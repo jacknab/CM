@@ -1,0 +1,31 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "..\/..",
+    "outDir": "dist",
+    "noImplicitReturns": false,
+    "types": ["node"],
+    "paths": {
+      "@shared/*": ["../../shared/*"],
+      "@shared/schema": ["../../shared/schema/index"],
+      "@shared/permissions": ["../../shared/permissions"],
+      "@shared/models/*": ["../../shared/models/*"],
+      "@shared/routes": ["../../shared/routes"],
+      "drizzle-orm": ["./node_modules/drizzle-orm"],
+      "drizzle-orm/*": ["./node_modules/drizzle-orm/*"],
+      "drizzle-zod": ["./node_modules/drizzle-zod"],
+      "drizzle-zod/*": ["./node_modules/drizzle-zod/*"],
+      "zod": ["./node_modules/zod"],
+      "zod/*": ["./node_modules/zod/*"]
+    }
+  },
+  "include": ["src"],
+  "references": [
+    {
+      "path": "../../lib/db"
+    },
+    {
+      "path": "../../lib/api-zod"
+    }
+  ]
+}

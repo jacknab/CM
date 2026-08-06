@@ -1,0 +1,16 @@
+# Generated native directories — EAS runs expo prebuild (CNG) fresh each time
+/android
+/ios
+
+# Expo local state
+/.expo
+
+# Node
+node_modules/
+
+# Build outputs
+dist/
+
+# OS
+.DS_Store
+google-service-account.json

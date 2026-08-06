@@ -1,0 +1,713 @@
+/* ============================================================
+   PREVIEW PAGE — Full-screen template preview
+   ============================================================ */
+
+body {
+    background: #0a0b15;
+    overflow-x: hidden;
+}
+
+/* ── Preview chrome bar (sticky top) ── */
+.preview-chrome {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    height: 56px;
+    background: rgba(10, 11, 21, 0.95);
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0 20px;
+}
+
+.preview-chrome__back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: rgba(255,255,255,0.55);
+    text-decoration: none;
+    transition: color 0.2s ease;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+.preview-chrome__back:hover { color: white; }
+.preview-chrome__back svg { width: 14px; height: 14px; }
+
+.preview-chrome__divider {
+    width: 1px;
+    height: 20px;
+    background: rgba(255,255,255,0.12);
+    flex-shrink: 0;
+}
+
+.preview-chrome__info {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    overflow: hidden;
+}
+
+.preview-chrome__name {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: white;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.preview-chrome__badge {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 100px;
+    background: rgba(124,58,237,0.2);
+    color: #a78bfa;
+    border: 1px solid rgba(124,58,237,0.3);
+    flex-shrink: 0;
+}
+
+.preview-chrome__url {
+    font-size: 0.75rem;
+    color: rgba(255,255,255,0.3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 1;
+}
+
+.preview-chrome__actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+/* ── Scrollable preview wrapper ── */
+.preview-wrapper {
+    margin-top: 56px;
+    width: 100%;
+    min-height: calc(100vh - 56px);
+}
+
+/* ── Responsive device toggle ── */
+.preview-chrome__device-btns {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 6px;
+}
+.device-btn {
+    width: 28px; height: 24px;
+    border: none;
+    background: transparent;
+    color: rgba(255,255,255,0.35);
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    font-size: 12px;
+}
+.device-btn.is-active,
+.device-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: white;
+}
+
+/* ── The actual rendered website ── */
+.preview-site {
+    --accent:  v-ar(--ps-accent, #7c3aed);
+    --dark:    var(--ps-dark,   #0b0d1a);
+    --light:   var(--ps-light,  #141830);
+    --text:    #1a1a2a;
+    --muted:   #5a5a72;
+    font-family: 'Inter', -apple-system, sans-serif;
+    line-height: 1.6;
+    color: var(--text);
+    background: white;
+    width: 100%;
+    transition: max-width 0.35s ease, margin 0.35s ease;
+}
+
+.preview-site.is-mobile {
+    max-width: 390px;
+    margin: 20px auto;
+    border-radius: 20px;
+    box-shadow: 0 0 0 8px #1e1e2e, 0 30px 80px rgba(0,0,0,0.5);
+    overflow: hidden;
+}
+
+/* ── Site Navbar ── */
+.psite-nav {
+    display: flex;
+    align-items: center;
+    padding: 0 40px;
+    height: 64px;
+    background: var(--dark);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    gap: 2rem;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+.psite-logo {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: white;
+    letter-spacing: -0.02em;
+    text-decoration: none;
+    flex-shrink: 0;
+}
+.psite-logo span { color: var(--accent); }
+.psite-nav-links {
+    display: flex;
+    gap: 2rem;
+    flex: 1;
+}
+.psite-nav-links a {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: rgba(255,255,255,0.6);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+.psite-nav-links a:hover { color: white; }
+.psite-nav-cta {
+    display: inline-block;
+    padding: 9px 22px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: white;
+    text-decoration: none;
+    background: var(--accent);
+    transition: opacity 0.2s;
+    flex-shrink: 0;
+}
+.psite-nav-cta:hover { opacity: 0.88; }
+
+/* ── Hero ── */
+.psite-hero {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    min-height: 520px;
+    background: var(--dark);
+    overflow: hidden;
+}
+.psite-hero__content {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 64px 48px;
+    gap: 1.25rem;
+}
+.psite-hero__eyebrow {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+}
+.psite-hero__h1 {
+    font-size: clamp(2rem, 3.5vw, 3rem);
+    font-weight: 800;
+    color: white;
+    line-height: 1.15;
+    letter-spacing: -0.03em;
+}
+.psite-hero__sub {
+    font-size: 1rem;
+    color: rgba(255,255,255,0.55);
+    line-height: 1.7;
+    max-width: 380px;
+}
+.psite-hero__actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+}
+.psite-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 13px 28px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    cursor: default;
+}
+.psite-btn--fill {
+    background: var(--accent);
+    color: white;
+}
+.psite-btn--outline {
+    background: transparent;
+    color: white;
+    border: 1px solid rgba(255,255,255,0.25);
+}
+.psite-hero__image {
+    background: var(--light);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.psite-hero__image-placeholder {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, var(--light) 0%, var(--dark) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 5rem;
+    opacity: 0.35;
+}
+.psite-hero__image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* ── Trust strip ── */
+.psite-trust {
+    background: var(--dark);
+    border-top: 1px solid rgba(255,255,255,0.05);
+    padding: 14px 40px;
+    display: flex;
+    align-items: center;
+    gap: 2.5rem;
+    overflow: hidden;
+}
+.psite-trust__label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.25);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.psite-trust__items {
+    display: flex;
+    gap: 2.5rem;
+    flex: 1;
+}
+.psite-trust__items span {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: rgba(255,255,255,0.35);
+    white-space: nowrap;
+}
+
+/* ── Services section ── */
+.psite-section {
+    padding: 80px 40px;
+}
+.psite-section--alt { background: #f8f8fb; }
+.psite-section--dark {
+    background: var(--dark);
+}
+.psite-section__head {
+    text-align: center;
+    margin-bottom: 52px;
+}
+.psite-eyebrow {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    margin-bottom: 0.75rem;
+}
+.psite-section__h2 {
+    font-size: clamp(1.5rem, 3vw, 2.2rem);
+    font-weight: 700;
+    color: #0a0b1a;
+    letter-spacing: -0.03em;
+    margin-bottom: 0.75rem;
+}
+.psite-section--dark .psite-section__h2 { color: white; }
+.psite-section__sub {
+    font-size: 0.95rem;
+    color: #6a6a82;
+    max-width: 480px;
+    margin: 0 auto;
+    line-height: 1.7;
+}
+.psite-section--dark .psite-section__sub { color: rgba(255,255,255,0.45); }
+
+/* Services grid */
+.psite-services-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+}
+.psite-service-card {
+    background: white;
+    border-radius: 12px;
+    padding: 28px;
+    border: 1px solid rgba(0,0,0,0.07);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+}
+.psite-section--dark .psite-service-card {
+    background: rgba(255,255,255,0.04);
+    border-color: rgba(255,255,255,0.08);
+}
+.psite-service-icon {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.psite-service-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0a0b1a;
+    margin-bottom: 0.5rem;
+}
+.psite-section--dark .psite-service-title { color: white; }
+.psite-service-desc {
+    font-size: 0.85rem;
+    color: #6a6a82;
+    line-height: 1.65;
+}
+.psite-section--dark .psite-service-desc { color: rgba(255,255,255,0.45); }
+.psite-service-price {
+    margin-top: 1rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+/* Gallery */
+.psite-gallery {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-top: 0;
+}
+.psite-gallery__item {
+    aspect-ratio: 3/4;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--light) 0%, var(--dark) 100%);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    opacity: 0.5;
+}
+.psite-gallery__item:first-child {
+    grid-column: span 2;
+    aspect-ratio: 3/2;
+    opacity: 0.65;
+}
+
+/* Testimonials */
+.psite-reviews {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+}
+.psite-review {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    border: 1px solid rgba(0,0,0,0.07);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+}
+.psite-review__stars { color: var(--accent); font-size: 0.9rem; margin-bottom: 12px; }
+.psite-review__text {
+    font-size: 0.875rem;
+    color: #4a4a62;
+    line-height: 1.7;
+    margin-bottom: 16px;
+    font-style: italic;
+}
+.psite-review__author {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #0a0b1a;
+}
+.psite-review__handle {
+    font-size: 0.75rem;
+    color: #9a9ab2;
+}
+
+/* CTA band */
+.psite-cta {
+    background: var(--accent);
+    padding: 72px 40px;
+    text-align: center;
+    color: white;
+}
+.psite-cta h2 {
+    font-size: clamp(1.6rem, 3vw, 2.4rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin-bottom: 1rem;
+}
+.psite-cta p {
+    font-size: 1rem;
+    opacity: 0.8;
+    margin-bottom: 2rem;
+    max-width: 440px;
+    margin-left: auto;
+    margin-right: auto;
+    line-height: 1.7;
+}
+.psite-btn--white {
+    background: white;
+    color: var(--dark);
+    font-weight: 700;
+    padding: 14px 32px;
+    border-radius: 8px;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 0.9rem;
+    cursor: default;
+}
+
+/* Footer */
+.psite-footer {
+    background: var(--dark);
+    color: rgba(255,255,255,0.5);
+    padding: 48px 40px 24px;
+}
+.psite-footer__grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: 3rem;
+    margin-bottom: 3rem;
+}
+.psite-footer__brand-name {
+    font-size: 1rem;
+    font-weight: 800;
+    color: white;
+    margin-bottom: 0.75rem;
+}
+.psite-footer__tagline {
+    font-size: 0.82rem;
+    line-height: 1.65;
+    max-width: 220px;
+}
+.psite-footer__col h4 {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.25);
+    margin-bottom: 1rem;
+}
+.psite-footer__col ul { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+.psite-footer__col a {
+    font-size: 0.85rem;
+    color: rgba(255,255,255,0.45);
+    text-decoration: none;
+}
+.psite-footer__bottom {
+    border-top: 1px solid rgba(255,255,255,0.07);
+    padding-top: 20px;
+    font-size: 0.78rem;
+}
+
+/* ── Mobile responsive adjustments ── */
+@media (max-width: 768px) {
+    .psite-hero { grid-template-columns: 1fr; }
+    .psite-hero__image { display: none; }
+    .psite-hero__content { padding: 48px 24px; }
+    .psite-services-grid { grid-template-columns: 1fr; }
+    .psite-gallery { grid-template-columns: repeat(2, 1fr); }
+    .psite-gallery__item:first-child { grid-column: span 2; }
+    .psite-reviews { grid-template-columns: 1fr; }
+    .psite-footer__grid { grid-template-columns: 1fr 1fr; }
+    .psite-section { padding: 56px 24px; }
+    .psite-nav { padding: 0 20px; gap: 1rem; }
+    .psite-nav-links { display: none; }
+    .preview-chrome__url { display: none; }
+}
+
+/* ── React template iframe preview ── */
+.preview-wrapper--react {
+    margin-top: 56px;
+    width: 100%;
+    height: calc(100vh - 56px);
+    background: #0a0b15;
+    display: flex;
+    flex-direction: column;
+    transition: padding 0.3s ease;
+}
+
+.preview-iframe {
+    width: 100%;
+    flex: 1;
+    border: none;
+    display: block;
+    background: white;
+    transition: width 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* ============================================================
+   HOURS BADGE — Open / Closed status widget
+   Three distinct designs: Hair Salon, Barbershop, Nail Salon
+   ============================================================ */
+
+/* ── Base ── */
+.hb {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    user-select: none;
+    cursor: default;
+    transition: color 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+}
+
+.hb-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* ── Open: slow pulsing green dot ── */
+@keyframes hb-pulse {
+    0%   { box-shadow: 0 0 0 0   rgba(34, 197, 94, 0.7); }
+    60%  { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0);   }
+    100% { box-shadow: 0 0 0 0   rgba(34, 197, 94, 0);   }
+}
+
+.hb--open .hb-dot {
+    background: #22c55e;
+    animation: hb-pulse 2.6s ease-out infinite;
+}
+
+/* ── Closed: static red dot ── */
+.hb--closed .hb-dot {
+    background: #ef4444;
+    animation: none;
+    box-shadow: none;
+}
+
+/* ══════════════════════════════════════════════
+   HAIR SALON — Elegant glass pill
+   Inline in hero content, above the eyebrow
+   ══════════════════════════════════════════════ */
+.hb--hair {
+    padding: 5px 14px 5px 11px;
+    border-radius: 100px;
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    color: rgba(255, 255, 255, 0.55);
+    align-self: flex-start;
+}
+
+.hb--hair.hb--open {
+    background: rgba(34, 197, 94, 0.07);
+    border-color: rgba(34, 197, 94, 0.28);
+    color: #86efac;
+}
+
+.hb--hair.hb--closed {
+    color: rgba(255, 255, 255, 0.45);
+}
+
+/* ══════════════════════════════════════════════
+   BARBERSHOP — Bold overlay pill
+   Absolute on hero image, bottom-left corner
+   ══════════════════════════════════════════════ */
+.hb--barber {
+    position: absolute;
+    bottom: 24px;
+    left: 24px;
+    z-index: 5;
+    padding: 8px 16px 8px 13px;
+    border-radius: 7px;
+    background: rgba(0, 0, 0, 0.78);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    color: rgba(255, 255, 255, 0.5);
+    letter-spacing: 0.1em;
+    font-size: 0.68rem;
+}
+
+.hb--barber .hb-dot {
+    width: 8px;
+    height: 8px;
+}
+
+.hb--barber .hb-text {
+    white-space: nowrap;
+}
+
+.hb--barber.hb--open {
+    border-color: rgba(34, 197, 94, 0.32);
+    color: #86efac;
+}
+
+.hb--barber.hb--closed {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* ══════════════════════════════════════════════
+   NAIL SALON — Soft luxury pill
+   Inline in hero content, above the eyebrow
+   ══════════════════════════════════════════════ */
+.hb--nail {
+    padding: 5px 15px 5px 11px;
+    border-radius: 100px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.5);
+    align-self: flex-start;
+    font-size: 0.67rem;
+    letter-spacing: 0.1em;
+}
+
+.hb--nail .hb-dot {
+    width: 6px;
+    height: 6px;
+}
+
+.hb--nail.hb--open {
+    background: rgba(34, 197, 94, 0.07);
+    border-color: rgba(34, 197, 94, 0.24);
+    color: #86efac;
+}
+
+.hb--nail.hb--closed {
+    color: rgba(255, 255, 255, 0.45);
+}
+
+/* Open pulse: slower/gentler for nail */
+.hb--nail.hb--open .hb-dot {
+    animation-duration: 3.2s;
+}

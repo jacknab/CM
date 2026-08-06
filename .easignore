@@ -1,0 +1,64 @@
+# ── Dependency installs (EAS runs its own) ───────────────────────────────────
+node_modules
+
+# pnpm-lock.yaml IS included — EAS needs it to detect pnpm as the package
+# manager. Without it EAS falls back to yarn and the build fails immediately.
+# pnpm install --frozen-lockfile works even with only apps/certxa-owner present
+# because certxa-owner has no @workspace/* dependencies.
+
+# ── Other workspace app sources (certxa-owner is the only build target) ───────
+apps/certxa-pos
+apps/certxa-staff
+apps/certxa-terminal
+apps/certxa-tap-to-pay
+apps/staff-mobile
+apps/support-backoffice
+
+# ── API server, website builder, other artifacts ──────────────────────────────
+artifacts
+
+# ── Shared/lib workspace packages (not needed for mobile build) ───────────────
+# Leading / anchors these to the archive root so they don't also strip
+# apps/certxa-owner/lib, apps/certxa-owner/scripts, etc.
+/shared
+/lib
+/scripts
+
+# ── Large asset / storage directories ────────────────────────────────────────
+/attached_assets
+/screenshots
+/videos
+/media
+/image-library-storage
+/thumbnails-storage
+/templates-storage
+/template_master
+/backups
+/snap
+/php
+/src
+/public
+/migrations
+
+# ── Dev tooling / Replit internals ────────────────────────────────────────────
+.git
+.github
+.agents
+.local
+.windsurf
+.cache
+.pnpm-store
+.npm
+.replit_integration_files
+
+# ── Docs & logs ───────────────────────────────────────────────────────────────
+*.md
+*.log
+*.txt
+
+# ── OS / IDE files ────────────────────────────────────────────────────────────
+.DS_Store
+.env.local
+*.local
+coverage
+.nyc_output

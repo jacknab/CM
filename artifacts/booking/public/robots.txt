@@ -1,0 +1,27 @@
+# Robots.txt for Certxa — https://certxa.com
+# Public marketing and booking pages are open to all crawlers.
+# Internal app pages (dashboard, admin, staff tools) are disallowed.
+
+User-agent: *
+Allow: /
+
+# Internal app sections — not for public indexing
+Disallow: /api/
+Disallow: /auth/
+Disallow: /manage/
+Disallow: /admin/
+Disallow: /isadmin/
+Disallow: /isTeam/
+Disallow: /onboarding/
+Disallow: /staff/
+Disallow: /staff-auth/
+Disallow: /staff-forgot-password/
+Disallow: /staff-reset-password/
+Disallow: /staff-dashboard/
+Disallow: /dashboard/
+Disallow: /calendar/
+Disallow: /customers/
+Disallow: /products/
+
+# Sitemap
+Sitemap: https://certxa.com/sitemap.xml

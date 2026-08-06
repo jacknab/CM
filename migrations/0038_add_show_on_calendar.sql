@@ -1,0 +1,1 @@
+ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "show_on_calendar" BOOLEAN NOT NULL DEFAULT true;

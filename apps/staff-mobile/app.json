@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Certxa Staff",
+    "slug": "certxa-staff",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "sdkVersion": "54.0.0",
+    "userInterfaceStyle": "dark",
+    "scheme": "certxa-staff",
+    "icon": "./assets/icon.png",
+    "platforms": ["ios", "android", "web"],
+    "splash": {
+      "image": "./assets/splash.png",
+      "backgroundColor": "#050C18"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.certxa.staff"
+    },
+    "android": {
+      "package": "com.certxa.staff",
+      "adaptiveIcon": {
+        "backgroundColor": "#050C18"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#050C18"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}

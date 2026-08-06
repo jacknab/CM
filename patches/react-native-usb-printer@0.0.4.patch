@@ -1,0 +1,43 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index f97adc1bb7b4eaff46f0fca2844168ca86593636..a5d78d808953a42a864e012a8e7701870bf107e9 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -1,16 +1,16 @@
+ apply plugin: 'com.android.library'
+ 
+ android {
+-    compileSdkVersion 26
+-    buildToolsVersion "26.0.1"
++    compileSdkVersion 33
++    buildToolsVersion "33.0.0"
+ 
+     defaultConfig {
+-        minSdkVersion 15
+-        targetSdkVersion 26
++        minSdkVersion 21
++        targetSdkVersion 33
+         versionCode 1
+         versionName "1.0"
+ 
+-        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
++        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+ 
+     }
+     buildTypes {
+@@ -22,11 +22,11 @@ android {
+ }
+ 
+ dependencies {
+-    compile fileTree(dir: 'libs', include: ['*.jar'])
+-    androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
++    implementation fileTree(dir: 'libs', include: ['*.jar'])
++    androidTestImplementation('androidx.test.espresso:espresso-core:3.4.0', {
+         exclude group: 'com.android.support', module: 'support-annotations'
+     })
+-    compile 'com.android.support:appcompat-v7:21.2.1'
+-    compile "com.facebook.react:react-native:+"
+-    testCompile 'junit:junit:4.12'
++    implementation 'androidx.appcompat:appcompat:1.4.0'
++    implementation "com.facebook.react:react-native:+"
++    testImplementation 'junit:junit:4.12'
+ }

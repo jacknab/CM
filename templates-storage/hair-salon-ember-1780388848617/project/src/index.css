@@ -1,0 +1,7 @@
+@import url('https://fonts.googleapis.com/css2?family=Kanit:ital,wght@0,200;0,300;0,400;0,500;1,300&family=Merriweather:ital,wght@0,300;1,300&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { font-family: 'Kanit', sans-serif; }
+h1, h2, h3, .serif { font-family: 'Merriweather', serif; }

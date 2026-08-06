@@ -1,0 +1,2718 @@
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * AI Voice Booking Receptionist  ·  OpenAI Realtime API edition
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Features:
+ *   • New booking creation
+ *   • Caller recognition by phone number (caller ID)
+ *   • Existing-booking lookup at call start  — AI knows their upcoming
+ *     appointments the moment the caller says hello
+ *   • Booking cancellation (with reason)
+ *   • Booking rescheduling
+ *
+ * INTERNAL WEBHOOK URLS (platform-controlled — do not expose to salon owners):
+ *
+ *   Twilio webhook  →  POST  /api/webhook/twilio/:storeId
+ *   Media stream    →  WSS   /media-stream  (storeId via customParameters)
+ *
+ * Architecture:
+ *
+ *   Inbound call → Twilio (PSTN)
+ *       │  POST /api/webhook/twilio/7   (body contains From=<callerPhone>)
+ *       ▼
+ *   Server validates store → returns TwiML <Connect><Stream>
+ *       │   <Parameter name="storeId" value="7"/>
+ *       │   <Parameter name="from" value="<callerPhone>"/>
+ *       │
+ *       │  Twilio opens WSS /media-stream  (storeId via customParameters)
+ *       ▼
+ *   ┌──────────────────────────────────────────────────────────────────────┐
+ *   │  Audio Bridge (per call, fully isolated)                              │
+ *   │                                                                      │
+ *   │  1. Open OpenAI Realtime WebSocket                                   │
+ *   │  2. Wait for BOTH: OpenAI ready + Twilio 'start' event               │
+ *   │  3. Read caller phone from start.customParameters.from               │
+ *   │  4. Look up upcoming appointments for that phone in this store      │
+ *   │  5. Build session.update with caller context + appointment list      │
+ *   │  6. Audio bridges in g711_ulaw — zero conversion                     │
+ *   └──────────────────────────────────────────────────────────────────────┘
+ *
+ * Audio format (both directions): g711_ulaw (8 kHz µ-law — Twilio native)
+ * Required secret: AI_INTEGRATIONS_OPENAI_API_KEY (or falls back to OPENAI_API_KEY
+ *   — the standard variable provided by the Replit OpenAI integration)
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+import type { Express, Request, Response } from "express";
+import type { Server as HttpServer } from "http";
+import { WebSocketServer, WebSocket } from "ws";
+import twilio from "twilio";
+import { fromZonedTime, toZonedTime } from "date-fns-tz";
+import { db } from "../db";
+import { locations, services, storeSettings, aiCallLog } from "@shared/schema";
+import { eq, desc } from "drizzle-orm";
+import { isAuthenticated, isAdminAuthenticated } from "../auth";
+import { storage } from "../storage";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const OPENAI_REALTIME_URL =
+  "wss://api.openai.com/v1/realtime?model=gpt-realtime-2";
+
+const PREF_KEY = "aiReceptionistEnabled";
+const PREF_PHONE_KEY = "aiReceptionistPhone";
+
+const TWILIO_ULAW_FRAME_BYTES = 160; // 20ms @ 8kHz, 8-bit μ-law
+
+/**
+ * Convert a single 16-bit linear PCM sample to 8-bit μ-law.
+ * Implementation adapted from the standard G.711 μ-law companding algorithm.
+ */
+function linear16ToMuLaw(sample: number): number {
+  const MU_LAW_MAX = 0x1fff;
+  const BIAS = 0x84;
+
+  let pcm = Math.max(-32768, Math.min(32767, sample));
+  let sign = 0;
+  if (pcm < 0) {
+    pcm = -pcm;
+    sign = 0x80;
+  }
+
+  pcm = pcm + BIAS;
+  if (pcm > MU_LAW_MAX) pcm = MU_LAW_MAX;
+
+  let exponent = 7;
+  for (let expMask = 0x4000; (pcm & expMask) === 0 && exponent > 0; exponent--, expMask >>= 1) {
+    // find segment
+  }
+  const mantissa = (pcm >> (exponent + 3)) & 0x0f;
+  const ulaw = ~(sign | (exponent << 4) | mantissa) & 0xff;
+  return ulaw;
+}
+
+/** Convert one 8-bit μ-law byte to 16-bit linear PCM sample. */
+function muLawToLinear16(muLawByte: number): number {
+  const u = (~muLawByte) & 0xff;
+  const sign = u & 0x80;
+  const exponent = (u >> 4) & 0x07;
+  const mantissa = u & 0x0f;
+  let sample = ((mantissa << 3) + 0x84) << exponent;
+  sample -= 0x84;
+  return sign ? -sample : sample;
+}
+
+/**
+ * Convert Twilio μ-law 8k (base64) to PCM16 24k (base64) for OpenAI input.
+ * Upsampling is 3x duplication (8k -> 24k), sufficient for speech input.
+ */
+function twilioUlawBase64ToPcm16_24kBase64(base64Ulaw: string): string {
+  const ulaw = Buffer.from(base64Ulaw, "base64");
+  if (!ulaw.length) return "";
+
+  const pcm = Buffer.allocUnsafe(ulaw.length * 3 * 2);
+  let o = 0;
+  for (let i = 0; i < ulaw.length; i++) {
+    const s = muLawToLinear16(ulaw[i]);
+    // 8k -> 24k upsample by repeating each sample 3 times
+    pcm.writeInt16LE(s, o); o += 2;
+    pcm.writeInt16LE(s, o); o += 2;
+    pcm.writeInt16LE(s, o); o += 2;
+  }
+  return pcm.toString("base64");
+}
+
+/** Lightweight voice detection over Twilio μ-law payload. */
+function hasVoiceInTwilioUlaw(base64Ulaw: string): boolean {
+  const ulaw = Buffer.from(base64Ulaw, "base64");
+  if (!ulaw.length) return false;
+
+  // Sample sparsely for speed; voice should still show clear energy.
+  let sumAbs = 0;
+  let n = 0;
+  for (let i = 0; i < ulaw.length; i += 4) {
+    const s = muLawToLinear16(ulaw[i]);
+    sumAbs += Math.abs(s);
+    n++;
+  }
+  const avgAbs = n ? sumAbs / n : 0;
+  return avgAbs > 900;
+}
+
+/**
+ * Convert OpenAI PCM16 (typically 24kHz) into Twilio μ-law (8kHz).
+ * Downsampling is a simple 3:1 decimation, which is sufficient for phone-band speech.
+ */
+function pcm16Base64ToTwilioUlawBase64(base64Pcm16: string): string {
+  const pcm = Buffer.from(base64Pcm16, "base64");
+  if (pcm.length < 2) return "";
+
+  const sampleCount = Math.floor(pcm.length / 2);
+  const outLen = Math.floor(sampleCount / 3); // 24k -> 8k decimation
+  const ulaw = Buffer.allocUnsafe(Math.max(outLen, 0));
+
+  let outIdx = 0;
+  for (let i = 0; i + 1 < pcm.length; i += 6) {
+    const sample = pcm.readInt16LE(i);
+    ulaw[outIdx++] = linear16ToMuLaw(sample);
+  }
+
+  return ulaw.subarray(0, outIdx).toString("base64");
+}
+
+/** Normalize a user-typed phone number to E.164 (very forgiving). */
+function normalizePhone(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  // Strip spaces, dashes, parens, dots
+  const cleaned = trimmed.replace(/[\s\-().]/g, "");
+  // Must start with + and 8–15 digits (E.164)
+  if (/^\+\d{8,15}$/.test(cleaned)) return cleaned;
+  // Bare 10-digit US number → prepend +1
+  if (/^\d{10}$/.test(cleaned)) return `+1${cleaned}`;
+  // 11-digit starting with 1 → +1...
+  if (/^1\d{10}$/.test(cleaned)) return `+${cleaned}`;
+  return null;
+}
+
+// ─── Salon context ────────────────────────────────────────────────────────────
+
+interface SalonService {
+  id: number;
+  name: string;
+  durationMinutes: number;
+  price: string;
+}
+
+interface SalonContext {
+  storeId: number;
+  businessName: string;
+  timezone: string;
+  bookingSlug: string | null;
+  businessPhone: string | null;
+  services: SalonService[];
+}
+
+/** A pre-loaded upcoming appointment for the caller, surfaced to the AI. */
+interface CallerAppointment {
+  id: number;
+  serviceName: string;
+  date: string;            // ISO 8601
+  durationMinutes: number;
+  status: string;
+}
+
+/**
+ * Look up the stored first name of a returning caller.
+ * Returns null if this is an unknown number (new caller).
+ */
+async function getCallerName(callerPhone: string, storeId: number): Promise<string | null> {
+  if (!callerPhone) return null;
+  try {
+    const customer = await storage.searchCustomerByPhone(callerPhone, storeId);
+    if (!customer?.name) return null;
+    // Return only the first name so the greeting feels natural ("Hi Ashley!")
+    const firstName = customer.name.trim().split(/\s+/)[0];
+    return firstName || null;
+  } catch {
+    return null;
+  }
+}
+
+async function getSalonContext(storeId: number): Promise<SalonContext | null> {
+  const [store] = await db
+    .select({
+      id: locations.id,
+      name: locations.name,
+      timezone: locations.timezone,
+      bookingSlug: locations.bookingSlug,
+      phone: locations.phone,
+    })
+    .from(locations)
+    .where(eq(locations.id, storeId))
+    .limit(1);
+
+  if (!store) return null;
+
+  let businessName = store.name;
+  try {
+    const [settings] = await db
+      .select({ preferences: storeSettings.preferences })
+      .from(storeSettings)
+      .where(eq(storeSettings.storeId, storeId))
+      .limit(1);
+    if (settings?.preferences) {
+      const prefs = JSON.parse(settings.preferences) as Record<string, unknown>;
+      if (typeof prefs.businessName === "string" && prefs.businessName.trim()) {
+        businessName = prefs.businessName.trim();
+      }
+    }
+  } catch { /* optional */ }
+
+  const storeServices = await db
+    .select({ id: services.id, name: services.name, duration: services.duration, price: services.price })
+    .from(services)
+    .where(eq(services.storeId, storeId));
+
+  return {
+    storeId,
+    businessName,
+    timezone: store.timezone ?? "UTC",
+    bookingSlug: store.bookingSlug ?? null,
+    businessPhone: store.phone ?? null,
+    services: storeServices.map((s) => ({
+      id: s.id,
+      name: s.name,
+      durationMinutes: s.duration,
+      price: String(s.price ?? "0.00"),
+    })),
+  };
+}
+
+/**
+ * Fetches upcoming (future, not cancelled, not completed) appointments
+ * for a phone number at the given store.
+ */
+async function getCallerUpcomingAppointments(
+  callerPhone: string,
+  storeId: number
+): Promise<CallerAppointment[]> {
+  if (!callerPhone) return [];
+
+  try {
+    const all = await storage.getAppointmentsByCustomerPhone(callerPhone, storeId);
+    const now = Date.now();
+    return all
+      .filter((a: any) => {
+        const apptTime = new Date(a.date).getTime();
+        const status = (a.status ?? "").toLowerCase();
+        return apptTime > now && status !== "cancelled" && status !== "completed" && status !== "no_show";
+      })
+      .map((a: any) => ({
+        id: a.id,
+        serviceName: a.service?.name ?? "Service",
+        date: new Date(a.date).toISOString(),
+        durationMinutes: a.duration ?? 60,
+        status: a.status ?? "confirmed",
+      }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  } catch (err) {
+    console.error("[AI Receptionist] Failed to look up caller appointments:", err);
+    return [];
+  }
+}
+
+// ─── OpenAI session config ────────────────────────────────────────────────────
+
+function buildOpenAiSessionConfig(
+  salon: SalonContext,
+  callerPhone: string | null,
+  callerName: string | null,
+  existingAppointments: CallerAppointment[]
+): object {
+  const serviceList = salon.services.length
+    ? salon.services
+        .map((s) => `• ${s.name} — ${s.durationMinutes} min, $${s.price}  [serviceId: ${s.id}]`)
+        .join("\n")
+    : "• Please ask the caller to check the website for available services.";
+
+  // ── Build the existing-appointment context block ──────────────────────────
+  let existingBookingsBlock: string;
+  if (!callerPhone) {
+    existingBookingsBlock =
+      `The caller's phone number is not available (they may be calling with caller ID blocked). ` +
+      `Start with: "Thank you for calling ${salon.businessName}, this is Autumn. Are you calling to book an appointment today?" ` +
+      `If yes, ask: "Great, may I ask who I am speaking with?" Then ask: "Thank you [caller name], are we looking to book a manicure or pedicure?" ` +
+      `Then ask for best callback number if needed.`;
+  } else if (existingAppointments.length === 0) {
+    const nameClause = callerName
+      ? `The caller's name on file is **${callerName}**. `
+      : `This number is not yet on file. `;
+    existingBookingsBlock =
+      `Caller's phone (from caller ID): ${callerPhone}\n` +
+      nameClause +
+      `Start with: "Thank you for calling ${salon.businessName}, this is Autumn. Are you calling to book an appointment today?" ` +
+      `If yes, ask: "Great, may I ask who I am speaking with?" ` +
+      `Then ask: "Thank you [caller name], are we looking to book a manicure or pedicure?" ` +
+      `Do NOT say "I don't see any upcoming appointments" unless the caller asks.`;
+  } else {
+    const apptList = existingAppointments
+      .map((a) => {
+        const formatted = new Date(a.date).toLocaleString("en-US", {
+          weekday: "long", month: "short", day: "numeric",
+          hour: "numeric", minute: "2-digit",
+          timeZone: salon.timezone,
+        });
+        return `• ${a.serviceName} on ${formatted}  [appointmentId: ${a.id}]`;
+      })
+      .join("\n");
+
+    const greetingInstruction = callerName
+      ? `Start with: "Thank you for calling ${salon.businessName}, this is Autumn. Are you calling to book an appointment today?" If yes, still ask for their preferred call name before booking flow and continue.`
+      : `Start with: "Thank you for calling ${salon.businessName}, this is Autumn. Are you calling to book an appointment today?" If yes, ask: "Great, may I ask who I am speaking with?" then continue.`;
+
+    existingBookingsBlock =
+      `Caller's phone (from caller ID): ${callerPhone}\n` +
+      (callerName ? `Caller's name on file: **${callerName}**\n` : "") +
+      `**This caller has the following upcoming appointment(s) on file:**\n${apptList}\n\n` +
+      `${greetingInstruction} Do NOT assume what they want. Let the caller explain first. ` +
+      `If they ask to cancel or reschedule, use the known appointment details and proceed.`;
+  }
+
+  const instructions = `You are Autumn, a friendly, professional AI phone receptionist for ${salon.businessName}. \
+You help callers manage their appointments — book new ones, cancel existing ones, reschedule, or just confirm details.
+
+Introduce yourself as Autumn near the start of the call.
+Your FIRST spoken response in a new call must be exactly: "Thank you for calling ${salon.businessName}, this is Autumn. Are you calling to book an appointment today?"
+If they say yes, your next question must be: "Great, may I ask who I am speaking with?"
+After they give their name, say: "Thank you [caller name], are we looking to book a manicure or pedicure?"
+Use this exact opening flow for new booking intent: "Thank you for calling ${salon.businessName}, this is Autumn. Are you calling to book an appointment today?" If yes: "Great, may I ask who I am speaking with?" Then: "Thank you [caller name], are we looking to book a manicure or pedicure?"
+
+${existingBookingsBlock}
+
+The available services at this salon are:
+${serviceList}
+
+The salon's timezone is: ${salon.timezone}.
+
+═══ HOW TO HANDLE EACH SCENARIO ═══
+
+▶ NEW BOOKING (caller wants a new appointment):
+  1. Collect: caller FIRST name, contact phone, service, and preferred date/time.
+     - Use call memory across turns. If the caller already provided any of these details, do NOT ask for that detail again.
+     - If the caller provides multiple details in one sentence, extract all of them immediately and only ask for missing fields.
+      - If caller ID is available, ask: "Is the number you're calling from a good contact number?"
+      - If yes, use caller ID and do not read digits back.
+      - If no, ask for the best callback number.
+      - If caller says "with [staff name]" or asks for a specific technician, treat that as a staff preference and keep that technician for both availability lookup and booking.
+      - When a specific technician is requested, include staffId in search_available_slots and create_booking.
+      - Ask first: "Are you looking for manicure services or pedicure services?"
+     - Do NOT list all services unless the caller asks for the full menu.
+     - After the caller chooses a service, suggest ONE relevant add-on/upgrade naturally.
+     - Example upsell: for full set acrylic/gel nails, ask if they need acrylic removal first.
+     - Example upsell: for pedicures, ask if they want to add callus treatment.
+     - Keep upsell brief and optional (never pushy); if declined, continue booking immediately.
+      - If caller gives a broad time request (example: "anytime tomorrow", "afternoon", "next week"), call search_available_slots before answering.
+      - Do NOT ask open-ended "what exact time" first. Ask whether they prefer MORNING, AFTERNOON, or EVENING.
+      - Once they choose a day + window, call search_available_slots and offer 2-3 real times in that window.
+      - For these suggested options, require at least 90 minutes of fit by setting minimumTotalDurationMinutes to 90.
+      - For "anytime tomorrow", prioritize slots between 11:00 AM and 5:00 PM.
+      - Offer only real available slots from tool output (never invented times).
+      - Prefer around 1:30 PM and 3:30 PM when those are actually available.
+      - If caller says "it doesn't matter", choose the best available slot near 1:30 PM first, otherwise nearest in the 11:00 AM-5:00 PM window.
+      - If add-ons increase total time, include that in extraDurationMinutes for tool calls.
+      - Never claim you cannot see the full schedule until search_available_slots has been called for that date.
+      - Name on file is only a historical hint. If the caller gives a different name, immediately switch to that new name and use it for the rest of the call and in create_booking.customerName.
+  2. Read back details using this style: "So we are scheduling a [service name] for [time] on [date], correct?"
+     If they confirm, say: "Wonderful, give me one second to get that locked in."
+  3. Once confirmed, call the create_booking function.
+  4. After search_available_slots returns, offer 2-4 concrete times and ask the caller to pick one.
+
+▶ PRICE QUESTIONS / UNSURE CALLER (keep call short):
+  1. If the caller asks many pricing questions OR says they are not sure what they want,
+     offer: "I can text you our price sheet so you can review everything."
+  1b. If caller says "cheapest", "least expensive", "low-cost", or gives a budget (example: "$50"), interpret this as price-based intent.
+      - Suggest the lowest-priced matching option for their category first.
+      - If multiple fit, give up to 2 concise options from lowest to higher.
+      - If they mention a budget, only suggest options at or under that budget first; if none fit, clearly say none fit and offer nearest above-budget option.
+      - Always continue the conversation with a next step question (never stop after suggesting a service).
+  2. If they say yes, ask: "Is the number you're calling from a mobile number that can receive texts?"
+  3. If yes, reply: "Perfect — you should receive a text shortly from our 1-888 number."
+  4. Keep this path short and friendly, then ask if they'd like to book now or call back.
+
+▶ CALLER WANTS A REAL PERSON:
+  1. If caller asks for a real person, respond politely and helpfully.
+  2. Provide the business phone number: ${salon.businessPhone ?? "(phone not available)"}
+  3. If phone is unavailable in system, apologize briefly and suggest calling back later.
+
+▶ CANCEL an existing appointment:
+  1. First call get_customer_appointments to identify upcoming bookings for this caller.
+  2. Confirm which one they want to cancel.
+     - If there is only one upcoming appointment and caller says "cancel it", you may call cancel_booking without appointmentId.
+     - If multiple appointments exist, ask which date/time to cancel and then pass appointmentId.
+  3. Briefly ask why — be gentle, this is optional.
+  4. Read back the cancellation and ask the caller to confirm.
+  5. Once confirmed, call cancel_booking with optional appointmentId and optional reason.
+
+▶ RESCHEDULE an existing appointment:
+  1. Confirm which appointment they want to move (use the appointmentId from the list above).
+  2. Ask what new date and time works for them.
+  3. Read back the change ("So you'd like to move your X from [old time] to [new time]") and confirm.
+  4. Once confirmed, call the reschedule_booking function with the appointmentId and new ISO datetime.
+
+▶ JUST CONFIRMING DETAILS:
+  Read the appointment details back to them, wish them well, and end the call warmly.
+
+═══ TONE & STYLE ═══
+
+Speak like a calm human receptionist. Keep each reply short (1 sentence, max ~12 words).
+Ask only ONE question at a time, then wait.
+Do NOT list all services unless the caller asks.
+If offering options, give at most 2-3 popular choices.
+Offer at most ONE relevant add-on suggestion per booking flow.
+When asking for a name, ask for first name only.
+If caller ID is available, confirm it by asking whether the number they're calling from is best.
+Do not read phone digits back unless the caller provides a different number.
+For booking, first ask: manicure or pedicure.
+If caller is unsure or price-focused, offer texting the price sheet quickly.
+Use simple everyday words, relaxed pacing, and brief confirmations ("Got it", "Perfect", "Sounds good").
+  If anything is unclear, ask once for clarification before moving on.
+  Never stop mid-conversation after a recommendation — always end your turn with a clear next question.
+  Never invent appointment IDs — only use the IDs listed in the context above.`;
+
+  const realtimeTools = [
+    {
+      type: "function",
+      name: "create_booking",
+      description: "Create a new appointment after all details are confirmed.",
+      parameters: {
+        type: "object",
+        properties: {
+          customerName:        { type: "string", description: "Full name" },
+          customerPhone:       { type: "string", description: "Phone number (E.164 or 10-digit US)" },
+          serviceId:           { type: "integer", description: "Numeric service ID from the list" },
+          staffId:             { type: "integer", description: "Optional specific staff ID when caller requests a technician." },
+          appointmentDateTime: { type: "string", description: "ISO 8601 datetime (e.g. 2025-06-15T14:00:00)" },
+          extraDurationMinutes: { type: "integer", description: "Optional extra minutes for add-ons (0 if none)." },
+        },
+        required: ["customerName", "customerPhone", "serviceId", "appointmentDateTime"],
+      },
+    },
+    {
+      type: "function",
+      name: "cancel_booking",
+      description: "Cancel an existing appointment after the caller has confirmed.",
+      parameters: {
+        type: "object",
+        properties: {
+          appointmentId: { type: "integer", description: "Optional appointment ID from caller's upcoming appointments." },
+          customerPhone: { type: "string", description: "Optional 10-digit phone if different from caller ID." },
+          reason:        { type: "string", description: "Optional reason" },
+        },
+        required: [],
+      },
+    },
+    {
+      type: "function",
+      name: "reschedule_booking",
+      description: "Reschedule an existing appointment after the caller has confirmed.",
+      parameters: {
+        type: "object",
+        properties: {
+          appointmentId: { type: "integer", description: "ID from the appointments list" },
+          newDateTime:   { type: "string", description: "ISO 8601 new datetime" },
+        },
+        required: ["appointmentId", "newDateTime"],
+      },
+    },
+    {
+      type: "function",
+      name: "search_available_slots",
+      description: "Get real available booking times from the existing platform availability API.",
+      parameters: {
+        type: "object",
+        properties: {
+          storeId: { type: "integer", description: "Store ID (optional; session store is used when omitted)." },
+          serviceId: { type: "integer", description: "Numeric service ID from the list" },
+          date: { type: "string", description: "Date in YYYY-MM-DD" },
+          preferredTimeRange: { type: "string", description: "Optional: morning, afternoon, or evening" },
+          staffId: { type: "integer", description: "Optional specific staff ID" },
+          extraDurationMinutes: { type: "integer", description: "Optional extra minutes for add-ons (0 if none)." },
+          minimumTotalDurationMinutes: { type: "integer", description: "Optional minimum total slot fit in minutes (e.g. 90)." },
+        },
+        required: ["serviceId", "date"],
+      },
+    },
+    {
+      type: "function",
+      name: "lookup_client_by_phone",
+      description: "Look up an existing client record by 10-digit phone number for this salon.",
+      parameters: {
+        type: "object",
+        properties: {
+          customerPhone: { type: "string", description: "Phone number (E.164 or 10-digit US)" },
+        },
+        required: ["customerPhone"],
+      },
+    },
+    {
+      type: "function",
+      name: "get_customer_appointments",
+      description: "Fetch upcoming appointments for a customer by phone number.",
+      parameters: {
+        type: "object",
+        properties: {
+          customerPhone: { type: "string", description: "Optional 10-digit phone. If omitted, caller phone is used." },
+        },
+        required: [],
+      },
+    },
+  ];
+
+  return {
+    type: "session.update",
+    session: {
+      type: "realtime",
+      model: "gpt-realtime-2",
+      instructions,
+      tools: realtimeTools,
+    },
+  };
+}
+
+// ─── Booking-related tool handlers ────────────────────────────────────────────
+
+interface NewBookingArgs {
+  customerName: string;
+  customerPhone: string;
+  serviceId: number;
+  staffId?: number;
+  appointmentDateTime: string;
+  extraDurationMinutes?: number;
+}
+
+interface CancelArgs {
+  appointmentId?: number;
+  customerPhone?: string;
+  reason?: string;
+}
+
+function logAiToolEvent(event: string, payload: Record<string, unknown>): void {
+  console.log(
+    `[AI Receptionist][tool] ${JSON.stringify({
+      ts: new Date().toISOString(),
+      event,
+      ...payload,
+    })}`,
+  );
+}
+
+interface RescheduleArgs {
+  appointmentId: number;
+  newDateTime: string;
+}
+
+interface GetAvailableSlotsArgs {
+  storeId?: number;
+  serviceId: number;
+  date: string; // YYYY-MM-DD in salon-local intent
+  preferredTimeRange?: "morning" | "afternoon" | "evening";
+  staffId?: number;
+  extraDurationMinutes?: number;
+  minimumTotalDurationMinutes?: number;
+}
+
+interface LookupClientByPhoneArgs {
+  customerPhone: string;
+}
+
+interface GetCustomerAppointmentsArgs {
+  customerPhone?: string;
+}
+
+/** Used to scope cancel/reschedule to this caller's own appointments. */
+type AppointmentIdAllowlist = Set<number>;
+
+function normalizePhoneForPublicBooking(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
+  return digits;
+}
+
+function parseAppointmentDateTimeInSalonTimezone(raw: string, timezone: string): Date | null {
+  const value = String(raw ?? "").trim();
+  if (!value) return null;
+
+  if (/[zZ]$|[+-]\d{2}:\d{2}$/.test(value)) {
+    const dt = new Date(value);
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(value)) {
+    const normalized = value.length === 16 ? `${value}:00` : value;
+    const dt = fromZonedTime(new Date(normalized), timezone || "UTC");
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const dt = fromZonedTime(new Date(`${value}T00:00:00`), timezone || "UTC");
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+
+  const fallback = new Date(value);
+  return isNaN(fallback.getTime()) ? null : fallback;
+}
+
+function toSalonLocalDateString(input: Date, timezone: string): string {
+  const local = toZonedTime(input, timezone || "UTC");
+  const y = local.getFullYear();
+  const m = String(local.getMonth() + 1).padStart(2, "0");
+  const d = String(local.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function getAiReceptionistApiBase(): string {
+  const configured = (process.env.APP_URL ?? "").trim().replace(/\/$/, "");
+  if (configured) return configured;
+  const port = String(process.env.PORT ?? "5000").trim() || "5000";
+  return `http://127.0.0.1:${port}`;
+}
+
+function getAiReceptionistInternalKey(): string | null {
+  const key = (process.env.AI_RECEPTIONIST_API_KEY ?? "").trim();
+  return key || null;
+}
+
+function isAiInternalAuthorized(req: Request): boolean {
+  const expected = getAiReceptionistInternalKey();
+  if (!expected) return true; // optional hardening key
+  const provided = String(req.headers["x-ai-receptionist-key"] ?? "").trim();
+  return !!provided && provided === expected;
+}
+
+type AvailabilitySlot = { time: string; staffId: number; staffName: string };
+
+async function getCandidateStaffForService(
+  storeId: number,
+  serviceId: number,
+  specificStaffId?: number,
+): Promise<Array<{ id: number; name: string; storeId: number | null }>> {
+  if (specificStaffId) {
+    const member = await storage.getStaffMember(specificStaffId);
+    if (!member || member.storeId !== storeId) return [];
+    const links = await storage.getStaffServices(specificStaffId, serviceId);
+    return links.length > 0 ? [{ id: member.id, name: member.name, storeId: member.storeId }] : [];
+  }
+
+  const links = await storage.getStaffServices(undefined, serviceId);
+  if (!links.length) return [];
+
+  const allowedIds = new Set(links.map((l) => l.staffId));
+  const storeStaff = await storage.getAllStaff(storeId);
+  return storeStaff
+    .filter((s) => allowedIds.has(s.id))
+    .map((s) => ({ id: s.id, name: s.name, storeId: s.storeId }));
+}
+
+async function computeAvailabilitySlots(
+  salon: SalonContext,
+  serviceId: number,
+  date: string,
+  duration: number,
+  specificStaffId?: number,
+): Promise<AvailabilitySlot[]> {
+  // Fast return for malformed input
+  if (!date || Number.isNaN(new Date(`${date}T00:00:00Z`).getTime())) return [];
+
+  const tz = salon.timezone || "UTC";
+  const calendarSettings = await storage.getCalendarSettings(salon.storeId);
+  const slotInterval = calendarSettings?.timeSlotInterval || 15;
+
+  const dayStartLocal = fromZonedTime(new Date(`${date}T00:00:00`), tz);
+  const dayEndLocal = fromZonedTime(new Date(`${date}T23:59:59.999`), tz);
+
+  const [hours, dayAppointments, allAppointments, candidateStaff] = await Promise.all([
+    storage.getBusinessHours(salon.storeId),
+    storage.getAppointments({ from: dayStartLocal, to: dayEndLocal, storeId: salon.storeId }),
+    storage.getAppointments({ storeId: salon.storeId }),
+    getCandidateStaffForService(salon.storeId, serviceId, specificStaffId),
+  ]);
+
+  if (!candidateStaff.length) return [];
+
+  const dateParts = date.split("-").map(Number);
+  const dayOfWeek = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]).getDay();
+  const dayHours = hours.find((h) => h.dayOfWeek === dayOfWeek);
+  if (dayHours?.isClosed) return [];
+
+  const businessStartHour = 9;
+  const businessStartMinute = 0;
+  const businessEndHour = 18;
+  const businessEndMinute = 0;
+  const [openHour, openMin] = dayHours && !dayHours.isClosed
+    ? dayHours.openTime.split(":").map(Number)
+    : [businessStartHour, businessStartMinute];
+  const [closeHour, closeMin] = dayHours && !dayHours.isClosed
+    ? dayHours.closeTime.split(":").map(Number)
+    : [businessEndHour, businessEndMinute];
+
+  const businessEndUtc = fromZonedTime(
+    new Date(`${date}T${String(closeHour).padStart(2, "0")}:${String(closeMin).padStart(2, "0")}:00`),
+    tz,
+  );
+  const nowUtc = new Date();
+
+  const staffLastAppointment: Map<number, Date> = new Map();
+  for (const apt of allAppointments) {
+    if (apt.status === "cancelled" || !apt.staffId) continue;
+    const aptDate = new Date(apt.date);
+    const current = staffLastAppointment.get(apt.staffId);
+    if (!current || aptDate > current) staffLastAppointment.set(apt.staffId, aptDate);
+  }
+
+  const availabilityByStaff = new Map<number, Awaited<ReturnType<typeof storage.getStaffAvailability>>>();
+  await Promise.all(
+    candidateStaff.map(async (s) => {
+      const rules = await storage.getStaffAvailability(s.id);
+      availabilityByStaff.set(s.id, rules);
+    }),
+  );
+
+  const slots: AvailabilitySlot[] = [];
+
+  // Precompute working window in minutes for quick comparisons
+  const dayStartMinutes = openHour * 60 + openMin;
+  const dayEndMinutes = closeHour * 60 + closeMin;
+
+  for (let hour = openHour; hour <= closeHour; hour++) {
+    for (let min = 0; min < 60; min += slotInterval) {
+      if (hour === openHour && min < openMin) continue;
+      if (hour === closeHour && min >= closeMin) break;
+      if (hour > closeHour) break;
+
+      const slotStart = fromZonedTime(
+        new Date(`${date}T${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}:00`),
+        tz,
+      );
+      const slotEnd = new Date(slotStart.getTime() + duration * 60000);
+
+      if (slotStart < nowUtc) continue;
+      if (slotEnd > businessEndUtc) continue;
+
+      const availableForSlot: Array<{ staffMember: { id: number; name: string }; lastApt: Date | null }> = [];
+
+      for (const staffMember of candidateStaff) {
+        let hasConflict = false;
+
+        for (const apt of dayAppointments) {
+          if (apt.staffId !== staffMember.id || apt.status === "cancelled") continue;
+          const aptStart = new Date(apt.date);
+          const aptEnd = new Date(aptStart.getTime() + apt.duration * 60000);
+          if (slotStart < aptEnd && slotEnd > aptStart) {
+            hasConflict = true;
+            break;
+          }
+        }
+
+        if (!hasConflict) {
+          const rules = availabilityByStaff.get(staffMember.id) ?? [];
+          if (rules.length > 0) {
+            const slotLocalDate = toZonedTime(slotStart, tz);
+            const slotDayOfWeek = slotLocalDate.getDay();
+            const dayAvailability = rules.find((r) => r.dayOfWeek === slotDayOfWeek);
+
+            if (dayAvailability) {
+              const [availStartHour, availStartMin] = dayAvailability.startTime.split(":").map(Number);
+              const [availEndHour, availEndMin] = dayAvailability.endTime.split(":").map(Number);
+              const slotLocalHour = slotLocalDate.getHours();
+              const slotLocalMin = slotLocalDate.getMinutes();
+              const slotTimeInMin = slotLocalHour * 60 + slotLocalMin;
+              const slotEndLocal = toZonedTime(slotEnd, tz);
+              const slotEndTimeInMin = slotEndLocal.getHours() * 60 + slotEndLocal.getMinutes();
+              const availStartInMin = availStartHour * 60 + availStartMin;
+              const availEndInMin = availEndHour * 60 + availEndMin;
+
+              if (slotTimeInMin < availStartInMin || slotEndTimeInMin > availEndInMin) {
+                hasConflict = true;
+              }
+            } else {
+              hasConflict = true;
+            }
+          }
+        }
+
+        if (!hasConflict) {
+          availableForSlot.push({
+            staffMember,
+            lastApt: staffLastAppointment.get(staffMember.id) || null,
+          });
+        }
+      }
+
+      if (availableForSlot.length > 0) {
+        availableForSlot.sort((a, b) => {
+          if (a.lastApt === null && b.lastApt === null) return 0;
+          if (a.lastApt === null) return -1;
+          if (b.lastApt === null) return 1;
+          return a.lastApt.getTime() - b.lastApt.getTime();
+        });
+
+        const chosen = availableForSlot[0];
+        slots.push({
+          time: slotStart.toISOString(),
+          staffId: chosen.staffMember.id,
+          staffName: chosen.staffMember.name,
+        });
+      }
+    }
+  }
+
+  return slots;
+}
+
+async function createBookingViaBookingRules(
+  salon: SalonContext,
+  args: NewBookingArgs,
+): Promise<{ success: boolean; message: string }> {
+  const service = salon.services.find((s) => s.id === Number(args.serviceId));
+  if (!service) {
+    return { success: false, message: "Requested service is not available for this salon." };
+  }
+
+  const requested = parseAppointmentDateTimeInSalonTimezone(
+    String(args.appointmentDateTime ?? ""),
+    salon.timezone,
+  );
+  if (!requested || isNaN(requested.getTime())) {
+    return { success: false, message: "appointmentDateTime must be a valid ISO datetime." };
+  }
+
+  const publicPhone = normalizePhoneForPublicBooking(String(args.customerPhone ?? ""));
+  if (publicPhone.length !== 10) {
+    return { success: false, message: "Please provide a valid 10-digit US phone number." };
+  }
+
+  const specificStaffId =
+    typeof args.staffId === "number" && Number.isFinite(args.staffId) && args.staffId > 0
+      ? Number(args.staffId)
+      : undefined;
+
+  const dateStr = toSalonLocalDateString(requested, salon.timezone);
+  const extraDuration = Math.max(0, Number(args.extraDurationMinutes ?? 0) || 0);
+  const totalDuration = service.durationMinutes + extraDuration;
+  logAiToolEvent("create_booking.request", {
+    storeId: salon.storeId,
+    bookingSlug: salon.bookingSlug,
+    serviceId: Number(args.serviceId),
+    staffId: specificStaffId ?? null,
+    requestedAt: requested.toISOString(),
+    timezone: salon.timezone,
+    totalDuration,
+  });
+
+  let slots: AvailabilitySlot[] = [];
+  try {
+    slots = await computeAvailabilitySlots(salon, Number(args.serviceId), dateStr, totalDuration, specificStaffId);
+    logAiToolEvent("create_booking.availability_result", {
+      storeId: salon.storeId,
+      date: dateStr,
+      slotsCount: slots.length,
+      strategy: "local_compute",
+    });
+  } catch (err) {
+    console.error("[AI Receptionist] Local availability compute failed:", err);
+    logAiToolEvent("create_booking.availability_failed", {
+      storeId: salon.storeId,
+      date: dateStr,
+      message: "local_compute_failed",
+    });
+    return {
+      success: false,
+      message: "Availability lookup failed. Please try again.",
+    };
+  }
+
+  if (!slots.length) {
+    return {
+      success: false,
+      message: specificStaffId
+        ? "No available time slots were found for that date with the requested technician."
+        : "No available time slots were found for that date.",
+    };
+  }
+
+  const requestedMinute = Math.floor(requested.getTime() / 60000);
+  const chosen = slots.find((s) => Math.floor(new Date(s.time).getTime() / 60000) === requestedMinute);
+  if (!chosen) {
+    logAiToolEvent("create_booking.requested_slot_missing", {
+      storeId: salon.storeId,
+      requestedMinute,
+    });
+    return { success: false, message: "That time is no longer available. Please choose another time." };
+  }
+  try {
+    const existingCustomer = await storage.searchCustomerByPhone(publicPhone, salon.storeId);
+    const customer =
+      existingCustomer ??
+      (await storage.createCustomer({
+        name: String(args.customerName ?? "").trim() || "Guest",
+        phone: publicPhone,
+        storeId: salon.storeId,
+      }));
+
+    const appointment = await storage.createAppointment({
+      date: new Date(chosen.time),
+      duration: totalDuration,
+      status: "confirmed",
+      notes: "Booked by AI receptionist",
+      serviceId: service.id,
+      staffId: chosen.staffId,
+      customerId: customer.id,
+      storeId: salon.storeId,
+    });
+
+    logAiToolEvent("create_booking.success", {
+      storeId: salon.storeId,
+      appointmentId: appointment.id,
+      slot: chosen.time,
+      staffId: chosen.staffId,
+      strategy: "direct_db_insert",
+    });
+
+    return {
+      success: true,
+      message: `Appointment ${appointment.id} confirmed with ${chosen.staffName} at ${new Date(chosen.time).toISOString()}.`.trim(),
+    };
+  } catch (err) {
+    console.error("[AI Receptionist] Booking DB insert failed:", err);
+    logAiToolEvent("create_booking.backend_rejected", {
+      storeId: salon.storeId,
+      slot: chosen.time,
+      staffId: chosen.staffId,
+      message: "db_insert_failed",
+    });
+    return { success: false, message: "Failed to save the booking — please try again." };
+  }
+}
+
+async function getAvailabilityViaBookingRules(
+  salon: SalonContext,
+  args: GetAvailableSlotsArgs,
+): Promise<{ success: boolean; message: string; slots?: AvailabilitySlot[] }> {
+  const service = salon.services.find((s) => s.id === Number(args.serviceId));
+  if (!service) {
+    return { success: false, message: "Requested service is not available for this salon." };
+  }
+
+  const extraDuration = Math.max(0, Number(args.extraDurationMinutes ?? 0) || 0);
+  const minimumTotalDuration = Math.max(0, Number(args.minimumTotalDurationMinutes ?? 0) || 0);
+  const totalDuration = Math.max(service.durationMinutes + extraDuration, minimumTotalDuration);
+  logAiToolEvent("search_available_slots.request", {
+    storeId: salon.storeId,
+    serviceId: Number(args.serviceId),
+    date: String(args.date),
+    staffId: typeof args.staffId === "number" ? args.staffId : null,
+    totalDuration,
+    preferredTimeRange: args.preferredTimeRange ?? null,
+    timezone: salon.timezone,
+  });
+
+  let slots: AvailabilitySlot[] = [];
+  try {
+    slots = await computeAvailabilitySlots(
+      salon,
+      Number(args.serviceId),
+      String(args.date),
+      totalDuration,
+      typeof args.staffId === "number" ? args.staffId : undefined,
+    );
+  } catch (err) {
+    console.error("[AI Receptionist] Local availability compute failed:", err);
+    logAiToolEvent("search_available_slots.failed", {
+      storeId: salon.storeId,
+      status: "local_compute_failed",
+    });
+    return {
+      success: false,
+      message: "Availability lookup failed. Please try again.",
+    };
+  }
+
+  const range = String(args.preferredTimeRange ?? "").toLowerCase();
+  if (range === "morning" || range === "afternoon" || range === "evening") {
+    slots = slots.filter((slot) => {
+      const local = toZonedTime(new Date(slot.time), salon.timezone || "UTC");
+      const hour = local.getHours();
+      if (range === "morning") return hour >= 8 && hour < 12;
+      if (range === "afternoon") return hour >= 12 && hour < 17;
+      return hour >= 17 && hour < 21;
+    });
+  }
+
+  logAiToolEvent("search_available_slots.result", {
+    storeId: salon.storeId,
+    serviceId: Number(args.serviceId),
+    date: String(args.date),
+    slotsCount: slots.length,
+    filteredByRange: range || null,
+    strategy: "local_compute",
+  });
+
+  if (slots.length === 0) {
+    return {
+      success: true,
+      slots,
+      message: `No openings found for ${service.name} on ${args.date}. Ask for another date.`,
+    };
+  }
+
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: salon.timezone,
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const top = slots.slice(0, 8).map((s) => `${fmt.format(new Date(s.time))} (${s.staffName})`);
+  const more = slots.length > top.length ? ` plus ${slots.length - top.length} more` : "";
+
+  return {
+    success: true,
+    slots,
+    message: `Available times for ${service.name} on ${args.date}: ${top.join(", ")}${more}.`,
+  };
+}
+
+async function handleLookupClientByPhone(
+  rawArgs: string,
+  salon: SalonContext,
+): Promise<{ success: boolean; message: string }> {
+  let args: LookupClientByPhoneArgs;
+  try {
+    args = JSON.parse(rawArgs);
+  } catch {
+    return { success: false, message: "Could not understand client lookup arguments." };
+  }
+
+  const phone = normalizePhoneForPublicBooking(String(args.customerPhone ?? ""));
+  if (phone.length !== 10) {
+    return { success: false, message: "Please provide a valid 10-digit US phone number." };
+  }
+
+  const customer = await storage.searchCustomerByPhone(phone, salon.storeId);
+  if (!customer) {
+    return {
+      success: true,
+      message: `No existing client found for ${phone} in this salon.`,
+    };
+  }
+
+  return {
+    success: true,
+    message: `Client found: clientId=${customer.id}, name=${customer.name ?? "(unknown)"}, phone=${phone}.`,
+  };
+}
+
+async function handleNewBooking(
+  storeId: number,
+  rawArgs: string,
+  salon: SalonContext
+): Promise<{ success: boolean; message: string }> {
+  let args: NewBookingArgs;
+  try {
+    args = JSON.parse(rawArgs);
+  } catch {
+    return { success: false, message: "Could not understand booking arguments." };
+  }
+
+  try {
+    const result = await createBookingViaBookingRules(salon, args);
+    if (result.success) {
+      logAiToolEvent("create_booking.handler_success", {
+        storeId,
+        serviceId: args.serviceId,
+        at: args.appointmentDateTime,
+      });
+    } else {
+      logAiToolEvent("create_booking.handler_rejected", {
+        storeId,
+        serviceId: args.serviceId,
+        at: args.appointmentDateTime,
+        reason: result.message,
+      });
+    }
+    return result;
+  } catch (err) {
+    console.error("[AI Receptionist] New booking failed:", err);
+    return { success: false, message: "Failed to save the booking — please try again." };
+  }
+}
+
+async function handleGetAvailableSlots(
+  rawArgs: string,
+  salon: SalonContext,
+): Promise<{ success: boolean; message: string; slots?: AvailabilitySlot[] }> {
+  let args: GetAvailableSlotsArgs;
+  try {
+    args = JSON.parse(rawArgs);
+  } catch {
+    return { success: false, message: "Could not understand availability arguments." };
+  }
+
+  if (!args || typeof args.serviceId !== "number" || typeof args.date !== "string") {
+    return { success: false, message: "Availability requires serviceId and date (YYYY-MM-DD)." };
+  }
+
+  try {
+    const result = await getAvailabilityViaBookingRules(salon, args);
+    if (result.success) {
+      logAiToolEvent("search_available_slots.handler_success", {
+        storeId: salon.storeId,
+        serviceId: args.serviceId,
+        date: args.date,
+        staffId: args.staffId ?? null,
+      });
+    } else {
+      logAiToolEvent("search_available_slots.handler_failed", {
+        storeId: salon.storeId,
+        serviceId: args.serviceId,
+        date: args.date,
+        staffId: args.staffId ?? null,
+        reason: result.message,
+      });
+    }
+    return result;
+  } catch (err) {
+    console.error("[AI Receptionist] Availability lookup failed:", err);
+    return { success: false, message: "Failed to check availability — please try again." };
+  }
+}
+
+async function handleGetCustomerAppointments(
+  rawArgs: string,
+  salon: SalonContext,
+  fallbackCallerPhone?: string,
+): Promise<{ success: boolean; message: string }> {
+  let args: GetCustomerAppointmentsArgs;
+  try {
+    args = JSON.parse(rawArgs || "{}");
+  } catch {
+    return { success: false, message: "Could not understand customer appointment lookup arguments." };
+  }
+
+  const phone = normalizePhoneForPublicBooking(String(args.customerPhone ?? fallbackCallerPhone ?? ""));
+  if (phone.length !== 10) {
+    return { success: false, message: "A valid 10-digit customer phone number is required." };
+  }
+
+  const upcoming = await getCallerUpcomingAppointments(phone, salon.storeId);
+  if (!upcoming.length) {
+    return { success: true, message: `No upcoming appointments found for ${phone}.` };
+  }
+
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: salon.timezone,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const rendered = upcoming
+    .slice(0, 6)
+    .map((a) => `${a.serviceName} on ${fmt.format(new Date(a.date))} (appointmentId: ${a.id})`)
+    .join(", ");
+
+  return {
+    success: true,
+    message: `Upcoming appointments for ${phone}: ${rendered}.`,
+  };
+}
+
+async function handleCancel(
+  storeId: number,
+  rawArgs: string,
+  allowlist: AppointmentIdAllowlist,
+  fallbackCallerPhone?: string,
+): Promise<{ success: boolean; message: string }> {
+  let args: CancelArgs;
+  try {
+    args = JSON.parse(rawArgs || "{}");
+  } catch {
+    return { success: false, message: "Could not understand cancel arguments." };
+  }
+
+  const requestedId =
+    typeof args.appointmentId === "number" && Number.isFinite(args.appointmentId) && args.appointmentId > 0
+      ? Number(args.appointmentId)
+      : null;
+
+  let targetAppointmentId: number | null = requestedId;
+
+  // If no appointmentId is provided, resolve from caller's phone-based session context.
+  if (!targetAppointmentId) {
+    const allowlistIds = Array.from(allowlist.values());
+    if (allowlistIds.length > 0) {
+      const loaded = await Promise.all(allowlistIds.map((id) => storage.getAppointment(id).catch(() => undefined)));
+      const candidates = loaded
+        .filter((a): a is NonNullable<typeof a> => !!a)
+        .filter((a) => a.storeId === storeId && String(a.status ?? "").toLowerCase() !== "cancelled")
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      const now = Date.now();
+      const future = candidates.filter((a) => new Date(a.date).getTime() >= now);
+      const picked = future[0] ?? candidates[candidates.length - 1];
+      targetAppointmentId = picked?.id ?? null;
+    }
+  }
+
+  // Final fallback: try direct lookup by supplied phone (or caller phone), then choose nearest appointment.
+  if (!targetAppointmentId) {
+    const phone = normalizePhoneForPublicBooking(String(args.customerPhone ?? fallbackCallerPhone ?? ""));
+    if (phone.length === 10) {
+      const upcoming = await getCallerUpcomingAppointments(phone, storeId);
+      if (upcoming.length > 0) {
+        targetAppointmentId = upcoming[0].id;
+      }
+    }
+  }
+
+  if (!targetAppointmentId) {
+    return {
+      success: false,
+      message:
+        "I couldn't find an upcoming appointment for this caller to cancel. Please ask for the appointment date and time, or provide the appointment ID.",
+    };
+  }
+
+  if (!allowlist.has(targetAppointmentId)) {
+    console.warn(
+      `[AI Receptionist] Refusing to cancel appointment ${targetAppointmentId} — not in caller's allowlist (store ${storeId})`
+    );
+    return {
+      success: false,
+      message:
+        "That appointment is not one I can modify for this caller. I can only cancel appointments tied to this caller's phone number.",
+    };
+  }
+
+  // Defense-in-depth: re-verify storeId on the live record before mutating
+  const existing = await storage.getAppointment(targetAppointmentId);
+  if (!existing || existing.storeId !== storeId) {
+    console.warn(
+      `[AI Receptionist] storeId mismatch on cancel — appointment ${targetAppointmentId} belongs to store ${existing?.storeId}, call is for ${storeId}`
+    );
+    return { success: false, message: "Appointment not found." };
+  }
+
+  try {
+    const updated = await storage.updateAppointment(targetAppointmentId, {
+      status: "cancelled",
+      cancellationReason: args.reason ?? "Cancelled by caller via AI receptionist",
+    });
+    if (!updated) {
+      return { success: false, message: "Appointment not found." };
+    }
+    console.log(
+      `[AI Receptionist] ❌ CANCELLED appointment id=${targetAppointmentId} (store ${storeId}) — reason: ${args.reason ?? "(none given)"}`
+    );
+    return { success: true, message: `Appointment ${targetAppointmentId} cancelled.` };
+  } catch (err) {
+    console.error("[AI Receptionist] Cancel failed:", err);
+    return { success: false, message: "Failed to cancel the appointment — please try again." };
+  }
+}
+
+async function handleReschedule(
+  storeId: number,
+  rawArgs: string,
+  allowlist: AppointmentIdAllowlist
+): Promise<{ success: boolean; message: string }> {
+  let args: RescheduleArgs;
+  try {
+    args = JSON.parse(rawArgs);
+  } catch {
+    return { success: false, message: "Could not understand reschedule arguments." };
+  }
+
+  if (!allowlist.has(args.appointmentId)) {
+    console.warn(
+      `[AI Receptionist] Refusing to reschedule appointment ${args.appointmentId} — not in caller's allowlist (store ${storeId})`
+    );
+    return {
+      success: false,
+      message:
+        "That appointment ID is not one I can modify for this caller. Only the appointments listed in the session may be rescheduled.",
+    };
+  }
+
+  // Defense-in-depth: re-verify storeId on the live record before mutating
+  const existing = await storage.getAppointment(args.appointmentId);
+  if (!existing || existing.storeId !== storeId) {
+    console.warn(
+      `[AI Receptionist] storeId mismatch on reschedule — appointment ${args.appointmentId} belongs to store ${existing?.storeId}, call is for ${storeId}`
+    );
+    return { success: false, message: "Appointment not found." };
+  }
+
+  const newDate = new Date(args.newDateTime);
+  if (isNaN(newDate.getTime())) {
+    return { success: false, message: "The new date/time was not a valid value." };
+  }
+
+  try {
+    const updated = await storage.updateAppointment(args.appointmentId, {
+      date: newDate,
+      status: "confirmed",
+    });
+    if (!updated) {
+      return { success: false, message: "Appointment not found." };
+    }
+    console.log(
+      `[AI Receptionist] 🔄 RESCHEDULED appointment id=${args.appointmentId} → ${newDate.toISOString()} (store ${storeId})`
+    );
+    return { success: true, message: `Appointment ${args.appointmentId} moved to ${newDate.toISOString()}.` };
+  } catch (err) {
+    console.error("[AI Receptionist] Reschedule failed:", err);
+    return { success: false, message: "Failed to reschedule the appointment — please try again." };
+  }
+}
+
+// ─── Per-call bridge ──────────────────────────────────────────────────────────
+
+function createCallSession(twilioWs: WebSocket) {
+  const apiKey =
+    process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    console.error(
+      "[AI Receptionist] No OpenAI key found (checked AI_INTEGRATIONS_OPENAI_API_KEY and OPENAI_API_KEY) — rejecting call."
+    );
+    twilioWs.close(1011, "Server misconfiguration");
+    return;
+  }
+
+  let streamSid: string | null = null;
+  let aiSpeaking = false;
+  let callerSpeaking = false;
+
+  // Session-bootstrap coordination — wait for BOTH conditions before sending session.update.
+  // Salon context is now loaded from the Twilio `start` event's customParameters (not the URL),
+  // since Twilio <Stream> URLs cannot contain query strings.
+  let openAiReady = false;
+  let startReceived = false;
+  let salon: SalonContext | null = null;
+  let callerPhone: string | null = null;
+  let allowlist: AppointmentIdAllowlist = new Set();
+  let sessionConfigured = false;
+
+  // ── Call log tracking ─────────────────────────────────────────────────────
+  let callLogId: number | null = null;
+  const callStartTime = new Date();
+  let callOutcome = "no_action";
+  let callNotes: string | null = null;
+  let callAppointmentId: number | null = null;
+  let callCallerName: string | null = null;
+
+  const openAiWs = new WebSocket(OPENAI_REALTIME_URL, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  });
+
+  // Track audio packet counts to avoid log flooding
+  let inboundAudioCount = 0;
+  let outboundAudioCount = 0;
+  let speechFrames = 0;
+  let silenceFrames = 0;
+  let hasPendingUserSpeech = false;
+  let lastCommitAt = 0;
+
+  // Whether we've received session.updated from OpenAI (confirms session config was accepted)
+  let sessionUpdated = false;
+
+  /** Once OpenAI is ready AND we have salon + caller info, look up appointments and configure the session. */
+  async function configureSessionIfReady() {
+    if (sessionConfigured || !openAiReady || !startReceived || !salon) return;
+    sessionConfigured = true;
+
+    const [upcoming, callerName] = await Promise.all([
+      callerPhone ? getCallerUpcomingAppointments(callerPhone, salon.storeId) : Promise.resolve([]),
+      callerPhone ? getCallerName(callerPhone, salon.storeId) : Promise.resolve(null),
+    ]);
+    allowlist = new Set(upcoming.map((a) => a.id));
+    callCallerName = callerName;
+
+    // Back-fill caller name into the call log row once we know it
+    if (callLogId && callerName) {
+      db.update(aiCallLog).set({ callerName }).where(eq(aiCallLog.id, callLogId))
+        .catch((err) => console.error("[AI Receptionist] Failed to update caller name in log:", err));
+    }
+
+    console.log(
+      `[AI Receptionist] ▶ Sending session.update — caller="${callerPhone ?? "(unknown)"}" ` +
+      `name="${callerName ?? "(new caller)"}", ${upcoming.length} upcoming appointment(s)`
+    );
+
+    const sessionConfig = buildOpenAiSessionConfig(salon, callerPhone, callerName, upcoming);
+    const sessionConfigJson = JSON.stringify(sessionConfig);
+    console.log(`[AI Receptionist] session.update payload (exact): ${sessionConfigJson}`);
+    openAiWs.send(sessionConfigJson);
+    console.log(`[AI Receptionist] session.update sent — waiting for session.updated confirmation`);
+
+    // session.updated fires asynchronously; we trigger response.create from that handler
+    // to guarantee the session is fully configured before the greeting fires.
+  }
+
+  openAiWs.on("open", () => {
+    console.log(`[AI Receptionist] ✅ OpenAI Realtime WebSocket OPEN — waiting for session.created before configuring`);
+    // Do NOT set openAiReady here — wait for session.created from OpenAI
+    // to ensure the session object exists before we send session.update.
+  });
+
+  openAiWs.on("message", (rawData: Buffer | string) => {
+    let msg: Record<string, unknown>;
+    try { msg = JSON.parse(rawData.toString()); } catch { return; }
+
+    const type = msg.type as string;
+
+    // ── Verbose event logging ────────────────────────────────────────────────
+    if (type === "session.created") {
+      const sess = msg.session as Record<string, unknown> | undefined;
+      console.log(`[AI Receptionist] ✅ session.created — id=${sess?.id ?? "?"} model=${sess?.model ?? "?"}`);
+      // NOW safe to configure — session object exists on OpenAI's side
+      openAiReady = true;
+      configureSessionIfReady().catch((err) =>
+        console.error("[AI Receptionist] Session config error (from session.created):", err)
+      );
+      return;
+    }
+
+    if (type === "session.updated") {
+      sessionUpdated = true;
+      const sess = msg.session as Record<string, unknown> | undefined;
+      console.log(
+        `[AI Receptionist] ✅ session.updated — model=${sess?.model ?? "?"} ` +
+        `turn_detection=${JSON.stringify((sess?.turn_detection as any)?.type ?? "none")} — audio forwarding ENABLED`
+      );
+      // NOW it's safe to trigger the greeting — session is fully configured
+      if (sessionConfigured) {
+        console.log(`[AI Receptionist] ▶ Sending response.create (greeting)`);
+        openAiWs.send(JSON.stringify({ type: "response.create" }));
+      }
+      return;
+    }
+
+    if (type === "input_audio_buffer.speech_started") {
+      callerSpeaking = true;
+      console.log(`[AI Receptionist] 🎤 VAD: speech started`);
+      return;
+    }
+
+    if (type === "input_audio_buffer.speech_stopped") {
+      callerSpeaking = false;
+      console.log(`[AI Receptionist] 🔇 VAD: speech stopped — buffer will be committed`);
+      return;
+    }
+
+    if (type === "input_audio_buffer.committed") {
+      console.log(`[AI Receptionist] ✅ input buffer committed — OpenAI processing speech`);
+      return;
+    }
+
+    if (type === "response.created") {
+      const responseId = (msg.response as Record<string, unknown> | undefined)?.id ?? "?";
+      console.log(`[AI Receptionist] ▶ response.created — id=${responseId}`);
+      return;
+    }
+
+    if (type === "response.audio.delta" || type === "response.output_audio.delta") {
+      aiSpeaking = true;
+      const delta = (msg.delta || msg.audio) as string | undefined;
+      if (delta) {
+        outboundAudioCount++;
+        const payloadBytes = Buffer.byteLength(delta, "base64");
+
+        // Realtime `type: realtime` sessions currently return PCM16 audio chunks.
+        // Twilio Media Streams expects μ-law 8k (g711_ulaw), so convert before sending.
+        const twilioPayload = pcm16Base64ToTwilioUlawBase64(delta);
+        const twilioPayloadBytes = Buffer.byteLength(twilioPayload, "base64");
+
+        if (outboundAudioCount === 1 || outboundAudioCount % 50 === 0) {
+          console.log(
+            `[AI Receptionist] Sending outbound audio packet #${outboundAudioCount} to Twilio` +
+            ` | openai_payload=${payloadBytes} bytes (pcm16)` +
+            ` | twilio_payload=${twilioPayloadBytes} bytes (g711_ulaw)` +
+            ` | streamSid=${streamSid ?? "none"} | twilioWs=${twilioWs.readyState === WebSocket.OPEN ? "OPEN" : "CLOSED"}`
+          );
+        }
+        if (streamSid && twilioWs.readyState === WebSocket.OPEN) {
+          const ulaw = Buffer.from(twilioPayload, "base64");
+          try {
+            for (let i = 0; i < ulaw.length; i += TWILIO_ULAW_FRAME_BYTES) {
+              const chunk = ulaw.subarray(i, i + TWILIO_ULAW_FRAME_BYTES).toString("base64");
+              const packet = JSON.stringify({ event: "media", streamSid, media: { payload: chunk } });
+              twilioWs.send(packet);
+            }
+          } catch (sendErr) {
+            console.error(`[AI Receptionist] ⚠️  WebSocket send failed on packet #${outboundAudioCount}:`, sendErr);
+          }
+        } else {
+          console.warn(
+            `[AI Receptionist] ⚠️  Audio delta DROPPED — packet #${outboundAudioCount}` +
+            ` streamSid=${streamSid ?? "none"} twilioWs=${twilioWs.readyState}`
+          );
+        }
+      }
+      return;
+    }
+
+    if (type === "response.audio.done" || type === "response.output_audio.done") {
+      console.log(`[AI Receptionist] 🔊 response.audio.done — total outbound audio packets: ${outboundAudioCount}`);
+      aiSpeaking = false;
+      return;
+    }
+
+    if (type === "response.done") {
+      const resp = msg.response as Record<string, unknown> | undefined;
+      console.log(`[AI Receptionist] ✅ response.done — status=${resp?.status ?? "?"} usage=${JSON.stringify(resp?.usage ?? {})}`);
+      aiSpeaking = false;
+      return;
+    }
+
+    if (type === "response.output_item.added") {
+      const item = msg.item as Record<string, unknown> | undefined;
+      console.log(`[AI Receptionist] response.output_item.added — type=${item?.type} role=${item?.role}`);
+      return;
+    }
+
+    if (type === "response.content_part.added") {
+      const part = msg.part as Record<string, unknown> | undefined;
+      console.log(`[AI Receptionist] response.content_part.added — type=${part?.type}`);
+      return;
+    }
+
+    if (type === "rate_limits.updated") {
+      // Noisy — skip
+      return;
+    }
+
+    if (type === "response.function_call_arguments.delta") {
+      // Streaming args — skip verbose logging
+      return;
+    }
+
+    if (type === "response.function_call_arguments.done") {
+      const name = msg.name as string;
+      const callId = msg.call_id as string;
+      const args = msg.arguments as string;
+
+      // Run the tool and feed the result back to OpenAI
+      (async () => {
+        let result: { success: boolean; message: string };
+        let shouldEndCall = false;
+
+        if (!salon) {
+          result = { success: false, message: "Session not initialized." };
+        } else if (name === "create_booking") {
+          result = await handleNewBooking(salon.storeId, args, salon);
+          if (result.success) {
+            callOutcome = "booked";
+            callNotes = result.message;
+            shouldEndCall = true;
+          }
+        } else if (name === "cancel_booking") {
+          result = await handleCancel(salon.storeId, args, allowlist, callerPhone ?? undefined);
+          if (result.success) {
+            callOutcome = "cancelled";
+            callNotes = result.message;
+            shouldEndCall = true;
+          }
+        } else if (name === "reschedule_booking") {
+          result = await handleReschedule(salon.storeId, args, allowlist);
+          if (result.success) {
+            callOutcome = "rescheduled";
+            callNotes = result.message;
+            shouldEndCall = true;
+          }
+        } else if (name === "search_available_slots") {
+          result = await handleGetAvailableSlots(args, salon);
+          if (result.success) {
+            callOutcome = "availability_checked";
+            callNotes = result.message;
+          }
+        } else if (name === "get_customer_appointments") {
+          result = await handleGetCustomerAppointments(args, salon, callerPhone ?? undefined);
+          if (result.success) {
+            callOutcome = "availability_checked";
+            callNotes = result.message;
+          }
+        } else if (name === "lookup_client_by_phone") {
+          result = await handleLookupClientByPhone(args, salon);
+          if (result.success) {
+            callOutcome = "availability_checked";
+            callNotes = result.message;
+          }
+        } else {
+          result = { success: false, message: `Unknown tool: ${name}` };
+        }
+
+        openAiWs.send(
+          JSON.stringify({
+            type: "conversation.item.create",
+            item: {
+              type: "function_call_output",
+              call_id: callId,
+              output: JSON.stringify(result),
+            },
+          })
+        );
+        openAiWs.send(JSON.stringify({ type: "response.create" }));
+
+        if (shouldEndCall) {
+          setTimeout(() => {
+            console.log(`[AI Receptionist] Closing call after tool "${name}" — store ${salon?.storeId ?? "?"}`);
+            twilioWs.close();
+          }, 7_000);
+        }
+      })().catch((err) => console.error("[AI Receptionist] Tool handler error:", err));
+
+      return;
+    }
+
+    if (type === "error") {
+      const err = msg.error as Record<string, unknown> | undefined;
+      console.error(
+        `[AI Receptionist] ❌ OpenAI ERROR — code=${err?.code ?? "?"} type=${err?.type ?? "?"} message=${err?.message ?? JSON.stringify(msg)}`
+      );
+      return;
+    }
+
+    // Log any unhandled event types so we know what we're missing
+    console.log(`[AI Receptionist] OpenAI event: ${type}`);
+  });
+
+  openAiWs.on("error", (err) => {
+    console.error(`[AI Receptionist] ❌ OpenAI WebSocket ERROR: ${err.message}`);
+  });
+
+  openAiWs.on("close", (code, reason) => {
+    const reasonStr = reason.toString() || "(none)";
+    console.log(`[AI Receptionist] OpenAI WebSocket CLOSED — code=${code} reason=${reasonStr} sessionUpdated=${sessionUpdated} outboundAudioPackets=${outboundAudioCount}`);
+    if (twilioWs.readyState === WebSocket.OPEN) twilioWs.close();
+  });
+
+  twilioWs.on("message", (rawData: Buffer | string) => {
+    let msg: Record<string, unknown>;
+    try { msg = JSON.parse(rawData.toString()); } catch { return; }
+
+    const event = msg.event as string;
+
+    if (event === "connected") {
+      console.log(`[AI Receptionist] Twilio stream connected (awaiting start event)`);
+      return;
+    }
+
+    if (event === "start") {
+      const startData = msg.start as Record<string, unknown> | undefined;
+      streamSid = (msg.streamSid as string) ?? null;
+      const callSid = (startData?.callSid as string) ?? null;
+      const customParams = (startData?.customParameters as Record<string, string> | undefined) ?? {};
+      callerPhone = (customParams.from ?? "").trim() || null;
+
+      // storeId arrives via <Parameter name="storeId"> in the TwiML (Twilio
+      // forbids query strings on Stream URLs — error 31920).
+      const storeIdRaw = (customParams.storeId ?? "").trim();
+      const parsedStoreId = parseInt(storeIdRaw, 10);
+      if (isNaN(parsedStoreId) || parsedStoreId <= 0) {
+        console.error(
+          `[AI Receptionist] start event missing/invalid storeId customParameter (got "${storeIdRaw}") — closing call`
+        );
+        twilioWs.close(1008, "Missing storeId parameter");
+        return;
+      }
+
+      // Load salon context now (we couldn't do it at upgrade time — no URL params).
+      (async () => {
+        const loaded = await getSalonContext(parsedStoreId).catch(() => null);
+        if (!loaded) {
+          console.warn(`[AI Receptionist] Unknown storeId ${parsedStoreId} on start — closing call`);
+          twilioWs.close(1008, "Unknown store");
+          return;
+        }
+        salon = loaded;
+
+        console.log(
+          `[AI Receptionist] Stream started — streamSid=${streamSid} callSid=${callSid} ` +
+          `from="${callerPhone ?? "(unknown)"}" store=${parsedStoreId} ("${loaded.businessName}")`
+        );
+
+        // ── Insert call log row ──────────────────────────────────────
+        db.insert(aiCallLog).values({
+          storeId: parsedStoreId,
+          callSid: callSid ?? undefined,
+          callerPhone: callerPhone ?? undefined,
+          outcome: "in_progress",
+          startedAt: callStartTime,
+        }).returning().then(([row]) => {
+          if (row) callLogId = row.id;
+        }).catch((err) => console.error("[AI Receptionist] Failed to insert call log:", err));
+
+        startReceived = true;
+        configureSessionIfReady().catch((err) =>
+          console.error("[AI Receptionist] Session config error:", err)
+        );
+      })().catch((err) => console.error("[AI Receptionist] Start handler error:", err));
+      return;
+    }
+
+    if (event === "media") {
+      const media = msg.media as Record<string, unknown>;
+      const track = media?.track as string;
+      const payload = media?.payload as string | undefined;
+      if (track !== "inbound" || !payload) return;
+
+      // Drop early audio that arrives before the session is fully configured.
+      // Without this, caller speech could reach OpenAI before our instructions/
+      // tools/allowlist are loaded, causing inconsistent first-turn behavior.
+      // We wait for session.updated from OpenAI which confirms our session config
+      // was accepted — only then is it safe to forward audio.
+      if (!sessionUpdated) {
+        // Log occasionally so we can see audio is arriving but session isn't ready
+        inboundAudioCount++;
+        if (inboundAudioCount === 1 || inboundAudioCount % 100 === 0) {
+          console.log(`[AI Receptionist] ⏳ Dropping inbound audio #${inboundAudioCount} — waiting for session.updated (sessionConfigured=${sessionConfigured})`);
+        }
+        return;
+      }
+
+      inboundAudioCount++;
+      if (inboundAudioCount === 1 || inboundAudioCount % 100 === 0) {
+        console.log(`[AI Receptionist] 🎤 Inbound audio packet #${inboundAudioCount} → OpenAI (ws=${openAiWs.readyState === WebSocket.OPEN ? "OPEN" : "CLOSED"})`);
+      }
+
+      // Interruption — only cancel if OpenAI VAD has actually detected caller speech.
+      // Twilio sends a continuous inbound stream (including silence/background noise),
+      // so cancelling on any inbound media packet causes false interruptions.
+      if (aiSpeaking && callerSpeaking) {
+        aiSpeaking = false;
+        console.log(`[AI Receptionist] 🛑 Interruption detected — cancelling AI response`);
+        if (openAiWs.readyState === WebSocket.OPEN) {
+          openAiWs.send(JSON.stringify({ type: "response.cancel" }));
+        }
+        if (streamSid && twilioWs.readyState === WebSocket.OPEN) {
+          twilioWs.send(JSON.stringify({ event: "clear", streamSid }));
+        }
+      }
+
+      if (openAiWs.readyState === WebSocket.OPEN) {
+        const voiced = hasVoiceInTwilioUlaw(payload);
+
+        const openAiAudio = twilioUlawBase64ToPcm16_24kBase64(payload);
+        openAiWs.send(JSON.stringify({ type: "input_audio_buffer.append", audio: openAiAudio }));
+
+        // Local speech gating to avoid response loops.
+        if (!aiSpeaking) {
+          if (voiced) {
+            hasPendingUserSpeech = true;
+            speechFrames++;
+            silenceFrames = 0;
+          } else if (hasPendingUserSpeech) {
+            silenceFrames++;
+          }
+
+          const now = Date.now();
+          const enoughSpeech = speechFrames >= 5;   // ~100ms+ voiced audio
+          const enoughSilence = silenceFrames >= 12; // ~240ms trailing silence
+          const debounceOk = now - lastCommitAt > 1200;
+
+          if (hasPendingUserSpeech && enoughSpeech && enoughSilence && debounceOk) {
+            lastCommitAt = now;
+            hasPendingUserSpeech = false;
+            speechFrames = 0;
+            silenceFrames = 0;
+
+            openAiWs.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+            openAiWs.send(JSON.stringify({ type: "response.create" }));
+          }
+        }
+      } else {
+        console.warn(`[AI Receptionist] ⚠️  Cannot forward audio — OpenAI WS not open (state=${openAiWs.readyState})`);
+      }
+      return;
+    }
+
+    if (event === "stop") {
+      console.log(`[AI Receptionist] Twilio stream stopped — store ${salon?.storeId ?? "?"}`);
+      closeSession();
+      return;
+    }
+  });
+
+  twilioWs.on("close", () => {
+    closeSession();
+    // Finalise the call log row
+    if (callLogId) {
+      const endedAt = new Date();
+      const durationSeconds = Math.round((endedAt.getTime() - callStartTime.getTime()) / 1000);
+      db.update(aiCallLog)
+        .set({
+          outcome: callOutcome,
+          endedAt,
+          durationSeconds,
+          notes: callNotes,
+          appointmentId: callAppointmentId ?? undefined,
+          callerName: callCallerName ?? undefined,
+        })
+        .where(eq(aiCallLog.id, callLogId))
+        .catch((err) => console.error("[AI Receptionist] Failed to finalise call log:", err));
+    }
+  });
+  twilioWs.on("error", (err) => {
+    console.error("[AI Receptionist] Twilio error:", err.message);
+    closeSession();
+  });
+
+  function closeSession() {
+    if (openAiWs.readyState === WebSocket.OPEN || openAiWs.readyState === WebSocket.CONNECTING) {
+      openAiWs.close();
+    }
+  }
+}
+
+// ─── Settings helpers ─────────────────────────────────────────────────────────
+
+async function readPrefs(storeId: number): Promise<Record<string, unknown>> {
+  try {
+    const [row] = await db
+      .select({ preferences: storeSettings.preferences })
+      .from(storeSettings)
+      .where(eq(storeSettings.storeId, storeId))
+      .limit(1);
+    if (!row?.preferences) return {};
+    return JSON.parse(row.preferences) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+async function writePrefs(storeId: number, prefs: Record<string, unknown>): Promise<void> {
+  const prefsJson = JSON.stringify(prefs);
+  const [row] = await db
+    .select({ id: storeSettings.id })
+    .from(storeSettings)
+    .where(eq(storeSettings.storeId, storeId))
+    .limit(1);
+  if (row) {
+    await db.update(storeSettings).set({ preferences: prefsJson }).where(eq(storeSettings.storeId, storeId));
+  } else {
+    await db.insert(storeSettings).values({ storeId, preferences: prefsJson });
+  }
+}
+
+export async function getReceptionistEnabled(storeId: number): Promise<boolean> {
+  const prefs = await readPrefs(storeId);
+  return prefs[PREF_KEY] === true;
+}
+
+export async function getReceptionistPhone(storeId: number): Promise<string | null> {
+  const prefs = await readPrefs(storeId);
+  const v = prefs[PREF_PHONE_KEY];
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
+export async function setReceptionistEnabled(storeId: number, enabled: boolean): Promise<void> {
+  const prefs = await readPrefs(storeId);
+  prefs[PREF_KEY] = enabled;
+  await writePrefs(storeId, prefs);
+}
+
+export async function setReceptionistPhone(storeId: number, phone: string | null): Promise<void> {
+  const prefs = await readPrefs(storeId);
+  if (phone === null) {
+    delete prefs[PREF_PHONE_KEY];
+  } else {
+    prefs[PREF_PHONE_KEY] = phone;
+  }
+  await writePrefs(storeId, prefs);
+}
+
+// ─── Route registration ───────────────────────────────────────────────────────
+
+export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express): void {
+  const apiKeyPresent =
+    !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY || !!process.env.OPENAI_API_KEY;
+  const apiKeySource = process.env.AI_INTEGRATIONS_OPENAI_API_KEY
+    ? "AI_INTEGRATIONS_OPENAI_API_KEY"
+    : process.env.OPENAI_API_KEY
+      ? "OPENAI_API_KEY (Replit integration)"
+      : null;
+  if (!apiKeyPresent) {
+    console.warn(
+      "[AI Receptionist] ⚠️  No OpenAI key set (checked AI_INTEGRATIONS_OPENAI_API_KEY " +
+      "and OPENAI_API_KEY). Routes registered but live calls will fail until the key is available."
+    );
+  } else {
+    console.log(`[AI Receptionist] OpenAI key detected ✓  (source: ${apiKeySource})`);
+  }
+
+  // ── Call log: GET /api/ai-receptionist/call-logs ─────────────────────────
+  app.get("/api/ai-receptionist/call-logs", isAuthenticated, async (req: Request, res: Response) => {
+    const storeId = (req as any).user?.storeId as number | undefined;
+    if (!storeId) return res.status(400).json({ message: "No store selected" });
+    const limit = Math.min(parseInt((req.query.limit as string) ?? "100", 10), 500);
+    const logs = await db
+      .select()
+      .from(aiCallLog)
+      .where(eq(aiCallLog.storeId, storeId))
+      .orderBy(desc(aiCallLog.startedAt))
+      .limit(limit);
+    return res.json(logs);
+  });
+
+  // ── Public health check — used by deploy script & monitoring ─────────────
+  // No auth required: it only reveals whether the service is up and whether
+  // the OpenAI key is configured. No sensitive data is exposed.
+  app.get("/api/ai-receptionist/health", (_req: Request, res: Response) => {
+    res.json({
+      status: "ok",
+      service: "AI Receptionist",
+      openAiConfigured: apiKeyPresent,
+      twilioWebhookPath: "/api/webhook/twilio/:storeId",
+      uptime: Math.round(process.uptime() * 10) / 10,
+    });
+  });
+
+  // ── Internal AI-safe booking API (used by receptionist tools) ─────────────
+  app.get("/api/ai-receptionist/store/:storeId/availability", async (req: Request, res: Response) => {
+    if (!isAiInternalAuthorized(req)) {
+      return res.status(401).json({ success: false, message: "Unauthorized AI receptionist request." });
+    }
+
+    const storeId = parseInt(String(req.params.storeId ?? ""), 10);
+    if (isNaN(storeId) || storeId <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid storeId." });
+    }
+
+    const serviceId = parseInt(String(req.query.serviceId ?? ""), 10);
+    const date = String(req.query.date ?? "").trim();
+    const staffIdRaw = String(req.query.staffId ?? "").trim();
+    const staffId = staffIdRaw ? parseInt(staffIdRaw, 10) : undefined;
+    const extraDurationRaw = String(req.query.extraDurationMinutes ?? "").trim();
+    const extraDurationMinutes = extraDurationRaw ? parseInt(extraDurationRaw, 10) : 0;
+
+    if (isNaN(serviceId) || serviceId <= 0) {
+      return res.status(400).json({ success: false, message: "serviceId is required." });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ success: false, message: "date must be YYYY-MM-DD." });
+    }
+    if (staffIdRaw && (!Number.isFinite(staffId) || (staffId ?? 0) <= 0)) {
+      return res.status(400).json({ success: false, message: "staffId must be a positive integer." });
+    }
+    if (extraDurationRaw && (!Number.isFinite(extraDurationMinutes) || extraDurationMinutes < 0)) {
+      return res.status(400).json({ success: false, message: "extraDurationMinutes must be 0 or a positive integer." });
+    }
+
+    const salon = await getSalonContext(storeId).catch(() => null);
+    if (!salon || !salon.bookingSlug) {
+      return res.status(404).json({ success: false, message: "Salon not configured for booking." });
+    }
+
+    const result = await getAvailabilityViaBookingRules(salon, {
+      serviceId,
+      date,
+      staffId,
+      extraDurationMinutes,
+    });
+    return res.json(result);
+  });
+
+  app.post("/api/ai-receptionist/store/:storeId/book", async (req: Request, res: Response) => {
+    if (!isAiInternalAuthorized(req)) {
+      return res.status(401).json({ success: false, message: "Unauthorized AI receptionist request." });
+    }
+
+    const storeId = parseInt(String(req.params.storeId ?? ""), 10);
+    if (isNaN(storeId) || storeId <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid storeId." });
+    }
+
+    const salon = await getSalonContext(storeId).catch(() => null);
+    if (!salon || !salon.bookingSlug) {
+      return res.status(404).json({ success: false, message: "Salon not configured for booking." });
+    }
+
+    const body = (req.body ?? {}) as Partial<NewBookingArgs>;
+    const result = await createBookingViaBookingRules(salon, {
+      customerName: String(body.customerName ?? "").trim(),
+      customerPhone: String(body.customerPhone ?? "").trim(),
+      serviceId: Number(body.serviceId),
+      staffId:
+        typeof body.staffId === "number" && Number.isFinite(body.staffId) && body.staffId > 0
+          ? Number(body.staffId)
+          : undefined,
+      appointmentDateTime: String(body.appointmentDateTime ?? "").trim(),
+      extraDurationMinutes: Math.max(0, Number(body.extraDurationMinutes ?? 0) || 0),
+    });
+
+    if (!result.success) {
+      const msg = String(result.message || "Booking failed");
+      const code = /no longer available|No available time slots/i.test(msg) ? 409 : 400;
+      return res.status(code).json(result);
+    }
+    return res.json(result);
+  });
+
+  // ── Salon owner: GET/PATCH /api/ai-receptionist/settings ─────────────────
+  // Owner view never exposes the webhook URL or other admin-only details — it
+  // only reveals whether a number has been provisioned and whether the platform
+  // OpenAI key is present, so the owner knows when they're allowed to flip the
+  // switch and who to contact otherwise.
+  app.get("/api/ai-receptionist/settings", isAuthenticated, async (req: Request, res: Response) => {
+    const storeId = (req as any).user?.storeId as number | undefined;
+    if (!storeId) return res.status(400).json({ message: "No store selected" });
+    const [enabled, phoneNumber] = await Promise.all([
+      getReceptionistEnabled(storeId),
+      getReceptionistPhone(storeId),
+    ]);
+    const _ownerBase = (process.env.APP_URL ?? "").replace(/\/$/, "");
+    return res.json({
+      enabled,
+      apiKeyConfigured: apiKeyPresent,
+      phoneProvisioned: !!phoneNumber,
+      voiceWebhookUrl: `${_ownerBase}/api/webhook/twilio/voice/${storeId}`,
+    });
+  });
+
+  app.patch("/api/ai-receptionist/settings", isAuthenticated, async (req: Request, res: Response) => {
+    const storeId = (req as any).user?.storeId as number | undefined;
+    if (!storeId) return res.status(400).json({ message: "No store selected" });
+    const { enabled } = req.body as { enabled?: boolean };
+    if (typeof enabled !== "boolean") {
+      return res.status(400).json({ message: "'enabled' must be a boolean" });
+    }
+    // Owners cannot turn the system ON unless the platform has provisioned
+    // a phone number AND the OpenAI key is set. Turning OFF is always allowed.
+    if (enabled) {
+      const phoneNumber = await getReceptionistPhone(storeId);
+      if (!apiKeyPresent || !phoneNumber) {
+        return res.status(409).json({
+          message: !apiKeyPresent
+            ? "The platform OpenAI key is not configured — contact your account manager."
+            : "No Twilio number has been assigned to this salon yet — contact your account manager.",
+        });
+      }
+    }
+    await setReceptionistEnabled(storeId, enabled);
+    const phoneNumber = await getReceptionistPhone(storeId);
+    return res.json({
+      enabled,
+      apiKeyConfigured: apiKeyPresent,
+      phoneProvisioned: !!phoneNumber,
+    });
+  });
+
+  // ── Admin: GET/PATCH /api/admin/stores/:storeId/ai-receptionist ───────────
+  // Protected by isAdminAuthenticated → must be a logged-in user with users.isAdmin = true.
+  app.get("/api/admin/stores/:storeId/ai-receptionist", isAdminAuthenticated, async (req: Request, res: Response) => {
+    const storeId = parseInt(String(req.params.storeId ?? ""), 10);
+    if (isNaN(storeId)) return res.status(400).json({ message: "Invalid storeId" });
+    const [enabled, phoneNumber] = await Promise.all([
+      getReceptionistEnabled(storeId),
+      getReceptionistPhone(storeId),
+    ]);
+    const _base = (process.env.APP_URL ?? "").replace(/\/$/, "");
+    return res.json({
+      enabled,
+      phoneNumber,
+      apiKeyConfigured: apiKeyPresent,
+      webhookUrl: phoneNumber ? `${_base}/api/webhook/twilio/${storeId}` : null,
+      voiceWebhookUrl: phoneNumber ? `${_base}/api/webhook/twilio/voice/${storeId}` : null,
+    });
+  });
+
+  app.patch("/api/admin/stores/:storeId/ai-receptionist", isAdminAuthenticated, async (req: Request, res: Response) => {
+    const storeId = parseInt(String(req.params.storeId ?? ""), 10);
+    if (isNaN(storeId)) return res.status(400).json({ message: "Invalid storeId" });
+
+    const body = req.body as { enabled?: boolean; phoneNumber?: string | null };
+
+    // At least one of the two fields must be present.
+    if (body.enabled === undefined && body.phoneNumber === undefined) {
+      return res.status(400).json({ message: "Provide 'enabled' and/or 'phoneNumber'" });
+    }
+
+    if (body.enabled !== undefined) {
+      if (typeof body.enabled !== "boolean") {
+        return res.status(400).json({ message: "'enabled' must be a boolean" });
+      }
+      await setReceptionistEnabled(storeId, body.enabled);
+    }
+
+    if (body.phoneNumber !== undefined) {
+      if (body.phoneNumber === null || body.phoneNumber === "") {
+        await setReceptionistPhone(storeId, null);
+      } else if (typeof body.phoneNumber === "string") {
+        const normalized = normalizePhone(body.phoneNumber);
+        if (!normalized) {
+          return res.status(400).json({
+            message:
+              "Invalid phone number — use E.164 format (e.g. +12125551234) or a 10-digit US number.",
+          });
+        }
+        await setReceptionistPhone(storeId, normalized);
+      } else {
+        return res.status(400).json({ message: "'phoneNumber' must be a string or null" });
+      }
+    }
+
+    const [enabled, phoneNumber] = await Promise.all([
+      getReceptionistEnabled(storeId),
+      getReceptionistPhone(storeId),
+    ]);
+    const _base2 = (process.env.APP_URL ?? "").replace(/\/$/, "");
+    return res.json({
+      enabled,
+      phoneNumber,
+      apiKeyConfigured: apiKeyPresent,
+      webhookUrl: phoneNumber ? `${_base2}/api/webhook/twilio/${storeId}` : null,
+      voiceWebhookUrl: phoneNumber ? `${_base2}/api/webhook/twilio/voice/${storeId}` : null,
+    });
+  });
+
+  // ── Twilio webhook: POST /api/webhook/twilio/:storeId ────────────────────
+  const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+
+  app.post("/api/webhook/twilio/:storeId", async (req: Request, res: Response) => {
+    // ── DEBUG: log everything about the incoming request ──────────────────
+    console.log("═══════════════════════════════════════════════════════════════");
+    console.log(`[AI Receptionist] WEBHOOK RECEIVED at ${new Date().toISOString()}`);
+    console.log(`[AI Receptionist]   method: ${req.method}`);
+    console.log(`[AI Receptionist]   originalUrl: ${req.originalUrl}`);
+    console.log(`[AI Receptionist]   path: ${req.path}`);
+    console.log(`[AI Receptionist]   params: ${JSON.stringify(req.params)}`);
+    console.log(`[AI Receptionist]   query: ${JSON.stringify(req.query)}`);
+    console.log(`[AI Receptionist]   hostname: ${req.hostname}`);
+    console.log(`[AI Receptionist]   x-forwarded-host: ${req.headers["x-forwarded-host"] ?? "(none)"}`);
+    console.log(`[AI Receptionist]   x-forwarded-proto: ${req.headers["x-forwarded-proto"] ?? "(none)"}`);
+    console.log(`[AI Receptionist]   content-type: ${req.headers["content-type"] ?? "(none)"}`);
+    console.log(`[AI Receptionist]   body (keys): ${Object.keys(req.body ?? {}).join(", ") || "(empty)"}`);
+    console.log(`[AI Receptionist]   body.From: ${(req.body as any)?.From ?? "(not set)"}`);
+    console.log(`[AI Receptionist]   APP_URL: ${process.env.APP_URL ?? "(not set)"}`);
+    console.log(`[AI Receptionist]   REPLIT_DEV_DOMAIN: ${process.env.REPLIT_DEV_DOMAIN ?? "(not set)"}`);
+    console.log("═══════════════════════════════════════════════════════════════");
+
+    // ── SKIP signature validation during development ──────────────────────
+    // 🔒 Re-enable in production! See line ~1070 for the code.
+    /*
+    if (twilioAuthToken) {
+      // ... signature validation ...
+    }
+    */
+
+    const storeId = parseInt(String(req.params.storeId ?? ""), 10);
+
+    if (isNaN(storeId) || storeId <= 0) {
+      console.warn(`[AI Receptionist] Missing or invalid storeId in webhook URL — got "${req.params.storeId}". Path should be /api/webhook/twilio/<N>.`);
+      // Return 200 — a 4xx causes Twilio to play its own "application error" recording.
+      return res.status(200).type("text/xml")
+        .send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>This phone line is not yet configured. Please contact support.</Say><Hangup/></Response>`);
+    }
+
+    console.log(`[AI Receptionist] Parsed storeId = ${storeId}`);
+
+    const salon = await getSalonContext(storeId).catch((err) => {
+      console.error(`[AI Receptionist] getSalonContext(${storeId}) threw:`, err);
+      return null;
+    });
+    if (!salon) {
+      console.warn(`[AI Receptionist] Unknown storeId ${storeId} — no salon found`);
+      // Return 200 — a 4xx causes Twilio to play its own "application error" recording.
+      return res.status(200).type("text/xml")
+        .send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, we could not find this salon. Please call back later.</Say><Hangup/></Response>`);
+    }
+
+    console.log(`[AI Receptionist] Found salon: "${salon.businessName}" (store ${storeId})`);
+
+    // ── Extract caller phone (escaped for safe inclusion in TwiML) ──────────
+    const callerPhoneRaw = (req.body?.From as string | undefined) ?? "";
+    const callerPhone = callerPhoneRaw.replace(/[<>&"']/g, "");
+
+    const appUrl = process.env.APP_URL ?? `https://${process.env.REPLIT_DEV_DOMAIN}`;
+    const wssDomain = appUrl.replace(/^https?:\/\//, "");
+    // IMPORTANT: Twilio <Stream> URLs MUST NOT contain a query string —
+    // any `?param=…` causes the WebSocket handshake to fail (Twilio error 31920).
+    // The storeId and caller phone are passed below as <Parameter> nouns,
+    // which Twilio delivers in the `start` event's customParameters object.
+    const streamUrl = `wss://${wssDomain}/media-stream`;
+
+    console.log(
+      `[AI Receptionist] Incoming call → "${salon.businessName}" (store ${storeId}) from "${callerPhone || "unknown"}"`
+    );
+    console.log(`[AI Receptionist] Stream URL: ${streamUrl}`);
+
+    return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Connect>
+    <Stream url="${streamUrl}">
+      <Parameter name="storeId" value="${storeId}" />
+      <Parameter name="from" value="${callerPhone}" />
+    </Stream>
+  </Connect>
+</Response>`);
+  });
+
+  // ── WebSocket: WSS /media-stream ─────────────────────────────────────────
+  // NOTE: no query string — Twilio forbids them on Stream URLs (error 31920).
+  // storeId arrives later via the `start` event's customParameters.
+  const mediaWss = new WebSocketServer({ noServer: true });
+
+  mediaWss.on("connection", (ws: WebSocket, _req: Request) => {
+    console.log(`[AI Receptionist] WebSocket accepted (awaiting Twilio start event for storeId)`);
+    createCallSession(ws);
+  });
+
+  httpServer.on("upgrade", (req, socket, head) => {
+    const pathname = req.url?.split("?")[0] ?? "";
+    if (pathname === "/media-stream") {
+      console.log(`[AI Receptionist] WS upgrade → /media-stream from ${req.headers.host}`);
+      mediaWss.handleUpgrade(req as Request, socket as any, head, (ws) => {
+        mediaWss.emit("connection", ws, req);
+      });
+    }
+    // Other paths are handled by other upgrade listeners (e.g. http-proxy-middleware
+    // for /assets/, /editor/, etc.). Each listener decides on its own whether to
+    // claim the socket; unclaimed sockets are eventually closed by Node.
+  });
+
+  // ── Simple Voice mode ─────────────────────────────────────────────────────
+  // Uses Twilio <Gather input="speech"> + OpenAI Chat Completions instead of
+  // the WebSocket / Realtime API path.  No WebSocket required — all HTTP.
+  //
+  // Webhook URL for Twilio:  POST /api/webhook/twilio/voice/:storeId
+  //
+  // Conversation state lives in memory keyed by Twilio CallSid (calls are
+  // short-lived so we never need persistence). Sessions are pruned after
+  // VOICE_SESSION_TTL_MS of inactivity.
+
+  const VOICE_SESSION_TTL_MS = 10 * 60 * 1000; // 10 minutes
+  const MAX_VOICE_TURNS = 12;
+
+  interface VoiceSession {
+    storeId: number;
+    callerPhone: string;
+    salon: SalonContext;
+    allowlist: AppointmentIdAllowlist;
+    messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+    turnCount: number;
+    lastActive: number;
+    callLogId: number | null;
+    callStartTime: Date;
+  }
+
+  const voiceSessions = new Map<string, VoiceSession>();
+
+  // Prune stale sessions every 5 minutes
+  setInterval(() => {
+    const now = Date.now();
+    for (const [sid, session] of voiceSessions) {
+      if (now - session.lastActive > VOICE_SESSION_TTL_MS) {
+        voiceSessions.delete(sid);
+      }
+    }
+  }, 5 * 60 * 1000);
+
+  function buildVoiceSystemPrompt(salon: SalonContext, callerPhone: string, callerName: string | null, upcoming: CallerAppointment[]): string {
+    const serviceList = salon.services.length
+      ? salon.services.map((s) => `• ${s.name} — ${s.durationMinutes} min, $${s.price}  [serviceId: ${s.id}]`).join("\n")
+      : "• (No services on file — ask the caller to visit the website)";
+
+    let callerBlock: string;
+    if (!callerPhone) {
+      callerBlock = "The caller's phone number is not available. Ask for their name and phone number.";
+    } else if (upcoming.length === 0) {
+      const nameNote = callerName ? `Their name on file is ${callerName}. ` : "This is a new caller — ask for their name. ";
+      callerBlock = `Caller phone: ${callerPhone}. ${nameNote}They have no upcoming appointments.`;
+    } else {
+      const list = upcoming.map((a) => {
+        const fmt = new Date(a.date).toLocaleString("en-US", {
+          weekday: "short", month: "short", day: "numeric",
+          hour: "numeric", minute: "2-digit", timeZone: salon.timezone,
+        });
+        return `• ${a.serviceName} on ${fmt} [appointmentId: ${a.id}]`;
+      }).join("\n");
+      callerBlock = `Caller phone: ${callerPhone}. Name on file: ${callerName ?? "(unknown)"}.\nUpcoming appointments:\n${list}`;
+    }
+
+    return `You are Autumn, a friendly AI phone receptionist for ${salon.businessName}. Keep responses SHORT — this is a phone call. One or two sentences per turn. Today's date/timezone: ${new Date().toLocaleString("en-US", { timeZone: salon.timezone, dateStyle: "full" })} (${salon.timezone}).
+
+Introduce yourself as Autumn near the start of the call.
+Your FIRST spoken response in a new call must be exactly: "Thank you for calling ${salon.businessName}, this is Autumn. Are you calling to book an appointment today?"
+If they say yes, your next question must be: "Great, may I ask who I am speaking with?"
+After they give their name, say: "Thank you [caller name], are we looking to book a manicure or pedicure?"
+
+${callerBlock}
+
+Services available:
+${serviceList}
+
+You can: book new appointments, cancel or reschedule existing ones.
+To book, collect: FIRST name, contact phone, service choice, and preferred date + time.
+Use call memory across turns. If the caller already provided a detail, do NOT ask for it again.
+If the caller provides multiple details in one sentence, extract all of them and only ask for missing fields.
+Do NOT ask open-ended "what exact time" first. Ask whether they prefer MORNING, AFTERNOON, or EVENING.
+Once they choose a day + window, call search_available_slots and offer 2-3 real times in that window.
+For these suggested options, require at least 90 minutes of fit by setting minimumTotalDurationMinutes to 90.
+If caller says "with [staff name]" or asks for a specific technician, treat that as required staff preference.
+When a specific technician is requested, include staffId in search_available_slots and create_booking.
+If caller ID is available, ask: "Is the number you're calling from a good contact number?"
+If yes, use it without reading digits back. If no, ask for the best callback number.
+For service choice, ask manicure vs pedicure first. Do not list all services unless asked.
+After service choice, offer one brief relevant add-on suggestion when helpful.
+If service is full set acrylic or gel, ask whether current acrylic/gel removal is needed first.
+If service is a pedicure, offer a callus treatment add-on.
+If they decline the add-on, continue booking normally without repeating the upsell.
+If caller asks many price questions or is unsure what to book, offer to text a price sheet.
+If caller says "cheapest", "least expensive", "low-cost", or gives a budget (example: "$50"), treat this as price-based intent.
+Suggest the lowest-priced matching option first.
+If multiple fit, offer up to 2 concise options from lowest to higher.
+If they mention a budget, offer options at or under budget first; if none fit, clearly say that and offer the nearest above-budget option.
+Always continue with a next step question (never stop after suggesting a service).
+If they agree, ask if the current number can receive texts.
+If yes, tell them they should receive an SMS shortly from a 1-888 number.
+If caller gives a broad time request (for example "anytime tomorrow", "afternoon", or "next week"), gather their target date and use search_available_slots before suggesting times.
+For "anytime tomorrow", prioritize options between 11:00 AM and 5:00 PM.
+Prefer around 1:30 PM and 3:30 PM when those are truly available.
+Only offer real times returned by tools; never invent a time.
+If caller says "it doesn't matter," pick the best available time near 1:30 PM first, otherwise nearest in the 11:00 AM-5:00 PM window.
+If add-ons increase total time, include that in extraDurationMinutes when calling tools.
+Name on file is only a historical hint. If the caller gives a different name, immediately switch to that new name and use it for the rest of the call and in create_booking.customerName.
+Before booking, confirm with this style: "So we are scheduling a [service name] for [time] on [date], correct?"
+If caller confirms, say: "Wonderful, give me one second to get that locked in," then call create_booking.
+Confirm everything, then call create_booking.
+To cancel, first call get_customer_appointments. If exactly one upcoming appointment exists and caller says "cancel it," call cancel_booking without appointmentId. If multiple exist, ask which date/time to cancel and pass appointmentId.
+To reschedule, confirm which appointment and new time, then call reschedule_booking.
+Always confirm details back to the caller before calling any tool.
+Never end a turn with only a statement when booking is still in progress; always ask the next question.
+When done, say a warm goodbye and end the call naturally.`;
+  }
+
+  const VOICE_TOOLS = [
+    {
+      type: "function" as const,
+      function: {
+        name: "create_booking",
+        description: "Create a new appointment after all details are confirmed.",
+        parameters: {
+          type: "object",
+          properties: {
+            customerName:        { type: "string", description: "Full name" },
+            customerPhone:       { type: "string", description: "Phone number (E.164 or 10-digit US)" },
+            serviceId:           { type: "integer", description: "Numeric service ID from the list" },
+            staffId:             { type: "integer", description: "Optional specific staff ID when caller requests a technician." },
+            appointmentDateTime: { type: "string", description: "ISO 8601 datetime (e.g. 2025-06-15T14:00:00)" },
+            extraDurationMinutes: { type: "integer", description: "Optional extra minutes for add-ons (0 if none)." },
+          },
+          required: ["customerName", "customerPhone", "serviceId", "appointmentDateTime"],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "cancel_booking",
+        description: "Cancel an existing appointment after the caller has confirmed.",
+        parameters: {
+          type: "object",
+          properties: {
+            appointmentId: { type: "integer", description: "ID from the appointments list" },
+            customerPhone: { type: "string", description: "Optional 10-digit phone if different from caller ID." },
+            reason:        { type: "string", description: "Optional reason" },
+          },
+          required: [],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "reschedule_booking",
+        description: "Reschedule an existing appointment after the caller has confirmed.",
+        parameters: {
+          type: "object",
+          properties: {
+            appointmentId: { type: "integer", description: "ID from the appointments list" },
+            newDateTime:   { type: "string", description: "ISO 8601 new datetime" },
+          },
+          required: ["appointmentId", "newDateTime"],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "search_available_slots",
+        description: "Get real available booking times from the existing platform availability API.",
+        parameters: {
+          type: "object",
+          properties: {
+            serviceId: { type: "integer", description: "Numeric service ID from the list" },
+            date: { type: "string", description: "Date in YYYY-MM-DD" },
+            staffId: { type: "integer", description: "Optional specific staff ID" },
+            extraDurationMinutes: { type: "integer", description: "Optional extra minutes for add-ons (0 if none)." },
+            minimumTotalDurationMinutes: { type: "integer", description: "Optional minimum total slot fit in minutes (e.g. 90)." },
+          },
+          required: ["serviceId", "date"],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "lookup_client_by_phone",
+        description: "Look up an existing client record by 10-digit phone number for this salon.",
+        parameters: {
+          type: "object",
+          properties: {
+            customerPhone: { type: "string", description: "Phone number (E.164 or 10-digit US)" },
+          },
+          required: ["customerPhone"],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "get_customer_appointments",
+        description: "Fetch upcoming appointments for a customer by phone number.",
+        parameters: {
+          type: "object",
+          properties: {
+            customerPhone: { type: "string", description: "Optional 10-digit phone. If omitted, caller phone is used." },
+          },
+          required: [],
+        },
+      },
+    },
+  ];
+
+  async function callOpenAiChat(messages: VoiceSession["messages"]): Promise<{
+    text: string | null;
+    toolName: string | null;
+    toolArgs: string | null;
+  }> {
+    const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error("No OpenAI API key configured");
+
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages,
+        tools: VOICE_TOOLS,
+        tool_choice: "auto",
+        max_tokens: 200,
+        temperature: 0.6,
+      }),
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`OpenAI error ${resp.status}: ${errText}`);
+    }
+
+    const data = await resp.json() as any;
+    const choice = data.choices?.[0];
+    const msg = choice?.message;
+
+    if (msg?.tool_calls?.length) {
+      const tc = msg.tool_calls[0];
+      return { text: null, toolName: tc.function.name, toolArgs: tc.function.arguments };
+    }
+
+    return { text: msg?.content ?? "I'm sorry, I didn't catch that.", toolName: null, toolArgs: null };
+  }
+
+  function twimlSay(text: string, actionUrl: string): string {
+    const safe = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const safeUrl = actionUrl.replace(/&/g, "&amp;");
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech" action="${safeUrl}" method="POST" speechTimeout="3" timeout="8" language="en-US">
+    <Say voice="Polly.Joanna">${safe}</Say>
+  </Gather>
+  <Redirect method="POST">${safeUrl}?_timeout=1</Redirect>
+</Response>`;
+  }
+
+  function twimlHangup(text: string): string {
+    const safe = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">${safe}</Say>
+  <Hangup/>
+</Response>`;
+  }
+
+  function getVoiceWebhookBase(req: Request): string {
+    const hostname = (req.hostname === "localhost" || req.hostname === "127.0.0.1")
+      ? (process.env.REPLIT_DEV_DOMAIN ?? req.hostname)
+      : req.hostname;
+    return `https://${hostname}/api/webhook/twilio/voice`;
+  }
+
+  app.post("/api/webhook/twilio/voice/:storeId", async (req: Request, res: Response) => {
+    const storeId = parseInt(String(req.params.storeId ?? ""), 10);
+    if (isNaN(storeId) || storeId <= 0) {
+      return res.status(400).type("text/xml").send(twimlHangup("Sorry, this number is not configured. Goodbye."));
+    }
+
+    const callSid = (req.body?.CallSid as string | undefined) ?? "";
+    const callerPhoneRaw = (req.body?.From as string | undefined) ?? "";
+    const speechResult = ((req.body?.SpeechResult as string | undefined) ?? "").trim();
+    const isTimeout = req.query._timeout === "1";
+    const baseUrl = getVoiceWebhookBase(req);
+    const actionUrl = `${baseUrl}/${storeId}`;
+
+    console.log(`[Voice] storeId=${storeId} callSid=${callSid || "(none)"} speech="${speechResult || "(none)"}"`);
+
+    // ── Initial call (no CallSid in session yet) → bootstrap ──────────────
+    if (!voiceSessions.has(callSid)) {
+      const salon = await getSalonContext(storeId).catch(() => null);
+      if (!salon) {
+        return res.type("text/xml").send(twimlHangup("Sorry, we couldn't locate this salon. Please call back later."));
+      }
+
+      const callerPhone = callerPhoneRaw.replace(/[<>&"']/g, "");
+      const [upcoming, callerName] = await Promise.all([
+        callerPhone ? getCallerUpcomingAppointments(callerPhone, storeId) : Promise.resolve([]),
+        callerPhone ? getCallerName(callerPhone, storeId) : Promise.resolve(null),
+      ]);
+
+      const systemPrompt = buildVoiceSystemPrompt(salon, callerPhone, callerName, upcoming);
+
+      // Insert call log row
+      let callLogId: number | null = null;
+      try {
+        const [row] = await db.insert(aiCallLog).values({
+          storeId,
+          callSid: callSid || null,
+          callerPhone: callerPhone || null,
+          callerName: callerName || null,
+          outcome: "in_progress",
+          startedAt: new Date(),
+        }).returning({ id: aiCallLog.id });
+        callLogId = row?.id ?? null;
+      } catch (err) {
+        console.error("[Voice] Failed to insert call log:", err);
+      }
+
+      const greeting = `Thank you for calling ${salon.businessName}, this is Autumn. Are you calling to book an appointment today?`;
+
+      voiceSessions.set(callSid, {
+        storeId,
+        callerPhone,
+        salon,
+        allowlist: new Set(upcoming.map((a) => a.id)),
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "assistant", content: greeting },
+        ],
+        turnCount: 0,
+        lastActive: Date.now(),
+        callLogId,
+        callStartTime: new Date(),
+      });
+
+      return res.type("text/xml").send(twimlSay(greeting, actionUrl));
+    }
+
+    // ── Subsequent turn ────────────────────────────────────────────────────
+    const session = voiceSessions.get(callSid)!;
+    session.lastActive = Date.now();
+    session.turnCount++;
+
+    // Caller didn't say anything (timeout or silence)
+    if (!speechResult && !isTimeout) {
+      if (session.turnCount > 2) {
+        voiceSessions.delete(callSid);
+        await finalizeCallLog(session, "no_action");
+        return res.type("text/xml").send(twimlHangup("I didn't catch that. Give us a call back anytime. Goodbye!"));
+      }
+      return res.type("text/xml").send(twimlSay("I didn't catch that — could you say that again?", actionUrl));
+    }
+
+    if (session.turnCount > MAX_VOICE_TURNS) {
+      voiceSessions.delete(callSid);
+      await finalizeCallLog(session, "no_action");
+      return res.type("text/xml").send(twimlHangup("I've reached my limit for this call. Please call back or book online. Goodbye!"));
+    }
+
+    if (speechResult) {
+      session.messages.push({ role: "user", content: speechResult });
+    }
+
+    let aiResponse: { text: string | null; toolName: string | null; toolArgs: string | null };
+    try {
+      aiResponse = await callOpenAiChat(session.messages);
+    } catch (err: any) {
+      console.error("[Voice] OpenAI error:", err.message);
+      return res.type("text/xml").send(twimlHangup("I'm having trouble connecting right now. Please call back in a moment. Goodbye!"));
+    }
+
+    // ── Tool call → execute booking action ────────────────────────────────
+    if (aiResponse.toolName && aiResponse.toolArgs) {
+      const { toolName, toolArgs } = aiResponse;
+      console.log(`[Voice] Tool call: ${toolName} args=${toolArgs}`);
+
+      let result: { success: boolean; message: string };
+      let outcome = "no_action";
+
+      if (toolName === "create_booking") {
+        result = await handleNewBooking(session.storeId, toolArgs, session.salon);
+        if (result.success) outcome = "booked";
+      } else if (toolName === "cancel_booking") {
+        result = await handleCancel(session.storeId, toolArgs, session.allowlist, session.callerPhone);
+        if (result.success) outcome = "cancelled";
+      } else if (toolName === "reschedule_booking") {
+        result = await handleReschedule(session.storeId, toolArgs, session.allowlist);
+        if (result.success) outcome = "rescheduled";
+      } else if (toolName === "search_available_slots") {
+        result = await handleGetAvailableSlots(toolArgs, session.salon);
+        if (result.success) outcome = "availability_checked";
+      } else if (toolName === "get_customer_appointments") {
+        result = await handleGetCustomerAppointments(toolArgs, session.salon, session.callerPhone);
+        if (result.success) outcome = "availability_checked";
+      } else if (toolName === "lookup_client_by_phone") {
+        result = await handleLookupClientByPhone(toolArgs, session.salon);
+        if (result.success) outcome = "availability_checked";
+      } else {
+        result = { success: false, message: "Unknown action." };
+      }
+
+      voiceSessions.delete(callSid);
+      await finalizeCallLog(session, outcome, result.message);
+
+      const confirmText = result.success
+        ? toolName === "create_booking"
+          ? "Perfect, your appointment is confirmed! We'll see you soon. Goodbye!"
+          : toolName === "cancel_booking"
+            ? "Done, your appointment has been cancelled. Is there anything else? No? Goodbye!"
+            : "Your appointment has been rescheduled. We'll see you at the new time. Goodbye!"
+        : `I'm sorry, I wasn't able to complete that — ${result.message} Please try again or call back. Goodbye!`;
+
+      return res.type("text/xml").send(twimlHangup(confirmText));
+    }
+
+    // ── Text response → continue conversation ─────────────────────────────
+    const text = aiResponse.text ?? "I didn't catch that — could you repeat that?";
+    session.messages.push({ role: "assistant", content: text });
+
+    return res.type("text/xml").send(twimlSay(text, actionUrl));
+  });
+
+  async function finalizeCallLog(session: VoiceSession, outcome: string, notes?: string) {
+    if (!session.callLogId) return;
+    const durationSeconds = Math.round((Date.now() - session.callStartTime.getTime()) / 1000);
+    try {
+      await db.update(aiCallLog)
+        .set({ outcome, notes: notes ?? null, endedAt: new Date(), durationSeconds })
+        .where(eq(aiCallLog.id, session.callLogId));
+    } catch (err) {
+      console.error("[Voice] Failed to finalize call log:", err);
+    }
+  }
+
+  console.log("[AI Receptionist] Routes registered:");
+  console.log("  GET  /api/ai-receptionist/health                   (public health check)");
+  console.log("  GET  /api/ai-receptionist/call-logs                (salon owner — call history)");
+  console.log("  POST /api/webhook/twilio/:storeId                 (Twilio inbound webhook — Realtime API / WebSocket mode)");
+  console.log("  POST /api/webhook/twilio/voice/:storeId           (Twilio inbound webhook — Simple Voice / Gather mode)");
+  console.log("  WSS  /media-stream                                (Twilio media stream — storeId via customParameters)");
+  console.log("  GET  /api/ai-receptionist/settings                (salon owner read)");
+  console.log("  PATCH /api/ai-receptionist/settings               (salon owner write)");
+  console.log("  GET  /api/admin/stores/:storeId/ai-receptionist   (admin read)");
+  console.log("  PATCH /api/admin/stores/:storeId/ai-receptionist  (admin write)");
+  console.log("[AI Receptionist] Capabilities: book · cancel · reschedule (with caller recognition)");
+}

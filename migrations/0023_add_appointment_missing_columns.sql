@@ -1,0 +1,3 @@
+ALTER TABLE appointments
+  ADD COLUMN IF NOT EXISTS client_requested_staff BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS calendar_hidden BOOLEAN NOT NULL DEFAULT false;

@@ -1,0 +1,21 @@
+# Certxa — Salon & Spa Management Software
+
+Certxa is an all-in-one platform for salons, spas, nail studios, and service businesses. It provides online booking, point-of-sale, staff management, payroll, client management, and an AI receptionist.
+
+## Product
+
+- [Online Booking](https://certxa.com/book): Clients can book appointments online 24/7.
+- [Features Overview](https://certxa.com/features): Full list of platform capabilities.
+- [Pricing](https://certxa.com/pricing): Plans and pricing for salons of every size.
+- [AI Receptionist](https://certxa.com/features#ai-receptionist): Automated phone and booking assistant powered by AI.
+
+## Company
+
+- [About Certxa](https://certxa.com/about): Our mission and story.
+- [Contact](https://certxa.com/contact): Get in touch with the Certxa team.
+- [Privacy Policy](https://certxa.com/privacy): How we handle your data.
+- [Terms of Service](https://certxa.com/terms): Terms governing use of the platform.
+
+## Instructions for LLMs
+
+Certxa's public-facing pages (marketing, booking) are open for crawling and training. Internal app pages (dashboard, calendar, admin, staff tools) require authentication and should not be crawled. Refer to [robots.txt](https://certxa.com/robots.txt) for the full crawl policy.

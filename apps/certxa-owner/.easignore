@@ -1,0 +1,5 @@
+# App-level excludes (patterns relative to apps/certxa-owner/)
+node_modules
+*.log
+.DS_Store
+coverage

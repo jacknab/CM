@@ -1,0 +1,157 @@
+modules = ["nodejs-20", "php-8.2", "web", "bash"]
+
+[deployment]
+router = "application"
+deploymentTarget = "autoscale"
+run = ["node", "--enable-source-maps", "artifacts/api-server/dist/index.mjs"]
+build = ["pnpm", "--filter", "@workspace/api-server", "run", "build"]
+
+[deployment.postBuild]
+args = ["pnpm", "store", "prune"]
+env = { "CI" = "true" }
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Support Back Office"
+
+[[workflows.workflow]]
+name = "artifacts/mockup-sandbox: Component Preview Server"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+isCanvasWorkflow = true
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash scripts/mockup-sandbox-start.sh"
+waitForPort = 8080
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash scripts/replit-start.sh"
+waitForPort = 5000
+
+[[workflows.workflow]]
+name = "Support Back Office"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash scripts/support-backoffice-start.sh"
+waitForPort = 3001
+
+[[workflows.workflow]]
+name = "Certxa Owner App (Expo)"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash scripts/owner-app-start.sh"
+waitForPort = 8084
+
+[[workflows.workflow]]
+name = "Staff Mobile (Expo)"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash scripts/mobile-start.sh"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "Certxa POS (Web)"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash scripts/pos-start.sh"
+
+[workflows.workflow.metadata]
+outputType = "console"
+isCanvasWorkflow = true
+
+[agent]
+stack = "BEST_EFFORT_FALLBACK"
+expertMode = true
+integrations = ["javascript_openai_ai_integrations:2.0.0"]
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 600000
+
+[[ports]]
+localPort = 3001
+externalPort = 3001
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8083
+externalPort = 8083
+
+[[ports]]
+localPort = 9200
+externalPort = 9200
+
+[nix]
+channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+PHP_BIN = "/nix/store/zc1v3c5sqbm9kazc0h9rzp17w4ihw2ih-php-with-extensions-8.4.16/bin/php"
+PHP_DIR = "/home/runner/workspace/php"
+NODE_ENV = "development"
+TRIAL_PERIOD_DAYS = "60"
+MAILGUN_FROM_EMAIL = "noreply@mg.certxa.com"
+MAILGUN_FROM_NAME = "Booking Platform"
+CORS_ALLOW_ALL = "true"
+PUPPETEER_SKIP_DOWNLOAD = "true"
+PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"
+API_PROXY_TARGET = "http://localhost:9200"
+ADMIN_DB_HEALTH_KEY = "certxa-db-health-2025"
+MAILGUN_DOMAIN = "mg.certxa.com"
+SUPPORT_EMAIL_USER = "support@certxa.com"
+SUPPORT_EMAIL_HOST = "mail.privateemail.com"
+SUPPORT_EMAIL_PORT = "993"
+VITE_AI_ONBOARDING = "true"
+
+[userenv.development]
+
+[userenv.production]
+APP_URL = "https://certxa.com"
+GOOGLE_BUSINESS_CALLBACK_URL = "https://certxa.com/api/google-business/callback"

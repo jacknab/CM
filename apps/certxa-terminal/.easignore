@@ -1,0 +1,16 @@
+# Exclude files that aren't needed for EAS cloud builds.
+# EAS installs dependencies fresh on its build servers, so node_modules
+# and any local build artifacts can be safely excluded.
+
+node_modules/
+android/
+ios/
+.expo/
+dist/
+web-build/
+*.keystore
+*.jks
+*.key
+*.p12
+credentials.json
+docs/

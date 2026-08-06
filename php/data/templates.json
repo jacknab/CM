@@ -1,0 +1,161 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2026-05-04",
+  "categories": [
+    {
+      "id": "barbershop",
+      "label": "Barbershop",
+      "emoji": "💈",
+      "description": "Bold, masculine designs for barbershops and men's grooming",
+      "available": true,
+      "port": 6000,
+      "heroImage": "https://images.pexels.com/photos/1813272/pexels-photo-1813272.jpeg?auto=compress&cs=tinysrgb&w=800",
+      "designs": [
+        {
+          "id": "barbershop-v1",
+          "name": "Classic Barbershop",
+          "description": "Dark, luxury layout with gallery and team section",
+          "longDescription": "A timeless design featuring rich dark tones, gold accents, and sophisticated typography. Perfect for high-end barbershops that want to convey luxury and craftsmanship.",
+          "previewType": "barbershop",
+          "heroImage": "https://images.pexels.com/photos/1813272/pexels-photo-1813272.jpeg?auto=compress&cs=tinysrgb&w=800",
+          "features": [
+            "Full-width hero with booking CTA",
+            "Services menu with pricing",
+            "Team/gallery section",
+            "Location & hours",
+            "Contact form",
+            "Mobile responsive"
+          ],
+          "themes": [
+            {"id": "midnight-gold", "name": "Midnight & Gold", "style": "Luxury", "accentColor": "#d4a853", "bgColor": "#0a0a0a", "description": "Dark luxury with gold accents"},
+            {"id": "cream-heritage", "name": "Cream & Heritage", "style": "Classic", "accentColor": "#8b4513", "bgColor": "#faf6f0", "description": "Warm cream tones with rich brown"},
+            {"id": "slate-steel", "name": "Slate & Steel", "style": "Modern", "accentColor": "#38bdf8", "bgColor": "#1e293b", "description": "Cool grays with steel blue accents"},
+            {"id": "obsidian-copper", "name": "Obsidian & Copper", "style": "Industrial", "accentColor": "#c87533", "bgColor": "#0c0c0c", "description": "Deep black with warm copper highlights"},
+            {"id": "ivory-emerald", "name": "Ivory & Emerald", "style": "Classic", "accentColor": "#2d6a4f", "bgColor": "#fffff0", "description": "Clean ivory with rich emerald green"},
+            {"id": "charcoal-crimson", "name": "Charcoal & Crimson", "style": "Bold", "accentColor": "#dc2626", "bgColor": "#1a1a1a", "description": "Dark charcoal with bold red accents"},
+            {"id": "sand-turquoise", "name": "Sand & Turquoise", "style": "Tropical", "accentColor": "#2a9d8f", "bgColor": "#f4efe6", "description": "Desert sand with turquoise accents"},
+            {"id": "noir-silver", "name": "Noir & Silver", "style": "Minimal", "accentColor": "#c0c0c0", "bgColor": "#000000", "description": "Pure black with silver metallic"},
+            {"id": "walnut-brass", "name": "Walnut & Brass", "style": "Rustic", "accentColor": "#d4a843", "bgColor": "#3e2723", "description": "Rich walnut wood with brass hardware"},
+            {"id": "frost-navy", "name": "Frost & Navy", "style": "Scandinavian", "accentColor": "#1e3a5f", "bgColor": "#f8fafc", "description": "Icy white with deep navy blue"},
+            {"id": "espresso-cream", "name": "Espresso & Cream", "style": "Rustic", "accentColor": "#f5deb3", "bgColor": "#2c1e14", "description": "Rich espresso brown with cream"},
+            {"id": "graphite-amber", "name": "Graphite & Amber", "style": "Industrial", "accentColor": "#f59e0b", "bgColor": "#2d3436", "description": "Cool graphite with warm amber glow"},
+            {"id": "pearl-rosewood", "name": "Pearl & Rosewood", "style": "Art Deco", "accentColor": "#8b2252", "bgColor": "#faf5f0", "description": "Soft pearl white with rosewood accents"},
+            {"id": "onyx-teal", "name": "Onyx & Teal", "style": "Contemporary", "accentColor": "#14b8a6", "bgColor": "#121212", "description": "Deep onyx with vibrant teal"},
+            {"id": "linen-charcoal", "name": "Linen & Charcoal", "style": "Minimal", "accentColor": "#333333", "bgColor": "#f5f0e8", "description": "Natural linen with charcoal accents"}
+          ]
+        },
+        {
+          "id": "barbershop-v2",
+          "name": "Modern Barbershop",
+          "description": "Clean split-hero layout with reviews and booking CTA",
+          "longDescription": "A contemporary design with a bold, split-screen hero section, customer reviews, and prominent call-to-action buttons. Ideal for modern barbershops targeting a younger demographic.",
+          "previewType": "barbershop2",
+          "heroImage": "https://images.pexels.com/photos/2076930/pexels-photo-2076930.jpeg?auto=compress&cs=tinysrgb&w=800",
+          "features": [
+            "Split-hero design",
+            "Customer reviews section",
+            "Team showcase",
+            "Service pricing cards",
+            "Instagram feed integration",
+            "Newsletter signup"
+          ],
+          "themes": [
+            {"id": "urban-noir", "name": "Urban Noir", "style": "Bold", "accentColor": "#f5c518", "bgColor": "#0f0f0f", "description": "Stark black with electric yellow"},
+            {"id": "clean-white", "name": "Clean White", "style": "Modern", "accentColor": "#e11d48", "bgColor": "#ffffff", "description": "Crisp white with black and red"},
+            {"id": "forest-cream", "name": "Forest & Cream", "style": "Classic", "accentColor": "#2d5a27", "bgColor": "#faf7f2", "description": "Deep green with warm cream tones"},
+            {"id": "copper-noir", "name": "Copper Noir", "style": "Luxury", "accentColor": "#b87333", "bgColor": "#12100e", "description": "Near-black with copper warmth"},
+            {"id": "sky-sand", "name": "Sky & Sand", "style": "Contemporary", "accentColor": "#1e6fa8", "bgColor": "#f0f4f8", "description": "Cool sky blue with sandy neutrals"},
+            {"id": "crimson-bone", "name": "Crimson & Bone", "style": "Heritage", "accentColor": "#8b0000", "bgColor": "#f8f4ee", "description": "Bold crimson with off-white bone"}
+          ]
+        },
+        {
+          "id": "barbershop-v3",
+          "name": "Walk-In & Check-In",
+          "description": "Classic luxury design with built-in online check-in queue",
+          "longDescription": "A premium design featuring an integrated walk-in check-in system. Perfect for busy barbershops that accept both appointments and walk-in clients.",
+          "previewType": "barbershop3",
+          "heroImage": "https://images.pexels.com/photos/3998418/pexels-photo-3998418.jpeg?auto=compress&cs=tinysrgb&w=800",
+          "features": [
+            "Online check-in system",
+            "Real-time queue display",
+            "Appointment + walk-in hybrid",
+            "Service menu",
+            "Barber profiles",
+            "Mobile check-in"
+          ],
+          "themes": [
+            {"id": "midnight-gold", "name": "Midnight & Gold", "style": "Luxury", "accentColor": "#d4a853", "bgColor": "#0a0a0a", "description": "Dark luxury with gold accents"},
+            {"id": "obsidian-copper", "name": "Obsidian & Copper", "style": "Industrial", "accentColor": "#c87533", "bgColor": "#0c0c0c", "description": "Deep black with warm copper highlights"},
+            {"id": "walnut-brass", "name": "Walnut & Brass", "style": "Rustic", "accentColor": "#d4a843", "bgColor": "#3e2723", "description": "Rich walnut wood with brass hardware"},
+            {"id": "mahogany-whiskey", "name": "Mahogany & Whiskey", "style": "Luxury", "accentColor": "#d4880f", "bgColor": "#4a1c1c", "description": "Rich mahogany wood with whiskey amber"},
+            {"id": "espresso-cream", "name": "Espresso & Cream", "style": "Rustic", "accentColor": "#f5deb3", "bgColor": "#2c1e14", "description": "Rich espresso brown with cream"},
+            {"id": "graphite-amber", "name": "Graphite & Amber", "style": "Industrial", "accentColor": "#f59e0b", "bgColor": "#2d3436", "description": "Cool graphite with warm amber glow"},
+            {"id": "charcoal-crimson", "name": "Charcoal & Crimson", "style": "Bold", "accentColor": "#dc2626", "bgColor": "#1a1a1a", "description": "Dark charcoal with bold red accents"},
+            {"id": "noir-silver", "name": "Noir & Silver", "style": "Minimal", "accentColor": "#c0c0c0", "bgColor": "#000000", "description": "Pure black with silver metallic"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nail-salon",
+      "label": "Nail Salon",
+      "emoji": "💅",
+      "description": "Elegant, feminine designs for nail studios and spas",
+      "available": true,
+      "port": 5173,
+      "heroImage": "https://images.pexels.com/photos/3997391/pexels-photo-3997391.jpeg?auto=compress&cs=tinysrgb&w=800",
+      "designs": [
+        {
+          "id": "nail-salon-v1",
+          "name": "Nail Salon",
+          "description": "Soft, elegant design for nail studios",
+          "longDescription": "A refined and graceful design tailored for nail salons and spas. Features soft color palettes, elegant typography, and sections for showcasing nail art galleries.",
+          "previewType": "nail-salon",
+          "heroImage": "https://images.pexels.com/photos/939836/pexels-photo-939836.jpeg?auto=compress&cs=tinysrgb&w=800",
+          "features": [
+            "Hero slideshow",
+            "Nail art gallery",
+            "Service menu with pricing",
+            "Online booking integration",
+            "Team profiles",
+            "Gift card section"
+          ],
+          "themes": [
+            {"id": "rose-quartz", "name": "Rose Quartz", "style": "Romantic", "accentColor": "#c8748a", "bgColor": "#fdf0f3", "description": "Soft blush pink with rose gold accents"},
+            {"id": "midnight-noir", "name": "Midnight Noir", "style": "Luxury", "accentColor": "#c9a87c", "bgColor": "#0d0d0d", "description": "Dramatic black with rose gold glamour"},
+            {"id": "ivory-gold", "name": "Ivory & Gold", "style": "Classic", "accentColor": "#b8860b", "bgColor": "#fdfaf4", "description": "Pristine ivory with warm gold accents"},
+            {"id": "blush-luxe", "name": "Blush Luxe", "style": "Romantic", "accentColor": "#a0522d", "bgColor": "#f8f0ee", "description": "Warm blush with mauve and dusty rose"},
+            {"id": "emerald-glam", "name": "Emerald Glam", "style": "Luxury", "accentColor": "#d4b483", "bgColor": "#0d1f17", "description": "Deep emerald green with champagne shimmer"},
+            {"id": "nude-studio", "name": "Nude Studio", "style": "Minimal", "accentColor": "#8a7560", "bgColor": "#f5f0eb", "description": "Clean neutral nudes with a modern edge"},
+            {"id": "plum-velvet", "name": "Plum Velvet", "style": "Luxury", "accentColor": "#c084fc", "bgColor": "#1a0d2e", "description": "Deep plum luxury with lavender highlights"},
+            {"id": "champagne-cream", "name": "Champagne & Cream", "style": "Classic", "accentColor": "#c8a870", "bgColor": "#faf6ee", "description": "Warm champagne bubbles with cream elegance"},
+            {"id": "carbon-coral", "name": "Carbon & Coral", "style": "Modern", "accentColor": "#ff6b6b", "bgColor": "#1a1a1a", "description": "Dark carbon modern with coral pop"},
+            {"id": "sage-linen", "name": "Sage & Linen", "style": "Botanical", "accentColor": "#6b7c5a", "bgColor": "#f2f0ea", "description": "Earthy sage green with natural linen warmth"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hair-salon",
+      "label": "Hair Salon",
+      "emoji": "✂️",
+      "description": "Sophisticated designs for hair salons and stylists",
+      "available": false,
+      "port": 5175,
+      "heroImage": "https://images.pexels.com/photos/3993449/pexels-photo-3993449.jpeg?auto=compress&cs=tinysrgb&w=800",
+      "designs": [],
+      "comingSoon": true
+    },
+    {
+      "id": "haircut-studio",
+      "label": "Haircut Studio",
+      "emoji": "🪒",
+      "description": "Quick, efficient designs for walk-in haircut studios",
+      "available": false,
+      "port": 5176,
+      "heroImage": "https://images.pexels.com/photos/1813272/pexels-photo-1813272.jpeg?auto=compress&cs=tinysrgb&w=800",
+      "designs": [],
+      "comingSoon": true
+    }
+  ]
+}

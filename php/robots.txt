@@ -1,0 +1,83 @@
+# Robots.txt for Certxa — https://certxa.com
+# Public marketing and booking pages are open to all crawlers.
+# Internal app pages (dashboard, admin, staff tools) are disallowed.
+
+User-agent: *
+Allow: /
+Crawl-delay: 2
+
+# Internal app sections — not for public indexing
+Disallow: /api/
+Disallow: /includes/
+Disallow: /config.php
+Disallow: /router.php
+
+# ── Block the visual editor (has noindex — keep Googlebot from discovering it) ─
+Disallow: /editor
+
+# ── Block query-string duplicates ─────────────────────────────────────────────
+Disallow: /*?*
+
+# ── Block launchsite internal paths — only the overview page should be indexed ─
+Disallow: /launchsite/admin
+Disallow: /launchsite/editor
+Disallow: /launchsite/preview
+Disallow: /launchsite/scraped-tmp/
+Disallow: /launchsite/api/
+Disallow: /launchsite/barbershops
+Disallow: /launchsite/hair-salons
+
+# ── Raw data files — never serve to crawlers ──────────────────────────────────
+Disallow: /salon-data.json
+
+# ── Known scraper / data-harvesting agents — block from salon directory ───────
+User-agent: AhrefsBot
+Disallow: /salon/
+Disallow: /nail-salons/
+
+User-agent: SemrushBot
+Disallow: /salon/
+Disallow: /nail-salons/
+
+User-agent: MJ12bot
+Disallow: /salon/
+Disallow: /nail-salons/
+
+User-agent: DotBot
+Disallow: /salon/
+Disallow: /nail-salons/
+
+User-agent: BLEXBot
+Disallow: /salon/
+Disallow: /nail-salons/
+
+User-agent: DataForSeoBot
+Disallow: /salon/
+Disallow: /nail-salons/
+
+User-agent: PetalBot
+Disallow: /salon/
+Disallow: /nail-salons/
+
+User-agent: Bytespider
+Disallow: /salon/
+Disallow: /nail-salons/
+
+# ── Search-engine crawlers — no crawl-delay (override the wildcard above) ────
+User-agent: Googlebot
+Allow: /
+Crawl-delay: 0
+
+User-agent: Bingbot
+Allow: /
+Crawl-delay: 0
+
+User-agent: Slurp
+Allow: /
+Crawl-delay: 0
+
+# Sitemaps
+Sitemap: https://certxa.com/sitemap.xml
+Sitemap: https://certxa.com/sitemap-pages.xml
+Sitemap: https://certxa.com/blog/sitemap.xml
+Sitemap: https://certxa.com/salon/sitemap.xml

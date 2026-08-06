@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
+        http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
+
+  <!-- Homepage — canonical root URL (not /overview which 301s here) -->
+  <url><loc>https://certxa.com/</loc><lastmod>2026-07-20</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>
+
+  <!-- Primary feature pages -->
+  <url><loc>https://certxa.com/pricing</loc><lastmod>2026-07-20</lastmod><changefreq>weekly</changefreq><priority>0.95</priority></url>
+  <url><loc>https://certxa.com/nail-salon-software</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.93</priority></url>
+  <url><loc>https://certxa.com/autumn</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.93</priority></url>
+  <url><loc>https://certxa.com/online-booking</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.90</priority></url>
+  <url><loc>https://certxa.com/payments</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.90</priority></url>
+  <url><loc>https://certxa.com/blog</loc><lastmod>2026-07-20</lastmod><changefreq>daily</changefreq><priority>0.90</priority></url>
+  <url><loc>https://certxa.com/revenue-intelligence</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.88</priority></url>
+  <url><loc>https://certxa.com/checkin-kiosk</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.87</priority></url>
+  <url><loc>https://certxa.com/launchsite</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.87</priority></url>
+  <url><loc>https://certxa.com/custom-website-builder</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.86</priority></url>
+  <url><loc>https://certxa.com/client-management</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.86</priority></url>
+  <url><loc>https://certxa.com/payment-processing</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.85</priority></url>
+  <url><loc>https://certxa.com/client-notifications</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.84</priority></url>
+  <url><loc>https://certxa.com/google-business-profile</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.83</priority></url>
+  <url><loc>https://certxa.com/client-reviews</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.83</priority></url>
+  <url><loc>https://certxa.com/salonos</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.82</priority></url>
+  <url><loc>https://certxa.com/solo-professionals</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.82</priority></url>
+  <url><loc>https://certxa.com/booth-renters</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.81</priority></url>
+  <url><loc>https://certxa.com/case-studies</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.80</priority></url>
+  <url><loc>https://certxa.com/data-transfer</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.79</priority></url>
+
+  <!-- Footer / secondary pages -->
+  <url><loc>https://certxa.com/contact</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.76</priority></url>
+  <url><loc>https://certxa.com/about</loc><lastmod>2026-07-20</lastmod><changefreq>monthly</changefreq><priority>0.75</priority></url>
+  <url><loc>https://certxa.com/google-data-policy</loc><lastmod>2026-07-20</lastmod><changefreq>yearly</changefreq><priority>0.62</priority></url>
+  <url><loc>https://certxa.com/privacy</loc><lastmod>2026-07-20</lastmod><changefreq>yearly</changefreq><priority>0.60</priority></url>
+  <url><loc>https://certxa.com/terms</loc><lastmod>2026-07-20</lastmod><changefreq>yearly</changefreq><priority>0.60</priority></url>
+
+</urlset>

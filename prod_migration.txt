@@ -1,0 +1,229 @@
+-- ============================================================================
+-- Production migration — run once on VPS against the production DB
+-- Safe to re-run: uses IF NOT EXISTS guards throughout
+--
+-- Run with:
+--   psql "$DATABASE_URL" -f prod_migration.txt
+-- Or copy/paste into psql directly.
+-- ============================================================================
+
+-- ── 1. Add missing column to existing locations table ─────────────────────────
+--    This is the cause of the "errorMissingColumn" crash you're seeing.
+--    Added when the contractor payouts system was built, never pushed to prod.
+ALTER TABLE locations
+  ADD COLUMN IF NOT EXISTS commission_payout_frequency TEXT DEFAULT 'monthly';
+
+-- ── 2. Contractor Payouts system — new tables ─────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS contractors (
+  id                      SERIAL PRIMARY KEY,
+  store_id                INTEGER NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+  staff_id                INTEGER REFERENCES staff(id),
+  first_name              TEXT NOT NULL,
+  last_name               TEXT NOT NULL,
+  email                   TEXT,
+  phone                   TEXT,
+  profile_image           TEXT,
+  role                    TEXT DEFAULT 'stylist',
+  commission_rate         NUMERIC(5,2) DEFAULT 0,
+  product_commission_rate NUMERIC(5,2) DEFAULT 0,
+  payout_method           TEXT DEFAULT 'ach',
+  stripe_account_id       TEXT,
+  stripe_onboarding_url   TEXT,
+  tax_classification      TEXT DEFAULT 'individual',
+  tax_id_last4            TEXT,
+  onboarding_status       TEXT DEFAULT 'pending',
+  bank_verified           BOOLEAN DEFAULT FALSE,
+  is_active               BOOLEAN DEFAULT TRUE,
+  notes                   TEXT,
+  created_at              TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at              TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_contractors_store_id ON contractors(store_id);
+CREATE INDEX IF NOT EXISTS idx_contractors_staff_id ON contractors(staff_id);
+
+CREATE TABLE IF NOT EXISTS contractor_bank_accounts (
+  id                     SERIAL PRIMARY KEY,
+  contractor_id          INTEGER NOT NULL REFERENCES contractors(id) ON DELETE CASCADE,
+  account_type           TEXT DEFAULT 'checking',
+  bank_name              TEXT,
+  routing_last4          TEXT,
+  account_last4          TEXT,
+  verification_status    TEXT DEFAULT 'pending',
+  stripe_bank_account_id TEXT,
+  is_default             BOOLEAN DEFAULT TRUE,
+  created_at             TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_cba_contractor_id ON contractor_bank_accounts(contractor_id);
+
+CREATE TABLE IF NOT EXISTS payout_deduction_rules (
+  id            SERIAL PRIMARY KEY,
+  store_id      INTEGER NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+  contractor_id INTEGER REFERENCES contractors(id),
+  name          TEXT NOT NULL,
+  type          TEXT DEFAULT 'fixed',
+  amount        NUMERIC(10,2) DEFAULT 0,
+  applies_to    TEXT DEFAULT 'all',
+  is_active     BOOLEAN DEFAULT TRUE,
+  created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pdr_store_id ON payout_deduction_rules(store_id);
+
+CREATE TABLE IF NOT EXISTS payout_runs (
+  id                  SERIAL PRIMARY KEY,
+  store_id            INTEGER NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+  period_start        TEXT NOT NULL,
+  period_end          TEXT NOT NULL,
+  status              TEXT NOT NULL DEFAULT 'draft',
+  total_gross         NUMERIC(12,2) NOT NULL DEFAULT 0,
+  total_deductions    NUMERIC(12,2) NOT NULL DEFAULT 0,
+  total_net           NUMERIC(12,2) NOT NULL DEFAULT 0,
+  contractor_count    INTEGER NOT NULL DEFAULT 0,
+  notes               TEXT,
+  created_by_user_id  TEXT,
+  approved_by_user_id TEXT,
+  approved_at         TIMESTAMP,
+  completed_at        TIMESTAMP,
+  created_at          TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at          TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pr_store_status  ON payout_runs(store_id, status);
+CREATE INDEX IF NOT EXISTS idx_pr_store_created ON payout_runs(store_id, created_at);
+
+CREATE TABLE IF NOT EXISTS payout_run_items (
+  id                SERIAL PRIMARY KEY,
+  payout_run_id     INTEGER NOT NULL REFERENCES payout_runs(id) ON DELETE CASCADE,
+  contractor_id     INTEGER NOT NULL REFERENCES contractors(id),
+  contractor_name   TEXT NOT NULL DEFAULT '',
+  appointment_count INTEGER NOT NULL DEFAULT 0,
+  service_revenue   NUMERIC(10,2) NOT NULL DEFAULT 0,
+  product_revenue   NUMERIC(10,2) NOT NULL DEFAULT 0,
+  tips              NUMERIC(10,2) NOT NULL DEFAULT 0,
+  gross_amount      NUMERIC(10,2) NOT NULL DEFAULT 0,
+  deductions        JSONB,
+  total_deductions  NUMERIC(10,2) NOT NULL DEFAULT 0,
+  net_amount        NUMERIC(10,2) NOT NULL DEFAULT 0,
+  payout_method     TEXT,
+  status            TEXT NOT NULL DEFAULT 'pending',
+  stripe_transfer_id TEXT,
+  failure_reason    TEXT,
+  check_number      INTEGER,
+  paid_at           TIMESTAMP,
+  created_at        TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pri_run_id        ON payout_run_items(payout_run_id);
+CREATE INDEX IF NOT EXISTS idx_pri_contractor_id ON payout_run_items(contractor_id);
+
+CREATE TABLE IF NOT EXISTS payout_checks (
+  id                 SERIAL PRIMARY KEY,
+  store_id           INTEGER NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+  payout_run_item_id INTEGER REFERENCES payout_run_items(id),
+  contractor_id      INTEGER NOT NULL REFERENCES contractors(id),
+  check_number       INTEGER NOT NULL,
+  amount             NUMERIC(10,2) NOT NULL,
+  payee_name         TEXT NOT NULL,
+  memo               TEXT,
+  period_start       TEXT,
+  period_end         TEXT,
+  print_status       TEXT DEFAULT 'queued',
+  void_status        TEXT DEFAULT 'active',
+  cleared_status     TEXT DEFAULT 'outstanding',
+  issued_at          TIMESTAMP NOT NULL DEFAULT NOW(),
+  printed_at         TIMESTAMP,
+  voided_at          TIMESTAMP,
+  cleared_at         TIMESTAMP,
+  created_at         TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pc_store_id      ON payout_checks(store_id);
+CREATE INDEX IF NOT EXISTS idx_pc_contractor_id ON payout_checks(contractor_id);
+
+CREATE TABLE IF NOT EXISTS payout_w9_records (
+  id                 SERIAL PRIMARY KEY,
+  contractor_id      INTEGER NOT NULL REFERENCES contractors(id) ON DELETE CASCADE,
+  legal_name         TEXT NOT NULL,
+  business_name      TEXT,
+  tax_classification TEXT NOT NULL,
+  tax_id_last4       TEXT,
+  address            TEXT,
+  city               TEXT,
+  state              TEXT,
+  zip                TEXT,
+  year               INTEGER NOT NULL,
+  certified_at       TIMESTAMP,
+  created_at         TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_w9_contractor_id ON payout_w9_records(contractor_id);
+
+CREATE TABLE IF NOT EXISTS payout_audit_logs (
+  id          SERIAL PRIMARY KEY,
+  store_id    INTEGER NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+  action      TEXT NOT NULL,
+  entity_type TEXT,
+  entity_id   INTEGER,
+  user_id     TEXT,
+  user_email  TEXT,
+  metadata    JSONB,
+  created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pal_store_id   ON payout_audit_logs(store_id);
+CREATE INDEX IF NOT EXISTS idx_pal_created_at ON payout_audit_logs(created_at);
+
+-- ── 3. AI Receptionist tables ─────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS ai_call_log (
+  id               SERIAL PRIMARY KEY,
+  store_id         INTEGER NOT NULL REFERENCES locations(id),
+  call_sid         TEXT,
+  caller_phone     TEXT,
+  caller_name      TEXT,
+  outcome          TEXT NOT NULL DEFAULT 'in_progress',
+  appointment_id   INTEGER REFERENCES appointments(id),
+  duration_seconds INTEGER,
+  started_at       TIMESTAMP NOT NULL DEFAULT NOW(),
+  ended_at         TIMESTAMP,
+  notes            TEXT
+);
+
+CREATE TABLE IF NOT EXISTS call_usage_records (
+  id                 SERIAL PRIMARY KEY,
+  call_log_id        INTEGER REFERENCES ai_call_log(id),
+  store_id           INTEGER NOT NULL REFERENCES locations(id),
+  call_sid           TEXT,
+  duration_seconds   INTEGER NOT NULL DEFAULT 0,
+  audio_tokens_in    INTEGER NOT NULL DEFAULT 0,
+  audio_tokens_out   INTEGER NOT NULL DEFAULT 0,
+  text_tokens_in     INTEGER NOT NULL DEFAULT 0,
+  text_tokens_out    INTEGER NOT NULL DEFAULT 0,
+  tool_call_count    INTEGER NOT NULL DEFAULT 0,
+  ai_response_count  INTEGER NOT NULL DEFAULT 0,
+  twilio_minutes     NUMERIC(10,4) NOT NULL DEFAULT 0,
+  twilio_est_cost    NUMERIC(10,6) NOT NULL DEFAULT 0,
+  openai_est_cost    NUMERIC(10,6) NOT NULL DEFAULT 0,
+  total_est_cost     NUMERIC(10,6) NOT NULL DEFAULT 0,
+  termination_reason TEXT,
+  created_at         TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS salon_usage_limits (
+  store_id               INTEGER PRIMARY KEY REFERENCES locations(id),
+  max_call_duration_min  INTEGER NOT NULL DEFAULT 12,
+  max_daily_minutes      INTEGER NOT NULL DEFAULT 480,
+  max_monthly_cost_usd   NUMERIC(10,2) NOT NULL DEFAULT 200,
+  max_concurrent_calls   INTEGER NOT NULL DEFAULT 3,
+  idle_timeout_seconds   INTEGER NOT NULL DEFAULT 30,
+  updated_at             TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ai_silence_incidents (
+  id                  SERIAL PRIMARY KEY,
+  call_log_id         INTEGER REFERENCES ai_call_log(id),
+  store_id            INTEGER NOT NULL REFERENCES locations(id),
+  call_sid            TEXT,
+  layer               TEXT NOT NULL,
+  silence_duration_ms INTEGER NOT NULL,
+  recovery_action     TEXT NOT NULL,
+  occurred_at         TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- ── Done ──────────────────────────────────────────────────────────────────────
+SELECT 'Migration complete' AS status;

@@ -1,0 +1,142 @@
+modules = ["nodejs-20", "php-8.2", "web", "python-3.11"]
+
+[deployment]
+router = "application"
+deploymentTarget = "autoscale"
+run = ["node", "--enable-source-maps", "artifacts/api-server/dist/index.mjs"]
+build = ["pnpm", "--filter", "@workspace/api-server", "run", "build"]
+
+[deployment.postBuild]
+args = ["pnpm", "store", "prune"]
+env = { "CI" = "true" }
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "artifacts/mockup-sandbox: Component Preview Server"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Support Back Office"
+
+[[workflows.workflow]]
+name = "artifacts/mockup-sandbox: Component Preview Server"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "BASE_PATH=/__mockup/ PORT=8080 pnpm --filter @workspace/mockup-sandbox run dev"
+waitForPort = 8080
+
+[workflows.workflow.metadata]
+outputType = "console"
+isCanvasWorkflow = true
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash scripts/dev-start.sh"
+waitForPort = 5000
+
+[[workflows.workflow]]
+name = "Support Back Office"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=3001 API_PROXY_TARGET=http://localhost:9200 pnpm --filter @workspace/support-backoffice run dev"
+waitForPort = 3001
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[agent]
+stack = "BEST_EFFORT_FALLBACK"
+expertMode = true
+integrations = ["javascript_openai_ai_integrations:2.0.0"]
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 600000
+
+[[ports]]
+localPort = 3000
+externalPort = 3000
+
+[[ports]]
+localPort = 3001
+externalPort = 3001
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 8081
+
+[[ports]]
+localPort = 8082
+externalPort = 3003
+
+[[ports]]
+localPort = 8083
+externalPort = 6800
+
+[[ports]]
+localPort = 9200
+externalPort = 3002
+
+[[ports]]
+localPort = 19171
+externalPort = 3000
+
+[[ports]]
+localPort = 24491
+externalPort = 80
+
+[nix]
+channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+PHP_BIN = "/nix/store/zc1v3c5sqbm9kazc0h9rzp17w4ihw2ih-php-with-extensions-8.4.16/bin/php"
+PHP_DIR = "/home/runner/workspace/php"
+NODE_ENV = "development"
+TRIAL_PERIOD_DAYS = "60"
+MAILGUN_FROM_EMAIL = "noreply@mg.certxa.com"
+MAILGUN_FROM_NAME = "Booking Platform"
+CORS_ALLOW_ALL = "true"
+PUPPETEER_SKIP_DOWNLOAD = "true"
+PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"
+API_PROXY_TARGET = "http://localhost:9200"
+ADMIN_DB_HEALTH_KEY = "certxa-db-health-2025"
+MAILGUN_DOMAIN = "mg.certxa.com"
+
+[userenv.development]
+APP_URL = "https://ef2e57d2-4a4d-499f-b4f4-1fa68703e237-00-1uvfnebiib02g.spock.replit.dev"
+
+[userenv.production]
+APP_URL = "https://certxa.com"

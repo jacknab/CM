@@ -1,0 +1,7 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@300;400;600&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { font-family: 'Crimson Text', serif; }
+h1, h2, h3, .display { font-family: 'Cinzel', serif; }

@@ -1,0 +1,796 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Website Builder API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: templates
+    description: Template management
+  - name: websites
+    description: Tenant website management
+  - name: subdomains
+    description: Purchased subdomain management
+  - name: dashboard
+    description: Dashboard and analytics
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /templates:
+    get:
+      operationId: listTemplates
+      tags: [templates]
+      summary: List all templates
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [nail_salon, barbershop, hair_salon]
+      responses:
+        "200":
+          description: List of templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Template"
+
+  /templates/import:
+    post:
+      operationId: importTemplate
+      tags: [templates]
+      summary: Import a template from a zip file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TemplateImportInput"
+      responses:
+        "201":
+          description: Template imported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Template"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /templates/{id}:
+    get:
+      operationId: getTemplate
+      tags: [templates]
+      summary: Get a single template by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Template found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Template"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteTemplate
+      tags: [templates]
+      summary: Delete a template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /websites/check-slug:
+    get:
+      operationId: checkSlug
+      tags: [websites]
+      summary: Check if a slug is available
+      parameters:
+        - name: slug
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: excludeId
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Slug availability result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SlugCheckResult"
+
+  /websites:
+    get:
+      operationId: listWebsites
+      tags: [websites]
+      summary: List all tenant websites
+      parameters:
+        - name: storeid
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of websites
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Website"
+    post:
+      operationId: createWebsite
+      tags: [websites]
+      summary: Create a new tenant website
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebsiteInput"
+      responses:
+        "201":
+          description: Created website
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Website"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /websites/{id}:
+    get:
+      operationId: getWebsite
+      tags: [websites]
+      summary: Get a single website by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Website found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Website"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updateWebsite
+      tags: [websites]
+      summary: Update a tenant website
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebsiteUpdate"
+      responses:
+        "200":
+          description: Updated website
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Website"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteWebsite
+      tags: [websites]
+      summary: Delete a website
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /websites/{id}/publish:
+    post:
+      operationId: publishWebsite
+      tags: [websites]
+      summary: Publish a website (make it live)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Website"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /websites/{id}/unpublish:
+    post:
+      operationId: unpublishWebsite
+      tags: [websites]
+      summary: Unpublish a website (take it offline)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Unpublished
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Website"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /websites/{id}/custom-domain/checkout:
+    post:
+      operationId: createCustomDomainCheckout
+      tags: [websites]
+      summary: Save a custom domain and create a Stripe Checkout session for the $15/year fee
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomDomainCheckoutInput"
+      responses:
+        "200":
+          description: Checkout session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomDomainCheckoutResult"
+        "404":
+          description: Website not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Stripe not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /websites/{id}/assign-domain:
+    post:
+      operationId: assignDomain
+      tags: [websites]
+      summary: Assign a purchased subdomain (or reset to default slug) for this website
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignDomainInput"
+      responses:
+        "200":
+          description: Domain assigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Website"
+        "400":
+          description: Invalid input or subdomain not owned by this store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Website not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /tenant/{slug}:
+    get:
+      operationId: resolveTenant
+      tags: [websites]
+      summary: Resolve tenant website by slug (for subdomain routing)
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tenant resolved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantResolution"
+        "404":
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /subdomains:
+    get:
+      operationId: listPurchasedSubdomains
+      tags: [subdomains]
+      summary: List purchased subdomains for a storeid
+      parameters:
+        - name: storeid
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of purchased subdomains
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PurchasedSubdomain"
+
+  /subdomains/purchase:
+    post:
+      operationId: purchaseSubdomain
+      tags: [subdomains]
+      summary: Start a Stripe Checkout session to purchase an additional subdomain ($10/year)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PurchaseSubdomainInput"
+      responses:
+        "200":
+          description: Checkout session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseSubdomainCheckoutResult"
+        "400":
+          description: Subdomain unavailable or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Stripe not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /subdomains/purchase/verify:
+    post:
+      operationId: verifySubdomainPurchase
+      tags: [subdomains]
+      summary: Verify a Stripe Checkout session and activate the purchased subdomain
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifySubdomainInput"
+      responses:
+        "200":
+          description: Subdomain activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchasedSubdomain"
+        "400":
+          description: Payment not completed or session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /dashboard/stats:
+    get:
+      operationId: getDashboardStats
+      tags: [dashboard]
+      summary: Get dashboard statistics
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    Template:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        category:
+          type: string
+          enum: [nail_salon, barbershop, hair_salon]
+        description:
+          type: ["string", "null"]
+        thumbnail:
+          type: ["string", "null"]
+        filesPath:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - category
+        - filesPath
+        - createdAt
+
+    TemplateImportInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        category:
+          type: string
+          enum: [nail_salon, barbershop, hair_salon]
+        description:
+          type: string
+        zipBase64:
+          type: string
+          description: Base64 encoded zip file contents
+      required:
+        - name
+        - category
+        - zipBase64
+
+    Website:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        slug:
+          type: string
+        storeid:
+          type: ["string", "null"]
+        templateId:
+          type: ["integer", "null"]
+        content:
+          type: object
+          description: JSON content for the website (customized fields)
+          additionalProperties: true
+        published:
+          type: boolean
+        publishedAt:
+          type: ["string", "null"]
+          format: date-time
+        customDomain:
+          type: ["string", "null"]
+          description: Custom domain the user has configured (e.g. www.mybarbershop.com)
+        customDomainStatus:
+          type: ["string", "null"]
+          description: "null = not set, pending_dns = awaiting DNS, active = live"
+        assignedSubdomain:
+          type: ["string", "null"]
+          description: "Purchased subdomain assigned to this website (overrides default slug for routing)"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - slug
+        - published
+        - content
+        - createdAt
+        - updatedAt
+
+    CustomDomainCheckoutInput:
+      type: object
+      properties:
+        domain:
+          type: string
+          description: The custom domain the user wants to connect (e.g. www.mybarbershop.com)
+          minLength: 3
+      required:
+        - domain
+
+    CustomDomainCheckoutResult:
+      type: object
+      properties:
+        checkoutUrl:
+          type: string
+          description: Stripe Checkout URL to redirect the user to
+        domain:
+          type: string
+      required:
+        - checkoutUrl
+        - domain
+
+    AssignDomainInput:
+      type: object
+      properties:
+        assignedSubdomain:
+          type: ["string", "null"]
+          description: "Subdomain slug to assign (null = reset to website's own slug)"
+        storeid:
+          type: string
+      required:
+        - storeid
+
+    PurchasedSubdomain:
+      type: object
+      properties:
+        id:
+          type: integer
+        storeid:
+          type: string
+        subdomain:
+          type: string
+        stripeCheckoutSessionId:
+          type: ["string", "null"]
+        status:
+          type: string
+          description: "pending_payment | active | cancelled"
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+      required:
+        - id
+        - storeid
+        - subdomain
+        - status
+        - createdAt
+
+    PurchaseSubdomainInput:
+      type: object
+      properties:
+        subdomain:
+          type: string
+          minLength: 2
+          description: The subdomain slug to purchase (e.g. "glamour-nails")
+        storeid:
+          type: string
+      required:
+        - subdomain
+        - storeid
+
+    PurchaseSubdomainCheckoutResult:
+      type: object
+      properties:
+        checkoutUrl:
+          type: string
+          description: Stripe Checkout URL to redirect the user to
+        subdomain:
+          type: string
+      required:
+        - checkoutUrl
+        - subdomain
+
+    VerifySubdomainInput:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        storeid:
+          type: string
+      required:
+        - sessionId
+        - storeid
+
+    WebsiteInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        slug:
+          type: string
+          minLength: 1
+          pattern: '^[a-z0-9-]+$'
+        storeid:
+          type: string
+        templateId:
+          type: integer
+        content:
+          type: object
+          additionalProperties: true
+      required:
+        - name
+        - slug
+
+    WebsiteUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        content:
+          type: object
+          additionalProperties: true
+        templateId:
+          type: integer
+        storeid:
+          type: string
+
+    SlugCheckResult:
+      type: object
+      properties:
+        available:
+          type: boolean
+        slug:
+          type: string
+        reason:
+          type: ["string", "null"]
+      required:
+        - available
+        - slug
+
+    TenantResolution:
+      type: object
+      properties:
+        website:
+          $ref: "#/components/schemas/Website"
+        template:
+          $ref: "#/components/schemas/Template"
+      required:
+        - website
+
+    DashboardStats:
+      type: object
+      properties:
+        totalWebsites:
+          type: integer
+        publishedWebsites:
+          type: integer
+        totalTemplates:
+          type: integer
+        templatesByCategory:
+          type: object
+          properties:
+            nail_salon:
+              type: integer
+            barbershop:
+              type: integer
+            hair_salon:
+              type: integer
+          required:
+            - nail_salon
+            - barbershop
+            - hair_salon
+      required:
+        - totalWebsites
+        - publishedWebsites
+        - totalTemplates
+        - templatesByCategory

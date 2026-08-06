@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Certxa Sitemap Index
+  Auto-generated — static pages listed here; blog posts served dynamically from /blog/sitemap.xml
+-->
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+
+  <!-- Static marketing pages -->
+  <sitemap>
+    <loc>https://certxa.com/sitemap-pages.xml</loc>
+    <lastmod>2026-07-10</lastmod>
+  </sitemap>
+
+  <!-- Blog posts (dynamic — updates automatically when articles are published) -->
+  <sitemap>
+    <loc>https://certxa.com/blog/sitemap.xml</loc>
+  </sitemap>
+
+  <!-- Nail salon directory (51k+ individual salon pages) -->
+  <sitemap>
+    <loc>https://certxa.com/salon/sitemap.xml</loc>
+    <lastmod>2026-07-26</lastmod>
+  </sitemap>
+
+</sitemapindex>

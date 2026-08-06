@@ -1,0 +1,157 @@
+uploads = []
+
+[[generated]]
+id = "XTn2QCjpkTHReb6CfJynQ"
+uri = "file://public/images/tablet-booking-ui.png"
+type = "image"
+title = "Tablet booking UI"
+
+[[generated]]
+id = "9xfsVmolKCKDGVdFDdljU"
+uri = "file://public/images/receptionist-greeting.png"
+type = "image"
+title = "Receptionist greeting"
+
+[[generated]]
+id = "b6KICN8WjGGSARgfYazZQ"
+uri = "file://public/images/receptionist-gesture.png"
+type = "image"
+title = "Receptionist gesture"
+
+[[generated]]
+id = "3uRjHsGqtQjIdxod4_Ts4"
+uri = "file://public/images/salon-interior.png"
+type = "image"
+title = "Salon interior"
+
+[[generated]]
+id = "bVb43tYxcJCcDnZgtRoBU"
+uri = "file://attached_assets/generated_images/modern_luxury_nail_salon_d0e0.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "nmhLZH7DfMq5DOJ4kMh1D"
+uri = "file://attached_assets/generated_images/close_up_over_shoulder_fe76.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "uqStQ3sAyoPXDC0Y4nE4N"
+uri = "file://attached_assets/generated_images/nail_salon_floor_with_42cf.png"
+type = "image"
+title = "generated_image"
+
+[[outputs]]
+id = "0_KL_XV3SkGGedkpihqJx"
+uri = "file://docs/turn-system-guide.md"
+type = "text"
+title = "Turn System Guide"
+
+[[outputs]]
+id = "Durx-zZjqL8q4z8g_RmkT"
+uri = "file://docs/ai-receptionist.md"
+type = "text"
+title = "AI Voice Receptionist — Full Documentation"
+
+[[outputs]]
+id = "wYTcojA5Eb9p-rrpOl3Du"
+uri = "file://docs/contractor-payouts-and-check-printing.md"
+type = "text"
+title = "Contractor Payouts & Check Printing — Full Reference"
+
+[[outputs]]
+id = "JLl-6cMfP68W-0jaD1vKt"
+uri = "file://prod_migration.txt"
+type = "text"
+title = "prod_migration.txt — Run this on your VPS"
+
+[[outputs]]
+id = "9Tb3FOwzzbuU1-ZvAQvld"
+uri = "file://docs/data-transfer-vps-testing.md"
+type = "text"
+title = "Data Transfer — VPS Testing Guide"
+
+[[outputs]]
+id = "KBrRAwUHS1f4zqAGK_oPt"
+uri = "file://docs/feature-subscription-system.md"
+type = "text"
+title = "Feature-Based Subscription System — Full Documentation"
+
+[[outputs]]
+id = "vEobanJSoiHb5kv6nEhwX"
+uri = "file://docs/plans-and-features.md"
+type = "text"
+title = "Plans & Features Guide"
+
+[[outputs]]
+id = "_eBCDaXoZ8Qz2ayZyCMi1"
+uri = "file://docs/data-import-guide.md"
+type = "text"
+title = "Data Import Guide"
+
+[[outputs]]
+id = "B9B3WgYGziJqlF6ZqEsPB"
+uri = "file://.local/illustration-library-guide.md"
+type = "text"
+title = "Illustration Library — Access & Usage Guide"
+
+[[outputs]]
+id = "hQq3-wOjKL7EZZQwWt6Er"
+uri = "file://docs/stripe-connect-oauth-setup.md"
+type = "text"
+title = "Stripe Connect — Full Setup & Webhook Guide"
+
+[[outputs]]
+id = "ritVEE1E-kAYidNtgDgZn"
+uri = "file://docs/certxa-native-app-plan.md"
+type = "text"
+title = "Certxa Native App — Product & Build Plan"
+
+[[outputs]]
+id = "v0-SaufcoKzK4VKYiqC8h"
+uri = "file://attached_assets/expo-qr.png"
+type = "image"
+title = "Scan with Expo Go"
+
+[[outputs]]
+id = "318Gkdw-j8SANyjkZ31I9"
+uri = "file://attached_assets/image_search/pedicure_chair_1.png"
+type = "image"
+title = "Pedicure Chair Icon – Noun Project"
+
+[[outputs]]
+id = "6In9QTptYhbfv5ar8Wp3H"
+uri = "file://attached_assets/image_search/pedicure_chair_2.png"
+type = "image"
+title = "Pedicure Chair PNG – PNGkey"
+
+[[outputs]]
+id = "FIWdgB53_LU9cD6nVhevI"
+uri = "file://attached_assets/image_search/pedicure_chair_4.png"
+type = "image"
+title = "Pedicure Spa Chair – NicePNG"
+
+[[outputs]]
+id = "krYUoMJqTGWXCfONt5eCO"
+uri = "file://attached_assets/image_search/pedicure_1.png"
+type = "image"
+title = "Pedicure Chair Icon – Flaticon 1"
+
+[[outputs]]
+id = "YoKx1SEoIYsBmv_3eK5SU"
+uri = "file://attached_assets/image_search/pedicure_2.png"
+type = "image"
+title = "Pedicure Chair Icon – Flaticon 2"
+
+[[outputs]]
+id = "-sOfaHrPo1ag0sDKqi6gJ"
+uri = "file://attached_assets/image_search/pedicure_3.png"
+type = "image"
+title = "Spa Chair Icon – Flaticon"
+
+[[outputs]]
+id = "iRNWy3HaPeYtpfDl7wyo5"
+uri = "file://attached_assets/image_search/pedicure_4.png"
+type = "image"
+title = "Pedicure Chair – Noun Project"

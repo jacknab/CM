@@ -1,0 +1,48 @@
+{
+  "cli": {
+    "version": ">= 14.0.0",
+    "requireCommit": false,
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "pnpm": "10.26.1",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease"
+      },
+      "env": {
+        "EXPO_PUBLIC_PORTAL_URL": "https://certxa.com/app-login"
+      }
+    },
+    "staging": {
+      "distribution": "internal",
+      "pnpm": "10.26.1",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_PORTAL_URL": "https://staging.certxa.com"
+      }
+    },
+    "production": {
+      "distribution": "store",
+      "pnpm": "10.26.1",
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_PORTAL_URL": "https://certxa.com/app-login"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./google-service-account.json",
+        "track": "internal"
+      }
+    }
+  }
+}

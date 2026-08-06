@@ -1,0 +1,109 @@
+modules = ["nodejs-20", "php-8.2", "bash", "postgresql-16"]
+
+[deployment]
+router = "application"
+deploymentTarget = "autoscale"
+run = ["node", "--enable-source-maps", "artifacts/api-server/dist/index.mjs"]
+build = ["pnpm", "--filter", "@workspace/api-server", "run", "build"]
+
+[deployment.postBuild]
+args = ["pnpm", "store", "prune"]
+env = { "CI" = "true" }
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash scripts/dev-start.sh"
+waitForPort = 5000
+
+[agent]
+stack = "BEST_EFFORT_FALLBACK"
+expertMode = true
+integrations = ["javascript_openai_ai_integrations:2.0.0"]
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 600000
+
+[[ports]]
+localPort = 3000
+externalPort = 3000
+
+[[ports]]
+localPort = 3001
+externalPort = 3001
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 8081
+
+[[ports]]
+localPort = 8082
+externalPort = 3003
+
+[[ports]]
+localPort = 9200
+externalPort = 3002
+
+[[ports]]
+localPort = 19171
+externalPort = 3000
+
+[[ports]]
+localPort = 24491
+externalPort = 80
+
+[nix]
+channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+PHP_BIN = "/nix/store/zc1v3c5sqbm9kazc0h9rzp17w4ihw2ih-php-with-extensions-8.4.16/bin/php"
+PHP_DIR = "/home/runner/workspace/php"
+NODE_ENV = "development"
+TRIAL_PERIOD_DAYS = "60"
+MAILGUN_FROM_EMAIL = "noreply@mg.certxa.com"
+MAILGUN_FROM_NAME = "Booking Platform"
+CORS_ALLOW_ALL = "true"
+PUPPETEER_SKIP_DOWNLOAD = "true"
+PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"
+API_PROXY_TARGET = "http://localhost:8080"
+ADMIN_DB_HEALTH_KEY = "certxa-db-health-2025"
+MAILGUN_DOMAIN = "mg.certxa.com"
+SUPPORT_EMAIL_USER = "support@certxa.com"
+SUPPORT_EMAIL_HOST = "mail.privateemail.com"
+SUPPORT_EMAIL_PORT = "993"
+VITE_AI_ONBOARDING = "true"
+
+[userenv.development]
+
+[userenv.production]
+APP_URL = "https://certxa.com"
+GOOGLE_BUSINESS_CALLBACK_URL = "https://certxa.com/api/google-business/callback"

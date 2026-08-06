@@ -1,0 +1,28 @@
+{
+  "name": "@workspace/scripts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "hello": "tsx ./src/hello.ts",
+    "export-tenant-data": "tsx ./src/export-tenant-data.ts",
+    "run-service-image-auto-match": "tsx ./src/run-service-image-auto-match.ts",
+    "check-schema-sync": "node ./src/check-schema-sync.mjs",
+    "check-nullability": "node ./src/check-nullability.mjs",
+    "check-migrations": "node ./src/check-migrations.mjs",
+    "check-migration-drift": "node ./src/check-migration-drift.mjs",
+    "check-drizzle-filter": "node ./src/check-drizzle-filter.mjs",
+    "check-sequence-guard-sync": "node ./src/check-sequence-guard-sync.mjs",
+    "apply-pending-migrations": "node ./src/apply-pending-migrations.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "pg": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/pg": "^8.11.0",
+    "drizzle-orm": "catalog:",
+    "tsx": "catalog:"
+  }
+}

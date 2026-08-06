@@ -1,0 +1,7 @@
+@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,wght@0,400;0,500;1,400;1,500&family=Questrial&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { font-family: 'Questrial', sans-serif; }
+h1, h2, h3, .serif { font-family: 'Bodoni Moda', serif; }

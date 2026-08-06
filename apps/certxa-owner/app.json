@@ -1,0 +1,90 @@
+{
+  "expo": {
+    "name": "Certxa",
+    "slug": "certxa",
+    "version": "1.0.0",
+    "orientation": "default",
+    "sdkVersion": "54.0.0",
+    "userInterfaceStyle": "dark",
+    "scheme": "certxa-owner",
+    "icon": "./assets/icon.png",
+    "platforms": [
+      "android"
+    ],
+    "newArchEnabled": false,
+    "androidStatusBar": {
+      "hidden": true,
+      "translucent": true,
+      "backgroundColor": "#0A001F"
+    },
+    "android": {
+      "package": "com.certxa.owner",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0A001F"
+      },
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.NFC",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.USB_PERMISSION"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "./plugins/withJitpack",
+      "expo-secure-store",
+      [
+        "@stripe/stripe-terminal-react-native",
+        {
+          "appDelegate": true,
+          "tapToPayCheck": false
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Certxa needs location access to discover nearby Bluetooth card readers."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0A001F",
+          "image": "./assets/splash-logo.png",
+          "imageWidth": 400,
+          "resizeMode": "contain"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26,
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "extraProguardRules": "-keep class com.stripeterminalreactnative.** { *; }\n-keep class com.stripe.** { *; }\n-keepclassmembers class * extends com.facebook.react.bridge.ReactContextBaseJavaModule { *; }\n-keepclassmembers class * implements com.facebook.react.bridge.NativeModule { *; }"
+          }
+        }
+      ],
+      "expo-navigation-bar"
+    ],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "eas": {
+        "projectId": "d5eff1fa-1cd2-4d20-aff8-cf9136402811"
+      },
+      "router": {},
+      "expo-navigation-bar": {}
+    },
+    "owner": "certxa1s-team"
+  }
+}

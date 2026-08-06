@@ -1,0 +1,25 @@
+attached_assets/
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+# Template pre-built output must be committed — VPS serves these directly, no build step there
+!templates-storage/nail-salon-bloom/project/dist/
+!templates-storage/nail-salon-bloom/project/dist/**
+!templates-storage/nail-salon-lacquer/project/dist/
+!templates-storage/nail-salon-lacquer/project/dist/**
+.next/
+build/
+*.log
+logs/
+.DS_Store
+coverage/
+.turbo/
+.cache/
+.local/
+*.tsbuildinfo
+# ecosystem.config.cjs is committed (no secrets — env vars injected via /etc/certxa.env + --update-env)
+
+# Redis runtime dump — regenerated automatically, never commit
+dump.rdb

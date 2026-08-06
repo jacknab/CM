@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Certxa",
+    "slug": "certxa-pos",
+    "version": "1.0.0",
+    "scheme": "certxa",
+    "platforms": ["ios", "android", "web"],
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "backgroundColor": "#060616"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.certxa.pos",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Used to scan client check-in QR codes.",
+        "NSFaceIDUsageDescription": "Used to securely sign in to Certxa.",
+        "NFCReaderUsageDescription": "Used to accept Tap to Pay card payments."
+      }
+    },
+    "android": {
+      "package": "com.certxa.pos",
+      "permissions": ["android.permission.NFC", "android.permission.CAMERA", "android.permission.USE_BIOMETRIC", "android.permission.BLUETOOTH", "android.permission.BLUETOOTH_SCAN", "android.permission.BLUETOOTH_CONNECT", "android.permission.ACCESS_FINE_LOCATION"]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      ["expo-local-authentication", { "faceIDPermission": "Used to securely sign in to Certxa." }],
+      ["expo-camera", { "cameraPermission": "Used to scan QR codes for client check-in." }],
+      ["expo-splash-screen", { "backgroundColor": "#060616" }]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}
