@@ -1556,8 +1556,8 @@ function toggleFaq(btn) {
       iScreen.style.background = 'linear-gradient(180deg,#0a0a0a 0%,#050505 100%)';
       iConnected.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;flex:1;justify-content:center;gap:8px;margin-top:40px;">' +
         '<div style="width:62px;height:62px;border-radius:50%;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font-size:1rem;font-weight:800;color:rgba(255,255,255,.25);">FN</div>' +
-        '<div style="font-size:.88rem;color:rgba(255,255,255,.85);font-weight:600;">Call Ended</div>' +
-        '<div style="font-size:.7rem;color:rgba(255,255,255,.38);">'+fmtSecs(callSecs)+'</div></div>';
+        '<div style="font-size:.88rem;color:rgba(255,255,255,.85);font-weight:600;">Autumn handled the call</div>' +
+        '<div style="font-size:.7rem;color:rgba(255,255,255,.38);">Preparing the next demo…</div></div>';
       bubblesEl.style.transition = 'transform .55s ease-in, opacity .55s';
       bubblesEl.style.transform = 'translateY(-420px)';
       bubblesEl.style.opacity = '0';
