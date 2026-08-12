@@ -319,13 +319,13 @@ export async function atomicCreateBooking(
     // re-evaluates the (now up-to-date) conflict check below.
     // Serialize writers for this (store, staff) pair — prevents write-skew double-booking
     await tx.execute(
-      sql`select pg_advisory_xact_lock(${input.storeId}::bigint, ${input.staffId}::bigint)`
+      sql`select pg_advisory_xact_lock(${input.storeId}::int, ${input.staffId}::int)`
     );
     // Also lock on resource to prevent two concurrent bookings from grabbing the same station/chair.
     // Use storeId+1_000_000 as namespace to avoid collisions with the staff lock space.
     if (input.resourceId) {
       await tx.execute(
-        sql`select pg_advisory_xact_lock(${input.storeId + 1_000_000}::bigint, ${input.resourceId}::bigint)`
+        sql`select pg_advisory_xact_lock(${input.storeId + 1_000_000}::int, ${input.resourceId}::int)`
       );
     }
 
