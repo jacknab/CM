@@ -6978,7 +6978,7 @@ If you have any questions, please contact your administrator.
       if (candidateStaff.length === 0) return res.json([]);
 
       const dateParts = date.split("-").map(Number);
-      const dayOfWeek = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]).getDay();
+      const dayOfWeek = parseInt(formatInTimeZone(new Date(`${date}T12:00:00`), tz, "i"), 10) % 7;
       const dayHours = hours.find(h => h.dayOfWeek === dayOfWeek);
       const startHour = dayHours && !dayHours.isClosed ? parseInt(dayHours.openTime.split(":")[0]) : businessStartHour;
       const endHour = dayHours && !dayHours.isClosed ? parseInt(dayHours.closeTime.split(":")[0]) : businessEndHour;
@@ -7164,8 +7164,8 @@ If you have any questions, please contact your administrator.
           continue;
         }
 
-        // Closed by store business hours
-        const dayOfWeek = new Date(year, month - 1, d).getDay();
+        // Closed by store business hours — use salon timezone, not server local time
+        const dayOfWeek = parseInt(formatInTimeZone(new Date(`${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}T12:00:00`), tz, "i"), 10) % 7;
         const dayHours = businessHours.find((h) => h.dayOfWeek === dayOfWeek);
         if (!dayHours || dayHours.isClosed) {
           unavailableDates.push(dateStr);
@@ -12269,14 +12269,14 @@ or
 
       // Find active queue items whose linked review pre-dates the cutoff.
       const overdue = await db
-        .select({ id: googleReviewResponseQueue.id, ageDays: sql<number>`EXTRACT(EPOCH FROM (NOW() - ${googleReviews.reviewDate})) / 86400` })
+        .select({ id: googleReviewResponseQueue.id, ageDays: sql<number>`EXTRACT(EPOCH FROM (NOW() - ${googleReviews.reviewCreateTime})) / 86400` })
         .from(googleReviewResponseQueue)
         .innerJoin(googleReviews, eq(googleReviewResponseQueue.googleReviewId, googleReviews.id))
         .where(
           and(
             eq(googleReviewResponseQueue.storeId, storeId),
             inArray(googleReviewResponseQueue.status, ["scheduled", "failed"]),
-            sql`${googleReviews.reviewDate} < ${cutoff.toISOString()}`,
+            sql`${googleReviews.reviewCreateTime} < ${cutoff.toISOString()}`,
           ),
         );
 

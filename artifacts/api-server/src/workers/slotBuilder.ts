@@ -11,7 +11,7 @@
  */
 
 import { Worker, type Job } from "bullmq";
-import { fromZonedTime, toZonedTime } from "date-fns-tz";
+import { fromZonedTime, toZonedTime, formatInTimeZone } from "date-fns-tz";
 import { getRedisClient } from "../lib/redis";
 import { setSlotCache, type DaySlotCache, type PrecomputedSlot } from "../lib/slotCache";
 import { SLOT_QUEUE_NAME, type SlotJobData } from "../lib/slotQueue";
@@ -41,9 +41,8 @@ async function buildSlotsForDate(
   // payload small).
   const slotInterval: number = calSettings?.timeSlotInterval ?? 30;
 
-  // Day-of-week check
-  const [y, m, d] = date.split("-").map(Number);
-  const dayOfWeek = new Date(y, m - 1, d).getDay();
+  // Day-of-week check — use salon timezone, not server local time
+  const dayOfWeek = parseInt(formatInTimeZone(new Date(`${date}T12:00:00`), tz, "i"), 10) % 7;
   const dayHours = hours.find((h) => h.dayOfWeek === dayOfWeek);
 
   if (dayHours?.isClosed) {

@@ -48,7 +48,7 @@ import type { Express, Request, Response } from "express";
 import type { Server as HttpServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import twilio from "twilio";
-import { fromZonedTime, toZonedTime } from "date-fns-tz";
+import { fromZonedTime, toZonedTime, formatInTimeZone } from "date-fns-tz";
 import { db } from "../db";
 import { locations, services, storeSettings, aiCallLog, aiSilenceIncidents, callUsageRecords, staff as staffTable, appointments } from "@shared/schema";
 import { eq, desc, inArray, sql, count, gt, or, isNull, and } from "drizzle-orm";
@@ -1322,7 +1322,7 @@ async function computeAvailabilitySlots(
   if (!candidateStaff.length) return [];
 
   const dateParts = date.split("-").map(Number);
-  const dayOfWeek = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]).getDay();
+  const dayOfWeek = parseInt(formatInTimeZone(new Date(`${date}T12:00:00`), tz, "i"), 10) % 7;
   const dayHours = hours.find((h) => h.dayOfWeek === dayOfWeek);
   if (dayHours?.isClosed) return [];
 
