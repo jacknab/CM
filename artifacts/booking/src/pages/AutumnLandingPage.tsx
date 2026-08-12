@@ -807,7 +807,7 @@ function HeroCallChat() {
               </div>
             </>
           ) : isSweeping ? (
-            /* ── CALL ENDED / SWEEPING STATE ── */
+            /* ── CALL COMPLETED / TRANSITION STATE ── */
             <motion.div
               key="ended-screen"
               initial={{ opacity: 0 }}
@@ -816,8 +816,8 @@ function HeroCallChat() {
               style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, justifyContent: "center", gap: 8 }}
             >
               <div style={{ width: 62, height: 62, borderRadius: "50%", background: "rgba(255,255,255,.07)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem", fontWeight: 800, color: "rgba(255,255,255,.25)", marginBottom: 8 }}>FN</div>
-              <div style={{ fontSize: ".88rem", color: "rgba(255,255,255,.85)", fontWeight: 600 }}>Call Ended</div>
-              <div style={{ fontSize: ".7rem", color: "rgba(255,255,255,.38)", fontVariantNumeric: "tabular-nums" }}>{fmtCall(callSecs)}</div>
+              <div style={{ fontSize: ".88rem", color: "rgba(255,255,255,.85)", fontWeight: 600 }}>Autumn handled the call</div>
+              <div style={{ fontSize: ".7rem", color: "rgba(255,255,255,.38)", fontVariantNumeric: "tabular-nums" }}>Preparing the next demo…</div>
             </motion.div>
           ) : (
             /* ── CONNECTED / ACTIVE CALL STATE ── */
