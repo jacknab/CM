@@ -1853,6 +1853,8 @@ export const aiCallLog = pgTable("ai_call_log", {
   id:              serial("id").primaryKey(),
   storeId:         integer("store_id").references(() => locations.id).notNull(),
   callSid:         text("call_sid"),
+  recordingSid:    text("recording_sid"),
+  recordingUrl:    text("recording_url"),
   callerPhone:     text("caller_phone"),
   callerName:      text("caller_name"),
   outcome:         text("outcome").notNull().default("in_progress"),

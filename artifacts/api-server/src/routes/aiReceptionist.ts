@@ -4597,11 +4597,8 @@ export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express):
     const page = Math.max(1, parseInt((req.query.page as string) ?? "1", 10));
     const offset = (page - 1) * pageSize;
 
-    // Only count/show calls longer than 30 seconds (short calls are free and hidden)
-    const callFilter = and(
-      eq(aiCallLog.storeId, storeId),
-      or(isNull(aiCallLog.durationSeconds), gt(aiCallLog.durationSeconds, 30))
-    );
+    // Show all call records for this page, including completed calls after hangup.
+    const callFilter = eq(aiCallLog.storeId, storeId);
 
     // Total count for pagination
     const [countRow] = await db
@@ -4626,6 +4623,8 @@ export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express):
         appointmentId:   aiCallLog.appointmentId,
         serviceName:     services.name,
         transcript:      aiCallLog.transcript,
+        recordingSid:    aiCallLog.recordingSid,
+        recordingUrl:    aiCallLog.recordingUrl,
       })
       .from(aiCallLog)
       .leftJoin(appointments, eq(appointments.id, aiCallLog.appointmentId))
@@ -4636,6 +4635,57 @@ export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express):
       .offset(offset);
 
     return res.json({ logs, total, page, totalPages, pageSize });
+  });
+
+  app.get("/api/ai-receptionist/recording/:callLogId", isAuthenticated, async (req: Request, res: Response) => {
+    const storeId = await resolveTenantIdForRequest(req);
+    if (!storeId) return res.status(400).json({ message: "Unable to resolve tenant for this session" });
+
+    const callLogId = Number(req.params.callLogId);
+    if (!Number.isFinite(callLogId) || callLogId <= 0) {
+      return res.status(400).json({ message: "Invalid callLogId" });
+    }
+
+    const [row] = await db
+      .select({ recordingSid: aiCallLog.recordingSid })
+      .from(aiCallLog)
+      .where(and(eq(aiCallLog.storeId, storeId), eq(aiCallLog.id, callLogId)))
+      .limit(1);
+
+    if (!row?.recordingSid) {
+      return res.status(404).json({ message: "Recording not found" });
+    }
+
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    if (!accountSid || !authToken) {
+      return res.status(503).json({ message: "Twilio is not configured" });
+    }
+
+    const recordingUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Recordings/${row.recordingSid}.mp3`;
+    const authHeader = `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`;
+
+    try {
+      const twilioResponse = await fetch(recordingUrl, {
+        headers: {
+          Authorization: authHeader,
+        },
+      });
+
+      if (!twilioResponse.ok) {
+        const bodyText = await twilioResponse.text().catch(() => "");
+        return res.status(twilioResponse.status).send(bodyText || "Failed to fetch recording");
+      }
+
+      const arr = await twilioResponse.arrayBuffer();
+      const buf = Buffer.from(arr);
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Cache-Control", "private, max-age=0");
+      return res.send(buf);
+    } catch (err: any) {
+      console.error("[AI Receptionist] Failed to proxy Twilio recording:", err);
+      return res.status(502).json({ message: "Failed to fetch Twilio recording" });
+    }
   });
 
   // ── Session log: GET /api/ai-receptionist/session-log ────────────────────
@@ -5380,7 +5430,11 @@ export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express):
         const nextNotes = [row.notes, recordingLine].filter(Boolean).join("\n");
         await db
           .update(aiCallLog)
-          .set({ notes: nextNotes })
+          .set({
+            notes: nextNotes,
+            recordingSid: recordingSid || undefined,
+            recordingUrl: recordingUrl || undefined,
+          })
           .where(eq(aiCallLog.id, row.id));
       }
     } catch (err) {

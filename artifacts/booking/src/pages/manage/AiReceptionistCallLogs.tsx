@@ -43,6 +43,8 @@ interface CallLog {
   appointmentId: number | null;
   serviceName: string | null;
   transcript: CallTranscriptTurn[] | null;
+  recordingSid?: string | null;
+  recordingUrl?: string | null;
 }
 
 interface CallLogsResponse {
@@ -428,6 +430,15 @@ export default function AiReceptionistCallLogs() {
                           </div>
                         )}
 
+                        {log.recordingUrl && (
+                          <div className="mt-4 pt-4 border-t border-slate-200">
+                            <p className="text-xs text-slate-400 mb-1">Recording</p>
+                            <audio controls className="w-full rounded-xl bg-slate-900/5 p-2">
+                              <source src={`/api/ai-receptionist/recording/${log.id}`} type="audio/mpeg" />
+                              Your browser does not support audio playback.
+                            </audio>
+                          </div>
+                        )}
                         {log.transcript && log.transcript.length > 0 && (
                           <div className="mt-4 pt-4 border-t border-slate-200">
                             <div className="flex items-center gap-2 mb-3">
