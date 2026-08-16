@@ -32,7 +32,25 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+>(({ className, children, ...props }, ref) => {
+  // Helper: detect if any child contains a DialogPrimitive.Title so we
+  // only render a fallback hidden title when necessary to avoid Radix warning
+  const hasTitle = (childNodes: any): boolean => {
+    const arr = React.Children.toArray(childNodes);
+    for (const ch of arr) {
+      if (!React.isValidElement(ch)) continue;
+      const t: any = ch.type;
+      if (t === DialogPrimitive.Title || t?.displayName === DialogPrimitive.Title.displayName || t?.name === "DialogTitle") return true;
+      if (typeof ch.props === "object" && ch.props !== null && "children" in ch.props && ch.props.children !== null && ch.props.children !== undefined) {
+        if (hasTitle(ch.props.children)) return true;
+      }
+    }
+    return false;
+  };
+
+  const includeFallbackTitle = !hasTitle(children);
+
+  return (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
@@ -44,6 +62,9 @@ const DialogContent = React.forwardRef<
       )}
       {...props}
     >
+      {includeFallbackTitle && (
+        <DialogPrimitive.Title className="sr-only">Dialog</DialogPrimitive.Title>
+      )}
       {children}
       <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
         <X className="h-4 w-4" />
@@ -51,7 +72,8 @@ const DialogContent = React.forwardRef<
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>
-))
+  );
+})
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
 const DialogHeader = ({

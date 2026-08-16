@@ -144,6 +144,7 @@ import TattooStudioLandingPage from "@/pages/TattooStudioLandingPage";
 import AutumnLandingPage from "@/pages/AutumnLandingPage";
 import AcceptInvite from "@/pages/AcceptInvite";
 import ManageDashboard from "@/pages/manage/ManageDashboard";
+import MembersHome from "@/pages/manage/MembersHome";
 import AiReceptionistRouter from "@/pages/manage/AiReceptionistRouter";
 import AiReceptionistEnrollment from "@/pages/manage/AiReceptionistEnrollment";
 import AiReceptionistCallLogs from "@/pages/manage/AiReceptionistCallLogs";
@@ -417,7 +418,8 @@ function AppRoutes() {
       <Route path="/" element={<RootRedirect />} />
 
       {/* Manage hub */}
-      <Route path="/manage" element={<ManageDashboard />} />
+      <Route path="/manage" element={<MembersHome />} />
+      <Route path="/manage/dashboard" element={<ManageDashboard />} />
       <Route path="/manage/billing" element={<ManageBillingWrapper />} />
       <Route path="/manage/ai-receptionist" element={<AiReceptionistRouter />} />
       <Route path="/manage/ai-receptionist/setup" element={<AiReceptionistEnrollment />} />

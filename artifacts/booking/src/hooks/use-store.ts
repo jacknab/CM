@@ -3,16 +3,28 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@shared/routes";
 import type { Store } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
+import { offlineSessionBootstrap } from "@/lib/offline-session-bootstrap";
 
 export function useStores() {
   const { user } = useAuth();
   return useQuery({
     queryKey: [api.stores.list.path],
     queryFn: async () => {
-      const res = await fetch(api.stores.list.path, { credentials: "include" });
-      if (!res.ok) return [] as Store[];
-      return res.json() as Promise<Store[]>;
+      try {
+        const res = await fetch(api.stores.list.path, { credentials: "include" });
+        if (res.status === 401 || res.status === 403) return [] as Store[];
+        if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+
+        const stores = await res.json() as Store[];
+        offlineSessionBootstrap.setStores(stores);
+        return stores;
+      } catch (error) {
+        const cachedStores = offlineSessionBootstrap.getStores();
+        if (cachedStores.length > 0) return cachedStores;
+        throw error;
+      }
     },
+    initialData: () => offlineSessionBootstrap.getStores(),
     enabled: !!user,
   });
 }

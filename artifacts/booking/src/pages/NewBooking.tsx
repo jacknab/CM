@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
 import { useServices } from "@/hooks/use-services";
 import { useStaffList } from "@/hooks/use-staff";
-import { useClientsForBooking, useCreateClientForBooking, useClientDetail } from "@/hooks/use-clients";
+import { useClientsForBooking, useCreateClientForBooking, useClientDetail, type BookingClient } from "@/hooks/use-clients";
 import { useCreateAppointment } from "@/hooks/use-appointments";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAddonsForService, useSetAppointmentAddons, useServiceCategories } from "@/hooks/use-addons";
@@ -75,7 +75,7 @@ export default function NewBooking() {
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedAddons, setSelectedAddons] = useState<Addon[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<BookingClient | null>(null);
   const [notes, setNotes] = useState("");
   const [step, setStep] = useState<BookingStep>("services");
   const [editInitialized, setEditInitialized] = useState(false);
@@ -293,7 +293,7 @@ export default function NewBooking() {
   // 500-client list) so the name shows immediately instead of "Walk-In".
   useEffect(() => {
     if (!directClient || clientInitialized) return;
-    const customer: Customer = {
+    const customer: BookingClient = {
       id: directClient.id,
       name: directClient.fullName || `${(directClient as any).firstName ?? ''} ${(directClient as any).lastName ?? ''}`.trim(),
       email: (directClient as any).emails?.[0]?.emailAddress ?? null,
@@ -304,6 +304,8 @@ export default function NewBooking() {
       marketingOptIn: null,
       loyaltyPoints: null,
       storeId: selectedStore?.id ?? null,
+      createdAt: (directClient as any).createdAt ?? "",
+      updatedAt: (directClient as any).updatedAt ?? "",
     };
     setSelectedCustomer(customer);
     setClientInitialized(true);
@@ -312,7 +314,7 @@ export default function NewBooking() {
   // Fallback: if the direct fetch missed (edge case), find client in the full list.
   useEffect(() => {
     if (paramClientId && customers && !clientInitialized) {
-      const client = customers.find((c: Customer) => String(c.id) === String(paramClientId));
+      const client = customers.find((c: BookingClient) => String(c.id) === String(paramClientId));
       if (client) {
         setSelectedCustomer(client);
         setClientInitialized(true);
@@ -342,7 +344,7 @@ export default function NewBooking() {
           }
 
           if (apt.customer && customers) {
-            const client = customers.find((c: Customer) => c.id === apt.customerId);
+            const client = customers.find((c: BookingClient) => String(c.id) === String(apt.customerId));
             if (client) setSelectedCustomer(client);
           }
 
@@ -2286,8 +2288,8 @@ function ClientPickerWidget({
   customers,
   onSelect,
 }: {
-  customers: Customer[] | undefined;
-  onSelect: (c: Customer) => void;
+  customers: any[] | undefined;
+  onSelect: (c: any) => void;
 }) {
   const [query, setQuery] = useState("");
   const [showNew, setShowNew] = useState(false);
@@ -2370,7 +2372,7 @@ function ClientPickerWidget({
       <Input
         value={query}
         onChange={e => setQuery(e.target.value)}
-        placeholder="Search clients…"
+        placeholder="Search by 10-digit phone…"
         data-testid="input-client-search"
       />
       {(filtered.length > 0 || query.length > 0) && (
@@ -2396,11 +2398,17 @@ function ClientPickerWidget({
       <button
         type="button"
         className="flex items-center gap-1.5 text-sm text-primary font-medium"
-        onClick={() => { setShowNew(true); setNewName(query); setQuery(""); }}
+        onClick={() => {
+          const digits = query.replace(/\D/g, "");
+          setShowNew(true);
+          setNewPhone(digits.length >= 7 ? formatPhoneInput(query) : "");
+          setNewName(digits.length >= 7 ? "" : query);
+          setQuery("");
+        }}
         data-testid="button-add-new-client"
       >
         <Plus className="w-3.5 h-3.5" />
-        {query.length > 0 ? `Add "${query}" as new client` : "Add new client"}
+        {query.replace(/\D/g, "").length >= 7 ? "Add client with this phone" : query.length > 0 ? `Add "${query}" as new client` : "Add new client"}
       </button>
     </div>
   );
@@ -2428,11 +2436,11 @@ function BookingSummaryPanel({
   selectedService: Service | null;
   selectedAddons: Addon[];
   selectedStaff: Staff | null;
-  selectedCustomer: Customer | null;
-  customers: Customer[] | undefined;
+  selectedCustomer: BookingClient | null;
+  customers: BookingClient[] | undefined;
   totalPrice: number;
   totalDuration: number;
-  onSetCustomer: (c: Customer | null) => void;
+  onSetCustomer: (c: BookingClient | null) => void;
   onRemoveService: () => void;
   onRemoveAddon: (id: number) => void;
   onEditAddons?: () => void;
@@ -2454,11 +2462,12 @@ function BookingSummaryPanel({
     return `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}`;
   };
   const { selectedStore: panelStore } = useSelectedStore();
+  const selectedCustomerHasServerId = typeof selectedCustomer?.id === "number";
   const { data: allAppts = [] } = useQuery<any[]>({
     queryKey: ["/api/appointments", panelStore?.id],
     queryFn: () =>
       fetch(`/api/appointments?storeId=${panelStore?.id}`, { credentials: "include" }).then(r => r.json()),
-    enabled: !!panelStore?.id && !!selectedCustomer,
+    enabled: !!panelStore?.id && selectedCustomerHasServerId,
     staleTime: 60_000,
   });
 
@@ -2472,7 +2481,7 @@ function BookingSummaryPanel({
       if (!res.ok) return null;
       return res.json();
     },
-    enabled: !!selectedCustomer?.id && !!panelStore?.id,
+    enabled: selectedCustomerHasServerId && !!panelStore?.id,
     staleTime: 5 * 60 * 1000,
   });
   const bookingIntel = clientIntelData?.intel;

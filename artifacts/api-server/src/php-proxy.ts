@@ -246,7 +246,7 @@ const PHP_PREFIXES = [
 ];
 
 // Static root-level PHP files
-const PHP_ROOT_FILES = new Set(["/sitemap.xml", "/robots.txt", "/favicon.svg"]);
+const PHP_ROOT_FILES = new Set(["/sitemap.xml", "/sitemap-pages.xml", "/blog/sitemap.xml", "/robots.txt", "/favicon.svg"]);
 
 export function isPhpRoute(reqPath: string): boolean {
   // Never send booking/API/Vite paths to PHP

@@ -1,5 +1,6 @@
 import { snapshotDB, type BusinessSnapshot } from "./snapshot-db";
 import { CURRENT_VERSIONS } from "./storage-version";
+import { clientPhoneCacheDB } from "./client-phone-cache-db";
 
 export type SnapshotLoadStatus = "idle" | "loading" | "cached" | "fresh" | "offline";
 
@@ -53,6 +54,7 @@ class SnapshotService {
 
     if (!navigator.onLine) {
       if (cacheValid) {
+        await clientPhoneCacheDB.putMany(storeId, cached.customers ?? []).catch(() => {});
         this.setSnapshot(cached);
         this.setStatus("offline");
       } else {
@@ -62,6 +64,7 @@ class SnapshotService {
     }
 
     if (cacheValid) {
+      await clientPhoneCacheDB.putMany(storeId, cached.customers ?? []).catch(() => {});
       this.setSnapshot(cached);
       this.setStatus("cached");
     }
@@ -83,12 +86,14 @@ class SnapshotService {
 
       if (!cacheValid || cached!.version !== fresh.version) {
         await snapshotDB.save(fresh).catch(() => {});
+        await clientPhoneCacheDB.putMany(storeId, fresh.customers ?? []).catch(() => {});
         this.setSnapshot(fresh);
       }
 
       this.setStatus("fresh");
     } catch {
       if (cacheValid) {
+        await clientPhoneCacheDB.putMany(storeId, cached.customers ?? []).catch(() => {});
         this.setSnapshot(cached);
         this.setStatus("cached");
       } else {

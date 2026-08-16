@@ -23,9 +23,14 @@ export function useStaffList() {
       const url = storeId
         ? `${api.staff.list.path}?storeId=${storeId}`
         : api.staff.list.path;
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch staff");
-      return res.json();
+      try {
+        const res = await fetch(url, { credentials: "include" });
+        if (!res.ok) throw new Error("Failed to fetch staff");
+        return res.json();
+      } catch (error) {
+        if (snapshot?.staff) return snapshot.staff as Staff[];
+        throw error;
+      }
     },
     enabled: canFetch,
     placeholderData: (snapshot?.staff as Staff[] | undefined) ?? undefined,

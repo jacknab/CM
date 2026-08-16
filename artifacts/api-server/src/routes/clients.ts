@@ -865,13 +865,13 @@ router.post("/merge", isAuthenticated, async (req, res) => {
           ON CONFLICT DO NOTHING
         `);
 
-        // Merge custom field values the winner doesn't have
+        // Merge custom field values the winner doesn't have (use actual column names)
         await tx.execute(sql`
-          INSERT INTO client_custom_field_values (client_id, field_id, value_text, value_number, value_boolean, value_date)
-          SELECT ${winnerId}, field_id, value_text, value_number, value_boolean, value_date
+          INSERT INTO client_custom_field_values (client_id, custom_field_id, field_value)
+          SELECT ${winnerId}, custom_field_id, field_value
           FROM client_custom_field_values
           WHERE client_id = ${loserId}
-            AND field_id NOT IN (SELECT field_id FROM client_custom_field_values WHERE client_id = ${winnerId})
+            AND custom_field_id NOT IN (SELECT custom_field_id FROM client_custom_field_values WHERE client_id = ${winnerId})
           ON CONFLICT DO NOTHING
         `);
 
@@ -918,13 +918,13 @@ async function buildClientRows(storeId: number, filter: any = {}) {
 
   if (filter.status) conditions.push(eq(clients.clientStatus, filter.status));
   if (filter.smsOptIn === true) conditions.push(
-    sql`EXISTS (SELECT 1 FROM client_marketing_preferences WHERE client_id = ${clients.id} AND sms_marketing_opt_in = true)`
+    sql`EXISTS (SELECT 1 FROM client_marketing_preferences WHERE client_id = clients.id AND sms_marketing_opt_in = true)`
   );
   if (filter.emailOptIn === true) conditions.push(
-    sql`EXISTS (SELECT 1 FROM client_marketing_preferences WHERE client_id = ${clients.id} AND email_marketing_opt_in = true)`
+    sql`EXISTS (SELECT 1 FROM client_marketing_preferences WHERE client_id = clients.id AND email_marketing_opt_in = true)`
   );
   if (filter.tag) conditions.push(
-    sql`EXISTS (SELECT 1 FROM client_tag_relationships r JOIN client_tags t ON r.tag_id = t.id WHERE r.client_id = ${clients.id} AND t.tag_name = ${filter.tag})`
+    sql`EXISTS (SELECT 1 FROM client_tag_relationships r JOIN client_tags t ON r.tag_id = t.id WHERE r.client_id = clients.id AND t.tag_name = ${filter.tag})`
   );
 
   const rows = await db
@@ -941,18 +941,20 @@ async function buildClientRows(storeId: number, filter: any = {}) {
       lastVisitAt: clients.lastVisitAt,
       createdAt: clients.createdAt,
       updatedAt: clients.updatedAt,
-      primaryEmail: sql<string>`(SELECT email_address FROM client_emails WHERE client_id = ${clients.id} AND is_primary = true LIMIT 1)`,
-      primaryPhone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = ${clients.id} AND is_primary = true LIMIT 1)`,
-      altPhone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = ${clients.id} AND is_primary = false LIMIT 1)`,
-      addressLine1: sql<string>`(SELECT address_line1 FROM client_addresses WHERE client_id = ${clients.id} LIMIT 1)`,
-      city: sql<string>`(SELECT city FROM client_addresses WHERE client_id = ${clients.id} LIMIT 1)`,
-      state: sql<string>`(SELECT state FROM client_addresses WHERE client_id = ${clients.id} LIMIT 1)`,
-      postalCode: sql<string>`(SELECT postal_code FROM client_addresses WHERE client_id = ${clients.id} LIMIT 1)`,
-      country: sql<string>`(SELECT country FROM client_addresses WHERE client_id = ${clients.id} LIMIT 1)`,
-      tags: sql<string>`(SELECT string_agg(t.tag_name, ', ') FROM client_tags t JOIN client_tag_relationships r ON r.tag_id = t.id WHERE r.client_id = ${clients.id})`,
-      notes: sql<string>`(SELECT string_agg(note_content, ' | ') FROM client_notes WHERE client_id = ${clients.id} AND visibility = 'internal' LIMIT 5)`,
-      smsOptIn: sql<boolean>`(SELECT sms_marketing_opt_in FROM client_marketing_preferences WHERE client_id = ${clients.id} LIMIT 1)`,
-      emailOptIn: sql<boolean>`(SELECT email_marketing_opt_in FROM client_marketing_preferences WHERE client_id = ${clients.id} LIMIT 1)`,
+      primaryEmail: sql<string>`(SELECT email_address FROM client_emails WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
+      primaryPhone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
+      primaryPhoneE164: sql<string>`(SELECT phone_number_e164 FROM client_phones WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
+      altPhone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id AND is_primary = false LIMIT 1)`,
+      altPhoneE164: sql<string>`(SELECT phone_number_e164 FROM client_phones WHERE client_id = clients.id AND is_primary = false LIMIT 1)`,
+      addressLine1: sql<string>`(SELECT address_line1 FROM client_addresses WHERE client_id = clients.id LIMIT 1)`,
+      city: sql<string>`(SELECT city FROM client_addresses WHERE client_id = clients.id LIMIT 1)`,
+      state: sql<string>`(SELECT state FROM client_addresses WHERE client_id = clients.id LIMIT 1)`,
+      postalCode: sql<string>`(SELECT postal_code FROM client_addresses WHERE client_id = clients.id LIMIT 1)`,
+      country: sql<string>`(SELECT country FROM client_addresses WHERE client_id = clients.id LIMIT 1)`,
+      tags: sql<string>`(SELECT string_agg(t.tag_name, ', ') FROM client_tags t JOIN client_tag_relationships r ON r.tag_id = t.id WHERE r.client_id = clients.id)`,
+      notes: sql<string>`(SELECT string_agg(n.note_content, ' | ') FROM (SELECT note_content FROM client_notes WHERE client_id = clients.id AND visibility = 'internal' ORDER BY created_at DESC LIMIT 5) n)`,
+      smsOptIn: sql<boolean>`(SELECT sms_marketing_opt_in FROM client_marketing_preferences WHERE client_id = clients.id LIMIT 1)`,
+      emailOptIn: sql<boolean>`(SELECT email_marketing_opt_in FROM client_marketing_preferences WHERE client_id = clients.id LIMIT 1)`,
     })
     .from(clients)
     .where(and(...conditions))
@@ -964,7 +966,9 @@ async function buildClientRows(storeId: number, filter: any = {}) {
     "Full Name": r.fullName,
     "Email": r.primaryEmail ?? "",
     "Mobile Phone": r.primaryPhone ?? "",
+    "Mobile Phone E.164": r.primaryPhoneE164 ?? "",
     "Alternate Phone": r.altPhone ?? "",
+    "Alternate Phone E.164": r.altPhoneE164 ?? "",
     "Tags": r.tags ?? "",
     "Notes": r.notes ?? "",
     "Last Visit Date": r.lastVisitAt ? new Date(r.lastVisitAt).toISOString().split("T")[0] : "",

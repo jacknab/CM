@@ -125,7 +125,7 @@ export function useCreateAppointment() {
         date: string;
         serviceId: number;
         staffId: number;
-        customerId: number;
+        customerId: number | string;
         duration: number;
         _offlineCustomerName?: string;
         _offlineServiceName?: string;

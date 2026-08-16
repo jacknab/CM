@@ -2,6 +2,7 @@ import { offlineDB, type PendingOp, type ServerEntry } from "./offline-db";
 import { actionQueueDB, type ActionType, type SyncAction } from "./action-queue-db";
 import { appointmentsCacheDB } from "./appointments-cache-db";
 import { getDeviceId } from "./device-id";
+import { clientPhoneCacheDB } from "./client-phone-cache-db";
 
 export type SyncStatus = "online" | "offline" | "syncing";
 
@@ -233,8 +234,35 @@ class SyncEngine {
 
   private async processActionQueue(): Promise<void> {
     const pending = await actionQueueDB.getPending().catch(() => [] as SyncAction[]);
+    const tempIdMappings: Record<string, number> = {};
 
-    for (const action of pending) {
+    const applyClientMappings = async (action: SyncAction): Promise<SyncAction> => {
+      const payload = { ...action.payload } as any;
+      const storeId = Number(payload.storeId);
+      let changed = false;
+      const mapField = async (field: "customerId" | "clientId") => {
+        const value = payload[field];
+        if (typeof value !== "string" || !value.startsWith("local_client_")) return;
+        let realId = tempIdMappings[value];
+        if (!realId && Number.isFinite(storeId)) {
+          const cached = await clientPhoneCacheDB.getById(storeId, value).catch(() => null);
+          realId = cached?._syncedRealId ?? 0;
+        }
+        if (!realId) throw new Error(`Waiting for offline client ${value} to sync before ${action.type}`);
+        payload[field] = realId;
+        changed = true;
+      };
+      await mapField("customerId");
+      await mapField("clientId");
+      if (changed) {
+        await actionQueueDB.setState(action.id, action.state, { payload });
+        return { ...action, payload };
+      }
+      return action;
+    };
+
+    for (const queuedAction of pending) {
+      let action = queuedAction;
       if (action.attempts >= MAX_ATTEMPTS) {
         await actionQueueDB.setState(action.id, "CONFLICT", {
           conflict: "Max retry attempts reached — manual review required",
@@ -247,6 +275,7 @@ class SyncEngine {
       }
 
       try {
+        action = await applyClientMappings(action);
         await actionQueueDB.setState(action.id, "SYNCING");
         const realId = await this.executeAction(action);
 
@@ -254,6 +283,14 @@ class SyncEngine {
           entity_real_id: realId ?? undefined,
           synced_at: new Date().toISOString(),
         });
+
+        if (action.type === "CREATE_CLIENT" && action.entity_temp_id && realId) {
+          tempIdMappings[action.entity_temp_id] = realId;
+          const storeId = Number((action.payload as any).storeId);
+          if (Number.isFinite(storeId)) {
+            await clientPhoneCacheDB.markSynced(storeId, action.entity_temp_id, realId).catch(() => {});
+          }
+        }
 
         // Mark local booking as synced so calendar stops showing temp entry
         if (action.type === "CREATE_BOOKING" && action.entity_temp_id && realId) {

@@ -15,9 +15,14 @@ export function useServices() {
       const url = storeId
         ? `${api.services.list.path}?storeId=${storeId}`
         : api.services.list.path;
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch services");
-      return res.json();
+      try {
+        const res = await fetch(url, { credentials: "include" });
+        if (!res.ok) throw new Error("Failed to fetch services");
+        return res.json();
+      } catch (error) {
+        if (snapshot?.services) return snapshot.services;
+        throw error;
+      }
     },
     enabled: !!storeId,
     placeholderData: snapshot?.services ?? undefined,

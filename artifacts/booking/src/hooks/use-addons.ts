@@ -210,9 +210,14 @@ export function useServiceCategories() {
       const url = storeId
         ? `${api.serviceCategories.list.path}?storeId=${storeId}`
         : api.serviceCategories.list.path;
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch categories");
-      return res.json();
+      try {
+        const res = await fetch(url, { credentials: "include" });
+        if (!res.ok) throw new Error("Failed to fetch categories");
+        return res.json();
+      } catch (error) {
+        if (snapshot?.categories) return snapshot.categories;
+        throw error;
+      }
     },
     enabled: !!storeId,
     placeholderData: snapshot?.categories ?? undefined,

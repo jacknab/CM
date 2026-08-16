@@ -214,13 +214,14 @@ ${urlEntries}
   });
 
   // Empty blog sitemap (no blog content yet — prevents 404)
-  app.get("/blog/sitemap.xml", (_req: Request, res: Response) => {
-    res.setHeader("Content-Type", "application/xml");
-    res.setHeader("Cache-Control", "public, max-age=86400");
-    res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-</urlset>`);
-  });
+  // NOTE: This route is now handled by PHP middleware, so we don't need to serve it statically
+  // app.get("/blog/sitemap.xml", (_req: Request, res: Response) => {
+  //   res.setHeader("Content-Type", "application/xml");
+  //   res.setHeader("Cache-Control", "public, max-age=86400");
+  //   res.send(`<?xml version="1.0" encoding="UTF-8"?>
+  //     <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  //     </urlset>`);
+  // });
 
   // ── Geo landing pages at clean canonical URLs (no .html extension) ────────
   for (const { route, file } of GEO_PAGES) {

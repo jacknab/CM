@@ -11,7 +11,7 @@ export type LocalBooking = {
   duration: number;
   serviceId: number | null;
   staffId: number | null;
-  customerId: number | null;
+  customerId: number | string | null;
   customerName?: string;
   serviceName?: string;
   staffName?: string;

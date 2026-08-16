@@ -23,6 +23,23 @@ try {
     // Graceful degradation — serve empty sitemap
 }
 
+// Ensure blog sitemap is served as XML (not HTML)
+header('Content-Type: application/xml; charset=utf-8');
+
+// Add explicit XML declaration and proper content type
+if (empty($posts)) {
+    // Serve minimal valid sitemap when no posts exist
+    echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+    echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">' . "\n";
+    echo '  <url>' . "\n";
+    echo '    <loc>https://certxa.com/blog</loc>' . "\n";
+    echo '    <changefreq>daily</changefreq>' . "\n";
+    echo '    <priority>0.90</priority>' . "\n";
+    echo '  </url>' . "\n";
+    echo '</urlset>';
+    exit;
+}
+
 echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9

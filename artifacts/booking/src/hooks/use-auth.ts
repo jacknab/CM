@@ -1,18 +1,34 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@shared/models/auth";
 import { apiRequest } from "@/lib/queryClient";
+import { offlineSessionBootstrap } from "@/lib/offline-session-bootstrap";
 
 const STORAGE_KEY = "booking_user_session";
 
 async function fetchUser(): Promise<User | null> {
-  const response = await fetch("/api/auth/user", {
-    credentials: "include",
-  });
+  try {
+    const response = await fetch("/api/auth/user", {
+      credentials: "include",
+    });
 
-  if (!response.ok) throw new Error(`${response.status}: ${response.statusText}`);
+    if (response.status === 401 || response.status === 403) {
+      offlineSessionBootstrap.clear();
+      if (typeof window !== "undefined") localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
 
-  const data = await response.json();
-  return data ?? null;
+    if (!response.ok) throw new Error(`${response.status}: ${response.statusText}`);
+
+    const data = await response.json();
+    if (data) offlineSessionBootstrap.setUser(data);
+    return data ?? null;
+  } catch (error) {
+    const cachedUser = offlineSessionBootstrap.getUser();
+    if (cachedUser && typeof window !== "undefined" && localStorage.getItem(STORAGE_KEY) === "true") {
+      return cachedUser;
+    }
+    throw error;
+  }
 }
 
 export function useAuth() {
@@ -36,6 +52,7 @@ export function useAuth() {
     },
     onSuccess: (user) => {
       queryClient.setQueryData(["/api/auth/user"], user);
+      offlineSessionBootstrap.setUser(user);
       if (typeof window !== "undefined") localStorage.setItem(STORAGE_KEY, "true");
     },
   });
@@ -47,6 +64,7 @@ export function useAuth() {
     },
     onSuccess: (user) => {
       if (typeof window !== "undefined") localStorage.setItem(STORAGE_KEY, "true");
+      offlineSessionBootstrap.setUser(user);
       queryClient.setQueryData(["/api/auth/user"], user);
     },
   });
@@ -60,6 +78,7 @@ export function useAuth() {
       queryClient.clear();
       if (typeof window !== "undefined") {
         localStorage.removeItem(STORAGE_KEY);
+        offlineSessionBootstrap.clear();
         window.location.href = "/auth";
       }
     },

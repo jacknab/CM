@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useSnapshot } from "@/hooks/use-snapshot";
 import { actionQueueDB } from "@/lib/action-queue-db";
+import { clientPhoneCacheDB } from "@/lib/client-phone-cache-db";
 
 const BASE = "/api/clients";
 
@@ -476,58 +477,89 @@ export function useRemoveTagFromClient() {
 // ─── Booking-form compatible hook ─────────────────────────────────────────────
 // Returns clients shaped like the old Customer type so NewBooking.tsx can use
 // the clients table without a deep refactor of every consumer.
+export type BookingClient = {
+  id: number | string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  storeId: number | null;
+  loyaltyPoints: number | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  allergies: string | null;
+  marketingOptIn: boolean | null;
+  birthday: string | null;
+  _isLocal?: boolean;
+  _tempId?: string;
+};
+
+function toBookingClient(c: any, storeId: number): BookingClient {
+  return {
+    id: c.id,
+    name: c.name ?? "",
+    phone: c.phone ?? null,
+    email: c.email ?? null,
+    storeId: c.storeId ?? storeId,
+    loyaltyPoints: c.loyaltyPoints ?? 0,
+    notes: c.notes ?? null,
+    createdAt: c.createdAt ?? "",
+    updatedAt: c.updatedAt ?? "",
+    allergies: c.allergies ?? null,
+    marketingOptIn: c.marketingOptIn ?? null,
+    birthday: c.birthday ?? null,
+    _isLocal: c._isLocal,
+    _tempId: c._tempId,
+  };
+}
+
+async function loadCachedBookingClients(storeId: number, snapshotCustomers: any[] = []): Promise<BookingClient[]> {
+  const cached = await clientPhoneCacheDB.getAll(storeId).catch(() => [] as Awaited<ReturnType<typeof clientPhoneCacheDB.getAll>>);
+  if (cached.length > 0) return cached.filter((c) => !c._syncedRealId).map((c) => toBookingClient(c, storeId));
+  await clientPhoneCacheDB.putMany(storeId, snapshotCustomers).catch(() => {});
+  return snapshotCustomers.map((c) => toBookingClient(c, storeId));
+}
+
 export function useClientsForBooking() {
   const { selectedStore } = useSelectedStore();
   const storeId = selectedStore?.id;
   const { snapshot } = useSnapshot();
 
-  return useQuery<Array<{
-    id: number;
-    name: string;
-    phone: string | null;
-    email: string | null;
-    storeId: number;
-    loyaltyPoints: number | null;
-    notes: string | null;
-    createdAt: string;
-    updatedAt: string;
-    allergies: string | null;
-    marketingOptIn: boolean | null;
-    birthday: string | null;
-  }>>({
+  return useQuery<BookingClient[]>({
     queryKey: [BASE, "booking-picker", storeId],
     networkMode: "always",
     queryFn: async () => {
+      const snapshotCustomers = snapshot?.customers ?? [];
       if (!navigator.onLine) {
-        const all = (snapshot?.customers ?? []) as Array<{
-          id: number; name: string; phone?: string | null; email?: string | null;
-          loyaltyPoints?: number | null; storeId?: number | null;
-        }>;
-        return all.map((c) => ({
-          id: c.id, name: c.name ?? "", phone: c.phone ?? null,
-          email: c.email ?? null, storeId: c.storeId ?? storeId!,
-          loyaltyPoints: c.loyaltyPoints ?? 0, notes: null, createdAt: "", updatedAt: "",
-          allergies: null, marketingOptIn: null, birthday: null,
-        }));
+        return loadCachedBookingClients(storeId!, snapshotCustomers);
       }
-      const qs = new URLSearchParams({ storeId: String(storeId), limit: "500", sort: "fullName", order: "asc" });
-      const res = await fetch(`${BASE}?${qs}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch clients");
-      const data: ClientListResponse = await res.json();
-      return data.clients.map((c) => ({
-        id: c.id,
-        name: c.fullName || `${c.firstName} ${c.lastName}`.trim(),
-        phone: c.primaryPhone ?? null,
-        email: c.primaryEmail ?? null,
-        storeId: c.storeId,
-        loyaltyPoints: c.loyaltyPoints ?? 0,
-        notes: null,
-        createdAt: c.createdAt,
-        updatedAt: c.updatedAt,
-        allergies: null,
-        marketingOptIn: null,
-        birthday: null,
-      }));
+
+      try {
+        const qs = new URLSearchParams({ storeId: String(storeId), limit: "500", sort: "fullName", order: "asc" });
+        const res = await fetch(`${BASE}?${qs}`, { credentials: "include" });
+        if (!res.ok) throw new Error("Failed to fetch clients");
+        const data: ClientListResponse = await res.json();
+        const clients = data.clients.map((c) => ({
+          id: c.id,
+          name: c.fullName || `${c.firstName} ${c.lastName}`.trim(),
+          phone: c.primaryPhone ?? null,
+          email: c.primaryEmail ?? null,
+          storeId: c.storeId,
+          loyaltyPoints: c.loyaltyPoints ?? 0,
+          notes: null,
+          createdAt: c.createdAt,
+          updatedAt: c.updatedAt,
+          allergies: null,
+          marketingOptIn: null,
+          birthday: null,
+        }));
+        await clientPhoneCacheDB.putMany(storeId!, clients).catch(() => {});
+        return clients;
+      } catch (error) {
+        const cached = await loadCachedBookingClients(storeId!, snapshotCustomers);
+        if (cached.length > 0) return cached;
+        throw error;
+      }
     },
     enabled: !!storeId,
     staleTime: 60 * 1000,
@@ -543,28 +575,73 @@ export function useCreateClientForBooking() {
   return useMutation({
     mutationFn: async (data: { name?: string; phone?: string }) => {
       const storeId = selectedStore?.id;
+      if (!storeId) throw new Error("No store selected");
+
       const parts = (data.name ?? "").trim().split(/\s+/);
       const firstName = parts[0] ?? "";
       const lastName = parts.slice(1).join(" ") ?? "";
-      const res = await fetch(BASE, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ firstName, lastName, phone: data.phone ?? undefined, storeId }),
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to create client");
-      const client = await res.json();
-      return {
-        id: client.id,
-        name: client.fullName || `${client.firstName} ${client.lastName}`.trim(),
-        phone: data.phone ?? null,
-        email: null,
-        storeId: client.storeId,
-        loyaltyPoints: 0,
-        notes: null,
-        createdAt: client.createdAt,
-        updatedAt: client.updatedAt,
+
+      const saveLocal = async () => {
+        const tempId = `local_client_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+        await actionQueueDB.add({
+          type: "CREATE_CLIENT",
+          entity_temp_id: tempId,
+          payload: { firstName, lastName, phone: data.phone ?? undefined, storeId, tempId },
+          timestamp: Date.now(),
+          idempotency_key: `${tempId}_CREATE_CLIENT`,
+        });
+        const client = await clientPhoneCacheDB.putLocal(storeId, {
+          id: tempId,
+          _isLocal: true,
+          _tempId: tempId,
+          storeId,
+          name: fullName,
+          phone: data.phone ?? null,
+          email: null,
+          loyaltyPoints: 0,
+          notes: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        return toBookingClient(client, storeId);
       };
+
+      if (!navigator.onLine) return saveLocal();
+
+      try {
+        const res = await fetch(BASE, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ firstName, lastName, phone: data.phone ?? undefined, storeId }),
+          credentials: "include",
+        });
+        if (!res.ok) {
+          const err: any = new Error("Failed to create client");
+          err.status = res.status;
+          throw err;
+        }
+        const client = await res.json();
+        const bookingClient = {
+          id: client.id,
+          name: client.fullName || `${client.firstName} ${client.lastName}`.trim(),
+          phone: data.phone ?? null,
+          email: null,
+          storeId: client.storeId,
+          loyaltyPoints: 0,
+          notes: null,
+          createdAt: client.createdAt,
+          updatedAt: client.updatedAt,
+          allergies: null,
+          marketingOptIn: null,
+          birthday: null,
+        };
+        await clientPhoneCacheDB.putMany(storeId, [bookingClient]).catch(() => {});
+        return bookingClient;
+      } catch (error: any) {
+        if (error?.name === "TypeError" || error?.status >= 500) return saveLocal();
+        throw error;
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [BASE] });
