@@ -280,6 +280,9 @@ ALTER TABLE sms_settings ADD COLUMN IF NOT EXISTS sms_cancellation_enabled  BOOL
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS loyalty_points  INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS notes           TEXT;
 
+-- contractors
+ALTER TABLE contractors ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';
+
 -- users
 ALTER TABLE users ADD COLUMN IF NOT EXISTS account_type VARCHAR(32);
 
@@ -775,6 +778,8 @@ the next run once it is absent from the excluded list."
         -- clients: loyalty + notes added via ALTER TABLE
         ('clients',                 'loyalty_points'),
         ('clients',                 'notes'),
+         -- contractors: display name added by migration 0145
+         ('contractors',             'name'),
         -- users: account type
         ('users',                   'account_type'),
         -- client_phones: store scoping
@@ -822,6 +827,7 @@ the next run once it is absent from the excluded list."
     _RECOVERY_SQL["sms_settings.sms_cancellation_enabled"]="ALTER TABLE sms_settings ADD COLUMN IF NOT EXISTS sms_cancellation_enabled BOOLEAN NOT NULL DEFAULT TRUE;"
     _RECOVERY_SQL["clients.loyalty_points"]="ALTER TABLE clients ADD COLUMN IF NOT EXISTS loyalty_points INTEGER NOT NULL DEFAULT 0;"
     _RECOVERY_SQL["clients.notes"]="ALTER TABLE clients ADD COLUMN IF NOT EXISTS notes TEXT;"
+     _RECOVERY_SQL["contractors.name"]="ALTER TABLE contractors ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';"
     _RECOVERY_SQL["users.account_type"]="ALTER TABLE users ADD COLUMN IF NOT EXISTS account_type VARCHAR(32);"
     _RECOVERY_SQL["client_phones.store_id"]="ALTER TABLE client_phones ADD COLUMN IF NOT EXISTS store_id INTEGER;"
     _RECOVERY_SQL["locations.setup_complete"]="ALTER TABLE locations ADD COLUMN IF NOT EXISTS setup_complete BOOLEAN NOT NULL DEFAULT FALSE;"
