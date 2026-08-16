@@ -255,6 +255,15 @@ export function OnboardingGoogleStep({
     }
   }, [storeId]);
 
+  // Keep this hook above all stage-specific early returns. The component moves
+  // between stages during the flow, so declaring it below a return would make
+  // React see a different hook order after the location picker is reached.
+  useEffect(() => {
+    if (locations.length > 0 && !pendingLoc) {
+      setPendingLoc(locations[0]);
+    }
+  }, [locations, pendingLoc]);
+
   // ── API functions ──────────────────────────────────────────────────────────
 
   const doSearch = async () => {
@@ -934,13 +943,6 @@ export function OnboardingGoogleStep({
       </div>
     );
   }
-
-  // Auto-initialize pendingLoc when locations list arrives
-  useEffect(() => {
-    if (locations.length > 0 && !pendingLoc) {
-      setPendingLoc(locations[0]);
-    }
-  }, [locations]);
 
   // ── SELECT LOCATION ───────────────────────────────────────────────────────
 
