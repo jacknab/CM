@@ -1,7 +1,7 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Salon Website Builder | Create a Bookable Beauty Salon Website — Certxa');
-define('PAGE_DESC',     'Build a stunning, bookable website for your salon in minutes. No design skills needed. Certxa salon website builder includes designer templates, custom branding, and integrated online booking built in from day one.');
+define('PAGE_TITLE',    'Salon Website Builder | Certxa');
+define('PAGE_DESC',     'Salon website builder for a branded, bookable website with templates, custom content, and Certxa online booking. Create a professional home for your nail salon or beauty business without starting from code.');
 define('PAGE_KEYWORDS', 'salon website builder, beauty salon website, hair salon website builder, bookable salon website, salon website design, nail salon website, create salon website, salon website templates, beauty website builder');
 define('PAGE_CANONICAL', 'https://certxa.com/custom-website-builder');
 define('PAGE_BREADCRUMBS', json_encode([
@@ -44,8 +44,8 @@ require 'includes/nav.php';
         <h1 class="hero-headline">A website as stunning<br>as your <em>best work.</em></h1>
         <p class="hero-subtext">Build a gorgeous, fully-bookable website in under an afternoon — no web designers, no monthly agency fees, no technical knowledge required. Just your brand, your services, and your personality.</p>
         <div class="hero-actions">
-          <a href="#" class="btn btn-primary">Build Your Site Free</a>
-          <a href="#" class="btn btn-secondary">Browse Templates</a>
+          <a href="/auth?mode=register" class="btn btn-primary">Build Your Site Free</a>
+          <a href="/online-booking" class="btn btn-secondary">Explore Online Booking</a>
         </div>
         <p class="hero-note">No coding &middot; Booking built-in &middot; Live in minutes</p>
       </div>
@@ -136,7 +136,7 @@ require 'includes/nav.php';
           <li>Custom fonts — choose from hundreds of pairings</li>
           <li>Mobile-perfect on every device, automatically</li>
         </ul>
-        <a href="#" class="btn btn-primary">Browse Templates</a>
+        <a href="/auth?mode=register" class="btn btn-primary">Start Building Free</a>
       </div>
       <div class="feature-visual" style="background:linear-gradient(145deg,var(--plum-light),#DDD6FE);">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%;max-width:320px;">
@@ -173,7 +173,7 @@ require 'includes/nav.php';
           <li>Service menu with photos, descriptions, and pricing</li>
           <li>Staff profiles and individual booking pages</li>
         </ul>
-        <a href="#" class="btn btn-primary">Try It Free</a>
+        <a href="/auth?mode=register" class="btn btn-primary">Try the Website Builder Free</a>
       </div>
       <div class="feature-visual">
         <div class="ui-card" style="width:100%;max-width:320px;">
@@ -214,7 +214,7 @@ require 'includes/nav.php';
           <li>99.9% uptime guarantee — always online</li>
           <li>Blazing-fast load times on all devices</li>
         </ul>
-        <a href="#" class="btn btn-primary">Get Your Free Site</a>
+        <a href="/auth?mode=register" class="btn btn-primary">Get Your Free Site</a>
       </div>
       <div class="feature-visual" style="background:linear-gradient(145deg,var(--cream),var(--cream-dark));">
         <div style="text-align:center;width:100%;max-width:300px;">
@@ -263,7 +263,7 @@ require 'includes/nav.php';
       <div class="card">
         <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <h3 class="card-title">Lightning Fast</h3>
-        <p class="card-text">Page speed is a Google ranking factor. Certxa sites score 95+ on Google PageSpeed — keeping you ahead of slower competitors in search results.</p>
+        <p class="card-text">Use a fast, mobile-friendly site as the starting point for local discovery. Certxa connects your site to your booking workflow so visitors can move from discovery to appointment.</p>
       </div>
     </div>
   </div>
@@ -308,8 +308,8 @@ require 'includes/nav.php';
     <h2 class="cta-title">Your website is waiting.<br><em>Build it in minutes.</em></h2>
     <p class="cta-text">Build a stunning, fully-bookable nail studio website with Certxa — no designers, no developers, no stress.</p>
     <div class="cta-actions">
-      <a href="#" class="btn btn-gold">Start Building — It's Free</a>
-      <a href="#" class="btn btn-outline-white">Browse Templates</a>
+      <a href="/auth?mode=register" class="btn btn-gold">Start Building — It's Free</a>
+      <a href="/nail-salon-software" class="btn btn-outline-white">Explore Nail Salon Software</a>
     </div>
     <p class="cta-note">Credit card required · No charge until trial ends &middot; Website included on all plans &middot; Live in minutes</p>
   </div>

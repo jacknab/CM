@@ -68,6 +68,7 @@ export interface IStorage {
   updateServiceOption(id: number, option: Partial<InsertServiceOption>): Promise<ServiceOption | undefined>;
   deactivateServiceOption(id: number): Promise<void>;
   deleteService(id: number): Promise<void>;
+  deactivateAllServices(storeId: number): Promise<Service[]>;
 
   getAddons(storeId?: number): Promise<Addon[]>;
   getAddon(id: number): Promise<Addon | undefined>;
@@ -255,6 +256,12 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteService(id: number): Promise<void> {
     await this.deactivateService(id);
+  }
+  async deactivateAllServices(storeId: number): Promise<Service[]> {
+    return await db.update(services)
+      .set({ isActive: false })
+      .where(and(eq(services.storeId, storeId), eq(services.isActive, true)))
+      .returning();
   }
 
   // Service Options

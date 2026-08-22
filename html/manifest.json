@@ -1,0 +1,910 @@
+[
+  {
+    "path": "/about",
+    "title": "About | GlossGenius",
+    "description": "",
+    "h1": "More room for your best work",
+    "h2s": [
+      "More than a system. \u200d A superpower.",
+      "Local businesses are being held back",
+      "Giving every business an edge",
+      "The always-on partner that grows your business"
+    ]
+  },
+  {
+    "path": "/customers/barber-software",
+    "title": "Barber Shop Software | GlossGenius",
+    "description": "",
+    "h1": "Barber Software",
+    "h2s": [
+      "Turn first cuts into loyal clients",
+      "Trusted by 100,000+ businesses",
+      "Features",
+      "Helping barbershops grow revenue and trim admin"
+    ]
+  },
+  {
+    "path": "/calendar-scheduling-app",
+    "title": "Appointment Scheduling Software for Salons, Spas & Medspas | GlossGenius",
+    "description": "",
+    "h1": "Appointment Scheduling Software",
+    "h2s": [
+      "Turn every minute into more revenue",
+      "Online Scheduling Software",
+      "Resource Management",
+      "Calendar Client Management"
+    ]
+  },
+  {
+    "path": "/client-communication-and-notifications",
+    "title": "Client Notifications with Automated Appointment Reminders | GlossGenius",
+    "description": "",
+    "h1": "Appointment Reminder Software for Small Business",
+    "h2s": [
+      "Stop losing revenue to no-shows and calendar gaps",
+      "Send unlimited Client Notifications at no extra cost",
+      "Prevent late cancellations and no-shows",
+      "Drive repeat visits with automated Rebooking Reminders"
+    ]
+  },
+  {
+    "path": "/client-management",
+    "title": "Spa & Salon CRM Software | GlossGenius",
+    "description": "",
+    "h1": "Beauty, Wellness & Health CRM Software",
+    "h2s": [
+      "Turn strong relationships into repeat revenue",
+      "Login-Free Online Booking",
+      "Put confirmations & reminders on autopilot",
+      "Track where clients are coming from"
+    ]
+  },
+  {
+    "path": "/contact-us",
+    "title": "Contact Support | GlossGenius",
+    "description": "",
+    "h1": "GlossGenius",
+    "h2s": [
+      "We\u2019re here to help",
+      "Switching to GlossGenius has never been easier",
+      "Grow more with GlossGenius"
+    ]
+  },
+  {
+    "path": "/customers/esthetician-software",
+    "title": "Esthetician Software & Point-of-Sale System | GlossGenius",
+    "description": "",
+    "h1": "Esthetician Software",
+    "h2s": [
+      "Build a book that rebooks itself",
+      "Trusted by 100,000+ businesses",
+      "Features",
+      "Helping estheticians grow their empires"
+    ]
+  },
+  {
+    "path": "/finances",
+    "title": "Spa & Salon Accounting Software | GlossGenius",
+    "description": "",
+    "h1": "Beauty, Wellness & Health Accounting Software",
+    "h2s": [
+      "Manage and grow your revenue with confidence",
+      "Beauty, Wellness & Health Bookkeeping Software",
+      "Accounting Software for Beauty, Wellness & Health Businesses",
+      "Beauty, Wellness & Health Payouts"
+    ]
+  },
+  {
+    "path": "/get-client-reviews",
+    "title": "Salon Reputation Management | GlossGenius",
+    "description": "",
+    "h1": "Beauty, Wellness & Health Reputation Management Software",
+    "h2s": [
+      "More reviews. More clients. More revenue.",
+      "Get more client reviews without ever asking",
+      "Boost your SEO and book more clients on Google",
+      "Book more clients fast with frictionless online booking"
+    ]
+  },
+  {
+    "path": "/customers/salon-software",
+    "title": "Salon Software | GlossGenius",
+    "description": "",
+    "h1": "Salon Software",
+    "h2s": [
+      "Get more clients booking and rebooking",
+      "Trusted by 100,000+ businesses",
+      "Features",
+      "Helping hair salons make more possible"
+    ]
+  },
+  {
+    "path": "/customers/medical-spa-software",
+    "title": "Medical Spa Software | GlossGenius",
+    "description": "",
+    "h1": "Medical Spa Software Trusted by 5,000+ Practices",
+    "h2s": [
+      "The only system that grows your medspa for you",
+      "Other EMRs were only built to document treatments, not to grow your revenue",
+      "Get more clients, earn more on every treatment, and stay compliant",
+      "GlossGenius helps you grow. Others don\u2019t."
+    ]
+  },
+  {
+    "path": "/customers/makeup-artist-software",
+    "title": "Makeup Artist & Beauty Salon Software | GlossGenius",
+    "description": "",
+    "h1": "Beauty Salon Software",
+    "h2s": [
+      "Set the foundation for flawless growth",
+      "Trusted by 100,000+ businesses",
+      "Features",
+      "Helping beauty salons grow more with less busywork"
+    ]
+  },
+  {
+    "path": "/customers/massage-therapy-software",
+    "title": "Massage Therapist Software | GlossGenius",
+    "description": "",
+    "h1": "Massage Therapy Software",
+    "h2s": [
+      "Take the strain out of scaling your business",
+      "Trusted by 100,000+ businesses",
+      "Features",
+      "Helping massage studios grow more and stress less"
+    ]
+  },
+  {
+    "path": "/customers/nail-salon-software",
+    "title": "Nail Salon Software & Point-of-Sale System | GlossGenius",
+    "description": "",
+    "h1": "Nail Salon Software",
+    "h2s": [
+      "Turn walk-ins into regulars",
+      "Trusted by 100,000+ businesses",
+      "Features",
+      "Helping nail salons grow more with less busywork"
+    ]
+  },
+  {
+    "path": "/no-shows-protection-card-on-file",
+    "title": "No-Show Protection | GlossGenius",
+    "description": "",
+    "h1": "GlossGenius\u2019s All-In-One No-Show Protection",
+    "h2s": [
+      "Reduce no-shows and fill open slots",
+      "Fewer no-shows. Fuller schedules. More revenue.",
+      "Learn more about no-show protection",
+      "Switching to GlossGenius has never been easier"
+    ]
+  },
+  {
+    "path": "/online-booking",
+    "title": "All-In-One Online Booking System | GlossGenius",
+    "description": "",
+    "h1": "Online Booking System",
+    "h2s": [
+      "Book more clients fast",
+      "Online booking software proven to help businesses grow",
+      "How GlossGenius helps beauty & wellness businesses book more clients",
+      "Online Booking for Small Business"
+    ]
+  },
+  {
+    "path": "/overview",
+    "title": "How Does GlossGenius Work? Features, Benefits & more",
+    "description": "",
+    "h1": "GlossGenius System",
+    "h2s": [
+      "The intelligent system that works for you",
+      "Booking & Scheduling",
+      "Payments & Point of Sale",
+      "Core Operations"
+    ]
+  },
+  {
+    "path": "/payment-processing",
+    "title": "Medspa, Spa & Salon Credit Card Processing | GlossGenius",
+    "description": "",
+    "h1": "Payment Processing for Appointment Businesses",
+    "h2s": [
+      "The only POS that earns you more",
+      "Proven to grow your revenue, not just process it",
+      "Keep more of what you earn with a flat 2.6% processing rate and no hidden fees.",
+      "How GlossGenius POS earns you more"
+    ]
+  },
+  {
+    "path": "/reports-analytics",
+    "title": "Spa & Salon Software Reports | GlossGenius",
+    "description": "",
+    "h1": "Analytics Reporting Software for Beauty, Wellness & Health",
+    "h2s": [
+      "Find hidden revenue in your business",
+      "GlossGenius Growth Analyst",
+      "AI Analytics Software for Beauty, Wellness & Health Businesses",
+      "Analytics Dashboard Software"
+    ]
+  },
+  {
+    "path": "/salon-inventory-management",
+    "title": "Spa & Salon Inventory Software | GlossGenius",
+    "description": "",
+    "h1": "Beauty, Wellness & Health Inventory Software",
+    "h2s": [
+      "Sell more with smarter inventory",
+      "Beauty, Wellness & Health Inventory Management Software",
+      "Beauty, Wellness & Health Inventory System",
+      "Medspa, Spa & Salon Inventory Software"
+    ]
+  },
+  {
+    "path": "/salon-management-software-for-teams",
+    "title": "Spa & Salon Employee Management Software | GlossGenius",
+    "description": "",
+    "h1": "Beauty, Wellness & Health Employee Management Software",
+    "h2s": [
+      "Grow your team and revenue, not your to-do list",
+      "Beauty, Wellness & Health Employee Management Software",
+      "Beauty, Wellness & Health Staff Calendar",
+      "Manage your shared staff calendar from any device"
+    ]
+  },
+  {
+    "path": "/customers/tanning-salon-software",
+    "title": "Tanning Salon Software | GlossGenius",
+    "description": "",
+    "h1": "Tanning Salon Software",
+    "h2s": [
+      "Scale faster. Shine brighter.",
+      "Trusted by 100,000+ businesses",
+      "Features",
+      "Helping tanning salons grow more with less busywork"
+    ]
+  },
+  {
+    "path": "/customers/tattoo-studio-software",
+    "title": "Piercing and Tattoo Studio Software | GlossGenius",
+    "description": "",
+    "h1": "Tattoo & Piercing Studio Software",
+    "h2s": [
+      "Scale your studio in a flash",
+      "Trusted by 100,000+ businesses",
+      "Features",
+      "Helping tattoo & piercing studios grow more with less busywork"
+    ]
+  },
+  {
+    "path": "/payroll",
+    "title": "Medspa, Spa & Salon Software With Payroll | GlossGenius",
+    "description": "",
+    "h1": "Beauty, Wellness & Health Payroll Software",
+    "h2s": [
+      "Run payroll without the headaches",
+      "How GlossGenius simplifies payroll for you and your staff",
+      "All-In-One Beauty, Wellness & Health Software with Payroll",
+      "Beauty, Wellness & Health Timesheets"
+    ]
+  },
+  {
+    "path": "/tax",
+    "title": "Beauty Professional Tax Resources | GlossGenius",
+    "description": "",
+    "h1": "Crush Your Taxes This Year",
+    "h2s": [
+      "Preparing for Tax Season and Managing Your 1099-K",
+      "Navigating 1099 Taxes as a Beauty Professional",
+      "FAQ",
+      "Run your business the smart and stylish way with GlossGenius"
+    ]
+  },
+  {
+    "path": "/salon-spa-loans-financing-and-cash-advances",
+    "title": "Financing and Loans for Small Business | GlossGenius",
+    "description": "",
+    "h1": "Small Business Loans & Merchant Cash Advances",
+    "h2s": [
+      "Financing to grow your business",
+      "Beauty, Wellness & Health Financing",
+      "Beauty, Wellness & Health Loans & Merchant Cash Advances",
+      "How does GlossGenius Financing work?"
+    ]
+  },
+  {
+    "path": "/get-demo",
+    "title": "Get a Demo Today | GlossGenius",
+    "description": "",
+    "h1": "See how GlossGenius works",
+    "h2s": [
+      "How many employees work at your business?",
+      "100,000+ businesses are earning more with GlossGenius",
+      "More revenue for your business. More time for everything else.",
+      "See the difference 30 days can make."
+    ]
+  },
+  {
+    "path": "/careers",
+    "title": "GlossGenius Careers | Work With Us",
+    "description": "",
+    "h1": "Build With Us",
+    "h2s": [
+      "Massive impact. Career-defining work.",
+      "Everyone is a builder",
+      "Us at a glance",
+      "How you work matters"
+    ]
+  },
+  {
+    "path": "/forms-waivers",
+    "title": "Online Intake Forms & Waivers | GlossGenius",
+    "description": "",
+    "h1": "Online Intake Forms & Waivers Software",
+    "h2s": [
+      "5-star service starts at check-in",
+      "Build custom Forms & Waivers in a click",
+      "Stop chasing paper signatures at check-in",
+      "Get everything you need at booking"
+    ]
+  },
+  {
+    "path": "/instant-payouts",
+    "title": "GlossGenius Same-Business-Day Payout Processing | GlossGenius",
+    "description": "",
+    "h1": "GlossGenius Instant Payouts",
+    "h2s": [
+      "Get paid faster",
+      "Access earnings in under 1 minute",
+      "Enjoy free same-business-day payout transfers",
+      "Track your earnings at a glance"
+    ]
+  },
+  {
+    "path": "/google-reserve",
+    "title": "Reserve with Google | GlossGenius",
+    "description": "",
+    "h1": "Reserve with Google",
+    "h2s": [
+      "Turn Google searches into more appointment revenue",
+      "Get More Bookings With Google Reserve",
+      "GlossGenius Reserve With Google Integrations",
+      "Sync your booking requirements"
+    ]
+  },
+  {
+    "path": "/waitlist",
+    "title": "Spa, Medspa, and Salon Waitlist Software | GlossGenius",
+    "description": "",
+    "h1": "Beauty, Wellness & Health Waitlist Software",
+    "h2s": [
+      "Turn cancellations into revenue",
+      "Learn more about GlossGenius Waitlists",
+      "Switching to GlossGenius has never been easier",
+      "Grow more with GlossGenius"
+    ]
+  },
+  {
+    "path": "/data-transfer",
+    "title": "Free Data Transfer | GlossGenius",
+    "description": "",
+    "h1": "GlossGenius Free Data Transfer",
+    "h2s": [
+      "Take the stress out of switching",
+      "What\u2019s included in GlossGenius\u2019s free data transfer service?",
+      "Can I switch to GlossGenius without losing my data?",
+      "How can I contact GlossGenius support?"
+    ]
+  },
+  {
+    "path": "/custom-website-builder",
+    "title": "Custom Booking Website Builder | GlossGenius",
+    "description": "",
+    "h1": "Booking Website Builder",
+    "h2s": [
+      "Build a site that turns clicks into clients",
+      "Customize your booking site and wow clients",
+      "How to Make a GlossGenius Booking Site",
+      "GlossGenius Booking Website Customization"
+    ]
+  },
+  {
+    "path": "/client-insights",
+    "title": "Client Insights for Service Businesses | GlossGenius",
+    "description": "",
+    "h1": "Client Insight Software",
+    "h2s": [
+      "Turn insights into more appointments",
+      "Use your AI Growth Analyst to uncover client opportunities",
+      "See where new clients are coming from",
+      "Identify your most valuable clients"
+    ]
+  },
+  {
+    "path": "/marketing",
+    "title": "Spa & Salon Marketing Software | GlossGenius",
+    "description": "",
+    "h1": "Beauty, Wellness & Health Marketing Software",
+    "h2s": [
+      "Keep clients coming back and spending more",
+      "Learn more about email & text marketing",
+      "Switching to GlossGenius has never been easier",
+      "Grow more with GlossGenius"
+    ]
+  },
+  {
+    "path": "/point-of-sale",
+    "title": "Medspa, Spa, & Salon Point-of-Sale System | GlossGenius",
+    "description": "",
+    "h1": "Point of Sale System for Beauty, Wellness & Health Businesses",
+    "h2s": [
+      "Process more payments with ease",
+      "Beauty, Wellness & Health POS System",
+      "Tap to Pay",
+      "Grow with every transaction"
+    ]
+  },
+  {
+    "path": "/elitebeautysociety",
+    "title": "Elite Beauty Society",
+    "description": "",
+    "h1": "Protect Your Growing Beauty Business",
+    "h2s": [
+      "The Elite Beauty Society Difference",
+      "Get Insured in 5 Minutes students' careers",
+      "Complete Coverage for Your Business",
+      "Run your business the smart and stylish way with GlossGenius"
+    ]
+  },
+  {
+    "path": "/for-team-members",
+    "title": "For Team Members",
+    "description": "",
+    "h1": "GlossGenius",
+    "h2s": [
+      "For staff",
+      "Require deposits & card on file",
+      "More appointments, less admin",
+      "Enjoy error-free paydays"
+    ]
+  },
+  {
+    "path": "/for-solo-professionals",
+    "title": "For Solo Professionals",
+    "description": "",
+    "h1": "GlossGenius for Solopreneurs",
+    "h2s": [
+      "Grow revenue without burning out",
+      "The always-on partner built to give you an edge",
+      "A calendar that fills itself while you\u2019re with clients",
+      "Your brand, elevated in minutes"
+    ]
+  },
+  {
+    "path": "/for-team-owners",
+    "title": "For Team Owners",
+    "description": "",
+    "h1": "GlossGenius",
+    "h2s": [
+      "For business owners",
+      "Manage your staff with ease",
+      "Eliminate no-shows",
+      "Integrate Forms & Waivers into booking"
+    ]
+  },
+  {
+    "path": "/for-booth-renters",
+    "title": "For Booth Renters",
+    "description": "",
+    "h1": "GlossGenius for Booth Renters",
+    "h2s": [
+      "Space rented. Business handled.",
+      "A calendar that fills itself while you\u2019re with clients",
+      "Book together, get paid separately",
+      "Earn more from every appointment"
+    ]
+  },
+  {
+    "path": "/customers/personal-trainer-software",
+    "title": "Personal Trainer Software | GlossGenius",
+    "description": "",
+    "h1": "Personal Trainer Software",
+    "h2s": [
+      "Keep clients committed and showing up",
+      "Trusted by 100,000+ businesses",
+      "Features",
+      "Helping personal trainers grow more without breaking a sweat"
+    ]
+  },
+  {
+    "path": "/customers/yoga-software",
+    "title": "Yoga Software | GlossGenius",
+    "description": "",
+    "h1": "Yoga Studio Software",
+    "h2s": [
+      "Take the stress out of scaling your business",
+      "Trusted by 100,000+ businesses",
+      "Features",
+      "Helping yoga studios power their practice"
+    ]
+  },
+  {
+    "path": "/ai-business-tools",
+    "title": "AI business tools for salons and spas | GlossGenius",
+    "description": "",
+    "h1": "Grow faster with AI that never stops working for you",
+    "h2s": [
+      "Your Growth Analyst finds ways to help you grow",
+      "Meet your own AI assistant that does marketing for you",
+      "Fill calendar gaps with an automated waitlist",
+      "Switching to GlossGenius has never been easier"
+    ]
+  },
+  {
+    "path": "/goal-setting",
+    "title": "Goal Setting Software for Service Businesses | GlossGenius",
+    "description": "",
+    "h1": "Goal Setting Software for Beauty, Wellness & Health Businesses",
+    "h2s": [
+      "Hit bigger revenue goals faster",
+      "Goal Tracking Software",
+      "Business Goal Tracking Software",
+      "Goal Setting Software For Teams"
+    ]
+  },
+  {
+    "path": "/time-tracking-software",
+    "title": "Employee Time Tracking Software | GlossGenius",
+    "description": "",
+    "h1": "Employee Time Tracking Software",
+    "h2s": [
+      "Less time on timesheets. More time growing your business.",
+      "Let staff manage their time from their phone",
+      "Automatically sync timesheets with Payroll",
+      "Keep your team accountable"
+    ]
+  },
+  {
+    "path": "/free-trial",
+    "title": "GlossGenius Free Trial: Signup Now | GlossGenius",
+    "description": "",
+    "h1": "Earn more without the admin",
+    "h2s": [
+      "More revenue for your business. More time for everything else.",
+      "How It Works",
+      "GlossGenius is made for:",
+      "See the difference 30 days can make."
+    ]
+  },
+  {
+    "path": "/memberships-packages",
+    "title": "Medspa, Spa, and Salon Memberships & Packages Software | GlossGenius",
+    "description": "",
+    "h1": "Salon, Spa & Medspa Membership Software",
+    "h2s": [
+      "Build loyalty & grow revenue",
+      "Memberships & Packages Revenue Benefits",
+      "Memberships & Packages Retention Benefits",
+      "Salon, Spa & Medspa Membership Software"
+    ]
+  },
+  {
+    "path": "/buy-now-pay-later",
+    "title": "Buy Now Pay Later for Small Business | GlossGenius",
+    "description": "",
+    "h1": "Buy Now, Pay Later for Small Business",
+    "h2s": [
+      "Drive more high-value bookings with Buy Now, Pay Later",
+      "Get paid upfront \u2014 no waiting, no chasing, no risk",
+      "Offer the broadest range of trusted providers",
+      "Automatically track impact"
+    ]
+  },
+  {
+    "path": "/invoices",
+    "title": "Professional Invoice Software | GlossGenius",
+    "description": "",
+    "h1": "Professional Invoice Software",
+    "h2s": [
+      "Capture more revenue with flexible invoicing",
+      "Custom Invoices for Beauty, Wellness & Health",
+      "Beauty, Wellness & Health Invoice Software",
+      "GlossGenius Invoices"
+    ]
+  },
+  {
+    "path": "/pricing",
+    "title": "GlossGenius Pricing & Subscription Plans | GlossGenius",
+    "description": "",
+    "h1": "GlossGenius Pricing",
+    "h2s": [
+      "Grow revenue with plans that grow with you",
+      "Included in every plan",
+      "Plan add-ons",
+      "Compare plans"
+    ]
+  },
+  {
+    "path": "/customers/brow-and-lash-salon-software",
+    "title": "Brow and Lash Salon Software | GlossGenius",
+    "description": "",
+    "h1": "Lash & Brow Salon Software",
+    "h2s": [
+      "Reshape your business\u2019s growth",
+      "Trusted by 100,000+ businesses",
+      "Features",
+      "Helping lash & brow techs grow more with less busywork"
+    ]
+  },
+  {
+    "path": "/gift-cards",
+    "title": "Medspa, Spa & Salon Gift Card Software | GlossGenius",
+    "description": "",
+    "h1": "Beauty, Wellness & Health Gift Card Software",
+    "h2s": [
+      "Drive upfront revenue and attract new clients",
+      "1 in 3",
+      "70%",
+      "Sell Beauty, Wellness & Health Gift Cards"
+    ]
+  },
+  {
+    "path": "/custom-booking-website",
+    "title": "Customization",
+    "description": "",
+    "h1": "A Booking Site That WOWs",
+    "h2s": [
+      "A booking experience as beautiful as your salon",
+      "\u201cGlossGenius gives your business a boost when it comes to boutique style, when it comes to luxury, and when it comes to setting the bar high\u201d",
+      "Build your brand and client experience",
+      "have full control of your booking"
+    ]
+  },
+  {
+    "path": "/customers/medical-spa-software-glossgenius",
+    "title": "Medical Spa Software | GlossGenius",
+    "description": "",
+    "h1": "Medical Spa Software Trusted by 5,000+ Practices",
+    "h2s": [
+      "The only system that grows your medspa for you",
+      "Other EMRs were only built to document treatments, not to grow your revenue",
+      "Get more clients, earn more on every treatment, and stay compliant",
+      "GlossGenius helps you grow. Others don\u2019t."
+    ]
+  },
+  {
+    "path": "/charting",
+    "title": "Medical Spa Client Charting System | GlossGenius",
+    "description": "",
+    "h1": "Patient Charting Software",
+    "h2s": [
+      "Your charts and your business, finally in one system",
+      "Trusted by 5,000+ aesthetic practices",
+      "Charting connected to your entire practice",
+      "Take, mark up, and store photos without leaving the chart"
+    ]
+  },
+  {
+    "path": "/photo-management",
+    "title": "Photo Management System for Medical Spas | GlossGenius",
+    "description": "",
+    "h1": "Photo Management Software",
+    "h2s": [
+      "Don\u2019t let your best work stay buried in your camera roll",
+      "Your scattered photo library is costing you revenue",
+      "Medspa Photo Management",
+      "Client Photo Markup for Medspas"
+    ]
+  },
+  {
+    "path": "/single-location",
+    "title": "Single Location",
+    "description": "",
+    "h1": "GlossGenius for Single Location Businesses",
+    "h2s": [
+      "Grow your revenue, not your to-do list.",
+      "Payroll, commissions, and schedules handled for you",
+      "Your booking flow, your rules",
+      "Let us handle switching for you. Free."
+    ]
+  },
+  {
+    "path": "/customers/sports-coaching-software",
+    "title": "Sports Coaching Software & POS System | GlossGenius",
+    "description": "",
+    "h1": "Sports Coaching Software & POS",
+    "h2s": [
+      "You coach clients. We grow your business.",
+      "Our members love the edge they get",
+      "Why gyms like yours choose GlossGenius",
+      "GlossGenius earns you more. Others don't."
+    ]
+  },
+  {
+    "path": "/customers/pilates-studio-software",
+    "title": "Pilates Studio Software & POS System | GlossGenius",
+    "description": "",
+    "h1": "Pilates Studio Software & POS",
+    "h2s": [
+      "Sessions booked. Admin done for you.",
+      "Our members love the edge they get",
+      "Why pilates studios like yours choose GlossGenius",
+      "GlossGenius earns you more. Others don't."
+    ]
+  },
+  {
+    "path": "/customers/acupuncture-software-emr",
+    "title": "Acupuncture Practice Management Software, EMR & POS | GlossGenius",
+    "description": "",
+    "h1": "Acupuncture Practice Software & POS",
+    "h2s": [
+      "While you care for patients, AI handles the rest",
+      "Our members love the edge they get",
+      "Why acupuncture practices like yours choose GlossGenius",
+      "GlossGenius earns you more. Others don't."
+    ]
+  },
+  {
+    "path": "/customers/chiropractic-software-emr",
+    "title": "Chiropractic Software, EMR & POS | GlossGenius",
+    "description": "",
+    "h1": "Chiropractic Clinic Software & POS",
+    "h2s": [
+      "Don\u2019t just manage visits. Grow your clinic.",
+      "Our members love the edge they get",
+      "Why chiropractic clinics like yours choose GlossGenius",
+      "GlossGenius earns you more. Others don't."
+    ]
+  },
+  {
+    "path": "/customers/medical-weight-loss-software",
+    "title": "Medical Weight Loss Software, EMR & POS | GlossGenius",
+    "description": "",
+    "h1": "Medical Weight Loss Software & POS",
+    "h2s": [
+      "Grow your GLP-1 program, not your admin work",
+      "Our members love the edge they get",
+      "Why medical weight loss clinics like yours choose GlossGenius",
+      "GlossGenius earns you more. Others don't."
+    ]
+  },
+  {
+    "path": "/customers/physical-therapy-software-emr",
+    "title": "Physical Therapy Software, EMR & POS | GlossGenius",
+    "description": "",
+    "h1": "Physical Therapy Software & POS",
+    "h2s": [
+      "You treat patients. We grow your practice.",
+      "Our members love the edge they get",
+      "Why physical therapy practices like yours choose GlossGenius",
+      "GlossGenius earns you more. Others don't."
+    ]
+  },
+  {
+    "path": "/customers/behavioral-health-software-emr",
+    "title": "Behavioral Health Software, EMR & POS | GlossGenius",
+    "description": "",
+    "h1": "Behavioral Therapy Software & POS",
+    "h2s": [
+      "You care for patients. We grow your practice.",
+      "Our members love the edge they get",
+      "Why therapy practices like yours choose GlossGenius",
+      "GlossGenius earns you more. Others don't."
+    ]
+  },
+  {
+    "path": "/for-multi-location-appointment-businesses",
+    "title": "Multi-Location Scheduling & Business Management System Beauty, Wellness & Health Businesses | GlossGenius",
+    "description": "",
+    "h1": "GlossGenius for Multi-Location Businesses",
+    "h2s": [
+      "Run every location with clarity and control",
+      "We don\u2019t believe in disconnected locations",
+      "One intelligent system running every location",
+      "Recognize every client, at any location"
+    ]
+  },
+  {
+    "path": "/get-a-demo-ps",
+    "title": "Get a Demo PS",
+    "description": "",
+    "h1": "See how GlossGenius works",
+    "h2s": [
+      "How many employees work at your business?",
+      "100,000+ businesses are earning more with GlossGenius",
+      "More revenue for your business. More time for everything else.",
+      "See the difference 30 days can make."
+    ]
+  },
+  {
+    "path": "/reception",
+    "title": "Reception by Genius AI",
+    "description": "",
+    "h1": "Meet your 24/7 AI Front Desk",
+    "h2s": [
+      "Stay fully present and fully booked",
+      "Proven to earn your business more",
+      "24/7 reception that gives your business an edge",
+      "Awkward policy talks, handled for you"
+    ]
+  },
+  {
+    "path": "/get-a-demo-ps-glossgenius-vs-your-system",
+    "title": "Get a Demo PS GlossGenius vs Your System",
+    "description": "",
+    "h1": "See how GlossGenius works",
+    "h2s": [
+      "How many employees work at your business?",
+      "100,000+ businesses are earning more with GlossGenius",
+      "More revenue for your business. More time for everything else.",
+      "See the difference 30 days can make."
+    ]
+  },
+  {
+    "path": "/get-a-demo-updated-form",
+    "title": "Get a Demo (Updated Form)",
+    "description": "",
+    "h1": "See how GlossGenius works",
+    "h2s": [
+      "How many employees work at your business?",
+      "100,000+ businesses are earning more with GlossGenius",
+      "More revenue for your business. More time for everything else.",
+      "See the difference 30 days can make."
+    ]
+  },
+  {
+    "path": "/reception-early-access",
+    "title": "Reception by GlossGenius | AI receptionist & front desk",
+    "description": "",
+    "h1": "Meet your 24/7 AI Front Desk",
+    "h2s": [
+      "Stay fully present and fully booked",
+      "Turns every client inquiry into revenue, 24/7",
+      "The edge your competitors don\u2019t have",
+      "Awkward policy talks, handled for you"
+    ]
+  },
+  {
+    "path": "/get-a-demo-ps-medspa",
+    "title": "Get a Demo PS Medspa",
+    "description": "",
+    "h1": "See how GlossGenius works",
+    "h2s": [
+      "How many employees work at your business?",
+      "100,000+ businesses are earning more with GlossGenius",
+      "More revenue for your business. More time for everything else.",
+      "See the difference 30 days can make."
+    ]
+  },
+  {
+    "path": "/topics/ai",
+    "title": "GlossGenius",
+    "description": "",
+    "h1": "AI",
+    "h2s": [
+      "Follow us",
+      "Join our Genius newsletter",
+      "Run your business the smart and stylish way with GlossGenius."
+    ]
+  },
+  {
+    "path": "/topics/finances-accounting",
+    "title": "GlossGenius",
+    "description": "",
+    "h1": "Finances & Accounting",
+    "h2s": [
+      "Follow us",
+      "Join our Genius newsletter",
+      "Run your business the smart and stylish way with GlossGenius."
+    ]
+  },
+  {
+    "path": "/topics/growing-your-business",
+    "title": "GlossGenius",
+    "description": "",
+    "h1": "Growing Your Business",
+    "h2s": [
+      "Follow us",
+      "Join our Genius newsletter",
+      "Run your business the smart and stylish way with GlossGenius."
+    ]
+  }
+]

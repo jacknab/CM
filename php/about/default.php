@@ -1,6 +1,6 @@
 <?php
 define('BRAND_NAME',     'Certxa');
-define('PAGE_TITLE',     'About Certxa | Salon Software Built to Depend On');
+define('PAGE_TITLE',     'About Certxa | Salon Software');
 define('PAGE_DESC',      'We started Certxa with a simple idea: salon software should help you run your business—not overwhelm it. One platform for booking, POS, payments, team management, payroll, websites, and more.');
 define('PAGE_KEYWORDS',  'about certxa, certxa story, salon software platform, all-in-one salon software, certxa mission');
 define('PAGE_CANONICAL', 'https://certxa.com/about');

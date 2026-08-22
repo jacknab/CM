@@ -2,11 +2,34 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import fs from "fs";
 import path from "path";
 
-const BASE_URL = (process.env.APP_URL ?? "").replace(/\/$/, "");
+const BASE_URL = (process.env.APP_URL ?? "https://certxa.com").replace(/\/$/, "");
+const TRIAL_DAYS = process.env.TRIAL_PERIOD_DAYS ?? "60";
 
 interface PageSeo { title: string; description: string; canonical: string; }
 
-const SEO_CONFIG: Record<string, PageSeo> = {
+export const SEO_CONFIG: Record<string, PageSeo> = {
+  // Commercial routes are normally server-rendered by PHP. Keeping their SEO
+  // metadata here as well protects the raw HTML response if a PHP template is
+  // removed and the URL falls through to the React application.
+  "/nail-salon-software": { title: "Nail Studio Software | Certxa", description: `Nail salon software for independent nail technicians and growing studios. Certxa connects online booking, client nail records, reminders, payments, POS, walk-ins, and a booking website in one platform. ${TRIAL_DAYS}-day free trial.`, canonical: `${BASE_URL}/nail-salon-software` },
+  "/online-booking": { title: "Nail Salon Online Booking | Certxa", description: "Nail salon booking software for online appointments, technician selection, deposits, reminders, waitlists, and walk-ins. Let clients book from your website, social profiles, or Google with Certxa.", canonical: `${BASE_URL}/online-booking` },
+  "/salonos": { title: "Nail Salon Management Software | Certxa", description: "Nail salon management software for appointments, staff calendars, client records, walk-ins, POS, waitlists, loyalty, and daily operations. SalonOS connects the workflows of growing nail studios.", canonical: `${BASE_URL}/salonos` },
+  "/payment-processing": { title: "Nail Salon Payment Processing | Certxa", description: "Nail salon POS and payment processing powered by Stripe. Take card, chip, contactless, Apple Pay, and Google Pay payments through the Stripe M2 reader inside Certxa.", canonical: `${BASE_URL}/payment-processing` },
+  "/client-management": { title: "Salon Client Management | Certxa", description: "Nail salon client management software for profiles, appointment history, service notes, preferences, and client follow-up. Certxa keeps the details your team needs organised alongside booking and daily salon workflows.", canonical: `${BASE_URL}/client-management` },
+  "/client-notifications": { title: "Salon Appointment Reminders | Certxa", description: "Nail salon appointment reminders and automated client notifications for booking confirmations, reminders, follow-ups, and rebooking messages. Certxa helps keep clients informed across your salon booking workflow.", canonical: `${BASE_URL}/client-notifications` },
+  "/custom-website-builder": { title: "Salon Website Builder | Certxa", description: "Salon website builder for a branded, bookable website with templates, custom content, and Certxa online booking. Create a professional home for your nail salon or beauty business without starting from code.", canonical: `${BASE_URL}/custom-website-builder` },
+  "/solo-professionals": { title: "Independent Nail Tech Software | Certxa", description: "Software for solo nail technicians to manage online booking, client nail records, reminders, payments, and daily salon work from one platform. Certxa helps independent nail professionals run a focused, organised business.", canonical: `${BASE_URL}/solo-professionals` },
+  "/booth-renters": { title: "Booth Rental Software | Certxa", description: "Booking and management software for nail tech booth renters and chair renters. Manage your own clients, nail records, payments, and appointment workflow with Certxa in an account built for independent nail professionals.", canonical: `${BASE_URL}/booth-renters` },
+  "/client-reviews": { title: "Salon Review Management | Certxa", description: "Automatically collect Google reviews after every appointment. Certxa salon review management software builds your online reputation on autopilot, helping new clients find and choose your salon.", canonical: `${BASE_URL}/client-reviews` },
+  "/pricing": { title: "Salon Software Pricing | Certxa", description: "Simple, transparent nail salon software pricing. Certxa plans start at $9/month. No hidden fees or contracts. Booking, payments, and client management included.", canonical: `${BASE_URL}/pricing` },
+  "/contact": { title: "Certxa Support | Contact Us", description: "Get in touch with the Certxa support team by phone, email, or live chat. Support is available Monday through Friday, 9am to 6pm ET.", canonical: `${BASE_URL}/contact` },
+  "/autumn": { title: "AI Receptionist for Salons | Certxa", description: "Autumn answers salon calls, books appointments into your Certxa calendar, handles rescheduling, and helps clients around the clock.", canonical: `${BASE_URL}/autumn` },
+  "/case-studies": { title: "Nail Salon Case Studies | Certxa", description: "See how nail studios and nail technicians transformed their business with Certxa, from solo booth renters to multi-location nail studios.", canonical: `${BASE_URL}/case-studies` },
+  "/data-transfer": { title: "Salon Software Data Migration | Certxa", description: "Switch salon software with help from Certxa. Import client lists, appointments, services, and inventory from your existing platform.", canonical: `${BASE_URL}/data-transfer` },
+  "/checkin-kiosk": { title: "Nail Salon Check-In Kiosk | Certxa", description: "A self-service nail salon check-in kiosk for walk-ins. Capture the requested service and technician preference, then add clients to your live waitlist.", canonical: `${BASE_URL}/checkin-kiosk` },
+  "/revenue-intelligence": { title: "Salon Revenue Intelligence | Certxa", description: "Certxa Revenue Intelligence detects drifting clients, predicts no-shows, identifies open capacity, and helps salons recover lost revenue.", canonical: `${BASE_URL}/revenue-intelligence` },
+  "/google-business-profile": { title: "Salon Google Booking Link | Certxa", description: "Connect your Certxa booking link to your Google Business Profile so clients can book from Google Search and Maps.", canonical: `${BASE_URL}/google-business-profile` },
+  "/about": { title: "About Certxa | Salon Software", description: "Learn why Certxa built one platform for salon booking, POS, payments, team management, payroll, websites, and business operations.", canonical: `${BASE_URL}/about` },
   "/industries": { title: "Booking Software for Every Service Industry | Certxa", description: "Certxa works for barbers, spas, HVAC, plumbers, dog walkers, tutors, and 20+ more industries. One platform — every service business.", canonical: `${BASE_URL}/industries` },
   "/barbers": { title: "Barber Shop Booking Software — Online Appointments & POS | Certxa", description: "Let clients book barber appointments 24/7. Manage walk-ins, track chair revenue, and send automatic SMS reminders. Free 60-day trial.", canonical: `${BASE_URL}/barbers` },
   "/spa": { title: "Day Spa & Wellness Booking Software — Memberships & Gift Cards | Certxa", description: "Booking, memberships, gift cards, and therapist scheduling for day spas and wellness centers. Replace Mindbody for a fraction of the cost.", canonical: `${BASE_URL}/spa` },
@@ -33,6 +56,43 @@ const SEO_CONFIG: Record<string, PageSeo> = {
 
 const SSR_ROUTES = new Set(Object.keys(SEO_CONFIG));
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Inject route-specific metadata into the HTML document returned to crawlers.
+ * This works independently of React SSR, so a SPA fallback never ships a
+ * missing or generic title, description, canonical, or social preview.
+ */
+export function injectSeoMetadata(template: string, seo: PageSeo): string {
+  const title = escapeHtml(seo.title);
+  const description = escapeHtml(seo.description);
+  const canonical = escapeHtml(seo.canonical);
+  let html = template;
+
+  const replacements: Array<[RegExp, string]> = [
+    [/<title>[^<]*<\/title>/i, `<title>${title}</title>`],
+    [/<meta\s+name=["']description["'][^>]*>/i, `<meta name="description" content="${description}" />`],
+    [/<link\s+rel=["']canonical["'][^>]*>/i, `<link rel="canonical" href="${canonical}" />`],
+    [/<meta\s+property=["']og:title["'][^>]*>/i, `<meta property="og:title" content="${title}" />`],
+    [/<meta\s+property=["']og:description["'][^>]*>/i, `<meta property="og:description" content="${description}" />`],
+    [/<meta\s+property=["']og:url["'][^>]*>/i, `<meta property="og:url" content="${canonical}" />`],
+    [/<meta\s+name=["']twitter:title["'][^>]*>/i, `<meta name="twitter:title" content="${title}" />`],
+    [/<meta\s+name=["']twitter:description["'][^>]*>/i, `<meta name="twitter:description" content="${description}" />`],
+  ];
+
+  for (const [pattern, replacement] of replacements) {
+    html = pattern.test(html)
+      ? html.replace(pattern, replacement)
+      : html.replace("</head>", `  ${replacement}\n  </head>`);
+  }
+  return html;
+}
+
 // Static geo landing pages: served at clean URLs matching their canonical tags
 const GEO_PAGES: Array<{ route: string; file: string }> = [
   { route: "/dallas-tx-booking", file: "dallas-tx-booking.html" },
@@ -54,10 +114,13 @@ export function serveStatic(app: Express) {
   let ssrRender: ((url: string) => { html: string }) | null = null;
   let indexTemplate: string | null = null;
 
-  if (fs.existsSync(ssrBundlePath) && fs.existsSync(indexHtmlPath)) {
+  if (fs.existsSync(indexHtmlPath)) {
+    indexTemplate = fs.readFileSync(indexHtmlPath, "utf-8");
+  }
+
+  if (fs.existsSync(ssrBundlePath) && indexTemplate) {
     try {
       ssrRender = require(ssrBundlePath).render;
-      indexTemplate = fs.readFileSync(indexHtmlPath, "utf-8");
       console.log("[SSR] Bundle loaded — landing pages will be server-rendered");
     } catch (err) {
       console.warn("[SSR] Failed to load bundle, falling back to SPA:", err);
@@ -251,14 +314,7 @@ ${urlEntries}
         rendered = indexTemplate.replace('<div id="root"></div>', `<div id="root">${appHtml}</div>`);
       }
       const seo = SEO_CONFIG[reqPath];
-      if (seo) {
-        rendered = rendered.replace(/<title>[^<]*<\/title>/, `<title>${seo.title}</title>`);
-        rendered = rendered.replace(/(<meta\s+name="description"\s+content=")[^"]*(")/i, `$1${seo.description}$2`);
-        rendered = rendered.replace(/(<meta\s+property="og:title"\s+content=")[^"]*(")/i, `$1${seo.title}$2`);
-        rendered = rendered.replace(/(<meta\s+property="og:description"\s+content=")[^"]*(")/i, `$1${seo.description}$2`);
-        rendered = rendered.replace(/(<meta\s+property="og:url"\s+content=")[^"]*(")/i, `$1${seo.canonical}$2`);
-        rendered = rendered.replace(/(<link\s+rel="canonical"\s+href=")[^"]*(")/i, `$1${seo.canonical}$2`);
-      }
+      if (seo) rendered = injectSeoMetadata(rendered, seo);
       res
         .status(200)
         .set({ "Content-Type": "text/html", "Cache-Control": "no-cache" })
@@ -278,6 +334,14 @@ ${urlEntries}
       reqPath.startsWith("/ws/")
     ) {
       return next();
+    }
+    const seo = SEO_CONFIG[reqPath];
+    if (seo && indexTemplate) {
+      res
+        .status(200)
+        .set({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=0, must-revalidate" })
+        .send(injectSeoMetadata(indexTemplate, seo));
+      return;
     }
     res.setHeader("Cache-Control", "public, max-age=0, must-revalidate");
     res.sendFile(indexHtmlPath, (err) => {

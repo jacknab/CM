@@ -1,7 +1,7 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'SalonOS by Certxa — The Complete Nail Salon Operating System');
-define('PAGE_DESC',     'SalonOS by Certxa is the all-in-one nail salon operating system. Online booking, front desk calendar, self-service walk-in kiosk, built-in POS, loyalty rewards, waitlist management, and Google review automation — built exclusively for nail studios.');
+define('PAGE_TITLE',    'Nail Salon Management Software | Certxa');
+define('PAGE_DESC',     'Nail salon management software for appointments, staff calendars, client records, walk-ins, POS, waitlists, loyalty, and daily operations. SalonOS connects the workflows of growing nail studios.');
 define('PAGE_KEYWORDS', 'nail salon operating system, all-in-one nail salon software, nail salon POS booking loyalty, nail studio front desk software, SalonOS, nail salon management system, nail salon check-in kiosk, nail salon waitlist, nail salon loyalty program');
 define('PAGE_CANONICAL', 'https://certxa.com/salonos');
 define('PAGE_BREADCRUMBS', json_encode([
@@ -201,13 +201,13 @@ require 'includes/nav.php';
     </div>
 
     <h1 class="sos-headline">
-      One system.<br>
-      <em>Everything</em> your<br>
-      salon <span class="sos-gold">needs.</span>
+      Nail salon<br>
+      management software.<br>
+      <em>One connected system.</em>
     </h1>
 
     <p class="sos-sub">
-      Stop juggling seven different tools. SalonOS brings booking, your front desk, POS, loyalty, check-in, waitlist, and Google reviews into one beautifully unified platform.
+      SalonOS connects booking, your front desk, POS, loyalty, check-in, waitlist, and Google reviews into one operating platform for nail salons and nail professionals.
     </p>
 
     <!-- module pills -->
@@ -223,7 +223,7 @@ require 'includes/nav.php';
     </div>
 
     <div class="sos-actions">
-      <a href="#" class="sos-btn-primary">Start <?= TRIAL_DAYS ?>-Day Free Trial</a>
+      <a href="/auth?mode=register" class="sos-btn-primary">Start <?= TRIAL_DAYS ?>-Day Free Trial</a>
       <a href="/pricing" class="sos-btn-outline">View Pricing →</a>
     </div>
 
@@ -244,9 +244,9 @@ require 'includes/nav.php';
   <div class="container">
     <div class="stats-grid">
       <div class="stat-item"><div class="stat-value"><span data-count="7">0</span></div><div class="stat-label">Modules in one system</div></div>
-      <div class="stat-item"><div class="stat-value"><span data-count="50">0</span>K+</div><div class="stat-label">Salons on SalonOS</div></div>
+      <div class="stat-item"><div class="stat-value"><span>1</span></div><div class="stat-label">Connected operating platform</div></div>
       <div class="stat-item"><div class="stat-value"><span data-count="<?= TRIAL_DAYS ?>"><?= TRIAL_DAYS ?></span>-day</div><div class="stat-label">Free trial, no charge until it ends</div></div>
-      <div class="stat-item"><div class="stat-value">4.9<span style="font-size:1.8rem;">★</span></div><div class="stat-label">Average customer rating</div></div>
+      <div class="stat-item"><div class="stat-value"><span>24/7</span></div><div class="stat-label">Booking availability for clients</div></div>
     </div>
   </div>
 </section>
@@ -458,7 +458,7 @@ require 'includes/nav.php';
           <li><?= $b ?></li>
           <?php endforeach; ?>
         </ul>
-        <a href="#" class="btn btn-primary" style="margin-top:24px;">Try <?= $m['tag'] ?> Free</a>
+        <a href="/auth?mode=register" class="btn btn-primary" style="margin-top:24px;">Try <?= $m['tag'] ?> Free</a>
       </div>
       <div class="feature-visual" style="background:linear-gradient(145deg,var(--cream),var(--cream-dark));">
         <?= $m['ui'] ?>
@@ -665,7 +665,7 @@ require 'includes/nav.php';
       No picking and choosing features. SalonOS gives you everything from day one — booking, POS, loyalty, check-in, waitlist, and reviews — all in one plan.
     </p>
     <div style="display:flex;justify-content:center;gap:16px;flex-wrap:wrap;">
-      <a href="#" class="sos-btn-primary">Start <?= TRIAL_DAYS ?>-Day Free Trial</a>
+      <a href="/auth?mode=register" class="sos-btn-primary">Start <?= TRIAL_DAYS ?>-Day Free Trial</a>
       <a href="/pricing" class="sos-btn-outline">View Plans &amp; Pricing</a>
     </div>
     <p style="font-size:.78rem;color:#7c6aa0;margin-top:16px;">Credit card required · No charge until trial ends &middot; All 7 modules included &middot; Cancel any time</p>
@@ -679,7 +679,7 @@ require 'includes/nav.php';
     <h2 class="cta-title">Your salon's new<br><em>operating system.</em></h2>
     <p class="cta-text">The only operating system built exclusively for nail studios — booking, POS, loyalty, kiosk, and revenue intelligence, all in one place.</p>
     <div class="cta-actions">
-      <a href="#" class="btn btn-gold">Start Free Trial</a>
+      <a href="/auth?mode=register" class="btn btn-gold">Start Free Trial</a>
       <a href="/contact" class="btn btn-outline-white">Talk to Us</a>
     </div>
     <p class="cta-note"><?= TRIAL_DAYS ?>-day free trial &middot; All modules included &middot; Credit card required · No charge until trial ends</p>

@@ -1,6 +1,6 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Salon Review Management Software | Automate 5-Star Google Reviews — Certxa');
+define('PAGE_TITLE',    'Salon Review Management | Certxa');
 define('PAGE_DESC',     'Automatically collect 5-star Google reviews after every appointment. Certxa salon review management software builds your online reputation on autopilot — helping new clients find and choose your salon every day.');
 define('PAGE_KEYWORDS', 'salon review management, beauty salon Google reviews, salon reputation management, automated salon reviews, hair salon review software, get more salon reviews, salon star rating, nail salon reviews, salon review automation');
 define('PAGE_CANONICAL', 'https://certxa.com/client-reviews');
@@ -32,8 +32,8 @@ require 'includes/nav.php';
         <h1 class="hero-headline" style="color:#78350F;">Your reputation,<br><em style="color:#D97706;">working for you.</em></h1>
         <p class="hero-subtext">Certxa automatically asks every happy client for a review right after their appointment — when their experience is fresh and they're most likely to rave about you. Build five-star credibility on autopilot.</p>
         <div class="hero-actions">
-          <a href="#" class="btn btn-primary">Start Collecting Reviews</a>
-          <a href="#" class="btn btn-secondary">See How It Works</a>
+          <a href="/auth?mode=register" class="btn btn-primary">Start Collecting Reviews</a>
+          <a href="/client-notifications" class="btn btn-secondary">Explore Client Notifications</a>
         </div>
         <p class="hero-note">Automated &middot; Google, Facebook &amp; Trustpilot &middot; No chasing required</p>
       </div>
@@ -109,7 +109,7 @@ require 'includes/nav.php';
           <li>Smart filter — unhappy clients are handled privately first</li>
           <li>Follow-up if no response (configurable)</li>
         </ul>
-        <a href="#" class="btn btn-primary">Start Free Trial</a>
+        <a href="/auth?mode=register" class="btn btn-primary">Start Free Trial</a>
       </div>
       <div class="feature-visual" style="background:linear-gradient(145deg,var(--gold-light),#FDE68A);">
         <div style="width:100%;max-width:300px;">
@@ -142,7 +142,7 @@ require 'includes/nav.php';
           <li>Unhappy clients send private feedback to you</li>
           <li>Resolve issues before they become public</li>
         </ul>
-        <a href="#" class="btn btn-primary">See the Full Flow</a>
+        <a href="/client-notifications" class="btn btn-primary">Explore Automated Messages</a>
       </div>
       <div class="feature-visual">
         <div style="text-align:center;width:100%;max-width:300px;">
@@ -182,7 +182,7 @@ require 'includes/nav.php';
           <li>Shareable review graphics for Instagram and Facebook</li>
           <li>Aggregate rating shown on all your public profiles</li>
         </ul>
-        <a href="#" class="btn btn-primary">See the Widget</a>
+        <a href="/auth?mode=register" class="btn btn-primary">Try Review Tools Free</a>
       </div>
       <div class="feature-visual" style="background:linear-gradient(145deg,var(--plum-light),#DDD6FE);">
         <div class="ui-card" style="width:100%;max-width:320px;">
@@ -222,7 +222,7 @@ require 'includes/nav.php';
     <h2 class="cta-title">Let your happy clients<br><em>do the marketing.</em></h2>
     <p class="cta-text">Start collecting five-star reviews automatically from your very next appointment. The best marketing you'll ever do is letting your work speak for itself.</p>
     <div class="cta-actions">
-      <a href="#" class="btn btn-gold">Start Free Trial</a>
+      <a href="/auth?mode=register" class="btn btn-gold">Start Free Trial</a>
       <a href="/salonos" class="btn btn-outline-white">Explore All Features</a>
     </div>
     <p class="cta-note">Credit card required · No charge until trial ends &middot; Setup in minutes</p>

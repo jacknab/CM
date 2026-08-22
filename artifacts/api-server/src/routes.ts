@@ -3312,6 +3312,46 @@ export async function registerRoutes(
     }
   });
 
+  app.delete(api.services.deleteAll.path, isAuthenticated, async (req, res) => {
+    try {
+      const parsed = api.services.deleteAll.input.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Type DELETE ALL to confirm" });
+      }
+
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(403).json({ message: "Only account owners can delete all services" });
+      }
+      const [user] = await db
+        .select({ role: users.role })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      if (user?.role !== "owner" && user?.role !== "admin") {
+        return res.status(403).json({ message: "Only account owners can delete all services" });
+      }
+
+      const sessionStoreId = await resolveSessionStoreId(req);
+      if (!sessionStoreId) return res.status(403).json({ message: "No store context" });
+
+      const deactivated = await storage.deactivateAllServices(sessionStoreId);
+      const actorUserId = (req.session as any)?.userId ?? null;
+      if (deactivated.length > 0) {
+        void Promise.all(deactivated.map((service) => pool.query(
+          `INSERT INTO service_events (store_id, service_id, service_name, event_type, actor_user_id, metadata) VALUES ($1,$2,$3,$4,$5,$6)`,
+          [sessionStoreId, service.id, service.name, "deleted", actorUserId, JSON.stringify({ source: "delete_all" })]
+        ))).catch((e: any) => console.error("[serviceEvents] delete all:", e?.message));
+        triggerGBPServiceSync(sessionStoreId);
+      }
+
+      return res.json({ deleted: deactivated.length });
+    } catch (error: any) {
+      console.error("[services] delete all:", error?.message);
+      return res.status(500).json({ message: "Failed to delete all services" });
+    }
+  });
+
   app.delete(api.services.delete.path, isAuthenticated, async (req, res) => {
     const sessionStoreId = await resolveSessionStoreId(req);
     if (!sessionStoreId) return res.status(403).json({ message: "No store context" });

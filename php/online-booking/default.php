@@ -1,8 +1,8 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Online Booking for Salons | 24/7 Appointment Scheduling — Certxa');
-define('PAGE_DESC',     'Let clients book appointments 24/7 from your website, Instagram, or Google. Reduce no-shows by 68% with automated reminders. Certxa online booking for hair salons, nail salons & beauty studios. Free trial.');
-define('PAGE_KEYWORDS', 'online booking for salons, salon online booking, hair salon booking system, salon appointment scheduling, beauty salon booking app, nail salon scheduling software, salon booking widget, 24/7 salon booking');
+define('PAGE_TITLE',    'Nail Salon Online Booking | Certxa');
+define('PAGE_DESC',     'Nail salon booking software for online appointments, technician selection, deposits, reminders, waitlists, and walk-ins. Let clients book from your website, social profiles, or Google with Certxa.');
+define('PAGE_KEYWORDS', 'nail salon booking software, nail salon booking system, nail salon scheduling software, online booking for nail salons, nail technician booking software, salon appointment scheduling');
 define('PAGE_CANONICAL', 'https://certxa.com/online-booking');
 define('PAGE_BREADCRUMBS', json_encode([
   ['name'=>'Home','url'=>'https://certxa.com/'],
@@ -17,7 +17,7 @@ define('PAGE_SCHEMA', json_encode([
     'url'         => 'https://certxa.com/online-booking',
     'isPartOf'    => ['@id'=>'https://certxa.com/#website'],
     'about'       => ['@id'=>'https://certxa.com/#software'],
-    'breadcrumb'  => ['@id'=>'https://certxa.com/online-booking.php#breadcrumb'],
+    'breadcrumb'  => ['@id'=>'https://certxa.com/online-booking#breadcrumb'],
   ],
   [
     '@type'      => 'FAQPage',
@@ -118,15 +118,15 @@ $now_top = cal_top('11:20'); // simulate current time line
         </div>
 
         <h1 class="hero-dark-headline">
-          Fill every<br>slot, <em>every</em><br>single day.
+          Nail salon<br>booking that<br><em>fills your calendar.</em>
         </h1>
 
         <p class="hero-dark-sub">
-          See your entire team's day at a glance. Clients book themselves into the right slot with the right person — automatically, around the clock.
+          Let clients choose a service, technician, and available time online while Certxa keeps your team calendar organised. Accept bookings around the clock from your website, social profiles, or Google.
         </p>
 
         <div class="hero-dark-actions">
-          <a href="#" class="btn btn-gold btn-lg">Start Free Trial</a>
+          <a href="/auth?mode=register" class="btn btn-gold btn-lg">Start Free Trial</a>
           <a href="/pricing" class="btn btn-outline-white btn-lg">See Pricing</a>
         </div>
 
@@ -136,7 +136,7 @@ $now_top = cal_top('11:20'); // simulate current time line
             <div class="av-dot" style="background:linear-gradient(135deg,#f9a8d4,#ec4899)">RP</div>
             <div class="av-dot" style="background:linear-gradient(135deg,#fcd34d,#f59e0b)">DK</div>
           </div>
-          <span class="trust-text"><strong>35%</strong> average boost in bookings within 30 days</span>
+          <span class="trust-text">Booking tools designed around real nail salon services and technician availability</span>
         </div>
       </div>
 
@@ -279,10 +279,10 @@ $now_top = cal_top('11:20'); // simulate current time line
 <section class="stats-strip">
   <div class="container">
     <div class="stats-grid">
-      <div class="stat-item"><div class="stat-value"><span>35</span>%</div><div class="stat-label">Average increase in bookings</div></div>
-      <div class="stat-item"><div class="stat-value"><span>70</span>%</div><div class="stat-label">Bookings made outside business hours</div></div>
-      <div class="stat-item"><div class="stat-value"><span>5</span>min</div><div class="stat-label">Average setup time</div></div>
-      <div class="stat-item"><div class="stat-value"><span>0</span></div><div class="stat-label">Phone calls needed</div></div>
+      <div class="stat-item"><div class="stat-value"><span>24/7</span></div><div class="stat-label">Online booking availability</div></div>
+      <div class="stat-item"><div class="stat-value"><span>1</span></div><div class="stat-label">Shared calendar for your team</div></div>
+      <div class="stat-item"><div class="stat-value"><span>3</span></div><div class="stat-label">Simple setup steps</div></div>
+      <div class="stat-item"><div class="stat-value"><span>0</span></div><div class="stat-label">Phone calls required for online bookings</div></div>
     </div>
   </div>
 </section>
@@ -307,7 +307,7 @@ $now_top = cal_top('11:20'); // simulate current time line
           <li>Instant confirmation sent automatically</li>
           <li>Buffer times and breaks handled for you</li>
         </ul>
-        <a href="#" class="btn btn-primary">Try It Free</a>
+        <a href="/auth?mode=register" class="btn btn-primary">Try nail salon booking free</a>
       </div>
       <div class="feature-visual" style="background:linear-gradient(145deg,#F0FDF4,#DCFCE7);">
         <div class="ui-card" style="width:100%;max-width:340px;">
@@ -356,7 +356,7 @@ $now_top = cal_top('11:20'); // simulate current time line
           <li>Google Business Profile booking link built-in</li>
           <li>QR code for in-salon display</li>
         </ul>
-        <a href="#" class="btn btn-primary">See All Integrations</a>
+        <a href="/google-business-profile" class="btn btn-primary">See Google booking setup</a>
       </div>
       <div class="feature-visual" style="background:linear-gradient(145deg,var(--cream),var(--cream-dark));">
         <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;">
@@ -393,7 +393,7 @@ $now_top = cal_top('11:20'); // simulate current time line
           <li>Minimum notice and advance booking windows</li>
           <li>Service-specific durations and pricing</li>
         </ul>
-        <a href="#" class="btn btn-primary">Try It Free</a>
+        <a href="/auth?mode=register" class="btn btn-primary">Try online booking free</a>
       </div>
       <div class="feature-visual">
         <div class="ui-card" style="width:100%;max-width:320px;">
@@ -486,8 +486,8 @@ $now_top = cal_top('11:20'); // simulate current time line
     <h2 class="cta-title">Fill your calendar.<br><em>Grow your business.</em></h2>
     <p class="cta-text">Join thousands of salon owners who've transformed their booking process with Certxa. Start your free trial today.</p>
     <div class="cta-actions">
-      <a href="#" class="btn btn-gold">Start Free Trial</a>
-      <a href="/salonos" class="btn btn-outline-white">Explore All Features</a>
+          <a href="/auth?mode=register" class="btn btn-gold">Start Free Trial</a>
+          <a href="/nail-salon-software" class="btn btn-outline-white">Explore nail salon software</a>
     </div>
     <p class="cta-note">Credit card required · No charge until trial ends &middot; <?= TRIAL_DAYS ?>-day free trial</p>
   </div>

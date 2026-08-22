@@ -1,6 +1,6 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Payments & Billing Explained | Certxa — Stripe Connect, Wallet & SMS');
+define('PAGE_TITLE',    'Payments & Billing | Certxa');
 define('PAGE_DESC',     'Understand how payments and billing work on Certxa. We use Stripe Connect for card-present POS and a prepaid Platform Wallet for AI Receptionist calls and SMS overage. No surprises.');
 define('PAGE_KEYWORDS', 'certxa payments, certxa billing, stripe connect salon, salon card reader, salon POS fees, certxa wallet, AI receptionist credits, SMS overage salon software');
 define('PAGE_CANONICAL', 'https://certxa.com/payments');

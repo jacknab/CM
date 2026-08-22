@@ -1,7 +1,7 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Nail Salon Software for Booth Renters &amp; Chair Renters | Certxa');
-define('PAGE_DESC',     'Certxa is the best booking and management app for nail tech booth renters and chair renters. Manage your own clients, nail records, payments, and kiosk check-in independently — no studio owner access. Free ' . TRIAL_DAYS . '-day trial.');
+define('PAGE_TITLE',    'Booth Rental Software | Certxa');
+define('PAGE_DESC',     'Booking and management software for nail tech booth renters and chair renters. Manage your own clients, nail records, payments, and appointment workflow with Certxa in an account built for independent nail professionals.');
 define('PAGE_KEYWORDS', 'nail salon software booth renters, nail tech chair rental software, independent nail technician app, nail booth renter booking software, nail studio booth rental app, nail tech independent software, chair rental nail salon booking');
 define('PAGE_CANONICAL','https://certxa.com/booth-renters');
 define('PAGE_BREADCRUMBS', json_encode([
@@ -14,7 +14,7 @@ define('PAGE_SCHEMA', json_encode([
     ['@type'=>'Question','name'=>'Does Certxa work for a solo nail technician renting a booth?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa is designed to work perfectly as a one-person nail studio. You get online booking, a self-service walk-in kiosk, POS, client nail records with product notes, automated reminders, loyalty rewards, and analytics — everything a full nail salon team gets, sized for one.']],
     ['@type'=>'Question','name'=>'How much does Certxa cost for a nail tech booth renter?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa starts at $9/month after a full ' . TRIAL_DAYS . '-day free trial. There are no contracts and no subscription setup fees. Optional add-ons like the Autumn AI receptionist are usage-based and billed separately through your Platform Wallet.']],
   ]],
-  ['@type'=>'SoftwareApplication','name'=>'Certxa for Booth Renters','applicationCategory'=>'BusinessApplication','operatingSystem'=>'Web, iOS, Android','offers'=>['@type'=>'Offer','price'=>'0','priceCurrency'=>'USD','description'=>TRIAL_DAYS . '-day free trial, then from $9/month']],
+  ['@type'=>'SoftwareApplication','name'=>'Certxa for Booth Renters','applicationCategory'=>'BusinessApplication','operatingSystem'=>'Web, iOS, Android','offers'=>['@type'=>'Offer','price'=>'0','priceCurrency'=>'USD','description'=>TRIAL_DAYS . '-day free trial']],
 ]));
 require 'includes/header.php';
 require 'includes/nav.php';

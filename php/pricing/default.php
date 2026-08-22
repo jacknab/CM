@@ -1,6 +1,6 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Salon Software Pricing | Certxa Plans from $9/month');
+define('PAGE_TITLE',    'Salon Software Pricing | Certxa');
 define('PAGE_DESC',     'Simple, transparent nail salon software pricing. Certxa plans start at $9/month. No hidden fees, no contracts. Online booking, Stripe Connect payments, and client management included in every plan.');
 define('PAGE_KEYWORDS', 'nail salon software pricing, nail salon booking software cost, nail salon software plans, nail salon management software price, how much does nail salon software cost, certxa pricing, nail salon software free trial, affordable nail salon software');
 define('PAGE_CANONICAL', 'https://certxa.com/pricing');
@@ -507,7 +507,7 @@ require 'includes/nav.php';
       <strong style="font-size:1rem;">Running more than 5 locations?</strong>
       <span style="color:var(--mid-grey); margin:0 12px;">·</span>
       <span style="font-size:.95rem; color:var(--mid-grey);">We offer custom Enterprise plans with volume pricing, a dedicated success team, and a bespoke contract.</span>
-      <a href="#" class="btn btn-secondary" style="margin-left:20px; padding:10px 24px; font-size:.85rem;">Talk to Sales</a>
+      <a href="/contact" class="btn btn-secondary" style="margin-left:20px; padding:10px 24px; font-size:.85rem;">Talk to Sales</a>
     </div>
   </div>
 </section>
@@ -964,7 +964,7 @@ require 'includes/nav.php';
     <h2 class="cta-title"><?= TRIAL_DAYS ?> days free.<br><em>Cancel anytime. No catch.</em></h2>
     <p class="cta-text">The all-in-one platform built exclusively for nail studios and nail technicians. A credit card is required to start — but you won't be charged until your <?= TRIAL_DAYS ?>-day trial ends.</p>
     <div class="cta-actions">
-      <a href="#" class="btn btn-gold" style="font-size:1rem;padding:16px 40px;">Start Free Trial</a>
+      <a href="/auth?mode=register" class="btn btn-gold" style="font-size:1rem;padding:16px 40px;">Start Free Trial</a>
       <a href="/salonos" class="btn btn-outline-white">Explore All Features</a>
     </div>
     <p class="cta-note">Questions? Chat with our team — typical response time under 5 minutes.</p>

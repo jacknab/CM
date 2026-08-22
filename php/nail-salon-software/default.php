@@ -1,7 +1,7 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Nail Salon Software | Online Booking & Management for Nail Studios — Certxa');
-define('PAGE_DESC',     'Certxa is the nail salon software built for gel, acrylic, and nail art studios. Online booking, client profiles with service history, automated reminders, integrated payments, and your own branded website. ' . TRIAL_DAYS . '-day free trial.');
+define('PAGE_TITLE',    'Nail Studio Software | Certxa');
+define('PAGE_DESC',     'Nail salon software for independent nail technicians and growing studios. Certxa connects online booking, client nail records, reminders, payments, POS, walk-ins, and a booking website in one platform. ' . TRIAL_DAYS . '-day free trial.');
 define('PAGE_KEYWORDS', 'nail salon software, nail salon booking software, nail studio management software, nail salon scheduling app, online booking for nail salons, nail salon POS, gel nail salon software, acrylic nail salon software, nail technician software');
 define('PAGE_CANONICAL','https://certxa.com/nail-salon-software');
 define('PAGE_BREADCRUMBS', json_encode([
@@ -46,11 +46,11 @@ require 'includes/nav.php';
           <span class="stars-badge"><span>💅</span><span>Built for Nail Salons & Studios</span></span>
         </div>
         <h1 class="hero-dark-headline">
-          Nail salon<br>software that<br><em>fills every chair.</em>
+          Nail salon<br>software for<br><em>every kind of studio.</em>
         </h1>
-        <p class="hero-dark-sub">Online booking, client records with full nail history, automated reminders, and payments — everything a nail studio needs, in one beautifully simple platform.</p>
+        <p class="hero-dark-sub">Certxa is a complete operating platform for independent nail technicians, booth renters, and growing nail studios: online booking, nail-specific client records, reminders, payments, POS, walk-ins, and a booking website in one place.</p>
         <div class="hero-dark-actions">
-          <a href="#" class="btn btn-gold btn-lg">Start <?= TRIAL_DAYS ?>-Day Free Trial</a>
+          <a href="/auth?mode=register" class="btn btn-gold btn-lg">Start <?= TRIAL_DAYS ?>-Day Free Trial</a>
           <a href="/pricing" class="btn-play-wrap"><span class="btn-play-icon">→</span><span>See pricing</span></a>
         </div>
         <div style="margin-top:28px;font-size:.82rem;color:rgba(255,255,255,.6);">Credit card required · No charge until trial ends &middot; Setup in under 5 minutes</div>
@@ -81,11 +81,29 @@ require 'includes/nav.php';
 <section class="stats-strip">
   <div class="container">
     <div class="stats-grid">
-      <div class="stat-item"><div class="stat-value"><span>68</span>%</div><div class="stat-label">Reduction in no-shows</div></div>
-      <div class="stat-item"><div class="stat-value"><span>42</span>%</div><div class="stat-label">More bookings in 30 days</div></div>
+      <div class="stat-item"><div class="stat-value"><span>24/7</span></div><div class="stat-label">Online booking availability</div></div>
+      <div class="stat-item"><div class="stat-value"><span>1</span></div><div class="stat-label">Connected platform for daily operations</div></div>
       <div class="stat-item"><div class="stat-value"><span><?= TRIAL_DAYS ?></span>day</div><div class="stat-label">Free trial — no charge until it ends</div></div>
-      <div class="stat-item"><div class="stat-value"><span>5</span>min</div><div class="stat-label">Average setup time</div></div>
+      <div class="stat-item"><div class="stat-value"><span>0</span></div><div class="stat-label">Separate systems to stitch together</div></div>
     </div>
+  </div>
+</section>
+
+<section class="section section-alt">
+  <div class="container" style="max-width:960px;">
+    <div class="section-header">
+      <span class="tag tag-plum">Built around the nail salon workflow</span>
+      <h2 class="section-title">From the first booking to the next visit</h2>
+      <p class="section-subtitle">Nail salons need more than a calendar. Certxa connects the client experience and the work behind the chair so your team can manage appointments, payments, walk-ins, and retention from one operating system.</p>
+    </div>
+    <div class="bento" style="grid-template-columns:repeat(2,1fr);">
+      <div class="bento-card"><h3 class="bento-title">Attract and book clients</h3><p class="bento-text">Share a booking link through your website, social profiles, Google Business Profile, or a QR code. Clients can choose a service, technician, and available time without phone tag. See the <a href="/online-booking">nail salon booking workflow</a>.</p></div>
+      <div class="bento-card"><h3 class="bento-title">Prepare for every appointment</h3><p class="bento-text">Keep client history, nail formulas, product notes, sensitivities, and appointment history together so your team can deliver a more consistent visit. Explore <a href="/client-management">client management for salons</a>.</p></div>
+      <div class="bento-card"><h3 class="bento-title">Handle the front desk and walk-ins</h3><p class="bento-text">Coordinate technician calendars, live availability, walk-ins, and waitlists while you stay focused on the service. The <a href="/checkin-kiosk">self-service check-in kiosk</a> helps clients enter the queue without interrupting the team.</p></div>
+      <div class="bento-card"><h3 class="bento-title">Get paid and grow repeat business</h3><p class="bento-text">Connect booking, deposits, checkout, tips, client communication, reviews, and revenue visibility. Review the <a href="/payment-processing">nail salon POS and payment workflow</a> or see <a href="/revenue-intelligence">revenue intelligence for salons</a>.</p></div>
+    </div>
+
+    <p style="margin:28px 0 0;color:var(--mid-grey);line-height:1.7;">Certxa also supports independent audiences: explore <a href="/solo-professionals">software for solo nail technicians</a> or <a href="/booth-renters">booking software for nail tech booth renters</a>.</p>
   </div>
 </section>
 
@@ -204,8 +222,8 @@ require 'includes/nav.php';
     <h2 class="cta-title">The nail salon software<br><em>your studio deserves.</em></h2>
     <p class="cta-text">Join thousands of nail technicians and studio owners running their business on Certxa.</p>
     <div class="cta-actions">
-      <a href="#" class="btn btn-gold btn-lg">Start <?= TRIAL_DAYS ?>-Day Free Trial</a>
-      <a href="/salonos" class="btn btn-outline-white">Explore All Features</a>
+      <a href="/auth?mode=register" class="btn btn-gold btn-lg">Start <?= TRIAL_DAYS ?>-Day Free Trial</a>
+      <a href="/salonos" class="btn btn-outline-white">Explore the complete nail salon platform</a>
     </div>
     <p class="cta-note"><?= TRIAL_DAYS ?>-day free trial &middot; Credit card required · No charge until trial ends &middot; Setup in 5 minutes</p>
   </div>

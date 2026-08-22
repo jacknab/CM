@@ -23,13 +23,10 @@ try {
     // Graceful degradation — serve empty sitemap
 }
 
-// Ensure blog sitemap is served as XML (not HTML)
-header('Content-Type: application/xml; charset=utf-8');
-
-// Add explicit XML declaration and proper content type
+// The XML declaration was emitted at byte 0 above; do not send headers again
+// after output has started because PHP will log a headers-already-sent warning.
 if (empty($posts)) {
     // Serve minimal valid sitemap when no posts exist
-    echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
     echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">' . "\n";
     echo '  <url>' . "\n";
     echo '    <loc>https://certxa.com/blog</loc>' . "\n";
@@ -55,7 +52,8 @@ echo '  </url>' . "\n";
 foreach ($posts as $p) {
     $lastmod = $p['updated_at'] ?? $p['published_at'];
     $date    = $lastmod ? date('Y-m-d', strtotime($lastmod)) : date('Y-m-d');
-    $loc     = 'https://certxa.com/blog/' . htmlspecialchars($p['slug'], ENT_XML1);
+    $loc     = 'https://certxa.com/blog/' . rawurlencode((string) $p['slug']);
+    $loc     = htmlspecialchars($loc, ENT_XML1, 'UTF-8');
     echo "  <url>\n";
     echo "    <loc>{$loc}</loc>\n";
     echo "    <lastmod>{$date}</lastmod>\n";

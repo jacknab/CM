@@ -463,7 +463,7 @@ export default function ServiceImportFlow() {
           <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-5">
             <AlertCircle className="w-8 h-8 text-amber-500" />
           </div>
-          <h2 className="text-xl font-bold text-slate-900 mb-3">We need clearer photos</h2>
+          <h2 className="text-xl font-bold text-slate-900 mb-3">We couldn't process your menu</h2>
           <p className="text-sm text-slate-500 leading-relaxed mb-6 max-w-sm mx-auto">
             {jobError ?? "We couldn't read your menu from those photos."}
           </p>

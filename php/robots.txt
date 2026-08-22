@@ -15,9 +15,6 @@ Disallow: /router.php
 # ── Block the visual editor (has noindex — keep Googlebot from discovering it) ─
 Disallow: /editor
 
-# ── Block query-string duplicates ─────────────────────────────────────────────
-Disallow: /*?*
-
 # ── Block launchsite internal paths — only the overview page should be indexed ─
 Disallow: /launchsite/admin
 Disallow: /launchsite/editor
@@ -76,8 +73,6 @@ User-agent: Slurp
 Allow: /
 Crawl-delay: 0
 
-# Sitemaps
+# Submit one canonical sitemap index; it references the marketing, blog, and salon
+# child sitemaps without creating multiple submission entry points.
 Sitemap: https://certxa.com/sitemap.xml
-Sitemap: https://certxa.com/sitemap-pages.xml
-Sitemap: https://certxa.com/blog/sitemap.xml
-Sitemap: https://certxa.com/salon/sitemap.xml

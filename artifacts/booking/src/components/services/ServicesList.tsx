@@ -4,11 +4,11 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { useServices, useUpdateService, useDeleteService } from "@/hooks/use-services";
+import { useServices, useUpdateService, useDeleteService, useDeleteAllServices } from "@/hooks/use-services";
 import { useServiceCategories } from "@/hooks/use-addons";
 import {
   Plus, Search, PenLine, Check, Loader2, MoreHorizontal,
-  Power, PowerOff, ChevronDown, ChevronRight, Layers, Trash2, EyeOff, Sparkles,
+  Power, PowerOff, ChevronDown, ChevronRight, Layers, Trash2, EyeOff, Sparkles, AlertTriangle,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@shared/routes";
@@ -19,6 +19,10 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // ── Pastel colour map for category dots ──────────────────────────────────────
 const PASTEL: Record<string, string> = {
@@ -50,12 +54,15 @@ export function ServicesList() {
   const { data: categories = [] } = useServiceCategories();
   const { mutate: updateService } = useUpdateService();
   const { mutate: deleteService } = useDeleteService();
+  const { mutate: deleteAllServices, isPending: isDeletingAll } = useDeleteAllServices();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const [searchQuery, setSearchQuery]   = useState("");
   const [showInactive, setShowInactive] = useState(false);
   const [editMode, setEditMode]         = useState(false);
+  const [deleteAllOpen, setDeleteAllOpen] = useState(false);
+  const [deleteAllConfirmation, setDeleteAllConfirmation] = useState("");
 
   // Bulk AI description generation
   const [bulkGenerating, setBulkGenerating] = useState(false);
@@ -78,6 +85,7 @@ export function ServicesList() {
 
   const all: ServiceWithOptions[] = services || [];
   const inactiveCount = all.filter((s) => (s as any).isActive === false).length;
+  const activeCount = all.length - inactiveCount;
 
   const filtered = all
     .filter((s) => showInactive || (s as any).isActive !== false)
@@ -278,6 +286,29 @@ export function ServicesList() {
     });
   }
 
+  function handleDeleteAll() {
+    if (deleteAllConfirmation !== "DELETE ALL") return;
+    deleteAllServices(undefined, {
+      onSuccess: ({ deleted }) => {
+        setDeleteAllOpen(false);
+        setDeleteAllConfirmation("");
+        setEditMode(false);
+        setPendingDeletes(new Set());
+        toast({
+          title: deleted === 0 ? "No active services to delete" : "All services deleted",
+          description: deleted > 0
+            ? `${deleted} service${deleted === 1 ? " was" : "s were"} removed from this location.`
+            : undefined,
+        });
+      },
+      onError: (error) => toast({
+        title: "Services could not be deleted",
+        description: error.message,
+        variant: "destructive",
+      }),
+    });
+  }
+
   // ── Bulk AI description generation ──────────────────────────────────────────
   const missingDescCount = all.filter((s) => !(s as any).description?.trim()).length;
 
@@ -373,6 +404,19 @@ export function ServicesList() {
             ) : (
               <><Sparkles className="h-4 w-4 mr-1.5" />Auto-describe ({missingDescCount})</>
             )}
+          </Button>
+        )}
+
+        {activeCount > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setDeleteAllOpen(true)}
+            disabled={editMode || isDeletingAll}
+            className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="h-4 w-4 mr-1.5" />
+            Delete all
           </Button>
         )}
 
@@ -724,6 +768,63 @@ export function ServicesList() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* ── Delete all confirmation ── */}
+      <AlertDialog
+        open={deleteAllOpen}
+        onOpenChange={(open) => {
+          if (!isDeletingAll) {
+            setDeleteAllOpen(open);
+            if (!open) setDeleteAllConfirmation("");
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Delete all {activeCount} services?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes every active service from this location’s service menu, online booking,
+              kiosk, and future appointments. Historical appointments and reports remain intact.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-2 py-2">
+            <label htmlFor="delete-all-services-confirmation" className="text-sm font-medium text-foreground">
+              Type <span className="font-mono font-semibold">DELETE ALL</span> to confirm
+            </label>
+            <Input
+              id="delete-all-services-confirmation"
+              value={deleteAllConfirmation}
+              onChange={(event) => setDeleteAllConfirmation(event.target.value)}
+              placeholder="DELETE ALL"
+              autoComplete="off"
+              disabled={isDeletingAll}
+              className="font-mono"
+            />
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingAll}>Keep services</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                handleDeleteAll();
+              }}
+              disabled={deleteAllConfirmation !== "DELETE ALL" || isDeletingAll}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeletingAll ? (
+                <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Deleting…</>
+              ) : (
+                `Delete all ${activeCount} services`
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Stripe Payment Processing for Salons — Certxa Built-In POS');
-define('PAGE_DESC',     'Certxa partners with Stripe to give nail salons a built-in point of sale. Accept credit cards, contactless tap payments, and Apple Pay through the Stripe M2 card reader — all inside Certxa with no extra software required.');
+define('PAGE_TITLE',    'Nail Salon Payment Processing | Certxa');
+define('PAGE_DESC',     'Nail salon POS and payment processing powered by Stripe. Take card, chip, contactless, Apple Pay, and Google Pay payments through the Stripe M2 reader inside Certxa.');
 define('PAGE_KEYWORDS', 'nail salon payment processing, stripe for nail salons, nail salon card reader, nail salon POS system, stripe M2 reader, nail salon point of sale, certxa payments, nail salon credit card processing, tap to pay nail salon');
 define('PAGE_CANONICAL','https://certxa.com/payment-processing');
 define('PAGE_BREADCRUMBS', json_encode([
@@ -12,12 +12,12 @@ define('PAGE_SCHEMA', json_encode([
   [
     '@type'      => 'FAQPage',
     'mainEntity' => [
-      ['@type'=>'Question','name'=>'Does Certxa process payments through Stripe?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. Certxa is an official Stripe Connect partner. Every salon connects their own Stripe account and all payments — card swipes, taps, and chip inserts — flow directly to your Stripe account. Certxa never holds your money.']],
+      ['@type'=>'Question','name'=>'Does Certxa support Stripe payments?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa provides a Stripe-powered payment workflow for salons. Review the current connection and payout details during setup before taking live payments.']],
       ['@type'=>'Question','name'=>'What is the Stripe M2 card reader?','acceptedAnswer'=>['@type'=>'Answer','text'=>'The Stripe M2 is a compact, wireless Bluetooth card reader that accepts chip, swipe, and contactless (NFC) payments including Apple Pay and Google Pay. It pairs directly with the Certxa app on your phone or tablet, so you can take payments anywhere in the salon — at the chair, the front desk, or on the go.']],
       ['@type'=>'Question','name'=>'Where do I buy the Stripe M2 reader?','acceptedAnswer'=>['@type'=>'Answer','text'=>'You purchase the Stripe M2 reader directly from Stripe\'s hardware store at stripe.com/terminal. Once you have the reader, simply pair it with your Certxa account through the Payment Settings page and you\'re ready to take payments instantly.']],
-      ['@type'=>'Question','name'=>'What are the payment processing fees?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Stripe\'s standard in-person rate applies to all transactions processed through Certxa. There is also a small $0.60 platform connection fee per transaction, which keeps the Certxa platform running. No hidden fees, no monthly minimums — you only pay when you get paid.']],
+      ['@type'=>'Question','name'=>'What are the payment processing fees?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Payment processing fees depend on the Stripe account and payment method used. Review the current Certxa and Stripe pricing details before enabling payments for your salon.']],
       ['@type'=>'Question','name'=>'Does Certxa support contactless and tap payments?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes — through the Stripe M2 reader, Certxa supports all major contactless payment methods: Apple Pay, Google Pay, Samsung Pay, and any NFC-enabled debit or credit card. Clients simply tap their phone or card and the payment is processed in seconds.']],
-      ['@type'=>'Question','name'=>'Is my payment data secure?','acceptedAnswer'=>['@type'=>'Answer','text'=>'All payment data is handled end-to-end by Stripe, which is PCI DSS Level 1 certified — the highest level of security certification in the payments industry. Certxa never stores card numbers, CVVs, or sensitive payment credentials. Your clients\' payment data is always safe.']],
+      ['@type'=>'Question','name'=>'Is my payment data secure?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Payment details are handled through the configured payment provider. Review the current security and data-handling information before enabling payments for your salon.']],
     ],
   ],
   [
@@ -26,7 +26,7 @@ define('PAGE_SCHEMA', json_encode([
     'applicationCategory' => 'BusinessApplication',
     'operatingSystem' => 'Web, iOS, Android',
     'description' => 'Certxa\'s built-in point of sale for nail salons, powered by Stripe. Accept chip, swipe, tap, Apple Pay, and Google Pay through the Stripe M2 card reader — no third-party POS app needed.',
-    'offers'      => ['@type'=>'Offer','price'=>'0','priceCurrency'=>'USD','description'=>TRIAL_DAYS . '-day free trial. Credit card required · No charge until trial ends.','priceCurrency'=>'USD','description'=>'Included in all Certxa plans. 60-day free trial.'],
+      'offers'      => ['@type'=>'Offer','price'=>'0','priceCurrency'=>'USD','description'=>TRIAL_DAYS . '-day free trial. Credit card required · No charge until trial ends.'],
   ],
 ]));
 require __DIR__ . '/../includes/header.php';
@@ -611,7 +611,7 @@ require __DIR__ . '/../includes/nav.php';
           Official Partner&nbsp;&nbsp;<span class="sp-partner-stripe">Stripe</span>
         </div>
         <h1 class="sp-headline">
-          Built-in payments,<br>
+          Nail salon POS,<br>
           <em>powered by Stripe</em>
         </h1>
         <p class="sp-sub">
@@ -623,16 +623,16 @@ require __DIR__ . '/../includes/nav.php';
         </div>
         <div class="sp-hero-stats">
           <div>
-            <div class="sp-stat-val">$0.60</div>
-            <div class="sp-stat-label">flat platform fee / transaction</div>
+            <div class="sp-stat-val">Stripe</div>
+            <div class="sp-stat-label">payment processing workflow</div>
           </div>
           <div>
-            <div class="sp-stat-val">2 sec</div>
-            <div class="sp-stat-label">average tap-to-paid time</div>
+            <div class="sp-stat-val">POS</div>
+            <div class="sp-stat-label">checkout connected to your salon workflow</div>
           </div>
           <div>
-            <div class="sp-stat-val">PCI L1</div>
-            <div class="sp-stat-label">Stripe security certification</div>
+            <div class="sp-stat-val">Secure</div>
+            <div class="sp-stat-label">provider-managed payment data</div>
           </div>
         </div>
       </div>
@@ -894,7 +894,7 @@ require __DIR__ . '/../includes/nav.php';
       <div class="sp-fee-copy">
         <div class="sp-label">Transparent Pricing</div>
         <h2>Simple, honest fees.<br>No surprises.</h2>
-        <p>Certxa charges a flat $0.60 platform connection fee per transaction — that's it. Stripe's standard in-person processing rate applies on top of that. No monthly POS fees, no hardware rental, no percentage cuts beyond Stripe's own rate. You keep more of every dollar your salon earns.</p>
+        <p>Payment costs depend on the configured payment provider, payment method, and your account terms. Review the current pricing details before taking live payments so you understand processing fees, hardware costs, and any applicable platform charges.</p>
       </div>
       <div class="sp-fee-cards">
         <div class="sp-fee-pill highlight">
@@ -924,12 +924,12 @@ require __DIR__ . '/../includes/nav.php';
     <div class="sp-faq-list">
       <?php
       $faqs = [
-        ["Does Certxa process payments through Stripe?", "Yes. Certxa is an official Stripe Connect partner. Every salon connects their own Stripe account, and all payments — card swipes, taps, and chip inserts — flow directly to your Stripe account. Certxa never holds your money. You're always in full control."],
+        ["Does Certxa support Stripe payments?", "Certxa provides a Stripe-powered payment workflow for salons. Review the current connection and payout details during setup before taking live payments."],
         ["What is the Stripe M2 card reader?", "The Stripe M2 is a compact, wireless Bluetooth card reader that accepts chip, swipe, and contactless (NFC) payments including Apple Pay and Google Pay. It pairs directly with the Certxa app on your phone or tablet, so you can take payments anywhere in the salon — at the chair, front desk, or on the move."],
         ["Where do I buy the Stripe M2 reader?", "You purchase the Stripe M2 reader directly from Stripe's hardware store at stripe.com/terminal. Once it arrives, open Certxa's Payment Settings, tap 'Pair Reader,' and you're ready to take payments in seconds. No technical setup required."],
-        ["What are the payment processing fees?", "Certxa charges a flat \$0.60 platform connection fee per transaction. Stripe's standard in-person processing rate is applied on top of that by Stripe directly. There are no monthly POS software fees, no hardware rental, and no hidden charges. You only pay when you get paid."],
+        ["What are the payment processing fees?", "Payment processing fees depend on the Stripe account and payment method used. Review the current Certxa and Stripe pricing details before enabling payments for your salon."],
         ["Does Certxa support contactless and tap payments?", "Yes — through the Stripe M2 reader, Certxa supports all major contactless payment methods: Apple Pay, Google Pay, Samsung Pay, and any NFC-enabled debit or credit card. Clients simply tap their phone or card and the payment is done in seconds."],
-        ["Is my payment data secure?", "All payment data is handled end-to-end by Stripe, which is PCI DSS Level 1 certified — the highest level of security certification in the payments industry. Certxa never stores card numbers, CVVs, or sensitive payment credentials. Your clients' payment data is always protected."],
+        ["Is my payment data secure?", "Payment details are handled through the configured payment provider. Review the current security and data-handling information before enabling payments for your salon."],
       ];
       foreach ($faqs as $f): ?>
       <div class="sp-faq-item">

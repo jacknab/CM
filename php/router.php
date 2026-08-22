@@ -92,6 +92,11 @@ if ($uri === '') $uri = '/';
 // If a tenant account is suspended/canceled/locked, always serve a maintenance
 // page at the edge before any template/page rendering.
 $host = strtolower($_SERVER['HTTP_HOST'] ?? '');
+if ($host === 'www.certxa.com') {
+    $query = $_SERVER['QUERY_STRING'] ?? '';
+    header('Location: https://certxa.com' . $uri . ($query !== '' ? '?' . $query : ''), true, 301);
+    exit;
+}
 $host = preg_replace('/:\\d+$/', '', $host ?? '');
 if (preg_match('/^([a-z0-9-]+)\\.certxa\\.com$/', $host, $m)) {
     $sub = $m[1] ?? '';
@@ -202,6 +207,28 @@ if ($uri === '/') {
 if ($uri === '/overview' || $uri === '/overview/') {
     header('Location: /', true, 301);
     exit;
+}
+if ($uri === '/overview.php') {
+    header('Location: /', true, 301);
+    exit;
+}
+
+// Commercial pages use slashless canonical URLs. Keep the salon directory's
+// established slash behavior unchanged, while consolidating only the known
+// marketing routes without introducing redirect chains.
+$slashless_commercial_routes = [
+    '/nail-salon-software', '/online-booking', '/salonos',
+    '/payment-processing', '/client-management', '/client-notifications',
+    '/custom-website-builder', '/solo-professionals', '/booth-renters',
+    '/client-reviews', '/pricing', '/contact', '/autumn',
+];
+if (str_ends_with($uri, '/') && $uri !== '/') {
+    $without_slash = rtrim($uri, '/');
+    if (in_array($without_slash, $slashless_commercial_routes, true)) {
+        $query = $_SERVER['QUERY_STRING'] ?? '';
+        header('Location: ' . $without_slash . ($query !== '' ? '?' . $query : ''), true, 301);
+        exit;
+    }
 }
 
 // ── 301 redirect: old .php URLs → clean URLs ─────────────────────────────────

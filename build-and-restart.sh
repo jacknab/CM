@@ -47,7 +47,7 @@ echo "========================================"
 echo ""
 echo "Restarting API Server..."
 echo "  Restarting PM2 app: $PM2_APP_NAME"
-pm2 restart "$PM2_APP_NAME"
+pm2 restart "$PM2_APP_NAME" --update-env
 pm2 save >/dev/null
 echo "  ✓ PM2 app restarted and saved"
 

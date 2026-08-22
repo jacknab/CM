@@ -1,6 +1,6 @@
 <?php
 define('BRAND_NAME',     'Certxa');
-define('PAGE_TITLE',     'Autumn AI Receptionist for Salons | Never Miss a Booking Call — Certxa');
+define('PAGE_TITLE',     'AI Receptionist for Salons | Certxa');
 define('PAGE_DESC',      'Autumn answers every salon call in under 2 seconds, books appointments directly into your Certxa calendar, upsells add-ons, and handles rescheduling — 24/7. Available on every Certxa plan. Pay only for what you use.');
 define('PAGE_KEYWORDS',  'salon AI receptionist, AI phone answering for salons, automated salon booking, salon virtual receptionist, AI call answering salon, salon phone automation, Autumn AI receptionist, Certxa AI receptionist');
 define('PAGE_CANONICAL', 'https://certxa.com/autumn');

@@ -1,6 +1,6 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Certxa — #1 Nail Salon Software | Online Booking, Kiosk Check-In & POS');
+define('PAGE_TITLE',    'Nail Salon Software | Certxa');
 define('PAGE_DESC',     'Certxa is the all-in-one nail salon software built for nail technicians and studio owners. Online booking, self-service walk-in kiosk, client nail records, waitlist, POS, and AI receptionist — all in one platform. Free ' . TRIAL_DAYS . '-day trial.');
 define('PAGE_KEYWORDS', 'nail salon software, nail salon booking software, nail studio management software, nail salon scheduling app, nail salon POS system, nail technician software, nail salon check-in kiosk, nail salon waitlist, gel acrylic nail salon software');
 // PAGE_CANONICAL and PAGE_BREADCRUMBS are pre-set by index.php when this file
@@ -125,7 +125,7 @@ require 'includes/nav.php';
         </h1>
 
         <p class="hero-dark-sub">
-          Online booking, self-service walk-in kiosk, POS, loyalty rewards, waitlist, and AI receptionist — everything a nail studio needs, all connected in <a href="/salonos" style="color:var(--gold-bright);text-decoration:underline;text-underline-offset:3px;">SalonOS by Certxa</a>.
+          <a href="/nail-salon-software" style="color:var(--gold-bright);text-decoration:underline;text-underline-offset:3px;">Nail salon software</a> with online booking, self-service walk-in kiosk, POS, loyalty rewards, waitlist, and AI receptionist — everything a nail studio needs, all connected in <a href="/salonos" style="color:var(--gold-bright);text-decoration:underline;text-underline-offset:3px;">SalonOS by Certxa</a>.
         </p>
 
         <div class="hero-dark-actions">

@@ -202,6 +202,19 @@ export const api = {
         404: errorSchemas.notFound,
       },
     },
+    deleteAll: {
+      method: 'DELETE' as const,
+      path: '/api/services' as const,
+      input: z.object({
+        confirmation: z.literal('DELETE ALL'),
+        storeId: z.number().optional(),
+      }),
+      responses: {
+        200: z.object({ deleted: z.number().int().nonnegative() }),
+        400: errorSchemas.validation,
+        403: errorSchemas.unauthorized,
+      },
+    },
   },
   addons: {
     list: {

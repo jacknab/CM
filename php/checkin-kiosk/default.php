@@ -1,6 +1,6 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Self-Service Walk-In Check-In Kiosk for Nail Salons — Certxa');
+define('PAGE_TITLE',    'Nail Salon Check-In Kiosk | Certxa');
 define('PAGE_DESC',     'Certxa\'s self-service walk-in check-in kiosk lets clients check themselves in on a tablet without interrupting your nail service. Captures name, service, and tech preference, adds them to your live waitlist, and notifies you instantly. GoCheckIn-style kiosk built for nail studios.');
 define('PAGE_KEYWORDS', 'nail salon check-in kiosk, self service salon kiosk, walk-in nail salon kiosk, nail salon tablet check-in, GoCheckIn nail salon, salon walk-in management, nail salon waitlist kiosk, nail studio self check-in tablet');
 define('PAGE_CANONICAL','https://certxa.com/checkin-kiosk');

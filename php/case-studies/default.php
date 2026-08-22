@@ -1,6 +1,6 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Nail Studio Success Stories & Case Studies | Real Results with Certxa');
+define('PAGE_TITLE',    'Nail Salon Case Studies | Certxa');
 define('PAGE_DESC',     'See how real nail studios and nail technicians transformed their business with Certxa. From solo booth renters to multi-location nail studios — read the numbers, hear the stories.');
 define('PAGE_KEYWORDS', 'nail salon software success stories, certxa case studies, nail salon booking software results, nail salon software reviews, nail tech software results, certxa reviews, nail salon management software testimonials');
 define('PAGE_CANONICAL','https://certxa.com/case-studies');

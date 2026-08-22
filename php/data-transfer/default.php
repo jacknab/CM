@@ -1,6 +1,6 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Free Salon Data Transfer Service | Switch to Certxa in Minutes');
+define('PAGE_TITLE',    'Salon Software Data Migration | Certxa');
 define('PAGE_DESC',     'Switching salon software is easier than you think. Certxa imports your client lists, appointments, services, and inventory from any platform — free, fast, and stress-free.');
 define('PAGE_KEYWORDS', 'salon software migration, switch salon software, import salon data, migrate from Vagaro, migrate from GlossGenius, migrate from Mindbody, migrate from Square Appointments, salon data transfer, switch to Certxa');
 define('PAGE_CANONICAL', 'https://certxa.com/data-transfer');

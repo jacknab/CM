@@ -163,6 +163,7 @@ const _cjsDirname: string | undefined = (globalThis as any).__dirname;
 import { storage } from "./storage";
 import { seoPageMiddleware } from "./seo-pages";
 import salonDirectoryRouter from "./routes/salonDirectory";
+import { SEO_CONFIG, injectSeoMetadata } from "./static";
 
 const app = express();
 const httpServer = createServer(app);
@@ -1420,12 +1421,13 @@ async function repairTwilioMessagingServiceInboundWebhook() {
 
       // Load SSR render function and template once at startup (not per-request)
       let ssrRender: ((url: string) => { html: string }) | null = null;
-      let indexTemplate: string | null = null;
+      let indexTemplate: string | null = fs.existsSync(indexHtmlPath)
+        ? fs.readFileSync(indexHtmlPath, "utf-8")
+        : null;
 
-      if (fs.existsSync(ssrBundlePath) && fs.existsSync(indexHtmlPath)) {
+      if (fs.existsSync(ssrBundlePath) && indexTemplate) {
         try {
           ssrRender = _require(ssrBundlePath).render;
-          indexTemplate = fs.readFileSync(indexHtmlPath, "utf-8");
           log("SSR bundle loaded — landing pages will be server-rendered");
         } catch (err) {
           console.warn("[SSR] Failed to load SSR bundle, falling back to SPA-only:", err);
@@ -1442,7 +1444,9 @@ async function repairTwilioMessagingServiceInboundWebhook() {
 
         try {
           const { html: appHtml } = ssrRender(req.originalUrl);
-          const rendered = indexTemplate.replace("<!--ssr-outlet-->", appHtml);
+          let rendered = indexTemplate.replace("<!--ssr-outlet-->", appHtml);
+          const seo = SEO_CONFIG[req.path];
+          if (seo) rendered = injectSeoMetadata(rendered, seo);
           res
             .status(200)
             .set({ "Content-Type": "text/html", "Cache-Control": "no-cache" })
@@ -1459,6 +1463,19 @@ async function repairTwilioMessagingServiceInboundWebhook() {
         // Let missing /uploads/* fall through to a real 404 — never serve index.html
         // for image requests (broken <img> shows a blank icon, not a silent HTML response).
         if (req.path.startsWith("/uploads/")) return next();
+        const seo = SEO_CONFIG[req.path];
+        if (seo && indexTemplate) {
+          res
+            .status(200)
+            .set({
+              "Content-Type": "text/html; charset=utf-8",
+              "Cache-Control": "no-cache, no-store, must-revalidate",
+              "Pragma": "no-cache",
+              "Expires": "0",
+            })
+            .send(injectSeoMetadata(indexTemplate, seo));
+          return;
+        }
         // Never cache index.html so users always pick up the latest hashed
         // asset filenames after a redeploy.
         res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");

@@ -1,7 +1,7 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Salon Client Management Software & CRM | Certxa — Know Every Client');
-define('PAGE_DESC',     'Build detailed client profiles, track appointment history, record preferences and formulas, and personalise every visit. Certxa salon CRM software helps you turn first-time visitors into loyal, raving regulars.');
+define('PAGE_TITLE',    'Salon Client Management | Certxa');
+define('PAGE_DESC',     'Nail salon client management software for profiles, appointment history, service notes, preferences, and client follow-up. Certxa keeps the details your team needs organised alongside booking and daily salon workflows.');
 define('PAGE_KEYWORDS', 'nail salon client management software, nail salon CRM, nail salon client database, nail salon client profiles, nail salon CRM software, client management for nail salons, nail salon appointment history, nail salon client tracking, nail salon customer management');
 define('PAGE_CANONICAL', 'https://certxa.com/client-management');
 define('PAGE_BREADCRUMBS', json_encode([
@@ -32,8 +32,8 @@ require 'includes/nav.php';
         <h1 class="hero-headline">Know every client.<br><em style="color:#C2410C;">Personalise every visit.</em></h1>
         <p class="hero-subtext">Build rich client profiles that remember preferences, allergies, colour formulas, and history — so every appointment feels like a VIP experience.</p>
         <div class="hero-actions">
-          <a href="#" class="btn btn-primary">Start Free Trial</a>
-          <a href="#" class="btn btn-secondary">Explore Features</a>
+          <a href="/auth?mode=register" class="btn btn-primary">Start Free Trial</a>
+          <a href="/nail-salon-software" class="btn btn-secondary">Explore Nail Salon Software</a>
         </div>
         <p class="hero-note">Credit card required · No charge until trial ends &middot; Unlimited client records</p>
       </div>
@@ -70,10 +70,10 @@ require 'includes/nav.php';
 <section class="stats-strip">
   <div class="container">
     <div class="stats-grid">
-      <div class="stat-item"><div class="stat-value"><span>3×</span></div><div class="stat-label">Higher return rate with profiles</div></div>
-      <div class="stat-item"><div class="stat-value"><span>$450</span></div><div class="stat-label">Average lifetime value increase</div></div>
-      <div class="stat-item"><div class="stat-value"><span>100</span>%</div><div class="stat-label">GDPR compliant data storage</div></div>
-      <div class="stat-item"><div class="stat-value"><span>0</span></div><div class="stat-label">Missed client preferences</div></div>
+      <div class="stat-item"><div class="stat-value"><span>1</span></div><div class="stat-label">Organised client record per client</div></div>
+      <div class="stat-item"><div class="stat-value"><span>24/7</span></div><div class="stat-label">Access to booking history and notes</div></div>
+      <div class="stat-item"><div class="stat-value"><span>1</span></div><div class="stat-label">Connected client workflow</div></div>
+      <div class="stat-item"><div class="stat-value"><span>0</span></div><div class="stat-label">Paper notes to search through</div></div>
     </div>
   </div>
 </section>
@@ -99,7 +99,7 @@ require 'includes/nav.php';
           <li>Client-uploaded photos for style references</li>
           <li>Tags and segments for targeted outreach</li>
         </ul>
-        <a href="#" class="btn btn-primary">Try It Free</a>
+        <a href="/auth?mode=register" class="btn btn-primary">Try Client Management Free</a>
       </div>
       <div class="feature-visual" style="background:linear-gradient(145deg,#FFF7ED,#FED7AA);">
         <div class="ui-card" style="width:100%;max-width:320px;">
@@ -137,7 +137,7 @@ require 'includes/nav.php';
           <li>Average visit frequency per client</li>
           <li>Service popularity and revenue breakdown</li>
         </ul>
-        <a href="#" class="btn btn-primary">See the Dashboard</a>
+        <a href="/revenue-intelligence" class="btn btn-primary">Explore Revenue Intelligence</a>
       </div>
       <div class="feature-visual">
         <div class="ui-card" style="width:100%;max-width:320px;">
@@ -175,7 +175,7 @@ require 'includes/nav.php';
           <li>Automated data retention and deletion policies</li>
           <li>Client data export on request in one click</li>
         </ul>
-        <a href="#" class="btn btn-primary">Learn About Security</a>
+        <a href="/contact" class="btn btn-primary">Ask About Data Privacy</a>
       </div>
       <div class="feature-visual">
         <div style="text-align:center;">
@@ -237,7 +237,7 @@ require 'includes/nav.php';
     <h2 class="cta-title">Build relationships that<br><em>last a lifetime.</em></h2>
     <p class="cta-text">Start building rich client profiles today and turn one-time visitors into loyal regulars who keep coming back.</p>
     <div class="cta-actions">
-      <a href="#" class="btn btn-gold">Start Free Trial</a>
+          <a href="/auth?mode=register" class="btn btn-gold">Start Free Trial</a>
       <a href="/salonos" class="btn btn-outline-white">Explore All Features</a>
     </div>
     <p class="cta-note">Credit card required · No charge until trial ends &middot; Unlimited client records included</p>

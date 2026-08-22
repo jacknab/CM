@@ -1,6 +1,6 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Revenue Intelligence for Salons | AI-Powered Growth Engine — Certxa');
+define('PAGE_TITLE',    'Salon Revenue Intelligence | Certxa');
 define('PAGE_DESC',     'Certxa Revenue Intelligence watches your salon data 24/7 — detecting drifting clients, predicting no-shows, filling dead seats, and recovering lost revenue automatically. Included in every SalonOS plan.');
 define('PAGE_KEYWORDS', 'salon revenue intelligence, salon AI analytics, salon client retention software, salon no-show prediction, salon churn risk, salon rebooking rate, salon growth score, salon revenue leakage, salon win-back campaigns');
 define('PAGE_CANONICAL', 'https://certxa.com/revenue-intelligence');

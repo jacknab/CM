@@ -31,10 +31,7 @@ $is_preview   = ($current_page === 'preview.php');
                 <a href="/overview.php#how-it-works" class="nav-link">How It Works</a>
                 <a href="/pricing.php" class="nav-link">Pricing</a>
             </div>
-            <div class="nav-actions">
-                <a href="/auth" class="btn btn--ghost">Log In</a>
-                <a href="/auth" class="btn btn--primary">Get Started</a>
-            </div>
+            <!-- nav-actions removed for desktop - links now only in mobile menu -->
             <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Toggle menu">
                 <span></span><span></span><span></span>
             </button>

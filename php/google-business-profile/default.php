@@ -1,6 +1,6 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Google Business Profile Booking Link for Salons | Certxa');
+define('PAGE_TITLE',    'Salon Google Booking Link | Certxa');
 define('PAGE_DESC',     'Sync your Certxa booking link to your Google Business Profile so clients can book directly from Google Search and Maps. No partnership required — just a direct link to your Certxa booking page.');
 define('PAGE_KEYWORDS', 'google business profile salon booking, google listing booking link, salon google maps booking link, book via google listing, certxa google integration, salon google business profile');
 define('PAGE_CANONICAL', 'https://certxa.com/google-business-profile');

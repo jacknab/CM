@@ -1,7 +1,7 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Nail Salon Software for Solo Nail Technicians | Run Your Nail Business Solo — Certxa');
-define('PAGE_DESC',     'Certxa is the best software for solo nail technicians — manage bookings, walk-ins, client nail records, loyalty rewards, and a self-service check-in kiosk all from one app. Free ' . TRIAL_DAYS . '-day trial, no contracts.');
+define('PAGE_TITLE',    'Independent Nail Tech Software | Certxa');
+define('PAGE_DESC',     'Software for solo nail technicians to manage online booking, client nail records, reminders, payments, and daily salon work from one platform. Certxa helps independent nail professionals run a focused, organised business.');
 define('PAGE_KEYWORDS', 'solo nail technician software, independent nail tech software, one person nail salon software, nail tech booking app, solo nail salon app, freelance nail technician software, nail tech scheduling software, solo nail studio software');
 define('PAGE_CANONICAL','https://certxa.com/solo-professionals');
 define('PAGE_BREADCRUMBS', json_encode([
@@ -14,7 +14,7 @@ define('PAGE_SCHEMA', json_encode([
     ['@type'=>'Question','name'=>'Can a solo nail tech use the walk-in kiosk feature?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes — Certxa\'s self-service walk-in kiosk lets clients check themselves in without you interrupting a service. The kiosk adds them to your waitlist, captures their name and service preference, and notifies you instantly. Perfect for solo operators who can\'t always stop to greet the door.']],
     ['@type'=>'Question','name'=>'How does Certxa replace a front desk for a solo nail tech?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa automates every task a front desk would handle: 24/7 online booking, appointment confirmations, reminders, client nail records, checkout and payment processing, and follow-up messages — plus a self-service kiosk for walk-in clients — all without you lifting a finger.']],
   ]],
-  ['@type'=>'SoftwareApplication','name'=>'Certxa for Solo Professionals','applicationCategory'=>'BusinessApplication','operatingSystem'=>'Web, iOS, Android','offers'=>['@type'=>'Offer','price'=>'0','priceCurrency'=>'USD','description'=>TRIAL_DAYS . '-day free trial, then from $9/month']],
+  ['@type'=>'SoftwareApplication','name'=>'Certxa for Solo Professionals','applicationCategory'=>'BusinessApplication','operatingSystem'=>'Web, iOS, Android','offers'=>['@type'=>'Offer','price'=>'0','priceCurrency'=>'USD','description'=>TRIAL_DAYS . '-day free trial']],
 ]));
 require 'includes/header.php';
 require 'includes/nav.php';
@@ -40,7 +40,7 @@ require 'includes/nav.php';
           <a href="/auth?mode=register" class="btn btn-gold btn-lg">Start <?= TRIAL_DAYS ?>-Day Free Trial</a>
           <a href="/pricing" class="btn-play-wrap"><span class="btn-play-icon">→</span><span>See pricing</span></a>
         </div>
-        <div style="margin-top:24px;font-size:.82rem;color:rgba(255,255,255,.55);">Trusted by 10,000+ solo nail technicians · Credit card required · No charge until trial ends</div>
+        <div style="margin-top:24px;font-size:.82rem;color:rgba(255,255,255,.55);">Credit card required · No charge until trial ends · Cancel anytime</div>
       </div>
 
       <!-- UI mockup -->

@@ -1,5 +1,5 @@
 <?php
-$page_title = 'Template Designs';
+$page_title = 'Salon Website Templates';
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/includes/categories.php';
 require_once __DIR__ . '/includes/header.php';

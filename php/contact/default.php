@@ -1,6 +1,6 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Contact Certxa Support | We\'re Here to Help — Certxa');
+define('PAGE_TITLE',    'Certxa Support | Contact Us');
 define('PAGE_DESC',     'Get in touch with the Certxa support team. Reach us by phone, email, or live chat. Available Monday–Friday 9am–6pm ET. Toll-free support for all Certxa customers.');
 define('PAGE_KEYWORDS', 'certxa contact, certxa support, nail salon software help, certxa phone number, certxa customer service, nail salon software support');
 define('PAGE_CANONICAL', 'https://certxa.com/contact');
@@ -203,7 +203,7 @@ require 'includes/nav.php';
           </button>
 
           <p style="font-size:.75rem;color:var(--mid-grey);text-align:center;margin:0;">
-            By submitting this form you agree to our <a href="#" style="color:var(--plum);">Privacy Policy</a>. We'll never share your data.
+            By submitting this form you agree to our <a href="/privacy" style="color:var(--plum);">Privacy Policy</a>. We'll never share your data.
           </p>
         </form>
 
@@ -259,7 +259,7 @@ require 'includes/nav.php';
     <h2 class="cta-title">Not a Certxa customer yet?<br><em>Start your <?= TRIAL_DAYS ?>-day free trial.</em></h2>
     <p class="cta-text">The all-in-one platform built exclusively for nail studios and nail technicians.</p>
     <div class="cta-actions">
-      <a href="#" class="btn btn-gold">Start Free Trial</a>
+      <a href="/auth?mode=register" class="btn btn-gold">Start Free Trial</a>
       <a href="/pricing" class="btn btn-outline-white">View Pricing</a>
     </div>
     <p class="cta-note">Credit card required · No charge until trial ends &middot; Cancel any time</p>

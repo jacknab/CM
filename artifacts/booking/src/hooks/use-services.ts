@@ -94,6 +94,29 @@ export function useDeleteService() {
   });
 }
 
+export function useDeleteAllServices() {
+  const queryClient = useQueryClient();
+  const { selectedStore } = useSelectedStore();
+
+  return useMutation({
+    mutationFn: async () => {
+      const res = await fetch(api.services.deleteAll.path, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          confirmation: "DELETE ALL",
+          storeId: selectedStore?.id,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message ?? "Failed to delete all services");
+      return data as { deleted: number };
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [api.services.list.path] }),
+  });
+}
+
 export function useCreateServiceOption() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -116,6 +116,19 @@ interface AIMenuResult {
   categories: ExtractedCategory[];
 }
 
+function getOpenAIConfig(): { apiKey: string; baseURL?: string } {
+  const directApiKey = process.env.OPENAI_API_KEY?.trim();
+  const integrationApiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY?.trim();
+
+  if (directApiKey) return { apiKey: directApiKey };
+  if (integrationApiKey) {
+    const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL?.trim();
+    return { apiKey: integrationApiKey, ...(baseURL ? { baseURL } : {}) };
+  }
+
+  throw new Error("OpenAI API key is not configured");
+}
+
 const SYSTEM_PROMPT = `You are a nail salon service menu parser. The owner has uploaded photos or a PDF of their price board. Extract all services you can identify and return ONLY valid JSON.
 
 Normalize service names to standard nail salon terminology:
@@ -127,8 +140,9 @@ Normalize service names to standard nail salon terminology:
 - "Hard Gel" / "Hard Gel Full Set" → "Hard Gel Full Set"
 - "Polygel" / "Poly Gel" / "Poly-Gel" → "Polygel Full Set"
 - "French" suffix → keep "French" in the name (e.g. "Gel French Manicure")
-- Add-ons and variations should be captured as separate services within the same category.
-Group services into logical categories: Manicures, Pedicures, Enhancements, Add-ons, Waxing, Eyebrows, etc.
+- Add-ons and variations should be captured as separate services within the closest allowed category.
+Use ONLY these seven category names: Manicures, Pedicures, Enhancements, Nail Art, Waxing, Threading, Combos.
+Never invent another category. Put acrylic, gel, Gel-X, dip, fills, removals, and extensions under Enhancements. Put designs, charms, French tips, and similar add-ons under Nail Art. Put bundled services under Combos.
 For duration, estimate in minutes based on service type if not shown (e.g. manicure=45, pedicure=60, acrylic full set=90).
 For prices, extract the numeric value only (no $ sign). If a price range is shown (e.g. "$40-50"), use the lower value.
 Return ONLY valid JSON with no markdown, no commentary.
@@ -151,11 +165,8 @@ JSON format:
 async function extractServicesFromImages(
   imageBuffers: { buffer: Buffer; mimeType: string; originalName: string }[]
 ): Promise<AIMenuResult> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OpenAI API key is not configured");
-
   const OpenAI = (await import("openai")).default;
-  const openai = new OpenAI({ apiKey });
+  const openai = new OpenAI(getOpenAIConfig());
 
   const content: any[] = [
     {
@@ -179,6 +190,7 @@ async function extractServicesFromImages(
   const completion = await openai.chat.completions.create({
     model: "gpt-4o",
     max_tokens: 4096,
+    response_format: { type: "json_object" },
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content },
@@ -196,15 +208,12 @@ async function extractServicesFromPDF(
   pdfBuffer: Buffer,
   originalName: string
 ): Promise<AIMenuResult> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OpenAI API key is not configured");
-
-  const OpenAI = (await import("openai")).default;
-  const openai = new OpenAI({ apiKey });
+  const { default: OpenAI, toFile } = await import("openai");
+  const openai = new OpenAI(getOpenAIConfig());
 
   // Upload the PDF to OpenAI Files API so the model can read it natively
   const file = await openai.files.create({
-    file: new File([pdfBuffer], originalName, { type: "application/pdf" }),
+    file: await toFile(pdfBuffer, originalName, { type: "application/pdf" }),
     purpose: "user_data",
   });
 
@@ -215,6 +224,7 @@ async function extractServicesFromPDF(
     completion = await openai.chat.completions.create({
       model: "gpt-5.5",
       max_tokens: 4096,
+      response_format: { type: "json_object" },
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         {
@@ -234,7 +244,7 @@ async function extractServicesFromPDF(
     });
   } finally {
     // Clean up the uploaded file regardless of success/failure
-    await openai.files.del(file.id).catch((e: any) =>
+    await openai.files.delete(file.id).catch((e: any) =>
       console.warn(`[ServiceImport] Could not delete OpenAI file ${file.id}:`, e.message)
     );
   }
@@ -550,6 +560,31 @@ router.patch("/jobs/:id/result", async (req: Request, res: Response): Promise<vo
  * Creates real service categories + services from the reviewed AI result.
  * Body: { jobId: number, categories: ExtractedCategory[] }
  */
+// ─── Allowed Nail Salon Categories (exact order, source of truth) ────────────────
+const ALLOWED_NAIL_SALON_CATEGORIES = [
+  "Manicures",
+  "Pedicures",
+  "Enhancements",
+  "Nail Art",
+  "Waxing",
+  "Threading",
+  "Combos",
+] as const;
+
+type AllowedCategory = (typeof ALLOWED_NAIL_SALON_CATEGORIES)[number];
+
+/**
+ * Normalize a category name to one of the 7 allowed nail salon categories.
+ * Returns the canonical category name if it matches (case-insensitive), otherwise null.
+ */
+function normalizeCategoryName(name: string): AllowedCategory | null {
+  const trimmed = name.trim();
+  const match = ALLOWED_NAIL_SALON_CATEGORIES.find(
+    (allowed) => allowed.toLowerCase() === trimmed.toLowerCase()
+  );
+  return match ?? null;
+}
+
 router.post("/publish", async (req: Request, res: Response): Promise<void> => {
   const storeId = await requireStore(req, res);
   if (!storeId) return;
@@ -581,12 +616,22 @@ router.post("/publish", async (req: Request, res: Response): Promise<void> => {
       continue;
     }
 
-    // Create or find category
+    // Validate category name against allowed nail salon categories
+    const canonicalName = normalizeCategoryName(cat.name);
+    if (!canonicalName) {
+      // Skip categories not in the allowed list — AI importer cannot create arbitrary categories
+      console.warn(
+        `[ServiceImport] Skipping disallowed category "${cat.name.trim()}" for store ${storeId}. Allowed: ${ALLOWED_NAIL_SALON_CATEGORIES.join(", ")}`
+      );
+      continue;
+    }
+
+    // Create or find category (using canonical name for consistency)
     const [existingCat] = await db
       .select({ id: serviceCategories.id })
       .from(serviceCategories)
       .where(
-        sql`store_id = ${storeId} AND lower(name) = lower(${cat.name.trim()})`
+        sql`store_id = ${storeId} AND lower(name) = lower(${canonicalName})`
       )
       .limit(1);
 
@@ -596,7 +641,7 @@ router.post("/publish", async (req: Request, res: Response): Promise<void> => {
     } else {
       const [newCat] = await db
         .insert(serviceCategories)
-        .values({ name: cat.name.trim(), storeId })
+        .values({ name: canonicalName, storeId })
         .returning({ id: serviceCategories.id });
       categoryId = newCat.id;
       totalCategories++;
@@ -613,7 +658,7 @@ router.post("/publish", async (req: Request, res: Response): Promise<void> => {
         name:        svc.name.trim(),
         price,
         duration,
-        category:    cat.name.trim(),
+        category:    canonicalName,
         categoryId,
         storeId,
         isActive:    false,

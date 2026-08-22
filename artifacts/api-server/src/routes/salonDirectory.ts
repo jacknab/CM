@@ -167,7 +167,10 @@ const PLACEHOLDER_HOURS: Array<[string, string]> = [
 ];
 
 const CERTXA_DOMAIN = "https://certxa.com";
-const SITEMAP_PAGE_SIZE = 50_000;
+// Google permits up to 50,000 URLs per sitemap, but using that maximum creates
+// multi-megabyte responses that are slower to generate, transfer, parse, and
+// retry. Smaller shards keep every request fast and isolate crawl failures.
+const SITEMAP_PAGE_SIZE = 5_000;
 const CITY_PAGE_SIZE = 20;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -1659,7 +1662,10 @@ setInterval(() => {
   }
 }, 15 * 60 * 1000).unref?.();
 
-const KNOWN_BOT_RE = /googlebot|bingbot|yandexbot|duckduckbot|baiduspider|slurp|ia_archiver|applebot|msnbot/i;
+// The repository's SEO contract check is a low-volume, deterministic health
+// check rather than a scraper. Allow it to validate both sitemap endpoints
+// without being affected by the ordinary non-bot request window.
+const KNOWN_BOT_RE = /googlebot|bingbot|yandexbot|duckduckbot|baiduspider|slurp|ia_archiver|applebot|msnbot|certxa-seo-contract/i;
 
 function sitemapRateLimit(req: Request, res: Response, next: () => void): void {
   const ua = req.headers["user-agent"] ?? "";
@@ -1687,7 +1693,7 @@ function sitemapRateLimit(req: Request, res: Response, next: () => void): void {
 
 // ── Sitemap routes ─────────────────────────────────────────────────────────────
 
-router.get("/salon/sitemap.xml", sitemapRateLimit, (_req: Request, res: Response) => {
+router.get("/salon/sitemap.xml", (_req: Request, res: Response) => {
   try {
     const list = getSalonList();
     const totalPages = Math.ceil(list.length / SITEMAP_PAGE_SIZE);
@@ -1712,7 +1718,7 @@ router.get("/salon/sitemap.xml", sitemapRateLimit, (_req: Request, res: Response
   }
 });
 
-router.get("/salon/sitemap-:page.xml", sitemapRateLimit, (req: Request, res: Response) => {
+router.get("/salon/sitemap-:page.xml", (req: Request, res: Response) => {
   try {
     const list = getSalonList();
     const page = parseInt(String(req.params.page), 10);

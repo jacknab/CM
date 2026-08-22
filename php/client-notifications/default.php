@@ -1,7 +1,7 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Salon Appointment Reminders & Automated Client Notifications — Certxa');
-define('PAGE_DESC',     'Reduce no-shows by 68% with automated SMS and email appointment reminders. Certxa sends booking confirmations, reminders, and follow-ups for your salon automatically — 24/7, without any effort from you.');
+define('PAGE_TITLE',    'Salon Appointment Reminders | Certxa');
+define('PAGE_DESC',     'Nail salon appointment reminders and automated client notifications for booking confirmations, reminders, follow-ups, and rebooking messages. Certxa helps keep clients informed across your salon booking workflow.');
 define('PAGE_KEYWORDS', 'nail salon appointment reminders, automated nail salon reminders, nail salon SMS reminders, nail salon no-show reduction, nail salon booking confirmation, nail salon follow-up messages, nail salon automated notifications, nail salon text reminders');
 define('PAGE_CANONICAL', 'https://certxa.com/client-notifications');
 define('PAGE_BREADCRUMBS', json_encode([
@@ -13,7 +13,7 @@ define('PAGE_SCHEMA', json_encode([
     '@type'       => 'WebPage',
     '@id'         => 'https://certxa.com/client-notifications',
     'name'        => 'Salon Appointment Reminders & Automated Notifications — Certxa',
-    'description' => 'Automated SMS and email appointment reminders that reduce no-shows by 68% for hair salons, nail salons, and beauty studios.',
+    'description' => 'Automated appointment reminders and client notifications for nail salons, beauty studios, and other appointment-based businesses.',
     'url'         => 'https://certxa.com/client-notifications',
     'isPartOf'    => ['@id'=>'https://certxa.com/#website'],
     'about'       => ['@id'=>'https://certxa.com/#software'],
@@ -32,8 +32,8 @@ require 'includes/nav.php';
         <h1 class="hero-headline">Fewer no-shows.<br><em>More loyal clients.</em></h1>
         <p class="hero-subtext">Automated reminders, booking confirmations, and follow-up messages that keep your clients engaged and your diary full — all running in the background without any effort from you.</p>
         <div class="hero-actions">
-          <a href="#" class="btn btn-primary">Start Free Trial</a>
-          <a href="#" class="btn btn-secondary">See Templates</a>
+          <a href="/auth?mode=register" class="btn btn-primary">Start Free Trial</a>
+          <a href="/online-booking" class="btn btn-secondary">Explore Online Booking</a>
         </div>
         <p class="hero-note">Fully automated &middot; SMS, email and push &middot; GDPR compliant</p>
       </div>
@@ -73,10 +73,10 @@ require 'includes/nav.php';
 <section class="stats-strip">
   <div class="container">
     <div class="stats-grid">
-      <div class="stat-item"><div class="stat-value"><span>60</span>%</div><div class="stat-label">Reduction in no-shows</div></div>
-      <div class="stat-item"><div class="stat-value"><span>4×</span></div><div class="stat-label">More rebookings from follow-ups</div></div>
-      <div class="stat-item"><div class="stat-value"><span>$280</span></div><div class="stat-label">Average monthly saving per nail tech</div></div>
-      <div class="stat-item"><div class="stat-value"><span>100</span>%</div><div class="stat-label">Automated — zero manual effort</div></div>
+      <div class="stat-item"><div class="stat-value"><span>24/7</span></div><div class="stat-label">Booking notification availability</div></div>
+      <div class="stat-item"><div class="stat-value"><span>1</span></div><div class="stat-label">Connected client communication workflow</div></div>
+      <div class="stat-item"><div class="stat-value"><span>3</span></div><div class="stat-label">Message moments: booking, visit, and follow-up</div></div>
+      <div class="stat-item"><div class="stat-value"><span>0</span></div><div class="stat-label">Manual reminder list to maintain</div></div>
     </div>
   </div>
 </section>
@@ -102,7 +102,7 @@ require 'includes/nav.php';
           <li>Instant notification to you when a client responds</li>
           <li>Cancellation policy enforced automatically</li>
         </ul>
-        <a href="#" class="btn btn-primary">Start Free Trial</a>
+        <a href="/auth?mode=register" class="btn btn-primary">Start Free Trial</a>
       </div>
       <div class="feature-visual" style="background:linear-gradient(145deg,var(--plum-light),#DDD6FE);">
         <div style="width:100%;max-width:300px;">
@@ -132,7 +132,7 @@ require 'includes/nav.php';
           <li>Optional exclusive offer or discount to incentivise return</li>
           <li>Track re-engagement rate per campaign</li>
         </ul>
-        <a href="#" class="btn btn-primary">See It in Action</a>
+        <a href="/client-management" class="btn btn-primary">Explore Client Management</a>
       </div>
       <div class="feature-visual">
         <div class="ui-card" style="width:100%;max-width:320px;">
@@ -165,7 +165,7 @@ require 'includes/nav.php';
           <li>Lapsed client re-engagement nudges</li>
           <li>Personalised rebooking reminders</li>
         </ul>
-        <a href="#" class="btn btn-primary">Try It Free</a>
+        <a href="/auth?mode=register" class="btn btn-primary">Try Notifications Free</a>
       </div>
       <div class="feature-visual" style="background:linear-gradient(145deg,#FFF7ED,var(--gold-light));">
         <div style="display:flex;flex-direction:column;gap:10px;width:100%;max-width:300px;">
@@ -226,8 +226,8 @@ require 'includes/nav.php';
     <h2 class="cta-title">Set it once.<br><em>Profit forever.</em></h2>
     <p class="cta-text">Spend 15 minutes setting up your notification flows and let Certxa handle every client communication from that moment on.</p>
     <div class="cta-actions">
-      <a href="#" class="btn btn-gold">Start Free Trial</a>
-      <a href="#" class="btn btn-outline-white">See All Templates</a>
+      <a href="/auth?mode=register" class="btn btn-gold">Start Free Trial</a>
+      <a href="/online-booking" class="btn btn-outline-white">Explore Online Booking</a>
     </div>
     <p class="cta-note">Credit card required · No charge until trial ends &middot; Unlimited notifications included</p>
   </div>
