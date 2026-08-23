@@ -83,12 +83,22 @@ export default function Reports() {
   const { data: staffList = [] } = useStaffList();
   const { data: customers = [] } = useQuery<any[]>({
     queryKey: ["/api/customers", selectedStore?.id],
-    queryFn: () => fetch(`/api/customers?storeId=${selectedStore!.id}`, { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const res = await fetch(`/api/customers?storeId=${selectedStore!.id}`, { credentials: "include" });
+      if (!res.ok) return [];
+      const raw = await res.json();
+      return Array.isArray(raw) ? raw : [];
+    },
     enabled: !!selectedStore,
   });
   const { data: services = [] } = useQuery<any[]>({
     queryKey: ["/api/services", selectedStore?.id],
-    queryFn: () => fetch(`/api/services?storeId=${selectedStore!.id}`, { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const res = await fetch(`/api/services?storeId=${selectedStore!.id}`, { credentials: "include" });
+      if (!res.ok) return [];
+      const raw = await res.json();
+      return Array.isArray(raw) ? raw : [];
+    },
     enabled: !!selectedStore,
   });
 
