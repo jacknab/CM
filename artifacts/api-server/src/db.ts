@@ -32,6 +32,10 @@ export const pool = new Pool({
   connectionTimeoutMillis: 5_000,
   // How long an idle connection stays alive before being closed.
   idleTimeoutMillis: 30_000,
+  // Detect dead sockets after a PostgreSQL/proxy restart instead of reusing
+  // them indefinitely.
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10_000,
   // How long a query is allowed to run before being forcibly killed.
   // Protects against runaway queries degrading the whole pool.
   statement_timeout: STATEMENT_TIMEOUT_MS,

@@ -24,7 +24,7 @@
 import pg from "pg";
 import fs from "fs";
 import path from "path";
-import { pool } from "../db";
+import { pool, waitForDb } from "../db";
 
 // Resolve migrations/ directory in both dev (ESM/tsx) and prod (esbuild CJS).
 const _cjsDirname: string | undefined = (globalThis as any).__dirname;
@@ -214,7 +214,23 @@ async function applyAllMigrationsSoft(
 }
 
 export async function runMigrations(): Promise<void> {
-  const client = await pool.connect();
+  // A VPS restart can bring Node up before PostgreSQL (or its proxy) accepts
+  // connections.  Failing the process on the first refused connection makes
+  // PM2 restart-loop and takes the API offline even though the DB recovers.
+  await waitForDb("migrations");
+  let client: pg.PoolClient | undefined;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    try {
+      client = await pool.connect();
+      break;
+    } catch (err) {
+      lastError = err;
+      if (attempt === 6) throw lastError;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(attempt * 2_000, 10_000)));
+    }
+  }
+  if (!client) throw lastError ?? new Error("Unable to acquire database client");
   try {
     await ensureTrackingTable(client);
 

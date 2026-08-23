@@ -454,14 +454,29 @@ app.get("/api/health", async (_req, res) => {
   let dbStatus: "ok" | "error" = "error";
   let dbError: string | undefined;
   try {
+    // Do not use a bare Promise.race here: if the timeout wins, a later
+    // successful pool.connect() would resolve to an unreleased client and
+    // eventually exhaust the pool after repeated health checks.
+    let timer: NodeJS.Timeout | undefined;
+    const connectPromise = pool.connect();
     const client = await Promise.race<any>([
-      pool.connect(),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("connection timeout after 2s")), 2000)
-      ),
-    ]);
-    await client.query("SELECT 1");
-    client.release();
+      connectPromise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("connection timeout after 2s")), 2000);
+      }),
+    ]).catch((err) => {
+      void connectPromise.then((lateClient) => lateClient.release()).catch(() => {});
+      throw err;
+    }).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+    try {
+      await client.query("SELECT 1");
+    } finally {
+      // Release on both success and query failure. A terminated connection is
+      // discarded by pg when released, while a healthy one returns to the pool.
+      client.release();
+    }
     dbStatus = "ok";
   } catch (err: any) {
     dbError = err?.message ?? "unknown error";
