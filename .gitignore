@@ -33,3 +33,8 @@ dump.rdb
 
 # Nested skills clone (has its own .git)
 geo-seo-claude/
+
+# Package-manager stores / aborted filter-branch scratch / agent scratch output
+.pnpm-store/
+.git-rewrite/
+.agents/outputs/
