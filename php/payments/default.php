@@ -1079,27 +1079,27 @@ $_proPrice  = number_format($_proCents  / 100, 0);
     </div>
     <div class="accordion">
       <div class="accordion-item">
-        <button class="accordion-btn">Does Certxa take a percentage of my card sales? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Does Certxa take a percentage of my card sales? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">No. Certxa does not take any percentage of your card sales. All processing fees go directly to Stripe at their standard rates. Our only payment-related charge is a flat <strong>$0.60 connection fee per transaction</strong> — that covers the cost of the Stripe Connect integration we maintain for you.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">Do I buy the card reader from Certxa? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Do I buy the card reader from Certxa? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">No — the Stripe M2 card reader is purchased directly from <a href="https://stripe.com/terminal" target="_blank" rel="noopener" style="color:var(--plum);font-weight:600;">Stripe Terminal</a>. Certxa connects to your Stripe account, so the reader talks to Stripe directly — not through us. You own the hardware outright and it stays with you even if you ever change platforms.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">What is the Platform Wallet and how is it different from my subscription? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">What is the Platform Wallet and how is it different from my subscription? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">Your subscription covers your core platform access: booking, calendars, CRM, website builder, and your monthly SMS allowance. The Platform Wallet is a <strong>separate prepaid balance</strong> used for pay-as-you-go extras — Autumn AI Receptionist calls, overflow SMS when your allowance runs out, AI phone number provisioning, and future usage-based features. You only need to add funds if you use those extras.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">What happens if my Wallet runs out during an Autumn call? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">What happens if my Wallet runs out during an Autumn call? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">Autumn completes any in-progress call even if it takes the balance slightly negative (up to -$10.00 grace). New calls will be blocked until you top up. Enable <strong>Auto-Refill</strong> and this will never happen — the system automatically tops up the moment the balance drops below your set threshold.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">What happens to unused SMS when my billing period resets? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">What happens to unused SMS when my billing period resets? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">Your plan's monthly SMS allowance resets each billing period — unused messages don't carry over. On the Professional and Elite plans, SMS is unlimited so this doesn't apply. On the Solo plan, you get 200 SMS/month; if you go over, additional messages are billed at <strong>$0.026 per SMS</strong> from your Platform Wallet.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">Is there a minimum amount I need to add to the Wallet? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Is there a minimum amount I need to add to the Wallet? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">No minimum. Add any amount via Stripe Checkout from your dashboard. A good rule of thumb: if Autumn handles around 100 calls a month, a $50–$75 top-up gives you comfortable runway. With Auto-Refill on, you set the threshold once and never think about it again.</div>
       </div>
     </div>

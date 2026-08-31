@@ -145,6 +145,24 @@ export function storeLocalToUtc(localDateStr: string, timezone: string): Date {
   return fromZonedTime(d, timezone);
 }
 
+/**
+ * True if a store wall-clock slot ("YYYY-MM-DDTHH:mm[:ss]") is at or before the
+ * real current moment.
+ *
+ * Use this for every "is this slot in the past?" check. The slot is converted to
+ * its true UTC instant via storeLocalToUtc() and compared against the real epoch
+ * (Date.now()).
+ *
+ * DO NOT hand-roll this as `storeLocalToUtc(slot, tz).getTime() <= storeNow.getTime()`:
+ * getNowInTimezone()/"storeNow" is a wall-clock Date whose .getTime() is shifted
+ * by the store's UTC offset, so mixing it with a real instant makes the past/
+ * future boundary drift by that offset (e.g. ~7h for America/Phoenix), which
+ * mis-shades the calendar's blocked hours on the current day.
+ */
+export function isStoreLocalSlotInPast(slotLocalStr: string, timezone: string): boolean {
+  return storeLocalToUtc(slotLocalStr, timezone).getTime() <= Date.now();
+}
+
 // ── Timezone-safe field accessors ────────────────────────────────────────────
 
 /**

@@ -21,13 +21,17 @@ define('PAGE_SCHEMA', json_encode([
     ],
   ],
   [
-    '@type'       => 'SoftwareApplication',
-    'name'        => 'Certxa Walk-In Check-In Kiosk',
-    'applicationCategory' => 'BusinessApplication',
-    'operatingSystem' => 'Web, iOS, Android',
-    'description' => 'Self-service walk-in check-in kiosk for nail salons. Clients check in on a tablet, choose a service and tech preference, and are added to the live waitlist — all without interrupting your work.',
-    'offers'      => ['@type'=>'Offer','price'=>'0','priceCurrency'=>'USD','description'=>'Included in all Certxa plans. ' . TRIAL_DAYS . '-day free trial.'],
+    '@type'       => 'HowTo',
+    'name'        => 'How the Certxa nail salon check-in kiosk works',
+    'description' => 'How a walk-in client checks themselves in on the Certxa kiosk tablet, in four steps.',
+    'step' => [
+      ['@type'=>'HowToStep','position'=>1,'name'=>'Tap the kiosk','text'=>'The client walks up to the iPad or Android tablet on your counter and taps to start. No staff needed — the screen guides them.','url'=>'https://certxa.com/checkin-kiosk#how-it-works'],
+      ['@type'=>'HowToStep','position'=>2,'name'=>'Enter phone number','text'=>'They type their number on the on-screen numpad. Returning clients are recognised and welcomed back by name.','url'=>'https://certxa.com/checkin-kiosk#how-it-works'],
+      ['@type'=>'HowToStep','position'=>3,'name'=>'Pick a service','text'=>'They select from your live service menu and optionally choose a preferred nail technician — or tap "any available".','url'=>'https://certxa.com/checkin-kiosk#how-it-works'],
+      ['@type'=>'HowToStep','position'=>4,'name'=>'Ticket prints automatically','text'=>'A check-in ticket fires to your front desk printer instantly and the client is added to your live waitlist. The next available staff member picks it up.','url'=>'https://certxa.com/checkin-kiosk#how-it-works'],
+    ],
   ],
+  // Canonical SoftwareApplication (@id #software) is injected site-wide by includes/header.php.
 ]));
 require __DIR__ . '/../includes/header.php';
 require __DIR__ . '/../includes/nav.php';
@@ -707,7 +711,7 @@ require __DIR__ . '/../includes/nav.php';
           <!-- Floating star badge -->
           <div class="ck-star-badge">
             <div class="stars">⭐⭐⭐⭐⭐</div>
-            <div class="label">4.9 · 247 reviews</div>
+            <div class="label">New 5-star review</div>
           </div>
 
           <!-- iPad shell -->
@@ -1255,7 +1259,7 @@ require __DIR__ . '/../includes/nav.php';
 </div>
 
 <!-- ══ 3. HOW IT WORKS ═══════════════════════════════════════ -->
-<section class="ck-section ck-section-white">
+<section id="how-it-works" class="ck-section ck-section-white">
   <div class="ck-container" style="max-width:1080px;">
     <div class="ck-text-center" style="margin-bottom:64px;">
       <span class="ck-section-label">How It Works</span>
@@ -1534,32 +1538,6 @@ require __DIR__ . '/../includes/nav.php';
         </div>
       </div>
 
-    </div>
-  </div>
-</section>
-
-<!-- ══ 6. TESTIMONIALS ═══════════════════════════════════════ -->
-<section class="ck-section ck-section-mid">
-  <div class="ck-container" style="max-width:1020px;">
-    <div class="ck-text-center" style="margin-bottom:48px;">
-      <span class="ck-section-label">Loved by Nail Studios</span>
-      <h2 class="ck-section-title">What nail salon owners say</h2>
-    </div>
-    <div class="ck-testimonials-grid">
-      <?php
-      $quotes = [
-        ['"Since we put the kiosk on the front counter, I haven\'t had to stop a service to greet a walk-in. My clients love it and I\'m so much less stressed."', 'Linh T.', 'Owner, Luxe Nail Studio'],
-        ['"The Google review SMS alone is worth it. Our rating went from 4.1 to 4.8 in two months — just from the automatic messages Certxa sends after each visit."', 'Mai N.', 'Owner, Pink Polish Studio'],
-        ['"My solo booth just feels so much more professional. Clients check in on the tablet and see their estimated wait. No awkward conversations. Game changer."', 'Sandra K.', 'Solo Nail Tech, Booth Renter'],
-      ];
-      foreach ($quotes as $q): ?>
-      <div class="ck-testimonial-card">
-        <div class="ck-t-stars">⭐⭐⭐⭐⭐</div>
-        <p class="ck-t-quote"><?= $q[0] ?></p>
-        <div class="ck-t-author"><?= $q[1] ?></div>
-        <div class="ck-t-role"><?= $q[2] ?></div>
-      </div>
-      <?php endforeach; ?>
     </div>
   </div>
 </section>

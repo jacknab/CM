@@ -17,13 +17,7 @@ define('PAGE_SCHEMA', json_encode([
     'url'         => 'https://certxa.com/salonos',
     'isPartOf'    => ['@id'=>'https://certxa.com/#website'],
   ],
-  [
-    '@type'       => 'SoftwareApplication',
-    'name'        => 'SalonOS by Certxa',
-    'applicationCategory' => 'BusinessApplication',
-    'operatingSystem'     => 'Web, iOS, Android',
-    'offers' => ['@type'=>'Offer','price'=>'0','priceCurrency'=>'USD','description'=>TRIAL_DAYS . '-day free trial. Credit card required · No charge until trial ends.'],
-  ],
+  // Canonical SoftwareApplication (@id #software) is injected site-wide by includes/header.php.
 ]));
 require 'includes/header.php';
 require 'includes/nav.php';
@@ -489,7 +483,7 @@ require 'includes/nav.php';
         <span style="color:#f9fafb;">we actually show you how.</span>
       </h2>
       <p style="font-size:clamp(.95rem,1.6vw,1.15rem);color:#9ca3af;max-width:580px;margin:0 auto;line-height:1.75;">
-        SalonOS mines your own booking data 24/7 and tells you exactly where revenue is leaking — then takes action to recover it automatically. No other salon platform does this.
+        SalonOS mines your own booking data 24/7 and tells you exactly where revenue is leaking — then takes action to recover it automatically.
       </p>
     </div>
 

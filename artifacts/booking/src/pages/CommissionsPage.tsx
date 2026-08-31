@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useSelectedStore } from "@/hooks/use-store";
+import { useLanguage } from "@/hooks/use-language";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { TrendingUp, Zap, Users, BarChart2, ArrowRight, Percent, CheckCircle2 } from "lucide-react";
@@ -9,12 +10,32 @@ import { TrendingUp, Zap, Users, BarChart2, ArrowRight, Percent, CheckCircle2 } 
 // ── Upsell page shown when commissions are not yet set up ─────────────────────
 
 function CommissionsUpsell({ onSetUp }: { onSetUp: () => void }) {
+  const { pick } = useLanguage();
+  const t = {
+    commissions:   pick({ en: "Commissions",          vi: "Hoa hồng",                       es: "Comisiones",                       fr: "Commissions" }),
+    subtitle:      pick({ en: "Motivate your team with performance-based pay", vi: "Khích lệ đội ngũ bằng lương theo hiệu suất", es: "Motiva a tu equipo con pago según el rendimiento", fr: "Motivez votre équipe avec une rémunération à la performance" }),
+    illustrationAlt: pick({ en: "Commission split illustration", vi: "Minh họa chia hoa hồng",          es: "Ilustración de reparto de comisiones", fr: "Illustration du partage des commissions" }),
+    badge:         pick({ en: "Commission Management",  vi: "Quản lý hoa hồng",                es: "Gestión de comisiones",            fr: "Gestion des commissions" }),
+    headingA:      pick({ en: "Automate Staff",         vi: "Tự động hóa hoa hồng",            es: "Automatiza las comisiones",        fr: "Automatisez les commissions" }),
+    headingB:      pick({ en: "Commissions",            vi: "cho nhân viên",                   es: "del personal",                     fr: "du personnel" }),
+    blurb:         pick({ en: "Create commission rules once. Certxa tracks completed services and calculates employee earnings automatically.", vi: "Tạo quy tắc hoa hồng một lần. Certxa theo dõi dịch vụ đã hoàn thành và tự động tính thu nhập cho nhân viên.", es: "Crea las reglas de comisión una vez. Certxa registra los servicios completados y calcula las ganancias de los empleados automáticamente.", fr: "Créez les règles de commission une seule fois. Certxa suit les services réalisés et calcule automatiquement les gains des employés." }),
+    feat1:         pick({ en: "Custom rates per staff member or role", vi: "Tỷ lệ tùy chỉnh theo từng nhân viên hoặc vai trò", es: "Tarifas personalizadas por empleado o función", fr: "Taux personnalisés par employé ou par rôle" }),
+    feat2:         pick({ en: "Auto-calculated after every appointment", vi: "Tự động tính sau mỗi lịch hẹn", es: "Cálculo automático tras cada cita", fr: "Calcul automatique après chaque rendez-vous" }),
+    feat3:         pick({ en: "Built-in reporting synced with payroll", vi: "Báo cáo tích hợp, đồng bộ với bảng lương", es: "Informes integrados sincronizados con la nómina", fr: "Rapports intégrés synchronisés avec la paie" }),
+    cta:           pick({ en: "Set up commissions",    vi: "Thiết lập hoa hồng",              es: "Configurar comisiones",            fr: "Configurer les commissions" }),
+    s1Title:       pick({ en: "Flexible structures",   vi: "Cấu trúc linh hoạt",              es: "Estructuras flexibles",            fr: "Structures flexibles" }),
+    s1Desc:        pick({ en: "Set flat rates, tiered brackets, or per-service splits — whatever fits your team.", vi: "Đặt tỷ lệ cố định, bậc thang, hoặc chia theo từng dịch vụ — tùy theo đội ngũ của bạn.", es: "Establece tarifas fijas, tramos escalonados o repartos por servicio — lo que se adapte a tu equipo.", fr: "Définissez des taux fixes, des paliers ou des répartitions par service — selon votre équipe." }),
+    s2Title:       pick({ en: "Real-time visibility",  vi: "Xem theo thời gian thực",         es: "Visibilidad en tiempo real",       fr: "Visibilité en temps réel" }),
+    s2Desc:        pick({ en: "Staff see their own earnings live. Owners see the full breakdown at a glance.", vi: "Nhân viên xem thu nhập của mình theo thời gian thực. Chủ tiệm xem toàn bộ chi tiết trong nháy mắt.", es: "El personal ve sus ganancias en vivo. Los propietarios ven el desglose completo de un vistazo.", fr: "Le personnel voit ses gains en direct. Les propriétaires voient le détail complet d'un coup d'œil." }),
+    s3Title:       pick({ en: "Payroll-ready",         vi: "Sẵn sàng cho bảng lương",         es: "Listo para la nómina",             fr: "Prêt pour la paie" }),
+    s3Desc:        pick({ en: "Commission totals flow directly into your payroll run — no manual math needed.", vi: "Tổng hoa hồng chuyển thẳng vào đợt trả lương — không cần tính tay.", es: "Los totales de comisión pasan directamente a tu nómina — sin cálculos manuales.", fr: "Les totaux de commission alimentent directement votre paie — aucun calcul manuel." }),
+  };
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white flex flex-col">
       {/* Page header */}
       <div className="px-4 sm:px-8 pt-6 sm:pt-8 pb-0">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">Commissions</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Motivate your team with performance-based pay</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">{t.commissions}</h1>
+        <p className="text-sm text-gray-500 mt-0.5">{t.subtitle}</p>
       </div>
 
       {/* Hero section */}
@@ -25,7 +46,7 @@ function CommissionsUpsell({ onSetUp }: { onSetUp: () => void }) {
           <div className="relative flex items-center justify-center order-2 lg:order-1">
             <img
               src="/commissions-illustration.jpg"
-              alt="Commission split illustration"
+              alt={t.illustrationAlt}
               className="w-full max-w-sm sm:max-w-lg lg:max-w-2xl rounded-2xl sm:rounded-3xl object-contain drop-shadow-xl"
             />
           </div>
@@ -35,22 +56,22 @@ function CommissionsUpsell({ onSetUp }: { onSetUp: () => void }) {
             <div>
               <div className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-600 text-[12px] font-semibold px-3 py-1 rounded-full mb-3 sm:mb-4">
                 <Percent size={12} />
-                Commission Management
+                {t.badge}
               </div>
               <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 leading-[1.15] tracking-tight">
-                Automate Staff<br />Commissions
+                {t.headingA}<br />{t.headingB}
               </h2>
               <p className="text-gray-500 text-sm sm:text-base mt-3 sm:mt-4 leading-relaxed max-w-sm">
-                Create commission rules once. Certxa tracks completed services and calculates employee earnings automatically.
+                {t.blurb}
               </p>
             </div>
 
             {/* Feature list */}
             <ul className="space-y-2.5 sm:space-y-3">
               {[
-                { icon: Users,      text: "Custom rates per staff member or role" },
-                { icon: Zap,        text: "Auto-calculated after every appointment" },
-                { icon: TrendingUp, text: "Built-in reporting synced with payroll" },
+                { icon: Users,      text: t.feat1 },
+                { icon: Zap,        text: t.feat2 },
+                { icon: TrendingUp, text: t.feat3 },
               ].map(({ icon: Icon, text }) => (
                 <li key={text} className="flex items-start gap-3">
                   <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-50 flex items-center justify-center mt-0.5">
@@ -67,7 +88,7 @@ function CommissionsUpsell({ onSetUp }: { onSetUp: () => void }) {
                 onClick={onSetUp}
                 className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-semibold text-[14px] shadow-md shadow-indigo-200 flex items-center justify-center gap-2"
               >
-                Set up commissions
+                {t.cta}
                 <ArrowRight size={15} />
               </Button>
             </div>
@@ -81,18 +102,18 @@ function CommissionsUpsell({ onSetUp }: { onSetUp: () => void }) {
           {[
             {
               icon: Percent,
-              title: "Flexible structures",
-              desc: "Set flat rates, tiered brackets, or per-service splits — whatever fits your team.",
+              title: t.s1Title,
+              desc: t.s1Desc,
             },
             {
               icon: BarChart2,
-              title: "Real-time visibility",
-              desc: "Staff see their own earnings live. Owners see the full breakdown at a glance.",
+              title: t.s2Title,
+              desc: t.s2Desc,
             },
             {
               icon: TrendingUp,
-              title: "Payroll-ready",
-              desc: "Commission totals flow directly into your payroll run — no manual math needed.",
+              title: t.s3Title,
+              desc: t.s3Desc,
             },
           ].map(({ icon: Icon, title, desc }) => (
             <div key={title} className="flex gap-4">

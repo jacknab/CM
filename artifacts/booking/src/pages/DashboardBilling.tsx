@@ -289,6 +289,9 @@ export default function DashboardBilling() {
         return;
       }
       queryClient.invalidateQueries({ queryKey: ["billing-profile", salonId] });
+      setShowPlanConfirm(false);
+      setSwitchingTo(null);
+      setCancelStep("idle");
       const plan = PLANS.find((p) => p.code === planCode) ?? PLANS[0];
       toast({ title: "Plan selected", description: `You're now on the ${plan.name} plan — $${plan.price}/mo.` });
     },
@@ -607,7 +610,7 @@ export default function DashboardBilling() {
                             <div className={cn("flex items-center gap-1.5 text-xs font-semibold", isElite ? "text-amber-600" : "text-primary")}>
                               <BadgeCheck className="w-4 h-4" /> Active
                             </div>
-                          ) : isActive ? (
+                          ) : isActive && !isTrialing ? (
                             <button
                               onClick={() => { setSwitchingTo(plan.code); setShowPlanConfirm(true); }}
                               disabled={changePlanMutation.isPending && switchingTo === plan.code}
@@ -698,10 +701,10 @@ export default function DashboardBilling() {
                     </button>
                     <button
                       className="flex-1 px-4 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2"
-                      onClick={() => changePlanMutation.mutate(switchingTo)}
-                      disabled={changePlanMutation.isPending}
+                      onClick={() => isTrialing ? selectPlanMutation.mutate(switchingTo) : changePlanMutation.mutate(switchingTo)}
+                      disabled={changePlanMutation.isPending || selectPlanMutation.isPending}
                     >
-                      {changePlanMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      {(changePlanMutation.isPending || selectPlanMutation.isPending) && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                       Confirm switch
                     </button>
                   </div>

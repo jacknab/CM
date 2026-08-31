@@ -1,11 +1,14 @@
 /**
  * M2PaymentOverlay.tsx
  *
- * Standalone native overlay that handles the full M2 Bluetooth reader payment
- * flow — discovery → connect → collect → process → capture.
+ * Standalone native overlay that handles the full card-present payment flow —
+ * discovery → connect → collect → process → capture — for either method:
+ *   mode="m2"  → Stripe M2 Bluetooth reader   (triggered by `M2_PAY`)
+ *   mode="tap" → Tap to Pay on this device NFC (triggered by `TAP_TO_PAY`)
  *
- * Triggered by a `M2_PAY` postMessage from the web Calendar POS sheet.
- * On success calls `onComplete(appointmentId, method, amount)`.
+ * Triggered by a postMessage from the web Calendar / FrontDesk POS.
+ * On success calls `onComplete(appointmentId, method, amount)` where method is
+ * "m2" or "tap_to_pay".
  * On error  calls `onError(message)` so the web can show the failure.
  * On cancel calls `onCancel()`.
  *
@@ -36,6 +39,8 @@ export interface M2PayData {
   appointmentId: number;
   amountCents:   number;
   clientName:    string;
+  /** "m2" (Bluetooth reader) or "tap" (this device's NFC). Defaults to "m2". */
+  mode?:         'm2' | 'tap';
 }
 
 interface Props {
@@ -52,8 +57,12 @@ export function M2PaymentOverlay({ visible, data, onComplete, onError, onCancel 
   const discovery  = useReaderDiscovery();
   const payment    = useTerminalPayment();
 
+  const isTap        = data?.mode === 'tap';
+  const readerLabel  = isTap ? 'Tap to Pay' : 'M2 reader';
+  const scanningMsg  = isTap ? 'Starting Tap to Pay…' : 'Scanning for M2 reader…';
+
   const [phase,     setPhase]     = useState<Phase>('discovering');
-  const [statusMsg, setStatusMsg] = useState('Scanning for M2 reader…');
+  const [statusMsg, setStatusMsg] = useState(scanningMsg);
   const [errorMsg,  setErrorMsg]  = useState('');
 
   const busyRef    = useRef(false);
@@ -95,17 +104,22 @@ export function M2PaymentOverlay({ visible, data, onComplete, onError, onCancel 
       const locationId = await payment.getLocationId();
       if (cancelRef.current) return;
 
-      await discovery.discoverAndConnect(locationId, {
-        onDiscovering: () => { setPhase('discovering'); setStatusMsg('Scanning for M2 reader…'); },
-        onConnecting:  () => { setPhase('connecting');  setStatusMsg('Connecting to reader…');   },
-      });
+      await discovery.discoverAndConnect(
+        locationId,
+        isTap ? 'tapToPay' : 'bluetoothScan',
+        {
+          onDiscovering: () => { setPhase('discovering'); setStatusMsg(isTap ? 'Starting Tap to Pay…' : 'Scanning for M2 reader…'); },
+          onConnecting:  () => { setPhase('connecting');  setStatusMsg(isTap ? 'Preparing Tap to Pay…' : 'Connecting to reader…'); },
+        },
+      );
       if (cancelRef.current) return;
 
+      const payMethod = isTap ? 'tap_to_pay' : 'm2';
       const { cardDetails } = await payment.run(
         data.amountCents,
         data.appointmentId,
         data.clientName,
-        'm2',
+        payMethod,
         {
           onPhase:  (p) => { setPhase(p as Phase); },
           onStatus: (s) => setStatusMsg(s),
@@ -114,7 +128,7 @@ export function M2PaymentOverlay({ visible, data, onComplete, onError, onCancel 
 
       if (cancelRef.current) return;
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onComplete(data.appointmentId, 'm2', data.amountCents / 100);
+      onComplete(data.appointmentId, payMethod, data.amountCents / 100);
     } catch (err: any) {
       if (cancelRef.current) return;
       await discovery.cancelDiscovery();
@@ -132,7 +146,7 @@ export function M2PaymentOverlay({ visible, data, onComplete, onError, onCancel 
   useEffect(() => {
     if (visible && data) {
       setPhase('discovering');
-      setStatusMsg('Scanning for M2 reader…');
+      setStatusMsg(scanningMsg);
       setErrorMsg('');
       runPayment();
     }
@@ -150,7 +164,7 @@ export function M2PaymentOverlay({ visible, data, onComplete, onError, onCancel 
   // ── Try again ────────────────────────────────────────────────────────────────
   const handleRetry = useCallback(() => {
     setPhase('discovering');
-    setStatusMsg('Scanning for M2 reader…');
+    setStatusMsg(scanningMsg);
     setErrorMsg('');
     runPayment();
   }, [runPayment]);
@@ -207,9 +221,9 @@ export function M2PaymentOverlay({ visible, data, onComplete, onError, onCancel 
 
               <View style={S.phasePill}>
                 <Text style={S.phasePillTxt}>
-                  {phase === 'discovering' ? 'SCANNING FOR READER'
-                    : phase === 'connecting'  ? 'CONNECTING TO READER'
-                    : phase === 'collecting'  ? 'WAITING FOR CARD'
+                  {phase === 'discovering' ? (isTap ? 'STARTING TAP TO PAY' : 'SCANNING FOR READER')
+                    : phase === 'connecting'  ? (isTap ? 'PREPARING' : 'CONNECTING TO READER')
+                    : phase === 'collecting'  ? (isTap ? 'TAP CARD / PHONE NOW' : 'WAITING FOR CARD')
                     :                          'PROCESSING'}
                 </Text>
               </View>

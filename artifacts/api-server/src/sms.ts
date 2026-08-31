@@ -356,10 +356,53 @@ export async function sendSms(
   }
 }
 
+/**
+ * Client phone numbers live in the `client_phones` table, NOT on the `clients`
+ * row, so an appointment loaded with the Drizzle `customer` relation has no
+ * `.phone` — it's always undefined. Every automated SMS below (confirmation,
+ * reminder, review request) guarded on `appointment.customer.phone`, so none of
+ * them ever sent. Resolve the customer's primary number here as a fallback.
+ */
+async function resolveCustomerPhone(
+  customerId: number | null | undefined,
+): Promise<string | null> {
+  if (!customerId) return null;
+  try {
+    const { pool } = await import("./db");
+    const { rows } = await pool.query(
+      `SELECT COALESCE(NULLIF(display_phone, ''), phone_number_e164) AS phone
+         FROM client_phones
+        WHERE client_id = $1
+        ORDER BY is_primary DESC, id ASC
+        LIMIT 1`,
+      [customerId],
+    );
+    const phone = rows[0]?.phone;
+    return phone ? String(phone) : null;
+  } catch (e: any) {
+    console.error("[SMS] resolveCustomerPhone failed:", e?.message ?? e);
+    return null;
+  }
+}
+
+/** The customer's phone: relation value if present, else looked up from client_phones. */
+async function appointmentCustomerPhone(
+  appointment: AppointmentWithDetails,
+): Promise<string | null> {
+  return (
+    (appointment.customer as any)?.phone ||
+    (await resolveCustomerPhone(
+      appointment.customer?.id ?? (appointment as any).customerId,
+    ))
+  );
+}
+
 export async function sendBookingConfirmation(
   appointment: AppointmentWithDetails
 ): Promise<void> {
-  if (!appointment.customer?.phone || !appointment.storeId) return;
+  if (!appointment.storeId) return;
+  const customerPhone = await appointmentCustomerPhone(appointment);
+  if (!customerPhone) return;
 
   const settings = await storage.getSmsSettings(appointment.storeId);
   if (!settings?.bookingConfirmationEnabled) return;
@@ -387,11 +430,11 @@ export async function sendBookingConfirmation(
 
   await sendSms(
     appointment.storeId,
-    appointment.customer.phone,
+    customerPhone,
     body,
     "booking_confirmation",
     appointment.id,
-    appointment.customer.id,
+    appointment.customer?.id,
     { skipCreditDeduction: true, smsSource: "platform" }
   );
 }
@@ -399,7 +442,9 @@ export async function sendBookingConfirmation(
 export async function sendAppointmentReminder(
   appointment: AppointmentWithDetails
 ): Promise<void> {
-  if (!appointment.customer?.phone || !appointment.storeId) return;
+  if (!appointment.storeId) return;
+  const customerPhone = await appointmentCustomerPhone(appointment);
+  if (!customerPhone) return;
 
   const settings = await storage.getSmsSettings(appointment.storeId);
   if (!settings?.reminderEnabled) return;
@@ -433,65 +478,84 @@ export async function sendAppointmentReminder(
 
   await sendSms(
     appointment.storeId,
-    appointment.customer.phone,
+    customerPhone,
     body,
     "reminder",
     appointment.id,
-    appointment.customer.id,
+    appointment.customer?.id,
     { skipCreditDeduction: true, smsSource: "platform" }
   );
 }
 
 export async function sendReviewRequest(
   appointment: AppointmentWithDetails
-): Promise<void> {
-  if (!appointment.customer?.phone || !appointment.storeId) return;
+): Promise<{ sent: boolean; reason?: string }> {
+  if (!appointment.storeId) return { sent: false, reason: "no store" };
+  const customerPhone = await appointmentCustomerPhone(appointment);
+  if (!customerPhone) return { sent: false, reason: "customer has no phone number on file" };
 
   const settings = await storage.getSmsSettings(appointment.storeId);
-  if (!settings?.reviewRequestEnabled) return;
+  if (!settings?.reviewRequestEnabled) return { sent: false, reason: "review requests are disabled in SMS settings" };
 
-  // Resolve the review URL: prefer the manually-entered URL in SMS settings,
-  // fall back to the link auto-fetched from the connected Google Business Profile.
-  let reviewUrl = settings.googleReviewUrl || null;
-  if (!reviewUrl) {
-    const { db } = await import("./db");
-    const { googleBusinessProfiles } = await import("@shared/schema");
-    const { eq } = await import("drizzle-orm");
-    const gbpRows = await db
-      .select({ googleReviewLink: googleBusinessProfiles.googleReviewLink })
-      .from(googleBusinessProfiles)
-      .where(eq(googleBusinessProfiles.storeId, appointment.storeId))
-      .limit(1);
-    reviewUrl = gbpRows[0]?.googleReviewLink ?? null;
-  }
-
-  if (!reviewUrl) return;
+  // Only send if the store actually has a Google review URL to point at
+  // (manual SMS-settings URL → connected GBP link → discovered Place ID).
+  const { resolveExternalReviewUrl } = await import("./lib/reviewLinks");
+  const externalReviewUrl = await resolveExternalReviewUrl(appointment.storeId);
+  if (!externalReviewUrl) return { sent: false, reason: "no Google review URL configured for this store" };
 
   const existing = await storage.getSmsLogByAppointmentAndType(
     appointment.id,
     "review_request"
   );
-  if (existing) return;
+  if (existing) return { sent: false, reason: "already sent for this appointment" };
+
+  // Send a per-customer certxa.com/review/<token> link. The token is only for
+  // attribution (which appointment/customer clicked) — GET /review/:token in
+  // routes/reviewGating.ts 302-redirects straight to the store's Google review
+  // page for everyone. No rating funnel / no gating (Google review policy).
+  const crypto = await import("crypto");
+  const { pool } = await import("./db");
+  const token = crypto.randomBytes(24).toString("hex");
+  const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14 days
+  const customerName = (appointment.customer as any)?.fullName || appointment.customer?.name || null;
+
+  await pool.query(
+    `INSERT INTO review_tokens (token, store_id, appointment_id, customer_id, customer_name, customer_phone, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      token,
+      appointment.storeId,
+      appointment.id,
+      appointment.customer?.id ?? null,
+      customerName,
+      customerPhone,
+      expiresAt,
+    ]
+  );
+
+  const reviewUrl = `${process.env.APP_URL ?? "https://certxa.com"}/review/${token}`;
 
   const template =
     settings.reviewTemplate ||
     "Hi {customerName}, thank you for visiting {storeName}! We'd love your feedback. Leave us a review: {reviewUrl}";
 
   const body = interpolateTemplate(template, {
-    customerName: (appointment.customer as any)?.fullName || appointment.customer?.name || "there",
+    customerName: customerName || "there",
     storeName: appointment.store?.name || "our salon",
     reviewUrl: reviewUrl,
   });
 
   await sendSms(
     appointment.storeId,
-    appointment.customer.phone,
+    customerPhone,
     body,
     "review_request",
     appointment.id,
-    appointment.customer.id,
+    appointment.customer?.id,
     { skipCreditDeduction: true, smsSource: "platform" }
   );
+
+  return { sent: true };
 }
 
 let reminderIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -550,8 +614,8 @@ async function processReviewRequests(): Promise<void> {
   let sent = 0;
   for (const appt of completedAppointments) {
     try {
-      await sendReviewRequest(appt);
-      sent++;
+      const result = await sendReviewRequest(appt);
+      if (result.sent) sent++;
     } catch (err) {
       console.error(`[SMS] Review request error for appointment ${appt.id}:`, err);
     }

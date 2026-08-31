@@ -5,12 +5,34 @@ import { KIOSK_LANGS, LangCode, translations } from "../lib/kioskTranslations";
 
 type Screen =
   | "idle" | "phone" | "loading" | "welcome"
-  | "name_entry" | "service_type" | "services" | "service_options" | "addons" | "stylist" | "ticket"
+  | "name_entry" | "service_type" | "services" | "service_options"
+  | "nail_size" | "nail_shape" | "nail_effects"
+  | "addons" | "stylist" | "ticket"
   | "appointment_confirmed" | "error" | "closed" | "wait_confirm" | "fully_booked"
   | "waitlist_added" | "no_thanks" | "suspended";
 
+interface NailOption {
+  nailVocabId: number;
+  name: string;
+  description: string | null;
+  imageUrl: string | null;
+  swatchHex: string | null;
+  priceAdjustment: number;
+  durationAdjustment: number;
+  isDefault: boolean;
+}
+interface NailConfig {
+  enabled: boolean;
+  lengthRequired?: boolean;
+  shapeRequired?: boolean;
+  artRequired?: boolean;
+  sizes: NailOption[];
+  shapes: NailOption[];
+  effects: NailOption[];
+}
+
 interface ServiceOptionItem  { id: number; name: string; description?: string | null; durationMinutes: number; price: number; isDefault: boolean; displayOrder: number; imageUrl?: string | null; }
-interface ServiceItem        { id: number; name: string; description?: string | null; duration: number; price: number; category: string; imageUrl?: string | null; optionCount?: number; }
+interface ServiceItem        { id: number; name: string; description?: string | null; duration: number; longevity?: string | null; price: number; category: string; imageUrl?: string | null; optionCount?: number; }
 interface AddonItem          { id: number; name: string; description?: string | null; price: number; duration: number; imageUrl?: string | null; serviceIds: number[]; }
 interface StaffItem          { id: number; name: string; role: string | null; color: string | null; avatarThumbUrl: string | null; }
 interface ClientInfo         { id: number; name: string; loyaltyPoints: number; totalVisits: number; }
@@ -215,6 +237,11 @@ export default function KioskCheckIn() {
   const [serviceOptionsMap, setServiceOptionsMap] = useState<Record<number, ServiceOptionItem[]>>({});
   const [parentServiceForOptions, setParentServiceForOptions] = useState<ServiceItem | null>(null);
   const [selectedOption, setSelectedOption]   = useState<ServiceOptionItem | null>(null);
+  // Nail configuration (length / shape / effect) for fake-nail services
+  const [nailCfg, setNailCfg]     = useState<NailConfig | null>(null);
+  const [nailSize, setNailSize]   = useState<NailOption | null>(null);
+  const [nailShape, setNailShape] = useState<NailOption | null>(null);
+  const [nailEffect, setNailEffect] = useState<NailOption | null>(null); // null = "plain / no design"
 
   // ── Dual Screen POS checkout overlay state ────────────────────────────────
   const [posCheckout, setPosCheckout] = useState<null | "cart" | "tip" | "thankyou">(null);
@@ -227,30 +254,59 @@ export default function KioskCheckIn() {
   const kioskWsRef  = useRef<WebSocket | null>(null);
   const posResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // A kiosk tablet is meant to stay powered on and mounted for days at a
+  // time without ever being restarted, so a one-time fetch here means any
+  // service/price/staff/settings change the owner makes never reaches the
+  // kiosk until someone manually reloads it. `applyConfig` re-runs the same
+  // parse on a timer (see effect below) to keep the catalog data live.
+  const applyConfig = useCallback((d: any, isInitialLoad: boolean) => {
+    if (d.accountSuspended) {
+      setStoreId(d.storeId ?? null);
+      setScreen("suspended");
+      return;
+    }
+    if (d.error) {
+      if (isInitialLoad) { setError(d.error); setScreen("error"); }
+      return;
+    }
+    setStoreId(d.store?.id ?? d.storeId ?? null);
+    setStoreConfig(d.store);
+    setAllServices(d.services || []);
+    setAllStaff(d.staff || []);
+    setAllAddons(d.addons || []);
+    setBusyStaffIds(d.busyStaffIds || []);
+    setStaffServiceIds(d.staffServiceIds || {});
+    setKioskConfig({ kioskEnabled: d.kioskEnabled !== false, welcomeHeadline: d.welcomeHeadline ?? null, welcomeSubText: d.welcomeSubText ?? null, loyaltyPromoText: d.loyaltyPromoText ?? null, categoryImages: d.categoryImages ?? null, timezone: d.timezone ?? null, showServicePrice: d.showServicePrice !== false, showServiceDuration: d.showServiceDuration !== false, dualScreenMode: d.dualScreenMode === true });
+    setServiceOptionsMap(d.serviceOptionsMap ?? {});
+    if (isInitialLoad) setScreen(d.kioskEnabled === false ? "closed" : "idle");
+  }, []);
+
   useEffect(() => {
     if (!slug) return;
     fetch(`/api/public/kiosk/${slug}/config`)
       .then(r => r.json())
-      .then(d => {
-        if (d.accountSuspended) {
-          setStoreId(d.storeId ?? null);
-          setScreen("suspended");
-          return;
-        }
-        if (d.error) { setError(d.error); setScreen("error"); return; }
-        setStoreId(d.store?.id ?? d.storeId ?? null);
-        setStoreConfig(d.store);
-        setAllServices(d.services || []);
-        setAllStaff(d.staff || []);
-        setAllAddons(d.addons || []);
-        setBusyStaffIds(d.busyStaffIds || []);
-        setStaffServiceIds(d.staffServiceIds || {});
-        setKioskConfig({ kioskEnabled: d.kioskEnabled !== false, welcomeHeadline: d.welcomeHeadline ?? null, welcomeSubText: d.welcomeSubText ?? null, loyaltyPromoText: d.loyaltyPromoText ?? null, categoryImages: d.categoryImages ?? null, timezone: d.timezone ?? null, showServicePrice: d.showServicePrice !== false, showServiceDuration: d.showServiceDuration !== false, dualScreenMode: d.dualScreenMode === true });
-        setServiceOptionsMap(d.serviceOptionsMap ?? {});
-        setScreen(d.kioskEnabled === false ? "closed" : "idle");
-      })
+      .then(d => applyConfig(d, true))
       .catch(() => { setError("Failed to connect."); setScreen("error"); });
-  }, [slug]);
+  }, [slug, applyConfig]);
+
+  // Periodic background refresh of the catalog (services/staff/addons/pricing/
+  // kiosk settings) — only while idle, so an in-progress customer check-in is
+  // never disturbed. Also re-syncs immediately every time the kiosk returns to
+  // idle, so changes made mid-day show up for the very next customer instead
+  // of waiting up to a full interval.
+  useEffect(() => {
+    if (!slug || screen !== "idle") return;
+    let cancelled = false;
+    const refresh = () => {
+      fetch(`/api/public/kiosk/${slug}/config`)
+        .then(r => r.json())
+        .then(d => { if (!cancelled) applyConfig(d, false); })
+        .catch(() => {});
+    };
+    refresh();
+    const iv = setInterval(refresh, 5 * 60_000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [slug, screen, applyConfig]);
 
   // ── WebSocket: account_status_changed + dual-screen POS checkout events ──
   useEffect(() => {
@@ -273,42 +329,46 @@ export default function KioskCheckIn() {
               window.location.reload();
             }
           }
-          if (msg.type === "kiosk_checkout_start") {
-            setPosTotal(Number(msg.total) || 0);
-            setPosTipPct(null);
-            setPosTipAmt(0);
-            setPosCheckout("cart");
-            if (posResetRef.current) clearTimeout(posResetRef.current);
-          }
-          if (msg.type === "kiosk_checkout_tip_request") {
-            setPosTotal(Number(msg.total) || 0);
-            setPosTipPct(null);
-            setPosTipAmt(0);
-            setPosCheckout("tip");
-          }
-          if (msg.type === "kiosk_checkout_payment_result") {
-            if (msg.success) {
-              // Sync to the actual charged amount (includes tip) rather than
-              // trusting whatever posTotal happened to be left over from an
-              // earlier screen — this is the authoritative final total.
-              if (msg.total != null) setPosTotal(Number(msg.total) || 0);
-              setPosCheckout("thankyou");
-              if (posResetRef.current) clearTimeout(posResetRef.current);
-              posResetRef.current = setTimeout(() => {
-                setPosCheckout(null);
-                setPosTipPct(null);
-                setPosTipAmt(0);
-              }, 15_000);
-            } else {
-              setPosCheckout("cart");
-            }
-          }
-          if (msg.type === "kiosk_checkout_cancel") {
-            if (posResetRef.current) clearTimeout(posResetRef.current);
-            setPosCheckout(null);
-            setPosTipPct(null);
-            setPosTipAmt(0);
-          }
+          // ── Dual-screen POS checkout (cart / tip / thank-you) — RETIRED ──────
+          // The customer-facing checkout + tip flow now lives on the dedicated
+          // front-desk display (`/frontdesk/:slug`, FrontDeskDisplay.tsx). This
+          // kiosk no longer reacts to `kiosk_checkout_*` events; the overlay
+          // renderer below is likewise disabled. Kept commented for reference /
+          // easy rollback.
+          //
+          // if (msg.type === "kiosk_checkout_start") {
+          //   setPosTotal(Number(msg.total) || 0);
+          //   setPosTipPct(null);
+          //   setPosTipAmt(0);
+          //   setPosCheckout("cart");
+          //   if (posResetRef.current) clearTimeout(posResetRef.current);
+          // }
+          // if (msg.type === "kiosk_checkout_tip_request") {
+          //   setPosTotal(Number(msg.total) || 0);
+          //   setPosTipPct(null);
+          //   setPosTipAmt(0);
+          //   setPosCheckout("tip");
+          // }
+          // if (msg.type === "kiosk_checkout_payment_result") {
+          //   if (msg.success) {
+          //     if (msg.total != null) setPosTotal(Number(msg.total) || 0);
+          //     setPosCheckout("thankyou");
+          //     if (posResetRef.current) clearTimeout(posResetRef.current);
+          //     posResetRef.current = setTimeout(() => {
+          //       setPosCheckout(null);
+          //       setPosTipPct(null);
+          //       setPosTipAmt(0);
+          //     }, 15_000);
+          //   } else {
+          //     setPosCheckout("cart");
+          //   }
+          // }
+          // if (msg.type === "kiosk_checkout_cancel") {
+          //   if (posResetRef.current) clearTimeout(posResetRef.current);
+          //   setPosCheckout(null);
+          //   setPosTipPct(null);
+          //   setPosTipAmt(0);
+          // }
         } catch {}
       };
       ws.onclose = () => { kioskWsRef.current = null; if (!destroyed) setTimeout(connect, 5_000); };
@@ -345,6 +405,7 @@ export default function KioskCheckIn() {
     setTodayAppointment(null); setWaitInfo(null);
     setSelectedAddons([]); setAvailableAddons([]);
     setParentServiceForOptions(null); setSelectedOption(null);
+    setNailCfg(null); setNailSize(null); setNailShape(null); setNailEffect(null);
     if (cdownRef.current) clearInterval(cdownRef.current);
   }, []);
 
@@ -458,6 +519,40 @@ export default function KioskCheckIn() {
     else doCheckIn();
   };
 
+  // Called once a service is confirmed. Fake-nail services detour through
+  // length → shape → effect before add-ons; everything else goes straight on.
+  const afterServiceChosen = async () => {
+    const selSvc = selectedServices[0];
+    setNailCfg(null); setNailSize(null); setNailShape(null); setNailEffect(null);
+    if (selSvc) {
+      setScreen("loading");
+      try {
+        const r = await fetch(`/api/public/kiosk/${slug}/nail-config/${selSvc.id}`);
+        const cfg: NailConfig = await r.json();
+        if (cfg?.enabled && (cfg.sizes?.length || cfg.shapes?.length || cfg.effects?.length)) {
+          setNailCfg(cfg);
+          setScreen(cfg.sizes?.length ? "nail_size" : cfg.shapes?.length ? "nail_shape" : "nail_effects");
+          kick();
+          return;
+        }
+      } catch { /* fail open — skip the nail steps on any network/parse error */ }
+    }
+    goToStylist();
+  };
+
+  // Advance through the nail steps, skipping any dimension with no options.
+  const nailStepNext = (from: "size" | "shape") => {
+    kick();
+    if (from === "size") {
+      if (nailCfg?.shapes?.length)  return setScreen("nail_shape");
+      if (nailCfg?.effects?.length) return setScreen("nail_effects");
+      return goToStylist();
+    }
+    // from === "shape"
+    if (nailCfg?.effects?.length) return setScreen("nail_effects");
+    return goToStylist();
+  };
+
   const doCheckIn = async () => {
     setScreen("loading");
     const staffIdToSend = selectedStaff && selectedStaff !== "none" ? (selectedStaff as StaffItem).id : null;
@@ -468,6 +563,9 @@ export default function KioskCheckIn() {
           clientId:   clientInfo?.id ?? null,
           clientName: clientInfo?.name ?? (newClientName.trim() || "Walk-in Guest"),
           phone, services: selectedServices, addons: selectedAddons, staffId: staffIdToSend,
+          nailSizeId:      nailSize?.nailVocabId  ?? null,
+          nailShapeId:     nailShape?.nailVocabId ?? null,
+          nailArtEffectId: nailEffect?.nailVocabId ?? null,
         }),
       });
       const d = await r.json();
@@ -512,7 +610,11 @@ export default function KioskCheckIn() {
   const t = translations[lang];
 
   // ── SUSPENDED ───────────────────────────────────────────────────────────────
-  // ── Dual Screen POS checkout overlay (renders over all kiosk screens) ────
+  // ── Dual Screen POS checkout overlay (cart / tip / thank-you) — RETIRED ──
+  // Moved to the dedicated front-desk display (FrontDeskDisplay.tsx,
+  // /frontdesk/:slug). The `kiosk_checkout_*` WS handlers above are commented
+  // out, so `posCheckout` can never leave `null` and this overlay never renders.
+  // The renderer is kept intact (unreachable) for reference / easy rollback.
   if (posCheckout !== null) {
     const POS_TIPS = [
       { label: "No Tip", pct: 0 },
@@ -1264,64 +1366,49 @@ export default function KioskCheckIn() {
 
   // ── SERVICE TYPE PICKER ─────────────────────────────────────────────────────
   if (screen === "service_type") {
-    // Fixed nail-salon groups — maps to the 3 pre-seeded service buckets
-    const NAIL_GROUPS = [
-      {
-        key: "hand",
-        label: t.handServices,
-        bullets: [t.handBullet1, t.handBullet2, t.handBullet3],
-        matchKeys: ["manicure", "nail enhancement"],
-        fallbackEmoji: "💅",
-      },
-      {
-        key: "foot",
-        label: t.footServices,
-        bullets: [t.footBullet1, t.footBullet2, t.footBullet3],
-        matchKeys: ["pedicure"],
-        fallbackEmoji: "🦶",
-      },
-      {
-        key: "combo",
-        label: t.maniPediPackages,
-        bullets: [t.comboBullet1, t.comboBullet2, t.comboBullet3],
-        matchKeys: ["spa"],
-        fallbackEmoji: "✨",
-      },
-    ];
+    // One card per real service category in the store's catalogue (in the
+    // order categories first appear in the service list). Each card filters the
+    // service list to that category.
+    const catSlug = (c: string) => (c ?? "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    const catOrder: string[] = [];
+    const byCat = new Map<string, ServiceItem[]>();
+    for (const s of allServices) {
+      const raw = (s.category ?? "").trim();
+      const key = raw || t.otherServices;
+      if (!byCat.has(key)) { byCat.set(key, []); catOrder.push(key); }
+      byCat.get(key)!.push(s);
+    }
 
-    // Services excluded from the Mani-Pedi catch-all group
-    const COMBO_EXCLUDE = [
-      "eyebrow", "eyelash", "nail removal", "single nail repair", "polish change",
-    ];
-
-    // Assign DB services into each group by category/name keyword matching
-    const assignedIds = new Set<number>();
-    const groups = NAIL_GROUPS.map((g, idx) => {
-      let svcs: ServiceItem[];
-      if (idx < NAIL_GROUPS.length - 1) {
-        svcs = allServices.filter(s => {
-          const cat  = (s.category ?? "").toLowerCase();
-          const name = (s.name ?? "").toLowerCase();
-          return g.matchKeys.some(k => cat.includes(k) || name.includes(k));
-        });
-      } else {
-        // Last group absorbs anything unmatched, minus explicitly excluded services
-        svcs = allServices.filter(s => {
-          if (assignedIds.has(s.id)) return false;
-          const name = (s.name ?? "").toLowerCase();
-          return !COMBO_EXCLUDE.some(ex => name.includes(ex));
-        });
-      }
-      svcs.forEach(s => assignedIds.add(s.id));
-      return { ...g, svcs };
+    let groups = catOrder.map(cat => {
+      const svcs = byCat.get(cat)!;
+      const { emoji } = getCat(cat);
+      return {
+        key: catSlug(cat) || "all",
+        label: cat,
+        // Preview the first few service names as bullets — same slot the fixed
+        // groups used for their descriptions.
+        bullets: svcs.slice(0, 3).map(s => s.name)
+          .concat(svcs.length > 3 ? [t.andMore(svcs.length - 3)] : []),
+        fallbackEmoji: emoji,
+        svcs,
+      };
     });
 
-    // Fallback: nothing matched — put all services in first group
-    if (groups.every(g => g.svcs.length === 0) && allServices.length > 0) {
-      groups[0] = { ...groups[0], svcs: allServices };
+    // Fallback: no categories at all — a single "All services" card.
+    if (groups.length === 0 && allServices.length > 0) {
+      groups = [{
+        key: "all",
+        label: t.allServices,
+        bullets: allServices.slice(0, 3).map(s => s.name),
+        fallbackEmoji: "✨",
+        svcs: allServices,
+      }];
     }
 
     const catImgs = kioskConfig?.categoryImages ?? {};
+    // Grid density: keep 3-up for a handful of categories, tighten to fit more.
+    const gridCols = groups.length <= 3 ? "grid-cols-3" : groups.length === 4 ? "grid-cols-2" : "grid-cols-3";
+    const cardImgHeight = groups.length <= 3 ? 220 : groups.length <= 6 ? 160 : 128;
 
     const handleContinue = () => {
       if (!selectedCategoryGroup) return;
@@ -1347,11 +1434,13 @@ export default function KioskCheckIn() {
         </div>
 
         {/* ── Cards ── */}
-        <div className="flex-1 flex items-center justify-center px-8 py-6" style={{ overflow: "hidden" }}>
-          <div className="grid grid-cols-3 gap-6 w-full max-w-5xl h-full max-h-[540px]">
+        <div className="flex-1 overflow-y-auto px-8 py-6">
+          <div className={`grid ${gridCols} gap-6 w-full max-w-5xl mx-auto`}>
             {groups.map(group => {
               const isSel = selectedCategoryGroup === group.key;
-              const imgUrl = catImgs[group.key];
+              // Owner upload keyed by category name, then legacy slug key, then
+              // the server's best-match from the Service Images Library.
+              const imgUrl = catImgs[group.label] ?? catImgs[group.key];
 
               return (
                 <button
@@ -1373,7 +1462,7 @@ export default function KioskCheckIn() {
                   )}
 
                   {/* Image area — fixed height so it never stretches in fullscreen */}
-                  <div className="w-full flex-shrink-0" style={{ height: 220 }}>
+                  <div className="w-full flex-shrink-0" style={{ height: cardImgHeight }}>
                     <div className="w-full h-full overflow-hidden">
                       {imgUrl ? (
                         <img src={imgUrl} alt={group.label} className="w-full h-full object-cover object-top" />
@@ -1675,7 +1764,7 @@ export default function KioskCheckIn() {
               </div>
             )}
             <PrimaryBtn
-              onPress={() => selectedServices.length > 0 && goToStylist()}
+              onPress={() => selectedServices.length > 0 && afterServiceChosen()}
               disabled={selectedServices.length === 0}
               size="md">
               {t.continueBtn}
@@ -1706,7 +1795,7 @@ export default function KioskCheckIn() {
       };
       setSel([syntheticSvc]);
       setSelectedAddons([]);
-      goToStylist();
+      afterServiceChosen();
     };
 
     return (
@@ -1845,6 +1934,102 @@ export default function KioskCheckIn() {
       </div>
     );
   }
+
+  // ── NAIL CONFIG: length / shape / effect pickers ───────────────────────────
+  const renderNailPicker = (opts: {
+    title: string;
+    options: NailOption[];
+    selectedId: number | null | undefined;
+    onPick: (o: NailOption | null) => void;
+    onBack: () => void;
+    plainOption?: boolean; // effects step: prepend a "no design" card
+  }) => {
+    const cards: (NailOption | null)[] = opts.plainOption ? [null, ...opts.options] : opts.options;
+    const priceLabel = (adj: number) =>
+      adj > 0 ? `+${fmtPrice(adj)}` : adj < 0 ? `−${fmtPrice(Math.abs(adj))}` : "";
+    return (
+      <div className="fixed inset-0 flex flex-col select-none" onContextMenu={e => e.preventDefault()}
+        style={{ ...NO_SELECT, background: BG }}>
+        <div className="px-8 pt-6 pb-5 shrink-0" style={{ borderBottom: `1.5px solid ${BORDER}`, background: SURFACE }}>
+          <p className="text-sm font-semibold uppercase tracking-widest mb-1" style={{ color: PRIMARY }}>
+            {selectedServices[0]?.name}
+          </p>
+          <h2 className="text-4xl font-black leading-tight" style={{ color: TEXT }}>{opts.title}</h2>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-8 py-6">
+          <div className="grid grid-cols-4 gap-5 content-start max-w-6xl mx-auto">
+            {cards.map((o, i) => {
+              const isSel = o == null ? opts.selectedId === null : opts.selectedId === o.nailVocabId;
+              return (
+                <button key={o?.nailVocabId ?? `plain-${i}`}
+                  onPointerDown={e => { e.preventDefault(); opts.onPick(o); }}
+                  className="rounded-2xl text-left flex flex-col overflow-hidden transition-all duration-150 active:scale-[0.97] relative"
+                  style={{
+                    background: SURFACE,
+                    border: `2.5px solid ${isSel ? PRIMARY : BORDER}`,
+                    boxShadow: isSel ? `0 0 0 4px ${PRIMARY}22, ${SHADOW_LG}` : SHADOW,
+                  }}>
+                  <div className="w-full flex-shrink-0" style={{ height: 150 }}>
+                    {o?.imageUrl ? (
+                      <img src={o.imageUrl} alt={o.name} className="w-full h-full object-cover" loading="lazy" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center"
+                        style={{ background: o?.swatchHex || (isSel ? `${PRIMARY}12` : "#f0eeff") }}>
+                        <span className="select-none" style={{ fontSize: 56 }}>{o == null ? "🚫" : "💅"}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="px-4 pt-3 pb-4 shrink-0" style={{ borderTop: `1.5px solid ${isSel ? PRIMARY + "40" : BORDER}` }}>
+                    <p className="text-lg font-black leading-tight" style={{ color: TEXT }}>
+                      {o == null ? "Plain — no design" : o.name}
+                    </p>
+                    {o?.description && (
+                      <p className="text-sm mt-1 leading-snug" style={{ color: MUTED }}>{o.description}</p>
+                    )}
+                    {o && priceLabel(o.priceAdjustment) && (
+                      <p className="text-base font-bold mt-1.5" style={{ color: PRIMARY }}>{priceLabel(o.priceAdjustment)}</p>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="shrink-0 px-8 py-5 flex items-center justify-between"
+          style={{ borderTop: `1.5px solid ${BORDER}`, background: SURFACE }}>
+          <GhostBtn onPress={opts.onBack}>{t.backBtn}</GhostBtn>
+        </div>
+      </div>
+    );
+  };
+
+  if (screen === "nail_size") return renderNailPicker({
+    title: "Choose your nail length",
+    options: nailCfg?.sizes ?? [],
+    selectedId: nailSize?.nailVocabId,
+    onPick: (o) => { setNailSize(o); nailStepNext("size"); },
+    onBack: () => setScreen("services"),
+  });
+
+  if (screen === "nail_shape") return renderNailPicker({
+    title: "Choose your nail shape",
+    options: nailCfg?.shapes ?? [],
+    selectedId: nailShape?.nailVocabId,
+    onPick: (o) => { setNailShape(o); nailStepNext("shape"); },
+    onBack: () => setScreen(nailCfg?.sizes?.length ? "nail_size" : "services"),
+  });
+
+  if (screen === "nail_effects") return renderNailPicker({
+    title: "Choose your nail design",
+    options: nailCfg?.effects ?? [],
+    selectedId: nailEffect ? nailEffect.nailVocabId : null,
+    // Only offer "no design" when the service's config doesn't require an art pick.
+    plainOption: !nailCfg?.artRequired,
+    onPick: (o) => { setNailEffect(o); kick(); goToStylist(); },
+    onBack: () => setScreen(nailCfg?.shapes?.length ? "nail_shape" : nailCfg?.sizes?.length ? "nail_size" : "services"),
+  });
 
   // ── STYLIST PICKER ──────────────────────────────────────────────────────────
   if (screen === "stylist") return (
@@ -2065,7 +2250,15 @@ export default function KioskCheckIn() {
             <p className="text-xs uppercase tracking-widest mb-1 font-semibold" style={{ color: SUBTLE }}>{t.clientLabel}</p>
             <p className="text-2xl font-bold" style={{ color: TEXT }}>{ticket.clientName}</p>
             {ticket.staffName && (
-              <p className="text-sm mt-1 font-semibold" style={{ color: PRIMARY }}>{t.withStaff(ticket.staffName.trim().split(/\s+/)[0])}</p>
+              <p className="text-sm mt-1 font-semibold" style={{ color: PRIMARY }}>
+                {t.withStaff(
+                  ticket.staffName
+                    .trim()
+                    .split(/\s+/)[0]
+                    .replace(/\b(Member|VIP|Gold|Silver|Platinum|Diamond|Premium|Elite)\b/i, "")
+                    .trim()
+                )}
+              </p>
             )}
           </div>
           {ticket.services.length > 0 && (
@@ -2155,7 +2348,7 @@ export default function KioskCheckIn() {
           <QRCodeCanvas value={ticketUrl} size={280} level="M" includeMargin={false} />
         </div>
         <p className="text-xs font-mono" style={{ color: SUBTLE }}>
-          #{ticket.appointmentId ?? ticket.token.substring(0, 10)}
+          {ticket.appointmentId ?? ticket.token.substring(0, 10)}
         </p>
       </div>
     </div>
@@ -2297,3 +2490,4 @@ function fmtTime(iso: string, tz?: string | null): string {
 function soft(hex: string) {
   return hex + "18";
 }
+

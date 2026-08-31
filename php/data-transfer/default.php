@@ -389,21 +389,23 @@ require 'includes/nav.php';
     <div class="platforms-grid">
       <?php
       $platforms = [
-        ['name'=>'Vagaro',           'emoji'=>'V',  'bg'=>'#7B3F9E'],
-        ['name'=>'GlossGenius',      'emoji'=>'GG', 'bg'=>'#E0477B'],
+        ['name'=>'Vagaro',           'emoji'=>'V',  'bg'=>'#7B3F9E', 'url'=>'/certxa-vs-vagaro'],
+        ['name'=>'GlossGenius',      'emoji'=>'GG', 'bg'=>'#E0477B', 'url'=>'/certxa-vs-glossgenius'],
         ['name'=>'Square Appts',     'emoji'=>'■',  'bg'=>'#00B386'],
         ['name'=>'Mindbody',         'emoji'=>'M',  'bg'=>'#0078D7'],
-        ['name'=>'Fresha',           'emoji'=>'F',  'bg'=>'#FF6B35'],
+        ['name'=>'Fresha',           'emoji'=>'F',  'bg'=>'#FF6B35', 'url'=>'/certxa-vs-fresha'],
         ['name'=>'Booksy',           'emoji'=>'B',  'bg'=>'#0A0A0A'],
+        ['name'=>'GoCheckIn',        'emoji'=>'GC', 'bg'=>'#1E293B', 'url'=>'/certxa-vs-gocheckin'],
         ['name'=>'Google Contacts',  'emoji'=>'G',  'bg'=>'#4285F4'],
         ['name'=>'CSV / Excel',      'emoji'=>'📋', 'bg'=>'#059669'],
       ];
       foreach ($platforms as $p):
+        $tag = isset($p['url']) ? 'a' : 'div';
       ?>
-      <div class="platform-pill">
+      <<?= $tag ?> class="platform-pill"<?= isset($p['url']) ? ' href="' . htmlspecialchars($p['url']) . '"' : '' ?>>
         <div class="pi" style="background:<?= $p['bg'] ?>;"><?= $p['emoji'] ?></div>
         <?= $p['name'] ?>
-      </div>
+      </<?= $tag ?>>
       <?php endforeach; ?>
     </div>
   </div>
@@ -508,43 +510,7 @@ require 'includes/nav.php';
       <div class="stat-item"><div class="stat-value"><span>24</span>h</div><div class="stat-label">Average transfer time</div></div>
       <div class="stat-item"><div class="stat-value"><span>100</span>%</div><div class="stat-label">Free — no hidden fees</div></div>
       <div class="stat-item"><div class="stat-value"><span>0</span></div><div class="stat-label">Data lost in transfers</div></div>
-      <div class="stat-item"><div class="stat-value"><span>50k</span>+</div><div class="stat-label">Professionals already switched</div></div>
-    </div>
-  </div>
-</section>
-
-<!-- TESTIMONIALS -->
-<section class="section section-alt">
-  <div class="container">
-    <div class="section-header">
-      <span class="tag tag-plum">Real Stories</span>
-      <h2 class="section-title">They switched. They never looked back.</h2>
-    </div>
-    <div class="testimonials-grid">
-      <div class="testimonial">
-        <div class="testimonial-stars">★★★★★</div>
-        <p class="testimonial-text">"I'd been on Vagaro for 6 years and was terrified to move. The Certxa team transferred everything overnight — 1,400 clients, all my appointments, every service. It was flawless."</p>
-        <div class="testimonial-author">
-          <div class="testimonial-avatar">AJ</div>
-          <div><div class="testimonial-name">Amanda Johnson</div><div class="testimonial-role">Salon Owner, Atlanta</div></div>
-        </div>
-      </div>
-      <div class="testimonial">
-        <div class="testimonial-stars">★★★★★</div>
-        <p class="testimonial-text">"I put off switching for two years because I thought it would be a nightmare. I uploaded my GlossGenius export on a Tuesday and was fully live on Certxa by Wednesday morning."</p>
-        <div class="testimonial-author">
-          <div class="testimonial-avatar">MB</div>
-          <div><div class="testimonial-name">Marcus Bell</div><div class="testimonial-role">Barbershop Owner, Chicago</div></div>
-        </div>
-      </div>
-      <div class="testimonial">
-        <div class="testimonial-stars">★★★★★</div>
-        <p class="testimonial-text">"Not a single client record was lost. The duplicate detection caught three clients I had accidentally double-booked in my old system. Honestly better than what I started with."</p>
-        <div class="testimonial-author">
-          <div class="testimonial-avatar">LP</div>
-          <div><div class="testimonial-name">Lauren Park</div><div class="testimonial-role">Colour Specialist, Seattle</div></div>
-        </div>
-      </div>
+      <div class="stat-item"><div class="stat-value"><span>7</span>+</div><div class="stat-label">Platforms supported</div></div>
     </div>
   </div>
 </section>

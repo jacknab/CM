@@ -1595,6 +1595,7 @@ router.get("/owner-dashboard", async (req, res) => {
           AND a.date >= ${todayStart.toISOString()}
           AND a.date <= ${todayEnd.toISOString()}
           AND a.status NOT IN ('cancelled')
+          AND a.calendar_hidden IS NOT TRUE
         ORDER BY a.date ASC
       `),
       // Yesterday revenue (for comparison)

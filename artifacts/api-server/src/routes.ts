@@ -21,9 +21,9 @@ import { sendEmail, sendBookingConfirmationEmail, sendReminderEmail, sendReviewR
 import { businessTemplates } from "./onboarding-data";
 import { fromZonedTime, toZonedTime, formatInTimeZone } from "date-fns-tz";
 import { atomicCreateBooking, validateBookingSlot } from "./bookingEngine";
-import { sendBookingConfirmation, startReminderScheduler } from "./sms";
+import { sendBookingConfirmation, startReminderScheduler, sendSms } from "./sms";
 import { startQueueSmsScheduler } from "./queue-sms-scheduler";
-import bcrypt from "bcryptjs";
+import bcrypt from "bcrypt";
 import crypto from "crypto";
 import path from "path";
 import fs from "fs";
@@ -59,6 +59,7 @@ import {
   serviceOptions,
   serviceCategories,
   calendarSettings,
+  storePaymentAccounts,
   smsSettings,
   mailSettings,
   waitlist,
@@ -68,6 +69,7 @@ import {
   intakeFormFields,
   intakeFormResponses,
   loyaltyTransactions,
+  loyaltyRewards,
   reviews,
   staffPins,
   timeclock,
@@ -95,6 +97,7 @@ import {
   payoutRunItems,
   payoutRuns,
   serviceIllustrationCategories,
+  serviceImages,
   billingPlans,
   googleServiceSyncSettings,
   gbpOptimizationLogs,
@@ -105,6 +108,8 @@ import {
 import { buildRegionSlug, ALL_CITIES, BOOKING_BUSINESS_TYPES } from "./seo-cities";
 import { notifyKioskNoShowWaitlist } from "./lib/kioskNoShowWaitlist";
 import { seedFromPresetStore } from "./lib/presetSeed";
+import { seedNailSalonCatalog } from "./lib/nailSalonSeed";
+import * as nailConfig from "./lib/nailConfig";
 import {
   GoogleBusinessAPIManager,
   createApiManagerFromProfile,
@@ -128,9 +133,13 @@ import validateRouter from "./routes/validate";
 import onboardingRouter from "./routes/onboarding";
 import usageRouter from "./routes/usage";
 import { autoAssignTechnician } from "./services/appointment-assignment";
+import { autoAssignResource } from "./services/resource-assignment";
+import { getRequiredResourceType } from "@shared/resourceMatching";
+import { createBookingPaymentToken } from "./lib/bookingPaymentLinks";
 import { toE164US } from "./lib/phoneUtils";
 import { checkOAuthRateLimit, syncCooldowns, SYNC_COOLDOWN_MS, getRateLimitSnapshot, clearRateLimitEntry, clearAllRateLimits, type RateLimitCategory } from "./rate-limits";
 import { db as websiteDb, websitesTable, templatesTable } from "@workspace/db";
+import { IS_SCHEDULER_INSTANCE } from "./lib/clusterInfo";
 
 const BLOOM_TEMPLATE_NAME = "Nail Salon — Bloom";
 const ONBOARDING_RESERVED_SLUGS = new Set([
@@ -1352,6 +1361,8 @@ export async function registerRoutes(
     if (req.path.startsWith("/reviews/form/")) return next(); // Public review form lookup
     if (req.path === "/reviews/submit") return next(); // Public review submission
     if (req.path === "/reviews/upload-photo") return next(); // Public review photo upload
+    if (req.path === "/reviews/gate/validate") return next(); // Public SMS review-gate token check
+    if (req.path === "/reviews/gate/submit") return next(); // Public SMS review-gate submission
     if (req.path.startsWith("/chatbot/")) return next(); // Chatbot API — uses own X-Chatbot-Key auth
     if (req.path.startsWith("/dialer/")) return next();  // Twilio dialer — uses own X-Dialer-Key auth + Twilio webhooks
     if (req.path.startsWith("/webhook/twilio")) return next(); // Twilio AI Receptionist — X-Twilio-Signature auth
@@ -2772,11 +2783,15 @@ export async function registerRoutes(
 
       const periodAppointments = await db
         .select({
-          id:        appointments.id,
-          staffId:   appointments.staffId,
-          serviceId: appointments.serviceId,
-          status:    appointments.status,
-          date:      appointments.date,
+          id:             appointments.id,
+          staffId:        appointments.staffId,
+          serviceId:      appointments.serviceId,
+          status:         appointments.status,
+          date:           appointments.date,
+          totalPaid:      appointments.totalPaid,
+          tipAmount:      appointments.tipAmount,
+          servicePrice:   appointments.servicePrice,
+          commissionRate: appointments.commissionRate,
         })
         .from(appointments)
         .where(
@@ -2788,7 +2803,9 @@ export async function registerRoutes(
           )
         );
 
-      // Fetch service prices for the appointments
+      // Live catalogue prices — only used as a last-resort fallback for an
+      // appointment that was completed WITHOUT going through checkout (no
+      // `total_paid`) and predates the per-appointment `service_price` snapshot.
       const serviceIds = [...new Set(periodAppointments.map(a => a.serviceId).filter(Boolean))];
       const servicePriceMap = new Map<number, number>();
       if (serviceIds.length > 0) {
@@ -2828,23 +2845,39 @@ export async function registerRoutes(
 
       for (const member of commissionStaff) {
         const memberAppts = periodAppointments.filter(a => a.staffId === member.id);
-        let serviceRevenue = 0;
-        let addonRevenue   = 0;
+        const memberRate  = Number(member.commissionRate || 0);
+        let serviceRevenue  = 0;
+        let addonRevenue    = 0;
+        let commissionAmount = 0;
 
         for (const appt of memberAppts) {
-          serviceRevenue += servicePriceMap.get(appt.serviceId!) || 0;
-          addonRevenue   += addonRevenueMap.get(appt.id) || 0;
+          const paid   = Number(appt.totalPaid ?? 0);
+          const tip    = Number(appt.tipAmount ?? 0);
+          const aAddon = addonRevenueMap.get(appt.id) || 0;
+          // Revenue basis = what the client actually paid (minus tip and
+          // add-ons). Only fall back to a price when the appointment was never
+          // checked out: the frozen snapshot first, then the live catalogue.
+          const aService = paid > 0
+            ? Math.max(0, paid - tip - aAddon)
+            : (appt.servicePrice != null
+                ? Number(appt.servicePrice)
+                : (servicePriceMap.get(appt.serviceId!) || 0));
+          // Rate frozen on the appointment at completion, else the member's
+          // current rate (historical rows have no snapshot).
+          const aRate = appt.commissionRate != null ? Number(appt.commissionRate) : memberRate;
+
+          serviceRevenue   += aService;
+          addonRevenue     += aAddon;
+          commissionAmount += (aService + aAddon) * (aRate / 100);
         }
 
-        const totalRevenue    = serviceRevenue + addonRevenue;
-        const commissionRate  = Number(member.commissionRate || 0);
-        const commissionAmount = totalRevenue * (commissionRate / 100);
+        const totalRevenue = serviceRevenue + addonRevenue;
         totalCommission += commissionAmount;
 
         runItems.push({
           staffId:          member.id,
           staffName:        member.name,
-          commissionRate,
+          commissionRate:   memberRate,
           appointmentCount: memberAppts.length,
           serviceRevenue,
           addonRevenue,
@@ -2947,8 +2980,8 @@ export async function registerRoutes(
       const tipsMap = new Map<number, number>();
       const hoursMap = new Map<number, number>();
 
-      // dailyRawMap: staffId → dateKey → { svcRevenue, tips, count }
-      const dailyRawMap = new Map<number, Map<string, { svcRevenue: number; tips: number; count: number }>>();
+      // dailyRawMap: staffId → dateKey → { svcRevenue, commission, tips, count }
+      const dailyRawMap = new Map<number, Map<string, { svcRevenue: number; commission: number; tips: number; count: number }>>();
 
       if (staffIds.length > 0) {
         // Single query for tips + daily service revenue breakdown
@@ -2958,6 +2991,7 @@ export async function registerRoutes(
             date: appointments.date,
             totalPaid: appointments.totalPaid,
             tipAmount: appointments.tipAmount,
+            commissionRate: appointments.commissionRate,
           })
           .from(appointments)
           .where(and(
@@ -2967,16 +3001,23 @@ export async function registerRoutes(
             sql`${appointments.date} <= ${periodEnd}`,
             inArray(appointments.staffId, staffIds)
           ));
+        // Fallback rate per staff = the rate frozen on the run item at creation.
+        const runItemRate = new Map<number, number>();
+        for (const it of items) runItemRate.set(it.staffId, Number(it.commissionRate || 0));
         for (const row of apptRows) {
           if (!row.staffId) continue;
           const tip = Number(row.tipAmount ?? 0);
           const svc = Number(row.totalPaid ?? 0) - tip;
+          const aRate = row.commissionRate != null
+            ? Number(row.commissionRate)
+            : (runItemRate.get(row.staffId) ?? 0);
+          const comm = svc * (aRate / 100);
           const dateKey = new Date(row.date).toISOString().slice(0, 10);
           tipsMap.set(row.staffId, (tipsMap.get(row.staffId) ?? 0) + tip);
           if (!dailyRawMap.has(row.staffId)) dailyRawMap.set(row.staffId, new Map());
           const staffDaily = dailyRawMap.get(row.staffId)!;
-          const prev = staffDaily.get(dateKey) ?? { svcRevenue: 0, tips: 0, count: 0 };
-          staffDaily.set(dateKey, { svcRevenue: prev.svcRevenue + svc, tips: prev.tips + tip, count: prev.count + 1 });
+          const prev = staffDaily.get(dateKey) ?? { svcRevenue: 0, commission: 0, tips: 0, count: 0 };
+          staffDaily.set(dateKey, { svcRevenue: prev.svcRevenue + svc, commission: prev.commission + comm, tips: prev.tips + tip, count: prev.count + 1 });
         }
 
         // Hours from timeclock
@@ -2998,8 +3039,7 @@ export async function registerRoutes(
       }
 
       const enrichedItems = items.map(item => {
-        const rate = Number(item.commissionRate) / 100;
-        const staffDailyRaw = dailyRawMap.get(item.staffId) ?? new Map<string, { svcRevenue: number; tips: number; count: number }>();
+        const staffDailyRaw = dailyRawMap.get(item.staffId) ?? new Map<string, { svcRevenue: number; commission: number; tips: number; count: number }>();
 
         // Build full date-range array with a row for every calendar day in the period
         const dailyBreakdown: Array<{ date: string; commission: number; tips: number; count: number }> = [];
@@ -3007,10 +3047,10 @@ export async function registerRoutes(
         const endDate = new Date(run.periodEnd + "T23:59:59Z");
         while (cursor <= endDate) {
           const key = cursor.toISOString().slice(0, 10);
-          const d = staffDailyRaw.get(key) ?? { svcRevenue: 0, tips: 0, count: 0 };
+          const d = staffDailyRaw.get(key) ?? { svcRevenue: 0, commission: 0, tips: 0, count: 0 };
           dailyBreakdown.push({
             date: key,
-            commission: parseFloat((d.svcRevenue * rate).toFixed(2)),
+            commission: parseFloat(d.commission.toFixed(2)),
             tips: parseFloat(d.tips.toFixed(2)),
             count: d.count,
           });
@@ -3119,6 +3159,39 @@ export async function registerRoutes(
   });
 
   // === SERVICE CATEGORIES ===
+  const withAccountTranslations = async (
+    storeId: number,
+    entityType: "category" | "service" | "addon",
+    rows: any[],
+  ) => {
+    if (!rows.length) return rows;
+    const languageResult = await pool.query(
+      `SELECT language FROM calendar_settings WHERE store_id = $1 ORDER BY id DESC LIMIT 1`,
+      [storeId],
+    );
+    const language = String(languageResult.rows[0]?.language ?? "en").toLowerCase();
+    if (language === "en") {
+      return rows.map((row) => ({ ...row, displayName: row.name, displayDescription: row.description ?? null }));
+    }
+
+    const ids = rows.map((row) => Number(row.id)).filter(Number.isFinite);
+    const translationResult = await pool.query(
+      `SELECT entity_id, name, description
+       FROM entity_translations
+       WHERE entity_type = $1 AND language = $2 AND entity_id = ANY($3::int[])`,
+      [entityType, language, ids],
+    );
+    const translated = new Map(translationResult.rows.map((row: any) => [Number(row.entity_id), row]));
+    return rows.map((row) => {
+      const translation: any = translated.get(Number(row.id));
+      return {
+        ...row,
+        displayName: translation?.name || row.name,
+        displayDescription: translation?.description ?? row.description ?? null,
+      };
+    });
+  };
+
   app.post("/api/service-categories/reorder", isAuthenticated, async (req, res) => {
     const sessionStoreId = await resolveSessionStoreId(req);
     if (!sessionStoreId) return res.status(403).json({ message: "No store context" });
@@ -3134,7 +3207,7 @@ export async function registerRoutes(
     const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(403).json({ message: "No store context" });
     const cats = await storage.getServiceCategories(storeId);
-    return res.json(cats);
+    return res.json(await withAccountTranslations(storeId, "category", cats));
   });
 
   app.post(api.serviceCategories.create.path, isAuthenticated, async (req, res) => {
@@ -3182,7 +3255,7 @@ export async function registerRoutes(
     const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(403).json({ message: "No store context" });
     const services = await storage.getServices(storeId);
-    return res.json(services);
+    return res.json(await withAccountTranslations(storeId, "service", services));
   });
 
   app.get(api.services.get.path, isAuthenticated, async (req, res) => {
@@ -3467,7 +3540,7 @@ export async function registerRoutes(
     const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(403).json({ message: "No store context" });
     const result = await storage.getAddons(storeId);
-    return res.json(result);
+    return res.json(await withAccountTranslations(storeId, "addon", result));
   });
 
   app.post(api.addons.create.path, isAuthenticated, async (req, res) => {
@@ -3591,6 +3664,140 @@ export async function registerRoutes(
     }
   });
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // NAIL CONFIGURATION  (migration 0154 / 0155)
+  // Store-owned length / shape / art vocabularies, per-service configuration,
+  // and the booking-time selection snapshot.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const nailVocabKind = z.enum(["size", "shape", "application", "effect"]);
+  const nailVocabBody = z.object({
+    name: z.string().min(1).max(120),
+    description: z.string().max(500).optional().nullable(),
+    code: z.string().max(60).optional().nullable(),
+    imageUrl: z.string().max(2000).optional().nullable(),
+    swatchHex: z.string().max(9).optional().nullable(),
+    isQuote: z.boolean().optional(),
+    sortOrder: z.number().int().optional(),
+    isActive: z.boolean().optional(),
+  });
+  const nailJunctionEntry = z.object({
+    vocabId: z.number().int(),
+    priceAdjustment: z.union([z.string(), z.number()]).optional(),
+    durationAdjustment: z.number().int().optional(),
+    isDefault: z.boolean().optional(),
+    isEnabled: z.boolean().optional(),
+  });
+  const saveNailConfigBody = z.object({
+    isEnabled: z.boolean().optional(),
+    lengthRequired: z.boolean().optional(),
+    shapeRequired: z.boolean().optional(),
+    artRequired: z.boolean().optional(),
+    sizes: z.array(nailJunctionEntry).optional(),
+    shapes: z.array(nailJunctionEntry).optional(),
+    applications: z.array(nailJunctionEntry).optional(),
+    effects: z.array(nailJunctionEntry).optional(),
+  });
+  const nailSelectionBody = z.object({
+    nailSizeId: z.number().int().nullable().optional(),
+    nailShapeId: z.number().int().nullable().optional(),
+    nailArtApplicationId: z.number().int().nullable().optional(),
+    nailArtEffectId: z.number().int().nullable().optional(),
+  });
+
+  app.get("/api/nail-vocab", isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(400).json({ message: "No store selected" });
+    return res.json(await nailConfig.getNailVocab(storeId));
+  });
+
+  app.post("/api/nail-vocab/:kind", isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(400).json({ message: "No store selected" });
+    const kind = nailVocabKind.safeParse(req.params.kind);
+    const body = nailVocabBody.safeParse(req.body);
+    if (!kind.success || !body.success) return res.status(400).json({ message: "Invalid input" });
+    return res.status(201).json(await nailConfig.createNailVocabRow(kind.data, storeId, body.data));
+  });
+
+  app.patch("/api/nail-vocab/:kind/:id", isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(400).json({ message: "No store selected" });
+    const kind = nailVocabKind.safeParse(req.params.kind);
+    const body = nailVocabBody.partial().safeParse(req.body);
+    if (!kind.success || !body.success) return res.status(400).json({ message: "Invalid input" });
+    const row = await nailConfig.updateNailVocabRow(kind.data, Number(req.params.id), storeId, body.data);
+    return row ? res.json(row) : res.status(404).json({ message: "Not found" });
+  });
+
+  app.delete("/api/nail-vocab/:kind/:id", isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(400).json({ message: "No store selected" });
+    const kind = nailVocabKind.safeParse(req.params.kind);
+    if (!kind.success) return res.status(400).json({ message: "Invalid input" });
+    const row = await nailConfig.deleteNailVocabRow(kind.data, Number(req.params.id), storeId);
+    return row ? res.json(row) : res.status(404).json({ message: "Not found" });
+  });
+
+  // POST /api/nail-vocab/:kind/:id/image — upload a photo for one vocab row (R2).
+  // Card visuals for the kiosk size / shape / effect pickers.
+  app.post("/api/nail-vocab/:kind/:id/image", isAuthenticated, memoryUpload({ maxSizeMb: 8 }).single("image"), async (req: any, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(400).json({ message: "No store selected" });
+      const kind = nailVocabKind.safeParse(req.params.kind);
+      if (!kind.success) return res.status(400).json({ message: "Invalid kind" });
+      if (!req.file) return res.status(400).json({ message: "No image file provided" });
+      const imageUrl = await uploadToR2(req.file.buffer, "nail-vocab", req.file.originalname, req.file.mimetype);
+      const row = await nailConfig.updateNailVocabRow(kind.data, Number(req.params.id), storeId, { imageUrl });
+      return row ? res.json(row) : res.status(404).json({ message: "Not found" });
+    } catch (err) {
+      console.error("[nail-vocab/image] error:", err);
+      return res.status(500).json({ message: "Failed to upload image" });
+    }
+  });
+
+  app.get("/api/nail-services", isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(400).json({ message: "No store selected" });
+    return res.json(await nailConfig.listNailServices(storeId));
+  });
+
+  app.get("/api/services/:id/nail-config", isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(400).json({ message: "No store selected" });
+    const serviceId = Number(req.params.id);
+    const svc = await storage.getService(serviceId);
+    if (!svc || svc.storeId !== storeId) return res.status(404).json({ message: "Service not found" });
+    const cfg = await nailConfig.getServiceNailConfig(serviceId);
+    return res.json(cfg); // null when the service has no nail config yet
+  });
+
+  app.put("/api/services/:id/nail-config", isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(400).json({ message: "No store selected" });
+    const body = saveNailConfigBody.safeParse(req.body);
+    if (!body.success) return res.status(400).json({ message: "Invalid input", errors: body.error.flatten() });
+    const cfg = await nailConfig.saveServiceNailConfig(storeId, Number(req.params.id), body.data);
+    return cfg ? res.json(cfg) : res.status(404).json({ message: "Service not found" });
+  });
+
+  app.get("/api/appointments/:id/nail-selection", isAuthenticated, async (req, res) => {
+    return res.json(await nailConfig.getAppointmentNailSelection(Number(req.params.id)));
+  });
+
+  app.put("/api/appointments/:id/nail-selection", isAuthenticated, async (req, res) => {
+    const body = nailSelectionBody.safeParse(req.body);
+    if (!body.success) return res.status(400).json({ message: "Invalid input" });
+    const row = await nailConfig.setAppointmentNailSelection(Number(req.params.id), body.data);
+    return row ? res.json(row) : res.status(404).json({ message: "Appointment or service not found" });
+  });
+
+  app.delete("/api/appointments/:id/nail-selection", isAuthenticated, async (req, res) => {
+    await nailConfig.clearAppointmentNailSelection(Number(req.params.id));
+    return res.status(204).end();
+  });
+
   // === APPOINTMENT AVAILABLE TIME ===
   // POST /api/appointments/:id/send-review-request
   // Manually triggers a review request SMS for a completed appointment
@@ -3607,7 +3814,10 @@ export async function registerRoutes(
     }
     try {
       const { sendReviewRequest } = await import("./sms");
-      await sendReviewRequest(appointment as any);
+      const result = await sendReviewRequest(appointment as any);
+      if (!result.sent) {
+        return res.status(400).json({ error: `Not sent — ${result.reason}` });
+      }
       return res.json({ success: true });
     } catch (err: any) {
       console.error("[review-request] error:", err);
@@ -4225,32 +4435,25 @@ If you have any questions, please contact your administrator.
         }))
       }).parse(req.body);
 
-      // Validate that each rule falls within business hours for that day
-      const staffRow = await storage.getStaffMember(staffId);
-      if (staffRow?.storeId) {
-        const bizHours = await storage.getBusinessHours(staffRow.storeId);
-        for (const rule of rules) {
-          const dayBiz = bizHours.find((h: any) => h.dayOfWeek === rule.dayOfWeek);
-          if (!dayBiz) continue; // no business hours defined for this day — allow
-          if (dayBiz.isClosed) {
-            return res.status(400).json({
-              message: `The business is closed on ${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][rule.dayOfWeek]}. Staff availability cannot be set for closed days.`,
-            });
-          }
-          const toMins = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
-          const bizOpenMins  = toMins(dayBiz.openTime);
-          const bizCloseMins = toMins(dayBiz.closeTime);
-          const startMins    = toMins(rule.startTime);
-          const endMins      = toMins(rule.endTime);
-          if (startMins < bizOpenMins || endMins > bizCloseMins) {
-            return res.status(400).json({
-              message: `Staff availability on ${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][rule.dayOfWeek]} must be within business hours (${dayBiz.openTime}–${dayBiz.closeTime}).`,
-            });
-          }
-        }
-      }
+      // Staff availability is stored as the owner sets it. Business hours are a
+      // SEPARATE concept — a salon can be open 9am–9pm while a given staff member
+      // only works 10am–4pm — so staff rules are NOT required to sit inside
+      // business hours.
+      //
+      // The client resubmits a staff member's FULL weekly set on every edit, so
+      // any hard rejection here (previously: "must be within business hours" and
+      // "business is closed on X") caused one stale day's row to block an edit to
+      // an entirely different day. Instead of rejecting, drop only the rules that
+      // are structurally invalid and persist the rest.
+      const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+      const toMins = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+      const cleanRules = rules.filter((r) =>
+        Number.isInteger(r.dayOfWeek) && r.dayOfWeek >= 0 && r.dayOfWeek <= 6 &&
+        HHMM.test(r.startTime) && HHMM.test(r.endTime) &&
+        toMins(r.startTime) < toMins(r.endTime)
+      );
 
-      const result = await storage.setStaffAvailability(staffId, rules.map(r => ({ ...r, staffId })));
+      const result = await storage.setStaffAvailability(staffId, cleanRules.map(r => ({ ...r, staffId })));
       // Rebuild precomputed slot cache and invalidate Redis availability cache.
       try {
         const staffRow = await storage.getStaffMember(staffId);
@@ -4915,6 +5118,69 @@ If you have any questions, please contact your administrator.
         }
       }
 
+      // === RESOURCE ASSIGNMENT (pedicure chairs / nail stations) ===
+      // Pedicure services must occupy a pedicure chair; other nail services
+      // (manicures, enhancements, nail art, combos) must occupy a nail station.
+      // Waxing/threading/hair/etc. have no resource requirement.
+      if (input.serviceId && input.storeId) {
+        const serviceRecord = await storage.getService(input.serviceId);
+        const requiredResourceType = getRequiredResourceType(serviceRecord?.category, serviceRecord?.name);
+
+        if (requiredResourceType) {
+          if (!input.resourceId) {
+            // No resource explicitly chosen — auto-assign the first available one.
+            const resourceAssignment = await autoAssignResource({
+              storeId: input.storeId,
+              resourceType: requiredResourceType,
+              date: input.date,
+              duration: input.duration || 30,
+            });
+            if (!resourceAssignment.assigned || !resourceAssignment.resourceId) {
+              // A store that hasn't set up any chairs/stations yet hasn't opted
+              // into resource tracking — don't block booking over it, only a
+              // genuine "all resources are busy" conflict should reject.
+              if (!resourceAssignment.noResourcesConfigured) {
+                return res.status(409).json({
+                  message: resourceAssignment.reason,
+                });
+              }
+            } else {
+              input.resourceId = resourceAssignment.resourceId;
+            }
+          } else {
+            // Client explicitly picked a resource — verify it's the right type,
+            // active, belongs to this store, and isn't already double-booked.
+            const [chosenResource] = await db
+              .select()
+              .from(salonResources)
+              .where(eq(salonResources.id, input.resourceId));
+            if (!chosenResource || chosenResource.storeId !== input.storeId || !chosenResource.isActive) {
+              return res.status(400).json({ message: "The selected resource is not available at this store" });
+            }
+            if (chosenResource.type !== requiredResourceType) {
+              return res.status(400).json({
+                message: requiredResourceType === "chair"
+                  ? "This service requires a pedicure chair"
+                  : "This service requires a nail station",
+              });
+            }
+            const appointmentEnd = new Date(input.date.getTime() + (input.duration || 30) * 60000);
+            const existingApts = await storage.getAppointments({ storeId: input.storeId });
+            const resourceConflict = existingApts.some(apt => {
+              if (apt.resourceId !== input.resourceId) return false;
+              if (apt.status === "cancelled") return false;
+              if (isNoShowFill && apt.status === "no_show") return false;
+              const aptStart = new Date(apt.date);
+              const aptEnd = new Date(aptStart.getTime() + apt.duration * 60000);
+              return input.date < aptEnd && appointmentEnd > aptStart;
+            });
+            if (resourceConflict) {
+              return res.status(409).json({ message: "That resource is already booked at that time" });
+            }
+          }
+        }
+      }
+
       if (input.storeId) {
         // Always enforce business hours — the allowBookingOutsideHours flag previously
         // gated this entire block, but since it defaults to true every new salon was
@@ -4950,6 +5216,81 @@ If you have any questions, please contact your administrator.
         input.customerId = clientId;
       }
 
+      // === PAYMENT POLICY GATE (deposit / card-on-file) ===========================
+      // Same rule as the AI receptionist's phone-booking gate, applied to staff
+      // creating a booking from /booking/new: if the store requires a deposit or
+      // card-on-file, hide the appointment and text the client a payment link
+      // instead of showing it on the calendar immediately.
+      //
+      // Never gate:
+      //   - Walk-ins (no client selected — input.customerId is null)
+      //   - Same-hour bookings (client is already at/about to be at the salon —
+      //     no realistic time for an SMS round-trip before the appointment)
+      //   - card_on_file when the client already has a card on file (requirement
+      //     already satisfied — nothing to collect)
+      let paymentRequirement: "deposit" | "card_on_file" | null = null;
+      let gateDepositAmountCents: number | null = null;
+      let gateClientPhone: string | null = null;
+
+      if (input.customerId && input.storeId && input.serviceId) {
+        const isImminent = input.date.getTime() - Date.now() <= 60 * 60 * 1000;
+        if (!isImminent) {
+          const [gateStorePolicy] = await db
+            .select({
+              bookingPaymentPolicy: locations.bookingPaymentPolicy,
+              depositType: locations.depositType,
+              depositValue: locations.depositValue,
+            })
+            .from(locations)
+            .where(eq(locations.id, input.storeId))
+            .limit(1);
+
+          const gateStripeConnected = !!(
+            process.env.STRIPE_SECRET_KEY &&
+            (await pool.query(
+              `SELECT 1 FROM store_payment_accounts WHERE store_id = $1 AND provider = 'stripe' AND status = 'connected' LIMIT 1`,
+              [input.storeId]
+            ).then((r: any) => r.rows.length > 0).catch(() => false))
+          );
+          const gateEffectivePolicy = gateStripeConnected ? (gateStorePolicy?.bookingPaymentPolicy ?? "none") : "none";
+
+          if (gateEffectivePolicy === "deposit" && gateStorePolicy?.depositValue) {
+            paymentRequirement = "deposit";
+          } else if (gateEffectivePolicy === "card_on_file") {
+            const [gateClientRow] = await db
+              .select({ stripeCustomerId: clients.stripeCustomerId, stripePaymentMethodId: clients.stripePaymentMethodId })
+              .from(clients)
+              .where(eq(clients.id, input.customerId))
+              .limit(1);
+            // Requirement already satisfied for this client — nothing to gate.
+            if (!gateClientRow?.stripeCustomerId || !gateClientRow?.stripePaymentMethodId) {
+              paymentRequirement = "card_on_file";
+            }
+          }
+
+          if (paymentRequirement) {
+            const gateCustomer = await storage.getCustomer(input.customerId);
+            gateClientPhone = gateCustomer?.phone ?? null;
+            if (!gateClientPhone) {
+              // No phone on file — can't text a link, so don't gate the booking.
+              paymentRequirement = null;
+            } else if (paymentRequirement === "deposit") {
+              const gateService = await storage.getService(input.serviceId);
+              const servicePriceCents = Math.round(Number(gateService?.price ?? 0) * 100);
+              gateDepositAmountCents = gateStorePolicy!.depositType === "percentage"
+                ? Math.round(servicePriceCents * (Number(gateStorePolicy!.depositValue) / 100))
+                : Math.round(Number(gateStorePolicy!.depositValue) * 100);
+              if (gateDepositAmountCents < 50) gateDepositAmountCents = 50;
+            }
+          }
+        }
+      }
+
+      if (paymentRequirement) {
+        input.calendarHidden = true;
+        (input as any).paymentStatus = "awaiting_payment";
+      }
+
       const appointment = await storage.createAppointment(input);
 
       // Log appointment creation event (fire-and-forget)
@@ -4961,15 +5302,36 @@ If you have any questions, please contact your administrator.
          JSON.stringify({ source: req.body.source ?? "staff", serviceId: input.serviceId, staffId: input.staffId })]
       ).catch((e: any) => console.error("[aptEvents] create:", e?.message));
 
-      const fullAppointment = await storage.getAppointment(appointment.id);
-      if (fullAppointment) {
-        sendBookingConfirmation(fullAppointment).catch(console.error);
-        sendBookingConfirmationEmail(fullAppointment).catch(console.error);
+      if (paymentRequirement && gateClientPhone && input.storeId) {
+        const tokenRow = await createBookingPaymentToken({
+          storeId: input.storeId,
+          appointmentId: appointment.id,
+          customerId: input.customerId ?? null,
+          customerPhone: gateClientPhone,
+          requirement: paymentRequirement,
+          depositAmountCents: gateDepositAmountCents,
+        });
+        const link = `${process.env.APP_URL ?? "https://certxa.com"}/complete-booking/${tokenRow.token}`;
+        const gateCustomerForSms = await storage.getCustomer(input.customerId!);
+        const store = await storage.getStore(input.storeId);
+        const smsBody = paymentRequirement === "deposit"
+          ? `Hi ${gateCustomerForSms?.name || "there"}, please confirm your ${store?.name ?? "appointment"} booking by paying a $${(gateDepositAmountCents! / 100).toFixed(2)} deposit within the next hour: ${link}`
+          : `Hi ${gateCustomerForSms?.name || "there"}, please confirm your ${store?.name ?? "appointment"} booking by adding a card on file within the next hour: ${link}`;
+        sendSms(input.storeId, gateClientPhone, smsBody, "booking_payment_required", appointment.id, input.customerId ?? undefined, {
+          skipCreditDeduction: true,
+          smsSource: "platform",
+        }).catch((err) => console.error(`[appointments:create] Failed to send payment-link SMS for appointment ${appointment.id}:`, err));
+      } else {
+        const fullAppointment = await storage.getAppointment(appointment.id);
+        if (fullAppointment) {
+          sendBookingConfirmation(fullAppointment).catch(console.error);
+          sendBookingConfirmationEmail(fullAppointment).catch(console.error);
 
-        if (appointment.storeId) {
-          broadcastTurnEligibilityChanged(appointment.storeId);
-          broadcastSyncEvent({ type: "booking_created", storeId: appointment.storeId, appointmentId: appointment.id, source: req.body.source ?? "staff" });
-          triggerDashboardBroadcast(appointment.storeId);
+          if (appointment.storeId) {
+            broadcastTurnEligibilityChanged(appointment.storeId);
+            broadcastSyncEvent({ type: "booking_created", storeId: appointment.storeId, appointmentId: appointment.id, source: req.body.source ?? "staff" });
+            triggerDashboardBroadcast(appointment.storeId);
+          }
         }
       }
 
@@ -5011,6 +5373,10 @@ If you have any questions, please contact your administrator.
         ...req.body,
         date: req.body.date ? new Date(req.body.date) : undefined,
       });
+      // Commission snapshot fields are server-managed (set once at first
+      // completion by storage.updateAppointment) — never trust a client value.
+      delete (input as any).servicePrice;
+      delete (input as any).commissionRate;
       if (input.status === "started" && !input.startedAt) {
         input.startedAt = new Date();
       }
@@ -5145,21 +5511,27 @@ If you have any questions, please contact your administrator.
                 amount: parseFloat(String(input.totalPaid)),
               });
 
-              // Auto-award loyalty points (1 pt per $1 spent, rounded)
+              // Auto-award loyalty points at the store's configured rate
+              // (store_settings.preferences.loyalty.pointsPerDollar, default 1).
               try {
                 const totalPaidNum = parseFloat(String(input.totalPaid));
                 if (totalPaidNum > 0) {
+                  const [ssRow] = await db.select({ preferences: storeSettings.preferences })
+                    .from(storeSettings).where(eq(storeSettings.storeId, appointment.storeId));
+                  const lp = ssRow?.preferences ? (JSON.parse(ssRow.preferences as string).loyalty ?? {}) : {};
+                  const loyaltyEnabled = lp.enabled !== false;
+                  const pointsPerDollar = Number(lp.pointsPerDollar) > 0 ? Number(lp.pointsPerDollar) : 1;
                   const full = await storage.getAppointment(appointment.id);
                   const customerId = full?.customerId ?? (full as any)?.customer?.id;
-                  if (customerId) {
-                    const pointsEarned = Math.round(totalPaidNum);
+                  if (customerId && loyaltyEnabled) {
+                    const pointsEarned = Math.round(totalPaidNum * pointsPerDollar);
                     await db.insert(loyaltyTransactions).values({
                       storeId: appointment.storeId,
                       customerId,
                       appointmentId: appointment.id,
                       type: "earn",
                       points: pointsEarned,
-                      description: `Earned for appointment #${appointment.id} (${totalPaidNum.toFixed(2)})`,
+                      description: `Earned for appointment #${appointment.id} (${totalPaidNum.toFixed(2)} @ ${pointsPerDollar}pt/$)`,
                     });
                     const [cust] = await db.select({ loyaltyPoints: clients.loyaltyPoints })
                       .from(clients).where(eq(clients.id, customerId)).limit(1);
@@ -6543,13 +6915,17 @@ If you have any questions, please contact your administrator.
         console.log(`Onboarding: Created ${pedicureChairs} chair resource(s)`);
       }
 
-      // Seed the new store's service catalogue by copying categories, services,
-      // addons, and links directly from the preset template store (storeId=2).
-      // That store is maintained as the source of truth for what a fully
-      // ready-to-use account looks like — every new account gets an exact
-      // copy of it, regardless of business type or categories picked in
-      // onboarding.
-      const allServiceIds: number[] = await seedFromPresetStore(store.id);
+      // Seed the new store's service catalogue.
+      //   • Nail Salon → build the full catalog from the static template
+      //     (nailSalonCatalog.ts): categories, services, add-ons, add-on links,
+      //     the four nail vocabularies, and per-service nail configuration.
+      //   • Everything else → copy categories, services, addons, and links from
+      //     the preset template store (storeId=2), which is maintained as the
+      //     source of truth for a fully ready-to-use account of that type.
+      const allServiceIds: number[] =
+        businessType === "Nail Salon"
+          ? await seedNailSalonCatalog(store.id)
+          : await seedFromPresetStore(store.id);
 
       const staffMembers = staffData || [{ name: "Owner", color: "#f472b6" }];
       for (const s of staffMembers) {
@@ -7445,6 +7821,30 @@ If you have any questions, please contact your administrator.
         }
       }
 
+      // === RESOURCE ASSIGNMENT (pedicure chairs / nail stations) ===
+      // Same rule as the staff-facing booking route: pedicure services need a
+      // pedicure chair, other nail services need a nail station. Waxing/
+      // threading/hair/etc. have no resource requirement.
+      let assignedResourceId: number | null = null;
+      const requiredResourceType = getRequiredResourceType(serviceRecord?.category, serviceRecord?.name);
+      if (requiredResourceType) {
+        const resourceAssignment = await autoAssignResource({
+          storeId: store.id,
+          resourceType: requiredResourceType,
+          date: new Date(input.date),
+          duration: input.duration,
+        });
+        if (!resourceAssignment.assigned || !resourceAssignment.resourceId) {
+          // Store hasn't configured any resources of this type — don't block
+          // booking over it, only reject on a genuine full-capacity conflict.
+          if (!resourceAssignment.noResourcesConfigured) {
+            return res.status(409).json({ message: resourceAssignment.reason });
+          }
+        } else {
+          assignedResourceId = resourceAssignment.resourceId;
+        }
+      }
+
       // Atomic create: overlap check + INSERT in one DB transaction (eliminates TOCTOU race).
       // Duration rule: input.duration is the final value (including addons) passed by the client.
       // RULE: appointment.duration (incl. addons) is ALWAYS used for conflict detection — never service.duration.
@@ -7458,6 +7858,7 @@ If you have any questions, please contact your administrator.
         customerId: customer.id,
         notes: input.notes || null,
         status: "pending",
+        resourceId: assignedResourceId,
       });
       if (!createResult.ok) {
         return res.status(409).json({ message: createResult.error.message });
@@ -9762,154 +10163,101 @@ or
     const client = await pool.connect();
     const tablesCleared: string[] = [];
     try {
-      await client.query("BEGIN");
+      // Every delete below runs in its OWN mini-transaction rather than one
+      // big transaction for the whole function. A hand-maintained table list
+      // here has repeatedly drifted from the live schema (wrong column names,
+      // tables that were never migrated onto this environment, tables added
+      // to the schema after this list was written) — and a single failing
+      // statement inside one shared transaction poisons it for every
+      // statement after it, even correctly-named ones, silently leaving
+      // orphaned rows and ultimately blocking the final `locations` delete.
+      // Isolating each delete means one bad statement only skips itself.
+      const tryDelete = async (sql: string, params: any[], label: string): Promise<boolean> => {
+        try {
+          await client.query("BEGIN");
+          await client.query(sql, params);
+          await client.query("COMMIT");
+          tablesCleared.push(label);
+          return true;
+        } catch (_e) {
+          await client.query("ROLLBACK").catch(() => {});
+          return false;
+        }
+      };
 
       if (locationId !== null) {
         const sid = locationId;
 
-        // 1. Children of appointments
-        await client.query(`DELETE FROM appointment_addons WHERE appointment_id IN (SELECT id FROM appointments WHERE store_id = $1)`, [sid]);
-        tablesCleared.push("appointment_addons");
+        // Child tables with no store_id of their own — scoped via a subquery
+        // through their store-scoped parent (clients/staff/services).
+        await tryDelete(`DELETE FROM client_addresses WHERE client_id IN (SELECT id FROM clients WHERE store_id = $1)`, [sid], "client_addresses");
+        await tryDelete(`DELETE FROM client_emails WHERE client_id IN (SELECT id FROM clients WHERE store_id = $1)`, [sid], "client_emails");
+        await tryDelete(`DELETE FROM client_custom_field_values WHERE client_id IN (SELECT id FROM clients WHERE store_id = $1)`, [sid], "client_custom_field_values");
+        await tryDelete(`DELETE FROM client_marketing_preferences WHERE client_id IN (SELECT id FROM clients WHERE store_id = $1)`, [sid], "client_marketing_preferences");
+        await tryDelete(`DELETE FROM client_tag_relationships WHERE client_id IN (SELECT id FROM clients WHERE store_id = $1)`, [sid], "client_tag_relationships");
+        await tryDelete(`DELETE FROM staff_services WHERE staff_id IN (SELECT id FROM staff WHERE store_id = $1)`, [sid], "staff_services");
+        await tryDelete(`DELETE FROM service_options WHERE service_id IN (SELECT id FROM services WHERE store_id = $1)`, [sid], "service_options");
+        await tryDelete(`DELETE FROM service_addons WHERE service_id IN (SELECT id FROM services WHERE store_id = $1)`, [sid], "service_addons");
 
-        // 2. Children of intake_forms
-        await client.query(`DELETE FROM intake_form_fields WHERE form_id IN (SELECT id FROM intake_forms WHERE store_id = $1)`, [sid]);
-        tablesCleared.push("intake_form_fields");
-        await client.query(`DELETE FROM intake_form_responses WHERE store_id = $1`, [sid]);
-        tablesCleared.push("intake_form_responses");
+        // Every table with a store_id/staff_id/salon_id column, discovered
+        // live from the schema rather than hand-maintained — automatically
+        // covers new tables and never references a renamed/removed one.
+        const findScopedTables = async (column: string): Promise<string[]> => {
+          const r = await client.query(
+            `SELECT DISTINCT table_name FROM information_schema.columns WHERE column_name = $1 AND table_schema = 'public' AND table_name != 'locations'`,
+            [column]
+          );
+          return r.rows.map((row: any) => row.table_name);
+        };
 
-        // 3. Children of payroll_runs / payout_runs
-        await client.query(`DELETE FROM payroll_run_items WHERE run_id IN (SELECT id FROM payroll_runs WHERE store_id = $1)`, [sid]);
-        tablesCleared.push("payroll_run_items");
-        await client.query(`DELETE FROM payout_run_items WHERE payout_run_id IN (SELECT id FROM payout_runs WHERE store_id = $1)`, [sid]);
-        tablesCleared.push("payout_run_items");
-
-        // 4. Children of pos_grids
-        await client.query(`DELETE FROM pos_grid_slots WHERE grid_id IN (SELECT id FROM pos_grids WHERE store_id = $1)`, [sid]);
-        tablesCleared.push("pos_grid_slots");
-
-        // 5. Children of gift_cards
-        await client.query(`DELETE FROM gift_card_transactions WHERE gift_card_id IN (SELECT id FROM gift_cards WHERE store_id = $1)`, [sid]);
-        tablesCleared.push("gift_card_transactions");
-
-        // 6. Children of service_options (linked to services)
-        await client.query(`DELETE FROM service_options WHERE service_id IN (SELECT id FROM services WHERE store_id = $1)`, [sid]);
-        tablesCleared.push("service_options");
-
-        // 7. Client child tables
-        for (const t of ["client_notes", "client_tags", "client_audit_logs", "client_custom_fields", "client_export_jobs", "client_import_jobs"]) {
-          await client.query(`DELETE FROM ${t} WHERE store_id = $1`, [sid]);
-          tablesCleared.push(t);
-        }
-
-        // 8. Direct store-scoped tables (children before parents)
-        const storeScoped = [
-          "appointment_addons",      // already done but idempotent
-          "appointments",
-          "client_phones",
-          "clients",
-          "customers",
-          "staff_pins",
-          "staff_intelligence",
-          "staff_availability",
-          "staff_settings",
-          "timeclock",
-          "staff",
-          "services",
-          "service_categories",
-          "addons",
-          "intake_forms",
-          "gift_cards",
-          "loyalty_transactions",
-          "reviews",
-          "google_review_responses",
-          "google_reviews",
-          "google_business_sync_logs",
-          "google_business_locations",
-          "google_business_profiles",
-          "google_business_accounts",
-          "google_service_sync_settings",
-          "gbp_optimization_logs",
-          "waitlist",
-          "sms_log",
-          "sms_conversations",
-          "sms_settings",
-          "mail_settings",
-          "business_hours",
-          "calendar_settings",
-          "store_settings",
-          "campaigns",
-          "permissions",
-          "roles",
-          "products",
-          "cash_drawer_sessions",
-          "kiosk_checkins",
-          "kiosk_turn",
-          "turn_assignment_log",
-          "payroll_runs",
-          "payout_runs",
-          "contractors",
-          "commission_structures",
-          "store_subscriptions",
-          "store_payment_accounts",
-          "stripe_settings",
-          "api_keys",
-          "pos_grids",
-          "salon_resources",
-          "pro_crews",
-          "pro_customers",
-          "pro_estimates",
-          "pro_invoices",
-          "pro_order_notes",
-          "pro_service_orders",
-          "intelligence_interventions",
-          "client_intelligence",
-          "dead_seat_patterns",
-          "growth_score_snapshots",
-          "staff_intelligence",
-          "app",
-        ];
-        for (const t of storeScoped) {
-          try {
-            await client.query(`DELETE FROM ${t} WHERE store_id = $1`, [sid]);
-            tablesCleared.push(t);
-          } catch (_e) { /* table may not exist yet or column name differs — skip */ }
-        }
-
-        // salon_id variant tables
-        for (const t of ["billing_activity_logs", "customer_billing_profiles", "invoice_records", "payment_transactions", "refunds", "subscription_plan_changes"]) {
-          try {
-            await client.query(`DELETE FROM ${t} WHERE salon_id = $1`, [sid]);
-            tablesCleared.push(t);
-          } catch (_e) {}
-        }
-
-        // store_number variant tables — get the store_number from locations first
-        const locRow = await client.query(`SELECT store_number FROM locations WHERE id = $1`, [sid]);
-        if (locRow.rows.length > 0 && locRow.rows[0].store_number !== null) {
-          const snum = locRow.rows[0].store_number;
-          for (const t of ["stripe_customers", "subscriptions"]) {
-            try {
-              await client.query(`DELETE FROM ${t} WHERE store_number = $1`, [snum]);
-              tablesCleared.push(t);
-            } catch (_e) {}
+        // Multi-pass retry: the FK dependency order between these tables
+        // isn't known upfront, so keep retrying whatever failed until a full
+        // pass makes no further progress — this self-resolves ordering
+        // issues (e.g. staff_availability must clear before staff) without
+        // needing a hand-maintained order.
+        const runMultiPass = async (tables: string[], column: string) => {
+          let remaining = tables;
+          let progress = true;
+          let pass = 0;
+          while (remaining.length && progress && pass < 8) {
+            progress = false;
+            pass++;
+            const next: string[] = [];
+            for (const t of remaining) {
+              const ok = await tryDelete(`DELETE FROM "${t}" WHERE ${column} = $1`, [sid], t);
+              if (ok) progress = true; else next.push(t);
+            }
+            remaining = next;
           }
-        }
+        };
 
-        // Finally delete the location row
-        await client.query(`DELETE FROM locations WHERE id = $1`, [sid]);
-        tablesCleared.push("locations");
+        await runMultiPass(await findScopedTables("staff_id"), "staff_id");
+        await runMultiPass(await findScopedTables("store_id"), "store_id");
+        await runMultiPass(await findScopedTables("salon_id"), "salon_id");
+
+        // subscriptions.store_number is a legacy column name that actually
+        // just holds the location id directly — locations has no separate
+        // store_number column to look up.
+        await tryDelete(`DELETE FROM subscriptions WHERE store_number = $1`, [sid], "subscriptions");
+
+        // Finally the location row itself — unlike everything above, this
+        // one must succeed, or the store isn't actually gone.
+        const locationDeleted = await tryDelete(`DELETE FROM locations WHERE id = $1`, [sid], "locations");
+        if (!locationDeleted) {
+          return { tablesCleared, error: "Could not delete the location row — a table still references it. Check server logs for the specific constraint." };
+        }
       }
 
       // Delete the user account
       if (ownerId) {
-        await client.query(`DELETE FROM users WHERE id = $1`, [ownerId]);
-        tablesCleared.push("users");
+        const userDeleted = await tryDelete(`DELETE FROM users WHERE id = $1`, [ownerId], "users");
+        if (!userDeleted) {
+          return { tablesCleared, error: "Store deleted, but could not delete the owner's user account — it may own other data." };
+        }
       }
 
-      await client.query("COMMIT");
       return { tablesCleared };
     } catch (err: any) {
-      await client.query("ROLLBACK");
       console.error("[deleteStoreAndOwner] error:", err);
       return { tablesCleared, error: err?.message ?? String(err) };
     } finally {
@@ -11318,7 +11666,14 @@ or
 
     const storeId = Number(req.params.storeId);
     const store = await storage.getStore(storeId);
-    if (!store || store.userId !== userId) return res.status(403).json({ message: "Forbidden" });
+    const [requestUser] = await db
+      .select({ isAdmin: users.isAdmin })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!store || (store.userId !== userId && !requestUser?.isAdmin)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
 
     try {
       const profiles = await db
@@ -13809,10 +14164,38 @@ or
   const requireAdmin = async (req: any, res: any): Promise<boolean> => {
     const adminUserId = (req.session as any)?.userId;
     if (!adminUserId) { res.status(401).json({ message: "Unauthorized" }); return false; }
-    const [user] = await db.select({ role: users.role }).from(users).where(eq(users.id, adminUserId));
-    if (user?.role !== "admin") { res.status(403).json({ message: "Admin access required" }); return false; }
+    const [user] = await db
+      .select({ role: users.role, isAdmin: users.isAdmin })
+      .from(users)
+      .where(eq(users.id, adminUserId));
+    // `users.is_admin` is the canonical platform-admin flag. Keep the role
+    // fallback for legacy administrator accounts created before that column.
+    if (!user?.isAdmin && user?.role !== "admin") {
+      res.status(403).json({ message: "Admin access required" });
+      return false;
+    }
     return true;
   };
+
+  // === DEVICE FULFILLMENT ===
+  // The fulfillment UI previously requested a non-API URL, so Express returned
+  // the SPA HTML shell and the client attempted to parse "<!DOCTYPE" as JSON.
+  // There is currently no fulfillment ledger in the database; return an empty,
+  // correctly shaped queue until a subscription explicitly creates a shipment.
+  app.get("/api/admin/fulfillment/pending", async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    return res.json({ data: [] });
+  });
+
+  app.post("/api/admin/fulfillment/record", async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    return res.status(501).json({ message: "Device fulfillment recording is not configured" });
+  });
+
+  app.post("/api/admin/fulfillment/buy-label", async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    return res.status(501).json({ message: "Shipping label purchasing is not configured" });
+  });
 
   app.get("/api/admin/users/:userId/trial-status", async (req, res) => {
     if (!(await requireAdmin(req, res))) return;
@@ -14097,8 +14480,18 @@ or
       const totalAppointmentsResult = await pool.query(`SELECT COUNT(*)::int as count FROM appointments`);
       const totalAppointmentsCount = Number(totalAppointmentsResult.rows[0]?.count || 0);
 
-      // Get trial user count using raw SQL via pool
-      const trialUsersResult = await pool.query(`SELECT COUNT(*)::int as count FROM users WHERE subscription_status = 'trial'`);
+      // Use the same canonical subscription source as /isadmin/billing. The
+      // legacy users.subscription_status field includes users without an
+      // account/location and can remain "trial" after a plan transition.
+      const trialUsersResult = await pool.query(`
+        SELECT COUNT(*)::int AS count
+        FROM (
+          SELECT DISTINCT ON (store_id) store_id, status
+          FROM store_subscriptions
+          ORDER BY store_id, created_at DESC, id DESC
+        ) latest
+        WHERE latest.status = 'trialing'
+      `);
       const trialUsersCount = Number(trialUsersResult.rows[0]?.count || 0);
 
       // Stripe is not yet implemented — subscriptions and MRR are always 0
@@ -15648,6 +16041,7 @@ or
           name: services.name,
           description: services.description,
           duration: services.duration,
+          longevity: services.longevity,
           price: services.price,
           category: services.category,
           categoryId: services.categoryId,
@@ -16887,6 +17281,14 @@ or
       const calSettings = await db.select({ autoMarkNoShows: calendarSettings.autoMarkNoShows })
         .from(calendarSettings).where(eq(calendarSettings.storeId, store.id)).limit(1);
 
+      const connectedAccount = await db.select({ id: storePaymentAccounts.id })
+        .from(storePaymentAccounts)
+        .where(and(
+          eq(storePaymentAccounts.storeId, store.id),
+          eq(storePaymentAccounts.provider, "stripe"),
+          eq(storePaymentAccounts.status, "connected"),
+        )).limit(1);
+
       return res.json({
         cancellationHoursCutoff: store.cancellationHoursCutoff ?? 24,
         lateGracePeriodMinutes: store.lateGracePeriodMinutes ?? 10,
@@ -16894,6 +17296,7 @@ or
         bookingPaymentPolicy: (store as any).bookingPaymentPolicy ?? "none",
         depositType: (store as any).depositType ?? null,
         depositValue: (store as any).depositValue ? Number((store as any).depositValue) : null,
+        stripeConnected: connectedAccount.length > 0,
       });
     } catch (err) {
       console.error(err);
@@ -17249,6 +17652,182 @@ or
     }
   });
 
+  // ── Loyalty program config (earning rate) — stored in preferences.loyalty ──
+  app.get("/api/loyalty/config", isAuthenticated, async (req: any, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(400).json({ error: "No store selected" });
+      const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
+      const prefs = row?.preferences ? JSON.parse(row.preferences as string) : {};
+      const l = prefs.loyalty ?? {};
+      return res.json({
+        enabled: l.enabled !== false,
+        pointsPerDollar: Number(l.pointsPerDollar) > 0 ? Number(l.pointsPerDollar) : 1,
+      });
+    } catch (err) {
+      console.error("[loyalty/config] GET", err);
+      return res.status(500).json({ error: "Failed to load loyalty config" });
+    }
+  });
+
+  app.put("/api/loyalty/config", isAuthenticated, async (req: any, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(400).json({ error: "No store selected" });
+      const { enabled, pointsPerDollar } = req.body ?? {};
+      const ppd = Number(pointsPerDollar);
+      if (!Number.isFinite(ppd) || ppd <= 0 || ppd > 1000) {
+        return res.status(400).json({ error: "pointsPerDollar must be between 0 and 1000" });
+      }
+      const [existing] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
+      const currentPrefs = existing?.preferences ? JSON.parse(existing.preferences as string) : {};
+      const nextPrefs = {
+        ...currentPrefs,
+        loyalty: { ...(currentPrefs.loyalty ?? {}), enabled: enabled !== false, pointsPerDollar: ppd },
+      };
+      const newPrefs = JSON.stringify(nextPrefs);
+      if (existing) {
+        await db.update(storeSettings).set({ preferences: newPrefs, updatedAt: new Date() }).where(eq(storeSettings.storeId, storeId));
+      } else {
+        await db.insert(storeSettings).values({ storeId, preferences: newPrefs });
+      }
+      return res.json({ success: true, enabled: enabled !== false, pointsPerDollar: ppd });
+    } catch (err) {
+      console.error("[loyalty/config] PUT", err);
+      return res.status(500).json({ error: "Failed to save loyalty config" });
+    }
+  });
+
+  // ── Loyalty rewards catalogue (owner-managed) ────────────────────────────
+  app.get("/api/loyalty/rewards", isAuthenticated, async (req: any, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(400).json({ error: "No store selected" });
+      const rows = await db.select().from(loyaltyRewards)
+        .where(eq(loyaltyRewards.storeId, storeId))
+        .orderBy(asc(loyaltyRewards.sortOrder), asc(loyaltyRewards.pointsCost));
+      return res.json(rows.map(r => ({ ...r, dollarValue: Number(r.dollarValue) })));
+    } catch (err) {
+      console.error("[loyalty/rewards] GET", err);
+      return res.status(500).json({ error: "Failed to load rewards" });
+    }
+  });
+
+  app.post("/api/loyalty/rewards", isAuthenticated, async (req: any, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(400).json({ error: "No store selected" });
+      const name = String(req.body?.name ?? "").trim();
+      const pointsCost = Math.round(Number(req.body?.pointsCost));
+      const dollarValue = Number(req.body?.dollarValue);
+      if (!name) return res.status(400).json({ error: "Name is required" });
+      if (!Number.isFinite(pointsCost) || pointsCost <= 0) return res.status(400).json({ error: "Points cost must be a positive number" });
+      if (!Number.isFinite(dollarValue) || dollarValue <= 0) return res.status(400).json({ error: "Dollar value must be a positive number" });
+      const [row] = await db.insert(loyaltyRewards).values({
+        storeId, name, pointsCost,
+        dollarValue: dollarValue.toFixed(2),
+        isActive: req.body?.isActive !== false,
+        sortOrder: Number.isFinite(Number(req.body?.sortOrder)) ? Math.round(Number(req.body.sortOrder)) : 0,
+      }).returning();
+      return res.status(201).json({ ...row, dollarValue: Number(row.dollarValue) });
+    } catch (err) {
+      console.error("[loyalty/rewards] POST", err);
+      return res.status(500).json({ error: "Failed to create reward" });
+    }
+  });
+
+  app.patch("/api/loyalty/rewards/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(400).json({ error: "No store selected" });
+      const id = Number(req.params.id);
+      const patch: Record<string, any> = {};
+      if (req.body?.name !== undefined) {
+        const n = String(req.body.name).trim();
+        if (!n) return res.status(400).json({ error: "Name is required" });
+        patch.name = n;
+      }
+      if (req.body?.pointsCost !== undefined) {
+        const p = Math.round(Number(req.body.pointsCost));
+        if (!Number.isFinite(p) || p <= 0) return res.status(400).json({ error: "Points cost must be a positive number" });
+        patch.pointsCost = p;
+      }
+      if (req.body?.dollarValue !== undefined) {
+        const d = Number(req.body.dollarValue);
+        if (!Number.isFinite(d) || d <= 0) return res.status(400).json({ error: "Dollar value must be a positive number" });
+        patch.dollarValue = d.toFixed(2);
+      }
+      if (req.body?.isActive !== undefined) patch.isActive = !!req.body.isActive;
+      if (req.body?.sortOrder !== undefined) patch.sortOrder = Math.round(Number(req.body.sortOrder)) || 0;
+      if (Object.keys(patch).length === 0) return res.status(400).json({ error: "Nothing to update" });
+      const [row] = await db.update(loyaltyRewards).set(patch)
+        .where(and(eq(loyaltyRewards.id, id), eq(loyaltyRewards.storeId, storeId)))
+        .returning();
+      if (!row) return res.status(404).json({ error: "Reward not found" });
+      return res.json({ ...row, dollarValue: Number(row.dollarValue) });
+    } catch (err) {
+      console.error("[loyalty/rewards] PATCH", err);
+      return res.status(500).json({ error: "Failed to update reward" });
+    }
+  });
+
+  app.delete("/api/loyalty/rewards/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(400).json({ error: "No store selected" });
+      await db.delete(loyaltyRewards)
+        .where(and(eq(loyaltyRewards.id, Number(req.params.id)), eq(loyaltyRewards.storeId, storeId)));
+      return res.status(204).end();
+    } catch (err) {
+      console.error("[loyalty/rewards] DELETE", err);
+      return res.status(500).json({ error: "Failed to delete reward" });
+    }
+  });
+
+  // POST /api/loyalty/redeem — spend a customer's points on a reward. Deducts
+  // points, logs a "redeem" transaction, returns the $ value to apply to the
+  // ticket. Called by the POS at finalize time.
+  app.post("/api/loyalty/redeem", isAuthenticated, async (req: any, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(400).json({ error: "No store selected" });
+      const customerId = Number(req.body?.customerId);
+      const rewardId = Number(req.body?.rewardId);
+      const appointmentId = Number.isFinite(Number(req.body?.appointmentId)) ? Number(req.body.appointmentId) : null;
+      if (!Number.isFinite(customerId) || !Number.isFinite(rewardId)) {
+        return res.status(400).json({ error: "customerId and rewardId are required" });
+      }
+      const [reward] = await db.select().from(loyaltyRewards)
+        .where(and(eq(loyaltyRewards.id, rewardId), eq(loyaltyRewards.storeId, storeId)));
+      if (!reward) return res.status(404).json({ error: "Reward not found" });
+      const [client] = await db.select({ loyaltyPoints: clients.loyaltyPoints })
+        .from(clients).where(and(eq(clients.id, customerId), eq(clients.storeId, storeId)));
+      if (!client) return res.status(404).json({ error: "Customer not found" });
+      const balance = client.loyaltyPoints ?? 0;
+      if (balance < reward.pointsCost) {
+        return res.status(400).json({ error: "Not enough points", balance, pointsCost: reward.pointsCost });
+      }
+      const newBalance = balance - reward.pointsCost;
+      await db.update(clients).set({ loyaltyPoints: newBalance }).where(eq(clients.id, customerId));
+      await db.insert(loyaltyTransactions).values({
+        storeId, customerId, appointmentId,
+        type: "redeem",
+        points: -reward.pointsCost,
+        description: `Redeemed "${reward.name}" — $${Number(reward.dollarValue).toFixed(2)} off`,
+      });
+      return res.json({
+        rewardId: reward.id,
+        name: reward.name,
+        pointsCost: reward.pointsCost,
+        dollarValue: Number(reward.dollarValue),
+        newBalance,
+      });
+    } catch (err) {
+      console.error("[loyalty/redeem]", err);
+      return res.status(500).json({ error: "Failed to redeem reward" });
+    }
+  });
+
   // ============================================================
   // POS — Record Walk-in Sale (revenue + commission tracking)
   // ============================================================
@@ -17270,6 +17849,15 @@ or
         0
       );
 
+      // Commission-rate snapshot for each staff member on the ticket.
+      const saleStaffIds = [...new Set(items.map((i: any) => i.staffId ? Number(i.staffId) : null).filter(Boolean))] as number[];
+      const staffRateMap = new Map<number, string>();
+      if (saleStaffIds.length > 0) {
+        const rows = await db.select({ id: staff.id, rate: staff.commissionRate })
+          .from(staff).where(inArray(staff.id, saleStaffIds));
+        for (const r of rows) if (r.rate != null) staffRateMap.set(r.id, String(r.rate));
+      }
+
       const createdIds: number[] = [];
 
       for (const item of items) {
@@ -17278,10 +17866,11 @@ or
         const proportion = ticketSubtotal > 0 ? itemSubtotal / ticketSubtotal : 1 / items.length;
         const itemTip    = Math.round(Number(tipAmount || 0) * proportion * 100) / 100;
         const itemPaid   = Math.round(Number(totalPaid || 0) * proportion * 100) / 100;
+        const itemStaffId = item.staffId ? Number(item.staffId) : null;
 
         const [apt] = await db.insert(appointments).values({
           storeId,
-          staffId:       item.staffId   ? Number(item.staffId)   : null,
+          staffId:       itemStaffId,
           customerId:    clientId        ? Number(clientId)        : null,
           serviceId:     item.serviceId  ? Number(item.serviceId)  : null,
           status:        "completed",
@@ -17291,6 +17880,9 @@ or
           tipAmount:     itemTip.toFixed(2),
           paymentMethod: paymentMethod || "Card",
           notes:         "Walk-in POS sale",
+          // Commission reproducibility snapshot (this INSERT is a completion).
+          servicePrice:   itemSubtotal.toFixed(2),
+          commissionRate: itemStaffId != null ? (staffRateMap.get(itemStaffId) ?? null) : null,
         }).returning({ id: appointments.id });
 
         if (apt?.id) createdIds.push(apt.id);
@@ -18334,7 +18926,7 @@ or
   // ── Certxa Crew Mobile API ────────────────────────────────────────────────────
   const { default: crewMobileRouter, startOvertimeDetector } = await import("./routes/crew-mobile.js");
   app.use("/api/crew", crewMobileRouter);
-  startOvertimeDetector();
+  if (IS_SCHEDULER_INSTANCE) startOvertimeDetector();
 
   // ── AI Chatbot API ───────────────────────────────────────────────────────────
   const { default: chatbotRouter } = await import("./chatbot.js");
@@ -18368,9 +18960,23 @@ or
   const { default: crmSearchRouter } = await import("./routes/crm-search.js");
   app.use("/api/manage/crm-search", crmSearchRouter);
 
+  // All interval-based schedulers below must run in exactly one process —
+  // see IS_SCHEDULER_INSTANCE. In PM2 cluster mode, running these in every
+  // worker would mean every reminder/email/SMS fires once per worker.
+  if (IS_SCHEDULER_INSTANCE) {
+
   // Start the reminder schedulers (SMS + Email)
   startReminderScheduler();
   startEmailReminderScheduler();
+
+  // AI-receptionist payment-link holds: create the token table if needed,
+  // then start the 60-min expiry / 20-min resend scheduler.
+  const { ensureBookingPaymentTokensTable } = await import("./lib/bookingPaymentLinks.js");
+  await ensureBookingPaymentTokensTable().catch((e: unknown) =>
+    console.warn("[BookingHold] Table init skipped:", (e as any)?.message)
+  );
+  const { startBookingHoldScheduler } = await import("./services/booking-hold-scheduler.js");
+  startBookingHoldScheduler();
 
   // Start the queue smart SMS scheduler
   startQueueSmsScheduler();
@@ -18386,6 +18992,8 @@ or
   // Start Google Reviews auto-sync (every 6 hours — new engine, new schema + legacy fallback)
   startGoogleReviewSyncScheduler();
 
+  } // end IS_SCHEDULER_INSTANCE
+
   // Seed default illustration categories (no-op if already present)
   const { seedIllustrationCategories } = await import("./lib/seedIllustrationCategories.js");
   seedIllustrationCategories().catch(e => console.warn("[IllustrationSeed] non-fatal:", e?.message));
@@ -18397,15 +19005,19 @@ or
   const { default: intelligenceDemoRouter } = await import("./routes/intelligence-demo.js");
   app.use("/api/intelligence/demo", requireNotSuspended, intelligenceDemoRouter);
 
-  const { startIntelligenceScheduler } = await import("./intelligence/orchestrator.js");
-  startIntelligenceScheduler();
+  if (IS_SCHEDULER_INSTANCE) {
+    const { startIntelligenceScheduler } = await import("./intelligence/orchestrator.js");
+    startIntelligenceScheduler();
+  }
 
   // ── Enterprise Sync Engine ───────────────────────────────────────────────────
   const { default: syncRouter } = await import("./routes/sync.js");
   app.use("/api/sync", syncRouter);
 
-  const { startReconciliationScheduler } = await import("./routes/sync-jobs.js");
-  startReconciliationScheduler();
+  if (IS_SCHEDULER_INSTANCE) {
+    const { startReconciliationScheduler } = await import("./routes/sync-jobs.js");
+    startReconciliationScheduler();
+  }
 
   // ── Contractor Payouts & Direct Deposit ─────────────────────────────────────
   const { default: contractorPayoutsRouter } = await import("./routes/contractorPayouts.js");
@@ -18984,21 +19596,81 @@ or
         name: services.name,
         description: services.description,
         duration: services.duration,
+        longevity: services.longevity,
         price: services.price,
         category: services.category,
         imageUrl: services.imageUrl,
         customIllustrationUrl: services.customIllustrationUrl,
         illustrationCategoryId: services.illustrationCategoryId,
         illustrationImageUrl: serviceIllustrationCategories.imageUrl,
+        categoryId: services.categoryId,
       }).from(services)
         .leftJoin(serviceIllustrationCategories, eq(services.illustrationCategoryId, serviceIllustrationCategories.id))
         .where(and(eq(services.storeId, store.id), eq(services.isActive, true), eq(services.hiddenFromPublic, false)))
         .orderBy(asc(services.name));
 
+      // Drop services that belong to a hidden category (matched by id or by
+      // name), same rule the public booking catalogue uses.
+      const kioskCats = await db.select({ id: serviceCategories.id, name: serviceCategories.name, hiddenFromPublic: serviceCategories.hiddenFromPublic })
+        .from(serviceCategories)
+        .where(eq(serviceCategories.storeId, store.id));
+      const hiddenCatIds = new Set(kioskCats.filter(c => c.hiddenFromPublic).map(c => Number(c.id)));
+      const hiddenCatNames = new Set(kioskCats.filter(c => c.hiddenFromPublic).map(c => String(c.name).trim().toLowerCase()));
+      const storeServicesVisible = storeServices.filter(s => {
+        if (s.categoryId != null && hiddenCatIds.has(Number(s.categoryId))) return false;
+        const cn = String(s.category ?? "").trim().toLowerCase();
+        return !cn || !hiddenCatNames.has(cn);
+      });
+
+      // ── Best-match image per category from the Service Images Library ──────
+      // Used by the kiosk's category cards when the owner hasn't uploaded their
+      // own image for that category. Owner uploads (ks.categoryImages) win.
+      const kioskCatNames = Array.from(new Set(
+        storeServicesVisible.map(s => String(s.category ?? "").trim()).filter(Boolean),
+      ));
+      const autoCatImages: Record<string, string> = {};
+      if (kioskCatNames.length) {
+        const libImgs = await db.select({
+          name: serviceImages.name, category: serviceImages.category,
+          subcategory: serviceImages.subcategory, imageUrl: serviceImages.imageUrl,
+        }).from(serviceImages)
+          .where(and(eq(serviceImages.isActive, true), sql`${serviceImages.imageUrl} IS NOT NULL AND ${serviceImages.imageUrl} <> ''`))
+          .orderBy(asc(serviceImages.sortOrder), asc(serviceImages.name));
+
+        const norm = (x: string) => String(x ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+        const toks = (x: string) => new Set(norm(x).split(" ").filter(t => t.length >= 2));
+
+        for (const cat of kioskCatNames) {
+          const cn = norm(cat);
+          const cTokens = toks(cat);
+          const firstTok = norm(cat).split(" ")[0];
+          // 1) exact category match (ignores spaces/hyphens: "Gel X" ≈ "Gel-X")
+          let best = libImgs.find(i => norm(i.category) === cn);
+          if (!best) {
+            // 2) token-overlap score across category / subcategory / name
+            let bestScore = 0;
+            for (const i of libImgs) {
+              const inCat = toks(i.category);
+              const hay = new Set<string>([...inCat, ...toks(i.subcategory ?? ""), ...toks(i.name)]);
+              let score = 0;
+              for (const t of cTokens) if (hay.has(t)) score += inCat.has(t) ? 3 : 1;
+              const lc = norm(i.category);
+              if (lc && (lc.includes(cn) || cn.includes(lc))) score += 2;
+              // The category's leading word is the most defining ("Gel Nails" →
+              // prefer a Gel library category over an Acrylic one).
+              if (firstTok && firstTok.length >= 2 && inCat.has(firstTok)) score += 4;
+              if (score > bestScore) { bestScore = score; best = i; }
+            }
+            if (bestScore < 3) best = undefined; // not confident — fall back to emoji
+          }
+          if (best?.imageUrl) autoCatImages[cat] = best.imageUrl;
+        }
+      }
+
       // Auto-resolve illustration images on-the-fly for any service that
       // hasn't been manually assigned a category yet.
-      const needsAutoResolve = storeServices.some(s => !s.illustrationImageUrl && !s.customIllustrationUrl);
-      let resolvedServices = storeServices;
+      const needsAutoResolve = storeServicesVisible.some(s => !s.illustrationImageUrl && !s.customIllustrationUrl);
+      let resolvedServices = storeServicesVisible;
       if (needsAutoResolve) {
         const { findIllustrationSlug, industryDefaultSlug } = await import("./lib/illustrationMatcher.js");
         // Fetch all active categories (slug → imageUrl map) once
@@ -19012,7 +19684,7 @@ or
         // Determine industry from store settings (fallback to NAIL_SALON)
         const industry = (ks.industry || prefs.industry || "NAIL_SALON") as any;
         const fallbackSlug = industryDefaultSlug(industry);
-        resolvedServices = storeServices.map(s => {
+        resolvedServices = storeServicesVisible.map(s => {
           if (s.illustrationImageUrl || s.customIllustrationUrl) return s;
           const slug = findIllustrationSlug(s.name, industry) ?? fallbackSlug;
           const illustrationImageUrl = (slug && catMap[slug]) ? catMap[slug] : null;
@@ -19119,7 +19791,8 @@ or
         welcomeHeadline: ks.welcomeHeadline ?? null,
         welcomeSubText: ks.welcomeSubText ?? null,
         loyaltyPromoText: ks.loyaltyPromoText ?? null,
-        categoryImages: ks.categoryImages ?? {},
+        // Auto-matched library image per category, overridden by any owner upload.
+        categoryImages: { ...autoCatImages, ...(ks.categoryImages ?? {}) },
         timezone: store.timezone ?? "UTC",
         showServicePrice: ks.showServicePrice !== false,
         showServiceDuration: ks.showServiceDuration !== false,
@@ -19128,6 +19801,24 @@ or
     } catch (err) {
       console.error("[kiosk/config]", err);
       return res.status(500).json({ error: "Failed to load kiosk config" });
+    }
+  });
+
+  // GET /api/public/kiosk/:slug/nail-config/:serviceId — enabled length/shape/
+  // effect options for a fake-nail service, for the kiosk's size→shape→effects
+  // step. Public (no auth); scoped by slug→store→service.
+  app.get("/api/public/kiosk/:slug/nail-config/:serviceId", async (req, res) => {
+    try {
+      const [store] = await db.select({ id: locations.id }).from(locations).where(eq(locations.bookingSlug, req.params.slug));
+      if (!store) return res.status(404).json({ error: "Store not found" });
+      const serviceId = Number(req.params.serviceId);
+      if (!Number.isFinite(serviceId)) return res.status(400).json({ error: "Invalid service" });
+      const svc = await storage.getService(serviceId);
+      if (!svc || svc.storeId !== store.id) return res.status(404).json({ error: "Service not found" });
+      return res.json(await nailConfig.getPublicServiceNailConfig(serviceId));
+    } catch (err) {
+      console.error("[kiosk/nail-config]", err);
+      return res.status(500).json({ error: "Failed to load nail options" });
     }
   });
 
@@ -19237,11 +19928,135 @@ or
     }
   });
 
+  // GET /api/public/kiosk/:slug/rewards — active loyalty rewards for the store,
+  // shown to a checked-in client on the front-desk display so they can redeem.
+  app.get("/api/public/kiosk/:slug/rewards", async (req, res) => {
+    try {
+      const { slug } = req.params;
+      const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
+      if (!store) return res.status(404).json({ error: "Store not found" });
+      const rows = await db
+        .select({
+          id: loyaltyRewards.id,
+          name: loyaltyRewards.name,
+          pointsCost: loyaltyRewards.pointsCost,
+          dollarValue: loyaltyRewards.dollarValue,
+        })
+        .from(loyaltyRewards)
+        .where(and(eq(loyaltyRewards.storeId, store.id), eq(loyaltyRewards.isActive, true)))
+        .orderBy(asc(loyaltyRewards.sortOrder), asc(loyaltyRewards.pointsCost));
+      return res.json(rows.map((r) => ({ ...r, dollarValue: Number(r.dollarValue) })));
+    } catch (err: any) {
+      console.error("[kiosk/rewards]", err?.message);
+      return res.status(500).json({ error: "Failed to load rewards" });
+    }
+  });
+
+  // POST /api/public/kiosk/:slug/rewards-signup — customer taps their phone into
+  // the front-desk display during checkout to join the rewards program. Finds or
+  // creates a client for the store by phone, and (for a walk-in ticket with no
+  // customer yet) attaches that client to the appointment so the sale is
+  // credited to them. Fire-and-forget notify so the open POS refreshes the name.
+  app.post("/api/public/kiosk/:slug/rewards-signup", async (req, res) => {
+    try {
+      const { slug } = req.params;
+      const { phone, name, appointmentId } = req.body as { phone?: string; name?: string; appointmentId?: number | null };
+      const digits = String(phone ?? "").replace(/\D/g, "").slice(-10);
+      if (digits.length !== 10) return res.status(400).json({ error: "Enter a 10-digit phone number" });
+
+      const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
+      if (!store) return res.status(404).json({ error: "Store not found" });
+
+      let client = await storage.searchCustomerByPhone(digits, store.id);
+      const isNew = !client;
+      if (!client) {
+        // Never create a nameless placeholder client — it would attach to the
+        // ticket as a blank "Walk-In" row and block a later real check-in.
+        if (!(name ?? "").trim()) {
+          return res.status(422).json({ error: "name_required", message: "Enter your name to continue" });
+        }
+        client = await storage.createCustomer({
+          name: (name ?? "").trim(),
+          phone: digits,
+          storeId: store.id,
+        } as any);
+      }
+
+      let linkedAppointmentId: number | null = null;
+      const apptId = appointmentId != null && Number.isFinite(Number(appointmentId)) ? Number(appointmentId) : null;
+      if (apptId && client) {
+        const [appt] = await db.select().from(appointments)
+          .where(and(eq(appointments.id, apptId), eq(appointments.storeId, store.id)));
+        if (appt) {
+          // Re-link the ticket to this real client when:
+          //  • it has no customer yet, OR
+          //  • it's attached to a different client that's just a blank POS
+          //    placeholder (nameless row auto-created during a walk-in ticket),
+          //    as long as the sale isn't already completed.
+          const currentCustomerId = appt.customerId;
+          let shouldLink = currentCustomerId == null;
+          if (currentCustomerId != null && currentCustomerId !== client.id && appt.status !== "completed") {
+            const [current] = await db
+              .select({ fullName: clients.fullName, firstName: clients.firstName, lastName: clients.lastName, loyaltyPoints: clients.loyaltyPoints })
+              .from(clients)
+              .where(eq(clients.id, currentCustomerId));
+            const blankPlaceholder =
+              !current ||
+              ((`${current.fullName ?? ""}${current.firstName ?? ""}${current.lastName ?? ""}`.trim() === "") &&
+                Number(current.loyaltyPoints ?? 0) === 0);
+            shouldLink = blankPlaceholder;
+          }
+          if (shouldLink && appt.customerId !== client.id) {
+            await db.update(appointments).set({ customerId: client.id }).where(eq(appointments.id, apptId));
+            linkedAppointmentId = apptId;
+          } else if (appt.customerId === client.id) {
+            linkedAppointmentId = apptId; // already linked to this client
+          }
+        }
+      }
+
+      const result = {
+        found: !isNew,
+        isNew,
+        clientId: client!.id,
+        linkedAppointmentId,
+        name: (client as any)?.name ?? (name ?? "").trim() ?? "",
+        loyaltyPoints: Number((client as any)?.loyaltyPoints ?? 0),
+      };
+
+      // Tell the open POS (and any other store client) so the ticket header
+      // swaps "Walk-In" for the customer's name.
+      try {
+        broadcastNotification({
+          type: "kiosk_checkout_customer_linked",
+          storeId: store.id,
+          appointmentId: linkedAppointmentId ?? apptId ?? 0,
+          clientId: client!.id,
+          name: result.name,
+          loyaltyPoints: result.loyaltyPoints,
+          isNew,
+        } as any);
+      } catch (e: any) {
+        console.warn("[kiosk/rewards-signup] notify failed:", e?.message);
+      }
+
+      return res.json(result);
+    } catch (err: any) {
+      console.error("[kiosk/rewards-signup]", err?.message);
+      return res.status(500).json({ error: "Sign-up failed" });
+    }
+  });
+
   // POST /api/public/kiosk/:slug/checkin — create check-in session + walk-in appointment
   app.post("/api/public/kiosk/:slug/checkin", async (req, res) => {
     try {
       const { slug } = req.params;
-      const { clientId, clientName, phone, services: selectedServices, addons: rawAddons, staffId: requestedStaffId } = req.body;
+      const { clientId, clientName, phone, services: selectedServices, addons: rawAddons, staffId: requestedStaffId,
+              nailSizeId: rawNailSizeId, nailShapeId: rawNailShapeId, nailArtEffectId: rawNailArtEffectId } = req.body;
+      const toIdOrNull = (v: unknown) => (v != null && Number.isFinite(Number(v)) ? Number(v) : null);
+      const nailSizeId = toIdOrNull(rawNailSizeId);
+      const nailShapeId = toIdOrNull(rawNailShapeId);
+      const nailArtEffectId = toIdOrNull(rawNailArtEffectId);
       // Normalise add-ons: coerce null / non-array payloads to an empty array
       const selectedAddons: any[] = Array.isArray(rawAddons) ? rawAddons : [];
 
@@ -19290,8 +20105,13 @@ or
         tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
       ): Promise<number | null> => {
         if (safeClientId === null) return null;
+        // Two-key advisory lock — Postgres only has pg_advisory_xact_lock(int4, int4);
+        // there is NO (bigint, bigint) overload, so `::bigint` here throws
+        // "function pg_advisory_xact_lock(bigint, bigint) does not exist" (42883)
+        // and every returning-client kiosk check-in fails. store.id / clientId are
+        // serial (int4) PKs, so `::int` is always safe.
         await tx.execute(
-          sql`select pg_advisory_xact_lock(${store.id}::bigint, ${safeClientId}::bigint)`
+          sql`select pg_advisory_xact_lock(${store.id}::int, ${safeClientId}::int)`
         );
         // Lower bound only — deliberately no upper bound here. `now` is captured
         // once at request-entry time, but the duplicate row we're racing against
@@ -19395,12 +20215,38 @@ or
       // appointment for the same technician.
       const storeTz = (store as any).timezone || "UTC";
 
+      // === RESOURCE ASSIGNMENT (pedicure chairs / nail stations) ===
+      // Same rule as the other two booking paths: pedicure services need a
+      // pedicure chair, other nail services need a nail station.
+      let assignedResourceId: number | null = null;
+      const primaryServiceRecord = await storage.getService(primaryServiceId);
+      const requiredResourceType = getRequiredResourceType(primaryServiceRecord?.category, primaryServiceRecord?.name);
+      if (requiredResourceType) {
+        const resourceAssignment = await autoAssignResource({
+          storeId: store.id,
+          resourceType: requiredResourceType,
+          date: now,
+          duration: totalDuration,
+        });
+        if (!resourceAssignment.assigned || !resourceAssignment.resourceId) {
+          // Store hasn't configured any resources of this type — don't block
+          // the walk-in over it, only reject on a genuine full-capacity conflict.
+          if (!resourceAssignment.noResourcesConfigured) {
+            console.warn(`[kiosk/checkin] no ${requiredResourceType} available for store ${store.id} — rejecting check-in`);
+            return res.status(409).json({ error: resourceAssignment.reason });
+          }
+        } else {
+          assignedResourceId = resourceAssignment.resourceId;
+        }
+      }
+
       const slotCheck = await validateBookingSlot({
         storeId: store.id,
         timezone: storeTz,
         startTime: now,
         durationMinutes: totalDuration,
         staffId: assignedStaffId,
+        resourceId: assignedResourceId,
         // Kiosk check-ins are inherently same-day/right-now walk-ins — the
         // same-day and past-date guards exist for advance online booking, not
         // for someone standing at the salon.
@@ -19443,6 +20289,7 @@ or
             status: "checked_in",
             checkedInAt: now,
             clientRequestedStaff: clientRequestedStaffBool,
+            resourceId: assignedResourceId,
           }, tx);
 
           if (!createResult.ok) {
@@ -19459,6 +20306,18 @@ or
       if (rejection) {
         const r = rejection as { status: number; body: Record<string, unknown> };
         return res.status(r.status).json(r.body);
+      }
+
+      // ── 2b. Snapshot the nail configuration (length / shape / effect) ───────
+      // Best-effort: a failure here must not undo a completed check-in.
+      // setAppointmentNailSelection also bumps appointments.duration by the
+      // length/shape/effect duration adjustments (same as the POS path).
+      if (appointmentId && (nailSizeId || nailShapeId || nailArtEffectId)) {
+        try {
+          await nailConfig.setAppointmentNailSelection(appointmentId, { nailSizeId, nailShapeId, nailArtEffectId });
+        } catch (nailErr: any) {
+          console.warn("[kiosk/checkin] nail-selection snapshot failed:", nailErr?.message);
+        }
       }
 
       // ── 3. Create kiosk check-in record ─────────────────────────────────────

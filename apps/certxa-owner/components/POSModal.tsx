@@ -581,7 +581,7 @@ export function POSModal({
     busyRef.current = true;
     try {
       const locationId = await payment.getLocationId();
-      await discovery.discoverAndConnect(locationId, {
+      await discovery.discoverAndConnect(locationId, 'bluetoothScan', {
         onDiscovering: () => { setPhase('discovering'); setStatusMsg('Scanning for M2 reader…'); },
         onConnecting:  () => { setPhase('connecting');  setStatusMsg('Connecting to reader…');   },
       });
@@ -650,7 +650,7 @@ export function POSModal({
     setRescanError('');
     try {
       const locationId = await payment.getLocationId();
-      await discovery.discoverAndConnect(locationId, {
+      await discovery.discoverAndConnect(locationId, 'bluetoothScan', {
         onDiscovering: () => setRescanPhase('scanning'),
         onConnecting:  () => setRescanPhase('connecting'),
       });

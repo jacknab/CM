@@ -20,14 +20,7 @@ define('PAGE_SCHEMA', json_encode([
       ['@type'=>'Question','name'=>'Is my payment data secure?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Payment details are handled through the configured payment provider. Review the current security and data-handling information before enabling payments for your salon.']],
     ],
   ],
-  [
-    '@type'       => 'SoftwareApplication',
-    'name'        => 'Certxa Built-In POS — Powered by Stripe',
-    'applicationCategory' => 'BusinessApplication',
-    'operatingSystem' => 'Web, iOS, Android',
-    'description' => 'Certxa\'s built-in point of sale for nail salons, powered by Stripe. Accept chip, swipe, tap, Apple Pay, and Google Pay through the Stripe M2 card reader — no third-party POS app needed.',
-      'offers'      => ['@type'=>'Offer','price'=>'0','priceCurrency'=>'USD','description'=>TRIAL_DAYS . '-day free trial. Credit card required · No charge until trial ends.'],
-  ],
+  // Canonical SoftwareApplication (@id #software) is injected site-wide by includes/header.php.
 ]));
 require __DIR__ . '/../includes/header.php';
 require __DIR__ . '/../includes/nav.php';

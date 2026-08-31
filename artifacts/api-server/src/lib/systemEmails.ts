@@ -1109,7 +1109,10 @@ export async function sendServiceImportSuccessEmail(
   serviceCount: number
 ): Promise<void> {
   const reviewUrl = `${APP_URL}/services`;
-  const html = layout(`
+  const html = wrap({
+    title: "Your Certxa service menu is ready",
+    accentColor: SUCCESS_COLOR,
+    body: `
     <div style="text-align:center;margin-bottom:28px;">
       <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:50%;background:${SUCCESS_COLOR}20;margin-bottom:12px;">
         <span style="font-size:28px;">✅</span>
@@ -1137,7 +1140,8 @@ export async function sendServiceImportSuccessEmail(
     <p style="margin:24px 0 0;color:#94a3b8;font-size:12px;">
       Questions? Email <a href="mailto:support@certxa.com" style="color:${BRAND_COLOR};text-decoration:none;">support@certxa.com</a>
     </p>
-  `);
+  `,
+  });
 
   await sendEmail(
     0,
@@ -1159,7 +1163,10 @@ export async function sendServiceImportFailureEmail(
   reason: string
 ): Promise<void> {
   const retryUrl = `${APP_URL}/setup/service-import`;
-  const html = layout(`
+  const html = wrap({
+    title: "We need clearer photos",
+    accentColor: WARN_COLOR,
+    body: `
     <div style="text-align:center;margin-bottom:28px;">
       <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:50%;background:${WARN_COLOR}20;margin-bottom:12px;">
         <span style="font-size:28px;">📸</span>
@@ -1182,7 +1189,8 @@ export async function sendServiceImportFailureEmail(
       You can also <a href="${APP_URL}/setup/services" style="color:${BRAND_COLOR};text-decoration:none;">add services manually</a> if you prefer.
       Questions? Email <a href="mailto:support@certxa.com" style="color:${BRAND_COLOR};text-decoration:none;">support@certxa.com</a>
     </p>
-  `);
+  `,
+  });
 
   await sendEmail(
     0,

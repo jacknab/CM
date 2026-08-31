@@ -18,6 +18,7 @@ if (fs.existsSync("/etc/certxa.env")) {
 }
 import { getWssHealth } from "./lib/wsHealth";
 import { getLastDriftResult } from "./startup/checkSchemaDrift";
+import { IS_SCHEDULER_INSTANCE } from "./lib/clusterInfo";
 
 // ─── Startup environment validation ────────────────────────────────────────
 // Runs before anything else. Hard-exits if required vars are missing so
@@ -106,6 +107,30 @@ import { getLastDriftResult } from "./startup/checkSchemaDrift";
     );
   }
 })();
+
+// ─── Global crash visibility ────────────────────────────────────────────────
+// This process runs dozens of background schedulers (SMS, email, GBP sync,
+// payroll, trial reminders, etc.) alongside the HTTP server, all sharing one
+// event loop. Previously there was no process-level handler for either error
+// class, so a single unguarded bug anywhere — in a request handler or a
+// setInterval tick — could take the entire server down for every user with
+// zero trace in the logs (pm2 would just silently restart it).
+//
+// unhandledRejection: log with full detail but do NOT exit. Node's own
+// default (since v15) is to crash on these, which is disproportionate when
+// the rejection came from one background job's fire-and-forget promise —
+// better to surface it loudly and keep serving everyone else.
+//
+// uncaughtException: Node's official guidance is that the process may be in
+// an undefined state after this, so exit (pm2 restarts it immediately) —
+// but log full details first so the cause is actually visible afterward.
+process.on("unhandledRejection", (reason) => {
+  console.error("[fatal] Unhandled promise rejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[fatal] Uncaught exception — process will exit and be restarted by pm2:", err);
+  process.exit(1);
+});
 
 import cors from "cors";
 import express, { type Request, Response, NextFunction } from "express";
@@ -298,8 +323,14 @@ declare module "http" {
 }
 
 // --- Security Headers ---
+// Strict-Transport-Security and Permissions-Policy are intentionally NOT set
+// here — nginx already applies its own (stronger, preload-eligible) values to
+// every response via `add_header ... always` at the server-block level. If
+// both layers set the same header, nginx appends its value after the
+// upstream's, so this app's would have been the one browsers actually used
+// per RFC 6797 (first Strict-Transport-Security header wins) — silently
+// downgrading HSTS from the nginx-configured preload policy.
 app.use((req, res, next) => {
-  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   // In development, omit X-Frame-Options so the Replit preview iframe can load.
   if (process.env.NODE_ENV === "production") {
     res.setHeader("X-Frame-Options", "SAMEORIGIN");
@@ -317,7 +348,6 @@ app.use((req, res, next) => {
     `default-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com${_appUrl ? ` ${_appUrl}` : ""}; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://js.stripe.com https://connect-js.stripe.com https://unpkg.com${_appUrl ? ` ${_appUrl}` : ""}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; media-src 'self' https:; ${cspConnectSrc} frame-src 'self' https://js.stripe.com https://connect-js.stripe.com https://hooks.stripe.com https://www.google.com https://maps.google.com${_appUrl ? ` ${_appUrl}` : ""};`
   );
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
   next();
 });
 
@@ -412,8 +442,10 @@ app.use("/api/auth/reset-password", authLimiter);
 app.use("/api/auth/staff-request-otp", authLimiter);
 app.use("/api/auth/staff-otp-login", authLimiter);
 app.use("/api/auth/google", authLimiter);
+app.use("/api/support/auth/login", authLimiter);
 app.use("/api/public", publicLimiter);
 app.use("/api/book", publicLimiter);
+app.use("/api/reviews/gate", publicLimiter);
 // Prevent log-spamming / disk-filling via the client error reporter.
 // 10 reports per IP per minute is more than enough for a real browser error.
 const clientErrorLimiter = rateLimit({
@@ -1234,6 +1266,18 @@ async function repairTwilioMessagingServiceInboundWebhook() {
     console.warn("[ServiceImport] Table init skipped:", (e as any)?.message)
   );
 
+  // Agent Accounts: /isadmin management of /isTeam back-office logins
+  const { default: agentAccountsRouter } = await import("./routes/agentAccounts");
+  app.use("/api/admin/agents", agentAccountsRouter);
+
+  // Review gating: public one-time SMS review links (Great/OK/Bad funnel)
+  const { default: reviewGatingRouter } = await import("./routes/reviewGating");
+  const { ensureReviewTables } = await import("./lib/reviewLinks");
+  app.use(reviewGatingRouter);
+  await ensureReviewTables().catch((e: unknown) =>
+    console.warn("[ReviewGating] Table init skipped:", (e as any)?.message)
+  );
+
   // One-time startup repair: fix any users who own a store but were left with
   // the "staff" role by legacy code paths.
   const { repairOwnerRoles } = await import("./startup/repairOwnerRoles");
@@ -1298,6 +1342,12 @@ async function repairTwilioMessagingServiceInboundWebhook() {
   // Register the "Nail Salon — Bloom" website template into wb_templates
   const { seedNailSalonBloomTemplate } = await import("./startup/seedNailSalonBloomTemplate");
   await seedNailSalonBloomTemplate();
+
+  // All interval-based schedulers below must run in exactly one process —
+  // see IS_SCHEDULER_INSTANCE above. BullMQ-backed workers (availability/slot
+  // builder further down) are exempt: BullMQ already coordinates multiple
+  // workers safely, so those keep running in every instance.
+  if (IS_SCHEDULER_INSTANCE) {
 
   // Start the 60-day free trial expiration scheduler (runs every hour)
   const { startTrialExpirationScheduler } = await import("./services/trial-expiration");
@@ -1379,6 +1429,8 @@ async function repairTwilioMessagingServiceInboundWebhook() {
     console.warn("[GBP Photos] Re-queue sweep failed:", e?.message),
   );
 
+  } // end IS_SCHEDULER_INSTANCE
+
   // Staff Work Photos router (Phase 3.2A):
   // Staff upload completed-service photos that feed directly into the GBP Photo Engine.
   try {
@@ -1390,8 +1442,10 @@ async function repairTwilioMessagingServiceInboundWebhook() {
 
   // Smart Booking Reassignment Engine: every 5 min, prevents scheduled appointments
   // from becoming late when a technician's active walk-in/service runs long.
-  const { startSmartBookingEngine } = await import("./services/smart-booking-reassignment");
-  startSmartBookingEngine();
+  if (IS_SCHEDULER_INSTANCE) {
+    const { startSmartBookingEngine } = await import("./services/smart-booking-reassignment");
+    startSmartBookingEngine();
+  }
 
   // Redis availability cache worker (no-ops gracefully if REDIS_URL is not set)
   const { startAvailabilityWorker } = await import("./workers/availabilityWorker");
@@ -1555,6 +1609,14 @@ async function repairTwilioMessagingServiceInboundWebhook() {
       void checkStripeConnectivity();
       void repairTwilioSmsWebhook();
       void repairTwilioMessagingServiceInboundWebhook();
+      // Tell PM2 this worker can actually accept traffic now. Without this,
+      // `pm2 reload` (cluster mode) only waits for the new process to spawn —
+      // not for it to finish the several-second startup before it's actually
+      // listening — and moves on to killing the next worker regardless,
+      // producing a real gap where too few workers are ready to serve
+      // requests. wait_ready + listen_timeout in ecosystem.config.cjs make
+      // PM2 hold off until this fires (or the timeout elapses).
+      if (process.send) process.send("ready");
     },
   );
 

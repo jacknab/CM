@@ -26,6 +26,13 @@ export function useStores() {
     },
     initialData: () => offlineSessionBootstrap.getStores(),
     enabled: !!user,
+    // A tab left open for hours (e.g. the calendar page) otherwise never
+    // re-fetches this — nothing naturally triggers it (no interval, no focus
+    // change if the tab is never blurred). That leaves `selectedStore` frozen
+    // at whatever it was on initial mount for the whole session, which has
+    // caused stale-data bugs elsewhere. Periodic + focus refetch keeps it live.
+    refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
   });
 }
 

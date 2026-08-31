@@ -236,28 +236,27 @@ describe("runTrialExpirationCheck", () => {
    *
    * Sub-queries (active-sub check, location look-up) use `.limit()`.
    */
-  function makeExpirationDb(expiredUsers: object[], hasActiveSub = false) {
+  function makeExpirationDb(expiredUsers: object[], subscriptionStatus?: string) {
     // storeSubscriptions and location sub-queries both use .select().from().where().limit()
-    const subResult = hasActiveSub
-      ? [{ status: "active" }]
-      : [];
+    const subResult = subscriptionStatus ? [{ status: subscriptionStatus }] : [];
 
-    const thenableWhere = {
-      then: (onFulfilled: (v: object[]) => unknown) => Promise.resolve(expiredUsers).then(onFulfilled),
-      catch: (fn: (e: unknown) => unknown) => Promise.resolve(expiredUsers).catch(fn),
-    };
-
-    let firstSelect = true;
+    let selectCount = 0;
     return {
       select: vi.fn(() => {
-        if (firstSelect) {
-          firstSelect = false;
-          return { from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue(thenableWhere) }) };
-        }
-        // Location and subscription sub-queries
+        selectCount++;
+        const rows = selectCount === 1 ? expiredUsers : [];
+        // The first and fourth SELECTs are the two sweep queries. The middle
+        // SELECTs are location/subscription lookups and use LIMIT.
+        const result = {
+          then: (onFulfilled: (v: object[]) => unknown) => Promise.resolve(rows).then(onFulfilled),
+          catch: (fn: (e: unknown) => unknown) => Promise.resolve(rows).catch(fn),
+        };
         return {
           from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue(subResult) }),
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue(selectCount === 2 || selectCount === 3 ? subResult : rows),
+              ...result,
+            }),
           }),
         };
       }),
@@ -304,8 +303,8 @@ describe("runTrialExpirationCheck", () => {
   it("skips users who already have an active paid subscription", async () => {
     const sendTrialExpiredEmailMock = vi.fn().mockResolvedValue(undefined);
 
-    // hasActiveSub = true → sub-queries return an active subscription record
-    vi.doMock("../db", () => ({ db: makeExpirationDb([EXPIRED_OWNER], true) }));
+    // Active → sub-queries return a paid, healthy subscription record
+    vi.doMock("../db", () => ({ db: makeExpirationDb([EXPIRED_OWNER], "active") }));
     vi.doMock("../lib/systemEmails", () => ({ sendTrialExpiredEmail: sendTrialExpiredEmailMock }));
     vi.doMock("../cache", () => ({ cache: { billing: { invalidate: vi.fn() } } }));
     vi.doMock("@shared/schema/subscriptions", () => ({
@@ -318,6 +317,42 @@ describe("runTrialExpirationCheck", () => {
     expect(result.skipped).toBe(1);
     expect(result.expired).toBe(0);
     expect(sendTrialExpiredEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("expires an account with no subscription", async () => {
+    const sendTrialExpiredEmailMock = vi.fn().mockResolvedValue(undefined);
+
+    vi.doMock("../db", () => ({ db: makeExpirationDb([EXPIRED_OWNER]) }));
+    vi.doMock("../lib/systemEmails", () => ({ sendTrialExpiredEmail: sendTrialExpiredEmailMock }));
+    vi.doMock("../cache", () => ({ cache: { billing: { invalidate: vi.fn() } } }));
+    vi.doMock("@shared/schema/subscriptions", () => ({
+      storeSubscriptions: { storeId: "store_id", status: "status" },
+    }));
+
+    const { runTrialExpirationCheck } = await import("../services/trial-expiration");
+    const result = await runTrialExpirationCheck();
+
+    expect(result.expired).toBe(1);
+    expect(result.skipped).toBe(0);
+    expect(sendTrialExpiredEmailMock).toHaveBeenCalledOnce();
+  });
+
+  it("does not treat a past-due subscription as paid and in good standing", async () => {
+    const sendTrialExpiredEmailMock = vi.fn().mockResolvedValue(undefined);
+
+    vi.doMock("../db", () => ({ db: makeExpirationDb([EXPIRED_OWNER], "past_due") }));
+    vi.doMock("../lib/systemEmails", () => ({ sendTrialExpiredEmail: sendTrialExpiredEmailMock }));
+    vi.doMock("../cache", () => ({ cache: { billing: { invalidate: vi.fn() } } }));
+    vi.doMock("@shared/schema/subscriptions", () => ({
+      storeSubscriptions: { storeId: "store_id", status: "status" },
+    }));
+
+    const { runTrialExpirationCheck } = await import("../services/trial-expiration");
+    const result = await runTrialExpirationCheck();
+
+    expect(result.expired).toBe(1);
+    expect(result.skipped).toBe(0);
+    expect(sendTrialExpiredEmailMock).toHaveBeenCalledOnce();
   });
 });
 

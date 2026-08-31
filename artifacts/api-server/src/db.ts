@@ -13,13 +13,32 @@ if (!process.env.DATABASE_URL) {
 const SLOW_QUERY_THRESHOLD_MS = 200;
 const STATEMENT_TIMEOUT_MS    = 30_000;
 
+// Env-overridable so a memory/CPU-constrained host can be tuned without a code
+// change. `DB_POOL_MAX` shrinks each worker's footprint (2 cluster workers ×
+// max = the real ceiling, shared with every other app on the same Postgres);
+// `DB_CONNECT_TIMEOUT_MS` gives connection acquisition more slack when the box
+// is thrashing right after a reboot/deploy (the "[db:slow] ~5000ms — SELECT 1"
+// timeouts seen in the logs were acquisition hitting the old 5 s ceiling, not
+// Postgres running out of connections).
+const POOL_MAX           = Number(process.env.DB_POOL_MAX) || 20;
+const CONNECT_TIMEOUT_MS = Number(process.env.DB_CONNECT_TIMEOUT_MS) || 8_000;
+// Client-side per-query deadline. Without this a query whose response never
+// comes back — event loop starved by co-tenant CPU load, or a dead socket —
+// hangs forever and never releases its pool client. After POOL_MAX such stuck
+// queries the whole worker stops serving and only a manual `pm2 restart` fixes
+// it (the "page says Offline until I restart certxa-api" symptom). With it, the
+// query rejects, the client is recycled, and the worker self-heals once CPU
+// frees up. Set > statement_timeout (30 s) so a legitimately long query is
+// killed by Postgres with a proper error first; this is the wedge backstop.
+const QUERY_TIMEOUT_MS   = Number(process.env.DB_QUERY_TIMEOUT_MS) || 45_000;
+
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 
   // ── Pool sizing ────────────────────────────────────────────────────────────
   // Keep this ≤ the DB's max_connections limit (Replit PG default: 100).
   // 20 app connections leaves headroom for admin tools and background workers.
-  max: 20,
+  max: POOL_MAX,
   // min: 0 — lazy pool: no eager connections at startup. This eliminates the
   // "Connection terminated due to connection timeout" warnings on VPS restart
   // where Postgres may not be fully accepting connections the instant the pool
@@ -29,7 +48,15 @@ export const pool = new Pool({
 
   // ── Timeouts ───────────────────────────────────────────────────────────────
   // How long a client waits to be acquired from the pool before erroring.
-  connectionTimeoutMillis: 5_000,
+  // On a contended host the TCP + auth handshake to local Postgres can exceed
+  // the old 5 s; 8 s tolerates that while still failing fast enough to shed
+  // load rather than pile up. `waitForDb()` still gates startup.
+  connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
+  // Client-side per-query deadline (see QUERY_TIMEOUT_MS above). The single
+  // most important knob for surviving a CPU-starvation event without a manual
+  // restart: a wedged query rejects and frees its pool client instead of
+  // holding it forever.
+  query_timeout: QUERY_TIMEOUT_MS,
   // How long an idle connection stays alive before being closed.
   idleTimeoutMillis: 30_000,
   // Detect dead sockets after a PostgreSQL/proxy restart instead of reusing

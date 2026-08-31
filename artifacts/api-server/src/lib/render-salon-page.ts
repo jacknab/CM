@@ -46,6 +46,23 @@ function fmt12(time: string): string {
   return `${hour}:${String(m ?? 0).padStart(2, "0")} ${suffix}`;
 }
 
+// Schema.org / Google require ISO 8601 24-hour time ("09:30"), not "9:30 AM".
+// Normalizes either stored format so OpeningHoursSpecification always validates.
+function to24h(time: string): string {
+  const ampm = time.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (ampm) {
+    let h = parseInt(ampm[1], 10);
+    const m = ampm[2];
+    const suffix = ampm[3].toUpperCase();
+    if (suffix === "PM" && h !== 12) h += 12;
+    if (suffix === "AM" && h === 12) h = 0;
+    return `${String(h).padStart(2, "0")}:${m}`;
+  }
+  const iso = time.match(/^(\d{1,2}):(\d{2})/);
+  if (iso) return `${iso[1].padStart(2, "0")}:${iso[2]}`;
+  return time;
+}
+
 function formatPrice(price: string | number | null): string {
   if (price === null || price === undefined || price === "") return "";
   const n = typeof price === "string" ? parseFloat(price) : price;
@@ -132,8 +149,8 @@ function buildJsonLd(business: BusinessData | null, hours: HoursEntry[], canonic
     .map((h) => ({
       "@type": "OpeningHoursSpecification",
       dayOfWeek: DAY_NAMES[h.day_of_week],
-      opens: h.open_time,
-      closes: h.close_time,
+      opens: to24h(h.open_time),
+      closes: to24h(h.close_time),
     }));
 
   const sameAs = [socialUrls.yelp, socialUrls.facebook].filter(Boolean);

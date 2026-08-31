@@ -18,6 +18,29 @@ define('PAGE_SCHEMA', json_encode([
     'isPartOf'    => ['@id'=>'https://certxa.com/#website'],
     'about'       => ['@id'=>'https://certxa.com/#software'],
   ],
+  [
+    '@type'       => 'HowTo',
+    'name'        => 'How to get more 5-star Google reviews for your nail salon',
+    'description' => 'A repeatable process nail salons can use to steadily grow their Google review count and star rating.',
+    'step' => [
+      ['@type'=>'HowToStep','position'=>1,'name'=>'Claim and complete your Google Business Profile','text'=>'Verify your salon on Google, add your hours, services, photos, and booking link. Reviews only help if the profile they land on is complete and accurate.','url'=>'https://certxa.com/client-reviews#how-to'],
+      ['@type'=>'HowToStep','position'=>2,'name'=>'Ask every happy client, right after the appointment','text'=>'The best moment is within an hour of the service, while the result is fresh. Ask consistently — not just when you remember.','url'=>'https://certxa.com/client-reviews#how-to'],
+      ['@type'=>'HowToStep','position'=>3,'name'=>'Send the request by text with a direct link','text'=>'A text is opened far more often than an email. Link straight to your Google review form so it is one tap, not a search.','url'=>'https://certxa.com/client-reviews#how-to'],
+      ['@type'=>'HowToStep','position'=>4,'name'=>'Make the ask personal and specific','text'=>'Use the client\'s name and the service they had. A specific, human message gets a far higher response than a generic blast.','url'=>'https://certxa.com/client-reviews#how-to'],
+      ['@type'=>'HowToStep','position'=>5,'name'=>'Reply to every review, good or bad','text'=>'Responding shows future clients you care and keeps your Google Business Profile active. Thank 5-star reviewers; answer criticism calmly and offer to make it right.','url'=>'https://certxa.com/client-reviews#how-to'],
+    ],
+  ],
+  [
+    '@type'      => 'FAQPage',
+    'mainEntity' => [
+      ['@type'=>'Question','name'=>'How do nail salons get more 5-star Google reviews?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Ask every satisfied client right after their appointment, send the request by text with a direct link to your Google review page, personalise the message with their name and service, and reply to every review you receive. Doing this consistently after every appointment is what grows the count — most salons only ask occasionally, which is why their review numbers stay flat.']],
+      ['@type'=>'Question','name'=>'When is the best time to ask a client for a review?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Within about an hour of the completed appointment, while the client is still enjoying the result. Response rates drop sharply after the first day. An automated post-appointment text sent on that timing consistently outperforms asking in person at the desk.']],
+      ['@type'=>'Question','name'=>'What should a salon review request text say?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Keep it short, warm, and specific: greet the client by name, thank them for coming in for the specific service, and include a one-tap link to your Google review page. For example: "Hi Emma, thank you for coming in for your gel manicure today. If you have a moment, we would love a quick Google review: [link]."']],
+      ['@type'=>'Question','name'=>'Is it against Google\'s rules to ask clients for reviews?','acceptedAnswer'=>['@type'=>'Answer','text'=>'No — asking clients for honest reviews is allowed and encouraged. What is against Google\'s policies is offering payment or discounts in exchange for reviews, only asking clients you know are happy while discouraging others, or setting up a review station that filters people by rating before they reach Google. Ask everyone, make it easy for everyone, and let the reviews be honest.']],
+      ['@type'=>'Question','name'=>'Should a salon offer a discount in exchange for a review?','acceptedAnswer'=>['@type'=>'Answer','text'=>'No. Incentivising reviews violates Google\'s review policies and US FTC guidance, and Google can remove the reviews or penalise the profile. Offer great service and a frictionless way to leave feedback instead.']],
+      ['@type'=>'Question','name'=>'How many Google reviews does a nail salon need?','acceptedAnswer'=>['@type'=>'Answer','text'=>'There is no fixed number, but salons generally become competitive in local results once they are clearly ahead of nearby salons on both review count and recency. A steady trickle of fresh reviews every week matters more than a large number of old ones, because both Google and prospective clients weigh how recent the reviews are.']],
+    ],
+  ],
 ]));
 require 'includes/header.php';
 require 'includes/nav.php';
@@ -80,10 +103,10 @@ require 'includes/nav.php';
 <section class="stats-strip">
   <div class="container">
     <div class="stats-grid">
-      <div class="stat-item"><div class="stat-value"><span>4×</span></div><div class="stat-label">More reviews than asking manually</div></div>
-      <div class="stat-item"><div class="stat-value"><span>88</span>%</div><div class="stat-label">Consumers trust online reviews as much as personal recommendations</div></div>
-      <div class="stat-item"><div class="stat-value"><span>32</span>%</div><div class="stat-label">More new clients from strong review profiles</div></div>
-      <div class="stat-item"><div class="stat-value"><span>1 in 3</span></div><div class="stat-label">New clients cite reviews as their reason for choosing a salon</div></div>
+      <div class="stat-item"><div class="stat-value"><span>Automatic</span></div><div class="stat-label">A review request after every completed appointment</div></div>
+      <div class="stat-item"><div class="stat-value"><span>&lt; 1 hr</span></div><div class="stat-label">Request sent while the client's experience is still fresh</div></div>
+      <div class="stat-item"><div class="stat-value"><span>1 tap</span></div><div class="stat-label">Straight to your Google review page — no searching</div></div>
+      <div class="stat-item"><div class="stat-value"><span>Every review</span></div><div class="stat-label">Gets a reply, so your profile stays active</div></div>
     </div>
   </div>
 </section>
@@ -211,6 +234,48 @@ require 'includes/nav.php';
           </div>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW TO -->
+<section id="how-to" class="section section-alt">
+  <div class="container">
+    <div class="section-header">
+      <span class="tag tag-plum">Playbook</span>
+      <h2 class="section-title">How to get more 5-star Google reviews for your nail salon</h2>
+      <p class="section-subtitle">The mechanics are simple. Almost every salon knows them and almost none of them do it consistently — which is exactly why doing it works.</p>
+    </div>
+
+    <div style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:28px;">
+      <div>
+        <h3 class="feature-title">1. Claim and complete your Google Business Profile</h3>
+        <p class="feature-text">Verify your salon on Google and fill in everything — hours, every service, real photos of your work, and your booking link. Reviews send new clients to that profile, so it has to be complete and accurate before you drive traffic to it. See <a href="/google-business-profile">Google Business Profile</a>.</p>
+      </div>
+      <div>
+        <h3 class="feature-title">2. Ask every happy client, right after the appointment</h3>
+        <p class="feature-text">The window that matters is the first hour after the service, while the result is fresh and the client is pleased. The single biggest reason review counts stay flat is that salons only ask when they remember. Ask after <em>every</em> completed appointment, automatically.</p>
+      </div>
+      <div>
+        <h3 class="feature-title">3. Send it by text, with a one-tap link</h3>
+        <p class="feature-text">A text is opened far more often than an email, and it should link straight to your Google review form — not to a Google search for your salon. One tap, one screen, done.</p>
+      </div>
+      <div>
+        <h3 class="feature-title">4. Make the message personal and specific</h3>
+        <p class="feature-text">Use the client's name and the service they had: <em>"Hi Emma, thank you for coming in for your gel manicure today…"</em>. A specific, human note gets a much higher response than a generic blast to everyone.</p>
+      </div>
+      <div>
+        <h3 class="feature-title">5. Reply to every review — good and bad</h3>
+        <p class="feature-text">Thank your 5-star reviewers by name. Answer criticism calmly, publicly, and with an offer to make it right. Responding tells prospective clients you pay attention, and it keeps your profile active in Google's eyes.</p>
+      </div>
+      <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:12px;padding:18px 22px;">
+        <h3 class="feature-title" style="margin-bottom:8px;">Stay inside Google's rules</h3>
+        <p class="feature-text" style="margin:0;">Asking clients for honest reviews is fine. What is not: paying or discounting in exchange for reviews, only asking clients you know are happy, or filtering people by rating before they reach Google. Ask everyone, make it easy for everyone, and let the reviews be honest — it is also what performs best over time.</p>
+      </div>
+    </div>
+
+    <div style="text-align:center;margin-top:36px;">
+      <a href="/auth?mode=register" class="btn btn-primary">Automate steps 2–5 with Certxa</a>
     </div>
   </div>
 </section>

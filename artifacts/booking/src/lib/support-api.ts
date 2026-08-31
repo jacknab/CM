@@ -16,9 +16,9 @@ async function request<T>(path: string, opts?: RequestInit): Promise<T> {
 export const supportApi = {
   auth: {
     login: (email: string, password: string) =>
-      request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
-    me: () => request("/auth/me"),
-    logout: () => request("/auth/logout", { method: "POST" }),
+      request<SupportAgent>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+    me: () => request<SupportAgent>("/auth/me"),
+    logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
   },
   search: (q: string) => request<SearchResult[]>(`/search?q=${encodeURIComponent(q)}`),
   accounts: {

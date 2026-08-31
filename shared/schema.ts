@@ -252,8 +252,14 @@ export const services = pgTable("services", {
   name: text("name").notNull(),
   description: text("description"),
   duration: integer("duration").notNull(),
+  // How long the appointment takes (minutes). Affects scheduling.
+  // ── NOT to be confused with `longevity` below. ──
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
   category: text("category").notNull(),
+  // How long the service result typically lasts before the client would need it
+  // redone, as free text (e.g. "3 weeks", "3–4 weeks"). Nullable. This is purely
+  // informational — it does NOT affect appointment length, scheduling, or availability.
+  longevity: text("longevity"),
   categoryId: integer("category_id").references(() => serviceCategories.id),
   imageUrl: text("image_url"),
   storeId: integer("store_id").references(() => locations.id),
@@ -320,6 +326,7 @@ export const staff = pgTable("staff", {
   avatarThumbUrl: text("avatar_thumb_url"),
   commissionEnabled: boolean("commission_enabled").default(false),
   commissionRate: decimal("commission_rate", { precision: 5, scale: 2 }).default("0"),
+  productCommissionRate: decimal("product_commission_rate", { precision: 5, scale: 2 }).default("0"),
   commissionStructureId: integer("commission_structure_id"),
   storeId: integer("store_id").references(() => locations.id),
   permissions: jsonb("permissions").$type<Record<string, boolean>>(),
@@ -404,6 +411,12 @@ export const appointments = pgTable("appointments", {
   stripePaymentMethodIdApt: text("stripe_payment_method_id"),
   paymentStatus:           text("payment_status").notNull().default("none"),
   resourceId:              integer("resource_id").references(() => salonResources.id),
+  // ── Commission reproducibility snapshot (set once, at first completion) ────
+  // Captured so commission reports / payroll runs don't move when a service
+  // price or a staff commission rate is edited later. NULL on historical rows —
+  // consumers fall back to the live value when absent. See migration 0156.
+  servicePrice:            decimal("service_price", { precision: 10, scale: 2 }),
+  commissionRate:          decimal("commission_rate", { precision: 5, scale: 2 }),
 });
 
 export const products = pgTable("products", {
@@ -954,6 +967,19 @@ export const loyaltyTransactions = pgTable("loyalty_transactions", {
   type: text("type").notNull(),
   points: integer("points").notNull(),
   description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Owner-defined rewards catalogue. Each reward is "spend N points → $X off".
+// Earning rate (points per $1) lives in store_settings.preferences.loyalty.
+export const loyaltyRewards = pgTable("loyalty_rewards", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id").references(() => locations.id).notNull(),
+  name: text("name").notNull(),
+  pointsCost: integer("points_cost").notNull(),
+  dollarValue: decimal("dollar_value", { precision: 10, scale: 2 }).notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -1653,6 +1679,10 @@ export type InsertIntakeFormResponse = z.infer<typeof insertIntakeFormResponseSc
 export type LoyaltyTransaction = typeof loyaltyTransactions.$inferSelect;
 export type InsertLoyaltyTransaction = z.infer<typeof insertLoyaltyTransactionSchema>;
 
+export const insertLoyaltyRewardSchema = createInsertSchema(loyaltyRewards).omit({ id: true, createdAt: true });
+export type LoyaltyReward = typeof loyaltyRewards.$inferSelect;
+export type InsertLoyaltyReward = z.infer<typeof insertLoyaltyRewardSchema>;
+
 export const insertReviewSchema = createInsertSchema(reviews).omit({ id: true, createdAt: true });
 export type Review = typeof reviews.$inferSelect;
 export type InsertReview = z.infer<typeof insertReviewSchema>;
@@ -2108,7 +2138,8 @@ export type InsertSupportTicketMessage = typeof supportTicketMessages.$inferInse
 export const supportAgents = pgTable("support_agents", {
   id:          serial("id").primaryKey(),
   name:        text("name"),             // nullable — canonical fields are first_name + last_name; existing VPS rows may have name=NULL
-  email:       text("email"),
+  email:       text("email"),            // login email — auto-generated as {name}{id}@certxa.com
+  personalEmail: text("personal_email"), // agent's real-world email — where credentials are sent
   role:        varchar("role", { length: 32 }).notNull().default("agent"),
   isActive:    boolean("is_active").notNull().default(true),
   passwordHash: text("password_hash"),
@@ -2372,6 +2403,27 @@ export const storePaymentAccounts = pgTable("store_payment_accounts", {
 export type StorePaymentAccount = typeof storePaymentAccounts.$inferSelect;
 export type InsertStorePaymentAccount = typeof storePaymentAccounts.$inferInsert;
 
+// ─── Payment Refunds (salon-initiated customer refunds) ───────────────────────
+// Local audit trail; Stripe is the source of truth. Powers the refund history in
+// the Payments & Payouts dashboard and attributes each refund to a Certxa user.
+export const paymentRefunds = pgTable("payment_refunds", {
+  id:                  serial("id").primaryKey(),
+  storeId:             integer("store_id").notNull(),
+  appointmentId:       integer("appointment_id"),
+  stripeRefundId:      text("stripe_refund_id").notNull(),
+  stripePaymentIntent: text("stripe_payment_intent"),
+  stripeChargeId:      text("stripe_charge_id"),
+  amountCents:         integer("amount_cents").notNull(),
+  currency:            text("currency").notNull().default("usd"),
+  status:              text("status").notNull().default("pending"),
+  reason:              text("reason"),
+  createdByUserId:     text("created_by_user_id"),
+  createdAt:           timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:           timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type PaymentRefund = typeof paymentRefunds.$inferSelect;
+export type InsertPaymentRefund = typeof paymentRefunds.$inferInsert;
+
 // ── Salon Resources (manicure stations, pedicure chairs, etc.) ─────────────────
 export const salonResources = pgTable("salon_resources", {
   id:        serial("id").primaryKey(),
@@ -2497,6 +2549,13 @@ export const googleReviewResponseQueue = pgTable("google_review_response_queue",
   grrqReviewIdx:      index("grrq_google_review_id_idx").on(table.googleReviewId),
   grrqStatusIdx:      index("grrq_status_idx").on(table.status),
   grrqScheduledIdx:   index("grrq_scheduled_for_idx").on(table.scheduledFor),
+  // Only one "active" queue row per review at a time. 'failed' and 'cancelled' are
+  // excluded so a transient failure can still be retried with a fresh row — this
+  // matches the exclusion set in processNewReviewsForStore (google-review-engine.ts).
+  // Without this, nothing stops duplicate rows for the same review from piling up,
+  // and the dispatcher will fire a separate reply PUT for each one.
+  grrqReviewUniqueIdx: uniqueIndex("grrq_review_unique_idx").on(table.googleReviewId)
+    .where(sql`status IN ('pending','scheduled','awaiting_approval','approved','owner_notified','published','not_found')`),
 }));
 
 // ─── Review Sentiment Cache ───────────────────────────────────────────────────
@@ -2716,3 +2775,315 @@ export type InsertClientPhotoPermission = typeof clientPhotoPermissions.$inferIn
 
 // contractorCommissions — defined in ./schema/payouts (where `contractors` is in scope)
 // and re-exported above with the rest of the payouts tables.
+
+// ═════════════════════════════════════════════════════════════════════════════
+// NAIL CONFIGURATION  —  migration 0154
+//
+// Store-owned length / shape / art configuration for fake-nail services.
+//   • 4 vocabulary tables (nail_sizes, nail_shapes, nail_art_applications,
+//     nail_art_effects)          — every row owned by one store
+//   • nail_service_configs        — 1 row per fake-nail service (the gate)
+//   • 4 service→vocab junctions   — per-service availability + price delta
+//
+// Pricing lives ONLY on the junctions, as a signed NUMERIC(10,2) delta vs
+// services.price. Art price = application delta + effect delta. Combination
+// totals are never stored. The existing addons / service_addons /
+// appointment_addons / service_options system is untouched and runs alongside.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ── Vocabularies (store-owned) ───────────────────────────────────────────────
+
+export const nailSizes = pgTable("nail_sizes", {
+  id:          serial("id").primaryKey(),
+  storeId:     integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  code:        text("code"),                 // stable slug from the catalog template; seeding key
+  name:        text("name").notNull(),       // editable display label ("Short", "Medium", …)
+  description: text("description"),
+  imageUrl:    text("image_url"),            // optional photo for picker cards (kiosk, POS)
+  sortOrder:   integer("sort_order").notNull().default(0),
+  isActive:    boolean("is_active").notNull().default(true),
+  createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:   timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("nail_sizes_store_id_name_key").on(table.storeId, table.name),
+  unique("nail_sizes_store_id_code_key").on(table.storeId, table.code),
+  index("nail_sizes_store_id_idx").on(table.storeId),
+]);
+
+export const nailShapes = pgTable("nail_shapes", {
+  id:          serial("id").primaryKey(),
+  storeId:     integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  code:        text("code"),
+  name:        text("name").notNull(),
+  description: text("description"),
+  imageUrl:    text("image_url"),            // optional photo for picker cards (kiosk, POS)
+  sortOrder:   integer("sort_order").notNull().default(0),
+  isActive:    boolean("is_active").notNull().default(true),
+  createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:   timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("nail_shapes_store_id_name_key").on(table.storeId, table.name),
+  unique("nail_shapes_store_id_code_key").on(table.storeId, table.code),
+  index("nail_shapes_store_id_idx").on(table.storeId),
+]);
+
+export const nailArtApplications = pgTable("nail_art_applications", {
+  id:          serial("id").primaryKey(),
+  storeId:     integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  code:        text("code"),
+  name:        text("name").notNull(),
+  description: text("description"),
+  imageUrl:    text("image_url"),            // optional photo for picker cards (kiosk, POS)
+  isQuote:     boolean("is_quote").notNull().default(false),  // e.g. "Custom Nail Art" — priced at booking
+  sortOrder:   integer("sort_order").notNull().default(0),
+  isActive:    boolean("is_active").notNull().default(true),
+  createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:   timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("nail_art_applications_store_id_name_key").on(table.storeId, table.name),
+  unique("nail_art_applications_store_id_code_key").on(table.storeId, table.code),
+  index("nail_art_applications_store_id_idx").on(table.storeId),
+]);
+
+export const nailArtEffects = pgTable("nail_art_effects", {
+  id:          serial("id").primaryKey(),
+  storeId:     integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  code:        text("code"),
+  name:        text("name").notNull(),
+  description: text("description"),
+  imageUrl:    text("image_url"),
+  swatchHex:   text("swatch_hex"),
+  sortOrder:   integer("sort_order").notNull().default(0),
+  isActive:    boolean("is_active").notNull().default(true),
+  createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:   timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("nail_art_effects_store_id_name_key").on(table.storeId, table.name),
+  unique("nail_art_effects_store_id_code_key").on(table.storeId, table.code),
+  index("nail_art_effects_store_id_idx").on(table.storeId),
+]);
+
+// ── Per-service gate ─────────────────────────────────────────────────────────
+
+export const nailServiceConfigs = pgTable("nail_service_configs", {
+  id:             serial("id").primaryKey(),
+  storeId:        integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  serviceId:      integer("service_id").notNull().references(() => services.id, { onDelete: "cascade" }),
+  isEnabled:      boolean("is_enabled").notNull().default(true),
+  lengthRequired: boolean("length_required").notNull().default(true),
+  shapeRequired:  boolean("shape_required").notNull().default(true),
+  artRequired:    boolean("art_required").notNull().default(false),
+  createdAt:      timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:      timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("nail_service_configs_service_id_key").on(table.serviceId),
+  index("nail_service_configs_store_id_idx").on(table.storeId),
+]);
+
+// ── Service → vocabulary junctions (pricing lives here) ──────────────────────
+
+export const serviceNailSizes = pgTable("service_nail_sizes", {
+  id:                 serial("id").primaryKey(),
+  storeId:            integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  serviceId:          integer("service_id").notNull().references(() => services.id, { onDelete: "cascade" }),
+  nailSizeId:         integer("nail_size_id").notNull().references(() => nailSizes.id, { onDelete: "restrict" }),
+  priceAdjustment:    decimal("price_adjustment", { precision: 10, scale: 2 }).notNull().default("0"),
+  durationAdjustment: integer("duration_adjustment").notNull().default(0),
+  isDefault:          boolean("is_default").notNull().default(false),
+  isEnabled:          boolean("is_enabled").notNull().default(true),
+  sortOrder:          integer("sort_order").notNull().default(0),
+  createdAt:          timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:          timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("service_nail_sizes_service_id_nail_size_id_key").on(table.serviceId, table.nailSizeId),
+  uniqueIndex("service_nail_sizes_one_default_idx").on(table.serviceId).where(sql`is_default`),
+  index("service_nail_sizes_service_id_idx").on(table.serviceId),
+  index("service_nail_sizes_store_id_idx").on(table.storeId),
+  index("service_nail_sizes_nail_size_id_idx").on(table.nailSizeId),
+]);
+
+export const serviceNailShapes = pgTable("service_nail_shapes", {
+  id:                 serial("id").primaryKey(),
+  storeId:            integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  serviceId:          integer("service_id").notNull().references(() => services.id, { onDelete: "cascade" }),
+  nailShapeId:        integer("nail_shape_id").notNull().references(() => nailShapes.id, { onDelete: "restrict" }),
+  priceAdjustment:    decimal("price_adjustment", { precision: 10, scale: 2 }).notNull().default("0"),
+  durationAdjustment: integer("duration_adjustment").notNull().default(0),
+  isDefault:          boolean("is_default").notNull().default(false),
+  isEnabled:          boolean("is_enabled").notNull().default(true),
+  sortOrder:          integer("sort_order").notNull().default(0),
+  createdAt:          timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:          timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("service_nail_shapes_service_id_nail_shape_id_key").on(table.serviceId, table.nailShapeId),
+  uniqueIndex("service_nail_shapes_one_default_idx").on(table.serviceId).where(sql`is_default`),
+  index("service_nail_shapes_service_id_idx").on(table.serviceId),
+  index("service_nail_shapes_store_id_idx").on(table.storeId),
+  index("service_nail_shapes_nail_shape_id_idx").on(table.nailShapeId),
+]);
+
+export const serviceNailArtApplications = pgTable("service_nail_art_applications", {
+  id:                  serial("id").primaryKey(),
+  storeId:             integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  serviceId:           integer("service_id").notNull().references(() => services.id, { onDelete: "cascade" }),
+  nailArtApplicationId: integer("nail_art_application_id").notNull().references(() => nailArtApplications.id, { onDelete: "restrict" }),
+  priceAdjustment:     decimal("price_adjustment", { precision: 10, scale: 2 }).notNull().default("0"),
+  durationAdjustment:  integer("duration_adjustment").notNull().default(0),
+  isEnabled:           boolean("is_enabled").notNull().default(true),
+  sortOrder:           integer("sort_order").notNull().default(0),
+  createdAt:           timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:           timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("service_nail_art_applications_svc_app_key").on(table.serviceId, table.nailArtApplicationId),
+  index("service_nail_art_applications_service_id_idx").on(table.serviceId),
+  index("service_nail_art_applications_store_id_idx").on(table.storeId),
+  index("service_nail_art_applications_app_id_idx").on(table.nailArtApplicationId),
+]);
+
+export const serviceNailArtEffects = pgTable("service_nail_art_effects", {
+  id:                 serial("id").primaryKey(),
+  storeId:            integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  serviceId:          integer("service_id").notNull().references(() => services.id, { onDelete: "cascade" }),
+  nailArtEffectId:    integer("nail_art_effect_id").notNull().references(() => nailArtEffects.id, { onDelete: "restrict" }),
+  priceAdjustment:    decimal("price_adjustment", { precision: 10, scale: 2 }).notNull().default("0"),  // surcharge, usually 0
+  durationAdjustment: integer("duration_adjustment").notNull().default(0),
+  isEnabled:          boolean("is_enabled").notNull().default(true),
+  sortOrder:          integer("sort_order").notNull().default(0),
+  createdAt:          timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:          timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("service_nail_art_effects_svc_effect_key").on(table.serviceId, table.nailArtEffectId),
+  index("service_nail_art_effects_service_id_idx").on(table.serviceId),
+  index("service_nail_art_effects_store_id_idx").on(table.storeId),
+  index("service_nail_art_effects_effect_id_idx").on(table.nailArtEffectId),
+]);
+
+// ── Relations ────────────────────────────────────────────────────────────────
+
+export const nailSizesRelations = relations(nailSizes, ({ one, many }) => ({
+  store: one(locations, { fields: [nailSizes.storeId], references: [locations.id] }),
+  serviceLinks: many(serviceNailSizes),
+}));
+export const nailShapesRelations = relations(nailShapes, ({ one, many }) => ({
+  store: one(locations, { fields: [nailShapes.storeId], references: [locations.id] }),
+  serviceLinks: many(serviceNailShapes),
+}));
+export const nailArtApplicationsRelations = relations(nailArtApplications, ({ one, many }) => ({
+  store: one(locations, { fields: [nailArtApplications.storeId], references: [locations.id] }),
+  serviceLinks: many(serviceNailArtApplications),
+}));
+export const nailArtEffectsRelations = relations(nailArtEffects, ({ one, many }) => ({
+  store: one(locations, { fields: [nailArtEffects.storeId], references: [locations.id] }),
+  serviceLinks: many(serviceNailArtEffects),
+}));
+export const nailServiceConfigsRelations = relations(nailServiceConfigs, ({ one }) => ({
+  store: one(locations, { fields: [nailServiceConfigs.storeId], references: [locations.id] }),
+  service: one(services, { fields: [nailServiceConfigs.serviceId], references: [services.id] }),
+}));
+export const serviceNailSizesRelations = relations(serviceNailSizes, ({ one }) => ({
+  store: one(locations, { fields: [serviceNailSizes.storeId], references: [locations.id] }),
+  service: one(services, { fields: [serviceNailSizes.serviceId], references: [services.id] }),
+  nailSize: one(nailSizes, { fields: [serviceNailSizes.nailSizeId], references: [nailSizes.id] }),
+}));
+export const serviceNailShapesRelations = relations(serviceNailShapes, ({ one }) => ({
+  store: one(locations, { fields: [serviceNailShapes.storeId], references: [locations.id] }),
+  service: one(services, { fields: [serviceNailShapes.serviceId], references: [services.id] }),
+  nailShape: one(nailShapes, { fields: [serviceNailShapes.nailShapeId], references: [nailShapes.id] }),
+}));
+export const serviceNailArtApplicationsRelations = relations(serviceNailArtApplications, ({ one }) => ({
+  store: one(locations, { fields: [serviceNailArtApplications.storeId], references: [locations.id] }),
+  service: one(services, { fields: [serviceNailArtApplications.serviceId], references: [services.id] }),
+  application: one(nailArtApplications, { fields: [serviceNailArtApplications.nailArtApplicationId], references: [nailArtApplications.id] }),
+}));
+export const serviceNailArtEffectsRelations = relations(serviceNailArtEffects, ({ one }) => ({
+  store: one(locations, { fields: [serviceNailArtEffects.storeId], references: [locations.id] }),
+  service: one(services, { fields: [serviceNailArtEffects.serviceId], references: [services.id] }),
+  effect: one(nailArtEffects, { fields: [serviceNailArtEffects.nailArtEffectId], references: [nailArtEffects.id] }),
+}));
+
+// ── Insert schemas + types ───────────────────────────────────────────────────
+
+export const insertNailSizeSchema                 = createInsertSchema(nailSizes).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertNailShapeSchema                = createInsertSchema(nailShapes).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertNailArtApplicationSchema       = createInsertSchema(nailArtApplications).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertNailArtEffectSchema            = createInsertSchema(nailArtEffects).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertNailServiceConfigSchema        = createInsertSchema(nailServiceConfigs).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertServiceNailSizeSchema          = createInsertSchema(serviceNailSizes).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertServiceNailShapeSchema         = createInsertSchema(serviceNailShapes).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertServiceNailArtApplicationSchema = createInsertSchema(serviceNailArtApplications).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertServiceNailArtEffectSchema     = createInsertSchema(serviceNailArtEffects).omit({ id: true, createdAt: true, updatedAt: true });
+
+export type NailSize                  = typeof nailSizes.$inferSelect;
+export type InsertNailSize            = typeof nailSizes.$inferInsert;
+export type NailShape                 = typeof nailShapes.$inferSelect;
+export type InsertNailShape           = typeof nailShapes.$inferInsert;
+export type NailArtApplication        = typeof nailArtApplications.$inferSelect;
+export type InsertNailArtApplication  = typeof nailArtApplications.$inferInsert;
+export type NailArtEffect             = typeof nailArtEffects.$inferSelect;
+export type InsertNailArtEffect       = typeof nailArtEffects.$inferInsert;
+export type NailServiceConfig         = typeof nailServiceConfigs.$inferSelect;
+export type InsertNailServiceConfig   = typeof nailServiceConfigs.$inferInsert;
+export type ServiceNailSize           = typeof serviceNailSizes.$inferSelect;
+export type InsertServiceNailSize     = typeof serviceNailSizes.$inferInsert;
+export type ServiceNailShape          = typeof serviceNailShapes.$inferSelect;
+export type InsertServiceNailShape    = typeof serviceNailShapes.$inferInsert;
+export type ServiceNailArtApplication       = typeof serviceNailArtApplications.$inferSelect;
+export type InsertServiceNailArtApplication = typeof serviceNailArtApplications.$inferInsert;
+export type ServiceNailArtEffect      = typeof serviceNailArtEffects.$inferSelect;
+export type InsertServiceNailArtEffect = typeof serviceNailArtEffects.$inferInsert;
+
+// ── Booking-time nail selection  (migration 0155) ───────────────────────────
+//
+// One row per appointment whose service is a fake-nail service. Every value is
+// SNAPSHOTTED at booking time so a receipt never changes when the salon edits
+// its config later. FKs to the config/vocab rows are provenance only
+// (ON DELETE SET NULL); the *_snapshot columns are the source of truth.
+
+export const appointmentNailSelection = pgTable("appointment_nail_selection", {
+  id:                serial("id").primaryKey(),
+  appointmentId:     integer("appointment_id").notNull().references(() => appointments.id, { onDelete: "cascade" }),
+  storeId:           integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  basePriceSnapshot: decimal("base_price_snapshot", { precision: 10, scale: 2 }).notNull(),
+
+  // length
+  nailSizeId:                 integer("nail_size_id").references(() => nailSizes.id, { onDelete: "set null" }),
+  lengthNameSnapshot:         text("length_name_snapshot"),
+  lengthPriceAdjSnapshot:     decimal("length_price_adj_snapshot", { precision: 10, scale: 2 }).notNull().default("0"),
+  lengthDurationAdjSnapshot:  integer("length_duration_adj_snapshot").notNull().default(0),
+
+  // shape
+  nailShapeId:                integer("nail_shape_id").references(() => nailShapes.id, { onDelete: "set null" }),
+  shapeNameSnapshot:          text("shape_name_snapshot"),
+  shapePriceAdjSnapshot:      decimal("shape_price_adj_snapshot", { precision: 10, scale: 2 }).notNull().default("0"),
+  shapeDurationAdjSnapshot:   integer("shape_duration_adj_snapshot").notNull().default(0),
+
+  // art
+  nailArtApplicationId:       integer("nail_art_application_id").references(() => nailArtApplications.id, { onDelete: "set null" }),
+  nailArtEffectId:            integer("nail_art_effect_id").references(() => nailArtEffects.id, { onDelete: "set null" }),
+  artApplicationNameSnapshot: text("art_application_name_snapshot"),
+  artEffectNameSnapshot:      text("art_effect_name_snapshot"),
+  artPriceAdjSnapshot:        decimal("art_price_adj_snapshot", { precision: 10, scale: 2 }).notNull().default("0"),
+  artDurationAdjSnapshot:     integer("art_duration_adj_snapshot").notNull().default(0),
+  artIsCustomQuote:           boolean("art_is_custom_quote").notNull().default(false),
+
+  totalPriceSnapshot: decimal("total_price_snapshot", { precision: 10, scale: 2 }).notNull(),
+  createdAt:          timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:          timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("appointment_nail_selection_appointment_id_key").on(table.appointmentId),
+  index("appointment_nail_selection_store_id_idx").on(table.storeId),
+]);
+
+export const appointmentNailSelectionRelations = relations(appointmentNailSelection, ({ one }) => ({
+  appointment: one(appointments, { fields: [appointmentNailSelection.appointmentId], references: [appointments.id] }),
+  store: one(locations, { fields: [appointmentNailSelection.storeId], references: [locations.id] }),
+  nailSize: one(nailSizes, { fields: [appointmentNailSelection.nailSizeId], references: [nailSizes.id] }),
+  nailShape: one(nailShapes, { fields: [appointmentNailSelection.nailShapeId], references: [nailShapes.id] }),
+  application: one(nailArtApplications, { fields: [appointmentNailSelection.nailArtApplicationId], references: [nailArtApplications.id] }),
+  effect: one(nailArtEffects, { fields: [appointmentNailSelection.nailArtEffectId], references: [nailArtEffects.id] }),
+}));
+
+export const insertAppointmentNailSelectionSchema = createInsertSchema(appointmentNailSelection).omit({ id: true, createdAt: true, updatedAt: true });
+
+export type AppointmentNailSelection       = typeof appointmentNailSelection.$inferSelect;
+export type InsertAppointmentNailSelection = typeof appointmentNailSelection.$inferInsert;

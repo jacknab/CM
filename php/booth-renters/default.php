@@ -14,7 +14,7 @@ define('PAGE_SCHEMA', json_encode([
     ['@type'=>'Question','name'=>'Does Certxa work for a solo nail technician renting a booth?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa is designed to work perfectly as a one-person nail studio. You get online booking, a self-service walk-in kiosk, POS, client nail records with product notes, automated reminders, loyalty rewards, and analytics — everything a full nail salon team gets, sized for one.']],
     ['@type'=>'Question','name'=>'How much does Certxa cost for a nail tech booth renter?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa starts at $9/month after a full ' . TRIAL_DAYS . '-day free trial. There are no contracts and no subscription setup fees. Optional add-ons like the Autumn AI receptionist are usage-based and billed separately through your Platform Wallet.']],
   ]],
-  ['@type'=>'SoftwareApplication','name'=>'Certxa for Booth Renters','applicationCategory'=>'BusinessApplication','operatingSystem'=>'Web, iOS, Android','offers'=>['@type'=>'Offer','price'=>'0','priceCurrency'=>'USD','description'=>TRIAL_DAYS . '-day free trial']],
+  // Canonical SoftwareApplication (@id #software) is injected site-wide by includes/header.php.
 ]));
 require 'includes/header.php';
 require 'includes/nav.php';
@@ -197,47 +197,12 @@ require 'includes/nav.php';
   </div>
 </section>
 
-<!-- TESTIMONIALS -->
-<section class="section" style="background:#fafafa;">
-  <div class="container" style="max-width:900px;">
-    <div class="section-header">
-      <span class="tag tag-plum">Real Booth Renters</span>
-      <h2 class="section-title">Booth renters<br><em>love Certxa.</em></h2>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:24px;margin-top:40px;">
-      <?php
-      $testimonials = [
-        ['"I went from a paper book and Venmo to fully automated in one weekend. I\'ve never missed a booking since."', 'Aaliyah K.', 'Nail Tech, Atlanta', 'AK'],
-        ['"My clients love being able to book at midnight. I wake up to a full book. Certxa basically works as my assistant."', 'Marcus J.', 'Chair Renter, Chicago', 'MJ'],
-        ['"I moved to a new suite and my entire client history came with me. That would have been impossible without Certxa."', 'Destiny C.', 'Booth Renter, Houston', 'DC'],
-      ];
-      foreach ($testimonials as $t): ?>
-      <div style="background:#fff;border:1px solid #f0f0f2;border-radius:16px;padding:28px;">
-        <div style="display:flex;gap:2px;margin-bottom:14px;">
-          <?php for ($i = 0; $i < 5; $i++): ?>
-          <svg width="14" height="14" viewBox="0 0 20 20" fill="#F59E0B"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-          <?php endfor; ?>
-        </div>
-        <p style="font-size:.88rem;color:var(--mid-grey);line-height:1.65;font-style:italic;margin:0 0 18px;"><?= $t[0] ?></p>
-        <div style="display:flex;align-items:center;gap:10px;">
-          <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#5b21b6,#3b0764);display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:800;color:#fff;flex-shrink:0;"><?= $t[2] ?></div>
-          <div>
-            <div style="font-size:.85rem;font-weight:700;color:var(--charcoal);"><?= $t[1] ?></div>
-            <div style="font-size:.75rem;color:var(--mid-grey);"><?= $t[2] ?></div>
-          </div>
-        </div>
-      </div>
-      <?php endforeach; ?>
-    </div>
-  </div>
-</section>
-
 <!-- CTA -->
 <section class="section cta-section">
   <div class="container" style="max-width:700px;text-align:center;">
     <span class="tag" style="background:rgba(245,158,11,.15);color:#FCD34D;border-color:rgba(245,158,11,.3);margin-bottom:20px;display:inline-flex;">Free for <?= TRIAL_DAYS ?> days</span>
     <h2 class="section-title" style="color:#fff;">Ready to run your<br><em style="color:#F59E0B;">booth like a business?</em></h2>
-    <p style="color:rgba(255,255,255,.65);font-size:1rem;line-height:1.65;margin-bottom:36px;">Join thousands of independent nail technicians who use Certxa to fill their books, retain their clients, and get paid on time — every time.</p>
+    <p style="color:rgba(255,255,255,.65);font-size:1rem;line-height:1.65;margin-bottom:36px;">Certxa helps independent nail technicians fill their books, retain their clients, and get paid on time — every time.</p>
     <a href="/auth?mode=register" class="btn btn-gold btn-lg">Start Free — <?= TRIAL_DAYS ?> Days</a>
     <div style="margin-top:16px;font-size:.82rem;color:rgba(255,255,255,.4);"><?= TRIAL_DAYS ?>-day trial · From $9/mo · Cancel anytime</div>
   </div>

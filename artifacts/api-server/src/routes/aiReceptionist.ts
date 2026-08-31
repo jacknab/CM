@@ -49,7 +49,7 @@ import type { Server as HttpServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import twilio from "twilio";
 import { fromZonedTime, toZonedTime, formatInTimeZone } from "date-fns-tz";
-import { db } from "../db";
+import { db, pool } from "../db";
 import { locations, services, storeSettings, aiCallLog, aiSilenceIncidents, callUsageRecords, staff as staffTable, appointments } from "@shared/schema";
 import { eq, desc, inArray, sql, count, gt, or, isNull, and } from "drizzle-orm";
 import { isAuthenticated, isAdminAuthenticated } from "../auth";
@@ -73,6 +73,10 @@ import { getAvailabilityCache, getAvailabilityCacheStats, setAvailabilityCache }
 import { enqueueAvailabilityInvalidation } from "../lib/availabilityQueue";
 import { enqueueSlotRebuild, buildDateRange } from "../lib/slotQueue";
 import { broadcastNotification, broadcastSyncEvent } from "../notifications";
+import { sendSms } from "../sms";
+import { createBookingPaymentToken } from "../lib/bookingPaymentLinks";
+import { autoAssignResource } from "../services/resource-assignment";
+import { getRequiredResourceType } from "@shared/resourceMatching";
 import { scoreCallRisk, recordBlockedNumber } from "../services/spamProtection/callFilter";
 import { resolveTenantIdForRequest } from "../lib/tenantResolver";
 import { CallFileLogger, NullCallFileLogger, type ICallFileLogger } from "../lib/callFileLogger";
@@ -1624,6 +1628,84 @@ async function createBookingViaBookingRules(
     return { success: false, message: "Could not resolve client record — please try again." };
   }
 
+  // ── Resource assignment (pedicure chairs / nail stations) ─────────────────
+  // Same rule as the staff New Booking / online booking / kiosk check-in
+  // paths: a pedicure service needs a pedicure chair, other nail services
+  // (manicures, enhancements, nail art, combos) need a nail station. No
+  // requirement (null) for waxing/threading/hair/etc.
+  let assignedResourceId: number | null = null;
+  const [serviceRow] = await db
+    .select({ category: services.category, name: services.name })
+    .from(services)
+    .where(eq(services.id, Number(args.serviceId)))
+    .limit(1);
+  const requiredResourceType = getRequiredResourceType(serviceRow?.category, serviceRow?.name);
+  if (requiredResourceType) {
+    const resourceAssignment = await autoAssignResource({
+      storeId: salon.storeId,
+      resourceType: requiredResourceType,
+      date: new Date(chosen.time),
+      duration: totalDuration,
+    });
+    if (!resourceAssignment.assigned || !resourceAssignment.resourceId) {
+      // A store that hasn't configured any resources of this type hasn't
+      // opted into resource tracking — don't block the booking over it,
+      // only a genuine full-capacity conflict should reject.
+      if (!resourceAssignment.noResourcesConfigured) {
+        logAiToolEvent("create_booking.no_resource_available", {
+          storeId: salon.storeId,
+          resourceType: requiredResourceType,
+          slot: chosen.time,
+        });
+        return {
+          success: false,
+          message: "That time no longer has an available chair/station for this service. Please choose another time.",
+        };
+      }
+    } else {
+      assignedResourceId = resourceAssignment.resourceId;
+    }
+  }
+
+  // ── Payment policy gate ────────────────────────────────────────────────────
+  // A phone call can't collect a card or run a Stripe payment. If this store
+  // requires a deposit or card-on-file for online bookings, the AI can still
+  // reserve the slot (so nobody else can grab it), but the appointment is
+  // created hidden/pending until the caller finishes payment via an SMS link.
+  const [storePolicy] = await db
+    .select({
+      bookingPaymentPolicy: locations.bookingPaymentPolicy,
+      depositType: locations.depositType,
+      depositValue: locations.depositValue,
+    })
+    .from(locations)
+    .where(eq(locations.id, salon.storeId))
+    .limit(1);
+
+  const stripeConnected = !!(
+    process.env.STRIPE_SECRET_KEY &&
+    (await pool.query(
+      `SELECT 1 FROM store_payment_accounts WHERE store_id = $1 AND provider = 'stripe' AND status = 'connected' LIMIT 1`,
+      [salon.storeId]
+    ).then((r: any) => r.rows.length > 0).catch(() => false))
+  );
+  // A "deposit"/"card_on_file" policy only matters if Stripe is actually
+  // connected and (for deposit) a value is configured — same fallback the
+  // public booking widget applies, so the AI doesn't gate on a policy the
+  // store can't actually collect against.
+  const effectivePolicy = stripeConnected ? (storePolicy?.bookingPaymentPolicy ?? "none") : "none";
+  const requiresPayment =
+    (effectivePolicy === "deposit" && !!storePolicy?.depositValue) || effectivePolicy === "card_on_file";
+
+  let depositAmountCents: number | null = null;
+  if (requiresPayment && effectivePolicy === "deposit") {
+    const servicePriceCents = Math.round(Number(service.price ?? 0) * 100);
+    depositAmountCents = storePolicy!.depositType === "percentage"
+      ? Math.round(servicePriceCents * (Number(storePolicy!.depositValue) / 100))
+      : Math.round(Number(storePolicy!.depositValue) * 100);
+    if (depositAmountCents < 50) depositAmountCents = 50; // Stripe minimum
+  }
+
   const createResult = await atomicCreateBooking({
     storeId: salon.storeId,
     timezone: salon.timezone || "UTC",
@@ -1635,6 +1717,8 @@ async function createBookingViaBookingRules(
     notes: "Booked by AI receptionist",
     status: "pending",
     clientRequestedStaff: resolvedStaff.requestedSpecificStaff && !!specificStaffId,
+    resourceId: assignedResourceId,
+    ...(requiresPayment ? { calendarHidden: true, paymentStatus: "awaiting_payment" } : {}),
   });
 
   if (!createResult.ok) {
@@ -1654,6 +1738,7 @@ async function createBookingViaBookingRules(
     appointmentId,
     slot: chosen.time,
     staffId: chosen.staffId,
+    requiresPayment,
   });
 
   // Invalidate availability cache for the booked date so the next query
@@ -1661,9 +1746,49 @@ async function createBookingViaBookingRules(
   void enqueueAvailabilityInvalidation(salon.storeId, dateStr, "booking_created");
   void enqueueSlotRebuild(salon.storeId, buildDateRange(14).filter((d) => d >= dateStr), "booking_changed");
 
+  const bookedService = salon.services.find((s) => s.id === Number(args.serviceId));
+
+  void logActivityEvent({
+    storeId: salon.storeId,
+    eventType: "ai_booking",
+    message: `AI Receptionist booked ${new Date(chosen.time).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit", timeZone: salon.timezone || "UTC" })}${bookedService ? ` for ${bookedService.name}` : ""}${requiresPayment ? " (awaiting payment link)" : ""}`,
+  });
+
+  if (requiresPayment) {
+    // Hold created — no calendar/dashboard broadcast yet (it's hidden until
+    // paid). Send the caller an SMS with a one-time link instead.
+    const requirement = effectivePolicy === "deposit" ? "deposit" : "card_on_file";
+    const tokenRow = await createBookingPaymentToken({
+      storeId: salon.storeId,
+      appointmentId,
+      customerId: customer.id,
+      customerPhone: publicPhone,
+      requirement,
+      depositAmountCents,
+    });
+    const link = `${process.env.APP_URL ?? "https://certxa.com"}/complete-booking/${tokenRow.token}`;
+    const smsBody = requirement === "deposit"
+      ? `Hi ${customer.name || "there"}, please confirm your ${salon.businessName ?? "appointment"} booking by paying a $${(depositAmountCents! / 100).toFixed(2)} deposit within the next hour: ${link}`
+      : `Hi ${customer.name || "there"}, please confirm your ${salon.businessName ?? "appointment"} booking by adding a card on file within the next hour: ${link}`;
+    try {
+      await sendSms(salon.storeId, publicPhone, smsBody, "booking_payment_required", appointmentId, customer.id, {
+        skipCreditDeduction: true,
+        smsSource: "platform",
+      });
+    } catch (err) {
+      console.error(`[AI Receptionist] Failed to send payment-link SMS for appointment ${appointmentId}:`, err);
+    }
+
+    return {
+      success: true,
+      message: requirement === "deposit"
+        ? `I've reserved that time — you'll get a text in just a moment with a link to pay the $${(depositAmountCents! / 100).toFixed(2)} deposit. Your spot is fully booked once that's done, within the next hour.`
+        : "I've reserved that time — you'll get a text in just a moment with a link to add a card on file. Your spot is fully booked once that's done, within the next hour.",
+    };
+  }
+
   // ── Real-time WebSocket push so the demo calendar (and dashboard) update
   //    the instant the AI confirms the booking — no polling required.
-  const bookedService = salon.services.find((s) => s.id === Number(args.serviceId));
   try {
     broadcastNotification({
       type: "new_booking",
@@ -1683,12 +1808,6 @@ async function createBookingViaBookingRules(
     // Non-critical — booking is already saved; broadcast failure just means
     // the live calendar won't refresh automatically for this call.
   }
-
-  void logActivityEvent({
-    storeId: salon.storeId,
-    eventType: "ai_booking",
-    message: `AI Receptionist booked ${new Date(chosen.time).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit", timeZone: salon.timezone || "UTC" })}${bookedService ? ` for ${bookedService.name}` : ""}`,
-  });
 
   return {
     success: true,

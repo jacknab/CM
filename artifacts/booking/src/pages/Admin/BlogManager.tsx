@@ -3,7 +3,12 @@ import {
   PlusCircle, Edit2, Trash2, Eye, EyeOff, Star, StarOff,
   ChevronDown, ChevronUp, X, Save, Globe, FileText, Loader2,
   AlertCircle, CheckCircle2, Search,
+  Bold, Italic, Underline as UnderlineIcon, Heading2, Heading3,
+  List, ListOrdered, Quote, Link as LinkIcon, Minus, Undo2, Redo2, Code2,
 } from "lucide-react";
+import { useEditor, EditorContent, type Editor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import Placeholder from "@tiptap/extension-placeholder";
 
 const API = "/api";
 
@@ -70,66 +75,138 @@ async function api(method: string, path: string, body?: unknown) {
   return data;
 }
 
-// ── Simple HTML editor ────────────────────────────────────────────────────────
+// ── Rich text editor (Tiptap) ───────────────────────────────────────────────────
+// WYSIWYG editing + clean-paste from Word/Docs/web, with a raw-HTML tab for
+// power users. The value/onChange contract (an HTML string) is unchanged so
+// nothing else in this file needs to know the editor is no longer a textarea.
+
+function ToolbarButton({
+  onClick, active, title, children,
+}: { onClick: () => void; active?: boolean; title: string; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      // Preserve the editor's text selection — a normal button click would
+      // steal focus first and collapse it before the command can run.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      style={{
+        padding: "5px 7px", display: "flex", alignItems: "center",
+        borderRadius: 4, cursor: "pointer",
+        background: active ? "#3b0764" : "#fff",
+        color: active ? "#fff" : "#374151",
+        border: `1px solid ${active ? "#3b0764" : "#d1d5db"}`,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ToolbarDivider() {
+  return <div style={{ width: 1, alignSelf: "stretch", background: "#e5e7eb", margin: "0 3px" }} />;
+}
+
+function EditorToolbar({ editor }: { editor: Editor }) {
+  const setLink = () => {
+    const previousUrl = editor.getAttributes("link").href as string | undefined;
+    const url = window.prompt("Link URL", previousUrl || "https://");
+    if (url === null) return;
+    if (url === "") {
+      editor.chain().focus().extendMarkRange("link").unsetLink().run();
+      return;
+    }
+    editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 3, flexWrap: "wrap" }}>
+      <ToolbarButton title="Bold" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={14} /></ToolbarButton>
+      <ToolbarButton title="Italic" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={14} /></ToolbarButton>
+      <ToolbarButton title="Underline" active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()}><UnderlineIcon size={14} /></ToolbarButton>
+      <ToolbarButton title="Code" active={editor.isActive("code")} onClick={() => editor.chain().focus().toggleCode().run()}><Code2 size={14} /></ToolbarButton>
+      <ToolbarDivider />
+      <ToolbarButton title="Heading 2" active={editor.isActive("heading", { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}><Heading2 size={14} /></ToolbarButton>
+      <ToolbarButton title="Heading 3" active={editor.isActive("heading", { level: 3 })} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}><Heading3 size={14} /></ToolbarButton>
+      <ToolbarDivider />
+      <ToolbarButton title="Bullet list" active={editor.isActive("bulletList")} onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={14} /></ToolbarButton>
+      <ToolbarButton title="Numbered list" active={editor.isActive("orderedList")} onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={14} /></ToolbarButton>
+      <ToolbarButton title="Quote" active={editor.isActive("blockquote")} onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote size={14} /></ToolbarButton>
+      <ToolbarButton title="Insert link" active={editor.isActive("link")} onClick={setLink}><LinkIcon size={14} /></ToolbarButton>
+      <ToolbarButton title="Divider" onClick={() => editor.chain().focus().setHorizontalRule().run()}><Minus size={14} /></ToolbarButton>
+      <ToolbarDivider />
+      <ToolbarButton title="Undo" onClick={() => editor.chain().focus().undo().run()}><Undo2 size={14} /></ToolbarButton>
+      <ToolbarButton title="Redo" onClick={() => editor.chain().focus().redo().run()}><Redo2 size={14} /></ToolbarButton>
+    </div>
+  );
+}
+
 function HtmlEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [tab, setTab] = useState<"edit" | "preview">("edit");
+  const [mode, setMode] = useState<"write" | "html">("write");
+  const [rawHtml, setRawHtml] = useState(value);
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        heading: { levels: [2, 3] },
+        link: { openOnClick: false, autolink: true },
+      }),
+      Placeholder.configure({ placeholder: "Write your article here, or paste it in from Word, Google Docs, or the web…" }),
+    ],
+    content: value,
+    onUpdate: ({ editor }) => onChange(editor.getHTML()),
+    editorProps: { attributes: { class: "blog-content" } },
+  });
+
+  if (!editor) return null;
+
+  const switchToHtml = () => {
+    setRawHtml(editor.getHTML());
+    setMode("html");
+  };
+  const switchToWrite = () => {
+    // emitUpdate: false suppresses onUpdate — we propagate the change once,
+    // explicitly, instead of letting setContent's own update event double-fire it.
+    editor.commands.setContent(rawHtml, { emitUpdate: false });
+    onChange(rawHtml);
+    setMode("write");
+  };
+
   return (
     <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden" }}>
+      <style>{`
+        .tiptap-editor-body .ProseMirror { outline: none; min-height: 300px; padding: 16px 18px; }
+        .tiptap-editor-body .ProseMirror p.is-editor-empty:first-child::before {
+          content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: #9ca3af;
+        }
+      `}</style>
       {/* toolbar */}
       <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "6px 10px", background: "#f9fafb", borderBottom: "1px solid #e5e7eb", flexWrap: "wrap" }}>
-        {[
-          ["<b>", "</b>", "B", "bold"],
-          ["<i>", "</i>", "I", "italic"],
-          ["<h2>", "</h2>", "H2", "heading2"],
-          ["<h3>", "</h3>", "H3", "heading3"],
-          ["<ul>\n<li>", "</li>\n</ul>", "List", "list"],
-          ["<blockquote>", "</blockquote>", "Quote", "quote"],
-          ["<a href=\"\">", "</a>", "Link", "link"],
-          ["<hr>", "", "HR", "hr"],
-        ].map(([open, close, label]) => (
-          <button key={label}
-            type="button"
-            onClick={() => {
-              const ta = document.getElementById("blog-content-ta") as HTMLTextAreaElement;
-              if (!ta) return;
-              const s = ta.selectionStart, e = ta.selectionEnd;
-              const sel = ta.value.slice(s, e);
-              const newVal = ta.value.slice(0, s) + open + sel + close + ta.value.slice(e);
-              onChange(newVal);
-              setTimeout(() => {
-                ta.focus();
-                ta.setSelectionRange(s + (open as string).length, s + (open as string).length + sel.length);
-              }, 10);
-            }}
-            style={{
-              padding: "3px 8px", fontSize: ".72rem", fontWeight: 700,
-              background: "#fff", border: "1px solid #d1d5db",
-              borderRadius: 4, cursor: "pointer", color: "#374151",
-            }}
-          >
-            {label}
-          </button>
-        ))}
+        {mode === "write" && <EditorToolbar editor={editor} />}
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-          <button type="button" onClick={() => setTab("edit")}
+          <button type="button" onClick={switchToWrite}
             style={{ padding: "3px 10px", fontSize: ".72rem", fontWeight: 600, borderRadius: 4, cursor: "pointer",
-              background: tab === "edit" ? "#3b0764" : "#fff", color: tab === "edit" ? "#fff" : "#6b7280",
-              border: `1px solid ${tab === "edit" ? "#3b0764" : "#d1d5db"}` }}>
-            Edit
+              background: mode === "write" ? "#3b0764" : "#fff", color: mode === "write" ? "#fff" : "#6b7280",
+              border: `1px solid ${mode === "write" ? "#3b0764" : "#d1d5db"}` }}>
+            Write
           </button>
-          <button type="button" onClick={() => setTab("preview")}
+          <button type="button" onClick={switchToHtml}
             style={{ padding: "3px 10px", fontSize: ".72rem", fontWeight: 600, borderRadius: 4, cursor: "pointer",
-              background: tab === "preview" ? "#3b0764" : "#fff", color: tab === "preview" ? "#fff" : "#6b7280",
-              border: `1px solid ${tab === "preview" ? "#3b0764" : "#d1d5db"}` }}>
-            Preview
+              background: mode === "html" ? "#3b0764" : "#fff", color: mode === "html" ? "#fff" : "#6b7280",
+              border: `1px solid ${mode === "html" ? "#3b0764" : "#d1d5db"}` }}>
+            HTML
           </button>
         </div>
       </div>
-      {tab === "edit" ? (
+      {mode === "write" ? (
+        <div className="tiptap-editor-body" style={{ background: "#fff", fontSize: ".95rem", lineHeight: 1.8, color: "#374151" }}>
+          <EditorContent editor={editor} />
+        </div>
+      ) : (
         <textarea
-          id="blog-content-ta"
-          value={value}
-          onChange={e => onChange(e.target.value)}
+          value={rawHtml}
+          onChange={e => setRawHtml(e.target.value)}
           rows={18}
           placeholder="<p>Write your article content here using HTML...</p>"
           style={{
@@ -138,12 +215,6 @@ function HtmlEditor({ value, onChange }: { value: string; onChange: (v: string) 
             lineHeight: 1.65, border: "none", outline: "none", resize: "vertical",
             background: "#fff", color: "#1f2937",
           }}
-        />
-      ) : (
-        <div
-          className="blog-content"
-          style={{ padding: "20px 24px", minHeight: 240, background: "#fff", fontSize: ".95rem", lineHeight: 1.8, color: "#374151" }}
-          dangerouslySetInnerHTML={{ __html: value || "<p style='color:#9ca3af'>Nothing to preview yet.</p>" }}
         />
       )}
     </div>

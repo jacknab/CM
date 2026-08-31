@@ -7,14 +7,12 @@ import { sendTrialExpiredEmail } from "../lib/systemEmails";
 import { emitPlatformEmailEvent } from "./platform-email-engine";
 import { broadcastNotification } from "../notifications";
 
-const FREE_TRIAL_DAYS = 60;
-
 /**
  * How long after trial end before the account is suspended.
- * During this window the user retains full access so they can subscribe
- * without losing their data or being locked out of the calendar.
+ * During this window the user retains access so they can subscribe without
+ * losing their data or being locked out of the calendar.
  */
-const GRACE_PERIOD_DAYS = 7;
+const GRACE_PERIOD_DAYS = 1;
 
 export async function runTrialExpirationCheck(): Promise<{ expired: number; suspended: number; skipped: number }> {
   const now = new Date();
@@ -159,7 +157,9 @@ async function userHasActivePaidSubscription(userId: string): Promise<boolean> {
       .where(eq(storeSubscriptions.storeId, store.id))
       .limit(1);
 
-    return sub?.status === "active" || sub?.status === "trialing";
+    // After the free trial, only a paid, healthy subscription preserves the
+    // account. Trialing, past_due, paused, and canceled do not.
+    return sub?.status === "active";
   } catch {
     return false;
   }
@@ -208,11 +208,18 @@ async function reactivateLaunchSite(storeId: number): Promise<void> {
 
 export function startTrialExpirationScheduler(): void {
   const INTERVAL_MS = 60 * 60 * 1000;
+  let running = false;
 
-  const run = () => {
-    runTrialExpirationCheck().catch((err) =>
-      console.error("[TrialExpiration] Scheduler error:", err)
-    );
+  const run = async () => {
+    if (running) return;
+    running = true;
+    try {
+      await runTrialExpirationCheck();
+    } catch (err) {
+      console.error("[TrialExpiration] Scheduler error:", err);
+    } finally {
+      running = false;
+    }
   };
 
   run();

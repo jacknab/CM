@@ -14,10 +14,10 @@ import {
   ImageIcon,
   Zap,
   Wallet,
-  Globe,
   Activity,
   BookOpen,
   Mails,
+  UserCog,
 } from 'lucide-react';
 
 interface AdminLayoutProps {
@@ -40,10 +40,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     { path: '/isadmin/illustration-library', label: 'ILLUSTRATIONS', icon: ImageIcon },
     { path: '/isadmin/platform-settings', label: 'PLATFORM SETTINGS', icon: Settings },
     { path: '/isadmin/seo-agent', label: 'SEO AGENT', icon: Zap },
-    { path: '/admin/seo-regions', label: 'SEO PAGES', icon: Globe },
     { path: '/isadmin/status', label: 'SERVICE STATUS', icon: Activity },
     { path: '/isadmin/blog', label: 'BLOG', icon: BookOpen },
     { path: '/isadmin/platform-emails', label: 'PLATFORM EMAIL', icon: Mails },
+    { path: '/isadmin/agents', label: 'AGENT ACCOUNTS', icon: UserCog },
   ];
 
   return (

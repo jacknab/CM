@@ -16,20 +16,10 @@ define('PAGE_SCHEMA', json_encode([
     'url'         => 'https://certxa.com/contact',
     'isPartOf'    => ['@id'=>'https://certxa.com/#website'],
   ],
-  [
-    '@type'       => 'Organization',
-    '@id'         => 'https://certxa.com/#org',
-    'name'        => 'Certxa',
-    'url'         => 'https://certxa.com',
-    'contactPoint'=> [
-      '@type'           => 'ContactPoint',
-      'telephone'       => '+1-800-278-4392',
-      'contactType'     => 'customer service',
-      'hoursAvailable'  => 'Mo-Fr 09:00-18:00',
-      'availableLanguage'=> 'English',
-    ],
-  ],
 ]));
+// Note: the site-wide Organization node (with telephone/hoursAvailable) is
+// injected once by includes/header.php under @id "#organization" — do not
+// duplicate it here with a different @id, or entity resolution splits.
 require 'includes/header.php';
 require 'includes/nav.php';
 ?>

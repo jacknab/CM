@@ -23,3 +23,13 @@ coverage/
 
 # Redis runtime dump — regenerated automatically, never commit
 dump.rdb
+
+# Tooling caches / runtime dirs — never belong in the repo
+.npm/
+.ngrok3
+.config/
+.pm2/
+.claude/
+
+# Nested skills clone (has its own .git)
+geo-seo-claude/

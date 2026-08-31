@@ -170,6 +170,8 @@
   & .text-gray-300 { color: #4a4a4a; }
 
   /* ── Text slate overrides ─────────────────────────────────────── */
+  & .text-slate-950,
+  & .text-slate-900 { color: #fafafa; }
   & .text-slate-800 { color: #e8e8e8; }
   & .text-slate-700 { color: #d0d0d0; }
   & .text-slate-600 { color: #aaaaaa; }
@@ -245,7 +247,79 @@
   /* ── Shadow deepening on dark ─────────────────────────────────── */
   & .shadow-sm  { box-shadow: 0 1px 3px rgba(0,0,0,0.6); }
   & .shadow-md  { box-shadow: 0 4px 16px rgba(0,0,0,0.7); }
+
+  /* ── Slate utilities (mirror the gray overrides above) ────────── */
+  & .bg-slate-50      { background-color: #1a1a1c; }
+  & .bg-slate-100     { background-color: #202023; }
+  & .bg-slate-200     { background-color: #2a2a2e; }
+  & .bg-slate-300     { background-color: #333338; }
+  & .border-slate-50  { border-color: rgba(255,255,255,0.04); }
+  & .border-slate-100 { border-color: rgba(255,255,255,0.07); }
+  & .border-slate-200 { border-color: rgba(255,255,255,0.10); }
+  & .border-slate-300 { border-color: rgba(255,255,255,0.15); }
+  & .divide-slate-50  > * + * { border-color: rgba(255,255,255,0.04); }
+  & .divide-slate-100 > * + * { border-color: rgba(255,255,255,0.07); }
+  & .divide-slate-200 > * + * { border-color: rgba(255,255,255,0.10); }
+  & .hover\:bg-slate-50:hover  { background-color: #202023; }
+  & .hover\:bg-slate-100:hover { background-color: #26262a; }
+  & .hover\:bg-slate-200:hover { background-color: #303035; }
+  & .text-slate-300 { color: #4a4a4a; }
+  & .text-slate-200 { color: #3a3a3a; }
+
+  /* Calendar grid tokens (consumed via inline var() in Calendar.tsx) */
+  --cal-grid-line: rgba(255,255,255,0.08);
+  --cal-nonworking: rgba(255,255,255,0.028);
 }
+
+:root {
+  --cal-grid-line: #e2e8f0;
+  --cal-nonworking: #f1f5f9;
+}
+
+/* ── Calendar dark theme: restore teal accent + readability fixes ──────
+   The Calendar page carries `.dark cx-cal`. `.dark` gives us the neutral
+   surfaces; this block undoes the app-wide teal→hot-pink remap for the
+   calendar only and lifts a few low-contrast colours.                   */
+.cx-cal {
+  --primary: 172 66% 40%;              /* teal ~#14b8a6 */
+  --primary-foreground: 0 0% 100%;
+  --ring: 172 66% 45%;
+  --sidebar-primary: 172 66% 40%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --accent: 172 66% 40%;
+  --accent-foreground: 0 0% 100%;
+}
+/* calendar "white" surfaces (grid columns, headers, turn-queue panel) sit at
+   page-black so only the grid lines separate them, matching the mockup */
+.cx-cal .bg-white          { background-color: hsl(var(--background)) !important; }
+.cx-cal .bg-teal-50        { background-color: rgba(20,184,166,0.14) !important; }
+.cx-cal .bg-teal-100       { background-color: rgba(20,184,166,0.22) !important; }
+.cx-cal .bg-teal-400,
+.cx-cal .bg-teal-500       { background-color: #14b8a6 !important; }
+.cx-cal .bg-teal-600       { background-color: #0d9488 !important; }
+.cx-cal .text-teal-700,
+.cx-cal .text-teal-600,
+.cx-cal .text-teal-500     { color: #2dd4bf !important; }
+.cx-cal .text-teal-400     { color: rgba(45,212,191,0.8) !important; }
+.cx-cal .border-teal-100   { border-color: rgba(20,184,166,0.28) !important; }
+.cx-cal .border-teal-200   { border-color: rgba(20,184,166,0.38) !important; }
+.cx-cal .border-teal-300   { border-color: rgba(20,184,166,0.5) !important; }
+.cx-cal .border-teal-400   { border-color: rgba(20,184,166,0.65) !important; }
+.cx-cal .hover\:bg-teal-50:hover   { background-color: rgba(20,184,166,0.14) !important; }
+.cx-cal .hover\:bg-teal-600:hover  { background-color: #0d9488 !important; }
+.cx-cal .hover\:text-teal-600:hover { color: #2dd4bf !important; }
+.cx-cal .ring-teal-400     { --tw-ring-color: rgba(20,184,166,0.65) !important; }
+.cx-cal .ring-2.ring-teal-400 { box-shadow: 0 0 0 2px rgba(20,184,166,0.65) !important; }
+/* hour markers — indigo-600 is too dark on near-black */
+.cx-cal .text-indigo-600,
+.cx-cal .text-indigo-500   { color: #a5b4fc !important; }
+/* lift the dimmest body text a notch for legibility on black */
+.cx-cal .text-gray-600,
+.cx-cal .text-slate-600    { color: #b4b4b8 !important; }
+.cx-cal .text-gray-500,
+.cx-cal .text-slate-500    { color: #9a9aa0 !important; }
+.cx-cal .text-gray-400,
+.cx-cal .text-slate-400    { color: #7c7c82 !important; }
 
 @layer base {
   * {
@@ -298,5 +372,28 @@
 @media (max-width: 767px) {
   body {
     padding-top: 56px;
+  }
+}
+
+/* Full-height app shells (Calendar): use the *small* viewport height so the
+   last row / a sheet's footer buttons are never hidden behind mobile browser
+   chrome. Falls back to 100vh where svh is unsupported. */
+.h-app {
+  height: 100vh;
+}
+@supports (height: 100svh) {
+  .h-app {
+    height: 100svh;
+  }
+}
+
+/* POS 3-panel checkout sheet is ~1192px wide — wider than a 10" tablet in
+   landscape (iPad 10.2" ≈ 1080, many Android 10" ≈ 1024). Scale the whole
+   sheet down to fit that band; `zoom` (unlike transform) keeps hit-testing
+   correct so every key stays tappable. 1280px+ tablets get it at full size. */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .pos-cart-sheet {
+    zoom: 0.82;
+    height: 122% !important; /* 122% × 0.82 ≈ 100% of the viewport */
   }
 }

@@ -160,7 +160,7 @@ function fmt_date(string $ts): string {
   <div class="container" style="max-width:560px;text-align:center;">
     <span class="tag tag-plum" style="margin-bottom:16px;display:inline-block;">Newsletter</span>
     <h2 style="font-family:'Cormorant Garamond',serif;font-size:1.8rem;font-weight:600;color:var(--charcoal);margin-bottom:12px;">Salon growth tips, every week.</h2>
-    <p style="color:var(--mid-grey);font-size:.9rem;margin-bottom:24px;">Join 18,000+ beauty professionals who get our weekly guide to growing a thriving salon business.</p>
+    <p style="color:var(--mid-grey);font-size:.9rem;margin-bottom:24px;">Get our weekly guide to growing a thriving salon business.</p>
     <div style="display:flex;gap:8px;max-width:420px;margin:0 auto;">
       <input type="email" placeholder="your@email.com" style="flex:1;padding:12px 16px;border:1px solid var(--light-grey);border-radius:var(--radius-sm);font-size:.88rem;outline:none;">
       <button style="background:var(--plum);color:#fff;border:none;padding:12px 20px;border-radius:var(--radius-sm);font-weight:600;font-size:.88rem;cursor:pointer;">Subscribe</button>

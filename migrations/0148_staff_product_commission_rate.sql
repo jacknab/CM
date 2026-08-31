@@ -1,0 +1,2 @@
+ALTER TABLE staff
+  ADD COLUMN IF NOT EXISTS product_commission_rate NUMERIC(5, 2) NOT NULL DEFAULT 0;

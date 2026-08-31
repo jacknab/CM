@@ -63,7 +63,7 @@ require 'includes/nav.php';
             <div style="padding:28px 24px;text-align:center;color:#fff;">
               <div style="font-size:.7rem;letter-spacing:.25em;text-transform:uppercase;color:var(--gold-bright);margin-bottom:8px;">Nail Art &amp; Beauty Specialists</div>
               <div style="font-family:'Cormorant Garamond',serif;font-size:2.2rem;font-weight:600;line-height:1.1;margin-bottom:12px;">Luna Nail Studio</div>
-              <div style="font-size:.8rem;color:rgba(255,255,255,.6);margin-bottom:16px;line-height:1.6;">Award-winning nail art &amp; gel services in the heart of London.</div>
+              <div style="font-size:.8rem;color:rgba(255,255,255,.6);margin-bottom:16px;line-height:1.6;">Award-winning nail art &amp; gel services in the heart of downtown.</div>
               <div style="display:flex;gap:10px;justify-content:center;">
                 <div style="background:var(--gold-bright);color:#fff;padding:9px 20px;border-radius:50px;font-size:.78rem;font-weight:700;cursor:pointer;">Book Now</div>
                 <div style="border:1.5px solid rgba(255,255,255,.4);color:#fff;padding:9px 20px;border-radius:50px;font-size:.78rem;cursor:pointer;">Our Work</div>
@@ -278,23 +278,23 @@ require 'includes/nav.php';
     </div>
     <div class="accordion">
       <div class="accordion-item">
-        <button class="accordion-btn">Do I need any design or coding experience? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Do I need any design or coding experience? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">None whatsoever. The Certxa website builder is drag-and-drop and completely visual. You choose a template, swap in your photos, write your words, pick your colours, and your site is done. If you can use Instagram, you can build a Certxa website.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">Can I use my own domain name? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Can I use my own domain name? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">Yes — you can connect any domain you already own (from GoDaddy, Namecheap, or any other registrar) to your Certxa site. We provide step-by-step instructions and our support team will help you get set up if needed. Alternatively, use your free yourname.certxa.com subdomain and upgrade later.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">Is booking automatically included on the site? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Is booking automatically included on the site? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">Yes — this is one of Certxa's biggest advantages. Your entire booking system is embedded into your website automatically. Clients can browse services and book in real time without leaving your site, and every booking goes directly into your Certxa calendar. No third-party widgets or extra setup required.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">Can I show my portfolio and photo gallery? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Can I show my portfolio and photo gallery? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">Absolutely. Every Certxa website includes a gallery section where you can showcase your best work. You can also connect your Instagram feed to automatically display your latest posts, keeping your site fresh with zero effort.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">Is there an extra cost for the website? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Is there an extra cost for the website? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">The website builder is included in all Certxa plans at no extra cost — including hosting, SSL, and your free subdomain. If you want to connect a custom domain, you'll just pay your registrar's standard annual domain fee (typically $10–15/year). No hidden costs from us.</div>
       </div>
     </div>

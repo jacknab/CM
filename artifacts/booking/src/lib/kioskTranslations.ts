@@ -89,6 +89,9 @@ export interface KioskStrings {
   comboBullet1: string;
   comboBullet2: string;
   comboBullet3: string;
+  otherServices: string;
+  allServices: string;
+  andMore: (n: number) => string;
   backBtn: string;
 
   // Services
@@ -203,6 +206,9 @@ const en: KioskStrings = {
   comboBullet1: "Hand & Foot Care",
   comboBullet2: "Combo Services",
   comboBullet3: "Best Value",
+  otherServices: "Other Services",
+  allServices: "All Services",
+  andMore: n => `+${n} more`,
   backBtn: "← Back",
   tapToSelect: "Tap to select your service",
   noServices: "No services configured yet.",
@@ -307,6 +313,9 @@ const es: KioskStrings = {
   comboBullet1: "Cuidado de Manos y Pies",
   comboBullet2: "Servicios Combinados",
   comboBullet3: "Mejor Valor",
+  otherServices: "Otros Servicios",
+  allServices: "Todos los Servicios",
+  andMore: n => `+${n} más`,
   backBtn: "← Atrás",
   tapToSelect: "Toca para seleccionar tu servicio",
   noServices: "Sin servicios configurados aún.",
@@ -411,6 +420,9 @@ const vi: KioskStrings = {
   comboBullet1: "Chăm Sóc Tay & Chân",
   comboBullet2: "Dịch Vụ Kết Hợp",
   comboBullet3: "Tiết Kiệm Nhất",
+  otherServices: "Dịch Vụ Khác",
+  allServices: "Tất Cả Dịch Vụ",
+  andMore: n => `+${n} dịch vụ`,
   backBtn: "← Quay lại",
   tapToSelect: "Chọn dịch vụ của bạn",
   noServices: "Chưa có dịch vụ nào được cấu hình.",
@@ -515,6 +527,9 @@ const zh: KioskStrings = {
   comboBullet1: "手足护理",
   comboBullet2: "组合服务",
   comboBullet3: "超值套餐",
+  otherServices: "其他服务",
+  allServices: "所有服务",
+  andMore: n => `+${n} 项`,
   backBtn: "← 返回",
   tapToSelect: "点击选择您的服务",
   noServices: "暂无可用服务。",
@@ -619,6 +634,9 @@ const ko: KioskStrings = {
   comboBullet1: "손·발 케어",
   comboBullet2: "콤보 서비스",
   comboBullet3: "최고의 가성비",
+  otherServices: "기타 서비스",
+  allServices: "전체 서비스",
+  andMore: n => `+${n}개`,
   backBtn: "← 뒤로",
   tapToSelect: "서비스를 선택하려면 탭하세요",
   noServices: "아직 서비스가 없습니다.",

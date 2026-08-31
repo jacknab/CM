@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 
 type EntityType = "category" | "service" | "addon" | "product";
-type LangCode = "es" | "vi" | "zh" | "ko";
+type LangCode = "es" | "vi" | "zh" | "ko" | "fr";
 
 interface Translation {
   language: LangCode;
@@ -58,6 +58,7 @@ const LANGS: { code: LangCode; label: string; flag: string }[] = [
   { code: "vi", label: "Vietnamese", flag: "🇻🇳" },
   { code: "zh", label: "Chinese", flag: "🇨🇳" },
   { code: "ko", label: "Korean", flag: "🇰🇷" },
+  { code: "fr", label: "French", flag: "🇫🇷" },
 ];
 
 const TABS: { key: EntityType; label: string }[] = [

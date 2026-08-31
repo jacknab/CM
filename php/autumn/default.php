@@ -28,6 +28,17 @@ define('PAGE_SCHEMA', json_encode([
       ['@type'=>'Question','name'=>'Does Autumn work for multi-location businesses?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. Autumn can be enabled independently per location, each with its own credit balance and configuration — ideal for salon groups and franchise owners.']],
     ],
   ],
+  [
+    '@type'       => 'HowTo',
+    'name'        => 'How to set up the Autumn AI receptionist',
+    'description' => 'Enable Autumn to answer your salon\'s phone calls and book appointments, in three steps.',
+    'totalTime'   => 'PT5M',
+    'step' => [
+      ['@type'=>'HowToStep','position'=>1,'name'=>'Load your account balance','text'=>'Head to the Autumn section in your Certxa dashboard and add credit to your account. You choose how much to load.','url'=>'https://certxa.com/autumn#setup'],
+      ['@type'=>'HowToStep','position'=>2,'name'=>'Activate Autumn','text'=>'Enable Autumn with one click. She reads your services, staff, and calendar automatically — no manual setup.','url'=>'https://certxa.com/autumn#setup'],
+      ['@type'=>'HowToStep','position'=>3,'name'=>'Forward your calls','text'=>'Point your salon phone to Autumn\'s number. She starts answering immediately. Your balance covers every minute she\'s on a call.','url'=>'https://certxa.com/autumn#setup'],
+    ],
+  ],
 ]));
 require __DIR__ . '/../includes/header.php';
 require __DIR__ . '/../includes/nav.php';
@@ -1233,7 +1244,7 @@ require __DIR__ . '/../includes/nav.php';
 </section>
 
 <!-- ══ 5. HOW IT WORKS ═════════════════════════════════════════ -->
-<section class="au2-section au2-section-white">
+<section id="setup" class="au2-section au2-section-white">
   <div class="au2-container-md">
     <div class="fade-in" style="text-align:center;margin-bottom:72px;">
       <h2 class="au2-section-title">Up and running in minutes</h2>
@@ -1300,32 +1311,6 @@ require __DIR__ . '/../includes/nav.php';
       <div style="display:flex;gap:12px;flex-wrap:wrap;">
         <?php foreach (['Solo','Professional','Elite'] as $plan): ?>
         <div class="au2-plan-badge">✅ <?= $plan ?></div>
-        <?php endforeach; ?>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ══ 7. TESTIMONIAL ══════════════════════════════════════════ -->
-<section class="au2-section au2-section-cream">
-  <div class="au2-container-sm">
-    <div class="au2-testimonial fade-in">
-      <div class="au2-stars">
-        <?php for ($i=0;$i<5;$i++): ?>
-        <span style="font-size:1.2rem;">⭐</span>
-        <?php endfor; ?>
-      </div>
-      <blockquote class="au2-quote">
-        "Autumn paid for herself in the first week. We stopped missing calls, our booking rate went up 34%, and my staff finally stopped running to the phone mid-haircut."
-      </blockquote>
-      <div style="font-weight:700;color:#1c1917;font-size:.95rem;">Jessica R.</div>
-      <div style="color:#9ca3af;font-size:.83rem;margin-top:4px;">Owner, Luxe Hair Studio</div>
-      <div class="au2-quote-stats">
-        <?php foreach ([['34%','More bookings'],['Zero','Missed calls'],['10 min','Setup time']] as [$v,$l]): ?>
-        <div>
-          <div class="au2-qs-val"><?= $v ?></div>
-          <div class="au2-qs-lbl"><?= $l ?></div>
-        </div>
         <?php endforeach; ?>
       </div>
     </div>

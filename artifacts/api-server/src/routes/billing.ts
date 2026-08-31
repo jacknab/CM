@@ -1010,6 +1010,11 @@ router.get("/admin/stats", async (req: any, res) => {
 
   try {
     const mrrResult = await pool.query(`
+      WITH latest_subscriptions AS (
+        SELECT DISTINCT ON (store_id) *
+        FROM store_subscriptions
+        ORDER BY store_id, created_at DESC, id DESC
+      )
       SELECT
         COUNT(DISTINCT ss.store_id) FILTER (WHERE ss.status = 'active')    AS active_subs,
         COUNT(DISTINCT ss.store_id) FILTER (WHERE ss.status = 'trialing')  AS trialing_subs,
@@ -1017,9 +1022,11 @@ router.get("/admin/stats", async (req: any, res) => {
         COUNT(DISTINCT ss.store_id) FILTER (WHERE ss.status = 'canceled')  AS churned_subs,
         COALESCE(SUM(sp.price_monthly_cents)
           FILTER (WHERE ss.status = 'active'), 0)                          AS mrr_cents,
-        COALESCE(SUM(sp.price_yearly_cents) / 12
-          FILTER (WHERE ss.status = 'active'), 0)                          AS mrr_from_annual_cents
-      FROM store_subscriptions ss
+        COALESCE(
+          SUM(sp.price_yearly_cents) FILTER (WHERE ss.status = 'active'),
+          0
+        ) / 12                                                             AS mrr_from_annual_cents
+      FROM latest_subscriptions ss
       JOIN subscription_plans sp ON ss.plan_id = sp.id
     `);
 

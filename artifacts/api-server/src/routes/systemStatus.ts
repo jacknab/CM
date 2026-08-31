@@ -8,6 +8,9 @@ import { resolvePhpPort } from "../php-proxy";
 import dns from "dns";
 import type { Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
+import { publishCrossProcess, subscribeCrossProcess, isCrossProcessBusAvailable } from "../lib/wsBroadcastBus";
+
+const RAW_EVENT_CHANNEL = "ws:admin-status-raw";
 
 export type ServiceStatus = "ok" | "warning" | "error" | "unconfigured";
 
@@ -295,9 +298,18 @@ let rawBroadcastFn: ((data: object) => void) | null = null;
 /**
  * Push any JSON event to all connected /ws/admin-status clients.
  * Used by support routes to push incident_update events in real-time.
+ *
+ * The triggering HTTP request (e.g. an admin action in routes/support.ts) may
+ * land on a different PM2 worker than the one holding the admin's WebSocket
+ * connection, so this relays through Redis rather than only pushing to
+ * whichever local clients this process happens to know about.
  */
 export function broadcastRawEvent(data: object): void {
-  rawBroadcastFn?.(data);
+  if (isCrossProcessBusAvailable()) {
+    publishCrossProcess(RAW_EVENT_CHANNEL, data);
+  } else {
+    rawBroadcastFn?.(data);
+  }
 }
 
 /** Call once from index.ts after the HTTP server is created. */
@@ -328,6 +340,10 @@ export function setupStatusStream(httpServer: Server): void {
       }
     });
   };
+
+  subscribeCrossProcess(RAW_EVENT_CHANNEL, (data: object) => {
+    rawBroadcastFn?.(data);
+  });
 
   wss.on("connection", (ws) => {
     if (latestPayload) {

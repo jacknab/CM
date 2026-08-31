@@ -25,8 +25,13 @@ import { pool } from "../db.js";
 
 export const blogRouter = Router();
 
-// Absolute path to php/blog/ relative to the API server working directory
-const PHP_BLOG_DIR = path.resolve(process.cwd(), "../../php/blog");
+// PM2 runs the API with the repository root as its working directory. Building
+// this path via "../../" wrote recent stubs to /php/blog instead of the
+// repository's php/blog directory, so the PHP proxy could not discover them.
+const PHP_BLOG_DIR = path.resolve(
+  process.env.CERTXA_PROJECT_ROOT || process.cwd(),
+  "php/blog",
+);
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -189,7 +194,7 @@ blogRouter.post("/api/admin/blog/posts", async (req: Request, res: Response) => 
           cover_color, cover_emoji, read_time, is_featured, status,
           published_at, created_at, updated_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,
-               CASE WHEN $11='published' THEN now() ELSE NULL END,
+               CASE WHEN $11::varchar='published' THEN now() ELSE NULL END,
                now(), now())
        RETURNING *`,
       [title, finalSlug, excerpt, content, category, author_name,

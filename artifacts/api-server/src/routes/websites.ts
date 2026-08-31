@@ -905,8 +905,8 @@ router.get("/tenant/:slug/data", async (req, res): Promise<void> => {
     try {
       const r = await db.execute(sql`
          SELECT id, name, price, duration, category_id, description, image_url FROM services
-        WHERE store_id = ${storeid}
-          AND (is_active IS NULL OR is_active = true)
+         WHERE store_id = ${storeid}
+           AND is_active = true
           AND (hidden_from_public IS NULL OR hidden_from_public = false)
         ORDER BY category_id NULLS LAST, id`);
       services = r.rows as Record<string, unknown>[];

@@ -113,10 +113,11 @@ $article_schema = json_encode([
         '@type' => 'WebPage',
         '@id'   => 'https://certxa.com/blog/' . $post['slug'],
     ],
-    'author' => [
-        '@type' => 'Person',
-        'name'  => $post['author_name'] ?: 'Certxa Team',
-    ],
+    // A named byline is a real Person; the generic "Certxa Team" fallback is the
+    // Organization, not a Person (Google flags Person nodes without a real name).
+    'author' => $post['author_name']
+        ? ['@type' => 'Person', 'name' => $post['author_name']]
+        : ['@type' => 'Organization', '@id' => 'https://certxa.com/#organization', 'name' => 'Certxa'],
     'publisher' => [
         '@type' => 'Organization',
         '@id'   => 'https://certxa.com/#organization',
@@ -188,13 +189,14 @@ require __DIR__ . '/../includes/nav.php';
       <?= htmlspecialchars($post['excerpt']) ?>
     </p>
     <?php endif; ?>
+    <?php $author_display = $post['author_name'] ?: 'Certxa Team'; ?>
     <div style="display:flex;align-items:center;gap:10px;">
       <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--plum),#6d28d9);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.85rem;" aria-hidden="true">
-        <?= strtoupper(substr($post['author_name'], 0, 1)) ?>
+        <?= strtoupper(substr($author_display, 0, 1)) ?>
       </div>
       <div>
-        <div style="font-size:.82rem;font-weight:600;color:var(--charcoal);" itemprop="author"><?= htmlspecialchars($post['author_name']) ?></div>
-        <div style="font-size:.73rem;color:var(--mid-grey);">Certxa Team · <time datetime="<?= $pub_iso ?>"><?= $pub_date_human ?></time></div>
+        <div style="font-size:.82rem;font-weight:600;color:var(--charcoal);" itemprop="author"><?= htmlspecialchars($author_display) ?></div>
+        <div style="font-size:.73rem;color:var(--mid-grey);"><time datetime="<?= $pub_iso ?>"><?= $pub_date_human ?></time></div>
       </div>
     </div>
   </div>
@@ -283,7 +285,7 @@ require __DIR__ . '/../includes/nav.php';
   <div class="container" style="max-width:520px;text-align:center;">
     <span class="tag tag-plum" style="margin-bottom:16px;display:inline-block;">Newsletter</span>
     <h2 style="font-family:'Cormorant Garamond',serif;font-size:1.7rem;font-weight:600;color:var(--charcoal);margin-bottom:10px;">Salon growth tips, every week.</h2>
-    <p style="color:var(--mid-grey);font-size:.88rem;margin-bottom:22px;">Join 18,000+ beauty professionals getting our weekly insights.</p>
+    <p style="color:var(--mid-grey);font-size:.88rem;margin-bottom:22px;">Get our weekly insights on growing a salon business.</p>
     <div style="display:flex;gap:8px;max-width:400px;margin:0 auto;">
       <input type="email" placeholder="your@email.com" style="flex:1;padding:12px 16px;border:1px solid var(--light-grey);border-radius:var(--radius-sm);font-size:.88rem;outline:none;" aria-label="Email address">
       <button style="background:var(--plum);color:#fff;border:none;padding:12px 20px;border-radius:var(--radius-sm);font-weight:600;font-size:.88rem;cursor:pointer;">Subscribe</button>

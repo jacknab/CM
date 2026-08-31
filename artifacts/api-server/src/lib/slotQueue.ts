@@ -53,7 +53,9 @@ export async function enqueueSlotRebuild(
   const queue = getQueue();
   if (!queue) return;
   try {
-    const jobId = `${storeId}:${dates[0]}:${reason}`;
+    // BullMQ rejects custom job IDs containing ":" (it uses colons as the
+    // Redis key delimiter internally) — use "-" instead.
+    const jobId = `${storeId}-${dates[0]}-${reason}`;
     await queue.add("rebuild", { storeId, dates, reason }, { jobId, delay: 400 });
   } catch (err: any) {
     console.warn("[SlotQueue] Failed to enqueue:", err.message);

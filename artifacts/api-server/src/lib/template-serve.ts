@@ -104,6 +104,7 @@ var BLOCK_OPS=${opsJson};
 
 // ── Text-editor state ─────────────────────────────────────────────────────────
 var labelEl=null,inited=false,initTimer=null,captureReady=false,autoIdx=0,textJustClicked=false;
+var editBar=null,activeEditEl=null;
 var SKIP_TAGS={script:1,style:1,noscript:1,head:1,svg:1,path:1,iframe:1,code:1,pre:1,textarea:1,input:1,select:1};
 
 // ── Block-editor state ────────────────────────────────────────────────────────
@@ -111,6 +112,13 @@ var allBlocks=[],blockContainer=null,selectedBlock=null,hoveredBlock=null,blockT
 
 // ── Image-editor state ────────────────────────────────────────────────────────
 var editorMode='text',hoveredImg=null;
+
+// ── Touch detection ──────────────────────────────────────────────────────────
+// (hover: none) rather than UA-sniffing so hybrid touch-laptops keep mouse
+// behavior. Gates discovery affordances that only make sense without hover:
+// persistent (not hover-only) outlines, bigger tap targets, and the edit bar.
+var IS_TOUCH=false;
+try{ IS_TOUCH=window.matchMedia('(hover: none)').matches; }catch(e){}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TEXT EDITING HELPERS
@@ -149,6 +157,61 @@ function activateEdit(el){
   el.style.cursor='text';
   el.focus();
   try{var r=document.createRange(),s=window.getSelection();r.selectNodeContents(el);r.collapse(false);if(s){s.removeAllRanges();s.addRange(r);}}catch(ex){}
+  // Touch has no Escape key and commits on blur with no visible affordance —
+  // show an explicit Done/Cancel bar instead of relying on tap-away.
+  if(IS_TOUCH){
+    activeEditEl=el;
+    if(!editBar) editBar=createEditBar();
+    positionEditBar();
+  }
+}
+// ── Touch-only Done/Cancel bar for in-progress text edits ──────────────────
+function createEditBar(){
+  var b=document.createElement('div');
+  b.setAttribute('data-cxa-editbar','1');
+  b.style.cssText='position:fixed;z-index:2147483647;display:none;align-items:stretch;font-family:system-ui,sans-serif;pointer-events:auto;height:44px;border-radius:22px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.35);';
+  function mk(label,bg,svg,action){
+    var btn=document.createElement('button');
+    btn.style.cssText='background:'+bg+';border:none;color:#fff;cursor:pointer;padding:0 18px;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;font-family:system-ui,sans-serif;';
+    btn.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'+svg+'</svg><span>'+label+'</span>';
+    // mousedown/touchstart + preventDefault — NOT click. A click on this
+    // button would fire after the field already blurred (native focus-loss
+    // happens on pointerdown), which both hides this bar and would make the
+    // click a no-op. Firing on the pointerdown itself, before default focus
+    // handling runs, lets us call the field's own commit/cancel logic
+    // ourselves instead of racing the native blur.
+    var fire=function(e){e.preventDefault();e.stopPropagation();action();};
+    btn.addEventListener('mousedown',fire);
+    btn.addEventListener('touchstart',fire,{passive:false});
+    return btn;
+  }
+  b.appendChild(mk('Cancel','#6b7280','<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',function(){
+    if(!activeEditEl)return;
+    activeEditEl.innerText=activeEditEl.getAttribute('data-cxa-base')||'';
+    activeEditEl.blur();
+  }));
+  b.appendChild(mk('Done','#C97B2B','<polyline points="20 6 9 17 4 12"/>',function(){
+    if(!activeEditEl)return;
+    activeEditEl.blur();
+  }));
+  document.body.appendChild(b);
+  return b;
+}
+function positionEditBar(){
+  if(!editBar||!activeEditEl)return;
+  var r=activeEditEl.getBoundingClientRect();
+  var vh=(window.visualViewport&&window.visualViewport.height)||window.innerHeight;
+  var top=r.bottom+8;
+  // If the bar would land below the keyboard-shrunk visible viewport, pin it
+  // above the field instead so it's never hidden behind the keyboard.
+  if(top+44>vh) top=Math.max(4,r.top-52);
+  editBar.style.top=top+'px';
+  editBar.style.left=Math.max(4,r.left)+'px';
+  editBar.style.display='flex';
+}
+function hideEditBar(){
+  if(editBar) editBar.style.display='none';
+  activeEditEl=null;
 }
 function wire(el,field){
   if(el.getAttribute('data-cxa')==='true') return;
@@ -161,6 +224,7 @@ function wire(el,field){
   el.addEventListener('blur',function(){
     el.contentEditable='false';
     el.style.outline='';el.style.outlineOffset='';el.style.borderRadius='';el.style.cursor='pointer';
+    if(IS_TOUCH&&activeEditEl===el) hideEditBar();
     var v=(el.innerText||'').trim();
     var fid=el.getAttribute('data-cxa-id')||'';
     var isAuto=fid.indexOf('auto-')===0;
@@ -293,8 +357,10 @@ function updateTbPos(){
   if(lbl)lbl.textContent=blkLabel(selectedBlock);
   blockToolbar.style.display='flex';
   var r=selectedBlock.getBoundingClientRect();
-  // Pin the bar flush to the top-left of the block border (Microweber style)
-  blockToolbar.style.top=(r.top-1)+'px';
+  // Pin the bar flush to the top-left of the block border (Microweber style).
+  // Clamped so a block selected near the top of a scrolled iframe doesn't
+  // push the bar off-screen (matches the clamp posInsBtn() already had).
+  blockToolbar.style.top=Math.max(4,r.top-1)+'px';
   var left=Math.max(0,r.left);
   blockToolbar.style.left=left+'px';
 }
@@ -303,18 +369,23 @@ function selectBlock(el){
   deselectBlock();selectedBlock=el;
   el.setAttribute('data-cxa-sel','1');
   updateTbPos();
+  // Tapping a block (no hover on touch) must reveal Add-Layout the same way
+  // hovering does on desktop — posInsBtn() reads hoveredBlock||selectedBlock.
+  posInsBtn();
 }
 function deselectBlock(){
   if(selectedBlock){
     selectedBlock.removeAttribute('data-cxa-sel');selectedBlock=null;
   }
   if(blockToolbar)blockToolbar.style.display='none';
+  posInsBtn();
 }
 function createToolbar(){
   var t=document.createElement('div');
   t.setAttribute('data-cxa-toolbar','1');
+  var tbH=IS_TOUCH?44:26,tbPad=IS_TOUCH?14:9,tbIcon=IS_TOUCH?17:13;
   // Bar sits at the top edge of the block — no border-radius so it feels flush
-  t.style.cssText='position:fixed;z-index:2147483646;display:none;align-items:stretch;font-family:system-ui,sans-serif;pointer-events:auto;user-select:none;height:26px;box-shadow:0 2px 8px rgba(0,0,0,.25);';
+  t.style.cssText='position:fixed;z-index:2147483646;display:none;align-items:stretch;font-family:system-ui,sans-serif;pointer-events:auto;user-select:none;height:'+tbH+'px;box-shadow:0 2px 8px rgba(0,0,0,.25);';
   // Left: blue label badge
   var lbl=document.createElement('div');
   lbl.setAttribute('data-cxa-tb-lbl','1');
@@ -325,8 +396,8 @@ function createToolbar(){
   ctrl.style.cssText='display:flex;align-items:stretch;';
   function btn(title,svg,action){
     var b=document.createElement('button');b.title=title;
-    b.style.cssText='background:#1B6EF0;border:none;border-left:1px solid rgba(255,255,255,.18);color:#fff;cursor:pointer;padding:0 9px;display:flex;align-items:center;justify-content:center;transition:background .12s;';
-    b.innerHTML='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">'+svg+'</svg>';
+    b.style.cssText='background:#1B6EF0;border:none;border-left:1px solid rgba(255,255,255,.18);color:#fff;cursor:pointer;padding:0 '+tbPad+'px;display:flex;align-items:center;justify-content:center;transition:background .12s;';
+    b.innerHTML='<svg width="'+tbIcon+'" height="'+tbIcon+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">'+svg+'</svg>';
     b.addEventListener('mouseenter',function(){b.style.background='#0f55cc';});
     b.addEventListener('mouseleave',function(){b.style.background='#1B6EF0';});
     b.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();action();});
@@ -378,7 +449,8 @@ function createInsBtn(){
   if(insBtnEl)return;
   var btn=document.createElement('button');
   btn.setAttribute('data-cxa-ins','1');
-  btn.style.cssText='position:fixed;z-index:2147483644;display:none;background:#1B6EF0;color:#fff;border:none;cursor:pointer;font-size:11px;font-weight:700;padding:5px 18px;border-radius:20px;font-family:system-ui,sans-serif;letter-spacing:.06em;white-space:nowrap;box-shadow:0 2px 12px rgba(27,110,240,.6);pointer-events:auto;transform:translateX(-50%);transition:background .12s;';
+  var insPad=IS_TOUCH?'12px 22px':'5px 18px';
+  btn.style.cssText='position:fixed;z-index:2147483644;display:none;background:#1B6EF0;color:#fff;border:none;cursor:pointer;font-size:11px;font-weight:700;padding:'+insPad+';border-radius:20px;font-family:system-ui,sans-serif;letter-spacing:.06em;white-space:nowrap;box-shadow:0 2px 12px rgba(27,110,240,.6);pointer-events:auto;transform:translateX(-50%);transition:background .12s;';
   btn.textContent='+ ADD LAYOUT';
   btn.addEventListener('mouseenter',function(){btn.style.background='#0f55cc';});
   btn.addEventListener('mouseleave',function(){btn.style.background='#1B6EF0';});
@@ -450,8 +522,17 @@ function initBlockEditor(){
     for(var i=0;i<allBlocks.length;i++){if(allBlocks[i].style.display!=='none'&&(allBlocks[i]===e.target||allBlocks[i].contains(e.target))){clicked=allBlocks[i];break;}}
     if(clicked)selectBlock(clicked);else deselectBlock();
   },false);
-  window.addEventListener('scroll',function(){if(selectedBlock)updateTbPos();posInsBtn();},true);
-  window.addEventListener('resize',function(){if(selectedBlock)updateTbPos();posInsBtn();});
+  function repositionFixedUi(){if(selectedBlock)updateTbPos();posInsBtn();if(activeEditEl)positionEditBar();}
+  window.addEventListener('scroll',repositionFixedUi,true);
+  window.addEventListener('resize',repositionFixedUi);
+  // iOS Safari does not fire window 'resize' when the virtual keyboard opens
+  // (it shrinks the *visual* viewport only, via the separate visualViewport
+  // API) — without this, fixed-position UI (toolbar/insert-button/edit bar)
+  // can end up positioned correctly on paper but hidden under the keyboard.
+  if(window.visualViewport){
+    window.visualViewport.addEventListener('resize',repositionFixedUi);
+    window.visualViewport.addEventListener('scroll',repositionFixedUi);
+  }
   // Re-detect blocks after React mutates DOM (subtree:true catches re-renders inside #root)
   var blkTimer;
   new MutationObserver(function(mutations){
@@ -582,6 +663,7 @@ function init(){
   inited=true;
   // Set initial mode attribute — block controls only appear when editorMode becomes 'layout'
   document.body.setAttribute('data-cxa-mode',editorMode);
+  if(IS_TOUCH) document.body.setAttribute('data-cxa-touch','1');
   initBlockEditor();
   initImageEditor();
   try{window.parent.postMessage({type:'certxa-editor-ready',count:cnt},'*');}catch(e){}
@@ -595,7 +677,18 @@ style.textContent=[
   '[data-cxa="true"][contenteditable="true"]{min-width:4px;min-height:1em;white-space:pre-wrap;cursor:text!important;}',
   'body[data-cxa-mode="layout"] [data-cxa-block="1"]{outline:2px dashed rgba(27,110,240,0.38)!important;outline-offset:0!important;}',
   'body[data-cxa-mode="layout"] [data-cxa-block="1"][data-cxa-hover="1"]{outline:2px dashed rgba(27,110,240,0.8)!important;}',
-  'body[data-cxa-mode="layout"] [data-cxa-sel="1"]{outline:2px solid #1B6EF0!important;outline-offset:0!important;}'
+  'body[data-cxa-mode="layout"] [data-cxa-sel="1"]{outline:2px solid #1B6EF0!important;outline-offset:0!important;}',
+  // Touch: suppress double-tap-to-zoom / 300ms tap delay on editable targets only
+  // (not body — pinch-zoom-to-read stays available elsewhere for accessibility).
+  '[data-cxa="true"],[data-cxa-block="1"],img,[data-cxa-toolbar] button,[data-cxa-ins],[data-cxa-editbar] button{touch-action:manipulation;}',
+  // Touch: a long-press on unedited text would otherwise trigger the native
+  // selection/callout menu instead of our tap-to-edit handler.
+  '[data-cxa="true"]:not([contenteditable="true"]){-webkit-user-select:none;user-select:none;}',
+  '[data-cxa="true"][contenteditable="true"]{-webkit-user-select:text;user-select:text;}',
+  // Touch: there is no hover to reveal what's editable, so show a persistent
+  // (but subtler than the active/selected state) outline instead.
+  'body[data-cxa-touch="1"] [data-cxa="true"]:not([contenteditable="true"]){outline:1.5px dashed rgba(59,7,100,.4)!important;outline-offset:3px!important;}',
+  'body[data-cxa-touch="1"][data-cxa-mode="image"] img:not([data-cxa-img-sel]):not([data-cxa-toolbar]){outline:1.5px dashed rgba(27,110,240,.4)!important;outline-offset:2px!important;}'
 ].join('');
 document.head.appendChild(style);
 

@@ -614,7 +614,8 @@ async function markSeenAndDeleted(uid: number): Promise<void> {
     const mailbox = await c.getMailboxLock("INBOX");
     try {
       await c.messageFlagsAdd({ uid }, ["\\Seen", "\\Deleted"], { uid: true });
-      log(`Marked uid=${uid} as seen+deleted`);
+      // (no per-uid log — the batch summary line reports the counts; a failure
+      // still logs via logError below)
     } finally {
       try { mailbox.release(); } catch {}
     }

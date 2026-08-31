@@ -4,9 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useSupportAuth } from "@/hooks/use-support-auth";
 import { supportApi } from "@/lib/support-api";
 import {
-  Home, Users, Ticket, CreditCard, Monitor, ArrowRightLeft, BarChart2,
-  UserCog, Settings, ChevronDown, ChevronRight, LogOut, Activity,
-  ChevronsLeft, Package,
+  Home, Users, Ticket, CreditCard, Monitor, ArrowRightLeft,
+  ChevronDown, ChevronRight, LogOut, Activity,
+  ChevronsLeft,
 } from "lucide-react";
 
 type NavChild = { label: string; to: string; badge?: number; dot?: string };
@@ -34,33 +34,12 @@ const BASE_NAV: NavItem[] = [
     children: [
       { label: "Tickets",               to: "/isTeam/tickets" },
       { label: "Live Chat",             to: "/isTeam/live-chat", dot: "green" },
-      { label: "Escalations",           to: "/isTeam/escalations" },
       { label: "Incidents & Service Health", to: "/isTeam/incidents" },
     ],
   },
-  {
-    label: "Billing", icon: <CreditCard size={16} />,
-    children: [
-      { label: "Billing Investigation", to: "/isTeam/billing-investigation" },
-      { label: "Subscriptions",     to: "/isTeam/billing/subscriptions" },
-      { label: "Invoices",          to: "/isTeam/billing/invoices" },
-      { label: "Refunds & Credits", to: "/isTeam/billing/refunds" },
-    ],
-  },
-  {
-    label: "Products", icon: <Package size={16} />,
-    children: [
-      { label: "AI Receptionist", to: "/isTeam/products/ai-receptionist" },
-      { label: "Booking System",  to: "/isTeam/products/booking" },
-      { label: "Website",         to: "/isTeam/products/website" },
-      { label: "SMS & Email",     to: "/isTeam/products/sms-email" },
-    ],
-  },
+  { label: "Billing", icon: <CreditCard size={16} />, to: "/isTeam/billing-investigation" },
   { label: "Monitoring", icon: <Monitor size={16} />, to: "/isTeam/incidents" },
   { label: "Data Transfers", icon: <ArrowRightLeft size={16} />, to: "/isTeam/data-transfers" },
-  { label: "Reports",        icon: <BarChart2 size={16} />,      to: "/isTeam/reports" },
-  { label: "Staff",          icon: <UserCog size={16} />,        to: "/isTeam/staff" },
-  { label: "Settings",       icon: <Settings size={16} />,       to: "/isTeam/settings" },
 ];
 
 const DEFAULT_OPEN = new Set(["Accounts", "Support"]);

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { PaymentsDashboard } from "@/pages/manage/PaymentsDashboard";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -226,30 +227,47 @@ export default function PaymentSettings() {
 
   return (
     <AppLayout>
-      <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
+      <div className={`${status?.connected ? "max-w-4xl" : "max-w-2xl"} mx-auto px-4 py-6 space-y-4`}>
         {/* Page title */}
         <div className="mb-2">
-          <h1 className="text-2xl font-bold text-slate-800">Payment Settings</h1>
-          <p className="text-slate-500 mt-1 text-sm">Manage Stripe Connect and M2 card reader configuration</p>
+          <h1 className="text-2xl font-bold text-slate-800">Payments &amp; Payouts</h1>
+          <p className="text-slate-500 mt-1 text-sm">
+            {status?.connected
+              ? "Your salon's payments, transactions, refunds and payouts — without leaving Certxa."
+              : "Connect Stripe to accept card payments and manage payouts from here."}
+          </p>
         </div>
 
-        {/* Overview card */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
-                <CreditCard className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+        {/* ── Financial dashboard (shown once Stripe is connected) ── */}
+        {status?.connected && !isLoading && (
+          <div className="mb-2">
+            <PaymentsDashboard />
+          </div>
+        )}
+
+        {/* Onboarding blurb — only before connecting */}
+        {!status?.connected && (
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
+                  <CreditCard className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">Stripe Connect</CardTitle>
+                  <CardDescription className="text-sm mt-0.5">
+                    Connect your own Stripe account to accept card payments — Visa, Mastercard, Apple Pay,
+                    and Google Pay. Money flows directly into your bank account. Certxa never touches your client payments.
+                  </CardDescription>
+                </div>
               </div>
-              <div>
-                <CardTitle className="text-base">Stripe Connect</CardTitle>
-                <CardDescription className="text-sm mt-0.5">
-                  Connect your own Stripe account to accept card payments — Visa, Mastercard, Apple Pay,
-                  and Google Pay. Money flows directly into your bank account. Certxa never touches your client payments.
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-        </Card>
+            </CardHeader>
+          </Card>
+        )}
+
+        {status?.connected && (
+          <h2 className="pt-4 text-sm font-bold uppercase tracking-wider text-slate-500">Stripe account &amp; card reader</h2>
+        )}
 
         {/* Status card */}
         <Card>

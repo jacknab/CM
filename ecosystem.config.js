@@ -7,8 +7,16 @@ module.exports = {
     name: "certxa-api",
     cwd: "/apps/CM/artifacts/api-server",
     script: "./dist/index.mjs",
-    interpreter: "/root/.nvm/versions/node/v22.16.0/bin/node",
+    // Was pointing at a node version that no longer exists on this box
+    // (v22.16.0) — pm2 was silently falling back to whatever `node` resolved
+    // to on PATH. Pointing it at the real interpreter directly instead.
+    interpreter: "/root/.nvm/versions/node/v20.20.0/bin/node",
     interpreter_args: "--enable-source-maps",
+    instances: 2,
+    exec_mode: "cluster",
+    wait_ready: true,
+    listen_timeout: 15000,
+    kill_timeout: 5000,
     env: {
       NODE_ENV: "production",
       PORT: "9200",

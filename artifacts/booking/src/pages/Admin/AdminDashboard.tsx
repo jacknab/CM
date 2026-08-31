@@ -20,6 +20,7 @@ import StoreManager from './StoreManager';
 import { DashboardOverview } from './DashboardOverview';
 import BlogManager from './BlogManager';
 import PlatformEmailCampaigns from './PlatformEmailCampaigns';
+import AgentAccountsManager from './AgentAccountsManager';
 import { getStoreId } from '../../config.js';
 import { apiRequest } from '../../services/api.js';
 import { useAuth } from '@/hooks/use-auth';
@@ -268,6 +269,7 @@ function AdminDashboardContent({
         <Route path="/blog"                  element={<BlogManager />} />
         <Route path="/blog/*"               element={<BlogManager />} />
         <Route path="/platform-emails"      element={<PlatformEmailCampaigns />} />
+        <Route path="/agents"                element={<AgentAccountsManager />} />
       </Routes>
     </AdminLayout>
   );

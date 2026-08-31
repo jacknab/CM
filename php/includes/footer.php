@@ -20,6 +20,8 @@
           <li><a href="/autumn">AI Receptionist</a></li>
           <li><a href="/salonos#pos">POS</a></li>
           <li><a href="/launchsite">Website Builder</a></li>
+          <li><a href="/get-more-reviews">Review Monitoring &amp; Engagement</a></li>
+          <li><a href="/vietnamese-salon-software">Tiếng Việt 🇻🇳</a></li>
         </ul>
       </div>
 
@@ -30,6 +32,13 @@
           <li><a href="/about">About Us</a></li>
           <li><a href="/blog">Blog</a></li>
           <li><a href="/contact">Contact</a></li>
+        </ul>
+        <p class="footer-col-title" style="margin-top:20px;">Compare</p>
+        <ul class="footer-col-links">
+          <li><a href="/certxa-vs-glossgenius">vs GlossGenius</a></li>
+          <li><a href="/certxa-vs-vagaro">vs Vagaro</a></li>
+          <li><a href="/certxa-vs-fresha">vs Fresha</a></li>
+          <li><a href="/certxa-vs-gocheckin">vs GoCheckIn</a></li>
         </ul>
         <p class="footer-col-title" style="margin-top:20px;">Login</p>
         <ul class="footer-col-links">

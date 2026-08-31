@@ -12,9 +12,9 @@ import { useAppointmentSSE } from "@/hooks/use-appointment-sse";
 import { useStaffList, useAllStaffAvailability } from "@/hooks/use-staff";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useCalendarSettings, DEFAULT_CALENDAR_SETTINGS } from "@/hooks/use-calendar-settings";
-import { formatInTz, formatStoreDate, getTimezoneAbbr, getNowInTimezone, storeLocalToUtc, isSameLocalDay, isSameStoreDay, isOnStoreDate, addStoreDays, toLocalDateStringInTz } from "@/lib/timezone";
+import { formatInTz, formatStoreDate, getTimezoneAbbr, getNowInTimezone, storeLocalToUtc, isStoreLocalSlotInPast, isSameLocalDay, isSameStoreDay, isOnStoreDate, addStoreDays, toLocalDateStringInTz } from "@/lib/timezone";
 import { addMinutes, format } from "date-fns";
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CalendarPlus, Users, Globe, ArrowLeft, ArrowUp, X, Clock, Loader2, CreditCard, Banknote, Smartphone, DollarSign, Check, Receipt, Percent, Tag, Delete, Printer, XCircle, Settings, PersonStanding, LayoutDashboard, TrendingUp, CalendarDays, Scissors, ShoppingBag, UserCircle, Gift, ClipboardList, FileText, BarChart3, MessageSquare, Mail, Building2, MapPin, Star, ThumbsUp, ListOrdered, Search, AlertCircle, Lock, Unlock, Bell, ListFilter, MoreVertical, Plus, LayoutList, Zap, Send, HelpCircle, ChevronDown as ChevronDownIcon, Calendar as CalendarIcon, Phone, AlertTriangle, LogIn, QrCode, Layers, WifiOff } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CalendarPlus, Users, Globe, ArrowLeft, ArrowUp, X, Clock, Loader2, CreditCard, Banknote, Smartphone, DollarSign, Check, Receipt, Percent, Tag, Delete, Printer, XCircle, Settings, PersonStanding, LayoutDashboard, TrendingUp, CalendarDays, Scissors, ShoppingBag, UserCircle, Gift, ClipboardList, FileText, BarChart3, MessageSquare, Mail, Building2, MapPin, Star, ThumbsUp, ListOrdered, Search, AlertCircle, Lock, Unlock, Bell, ListFilter, MoreVertical, Plus, LayoutList, Zap, Send, HelpCircle, ChevronDown as ChevronDownIcon, Calendar as CalendarIcon, Phone, AlertTriangle, LogIn, QrCode, Layers, WifiOff, Utensils, CupSoda, Package, BadgePercent, Barcode, ScanSearch, Scale, Ticket, Wallet } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Card } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
@@ -24,6 +24,8 @@ import { AvailableTimeBanner } from "@/components/AvailableTimeBanner";
 import { useThermalPrinter } from "@/hooks/use-thermal-printer";
 import { buildCheckinTicket, buildCheckoutReceipt } from "@/lib/thermalPrinter";
 import { cn } from "@/lib/utils";
+import { getPosLayout, getMobilePosActions, resolvePosIcon, type PosButton } from "@/lib/pos";
+import { POS_BUTTON_TX, POS_GUIDED_TX, POS_MISC_TX } from "@/lib/pos/labels";
 import type { AppointmentWithDetails } from "@shared/schema";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
@@ -36,8 +38,8 @@ import { DayCloseModal } from "@/components/cash/DayCloseModal";
 import POSInterface from "@/pages/POSInterface";
 import { useLanguage } from "@/hooks/use-language";
 import { useFeatureFlags } from "@/hooks/use-features";
-import { useServiceCategories } from "@/hooks/use-addons";
-import { assignStaffColors } from "@/lib/staffColors";
+import { useServiceCategories, useAddons } from "@/hooks/use-addons";
+import { assignStaffColors, getContrastColors } from "@/lib/staffColors";
 import { CATEGORY_PALETTE } from "@/components/services/CategoryManager";
 import { usePendingSyncMap } from "@/hooks/use-pending-sync";
 import { AppointmentSyncBadge } from "@/components/AppointmentSyncBadge";
@@ -81,6 +83,18 @@ function useIsMobile() {
     return () => window.removeEventListener("resize", handler);
   }, []);
   return isMobile;
+}
+
+/** True below Tailwind's `lg` (1024px) — where the POS 3-panel keypad is hidden
+ *  and the phone/solo checkout layout takes over. */
+function useIsCompactPos() {
+  const [compact, setCompact] = useState(() => typeof window !== "undefined" && window.innerWidth < 1024);
+  useEffect(() => {
+    const handler = () => setCompact(window.innerWidth < 1024);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return compact;
 }
 const CALENDAR_COLUMN_SEPARATOR_COLOR = "#d9e2ea";
 const DEFAULT_BUSINESS_START = 9;
@@ -185,6 +199,32 @@ export default function Calendar() {
     rescheduleFailDesc:  pick({ en: "Could not move the appointment. Please try again.", vi: "Không thể chuyển lịch hẹn. Vui lòng thử lại.", es: "No se pudo mover la cita. Inténtalo de nuevo.", fr: "Impossible de déplacer le rendez-vous. Réessayez." }),
     noAppts:             pick({ en: "No appointments found",        vi: "Không tìm thấy lịch hẹn",                  es: "No se encontraron citas",               fr: "Aucun rendez-vous trouvé" }),
     noApptsDesc:         pick({ en: "This client has no appointments to look up.", vi: "Khách hàng này không có lịch hẹn nào để tra cứu.", es: "Este cliente no tiene citas para consultar.", fr: "Ce client n'a aucun rendez-vous à consulter." }),
+    // Toast messages
+    qrNotFound:          pick({ en: "QR scan — not found",             vi: "Quét QR — không tìm thấy",              es: "Escaneo QR — no encontrado",            fr: "Scan QR — introuvable" }),
+    qrNotFoundDesc:      pick({ en: "No booking matched this code.",   vi: "Không có lịch hẹn nào khớp mã này.",    es: "Ningún turno coincide con este código.", fr: "Aucune réservation ne correspond à ce code." }),
+    qrError:             pick({ en: "QR scan error",                   vi: "Lỗi quét QR",                          es: "Error de escaneo QR",                   fr: "Erreur de scan QR" }),
+    qrErrorDesc:         pick({ en: "Could not process the scan.",     vi: "Không thể xử lý mã quét.",              es: "No se pudo procesar el escaneo.",        fr: "Impossible de traiter le scan." }),
+    qrNotToday:          pick({ en: "Not a today booking",             vi: "Không phải lịch hẹn hôm nay",           es: "No es un turno de hoy",                 fr: "Réservation pas pour aujourd'hui" }),
+    qrNotTodayDesc:      (client: string, service: string, date: string) => pick({
+      en: `${client} — ${service} is scheduled for ${date}, not today.`,
+      vi: `${client} — ${service} được đặt vào ${date}, không phải hôm nay.`,
+      es: `${client} — ${service} está programado para ${date}, no hoy.`,
+      fr: `${client} — ${service} est prévu pour le ${date}, pas aujourd'hui.` }),
+    ticketsNotSaved:     pick({ en: "Some tickets didn't save",       vi: "Một số vé chưa được lưu",               es: "Algunos tickets no se guardaron",       fr: "Certains tickets n'ont pas été enregistrés" }),
+    ticketsNotSavedDesc: pick({ en: "Check the calendar and retry any that are still open.", vi: "Kiểm tra lịch và thử lại những vé vẫn còn mở.", es: "Revisa el calendario y reintenta los que sigan abiertos.", fr: "Vérifiez le calendrier et réessayez ceux encore ouverts." }),
+    couldNotMarkUnavail: pick({ en: "Could not mark unavailable",     vi: "Không thể đánh dấu bận",                es: "No se pudo marcar como no disponible",   fr: "Impossible de marquer indisponible" }),
+    couldNotMarkAvail:   pick({ en: "Could not mark available",       vi: "Không thể đánh dấu rảnh",               es: "No se pudo marcar como disponible",      fr: "Impossible de marquer disponible" }),
+    networkError:        pick({ en: "Network error",                   vi: "Lỗi mạng",                             es: "Error de red",                          fr: "Erreur réseau" }),
+    pleaseTryAgain:      pick({ en: "Please try again.",               vi: "Vui lòng thử lại.",                    es: "Inténtalo de nuevo.",                   fr: "Veuillez réessayer." }),
+    // Left toolbar (calendar-nav-drawer)
+    navCalendar:         pick({ en: "Calendar",     vi: "Lịch",             es: "Calendario",     fr: "Agenda" }),
+    navQuickLists:       pick({ en: "Quick Lists",  vi: "Danh sách nhanh",  es: "Listas rápidas", fr: "Listes rapides" }),
+    navClients:          pick({ en: "Clients",      vi: "Khách hàng",       es: "Clientes",       fr: "Clients" }),
+    navPos:              pick({ en: "POS",          vi: "Thu ngân",         es: "TPV",            fr: "Caisse" }),
+    navReports:          pick({ en: "Reports",      vi: "Báo cáo",          es: "Informes",       fr: "Rapports" }),
+    navCashDrawer:       pick({ en: "Cash Drawer",  vi: "Ngăn kéo tiền",    es: "Caja",           fr: "Tiroir-caisse" }),
+    navDayClose:         pick({ en: "Day Close",    vi: "Chốt ngày",        es: "Cierre del día", fr: "Clôture" }),
+    navInOut:            pick({ en: "In/Out",       vi: "Vào/Ra",           es: "Entrada/Salida", fr: "Arrivée/Départ" }),
   };
 
   // Query the open cash drawer session so we know whether to auto-prompt on mount
@@ -256,7 +296,19 @@ export default function Calendar() {
   const [showTimeclockSheet, setShowTimeclockSheet] = useState(false);
   const [showTurnPage, setShowTurnPage] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
-  const [calView, setCalView] = useState<"grid" | "agenda" | "resources">("grid");
+  // Persisted across navigations (and reloads) so creating a booking and
+  // returning to /calendar lands back on whichever view the staff had open —
+  // not always the default grid view.
+  const [calView, setCalView] = useState<"grid" | "agenda" | "resources">(() => {
+    try {
+      const stored = localStorage.getItem("calendarView");
+      if (stored === "grid" || stored === "agenda" || stored === "resources") return stored;
+    } catch {}
+    return "grid";
+  });
+  useEffect(() => {
+    try { localStorage.setItem("calendarView", calView); } catch {}
+  }, [calView]);
   const [draggedAppointment, setDraggedAppointment] = useState<{ id: number; staffId: number } | null>(null);
   const [dropTarget, setDropTarget] = useState<{ staffId: number; hour: number; minute: number } | null>(null);
   const navDrawerRef = useRef<HTMLElement | null>(null);
@@ -355,6 +407,13 @@ export default function Calendar() {
   const [qrFlash, setQrFlash] = useState(false);
 
   const isMobile = useIsMobile();
+
+  // The Resources view toggle only exists in the desktop header — a stored
+  // "resources" preference from a wider screen would otherwise leave a
+  // narrower/mobile session with no view selected at all.
+  useEffect(() => {
+    if (isMobile && calView === "resources") setCalView("grid");
+  }, [isMobile, calView]);
 
   // ── Offline sync state — tracks which local booking temp-IDs are pending/conflict ──
   const { syncMap, conflictMap } = usePendingSyncMap();
@@ -539,20 +598,26 @@ export default function Calendar() {
     return (businessHours as any[]).find((h: any) => h.dayOfWeek === dayOfWeek) || null;
   }, [businessHours, currentDate, timezone]);
 
-  const { BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_OPEN_MINUTE } = useMemo(() => {
+  const { BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_OPEN_MINUTE, BUSINESS_CLOSE_MINUTE } = useMemo(() => {
     if (!businessHoursForDay || businessHoursForDay.isClosed) {
-      return { BUSINESS_START_HOUR: DEFAULT_BUSINESS_START, BUSINESS_END_HOUR: DEFAULT_BUSINESS_END, BUSINESS_OPEN_MINUTE: 0 };
+      return { BUSINESS_START_HOUR: DEFAULT_BUSINESS_START, BUSINESS_END_HOUR: DEFAULT_BUSINESS_END, BUSINESS_OPEN_MINUTE: 0, BUSINESS_CLOSE_MINUTE: 0 };
     }
     const [openHourRaw, openMinRaw = "0"] = String(businessHoursForDay.openTime || "09:00").split(":");
-    const [closeHourRaw] = String(businessHoursForDay.closeTime || "17:00").split(":");
+    const [closeHourRaw, closeMinRaw = "0"] = String(businessHoursForDay.closeTime || "17:00").split(":");
     const openHour = Math.max(0, Math.min(24, Number(openHourRaw)));
     const openMin = Math.max(0, Math.min(59, Number(openMinRaw)));
     const closeHour = Math.max(0, Math.min(24, Number(closeHourRaw)));
-    return { BUSINESS_START_HOUR: openHour, BUSINESS_END_HOUR: closeHour, BUSINESS_OPEN_MINUTE: openMin };
+    const closeMin = Math.max(0, Math.min(59, Number(closeMinRaw)));
+    return { BUSINESS_START_HOUR: openHour, BUSINESS_END_HOUR: closeHour, BUSINESS_OPEN_MINUTE: openMin, BUSINESS_CLOSE_MINUTE: closeMin };
   }, [businessHoursForDay]);
 
+  // Total-minute forms — the close time keeps its minutes (a 23:50 close must not
+  // collapse to 23:00 and block the 23:00–23:50 window).
+  const BUSINESS_OPEN_TOTAL_MIN = BUSINESS_START_HOUR * 60 + BUSINESS_OPEN_MINUTE;
+  const BUSINESS_CLOSE_TOTAL_MIN = BUSINESS_END_HOUR * 60 + BUSINESS_CLOSE_MINUTE;
+
   const baseStartHour = Math.max(0, BUSINESS_START_HOUR - settings.nonWorkingHoursDisplay);
-  const baseEndHour = Math.min(24, BUSINESS_END_HOUR + settings.nonWorkingHoursDisplay);
+  const baseEndHour = Math.min(24, Math.ceil(BUSINESS_CLOSE_TOTAL_MIN / 60) + settings.nonWorkingHoursDisplay);
 
   const displayedDayAppointments = useMemo(() => {
     if (!appointments) return [];
@@ -597,33 +662,39 @@ export default function Calendar() {
   const unsettledLockDate = useMemo(() => {
     if (!posFeatureEnabled) return null;
     if (!appointments || !timezone) return null;
-    const now = getNowInTimezone(timezone);
-    const pastUnsettled = (appointments as any[]).filter((apt) => {
+    // Compare store-LOCAL calendar days. `apt.date` is a true UTC instant, so an
+    // evening appointment in a west-of-UTC timezone lands on the *next* UTC
+    // calendar day — a raw `new Date(apt.date)` vs `getNowInTimezone()` (a
+    // wall-clock Date) comparison then mis-classifies yesterday's late bookings
+    // as "today" and the lock never engages. Reduce everything to "YYYY-MM-DD"
+    // in the salon timezone and compare lexically.
+    const todayStr = toLocalDateStringInTz(new Date(), timezone);
+    let earliestStr: string | null = null;
+    for (const apt of appointments as any[]) {
       if (
         apt.status === "cancelled" ||
         apt.status === "no_show" ||
         apt.status === "no-show" ||
         apt.status === "completed" ||
         apt.status === "done"
-      ) return false;
-      if (apt.paymentStatus === "paid") return false;
-      const aptDate = new Date(apt.date);
-      // Only care about days strictly before today in the store's timezone
-      return !isSameStoreDay(aptDate, now) && aptDate < now;
-    });
-    if (pastUnsettled.length === 0) return null;
-    const earliest = pastUnsettled.reduce((min: any, apt: any) =>
-      new Date(apt.date) < new Date(min.date) ? apt : min
-    );
-    return new Date(earliest.date);
-  }, [appointments, timezone]);
+      ) continue;
+      if (apt.paymentStatus === "paid") continue;
+      const aptDayStr = toLocalDateStringInTz(apt.date, timezone);
+      if (aptDayStr >= todayStr) continue; // only days strictly before today
+      if (!earliestStr || aptDayStr < earliestStr) earliestStr = aptDayStr;
+    }
+    if (!earliestStr) return null;
+    // Return a salon wall-clock Date (UTC fields carry the local Y/M/D) so it
+    // lines up with `currentDate` / `formatStoreDate` / `isSameStoreDay`.
+    return new Date(earliestStr + "T00:00:00Z");
+  }, [appointments, timezone, posFeatureEnabled]);
 
   const isDateLocked = !!unsettledLockDate;
 
   // Pixel offset from the top of the scroll area to the business opening time.
   // Used to scroll to the open time on initial load (instead of "now") so the
   // full working day is visible right away.
-  const businessOpenScrollPixels = ((BUSINESS_START_HOUR * 60 + BUSINESS_OPEN_MINUTE) - START_HOUR * 60) * (HOUR_HEIGHT / 60);
+  const businessOpenScrollPixels = (BUSINESS_OPEN_TOTAL_MIN - START_HOUR * 60) * (HOUR_HEIGHT / 60);
 
 
   // Auto-select the staff column for staff users once auth resolves
@@ -801,7 +872,11 @@ export default function Calendar() {
 
   const getStaffColor = (staffMember: any): string => {
     if (!staffMember?.id) return "#94a3b8";
-    return staffColorMap.get(staffMember.id) ?? "#94a3b8";
+    // Prefer the staff member's own "Calendar Color" (set on their profile,
+    // TeamMembers.tsx/TeamMemberDetail.tsx's StaffColorPicker) — fall back to
+    // the deterministic auto-assigned palette only for staff who haven't
+    // picked one yet.
+    return staffMember.color || staffColorMap.get(staffMember.id) || "#94a3b8";
   };
 
   const formatHourLabel = (timeStr: string) => {
@@ -933,13 +1008,13 @@ export default function Calendar() {
       });
 
       if (!res.ok) {
-        toast({ title: "QR scan — not found", description: "No booking matched this code.", variant: "destructive" });
+        toast({ title: t.qrNotFound, description: t.qrNotFoundDesc, variant: "destructive" });
         return;
       }
 
       const data = await res.json();
       if (!data.found) {
-        toast({ title: "QR scan — not found", description: "No booking matched this code.", variant: "destructive" });
+        toast({ title: t.qrNotFound, description: t.qrNotFoundDesc, variant: "destructive" });
         return;
       }
 
@@ -955,13 +1030,13 @@ export default function Calendar() {
       } else {
         // Appointment exists but isn't on today's calendar — don't open it
         toast({
-          title: "Not a today booking",
-          description: `${data.clientName} — ${data.service} is scheduled for ${data.date}, not today.`,
+          title: t.qrNotToday,
+          description: t.qrNotTodayDesc(data.clientName, data.service, data.date),
           variant: "destructive",
         });
       }
     } catch {
-      toast({ title: "QR scan error", description: "Could not process the scan.", variant: "destructive" });
+      toast({ title: t.qrError, description: t.qrErrorDesc, variant: "destructive" });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appointments, toast]);
@@ -1038,8 +1113,7 @@ export default function Calendar() {
     // Convert the slot time using the store timezone (not the browser timezone)
     // so the past-time guard is correct even when the browser TZ differs from the store.
     const slotDateStr = `${currentDate.getUTCFullYear()}-${String(currentDate.getUTCMonth() + 1).padStart(2, "0")}-${String(currentDate.getUTCDate()).padStart(2, "0")}T${String(slotHour).padStart(2, "0")}:${String(slotMinute).padStart(2, "0")}:00`;
-    const slotStart = storeLocalToUtc(slotDateStr, timezone);
-    if (slotStart.getTime() <= storeNow.getTime()) return;
+    if (isStoreLocalSlotInPast(slotDateStr, timezone)) return;
     const availMins = getAvailableMinutesForSlot(staffId, slotHour, slotMinute);
     if (availMins <= 0) return;
     setSelectedSlot(prev =>
@@ -1047,7 +1121,7 @@ export default function Calendar() {
         ? null
         : { staffId, hour: slotHour, minute: slotMinute }
     );
-  }, [currentDate, storeNow, getAvailableMinutesForSlot]);
+  }, [currentDate, timezone, getAvailableMinutesForSlot]);
 
   const handleBookSlot = useCallback((staffId: number, slotHour: number, slotMinute: number) => {
     const availMins = getAvailableMinutesForSlot(staffId, slotHour, slotMinute);
@@ -1235,7 +1309,48 @@ export default function Calendar() {
   };
   // ── End drag-and-drop ──
 
-  const handleFinalizePayment = (apt: AppointmentWithDetails, paymentData: { paymentMethod: string; tip: number; discount: number; totalPaid: number }) => {
+  const handleFinalizePayment = (
+    apt: AppointmentWithDetails,
+    paymentData: { paymentMethod: string; tip: number; discount: number; totalPaid: number; groupTickets?: { appointmentId: number; tip: number; discount: number; totalPaid: number; paymentMethod: string }[]; redemption?: { rewardId: number; customerId: number } },
+  ) => {
+    const close = () => { setSelectedAppointment(null); setShowCheckout(false); };
+
+    // Spend the customer's loyalty points on the redeemed reward (the $ value is
+    // already baked into the ticket discount). Best-effort — a points shortfall
+    // shouldn't block the sale from closing.
+    if (paymentData.redemption?.rewardId && paymentData.redemption.customerId) {
+      fetch("/api/loyalty/redeem", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rewardId: paymentData.redemption.rewardId,
+          customerId: paymentData.redemption.customerId,
+          appointmentId: apt.id,
+        }),
+      })
+        .then(() => queryClient.invalidateQueries({ queryKey: ["/api/customers"] }))
+        .catch(() => {});
+    }
+
+    if (paymentData.groupTickets && paymentData.groupTickets.length > 0) {
+      // Group Pay — complete & pay each linked ticket individually with its share.
+      Promise.all(
+        paymentData.groupTickets.map((g) =>
+          updateAppointment.mutateAsync({
+            id: g.appointmentId,
+            status: "completed",
+            paymentMethod: g.paymentMethod,
+            tipAmount: String(g.tip),
+            discountAmount: String(g.discount),
+            totalPaid: String(g.totalPaid),
+          } as any),
+        ),
+      ).then(close).catch(() => {
+        toast({ title: t.ticketsNotSaved, description: t.ticketsNotSavedDesc, variant: "destructive" });
+      });
+      return;
+    }
+
     updateAppointment.mutate(
       {
         id: apt.id,
@@ -1245,29 +1360,24 @@ export default function Calendar() {
         discountAmount: String(paymentData.discount),
         totalPaid: String(paymentData.totalPaid),
       } as any,
-      {
-        onSuccess: () => {
-          setSelectedAppointment(null);
-          setShowCheckout(false);
-        },
-      }
+      { onSuccess: close },
     );
   };
 
   if (authLoading) {
     return (
-      <div className="h-screen w-full flex items-center justify-center bg-background">
+      <div className="dark cx-cal text-foreground h-app w-full flex items-center justify-center bg-background">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
   }
 
   return (
-    <div className="h-screen w-full overflow-hidden flex flex-col bg-background">
+    <div className="dark cx-cal text-foreground h-app w-full overflow-hidden flex flex-col bg-background">
 
       {/* ── Desktop header ── */}
       {!isMobile && (
-      <div className="flex items-center h-[56px] px-4 border-b bg-white gap-0" data-testid="calendar-header">
+      <div className="flex items-center h-[56px] px-4 border-b bg-white gap-0 flex-shrink-0" data-testid="calendar-header">
 
         {/* LEFT: View toggle + All Staff dropdown */}
         {/* View toggle — desktop only, moved to far left */}
@@ -1372,8 +1482,9 @@ export default function Calendar() {
             <ChevronRight className="w-4 h-4" />
           </button>
 
-          {/* Week day chips — inline after date nav; tapping only moves highlight, not week anchor */}
-          <div className="flex items-center gap-0.5 ml-3">
+          {/* Week day chips — inline after date nav; tapping only moves highlight, not week anchor.
+              Hidden below ~1180px (10" tablets) where the row would push header controls off-screen. */}
+          <div className="hidden min-[1180px]:flex items-center gap-0.5 ml-3">
             {weekDayLabels.map((wd) => {
               const isSelected = isSameStoreDay(wd.date, currentDate);
               const chipLocked = isDateLocked && !isSelected;
@@ -1424,7 +1535,7 @@ export default function Calendar() {
             )}
           >
             <QrCode className="w-3 h-3" />
-            <span className="hidden sm:inline">{qrFlash ? "Scanned!" : "Scan"}</span>
+            <span className="hidden lg:inline">{qrFlash ? "Scanned!" : "Scan"}</span>
           </div>
 
           {/* Thermal printer connect button */}
@@ -1450,7 +1561,7 @@ export default function Calendar() {
               )}
             >
               <Printer className="w-3 h-3" />
-              <span className="hidden sm:inline">
+              <span className="hidden lg:inline">
                 {thermalPrinter.isConnected
                   ? (thermalPrinter.deviceName?.split(" ")[0] ?? "Printer")
                   : thermalPrinter.status === "connecting"
@@ -1468,7 +1579,7 @@ export default function Calendar() {
               aria-label="New appointment"
               className="flex items-center gap-2 hover:opacity-75 active:scale-95 transition-all duration-100"
             >
-              <div className="text-right leading-none">
+              <div className="hidden min-[1100px]:block text-right leading-none">
                 <div className="text-[16px] font-black text-teal-500 tracking-tight">Certxa</div>
                 <div className="text-[10px] font-semibold text-slate-400 tracking-wide">SalonOS</div>
               </div>
@@ -1573,6 +1684,21 @@ export default function Calendar() {
           <div className="w-10 h-10 rounded-xl bg-teal-500 flex items-center justify-center text-white font-black text-sm mb-3 flex-shrink-0">
             CX
           </div>
+          {(() => {
+            const navLabel = (item: SidebarItem) => {
+              const key = item.kind === "action" ? item.action : item.to;
+              switch (key) {
+                case "/calendar":       return t.navCalendar;
+                case "quick-checkout":  return t.navQuickLists;
+                case "client-lookup":   return t.navClients;
+                case "open-register":   return t.navPos;
+                case "/reports":        return t.navReports;
+                case "cash-drawer":     return t.navCashDrawer;
+                case "day-close":       return t.navDayClose;
+                default:                return item.label;
+              }
+            };
+            return (<>
           {calendarSidebarItems.filter((item) => {
             if (item.kind === "action" && item.action === "cash-drawer") return false;
             if (!posFeatureEnabled && item.kind === "action" && (item.action === "open-register" || item.action === "day-close")) return false;
@@ -1607,7 +1733,7 @@ export default function Calendar() {
                   className={cn(baseClasses, "text-slate-400 hover:text-teal-600 hover:bg-teal-50 hover:border-teal-100")}
                 >
                   <item.icon className="h-5 w-5" />
-                  <span className="text-[10px] font-medium leading-tight text-center">{item.label}</span>
+                  <span className="text-[10px] font-medium leading-tight text-center">{navLabel(item)}</span>
                 </button>
               );
             }
@@ -1624,10 +1750,12 @@ export default function Calendar() {
                 )}
               >
                 <item.icon className="h-5 w-5" />
-                <span className="text-[10px] font-medium leading-tight text-center">{item.label}</span>
+                <span className="text-[10px] font-medium leading-tight text-center">{navLabel(item)}</span>
               </Link>
             );
           })}
+            </>);
+          })()}
 
           {/* Timeclock In/Out button — only shown when Timeclock feature is enabled */}
           {timeclockEnabled && (
@@ -1638,7 +1766,7 @@ export default function Calendar() {
               data-testid="button-timeclock-inout"
             >
               <Clock className="h-5 w-5" />
-              <span className="text-[10px] font-medium leading-tight text-center">In/Out</span>
+              <span className="text-[10px] font-medium leading-tight text-center">{t.navInOut}</span>
             </button>
           )}
         </nav>
@@ -1823,8 +1951,8 @@ export default function Calendar() {
                 tToday={t.today}
                 tAllStaff={t.allStaff}
                 allStaffAvailability={allStaffAvailability ?? []}
-                businessStartMin={BUSINESS_START_HOUR * 60 + BUSINESS_OPEN_MINUTE}
-                businessEndMin={BUSINESS_END_HOUR * 60}
+                businessStartMin={BUSINESS_OPEN_TOTAL_MIN}
+                businessEndMin={BUSINESS_CLOSE_TOTAL_MIN}
                 businessIsClosed={!!(businessHoursForDay?.isClosed)}
               />
             ) : (
@@ -1840,14 +1968,14 @@ export default function Calendar() {
                   <div className="w-[90px] flex-shrink-0 flex px-1">
                     <span
                       className="flex-1 inline-flex items-center justify-center rounded-md py-1 text-xs font-bold text-white shadow-[0_2px_8px_rgba(232,24,92,0.4)]"
-                      style={{ backgroundColor: "#e8185c" }}
+                      style={{ backgroundColor: "#2dd4bf" }}
                       data-testid="current-time-label"
                     >
                       {timeLineLabel}
                     </span>
                   </div>
                   {/* Line anchored to pill's right edge */}
-                  <div className="flex-1 h-[2px]" style={{ backgroundColor: "#e8185c" }} />
+                  <div className="flex-1 h-[2px]" style={{ backgroundColor: "#2dd4bf" }} />
                 </div>
               )}
               <div className="w-[90px] flex-shrink-0 bg-white z-30 sticky left-0">
@@ -1870,7 +1998,7 @@ export default function Calendar() {
                           className="absolute left-0 right-0 flex items-center justify-end pr-2.5 -translate-y-1/2"
                           style={{ top: `${topPx}px` }}
                         >
-                          <span className="text-[15px] font-extrabold text-indigo-600 leading-none tabular-nums">
+                          <span className="text-[13px] font-bold text-indigo-600 leading-none tabular-nums">
                             {displayH} {ampmLabel}
                           </span>
                         </div>
@@ -1892,7 +2020,7 @@ export default function Calendar() {
                 </div>
               </div>
 
-              <div ref={staffGridRef} className="flex flex-1 relative" style={{ backgroundColor: "#f0fdfa" }}>
+              <div ref={staffGridRef} className="flex flex-1 relative" style={{ backgroundColor: "hsl(var(--background))" }}>
 
                 {filteredStaff.length === 0 ? (
                   <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm py-20">
@@ -2017,7 +2145,7 @@ export default function Calendar() {
                                             setStaffAvailOverride((prev) => ({ ...prev, [member.id]: false }));
                                           } else {
                                             const err = await res.json().catch(() => ({}));
-                                            toast({ title: "Could not mark unavailable", description: (err as any).error || "Please try again.", variant: "destructive" });
+                                            toast({ title: t.couldNotMarkUnavail, description: (err as any).error || t.pleaseTryAgain, variant: "destructive" });
                                           }
                                         } else {
                                           const res = await fetch("/api/timeclock/clock-in", {
@@ -2031,11 +2159,11 @@ export default function Calendar() {
                                             setStaffAvailOverride((prev) => ({ ...prev, [member.id]: true }));
                                           } else {
                                             const err = await res.json().catch(() => ({}));
-                                            toast({ title: "Could not mark available", description: (err as any).error || "Please try again.", variant: "destructive" });
+                                            toast({ title: t.couldNotMarkAvail, description: (err as any).error || t.pleaseTryAgain, variant: "destructive" });
                                           }
                                         }
                                       } catch {
-                                        toast({ title: "Network error", description: "Please try again.", variant: "destructive" });
+                                        toast({ title: t.networkError, description: t.pleaseTryAgain, variant: "destructive" });
                                       } finally {
                                         setStaffAvailLoading((prev) => ({ ...prev, [member.id]: false }));
                                       }
@@ -2075,8 +2203,8 @@ export default function Calendar() {
                           className="relative bg-white border-l last:border-r"
                           style={{
                             height: `${TOTAL_HOURS * HOUR_HEIGHT}px`,
-                            borderLeftColor: "#e2e8f0",
-                            borderRightColor: "#e2e8f0",
+                            borderLeftColor: "var(--cal-grid-line)",
+                            borderRightColor: "var(--cal-grid-line)",
                           }}
                         >
                           {timeSlots.map((slot) => {
@@ -2103,20 +2231,20 @@ export default function Calendar() {
                               ? Number(_staffRule.endTime.split(":")[0]) * 60 + Number(_staffRule.endTime.split(":")[1] || 0)
                               : null;
                             const isNonWorking = !!(businessHoursForDay?.isClosed)
-                              || slotTotalMin < (BUSINESS_START_HOUR * 60 + BUSINESS_OPEN_MINUTE)
-                              || slotTotalMin >= (BUSINESS_END_HOUR * 60)
+                              || slotTotalMin < BUSINESS_OPEN_TOTAL_MIN
+                              || slotTotalMin >= BUSINESS_CLOSE_TOTAL_MIN
                               || (_staffStartMin !== null && _staffEndMin !== null
                                   && (slotTotalMin < _staffStartMin || slotTotalMin >= _staffEndMin));
                             // Past-slot guard — same wall-clock approach as handleSlotClick
                             const _slotDateStr = `${currentDate.getUTCFullYear()}-${String(currentDate.getUTCMonth() + 1).padStart(2, "0")}-${String(currentDate.getUTCDate()).padStart(2, "0")}T${String(slot.hour).padStart(2, "0")}:${String(slot.minute).padStart(2, "0")}:00`;
-                            const _slotUTC = storeLocalToUtc(_slotDateStr, timezone);
-                            const isPastSlot = _slotUTC.getTime() <= storeNow.getTime();
+                            const isPastSlot = isStoreLocalSlotInPast(_slotDateStr, timezone);
                             const isUnbookable = isNonWorking || isPastSlot;
                             return (
                               <div
                                 key={`${slot.hour}-${slot.minute}`}
                                 className={cn(
-                                  "absolute left-0 right-0 border-b transition-colors border-slate-100",
+                                  "absolute left-0 right-0 border-b transition-colors",
+                                  slot.minute === 0 ? "border-slate-200" : "border-slate-100 border-dashed",
                                   isUnbookable
                                     ? "cursor-default"
                                     : "cursor-pointer",
@@ -2133,8 +2261,12 @@ export default function Calendar() {
                                 style={{
                                   top: `${topPx}px`,
                                   height: `${slotHeight}px`,
-                                  backgroundColor: isUnbookable ? '#f1f5f9' : undefined,
-                                  backgroundImage: isUnbookable ? 'repeating-linear-gradient(45deg,transparent,transparent 6px,rgba(148,163,184,0.18) 6px,rgba(148,163,184,0.18) 12px)' : undefined,
+                                  // Dotted tint only for non-working time (outside business hours or
+                                  // staff availability). Past slots stay un-marked but remain
+                                  // unbookable via the onClick guard + handleSlotClick's own check.
+                                  backgroundColor: isNonWorking ? 'var(--cal-nonworking)' : undefined,
+                                  backgroundImage: isNonWorking ? 'radial-gradient(rgba(148,163,184,0.32) 1px, transparent 1.3px)' : undefined,
+                                  backgroundSize: isNonWorking ? '9px 9px' : undefined,
                                 }}
                                 onClick={() => !isUnbookable && handleSlotClick(member.id, slot.hour, slot.minute)}
                                 onDragOver={(e) => handleSlotDragOver(e, member.id, slot.hour, slot.minute)}
@@ -2217,29 +2349,21 @@ export default function Calendar() {
                             const catColor = apt.service?.categoryId
                               ? categoryColorMap.get(apt.service.categoryId)
                               : undefined;
-                            const defaultBg     = catColor?.bg     ?? "#fef9c3";
-                            const defaultBorder = catColor?.border  ?? "#fde047";
 
-                            // Pastel background palette — status overrides always win;
-                            // category colour applies for any neutral (pending/confirmed) state.
-                            const pastelBg =
-                              isCancelled ? "#fde8ef"
-                              : isNoShow ? "#fee2e2"
-                              : apt.status === "completed" ? "#f1f5f9"
-                              : apt.status === "started" ? "#dcfce7"
-                              : apt.status === "late" ? "#fef9c3"
-                              : defaultBg;
+                            // Dark calendar: a solid accent colour per status/category,
+                            // rendered as a translucent fill + solid left/border accent.
+                            const cardAccent =
+                              isCancelled ? "#f472b6"
+                              : isNoShow ? "#fb7185"
+                              : apt.status === "completed" ? "#94a3b8"
+                              : apt.status === "started" ? "#34d399"
+                              : apt.status === "late" ? "#fbbf24"
+                              : (catColor?.border ?? "#a78bfa");
 
-                            const pastelBorder =
-                              isCancelled ? "#f9a8d4"
-                              : isNoShow ? "#fca5a5"
-                              : apt.status === "completed" ? "#cbd5e1"
-                              : apt.status === "started" ? "#86efac"
-                              : apt.status === "late" ? "#fde047"
-                              : defaultBorder;
-
-                            const effectiveBg = (isAptOverdue && !isCancelled && !isNoShow) ? "#fef2f2" : pastelBg;
-                            const effectiveBorder = (isAptOverdue && !isCancelled && !isNoShow) ? "#fca5a5" : pastelBorder;
+                            const effectiveBg = (isAptOverdue && !isCancelled && !isNoShow)
+                              ? "rgba(239,68,68,0.14)"
+                              : `${cardAccent}22`;
+                            const effectiveBorder = (isAptOverdue && !isCancelled && !isNoShow) ? "#ef4444" : cardAccent;
 
                             return (
                               <div
@@ -2301,7 +2425,7 @@ export default function Calendar() {
                                 <div className="px-2 py-1.5 overflow-hidden flex flex-col min-h-0 gap-0.5 relative z-[2]">
                                   {/* Row 1: time range + status badge (matches mobile WeeklyAgendaView) */}
                                   <div className="flex items-start justify-between gap-1">
-                                    <span className="text-[10px] font-medium text-gray-600 leading-tight">{startTime} – {endTime}</span>
+                                    <span className="text-[11px] font-semibold leading-tight" style={{ color: cardAccent }}>{startTime} – {endTime}</span>
                                     <div className="flex items-center gap-1 flex-shrink-0">
                                       {apt.clientRequestedStaff && (
                                         <span className="text-[8px] font-bold text-amber-500 leading-none uppercase tracking-tight">REQ</span>
@@ -2351,12 +2475,12 @@ export default function Calendar() {
                                   </div>
 
                                   {/* Client name — prominent */}
-                                  <div className="text-[11px] font-bold text-gray-900 truncate leading-tight">
+                                  <div className="text-[11px] font-medium text-gray-500 truncate leading-tight">
                                     {(apt as any).customer?.fullName || apt.customer?.name || apt.customerName || apt.clientName || t.walkIn}
                                   </div>
 
                                   {/* Service name */}
-                                  <div className="text-[10px] font-medium text-gray-700 truncate leading-tight">
+                                  <div className="text-[12.5px] font-semibold text-gray-900 truncate leading-tight">
                                     {apt.service?.name || t.service}
                                   </div>
 
@@ -2433,11 +2557,11 @@ export default function Calendar() {
                   style={{ top: `${timeLinePosition + 88}px` }}
                 >
                   <div className="w-[90px] flex-shrink-0 flex px-1">
-                    <span className="flex-1 inline-flex items-center justify-center rounded-md py-1 text-xs font-bold text-white shadow-[0_2px_8px_rgba(232,24,92,0.4)]" style={{ backgroundColor: "#e8185c" }}>
+                    <span className="flex-1 inline-flex items-center justify-center rounded-md py-1 text-xs font-bold text-white shadow-[0_2px_8px_rgba(232,24,92,0.4)]" style={{ backgroundColor: "#2dd4bf" }}>
                       {timeLineLabel}
                     </span>
                   </div>
-                  <div className="flex-1 h-[2px]" style={{ backgroundColor: "#e8185c" }} />
+                  <div className="flex-1 h-[2px]" style={{ backgroundColor: "#2dd4bf" }} />
                 </div>
               )}
               {/* Time labels */}
@@ -2457,7 +2581,7 @@ export default function Calendar() {
                     if (isHour) {
                       return (
                         <div key={`rlbl-${h}`} className="absolute left-0 right-0 flex items-center justify-end pr-2.5 -translate-y-1/2" style={{ top: `${topPx}px` }}>
-                          <span className="text-[15px] font-extrabold text-indigo-600 leading-none tabular-nums">{displayH} {ampmLabel}</span>
+                          <span className="text-[13px] font-bold text-indigo-600 leading-none tabular-nums">{displayH} {ampmLabel}</span>
                         </div>
                       );
                     }
@@ -2470,7 +2594,7 @@ export default function Calendar() {
                 </div>
               </div>
               {/* Resource columns */}
-              <div className="flex flex-1 relative" style={{ backgroundColor: "#f0fdfa" }}>
+              <div className="flex flex-1 relative" style={{ backgroundColor: "hsl(var(--background))" }}>
                 {activeResources.length === 0 ? (
                   <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground text-sm py-20 gap-3">
                     <Layers className="w-8 h-8 text-slate-300" />
@@ -2492,18 +2616,17 @@ export default function Calendar() {
                           <span className="text-[12px] font-semibold truncate max-w-full leading-tight">{resource.name}</span>
                           <span className="text-[10px] text-slate-400 leading-tight">{resTypeLabel}</span>
                         </div>
-                        <div className="relative bg-white border-l last:border-r" style={{ height: `${TOTAL_HOURS * HOUR_HEIGHT}px`, borderLeftColor: "#e2e8f0", borderRightColor: "#e2e8f0" }}>
+                        <div className="relative bg-white border-l last:border-r" style={{ height: `${TOTAL_HOURS * HOUR_HEIGHT}px`, borderLeftColor: "var(--cal-grid-line)", borderRightColor: "var(--cal-grid-line)" }}>
                           {resourceTimeSlots.map((slot) => {
                             const topPx = ((slot.hour - START_HOUR) + slot.minute / 60) * HOUR_HEIGHT;
                             const slotHeight = (15 / 60) * HOUR_HEIGHT;
                             const dateStr = `${currentDate.getUTCFullYear()}-${String(currentDate.getUTCMonth() + 1).padStart(2, "0")}-${String(currentDate.getUTCDate()).padStart(2, "0")}`;
                             const timeStr = `${String(slot.hour).padStart(2, "0")}:${String(slot.minute).padStart(2, "0")}`;
-                            const slotUTC = storeLocalToUtc(`${dateStr}T${timeStr}:00`, timezone);
-                            const isPast = slotUTC.getTime() <= storeNow.getTime();
+                            const isPast = isStoreLocalSlotInPast(`${dateStr}T${timeStr}:00`, timezone);
                             const resSlotTotalMin = slot.hour * 60 + slot.minute;
                             const isResNonWorking = !!(businessHoursForDay?.isClosed)
-                              || resSlotTotalMin < (BUSINESS_START_HOUR * 60 + BUSINESS_OPEN_MINUTE)
-                              || resSlotTotalMin >= (BUSINESS_END_HOUR * 60);
+                              || resSlotTotalMin < BUSINESS_OPEN_TOTAL_MIN
+                              || resSlotTotalMin >= BUSINESS_CLOSE_TOTAL_MIN;
                             return (
                               <div
                                 key={`${slot.hour}-${slot.minute}`}
@@ -2514,8 +2637,9 @@ export default function Calendar() {
                                 style={{
                                   top: `${topPx}px`,
                                   height: `${slotHeight}px`,
-                                  backgroundColor: isResNonWorking ? '#f1f5f9' : undefined,
-                                  backgroundImage: isResNonWorking ? 'repeating-linear-gradient(45deg,transparent,transparent 6px,rgba(148,163,184,0.18) 6px,rgba(148,163,184,0.18) 12px)' : undefined,
+                                  backgroundColor: isResNonWorking ? 'var(--cal-nonworking)' : undefined,
+                                  backgroundImage: isResNonWorking ? 'radial-gradient(rgba(148,163,184,0.32) 1px, transparent 1.3px)' : undefined,
+                                  backgroundSize: isResNonWorking ? '9px 9px' : undefined,
                                 }}
                                 onClick={() => {
                                   if (isPast) return;
@@ -2531,12 +2655,18 @@ export default function Calendar() {
                             const isSelected = selectedAppointment?.id === apt.id;
                             const isCancelled = apt.status === "cancelled";
                             const isNoShow = apt.status === "no_show";
-                            const catColor = apt.service?.categoryId ? categoryColorMap.get(apt.service.categoryId) : undefined;
-                            const defaultBg = catColor?.bg ?? "#fef9c3";
-                            const defaultBorder = catColor?.border ?? "#fde047";
-                            const pastelBg = isCancelled ? "#fde8ef" : isNoShow ? "#fee2e2" : apt.status === "completed" ? "#f1f5f9" : apt.status === "started" ? "#dcfce7" : defaultBg;
-                            const pastelBorder = isCancelled ? "#f9a8d4" : isNoShow ? "#fca5a5" : apt.status === "completed" ? "#cbd5e1" : apt.status === "started" ? "#86efac" : defaultBorder;
                             const assignedStaff = staffList?.find((s: any) => s.id === apt.staffId);
+                            const staffColor = assignedStaff ? getStaffColor(assignedStaff) : "#94a3b8";
+                            // Status overrides always win (cancelled/no-show/done/in-progress
+                            // keep their usual pastel tints so those states stay recognizable);
+                            // any other appointment is colored by the assigned staff member's
+                            // own Calendar Color instead of the service category.
+                            const isNeutral = !isCancelled && !isNoShow && apt.status !== "completed" && apt.status !== "started";
+                            // Dark calendar: translucent fill + solid accent (see staff view above).
+                            const resAccent = isCancelled ? "#f472b6" : isNoShow ? "#fb7185" : apt.status === "completed" ? "#94a3b8" : apt.status === "started" ? "#34d399" : staffColor;
+                            const pastelBg = `${resAccent}22`;
+                            const pastelBorder = resAccent;
+                            const neutralContrast = isNeutral ? { text: "#f5f5f7", textMuted: "#9a9aa0" } : null;
                             return (
                               <div
                                 key={apt.id}
@@ -2549,13 +2679,25 @@ export default function Calendar() {
                                 data-testid={`resource-appt-block-${apt.id}`}
                               >
                                 <div className="px-2 py-1.5 overflow-hidden flex flex-col min-h-0 gap-0.5">
-                                  <span className="text-[10px] font-medium text-gray-600 leading-tight">{startTime} – {endTime}</span>
-                                  <div className="text-[11px] font-bold text-gray-900 truncate leading-tight">
+                                  <span
+                                    className={cn("text-[10px] font-medium leading-tight", !isNeutral && "text-gray-600")}
+                                    style={neutralContrast ? { color: neutralContrast.textMuted } : undefined}
+                                  >{startTime} – {endTime}</span>
+                                  <div
+                                    className={cn("text-[11px] font-bold truncate leading-tight", !isNeutral && "text-gray-900")}
+                                    style={neutralContrast ? { color: neutralContrast.text } : undefined}
+                                  >
                                     {(apt as any).customer?.fullName || apt.customer?.name || apt.customerName || apt.clientName || t.walkIn}
                                   </div>
-                                  <div className="text-[10px] font-medium text-gray-700 truncate leading-tight">{apt.service?.name || t.service}</div>
+                                  <div
+                                    className={cn("text-[10px] font-medium truncate leading-tight", !isNeutral && "text-gray-700")}
+                                    style={neutralContrast ? { color: neutralContrast.text } : undefined}
+                                  >{apt.service?.name || t.service}</div>
                                   {assignedStaff && (
-                                    <div className="text-[9px] text-slate-400 truncate leading-tight">👤 {assignedStaff.name}</div>
+                                    <div
+                                      className={cn("text-[9px] truncate leading-tight", !isNeutral && "text-slate-400")}
+                                      style={neutralContrast ? { color: neutralContrast.textMuted } : undefined}
+                                    >👤 {assignedStaff.name}</div>
                                   )}
                                 </div>
                               </div>
@@ -2590,6 +2732,7 @@ export default function Calendar() {
               currentDate={currentDate}
               turnEligibility={turnEligibility}
               onOpenTurnPage={() => setShowTurnPage(true)}
+              getStaffColor={getStaffColor}
             />
           </div>
         )}
@@ -2597,7 +2740,7 @@ export default function Calendar() {
         <Sheet open={quickCheckoutOpen} onOpenChange={setQuickCheckoutOpen}>
           <SheetContent
             side="left"
-            className="w-[340px] sm:w-[360px] p-0 flex flex-col gap-0"
+            className="dark cx-cal w-[340px] sm:w-[360px] p-0 flex flex-col gap-0 text-foreground"
           >
             {listView === "menu" ? (
               <>
@@ -3116,9 +3259,17 @@ export default function Calendar() {
           <CheckoutPOSPanel
             appointment={selectedAppointment}
             timezone={timezone}
+            siblingAppointments={(appointments as AppointmentWithDetails[]) || []}
             onClose={() => { setShowCheckout(false); }}
             onFinalize={(paymentData) => handleFinalizePayment(selectedAppointment, paymentData)}
             isUpdating={updateAppointment.isPending}
+            onCustomerLinked={(clientId, name, loyaltyPoints) => {
+              setSelectedAppointment(prev => (prev ? ({
+                ...prev,
+                customerId: clientId,
+                customer: { ...((prev as any).customer ?? {}), id: clientId, name, fullName: name, loyaltyPoints },
+              } as any) : prev));
+            }}
           />
         )}
 
@@ -3216,6 +3367,7 @@ function CalendarQueuePanel({
   currentDate,
   turnEligibility,
   onOpenTurnPage,
+  getStaffColor,
 }: {
   staffList: any[];
   appointments?: any[];
@@ -3223,6 +3375,7 @@ function CalendarQueuePanel({
   currentDate?: Date;
   turnEligibility?: { eligibleTechnicians: TurnTechnician[]; technicians: TurnTechnician[] };
   onOpenTurnPage?: () => void;
+  getStaffColor?: (member: any) => string;
 }) {
   const { pick } = useLanguage();
   const tz = timezone ?? "UTC";
@@ -3235,7 +3388,7 @@ function CalendarQueuePanel({
     const retaining   = pick({ en: "Busy • Retaining spot", vi: "Đang bận • Giữ vị trí", es: "Ocupado • Reteniendo turno", fr: "Occupé • Conserve sa place" });
     const onBreak     = pick({ en: "On Break",           vi: "Đang nghỉ",           es: "En descanso",     fr: "En pause" });
 
-    // For nail salons (turnEligibility present) only show clocked-in staff
+    // For nail salons (turnEligibility present) only show clocked-in staff.
     const clockedInIds = turnEligibility?.technicians
       ? new Set(turnEligibility.technicians.filter((t: TurnTechnician) => t.clockedIn).map((t: TurnTechnician) => t.id))
       : null;
@@ -3354,7 +3507,7 @@ function CalendarQueuePanel({
           type="button"
           onClick={onOpenTurnPage}
           data-testid="button-open-turn-page"
-          className="w-full h-full rounded-none bg-slate-800 text-white text-[10px] font-extrabold uppercase tracking-widest hover:bg-slate-700 active:opacity-90 transition-colors"
+          className="w-full h-full rounded-none bg-[#1b1b1f] text-slate-100 text-[10px] font-extrabold uppercase tracking-widest hover:bg-[#26262b] active:opacity-90 transition-colors"
         >
           {pick({ en: "TURN QUEUE", vi: "Hàng Chờ", es: "TURNO", fr: "FILE D'ATTENTE" })}
         </button>
@@ -3368,47 +3521,64 @@ function CalendarQueuePanel({
           </p>
         ) : (
           <>
-            {availableRows.map(({ member, statusLabel, position }) => (
-              <div
-                key={member.id}
-                className={cn(
-                  "flex flex-col items-center gap-1 px-2 py-2.5",
-                  position === 1 ? "bg-emerald-50" : "bg-white"
-                )}
-              >
-                <div className={cn(
-                  "w-6 h-6 flex items-center justify-center rounded-full text-[11px] font-extrabold shrink-0",
-                  position === 1 ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-700"
-                )}>
-                  {position}
+            {availableRows.map(({ member, statusLabel, position }) => {
+              const staffColor = getStaffColor ? getStaffColor(member) : "#94a3b8";
+              return (
+                <div
+                  key={member.id}
+                  className={cn(
+                    "flex flex-col items-center gap-1 px-2 py-2.5",
+                    position === 1 ? "bg-emerald-500/10" : ""
+                  )}
+                >
+                  <div className="relative">
+                    <Avatar className="w-8 h-8 shrink-0" style={{ boxShadow: `0 0 0 2px ${staffColor}` }}>
+                      <AvatarImage src={member.avatarUrl || undefined} alt={member.name} />
+                      <AvatarFallback className="text-[10px] font-bold bg-slate-200 text-slate-700">
+                        {member.name?.[0]?.toUpperCase() || "?"}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className={cn(
+                      "absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center rounded-full text-[9px] font-extrabold ring-2 ring-[#0d0d0f]",
+                      position === 1 ? "bg-emerald-500 text-white" : "bg-[#2dd4bf] text-slate-900"
+                    )}>
+                      {position}
+                    </div>
+                  </div>
+                  <p className="text-[11px] font-semibold text-slate-100 truncate w-full text-center leading-tight">
+                    {member.name}
+                  </p>
+                  <p className="text-[10px] font-medium text-emerald-400 leading-tight text-center">{statusLabel}</p>
                 </div>
-                <p className="text-[10px] font-bold text-slate-900 truncate w-full text-center leading-tight">
-                  {member.name}
-                </p>
-                <p className="text-[9px] text-slate-400 leading-tight text-center">{statusLabel}</p>
-              </div>
-            ))}
+              );
+            })}
 
             {busyRows.length > 0 && (
               <>
-                <div className="flex items-center gap-1 px-2 py-1 bg-rose-50">
-                  <div className="h-px flex-1 bg-rose-200" />
-                  <span className="shrink-0 text-[8px] font-bold uppercase tracking-wider text-rose-500">
+                <div className="flex items-center gap-1 px-2 py-1 bg-rose-500/10">
+                  <div className="h-px flex-1 bg-rose-500/25" />
+                  <span className="shrink-0 text-[8px] font-bold uppercase tracking-wider text-rose-400">
                     {pick({ en: "Busy", vi: "Bận", es: "Ocupado", fr: "Occupé" })}
                   </span>
-                  <div className="h-px flex-1 bg-rose-200" />
+                  <div className="h-px flex-1 bg-rose-500/25" />
                 </div>
-                {busyRows.map(({ member, statusLabel }) => (
-                  <div key={member.id} className="flex flex-col items-center gap-1 px-2 py-2.5 bg-rose-50/70">
-                    <div className="w-6 h-6 flex items-center justify-center rounded-full bg-rose-100 text-rose-600 text-[11px] font-bold">
-                      ·
+                {busyRows.map(({ member, statusLabel }) => {
+                  const staffColor = getStaffColor ? getStaffColor(member) : "#94a3b8";
+                  return (
+                    <div key={member.id} className="flex flex-col items-center gap-1 px-2 py-2.5 bg-rose-500/10">
+                      <Avatar className="w-8 h-8 shrink-0" style={{ boxShadow: `0 0 0 2px ${staffColor}` }}>
+                        <AvatarImage src={member.avatarUrl || undefined} alt={member.name} />
+                        <AvatarFallback className="text-[10px] font-bold bg-rose-500/15 text-rose-300">
+                          {member.name?.[0]?.toUpperCase() || "?"}
+                        </AvatarFallback>
+                      </Avatar>
+                      <p className="text-[11px] font-semibold text-slate-100 truncate w-full text-center leading-tight">
+                        {member.name}
+                      </p>
+                      <p className="text-[10px] font-medium text-rose-400 leading-tight text-center">{statusLabel}</p>
                     </div>
-                    <p className="text-[10px] font-bold text-slate-900 truncate w-full text-center leading-tight">
-                      {member.name}
-                    </p>
-                    <p className="text-[9px] text-rose-600 leading-tight text-center">{statusLabel}</p>
-                  </div>
-                ))}
+                  );
+                })}
               </>
             )}
           </>
@@ -4540,14 +4710,14 @@ function TimeClockSheet({ storeId, onClose }: { storeId: number; onClose: () => 
   ];
 
   return (
-    <div className="fixed inset-0 z-[100]">
+    <div className="dark cx-cal fixed inset-0 z-[100] text-foreground">
       <button
         type="button"
         aria-label="Close time clock"
         className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]"
         onClick={onClose}
       />
-      <div className="absolute right-0 top-0 h-full w-full sm:w-[380px] bg-[#F7F5F0] flex flex-col shadow-[-8px_0_24px_rgba(0,0,0,0.12)] border-l">
+      <div className="absolute right-0 top-0 h-full w-full sm:w-[380px] bg-[#161618] flex flex-col shadow-[-8px_0_24px_rgba(0,0,0,0.12)] border-l">
         {/* Header */}
         <div className="px-4 py-4 flex items-center justify-between gap-2 bg-white border-b border-gray-200">
           <div className="flex items-center gap-3">
@@ -4562,7 +4732,7 @@ function TimeClockSheet({ storeId, onClose }: { storeId: number; onClose: () => 
         </div>
 
         {/* Content */}
-        <div className="flex-1 flex flex-col px-4 pt-5 min-h-0 bg-[#F7F5F0] pb-[calc(env(safe-area-inset-bottom,0px)+72px)]">
+        <div className="flex-1 flex flex-col px-4 pt-5 min-h-0 bg-[#161618] pb-[calc(env(safe-area-inset-bottom,0px)+72px)]">
           {/* Staff info + PIN display */}
           <div className="w-full rounded-2xl bg-white border border-gray-200 shadow-sm py-6 px-4 mb-5 text-center">
             {staff ? (
@@ -4707,6 +4877,7 @@ function FillSlotSection({
   const [sentIds, setSentIds] = useState<Set<number>>(new Set());
   const [sendingId, setSendingId] = useState<number | null>(null);
   const { toast: fillToast } = useToast();
+  const { pick } = useLanguage();
 
   const { data: candidates, isLoading } = useQuery<FillSlotCandidate[]>({
     queryKey: ["/api/intelligence/cancellation-recovery", appointment.id, storeId],
@@ -4739,12 +4910,12 @@ function FillSlotSection({
       const data = await res.json();
       if (res.ok && data.success) {
         setSentIds(prev => new Set([...prev, candidate.customerId]));
-        fillToast({ title: "Message sent!", description: `${candidate.customerName} has been notified about the open slot.` });
+        fillToast({ title: pick({ en: "Message sent!", vi: "Đã gửi tin nhắn!", es: "¡Mensaje enviado!", fr: "Message envoyé !" }), description: pick({ en: `${candidate.customerName} has been notified about the open slot.`, vi: `Đã thông báo cho ${candidate.customerName} về chỗ trống.`, es: `Se notificó a ${candidate.customerName} sobre el hueco libre.`, fr: `${candidate.customerName} a été informé du créneau libre.` }) });
       } else {
-        fillToast({ title: "Could not send", description: data.error || "Failed to send SMS.", variant: "destructive" });
+        fillToast({ title: pick({ en: "Could not send", vi: "Không thể gửi", es: "No se pudo enviar", fr: "Envoi impossible" }), description: data.error || pick({ en: "Failed to send SMS.", vi: "Gửi SMS thất bại.", es: "No se pudo enviar el SMS.", fr: "Échec de l'envoi du SMS." }), variant: "destructive" });
       }
     } catch {
-      fillToast({ title: "Failed to send", variant: "destructive" });
+      fillToast({ title: pick({ en: "Failed to send", vi: "Gửi thất bại", es: "Error al enviar", fr: "Échec de l'envoi" }), variant: "destructive" });
     } finally {
       setSendingId(null);
     }
@@ -4938,12 +5109,12 @@ function AppointmentDetailsPanel({
       const data = await res.json();
       if (res.ok) {
         setReviewSent(true);
-        detailToast({ title: "Review request sent!", description: "Your client will receive a text shortly." });
+        detailToast({ title: tD.reviewSentToast, description: tD.reviewSentDesc });
       } else {
-        detailToast({ title: "Could not send", description: data.error || "Review requests require SMS enabled with a Google review URL.", variant: "destructive" });
+        detailToast({ title: tD.couldNotSend, description: data.error || tD.reviewNeedsSms, variant: "destructive" });
       }
     } catch {
-      detailToast({ title: "Failed to send", variant: "destructive" });
+      detailToast({ title: tD.failedToSend, variant: "destructive" });
     } finally {
       setReviewSending(false);
     }
@@ -4981,6 +5152,11 @@ function AppointmentDetailsPanel({
   const panelScrollRef = useRef<HTMLDivElement>(null);
   const tD = {
     walkIn:       pick({ en: "Walk-In",               vi: "Khách vãng lai",      es: "Sin cita",              fr: "Sans rendez-vous" }),
+    reviewSentToast: pick({ en: "Review request sent!", vi: "Đã gửi yêu cầu đánh giá!", es: "¡Solicitud de reseña enviada!", fr: "Demande d'avis envoyée !" }),
+    reviewSentDesc:  pick({ en: "Your client will receive a text shortly.", vi: "Khách của bạn sẽ nhận được tin nhắn ngay.", es: "Tu cliente recibirá un mensaje en breve.", fr: "Votre client recevra un SMS sous peu." }),
+    couldNotSend:    pick({ en: "Could not send", vi: "Không thể gửi", es: "No se pudo enviar", fr: "Envoi impossible" }),
+    reviewNeedsSms:  pick({ en: "Review requests require SMS enabled with a Google review URL.", vi: "Yêu cầu đánh giá cần bật SMS và có link đánh giá Google.", es: "Las solicitudes de reseña requieren SMS activado con una URL de reseña de Google.", fr: "Les demandes d'avis nécessitent le SMS activé avec une URL d'avis Google." }),
+    failedToSend:    pick({ en: "Failed to send", vi: "Gửi thất bại", es: "Error al enviar", fr: "Échec de l'envoi" }),
     service:      pick({ en: "Service",               vi: "Dịch vụ",             es: "Servicio",              fr: "Service" }),
     booked:       pick({ en: "Booked",                vi: "Đã đặt",              es: "Reservado",             fr: "Réservé" }),
     started:      pick({ en: "Started",               vi: "Đang làm",            es: "Iniciado",              fr: "Commencé" }),
@@ -5025,9 +5201,10 @@ function AppointmentDetailsPanel({
         onClick={onClose}
       />
       <div className={cn(
-        "absolute right-0 top-0 h-full w-full sm:w-[460px] bg-card flex flex-col shadow-[-8px_0_24px_rgba(0,0,0,0.12)] border-l",
-        isOverdue && "ring-2 ring-red-400 ring-inset",
+        "absolute right-0 top-0 h-full w-full sm:w-[440px] flex flex-col shadow-[-8px_0_24px_rgba(0,0,0,0.4)]",
+        isOverdue && "ring-2 ring-rose-500/60 ring-inset",
       )}
+        style={{ backgroundColor: "#1a1a1c", borderLeft: "1px solid #333338" }}
         onTouchStart={(e) => {
           const scrollTop = panelScrollRef.current?.scrollTop ?? 0;
           if (scrollTop === 0) {
@@ -5053,27 +5230,34 @@ function AppointmentDetailsPanel({
           <span>{tD.overdueMsg(minutesPastStart)}</span>
         </div>
       )}
-      <div className="p-4 border-b flex items-center justify-between gap-2">
-        <div className="flex items-center gap-3">
-          <Avatar className="w-9 h-9">
-            <AvatarFallback className="text-sm font-bold bg-muted">
-              {((appointment as any).customer?.fullName || appointment.customer?.name || (appointment as any).customerName || (appointment as any).clientName || "").charAt(0).toUpperCase() || "W"}
-            </AvatarFallback>
-          </Avatar>
-          <div>
-            <p className="font-bold text-base leading-tight" data-testid="text-detail-customer">
+      <div className="p-4 flex items-center justify-between gap-2" style={{ borderBottom: "1px solid #2b2b2f" }}>
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ backgroundColor: "#2e2e30", color: "#e5e5e7" }}>
+            {((appointment as any).customer?.fullName || appointment.customer?.name || (appointment as any).customerName || (appointment as any).clientName || "").charAt(0).toUpperCase() || "W"}
+          </div>
+          <div className="min-w-0">
+            <p className="font-bold text-[15px] leading-tight truncate" style={{ color: "#f5f5f7" }} data-testid="text-detail-customer">
               {(appointment as any).customer?.fullName || appointment.customer?.name || (appointment as any).customerName || (appointment as any).clientName || tD.walkIn}
             </p>
             {appointment.customer?.phone && (
-              <p className="text-xs text-muted-foreground mt-0.5">{formatPhone(appointment.customer.phone)}</p>
+              <p className="text-xs mt-0.5" style={{ color: "#8e8e93" }}>{formatPhone(appointment.customer.phone)}</p>
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant={statusVariant} className="no-default-active-elevate text-[10px]" data-testid="badge-detail-status">
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span
+            className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full border"
+            style={
+              appointment.status === "started" ? { background: "rgba(52,211,153,0.12)", color: "#34d399", borderColor: "rgba(52,211,153,0.3)" }
+              : appointment.status === "completed" ? { background: "rgba(148,163,184,0.14)", color: "#cbd5e1", borderColor: "rgba(148,163,184,0.3)" }
+              : appointment.status === "cancelled" || appointment.status === "no_show" ? { background: "rgba(251,113,133,0.12)", color: "#fb7185", borderColor: "rgba(251,113,133,0.3)" }
+              : { background: "rgba(96,165,250,0.12)", color: "#60a5fa", borderColor: "rgba(96,165,250,0.3)" }
+            }
+            data-testid="badge-detail-status"
+          >
             {statusLabel}
-          </Badge>
-          <button onClick={onClose} className="text-muted-foreground ml-1" data-testid="button-close-details">
+          </span>
+          <button onClick={onClose} className="ml-1" style={{ color: "#8e8e93" }} data-testid="button-close-details">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -5082,52 +5266,49 @@ function AppointmentDetailsPanel({
       <div ref={panelScrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-base font-bold" data-testid="text-detail-date">{dateStr}</p>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-sm font-bold text-foreground" data-testid="text-detail-time">{timeStr}</span>
+            <p className="text-[15px] font-bold" style={{ color: "#f5f5f7" }} data-testid="text-detail-date">{dateStr}</p>
+            <div className="flex items-center gap-1.5 mt-1">
+              <Clock className="w-3.5 h-3.5" style={{ color: "#8e8e93" }} />
+              <span className="text-sm font-semibold" style={{ color: "#e5e5e7" }} data-testid="text-detail-time">{timeStr}</span>
             </div>
           </div>
-          <div className="flex-shrink-0 border-2 border-gray-200 rounded-lg px-3 py-1.5 bg-white">
-            <span className="text-sm font-bold text-gray-900">{appointment.duration}m</span>
+          <div className="flex-shrink-0 rounded-lg px-2.5 py-1" style={{ backgroundColor: "#2a2a2c", border: "1px solid #3a3a3c" }}>
+            <span className="text-sm font-semibold" style={{ color: "#e5e5e7" }}>{appointment.duration}m</span>
           </div>
         </div>
 
-        <div className="w-full h-1 rounded-full bg-muted overflow-hidden">
+        <div className="w-full h-1 rounded-full overflow-hidden" style={{ backgroundColor: "#2a2a2c" }}>
           <div className="h-full rounded-full" style={{ width: "100%", backgroundColor: progressColor }} />
         </div>
 
-        <div className="space-y-2 mt-[25px]">
-          {/* Staff tag above service line */}
+        <div className="rounded-xl p-3.5 space-y-2.5" style={{ backgroundColor: "#232325", border: "1px solid #333338" }}>
           {appointment.staff && (
-            <Badge variant="outline" className="no-default-active-elevate text-[10px] px-1.5" data-testid="badge-detail-staff">
+            <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full" style={{ backgroundColor: "#2e2e30", color: "#a1a1a6" }} data-testid="badge-detail-staff">
               {appointment.staff.name}
-            </Badge>
+            </span>
           )}
 
-          {/* Service row: name · duration on left, price on right */}
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
-              <h4 className="font-semibold text-sm leading-snug" data-testid="text-detail-service">{appointment.service?.name || tD.service}</h4>
-              <span className="text-xs text-muted-foreground">({appointment.service?.duration || appointment.duration}m)</span>
+              <h4 className="font-semibold text-sm leading-snug" style={{ color: "#f5f5f7" }} data-testid="text-detail-service">{appointment.service?.name || tD.service}</h4>
+              <span className="text-xs" style={{ color: "#8e8e93" }}>({appointment.service?.duration || appointment.duration}m)</span>
             </div>
             {showPrices && (
-              <span className="text-sm font-normal text-gray-800 flex-shrink-0" data-testid="text-detail-price">
+              <span className="text-sm font-semibold flex-shrink-0" style={{ color: "#e5e5e7" }} data-testid="text-detail-price">
                 ${appointment.service?.price ? Number(appointment.service.price).toFixed(2) : "0.00"}
               </span>
             )}
           </div>
 
-          {/* Addons — same font size as service */}
           {aptAddons.length > 0 && (
-            <div className="space-y-1.5 pl-3 border-l-2 border-muted" data-testid="detail-addons-list">
+            <div className="space-y-1.5 pl-3" style={{ borderLeft: "2px solid #3a3a3c" }} data-testid="detail-addons-list">
               {aptAddons.map((addon: any) => (
                 <div key={addon.id} className="flex items-center justify-between gap-2" data-testid={`detail-addon-${addon.id}`}>
                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <span className="text-sm font-medium truncate">+ {addon.name}</span>
-                    <span className="text-xs text-muted-foreground flex-shrink-0">({addon.duration}m)</span>
+                    <span className="text-sm font-medium truncate" style={{ color: "#e5e5e7" }}>+ {addon.name}</span>
+                    <span className="text-xs flex-shrink-0" style={{ color: "#8e8e93" }}>({addon.duration}m)</span>
                   </div>
-                  {showPrices && <span className="text-sm font-normal text-gray-800">${Number(addon.price).toFixed(2)}</span>}
+                  {showPrices && <span className="text-sm font-semibold" style={{ color: "#e5e5e7" }}>${Number(addon.price).toFixed(2)}</span>}
                 </div>
               ))}
             </div>
@@ -5215,19 +5396,15 @@ function AppointmentDetailsPanel({
       </div>
 
       <div
-        className="border-t p-4 space-y-3 md:pb-4"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 72px)" }}
+        className="p-4 space-y-2.5 md:pb-4"
+        style={{ borderTop: "1px solid #2b2b2f", backgroundColor: "#202022", paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 72px)" }}
       >
         {showPrices && (
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="font-semibold">{tD.total}</span>
-            </div>
-            <div className="text-right">
-              <span className="font-bold text-lg" data-testid="text-detail-total">
-                ${grandTotal.toFixed(2)}
-              </span>
-            </div>
+          <div className="flex items-center justify-between pb-1">
+            <span className="font-semibold" style={{ color: "#8e8e93" }}>{tD.total}</span>
+            <span className="font-bold text-lg" style={{ color: "#f5f5f7" }} data-testid="text-detail-total">
+              ${grandTotal.toFixed(2)}
+            </span>
           </div>
         )}
 
@@ -5237,7 +5414,7 @@ function AppointmentDetailsPanel({
           <div className="flex gap-2">
             <Button
               variant="outline"
-              className={`flex-1 gap-2 font-semibold transition-colors ${reviewSent ? "border-emerald-500 text-emerald-700 hover:bg-emerald-50" : "border-violet-400 text-violet-700 hover:bg-violet-50"}`}
+              className={`flex-1 gap-2 h-10 rounded-lg font-semibold border border-[#3a3a3c] bg-[#2a2a2c] hover:bg-[#333338] ${reviewSent ? "text-emerald-400" : "text-[#e5e5e7]"}`}
               onClick={handleSendReview}
               disabled={reviewSending || reviewSent}
               data-testid="button-send-review-request"
@@ -5247,7 +5424,7 @@ function AppointmentDetailsPanel({
             </Button>
             <Button
               variant="outline"
-              className="flex-1 gap-2 font-semibold border-emerald-400 text-emerald-700 hover:bg-emerald-50"
+              className="flex-1 gap-2 h-10 rounded-lg font-semibold border border-[#3a3a3c] bg-[#2a2a2c] text-[#e5e5e7] hover:bg-[#333338]"
               onClick={() => {
                 const params = new URLSearchParams();
                 if (appointment.customerId) params.set("customerId", String(appointment.customerId));
@@ -5268,7 +5445,7 @@ function AppointmentDetailsPanel({
               {!isPastOneHour && (
                 <Button
                   variant="outline"
-                  className="flex-1 border-2 border-gray-400 text-gray-800 hover:border-gray-600 hover:bg-gray-50 font-semibold"
+                  className="flex-1 h-10 rounded-lg font-semibold border border-[#3a3a3c] bg-[#2a2a2c] text-[#e5e5e7] hover:bg-[#333338]"
                   onClick={onEdit}
                   data-testid="button-edit-appointment"
                 >
@@ -5277,7 +5454,7 @@ function AppointmentDetailsPanel({
               )}
               <Button
                 variant="outline"
-                className="flex-1 text-destructive border-destructive/30"
+                className="flex-1 h-10 rounded-lg font-semibold border border-[#3a3a3c] bg-transparent text-rose-400 hover:bg-rose-500/10 hover:text-rose-300"
                 onClick={onCancel}
                 disabled={isUpdating}
                 data-testid="button-cancel-appointment"
@@ -5288,7 +5465,7 @@ function AppointmentDetailsPanel({
 
             <Button
               variant="outline"
-              className="w-full border-2 border-amber-500 text-amber-700 hover:bg-amber-50 font-semibold"
+              className="w-full h-10 rounded-lg font-semibold border border-[#3a3a3c] bg-[#2a2a2c] text-[#e5e5e7] hover:bg-[#333338]"
               onClick={onReschedule}
               disabled={isUpdating}
               data-testid="button-reschedule-appointment"
@@ -5299,7 +5476,7 @@ function AppointmentDetailsPanel({
             {appointment.status === "started" ? (
               posEnabled ? (
                 <Button
-                  className="w-full bg-green-600 text-white h-12"
+                  className="w-full h-12 rounded-lg font-semibold bg-[#16a34a] hover:bg-[#15a34a] text-white"
                   onClick={onCheckout}
                   disabled={isUpdating}
                   data-testid="button-checkout"
@@ -5311,7 +5488,7 @@ function AppointmentDetailsPanel({
                 </Button>
               ) : (
                 <Button
-                  className="w-full bg-green-600 text-white h-12"
+                  className="w-full h-12 rounded-lg font-semibold bg-[#16a34a] hover:bg-[#15a34a] text-white"
                   onClick={onComplete}
                   disabled={isUpdating}
                   data-testid="button-complete"
@@ -5325,7 +5502,7 @@ function AppointmentDetailsPanel({
             ) : isPastOneHour && (appointment.status === "pending" || appointment.status === "confirmed") ? (
               <Button
                 variant="outline"
-                className="w-full h-12 border-2 border-red-500 text-red-700 hover:bg-red-50 font-semibold"
+                className="w-full h-12 rounded-lg font-semibold border border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
                 onClick={onMarkNoShow}
                 disabled={isUpdating}
                 data-testid="button-mark-no-show"
@@ -5351,7 +5528,7 @@ function AppointmentDetailsPanel({
                 {isOverdue && (
                   <Button
                     variant="outline"
-                    className="flex-1 h-12 border-2 border-red-500 text-red-700 hover:bg-red-50 font-semibold"
+                    className="flex-1 h-12 rounded-lg font-semibold border border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
                     onClick={onMarkNoShow}
                     disabled={isUpdating}
                     data-testid="button-mark-no-show"
@@ -5422,63 +5599,66 @@ function CancelAppointmentPanel({
         className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]"
         onClick={onClose}
       />
-      <div className="absolute right-0 top-0 h-full w-full sm:w-[380px] bg-card flex flex-col shadow-[-8px_0_24px_rgba(0,0,0,0.12)] border-l">
-      <div className="p-4 border-b flex items-center justify-between gap-2">
-        <h2 className="font-semibold text-lg">{tCA.header}</h2>
-        <button onClick={onClose} className="text-muted-foreground" data-testid="button-close-cancel">
+      <div className="absolute right-0 top-0 h-full w-full sm:w-[380px] flex flex-col shadow-[-8px_0_24px_rgba(0,0,0,0.4)]" style={{ backgroundColor: "#1a1a1c", borderLeft: "1px solid #333338" }}>
+      <div className="p-4 flex items-center justify-between gap-2" style={{ borderBottom: "1px solid #2b2b2f" }}>
+        <h2 className="font-bold text-[15px]" style={{ color: "#f5f5f7" }}>{tCA.header}</h2>
+        <button onClick={onClose} style={{ color: "#8e8e93" }} data-testid="button-close-cancel">
           <X className="w-4 h-4" />
         </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         <div>
-          <p className="text-sm text-muted-foreground mb-3">{tCA.willCancel}</p>
-          <div className="border rounded-md p-3 space-y-1">
+          <p className="text-sm mb-3" style={{ color: "#8e8e93" }}>{tCA.willCancel}</p>
+          <div className="rounded-xl p-3.5 space-y-1.5" style={{ backgroundColor: "#232325", border: "1px solid #333338" }}>
             <div className="flex items-center justify-between gap-2">
               <div>
-                <span className="font-semibold text-sm">{appointment.service?.name || tCA.service}</span>
+                <span className="font-semibold text-sm" style={{ color: "#f5f5f7" }}>{appointment.service?.name || tCA.service}</span>
                 {appointment.staff && (
-                  <span className="text-sm text-muted-foreground"> ( {appointment.staff.name} )</span>
+                  <span className="text-sm" style={{ color: "#8e8e93" }}> · {appointment.staff.name}</span>
                 )}
               </div>
-              <span className="font-semibold text-sm" data-testid="cancel-service-price">
+              <span className="font-semibold text-sm" style={{ color: "#e5e5e7" }} data-testid="cancel-service-price">
                 ${Number(appointment.service?.price || 0).toFixed(2)}
               </span>
             </div>
-            <p className="text-xs text-muted-foreground" data-testid="cancel-service-date">{dateStr}</p>
+            <p className="text-xs" style={{ color: "#8e8e93" }} data-testid="cancel-service-date">{dateStr}</p>
           </div>
         </div>
 
         <div className="space-y-3">
-          <h3 className="font-semibold text-sm">{tCA.reason}</h3>
+          <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: "#8e8e93" }}>{tCA.reason}</h3>
           <div className="grid grid-cols-2 gap-2">
-            {CANCEL_REASONS.map((reason) => (
-              <Button
-                key={reason}
-                variant="outline"
-                className={cn(
-                  "h-auto py-3 text-sm justify-center",
-                  selectedReason === reason && "border-primary bg-primary/5 text-primary"
-                )}
-                onClick={() => setSelectedReason(reason)}
-                data-testid={`cancel-reason-${reason.toLowerCase().replace(/[^a-z0-9]/g, "-")}`}
-              >
-                {cancelReasonLabels[reason] ?? reason}
-              </Button>
-            ))}
+            {CANCEL_REASONS.map((reason) => {
+              const active = selectedReason === reason;
+              return (
+                <button
+                  key={reason}
+                  className="h-auto py-3 px-2 text-sm rounded-lg border font-medium transition-colors"
+                  style={active
+                    ? { backgroundColor: "rgba(45,212,191,0.12)", borderColor: "rgba(45,212,191,0.4)", color: "#2dd4bf" }
+                    : { backgroundColor: "#2a2a2c", borderColor: "#3a3a3c", color: "#e5e5e7" }}
+                  onClick={() => setSelectedReason(reason)}
+                  data-testid={`cancel-reason-${reason.toLowerCase().replace(/[^a-z0-9]/g, "-")}`}
+                >
+                  {cancelReasonLabels[reason] ?? reason}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      <div className="border-t p-4">
-        <Button
-          className="w-full bg-pink-400 text-white h-12"
+      <div className="p-4" style={{ borderTop: "1px solid #2b2b2f", backgroundColor: "#202022" }}>
+        <button
+          className="w-full h-12 rounded-lg font-semibold text-white disabled:opacity-50"
+          style={{ backgroundColor: "#e11d48" }}
           onClick={() => selectedReason && onConfirmCancel(selectedReason)}
           disabled={!selectedReason || isUpdating}
           data-testid="button-confirm-cancel"
         >
           {isUpdating ? tCA.cancelling : tCA.cancelBtn}
-        </Button>
+        </button>
       </div>
       </div>
     </div>
@@ -5518,18 +5698,29 @@ type TenderLine = {
   amount: number;
 };
 
+interface GroupTicketShare {
+  appointmentId: number;
+  tip: number;
+  discount: number;
+  totalPaid: number;
+  paymentMethod: string;
+}
 function CheckoutPOSPanel({
   appointment,
   timezone,
   onClose,
   onFinalize,
   isUpdating,
+  siblingAppointments = [],
+  onCustomerLinked,
 }: {
   appointment: AppointmentWithDetails;
   timezone: string;
   onClose: () => void;
-  onFinalize: (data: { paymentMethod: string; tip: number; discount: number; totalPaid: number }) => void;
+  onFinalize: (data: { paymentMethod: string; tip: number; discount: number; totalPaid: number; groupTickets?: GroupTicketShare[]; redemption?: { rewardId: number; customerId: number } }) => void;
   isUpdating: boolean;
+  siblingAppointments?: AppointmentWithDetails[];
+  onCustomerLinked?: (clientId: number, name: string, loyaltyPoints: number) => void;
 }) {
   const { pick } = useLanguage();
   const tPOS = {
@@ -5556,10 +5747,122 @@ function CheckoutPOSPanel({
     printReceipt:    pick({ en: "Print Receipt",        vi: "In hóa đơn",                  es: "Imprimir recibo",          fr: "Imprimer le reçu" }),
     noReceipt:       pick({ en: "No Receipt",           vi: "Không in",                    es: "Sin recibo",               fr: "Sans reçu" }),
     processing:      pick({ en: "Processing...",        vi: "Đang xử lý...",               es: "Procesando...",            fr: "Traitement..." }),
+    retailItem:      pick({ en: "Retail Item",          vi: "Hàng bán lẻ",                 es: "Producto",                 fr: "Article boutique" }),
+  };
+  // POS status-bar messages (shown UPPERCASE in the sheet header). Kept in a
+  // sub-object so every transient string the cashier sees is translated too.
+  const tSt = {
+    addClientFirst:   pick({ en: "ADD A CLIENT TO THE TICKET FIRST",   vi: "THÊM KHÁCH VÀO VÉ TRƯỚC",              es: "AÑADE UN CLIENTE AL TICKET PRIMERO",     fr: "AJOUTEZ D'ABORD UN CLIENT AU TICKET" }),
+    enterAmountFirst: pick({ en: "ENTER AN AMOUNT FIRST",              vi: "NHẬP SỐ TIỀN TRƯỚC",                   es: "INTRODUCE UN IMPORTE PRIMERO",           fr: "SAISISSEZ D'ABORD UN MONTANT" }),
+    mustEnterAmount:  pick({ en: "MUST ENTER AMOUNT FIRST",            vi: "PHẢI NHẬP SỐ TIỀN TRƯỚC",              es: "DEBES INTRODUCIR UN IMPORTE PRIMERO",    fr: "VOUS DEVEZ D'ABORD SAISIR UN MONTANT" }),
+    m2Insert:         pick({ en: "M2 READER — INSERT / TAP CARD",      vi: "ĐẦU ĐỌC M2 — QUẸT / CHẠM THẺ",         es: "LECTOR M2 — INSERTA / ACERCA LA TARJETA", fr: "LECTEUR M2 — INSÉREZ / APPROCHEZ LA CARTE" }),
+    noAddons:         pick({ en: "NO ADD-ONS IN CATALOGUE",            vi: "KHÔNG CÓ DỊCH VỤ THÊM",                es: "NO HAY EXTRAS EN EL CATÁLOGO",           fr: "AUCUN SUPPLÉMENT AU CATALOGUE" }),
+    noOtherTickets:   pick({ en: "NO OTHER ACTIVE TICKETS",            vi: "KHÔNG CÓ VÉ NÀO KHÁC ĐANG MỞ",         es: "NO HAY OTROS TICKETS ACTIVOS",           fr: "AUCUN AUTRE TICKET ACTIF" }),
+    noSaleDrawer:     pick({ en: "NO SALE — DRAWER OPENED",            vi: "KHÔNG BÁN — ĐÃ MỞ NGĂN KÉO",           es: "SIN VENTA — CAJÓN ABIERTO",              fr: "PAS DE VENTE — TIROIR OUVERT" }),
+    nothingDue:       pick({ en: "NOTHING DUE",                        vi: "KHÔNG CÒN NỢ",                        es: "NADA PENDIENTE",                        fr: "RIEN À PAYER" }),
+    nothingToUndo:    pick({ en: "NOTHING TO UNDO",                    vi: "KHÔNG CÓ GÌ ĐỂ HOÀN TÁC",             es: "NADA QUE DESHACER",                     fr: "RIEN À ANNULER" }),
+    quickCancelled:   pick({ en: "QUICK TICKET CANCELLED",             vi: "ĐÃ HỦY VÉ NHANH",                     es: "TICKET RÁPIDO CANCELADO",               fr: "TICKET RAPIDE ANNULÉ" }),
+    quickDone:        pick({ en: "QUICK TICKET DONE — REVIEW & CHARGE", vi: "XONG VÉ NHANH — KIỂM TRA & THU TIỀN", es: "TICKET RÁPIDO LISTO — REVISA Y COBRA",  fr: "TICKET RAPIDE TERMINÉ — VÉRIFIEZ ET ENCAISSEZ" }),
+    quickExited:      pick({ en: "QUICK TICKET EXITED",                vi: "ĐÃ THOÁT VÉ NHANH",                   es: "SALISTE DEL TICKET RÁPIDO",             fr: "TICKET RAPIDE QUITTÉ" }),
+    rewardRemoved:    pick({ en: "REWARD REMOVED",                     vi: "ĐÃ BỎ ƯU ĐÃI",                        es: "RECOMPENSA ELIMINADA",                  fr: "RÉCOMPENSE RETIRÉE" }),
+    tapCancelled:     pick({ en: "TAP TO PAY CANCELLED",               vi: "ĐÃ HỦY TAP TO PAY",                   es: "TAP TO PAY CANCELADO",                  fr: "TAP TO PAY ANNULÉ" }),
+    tapSentScreen:    pick({ en: "TAP TO PAY SENT TO CUSTOMER SCREEN", vi: "ĐÃ GỬI TAP TO PAY LÊN MÀN HÌNH KHÁCH", es: "TAP TO PAY ENVIADO A LA PANTALLA DEL CLIENTE", fr: "TAP TO PAY ENVOYÉ À L'ÉCRAN CLIENT" }),
+    tapPrompt:        pick({ en: "TAP TO PAY — CUSTOMER TAP CARD / PHONE", vi: "TAP TO PAY — KHÁCH CHẠM THẺ / ĐIỆN THOẠI", es: "TAP TO PAY — EL CLIENTE ACERCA TARJETA / TELÉFONO", fr: "TAP TO PAY — LE CLIENT APPROCHE CARTE / TÉLÉPHONE" }),
+    ticketComped:     pick({ en: "TICKET COMPED — 100% OFF",           vi: "MIỄN PHÍ VÉ — GIẢM 100%",             es: "TICKET GRATIS — 100% DE DESCUENTO",     fr: "TICKET OFFERT — 100% DE REMISE" }),
+    tipScreenSent:    pick({ en: "TIP SCREEN SENT TO CLIENT",          vi: "ĐÃ GỬI MÀN HÌNH TIP CHO KHÁCH",        es: "PANTALLA DE PROPINA ENVIADA AL CLIENTE", fr: "ÉCRAN DE POURBOIRE ENVOYÉ AU CLIENT" }),
+    cardDeclined:     pick({ en: "CARD PAYMENT DECLINED",              vi: "THẺ BỊ TỪ CHỐI",                      es: "PAGO CON TARJETA RECHAZADO",            fr: "PAIEMENT PAR CARTE REFUSÉ" }),
+    customerEnrolled: pick({ en: "CUSTOMER ENROLLED",                  vi: "ĐÃ ĐĂNG KÝ KHÁCH",                    es: "CLIENTE INSCRITO",                      fr: "CLIENT INSCRIT" }),
+    // Dynamic — return the localised template string.
+    cardApproved:  (amt: string) => pick({ en: `CARD APPROVED · $${amt}`,   vi: `ĐÃ DUYỆT THẺ · $${amt}`,     es: `TARJETA APROBADA · $${amt}`,   fr: `CARTE APPROUVÉE · $${amt}` }),
+    customerLinked:(nm: string, isNew: boolean) => pick({
+      en: `CUSTOMER ${isNew ? "ENROLLED" : "LINKED"} · ${nm}`,
+      vi: `${isNew ? "ĐÃ ĐĂNG KÝ" : "ĐÃ LIÊN KẾT"} KHÁCH · ${nm}`,
+      es: `CLIENTE ${isNew ? "INSCRITO" : "VINCULADO"} · ${nm}`,
+      fr: `CLIENT ${isNew ? "INSCRIT" : "LIÉ"} · ${nm}` }),
+    pctDiscount:   (pct: string | number) => pick({ en: `${pct}% DISCOUNT APPLIED`, vi: `ĐÃ GIẢM ${pct}%`, es: `${pct}% DE DESCUENTO APLICADO`, fr: `REMISE DE ${pct}% APPLIQUÉE` }),
+    amtDiscount:   (amt: string) => pick({ en: `$${amt} DISCOUNT APPLIED`, vi: `ĐÃ GIẢM $${amt}`, es: `DESCUENTO DE $${amt} APLICADO`, fr: `REMISE DE $${amt} APPLIQUÉE` }),
+    itemAdded:     (name: string, amt: string) => pick({ en: `${name} ADDED · $${amt}`, vi: `ĐÃ THÊM ${name} · $${amt}`, es: `${name} AÑADIDO · $${amt}`, fr: `${name} AJOUTÉ · $${amt}` }),
+    retailAdded:   (amt: string) => pick({ en: `RETAIL ADDED · $${amt}`, vi: `ĐÃ THÊM HÀNG BÁN LẺ · $${amt}`, es: `PRODUCTO AÑADIDO · $${amt}`, fr: `PRODUIT AJOUTÉ · $${amt}` }),
+    extraAdded:    (kind: "addon" | "extra", amt: string) => pick({
+      en: `${kind === "addon" ? "ADDON" : "EXTRA"} ADDED · $${amt}`,
+      vi: `ĐÃ THÊM ${kind === "addon" ? "DỊCH VỤ THÊM" : "PHỤ PHÍ"} · $${amt}`,
+      es: `${kind === "addon" ? "EXTRA" : "CARGO"} AÑADIDO · $${amt}`,
+      fr: `${kind === "addon" ? "SUPPLÉMENT" : "FRAIS"} AJOUTÉ · $${amt}` }),
+    enterAmountFor:(label: string) => pick({ en: `ENTER AMOUNT FOR ${label}`, vi: `NHẬP SỐ TIỀN CHO ${label}`, es: `INTRODUCE EL IMPORTE PARA ${label}`, fr: `SAISISSEZ LE MONTANT POUR ${label}` }),
+    rewardApplied: (amt: string) => pick({ en: `REWARD APPLIED · $${amt} OFF`, vi: `ĐÃ ÁP DỤNG ƯU ĐÃI · GIẢM $${amt}`, es: `RECOMPENSA APLICADA · $${amt} DE DESCUENTO`, fr: `RÉCOMPENSE APPLIQUÉE · $${amt} DE REMISE` }),
+    rewardRedeemed:(name: string) => pick({ en: `REWARD REDEEMED · ${name}`, vi: `ĐÃ ĐỔI ƯU ĐÃI · ${name}`, es: `RECOMPENSA CANJEADA · ${name}`, fr: `RÉCOMPENSE ÉCHANGÉE · ${name}` }),
+    tipSet:        (amt: string) => pick({ en: `TIP SET · $${amt}`, vi: `ĐÃ ĐẶT TIP · $${amt}`, es: `PROPINA FIJADA · $${amt}`, fr: `POURBOIRE DÉFINI · $${amt}` }),
+    undid:         (name: string) => pick({ en: `UNDID · ${name}`, vi: `ĐÃ HOÀN TÁC · ${name}`, es: `DESHECHO · ${name}`, fr: `ANNULÉ · ${name}` }),
+    comingSoon:    (label: string) => pick({ en: `${label} — COMING SOON`, vi: `${label} — SẮP RA MẮT`, es: `${label} — PRÓXIMAMENTE`, fr: `${label} — BIENTÔT DISPONIBLE` }),
+    readerFailed:      pick({ en: "Reader connection failed",  vi: "Kết nối đầu đọc thất bại",   es: "Falló la conexión del lector", fr: "Échec de connexion du lecteur" }),
+    cardFailed:        pick({ en: "Card payment failed",       vi: "Thanh toán thẻ thất bại",    es: "El pago con tarjeta falló",    fr: "Échec du paiement par carte" }),
+    paymentApproved:   pick({ en: "Payment approved",          vi: "Đã duyệt thanh toán",        es: "Pago aprobado",                fr: "Paiement approuvé" }),
+    paymentApprovedDesc: (brand: string, last4: string, amt: string) => pick({
+      en: `${brand} ···${last4} charged ${amt}`,
+      vi: `${brand} ···${last4} đã tính ${amt}`,
+      es: `${brand} ···${last4} cobrado ${amt}`,
+      fr: `${brand} ···${last4} débité de ${amt}` }),
+    popupBlocked:      pick({ en: "Pop-up blocked",            vi: "Cửa sổ bật lên bị chặn",     es: "Ventana emergente bloqueada",  fr: "Fenêtre pop-up bloquée" }),
+    popupBlockedDesc:  pick({ en: "Allow pop-ups for this site to print receipts.", vi: "Cho phép cửa sổ bật lên trên trang này để in hóa đơn.", es: "Permite las ventanas emergentes de este sitio para imprimir recibos.", fr: "Autorisez les pop-ups sur ce site pour imprimer les reçus." }),
+    noTipSelected:     pick({ en: "No tip selected by client", vi: "Khách chưa chọn tiền tip",    es: "El cliente no eligió propina", fr: "Le client n'a pas choisi de pourboire" }),
+    m2Connected:      pick({ en: "M2 reader connected",      vi: "Đã kết nối đầu đọc M2",       es: "Lector M2 conectado",          fr: "Lecteur M2 connecté" }),
+    m2ConnectedDesc:  (name: string) => pick({ en: `${name} is ready.`, vi: `${name} đã sẵn sàng.`, es: `${name} está listo.`, fr: `${name} est prêt.` }),
+    // Quick Ticket wizard — header hint + ENTER hint (label/prompt come in already localised)
+    qtStep:        (prompt: string, i: number, n: number) => pick({
+      en: `${prompt} · ${i}/${n}`, vi: `${prompt} · ${i}/${n}`, es: `${prompt} · ${i}/${n}`, fr: `${prompt} · ${i}/${n}` }),
+    qtEnterAdd:    (amt: string, label: string) => pick({
+      en: `ENTER — add $${amt} to ${label}`, vi: `ENTER — thêm $${amt} vào ${label}`,
+      es: `ENTER — añadir $${amt} a ${label}`, fr: `ENTER — ajouter $${amt} à ${label}` }),
+    qtEnterSkip:   (label: string) => pick({
+      en: `ENTER — skip ${label}`, vi: `ENTER — bỏ qua ${label}`,
+      es: `ENTER — omitir ${label}`, fr: `ENTER — passer ${label}` }),
+    qtHeaderHint:  (prompt: string, amt: number, i: number, n: number) => pick({
+      en: `${prompt} — ENTER ${amt > 0 ? `TO ADD $${amt.toFixed(2)}` : "TO SKIP"} · ${i}/${n}`,
+      vi: `${prompt} — ENTER ${amt > 0 ? `ĐỂ THÊM $${amt.toFixed(2)}` : "ĐỂ BỎ QUA"} · ${i}/${n}`,
+      es: `${prompt} — ENTER ${amt > 0 ? `PARA AÑADIR $${amt.toFixed(2)}` : "PARA OMITIR"} · ${i}/${n}`,
+      fr: `${prompt} — ENTER ${amt > 0 ? `POUR AJOUTER $${amt.toFixed(2)}` : "POUR PASSER"} · ${i}/${n}` }),
+    qtClearExit:   pick({ en: "Clear & exit Quick Ticket", vi: "Xóa & thoát Vé nhanh", es: "Borrar y salir del Ticket rápido", fr: "Effacer et quitter le Ticket rapide" }),
+    qtErrorCorrect: pick({ en: "Error Correct — undo the last line added", vi: "Sửa lỗi — hoàn tác dòng vừa thêm", es: "Corregir — deshacer la última línea", fr: "Corriger — annuler la dernière ligne" }),
+  };
+  // Localise a POS function-button caption by its stable id (falls back to the
+  // raw English label from the layout config for dynamic add-on cells).
+  const posT = (id: string | undefined, raw: string) => {
+    const m = id ? POS_BUTTON_TX[id] : undefined;
+    return m ? pick(m) : raw;
+  };
+  // Localise a Quick Ticket guided step (keyed by its English label).
+  const guidedT = (step: { label: string; prompt: string }) => {
+    const m = POS_GUIDED_TX[step.label];
+    return m ? { label: pick(m.label), prompt: pick(m.prompt) } : step;
   };
   const { selectedStore } = useSelectedStore();
   const { toast } = useToast();
+  const posQueryClient = useQueryClient();
   const storeId = selectedStore?.id ?? null;
+  // POS layout for this store's business type (nail-salon config today).
+  const posLayout = getPosLayout((selectedStore as any)?.category);
+  const posTaxRate = posLayout.taxRate ?? TAX_RATE;
+
+  // Single-line status shown in the POS sheet header — replaces all POS toasts.
+  const [posStatus, setPosStatus] = useState<{ text: string; tone: "error" | "success" | "info" } | null>(null);
+  const posStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showPosStatus = (text: string, tone: "error" | "success" | "info" = "info") => {
+    setPosStatus({ text, tone });
+    if (posStatusTimer.current) clearTimeout(posStatusTimer.current);
+    posStatusTimer.current = setTimeout(() => setPosStatus(null), tone === "error" ? 4000 : 2600);
+  };
+  useEffect(() => () => { if (posStatusTimer.current) clearTimeout(posStatusTimer.current); }, []);
+
+  // Client-facing tip screen (dual-screen kiosk):
+  //  • auto-request opens it ONCE when the cart opens
+  //  • `tipCollected` blocks any further auto-request after the client submits
+  //  • the "Tip Adjust" button clears the tip and re-requests it on demand
+  const [tipCollected, setTipCollected] = useState(false);
+  const tipAutoRequestedRef = useRef(false);
+  const requestClientTipScreen = () => {
+    setWaitingForTip(true);
+    broadcastToKiosk("kiosk_checkout_tip_request", { total: Math.round(preTotal * 100) / 100, cardMethod });
+  };
   const [phase, setPhase] = useState<"cart" | "payment">("cart");
   const [tipMode, setTipMode] = useState<"preset" | "custom">("preset");
   const [selectedTipIndex, setSelectedTipIndex] = useState(0);
@@ -5569,10 +5872,54 @@ function CheckoutPOSPanel({
   const [dualScreenEnabled, setDualScreenEnabled] = useState(false);
   const [waitingForTip, setWaitingForTip] = useState(false);
 
+  // Per-device card-payment method (M2 reader vs Tap to Pay). Set from the POS
+  // settings button, saved to this device's localStorage, and sent to the
+  // customer display so the tip-page CONFIRM arms the right native bridge.
+  const POS_CARD_METHOD_KEY = "certxa.pos.cardMethod";
+  const [cardMethod, setCardMethod] = useState<"m2" | "tap">(() => {
+    try {
+      const v = localStorage.getItem(POS_CARD_METHOD_KEY);
+      return v === "m2" || v === "tap" ? v : "tap";
+    } catch { return "tap"; }
+  });
+  const updateCardMethod = (m: "m2" | "tap") => {
+    setCardMethod(m);
+    try { localStorage.setItem(POS_CARD_METHOD_KEY, m); } catch {}
+  };
+  const [showPosSettings, setShowPosSettings] = useState(false);
+
+  // One-time Tap to Pay enrollment (native Android wrapper only). The native
+  // side runs: location permission → Terminal location → discover+connect a
+  // tapToPay reader (fires Stripe's ToS + device provisioning), then posts back.
+  const [tapSetup, setTapSetup] = useState<{ state: "idle" | "running" | "ready" | "error"; msg: string }>({ state: "idle", msg: "" });
+  useEffect(() => {
+    const onReady = () => setTapSetup({ state: "ready", msg: "Tap to Pay is ready on this device." });
+    const onErr = (e: Event) => setTapSetup({ state: "error", msg: String((e as CustomEvent).detail?.message || "Setup failed. Try again.") });
+    window.addEventListener("certxa_native_taptopay_ready", onReady);
+    window.addEventListener("certxa_native_taptopay_error", onErr);
+    return () => {
+      window.removeEventListener("certxa_native_taptopay_ready", onReady);
+      window.removeEventListener("certxa_native_taptopay_error", onErr);
+    };
+  }, []);
+  const startTapToPaySetup = () => {
+    setTapSetup({ state: "running", msg: "Follow the prompts on this device…" });
+    (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "SETUP_TAP_TO_PAY" }));
+  };
+
   const [tenders, setTenders] = useState<TenderLine[]>([]);
   const [keypadDisplay, setKeypadDisplay] = useState("0");
   const [nextTenderId, setNextTenderId] = useState(1);
   const [showComplete, setShowComplete] = useState(false);
+
+  // Ad-hoc ticket lines added from the POS function buttons (add-ons, retail,
+  // custom charges). Folded into `subtotal` below and shown in the cart panel.
+  const [posExtraItems, setPosExtraItems] = useState<{ id: number; name: string; price: number; kind: string }[]>([]);
+  const posExtraNextId = useRef(1);
+  const addPosExtraItem = (name: string, price: number, kind = "item") => {
+    setPosExtraItems((prev) => [...prev, { id: posExtraNextId.current++, name, price: Math.max(0, price), kind }]);
+  };
+  const removePosExtraItem = (id: number) => setPosExtraItems((prev) => prev.filter((it) => it.id !== id));
 
   // ── Stripe Terminal M2 state ──────────────────────────────────────────────
   const [termStatus, setTermStatus] = useState<"idle"|"loading"|"discovering"|"connecting"|"ready"|"collecting"|"processing"|"error">("idle");
@@ -5580,25 +5927,90 @@ function CheckoutPOSPanel({
   const [termError, setTermError] = useState("");
   // Native app: tracks whether the M2 overlay is active on the device side
   const [nativeM2Active, setNativeM2Active] = useState(false);
+  // Dual-screen "Tap to Pay": waiting on the customer tablet to collect the card.
+  // The ref mirrors the state AND holds the amount we asked the tablet to charge,
+  // so the WS listener (a stable closure) can settle the tender without stale vars.
+  const [awaitingTapPay, setAwaitingTapPay] = useState(false);
+  const awaitingTapPayAmtRef = useRef(0);
 
-  // Reset M2 button if native bridge reports error or cancel
+  // Reset the native-payment busy state when the bridge reports an error,
+  // cancel, or failure (covers both M2 Reader and Tap to Pay).
   useEffect(() => {
     if (!(window as any).CERTXA_NATIVE_APP) return;
     const handler = () => setNativeM2Active(false);
     window.addEventListener('certxa_native_m2_error', handler);
-    return () => window.removeEventListener('certxa_native_m2_error', handler);
+    window.addEventListener('certxa_native_payment_failed', handler);
+    return () => {
+      window.removeEventListener('certxa_native_m2_error', handler);
+      window.removeEventListener('certxa_native_payment_failed', handler);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const termRef = useRef<any>(null);
   const aptAddons = appointment.appointmentAddons?.map(aa => aa.addon).filter(Boolean) || [];
   const servicePrice = Number(appointment.service?.price || 0);
   const addonTotal = aptAddons.reduce((sum, a) => sum + Number(a!.price), 0);
-  const subtotal = servicePrice + addonTotal;
+  const posExtraTotal = posExtraItems.reduce((sum, it) => sum + it.price, 0);
+
+  // ── Group Pay — other active tickets folded into this one for a single payment.
+  //    The linked appointments are NOT merged; on finalize each is completed and
+  //    paid individually with its proportional share of tip/discount so every
+  //    tech keeps their own commission and per-tech tip tracking.
+  const [linkedIds, setLinkedIds] = useState<number[]>([]);
+  const [showLinkPicker, setShowLinkPicker] = useState(false);
+
+  // ── Loyalty reward redemption (points → $ off) ──────────────────────────
+  const [showRewardPicker, setShowRewardPicker] = useState(false);
+  const [pendingRedemption, setPendingRedemption] = useState<
+    null | { rewardId: number; name: string; pointsCost: number; dollarValue: number }
+  >(null);
+  const redemptionDiscount = pendingRedemption?.dollarValue ?? 0;
+
+  // A customer linked from the front-desk display (phone check-in on a walk-in
+  // ticket). Overrides the stale `appointment` prop so the sheet shows their
+  // name / points immediately, without waiting for a query refetch to reach
+  // `selectedAppointment`.
+  const [linkedCustomer, setLinkedCustomer] = useState<
+    null | { id: number; name: string; loyaltyPoints: number }
+  >(null);
+  // Inline callback from the parent — kept in a ref so the polling/WS effects
+  // don't restart on every parent re-render.
+  const onCustomerLinkedRef = useRef(onCustomerLinked);
+  useEffect(() => { onCustomerLinkedRef.current = onCustomerLinked; }, [onCustomerLinked]);
+  // Current appointment id in a ref — the WS listener effect only re-subscribes
+  // on [storeId, dualScreenEnabled], so reading `appointment.id` directly inside
+  // it is a stale closure when the panel is reused for a different ticket.
+  const apptIdRef = useRef<number | undefined>(appointment?.id);
+  useEffect(() => { apptIdRef.current = appointment?.id; }, [appointment?.id]);
+  const customerLoyaltyPoints = linkedCustomer
+    ? linkedCustomer.loyaltyPoints
+    : Number((appointment as any).customer?.loyaltyPoints ?? 0);
+  const effectiveCustomerId = linkedCustomer?.id ?? Number((appointment as any).customerId) ?? 0;
+  const { data: loyaltyRewards = [] } = useQuery<
+    { id: number; name: string; pointsCost: number; dollarValue: number; isActive: boolean }[]
+  >({
+    queryKey: ["/api/loyalty/rewards"],
+    enabled: !!storeId && showRewardPicker,
+  });
+  const ticketSubtotal = (a: any) =>
+    Number(a?.service?.price || 0) +
+    (a?.appointmentAddons?.map((aa: any) => aa.addon).filter(Boolean).reduce((s: number, ad: any) => s + Number(ad.price || 0), 0) || 0);
+  const linkableTickets = siblingAppointments.filter((a) =>
+    a.id !== appointment.id &&
+    ["started", "checked_in", "pending", "confirmed"].includes(String(a.status)) &&
+    isOnStoreDate(a.date, getNowInTimezone(timezone), timezone),
+  );
+  const linkedAppointments = linkableTickets.filter((a) => linkedIds.includes(a.id));
+  const linkedSubtotal = linkedAppointments.reduce((s, a) => s + ticketSubtotal(a), 0);
+
+  const ownServiceBase = servicePrice + addonTotal + posExtraTotal;
+  const subtotal = ownServiceBase + linkedSubtotal;
 
   const discountNum = Number(discountValue) || 0;
-  const discount = discountType === "percent" ? subtotal * (discountNum / 100) : discountNum;
+  const manualDiscount = discountType === "percent" ? subtotal * (discountNum / 100) : discountNum;
+  const discount = manualDiscount + redemptionDiscount;
   const discountedSubtotal = Math.max(0, subtotal - discount);
 
-  const tax = discountedSubtotal * TAX_RATE;
+  const tax = discountedSubtotal * posTaxRate;
   const preTotal = discountedSubtotal + tax;
 
   const tip = tipMode === "custom"
@@ -5690,20 +6102,169 @@ function CheckoutPOSPanel({
           setTipMode("custom");
           setCustomTip(tipFromKiosk.toFixed(2));
           setWaitingForTip(false);
-          toast({
-            title: tipFromKiosk > 0 ? `Tip received: ${tipFromKiosk.toFixed(2)}` : "No tip selected by client",
-          });
+          setTipCollected(true); // don't auto-re-open the client tip screen
+          showPosStatus(
+            tipFromKiosk > 0 ? `TIP RECEIVED · $${tipFromKiosk.toFixed(2)}` : "NO TIP SELECTED BY CLIENT",
+            tipFromKiosk > 0 ? "success" : "info",
+          );
+        }
+        if (msg.type === "kiosk_checkout_payment_result") {
+          if (msg.via === "client_confirm") {
+            // The customer confirmed the tip on the customer screen and the
+            // native bridge (M2 or Tap to Pay) ran there. Record the tender so
+            // the POS's "paid in full" logic completes the sale.
+            if (msg.success) {
+              const paid = Number(msg.total) || 0;
+              if (paid > 0) {
+                const m = msg.method === "m2" ? "m2" : "tap";
+                setTenders(prev => [...prev, { id: (prev[prev.length - 1]?.id ?? 0) + 1, method: m, amount: paid }]);
+                showPosStatus(tSt.cardApproved(paid.toFixed(2)), "success");
+              }
+            } else {
+              showPosStatus(msg.error ? String(msg.error).toUpperCase() : tSt.cardDeclined, "error");
+            }
+          } else if (awaitingTapPayAmtRef.current > 0) {
+            // A "Tap to Pay" collection the POS itself started on the customer
+            // tablet. The web M2 flow also emits this event (and adds its own
+            // tender locally), so ignore that echo (amt ref stays 0 there).
+            const asked = awaitingTapPayAmtRef.current;
+            awaitingTapPayAmtRef.current = 0;
+            setAwaitingTapPay(false);
+            if (msg.success) {
+              const paid = Number(msg.total) || asked;
+              setTenders(prev => [...prev, { id: (prev[prev.length - 1]?.id ?? 0) + 1, method: "tap", amount: paid }]);
+              showPosStatus(tSt.cardApproved(paid.toFixed(2)), "success");
+            } else {
+              showPosStatus(msg.error ? String(msg.error).toUpperCase() : tSt.cardDeclined, "error");
+            }
+          }
+        }
+        // A customer just linked themselves to this ticket via phone check-in on
+        // the front-desk display — swap "Walk-In" for their name immediately and
+        // refresh the appointments cache in the background.
+        if (msg.type === "kiosk_checkout_customer_linked") {
+          const nm = String(msg.name || "").trim();
+          const linkedApptId = Number(msg.appointmentId) || 0;
+          const clientId = Number(msg.clientId) || 0;
+          // apptIdRef, not a stale `appointment.id` from this effect's closure.
+          if (clientId && (!linkedApptId || linkedApptId === apptIdRef.current)) {
+            const pts = Number(msg.loyaltyPoints) || 0;
+            setLinkedCustomer({ id: clientId, name: nm, loyaltyPoints: pts });
+            onCustomerLinkedRef.current?.(clientId, nm, pts);
+          }
+          showPosStatus(nm ? tSt.customerLinked(nm.toUpperCase(), !!msg.isNew) : tSt.customerEnrolled, "success");
+          posQueryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
+        }
+        // Client tapped "Redeem" on a loyalty reward on the front-desk display →
+        // apply it to this ticket as a points redemption (discount). Points are
+        // deducted server-side at finalize via onFinalize.redemption.
+        if (msg.type === "kiosk_checkout_redeem_reward") {
+          const rewardId = Number(msg.rewardId) || 0;
+          if (rewardId) {
+            setPendingRedemption({
+              rewardId,
+              name: String(msg.name || "Reward"),
+              pointsCost: Number(msg.pointsCost) || 0,
+              dollarValue: Number(msg.dollarValue) || 0,
+            });
+            showPosStatus(tSt.rewardRedeemed(String(msg.name || "").toUpperCase()), "success");
+          }
         }
       } catch {}
     };
     return () => ws.close();
-  }, [storeId, dualScreenEnabled, toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeId, dualScreenEnabled]);
 
+  // ── Reliable "customer linked" sync (no WebSocket dependency) ─────────────
+  // When a walk-in customer types their phone on the /frontdesk check-in panel,
+  // the server persists appointments.customer_id (POST /rewards-signup). The WS
+  // broadcast that's meant to tell this POS panel can be lost (PM2 worker that
+  // handles the HTTP request ≠ the worker holding this tab's socket, and the
+  // cross-process relay isn't guaranteed). So while this sheet is open on a
+  // ticket that has NO customer yet, poll the appointment directly — the moment
+  // customer_id appears server-side, swap "Walk-In" for their name.
+  const apptCustomerName = String(
+    (appointment as any).customer?.fullName || (appointment as any).customer?.name || "",
+  ).trim();
   useEffect(() => {
-    if (!dualScreenEnabled || phase !== "cart") return;
-    setWaitingForTip(true);
-    broadcastToKiosk("kiosk_checkout_tip_request", { total: Math.round(preTotal * 100) / 100 });
-  }, [dualScreenEnabled, phase, preTotal]);
+    // Keep polling until this sheet has a *named* customer. A ticket can already
+    // carry a customer_id that points at a blank POS placeholder (empty name) —
+    // that still shows as "Walk-In", and a real /frontdesk phone check-in must
+    // be able to take it over.
+    const hasNamedCustomer = !!linkedCustomer || apptCustomerName.length > 0;
+    // Only relevant with the /frontdesk check-in panel (dual screen).
+    if (!dualScreenEnabled || hasNamedCustomer || !appointment?.id) return;
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const r = await fetch(`/api/appointments/${appointment.id}`, { credentials: "include" });
+        if (!r.ok) return;
+        const data = await r.json();
+        const cid = Number(data?.customerId) || 0;
+        const nm = String(data.customer?.fullName || data.customer?.name || "").trim();
+        if (!cid || !nm || stopped) return; // ignore a blank placeholder
+        const pts = Number(data.customer?.loyaltyPoints ?? 0);
+        stopped = true;
+        clearInterval(iv);
+        setLinkedCustomer({ id: cid, name: nm, loyaltyPoints: pts });
+        onCustomerLinkedRef.current?.(cid, nm, pts);
+        showPosStatus(tSt.customerLinked(nm.toUpperCase(), false), "success");
+      } catch { /* keep polling */ }
+    };
+    const iv = setInterval(poll, 1500);
+    poll();
+    return () => { stopped = true; clearInterval(iv); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointment?.id, apptCustomerName, linkedCustomer, dualScreenEnabled]);
+
+  // Opening the checkout panel → switch the front-desk tablet to the cart +
+  // check-in double panel straight away; closing it → send the tablet back to
+  // its landing screen (dual screen only). The cart-mirror effect below keeps
+  // the contents in sync while the panel is open.
+  useEffect(() => {
+    if (!storeId || !dualScreenEnabled) return;
+    broadcastToKiosk("kiosk_checkout_start", { total: grandTotal, appointmentId: appointment?.id ?? 0 });
+    return () => { broadcastToKiosk("kiosk_checkout_cancel"); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeId, dualScreenEnabled]);
+
+  // Ask the customer display for a tip once the ticket moves to payment. While
+  // the ticket is still being built the display shows the live cart mirror.
+  useEffect(() => {
+    if (!dualScreenEnabled || phase !== "payment") return;
+    if (tipAutoRequestedRef.current || tipCollected) return;
+    tipAutoRequestedRef.current = true;
+    requestClientTipScreen();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dualScreenEnabled, phase, tipCollected]);
+
+  // ── Live cart mirror → front-desk display (dual screen only) ──────────────
+  const mirrorItems = useMemo(() => {
+    const rows: { label: string; price: number }[] = [];
+    if (appointment.service) rows.push({ label: appointment.service.name || "Service", price: servicePrice });
+    for (const a of aptAddons) if (a) rows.push({ label: `+ ${a.name}`, price: Number(a.price) || 0 });
+    for (const it of posExtraItems) rows.push({ label: it.name.startsWith("+") ? it.name : `+ ${it.name}`, price: it.price });
+    return rows;
+  }, [appointment.service, aptAddons, posExtraItems, servicePrice]);
+  const mirrorIsWalkIn = !linkedCustomer && !((appointment as any).customerId);
+  const mirrorCustomerName =
+    linkedCustomer?.name ||
+    (appointment as any).customer?.fullName || appointment.customer?.name ||
+    (appointment as any).customerName || (appointment as any).clientName || tPOS.walkIn;
+  const mirrorKey = JSON.stringify({ mirrorItems, discount, tip, tax, grandTotal, mirrorIsWalkIn, name: mirrorCustomerName, points: customerLoyaltyPoints });
+  useEffect(() => {
+    if (!dualScreenEnabled) return;
+    broadcastToKiosk("kiosk_checkout_cart", {
+      items: mirrorItems,
+      subtotal, discount, tip, tax, total: grandTotal,
+      isWalkIn: mirrorIsWalkIn,
+      customerName: mirrorCustomerName,
+      appointmentId: appointment?.id ?? 0,
+      loyaltyPoints: mirrorIsWalkIn ? undefined : customerLoyaltyPoints,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dualScreenEnabled, mirrorKey]);
 
   // ── Terminal M2 connect/payment ───────────────────────────────────────────
   const handleConnectM2 = async () => {
@@ -5733,10 +6294,10 @@ function CheckoutPOSPanel({
       if (conn.error) throw new Error(conn.error.message);
       setTermReader(toConnect);
       setTermStatus("ready");
-      toast({ title: "M2 reader connected", description: `${toConnect.label ?? toConnect.id} is ready.` });
+      toast({ title: tSt.m2Connected, description: tSt.m2ConnectedDesc(String(toConnect.label ?? toConnect.id)) });
     } catch (err: any) {
       setTermStatus("error"); setTermError(err.message ?? "Connection failed");
-      toast({ title: "Reader connection failed", description: err.message, variant: "destructive" });
+      toast({ title: tSt.readerFailed, description: err.message, variant: "destructive" });
     }
   };
 
@@ -5745,6 +6306,9 @@ function CheckoutPOSPanel({
     const amountCents = Math.round(balanceDue * 100);
     if (amountCents <= 0) return;
     setTermStatus("collecting"); setTermError("");
+    // Tell the customer-facing front-desk display to show the "tap card on the
+    // M2 reader" instruction screen while Stripe Terminal collects.
+    broadcastToKiosk("kiosk_checkout_await_payment", { mode: "m2", total: balanceDue, appointmentId: appointment?.id ?? 0 });
     try {
       const piRes = await fetch("/api/payments/terminal/create-payment-intent", {
         method: "POST", credentials: "include",
@@ -5766,28 +6330,56 @@ function CheckoutPOSPanel({
       if (!capture.ok) throw new Error((await capture.json()).error ?? "Capture failed");
       const last4 = process.paymentIntent?.payment_method_details?.card_present?.last4 ?? "????";
       const brand = process.paymentIntent?.payment_method_details?.card_present?.brand ?? "Card";
-      toast({ title: "Payment approved", description: `${brand} ···${last4} charged $${balanceDue.toFixed(2)}` });
+      toast({ title: tSt.paymentApproved, description: tSt.paymentApprovedDesc(brand, last4, balanceDue.toFixed(2)) });
       setTermStatus("ready");
       // Add as tender so the existing "paid in full" logic kicks in
       const charged = balanceDue;
       setTenders(prev => [...prev, { id: nextTenderId, method: "m2", amount: charged }]);
       setNextTenderId(prev => prev + 1);
+      broadcastToKiosk("kiosk_checkout_payment_result", { success: true, total: charged, last4 });
     } catch (err: any) {
       setTermStatus("ready");
       setTermError(err.message ?? "Payment failed");
       if (termRef.current) termRef.current.cancelCollectPaymentMethod().catch(() => {});
-      toast({ title: "Card payment failed", description: err.message, variant: "destructive" });
+      toast({ title: tSt.cardFailed, description: err.message, variant: "destructive" });
+      broadcastToKiosk("kiosk_checkout_payment_result", { success: false, error: err?.message });
     }
   };
 
   const handleCompleteTransaction = () => {
     broadcastToKiosk("kiosk_checkout_cancel");
     const methodsSummary = tenders.map(t => `${t.method}:${t.amount.toFixed(2)}`).join(",");
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+
+    let groupTickets: GroupTicketShare[] | undefined;
+    if (linkedAppointments.length > 0) {
+      // Split tip + discount across every ticket proportionally to its service value.
+      const tickets = [
+        { id: appointment.id, base: ownServiceBase },
+        ...linkedAppointments.map((a) => ({ id: a.id, base: ticketSubtotal(a) })),
+      ];
+      const totalBase = tickets.reduce((s, t) => s + t.base, 0) || 1;
+      let tipLeft = r2(tip), discLeft = r2(discount), paidLeft = r2(totalTendered);
+      groupTickets = tickets.map((t, i) => {
+        const last = i === tickets.length - 1;
+        const share = t.base / totalBase;
+        const tShare = last ? tipLeft : r2(tip * share);
+        const dShare = last ? discLeft : r2(discount * share);
+        const pShare = last ? paidLeft : r2(totalTendered * share);
+        tipLeft = r2(tipLeft - tShare); discLeft = r2(discLeft - dShare); paidLeft = r2(paidLeft - pShare);
+        return { appointmentId: t.id, tip: tShare, discount: dShare, totalPaid: pShare, paymentMethod: methodsSummary };
+      });
+    }
+
     onFinalize({
       paymentMethod: methodsSummary,
-      tip: Math.round(tip * 100) / 100,
-      discount: Math.round(discount * 100) / 100,
-      totalPaid: Math.round(totalTendered * 100) / 100,
+      tip: r2(tip),
+      discount: r2(discount),
+      totalPaid: r2(totalTendered),
+      groupTickets,
+      redemption: pendingRedemption
+        ? { rewardId: pendingRedemption.rewardId, customerId: effectiveCustomerId }
+        : undefined,
     });
   };
 
@@ -5806,7 +6398,7 @@ function CheckoutPOSPanel({
         .join(", "),
     );
     const storePhone = escapeHtml((selectedStore as any)?.phone || "");
-    const customerName = escapeHtml((appointment as any).customer?.fullName || appointment.customer?.name || (appointment as any).customerName || (appointment as any).clientName || "Walk-In");
+    const customerName = escapeHtml(linkedCustomer?.name || (appointment as any).customer?.fullName || appointment.customer?.name || (appointment as any).customerName || (appointment as any).clientName || "Walk-In");
     const staffName = escapeHtml((appointment as any).staff?.name || "");
     const apptDate = escapeHtml(dateStr);
     const apptTime = escapeHtml(timeStr);
@@ -5824,6 +6416,10 @@ function CheckoutPOSPanel({
     for (const a of aptAddons) {
       if (!a) continue;
       lineItems.push({ label: `+ ${a.name}`, price: Number(a.price) });
+    }
+    // POS-added lines (add-ons, removal, retail, custom charges, Quick Ticket steps)
+    for (const it of posExtraItems) {
+      lineItems.push({ label: it.name.startsWith("+") ? it.name : `+ ${it.name}`, price: it.price });
     }
 
     const itemsHtml = lineItems
@@ -5928,8 +6524,8 @@ function CheckoutPOSPanel({
     const w = window.open("", "_blank", "width=420,height=640");
     if (!w) {
       toast({
-        title: "Pop-up blocked",
-        description: "Allow pop-ups for this site to print receipts.",
+        title: tSt.popupBlocked,
+        description: tSt.popupBlockedDesc,
         variant: "destructive",
       });
       return;
@@ -5945,12 +6541,682 @@ function CheckoutPOSPanel({
   };
 
   const getMethodIcon = (method: string) => {
+    if (method === "tap") return Smartphone;
     const found = PAYMENT_METHODS.find(m => m.id === method);
     if (!found) return Banknote;
     return found.icon;
   };
 
-  if (phase === "cart") {
+  // ── Phase-1 keypad + function grid ────────────────────────────────────────
+  //    Design ported from the standalone POS (pos-interface.jsx). Layout only —
+  //    ENTER / quick-cash / function buttons are not wired to checkout yet.
+  const [cartKeypad, setCartKeypad] = useState("");
+  const cartKpDigit = (d: string) => setCartKeypad(prev => (prev + d).replace(/^0+(?=\d)/, "").slice(0, 10));
+  const cartKpBack  = () => setCartKeypad(prev => prev.slice(0, -1));
+  const cartKpClear = () => setCartKeypad("");
+
+  // Dark keypad button styles (matches the posted POS reference).
+  const KP_NUM: React.CSSProperties = {
+    display: "flex", alignItems: "center", justifyContent: "center",
+    boxSizing: "border-box", outline: "none",
+    border: "1px solid #3d3d40", borderRadius: 4, backgroundColor: "#2e2e30",
+    cursor: "pointer", fontSize: 26, fontWeight: 500, color: "#f5f5f7",
+    userSelect: "none",
+  };
+  const KP_FN_BASE: React.CSSProperties = {
+    position: "relative",
+    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+    boxSizing: "border-box", outline: "none",
+    border: "1px solid #3a3a3c", borderRadius: 4, backgroundColor: "#2a2a2c",
+    cursor: "pointer", fontSize: 12, fontWeight: 700, color: "#e5e5e7", lineHeight: 1.16,
+    userSelect: "none", padding: "4px 3px", textAlign: "center", gap: 2, minHeight: 84,
+  };
+  // Colour band per row, cycled.
+  const KP_ROW_BANDS = ["#f4d000", "#e879b0", "#00c8ff", "#ff8bd4", "#b493ff", "#95d8ff"];
+  const posCustomerName =
+    linkedCustomer?.name ||
+    (appointment as any).customer?.fullName || appointment.customer?.name ||
+    (appointment as any).customerName || (appointment as any).clientName || tPOS.walkIn;
+  // A real, named client is on this ticket (linked live from /frontdesk or
+  // already on the appointment) — show them in the header instead of "Checkout".
+  const posHasNamedClient = !!linkedCustomer || (posCustomerName !== tPOS.walkIn && posCustomerName.trim() !== "");
+
+  // ── POS function buttons — data-driven, keyed by the store's business type ──
+  //    Layout comes from `posLayout` above. Submenu buttons drill into a nested
+  //    grid; `posMenuStack` tracks depth.
+  const [posMenuStack, setPosMenuStack] = useState<PosButton[][]>([]);
+  const posButtons = posMenuStack.length > 0 ? posMenuStack[posMenuStack.length - 1] : posLayout.buttons;
+
+  // ── Quick Ticket — a guided amount-entry wizard. Each step prompts for an
+  //   amount; ENTER commits it as a cart line (or skips the step if blank),
+  //   then advances. Cancelled by tapping Quick Ticket again.
+  type GuidedStep = { prompt: string; label: string };
+  const [guided, setGuided] = useState<{ steps: GuidedStep[]; i: number } | null>(null);
+  const guidedStep = guided ? guided.steps[guided.i] : null;
+
+  // ── Add-On browser — the store's live catalogue, paginated to the 3×5 grid.
+  //   The grid always renders a "Back" cell first, so each page holds ≤14 real
+  //   cells (13 + a "More" cell, except the last page). Cell 1 is the "+Addon"
+  //   custom button; the rest are the store's add-ons, each tapping to a cart
+  //   line named after it. "Back" doubles as "previous page" while paging.
+  const { data: storeAddons } = useAddons();
+  const addonPages = useMemo<PosButton[][]>(() => {
+    const custom: PosButton = {
+      id: "dyn.addon.custom",
+      label: "+Addon",
+      icon: "Calculator",
+      band: "#e879b0",
+      action: { type: "add-custom-item", payload: { kind: "addon" } },
+    };
+    const items: PosButton[] = [
+      custom,
+      ...(storeAddons ?? [])
+        .filter((a: any) => a.isActive !== false)
+        .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)))
+        .map((a: any): PosButton => ({
+          id: `dyn.addon.${a.id}`,
+          label: String(a.name),
+          icon: "Sparkles",
+          action: { type: "add-addon", payload: { addonId: a.id, addonName: String(a.name), price: Number(a.price) || 0 } },
+        })),
+    ];
+    const chunks: PosButton[][] = [];
+    for (let i = 0; i < items.length; ) {
+      const remaining = items.length - i;
+      const take = remaining > 14 ? 13 : remaining;
+      chunks.push(items.slice(i, i + take));
+      i += take;
+    }
+    // One array object per page, filled in place, so a "More" button can hold a
+    // reference to the next page while that page is still being populated.
+    const pages: PosButton[][] = chunks.map(() => []);
+    chunks.forEach((chunk, k) => {
+      pages[k].push(...chunk);
+      if (k < chunks.length - 1) {
+        pages[k].push({
+          id: `dyn.addon.more.${k}`,
+          label: `More\n${k + 2}/${chunks.length}`,
+          icon: "ChevronRight",
+          band: "#00c8ff",
+          action: { type: "submenu", submenu: pages[k + 1] },
+        });
+      }
+    });
+    return pages;
+  }, [storeAddons]);
+
+  // Keypad value, in dollars (the phase-1 numpad stores cents: "2500" -> 25.00).
+  const posKeypadDollars = () => (Number(cartKeypad) || 0) / 100;
+  const clearPosKeypad = () => setCartKeypad("");
+  // `posStatus` / `showPosStatus` are declared near the top of the component.
+
+  // Quick Ticket: commit the current step's amount (if any) as a cart line and
+  // move to the next prompt. Blank/zero = skip the step, nothing added.
+  const handleGuidedEnter = () => {
+    if (!guided) return;
+    const step = guided.steps[guided.i];
+    const amt = posKeypadDollars();
+    if (amt > 0) addPosExtraItem(guidedT(step).label, amt, "guided");
+    setCartKeypad("");
+    const next = guided.i + 1;
+    if (next >= guided.steps.length) {
+      setGuided(null);
+      showPosStatus(tSt.quickDone, "success");
+    } else {
+      setGuided({ steps: guided.steps, i: next });
+    }
+  };
+
+  // ERC (Error Correct): in the Quick Ticket wizard → clear & exit;
+  // otherwise → undo the last POS line item added.
+  const handleErc = () => {
+    if (guided) {
+      setGuided(null);
+      setCartKeypad("");
+      showPosStatus(tSt.quickExited, "info");
+      return;
+    }
+    setPosExtraItems((prev) => {
+      if (prev.length === 0) { showPosStatus(tSt.nothingToUndo, "info"); return prev; }
+      showPosStatus(tSt.undid(String(prev[prev.length - 1].name).toUpperCase()), "info");
+      return prev.slice(0, -1);
+    });
+  };
+
+  // ── Phone / solo-professional layout ─────────────────────────────────────
+  //   Below `lg` the desktop 3-panel checkout is replaced by a mobile-app
+  //   shell: Ticket / Keypad / Actions / Pay tabs with a sticky footer nav.
+  //   Everything reuses the same state + `handlePosAction` + tender logic.
+  const isCompactPos = useIsCompactPos();
+  // Running inside the Certxa native Android wrapper — M2 Reader and Tap to Pay
+  // route through the device bridge rather than the web Stripe Terminal SDK.
+  const isNative = typeof window !== "undefined" && !!(window as any).CERTXA_NATIVE_APP;
+  const mobileActions = useMemo(() => getMobilePosActions(posLayout), [posLayout]);
+  const [mobileTab, setMobileTab] = useState<"ticket" | "keypad" | "actions" | "pay">("ticket");
+  // An amount-entry action the pro started before typing a value — the Keypad
+  // tab shows an "Apply to …" button to finish it.
+  const [pendingAmountAction, setPendingAmountAction] = useState<PosButton | null>(null);
+  const [mobileTipOpen, setMobileTipOpen] = useState<null | "charge" | "adjust">(null);
+  const [mobileTipDone, setMobileTipDone] = useState(false);
+  const MOBILE_KEYPAD_ACTIONS = new Set(["add-custom-item", "discount-custom", "add-product"]);
+  // Run an Actions-tab button. Tip opens the full-screen prompt; amount-entry
+  // actions with no value yet bounce to the Keypad tab.
+  const runMobileAction = (btn: PosButton) => {
+    const type = btn.action.type;
+    if (type === "tip-adjust") { setMobileTipOpen("adjust"); return; }
+    if (MOBILE_KEYPAD_ACTIONS.has(type) && posKeypadDollars() <= 0) {
+      setPendingAmountAction(btn);
+      setMobileTab("keypad");
+      showPosStatus(tSt.enterAmountFor(posT(btn.id, btn.label || "").replace(/\n/g, " ").toUpperCase()), "info");
+      return;
+    }
+    handlePosAction(btn);
+  };
+  // Pay-tab tender using the shared cents keypad (`cartKeypad`).
+  const applyMobileTender = (method: string) => {
+    const amt = posKeypadDollars();
+    if (amt <= 0) { showPosStatus(tSt.enterAmountFirst, "error"); return; }
+    setTenders((prev) => [...prev, { id: nextTenderId, method, amount: amt }]);
+    setNextTenderId((n) => n + 1);
+    clearPosKeypad();
+  };
+
+  const handlePosAction = (btn: PosButton) => {
+    const { action } = btn;
+    const p = action.payload ?? {};
+    const flat = posT(btn.id, btn.label || "").replace(/\n/g, " ");
+    const kd = posKeypadDollars();
+    const NEED_AMOUNT = tSt.mustEnterAmount;
+
+    switch (action.type) {
+      case "submenu":
+        if (action.submenu) setPosMenuStack((s) => [...s, action.submenu!]);
+        return;
+      case "back":
+        setPosMenuStack((s) => s.slice(0, -1));
+        return;
+      case "addon-browser":
+        setPosMenuStack((s) => [...s, addonPages[0] ?? []]);
+        if ((storeAddons ?? []).length === 0) showPosStatus(tSt.noAddons, "info");
+        return;
+      case "guided-ticket": {
+        if (guided) { setGuided(null); setCartKeypad(""); showPosStatus(tSt.quickCancelled, "info"); return; }
+        const steps = ((p.steps as GuidedStep[]) ?? []).filter((s) => s && s.prompt && s.label);
+        if (!steps.length) return;
+        setPosMenuStack([]);
+        setCartKeypad("");
+        setGuided({ steps, i: 0 });
+        if (isCompactPos) setMobileTab("keypad");
+        return;
+      }
+
+      // ── Ticket lines ──────────────────────────────────────────────────────
+      case "add-addon": {
+        const price = kd > 0 ? kd : Number(p.price) || 0;
+        const name = String(p.addonName ?? flat);
+        addPosExtraItem(name, price, "addon");
+        clearPosKeypad();
+        showPosStatus(tSt.itemAdded(name.toUpperCase(), price.toFixed(2)), "success");
+        return;
+      }
+      case "add-product": {
+        if (kd <= 0) { showPosStatus(NEED_AMOUNT, "error"); return; }
+        addPosExtraItem(tPOS.retailItem, kd, "retail");
+        clearPosKeypad();
+        showPosStatus(tSt.retailAdded(kd.toFixed(2)), "success");
+        return;
+      }
+      case "add-custom-item": {
+        if (kd <= 0) { showPosStatus(NEED_AMOUNT, "error"); return; }
+        addPosExtraItem(p.kind === "addon" ? "+Addon" : "+Extra", kd, "custom");
+        clearPosKeypad();
+        showPosStatus(tSt.extraAdded(p.kind === "addon" ? "addon" : "extra", kd.toFixed(2)), "success");
+        return;
+      }
+
+      // ── Discount / comp ──────────────────────────────────────────────────
+      case "discount-preset": {
+        if (typeof p.percent === "number") {
+          setDiscountType("percent"); setDiscountValue(String(p.percent));
+          showPosStatus(tSt.pctDiscount(p.percent), "success");
+        } else if (typeof p.amount === "number") {
+          setDiscountType("dollar"); setDiscountValue(String(p.amount));
+          showPosStatus(tSt.amtDiscount(Number(p.amount).toFixed(2)), "success");
+        }
+        return;
+      }
+      case "discount-custom": {
+        if (kd <= 0) { showPosStatus(NEED_AMOUNT, "error"); return; }
+        setDiscountType("dollar"); setDiscountValue(String(kd)); clearPosKeypad();
+        showPosStatus(tSt.amtDiscount(kd.toFixed(2)), "success");
+        return;
+      }
+      case "comp-item":
+        setDiscountType("percent"); setDiscountValue("100");
+        showPosStatus(tSt.ticketComped, "success");
+        return;
+
+      // ── Tip / payment shaping ────────────────────────────────────────────
+      case "tip-adjust": {
+        // Clear any existing tip first…
+        setTipMode("preset"); setSelectedTipIndex(0); setCustomTip("");
+        if (dualScreenEnabled) {
+          // …then (re-)open the client-facing tip screen. Used when it didn't
+          // open, the client closed it, or they submitted the wrong amount.
+          setTipCollected(false);
+          tipAutoRequestedRef.current = true; // manual request now — skip the auto-effect
+          requestClientTipScreen();
+          showPosStatus(tSt.tipScreenSent, "info");
+        } else if (kd > 0) {
+          // No client screen — fall back to a manual amount from the keypad.
+          setTipMode("custom"); setCustomTip(kd.toFixed(2)); clearPosKeypad();
+          showPosStatus(tSt.tipSet(kd.toFixed(2)), "success");
+        } else {
+          showPosStatus(NEED_AMOUNT, "error");
+        }
+        return;
+      }
+      // ── Utilities ───────────────────────────────────────────────────────
+      case "link-tickets":
+        if (linkableTickets.length === 0) { showPosStatus(tSt.noOtherTickets, "error"); return; }
+        setShowLinkPicker(true);
+        return;
+      case "no-sale":
+        // TODO: hardware/native drawer kick.
+        showPosStatus(tSt.noSaleDrawer, "info");
+        return;
+
+      case "loyalty-redeem":
+        if (!((appointment as any).customerId)) {
+          showPosStatus(tSt.addClientFirst, "error");
+          return;
+        }
+        setShowRewardPicker(true);
+        return;
+
+      // ── Not yet backed by a subsystem ──────────────────────────────────
+      case "gift-card":
+      case "membership":
+      case "reprint-receipt":
+        showPosStatus(tSt.comingSoon(flat.toUpperCase()), "info");
+        return;
+
+      default:
+        // eslint-disable-next-line no-console
+        console.debug("[pos] unhandled action:", action.type, p);
+    }
+  };
+
+  // ══ Mobile-app shell (phone / solo pro) — Ticket / Keypad / Actions / Pay ══
+  if (isCompactPos) {
+    const activeTab: "ticket" | "keypad" | "actions" | "pay" = phase === "payment" ? "pay" : mobileTab;
+    const kpVal = (Number(cartKeypad) || 0) / 100;
+    const paidInFull = tenders.length > 0 && totalTendered >= grandTotal;
+    const actionsList = posMenuStack.length > 0 ? posButtons : mobileActions;
+
+    const applyTip = (mode: "preset" | "custom", idxOrAmt: number) => {
+      if (mode === "preset") { setTipMode("preset"); setSelectedTipIndex(idxOrAmt); }
+      else { setTipMode("custom"); setCustomTip(idxOrAmt.toFixed(2)); }
+      const from = mobileTipOpen;
+      setMobileTipDone(true);
+      setMobileTipOpen(null);
+      setCartKeypad("");
+      if (from === "charge") setMobileTab("pay");
+    };
+    const goCharge = () => {
+      if (!dualScreenEnabled && !mobileTipDone) setMobileTipOpen("charge");
+      else setMobileTab("pay");
+    };
+
+    const TABS: { id: typeof mobileTab; label: string; icon: any }[] = [
+      { id: "ticket",  label: pick(POS_MISC_TX.tabTicket),  icon: Ticket },
+      { id: "keypad",  label: pick(POS_MISC_TX.tabKeypad),  icon: DollarSign },
+      { id: "actions", label: pick(POS_MISC_TX.tabActions), icon: Zap },
+      { id: "pay",     label: pick(POS_MISC_TX.tabPay),     icon: CreditCard },
+    ];
+    const KEY = (k: string, on: () => void, wide = false) => (
+      <button key={k} onClick={on}
+        className={cn("h-14 rounded-md text-xl font-semibold flex items-center justify-center", wide && "col-span-1")}
+        style={{ backgroundColor: "#2e2e30", border: "1px solid #3d3d40", color: "#f5f5f7" }}>
+        {k === "BS" ? <Delete className="w-5 h-5" /> : k === "C" ? "CLR" : k}
+      </button>
+    );
+    const numPad = (onDigit: (d: string) => void, onBack: () => void, onClear: () => void) => (
+      <div className="grid grid-cols-3 gap-2">
+        {["7","8","9","4","5","6","1","2","3"].map((k) => KEY(k, () => onDigit(k)))}
+        {KEY("00", () => onDigit("00"))}
+        {KEY("0", () => onDigit("0"))}
+        {KEY("BS", onBack)}
+        <button onClick={onClear} className="col-span-3 h-11 rounded-md text-sm font-semibold" style={{ backgroundColor: "#242426", border: "1px solid #3a3a3c", color: "#8e8e93" }}>CLEAR</button>
+      </div>
+    );
+
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: "#1c1c1e" }} data-testid="checkout-pos-mobile">
+        {/* Header */}
+        <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: "1px solid #3a3a3c", backgroundColor: "#2c2c2e" }}>
+          <button onClick={onClose} data-testid="pos-mobile-close" style={{ color: "#8e8e93" }}><X className="w-5 h-5" /></button>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold truncate" style={{ color: "#f5f5f7" }}>{posCustomerName}</p>
+            <p className="text-[11px]" style={{ color: "#8e8e93" }}>#{appointment.id} · {tPOS.checkoutHdr}</p>
+          </div>
+          <span className="text-lg font-bold" style={{ color: "#34d399" }}>${grandTotal.toFixed(2)}</span>
+        </div>
+        {(guided || posStatus) && (
+          <div className="px-4 py-1.5 text-[12px] font-bold uppercase tracking-wide text-center"
+            style={{ backgroundColor: "#242426", borderBottom: "1px solid #3a3a3c",
+              color: guided ? "#f4d000" : posStatus!.tone === "error" ? "#fbbf24" : posStatus!.tone === "success" ? "#34d399" : "#9a9aa0" }}
+            data-testid="pos-mobile-status">
+            {guided
+              ? tSt.qtStep(guidedT(guidedStep!).prompt, guided.i + 1, guided.steps.length)
+              : posStatus!.text}
+          </div>
+        )}
+
+        {/* Tab content */}
+        <div className="flex-1 overflow-y-auto">
+          {activeTab === "ticket" && (
+            <div className="p-4 space-y-4" data-testid="pos-tab-ticket">
+              <div className="rounded-md overflow-hidden" style={{ border: "1px solid #3a3a3c" }}>
+                <div className="flex items-center justify-between p-3">
+                  <div><p className="text-sm font-medium" style={{ color: "#f5f5f7" }}>{appointment.service?.name || "Service"}</p></div>
+                  <span className="text-sm font-semibold" style={{ color: "#f5f5f7" }}>${servicePrice.toFixed(2)}</span>
+                </div>
+                {aptAddons.map((a: any) => (
+                  <div key={a.id} className="flex items-center justify-between p-3" style={{ borderTop: "1px solid #3a3a3c" }}>
+                    <p className="text-sm" style={{ color: "#f5f5f7" }}>+ {a.name}</p>
+                    <span className="text-sm font-semibold" style={{ color: "#f5f5f7" }}>${Number(a.price).toFixed(2)}</span>
+                  </div>
+                ))}
+                {posExtraItems.map((it) => (
+                  <div key={it.id} className="flex items-center justify-between p-3" style={{ borderTop: "1px solid #3a3a3c" }}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <button onClick={() => removePosExtraItem(it.id)} className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#3a2a2e", color: "#fb7185" }}><X className="w-2.5 h-2.5" /></button>
+                      <p className="text-sm font-medium truncate" style={{ color: "#f5f5f7" }}>{it.name.startsWith("+") ? it.name : `+ ${it.name}`}</p>
+                    </div>
+                    <span className="text-sm font-semibold" style={{ color: "#f5f5f7" }}>${it.price.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between"><span style={{ color: "#8e8e93" }}>{tPOS.subtotal}</span><span style={{ color: "#e5e5e7" }}>${subtotal.toFixed(2)}</span></div>
+                {tip > 0 && <div className="flex justify-between"><span style={{ color: "#8e8e93" }}>{tPOS.tip}</span><span style={{ color: "#e5e5e7" }}>${tip.toFixed(2)}</span></div>}
+                {manualDiscount > 0 && <div className="flex justify-between" style={{ color: "#fb7185" }}><span>{tPOS.discount}{discountType === "percent" ? ` (${discountNum}%)` : ""}</span><span>&minus;${manualDiscount.toFixed(2)}</span></div>}
+                {pendingRedemption && <div className="flex justify-between" style={{ color: "#34d399" }}><span>🎁 {pendingRedemption.name}</span><span>&minus;${pendingRedemption.dollarValue.toFixed(2)}</span></div>}
+                {posTaxRate > 0 && <div className="flex justify-between"><span style={{ color: "#8e8e93" }}>{tPOS.tax} ({(posTaxRate * 100).toFixed(0)}%)</span><span style={{ color: "#e5e5e7" }}>${tax.toFixed(2)}</span></div>}
+                <div className="flex justify-between font-bold text-lg pt-2" style={{ borderTop: "1px solid #3a3a3c", color: "#f5f5f7" }}><span>{tPOS.total}</span><span>${grandTotal.toFixed(2)}</span></div>
+              </div>
+
+              <button onClick={goCharge} className="w-full h-12 rounded-md font-semibold flex items-center justify-center gap-2" style={{ backgroundColor: "#16a34a", color: "#fff" }} data-testid="pos-mobile-charge">
+                <Receipt className="w-4 h-4" /> Charge ${grandTotal.toFixed(2)}
+              </button>
+            </div>
+          )}
+
+          {activeTab === "keypad" && (
+            <div className="p-4 space-y-3" data-testid="pos-tab-keypad">
+              <div className="rounded-md text-right px-4 py-4 text-4xl font-mono" style={{ backgroundColor: "#0e0e10", border: "1px solid #3a3a3c", color: "#e8e8ea" }}>${kpVal.toFixed(2)}</div>
+              {numPad(cartKpDigit, cartKpBack, cartKpClear)}
+              {guided ? (
+                <button
+                  onClick={handleGuidedEnter}
+                  className="w-full h-12 rounded-md font-bold"
+                  style={{ backgroundColor: "#f4d000", color: "#1c1c1e" }}
+                  data-testid="pos-mobile-guided-enter"
+                >
+                  {kpVal > 0
+                    ? tSt.qtEnterAdd(kpVal.toFixed(2), guidedT(guidedStep!).label)
+                    : tSt.qtEnterSkip(guidedT(guidedStep!).label)}
+                </button>
+              ) : pendingAmountAction ? (
+                <button
+                  onClick={() => { handlePosAction(pendingAmountAction); setPendingAmountAction(null); setPosMenuStack([]); setMobileTab("ticket"); }}
+                  disabled={kpVal <= 0}
+                  className="w-full h-12 rounded-md font-semibold text-white disabled:opacity-40"
+                  style={{ backgroundColor: "#16a34a" }}
+                  data-testid="pos-mobile-keypad-apply"
+                >
+                  Apply to {(pendingAmountAction.label || "").replace(/\n/g, " ")} · ${kpVal.toFixed(2)}
+                </button>
+              ) : (
+                <p className="text-center text-xs" style={{ color: "#8e8e93" }}>
+                  Enter an amount, then use it on the Actions or Pay tab.
+                </p>
+              )}
+            </div>
+          )}
+
+          {activeTab === "actions" && (
+            <div className="p-4 space-y-3" data-testid="pos-tab-actions">
+              {posMenuStack.length > 0 && (
+                <button onClick={() => setPosMenuStack((s) => s.slice(0, -1))} className="flex items-center gap-1.5 text-sm font-semibold" style={{ color: "#34d399" }}>
+                  <ArrowLeft className="w-4 h-4" /> {pick(POS_MISC_TX.back)}
+                </button>
+              )}
+              <div className="grid grid-cols-3 gap-2.5">
+                {actionsList.map((b, i) => {
+                  if (!b) return null;
+                  const Icon = resolvePosIcon(b.icon);
+                  const price = Number((b.action.payload as any)?.price) || 0;
+                  return (
+                    <button
+                      key={b.id}
+                      onClick={() => runMobileAction(b)}
+                      className="relative flex flex-col items-center justify-center gap-1 rounded-lg py-3 min-h-[76px]"
+                      style={{ backgroundColor: "#2a2a2c", border: "1px solid #3a3a3c", color: "#e5e5e7" }}
+                      data-testid={`pos-mobile-action-${b.id}`}
+                    >
+                      {Icon ? <Icon className="w-5 h-5" /> : <span className="w-5 h-5 inline-block">•</span>}
+                      <span className="text-[11px] font-semibold leading-tight text-center whitespace-pre-line">{posT(b.id, b.label)}</span>
+                      {price > 0 && <span className="text-[10px]" style={{ color: "#8e8e93" }}>${price.toFixed(2)}</span>}
+                      {b.action.type === "submenu" && <span className="absolute top-1 right-1.5 text-[10px]" style={{ color: "#8e8e93" }}>›</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "pay" && (
+            <div className="p-4 space-y-4" data-testid="pos-tab-pay">
+              <div className="flex items-center justify-between rounded-md px-4 py-3" style={{ backgroundColor: "#242426", border: "1px solid #3a3a3c" }}>
+                <span className="text-sm font-semibold" style={{ color: balanceDue > 0 ? "#fb7185" : "#34d399" }}>
+                  {balanceDue > 0 ? tPOS.balanceDue : tPOS.paidInFull}
+                </span>
+                <span className="text-xl font-bold" style={{ color: "#f5f5f7" }}>
+                  ${(balanceDue > 0 ? balanceDue : changeDue).toFixed(2)}{balanceDue <= 0 && changeDue > 0 ? " change" : ""}
+                </span>
+              </div>
+
+              <div className="rounded-md text-right px-4 py-3 text-3xl font-mono" style={{ backgroundColor: "#0e0e10", border: "1px solid #3a3a3c", color: "#e8e8ea" }}>${kpVal.toFixed(2)}</div>
+              {numPad(cartKpDigit, cartKpBack, cartKpClear)}
+              <button onClick={() => setCartKeypad(String(Math.max(0, Math.round(balanceDue * 100))))} className="w-full h-10 rounded-md text-sm font-semibold" style={{ backgroundColor: "#1f3a2f", border: "1px solid #16a34a", color: "#34d399" }}>
+                {tPOS.exact} · ${Math.max(0, balanceDue).toFixed(2)}
+              </button>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => applyMobileTender("cash")} className="h-14 rounded-md font-semibold flex items-center justify-center gap-2 text-white" style={{ backgroundColor: "#16a34a" }} data-testid="pos-mobile-tender-cash">
+                  <Banknote className="w-5 h-5" /> Cash
+                </button>
+                <button onClick={() => applyMobileTender("card")} className="h-14 rounded-md font-semibold flex items-center justify-center gap-2 text-white" style={{ backgroundColor: "#2563eb" }} data-testid="pos-mobile-tender-card">
+                  <CreditCard className="w-5 h-5" /> Card
+                </button>
+                {isNative && (
+                  <>
+                    <button
+                      onClick={() => {
+                        if (nativeM2Active) return;
+                        const cents = Math.round(balanceDue * 100);
+                        if (cents <= 0) { showPosStatus(tSt.nothingDue, "error"); return; }
+                        setNativeM2Active(true); setTermError("");
+                        (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "M2_PAY", appointmentId: appointment?.id ?? 0, amountCents: cents, clientName: posCustomerName }));
+                        showPosStatus(tSt.m2Insert, "info");
+                      }}
+                      disabled={nativeM2Active || balanceDue <= 0}
+                      className="h-14 rounded-md font-semibold flex items-center justify-center gap-2 text-white disabled:opacity-50"
+                      style={{ backgroundColor: "#4f46e5" }}
+                      data-testid="pos-mobile-tender-m2"
+                    >
+                      {nativeM2Active ? <Loader2 className="w-5 h-5 animate-spin" /> : <CreditCard className="w-5 h-5" />}
+                      {nativeM2Active ? "M2 active…" : "M2 Reader"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (nativeM2Active) return;
+                        const cents = Math.round(balanceDue * 100);
+                        if (cents <= 0) { showPosStatus(tSt.nothingDue, "error"); return; }
+                        setNativeM2Active(true); setTermError("");
+                        (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "TAP_TO_PAY", appointmentId: appointment?.id ?? 0, amountCents: cents, clientName: posCustomerName }));
+                        showPosStatus(tSt.tapPrompt, "info");
+                      }}
+                      disabled={nativeM2Active || balanceDue <= 0}
+                      className="h-14 rounded-md font-semibold flex items-center justify-center gap-2 text-white disabled:opacity-50"
+                      style={{ backgroundColor: "#7c3aed" }}
+                      data-testid="pos-mobile-tender-tap"
+                    >
+                      {nativeM2Active ? <Loader2 className="w-5 h-5 animate-spin" /> : <Smartphone className="w-5 h-5" />}
+                      {nativeM2Active ? "Tap active…" : "Tap to Pay"}
+                    </button>
+                  </>
+                )}
+                {/* Web browser (not the native app): Stripe Terminal M2 reader */}
+                {!isNative && (() => {
+                  const busy = termStatus === "collecting" || termStatus === "processing";
+                  const connecting = termStatus === "loading" || termStatus === "discovering" || termStatus === "connecting";
+                  const ready = (termStatus === "ready" || busy) && termReader;
+                  return (
+                    <button
+                      onClick={ready ? handleM2Payment : handleConnectM2}
+                      disabled={connecting || (ready && balanceDue <= 0)}
+                      className="col-span-2 h-14 rounded-md font-semibold flex items-center justify-center gap-2 text-white disabled:opacity-50"
+                      style={{ backgroundColor: "#4f46e5" }}
+                      data-testid="pos-mobile-tender-m2"
+                    >
+                      {(busy || connecting) ? <Loader2 className="w-5 h-5 animate-spin" /> : <CreditCard className="w-5 h-5" />}
+                      {ready
+                        ? (termStatus === "collecting" ? "Waiting…" : termStatus === "processing" ? "Processing…" : `M2 · Charge $${Math.max(0, balanceDue).toFixed(2)}`)
+                        : (termStatus === "loading" ? "Loading…" : termStatus === "discovering" ? "Scanning…" : termStatus === "connecting" ? "Connecting…" : termStatus === "error" ? "Retry M2" : "M2 Reader")}
+                    </button>
+                  );
+                })()}
+                {/* Web + dual-screen: tell the paired customer tablet to collect the tap */}
+                {!isNative && dualScreenEnabled && (
+                  <button
+                    onClick={() => {
+                      if (awaitingTapPay) {
+                        awaitingTapPayAmtRef.current = 0; setAwaitingTapPay(false);
+                        broadcastToKiosk("kiosk_checkout_cancel"); showPosStatus(tSt.tapCancelled, "info");
+                        return;
+                      }
+                      const amt = balanceDue;
+                      if (amt <= 0) return;
+                      awaitingTapPayAmtRef.current = amt; setAwaitingTapPay(true);
+                      broadcastToKiosk("kiosk_checkout_await_payment", { mode: "tap", total: amt, appointmentId: appointment?.id ?? 0 });
+                      showPosStatus(tSt.tapSentScreen, "info");
+                    }}
+                    disabled={balanceDue <= 0 && !awaitingTapPay}
+                    className="col-span-2 h-14 rounded-md font-semibold flex items-center justify-center gap-2 text-white disabled:opacity-50"
+                    style={{ backgroundColor: "#7c3aed" }}
+                    data-testid="pos-mobile-tender-tap"
+                  >
+                    {awaitingTapPay ? <Loader2 className="w-5 h-5 animate-spin" /> : <Smartphone className="w-5 h-5" />}
+                    {awaitingTapPay ? "Cancel Tap to Pay" : "Tap to Pay (customer screen)"}
+                  </button>
+                )}
+              </div>
+
+              {tenders.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "#8e8e93" }}>{tPOS.paymentsApplied}</p>
+                  {tenders.map((t) => {
+                    const Icon = getMethodIcon(t.method);
+                    return (
+                      <div key={t.id} className="flex items-center justify-between rounded-md p-2.5" style={{ backgroundColor: "#242426", border: "1px solid #3a3a3c" }}>
+                        <span className="flex items-center gap-2 text-sm capitalize" style={{ color: "#e5e5e7" }}><Icon className="w-4 h-4" style={{ color: "#8e8e93" }} />{t.method}</span>
+                        <span className="flex items-center gap-2">
+                          <span className="text-sm font-semibold" style={{ color: "#34d399" }}>${t.amount.toFixed(2)}</span>
+                          <button onClick={() => handleRemoveTender(t.id)} style={{ color: "#8e8e93" }}><XCircle className="w-4 h-4" /></button>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {paidInFull && (
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={handlePrintAndComplete} disabled={isUpdating} className="h-12 rounded-md font-semibold flex items-center justify-center gap-2 disabled:opacity-50" style={{ backgroundColor: "#2a2a2c", border: "1px solid #3a3a3c", color: "#f5f5f7" }}>
+                    <Printer className="w-4 h-4" /> {isUpdating ? tPOS.processing : tPOS.printReceipt}
+                  </button>
+                  <button onClick={handleCompleteTransaction} disabled={isUpdating} className="h-12 rounded-md font-semibold flex items-center justify-center gap-2 text-white disabled:opacity-50" style={{ backgroundColor: "#16a34a" }} data-testid="pos-mobile-complete">
+                    <Check className="w-4 h-4" /> {isUpdating ? tPOS.processing : tPOS.noReceipt}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Sticky footer tab nav */}
+        <div className="flex" style={{ borderTop: "1px solid #3a3a3c", backgroundColor: "#2c2c2e", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+          {TABS.map((tb) => {
+            const on = activeTab === tb.id;
+            const Icon = tb.icon;
+            return (
+              <button
+                key={tb.id}
+                onClick={() => setMobileTab(tb.id)}
+                className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2"
+                style={{ color: on ? "#34d399" : "#8e8e93", borderTop: on ? "2px solid #34d399" : "2px solid transparent" }}
+                data-testid={`pos-mobile-tab-${tb.id}`}
+              >
+                <Icon className="w-5 h-5" />
+                <span className="text-[10px] font-semibold">{tb.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Full-screen tip step (pro turns the phone to the customer) */}
+        {mobileTipOpen && (
+          <div className="absolute inset-0 z-[64] flex flex-col items-center p-5 gap-4 overflow-y-auto" style={{ backgroundColor: "#161618" }} data-testid="pos-mobile-tip">
+            <p className="text-xs font-bold uppercase tracking-widest mt-6" style={{ color: "#8e8e93" }}>Add a tip?</p>
+            <p className="text-5xl font-black" style={{ color: "#f5f5f7" }}>${preTotal.toFixed(2)}</p>
+            <div className="w-full max-w-sm grid grid-cols-3 gap-2">
+              {TIP_PRESETS.map((tp, idx) => {
+                const amt = (tp as any).percent ? preTotal * (tp as any).percent : ((tp as any).value || 0);
+                return (
+                  <button key={tp.label} onClick={() => applyTip("preset", idx)} className="rounded-xl py-3 flex flex-col items-center gap-0.5" style={{ backgroundColor: "#232325", border: "1px solid #3a3a3c" }} data-testid={`pos-mobile-tip-${idx}`}>
+                    <span className="text-base font-bold" style={{ color: "#f5f5f7" }}>{tp.label}</span>
+                    {(tp as any).percent ? <span className="text-xs" style={{ color: "#8e8e93" }}>${amt.toFixed(2)}</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="w-full max-w-sm space-y-2">
+              <div className="rounded-md text-right px-4 py-2.5 text-2xl font-mono" style={{ backgroundColor: "#0e0e10", border: "1px solid #3a3a3c", color: "#e8e8ea" }}>${kpVal.toFixed(2)}</div>
+              {numPad(cartKpDigit, cartKpBack, cartKpClear)}
+              <button onClick={() => applyTip("custom", kpVal)} disabled={kpVal <= 0} className="w-full h-11 rounded-md font-semibold text-white disabled:opacity-40" style={{ backgroundColor: "#0d9d78" }}>
+                Apply custom tip
+              </button>
+            </div>
+            <button onClick={() => { const from = mobileTipOpen; setMobileTipDone(true); setMobileTipOpen(null); setCartKeypad(""); if (from === "charge") setMobileTab("pay"); }} className="text-sm pb-6" style={{ color: "#8e8e93" }}>
+              Skip tip
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Desktop: one unified 3-panel sheet for the whole checkout ──
+  //   Panel 1 = cart, Panel 2 = numpad. Panel 3 swaps between the function
+  //   grid (cart phase) and the payment / tender panel (payment phase) — the
+  //   "Finalize & Pay" button just flips `phase` in place, no second sheet.
+  {
+    const payKpVal = posKeypadDollars();
+    const payPaidInFull = tenders.length > 0 && totalTendered >= grandTotal;
     return (
       <div className="fixed inset-0 z-50" data-testid="checkout-pos-panel">
         <button
@@ -5959,536 +7225,769 @@ function CheckoutPOSPanel({
           className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]"
           onClick={onClose}
         />
-        <div className="absolute left-0 top-0 h-full w-full sm:w-[420px] bg-card flex flex-col shadow-[8px_0_24px_rgba(0,0,0,0.12)] border-r">
-        <div className="p-4 border-b flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <DollarSign className="w-5 h-5 text-muted-foreground" />
-            <h2 className="font-semibold text-lg">{tPOS.checkoutHdr}</h2>
-            <Badge variant="outline" className="no-default-active-elevate text-[10px]">#{appointment.id}</Badge>
+        <div className="pos-cart-sheet absolute left-0 top-0 h-full w-full sm:w-[420px] lg:w-[1192px] max-w-[100vw] flex overflow-x-auto shadow-[8px_0_24px_rgba(0,0,0,0.12)]">
+        {/* ── Panel 1 — Cart (dark) ── */}
+        <div className="w-full sm:w-[420px] flex-shrink-0 flex flex-col overflow-hidden" style={{ backgroundColor: "#1c1c1e" }}>
+        <div className="relative p-4 flex items-center justify-between gap-2" style={{ borderBottom: "1px solid #3a3a3c", backgroundColor: "#2c2c2e" }}>
+          {posHasNamedClient ? (
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0" style={{ backgroundColor: "#3a3a3c", color: "#f5f5f7" }}>
+                {posCustomerName.charAt(0).toUpperCase()}
+              </div>
+              <span className="font-semibold text-base truncate" data-testid="pos-header-customer-name" style={{ color: "#f5f5f7" }}>{posCustomerName}</span>
+              <span className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0" style={{ backgroundColor: "#2a2118", color: "#f5c451", border: "1px solid #4a3a1e" }}>
+                <Star className="w-3 h-3" />
+                {customerLoyaltyPoints}
+              </span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0" style={{ borderColor: "#3f3f42", color: "#a1a1a6" }}>#{appointment.id}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5" style={{ color: "#8e8e93" }} />
+              <h2 className="font-semibold text-lg" style={{ color: "#f5f5f7" }}>{tPOS.checkoutHdr}</h2>
+              <span className="text-[10px] px-1.5 py-0.5 rounded border" style={{ borderColor: "#3f3f42", color: "#a1a1a6" }}>#{appointment.id}</span>
+            </div>
+          )}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowPosSettings(v => !v)}
+              data-testid="button-pos-settings"
+              title="POS settings"
+              style={{ color: showPosSettings ? "#f5f5f7" : "#8e8e93" }}
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+            <button onClick={onClose} data-testid="button-close-checkout" style={{ color: "#8e8e93" }}>
+              <X className="w-4 h-4" />
+            </button>
           </div>
-          <button onClick={onClose} className="text-muted-foreground" data-testid="button-close-checkout">
-            <X className="w-4 h-4" />
-          </button>
+          {showPosSettings && (
+            <>
+              <button
+                className="fixed inset-0 z-40 cursor-default"
+                aria-label="Close settings"
+                onClick={() => setShowPosSettings(false)}
+              />
+              <div
+                className="absolute right-3 top-14 z-50 w-64 rounded-lg p-3 space-y-2 shadow-xl"
+                style={{ backgroundColor: "#2c2c2e", border: "1px solid #3a3a3c" }}
+                data-testid="pos-settings-menu"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "#8e8e93" }}>
+                  Card payment method
+                </p>
+                <p className="text-[11px] leading-snug" style={{ color: "#8e8e93" }}>
+                  Used when the customer confirms the tip on the customer screen. Saved to this device.
+                </p>
+                {([
+                  { key: "tap" as const, label: "Tap to Pay", icon: Smartphone, hint: "Phone / watch tap on the customer screen" },
+                  { key: "m2" as const, label: "M2 Reader", icon: CreditCard, hint: "Bluetooth chip / swipe reader" },
+                ]).map(opt => {
+                  const active = cardMethod === opt.key;
+                  const OptIcon = opt.icon;
+                  return (
+                    <button
+                      key={opt.key}
+                      onClick={() => { updateCardMethod(opt.key); setShowPosSettings(false); }}
+                      data-testid={`pos-card-method-${opt.key}`}
+                      className="w-full flex items-start gap-2 rounded-md p-2 text-left"
+                      style={{
+                        backgroundColor: active ? "#1f3a2f" : "#242426",
+                        border: `1px solid ${active ? "#16a34a" : "#3a3a3c"}`,
+                      }}
+                    >
+                      <OptIcon className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: active ? "#34d399" : "#8e8e93" }} />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold" style={{ color: active ? "#34d399" : "#f5f5f7" }}>{opt.label}</span>
+                        <span className="block text-[11px]" style={{ color: "#8e8e93" }}>{opt.hint}</span>
+                      </span>
+                      {active && <Check className="w-4 h-4 ml-auto flex-shrink-0" style={{ color: "#34d399" }} />}
+                    </button>
+                  );
+                })}
+
+                {/* One-time Tap to Pay enrollment — native Android app only */}
+                {isNative && (
+                  <div className="pt-1 mt-1 border-t" style={{ borderColor: "#3a3a3c" }}>
+                    <button
+                      onClick={startTapToPaySetup}
+                      disabled={tapSetup.state === "running"}
+                      data-testid="pos-setup-tap-to-pay"
+                      className="w-full flex items-center gap-2 rounded-md p-2 text-left disabled:opacity-60"
+                      style={{ backgroundColor: "#242426", border: "1px solid #3a3a3c" }}
+                    >
+                      {tapSetup.state === "running"
+                        ? <Loader2 className="w-4 h-4 flex-shrink-0 animate-spin" style={{ color: "#8e8e93" }} />
+                        : tapSetup.state === "ready"
+                          ? <Check className="w-4 h-4 flex-shrink-0" style={{ color: "#34d399" }} />
+                          : <Smartphone className="w-4 h-4 flex-shrink-0" style={{ color: "#8e8e93" }} />}
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold" style={{ color: "#f5f5f7" }}>
+                          {tapSetup.state === "ready" ? "Tap to Pay — ready" : "Set up Tap to Pay"}
+                        </span>
+                        <span className="block text-[11px]" style={{ color: tapSetup.state === "error" ? "#fb7185" : "#8e8e93" }}>
+                          {tapSetup.msg || "One-time: accept Stripe's terms + grant location."}
+                        </span>
+                      </span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-5">
-          <div className="flex items-center gap-3">
-            <Avatar className="w-8 h-8">
-              <AvatarFallback className="text-xs font-bold bg-muted">
-                {((appointment as any).customer?.fullName || appointment.customer?.name || (appointment as any).customerName || (appointment as any).clientName || "").charAt(0).toUpperCase() || "W"}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="font-medium text-sm" data-testid="pos-customer-name">{(appointment as any).customer?.fullName || appointment.customer?.name || (appointment as any).customerName || (appointment as any).clientName || tPOS.walkIn}</p>
-              <p className="text-xs text-muted-foreground">{dateStr} &middot; {timeStr}</p>
+          {posHasNamedClient ? (
+            /* Client name + points now live in the header — this row only needs
+               the assigned staff. */
+            appointment.staff ? (
+              <div className="flex items-center justify-between" data-testid="pos-ticket-staff">
+                <span className="text-[10px] uppercase tracking-wide" style={{ color: "#6b7280" }}>Staff</span>
+                <span className="text-xs font-medium" style={{ color: "#d1d1d6" }}>{appointment.staff.name}</span>
+              </div>
+            ) : null
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ backgroundColor: "#2e2e30", color: "#e5e5e7" }}>
+                {(posCustomerName || "W").charAt(0).toUpperCase()}
+              </div>
+              {/* Left — client name */}
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-sm truncate" data-testid="pos-customer-name" style={{ color: "#f5f5f7" }}>{posCustomerName}</p>
+              </div>
+              {/* Center — staff assigned to the ticket */}
+              {appointment.staff && (
+                <div className="flex flex-col items-center flex-shrink-0 px-2 leading-tight" data-testid="pos-ticket-staff">
+                  <span className="text-[9px] uppercase tracking-wide" style={{ color: "#6b7280" }}>Staff</span>
+                  <span className="text-xs font-medium" style={{ color: "#d1d1d6" }}>{appointment.staff.name}</span>
+                </div>
+              )}
+              {/* Right — client points badge */}
+              {(appointment as any).customerId && (
+                <span
+                  className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full flex-shrink-0"
+                  data-testid="pos-customer-points"
+                  style={{ backgroundColor: "#2a2118", color: "#f5c451", border: "1px solid #4a3a1e" }}
+                >
+                  <Star className="w-3 h-3" />
+                  {customerLoyaltyPoints} pts
+                </span>
+              )}
             </div>
-            {appointment.staff && (
-              <Badge variant="outline" className="no-default-active-elevate text-[10px] ml-auto">{appointment.staff.name}</Badge>
-            )}
-          </div>
+          )}
 
           <div className="space-y-1">
-            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">{tPOS.lineItems}</h3>
-            <div className="border rounded-md divide-y">
+            <h3 className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: "#8e8e93" }}>{tPOS.lineItems}</h3>
+            <div className="rounded-md overflow-hidden" style={{ border: "1px solid #3a3a3c" }}>
               <div className="flex items-center justify-between p-3">
                 <div>
-                  <p className="text-sm font-medium" data-testid="pos-service-name">{appointment.service?.name}</p>
-                  <p className="text-xs text-muted-foreground">{appointment.service?.duration} min</p>
+                  <p className="text-sm font-medium" data-testid="pos-service-name" style={{ color: "#f5f5f7" }}>{appointment.service?.name}</p>
                 </div>
-                <span className="text-sm font-semibold" data-testid="pos-service-price">${servicePrice.toFixed(2)}</span>
+                <span className="text-sm font-semibold" data-testid="pos-service-price" style={{ color: "#f5f5f7" }}>${servicePrice.toFixed(2)}</span>
               </div>
               {aptAddons.map((addon: any) => (
-                <div key={addon.id} className="flex items-center justify-between p-3" data-testid={`pos-addon-${addon.id}`}>
+                <div key={addon.id} className="flex items-center justify-between p-3" style={{ borderTop: "1px solid #3a3a3c" }} data-testid={`pos-addon-${addon.id}`}>
                   <div>
-                    <p className="text-sm font-medium">+ {addon.name}</p>
-                    <p className="text-xs text-muted-foreground">{addon.duration} min</p>
+                    <p className="text-sm font-medium" style={{ color: "#f5f5f7" }}>+ {addon.name}</p>
                   </div>
-                  <span className="text-sm font-semibold">${Number(addon.price).toFixed(2)}</span>
+                  <span className="text-sm font-semibold" style={{ color: "#f5f5f7" }}>${Number(addon.price).toFixed(2)}</span>
+                </div>
+              ))}
+              {posExtraItems.map((it) => (
+                <div key={it.id} className="flex items-center justify-between p-3" style={{ borderTop: "1px solid #3a3a3c" }} data-testid={`pos-extra-${it.id}`}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <button
+                      onClick={() => removePosExtraItem(it.id)}
+                      className="flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: "#3a2a2e", color: "#fb7185" }}
+                      aria-label={`Remove ${it.name}`}
+                      data-testid={`pos-extra-remove-${it.id}`}
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                    <p className="text-sm font-medium truncate min-w-0" style={{ color: "#f5f5f7" }}>{it.name.startsWith("+") ? it.name : `+ ${it.name}`}</p>
+                  </div>
+                  <span className="text-sm font-semibold" style={{ color: "#f5f5f7" }}>${it.price.toFixed(2)}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="space-y-1">
-            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">{tPOS.discount}</h3>
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1">
-                <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                <Input
-                  type="number"
-                  min="0"
-                  placeholder="0"
-                  value={discountValue}
-                  onChange={(e) => setDiscountValue(e.target.value)}
-                  className="pl-9"
-                  data-testid="input-discount"
-                />
-              </div>
-              <div className="flex rounded-md border overflow-visible">
-                <button
-                  className={cn(
-                    "px-3 py-2 text-sm transition-colors",
-                    discountType === "dollar" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
-                  )}
-                  onClick={() => setDiscountType("dollar")}
-                  data-testid="button-discount-dollar"
-                >
-                  $
-                </button>
-                <button
-                  className={cn(
-                    "px-3 py-2 text-sm transition-colors",
-                    discountType === "percent" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
-                  )}
-                  onClick={() => setDiscountType("percent")}
-                  data-testid="button-discount-percent"
-                >
-                  %
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">{tPOS.tip}</h3>
-            <div className="grid grid-cols-5 gap-1.5">
-              {TIP_PRESETS.map((preset, i) => (
-                <Button
-                  key={preset.label}
-                  variant="outline"
-                  size="sm"
-                  className={cn(
-                    "text-xs",
-                    tipMode === "preset" && selectedTipIndex === i && "border-primary bg-primary/5 text-primary"
-                  )}
-                  onClick={() => { setTipMode("preset"); setSelectedTipIndex(i); }}
-                  data-testid={`button-tip-${preset.label.replace(/[^a-z0-9]/gi, "").toLowerCase()}`}
-                >
-                  {preset.label}
-                </Button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2 mt-2">
-              <span className="text-xs text-muted-foreground whitespace-nowrap">{tPOS.custom}</span>
-              <div className="relative flex-1">
-                <DollarSign className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={customTip}
-                  onChange={(e) => { setCustomTip(e.target.value); setTipMode("custom"); }}
-                  onFocus={() => setTipMode("custom")}
-                  className={cn("pl-8", tipMode === "custom" && "border-primary")}
-                  data-testid="input-custom-tip"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="border-t p-4 space-y-3 bg-card">
-          <div className="space-y-1 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">{tPOS.subtotal}</span>
-              <span data-testid="pos-subtotal">${subtotal.toFixed(2)}</span>
-            </div>
-            {discount > 0 && (
-              <div className="flex justify-between text-green-600">
-                <span>{tPOS.discount}</span>
-                <span data-testid="pos-discount">-${discount.toFixed(2)}</span>
-              </div>
-            )}
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">{tPOS.tax} ({(TAX_RATE * 100).toFixed(0)}%)</span>
-              <span data-testid="pos-tax">${tax.toFixed(2)}</span>
-            </div>
-            {tip > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">{tPOS.tip}</span>
-                <span data-testid="pos-tip">${tip.toFixed(2)}</span>
-              </div>
-            )}
-            <div className="flex justify-between font-bold text-lg pt-2 border-t">
-              <span>{tPOS.total}</span>
-              <span data-testid="pos-total">${grandTotal.toFixed(2)}</span>
-            </div>
-          </div>
-
-          <Button
-            className="w-full bg-green-600 text-white h-12"
-            onClick={() => {
-              // Always use the in-sheet payment phase (native and web alike).
-              // The built-in POS sheet handles all tender methods including the
-              // M2 reader via the native bridge M2_PAY message.
-              setPhase("payment");
-            }}
-            data-testid="button-finalize-pay"
-          >
-            <Receipt className="w-4 h-4 mr-2" />
-            {tPOS.finalizePay}
-          </Button>
-          {dualScreenEnabled && (
-            <Button
-              className={cn(
-                "w-full h-10 gap-2 text-sm font-semibold",
-                waitingForTip
-                  ? "bg-amber-500 text-white"
-                  : "bg-purple-600 hover:bg-purple-700 text-white"
-              )}
-              onClick={() => {
-                setWaitingForTip(true);
-                // kiosk_checkout_tip_request always sends the PRE-tip amount
-                // (subtotal + tax): the kiosk's tip screen computes its 15/18/
-                // 20/25% preset amounts as a percentage of this number. Any
-                // tip already entered by staff is intentionally discarded here
-                // since the customer is being asked to pick a fresh tip — this
-                // must stay consistent with the auto-send effect above, which
-                // fires the same event using preTotal.
-                broadcastToKiosk("kiosk_checkout_tip_request", { total: Math.round(preTotal * 100) / 100 });
-              }}
-              disabled={waitingForTip}
-              data-testid="button-send-kiosk-tip-request"
-            >
-              {waitingForTip ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> Waiting for client tip…</>
-              ) : (
-                <><Smartphone className="w-4 h-4" /> Send Tip Screen to Client</>
-              )}
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            className="w-full text-muted-foreground"
-            onClick={() => {
-              broadcastToKiosk("kiosk_checkout_cancel");
-              onClose();
-            }}
-            data-testid="button-abort-checkout"
-          >
-          {tPOS.backToAppt}
-          </Button>
-        </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="fixed inset-0 z-50" data-testid="checkout-payment-panel">
-      <button
-        type="button"
-        aria-label="Close payment"
-        className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]"
-        onClick={onClose}
-      />
-      <div className="absolute left-0 top-0 h-full w-full sm:w-[680px] bg-card flex flex-col shadow-[8px_0_24px_rgba(0,0,0,0.12)] border-r">
-      <div className="p-3 border-b flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <DollarSign className="w-5 h-5 text-muted-foreground" />
-          <h2 className="font-semibold">{tPOS.paymentHdr}</h2>
-          <Badge variant="outline" className="no-default-active-elevate text-[10px]">#{appointment.id}</Badge>
-          <span className="text-xs text-muted-foreground">&middot; {(appointment as any).customer?.fullName || appointment.customer?.name || (appointment as any).customerName || (appointment as any).clientName || tPOS.walkIn}</span>
-        </div>
-        <button onClick={() => setPhase("cart")} className="text-muted-foreground" data-testid="button-back-to-cart">
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-      </div>
-
-      <div className="flex flex-1 overflow-hidden">
-        <div className="w-[300px] flex-shrink-0 border-r flex flex-col">
-          <div className="flex-1 overflow-y-auto p-3 space-y-1">
+          {/* Linked tickets (Group Pay) */}
+          {linkedAppointments.length > 0 && (
             <div className="space-y-1">
-              <div className="flex items-center justify-between py-1.5 text-sm">
-                <span className="font-medium">{appointment.service?.name}</span>
-                <span>${servicePrice.toFixed(2)}</span>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-medium uppercase tracking-wide" style={{ color: "#8e8e93" }}>
+                  Linked Tickets · {linkedAppointments.length}
+                </h3>
+                <button className="text-[11px] font-semibold" style={{ color: "#2dd4bf" }} onClick={() => setShowLinkPicker(true)}>Edit</button>
               </div>
-              {aptAddons.map((addon: any) => (
-                <div key={addon.id} className="flex items-center justify-between py-1 text-sm text-muted-foreground pl-2">
-                  <span>+ {addon.name}</span>
-                  <span>${Number(addon.price).toFixed(2)}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="border-t pt-2 mt-2 space-y-1 text-xs">
-              <div className="flex justify-between text-muted-foreground">
-                <span>{tPOS.subtotal}</span>
-                <span>${subtotal.toFixed(2)}</span>
-              </div>
-              {discount > 0 && (
-                <div className="flex justify-between text-green-600">
-                  <span>{tPOS.discount}</span>
-                  <span>-${discount.toFixed(2)}</span>
-                </div>
-              )}
-              <div className="flex justify-between text-muted-foreground">
-                <span>{tPOS.tax} ({(TAX_RATE * 100).toFixed(0)}%)</span>
-                <span>${tax.toFixed(2)}</span>
-              </div>
-              {tip > 0 && (
-                <div className="flex justify-between text-muted-foreground">
-                  <span>{tPOS.tip}</span>
-                  <span>${tip.toFixed(2)}</span>
-                </div>
-              )}
-              <div className="flex justify-between font-bold text-sm pt-1 border-t">
-                <span>{tPOS.total}</span>
-                <span data-testid="payment-total">${grandTotal.toFixed(2)}</span>
-              </div>
-            </div>
-
-            {tenders.length > 0 && (
-              <div className="border-t pt-2 mt-2 space-y-1.5">
-                <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{tPOS.paymentsApplied}</h4>
-                {tenders.map((tender) => {
-                  const Icon = getMethodIcon(tender.method);
+              <div className="rounded-md overflow-hidden" style={{ border: "1px solid #3a3a3c" }}>
+                {linkedAppointments.map((a, i) => {
+                  const nm = (a as any).customer?.fullName || a.customer?.name || (a as any).customerName || tPOS.walkIn;
                   return (
-                    <div key={tender.id} className="flex items-center justify-between bg-muted/50 rounded-md p-2" data-testid={`tender-line-${tender.id}`}>
-                      <div className="flex items-center gap-2">
-                        <Icon className="w-3.5 h-3.5 text-muted-foreground" />
-                        <span className="text-sm capitalize">{tender.method}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-green-600" data-testid={`tender-amount-${tender.id}`}>${tender.amount.toFixed(2)}</span>
+                    <div key={a.id} className="flex items-center justify-between p-3" style={i > 0 ? { borderTop: "1px solid #3a3a3c" } : undefined} data-testid={`pos-linked-${a.id}`}>
+                      <div className="flex items-center gap-2 min-w-0">
                         <button
-                          onClick={() => handleRemoveTender(tender.id)}
-                          className="text-muted-foreground"
-                          data-testid={`button-remove-tender-${tender.id}`}
+                          onClick={() => setLinkedIds((ids) => ids.filter((x) => x !== a.id))}
+                          className="flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center"
+                          style={{ backgroundColor: "#3a2a2e", color: "#fb7185" }}
+                          aria-label={`Unlink ${nm}`}
                         >
-                          <XCircle className="w-3.5 h-3.5" />
+                          <X className="w-2.5 h-2.5" />
                         </button>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate" style={{ color: "#f5f5f7" }}>{nm}</p>
+                          <p className="text-xs truncate" style={{ color: "#8e8e93" }}>{a.service?.name}{a.staff ? ` · ${a.staff.name}` : ""}</p>
+                        </div>
                       </div>
+                      <span className="text-sm font-semibold" style={{ color: "#f5f5f7" }}>${ticketSubtotal(a).toFixed(2)}</span>
                     </div>
                   );
                 })}
               </div>
-            )}
-          </div>
-
-          <div className="border-t p-3">
-            {balanceDue > 0 ? (
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold">{tPOS.balanceDue}</span>
-                <span className="text-lg font-bold text-destructive" data-testid="pos-balance-due">${balanceDue.toFixed(2)}</span>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-green-600">{tPOS.paidInFull}</span>
-                  <Check className="w-4 h-4 text-green-600" />
-                </div>
-                {changeDue > 0 && (
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">{tPOS.changeDue}</span>
-                    <span className="font-medium" data-testid="pos-change-due">${changeDue.toFixed(2)}</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="flex-1 flex flex-col relative">
-          <div className="bg-muted/30 px-4 py-3 border-b flex items-center justify-end">
-            <div className="text-right">
-              <span className="text-2xl font-mono font-bold tracking-wider" data-testid="keypad-display">${keypadDisplay}</span>
-            </div>
-          </div>
-
-          <div className="flex-1 p-3 flex flex-col gap-2">
-            <div className="grid grid-cols-4 gap-1.5 flex-1">
-              {["7","8","9","BS","4","5","6","C","1","2","3",".","00","0"].map((key) => (
-                <Button
-                  key={key}
-                  variant="outline"
-                  className={cn(
-                    "text-lg font-medium h-auto",
-                    key === "C" && "text-destructive",
-                    key === "BS" && "text-muted-foreground"
-                  )}
-                  onClick={() => handleKeypadPress(key)}
-                  data-testid={`keypad-${key === "BS" ? "backspace" : key === "." ? "dot" : key}`}
-                >
-                  {key === "BS" ? <Delete className="w-5 h-5" /> : key === "C" ? "CLR" : key}
-                </Button>
-              ))}
-              <Button
-                variant="outline"
-                className="text-lg font-medium h-auto col-span-2 bg-primary/5 border-primary text-primary"
-                onClick={() => setKeypadDisplay(balanceDue > 0 ? balanceDue.toFixed(2) : "0")}
-                data-testid="keypad-exact"
-              >
-                {tPOS.exact}
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-4 gap-1.5">
-              {[1, 5, 10, 20].map((amt) => (
-                <Button
-                  key={amt}
-                  variant="secondary"
-                  size="sm"
-                  className="text-sm font-medium"
-                  onClick={() => handleQuickAmount(amt)}
-                  data-testid={`quick-amount-${amt}`}
-                >
-                  ${amt}
-                </Button>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-3 gap-1.5 mt-1">
-              {PAYMENT_METHODS.map((method) => {
-                const Icon = method.icon;
-                if (method.id === "m2") {
-                  // ── Native Android: send M2_PAY to device bridge, one tap ────
-                  if ((window as any).CERTXA_NATIVE_APP) {
-                    return (
-                      <Button
-                        key="m2"
-                        className="h-auto py-2 flex flex-col items-center gap-1 bg-indigo-600 text-white col-span-1"
-                        onClick={() => {
-                          if (nativeM2Active) return;
-                          const amountCents = Math.round(balanceDue * 100);
-                          if (amountCents <= 0) return;
-                          setNativeM2Active(true);
-                          setTermError("");
-                          (window as any).ReactNativeWebView?.postMessage(JSON.stringify({
-                            type: 'M2_PAY',
-                            appointmentId: appointment?.id ?? 0,
-                            amountCents,
-                            clientName: (appointment as any)?.customer?.fullName
-                              || appointment?.customer?.name
-                              || (appointment as any)?.customerName
-                              || (appointment as any)?.clientName
-                              || 'Walk-in',
-                          }));
-                        }}
-                        disabled={balanceDue <= 0 || nativeM2Active}
-                        data-testid="tender-m2"
-                      >
-                        {nativeM2Active
-                          ? <Loader2 className="w-4 h-4 animate-spin" />
-                          : <CreditCard className="w-5 h-5" />}
-                        <span className="text-[10px] font-medium leading-tight text-center">
-                          {nativeM2Active ? "M2 Active…" : "M2 Reader"}
-                        </span>
-                      </Button>
-                    );
-                  }
-                  // ── Web: Stripe Terminal JS SDK ──────────────────────────────
-                  const busy = termStatus === "collecting" || termStatus === "processing";
-                  const connecting = termStatus === "loading" || termStatus === "discovering" || termStatus === "connecting";
-                  const chargeLabel = termStatus === "collecting"
-                    ? "Waiting…"
-                    : termStatus === "processing"
-                      ? "Processing…"
-                      : `Charge ${balanceDue.toFixed(2)}`;
-                  if ((termStatus === "ready" || termStatus === "collecting" || termStatus === "processing") && termReader) {
-                    return (
-                      <Button
-                        key="m2"
-                        className="h-auto py-2 flex flex-col items-center gap-1 bg-indigo-600 text-white col-span-1"
-                        onClick={handleM2Payment}
-                        disabled={balanceDue <= 0}
-                        data-testid="tender-m2"
-                      >
-                        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-5 h-5" />}
-                        <span className="text-[10px] font-medium leading-tight text-center">
-                          {chargeLabel}
-                        </span>
-                      </Button>
-                    );
-                  }
-                  return (
-                    <Button
-                      key="m2"
-                      className="h-auto py-2 flex flex-col items-center gap-1 bg-indigo-600 text-white col-span-1"
-                      onClick={handleConnectM2}
-                      disabled={connecting}
-                      data-testid="tender-m2"
-                    >
-                      {connecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-5 h-5" />}
-                      <span className="text-[10px] font-medium leading-tight text-center">
-                        {termStatus === "loading" ? "Loading…" : termStatus === "discovering" ? "Scanning…" : termStatus === "connecting" ? "Connecting…" : termStatus === "error" ? "Retry M2" : "M2 Reader"}
-                      </span>
-                    </Button>
-                  );
-                }
-                return (
-                  <Button
-                    key={method.id}
-                    className={cn(
-                      "h-auto py-3 flex flex-col items-center gap-1",
-                      method.id === "cash" && "bg-green-600 text-white",
-                      method.id === "card" && "bg-blue-600 text-white",
-                    )}
-                    onClick={() => handleApplyTender(method.id)}
-                    disabled={Number(keypadDisplay) <= 0}
-                    data-testid={`tender-${method.id}`}
-                  >
-                    <Icon className="w-5 h-5" />
-                    <span className="text-xs font-medium">{method.label}</span>
-                  </Button>
-                );
-              })}
-            </div>
-            {termError && <p className="text-xs text-red-600 dark:text-red-400 px-1">{termError}</p>}
-            {termStatus === "ready" && termReader && (
-              <p className="text-[10px] text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
-                {termReader.label ?? termReader.id ?? "M2"} connected
+              <p className="mt-1 text-[11px]" style={{ color: "#8e8e93" }}>
+                Each ticket is paid & completed on its own — tip and discount split by service value, so every tech keeps their commission.
               </p>
-            )}
-
-          </div>
-
-          {showComplete && (
-            <div className="absolute inset-0 bg-background/95 flex flex-col items-center justify-center gap-6 z-10" data-testid="payment-complete-overlay">
-              <div className="flex flex-col items-center gap-3">
-                <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                  <Check className="w-8 h-8 text-green-600" />
-                </div>
-                <h3 className="text-xl font-bold">{tPOS.payComplete}</h3>
-                <p className="text-sm text-muted-foreground">{tPOS.totalLabel} ${grandTotal.toFixed(2)}</p>
-                {changeDue > 0 && (
-                  <p className="text-sm font-medium">{tPOS.changeDueLabel} ${changeDue.toFixed(2)}</p>
-                )}
-              </div>
-              <div className="flex gap-3">
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={handlePrintAndComplete}
-                  disabled={isUpdating}
-                  data-testid="button-print-receipt"
-                >
-                  <Printer className="w-4 h-4" />
-                  {isUpdating ? tPOS.processing : tPOS.printReceipt}
-                </Button>
-                <Button
-                  className="gap-2 bg-green-600 text-white"
-                  onClick={handleCompleteTransaction}
-                  disabled={isUpdating}
-                  data-testid="button-no-receipt"
-                >
-                  <Check className="w-4 h-4" />
-                  {isUpdating ? tPOS.processing : tPOS.noReceipt}
-                </Button>
-              </div>
             </div>
           )}
         </div>
+
+        <div className="p-4 space-y-3" style={{ borderTop: "1px solid #3a3a3c", backgroundColor: "#2c2c2e" }}>
+          <div className="space-y-1 text-sm">
+            <div className="flex justify-between">
+              <span style={{ color: "#8e8e93" }}>{tPOS.subtotal}</span>
+              <span data-testid="pos-subtotal" style={{ color: "#e5e5e7" }}>${subtotal.toFixed(2)}</span>
+            </div>
+            {tip > 0 && (() => {
+              const tipPct = discountedSubtotal > 0 ? Math.round((tip / discountedSubtotal) * 100) : 0;
+              return (
+                <div className="flex justify-between">
+                  <span style={{ color: "#8e8e93" }}>{tPOS.tip}{tipPct > 0 ? ` (${tipPct}%)` : ""}</span>
+                  <span data-testid="pos-tip" style={{ color: "#e5e5e7" }}>${tip.toFixed(2)}</span>
+                </div>
+              );
+            })()}
+            {manualDiscount > 0 && (
+              <div className="flex justify-between" style={{ color: "#fb7185" }}>
+                <span>{tPOS.discount}{discountType === "percent" ? ` (${discountNum}%)` : ""}</span>
+                <span data-testid="pos-discount">&minus;${manualDiscount.toFixed(2)}</span>
+              </div>
+            )}
+            {pendingRedemption && (
+              <div className="flex justify-between" style={{ color: "#34d399" }}>
+                <span>🎁 {pendingRedemption.name}</span>
+                <span data-testid="pos-redemption">&minus;${pendingRedemption.dollarValue.toFixed(2)}</span>
+              </div>
+            )}
+            {posTaxRate > 0 && (
+              <div className="flex justify-between">
+                <span style={{ color: "#8e8e93" }}>{tPOS.tax} ({(posTaxRate * 100).toFixed(0)}%)</span>
+                <span data-testid="pos-tax" style={{ color: "#e5e5e7" }}>${tax.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="flex justify-between font-bold text-lg pt-2" style={{ borderTop: "1px solid #3a3a3c", color: "#f5f5f7" }}>
+              <span>{tPOS.total}</span>
+              <span data-testid="pos-total">${grandTotal.toFixed(2)}</span>
+            </div>
+            {phase === "payment" && tenders.length > 0 && (
+              <>
+                {tenders.map((t) => (
+                  <div key={t.id} className="flex justify-between" style={{ color: "#34d399" }}>
+                    <span className="capitalize">
+                      {t.method === "m2" ? "M2 Card" : t.method === "tap" ? "Tap to Pay" : t.method}
+                    </span>
+                    <span data-testid={`pos-left-tender-${t.id}`}>&minus;${t.amount.toFixed(2)}</span>
+                  </div>
+                ))}
+                <div
+                  className="flex justify-between font-bold pt-2"
+                  style={{ borderTop: "1px solid #3a3a3c", color: balanceDue > 0 ? "#fb7185" : "#34d399" }}
+                >
+                  <span>{balanceDue > 0 ? tPOS.balanceDue : changeDue > 0 ? "Change Due" : tPOS.paidInFull}</span>
+                  <span data-testid="pos-balance-due">${(balanceDue > 0 ? balanceDue : changeDue).toFixed(2)}</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {phase === "cart" ? (
+            <button
+              className="w-full h-12 rounded-md font-semibold flex items-center justify-center gap-2"
+              style={{ backgroundColor: "#16a34a", color: "#fff" }}
+              onClick={() => setPhase("payment")}
+              data-testid="button-finalize-pay"
+            >
+              <Receipt className="w-4 h-4" />
+              {tPOS.finalizePay}
+            </button>
+          ) : (
+            <button
+              className="w-full h-12 rounded-md font-semibold flex items-center justify-center gap-2"
+              style={{ backgroundColor: "#2a2a2c", border: "1px solid #3a3a3c", color: "#f5f5f7" }}
+              onClick={() => setPhase("cart")}
+              data-testid="button-back-to-cart"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Cart
+            </button>
+          )}
+          <button
+            className="w-full h-9 rounded-md text-sm"
+            style={{ color: "#8e8e93" }}
+            onClick={() => { broadcastToKiosk("kiosk_checkout_cancel"); onClose(); }}
+            data-testid="button-abort-checkout"
+          >
+            {tPOS.backToAppt}
+          </button>
+        </div>
+        </div>
+        {/* ── Panels 2 & 3 — dark POS keypad (header + centred keypad + footer) ── */}
+        <div className="hidden lg:flex w-[772px] flex-shrink-0 flex-col" style={{ backgroundColor: "#1c1c1e", borderLeft: "1px solid #3a3a3c" }}>
+
+          {/* Top status bar — replaces all POS toasts */}
+          <div
+            style={{
+              backgroundColor: "#2c2c2e", borderBottom: "1px solid #3a3a3c", height: 46, flexShrink: 0,
+              display: "flex", alignItems: "center", justifyContent: "center", padding: "0 16px",
+            }}
+            data-testid="pos-status-bar"
+          >
+            <span
+              style={{
+                fontSize: 15, fontWeight: 800, letterSpacing: 2, textTransform: "uppercase", textAlign: "center",
+                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%",
+                color: guided ? "#f4d000"
+                     : posStatus?.tone === "error" ? "#fbbf24"
+                     : posStatus?.tone === "success" ? "#34d399"
+                     : "#9a9aa0",
+              }}
+            >
+              {guided
+                ? tSt.qtHeaderHint(guidedT(guidedStep!).prompt, posKeypadDollars(), guided.i + 1, guided.steps.length)
+                : (posStatus?.text ?? "")}
+            </span>
+          </div>
+
+          {/* Middle — vertically centred keypad + function grid */}
+          <div className="flex-1 flex items-center justify-center" style={{ padding: "0 14px", minHeight: 0 }}>
+            <div className="flex" style={{ gap: 20 }}>
+
+              {/* Numpad */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 82px)", gridAutoRows: "72px", columnGap: 6, rowGap: 8 }} data-testid="cart-keypad">
+                {/* Display */}
+                <div style={{
+                  gridColumn: "1 / span 4", height: 72, boxSizing: "border-box",
+                  backgroundColor: "#0e0e10", border: "1px solid #3a3a3c", borderRadius: 4,
+                  boxShadow: "inset 0 2px 6px rgba(0,0,0,0.6)",
+                  display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "0 20px",
+                  fontSize: 40, fontFamily: "ui-monospace, 'SFMono-Regular', Menlo, monospace",
+                  color: "#e8e8ea", fontWeight: 500, letterSpacing: 1,
+                }} data-testid="cart-keypad-display">
+                  {phase === "payment" ? `$${payKpVal.toFixed(2)}` : (cartKeypad || "0")}
+                </div>
+
+                {/* 7 8 9 ⌫ */}
+                {["7", "8", "9"].map(n => <button key={n} style={KP_NUM} onClick={() => cartKpDigit(n)}>{n}</button>)}
+                <button style={KP_NUM} onClick={cartKpBack} aria-label="Backspace"><Delete style={{ width: 26, height: 26, color: "#c7c7cc" }} /></button>
+
+                {/* 4 5 6 CLEAR */}
+                {["4", "5", "6"].map(n => <button key={n} style={KP_NUM} onClick={() => cartKpDigit(n)}>{n}</button>)}
+                <button style={{ ...KP_NUM, fontSize: 15, fontWeight: 600 }} onClick={cartKpClear}>CLEAR</button>
+
+                {/* 1 2 3 ERC */}
+                {["1", "2", "3"].map(n => <button key={n} style={KP_NUM} onClick={() => cartKpDigit(n)}>{n}</button>)}
+                <button
+                  style={{ ...KP_NUM, backgroundColor: "#3a2a2e", border: "1px solid #5a3a3e", color: "#fb7185", fontSize: 17, fontWeight: 700, letterSpacing: 1 }}
+                  onClick={handleErc}
+                  title={guided ? tSt.qtClearExit : tSt.qtErrorCorrect}
+                >
+                  {guided ? "EXIT" : "ERC"}
+                </button>
+
+                {/* 00 0 ENTER */}
+                <button style={KP_NUM} onClick={() => cartKpDigit("00")}>00</button>
+                <button style={KP_NUM} onClick={() => cartKpDigit("0")}>0</button>
+                <button
+                  style={{ ...KP_NUM, gridColumn: "span 2", backgroundColor: guided ? "#f4d000" : "#0d9d78", border: `1px solid ${guided ? "#f4d000" : "#0d9d78"}`, color: guided ? "#1c1c1e" : "#fff", fontSize: 20, fontWeight: 700, letterSpacing: 1 }}
+                  onClick={() => {
+                    if (guided) { handleGuidedEnter(); return; }
+                    // In the payment phase, ENTER commits the keypad amount as a cash payment.
+                    if (phase === "payment") applyMobileTender("cash");
+                  }}
+                  data-testid="cart-keypad-enter"
+                >
+                  ENTER
+                </button>
+
+                {/* Beneath the numpad: business-type utility buttons, or quick-cash fallback */}
+                {posLayout.keypadButtons
+                  ? Array.from({ length: 4 }).map((_, i) => {
+                      const b = posLayout.keypadButtons?.[i] ?? null;
+                      if (!b) {
+                        return <div key={`kpfn-gap-${i}`} style={{ ...KP_NUM, cursor: "default", backgroundColor: "#242426" }} aria-hidden="true" />;
+                      }
+                      const Icon = resolvePosIcon(b.icon);
+                      return (
+                        <button
+                          key={b.id}
+                          style={{
+                            ...KP_FN_BASE, minHeight: 0, fontSize: 11, gap: 1, padding: "2px 2px",
+                            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.04), inset 0 -4px 0 ${b.band ?? "#6b7280"}`,
+                            opacity: b.enabled === false ? 0.4 : 1,
+                          }}
+                          onClick={() => b.enabled !== false && handlePosAction(b)}
+                          disabled={b.enabled === false}
+                          data-testid={`cart-kpfn-${b.id}`}
+                        >
+                          {Icon
+                            ? <Icon style={{ width: 20, height: 20, strokeWidth: 1.5 }} />
+                            : <span style={{ width: 20, height: 20, display: "inline-block" }}>•</span>}
+                          <span style={{ whiteSpace: "pre-line" }}>{posT(b.id, b.label)}</span>
+                        </button>
+                      );
+                    })
+                  : [["$1", "100"], ["$5", "500"], ["$10", "1000"], ["$20", "2000"]].map(([label, val]) => (
+                      <button key={label} style={{ ...KP_NUM, fontSize: 19, color: "#34d399", fontWeight: 600 }} onClick={() => setCartKeypad(val)}>
+                        {label}
+                      </button>
+                    ))}
+              </div>
+
+              {phase === "cart" ? (
+              /* Function grid — data-driven from the business-type POS layout */
+              <div style={{ display: "grid", gridTemplateColumns: `repeat(${posLayout.columns}, 116px)`, gridAutoRows: "84px", columnGap: 8, rowGap: 8 }} data-testid="cart-fn-grid">
+                {posMenuStack.length > 0 && (
+                  <button
+                    style={{ ...KP_FN_BASE, boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04), inset 0 -4px 0 #6b7280" }}
+                    onClick={() => setPosMenuStack((s) => s.slice(0, -1))}
+                    data-testid="cart-fn-back"
+                  >
+                    <ArrowLeft style={{ width: 22, height: 22, strokeWidth: 1.75, marginBottom: 2 }} />
+                    <span>{pick(POS_MISC_TX.back)}</span>
+                  </button>
+                )}
+                {posButtons.map((b, i) => {
+                  if (!b) {
+                    return <div key={`gap-${i}`} style={{ border: "1px solid #3a3a3c", borderRadius: 4, backgroundColor: "#242426" }} />;
+                  }
+                  const band = b.band ?? KP_ROW_BANDS[Math.floor((i + posMenuStack.length) / posLayout.columns) % KP_ROW_BANDS.length];
+                  const Icon = resolvePosIcon(b.icon);
+                  return (
+                    <button
+                      key={b.id}
+                      style={{ ...KP_FN_BASE, boxShadow: `inset 0 1px 0 rgba(255,255,255,0.04), inset 0 -4px 0 ${band}`, opacity: b.enabled === false ? 0.4 : 1 }}
+                      onClick={() => b.enabled !== false && handlePosAction(b)}
+                      disabled={b.enabled === false}
+                      data-testid={`cart-fn-btn-${b.id}`}
+                    >
+                      {Icon
+                        ? <Icon style={{ width: 24, height: 24, strokeWidth: 1.5, marginBottom: 2 }} />
+                        : <span style={{ width: 24, height: 24, marginBottom: 2, display: "inline-block" }}>•</span>}
+                      <span style={{ whiteSpace: "pre-line" }}>{posT(b.id, b.label)}</span>
+                      {b.action.type === "submenu" && (
+                        <span style={{ position: "absolute", top: 4, right: 6, fontSize: 10, color: "#8e8e93" }}>›</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              ) : (
+              /* Payment / tender panel — replaces the function grid in payment phase */
+              <div style={{ width: 372, display: "flex", flexDirection: "column", gap: 10, alignSelf: "flex-start", maxHeight: 452, overflowY: "auto" }} data-testid="pos-payment-panel">
+                <div style={{ backgroundColor: "#242426", border: "1px solid #3a3a3c", borderRadius: 6, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: balanceDue > 0 ? "#fb7185" : "#34d399" }}>
+                    {balanceDue > 0 ? tPOS.balanceDue : tPOS.paidInFull}
+                  </span>
+                  <span style={{ fontSize: 22, fontWeight: 800, color: "#f5f5f7" }} data-testid="pos-balance-due">
+                    ${(balanceDue > 0 ? balanceDue : (changeDue || 0)).toFixed(2)}{balanceDue <= 0 && changeDue > 0 ? " chg" : ""}
+                  </span>
+                </div>
+
+                <button
+                  onClick={() => setCartKeypad(String(Math.max(0, Math.round(balanceDue * 100))))}
+                  style={{ height: 40, borderRadius: 6, backgroundColor: "#1f3a2f", border: "1px solid #16a34a", color: "#34d399", fontSize: 13, fontWeight: 700, flexShrink: 0 }}
+                  data-testid="pos-pay-exact"
+                >
+                  {tPOS.exact} · ${Math.max(0, balanceDue).toFixed(2)}
+                </button>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, flexShrink: 0 }}>
+                  <button onClick={() => applyMobileTender("cash")} style={{ height: 56, borderRadius: 6, backgroundColor: "#16a34a", color: "#fff", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} data-testid="tender-cash">
+                    <Banknote className="w-5 h-5" /> Cash
+                  </button>
+                  <button onClick={() => applyMobileTender("card")} style={{ height: 56, borderRadius: 6, backgroundColor: "#2563eb", color: "#fff", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} data-testid="tender-card">
+                    <CreditCard className="w-5 h-5" /> Card
+                  </button>
+                  {/* ── M2 Reader — Bluetooth Stripe M2 card reader ──
+                      In the native Android app this fires the device bridge
+                      (M2_PAY); it never records a keypad tender. In a web
+                      browser it drives the Stripe Terminal JS SDK. */}
+                  {(() => {
+                    const M2_STYLE: React.CSSProperties = { gridColumn: "span 2", height: 56, borderRadius: 6, backgroundColor: "#4f46e5", color: "#fff", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 };
+                    if (isNative) {
+                      return (
+                        <button
+                          style={{ ...M2_STYLE, opacity: (balanceDue <= 0 || nativeM2Active) ? 0.5 : 1 }}
+                          disabled={balanceDue <= 0 || nativeM2Active}
+                          onClick={() => {
+                            if (nativeM2Active) return;
+                            const cents = Math.round(balanceDue * 100);
+                            if (cents <= 0) { showPosStatus(tSt.nothingDue, "error"); return; }
+                            setNativeM2Active(true); setTermError("");
+                            (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "M2_PAY", appointmentId: appointment?.id ?? 0, amountCents: cents, clientName: posCustomerName }));
+                            showPosStatus(tSt.m2Insert, "info");
+                          }}
+                          data-testid="tender-m2"
+                        >
+                          {nativeM2Active ? <Loader2 className="w-5 h-5 animate-spin" /> : <CreditCard className="w-5 h-5" />}
+                          {nativeM2Active ? "M2 active…" : `M2 Reader · $${Math.max(0, balanceDue).toFixed(2)}`}
+                        </button>
+                      );
+                    }
+                    const busy = termStatus === "collecting" || termStatus === "processing";
+                    const connecting = termStatus === "loading" || termStatus === "discovering" || termStatus === "connecting";
+                    if ((termStatus === "ready" || busy) && termReader) {
+                      return (
+                        <button style={{ ...M2_STYLE, opacity: balanceDue <= 0 ? 0.5 : 1 }} disabled={balanceDue <= 0} onClick={handleM2Payment} data-testid="tender-m2">
+                          {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <CreditCard className="w-5 h-5" />}
+                          {termStatus === "collecting" ? "Waiting…" : termStatus === "processing" ? "Processing…" : `Charge $${balanceDue.toFixed(2)}`}
+                        </button>
+                      );
+                    }
+                    return (
+                      <button style={{ ...M2_STYLE, opacity: connecting ? 0.5 : 1 }} disabled={connecting} onClick={handleConnectM2} data-testid="tender-m2">
+                        {connecting ? <Loader2 className="w-5 h-5 animate-spin" /> : <CreditCard className="w-5 h-5" />}
+                        {termStatus === "loading" ? "Loading…" : termStatus === "discovering" ? "Scanning…" : termStatus === "connecting" ? "Connecting…" : termStatus === "error" ? "Retry M2" : "M2 Reader"}
+                      </button>
+                    );
+                  })()}
+
+                  {/* ── Tap to Pay ──
+                      Native Android: fires the device bridge (TAP_TO_PAY) to
+                      run Tap to Pay on this phone's NFC — no keypad tender.
+                      Web + dual-screen: tells the paired customer tablet to
+                      collect the tap. Hidden otherwise. */}
+                  {isNative ? (
+                    <button
+                      style={{ gridColumn: "span 2", height: 56, borderRadius: 6, backgroundColor: "#c026d3", color: "#fff", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: (balanceDue <= 0 || nativeM2Active) ? 0.5 : 1 }}
+                      disabled={balanceDue <= 0 || nativeM2Active}
+                      onClick={() => {
+                        if (nativeM2Active) return;
+                        const cents = Math.round(balanceDue * 100);
+                        if (cents <= 0) { showPosStatus(tSt.nothingDue, "error"); return; }
+                        setNativeM2Active(true); setTermError("");
+                        (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "TAP_TO_PAY", appointmentId: appointment?.id ?? 0, amountCents: cents, clientName: posCustomerName }));
+                        showPosStatus(tSt.tapPrompt, "info");
+                      }}
+                      data-testid="tender-tap"
+                    >
+                      {nativeM2Active ? <Loader2 className="w-5 h-5 animate-spin" /> : <Smartphone className="w-5 h-5" />}
+                      {nativeM2Active ? "Tap to Pay active…" : `Tap to Pay · $${Math.max(0, balanceDue).toFixed(2)}`}
+                    </button>
+                  ) : dualScreenEnabled ? (
+                    <button
+                      style={{ gridColumn: "span 2", height: 56, borderRadius: 6, backgroundColor: "#c026d3", color: "#fff", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: (balanceDue <= 0 && !awaitingTapPay) ? 0.5 : 1 }}
+                      disabled={balanceDue <= 0 && !awaitingTapPay}
+                      onClick={() => {
+                        if (awaitingTapPay) {
+                          awaitingTapPayAmtRef.current = 0; setAwaitingTapPay(false);
+                          broadcastToKiosk("kiosk_checkout_cancel"); showPosStatus(tSt.tapCancelled, "info");
+                          return;
+                        }
+                        const amt = balanceDue;
+                        if (amt <= 0) return;
+                        awaitingTapPayAmtRef.current = amt; setAwaitingTapPay(true);
+                        broadcastToKiosk("kiosk_checkout_await_payment", { mode: "tap", total: amt, appointmentId: appointment?.id ?? 0 });
+                        showPosStatus(tSt.tapSentScreen, "info");
+                      }}
+                      data-testid="tender-tap"
+                    >
+                      {awaitingTapPay ? <Loader2 className="w-5 h-5 animate-spin" /> : <Smartphone className="w-5 h-5" />}
+                      {awaitingTapPay ? "Cancel Tap to Pay" : "Tap to Pay (customer screen)"}
+                    </button>
+                  ) : null}
+                </div>
+                {termError && <p style={{ fontSize: 11, color: "#f87171", flexShrink: 0 }}>{termError}</p>}
+
+                {tenders.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: "#8e8e93" }}>{tPOS.paymentsApplied}</p>
+                    {tenders.map((t) => {
+                      const Icon = getMethodIcon(t.method);
+                      return (
+                        <div key={t.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", backgroundColor: "#242426", border: "1px solid #3a3a3c", borderRadius: 6, padding: "8px 10px" }} data-testid={`tender-line-${t.id}`}>
+                          <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, textTransform: "capitalize", color: "#e5e5e7" }}>
+                            <Icon className="w-4 h-4" style={{ color: "#8e8e93" }} />{t.method}
+                          </span>
+                          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "#34d399" }}>${t.amount.toFixed(2)}</span>
+                            <button onClick={() => handleRemoveTender(t.id)} style={{ color: "#8e8e93" }}><XCircle className="w-4 h-4" /></button>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {payPaidInFull && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, flexShrink: 0, marginTop: "auto" }}>
+                    <button onClick={handlePrintAndComplete} disabled={isUpdating} style={{ height: 48, borderRadius: 6, backgroundColor: "#2a2a2c", border: "1px solid #3a3a3c", color: "#f5f5f7", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: isUpdating ? 0.5 : 1 }} data-testid="button-print-receipt">
+                      <Printer className="w-4 h-4" /> {isUpdating ? tPOS.processing : tPOS.printReceipt}
+                    </button>
+                    <button onClick={handleCompleteTransaction} disabled={isUpdating} style={{ height: 48, borderRadius: 6, backgroundColor: "#16a34a", color: "#fff", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: isUpdating ? 0.5 : 1 }} data-testid="button-no-receipt">
+                      <Check className="w-4 h-4" /> {isUpdating ? tPOS.processing : tPOS.noReceipt}
+                    </button>
+                  </div>
+                )}
+              </div>
+              )}
+
+            </div>
+          </div>
+
+          {/* Bottom footer bar */}
+          <div style={{ backgroundColor: "#2c2c2e", borderTop: "1px solid #3a3a3c", height: 84, flexShrink: 0, display: "flex", alignItems: "stretch", justifyContent: "flex-end" }}>
+            <div style={{ display: "flex", alignItems: "center", padding: "0 20px", color: "#34d399", fontSize: 14, fontWeight: 600, letterSpacing: 1 }}>SYS OK</div>
+            <div style={{ width: 6, backgroundColor: "#34d399" }} />
+          </div>
+
+        </div>
+        </div>
+
+        {/* ── Group Pay: link other active tickets ── */}
+        {showLinkPicker && (
+          <div className="absolute inset-0 z-[60] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.55)" }} onClick={() => setShowLinkPicker(false)}>
+            <div className="w-full max-w-md max-h-[80vh] flex flex-col rounded-xl overflow-hidden" style={{ backgroundColor: "#1c1c1e", border: "1px solid #3a3a3c" }} onClick={(e) => e.stopPropagation()}>
+              <div className="p-4 flex items-center justify-between" style={{ borderBottom: "1px solid #2b2b2f" }}>
+                <div>
+                  <h3 className="text-[15px] font-bold" style={{ color: "#f5f5f7" }}>Link tickets — Group Pay</h3>
+                  <p className="text-xs mt-0.5" style={{ color: "#8e8e93" }}>Add other active tickets so one person pays for all.</p>
+                </div>
+                <button onClick={() => setShowLinkPicker(false)} style={{ color: "#8e8e93" }}><X className="w-4 h-4" /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {linkableTickets.length === 0 && (
+                  <p className="py-8 text-center text-sm" style={{ color: "#8e8e93" }}>No other active tickets right now.</p>
+                )}
+                {linkableTickets.map((a) => {
+                  const on = linkedIds.includes(a.id);
+                  const nm = (a as any).customer?.fullName || a.customer?.name || (a as any).customerName || tPOS.walkIn;
+                  return (
+                    <button
+                      key={a.id}
+                      onClick={() => setLinkedIds((ids) => on ? ids.filter((x) => x !== a.id) : [...ids, a.id])}
+                      className="w-full flex items-center gap-3 rounded-lg p-3 text-left transition-colors"
+                      style={{ backgroundColor: on ? "rgba(45,212,191,0.1)" : "#2a2a2c", border: `1px solid ${on ? "rgba(45,212,191,0.4)" : "#3a3a3c"}` }}
+                      data-testid={`link-ticket-${a.id}`}
+                    >
+                      <div className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0" style={{ border: `1px solid ${on ? "#2dd4bf" : "#4a4a4f"}`, backgroundColor: on ? "#2dd4bf" : "transparent" }}>
+                        {on && <Check className="w-3.5 h-3.5" style={{ color: "#0d0d0f" }} />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold truncate" style={{ color: "#f5f5f7" }}>{nm}</p>
+                        <p className="text-xs truncate" style={{ color: "#8e8e93" }}>
+                          {a.service?.name}{a.staff ? ` · ${a.staff.name}` : ""} · {formatInTz(a.date, timezone, "h:mm a")}
+                        </p>
+                      </div>
+                      <span className="text-sm font-semibold flex-shrink-0" style={{ color: "#e5e5e7" }}>${ticketSubtotal(a).toFixed(2)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="p-3" style={{ borderTop: "1px solid #2b2b2f" }}>
+                <button
+                  onClick={() => setShowLinkPicker(false)}
+                  className="w-full h-11 rounded-lg font-semibold text-white"
+                  style={{ backgroundColor: "#0d9d78" }}
+                >
+                  {linkedIds.length > 0 ? `Done · ${linkedIds.length} linked` : "Done"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Loyalty: redeem a reward (points → $ off) ── */}
+        {showRewardPicker && (
+          <div className="absolute inset-0 z-[60] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.55)" }} onClick={() => setShowRewardPicker(false)}>
+            <div className="w-full max-w-md max-h-[80vh] flex flex-col rounded-xl overflow-hidden" style={{ backgroundColor: "#1c1c1e", border: "1px solid #3a3a3c" }} onClick={(e) => e.stopPropagation()}>
+              <div className="p-4 flex items-center justify-between" style={{ borderBottom: "1px solid #2b2b2f" }}>
+                <div>
+                  <h3 className="text-[15px] font-bold" style={{ color: "#f5f5f7" }}>Redeem a reward</h3>
+                  <p className="text-xs mt-0.5" style={{ color: "#8e8e93" }}>{customerLoyaltyPoints} points available</p>
+                </div>
+                <button onClick={() => setShowRewardPicker(false)} style={{ color: "#8e8e93" }}><X className="w-4 h-4" /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {pendingRedemption && (
+                  <button
+                    onClick={() => { setPendingRedemption(null); showPosStatus(tSt.rewardRemoved, "info"); setShowRewardPicker(false); }}
+                    className="w-full rounded-lg p-3 text-left text-sm font-semibold"
+                    style={{ backgroundColor: "#3a2a2e", border: "1px solid #5a3a3e", color: "#fb7185" }}
+                  >
+                    ✕ Remove “{pendingRedemption.name}” (−${pendingRedemption.dollarValue.toFixed(2)})
+                  </button>
+                )}
+                {loyaltyRewards.filter(r => r.isActive).length === 0 && (
+                  <p className="py-8 text-center text-sm" style={{ color: "#8e8e93" }}>No rewards set up. Add them in Loyalty settings.</p>
+                )}
+                {loyaltyRewards.filter(r => r.isActive).map((r) => {
+                  const affordable = customerLoyaltyPoints >= r.pointsCost;
+                  const chosen = pendingRedemption?.rewardId === r.id;
+                  return (
+                    <button
+                      key={r.id}
+                      disabled={!affordable && !chosen}
+                      onClick={() => {
+                        setPendingRedemption({ rewardId: r.id, name: r.name, pointsCost: r.pointsCost, dollarValue: r.dollarValue });
+                        showPosStatus(tSt.rewardApplied(r.dollarValue.toFixed(2)), "success");
+                        setShowRewardPicker(false);
+                      }}
+                      className="w-full flex items-center justify-between gap-3 rounded-lg p-3 text-left"
+                      style={{
+                        backgroundColor: chosen ? "rgba(45,212,191,0.1)" : "#2a2a2c",
+                        border: `1px solid ${chosen ? "rgba(45,212,191,0.4)" : "#3a3a3c"}`,
+                        opacity: affordable || chosen ? 1 : 0.4,
+                      }}
+                      data-testid={`reward-${r.id}`}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold truncate" style={{ color: "#f5f5f7" }}>{r.name}</p>
+                        <p className="text-xs" style={{ color: "#8e8e93" }}>
+                          {r.pointsCost.toLocaleString()} pts{!affordable && !chosen ? ` · needs ${r.pointsCost - customerLoyaltyPoints} more` : ""}
+                        </p>
+                      </div>
+                      <span className="text-sm font-bold flex-shrink-0" style={{ color: "#34d399" }}>${r.dollarValue.toFixed(2)} off</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
-      </div>
-    </div>
-  );
+    );
+  }
+
+  return null;
 }
 
 function WalkInCheckoutPanel({ onClose, onThermalPrint }: { onClose: () => void; onThermalPrint?: (bytes: Uint8Array) => Promise<void> }) {
   const { pick } = useLanguage();
+  const tSt = {
+    readerFailed:    pick({ en: "Reader connection failed",  vi: "Kết nối đầu đọc thất bại",   es: "Falló la conexión del lector", fr: "Échec de connexion du lecteur" }),
+    cardFailed:      pick({ en: "Card payment failed",       vi: "Thanh toán thẻ thất bại",    es: "El pago con tarjeta falló",    fr: "Échec du paiement par carte" }),
+    paymentApproved: pick({ en: "Payment approved",          vi: "Đã duyệt thanh toán",        es: "Pago aprobado",                fr: "Paiement approuvé" }),
+    paymentApprovedDesc: (brand: string, last4: string, amt: string) => pick({
+      en: `${brand} ···${last4} charged $${amt}`, vi: `${brand} ···${last4} đã tính $${amt}`,
+      es: `${brand} ···${last4} cobrado $${amt}`, fr: `${brand} ···${last4} débité de $${amt}` }),
+    m2Connected:     pick({ en: "M2 reader connected",       vi: "Đã kết nối đầu đọc M2",       es: "Lector M2 conectado",          fr: "Lecteur M2 connecté" }),
+    m2ConnectedDesc: (name: string) => pick({ en: `${name} is ready.`, vi: `${name} đã sẵn sàng.`, es: `${name} está listo.`, fr: `${name} est prêt.` }),
+    noTipSelected:   pick({ en: "No tip selected by client", vi: "Khách chưa chọn tiền tip",    es: "El cliente no eligió propina", fr: "Le client n'a pas choisi de pourboire" }),
+  };
   const { selectedStore: _wiStore } = useSelectedStore();
   const timezone = _wiStore?.timezone || "UTC";
   const [phase, setPhase] = useState<"amount" | "payment">("amount");
@@ -6543,7 +8042,7 @@ function WalkInCheckoutPanel({ onClose, onThermalPrint }: { onClose: () => void;
             setTipReceived(prev => Math.round((prev + tip) * 100) / 100);
             toast({ title: `Tip received: ${tip.toFixed(2)}` });
           } else {
-            toast({ title: "No tip selected by client" });
+            toast({ title: tSt.noTipSelected });
           }
           setWaitingForTip(false);
         }
@@ -6572,6 +8071,23 @@ function WalkInCheckoutPanel({ onClose, onThermalPrint }: { onClose: () => void;
   const totalTendered = tenders.reduce((sum, t) => sum + t.amount, 0);
   const balanceDue = Math.round((grandTotal - totalTendered) * 100) / 100;
   const changeDue = balanceDue < 0 ? Math.abs(balanceDue) : 0;
+
+  // Opening the walk-in checkout → switch the front-desk tablet to the cart +
+  // check-in double panel; closing it → send the tablet back to its landing
+  // screen (dual screen only).
+  useEffect(() => {
+    if (!wiStoreId || !dualScreenEnabled) return;
+    broadcastToKiosk("kiosk_checkout_start", { total: grandTotal });
+    return () => { broadcastToKiosk("kiosk_checkout_cancel"); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wiStoreId, dualScreenEnabled]);
+
+  // Keep the tablet's total in sync as staff key in the amount.
+  useEffect(() => {
+    if (!wiStoreId || !dualScreenEnabled) return;
+    broadcastToKiosk("kiosk_checkout_start", { total: grandTotal });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grandTotal]);
 
   const handleAmountKeypad = (key: string) => {
     if (key === "C") { setAmountDisplay("0"); return; }
@@ -6627,10 +8143,10 @@ function WalkInCheckoutPanel({ onClose, onThermalPrint }: { onClose: () => void;
     // When native M2 completes a walk-in payment (appointmentId === 0), apply
     // the tender here so the walk-in checkout marks itself paid.
     const completeHandler = (e: Event) => {
-      const { appointmentId, amount } = (e as CustomEvent).detail ?? {};
+      const { appointmentId, amount, method } = (e as CustomEvent).detail ?? {};
       if (appointmentId !== 0) return; // appointment POS handles non-zero IDs
       setWiNativeM2Active(false);
-      handleApplyTender('m2', amount);
+      handleApplyTender(method === 'tap_to_pay' ? 'tap_to_pay' : 'm2', amount);
     };
     window.addEventListener('certxa_native_payment_complete', completeHandler);
     return () => window.removeEventListener('certxa_native_payment_complete', completeHandler);
@@ -6664,10 +8180,10 @@ function WalkInCheckoutPanel({ onClose, onThermalPrint }: { onClose: () => void;
       if (conn.error) throw new Error(conn.error.message);
       setWiTermReader(toConnect);
       setWiTermStatus("ready");
-      toast({ title: "M2 reader connected", description: `${toConnect.label ?? toConnect.id} is ready.` });
+      toast({ title: tSt.m2Connected, description: tSt.m2ConnectedDesc(String(toConnect.label ?? toConnect.id)) });
     } catch (err: any) {
       setWiTermStatus("error"); setWiTermError(err.message ?? "Connection failed");
-      toast({ title: "Reader connection failed", description: err.message, variant: "destructive" });
+      toast({ title: tSt.readerFailed, description: err.message, variant: "destructive" });
     }
   };
 
@@ -6698,7 +8214,7 @@ function WalkInCheckoutPanel({ onClose, onThermalPrint }: { onClose: () => void;
       if (!capture.ok) throw new Error((await capture.json()).error ?? "Capture failed");
       const last4 = process.paymentIntent?.payment_method_details?.card_present?.last4 ?? "????";
       const brand = process.paymentIntent?.payment_method_details?.card_present?.brand ?? "Card";
-      toast({ title: "Payment approved", description: `${brand} ···${last4} charged $${chargeAmount.toFixed(2)}` });
+      toast({ title: tSt.paymentApproved, description: tSt.paymentApprovedDesc(brand, last4, chargeAmount.toFixed(2)) });
       setWiTermStatus("ready");
       handleApplyTender("m2", chargeAmount);
       broadcastToKiosk("kiosk_checkout_payment_result", { success: true, total: chargeAmount, last4 });
@@ -6706,7 +8222,7 @@ function WalkInCheckoutPanel({ onClose, onThermalPrint }: { onClose: () => void;
       setWiTermStatus("ready");
       setWiTermError(err.message ?? "Payment failed");
       if (wiTermRef.current) wiTermRef.current.cancelCollectPaymentMethod().catch(() => {});
-      toast({ title: "Card payment failed", description: err.message, variant: "destructive" });
+      toast({ title: tSt.cardFailed, description: err.message, variant: "destructive" });
     }
   };
 
@@ -7264,7 +8780,7 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
       .reduce((sum: number, a: any) => sum + (a.service ? Number(a.service.price) : 0), 0),
     [allAppointments]
   );
-  const noShows = useMemo(() => allAppointments.filter((a: any) => a.status === "no-show").length, [allAppointments]);
+  const noShows = useMemo(() => allAppointments.filter((a: any) => a.status === "no_show" || a.status === "no-show").length, [allAppointments]);
   const cancellations = useMemo(() => allAppointments.filter((a: any) => a.status === "cancelled").length, [allAppointments]);
 
   const formatPhone = (digits: string): string => {
@@ -7458,7 +8974,7 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
       : "?";
 
     return (
-      <div className="fixed inset-0 z-50" data-testid="client-lookup-sheet">
+      <div className="dark cx-cal fixed inset-0 z-50 text-foreground" data-testid="client-lookup-sheet">
         <button
           type="button"
           aria-label="Close"
@@ -7559,14 +9075,14 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50" data-testid="client-lookup-sheet">
+    <div className="dark cx-cal fixed inset-0 z-50 text-foreground" data-testid="client-lookup-sheet">
       <button
         type="button"
         aria-label="Close client lookup"
         className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]"
         onClick={onClose}
       />
-      <div className="absolute right-0 top-0 h-full w-full sm:w-[380px] bg-[#F7F5F0] flex flex-col shadow-[-8px_0_24px_rgba(0,0,0,0.12)] border-l">
+      <div className="absolute right-0 top-0 h-full w-full sm:w-[380px] bg-[#161618] flex flex-col shadow-[-8px_0_24px_rgba(0,0,0,0.12)] border-l">
         {/* Header */}
         <div className="px-4 py-4 flex items-center justify-between gap-2 bg-white border-b border-gray-200">
           <div className="flex items-center gap-3">
@@ -7582,7 +9098,7 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
 
         {/* Content */}
         <div
-          className="flex-1 flex flex-col px-4 pt-5 min-h-0 bg-[#F7F5F0] md:pb-4"
+          className="flex-1 flex flex-col px-4 pt-5 min-h-0 bg-[#161618] md:pb-4"
           style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 72px)" }}
         >
           {/* Phone number display */}
@@ -7779,14 +9295,14 @@ function ChooseClientPanel({
 
   if (showNameEntry) {
     return (
-      <div className="fixed inset-0 z-50" data-testid="enter-name-panel">
+      <div className="dark cx-cal fixed inset-0 z-50 text-foreground" data-testid="enter-name-panel">
         <button
           type="button"
           aria-label="Close name entry"
           className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]"
           onClick={onClose}
         />
-        <div className="absolute right-0 top-0 h-full w-full sm:w-[740px] bg-[#F7F5F0] flex flex-col shadow-[-8px_0_24px_rgba(0,0,0,0.12)] border-l">
+        <div className="absolute right-0 top-0 h-full w-full sm:w-[740px] bg-[#161618] flex flex-col shadow-[-8px_0_24px_rgba(0,0,0,0.12)] border-l">
           <div className="px-4 py-4 flex items-center justify-between gap-2 bg-white border-b border-gray-200">
             <div className="flex items-center gap-3">
               <Button variant="ghost" size="icon" onPointerDown={e => e.preventDefault()} onClick={() => { setShowNameEntry(false); setClientName(""); setPhoneDigits(""); setSearchDone(false); setShiftActive(true); }} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100" data-testid="button-back-name-entry">
@@ -7933,14 +9449,14 @@ function ChooseClientPanel({
   }
 
   return (
-    <div className="fixed inset-0 z-50" data-testid="choose-client-panel">
+    <div className="dark cx-cal fixed inset-0 z-50 text-foreground" data-testid="choose-client-panel">
       <button
         type="button"
         aria-label="Close client lookup"
         className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]"
         onClick={onClose}
       />
-      <div className="absolute right-0 top-0 h-full w-full sm:w-[380px] bg-[#F7F5F0] flex flex-col shadow-[-8px_0_24px_rgba(0,0,0,0.12)] border-l">
+      <div className="absolute right-0 top-0 h-full w-full sm:w-[380px] bg-[#161618] flex flex-col shadow-[-8px_0_24px_rgba(0,0,0,0.12)] border-l">
         {/* Header */}
         <div className="px-4 py-4 flex items-center justify-between gap-2 bg-white border-b border-gray-200">
           <div className="flex items-center gap-3">
@@ -7956,7 +9472,7 @@ function ChooseClientPanel({
 
         {/* Content fills all remaining height — bottom padding clears the mobile nav bar (56px + safe area) */}
         <div
-          className="flex-1 flex flex-col px-4 pt-5 min-h-0 bg-[#F7F5F0] md:pb-4"
+          className="flex-1 flex flex-col px-4 pt-5 min-h-0 bg-[#161618] md:pb-4"
           style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 72px)" }}
         >
           {/* Phone number display */}

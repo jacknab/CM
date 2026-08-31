@@ -451,6 +451,14 @@ router.post("/support/jobs/:id/approve", async (req: Request, res: Response) => 
         }).returning();
         importIds.services.push(svc.id);
         counts.services = (counts.services ?? 0) + 1;
+
+        // Auto-assign a service image from the platform library
+        try {
+          const { autoAssignServiceImages } = await import("./serviceImages");
+          await autoAssignServiceImages(storeId, [svc.id]);
+        } catch (e: any) {
+          console.warn(`[dataTransfer] Service image auto-assign skipped for service ${svc.id}: ${e?.message ?? e}`);
+        }
       } catch { /* skip */ }
     }
 

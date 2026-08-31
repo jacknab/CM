@@ -18,38 +18,9 @@ define('PAGE_SCHEMA', json_encode([
     'isPartOf'    => ['@id'=>'https://certxa.com/#website'],
     'about'       => ['@id'=>'https://certxa.com/#software'],
   ],
-  [
-    '@type'       => 'SoftwareApplication',
-    '@id'         => 'https://certxa.com/#software-pricing',
-    'name'        => 'Certxa',
-    'applicationCategory' => 'BusinessApplication',
-    'offers'      => [
-      [
-        '@type'           => 'Offer',
-        'name'            => 'Solo Plan',
-        'price'           => '9',
-        'priceCurrency'   => 'USD',
-        'description'     => 'Perfect for solo nail technicians and booth renters. Includes online booking, client management, integrated payments, and automated reminders.',
-        'billingIncrement' => 'P1M',
-      ],
-      [
-        '@type'           => 'Offer',
-        'name'            => 'Professional Plan',
-        'price'           => '22',
-        'priceCurrency'   => 'USD',
-        'description'     => 'Unlimited calendars, unlimited staff, and all core platform features for any salon size. Usage-based add-ons (AI receptionist, SMS overages) billed separately.',
-        'billingIncrement' => 'P1M',
-      ],
-      [
-        '@type'           => 'Offer',
-        'name'            => 'Elite Plan',
-        'price'           => '49',
-        'priceCurrency'   => 'USD',
-        'description'     => 'For multi-location businesses. All features, done-for-you setup, API access, and priority support.',
-        'billingIncrement' => 'P1M',
-      ],
-    ],
-  ],
+  // The canonical SoftwareApplication entity (@id #software, with the real
+  // $9/$22/$49 AggregateOffer) is injected site-wide by includes/header.php —
+  // 'about' above already points at it, so it isn't redefined here.
   [
     '@type'      => 'FAQPage',
     'mainEntity' => [
@@ -885,42 +856,6 @@ require 'includes/nav.php';
   </div>
 </section>
 
-<!-- TESTIMONIALS -->
-<section class="section section-alt">
-  <div class="container">
-    <div class="section-header">
-      <span class="tag tag-gold">Real Salon Owners</span>
-      <h2 class="section-title">"Worth every penny."</h2>
-    </div>
-    <div class="testimonials-grid">
-      <div class="testimonial">
-        <div class="testimonial-stars">★★★★★</div>
-        <p class="testimonial-text">"I was spending $180/month across three different apps for booking, reminders, and payments. Certxa replaces all of them for $39. The maths is obvious. The quality is better too."</p>
-        <div class="testimonial-author">
-          <div class="testimonial-avatar">LB</div>
-          <div><div class="testimonial-name">Lauren Bradley</div><div class="testimonial-role">Salon Owner, Professional Plan</div></div>
-        </div>
-      </div>
-      <div class="testimonial">
-        <div class="testimonial-stars">★★★★★</div>
-        <p class="testimonial-text">"I started on Starter, filled my books within three months, and upgraded to Professional. The ROI is insane — I brought in $1,200 extra last month just from the re-engagement campaigns."</p>
-        <div class="testimonial-author">
-          <div class="testimonial-avatar">JR</div>
-          <div><div class="testimonial-name">James Richardson</div><div class="testimonial-role">Barber, Professional Plan</div></div>
-        </div>
-      </div>
-      <div class="testimonial">
-        <div class="testimonial-stars">★★★★★</div>
-        <p class="testimonial-text">"We run four locations and the Elite plan is perfect. One dashboard, everything in one place, and a dedicated account manager who actually responds within the hour."</p>
-        <div class="testimonial-author">
-          <div class="testimonial-avatar">AM</div>
-          <div><div class="testimonial-name">Amara Mensah</div><div class="testimonial-role">Salon Group Owner, Elite Plan</div></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
 <!-- FAQ -->
 <section class="section">
   <div class="container" style="max-width:720px;">
@@ -930,27 +865,27 @@ require 'includes/nav.php';
     </div>
     <div class="accordion">
       <div class="accordion-item">
-        <button class="accordion-btn">Is a credit card required to start the trial? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Is a credit card required to start the trial? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">Yes — a credit card is required when you create your subscription. Your card will not be charged during the <?= TRIAL_DAYS ?>-day trial period. If you cancel before the trial ends, you'll owe nothing. If you continue past the trial, your card is billed at the start of your first paid period.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">Can I switch plans after I sign up? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Can I switch plans after I sign up? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">Yes — you can upgrade or downgrade at any time. Upgrades take effect immediately and you're only charged the prorated difference. Downgrades take effect at the end of your current billing period. There are no penalties for changing plans.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">What happens to my data if I cancel? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">What happens to my data if I cancel? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">Your data stays in your account for 90 days after cancellation. You can export everything — client lists, appointment history, financial records — at any time. We make it easy to leave, though we're confident you won't want to.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">Are there any setup fees or hidden costs? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Are there any setup fees or hidden costs? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">None. The price you see is the price you pay — monthly or annually. Website hosting, SSL, and your free subdomain are all included. If you use our POS, the total per-transaction cost is Stripe's standard rate plus our flat $0.60 connection fee: <strong>2.7% + $0.05 + $0.60</strong> for in-person card payments, or <strong>2.9% + $0.30 + $0.60</strong> for online payments. The $0.60 is our only charge — everything else goes directly to Stripe. You'll also need to purchase a Stripe M2 card reader directly from Stripe. The only other potential cost is a custom domain registration (typically $10–15/year from your registrar).</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">Does the annual plan auto-renew? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Does the annual plan auto-renew? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">Yes — annual plans renew automatically at the end of each year. We send a reminder email 30 days before renewal so you have plenty of time to review, change plans, or cancel if needed. You can also turn off auto-renewal from your account settings at any time.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">Do you offer a discount for new salons or students? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Do you offer a discount for new salons or students? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">We offer a 30% discount for newly qualified nail technicians and therapists in their first year of business — just contact our team with proof of qualification. We also have educational institution pricing for salon schools and colleges training the next generation of professionals.</div>
       </div>
     </div>

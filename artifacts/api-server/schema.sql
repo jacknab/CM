@@ -106,7 +106,9 @@ CREATE TABLE IF NOT EXISTS appointments (
     loyalty_points_redeemed integer DEFAULT 0,
     client_requested_staff boolean DEFAULT false NOT NULL,
     calendar_hidden boolean DEFAULT false NOT NULL,
-    created_at timestamp without time zone DEFAULT now()
+    created_at timestamp without time zone DEFAULT now(),
+    service_price numeric(10,2),
+    commission_rate numeric(5,2)
 );
 CREATE SEQUENCE IF NOT EXISTS appointments_id_seq
     AS integer
@@ -1139,6 +1141,16 @@ CREATE TABLE IF NOT EXISTS loyalty_transactions (
     description text,
     created_at timestamp without time zone DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS loyalty_rewards (
+    id integer NOT NULL,
+    store_id integer NOT NULL,
+    name text NOT NULL,
+    points_cost integer NOT NULL,
+    dollar_value numeric(10,2) NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    sort_order integer DEFAULT 0 NOT NULL,
+    created_at timestamp without time zone DEFAULT now()
+);
 CREATE SEQUENCE IF NOT EXISTS loyalty_transactions_id_seq
     AS integer
     START WITH 1
@@ -1779,7 +1791,8 @@ CREATE TABLE IF NOT EXISTS services (
     illustration_category_id integer,
     custom_illustration_url text,
     auto_assigned boolean DEFAULT false NOT NULL,
-    is_active boolean DEFAULT true NOT NULL
+    is_active boolean DEFAULT true NOT NULL,
+    longevity text
 );
 CREATE SEQUENCE IF NOT EXISTS services_id_seq
     AS integer
@@ -2202,6 +2215,7 @@ CREATE TABLE IF NOT EXISTS support_agents (
     id integer NOT NULL,
     name text NOT NULL,
     email text,
+    personal_email text,
     role character varying(32) DEFAULT 'agent'::character varying NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,

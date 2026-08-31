@@ -54,6 +54,11 @@ export function useAuth() {
       queryClient.setQueryData(["/api/auth/user"], user);
       offlineSessionBootstrap.setUser(user);
       if (typeof window !== "undefined") localStorage.setItem(STORAGE_KEY, "true");
+      // Any store/staff/appointment queries mounted before login may have been
+      // cached from a 401'd/logged-out state — force them to refetch now that
+      // the session is authenticated, or the dashboard keeps showing stale
+      // empty data until a manual page refresh.
+      queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "/api/auth/user" });
     },
   });
 
@@ -66,6 +71,7 @@ export function useAuth() {
       if (typeof window !== "undefined") localStorage.setItem(STORAGE_KEY, "true");
       offlineSessionBootstrap.setUser(user);
       queryClient.setQueryData(["/api/auth/user"], user);
+      queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "/api/auth/user" });
     },
   });
 

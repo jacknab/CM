@@ -279,6 +279,14 @@ export interface AtomicCreateInput {
   depositPaid?: boolean;
   /** Optional: assign a salon resource (station/chair) to this appointment */
   resourceId?: number | null;
+  /**
+   * Set true for a payment-pending hold (AI receptionist booking a store that
+   * requires a deposit/card-on-file) — keeps the appointment off the Calendar
+   * grid (Calendar.tsx filters on this) until payment completes, while still
+   * counting as a real conflict for other bookings against the same slot.
+   */
+  calendarHidden?: boolean;
+  paymentStatus?: string;
 }
 
 /**
@@ -430,6 +438,8 @@ export async function atomicCreateBooking(
         checkedInAt:        input.checkedInAt ?? null,
         depositPaid:        input.depositPaid ?? false,
         resourceId:         input.resourceId ?? null,
+        calendarHidden:     input.calendarHidden ?? false,
+        ...(input.paymentStatus ? { paymentStatus: input.paymentStatus } : {}),
       } as any)
       .returning({ id: appointments.id });
 

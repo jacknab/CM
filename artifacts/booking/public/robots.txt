@@ -1,9 +1,10 @@
 # Robots.txt for Certxa — https://certxa.com
-# Public marketing and booking pages are open to all crawlers.
+# Public marketing, blog, and booking pages are open to all crawlers.
 # Internal app pages (dashboard, admin, staff tools) are disallowed.
 
 User-agent: *
 Allow: /
+Content-Signal: search=yes, ai-train=yes, ai-retrieval=yes, ai-personalization=no
 
 # Internal app sections — not for public indexing
 Disallow: /api/
@@ -22,6 +23,98 @@ Disallow: /dashboard/
 Disallow: /calendar/
 Disallow: /customers/
 Disallow: /products/
+
+# PHP marketing-site internals
+Disallow: /includes/
+Disallow: /config.php
+Disallow: /router.php
+Disallow: /editor
+Disallow: /launchsite/admin
+Disallow: /launchsite/editor
+Disallow: /launchsite/preview
+Disallow: /launchsite/scraped-tmp/
+Disallow: /launchsite/api/
+Disallow: /launchsite/barbershops
+Disallow: /launchsite/hair-salons
+Disallow: /salon-data.json
+
+# ── Major AI crawlers — explicitly named so a future accidental broad
+# Disallow doesn't silently block them with no dedicated fallback rule ──────
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Cohere-ai
+Allow: /
+
+# ── Known scraper / data-harvesting agents — block from the salon directory
+# (unclaimed third-party listings, not Certxa's own content) ───────────────
+User-agent: AhrefsBot
+Disallow: /salon/
+Disallow: /nail-salons/
+
+User-agent: SemrushBot
+Disallow: /salon/
+Disallow: /nail-salons/
+
+User-agent: MJ12bot
+Disallow: /salon/
+Disallow: /nail-salons/
+
+User-agent: DotBot
+Disallow: /salon/
+Disallow: /nail-salons/
+
+User-agent: BLEXBot
+Disallow: /salon/
+Disallow: /nail-salons/
+
+User-agent: DataForSeoBot
+Disallow: /salon/
+Disallow: /nail-salons/
+
+User-agent: PetalBot
+Disallow: /salon/
+Disallow: /nail-salons/
+
+User-agent: Bytespider
+Disallow: /salon/
+Disallow: /nail-salons/
 
 # Sitemap
 Sitemap: https://certxa.com/sitemap.xml

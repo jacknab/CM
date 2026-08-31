@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { pool } from "../db.js";
 
-export type LangCode = "es" | "vi" | "zh" | "ko";
+export type LangCode = "es" | "vi" | "zh" | "ko" | "fr";
 export type EntityType = "category" | "service" | "addon" | "product";
 
 const LANG_NAMES: Record<LangCode, string> = {
@@ -9,9 +9,10 @@ const LANG_NAMES: Record<LangCode, string> = {
   vi: "Vietnamese",
   zh: "Chinese (Simplified)",
   ko: "Korean",
+  fr: "French",
 };
 
-const TARGET_LANGS: LangCode[] = ["es", "vi", "zh", "ko"];
+const TARGET_LANGS: LangCode[] = ["es", "vi", "zh", "ko", "fr"];
 
 function getOpenAI(): OpenAI | null {
   const key = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;

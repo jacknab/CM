@@ -2,7 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { db } from "../db";
 import { crews, serviceOrders, orderNotes, crewLocations } from "../../shared/schema";
 import { eq, and, asc, desc, isNotNull, sql } from "drizzle-orm";
-import { compareSync, hashSync } from "bcryptjs";
+import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
 const router = Router();
@@ -76,7 +76,10 @@ router.post("/login", async (req, res) => {
       sql`regexp_replace(${crews.phone}, '[^0-9]', '', 'g') = ${normalizedPhone}`
     );
 
-    const crew = allCrews.find(c => c.pinHash && compareSync(String(pin), c.pinHash));
+    let crew: typeof allCrews[number] | undefined;
+    for (const c of allCrews) {
+      if (c.pinHash && await bcrypt.compare(String(pin), c.pinHash)) { crew = c; break; }
+    }
     if (!crew) return res.status(401).json({ error: "Invalid phone number or PIN" });
     if (!crew.active) return res.status(403).json({ error: "Account is inactive. Contact your office manager." });
 
@@ -96,7 +99,7 @@ router.post("/set-pin", async (req, res) => {
     if (!crewId || !storeId || !pin) return res.status(400).json({ error: "crewId, storeId, pin required" });
     if (String(pin).length < 4 || String(pin).length > 8) return res.status(400).json({ error: "PIN must be 4–8 digits" });
 
-    const pinHash = hashSync(String(pin), 10);
+    const pinHash = await bcrypt.hash(String(pin), 10);
     const [updated] = await db.update(crews).set({ phone: phone ?? null, pinHash }).where(and(eq(crews.id, Number(crewId)), eq(crews.storeId, Number(storeId)))).returning();
     if (!updated) return res.status(404).json({ error: "Crew not found" });
     res.json({ success: true, crew: { id: updated.id, name: updated.name, phone: updated.phone, hasPinSet: !!updated.pinHash } });

@@ -40,6 +40,7 @@ import { contractors, appointments, contractorInstantTransfers, storePaymentAcco
 import { eq, and, desc, sql } from "drizzle-orm";
 import { logActivityEvent } from "../lib/activityFeed";
 import { getStripe, isStripeConfigured } from "../lib/stripe";
+import { snapshotCompletionFields } from "../lib/commissionSnapshot";
 
 const router = Router();
 
@@ -262,6 +263,263 @@ router.get("/stripe/balance", async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error("[stripeConnect/balance]", err?.message);
     return res.status(500).json({ error: "Failed to fetch balance" });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Payments & Payouts dashboard (Phase A) — read models over Certxa data
+//  + minimal live Stripe (balance / next payout). Every route is guarded by
+//  requireOwnerOrAdmin + resolveSessionStoreId, so a store can only ever see
+//  its own data.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Parse the comma-separated `method:amount` tender string on an appointment. */
+function parseTenders(paymentMethod: string | null | undefined, fallbackTotal: number): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!paymentMethod) { out["other"] = fallbackTotal; return out; }
+  const parts = String(paymentMethod).split(",");
+  let matched = false;
+  for (const part of parts) {
+    const [rawMethod, amtStr] = part.split(":");
+    const method = (rawMethod || "").trim().toLowerCase();
+    if (!method) continue;
+    const amt = amtStr != null && amtStr !== "" ? Number(amtStr) : NaN;
+    out[method] = (out[method] || 0) + (Number.isFinite(amt) ? amt : 0);
+    matched = true;
+  }
+  if (!matched) { out[String(paymentMethod).trim().toLowerCase() || "other"] = fallbackTotal; }
+  // If the tender amounts don't cover the total (e.g. label with no amount),
+  // attribute the shortfall to the first method.
+  const summed = Object.values(out).reduce((a, b) => a + b, 0);
+  if (summed < fallbackTotal - 0.005) {
+    const first = Object.keys(out)[0] ?? "other";
+    out[first] = (out[first] || 0) + (fallbackTotal - summed);
+  }
+  return out;
+}
+
+/** Salon-local date-key math for period ranges. Returns UTC boundary Dates. */
+async function resolvePeriod(storeId: number, period: string, fromISO?: string, toISO?: string) {
+  const { getStoreTimezone, salonDayBoundaries, toSalonDateKey } = await import("../lib/timezone");
+  const { subDays, startOfWeek, startOfMonth, subMonths, endOfMonth, format } = await import("date-fns");
+  const tz = await getStoreTimezone(storeId);
+  const todayKey = toSalonDateKey(new Date(), tz);
+  const todayLocal = new Date(`${todayKey}T12:00:00`); // noon-anchored, DST-safe
+
+  let startKey: string, endKey: string, label: string;
+  switch (period) {
+    case "yesterday": {
+      const d = subDays(todayLocal, 1);
+      startKey = endKey = format(d, "yyyy-MM-dd"); label = "Yesterday"; break;
+    }
+    case "week": {
+      startKey = format(startOfWeek(todayLocal, { weekStartsOn: 1 }), "yyyy-MM-dd");
+      endKey = todayKey; label = "This week"; break;
+    }
+    case "month": {
+      startKey = format(startOfMonth(todayLocal), "yyyy-MM-dd");
+      endKey = todayKey; label = "This month"; break;
+    }
+    case "lastmonth": {
+      const lm = subMonths(todayLocal, 1);
+      startKey = format(startOfMonth(lm), "yyyy-MM-dd");
+      endKey = format(endOfMonth(lm), "yyyy-MM-dd"); label = "Last month"; break;
+    }
+    case "custom": {
+      startKey = (fromISO || todayKey).slice(0, 10);
+      endKey = (toISO || todayKey).slice(0, 10); label = "Custom"; break;
+    }
+    case "today":
+    default:
+      startKey = endKey = todayKey; label = "Today"; break;
+  }
+  const { dayStart } = salonDayBoundaries(startKey, tz);
+  const { dayEnd } = salonDayBoundaries(endKey, tz);
+  return { tz, from: dayStart, to: dayEnd, label, startKey, endKey };
+}
+
+/** Completed, paid appointments in [from,to], attributed by completedAt (fallback date). */
+async function paidAppointmentsInRange(storeId: number, from: Date, to: Date) {
+  const { storage } = await import("../storage");
+  // Widen the fetch a little so completedAt (payment time) that spills past the
+  // appointment's scheduled date is still captured, then filter precisely.
+  const fetchFrom = new Date(from.getTime() - 3 * 24 * 3600 * 1000);
+  const fetchTo = new Date(to.getTime() + 1 * 24 * 3600 * 1000);
+  const appts = await storage.getAppointments({ storeId, from: fetchFrom, to: fetchTo });
+  return (appts as any[]).filter((a) => {
+    if (a.status !== "completed") return false;
+    const paid = Number(a.totalPaid) || 0;
+    if (paid <= 0) return false;
+    const when = a.completedAt ? new Date(a.completedAt) : new Date(a.date);
+    return when >= from && when <= to;
+  });
+}
+
+// ─── GET /api/payments/overview ─────────────────────────────────────────────
+router.get("/overview", async (req: Request, res: Response) => {
+  if (!await requireOwnerOrAdmin(req, res)) return;
+  try {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(400).json({ error: "No store found" });
+
+    const period = String(req.query.period || "month");
+    const cur = await resolvePeriod(storeId, period, String(req.query.from || ""), String(req.query.to || ""));
+
+    // Buckets for the summary cards (today / week / month + prior-period compare).
+    const [today, yesterday, week, month] = await Promise.all([
+      resolvePeriod(storeId, "today"),
+      resolvePeriod(storeId, "yesterday"),
+      resolvePeriod(storeId, "week"),
+      resolvePeriod(storeId, "month"),
+    ]);
+    const prevWeek = { from: new Date(week.from.getTime() - 7 * 864e5), to: new Date(week.from.getTime() - 1) };
+    const lastMonth = await resolvePeriod(storeId, "lastmonth");
+
+    const sum = (rows: any[]) => rows.reduce((t, a) => t + (Number(a.totalPaid) || 0), 0);
+    const [todayRows, yRows, weekRows, prevWeekRows, monthRows, lastMonthRows, curRows] = await Promise.all([
+      paidAppointmentsInRange(storeId, today.from, today.to),
+      paidAppointmentsInRange(storeId, yesterday.from, yesterday.to),
+      paidAppointmentsInRange(storeId, week.from, week.to),
+      paidAppointmentsInRange(storeId, prevWeek.from, prevWeek.to),
+      paidAppointmentsInRange(storeId, month.from, month.to),
+      paidAppointmentsInRange(storeId, lastMonth.from, lastMonth.to),
+      paidAppointmentsInRange(storeId, cur.from, cur.to),
+    ]);
+
+    const pct = (now: number, prev: number): number | null =>
+      prev > 0 ? Math.round(((now - prev) / prev) * 1000) / 10 : null;
+
+    const todaySales = sum(todayRows), weekSales = sum(weekRows), monthSales = sum(monthRows);
+
+    // Refunds for the selected period, from the local audit trail.
+    const refundRows = await pool.query<{ amount_cents: string }>(
+      `SELECT amount_cents FROM payment_refunds
+        WHERE store_id = $1 AND status <> 'canceled' AND created_at BETWEEN $2 AND $3`,
+      [storeId, cur.from.toISOString(), cur.to.toISOString()],
+    ).catch(() => ({ rows: [] as { amount_cents: string }[] }));
+    const refundsTotal = refundRows.rows.reduce((t, r) => t + (Number(r.amount_cents) || 0), 0) / 100;
+
+    // Live Stripe: pending payout + next payout date (best-effort, non-fatal).
+    let pendingPayout: number | null = null;
+    let nextPayout: { amount: number; arrivalDate: string | null } | null = null;
+    const feesAvailable = false;
+    const account = await getPaymentAccount(storeId);
+    if (account && account.status !== "disconnected" && account.payoutsEnabled) {
+      try {
+        const stripe = getStripe();
+        const bal = await stripe.balance.retrieve({}, { stripeAccount: account.providerAccountId });
+        pendingPayout = bal.pending.reduce((t, b) => t + b.amount, 0) / 100;
+        const pl = await stripe.payouts.list(
+          { limit: 1, status: "pending" },
+          { stripeAccount: account.providerAccountId },
+        );
+        const next = pl.data[0];
+        if (next) {
+          nextPayout = {
+            amount: next.amount / 100,
+            arrivalDate: next.arrival_date ? new Date(next.arrival_date * 1000).toISOString() : null,
+          };
+        }
+      } catch (e: any) {
+        console.warn("[payments/overview] stripe payout lookup failed:", e?.message);
+      }
+    }
+
+    const gross = sum(curRows);
+    return res.json({
+      currency: account?.currency || "usd",
+      cards: {
+        today:  { amount: todaySales, comparePct: pct(todaySales, sum(yRows)), compareLabel: "vs yesterday" },
+        week:   { amount: weekSales,  comparePct: pct(weekSales, sum(prevWeekRows)), compareLabel: "vs last week" },
+        month:  { amount: monthSales, comparePct: pct(monthSales, sum(lastMonthRows)), compareLabel: "vs last month" },
+        pendingPayout: { amount: pendingPayout, nextPayout },
+      },
+      salesOverview: {
+        period: cur.label,
+        from: cur.from.toISOString(),
+        to: cur.to.toISOString(),
+        transactionCount: curRows.length,
+        gross,
+        refunds: refundsTotal,
+        fees: null,            // Phase B: derived from Stripe balance transactions
+        feesAvailable,
+        net: Math.round((gross - refundsTotal) * 100) / 100,
+      },
+    });
+  } catch (err: any) {
+    console.error("[payments/overview]", err?.message);
+    return res.status(500).json({ error: "Failed to load payments overview" });
+  }
+});
+
+// ─── GET /api/payments/transactions ────────────────────────────────────────
+router.get("/transactions", async (req: Request, res: Response) => {
+  if (!await requireOwnerOrAdmin(req, res)) return;
+  try {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(400).json({ error: "No store found" });
+
+    const period = String(req.query.period || "month");
+    const { tz, from, to } = await resolvePeriod(storeId, period, String(req.query.from || ""), String(req.query.to || ""));
+    const { formatInSalonTime } = await import("../lib/timezone");
+
+    const search = String(req.query.search || "").trim().toLowerCase();
+    const methodFilter = String(req.query.method || "").trim().toLowerCase();
+    const staffFilter = req.query.staffId ? Number(req.query.staffId) : null;
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const offset = Math.max(0, Number(req.query.offset) || 0);
+
+    let rows = await paidAppointmentsInRange(storeId, from, to);
+
+    rows = rows.filter((a: any) => {
+      if (staffFilter && a.staffId !== staffFilter) return false;
+      if (methodFilter) {
+        const tenders = Object.keys(parseTenders(a.paymentMethod, Number(a.totalPaid) || 0));
+        if (!tenders.some((m) => m.includes(methodFilter))) return false;
+      }
+      if (search) {
+        const hay = [
+          a.customer?.fullName, a.customer?.name, (a as any).customerName,
+          a.service?.name, a.staff?.name, String(a.id), a.stripePaymentIntentId,
+        ].filter(Boolean).join(" ").toLowerCase();
+        if (!hay.includes(search)) return false;
+      }
+      return true;
+    });
+
+    rows.sort((a: any, b: any) => {
+      const ta = new Date(a.completedAt || a.date).getTime();
+      const tb = new Date(b.completedAt || b.date).getTime();
+      return tb - ta;
+    });
+
+    const total = rows.length;
+    const page = rows.slice(offset, offset + limit).map((a: any) => {
+      const totalPaid = Number(a.totalPaid) || 0;
+      const tenders = parseTenders(a.paymentMethod, totalPaid);
+      const methods = Object.keys(tenders);
+      const paidAt = new Date(a.completedAt || a.date);
+      return {
+        id: a.id,
+        customer: a.customer?.fullName || a.customer?.name || (a as any).customerName || "Walk-In",
+        service: a.service?.name || "Service",
+        staff: a.staff?.name || null,
+        paidAt: paidAt.toISOString(),
+        paidAtLabel: formatInSalonTime(paidAt, tz, "MMM d · h:mm a"),
+        method: methods.length === 1 ? methods[0] : "split",
+        methods,
+        amount: totalPaid,
+        tip: Number(a.tipAmount) || 0,
+        discount: Number(a.discountAmount) || 0,
+        status: "paid",
+        stripePaymentIntentId: a.stripePaymentIntentId || null,
+      };
+    });
+
+    return res.json({ items: page, total, offset, limit, hasMore: offset + limit < total });
+  } catch (err: any) {
+    console.error("[payments/transactions]", err?.message);
+    return res.status(500).json({ error: "Failed to load transactions" });
   }
 });
 
@@ -755,11 +1013,16 @@ router.post("/terminal/capture-payment-intent", async (req: Request, res: Respon
         const totalPaid = (pi.amount / 100).toFixed(2);
         const paymentMethod = (method as string) || "card";
         try {
+          // Freeze service price + commission rate on first completion (no-op
+          // if the follow-up client PATCH already recorded it).
+          const snap = await snapshotCompletionFields(apptId);
           await db.update(appointments).set({
             status:        "completed",
             paymentMethod,
             totalPaid,
             completedAt:   new Date(),
+            ...(snap.servicePrice   !== undefined ? { servicePrice:   snap.servicePrice }   : {}),
+            ...(snap.commissionRate !== undefined ? { commissionRate: snap.commissionRate } : {}),
           }).where(eq(appointments.id, apptId));
           console.log(`[terminal/capture] Appointment ${apptId} marked completed — ${totalPaid} via ${paymentMethod}`);
 

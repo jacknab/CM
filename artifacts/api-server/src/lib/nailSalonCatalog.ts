@@ -209,6 +209,182 @@ export const NAIL_ADDONS: Record<string, CatalogAddon> = {
   },
 };
 
+// ═════════════════════════════════════════════════════════════════════════════
+// NAIL CONFIGURATION TEMPLATE  (migration 0154)
+//
+// Store-owned vocabularies + the default per-service configuration applied to
+// fake-nail services (extensions & fills where the client chooses length and
+// shape). Every list is keyed by a stable `code`. The seeder resolves codes to
+// the store's own rows. Prices here are starting points the owner tunes in the
+// admin screen; they are stored as signed deltas vs the service's base price.
+// ═════════════════════════════════════════════════════════════════════════════
+
+export type NailVocabTemplate = {
+  code: string;
+  name: string;
+  description?: string;
+  sortOrder: number;
+};
+
+export type NailArtApplicationTemplate = NailVocabTemplate & {
+  /** true → priced at booking, not from config (e.g. "Custom Nail Art") */
+  isQuote?: boolean;
+};
+
+/** A single service→vocab row in the template: which entry, and its adjustment. */
+export type NailConfigEntry = {
+  code: string;
+  priceAdjustment: string;   // NUMERIC(10,2) as string, signed
+  durationAdjustment?: number;
+  isDefault?: boolean;
+  enabled?: boolean;         // default true
+};
+
+export type NailServiceConfigTemplate = {
+  lengthRequired?: boolean;  // default true
+  shapeRequired?: boolean;   // default true
+  artRequired?: boolean;     // default false
+  sizes: NailConfigEntry[];
+  shapes: NailConfigEntry[];
+  artApplications: NailConfigEntry[];
+  artEffects: NailConfigEntry[];
+};
+
+// ── Vocabularies ────────────────────────────────────────────────────────────
+
+export const NAIL_SIZES: NailVocabTemplate[] = [
+  { code: "short",  name: "Short",  sortOrder: 0 },
+  { code: "medium", name: "Medium", sortOrder: 1 },
+  { code: "long",   name: "Long",   sortOrder: 2 },
+  { code: "xl",     name: "XL",     sortOrder: 3 },
+  { code: "xxl",    name: "XXL",    sortOrder: 4 },
+  { code: "xxxl",   name: "XXXL",   sortOrder: 5 },
+];
+
+export const NAIL_SHAPES: NailVocabTemplate[] = [
+  { code: "square",        name: "Square",        sortOrder: 0 },
+  { code: "squoval",       name: "Squoval",       sortOrder: 1 },
+  { code: "round",         name: "Round",         sortOrder: 2 },
+  { code: "oval",          name: "Oval",          sortOrder: 3 },
+  { code: "almond",        name: "Almond",        sortOrder: 4 },
+  { code: "coffin",        name: "Coffin",        sortOrder: 5 },
+  { code: "ballerina",     name: "Ballerina",     sortOrder: 6 },
+  { code: "stiletto",      name: "Stiletto",      sortOrder: 7 },
+  { code: "lipstick",      name: "Lipstick",      sortOrder: 8 },
+  { code: "flare",         name: "Flare",         sortOrder: 9 },
+  { code: "mountain_peak", name: "Mountain Peak", sortOrder: 10 },
+];
+
+export const NAIL_ART_APPLICATIONS: NailArtApplicationTemplate[] = [
+  { code: "accent_1", name: "Accent Nail",      description: "Design on one accent nail",  sortOrder: 0 },
+  { code: "accent_2", name: "Two Accent Nails", description: "Design on two accent nails", sortOrder: 1 },
+  { code: "full",     name: "Full Nail Art",    description: "Design on all ten nails",    sortOrder: 2 },
+  { code: "custom",   name: "Custom Nail Art",  description: "Bespoke work, priced on consultation", isQuote: true, sortOrder: 3 },
+];
+
+export const NAIL_ART_EFFECTS: NailVocabTemplate[] = [
+  { code: "french_tips",    name: "French Tips",         sortOrder: 0 },
+  { code: "chrome",         name: "Chrome",              sortOrder: 1 },
+  { code: "mirror_chrome",  name: "Mirror Chrome",       sortOrder: 2 },
+  { code: "mermaid_chrome", name: "Mermaid Chrome",      sortOrder: 3 },
+  { code: "holographic",    name: "Holographic",         sortOrder: 4 },
+  { code: "unicorn",        name: "Unicorn",             sortOrder: 5 },
+  { code: "aurora",         name: "Aurora",              sortOrder: 6 },
+  { code: "cat_eye",        name: "Cat Eye",             sortOrder: 7 },
+  { code: "velvet_cat_eye", name: "Velvet Cat Eye",      sortOrder: 8 },
+  { code: "glazed_donut",   name: "Glazed Donut",        sortOrder: 9 },
+  { code: "pearl",          name: "Pearl Finish",        sortOrder: 10 },
+  { code: "mermaid_powder", name: "Mermaid Powder",      sortOrder: 11 },
+  { code: "glitter",        name: "Glitter",             sortOrder: 12 },
+  { code: "ombre",          name: "Ombré / Baby Boomer", sortOrder: 13 },
+  { code: "marble",         name: "Marble",              sortOrder: 14 },
+  { code: "magnetic",       name: "Magnetic",            sortOrder: 15 },
+  { code: "foil",           name: "Foil",                sortOrder: 16 },
+  { code: "rhinestones",    name: "Rhinestones",         sortOrder: 17 },
+  { code: "3d_art",         name: "3D Art",              sortOrder: 18 },
+  { code: "hand_painted",   name: "Hand Painted",        sortOrder: 19 },
+  { code: "airbrush",       name: "Airbrush",            sortOrder: 20 },
+  { code: "stamping",       name: "Stamping",            sortOrder: 21 },
+];
+
+// ── Default per-service configuration ───────────────────────────────────────
+
+const SIZE_PRESET: NailConfigEntry[] = [
+  { code: "short",  priceAdjustment: "0.00", isDefault: true },
+  { code: "medium", priceAdjustment: "5.00" },
+  { code: "long",   priceAdjustment: "10.00" },
+  { code: "xl",     priceAdjustment: "15.00" },
+  { code: "xxl",    priceAdjustment: "20.00" },
+];
+
+const SHAPE_PRESET: NailConfigEntry[] = [
+  { code: "square",    priceAdjustment: "0.00", isDefault: true },
+  { code: "squoval",   priceAdjustment: "0.00" },
+  { code: "round",     priceAdjustment: "0.00" },
+  { code: "oval",      priceAdjustment: "0.00" },
+  { code: "almond",    priceAdjustment: "0.00" },
+  { code: "coffin",    priceAdjustment: "5.00" },
+  { code: "ballerina", priceAdjustment: "5.00" },
+  { code: "stiletto",  priceAdjustment: "10.00" },
+];
+
+const ART_APPLICATION_PRESET: NailConfigEntry[] = [
+  { code: "accent_1", priceAdjustment: "5.00" },
+  { code: "accent_2", priceAdjustment: "10.00" },
+  { code: "full",     priceAdjustment: "20.00" },
+  { code: "custom",   priceAdjustment: "0.00" },   // is_quote — priced at booking
+];
+
+/** Premium techniques carry a surcharge; every other effect is offered at +$0. */
+const ART_EFFECT_SURCHARGES: Record<string, string> = {
+  velvet_cat_eye: "5.00",
+  mermaid_chrome: "5.00",
+  marble:         "8.00",
+  airbrush:       "10.00",
+  "3d_art":       "15.00",
+  hand_painted:   "15.00",
+};
+
+function nailConfigPreset(
+  overrides: Partial<Pick<NailServiceConfigTemplate, "lengthRequired" | "shapeRequired" | "artRequired">> = {},
+  applications: NailConfigEntry[] = ART_APPLICATION_PRESET,
+): NailServiceConfigTemplate {
+  return {
+    ...overrides,
+    sizes:  SIZE_PRESET.map((s) => ({ ...s })),
+    shapes: SHAPE_PRESET.map((s) => ({ ...s })),
+    artApplications: applications.map((a) => ({ ...a })),
+    artEffects: NAIL_ART_EFFECTS.map((e) => ({
+      code: e.code,
+      priceAdjustment: ART_EFFECT_SURCHARGES[e.code] ?? "0.00",
+    })),
+  };
+}
+
+/**
+ * Default nail configuration by service name. A service listed here gets a
+ * `nail_service_configs` row plus its four `service_nail_*` junction rows when
+ * the catalog is seeded. Every other service in NAIL_CATALOG is left untouched.
+ */
+export const NAIL_SERVICE_CONFIG_DEFAULTS: Record<string, NailServiceConfigTemplate> = {
+  "Full Set Acrylics":     nailConfigPreset(),
+  "Acrylic Fill":          nailConfigPreset(),
+  "Pink & White Full Set": nailConfigPreset(),
+  "Pink & White Fill":     nailConfigPreset(),
+  "Hard Gel Full Set":     nailConfigPreset(),
+  "Hard Gel Fill":         nailConfigPreset(),
+  "Dip Powder with Tips":  nailConfigPreset(),
+  "Gel X Full Set":        nailConfigPreset(),
+  "Gel X Fill":            nailConfigPreset(),
+  // Art is the point of this service: it's required, and Full Nail Art is bundled.
+  "Gel X with Nail Art":   nailConfigPreset({ artRequired: true }, [
+    { code: "accent_1", priceAdjustment: "0.00" },
+    { code: "accent_2", priceAdjustment: "0.00" },
+    { code: "full",     priceAdjustment: "0.00" },
+    { code: "custom",   priceAdjustment: "0.00" },
+  ]),
+};
+
 // ── Category catalog ──────────────────────────────────────────────────────────
 
 export const NAIL_CATALOG: CatalogCategory[] = [

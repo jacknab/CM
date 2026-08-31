@@ -15,7 +15,7 @@ import { pool } from "../db.js";
 const router = Router();
 
 const VALID_ENTITY_TYPES: EntityType[] = ["category", "service", "addon", "product"];
-const VALID_LANGS: LangCode[] = ["es", "vi", "zh", "ko"];
+const VALID_LANGS: LangCode[] = ["es", "vi", "zh", "ko", "fr"];
 
 function validateEntityType(t: string): t is EntityType {
   return VALID_ENTITY_TYPES.includes(t as EntityType);

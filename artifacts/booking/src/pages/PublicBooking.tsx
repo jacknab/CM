@@ -3,6 +3,9 @@ import { Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type { StoreData } from "./public-booking/types";
 import BloomTheme from "./public-booking/BloomTheme";
+import ClassicTheme from "./public-booking/ClassicTheme";
+import MobileTheme from "./public-booking/MobileTheme";
+import SimpleTheme from "./public-booking/SimpleTheme";
 
 export default function PublicBooking() {
   const { slug } = useParams<{ slug?: string }>();
@@ -49,12 +52,40 @@ export default function PublicBooking() {
   // For subdomain-based access, use the slug from the store's bookingSlug field
   const effectiveSlug = slug || effectiveStore.bookingSlug;
 
-  return (
-    <BloomTheme
-      store={effectiveStore as StoreData}
-      slug={effectiveSlug!}
-      preselectedStaffId={preselectedStaffId}
-      preselectedServiceId={preselectedServiceId}
-    />
-  );
+  switch (effectiveStore.bookingTheme) {
+    case "classic":
+      return (
+        <ClassicTheme
+          store={effectiveStore as StoreData}
+          slug={effectiveSlug!}
+          preselectedStaffId={preselectedStaffId}
+        />
+      );
+    case "mobile":
+      return (
+        <MobileTheme
+          store={effectiveStore as StoreData}
+          slug={effectiveSlug!}
+          preselectedStaffId={preselectedStaffId}
+        />
+      );
+    case "simple":
+      return (
+        <SimpleTheme
+          store={effectiveStore as StoreData}
+          slug={effectiveSlug!}
+          preselectedStaffId={preselectedStaffId}
+          preselectedServiceId={preselectedServiceId}
+        />
+      );
+    default:
+      return (
+        <BloomTheme
+          store={effectiveStore as StoreData}
+          slug={effectiveSlug!}
+          preselectedStaffId={preselectedStaffId}
+          preselectedServiceId={preselectedServiceId}
+        />
+      );
+  }
 }

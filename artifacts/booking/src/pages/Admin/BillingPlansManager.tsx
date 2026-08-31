@@ -202,6 +202,35 @@ function PlanForm({
         </div>
       ) : null}
 
+      {/* Catches the exact mistake that broke checkout: pasting the Product ID
+          (prod_...) from the Stripe dashboard instead of drilling into the
+          Price ID (price_...) under that product. Stripe Checkout rejects a
+          prod_ id with a 500 at subscribe time, which is much harder to spot
+          than a warning right here at save time. */}
+      {(form.stripePriceIdMonthly && !form.stripePriceIdMonthly.startsWith("price_")) ||
+      (form.stripePriceIdYearly && !form.stripePriceIdYearly.startsWith("price_")) ? (
+        <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 space-y-1">
+          <div className="flex items-center gap-2 text-red-700 font-medium text-sm">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            Stripe price ID looks wrong
+          </div>
+          {form.stripePriceIdMonthly && !form.stripePriceIdMonthly.startsWith("price_") && (
+            <p className="text-red-600 text-xs pl-6">
+              <strong>Stripe Monthly Price ID</strong> should start with <code>price_</code> — {form.stripePriceIdMonthly.startsWith("prod_")
+                ? "this looks like a Product ID instead. Open the product in Stripe and copy the Price ID underneath it, not the product's own ID."
+                : "double-check the value copied from Stripe."}
+            </p>
+          )}
+          {form.stripePriceIdYearly && !form.stripePriceIdYearly.startsWith("price_") && (
+            <p className="text-red-600 text-xs pl-6">
+              <strong>Stripe Yearly Price ID</strong> should start with <code>price_</code> — {form.stripePriceIdYearly.startsWith("prod_")
+                ? "this looks like a Product ID instead. Open the product in Stripe and copy the Price ID underneath it, not the product's own ID."
+                : "double-check the value copied from Stripe."}
+            </p>
+          )}
+        </div>
+      ) : null}
+
       <div className="flex items-center gap-3">
         <Switch
           checked={form.isPublic}

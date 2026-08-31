@@ -51,6 +51,8 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
     depositRequired: z.boolean().optional().default(false),
     depositAmount: z.coerce.number().min(0).optional().nullable(),
     hiddenFromPublic: z.boolean().optional().default(false),
+    // Free text — how long the result lasts (e.g. "3–4 weeks"). Not scheduling.
+    longevity: z.string().trim().max(100).optional().nullable(),
   });
 
   const { register, handleSubmit, formState: { errors }, setValue, watch, reset } = useForm<z.infer<typeof formSchema>>({
@@ -61,6 +63,7 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
       duration: initialData.duration,
       price: initialData.price,
       description: initialData.description || "",
+      longevity: initialData.longevity || "",
       imageUrl: initialData.imageUrl || null,
       depositRequired: initialData.depositRequired || false,
       depositAmount: initialData.depositAmount ? Number(initialData.depositAmount) : null,
@@ -70,6 +73,7 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
       depositAmount: null,
       category: initialCategoryName,
       hiddenFromPublic: false,
+      longevity: "",
     }
   });
 
@@ -77,9 +81,6 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
   const depositRequired = watch("depositRequired");
   const hiddenFromPublic = watch("hiddenFromPublic");
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [selectedIllustrationId, setSelectedIllustrationId] = useState<number | null>(
-    initialData?.illustrationCategoryId ?? null
-  );
   const [autoAssigning, setAutoAssigning] = useState(false);
   const [generatingDesc, setGeneratingDesc] = useState(false);
 
@@ -102,16 +103,18 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
   const [deletedOptionIds, setDeletedOptionIds] = useState<number[]>([]);
   const [uploadingOptionIdx, setUploadingOptionIdx] = useState<number | null>(null);
 
-  const { data: illustrationData } = useQuery<{ categories: any[] }>({
-    queryKey: ["illustration-categories", industry],
+  // Services Image Library — admin-curated stock photos owners can assign as a
+  // service's main image (in place of uploading their own).
+  const { data: libraryData } = useQuery<{ images: any[] }>({
+    queryKey: ["service-images-library"],
     queryFn: async () => {
-      const res = await fetch(`/api/illustration-categories?industry=${industry}&activeOnly=true`, { credentials: "include" });
-      if (!res.ok) return { categories: [] };
+      const res = await fetch(`/api/service-images?limit=9999`, { credentials: "include" });
+      if (!res.ok) return { images: [] };
       return res.json();
     },
   });
-  const illustrationCategories = illustrationData?.categories ?? [];
-  const currentIllustration = illustrationCategories.find((c: any) => c.id === selectedIllustrationId);
+  const libraryImages: any[] = libraryData?.images ?? [];
+  const currentLibraryImage = libraryImages.find((img: any) => img.imageUrl && img.imageUrl === imageUrl);
 
   useEffect(() => {
     if (initialData) {
@@ -121,6 +124,7 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
         duration: initialData.duration,
         price: initialData.price,
         description: initialData.description || "",
+        longevity: initialData.longevity || "",
         imageUrl: initialData.imageUrl || null,
         depositRequired: initialData.depositRequired || false,
         depositAmount: initialData.depositAmount ? Number(initialData.depositAmount) : null,
@@ -189,19 +193,29 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
     }
   };
 
-  const autoAssignIllustration = async (name: string) => {
+  // Auto-match the closest Services Image Library photo to this service and set
+  // it as the service's main image. Server-side scoring, no DB write here.
+  const autoMatchLibraryImage = async (name: string) => {
     if (!name.trim()) return;
     setAutoAssigning(true);
     try {
-      const res = await fetch(`/api/illustration-categories/auto-assign/${initialData?.id ?? 0}`, {
+      const res = await fetch(`/api/service-images/match`, {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ industry }),
+        body: JSON.stringify({ name: name.trim(), category: watch("category") ?? "" }),
       });
       if (res.ok) {
         const d = await res.json();
-        if (d.assigned && d.categoryId) setSelectedIllustrationId(d.categoryId);
+        if (d.matched && d.imageUrl) {
+          setValue("imageUrl", d.imageUrl);
+        } else {
+          toast({ title: "No close match in the image library" });
+        }
+      } else {
+        toast({ title: "Auto-match failed", variant: "destructive" });
       }
+    } catch {
+      toast({ title: "Auto-match failed", variant: "destructive" });
     } finally {
       setAutoAssigning(false);
     }
@@ -268,7 +282,9 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
       ...data,
       price: String(data.price),
       depositAmount: data.depositRequired && data.depositAmount != null ? String(data.depositAmount) : null,
-      illustrationCategoryId: selectedIllustrationId ?? null,
+      // Store null rather than an empty string when no longevity is given.
+      longevity: typeof data.longevity === "string" && data.longevity.trim() ? data.longevity.trim() : null,
+      illustrationCategoryId: initialData?.illustrationCategoryId ?? null,
       autoAssigned: false,
       categoryId,
     };
@@ -374,6 +390,21 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
           <Input id="price" type="number" step="0.01" {...register("price")} placeholder="80.00" data-testid="input-service-price" />
           {errors.price && <span className="text-xs text-destructive">{errors.price.message}</span>}
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="longevity">Service Longevity</Label>
+        <Input
+          id="longevity"
+          {...register("longevity")}
+          placeholder="e.g. 3–4 weeks"
+          data-testid="input-service-longevity"
+        />
+        <p className="text-xs text-muted-foreground">
+          How long this service typically lasts before it needs to be redone. This is separate
+          from Duration and does not affect scheduling.
+        </p>
+        {errors.longevity && <span className="text-xs text-destructive">{errors.longevity.message as string}</span>}
       </div>
 
       <div className="space-y-2">
@@ -542,35 +573,33 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
         )}
       </div>
 
-      {/* ── Illustration ──────────────────────────────────────────────────── */}
-      {illustrationCategories.length > 0 && (
+      {/* ── Services Image Library ────────────────────────────────────────── */}
+      {libraryImages.length > 0 && (
         <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
           <div className="flex items-center justify-between">
             <div>
               <Label className="text-sm font-medium flex items-center gap-1.5">
-                <Image className="w-3.5 h-3.5" /> Kiosk Illustration
+                <Image className="w-3.5 h-3.5" /> Services Image Library
               </Label>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Shown on kiosk screens when no service photo is uploaded
+                Pick a curated photo as this service's image (or upload your own above)
               </p>
             </div>
-            {initialData?.id && (
-              <button
-                type="button"
-                onClick={() => autoAssignIllustration(initialData.name)}
-                disabled={autoAssigning}
-                className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 border border-primary/20 rounded-lg px-2.5 py-1 transition-colors"
-              >
-                {autoAssigning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-                Auto-match
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => autoMatchLibraryImage(watch("name") || initialData?.name || "")}
+              disabled={autoAssigning || !(watch("name") || initialData?.name)}
+              className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 border border-primary/20 rounded-lg px-2.5 py-1 transition-colors disabled:opacity-50"
+            >
+              {autoAssigning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+              Auto-match
+            </button>
           </div>
 
           <div className="flex gap-3 items-start">
             <div className="w-20 h-14 rounded-lg border bg-white overflow-hidden flex-shrink-0 flex items-center justify-center">
-              {currentIllustration?.imageUrl ? (
-                <img src={currentIllustration.imageUrl} alt={currentIllustration.name} className="w-full h-full object-cover" />
+              {imageUrl ? (
+                <img src={imageUrl} alt="Service" className="w-full h-full object-cover" />
               ) : (
                 <Image className="w-6 h-6 text-muted-foreground/40" />
               )}
@@ -578,24 +607,36 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
 
             <div className="flex-1 space-y-1.5">
               <Select
-                onValueChange={val => setSelectedIllustrationId(val === "none" ? null : Number(val))}
-                value={selectedIllustrationId ? String(selectedIllustrationId) : "none"}
+                onValueChange={val => {
+                  if (val === "none") { setValue("imageUrl", null); return; }
+                  const img = libraryImages.find((i: any) => String(i.id) === val);
+                  if (img?.imageUrl) setValue("imageUrl", img.imageUrl);
+                }}
+                value={currentLibraryImage ? String(currentLibraryImage.id) : "none"}
               >
                 <SelectTrigger className="text-sm">
-                  <SelectValue placeholder="Choose illustration…" />
+                  <SelectValue placeholder="Choose from library…" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">No illustration</SelectItem>
-                  {illustrationCategories.map((cat: any) => (
-                    <SelectItem key={cat.id} value={String(cat.id)}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="none">
+                    {imageUrl && !currentLibraryImage ? "Custom upload (keep)" : "No library image"}
+                  </SelectItem>
+                  {libraryImages
+                    .filter((img: any) => img.imageUrl)
+                    .map((img: any) => (
+                      <SelectItem key={img.id} value={String(img.id)}>
+                        {img.category ? `${img.category} — ` : ""}{img.name}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
-              {currentIllustration && (
+              {currentLibraryImage && (
                 <p className="text-xs text-muted-foreground">
-                  Category: <span className="font-medium">{currentIllustration.slug}</span>
+                  From library:{" "}
+                  <span className="font-medium">
+                    {currentLibraryImage.category}
+                    {currentLibraryImage.subcategory ? ` / ${currentLibraryImage.subcategory}` : ""}
+                  </span>
                 </p>
               )}
             </div>

@@ -48,6 +48,9 @@ import { eq, desc, ilike, or, sql, count, and, inArray } from "drizzle-orm";
 import { sendEmail } from "../mail";
 import { isAuthenticated, isAdminAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
+import { publishCrossProcess, subscribeCrossProcess, isCrossProcessBusAvailable } from "../lib/wsBroadcastBus";
+
+const TICKET_ALERT_CHANNEL = "ws:support-ticket-alert";
 
 // ─── SSE: admin notification broadcast ──────────────────────────────────────
 const sseClients = new Set<Response>();
@@ -62,7 +65,10 @@ interface TicketAlertPayload {
   createdAt: string;
 }
 
-function broadcastTicketAlert(payload: TicketAlertPayload): void {
+// SSE Response objects are local to whichever worker holds that connection
+// and can't be sent over Redis — only the payload travels; each worker (via
+// its own subscription below) writes to its own locally-connected clients.
+function deliverTicketAlertLocal(payload: TicketAlertPayload): void {
   const data = `data: ${JSON.stringify({ event: "ticket.created", ticket: payload })}\n\n`;
   for (const res of sseClients) {
     try {
@@ -70,6 +76,18 @@ function broadcastTicketAlert(payload: TicketAlertPayload): void {
     } catch {
       sseClients.delete(res);
     }
+  }
+}
+
+subscribeCrossProcess(TICKET_ALERT_CHANNEL, (payload: TicketAlertPayload) => {
+  deliverTicketAlertLocal(payload);
+});
+
+function broadcastTicketAlert(payload: TicketAlertPayload): void {
+  if (isCrossProcessBusAvailable()) {
+    publishCrossProcess(TICKET_ALERT_CHANNEL, payload);
+  } else {
+    deliverTicketAlertLocal(payload);
   }
 }
 

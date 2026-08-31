@@ -144,7 +144,8 @@ export default function ClientProfile() {
 
   const noShows = useMemo(() => {
     if (!allAppointments) return 0;
-    return allAppointments.filter(a => a.status === "no-show").length;
+    // Appointments are stored with status "no_show"; older/edge data may use "no-show".
+    return allAppointments.filter(a => a.status === "no_show" || a.status === "no-show").length;
   }, [allAppointments]);
 
   const cancellations = useMemo(() => {
@@ -177,8 +178,11 @@ export default function ClientProfile() {
       pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
       confirmed: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
       cancelled: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-      "no-show": "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200",
+      no_show: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200",
+      "no-show": "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200",
+      started: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
     };
+    const statusLabel = (apt.status || "pending").replace(/_/g, " ");
 
     const svcPrice = apt.service ? Number(apt.service.price) : 0;
     const addonTotal = apt.appointmentAddons
@@ -196,7 +200,7 @@ export default function ClientProfile() {
             variant="secondary"
             className={cn("no-default-active-elevate text-xs capitalize", statusColors[apt.status || "pending"])}
             data-testid={`appointment-status-${apt.id}`}>
-            {apt.status || "Pending"}
+            {statusLabel}
           </Badge>
         </div>
         <div>

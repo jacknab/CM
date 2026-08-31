@@ -1388,14 +1388,14 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
                   <div className="flex min-h-[180px] flex-col">
                     {/* Image */}
                     <div
-                      className="relative h-44 w-full flex-shrink-0 overflow-hidden sm:h-auto"
+                      className="relative h-44 w-full flex-shrink-0 overflow-hidden sm:h-80"
                       style={{ background: C.cream100 }}
                     >
                       <img
                         src={imageUrl}
                         alt={isGooglePhoto ? `Google review photo for ${svc.name}` : `${svc.name} at our nail salon`}
                         loading="lazy"
-                        className="absolute inset-0 h-full w-full object-cover transition-transform duration-200 hover:scale-105 sm:relative sm:inset-auto sm:h-auto sm:w-full"
+                        className="absolute inset-0 h-full w-full object-cover transition-transform duration-200 hover:scale-105"
                         style={isGooglePhoto ? { cursor: "zoom-in" } : undefined}
                         onClick={isGooglePhoto ? () => setPhotoLightbox(imageUrl) : undefined}
                       />

@@ -3,7 +3,7 @@ import { db } from "../db";
 import { storage } from "../storage";
 import { isAuthenticated } from "../auth";
 import { appointments, waitlist, locations, services, staff } from "@shared/schema";
-import { clients, clientPhones, clientEmails } from "@shared/schema/clients";
+import { clients, clientPhones, clientEmails, clientNotes } from "@shared/schema/clients";
 import { eq as eqOp, and as andOp, sql as sqlOp, isNull as isNullOp } from "drizzle-orm";
 import { eq, and, isNotNull } from "drizzle-orm";
 import { broadcastSyncEvent } from "../notifications";
@@ -584,11 +584,18 @@ async function handleCreateClient(
       storeId,
       fullName: p.name ?? "Unknown",
       firstName: nameParts[0] || "",
-      lastName: nameParts.slice(1).join(" ") || null,
-      notes: p.notes ?? null,
+      lastName: nameParts.slice(1).join(" ") || "",
       loyaltyPoints: 0,
     })
     .returning({ id: clients.id });
+  // `notes` is not a column on `clients` — it lives in `client_notes`.
+  if (p.notes && String(p.notes).trim()) {
+    await db.insert(clientNotes).values({
+      clientId: newClient.id,
+      storeId,
+      noteContent: String(p.notes).trim(),
+    });
+  }
 
   if (p.phone) {
     await db.insert(clientPhones).values({ clientId: newClient.id, displayPhone: p.phone, phoneNumberE164: `+1${String(p.phone).replace(/\D/g, "").slice(-10)}`, isPrimary: true, smsOptIn: false });

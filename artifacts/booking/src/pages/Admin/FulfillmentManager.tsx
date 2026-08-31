@@ -24,7 +24,7 @@ export const FulfillmentManager: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const res = await apiRequest('/admin/fulfillment/pending', { method: 'GET' });
+        const res = await apiRequest('/api/admin/fulfillment/pending', { method: 'GET' });
         setPending(Array.isArray(res?.data) ? res.data : []);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load pending fulfillments');
@@ -57,7 +57,7 @@ export const FulfillmentManager: React.FC = () => {
     setError(null);
     setLoading(true);
     try {
-      await apiRequest('/admin/fulfillment/record', {
+      await apiRequest('/api/admin/fulfillment/record', {
         method: 'POST',
         body: JSON.stringify({
           store_number: row.store_number,
@@ -86,7 +86,7 @@ export const FulfillmentManager: React.FC = () => {
     try {
       let printWin: Window | null = null;
       try { printWin = window.open('', '_blank'); } catch (_) { printWin = null; }
-      const res = await apiRequest('/admin/fulfillment/buy-label', {
+      const res = await apiRequest('/api/admin/fulfillment/buy-label', {
         method: 'POST',
         body: JSON.stringify({
           store_number: row.store_number,

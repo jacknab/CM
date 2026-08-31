@@ -1,10 +1,11 @@
 import { 
   locations, services, serviceOptions, staff, appointments, products,
-  clients, clientPhones, clientEmails,
+  clients, clientPhones, clientEmails, clientNotes,
   serviceCategories, addons, serviceAddons, appointmentAddons, staffServices, staffAvailability,
   calendarSettings, cashDrawerSessions, drawerActions, businessHours,
   businessDays, businessDayActions,
   smsSettings, smsLog, mailSettings,
+  aiCallLog, googleReviews, giftCardTransactions, intakeFormResponses, loyaltyTransactions, reviews, staffWorkPhotos,
   type Store, type InsertStore,
   type ServiceCategory, type InsertServiceCategory,
   type Service, type InsertService,
@@ -33,6 +34,7 @@ import { db } from "./db";
 import { eq, and, gte, lte, inArray, desc, isNotNull, ne, isNull, sql } from "drizzle-orm";
 import { toE164US, displayPhone as formatDisplayPhone } from "./lib/phoneUtils";
 import { claimStaffColor } from "./lib/staffColorUtils";
+import { snapshotCompletionFields } from "./lib/commissionSnapshot";
 
 export interface IStorage {
   getStores(userId?: string): Promise<Store[]>;
@@ -114,6 +116,7 @@ export interface IStorage {
   createAppointment(appointment: InsertAppointment): Promise<Appointment>;
   updateAppointment(id: number, appointment: Partial<InsertAppointment>): Promise<Appointment | undefined>;
   deleteAppointment(id: number): Promise<void>;
+  deleteAppointmentAndRelated(id: number): Promise<void>;
 
   getProducts(storeId?: number): Promise<Product[]>;
   getProduct(id: number): Promise<Product | undefined>;
@@ -243,6 +246,19 @@ export class DatabaseStorage implements IStorage {
   }
   async createService(insertService: InsertService): Promise<ServiceWithOptions> {
     const [service] = await db.insert(services).values(insertService).returning();
+
+    // Auto-assign a service image from the platform library so the public
+    // booking page renders an illustration immediately — no manual trigger.
+    try {
+      const imgStoreId = insertService.storeId ?? service.storeId;
+      if (imgStoreId != null) {
+        const { autoAssignServiceImages } = await import("./routes/serviceImages");
+        await autoAssignServiceImages(imgStoreId, [service.id]);
+      }
+    } catch (e: any) {
+      console.warn(`[storage] Service image auto-assign skipped for service ${service.id}: ${e?.message ?? e}`);
+    }
+
     return { ...service, options: [] };
   }
   async updateService(id: number, updateData: Partial<InsertService>): Promise<ServiceWithOptions | undefined> {
@@ -255,13 +271,29 @@ export class DatabaseStorage implements IStorage {
     await db.update(services).set({ isActive: false }).where(eq(services.id, id));
   }
   async deleteService(id: number): Promise<void> {
-    await this.deactivateService(id);
+    // Soft delete only. A hard delete here previously ran
+    // `UPDATE appointments SET service_id = NULL` — which erased the service
+    // link (and therefore the fallback revenue basis) on every historical
+    // paid appointment, silently zeroing past commission on that work.
+    // Keep the row so `appointment.service` still resolves for reports; the
+    // public/booking service lists already filter on `is_active`.
+    await db.update(services).set({ isActive: false }).where(eq(services.id, id));
   }
   async deactivateAllServices(storeId: number): Promise<Service[]> {
-    return await db.update(services)
-      .set({ isActive: false })
-      .where(and(eq(services.storeId, storeId), eq(services.isActive, true)))
-      .returning();
+    // Soft delete only — despite the historical implementation, this must NOT
+    // hard-delete the service rows or NULL out `appointments.service_id`.
+    // Doing so wiped service attribution and the fallback revenue basis on
+    // every past paid appointment, zeroing commission for any period not yet
+    // run through payroll. The booking/menu UIs filter on `is_active`, so
+    // deactivating is enough to clear the visible menu.
+    return await db.transaction(async (tx) => {
+      const active = await tx.select().from(services)
+        .where(and(eq(services.storeId, storeId), eq(services.isActive, true)));
+      if (active.length === 0) return [];
+      await tx.update(services).set({ isActive: false })
+        .where(and(eq(services.storeId, storeId), eq(services.isActive, true)));
+      return active;
+    });
   }
 
   // Service Options
@@ -555,19 +587,34 @@ export class DatabaseStorage implements IStorage {
         fullName,
         dateOfBirth: birthday ?? null,
         allergies: allergies ?? null,
-        notes: notes ?? null,
         loyaltyPoints: loyaltyPoints ?? 0,
         clientStatus: "active",
         source: "pos",
       })
       .returning();
+    // `notes` is not a column on `clients` — it lives in `client_notes`.
+    if (notes && String(notes).trim() && storeId) {
+      await db.insert(clientNotes).values({
+        clientId: newClient.id,
+        storeId,
+        noteContent: String(notes).trim(),
+      });
+    }
     if (phone) {
       const e164 = toE164US(phone) ?? phone;
+      // Auto-detect whether this phone is mobile, VoIP, or landline
+      let detectedType: "mobile" | "voip" | "landline" | "unknown" = "unknown";
+      try {
+        const { detectPhoneType } = await import("./lib/phoneTypeDetector");
+        detectedType = detectPhoneType(e164).phoneType;
+      } catch (e: any) {
+        console.warn(`[storage] phone-type detection skipped: ${e?.message ?? e}`);
+      }
       await db.insert(clientPhones).values({
         clientId: newClient.id,
         phoneNumberE164: e164,
         displayPhone: formatDisplayPhone(e164) || phone,
-        phoneType: "mobile",
+        phoneType: detectedType,
         smsOptIn: true,
         isPrimary: true,
         storeId: storeId ?? null,
@@ -703,6 +750,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateAppointment(id: number, updateData: Partial<InsertAppointment>): Promise<Appointment | undefined> {
+    // Freeze the service price + staff commission rate the first time this
+    // appointment is completed, so commission reports / payroll runs stay
+    // reproducible if either is edited (or the service deleted) afterwards.
+    // Idempotent — a no-op if it was already completed or already snapshotted.
+    if (updateData.status === "completed") {
+      const snap = await snapshotCompletionFields(id);
+      if (snap.servicePrice   !== undefined) (updateData as any).servicePrice   = snap.servicePrice;
+      if (snap.commissionRate !== undefined) (updateData as any).commissionRate = snap.commissionRate;
+    }
     const [appointment] = await db.update(appointments).set(updateData).where(eq(appointments.id, id)).returning();
     return appointment;
   }
@@ -710,6 +766,36 @@ export class DatabaseStorage implements IStorage {
   async deleteAppointment(id: number): Promise<void> {
     await db.delete(appointmentAddons).where(eq(appointmentAddons.appointmentId, id));
     await db.delete(appointments).where(eq(appointments.id, id));
+  }
+
+  /**
+   * Hard-deletes an appointment along with every row in another table that
+   * references it via a non-cascading FK. `deleteAppointment()` only clears
+   * `appointment_addons` — several other tables (sms_log, ai_call_log,
+   * google_reviews, gift_card_transactions, intake_form_responses,
+   * loyalty_transactions, reviews, staff_work_photos) also have an
+   * `appointment_id` FK with no ON DELETE clause, so deleting an appointment
+   * with any activity against it (e.g. the confirmation SMS logged the
+   * moment it was created) would otherwise throw a FK violation.
+   *
+   * Used by the AI-receptionist payment-hold expiry scheduler to fully
+   * remove an appointment nobody paid the deposit/card-on-file for within
+   * the hold window — deleting rather than cancelling frees the slot as if
+   * it had never been booked.
+   */
+  async deleteAppointmentAndRelated(id: number): Promise<void> {
+    await db.transaction(async (tx) => {
+      await tx.delete(appointmentAddons).where(eq(appointmentAddons.appointmentId, id));
+      await tx.delete(smsLog).where(eq(smsLog.appointmentId, id));
+      await tx.delete(aiCallLog).where(eq(aiCallLog.appointmentId, id));
+      await tx.delete(googleReviews).where(eq(googleReviews.appointmentId, id));
+      await tx.delete(giftCardTransactions).where(eq(giftCardTransactions.appointmentId, id));
+      await tx.delete(intakeFormResponses).where(eq(intakeFormResponses.appointmentId, id));
+      await tx.delete(loyaltyTransactions).where(eq(loyaltyTransactions.appointmentId, id));
+      await tx.delete(reviews).where(eq(reviews.appointmentId, id));
+      await tx.delete(staffWorkPhotos).where(eq(staffWorkPhotos.appointmentId, id));
+      await tx.delete(appointments).where(eq(appointments.id, id));
+    });
   }
 
   // Products
@@ -734,8 +820,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Calendar Settings
-  async getCalendarSettings(storeId: number): Promise<CalendarSettings | undefined> {
-    const [settings] = await db.select().from(calendarSettings).where(eq(calendarSettings.storeId, storeId));
+  async getCalendarSettings(storeId: number): Promise<CalendarSettings> {
+    // Try to find existing settings, create default if none exist
+    let [settings] = await db.select().from(calendarSettings).where(eq(calendarSettings.storeId, storeId));
+    if (!settings) {
+      [settings] = await db.insert(calendarSettings).values({ storeId, language: "en" }).returning();
+    }
     return settings;
   }
 
@@ -909,7 +999,10 @@ export class DatabaseStorage implements IStorage {
       },
     });
     const activeStatuses = ["pending", "confirmed"];
-    return (result as AppointmentWithDetails[]).filter(a => activeStatuses.includes(a.status || ""));
+    // calendarHidden appointments are payment-pending holds (AI receptionist,
+    // awaiting a deposit/card-on-file link) — they aren't confirmed bookings
+    // yet and shouldn't get a normal day-before reminder SMS.
+    return (result as AppointmentWithDetails[]).filter(a => activeStatuses.includes(a.status || "") && !(a as any).calendarHidden);
   }
 
   async getRecentlyCompletedAppointments(fromTime: Date, toTime: Date): Promise<AppointmentWithDetails[]> {

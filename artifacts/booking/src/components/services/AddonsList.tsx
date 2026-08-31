@@ -60,7 +60,7 @@ export function AddonsList() {
 
   const all = addons || [];
   const searched = all.filter((a: Addon) =>
-    a.name.toLowerCase().includes(searchQuery.toLowerCase())
+    ((a as any).displayName || a.name).toLowerCase().includes(searchQuery.toLowerCase())
   );
   const filtered = showInactive
     ? searched
@@ -238,12 +238,12 @@ export function AddonsList() {
                       <TableCell className="text-muted-foreground font-mono text-xs">{addon.id}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <span className="font-medium" data-testid={`text-addon-name-${addon.id}`}>{addon.name}</span>
+                          <span className="font-medium" data-testid={`text-addon-name-${addon.id}`}>{(addon as any).displayName || addon.name}</span>
                           {inactive && <Badge variant="outline" className="text-[10px] px-1 py-0 text-muted-foreground border-muted-foreground/40">Inactive</Badge>}
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span className="text-muted-foreground text-xs">{addon.description || "-"}</span>
+                        <span className="text-muted-foreground text-xs">{(addon as any).displayDescription || addon.description || "-"}</span>
                       </TableCell>
                       <TableCell>
                         {editMode && !inactive ? (

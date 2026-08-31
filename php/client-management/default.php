@@ -164,69 +164,6 @@ require 'includes/nav.php';
       </div>
     </div>
 
-    <div class="feature-block">
-      <div class="feature-content">
-        <span class="tag tag-plum">GDPR & Privacy</span>
-        <h3 class="feature-title">Safe, secure, and fully compliant</h3>
-        <p class="feature-text">Certxa is built with privacy-first principles. All client data is encrypted, stored securely in the UK, and fully compliant with GDPR regulations. Your clients' trust is protected, and so is your business.</p>
-        <ul class="feature-list">
-          <li>End-to-end encryption for all client data</li>
-          <li>UK-based servers with ISO 27001 certification</li>
-          <li>Automated data retention and deletion policies</li>
-          <li>Client data export on request in one click</li>
-        </ul>
-        <a href="/contact" class="btn btn-primary">Ask About Data Privacy</a>
-      </div>
-      <div class="feature-visual">
-        <div style="text-align:center;">
-          <div style="font-size:4rem;margin-bottom:16px;">🔒</div>
-          <div style="font-size:1.1rem;font-weight:700;color:var(--plum);margin-bottom:8px;">Bank-Grade Security</div>
-          <div style="font-size:.9rem;color:var(--mid-grey);margin-bottom:24px;">All data encrypted at rest and in transit</div>
-          <?php
-          $badges = ['GDPR Compliant', 'ISO 27001', 'UK Data Centre', 'SOC 2 Type II'];
-          foreach ($badges as $b):
-          ?>
-          <div class="integration-pill" style="margin:0 auto 10px;max-width:200px;justify-content:center;"><span class="dot"></span><?= $b ?></div>
-          <?php endforeach; ?>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- TESTIMONIAL -->
-<section class="section section-alt">
-  <div class="container">
-    <div class="section-header">
-      <span class="tag tag-gold">Client Stories</span>
-      <h2 class="section-title">How professionals use client management</h2>
-    </div>
-    <div class="testimonials-grid">
-      <div class="testimonial">
-        <div class="testimonial-stars">★★★★★</div>
-        <p class="testimonial-text">"I used to rely on memory and scraps of paper for client notes. Now everything is in Certxa — every formula, every preference. My clients are always impressed that I remember everything."</p>
-        <div class="testimonial-author">
-          <div class="testimonial-avatar">KL</div>
-          <div><div class="testimonial-name">Katie Lambert</div><div class="testimonial-role">Colour Specialist, Edinburgh</div></div>
-        </div>
-      </div>
-      <div class="testimonial">
-        <div class="testimonial-stars">★★★★★</div>
-        <p class="testimonial-text">"The lapsed client alerts are brilliant. I set up an automatic message to clients I haven't seen in 8 weeks and it brings back 3-4 clients every month without me lifting a finger."</p>
-        <div class="testimonial-author">
-          <div class="testimonial-avatar">TW</div>
-          <div><div class="testimonial-name">Tom Walsh</div><div class="testimonial-role">Nail Studio Owner, Bristol</div></div>
-        </div>
-      </div>
-      <div class="testimonial">
-        <div class="testimonial-stars">★★★★★</div>
-        <p class="testimonial-text">"The allergy alert system is a lifesaver — literally. I had a client with a PPD sensitivity I'd forgotten about. Certxa flagged it before the appointment. That feature alone makes it worth it."</p>
-        <div class="testimonial-author">
-          <div class="testimonial-avatar">SP</div>
-          <div><div class="testimonial-name">Sienna Patel</div><div class="testimonial-role">Senior Nail Technician, Leeds</div></div>
-        </div>
-      </div>
-    </div>
   </div>
 </section>
 

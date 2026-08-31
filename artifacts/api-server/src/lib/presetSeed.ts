@@ -200,6 +200,18 @@ export async function seedFromPresetStore(newStoreId: number): Promise<number[]>
     }
   }
 
+  // ── 6. Auto-assign service images from the platform library ──────────────
+  // The preset store may have stale or missing image links; for new stores we
+  // run the auto-assigner so the public booking page renders illustrations
+  // immediately without the owner having to trigger anything manually.
+  try {
+    const { autoAssignServiceImages } = await import("../routes/serviceImages");
+    const assigned = await autoAssignServiceImages(newStoreId, newServiceIds);
+    console.log(`[presetSeed] Auto-assigned ${assigned} service images from library`);
+  } catch (e: any) {
+    console.warn(`[presetSeed] Service image auto-assign skipped: ${e?.message ?? e}`);
+  }
+
   console.log(`[presetSeed] Done — store ${newStoreId} seeded with ${newServiceIds.length} services`);
   return newServiceIds;
 }

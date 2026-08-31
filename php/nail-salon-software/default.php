@@ -4,6 +4,11 @@ define('PAGE_TITLE',    'Nail Studio Software | Certxa');
 define('PAGE_DESC',     'Nail salon software for independent nail technicians and growing studios. Certxa connects online booking, client nail records, reminders, payments, POS, walk-ins, and a booking website in one platform. ' . TRIAL_DAYS . '-day free trial.');
 define('PAGE_KEYWORDS', 'nail salon software, nail salon booking software, nail studio management software, nail salon scheduling app, online booking for nail salons, nail salon POS, gel nail salon software, acrylic nail salon software, nail technician software');
 define('PAGE_CANONICAL','https://certxa.com/nail-salon-software');
+define('PAGE_ALTERNATES', json_encode([
+  ['hreflang'=>'en',        'href'=>'https://certxa.com/nail-salon-software'],
+  ['hreflang'=>'vi',        'href'=>'https://certxa.com/vietnamese-salon-software'],
+  ['hreflang'=>'x-default', 'href'=>'https://certxa.com/nail-salon-software'],
+]));
 define('PAGE_BREADCRUMBS', json_encode([
   ['name'=>'Home','url'=>'https://certxa.com/'],
   ['name'=>'Nail Salon Software','url'=>'https://certxa.com/nail-salon-software'],
@@ -17,15 +22,7 @@ define('PAGE_SCHEMA', json_encode([
       ['@type'=>'Question','name'=>'Can I track nail formulas and product notes per client?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes — Certxa\'s client profiles let you record detailed service notes including gel brand, colour codes, nail shape, enhancements used, and anything else that makes each client\'s experience personal. Available to view before every appointment.']],
     ],
   ],
-  [
-    '@type'       => 'SoftwareApplication',
-    '@id'         => 'https://certxa.com/#nail-software',
-    'name'        => 'Certxa Nail Salon Software',
-    'applicationCategory' => 'BusinessApplication',
-    'operatingSystem' => 'Web, iOS, Android',
-    'description' => 'All-in-one nail salon management software with online booking, client profiles, automated reminders, payments, and website builder.',
-    'offers'      => ['@type'=>'Offer','price'=>'0','priceCurrency'=>'USD','description'=>TRIAL_DAYS . '-day free trial, then from $9/month'],
-  ],
+  // Canonical SoftwareApplication (@id #software) is injected site-wide by includes/header.php.
 ]));
 require 'includes/header.php';
 require 'includes/nav.php';
@@ -133,63 +130,6 @@ require 'includes/nav.php';
   </div>
 </section>
 
-<section class="testi-dark-section">
-  <div class="container" style="max-width:960px;">
-    <div class="section-header" style="text-align:center;margin-bottom:48px;">
-      <span class="tag tag-dark">Nail Salon Owners Love Certxa</span>
-      <h2 class="section-title" style="color:var(--white);">Real nail studios. Real results.</h2>
-    </div>
-    <div class="testi-dark-grid">
-      <?php
-      $testimonials = [
-        [
-          'quote'  => 'My clients love being able to book their regular gel appointments online at midnight. I wake up to a full schedule.',
-          'name'   => 'Ava L.',
-          'role'   => 'Gel Nail Studio, New York',
-          'stat'   => '+52%',
-          'stat_label' => 'more bookings',
-          'grad'   => 'linear-gradient(135deg,#fcd34d,#f59e0b)',
-        ],
-        [
-          'quote'  => 'The client notes are everything for me. I know exactly which gel brand each client prefers before they sit down.',
-          'name'   => 'Zara M.',
-          'role'   => 'Nail Artist, Los Angeles',
-          'stat'   => '5★',
-          'stat_label' => 'zero complaints',
-          'grad'   => 'linear-gradient(135deg,#a78bfa,#7c3aed)',
-        ],
-        [
-          'quote'  => 'Deposits stopped my no-shows overnight. For long nail art sessions, this feature alone pays for my entire subscription.',
-          'name'   => 'Grace W.',
-          'role'   => 'Nail Studio, Miami',
-          'stat'   => '68%',
-          'stat_label' => 'fewer no-shows',
-          'grad'   => 'linear-gradient(135deg,#fcd34d,#f59e0b)',
-        ],
-      ];
-      foreach ($testimonials as $t): ?>
-      <div class="testi-dark-card reveal">
-        <div class="tdc-top">
-          <div class="tdc-stars">★★★★★</div>
-          <div class="tdc-metric-pill">
-            <span class="tdc-metric-stat"><?= $t['stat'] ?></span>
-            <span class="tdc-metric-label"><?= $t['stat_label'] ?></span>
-          </div>
-        </div>
-        <p class="tdc-quote">"<?= $t['quote'] ?>"</p>
-        <div class="tdc-author">
-          <div class="tdc-av" style="background:<?= $t['grad'] ?>"><?= substr($t['name'],0,2) ?></div>
-          <div class="tdc-info">
-            <div class="tdc-name"><?= $t['name'] ?></div>
-            <div class="tdc-role"><?= $t['role'] ?></div>
-          </div>
-        </div>
-      </div>
-      <?php endforeach; ?>
-    </div>
-  </div>
-</section>
-
 <section class="section">
   <div class="container" style="max-width:720px;">
     <div class="section-header">
@@ -198,19 +138,19 @@ require 'includes/nav.php';
     </div>
     <div class="accordion">
       <div class="accordion-item">
-        <button class="accordion-btn">What is the best software for nail salons? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">What is the best software for nail salons? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">Certxa is purpose-built for nail salons and studios. It includes 24/7 online booking, detailed client profiles with nail history and product notes, automated reminders to cut no-shows, integrated payments, a POS system, and a branded website — all in one platform. Start with a <?= TRIAL_DAYS ?>-day free trial.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">Can clients choose their nail technician when booking? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Can clients choose their nail technician when booking? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">Yes — clients can select their preferred technician, or choose "any available" for maximum flexibility. Each technician has their own calendar, service list, and availability — all managed from your Certxa dashboard.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">Can I store client nail formulas and preferences? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Can I store client nail formulas and preferences? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">Yes — Certxa client profiles let you record gel brand, colour codes, nail shape, enhancements, sensitivities, photos, and any custom notes. Everything is there before a client arrives so you can deliver a personalised experience every single time.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">Can I take deposits for nail appointments? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Can I take deposits for nail appointments? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">Absolutely — Certxa lets you require a deposit (fixed amount or percentage) for any service. This is particularly popular for long nail art and full-set sessions where no-shows are most costly. Deposits are processed automatically at booking and are fully refundable or non-refundable based on your policy.</div>
       </div>
     </div>
@@ -220,7 +160,7 @@ require 'includes/nav.php';
 <section class="cta-section">
   <div class="container" style="position:relative;z-index:1;">
     <h2 class="cta-title">The nail salon software<br><em>your studio deserves.</em></h2>
-    <p class="cta-text">Join thousands of nail technicians and studio owners running their business on Certxa.</p>
+    <p class="cta-text">Run your whole studio — booking, client records, payments, and walk-ins — on one platform.</p>
     <div class="cta-actions">
       <a href="/auth?mode=register" class="btn btn-gold btn-lg">Start <?= TRIAL_DAYS ?>-Day Free Trial</a>
       <a href="/salonos" class="btn btn-outline-white">Explore the complete nail salon platform</a>

@@ -19,7 +19,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   Loader2,
   Globe,
@@ -56,6 +63,7 @@ import {
   ChevronRight,
   BarChart2,
   Zap,
+  MoreVertical,
 } from "lucide-react";
 import { BLOCK_LIBRARY } from "@/lib/block-library";
 import type { Block, BlockCategory } from "@/lib/block-library";
@@ -372,11 +380,11 @@ function CustomDomainDialog({
           </div>
           <div className="px-4 py-4 space-y-3">
             <p className="text-xs text-gray-500">Add this A record in your domain registrar's DNS settings:</p>
-            <div className="rounded-lg bg-gray-900 text-gray-100 font-mono text-xs p-4">
-              <div className="grid grid-cols-[60px_60px_1fr] gap-3 text-gray-400 text-[11px] uppercase tracking-wider mb-2">
+            <div className="rounded-lg bg-gray-900 text-gray-100 font-mono text-xs p-4 overflow-x-auto">
+              <div className="grid grid-cols-[60px_60px_1fr] gap-3 text-gray-400 text-[11px] uppercase tracking-wider mb-2 min-w-[280px]">
                 <span>Type</span><span>Name</span><span>Value</span>
               </div>
-              <div className="grid grid-cols-[60px_60px_1fr] gap-3 items-center">
+              <div className="grid grid-cols-[60px_60px_1fr] gap-3 items-center min-w-[280px]">
                 <span className="text-purple-300">A</span>
                 <span className="text-amber-300">@</span>
                 <div className="flex items-center gap-2">
@@ -486,27 +494,27 @@ function BlockPickerModal({
       style={{ background: "rgba(0,0,0,0.55)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="m-auto flex w-full max-w-5xl h-[85vh] bg-white rounded-2xl overflow-hidden shadow-2xl">
-        {/* ── Left: Category sidebar ── */}
-        <div className="w-52 bg-gray-50 border-r border-gray-200 flex flex-col shrink-0">
-          <div className="px-4 py-4 border-b border-gray-200">
+      <div className="m-0 md:m-auto flex flex-col md:flex-row w-full h-[92vh] md:h-[85vh] md:max-w-5xl bg-white rounded-t-2xl md:rounded-2xl overflow-hidden shadow-2xl mt-auto md:mt-auto">
+        {/* ── Category picker: horizontal chip strip on mobile, sidebar on desktop ── */}
+        <div className="flex flex-row md:flex-col w-full md:w-52 bg-gray-50 border-b md:border-b-0 md:border-r border-gray-200 shrink-0 overflow-x-auto md:overflow-x-visible">
+          <div className="hidden md:block px-4 py-4 border-b border-gray-200 shrink-0">
             <h2 className="font-bold text-gray-900 text-sm">Add Layout</h2>
             <p className="text-[11px] text-gray-400 mt-0.5">Choose a section to add</p>
           </div>
-          <div className="flex-1 overflow-y-auto py-2">
+          <div className="flex flex-row md:flex-col md:flex-1 md:overflow-y-auto py-2 px-2 md:px-0 gap-1.5 md:gap-0">
             {BLOCK_LIBRARY.map((cat) => (
               <button
                 key={cat.id}
                 onClick={() => { setActiveCategoryId(cat.id); setSearch(""); }}
-                className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm font-medium transition-colors text-left ${
+                className={`shrink-0 md:w-full flex items-center gap-2 md:gap-2.5 px-3 md:px-4 py-2 rounded-full md:rounded-none text-xs md:text-sm font-medium whitespace-nowrap transition-colors text-left ${
                   activeCategoryId === cat.id && !search.trim()
-                    ? "bg-[#1B6EF0]/10 text-[#1B6EF0] border-r-2 border-[#1B6EF0]"
+                    ? "bg-[#1B6EF0]/10 text-[#1B6EF0] md:border-r-2 md:border-[#1B6EF0]"
                     : "text-gray-600 hover:bg-gray-100"
                 }`}
               >
                 <span className="text-base leading-none">{cat.icon}</span>
                 <span>{cat.name}</span>
-                <span className="ml-auto text-[10px] text-gray-400 font-normal">{cat.blocks.length}</span>
+                <span className="hidden md:inline ml-auto text-[10px] text-gray-400 font-normal">{cat.blocks.length}</span>
               </button>
             ))}
           </div>
@@ -551,7 +559,7 @@ function BlockPickerModal({
                 <p className="text-sm">No layouts found</p>
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {blocks.map((block) => (
                   <button
                     key={block.id}
@@ -612,6 +620,12 @@ export default function EditWebsite() {
   const updateWebsite = useUpdateWebsite();
   const publishWebsite = usePublishWebsite();
   const unpublishWebsite = useUnpublishWebsite();
+
+  const isMobile = useIsMobile();
+  // The edit panel is a static sidebar on desktop and a bottom sheet on
+  // mobile (same JSX, responsive classes — see the panel wrapper below).
+  // Closed by default so mobile opens preview-first.
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
 
   const [fields, setFields] = useState<ContentField[]>([]);
   const [blockOps, setBlockOps] = useState<BlockOps>({ order: [], deleted: [] });
@@ -1006,30 +1020,35 @@ export default function EditWebsite() {
     ? `/api/websites/${id}/auto-preview`
     : `/api/websites/${id}/preview?editor=1`;
 
+  const unsavedCount = changedFields.length + Object.keys(imageOps).length;
+
   return (
     <div className="flex flex-col bg-background">
       {/* ── Header ── */}
-      <div className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-5 shrink-0">
-        <div className="flex items-center gap-3">
+      <div className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-3 md:px-5 shrink-0">
+        <div className="flex items-center gap-2 md:gap-3 min-w-0">
           <Link href="/websites">
-            <Button variant="ghost" size="icon" className="text-gray-500 rounded-full hover:bg-gray-100 h-8 w-8">
+            <Button variant="ghost" size="icon" className="text-gray-500 rounded-full hover:bg-gray-100 h-8 w-8 shrink-0">
               <ArrowLeft className="w-4 h-4" />
             </Button>
           </Link>
-          <div className="w-px h-5 bg-gray-200" />
-          <div>
-            <h2 className="font-bold text-gray-900 text-sm leading-none">{website.name}</h2>
+          <div className="w-px h-5 bg-gray-200 hidden md:block" />
+          <div className="min-w-0">
+            <h2 className="font-bold text-gray-900 text-sm leading-none truncate">{website.name}</h2>
             <div className="flex items-center gap-1.5 text-xs text-gray-400 mt-0.5">
-              <Globe className="w-3 h-3 text-[#C97B2B]" />
-              <span>{website.slug}.certxa.com</span>
+              <Globe className="w-3 h-3 text-[#C97B2B] shrink-0" />
+              <span className="truncate">{website.slug}.certxa.com</span>
               {domainIsActive && customDomain && (
-                <><span className="text-gray-300">·</span><Link2 className="w-3 h-3 text-green-500" /><span className="text-green-600 font-medium">{customDomain}</span></>
+                <span className="hidden md:inline-flex items-center gap-1.5">
+                  <span className="text-gray-300">·</span><Link2 className="w-3 h-3 text-green-500" /><span className="text-green-600 font-medium">{customDomain}</span>
+                </span>
               )}
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Desktop: full button row, unchanged */}
+        <div className="hidden md:flex items-center gap-2">
           <Link href={`/websites/${id}/analytics`}>
             <Button
               variant="ghost" size="sm"
@@ -1078,15 +1097,93 @@ export default function EditWebsite() {
               className="rounded-full bg-[#1A0333] hover:bg-[#2b0554] text-white h-8 px-4 text-xs gap-1.5 shadow-[0px_4px_16px_0px_rgba(201,123,43,0.20)] disabled:opacity-50"
             >
               {updateWebsite.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              {isDirty ? `Save (${changedFields.length + Object.keys(imageOps).length})` : "Save"}
+              {isDirty ? `Save (${unsavedCount})` : "Save"}
+            </Button>
+          )}
+        </div>
+
+        {/* Mobile: Save + Publish stay reachable as icon buttons; everything
+            else (Analytics, Custom Domain, Re-scan) collapses into a menu —
+            those buttons' full text ("Draft — Publish" + "Save (12)") simply
+            cannot coexist with the back button and site name at ~360px. */}
+        <div className="flex md:hidden items-center gap-1 shrink-0">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="relative text-gray-500 rounded-full hover:bg-gray-100 h-8 w-8">
+                <MoreVertical className="w-4 h-4" />
+                {domainIsActive && (
+                  <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-green-500" />
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem asChild>
+                <Link href={`/websites/${id}/analytics`} className="flex items-center gap-2 cursor-pointer">
+                  <BarChart2 className="w-3.5 h-3.5" /> Analytics
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowDomainDialog(true)} className="flex items-center gap-2 cursor-pointer">
+                <Link2 className={`w-3.5 h-3.5 ${domainIsActive ? "text-green-600" : ""}`} />
+                {domainIsActive ? "Domain Active" : "Custom Domain"}
+              </DropdownMenuItem>
+              {!isAutoMode && (
+                <DropdownMenuItem onClick={handleExtract} disabled={isExtracting} className="flex items-center gap-2 cursor-pointer">
+                  {isExtracting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanText className="w-3.5 h-3.5" />}
+                  {isExtracting ? "Scanning…" : "Re-scan"}
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Button
+            variant="outline" size="icon"
+            className={`rounded-full border-gray-200 h-8 w-8 ${website.published ? "text-green-600 bg-green-50 border-green-200" : "text-gray-600"}`}
+            onClick={handleTogglePublish}
+            disabled={publishWebsite.isPending || unpublishWebsite.isPending}
+            title={website.published ? "Published" : "Draft — tap to publish"}
+          >
+            {website.published ? <CheckCircle2 className="w-4 h-4" /> : <Globe className="w-4 h-4" />}
+          </Button>
+
+          {!isAutoMode && (
+            <Button
+              size="icon" onClick={handleSave}
+              disabled={updateWebsite.isPending || !isDirty}
+              className="relative rounded-full bg-[#1A0333] hover:bg-[#2b0554] text-white h-8 w-8 disabled:opacity-50"
+              title={isDirty ? `Save (${unsavedCount} unsaved)` : "Save"}
+            >
+              {updateWebsite.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {isDirty && !updateWebsite.isPending && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-[#C97B2B] text-white text-[9px] font-bold flex items-center justify-center leading-none">
+                  {unsavedCount}
+                </span>
+              )}
             </Button>
           )}
         </div>
       </div>
 
-      <div className="flex overflow-hidden" style={{ height: 'calc(100vh - 56px)', minHeight: '600px' }}>
-        {/* ── Left Panel ── */}
-        <div className="w-72 bg-white border-r border-gray-200 flex flex-col shrink-0 overflow-hidden">
+      <div className="flex overflow-hidden relative" style={{ height: 'calc(100dvh - 56px)', minHeight: isMobile ? undefined : '600px' }}>
+        {/* Backdrop — mobile only, tap outside the sheet to close it */}
+        {isMobile && mobileSheetOpen && (
+          <div
+            className="md:hidden fixed inset-0 bg-black/40 z-30"
+            onClick={() => setMobileSheetOpen(false)}
+          />
+        )}
+
+        {/* ── Left Panel — static sidebar on desktop, bottom sheet on mobile ── */}
+        <div
+          className={`bg-white flex flex-col overflow-hidden
+            fixed inset-x-0 bottom-0 z-40 rounded-t-2xl shadow-2xl max-h-[75vh] transition-transform duration-300 ease-out
+            ${mobileSheetOpen ? "translate-y-0" : "translate-y-full"}
+            md:static md:translate-y-0 md:z-auto md:rounded-none md:shadow-none md:max-h-none
+            md:w-72 md:border-r md:border-gray-200 md:shrink-0`}
+        >
+          {/* Drag handle — mobile only */}
+          <div className="md:hidden flex items-center justify-center py-2 shrink-0">
+            <div className="w-9 h-1 rounded-full bg-gray-300" onClick={() => setMobileSheetOpen(false)} />
+          </div>
           {isAutoMode ? (
             // ── AUTO-MODE PANEL ───────────────────────────────────────────────
             <div className="flex flex-col h-full overflow-hidden">
@@ -1988,6 +2085,44 @@ export default function EditWebsite() {
             </>
           )}
         </div>
+
+        {/* ── Mobile bottom tab bar — hidden once the sheet is open (its own
+            drag handle/backdrop close it instead), hidden on desktop. ── */}
+        {!mobileSheetOpen && (
+          <div
+            className="md:hidden fixed inset-x-0 bottom-0 z-40 bg-white border-t border-gray-200 flex items-stretch"
+            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+          >
+            {isAutoMode ? (
+              <button
+                className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-semibold text-[#1A0333]"
+                onClick={() => setMobileSheetOpen(true)}
+              >
+                <Zap className="w-4 h-4" />
+                Edit Site Settings
+              </button>
+            ) : (
+              [
+                { mode: "text" as const, label: "Text", Icon: Type },
+                { mode: "image" as const, label: "Images", Icon: ImageIcon },
+                { mode: "layout" as const, label: "Layout", Icon: LayoutGrid },
+                { mode: "colors" as const, label: "Colors", Icon: Palette },
+                { mode: "seo" as const, label: "SEO", Icon: FileSearch },
+              ].map(({ mode, label, Icon }) => (
+                <button
+                  key={mode}
+                  onClick={() => { setEditorMode(mode); setMobileSheetOpen(true); }}
+                  className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-semibold transition-colors ${
+                    editorMode === mode && mobileSheetOpen ? "text-[#1B6EF0]" : "text-gray-500"
+                  }`}
+                >
+                  <Icon className="w-5 h-5" />
+                  {label}
+                </button>
+              ))
+            )}
+          </div>
+        )}
 
         {/* ── Preview Pane ── */}
         <div className="flex-1 bg-gray-100 flex flex-col overflow-hidden">

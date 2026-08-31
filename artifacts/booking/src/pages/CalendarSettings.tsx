@@ -109,7 +109,19 @@ export default function CalendarSettings() {
   }, [settings, reset]);
 
   const onSubmit = (data: CalendarSettingsForm) => {
-    updateSettings.mutate(data, {
+    // Whitelist exactly the fields this form owns — the calendar_settings row is
+    // shared with the Booking Policies page (autoMarkNoShows), so sending the raw
+    // RHF values object here risks silently overwriting a field this page has no
+    // control for.
+    updateSettings.mutate({
+      startOfWeek: data.startOfWeek,
+      timeSlotInterval: data.timeSlotInterval,
+      nonWorkingHoursDisplay: data.nonWorkingHoursDisplay,
+      allowBookingOutsideHours: data.allowBookingOutsideHours,
+      autoCompleteAppointments: data.autoCompleteAppointments,
+      showPrices: data.showPrices,
+      walkInsEnabled: data.walkInsEnabled,
+    }, {
       onSuccess: () => {
         toast({ title: t.toastSaved, description: t.toastSavedDesc });
       },

@@ -954,8 +954,9 @@ function StaffColumn({
               top: topPx,
               height: slotH,
               WebkitTouchCallout: "none",
-              backgroundColor: isNonWorking ? '#f1f5f9' : undefined,
-              backgroundImage: isNonWorking ? 'repeating-linear-gradient(45deg,transparent,transparent 6px,rgba(148,163,184,0.18) 6px,rgba(148,163,184,0.18) 12px)' : undefined,
+              backgroundColor: isNonWorking ? 'var(--cal-nonworking)' : undefined,
+              backgroundImage: isNonWorking ? 'radial-gradient(rgba(148,163,184,0.32) 1px, transparent 1.3px)' : undefined,
+              backgroundSize: isNonWorking ? '9px 9px' : undefined,
             } as React.CSSProperties}
             onContextMenu={(e) => e.preventDefault()}
             onTouchStart={(e) => {

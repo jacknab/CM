@@ -832,8 +832,17 @@ async function publishQueuedResponse(
   // the complete path: accounts/{accountId}/locations/{locationId}/reviews/{reviewId}.
   // DO NOT strip the "accounts/{id}/" prefix — without it the URL matches no API route
   // and Google returns an HTML 404 page instead of a JSON error.
-  const replyUrl = `https://mybusinessreviews.googleapis.com/v1/${reviewResourceName}/reply`;
-  console.log(`[ReviewEngine] queueId=${item.id} — reply URL: ${replyUrl}`);
+  //
+  // FALLBACK: mybusinessreviews.googleapis.com/v1 has been observed to return a bare
+  // HTML 404 (not a JSON API error) for the ENTIRE reviews resource on some accounts —
+  // not just a single deleted review — while the legacy mybusiness.googleapis.com/v4
+  // API (same resource path, same reply semantics) still works. A 404/403 on v1 no
+  // longer means "review is gone"; it's only treated that way if v4 also fails.
+  const replyUrlCandidates = [
+    `https://mybusinessreviews.googleapis.com/v1/${reviewResourceName}/reply`,
+    `https://mybusiness.googleapis.com/v4/${reviewResourceName}/reply`,
+  ];
+  console.log(`[ReviewEngine] queueId=${item.id} — reply URL candidates: ${replyUrlCandidates.join(" | ")}`);
 
   // Update attempt count
   await db.update(googleReviewResponseQueue).set({
@@ -846,22 +855,29 @@ async function publishQueuedResponse(
     const accessToken = tokenResp.token;
     if (!accessToken) throw new Error("Could not obtain Google access token");
 
-    const res = await fetch(replyUrl, {
-      method:  "PUT",
-      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-      body:    JSON.stringify({ comment: item.generatedResponseText }),
-    });
+    let res: Response | null = null;
+    let lastNotFoundBody = "";
+    for (const url of replyUrlCandidates) {
+      res = await fetch(url, {
+        method:  "PUT",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body:    JSON.stringify({ comment: item.generatedResponseText }),
+      });
+      if (res.status === 404 || res.status === 403) {
+        lastNotFoundBody = await res.text();
+        console.warn(`[ReviewEngine] queueId=${item.id} — HTTP ${res.status} from ${url}, trying next candidate`);
+        continue;
+      }
+      break; // got a non-404/403 response (success or a real error) — stop here
+    }
+    if (!res) throw new Error("No reply URL candidates attempted");
 
-    // Handle HTTP 404 — the review no longer exists on Google (deleted by reviewer or removed
-    // by Google).  Mark as not_found (permanent terminal state) so the dispatcher never retries
-    // it and processNewReviewsForStore never re-queues it.
-    // NOTE: URL-construction bugs that used to cause spurious 404s are fixed — the resource
-    // name is now taken directly from googleReviewResourceName stored at sync time, so a 404
-    // here genuinely means the review is gone.
-    if (res.status === 404) {
-      const body404 = await res.text();
-      console.warn(`[ReviewEngine] queueId=${item.id} — HTTP 404 from Google (review deleted/not found), marking not_found: ${body404.slice(0, 120)}`);
-      await markNotFound(item.id, `HTTP 404 from Google — review no longer exists: ${body404.slice(0, 200)}`);
+    // Handle HTTP 404 — only reached if EVERY candidate URL 404'd/403'd. Mark as
+    // not_found (permanent terminal state) so the dispatcher never retries it and
+    // processNewReviewsForStore never re-queues it.
+    if (res.status === 404 || res.status === 403) {
+      console.warn(`[ReviewEngine] queueId=${item.id} — all reply URL candidates failed, marking not_found: ${lastNotFoundBody.slice(0, 120)}`);
+      await markNotFound(item.id, `HTTP ${res.status} from Google on all candidate URLs — review no longer exists: ${lastNotFoundBody.slice(0, 200)}`);
       return;
     }
 

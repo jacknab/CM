@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -17,113 +17,22 @@ import {
   Loader2,
   CheckCircle2,
   User,
-  Lock,
-  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatInTz, getNowInTimezone } from "@/lib/timezone";
 import { apiRequest } from "@/lib/queryClient";
 import { addDays, subDays, isSameDay } from "date-fns";
-import { StoreData, ServiceData, ServiceOptionData, CategoryData, TimeSlot } from "./types";
-import { detectBrowserLang, BOOKING_STRINGS } from "@/lib/bookingTranslations";
-import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
-import { loadStripe } from "@stripe/stripe-js/pure";
-import type { Stripe } from "@stripe/stripe-js";
+import { StoreData, ServiceData, CategoryData, TimeSlot } from "./types";
 
-type Step = "client" | "services" | "time" | "confirm" | "payment";
+type Step = "client" | "services" | "time" | "confirm";
 
 interface ClassicThemeProps {
   store: StoreData;
   slug: string;
   preselectedStaffId?: number;
-  preselectedServiceId?: number;
 }
 
-// ── Inner Stripe payment form ─────────────────────────────────────────────────
-function PaymentForm({
-  intentType,
-  depositAmountCents,
-  onSuccess,
-  onBack,
-}: {
-  intentType: "setup" | "payment" | null;
-  depositAmountCents: number;
-  onSuccess: (info: Record<string, any>) => void;
-  onBack: () => void;
-}) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSubmit = async () => {
-    if (!stripe || !elements) return;
-    setIsSubmitting(true);
-    setError(null);
-    try {
-      if (intentType === "setup") {
-        const result = await stripe.confirmSetup({
-          elements,
-          confirmParams: { return_url: window.location.href },
-          redirect: "if_required",
-        });
-        if (result.error) throw new Error(result.error.message);
-        const si = result.setupIntent;
-        onSuccess({
-          paymentPolicy: "card_on_file",
-          paymentStatus: "card_saved",
-          stripeSetupIntentId: si?.id,
-          stripePaymentMethodId: typeof si?.payment_method === "string" ? si.payment_method : undefined,
-        });
-      } else {
-        const result = await stripe.confirmPayment({
-          elements,
-          confirmParams: { return_url: window.location.href },
-          redirect: "if_required",
-        });
-        if (result.error) throw new Error(result.error.message);
-        const pi = result.paymentIntent;
-        onSuccess({
-          paymentPolicy: "deposit",
-          paymentStatus: "deposit_paid",
-          stripePaymentIntentId: pi?.id,
-          stripePaymentMethodId: typeof pi?.payment_method === "string" ? pi.payment_method : undefined,
-          depositCollected: depositAmountCents / 100,
-        });
-      }
-    } catch (err: any) {
-      setError(err.message ?? "Payment failed. Please try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <PaymentElement options={{ layout: "tabs" }} />
-      {error && (
-        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-      <Button className="w-full mt-2" onClick={handleSubmit} disabled={isSubmitting || !stripe}>
-        {isSubmitting ? (
-          <Loader2 className="w-4 h-4 animate-spin mr-2" />
-        ) : (
-          <Lock className="w-4 h-4 mr-2" />
-        )}
-        {intentType === "setup"
-          ? "Save Card & Confirm Booking"
-          : `Pay $${(depositAmountCents / 100).toFixed(2)} & Confirm`}
-      </Button>
-      <Button variant="ghost" className="w-full text-sm text-muted-foreground" onClick={onBack}>
-        <ArrowLeft className="w-3.5 h-3.5 mr-1.5" /> Change booking details
-      </Button>
-    </div>
-  );
-}
-
-export default function ClassicTheme({ store, slug, preselectedStaffId, preselectedServiceId }: ClassicThemeProps) {
+export default function ClassicTheme({ store, slug, preselectedStaffId }: ClassicThemeProps) {
   const [searchParams] = useSearchParams();
   const hideHeader = searchParams.get("embed") === "true" || searchParams.get("hideHeader") === "true";
   const [step, setStep] = useState<Step>("services");
@@ -153,20 +62,7 @@ export default function ClassicTheme({ store, slug, preselectedStaffId, preselec
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
-  const [phoneError, setPhoneError] = useState("");
-  const [smsOptIn, setSmsOptIn] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(false);
-  const [optionPickerService, setOptionPickerService] = useState<ServiceData | null>(null);
-  const preselectionAppliedRef = useRef<number | null>(null);
-
-  // ── Payment policy / Stripe ──────────────────────────────────────────────
-  const [stripeInstance, setStripeInstance] = useState<Stripe | null>(null);
-  const [paymentClientSecret, setPaymentClientSecret] = useState<string | null>(null);
-  const [intentType, setIntentType] = useState<"setup" | "payment" | null>(null);
-  const [pendingStripeCustomerId, setPendingStripeCustomerId] = useState<string | null>(null);
-  const [depositAmountCents, setDepositAmountCents] = useState<number>(0);
-  const [isCreatingIntent, setIsCreatingIntent] = useState(false);
-  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   const timezone = store.timezone || "UTC";
 
@@ -183,54 +79,8 @@ export default function ClassicTheme({ store, slug, preselectedStaffId, preselec
     enabled: !!slug,
   });
 
-  // ── Payment policy ──────────────────────────────────────────────────────────
-  const { data: paymentPolicyData } = useQuery<{
-    policy: "none" | "card_on_file" | "deposit";
-    depositType: "percentage" | "fixed" | null;
-    depositValue: number | null;
-    stripePublishableKey: string | null;
-    stripeConnectedAccountId: string | null;
-  }>({
-    queryKey: [`/api/public/booking-payment-policy/${slug}`],
-    queryFn: async () => {
-      const res = await fetch(`/api/public/booking-payment-policy/${slug}`);
-      if (!res.ok) return { policy: "none", depositType: null, depositValue: null, stripePublishableKey: null, stripeConnectedAccountId: null };
-      return res.json();
-    },
-    enabled: !!slug,
-    staleTime: 60_000,
-  });
-
-  // Load Stripe when publishable key is available
-  useEffect(() => {
-    if (!paymentPolicyData?.stripePublishableKey || stripeInstance) return;
-    const opts: any = {};
-    if (paymentPolicyData.stripeConnectedAccountId) {
-      opts.stripeAccount = paymentPolicyData.stripeConnectedAccountId;
-    }
-    loadStripe(paymentPolicyData.stripePublishableKey, opts).then(s => {
-      if (s) setStripeInstance(s);
-    });
-  }, [paymentPolicyData?.stripePublishableKey, paymentPolicyData?.stripeConnectedAccountId]);
-
   const services = servicesData?.services || [];
   const categories = servicesData?.categories || [];
-
-  useEffect(() => {
-    const requestedServiceId = Number(preselectedServiceId);
-    if (!Number.isFinite(requestedServiceId) || requestedServiceId <= 0 || services.length === 0 || preselectionAppliedRef.current === requestedServiceId) {
-      return;
-    }
-    const service = services.find((candidate) => Number(candidate.id) === requestedServiceId);
-    if (!service) return;
-    preselectionAppliedRef.current = requestedServiceId;
-    if (service.options && service.options.length > 1) {
-      setOptionPickerService(service);
-      return;
-    }
-    setSelectedServices([service]);
-    setStep("time");
-  }, [preselectedServiceId, services]);
   const showPrices = publicStoreData?.showPrices ?? true;
 
   const totalPrice = selectedServices.reduce((sum, s) => sum + Number(s.price), 0);
@@ -238,7 +88,10 @@ export default function ClassicTheme({ store, slug, preselectedStaffId, preselec
   const primaryService = selectedServices[0];
 
   const dateString = selectedDate
-    ? `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, "0")}-${String(selectedDate.getDate()).padStart(2, "0")}`
+    ? `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(
+        2,
+        "0"
+      )}-${String(selectedDate.getDate()).padStart(2, "0")}`
     : null;
 
   const { data: slots, isLoading: slotsLoading } = useQuery<TimeSlot[]>({
@@ -265,7 +118,8 @@ export default function ClassicTheme({ store, slug, preselectedStaffId, preselec
       if (!res.ok) throw new Error("Failed to fetch availability");
       return res.json();
     },
-    enabled: !!slug && !!primaryService && !!dateString && totalDuration > 0,
+    enabled:
+      !!slug && !!primaryService && !!dateString && totalDuration > 0,
   });
 
   useMemo(() => {
@@ -275,24 +129,13 @@ export default function ClassicTheme({ store, slug, preselectedStaffId, preselec
     }
   }, [slots, preselectedStaffId]);
 
-  const submitBooking = useCallback((paymentInfo: Record<string, any>) => {
-    if (!primaryService || !selectedSlot) return;
-    bookMutation.mutate({
-      serviceId: primaryService.id,
-      staffId: selectedSlot.staffId,
-      date: selectedSlot.time,
-      duration: totalDuration,
-      customerName: customerName.trim(),
-      customerEmail: customerEmail.trim() || undefined,
-      customerPhone: customerPhone.trim() || undefined,
-      smsOptIn,
-      ...paymentInfo,
-    });
-  }, [primaryService, selectedSlot, totalDuration, customerName, customerEmail, customerPhone, smsOptIn]);
-
   const bookMutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
-      const res = await apiRequest("POST", `/api/public/store/${slug}/book`, body);
+      const res = await apiRequest(
+        "POST",
+        `/api/public/store/${slug}/book`,
+        body
+      );
       return res.json();
     },
     onSuccess: () => {
@@ -350,27 +193,11 @@ export default function ClassicTheme({ store, slug, preselectedStaffId, preselec
   };
 
   const toggleService = (service: ServiceData) => {
-    const exists = selectedServices.find((s) => s.id === service.id);
-    if (exists) {
-      setSelectedServices((prev) => prev.filter((s) => s.id !== service.id));
-      return;
-    }
-    if (service.options && service.options.length > 1) {
-      setOptionPickerService(service);
-    } else {
-      setSelectedServices((prev) => [...prev, service]);
-    }
-  };
-
-  const handlePickOption = (service: ServiceData, option: ServiceOptionData) => {
-    const serviceWithOption: ServiceData = {
-      ...service,
-      duration: option.durationMinutes,
-      price: option.price,
-      name: `${service.name} – ${option.name}`,
-    };
-    setSelectedServices((prev) => [...prev, serviceWithOption]);
-    setOptionPickerService(null);
+    setSelectedServices((prev) => {
+      const exists = prev.find((s) => s.id === service.id);
+      if (exists) return prev.filter((s) => s.id !== service.id);
+      return [...prev, service];
+    });
   };
 
   const handleClientSelect = (type: "new" | "returning") => {
@@ -397,56 +224,17 @@ export default function ClassicTheme({ store, slug, preselectedStaffId, preselec
     setStep("confirm");
   };
 
-  const handleConfirmBooking = async () => {
+  const handleConfirmBooking = () => {
     if (!primaryService || !selectedSlot || !customerName.trim()) return;
-
-    const phoneDigits = customerPhone.replace(/\D/g, "");
-    if (phoneDigits.length !== 10) {
-      setPhoneError("Enter a valid 10-digit phone number.");
-      return;
-    }
-
-    const policy = paymentPolicyData?.policy ?? "none";
-
-    if (policy === "none") {
-      submitBooking({});
-      return;
-    }
-
-    setIsCreatingIntent(true);
-    setPaymentError(null);
-    try {
-      if (policy === "card_on_file") {
-        const res = await fetch("/api/public/booking-setup-intent", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ slug, customerName: customerName.trim(), customerEmail: customerEmail.trim() || undefined, customerPhone: customerPhone.trim() }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Failed to initialize payment");
-        setPaymentClientSecret(data.clientSecret);
-        setIntentType("setup");
-        setPendingStripeCustomerId(data.stripeCustomerId);
-      } else {
-        const serviceTotalCents = Math.round(totalPrice * 100);
-        const res = await fetch("/api/public/booking-payment-intent", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ slug, customerName: customerName.trim(), customerEmail: customerEmail.trim() || undefined, customerPhone: customerPhone.trim(), serviceTotalCents }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Failed to initialize payment");
-        setPaymentClientSecret(data.clientSecret);
-        setIntentType("payment");
-        setPendingStripeCustomerId(data.stripeCustomerId);
-        setDepositAmountCents(data.depositCents ?? serviceTotalCents);
-      }
-      setStep("payment");
-    } catch (err: any) {
-      setPaymentError(err.message ?? "Failed to initialize payment");
-    } finally {
-      setIsCreatingIntent(false);
-    }
+    bookMutation.mutate({
+      serviceId: primaryService.id,
+      staffId: selectedSlot.staffId,
+      date: selectedSlot.time,
+      duration: totalDuration,
+      customerName: customerName.trim(),
+      customerEmail: customerEmail.trim() || undefined,
+      customerPhone: customerPhone.trim() || undefined,
+    });
   };
 
   const navigateWeek = (direction: "prev" | "next") => {
@@ -457,13 +245,13 @@ export default function ClassicTheme({ store, slug, preselectedStaffId, preselec
     setSelectedDate(newStart);
   };
 
-  const isPhoneValid = customerPhone.replace(/\D/g, "").length === 10;
-
   if (!store) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="text-center">
-          <h2 className="text-xl font-semibold text-gray-900">Store not found</h2>
+          <h2 className="text-xl font-semibold text-gray-900">
+            Store not found
+          </h2>
           <p className="text-gray-500 mt-2">This booking page doesn't exist.</p>
         </div>
       </div>
@@ -477,37 +265,20 @@ export default function ClassicTheme({ store, slug, preselectedStaffId, preselec
           <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-6">
             <CheckCircle2 className="w-10 h-10 text-primary" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Booking Confirmed!</h2>
-          <p className="text-gray-500 mb-4">
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            Booking Confirmed!
+          </h2>
+          <p className="text-gray-500 mb-6">
             Your appointment at {store.name} has been booked successfully.
           </p>
           {selectedSlot && (
-            <p className="text-gray-700 font-medium mb-4">
-              {formatInTz(selectedSlot.time, timezone, "EEEE, d MMMM yyyy 'at' h:mm a")}
+            <p className="text-gray-700 font-medium">
+              {formatInTz(
+                selectedSlot.time,
+                timezone,
+                "EEEE, d MMMM yyyy 'at' h:mm a"
+              )}
             </p>
-          )}
-
-          {/* Payment confirmation */}
-          {intentType === "setup" && (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4 text-left">
-              <div className="flex items-center gap-2 text-blue-800 font-medium text-sm mb-0.5">
-                <ShieldCheck className="w-4 h-4 shrink-0" />
-                Card securely stored
-              </div>
-              <p className="text-xs text-blue-600">No payment was taken today. Your card is on file for this appointment.</p>
-            </div>
-          )}
-          {intentType === "payment" && depositAmountCents > 0 && (
-            <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-4 text-left space-y-1">
-              <div className="flex justify-between text-sm font-semibold text-green-800">
-                <span>Deposit paid</span>
-                <span>${(depositAmountCents / 100).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-sm text-gray-500">
-                <span>Remaining at checkout</span>
-                <span>${Math.max(0, totalPrice - depositAmountCents / 100).toFixed(2)}</span>
-              </div>
-            </div>
           )}
         </div>
       </div>
@@ -565,79 +336,103 @@ export default function ClassicTheme({ store, slug, preselectedStaffId, preselec
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {Object.entries(groupedServices).map(([category, categoryServices]) => {
-                    const isCollapsed = collapsedCategories.has(category);
-                    return (
-                      <div key={category}>
-                        <button
-                          className="w-full flex items-center justify-between py-3 px-1 text-left"
-                          onClick={() => toggleCategory(category)}
-                          data-testid={`button-category-${category}`}
-                        >
-                          <span className="font-semibold text-sm text-gray-700 uppercase tracking-wide">
-                            {category}
-                          </span>
-                          <ChevronDown
-                            className={cn(
-                              "w-4 h-4 text-gray-400 transition-transform",
-                              isCollapsed && "-rotate-90"
-                            )}
-                          />
-                        </button>
-                        {!isCollapsed && (
-                          <div className="space-y-1">
-                            {categoryServices.map((service) => {
-                              const isSelected = selectedServices.some((s) => s.id === service.id);
-                              return (
-                                <button
-                                  key={service.id}
-                                  onClick={() => toggleService(service)}
-                                  data-testid={`button-service-${service.id}`}
-                                  className={cn(
-                                    "w-full text-left p-3 rounded-lg border-2 transition-all flex items-center justify-between",
-                                    isSelected
-                                      ? "border-primary bg-primary/5"
-                                      : "border-transparent hover:border-gray-200 hover:bg-gray-50"
-                                  )}
-                                >
-                                  <div>
-                                    <p className="font-medium text-sm">{service.name}</p>
-                                    <p className="text-xs text-gray-500 mt-0.5">
-                                      {service.duration} min
-                                    </p>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    {showPrices && (
-                                      <span className="font-semibold text-sm">
-                                        ${Number(service.price).toFixed(2)}
-                                      </span>
-                                    )}
-                                    {isSelected ? (
-                                      <Check className="w-4 h-4 text-primary" />
-                                    ) : (
-                                      <Plus className="w-4 h-4 text-gray-400" />
-                                    )}
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {Object.entries(groupedServices).map(
+                    ([category, categoryServices]) => {
+                      const isCollapsed = collapsedCategories.has(category);
+                      return (
+                        <div key={category}>
+                          <button
+                            className="w-full flex items-center justify-between py-3 px-1 text-left"
+                            onClick={() => toggleCategory(category)}
+                            data-testid={`button-category-${category}`}
+                          >
+                            <span className="font-semibold text-sm text-gray-700 uppercase tracking-wide">
+                              {category}
+                            </span>
+                            <ChevronDown
+                              className={cn(
+                                "w-4 h-4 text-gray-400 transition-transform",
+                                isCollapsed && "-rotate-90"
+                              )}
+                            />
+                          </button>
+                          {!isCollapsed && (
+                            <div className="space-y-1">
+                              {categoryServices.map((service) => {
+                                const isSelected = selectedServices.some(
+                                  (s) => s.id === service.id
+                                );
+                                return (
+                                  <button
+                                    key={service.id}
+                                    className="w-full flex items-center justify-between px-3 py-3 rounded-md hover:bg-gray-50"
+                                    onClick={() => toggleService(service)}
+                                    data-testid={`button-service-${service.id}`}
+                                  >
+                                    <div className="flex-1 text-left">
+                                      <p className="font-medium text-sm text-gray-900">
+                                        {service.name}
+                                      </p>
+                                      <p className="text-xs text-gray-500 mt-0.5">
+                                        {service.duration} min &middot;{" "}
+                                        {service.category}
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                      {showPrices && (
+                                        <span className="font-semibold text-sm">
+                                          ${Number(service.price).toFixed(2)}
+                                        </span>
+                                      )}
+                                      <div
+                                        className={cn(
+                                          "w-7 h-7 rounded-full border-2 flex items-center justify-center transition-colors",
+                                          isSelected
+                                            ? "bg-primary border-primary"
+                                            : "border-gray-300"
+                                        )}
+                                      >
+                                        {isSelected ? (
+                                          <Check className="w-4 h-4 text-white" />
+                                        ) : (
+                                          <Plus className="w-4 h-4 text-gray-400" />
+                                        )}
+                                      </div>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+                  )}
                 </div>
               )}
             </div>
 
             {selectedServices.length > 0 && (
-              <div className="fixed bottom-0 left-0 right-0 max-w-2xl mx-auto bg-white border-t border-gray-200 px-4 py-3 flex items-center justify-between">
+              <div className="fixed bottom-0 left-0 right-0 bg-white border-t px-4 py-3 flex items-center justify-between gap-4 z-50">
                 <div>
-                  <p className="font-semibold text-sm">{selectedServices.length} service{selectedServices.length > 1 ? "s" : ""}</p>
-                  {showPrices && <p className="text-xs text-gray-500">${totalPrice.toFixed(2)}</p>}
+                  <span className="text-sm font-medium">
+                    {selectedServices.length} Service
+                    {selectedServices.length > 1 ? "s" : ""}
+                  </span>
+                  {showPrices && (
+                    <span
+                      className="text-sm text-gray-500 ml-2"
+                      data-testid="text-total-price"
+                    >
+                      ${totalPrice.toFixed(2)}
+                    </span>
+                  )}
                 </div>
-                <Button onClick={handleChooseTime} data-testid="button-choose-time">
-                  Choose Time →
+                <Button
+                  onClick={handleChooseTime}
+                  data-testid="button-choose-staff"
+                >
+                  Choose Staff
                 </Button>
               </div>
             )}
@@ -655,99 +450,107 @@ export default function ClassicTheme({ store, slug, preselectedStaffId, preselec
               >
                 <ArrowLeft className="w-4 h-4" />
               </Button>
-              <h2 className="font-semibold text-lg">Select Time</h2>
+              <h2 className="font-semibold text-lg">Choose Time</h2>
             </div>
 
-            <div className="px-4 py-4">
-              {/* Week navigation */}
-              <div className="flex items-center justify-between mb-4">
-                <button
+            {/* Calendar — week strip with nav arrows on each side */}
+            <div className="px-4 pt-4 pb-2">
+              <div className="flex items-center gap-2">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="shrink-0 h-8 w-8 rounded-full text-gray-400 hover:text-gray-700"
                   onClick={() => navigateWeek("prev")}
-                  className="p-2 rounded-lg hover:bg-gray-100"
-                  data-testid="button-prev-week"
+                  data-testid="button-week-prev"
                 >
                   <ChevronLeft className="w-4 h-4" />
-                </button>
-                <span className="text-sm font-medium text-gray-700">
-                  {weekDays[0] && formatInTz(weekDays[0], timezone, "MMM d")} –{" "}
-                  {weekDays[6] && formatInTz(weekDays[6], timezone, "MMM d, yyyy")}
-                </span>
-                <button
+                </Button>
+
+                <div className="flex-1 bg-white border border-gray-200 rounded-2xl overflow-hidden">
+                  {/* Combined day + date cells — label derived from actual date so it's always correct */}
+                  <div className="grid grid-cols-7 text-center px-1 py-3">
+                    {weekDays.map((day) => {
+                      const isSelected = selectedDate ? isSameDay(day, selectedDate) : false;
+                      const isToday = isSameDay(day, now);
+                      const dayAbbrev = formatInTz(day, timezone, "EEE"); // Mon, Tue, Wed …
+                      const dayNum = formatInTz(day, timezone, "d");
+                      const monthAbbrev = formatInTz(day, timezone, "MMM");
+                      return (
+                        <button
+                          key={day.toISOString()}
+                          onClick={() => setSelectedDate(day)}
+                          data-testid={`button-day-${dayNum}`}
+                          className="flex flex-col items-center gap-0.5"
+                        >
+                          <span className="text-[11px] font-medium text-gray-400 mb-1">{dayAbbrev}</span>
+                          <span
+                            className={cn(
+                              "w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors",
+                              isSelected
+                                ? "bg-primary text-white shadow-sm"
+                                : isToday
+                                  ? "border-2 border-primary text-primary"
+                                  : "text-gray-800 hover:bg-gray-100"
+                            )}
+                          >
+                            {dayNum}
+                          </span>
+                          <span className="text-[10px] text-gray-400 leading-none mt-0.5">{monthAbbrev}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="shrink-0 h-8 w-8 rounded-full text-gray-400 hover:text-gray-700"
                   onClick={() => navigateWeek("next")}
-                  className="p-2 rounded-lg hover:bg-gray-100"
-                  data-testid="button-next-week"
+                  data-testid="button-week-next"
                 >
                   <ChevronRight className="w-4 h-4" />
-                </button>
+                </Button>
               </div>
+            </div>
 
-              {/* Day selector */}
-              <div className="grid grid-cols-7 gap-1 mb-6">
-                {weekDays.map((day, i) => {
-                  const isToday = isSameDay(day, getNowInTimezone(timezone));
-                  const isSelected = selectedDate ? isSameDay(day, selectedDate) : false;
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => setSelectedDate(day)}
-                      className={cn(
-                        "flex flex-col items-center py-2 rounded-lg transition-all",
-                        isSelected
-                          ? "bg-primary text-white"
-                          : isToday
-                          ? "bg-primary/10 text-primary"
-                          : "hover:bg-gray-50 text-gray-600"
-                      )}
-                    >
-                      <span className="text-[10px] font-medium">
-                        {formatInTz(day, timezone, "EEE")}
-                      </span>
-                      <span className="text-sm font-bold mt-0.5">
-                        {formatInTz(day, timezone, "d")}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Slots */}
+            {/* Time slots */}
+            <div className="px-4 pt-3">
+              <h3 className="text-center font-bold text-gray-900 text-base mb-1">
+                What time works?
+              </h3>
               {slotsLoading ? (
-                <div className="flex items-center justify-center h-32">
+                <div className="flex items-center justify-center h-28">
                   <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
                 </div>
               ) : !slots || slots.length === 0 ? (
-                <div className="text-center py-8 text-gray-500 border border-dashed border-gray-200 rounded-lg">
-                  No availability for this day
-                </div>
+                <p className="text-center text-gray-400 py-8 text-sm">
+                  No available times for this date.
+                </p>
               ) : (
-                <div className="space-y-4">
-                  {[
-                    { label: "Morning", items: groupedSlots.morning },
-                    { label: "Afternoon", items: groupedSlots.afternoon },
-                    { label: "Evening", items: groupedSlots.evening },
-                  ]
-                    .filter((g) => g.items.length > 0)
-                    .map((group) => (
-                      <div key={group.label}>
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                          {group.label}
-                        </p>
-                        <div className="grid grid-cols-3 gap-2">
-                          {group.items.map((slot, i) => (
-                            <button
-                              key={i}
-                              onClick={() => handleSelectSlot(slot)}
-                              data-testid={`button-slot-${i}`}
-                              className="border border-gray-200 rounded-lg py-2 text-sm font-medium text-gray-700 hover:border-primary hover:text-primary hover:bg-primary/5 transition-all"
-                            >
-                              {formatInTz(slot.time, timezone, "h:mm a")}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+                <div className="grid grid-cols-3 gap-2 mt-3">
+                  {slots.map((slot) => (
+                    <Button
+                      key={slot.time}
+                      variant="outline"
+                      className="text-sm h-11 rounded-xl border-gray-200 hover:border-primary hover:text-primary"
+                      onClick={() => handleSelectSlot(slot)}
+                      data-testid={`button-slot-${formatInTz(slot.time, timezone, "HH:mm")}`}
+                    >
+                      {formatInTz(slot.time, timezone, "h:mm a")}
+                    </Button>
+                  ))}
                 </div>
               )}
+
+              <button
+                className="flex items-center gap-1 text-primary text-sm font-medium mt-6"
+                onClick={() => setStep("services")}
+                data-testid="button-add-another-service"
+              >
+                <Plus className="w-4 h-4" />
+                Add another service
+              </button>
             </div>
           </div>
         )}
@@ -773,14 +576,18 @@ export default function ClassicTheme({ store, slug, preselectedStaffId, preselec
                     <div className="flex items-center gap-2 text-sm">
                       <Clock className="w-4 h-4 text-gray-400" />
                       <span>
-                        {formatInTz(selectedSlot.time, timezone, "EEEE, d MMMM yyyy 'at' h:mm a")}
+                        {formatInTz(
+                          selectedSlot.time,
+                          timezone,
+                          "EEEE, d MMMM yyyy 'at' h:mm a"
+                        )}
                       </span>
                     </div>
                   )}
                   <div className="flex items-center gap-2 text-sm">
                     <MapPin className="w-4 h-4 text-gray-400" />
                     <div>
-                      <p className="font-medium">Certxa Booking Service</p>
+                      <p className="font-medium">{store.name}</p>
                       {store.address && (
                         <p className="text-gray-500 text-xs">{store.address}</p>
                       )}
@@ -792,12 +599,17 @@ export default function ClassicTheme({ store, slug, preselectedStaffId, preselec
               <Card className="p-4">
                 <div className="space-y-3">
                   {selectedServices.map((service) => (
-                    <div key={service.id} className="flex items-center justify-between">
+                    <div
+                      key={service.id}
+                      className="flex items-center justify-between"
+                    >
                       <div>
                         <p className="font-medium text-sm">{service.name}</p>
                         <p className="text-xs text-gray-500">
                           {service.category} &middot; {service.duration} min
-                          {selectedSlot && <> &middot; {selectedSlot.staffName}</>}
+                          {selectedSlot && (
+                            <> &middot; {selectedSlot.staffName}</>
+                          )}
                         </p>
                       </div>
                       {showPrices && (
@@ -809,46 +621,23 @@ export default function ClassicTheme({ store, slug, preselectedStaffId, preselec
                   ))}
                   {showPrices && (
                     <div className="border-t pt-3 flex items-center justify-between">
-                      <span className="font-semibold">Total</span>
-                      <span className="font-bold text-lg" data-testid="text-total-price">
+                      <span className="font-semibold">Total to pay</span>
+                      <span
+                        className="font-bold text-lg"
+                        data-testid="text-total-price"
+                      >
                         ${totalPrice.toFixed(2)}
                       </span>
                     </div>
                   )}
-
-                  {/* Payment policy info */}
-                  {paymentPolicyData?.policy === "card_on_file" && (
-                    <div className="border-t pt-3 flex items-start gap-2">
-                      <Lock className="w-3.5 h-3.5 text-blue-600 mt-0.5 shrink-0" />
-                      <p className="text-sm text-blue-800">
-                        A card is required to secure your booking. <strong>No charge will be made today.</strong>
-                      </p>
-                    </div>
-                  )}
-                  {paymentPolicyData?.policy === "deposit" && (() => {
-                    const depositDollars = paymentPolicyData.depositType === "percentage"
-                      ? totalPrice * ((paymentPolicyData.depositValue ?? 0) / 100)
-                      : (paymentPolicyData.depositValue ?? 0);
-                    const remaining = totalPrice - depositDollars;
-                    return (
-                      <div className="border-t pt-3 space-y-1">
-                        <div className="flex justify-between text-sm font-semibold text-amber-800">
-                          <span>Deposit due today</span>
-                          <span>${depositDollars.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm text-gray-500">
-                          <span>Remaining at checkout</span>
-                          <span>${remaining.toFixed(2)}</span>
-                        </div>
-                      </div>
-                    );
-                  })()}
                 </div>
               </Card>
 
               <div className="space-y-3">
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">Name *</label>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                    Name *
+                  </label>
                   <Input
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
@@ -857,7 +646,9 @@ export default function ClassicTheme({ store, slug, preselectedStaffId, preselec
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">Email</label>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                    Email
+                  </label>
                   <Input
                     type="email"
                     value={customerEmail}
@@ -867,68 +658,29 @@ export default function ClassicTheme({ store, slug, preselectedStaffId, preselec
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">Phone *</label>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                    Phone
+                  </label>
                   <Input
                     type="tel"
                     value={customerPhone}
-                    onChange={(e) => {
-                      const raw = e.target.value.replace(/\D/g, "").slice(0, 10);
-                      let formatted = raw;
-                      if (raw.length >= 6) formatted = `(${raw.slice(0, 3)}) ${raw.slice(3, 6)}-${raw.slice(6)}`;
-                      else if (raw.length >= 3) formatted = `(${raw.slice(0, 3)}) ${raw.slice(3)}`;
-                      setCustomerPhone(formatted);
-                      if (phoneError) setPhoneError("");
-                    }}
-                    placeholder="(555) 555-5555"
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    placeholder="Phone number"
                     data-testid="input-customer-phone"
                   />
-                  {phoneError && <p className="text-xs text-destructive mt-1">{phoneError}</p>}
                 </div>
               </div>
-
-              {/* SMS opt-in consent */}
-              <div className="border border-gray-200 rounded-lg p-4">
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={smsOptIn}
-                    onChange={(e) => setSmsOptIn(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-gray-300 accent-primary cursor-pointer shrink-0"
-                  />
-                  <span className="text-sm font-medium text-gray-800 leading-snug">
-                    Get important appointment updates from Certxa LLC
-                  </span>
-                </label>
-                <p className="text-xs text-gray-500 mt-2 leading-relaxed">
-                  By checking this box, you consent to receive automated text messages from Certxa LLC on behalf of your selected salon. Messages may include appointment confirmations, reminders, cancellations, rescheduling updates, and other appointment-related notifications. Consent is not a condition of purchase. Message frequency varies. Message and data rates may apply. Reply STOP to unsubscribe and HELP for help. View{" "}
-                  <a href="/terms" target="_blank" rel="noopener noreferrer" className="font-semibold underline text-gray-700">TERMS</a>
-                  {" "}&{" "}
-                  <a href="/policy" target="_blank" rel="noopener noreferrer" className="font-semibold underline text-gray-700">PRIVACY</a>
-                </p>
-              </div>
-
-              {paymentError && (
-                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-                  {paymentError}
-                </div>
-              )}
 
               <Button
                 className="w-full"
                 onClick={handleConfirmBooking}
-                disabled={!customerName.trim() || !isPhoneValid || bookMutation.isPending || isCreatingIntent}
+                disabled={!customerName.trim() || bookMutation.isPending}
                 data-testid="button-confirm-booking"
               >
-                {(bookMutation.isPending || isCreatingIntent) ? (
+                {bookMutation.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                ) : (paymentPolicyData?.policy && paymentPolicyData.policy !== "none") ? (
-                  <Lock className="w-4 h-4 mr-2" />
                 ) : null}
-                {paymentPolicyData?.policy === "card_on_file"
-                  ? "Continue to Save Card"
-                  : paymentPolicyData?.policy === "deposit"
-                    ? "Continue to Pay Deposit"
-                    : "Confirm Booking"}
+                Confirm Booking
               </Button>
 
               {bookMutation.isError && (
@@ -939,120 +691,7 @@ export default function ClassicTheme({ store, slug, preselectedStaffId, preselec
             </div>
           </div>
         )}
-
-        {/* Payment step */}
-        {step === "payment" && stripeInstance && paymentClientSecret && (
-          <div className="pb-6">
-            <div className="flex items-center gap-3 px-4 py-3 border-b">
-              <Button size="icon" variant="ghost" onClick={() => setStep("confirm")}>
-                <ArrowLeft className="w-4 h-4" />
-              </Button>
-              <h2 className="font-semibold text-lg">
-                {intentType === "setup" ? "Save Payment Method" : "Pay Deposit"}
-              </h2>
-            </div>
-
-            <div className="px-4 py-4 space-y-4">
-              {/* Booking recap */}
-              <Card className="p-4 space-y-1">
-                <p className="font-semibold text-gray-900">{primaryService?.name}</p>
-                <p className="text-sm text-gray-600">
-                  {selectedSlot && formatInTz(selectedSlot.time, timezone, "EEEE, d MMMM yyyy 'at' h:mm a")}
-                </p>
-                <p className="text-sm text-gray-500">With {selectedSlot?.staffName}</p>
-                {intentType === "payment" && depositAmountCents > 0 && (
-                  <div className="mt-2 pt-2 border-t border-gray-200 space-y-1">
-                    {showPrices && (
-                      <div className="flex justify-between text-sm text-gray-600">
-                        <span>Service total</span>
-                        <span>${totalPrice.toFixed(2)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between text-sm font-semibold text-amber-800">
-                      <span>Deposit due now</span>
-                      <span>${(depositAmountCents / 100).toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm text-gray-500">
-                      <span>Remaining at checkout</span>
-                      <span>${Math.max(0, totalPrice - depositAmountCents / 100).toFixed(2)}</span>
-                    </div>
-                  </div>
-                )}
-                {intentType === "setup" && (
-                  <div className="mt-2 pt-2 border-t border-gray-200 flex items-start gap-2">
-                    <Lock className="w-3.5 h-3.5 text-blue-600 mt-0.5 shrink-0" />
-                    <p className="text-sm text-blue-800">
-                      Your card will be securely stored. <strong>No charge will be made today.</strong>
-                    </p>
-                  </div>
-                )}
-              </Card>
-
-              <Elements
-                stripe={stripeInstance}
-                options={{
-                  clientSecret: paymentClientSecret,
-                  appearance: { theme: "stripe", variables: { colorPrimary: "#e11d48" } },
-                }}
-              >
-                <PaymentForm
-                  intentType={intentType}
-                  depositAmountCents={depositAmountCents}
-                  onSuccess={(paymentInfo) =>
-                    submitBooking({ ...paymentInfo, stripeCustomerId: pendingStripeCustomerId })
-                  }
-                  onBack={() => setStep("confirm")}
-                />
-              </Elements>
-            </div>
-          </div>
-        )}
-
-        {step === "payment" && (!stripeInstance || !paymentClientSecret) && (
-          <div className="flex flex-col items-center justify-center h-64 gap-3">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <p className="text-sm text-gray-500">Preparing payment…</p>
-          </div>
-        )}
       </main>
-
-      {/* Option Picker Modal */}
-      {optionPickerService && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl overflow-hidden">
-            <div className="px-5 pt-5 pb-3 border-b">
-              <h3 className="font-semibold text-base">{optionPickerService.name}</h3>
-              <p className="text-xs text-gray-500 mt-0.5">Choose an option to continue</p>
-            </div>
-            <div className="px-4 py-3 space-y-2 max-h-72 overflow-y-auto">
-              {optionPickerService.options.map((opt) => (
-                <button
-                  key={opt.id}
-                  onClick={() => handlePickOption(optionPickerService, opt)}
-                  className="w-full text-left p-3 rounded-xl border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition flex items-center justify-between"
-                >
-                  <div>
-                    <p className="font-medium text-sm">{opt.name}</p>
-                    {opt.description && <p className="text-xs text-gray-500 mt-0.5">{opt.description}</p>}
-                    <p className="text-xs text-gray-400 mt-0.5">{opt.durationMinutes} min</p>
-                  </div>
-                  {showPrices && (
-                    <span className="font-semibold text-sm ml-4 shrink-0">${Number(opt.price).toFixed(2)}</span>
-                  )}
-                </button>
-              ))}
-            </div>
-            <div className="px-4 pb-4 pt-2">
-              <button
-                onClick={() => setOptionPickerService(null)}
-                className="w-full text-center text-sm text-gray-500 hover:text-gray-700 py-2"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

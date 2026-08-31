@@ -21,6 +21,9 @@ import {
   setDashboardCache,
   invalidateDashboardCache,
 } from "../lib/dashboardCache";
+import { publishCrossProcess, subscribeCrossProcess, isCrossProcessBusAvailable } from "../lib/wsBroadcastBus";
+
+const CROSS_PROCESS_CHANNEL = "ws:dashboard-invalidate";
 
 /**
  * Apply an Express-style middleware to an HTTP upgrade request.
@@ -191,18 +194,13 @@ export function setupDashboardWS(httpServer: Server): void {
   });
 }
 
-/**
- * Called from routes.ts after any appointment mutation.
- * Debounced per store so a burst of rapid saves (e.g. bulk status update)
- * triggers only one recompute + broadcast cycle.
- */
-export function triggerDashboardBroadcast(storeId: number | undefined): void {
-  if (!storeId) return;
-
-  // Always invalidate so the next connection gets fresh data
-  void invalidateDashboardCache(storeId);
-
-  // Skip broadcast if nobody is watching
+// The worker that handles the HTTP mutation triggering this is not
+// necessarily the worker any given store's dashboard WebSocket landed on in
+// PM2 cluster mode — each worker only knows about its own storeClients Set.
+// So the actual recompute-and-push (gated on "does THIS worker have anyone
+// watching") happens per-worker, driven by a cross-process signal rather
+// than a local-only check.
+function scheduleLocalBroadcast(storeId: number): void {
   const clients = storeClients.get(storeId);
   if (!clients || clients.size === 0) return;
 
@@ -230,4 +228,26 @@ export function triggerDashboardBroadcast(storeId: number | undefined): void {
       }
     }, DEBOUNCE_MS),
   );
+}
+
+subscribeCrossProcess(CROSS_PROCESS_CHANNEL, (msg: { storeId: number }) => {
+  scheduleLocalBroadcast(msg.storeId);
+});
+
+/**
+ * Called from routes.ts after any appointment mutation.
+ * Debounced per store so a burst of rapid saves (e.g. bulk status update)
+ * triggers only one recompute + broadcast cycle.
+ */
+export function triggerDashboardBroadcast(storeId: number | undefined): void {
+  if (!storeId) return;
+
+  // Always invalidate so the next connection gets fresh data
+  void invalidateDashboardCache(storeId);
+
+  if (isCrossProcessBusAvailable()) {
+    publishCrossProcess(CROSS_PROCESS_CHANNEL, { storeId });
+  } else {
+    scheduleLocalBroadcast(storeId);
+  }
 }

@@ -1,6 +1,6 @@
 import { Router } from "express";
-import type { Request, Response, NextFunction } from "express";
-import bcrypt from "bcryptjs";
+import type { Request, Response } from "express";
+import bcrypt from "bcrypt";
 import { pool, waitForDb } from "../db";
 import { broadcastNotification } from "../notifications";
 import { sendSupportReply, smtpAvailable } from "../lib/smtpSender";
@@ -13,31 +13,10 @@ import {
   SEGMENT_IDS,
   type SegmentId,
 } from "../lib/healthCheck/index";
-
-declare module "express-session" {
-  interface SessionData {
-    supportAgentId?: number;
-    supportAgentRole?: string;
-    supportAgentName?: string;
-  }
-}
+import { requireSupportAuth } from "../lib/supportAuth";
+import { stripe, isStripeConfigured } from "../lib/stripe";
 
 const router = Router();
-
-// ─── Auth Middleware ───────────────────────────────────────────────────────────
-
-function requireSupportAuth(req: Request, res: Response, next: NextFunction) {
-  // Dev bypass — active unless SUPPORT_REQUIRE_AUTH=true is explicitly set (production deployments only)
-  if (!process.env.SUPPORT_REQUIRE_AUTH && !req.session.supportAgentId) {
-    req.session.supportAgentId   = 1;
-    req.session.supportAgentRole = "admin";
-    req.session.supportAgentName = "Admin Agent";
-  }
-  if (!req.session.supportAgentId) {
-    return res.status(401).json({ error: "Unauthorized — support login required" });
-  }
-  next();
-}
 
 function paramText(value: unknown): string {
   if (typeof value === "string") return value;
@@ -57,32 +36,27 @@ async function seedDefaultAgent() {
     const hash = await bcrypt.hash("support2024!", 10);
     const seedVals = ["Admin Agent", "admin@certxa.com", hash, "Admin", "Agent", "admin"];
 
-    // Prefer UPSERT when a unique email constraint exists.
-    // Some legacy DBs missed that constraint, so ON CONFLICT(email) throws 42P10.
+    // Only creates the agent if it doesn't already exist — never overwrites an
+    // existing password. The previous ON CONFLICT DO UPDATE silently reset
+    // admin@certxa.com's password back to this hardcoded default on every
+    // server restart, even after someone had changed it in the database.
     try {
-      await pool.query(
+      const result = await pool.query(
         `INSERT INTO support_agents (name, email, password_hash, first_name, last_name, role)
          VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash`,
+         ON CONFLICT (email) DO NOTHING
+         RETURNING id`,
         seedVals,
       );
+      if (result.rows.length > 0) {
+        console.log("[Support] Default agent created: admin@certxa.com — change the password after first login");
+      }
     } catch (e: any) {
       if (e?.code !== "42P10") throw e;
 
-      // Fallback for drifted schemas: upsert manually by email without relying
-      // on a unique index. This keeps startup clean and idempotent.
-      await pool.query(
-        `UPDATE support_agents
-           SET password_hash = $3,
-               name = $1,
-               first_name = $4,
-               last_name = $5,
-               role = $6,
-               is_active = true
-         WHERE lower(email) = lower($2)`,
-        seedVals,
-      );
-
+      // Fallback for drifted schemas: some legacy DBs are missing the unique
+      // email constraint, so ON CONFLICT(email) throws 42P10. Insert only if
+      // no row with this email exists yet.
       await pool.query(
         `INSERT INTO support_agents (name, email, password_hash, first_name, last_name, role)
          SELECT $1, $2, $3, $4, $5, $6
@@ -92,12 +66,31 @@ async function seedDefaultAgent() {
         seedVals,
       );
     }
-    console.log("[Support] Default agent ensured: admin@certxa.com / support2024!");
   } catch (e) {
     console.warn("[Support] Could not seed default agent:", e);
   }
 }
 seedDefaultAgent();
+
+async function ensureMagicLinksTable() {
+  try {
+    await waitForDb("support-magic-links");
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS support_magic_links (
+        id                  SERIAL PRIMARY KEY,
+        token               TEXT NOT NULL UNIQUE,
+        user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_by_agent_id INTEGER,
+        expires_at          TIMESTAMP NOT NULL,
+        used_at             TIMESTAMP,
+        created_at          TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+  } catch (e) {
+    console.warn("[Support] Could not ensure support_magic_links table:", e);
+  }
+}
+ensureMagicLinksTable();
 
 // ─── Incident / Service-Health table bootstrap ────────────────────────────────
 (async () => {
@@ -1208,13 +1201,42 @@ router.post("/api/support/accounts/:id/tickets", requireSupportAuth, async (req:
 
 // ─── Account Actions ──────────────────────────────────────────────────────────
 
+// Looks up the store's Stripe subscription id from store_subscriptions (the live
+// billing schema — see routes/billing.ts + routes/subscription.ts). Returns null
+// if there's no subscription row or it was never attached to a real Stripe sub
+// (e.g. still on a free trial with no payment method yet).
+async function findStripeSubscriptionId(storeId: number): Promise<string | null> {
+  const row = await pool.query<{ stripe_subscription_id: string | null }>(
+    `SELECT stripe_subscription_id FROM store_subscriptions
+     WHERE store_id = $1 AND stripe_subscription_id IS NOT NULL
+     ORDER BY id DESC LIMIT 1`,
+    [storeId],
+  );
+  return row.rows[0]?.stripe_subscription_id ?? null;
+}
+
 router.post("/api/support/accounts/:id/suspend", requireSupportAuth, async (req: Request, res: Response) => {
   const storeId = paramInt(req.params.id);
   try {
     await pool.query("UPDATE locations SET account_status = 'Suspended' WHERE id = $1", [storeId]);
-    await logActivity(req.session.supportAgentId!, storeId, "account_suspended", req.session.supportAgentName!);
+
+    // Pause (never cancel) any real Stripe subscription — this stops billing
+    // immediately without losing the plan/subscription, so the account can be
+    // restored just by resuming collection once the account is unsuspended.
+    let stripePaused = false;
+    const stripeSubId = await findStripeSubscriptionId(storeId);
+    if (stripeSubId && isStripeConfigured()) {
+      try {
+        await stripe.subscriptions.update(stripeSubId, { pause_collection: { behavior: "void" } });
+        stripePaused = true;
+      } catch (stripeErr: any) {
+        console.error(`[Support] Failed to pause Stripe subscription ${stripeSubId} for store ${storeId}:`, stripeErr?.message ?? stripeErr);
+      }
+    }
+
+    await logActivity(req.session.supportAgentId!, storeId, "account_suspended", req.session.supportAgentName!, { stripePaused });
     broadcastNotification({ type: "account_status_changed", storeId, accountStatus: "suspended" });
-    res.json({ ok: true });
+    res.json({ ok: true, stripePaused });
   } catch (e) {
     res.status(500).json({ error: "Failed to suspend account" });
   }
@@ -1224,9 +1246,23 @@ router.post("/api/support/accounts/:id/unsuspend", requireSupportAuth, async (re
   const storeId = paramInt(req.params.id);
   try {
     await pool.query("UPDATE locations SET account_status = 'Active' WHERE id = $1", [storeId]);
-    await logActivity(req.session.supportAgentId!, storeId, "account_unsuspended", req.session.supportAgentName!);
+
+    // Resume collection on the paused Stripe subscription, if any — billing
+    // picks back up on the normal cycle, no new checkout needed.
+    let stripeResumed = false;
+    const stripeSubId = await findStripeSubscriptionId(storeId);
+    if (stripeSubId && isStripeConfigured()) {
+      try {
+        await stripe.subscriptions.update(stripeSubId, { pause_collection: "" });
+        stripeResumed = true;
+      } catch (stripeErr: any) {
+        console.error(`[Support] Failed to resume Stripe subscription ${stripeSubId} for store ${storeId}:`, stripeErr?.message ?? stripeErr);
+      }
+    }
+
+    await logActivity(req.session.supportAgentId!, storeId, "account_unsuspended", req.session.supportAgentName!, { stripeResumed });
     broadcastNotification({ type: "account_status_changed", storeId, accountStatus: "active" });
-    res.json({ ok: true });
+    res.json({ ok: true, stripeResumed });
   } catch (e) {
     res.status(500).json({ error: "Failed to unsuspend account" });
   }
@@ -1719,7 +1755,7 @@ async function logActivity(agentId: number, accountId: number, action: string, a
 // ─── Billing Investigation ────────────────────────────────────────────────────
 
 router.get("/api/support/billing-search", requireSupportAuth, async (req: Request, res: Response) => {
-  const { q = "", status = "all", limit = "50", offset = "0" } = req.query as Record<string, string>;
+  const { q = "", status = "all", failedOnly = "false", limit = "50", offset = "0" } = req.query as Record<string, string>;
   const limitNum = Math.min(parseInt(limit) || 50, 200);
   const offsetNum = parseInt(offset) || 0;
 
@@ -1734,14 +1770,25 @@ router.get("/api/support/billing-search", requireSupportAuth, async (req: Reques
       pIdx++;
     }
 
-    if (status !== "all") {
+    if (status === "past_due") {
+      where.push(`s.status ILIKE $${pIdx}`);
+      params.push("past_due");
+      pIdx++;
+    } else if (status !== "all") {
       where.push(`l.account_status ILIKE $${pIdx}`);
       params.push(status);
       pIdx++;
     }
 
+    if (failedOnly === "true") {
+      where.push(`EXISTS (SELECT 1 FROM payment_transactions pt WHERE pt.salon_id = l.id AND pt.status = 'failed')`);
+    }
+
     const countResult = await pool.query(
-      `SELECT COUNT(*)::int FROM locations l LEFT JOIN users u ON u.id = l.user_id WHERE ${where.join(" AND ")}`,
+      `SELECT COUNT(*)::int FROM locations l
+       LEFT JOIN users u ON u.id = l.user_id
+       LEFT JOIN subscriptions s ON s.store_number = l.id
+       WHERE ${where.join(" AND ")}`,
       params
     );
     const total = countResult.rows[0]?.count ?? 0;
@@ -1838,7 +1885,7 @@ router.get("/api/support/billing/:accountId", requireSupportAuth, async (req: Re
       ...payments.map((p: any) => ({ type: "payment", date: p.created_at, description: `Payment for INV-${p.stripe_invoice_id ?? p.id}`, status: p.status, amount: -(p.amount_cents || 0), id: `pay-${p.id}`, meta: p })),
       ...refunds.map((r: any) => ({ type: "refund", date: r.created_at, description: `Refund${r.reason ? ` — ${r.reason}` : ""}`, status: r.status, amount: r.amount_cents, id: `ref-${r.id}`, meta: r })),
       ...wallet.map((w: any) => ({ type: "wallet", date: w.created_at, description: w.description ?? `Wallet ${w.transaction_type}`, status: w.status, amount: w.amount, id: `wlt-${w.id}`, meta: w })),
-      ...credits.map((c: any) => ({ type: "credit", date: c.created_at, description: c.description ?? `Credit ${c.type}`, status: "applied", amount: c.amount, id: `crd-${c.id}`, meta: c })),
+      ...credits.map((c: any) => ({ type: "credit", date: c.created_at, description: c.description ?? `Credit ${c.type}`, status: "applied", amount: Number(c.amount || 0) * 100, id: `crd-${c.id}`, meta: c })),
     ];
     timeline.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -1901,18 +1948,34 @@ router.get("/api/support/billing/:accountId", requireSupportAuth, async (req: Re
 
 // ── Billing action endpoints ───────────────────────────────────────────────────
 
+const SELF_SERVE_CREDIT_LIMIT = 500;   // any agent may issue up to this without admin approval
+const MAX_CREDIT_LIMIT = 2000;         // hard ceiling — even admins can't exceed this in one grant
+
 router.post("/api/support/billing/:accountId/apply-credit", requireSupportAuth, async (req: Request, res: Response) => {
   const storeId = paramInt(req.params.accountId);
   const { amount, description } = req.body as { amount: number; description?: string };
-  if (!amount || amount <= 0) return res.status(400).json({ error: "Valid amount required" });
+  if (!amount || !Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: "Valid amount required" });
+  if (amount > MAX_CREDIT_LIMIT) {
+    return res.status(400).json({ error: `Credit amount cannot exceed $${MAX_CREDIT_LIMIT}` });
+  }
+  if (amount > SELF_SERVE_CREDIT_LIMIT && req.session.supportAgentRole !== "admin") {
+    return res.status(403).json({ error: `Credits over $${SELF_SERVE_CREDIT_LIMIT} require an admin agent` });
+  }
   try {
+    const updateResult = await pool.query<{ platform_credits: string }>(
+      `UPDATE locations SET platform_credits = COALESCE(platform_credits, 0) + $1 WHERE id = $2 RETURNING platform_credits`,
+      [amount, storeId]
+    );
+    const balanceAfter = updateResult.rows[0]?.platform_credits;
+    if (balanceAfter === undefined) return res.status(404).json({ error: "Account not found" });
     await pool.query(
-      "INSERT INTO platform_credit_transactions (store_id, type, amount, description) VALUES ($1, 'credit', $2, $3)",
-      [storeId, amount, description || "Manual credit by support"]
+      "INSERT INTO platform_credit_transactions (store_id, type, amount, description, balance_after) VALUES ($1, 'credit', $2, $3, $4)",
+      [storeId, amount, description || "Manual credit by support", balanceAfter]
     );
     await logActivity(req.session.supportAgentId!, storeId, "credit_issued", req.session.supportAgentName!, { amount, description });
     res.json({ ok: true });
   } catch (e) {
+    console.error("[ApplyCredit]", e);
     res.status(500).json({ error: "Failed to apply credit" });
   }
 });
@@ -1939,6 +2002,104 @@ router.post("/api/support/billing/:accountId/retry-payment", requireSupportAuth,
     res.json({ ok: true, message: "Payment retry initiated (Stripe webhook will confirm)" });
   } catch (e) {
     res.status(500).json({ error: "Failed" });
+  }
+});
+
+// Refunds a subscription payment on Certxa's own platform Stripe account —
+// these are direct platform charges (Certxa billing the salon owner), not
+// Stripe Connect marketplace transactions, so there is no separate "client
+// Stripe dashboard" to send an agent to. The refund is issued via the Stripe
+// API against the charge/payment intent on file and recorded in the existing
+// `refunds` + `payment_transactions` tables.
+router.post("/api/support/billing/:accountId/refund", requireSupportAuth, async (req: Request, res: Response) => {
+  const storeId = paramInt(req.params.accountId);
+  const { paymentTransactionId, amountCents, reason, notes } = req.body as {
+    paymentTransactionId?: number;
+    amountCents?: number;
+    reason?: string;
+    notes?: string;
+  };
+
+  if (!paymentTransactionId || !amountCents || amountCents <= 0) {
+    return res.status(400).json({ error: "paymentTransactionId and a positive amountCents are required" });
+  }
+  if (!isStripeConfigured()) {
+    return res.status(503).json({ error: "Stripe is not configured" });
+  }
+  const validReasons = ["duplicate", "fraudulent", "requested_by_customer"] as const;
+  const stripeReason = (validReasons as readonly string[]).includes(reason ?? "")
+    ? (reason as (typeof validReasons)[number])
+    : "requested_by_customer";
+
+  try {
+    const ptRow = await pool.query(
+      `SELECT * FROM payment_transactions WHERE id = $1 AND salon_id = $2 LIMIT 1`,
+      [paymentTransactionId, storeId]
+    );
+    const payment = ptRow.rows[0];
+    if (!payment) return res.status(404).json({ error: "Payment not found for this account" });
+    if (payment.status !== "succeeded") {
+      return res.status(400).json({ error: "Only succeeded payments can be refunded" });
+    }
+
+    const remainingCents = Number(payment.amount_cents || 0) - Number(payment.refund_amount_cents || 0);
+    if (amountCents > remainingCents) {
+      return res.status(400).json({ error: `Amount exceeds refundable balance of $${(remainingCents / 100).toFixed(2)}` });
+    }
+
+    const chargeOrIntent = payment.stripe_charge_id
+      ? { charge: payment.stripe_charge_id as string }
+      : payment.stripe_payment_intent_id
+      ? { payment_intent: payment.stripe_payment_intent_id as string }
+      : null;
+    if (!chargeOrIntent) {
+      return res.status(422).json({ error: "This payment has no Stripe charge or payment intent on record — cannot refund via API" });
+    }
+
+    const refund = await stripe.refunds.create({
+      ...chargeOrIntent,
+      amount: amountCents,
+      reason: stripeReason,
+    });
+
+    await pool.query(
+      `INSERT INTO refunds
+        (stripe_refund_id, stripe_charge_id, stripe_payment_intent_id, stripe_invoice_id,
+         salon_id, user_id, initiated_by_user_id, amount_cents, reason, internal_reason_notes,
+         refund_type, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'manual',$11)`,
+      [
+        refund.id,
+        payment.stripe_charge_id ?? null,
+        payment.stripe_payment_intent_id ?? null,
+        payment.stripe_invoice_id ?? null,
+        storeId,
+        payment.user_id ?? null,
+        `support:${req.session.supportAgentId}`,
+        amountCents,
+        stripeReason,
+        notes ?? null,
+        refund.status ?? "pending",
+      ]
+    );
+
+    await pool.query(
+      `UPDATE payment_transactions
+       SET refunded = (refund_amount_cents + $1) >= amount_cents,
+           refund_amount_cents = refund_amount_cents + $1,
+           updated_at = now()
+       WHERE id = $2`,
+      [amountCents, paymentTransactionId]
+    );
+
+    await logActivity(req.session.supportAgentId!, storeId, "payment_refunded", req.session.supportAgentName!, {
+      amountCents, reason: stripeReason, stripeRefundId: refund.id,
+    });
+
+    res.json({ ok: true, refundId: refund.id, status: refund.status });
+  } catch (e: any) {
+    console.error("[Support Refund]", e?.message ?? e);
+    res.status(500).json({ error: e?.message ?? "Failed to issue refund" });
   }
 });
 
@@ -3122,13 +3283,42 @@ router.post("/api/support/accounts/:id/reset-password", requireSupportAuth, asyn
   const storeId = paramInt(req.params.id);
   try {
     const ownerR = await pool.query(
-      `SELECT u.id, u.email FROM users u JOIN locations l ON l.user_id = u.id WHERE l.id = $1 LIMIT 1`,
+      `SELECT u.id, u.email, u.first_name FROM users u JOIN locations l ON l.user_id = u.id WHERE l.id = $1 LIMIT 1`,
       [storeId]
     );
     if (!ownerR.rows[0]) return res.status(404).json({ error: "Owner not found" });
     const owner = ownerR.rows[0];
+
+    // Reuses the exact same mechanism as the customer-facing /api/auth/forgot-password
+    // flow (crypto-random token in password_reset_tokens, 1-hour expiry) so a link
+    // generated here is honored by the real /reset-password page.
+    const crypto = await import("crypto");
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+    await pool.query(
+      `INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)`,
+      [owner.id, token, expiresAt]
+    );
+
+    const appUrl = process.env.APP_URL ?? "https://certxa.com";
+    const resetUrl = `${appUrl}/reset-password?token=${token}`;
+    const html = `<div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+      <h2>Reset your Certxa password</h2>
+      <p>Hi ${owner.first_name ?? "there"},</p>
+      <p>Certxa support initiated a password reset for your account. Click the link below to set a new one:</p>
+      <p><a href="${resetUrl}" style="background:#111;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">Reset Password</a></p>
+      <p>This link expires in 1 hour. If you didn't request this, contact support.</p>
+    </div>`;
+
+    const { sendEmail } = await import("../mail.js");
+    const mailResult = await sendEmail(storeId, owner.email, "Reset your Certxa password", html);
+    if (!mailResult.success) {
+      console.error("[reset-password] Mail send failed:", mailResult.error);
+      return res.status(502).json({ error: mailResult.error ?? "Failed to send reset email" });
+    }
+
     await logActivity(req.session.supportAgentId!, storeId, "password_reset_sent", req.session.supportAgentName!);
-    res.json({ ok: true, email: owner.email, message: "Password reset email queued" });
+    res.json({ ok: true, email: owner.email, message: "Password reset email sent" });
   } catch (e) {
     console.error("[reset-password]", e);
     res.status(500).json({ error: "Failed to initiate password reset" });
@@ -3144,8 +3334,22 @@ router.post("/api/support/accounts/:id/magic-link", requireSupportAuth, async (r
       [storeId]
     );
     if (!ownerR.rows[0]) return res.status(404).json({ error: "Owner not found" });
-    const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
-    const link = `${process.env.APP_URL ?? "https://app.certxa.com"}/auth/magic?token=${token}&support=1`;
+    const owner = ownerR.rows[0];
+
+    // Cryptographically secure, single-use, persisted token — the previous
+    // Math.random() token was never stored anywhere and had no consuming
+    // route, so the generated link could never actually log anyone in.
+    const crypto = await import("crypto");
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    await pool.query(
+      `INSERT INTO support_magic_links (token, user_id, created_by_agent_id, expires_at)
+       VALUES ($1, $2, $3, $4)`,
+      [token, owner.id, req.session.supportAgentId, expiresAt]
+    );
+
+    const appUrl = process.env.APP_URL ?? "https://certxa.com";
+    const link = `${appUrl}/api/auth/magic?token=${token}`;
     await logActivity(req.session.supportAgentId!, storeId, "magic_link_sent", req.session.supportAgentName!);
     res.json({ ok: true, link, expiresIn: "15 minutes" });
   } catch (e) {
@@ -3158,9 +3362,26 @@ router.post("/api/support/accounts/:id/magic-link", requireSupportAuth, async (r
 router.post("/api/support/accounts/:id/force-logout", requireSupportAuth, async (req: Request, res: Response) => {
   const storeId = paramInt(req.params.id);
   try {
+    const ownerR = await pool.query(
+      `SELECT u.id FROM users u JOIN locations l ON l.user_id = u.id WHERE l.id = $1 LIMIT 1`,
+      [storeId]
+    );
+    if (!ownerR.rows[0]) return res.status(404).json({ error: "Owner not found" });
+    const ownerId = ownerR.rows[0].id;
+
+    // express-session (connect-pg-simple) stores each session's data as a
+    // JSONB blob with the logged-in user's id at sess.userId — delete every
+    // row matching this owner to actually end their active sessions, rather
+    // than just recording that a logout "happened."
+    const deleted = await pool.query(
+      `DELETE FROM sessions WHERE sess->>'userId' = $1 RETURNING sid`,
+      [String(ownerId)]
+    );
+
     await logActivity(req.session.supportAgentId!, storeId, "force_logout", req.session.supportAgentName!);
-    res.json({ ok: true, message: "All sessions invalidated" });
+    res.json({ ok: true, sessionsInvalidated: deleted.rowCount ?? 0, message: `Invalidated ${deleted.rowCount ?? 0} active session(s)` });
   } catch (e) {
+    console.error("[force-logout]", e);
     res.status(500).json({ error: "Failed to force logout" });
   }
 });
@@ -3177,19 +3398,16 @@ router.post("/api/support/accounts/:id/send-email", requireSupportAuth, async (r
     );
     if (!ownerR.rows[0]) return res.status(404).json({ error: "Owner not found" });
     const owner = ownerR.rows[0];
-    try {
-      const { sendEmail } = await import("../lib/mail.js");
-      await (sendEmail as Function)({
-        to: owner.email,
-        subject,
-        html: `<p>Hi ${owner.first_name ?? "there"},</p><p>${message.replace(/\n/g, "<br>")}</p><p style="margin-top:16px;color:#6b7280;font-size:13px">— Certxa Support Team</p>`,
-        text: `Hi ${owner.first_name ?? "there"},\n\n${message}\n\n— Certxa Support Team`,
-      });
-    } catch (mailErr) {
-      console.warn("[send-email] Mail send failed (continuing):", (mailErr as any)?.message);
+    const { sendEmail } = await import("../mail.js");
+    const html = `<p>Hi ${owner.first_name ?? "there"},</p><p>${message.replace(/\n/g, "<br>")}</p><p style="margin-top:16px;color:#6b7280;font-size:13px">— Certxa Support Team</p>`;
+    const text = `Hi ${owner.first_name ?? "there"},\n\n${message}\n\n— Certxa Support Team`;
+    const mailResult = await sendEmail(storeId, owner.email, subject, html, text);
+    if (!mailResult.success) {
+      console.error("[send-email] Mail send failed:", mailResult.error);
+      return res.status(502).json({ error: mailResult.error ?? "Failed to send email" });
     }
     await logActivity(req.session.supportAgentId!, storeId, "support_email_sent", req.session.supportAgentName!);
-    res.json({ ok: true, email: owner.email, message: "Email queued for delivery" });
+    res.json({ ok: true, email: owner.email, message: "Email sent" });
   } catch (e) {
     console.error("[send-email]", e);
     res.status(500).json({ error: "Failed to send email" });

@@ -39,6 +39,20 @@ function TeamShell() {
 }
 
 function PrivateTeamRoute({ children }: { children: React.ReactNode }) {
+  const { agent, isLoading } = useSupportAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-100 text-slate-400 text-sm">
+        Loading…
+      </div>
+    );
+  }
+
+  if (!agent) {
+    return <Navigate to="/isTeam/login" replace />;
+  }
+
   return <>{children}</>;
 }
 

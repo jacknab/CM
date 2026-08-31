@@ -92,6 +92,19 @@ const TIMEZONE_LABELS: Record<string, string> = {
   "UTC":                   "UTC (Coordinated Universal Time)",
 };
 
+// United States timezones offered in the manual override dropdown.
+const US_TIMEZONES: { value: string; label: string }[] = [
+  { value: "America/New_York",    label: "Eastern Time (ET) — New York" },
+  { value: "America/Chicago",     label: "Central Time (CT) — Chicago" },
+  { value: "America/Denver",      label: "Mountain Time (MT) — Denver" },
+  { value: "America/Phoenix",     label: "Arizona — Mountain, no DST (Phoenix)" },
+  { value: "America/Los_Angeles", label: "Pacific Time (PT) — Los Angeles" },
+  { value: "America/Anchorage",   label: "Alaska Time (AKT) — Anchorage" },
+  { value: "America/Adak",        label: "Hawaii–Aleutian Time (with DST) — Adak" },
+  { value: "Pacific/Honolulu",    label: "Hawaii Time (HST), no DST — Honolulu" },
+  { value: "America/Puerto_Rico", label: "Atlantic Time (AST) — Puerto Rico" },
+];
+
 type DayHours = {
   dayOfWeek: number;
   openTime: string;
@@ -254,18 +267,51 @@ function getCurrentTimeInZone(tz: string): string {
 }
 
 function TimezoneCard({ store }: { store: Store }) {
-  const tz = store.timezone ?? "UTC";
-  const label = formatTimezoneLabel(tz);
-  const [currentTime, setCurrentTime] = useState(() => getCurrentTimeInZone(tz));
+  const { toast } = useToast();
+  const savedTz = store.timezone ?? "UTC";
+
+  // Local selection — starts from the saved value, re-syncs if the store reloads.
+  const [selectedTz, setSelectedTz] = useState(savedTz);
+  useEffect(() => { setSelectedTz(store.timezone ?? "UTC"); }, [store.timezone]);
+
+  const [currentTime, setCurrentTime] = useState(() => getCurrentTimeInZone(selectedTz));
 
   // Tick every 30 seconds so the displayed local time stays fresh
   useEffect(() => {
-    setCurrentTime(getCurrentTimeInZone(tz));
-    const id = setInterval(() => setCurrentTime(getCurrentTimeInZone(tz)), 30_000);
+    setCurrentTime(getCurrentTimeInZone(selectedTz));
+    const id = setInterval(() => setCurrentTime(getCurrentTimeInZone(selectedTz)), 30_000);
     return () => clearInterval(id);
-  }, [tz]);
+  }, [selectedTz]);
 
-  const hasAddress = !!(store.address || store.city || store.state);
+  const saveTimezone = useMutation({
+    mutationFn: async (timezone: string) => {
+      const res = await apiRequest("PATCH", `/api/stores/${store.id}`, { timezone });
+      return res.json();
+    },
+    onSuccess: () => {
+      // Refresh both the store list (drives `selectedStore` across the app) and
+      // this page's store query so every timezone-aware view updates.
+      queryClient.invalidateQueries({ queryKey: ["/api/stores"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stores", store.id] });
+      toast({ title: "Timezone updated", description: `Now using ${formatTimezoneLabel(selectedTz)}.` });
+    },
+    onError: () => {
+      setSelectedTz(savedTz);
+      toast({ title: "Error", description: "Failed to update timezone.", variant: "destructive" });
+    },
+  });
+
+  const isDirty = selectedTz !== savedTz;
+  // If the saved timezone isn't one of the US options, still show it as a choice.
+  const options = US_TIMEZONES.some(o => o.value === savedTz)
+    ? US_TIMEZONES
+    : [{ value: savedTz, label: formatTimezoneLabel(savedTz) }, ...US_TIMEZONES];
+
+  const selectStyle: React.CSSProperties = {
+    fontSize: ".9rem", fontWeight: 600, color: "#111827",
+    border: "1px solid #d1d5db", borderRadius: 8, padding: "7px 10px",
+    background: "#fff", cursor: "pointer", minWidth: 260, maxWidth: "100%",
+  };
 
   return (
     <div style={{
@@ -273,8 +319,8 @@ function TimezoneCard({ store }: { store: Store }) {
       padding: "16px 20px", boxShadow: "0 1px 3px 0 rgb(0 0 0/.04)",
     }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        {/* Left: icon + label + timezone value */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {/* Left: icon + label + timezone selector */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
           <div style={{
             width: 34, height: 34, borderRadius: 8, background: "#f0f9ff",
             display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
@@ -282,14 +328,37 @@ function TimezoneCard({ store }: { store: Store }) {
             <Globe style={{ width: 16, height: 16, color: "#0284c7" }} />
           </div>
           <div>
-            <div style={{ fontSize: ".78rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 1 }}>
+            <div style={{ fontSize: ".78rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 4 }}>
               Timezone
             </div>
-            <div style={{ fontSize: ".94rem", fontWeight: 700, color: "#111827" }}>
-              {label}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <select
+                value={selectedTz}
+                onChange={e => setSelectedTz(e.target.value)}
+                style={selectStyle}
+                data-testid="select-timezone"
+                aria-label="Business timezone"
+              >
+                {options.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              {isDirty && (
+                <Button
+                  size="sm"
+                  onClick={() => saveTimezone.mutate(selectedTz)}
+                  disabled={saveTimezone.isPending}
+                  style={{ background: "#0f172a", color: "#fff", fontSize: ".78rem", height: 34 }}
+                  data-testid="button-save-timezone"
+                >
+                  <Save style={{ width: 13, height: 13, marginRight: 5 }} />
+                  {saveTimezone.isPending ? "Saving…" : "Save"}
+                </Button>
+              )}
             </div>
-            <div style={{ fontSize: ".75rem", color: "#6b7280", marginTop: 1 }}>
-              {tz}{currentTime ? ` · Currently ${currentTime}` : ""}
+            <div style={{ fontSize: ".75rem", color: "#6b7280", marginTop: 4 }}>
+              {selectedTz}{currentTime ? ` · Currently ${currentTime}` : ""}
+              {isDirty ? " · not saved yet" : ""}
             </div>
           </div>
         </div>
@@ -297,12 +366,12 @@ function TimezoneCard({ store }: { store: Store }) {
         {/* Right: badge */}
         <div style={{
           display: "flex", alignItems: "center", gap: 6,
-          background: "#f0fdf4", border: "1px solid #bbf7d0",
+          background: "#eff6ff", border: "1px solid #bfdbfe",
           borderRadius: 20, padding: "4px 10px", flexShrink: 0,
         }}>
-          <MapPin style={{ width: 12, height: 12, color: "#16a34a" }} />
-          <span style={{ fontSize: ".72rem", fontWeight: 600, color: "#15803d" }}>
-            Auto-detected
+          <MapPin style={{ width: 12, height: 12, color: "#2563eb" }} />
+          <span style={{ fontSize: ".72rem", fontWeight: 600, color: "#1d4ed8" }}>
+            Manual override
           </span>
         </div>
       </div>
@@ -314,22 +383,12 @@ function TimezoneCard({ store }: { store: Store }) {
         display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
       }}>
         <span>
-          Timezone is automatically determined from your business address. All hours and appointments use this timezone.
+          Pick the timezone your salon operates in. All business hours and appointment
+          times use this setting. Changing your business address may re-detect it.
         </span>
-        {!hasAddress && (
-          <span style={{ color: "#f59e0b", fontWeight: 500 }}>
-            No address on file — set your business address in{" "}
-            <Link to="/settings" style={{ color: "#0284c7", textDecoration: "underline" }}>
-              Business Settings
-            </Link>{" "}
-            to auto-detect the correct timezone.
-          </span>
-        )}
-        {hasAddress && (
-          <Link to="/settings" style={{ color: "#0284c7", textDecoration: "underline", whiteSpace: "nowrap" }}>
-            Update address in Business Settings
-          </Link>
-        )}
+        <Link to="/settings" style={{ color: "#0284c7", textDecoration: "underline", whiteSpace: "nowrap" }}>
+          Business Settings
+        </Link>
       </div>
     </div>
   );

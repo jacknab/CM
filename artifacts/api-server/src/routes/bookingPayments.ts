@@ -14,11 +14,13 @@
 import { Router } from "express";
 import Stripe from "stripe";
 import { db, pool } from "../db";
-import { locations, appointments } from "@shared/schema";
+import { locations, appointments, services } from "@shared/schema";
 import { clients } from "@shared/schema/clients";
 import { eq, and } from "drizzle-orm";
 import { isAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
+import { getBookingPaymentToken, markBookingPaymentTokenUsed } from "../lib/bookingPaymentLinks";
+import { broadcastSyncEvent } from "../notifications";
 
 // ─── Platform Stripe singleton ────────────────────────────────────────────────
 let _stripe: Stripe | null = null;
@@ -286,6 +288,260 @@ publicBookingPaymentRouter.post("/booking-payment-intent", async (req, res) => {
   } catch (err: any) {
     console.error("[bookingPayments/payment-intent]", err?.message);
     return res.status(500).json({ error: err?.message ?? "Failed to create payment intent" });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PAYMENT-LINK ROUTES — AI receptionist "complete your booking" SMS flow
+// ═══════════════════════════════════════════════════════════════════════════════
+// Unlike the routes above (payment collected BEFORE the appointment exists,
+// in the same browser session as the booking form), these operate on an
+// appointment that already exists as a hidden, payment-pending hold — the
+// token identifies which one. See lib/bookingPaymentLinks.ts and
+// aiReceptionist.ts's createBookingViaBookingRules for how the hold and
+// token get created, and services/booking-hold-scheduler.ts for the
+// 20-min-resend / 60-min-expire lifecycle around it.
+
+function isTokenUsable(tokenRow: { usedAt: Date | null; expiresAt: Date }): { ok: true } | { ok: false; status: number; error: string } {
+  if (tokenRow.usedAt) return { ok: false, status: 410, error: "This link has already been used." };
+  if (tokenRow.expiresAt.getTime() <= Date.now()) return { ok: false, status: 410, error: "This link has expired — please call the salon to rebook." };
+  return { ok: true };
+}
+
+/**
+ * POST /api/public/booking-payment-link/validate
+ * Body: { token }
+ * Returns what the page needs to render: what's required, the deposit
+ * amount (if any), and store/service/time context for display.
+ */
+publicBookingPaymentRouter.post("/booking-payment-link/validate", async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token || typeof token !== "string") return res.status(400).json({ error: "token required" });
+
+    const tokenRow = await getBookingPaymentToken(token);
+    if (!tokenRow) return res.status(404).json({ error: "Invalid link" });
+    const usable = isTokenUsable(tokenRow);
+    if (!usable.ok) return res.status(usable.status).json({ error: usable.error });
+
+    const [appt] = await db
+      .select({ date: appointments.date, duration: appointments.duration, serviceId: appointments.serviceId })
+      .from(appointments)
+      .where(eq(appointments.id, tokenRow.appointmentId))
+      .limit(1);
+    if (!appt) return res.status(404).json({ error: "Appointment not found" });
+
+    const [service] = appt.serviceId
+      ? await db.select({ name: services.name }).from(services).where(eq(services.id, appt.serviceId)).limit(1)
+      : [undefined];
+    const [store] = await db
+      .select({ name: locations.name, timezone: locations.timezone })
+      .from(locations)
+      .where(eq(locations.id, tokenRow.storeId))
+      .limit(1);
+
+    const connectedAccountId = await getConnectedAccountId(tokenRow.storeId);
+    const stripeEnabled = !!connectedAccountId && !!process.env.STRIPE_SECRET_KEY;
+    if (!stripeEnabled) {
+      return res.status(400).json({ error: "This salon's payment setup is temporarily unavailable — please call to confirm your booking." });
+    }
+
+    return res.json({
+      requirement: tokenRow.requirement,
+      depositAmountCents: tokenRow.depositAmountCents,
+      storeName: store?.name ?? "",
+      serviceName: service?.name ?? "",
+      appointmentDate: appt.date,
+      duration: appt.duration,
+      timezone: store?.timezone ?? "UTC",
+      stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? null,
+      stripeConnectedAccountId: connectedAccountId,
+    });
+  } catch (err: any) {
+    console.error("[bookingPayments/payment-link/validate]", err?.message);
+    return res.status(500).json({ error: "Failed to validate link" });
+  }
+});
+
+/**
+ * POST /api/public/booking-payment-link/setup-intent
+ * Body: { token } — creates a Stripe Setup Intent for the card-on-file requirement.
+ */
+publicBookingPaymentRouter.post("/booking-payment-link/setup-intent", async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token || typeof token !== "string") return res.status(400).json({ error: "token required" });
+
+    const tokenRow = await getBookingPaymentToken(token);
+    if (!tokenRow) return res.status(404).json({ error: "Invalid link" });
+    const usable = isTokenUsable(tokenRow);
+    if (!usable.ok) return res.status(usable.status).json({ error: usable.error });
+    if (tokenRow.requirement !== "card_on_file") {
+      return res.status(400).json({ error: "This booking does not require card on file" });
+    }
+    if (!tokenRow.customerId) return res.status(400).json({ error: "No client on this booking" });
+
+    const connectedAccountId = await getConnectedAccountId(tokenRow.storeId);
+    if (!connectedAccountId) return res.status(400).json({ error: "Store has no connected Stripe account" });
+
+    const stripe = getPlatformStripe();
+    const [cl] = await db.select({ fullName: clients.fullName }).from(clients).where(eq(clients.id, tokenRow.customerId)).limit(1);
+    const { customerId: stripeCustomerId } = await ensureStripeCustomer(
+      stripe, connectedAccountId, tokenRow.customerId, cl?.fullName || "Guest", undefined, tokenRow.customerPhone ?? undefined
+    );
+
+    const setupIntent = await stripe.setupIntents.create(
+      {
+        customer: stripeCustomerId,
+        payment_method_types: ["card"],
+        usage: "off_session",
+        metadata: { certxa_store_id: String(tokenRow.storeId), certxa_appointment_id: String(tokenRow.appointmentId) },
+      },
+      { stripeAccount: connectedAccountId }
+    );
+
+    return res.json({ clientSecret: setupIntent.client_secret, setupIntentId: setupIntent.id, stripeCustomerId });
+  } catch (err: any) {
+    console.error("[bookingPayments/payment-link/setup-intent]", err?.message);
+    return res.status(500).json({ error: err?.message ?? "Failed to create setup intent" });
+  }
+});
+
+/**
+ * POST /api/public/booking-payment-link/payment-intent
+ * Body: { token } — creates a Stripe Payment Intent for the deposit amount
+ * snapshotted on the token at hold-creation time (never recomputed here).
+ */
+publicBookingPaymentRouter.post("/booking-payment-link/payment-intent", async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token || typeof token !== "string") return res.status(400).json({ error: "token required" });
+
+    const tokenRow = await getBookingPaymentToken(token);
+    if (!tokenRow) return res.status(404).json({ error: "Invalid link" });
+    const usable = isTokenUsable(tokenRow);
+    if (!usable.ok) return res.status(usable.status).json({ error: usable.error });
+    if (tokenRow.requirement !== "deposit" || !tokenRow.depositAmountCents) {
+      return res.status(400).json({ error: "This booking does not require a deposit" });
+    }
+    if (!tokenRow.customerId) return res.status(400).json({ error: "No client on this booking" });
+
+    const connectedAccountId = await getConnectedAccountId(tokenRow.storeId);
+    if (!connectedAccountId) return res.status(400).json({ error: "Store has no connected Stripe account" });
+
+    const stripe = getPlatformStripe();
+    const [cl] = await db.select({ fullName: clients.fullName }).from(clients).where(eq(clients.id, tokenRow.customerId)).limit(1);
+    const { customerId: stripeCustomerId } = await ensureStripeCustomer(
+      stripe, connectedAccountId, tokenRow.customerId, cl?.fullName || "Guest", undefined, tokenRow.customerPhone ?? undefined
+    );
+
+    const paymentIntent = await stripe.paymentIntents.create(
+      {
+        amount: tokenRow.depositAmountCents,
+        currency: "usd",
+        customer: stripeCustomerId,
+        payment_method_types: ["card"],
+        capture_method: "automatic",
+        metadata: {
+          certxa_store_id: String(tokenRow.storeId),
+          certxa_appointment_id: String(tokenRow.appointmentId),
+          certxa_deposit_cents: String(tokenRow.depositAmountCents),
+        },
+      },
+      { stripeAccount: connectedAccountId }
+    );
+
+    return res.json({
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id,
+      stripeCustomerId,
+      depositCents: tokenRow.depositAmountCents,
+    });
+  } catch (err: any) {
+    console.error("[bookingPayments/payment-link/payment-intent]", err?.message);
+    return res.status(500).json({ error: err?.message ?? "Failed to create payment intent" });
+  }
+});
+
+/**
+ * POST /api/public/booking-payment-link/complete
+ * Body: { token, stripeSetupIntentId? | stripePaymentIntentId? }
+ * Authoritatively verifies the Stripe intent, unhides the appointment, and
+ * marks the token used — this is what makes the booking show up on the
+ * Calendar for the first time.
+ */
+publicBookingPaymentRouter.post("/booking-payment-link/complete", async (req, res) => {
+  try {
+    const { token, stripeSetupIntentId, stripePaymentIntentId } = req.body;
+    if (!token || typeof token !== "string") return res.status(400).json({ error: "token required" });
+
+    const tokenRow = await getBookingPaymentToken(token);
+    if (!tokenRow) return res.status(404).json({ error: "Invalid link" });
+    const usable = isTokenUsable(tokenRow);
+    if (!usable.ok) return res.status(usable.status).json({ error: usable.error });
+
+    const [appt] = await db
+      .select({ serviceId: appointments.serviceId })
+      .from(appointments)
+      .where(eq(appointments.id, tokenRow.appointmentId))
+      .limit(1);
+    let serviceTotalCents = 0;
+    if (appt?.serviceId) {
+      const [svc] = await db.select({ price: services.price }).from(services).where(eq(services.id, appt.serviceId)).limit(1);
+      if (svc) serviceTotalCents = Math.round(Number(svc.price) * 100);
+    }
+
+    const verified = await verifyStripeIntentForBooking({
+      storeId: tokenRow.storeId,
+      paymentPolicy: tokenRow.requirement,
+      stripeSetupIntentId,
+      stripePaymentIntentId,
+      expectedDepositCents: tokenRow.depositAmountCents ?? undefined,
+      authorizedServiceTotalCents: serviceTotalCents,
+    });
+
+    await pool.query(
+      `UPDATE appointments SET
+        calendar_hidden            = FALSE,
+        payment_policy             = $1,
+        payment_status             = $2,
+        stripe_payment_intent_id   = $3,
+        stripe_setup_intent_id     = $4,
+        stripe_customer_id         = $5,
+        stripe_payment_method_id   = $6,
+        deposit_collected          = $7,
+        remaining_balance          = $8
+       WHERE id = $9`,
+      [
+        tokenRow.requirement,
+        verified.paymentStatus,
+        verified.stripePaymentIntentId,
+        verified.stripeSetupIntentId,
+        verified.stripeCustomerId,
+        verified.stripePaymentMethodId,
+        verified.depositCollected,
+        verified.remainingBalance,
+        tokenRow.appointmentId,
+      ]
+    );
+
+    if (verified.stripeCustomerId && tokenRow.customerId) {
+      await pool.query(`UPDATE clients SET stripe_customer_id = $1 WHERE id = $2`, [verified.stripeCustomerId, tokenRow.customerId]);
+    }
+
+    await markBookingPaymentTokenUsed(tokenRow.id);
+
+    broadcastSyncEvent({
+      type: "booking_updated",
+      storeId: tokenRow.storeId,
+      appointmentId: tokenRow.appointmentId,
+      changes: ["calendarHidden", "paymentStatus"],
+    });
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("[bookingPayments/payment-link/complete]", err?.message);
+    return res.status(400).json({ error: err?.message ?? "Failed to complete booking" });
   }
 });
 

@@ -199,7 +199,7 @@ export function CategoryManager() {
   };
 
   const filteredCategories = categories
-    .filter((cat: any) => cat.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    .filter((cat: any) => (cat.displayName || cat.name).toLowerCase().includes(searchQuery.toLowerCase()))
     .sort((a: any, b: any) => {
       if (!categoryOrder) return 0;
       const idxA = categoryOrder.indexOf(a.name);
@@ -386,14 +386,14 @@ export function CategoryManager() {
                       {/* Image cell */}
                       <TableCell>
                         {cat.imageUrl && (
-                          <img src={cat.imageUrl} alt={cat.name} className="w-10 h-10 border rounded object-cover" />
+                          <img src={cat.imageUrl} alt={cat.displayName || cat.name} className="w-10 h-10 border rounded object-cover" />
                         )}
                       </TableCell>
                       {/* Name cell */}
                       <TableCell className="font-medium" data-testid={`text-category-name-${cat.id}`}>
                         <div className="flex items-center gap-2">
                           {cat.hiddenFromPublic && <EyeOff className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
-                          {cat.name}
+                          {cat.displayName || cat.name}
                         </div>
                       </TableCell>
                       {/* Colour swatch cell */}

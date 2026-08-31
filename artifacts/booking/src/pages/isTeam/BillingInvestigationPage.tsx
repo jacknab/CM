@@ -131,6 +131,102 @@ function ApplyCreditModal({ accountId, onClose, onSuccess }: { accountId: string
   );
 }
 
+function RefundModal({ accountId, payments, onClose, onSuccess }: {
+  accountId: string; payments: any[]; onClose: () => void; onSuccess: () => void;
+}) {
+  // Refundable = actually succeeded and not already fully refunded on our side.
+  const refundable = payments.filter((p: any) =>
+    p.status === "succeeded" && Number(p.amount_cents || 0) > Number(p.refund_amount_cents || 0)
+  );
+
+  const [paymentId, setPaymentId] = useState(refundable[0]?.id ? String(refundable[0].id) : "");
+  const selected = refundable.find((p: any) => String(p.id) === paymentId);
+  const remainingCents = selected ? Number(selected.amount_cents || 0) - Number(selected.refund_amount_cents || 0) : 0;
+
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState<"requested_by_customer" | "duplicate" | "fraudulent">("requested_by_customer");
+  const [notes, setNotes] = useState("");
+
+  const mut = useMutation({
+    mutationFn: () => apiFetch(`/billing/${accountId}/refund`, {
+      method: "POST",
+      body: JSON.stringify({
+        paymentTransactionId: selected!.id,
+        amountCents: Math.round(parseFloat(amount) * 100),
+        reason,
+        notes,
+      }),
+    }),
+    onSuccess: () => { onSuccess(); onClose(); },
+  });
+
+  const amountCents = Math.round((parseFloat(amount) || 0) * 100);
+  const canSubmit = !!selected && amountCents > 0 && amountCents <= remainingCents;
+
+  return (
+    <Modal title="Issue Refund" onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-xs text-slate-500">
+          Refunds are issued directly on Certxa's Stripe account for the subscription payment the client made to Certxa.
+        </p>
+
+        {refundable.length === 0 ? (
+          <p className="text-sm text-slate-500">No refundable payments found for this account.</p>
+        ) : (
+          <>
+            <div>
+              <label className="text-xs font-medium text-slate-700 block mb-1">Payment to refund</label>
+              <select value={paymentId} onChange={e => { setPaymentId(e.target.value); setAmount(""); }}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                {refundable.map((p: any) => (
+                  <option key={p.id} value={p.id}>
+                    {fmtDate(p.created_at)} — {fmt(Number(p.amount_cents || 0))}
+                    {p.payment_method_last4 ? ` — ****${p.payment_method_last4}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {selected && (
+              <p className="text-xs text-slate-500">Refundable up to {fmt(remainingCents)} on this payment.</p>
+            )}
+            <div>
+              <label className="text-xs font-medium text-slate-700 block mb-1">Amount ($)</label>
+              <input value={amount} onChange={e => setAmount(e.target.value)} type="number" min="0.01"
+                max={remainingCents / 100} step="0.01"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder={selected ? (remainingCents / 100).toFixed(2) : "0.00"} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-700 block mb-1">Reason (sent to Stripe)</label>
+              <select value={reason} onChange={e => setReason(e.target.value as typeof reason)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="requested_by_customer">Requested by customer</option>
+                <option value="duplicate">Duplicate charge</option>
+                <option value="fraudulent">Fraudulent</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-700 block mb-1">Internal notes (optional)</label>
+              <input value={notes} onChange={e => setNotes(e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="Context for other agents — not shown to the customer" />
+            </div>
+          </>
+        )}
+
+        {mut.isError && <p className="text-xs text-red-600">{String(mut.error)}</p>}
+        <div className="flex gap-2 justify-end pt-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition">Cancel</button>
+          <button onClick={() => mut.mutate()} disabled={!canSubmit || mut.isPending}
+            className="px-4 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition">
+            {mut.isPending ? "Refunding…" : "Issue Refund"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function AddNoteModal({ accountId, onClose, onSuccess }: { accountId: string; onClose: () => void; onSuccess: () => void }) {
   const [content, setContent] = useState("");
   const mut = useMutation({
@@ -288,11 +384,11 @@ function BillingListView() {
     queryKey: ["billing-search", search, filter],
     queryFn: () => {
       const params = new URLSearchParams();
-      if (search) params.set("search", search);
+      if (search) params.set("q", search);
       if (filter === "past_due") params.set("status", "past_due");
       if (filter === "failed") params.set("failedOnly", "true");
       if (filter === "suspended") params.set("status", "suspended");
-      return apiFetch(`/billing?${params}`);
+      return apiFetch(`/billing-search?${params}`);
     },
     staleTime: 30_000,
   });
@@ -917,15 +1013,7 @@ function DetailView({ accountId }: { accountId: string }) {
         />
       )}
       {modal === "refund" && (
-        <Modal title="Issue Refund" onClose={() => setModal(null)}>
-          <p className="text-sm text-slate-600 mb-4">To process a refund, open the client's Stripe dashboard and initiate the refund directly from there to ensure it's properly recorded.</p>
-          <div className="flex gap-2 justify-end">
-            <button onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition">Close</button>
-            <button className="flex items-center gap-1.5 px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
-              <ExternalLink size={12} />Open Stripe
-            </button>
-          </div>
-        </Modal>
+        <RefundModal accountId={accountId} payments={data.payments} onClose={() => setModal(null)} onSuccess={refetch} />
       )}
     </div>
   );

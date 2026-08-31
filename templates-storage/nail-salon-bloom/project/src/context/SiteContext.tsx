@@ -96,6 +96,10 @@ const SiteContext = createContext<SiteContextValue | null>(null);
 
 export function SiteProvider({ children }: { children: ReactNode }) {
   const { data, loading, blocked } = useSiteData();
+  // A live tenant must never fall back to Bloom's demo catalog while its API
+  // request is loading or when the store has deliberately configured zero
+  // services. Static content remains available for template previews.
+  const isLiveTenant = typeof window !== 'undefined' && Boolean(window.__CERTXA_SLUG__);
 
   const value = useMemo<SiteContextValue>(() => {
     if (!data) {
@@ -109,7 +113,7 @@ export function SiteProvider({ children }: { children: ReactNode }) {
         address: staticSalon.address,
         city: staticSalon.city,
         hours: staticSalon.hours,
-        services: staticServices.map((s) => ({
+        services: (isLiveTenant ? [] : staticServices).map((s) => ({
           id: s.id,
           name: s.name,
           description: s.description,
@@ -119,7 +123,7 @@ export function SiteProvider({ children }: { children: ReactNode }) {
           popular: s.popular,
           imageUrl: null,
         })),
-        categories: [...staticCategories],
+        categories: isLiveTenant ? [] : [...staticCategories],
         team: staticTeam.map((m) => ({
           name: m.name,
           role: m.role,
@@ -223,8 +227,10 @@ export function SiteProvider({ children }: { children: ReactNode }) {
       address: biz?.address ?? staticSalon.address,
       city: [biz?.city, biz?.state, biz?.postcode].filter(Boolean).join(', ') || staticSalon.city,
       hours,
-      services: liveServices.length > 0 ? liveServices : (staticServices as LiveService[]),
-      categories: liveCategories.length > 0 ? liveCategories : [...staticCategories],
+      // The tenant API is authoritative. An empty service array means the
+      // owner has no services and must render an empty section—not demo data.
+      services: liveServices,
+      categories: liveCategories,
       team: liveTeam.length > 0 ? liveTeam : staticTeam,
       galleryPhotos: data.galleryPhotos ?? [],
       testimonials: liveTestimonials.length > 0 ? liveTestimonials : staticTestimonials,
@@ -236,7 +242,7 @@ export function SiteProvider({ children }: { children: ReactNode }) {
       blocked,
       serviceReviews: (data.serviceReviews ?? {}) as Record<string | number, ServiceReviewEntry>,
     };
-  }, [data, loading, blocked]);
+  }, [data, loading, blocked, isLiveTenant]);
 
   return <SiteContext.Provider value={value}>{children}</SiteContext.Provider>;
 }

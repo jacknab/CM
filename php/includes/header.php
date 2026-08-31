@@ -2,8 +2,9 @@
 // ── Site-wide defaults ─────────────────────────────────
 defined('BRAND_NAME')    or define('BRAND_NAME',   'Certxa');
 defined('SITE_URL')      or define('SITE_URL',      'https://certxa.com');
-defined('PAGE_TITLE')    or define('PAGE_TITLE',    'Certxa — #1 Nail Salon Software | Online Booking, Kiosk Check-In & POS');
-defined('PAGE_DESC')     or define('PAGE_DESC',     'Certxa is the all-in-one nail salon software trusted by thousands of nail technicians and studio owners. Online booking, self-service walk-in kiosk, client management, POS, waitlist & AI receptionist. Free ' . TRIAL_DAYS . '-day trial.');
+defined('PAGE_LANG')     or define('PAGE_LANG',      'en');
+defined('PAGE_TITLE')    or define('PAGE_TITLE',    'Certxa — Nail Salon Software | Online Booking, Kiosk Check-In & POS');
+defined('PAGE_DESC')     or define('PAGE_DESC',     'Certxa is all-in-one nail salon software for nail technicians and studio owners. Online booking, self-service walk-in kiosk, client management, POS, waitlist & AI receptionist. Free ' . TRIAL_DAYS . '-day trial.');
 defined('PAGE_KEYWORDS') or define('PAGE_KEYWORDS', 'nail salon software, nail salon booking software, nail studio management software, nail salon scheduling app, nail salon POS system, nail technician software, gel nail salon software, acrylic nail salon software, nail salon check-in kiosk');
 defined('PAGE_OG_IMAGE') or define('PAGE_OG_IMAGE', SITE_URL . '/assets/images/og-image.jpg');
 
@@ -55,24 +56,91 @@ $_base_schema = [
     '@id'   => SITE_URL . '/#organization',
     'name'  => BRAND_NAME,
     'url'   => SITE_URL,
+    'description' => 'Certxa is all-in-one salon and nail studio management software with online booking, point of sale, payments, staff management, payroll, and an AI receptionist.',
+    'foundingDate' => '2026-02-01',
+    'founder' => ['@id' => SITE_URL . '/#founder-tom-tham'],
+    'address' => [
+      '@type'           => 'PostalAddress',
+      'addressLocality' => 'Phoenix',
+      'addressRegion'   => 'AZ',
+      'addressCountry'  => 'US',
+    ],
     'logo'  => [
       '@type'  => 'ImageObject',
       'url'    => SITE_URL . '/assets/images/logo.png',
-      'width'  => 200,
-      'height' => 60,
+      'width'  => 512,
+      'height' => 512,
     ],
-    'sameAs' => [
-      'https://twitter.com/certxa',
-      'https://facebook.com/certxa',
-      'https://instagram.com/certxa',
-      'https://linkedin.com/company/certxa',
-    ],
+    // No sameAs entries — Facebook, Instagram, LinkedIn, and Twitter/X
+    // profiles don't exist yet. Add real URLs here once each is created;
+    // asserting profiles that don't exist is worse than omitting sameAs.
     'contactPoint' => [
       '@type'            => 'ContactPoint',
       'contactType'      => 'customer support',
       'email'            => 'support@certxa.com',
+      'telephone'        => '+1-800-278-4392',
+      'hoursAvailable'   => 'Mo-Fr 09:00-18:00',
       'availableLanguage'=> 'English',
     ],
+    'knowsAbout' => [
+      'Salon management software',
+      'Nail salon software',
+      'Online appointment booking',
+      'Salon point of sale (POS)',
+      'Staff and payroll management',
+      'AI receptionist for salons',
+    ],
+  ],
+  [
+    '@type'    => 'Person',
+    '@id'      => SITE_URL . '/#founder-tom-tham',
+    'name'     => 'Tom Tham',
+    'jobTitle' => 'Founder',
+    'worksFor' => ['@id' => SITE_URL . '/#organization'],
+    'knowsAbout' => ['Nail salon management', 'Salon software', 'Vietnamese-owned nail salon industry'],
+  ],
+  // Canonical product entity — injected site-wide under a single @id so AI
+  // models and Google's entity resolution see one "Certxa" product, not a
+  // different fragment per page. Individual pages should NOT define their
+  // own competing SoftwareApplication node; if a page needs to reference
+  // the product, use ['@id' => SITE_URL . '/#software'] in an 'about' field.
+  [
+    '@type'                   => 'SoftwareApplication',
+    '@id'                     => SITE_URL . '/#software',
+    'name'                    => BRAND_NAME,
+    'applicationCategory'     => 'BusinessApplication',
+    'applicationSubCategory'  => 'SalonManagementSoftware',
+    'operatingSystem'         => 'Web, iOS, Android',
+    'url'                     => SITE_URL,
+    'description'             => 'Certxa is the all-in-one nail salon software built for nail technicians and studio owners. Features include 24/7 online booking, self-service walk-in check-in kiosk, multi-tech calendar management, client nail records with product notes, automated SMS and email reminders, a POS system, waitlist management, Autumn AI receptionist, Google Reviews integration, and a branded website builder.',
+    'softwareVersion'         => '2.0',
+    'offers' => [
+      '@type'      => 'AggregateOffer',
+      'priceCurrency' => 'USD',
+      'lowPrice'   => '9',
+      'highPrice'  => '49',
+      'offerCount' => '3',
+      'offers' => [
+        ['@type' => 'Offer', 'name' => 'Solo Plan',         'price' => '9',  'priceCurrency' => 'USD', 'billingIncrement' => 'P1M', 'url' => SITE_URL . '/pricing'],
+        ['@type' => 'Offer', 'name' => 'Professional Plan', 'price' => '22', 'priceCurrency' => 'USD', 'billingIncrement' => 'P1M', 'url' => SITE_URL . '/pricing'],
+        ['@type' => 'Offer', 'name' => 'Elite Plan',        'price' => '49', 'priceCurrency' => 'USD', 'billingIncrement' => 'P1M', 'url' => SITE_URL . '/pricing'],
+      ],
+    ],
+    'featureList' => [
+      '24/7 online booking with real-time availability',
+      'Multi-staff calendar management with day view',
+      'Automated SMS and email appointment reminders',
+      'Client management CRM with full appointment history',
+      'Integrated card payment processing',
+      'Salon point of sale (POS) system with card reader',
+      'Gift cards and membership management',
+      'Google Reviews automation',
+      'Google Business Profile booking link sync',
+      'Custom branded website builder',
+      'Business analytics and reporting dashboard',
+      'No-show deposit protection',
+    ],
+    'publisher' => ['@id' => SITE_URL . '/#organization'],
   ],
 ];
 
@@ -102,7 +170,7 @@ $_schema_output = json_encode(['@context' => 'https://schema.org', '@graph' => $
   JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
 ?>
 <!DOCTYPE html>
-<html lang="en" prefix="og: https://ogp.me/ns#">
+<html lang="<?= htmlspecialchars(PAGE_LANG) ?>" prefix="og: https://ogp.me/ns#">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -119,7 +187,21 @@ $_schema_output = json_encode(['@context' => 'https://schema.org', '@graph' => $
   <meta name="author"      content="<?= BRAND_NAME ?>">
   <meta name="robots"      content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
   <link rel="canonical"    href="<?= htmlspecialchars(PAGE_CANONICAL) ?>">
-
+<?php
+  // ── hreflang alternates ──────────────────────
+  // A page declares PAGE_ALTERNATES as a JSON array of
+  //   [ ['hreflang' => 'en', 'href' => 'https://…'], … ]
+  // Include an 'x-default' entry. Every URL in the set should point back at the
+  // same set (reciprocal) or Google ignores it.
+  if (defined('PAGE_ALTERNATES')) {
+    foreach ((json_decode(PAGE_ALTERNATES, true) ?: []) as $_alt) {
+      if (!empty($_alt['hreflang']) && !empty($_alt['href'])) {
+        echo '  <link rel="alternate" hreflang="' . htmlspecialchars($_alt['hreflang'])
+           . '" href="' . htmlspecialchars($_alt['href']) . '">' . "\n";
+      }
+    }
+  }
+?>
   <!-- ── Open Graph ────────────────────────────── -->
   <meta property="og:type"        content="<?= PAGE_OG_TYPE ?>">
   <meta property="og:site_name"   content="<?= BRAND_NAME ?>">

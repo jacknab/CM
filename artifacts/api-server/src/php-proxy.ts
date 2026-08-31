@@ -4,6 +4,7 @@ import net from "net";
 import path from "path";
 import fs from "fs";
 import type { Request, Response, NextFunction } from "express";
+import { IS_SCHEDULER_INSTANCE } from "./lib/clusterInfo";
 
 // esbuild injects __dirname into CJS bundles pointing to dist/.
 // In ESM dev (tsx), it is undefined — process.cwd() is the project root instead.
@@ -162,54 +163,66 @@ function evictStalePhpProcess(): void {
 }
 
 export function startPhpServer(): void {
-  // Clear any orphaned PHP process from a previous hard-kill before binding the port
-  evictStalePhpProcess();
+  // In PM2 cluster mode every worker shares the same PORT env var, so
+  // resolvePhpPort() (derived from PORT) resolves to the same port on every
+  // worker too — spawning a PHP server in each one fails with "Address
+  // already in use" on every worker after the first. Only one worker (the
+  // same one that owns the interval schedulers, see clusterInfo.ts) actually
+  // spawns it; every worker (including this one) still proxies PHP routes to
+  // that same shared port, and still waits for it to come up below.
+  if (IS_SCHEDULER_INSTANCE) {
+    // Clear any orphaned PHP process from a previous hard-kill before binding the port
+    evictStalePhpProcess();
 
-  const phpBin = findPhpBin();
-  const phpArgs = [
-    "-d", "upload_max_filesize=55M",
-    "-d", "post_max_size=60M",
-    "-d", "memory_limit=256M",
-    "-d", "output_buffering=Off",
-    "-S", `${PHP_HOST}:${PHP_PORT}`,
-    "router.php",
-  ];
-  // Use shell:true so the binary is resolved via sh, which has the full Nix PATH
-  phpProcess = spawn(phpBin, phpArgs, {
-    cwd: phpDir,
-    stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env },
-    shell: false,
-  });
+    const phpBin = findPhpBin();
+    const phpArgs = [
+      "-d", "upload_max_filesize=55M",
+      "-d", "post_max_size=60M",
+      "-d", "memory_limit=256M",
+      "-d", "output_buffering=Off",
+      "-S", `${PHP_HOST}:${PHP_PORT}`,
+      "router.php",
+    ];
+    // Use shell:true so the binary is resolved via sh, which has the full Nix PATH
+    phpProcess = spawn(phpBin, phpArgs, {
+      cwd: phpDir,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env },
+      shell: false,
+    });
 
-  phpProcess.stdout?.on("data", (data: Buffer) => {
-    const msg = data.toString().trim();
-    if (!msg) return;
-    if (shouldSuppressPhpStdout(msg)) return;
-    console.log(`[PHP] ${msg}`);
-  });
+    phpProcess.stdout?.on("data", (data: Buffer) => {
+      const msg = data.toString().trim();
+      if (!msg) return;
+      if (shouldSuppressPhpStdout(msg)) return;
+      console.log(`[PHP] ${msg}`);
+    });
 
-  phpProcess.stderr?.on("data", (data: Buffer) => {
-    const msg = data.toString().trim();
-    if (!msg) return;
-    if (shouldSuppressPhpStdout(msg)) return;
-    if (!msg.includes("Development Server")) {
-      console.error(`[PHP] ${msg}`);
-    }
-  });
+    phpProcess.stderr?.on("data", (data: Buffer) => {
+      const msg = data.toString().trim();
+      if (!msg) return;
+      if (shouldSuppressPhpStdout(msg)) return;
+      if (!msg.includes("Development Server")) {
+        console.error(`[PHP] ${msg}`);
+      }
+    });
 
-  phpProcess.on("error", (err) => {
-    console.error("[PHP] Failed to start server:", err.message);
-  });
+    phpProcess.on("error", (err) => {
+      console.error("[PHP] Failed to start server:", err.message);
+    });
 
-  phpProcess.on("exit", (code, signal) => {
-    phpReady = false;
-    if (signal !== "SIGTERM" && signal !== "SIGKILL") {
-      console.warn(`[PHP] Server exited (code=${code}, signal=${signal})`);
-    }
-  });
+    phpProcess.on("exit", (code, signal) => {
+      phpReady = false;
+      if (signal !== "SIGTERM" && signal !== "SIGKILL") {
+        console.warn(`[PHP] Server exited (code=${code}, signal=${signal})`);
+      }
+    });
 
-  console.log(`[PHP] Starting on port ${PHP_PORT}`);
+    console.log(`[PHP] Starting on port ${PHP_PORT}`);
+  } else {
+    console.log(`[PHP] Not this worker's job to spawn — waiting for port ${PHP_PORT} (owned by another instance)`);
+  }
+
   phpReadyPromise = waitForPhpReady().catch((err) => {
     console.error("[PHP] Readiness check failed:", err.message);
   });

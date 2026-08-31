@@ -144,7 +144,9 @@ export default function TeamCustomer360Page() {
 
         <div className="flex gap-0 -mb-px overflow-x-auto scrollbar-thin">
           {TABS.map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab)}
+            <button
+              key={tab}
+              onClick={() => tab === "Billing" ? navigate(`/isTeam/billing-investigation/${accountId}`) : setActiveTab(tab)}
               className={`px-4 py-2.5 text-xs font-medium border-b-2 whitespace-nowrap transition ${
                 activeTab === tab ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-500 hover:text-slate-700"
               }`}>
@@ -177,12 +179,6 @@ export default function TeamCustomer360Page() {
         )}
         {activeTab === "Activity" && <ActivityTimeline accountId={accountId} overview={overview} />}
         {activeTab === "Account Diagnostics" && <HealthCheckTab accountId={accountId} />}
-        {activeTab === "Billing" && (
-          <div className="p-6 max-w-3xl">
-            <h2 className="text-base font-semibold text-slate-800 mb-4">Billing Details</h2>
-            <SubscriptionCard subscription={subscription} full />
-          </div>
-        )}
         {activeTab === "AI Receptionist" && (
           <div className="p-6 max-w-3xl">
             <h2 className="text-base font-semibold text-slate-800 mb-4">AI Receptionist Usage</h2>

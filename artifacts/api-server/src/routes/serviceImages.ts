@@ -12,7 +12,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { serviceImages, services } from "@shared/schema";
-import { eq, asc, sql, ilike, or } from "drizzle-orm";
+import { eq, asc, sql, ilike, or, and, inArray } from "drizzle-orm";
 import { memoryUpload, uploadToR2, deleteFromR2, extractR2KeyFromUrl } from "../lib/r2";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import sharp from "sharp";
@@ -179,6 +179,43 @@ async function canModifyStore(req: any, storeId: number): Promise<boolean> {
 
 const router = Router();
 
+/** Assign the best library image to newly-created services without requiring
+ * the caller to make a second HTTP request. */
+export async function autoAssignServiceImages(storeId: number, serviceIds: number[] = []): Promise<number> {
+  const libraryRows = await db
+    .select({
+      id: serviceImages.id,
+      name: serviceImages.name,
+      category: serviceImages.category,
+      subcategory: serviceImages.subcategory,
+      imageUrl: serviceImages.imageUrl,
+      sortOrder: serviceImages.sortOrder,
+    })
+    .from(serviceImages)
+    .where(eq(serviceImages.isActive, true))
+    .orderBy(asc(serviceImages.sortOrder), asc(serviceImages.name));
+  const imagePool = libraryRows.filter((img) => Boolean(img.imageUrl?.trim())) as MatchableServiceImage[];
+  if (!imagePool.length) return 0;
+
+  const serviceFilter = serviceIds.length > 0
+    ? and(eq(services.storeId, storeId), inArray(services.id, serviceIds))
+    : eq(services.storeId, storeId);
+  const storeServices = await db
+    .select({ id: services.id, name: services.name, category: services.category, imageUrl: services.imageUrl })
+    .from(services)
+    .where(serviceFilter);
+
+  let updated = 0;
+  for (const service of storeServices as MatchableService[]) {
+    if (service.imageUrl) continue;
+    const matched = pickBestServiceImage(service, imagePool, 46);
+    if (!matched?.image.imageUrl) continue;
+    await db.update(services).set({ imageUrl: matched.image.imageUrl }).where(eq(services.id, service.id));
+    updated++;
+  }
+  return updated;
+}
+
 // ─── Smart auto-link: service records -> best matching library image ──────────
 // Links services.image_url for one store by matching each service name/category
 // against the admin-managed service image library.
@@ -339,6 +376,64 @@ router.get("/", async (req, res) => {
   } catch (err: any) {
     console.error("[service-images] list error:", err?.message);
     return res.status(500).json({ error: "Failed to load service images" });
+  }
+});
+
+// ─── Single-service match — best library image for one service (no persist) ──
+// Used by the ServiceForm "Auto-match" button: returns the best-matching
+// library image for a given name/category so the form can preview + save it
+// like a manual pick.  Does NOT touch the database.
+router.post("/match", async (req: any, res) => {
+  try {
+    const name = String(req.body?.name ?? "").trim();
+    const category = String(req.body?.category ?? "").trim();
+    if (!name) return res.status(400).json({ error: "name is required" });
+
+    const minScoreRaw = Number(req.body?.minScore ?? 46);
+    const minScore = Number.isFinite(minScoreRaw)
+      ? Math.max(1, Math.min(200, Math.round(minScoreRaw)))
+      : 46;
+
+    const libraryRows = await db
+      .select({
+        id: serviceImages.id,
+        name: serviceImages.name,
+        category: serviceImages.category,
+        subcategory: serviceImages.subcategory,
+        imageUrl: serviceImages.imageUrl,
+        sortOrder: serviceImages.sortOrder,
+      })
+      .from(serviceImages)
+      .where(eq(serviceImages.isActive, true))
+      .orderBy(asc(serviceImages.sortOrder), asc(serviceImages.name));
+
+    const imagePool = libraryRows.filter((img) => Boolean(img.imageUrl?.trim())) as MatchableServiceImage[];
+    if (!imagePool.length) {
+      return res.status(400).json({ error: "No active service library images found" });
+    }
+
+    const matched = pickBestServiceImage(
+      { id: 0, name, category, imageUrl: null },
+      imagePool,
+      minScore,
+    );
+    if (!matched || !matched.image.imageUrl) {
+      return res.json({ matched: false });
+    }
+
+    return res.json({
+      matched: true,
+      id: matched.image.id,
+      name: matched.image.name,
+      category: matched.image.category,
+      subcategory: matched.image.subcategory,
+      imageUrl: matched.image.imageUrl,
+      score: matched.score,
+      matchType: matched.matchType,
+    });
+  } catch (err: any) {
+    console.error("[service-images] match error:", err?.message);
+    return res.status(500).json({ error: "Match failed" });
   }
 });
 

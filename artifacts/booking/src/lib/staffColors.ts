@@ -1,40 +1,26 @@
 /**
  * Staff calendar color palette.
- * Rules: no black, no red family, no grey.
- * 20 clearly distinct hues spread across the wheel.
  */
 export const STAFF_COLORS = [
-  // Blues
-  "#1e3a8a", // Deep Navy
-  "#3b82f6", // Bright Blue
-  "#0ea5e9", // Sky Blue
-  "#06b6d4", // Cyan
-
-  // Greens
-  "#0f766e", // Dark Teal
-  "#10b981", // Mint
-  "#16a34a", // Forest Green
-  "#84cc16", // Lime
-
-  // Warm tones
-  "#ca8a04", // Golden Yellow
-  "#f97316", // Orange
-  "#b45309", // Warm Brown / Amber
-
-  // Pinks / Magentas
-  "#db2777", // Deep Pink
-  "#ec4899", // Hot Pink
-  "#f472b6", // Light Pink
-
-  // Purples
-  "#d946ef", // Fuchsia / Magenta
-  "#a855f7", // Purple
-  "#7c3aed", // Violet
-  "#4f46e5", // Indigo
-
-  // Extra distinct
-  "#0369a1", // Steel Blue
-  "#15803d", // Deep Green
+  "#FEE0F3",
+  "#FEDBD5",
+  "#E1FEFF",
+  "#FFC7C6",
+  "#FFF0E1",
+  "#FFF6BA",
+  "#FFD7B3",
+  "#F4E9FF",
+  "#E9FFF3",
+  "#EEFADB",
+  "#E6F4FF",
+  "#FF9D93",
+  "#CBEFE0",
+  "#A6DBC7",
+  "#FFC6BF",
+  "#FADAD4",
+  "#DCEBF2",
+  "#FFE9E9",
+  "#C1DCD9",
 ] as const;
 
 export type StaffColor = typeof STAFF_COLORS[number];
@@ -49,4 +35,40 @@ export function assignStaffColors(staffList: { id: number }[]): Map<number, stri
     map.set(member.id, STAFF_COLORS[index % STAFF_COLORS.length]);
   });
   return map;
+}
+
+/**
+ * Picks readable foreground colors for text/borders rendered on top of a given
+ * background color — the STAFF_COLORS palette is all light pastels, so plain
+ * white text (fine for the old dark palette) becomes unreadable.
+ */
+export function getContrastColors(hexBg: string): {
+  isLight: boolean;
+  text: string;
+  textMuted: string;
+  ring: string;
+  avatarFallbackBg: string;
+} {
+  const c = hexBg.replace("#", "");
+  const r = parseInt(c.substring(0, 2), 16) || 0;
+  const g = parseInt(c.substring(2, 4), 16) || 0;
+  const b = parseInt(c.substring(4, 6), 16) || 0;
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  const isLight = luminance > 0.6;
+
+  return isLight
+    ? {
+        isLight,
+        text: "#1f2937",           // slate-800
+        textMuted: "rgba(31,41,55,0.7)",
+        ring: "rgba(31,41,55,0.25)",
+        avatarFallbackBg: "rgba(31,41,55,0.12)",
+      }
+    : {
+        isLight,
+        text: "#ffffff",
+        textMuted: "rgba(255,255,255,0.8)",
+        ring: "rgba(255,255,255,0.5)",
+        avatarFallbackBg: "rgba(255,255,255,0.2)",
+      };
 }

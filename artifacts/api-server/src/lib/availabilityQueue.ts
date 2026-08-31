@@ -59,7 +59,9 @@ export async function enqueueAvailabilityInvalidation(
   if (!queue) return;
 
   try {
-    const jobId = `${storeId}:${date}`;
+    // BullMQ rejects custom job IDs containing ":" (it uses colons as the
+    // Redis key delimiter internally) — use "-" instead.
+    const jobId = `${storeId}-${date}`;
     await queue.add(
       "invalidate",
       { storeId, date, reason },

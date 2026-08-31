@@ -23,6 +23,7 @@ import CatalogCategories from "@/pages/catalog/CatalogCategories";
 import CatalogServices from "@/pages/catalog/CatalogServices";
 import CatalogAddons from "@/pages/catalog/CatalogAddons";
 import CatalogProducts from "@/pages/catalog/CatalogProducts";
+import NailServices from "@/pages/catalog/NailServices";
 import StaffPayrollLanding from "@/pages/StaffPayrollLanding";
 import Customers from "@/pages/Customers";
 import Calendar from "@/pages/Calendar";
@@ -54,6 +55,7 @@ import PublicCheckIn from "@/pages/queue/PublicCheckIn";
 import QueueDisplay from "@/pages/queue/QueueDisplay";
 import KioskCheckIn from "@/pages/KioskCheckIn";
 import KioskTicket from "@/pages/KioskTicket";
+import FrontDeskDisplay from "@/pages/FrontDeskDisplay";
 import GiftCards from "@/pages/GiftCards";
 import IntakeForms from "@/pages/IntakeForms";
 import Loyalty from "@/pages/Loyalty";
@@ -97,6 +99,9 @@ import WebsiteSetupFlow from "@/pages/setup/WebsiteSetupFlow";
 import PublicBooking from "@/pages/PublicBooking";
 import BookingWidgetPage from "@/pages/BookingWidgetPage";
 import BookingConfirmation from "@/pages/public-booking/BookingConfirmation";
+import ReviewGate from "@/pages/public-review/ReviewGate";
+import ReviewFeedback from "@/pages/public-review/ReviewFeedback";
+import CompleteBooking from "@/pages/public-payment/CompleteBooking";
 import StaffCalendar from "@/pages/StaffCalendar";
 import StaffProfile from "@/pages/StaffProfile";
 import StaffMenu from "@/pages/StaffMenu";
@@ -203,7 +208,9 @@ const authenticatedPaths = [
   "/settings",
   "/settings/translations",
   "/settings/resources",
+  "/booking-policies",
   "/calendar-settings",
+  "/language-settings",
   "/business-settings",
   "/business-hours",
   "/features-settings",
@@ -466,7 +473,10 @@ function AppRoutes() {
       <Route path="/widget" element={<BookingWidgetPage />} />
       <Route path="/book/:slug" element={<PublicBooking />} />
       <Route path="/booking/:confirmationNumber" element={<BookingConfirmation />} />
+      <Route path="/review/:token" element={<ReviewGate />} />
+      <Route path="/review/:token/feedback" element={<ReviewFeedback />} />
       <Route path="/review/:appointmentId" element={<ReviewSubmit />} />
+      <Route path="/complete-booking/:token" element={<CompleteBooking />} />
 
       {/* Public queue */}
       <Route path="/q/:slug" element={<PublicCheckIn />} />
@@ -476,6 +486,10 @@ function AppRoutes() {
       <Route path="/checkin-kiosk" element={<Navigate to="/kiosk-settings" replace />} />
       <Route path="/kiosk/:slug" element={<KioskCheckIn />} />
       <Route path="/kiosk/:slug/ticket/:token" element={<KioskTicket />} />
+
+      {/* Front-desk customer-facing display (POS tablet): lightweight check-in
+          + tip screen + card-payment instruction screens. NOT a self-serve kiosk. */}
+      <Route path="/frontdesk/:slug" element={<FrontDeskDisplay />} />
 
       {/* Industry landing pages */}
       <Route path="/spa" element={<SpaLandingPage />} />
@@ -526,6 +540,7 @@ function AppRoutes() {
       <Route path="/catalog/services"   element={<OwnerOnlyRoute><CatalogServices /></OwnerOnlyRoute>} />
       <Route path="/catalog/addons"     element={<OwnerOnlyRoute><CatalogAddons /></OwnerOnlyRoute>} />
       <Route path="/catalog/products"   element={<OwnerOnlyRoute><CatalogProducts /></OwnerOnlyRoute>} />
+      <Route path="/catalog/nail-services" element={<OwnerOnlyRoute><NailServices /></OwnerOnlyRoute>} />
       {/* Legacy redirects */}
       <Route path="/services" element={<Navigate to="/catalog/services" replace />} />
       <Route path="/team" element={<TeamMembers />} />

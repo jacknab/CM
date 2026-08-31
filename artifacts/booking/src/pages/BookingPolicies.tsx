@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Save, Clock, AlertCircle, Shield, CalendarX, ChevronLeft, CreditCard } from "lucide-react";
 import { Link } from "react-router-dom";
 import { apiRequest } from "@/lib/queryClient";
+import { cn } from "@/lib/utils";
 
 type PaymentPolicy = "none" | "card_on_file" | "deposit";
 type DepositType   = "percentage" | "fixed";
@@ -22,6 +23,7 @@ type Policies = {
   bookingPaymentPolicy: PaymentPolicy;
   depositType: DepositType | null;
   depositValue: number | null;
+  stripeConnected?: boolean;
 };
 
 const CANCEL_PRESETS = [
@@ -88,7 +90,13 @@ export default function BookingPolicies() {
     setDirty(true);
   };
 
-  if (isLoading) {
+  // Don't render the form until we actually know the store id AND the policies
+  // fetch has settled — the query is `enabled: false` until selectedStore
+  // resolves, and React Query v5's `isLoading` (= isPending && isFetching) stays
+  // false while a query is disabled, so it alone doesn't catch this window.
+  // Without this, the page briefly renders with the form's hardcoded defaults
+  // (autoMarkNoShows: false, etc.) instead of waiting for the real saved values.
+  if (!selectedStore?.id || isLoading) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center py-24 text-muted-foreground">Loading…</div>
@@ -254,7 +262,8 @@ export default function BookingPolicies() {
           </CardContent>
         </Card>
 
-        {/* Online Booking Deposit */}
+        {/* Online Booking Deposit — requires a connected Stripe account */}
+        {form.stripeConnected && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -262,30 +271,64 @@ export default function BookingPolicies() {
               Online Booking Deposit
             </CardTitle>
             <CardDescription>
-              When enabled, clients pay a deposit when booking online. Requires a connected Stripe account.
+              Choose what, if anything, a client must do to confirm an online booking. Requires a connected
+              Stripe account for either paid option.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Master toggle */}
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">Require deposit for online bookings</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Client pays upfront; remaining balance is collected at checkout.
-                </p>
-              </div>
-              <Switch
-                checked={form.bookingPaymentPolicy === "deposit"}
-                onCheckedChange={checked => {
-                  update("bookingPaymentPolicy", checked ? "deposit" : "none");
-                  if (!checked) {
-                    update("depositType", null);
-                    update("depositValue", null);
-                  } else if (!form.depositType) {
-                    update("depositType", "fixed");
-                  }
-                }}
-              />
+            {/* Policy picker */}
+            <div className="flex flex-col gap-2">
+              {([
+                {
+                  value: "none" as PaymentPolicy,
+                  label: "No payment required",
+                  desc: "Bookings are confirmed immediately, no charge.",
+                },
+                {
+                  value: "deposit" as PaymentPolicy,
+                  label: "Require deposit",
+                  desc: "Client pays upfront; remaining balance is collected at checkout.",
+                },
+                {
+                  value: "card_on_file" as PaymentPolicy,
+                  label: "Require card on file",
+                  desc: "No charge is made — the client's card is validated and saved for this appointment.",
+                },
+              ] as const).map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    update("bookingPaymentPolicy", opt.value);
+                    if (opt.value !== "deposit") {
+                      update("depositType", null);
+                      update("depositValue", null);
+                    } else if (!form.depositType) {
+                      update("depositType", "fixed");
+                    }
+                  }}
+                  className={cn(
+                    "flex items-start gap-3 px-4 py-3 rounded-xl border text-left transition-all",
+                    form.bookingPaymentPolicy === opt.value
+                      ? "border-violet-500 bg-violet-50"
+                      : "border-border bg-background hover:border-violet-300"
+                  )}
+                  data-testid={`button-payment-policy-${opt.value}`}
+                >
+                  <div className={cn(
+                    "w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5",
+                    form.bookingPaymentPolicy === opt.value ? "border-violet-500" : "border-muted-foreground/30"
+                  )}>
+                    {form.bookingPaymentPolicy === opt.value && (
+                      <div className="w-2.5 h-2.5 rounded-full bg-violet-500" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">{opt.label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
+                  </div>
+                </button>
+              ))}
             </div>
 
             {/* Sub-cards: only visible when deposit is on */}
@@ -373,6 +416,7 @@ export default function BookingPolicies() {
             )}
           </CardContent>
         </Card>
+        )}
 
         {/* Save bar for mobile */}
         {dirty && (

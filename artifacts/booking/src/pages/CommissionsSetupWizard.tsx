@@ -29,12 +29,14 @@ interface StaffMember {
   color?: string;
   commissionEnabled?: boolean;
   commissionRate?: string;
+  productCommissionRate?: string;
 }
 
 interface MemberRate {
   staffId: number;
   enabled: boolean;
   rate: string;
+  productRate: string;
 }
 
 interface TierRow {
@@ -129,6 +131,7 @@ function StepByMember({
 }) {
   const [search, setSearch] = useState("");
   const [bulkRate, setBulkRate] = useState("50");
+  const [bulkProductRate, setBulkProductRate] = useState("0");
 
   const filtered = useMemo(() =>
     staff.filter(s => s.name.toLowerCase().includes(search.toLowerCase())),
@@ -136,11 +139,14 @@ function StepByMember({
   );
 
   const patchMember = (id: number, patch: Partial<MemberRate>) =>
-    setMemberRates({ ...memberRates, [id]: { ...memberRates[id], ...patch } });
+    setMemberRates({
+      ...memberRates,
+      [id]: { ...{ staffId: id, enabled: true, rate: "50", productRate: "0" }, ...memberRates[id], ...patch },
+    });
 
   const applyBulk = () => {
     const next = { ...memberRates };
-    staff.forEach(s => { next[s.id] = { ...next[s.id], rate: bulkRate }; });
+    staff.forEach(s => { next[s.id] = { ...next[s.id], rate: bulkRate, productRate: bulkProductRate }; });
     setMemberRates(next);
   };
 
@@ -160,33 +166,42 @@ function StepByMember({
   };
 
   return (
-    <div className="space-y-4">
-      <p className="text-[14px] text-gray-600 leading-relaxed">
-        Choose which team members to include and set their individual commission rates.
+    <div className="space-y-4 rounded-[28px] bg-[#07111f] p-4 text-white sm:bg-transparent sm:p-0 sm:text-gray-900">
+      <p className="text-[14px] text-slate-300 leading-relaxed sm:text-gray-600">
+        Choose which team members to include and set their service and product commission rates.
       </p>
 
       {/* Search + bulk apply */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           <Input
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search by name…"
-            className="pl-9 rounded-full bg-gray-50 border-gray-200 text-[13px] h-9"
+            className="pl-9 rounded-full bg-[#101e30] border-[#263950] text-[13px] h-10 text-white placeholder:text-slate-400 sm:bg-gray-50 sm:border-gray-200 sm:text-gray-900 sm:placeholder:text-gray-400"
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-2">
           <Input
             type="number" min={0} max={100}
             value={bulkRate}
             onChange={e => setBulkRate(e.target.value)}
-            className="w-16 rounded-xl text-center text-[13px] h-9"
+            aria-label="Bulk service commission rate"
+            className="w-full rounded-xl text-center text-[13px] h-9 bg-[#101e30] border-[#263950] text-white sm:w-16 sm:bg-white sm:border-gray-200 sm:text-gray-900"
           />
-          <span className="text-[13px] text-gray-500">%</span>
+          <div className="relative">
+            <Input
+              type="number" min={0} max={100}
+              value={bulkProductRate}
+              onChange={e => setBulkProductRate(e.target.value)}
+              aria-label="Bulk product commission rate"
+              className="w-full rounded-xl text-center text-[13px] h-9 bg-[#101e30] border-[#263950] text-white sm:w-16 sm:bg-white sm:border-gray-200 sm:text-gray-900"
+            />
+          </div>
           <button
             onClick={applyBulk}
-            className="px-3 py-1.5 rounded-full text-[12px] font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors"
+            className="px-3 py-1.5 rounded-full text-[12px] font-semibold border border-[#38506b] text-slate-200 hover:bg-[#152840] transition-colors sm:border-gray-300 sm:text-gray-700 sm:hover:bg-gray-50 sm:hover:border-gray-400"
           >
             Apply all
           </button>
@@ -194,9 +209,9 @@ function StepByMember({
       </div>
 
       {/* Table */}
-      <div className="rounded-2xl border border-gray-200 overflow-hidden">
+      <div className="rounded-2xl border border-[#20344c] overflow-hidden sm:border-gray-200">
         {/* Header */}
-        <div className="grid grid-cols-[32px_1fr_130px_100px] gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-200">
+        <div className="grid grid-cols-[32px_1fr_92px_92px] gap-2 px-3 py-3 bg-[#0d1b2d] border-b border-[#20344c] sm:grid-cols-[32px_1fr_130px_130px_100px] sm:gap-3 sm:px-4 sm:py-2.5 sm:bg-gray-50 sm:border-gray-200">
           <button onClick={toggleAll} className="flex items-center justify-center">
             <div className={cn(
               "w-4 h-4 rounded border-2 flex items-center justify-center transition-colors",
@@ -211,24 +226,25 @@ function StepByMember({
               )}
             </div>
           </button>
-          <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Name</span>
-          <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Commission</span>
-          <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Actions</span>
+          <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wide sm:text-gray-500">Name</span>
+          <span className="text-[10px] font-semibold text-slate-300 uppercase tracking-wide sm:text-[11px] sm:text-gray-500">Services</span>
+          <span className="text-[10px] font-semibold text-slate-300 uppercase tracking-wide sm:text-[11px] sm:text-gray-500">Products</span>
+          <span className="hidden text-[11px] font-semibold text-gray-500 uppercase tracking-wide sm:block">Actions</span>
         </div>
 
         {/* Rows */}
         {filtered.length === 0 && (
-          <div className="py-8 text-center text-[13px] text-gray-400">No staff found</div>
+          <div className="col-span-4 py-8 text-center text-[13px] text-slate-400 sm:col-span-5">No staff found</div>
         )}
         {filtered.map((s, i) => {
-          const mr = memberRates[s.id] ?? { staffId: s.id, enabled: true, rate: "50" };
+          const mr = memberRates[s.id] ?? { staffId: s.id, enabled: true, rate: "50", productRate: "0" };
           const roleLabel = ROLE_LABELS[s.role ?? "stylist"] ?? s.role ?? "Staff";
           return (
             <div
               key={s.id}
               className={cn(
-                "grid grid-cols-[32px_1fr_130px_100px] gap-3 items-center px-4 py-3",
-                i < filtered.length - 1 && "border-b border-gray-100"
+                "grid grid-cols-[32px_1fr_92px_92px] gap-2 items-center px-3 py-3.5 bg-[#07111f] sm:grid-cols-[32px_1fr_130px_130px_100px] sm:gap-3 sm:px-4 sm:py-3 sm:bg-white",
+                i < filtered.length - 1 && "border-b border-[#20344c] sm:border-gray-100"
               )}
             >
               {/* Checkbox */}
@@ -251,18 +267,18 @@ function StepByMember({
               {/* Name + role */}
               <div className="flex items-center gap-3 min-w-0">
                 <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0"
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 ring-2 ring-white/10"
                   style={{ background: s.color ?? "#d8b4fe" }}
                 >
                   {initials(s.name)}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-[13px] font-medium text-gray-900 leading-tight truncate">{s.name}</p>
-                  <p className="text-[11px] text-gray-500">{roleLabel}</p>
+                   <p className="text-[13px] font-medium text-white leading-tight truncate sm:text-gray-900">{s.name}</p>
+                   <p className="text-[11px] text-slate-400 sm:text-gray-500">{roleLabel}</p>
                 </div>
               </div>
 
-              {/* Rate input */}
+              {/* Services rate */}
               <div className="relative">
                 <Input
                   type="number" min={0} max={100}
@@ -270,16 +286,31 @@ function StepByMember({
                   onChange={e => patchMember(s.id, { rate: e.target.value })}
                   disabled={!mr.enabled}
                   placeholder="Rate"
-                  className="pr-8 rounded-xl text-[13px] h-9 disabled:opacity-40"
+                   aria-label={`${s.name} services commission rate`}
+                   className="pr-7 rounded-xl text-[13px] h-9 bg-[#101e30] border-[#304760] text-white disabled:opacity-40 sm:bg-white sm:border-gray-200 sm:text-gray-900"
                 />
-                <Percent size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <Percent size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none sm:right-3 sm:text-gray-400" />
+              </div>
+
+              {/* Products rate */}
+              <div className="relative">
+                <Input
+                  type="number" min={0} max={100}
+                  value={mr.productRate}
+                  onChange={e => patchMember(s.id, { productRate: e.target.value })}
+                  disabled={!mr.enabled}
+                  placeholder="0"
+                  aria-label={`${s.name} products commission rate`}
+                  className="pr-7 rounded-xl text-[13px] h-9 bg-[#101e30] border-[#304760] text-white disabled:opacity-40 sm:bg-white sm:border-gray-200 sm:text-gray-900"
+                />
+                <Percent size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none sm:right-3 sm:text-gray-400" />
               </div>
 
               {/* Customize */}
               <button
                 onClick={() => onCustomize(s.id)}
                 disabled={!mr.enabled}
-                className="flex items-center gap-1 text-[12px] font-medium text-gray-600 border border-gray-200 rounded-full px-3 py-1.5 hover:border-gray-400 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                className="hidden items-center gap-1 text-[12px] font-medium text-gray-600 border border-gray-200 rounded-full px-3 py-1.5 hover:border-gray-400 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors whitespace-nowrap sm:flex"
               >
                 <Settings2 size={11} />
                 Customize
@@ -513,6 +544,7 @@ export default function CommissionsSetupWizard() {
           staffId: s.id,
           enabled: s.commissionEnabled ?? true,
           rate: s.commissionRate ? String(Math.round(Number(s.commissionRate))) : "50",
+          productRate: s.productCommissionRate ? String(Math.round(Number(s.productCommissionRate))) : "0",
         };
       });
       setMemberRates(prev => ({ ...init, ...prev }));
@@ -557,6 +589,7 @@ export default function CommissionsSetupWizard() {
             body: JSON.stringify({
               commissionEnabled: true,
               commissionRate: String(parseFloat(m.rate) || 0),
+              productCommissionRate: String(parseFloat(m.productRate) || 0),
               commissionStructureId: cs.id,
             }),
           })

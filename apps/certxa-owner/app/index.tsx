@@ -33,6 +33,7 @@ import { apiCaller, notifySessionReady } from '@/lib/terminalBridge';
 import { POSModal, type POSData } from '@/components/POSModal';
 import { M2PaymentOverlay, type M2PayData } from '@/components/M2PaymentOverlay';
 import { ReaderStatusModal } from '@/components/ReaderStatusModal';
+import { TapToPaySetupModal } from '@/components/TapToPaySetupModal';
 import { useStripeTerminal } from '@stripe/stripe-terminal-react-native';
 
 const PORTAL_URL = process.env.EXPO_PUBLIC_PORTAL_URL ?? 'https://certxa.com/app-login';
@@ -160,6 +161,7 @@ export default function PortalScreen() {
   const [posVisible, setPosVisible]       = useState(false);
   const [posData, setPosData]             = useState<POSData | null>(null);
   const [readerStatusVisible, setReaderStatusVisible] = useState(false);
+  const [tapSetupVisible, setTapSetupVisible] = useState(false);
   const [m2PayVisible, setM2PayVisible]   = useState(false);
   const [m2PayData, setM2PayData]         = useState<M2PayData | null>(null);
 
@@ -254,8 +256,28 @@ export default function PortalScreen() {
             appointmentId: appointmentId ?? 0,
             amountCents,
             clientName: clientName ?? 'Walk-in',
+            mode: 'm2',
           });
           setM2PayVisible(true);
+          break;
+        }
+        case 'TAP_TO_PAY': {
+          // Web POS requests Tap to Pay on this device's NFC. Same overlay,
+          // discovery method 'tapToPay' instead of Bluetooth.
+          const { appointmentId, amountCents, clientName } = msg;
+          setM2PayData({
+            appointmentId: appointmentId ?? 0,
+            amountCents,
+            clientName: clientName ?? 'Walk-in',
+            mode: 'tap',
+          });
+          setM2PayVisible(true);
+          break;
+        }
+        case 'SETUP_TAP_TO_PAY': {
+          // Web POS "Set up Tap to Pay" — one-time enrollment (location + ToS +
+          // device provisioning). Result relayed back via the modal callbacks.
+          setTapSetupVisible(true);
           break;
         }
         case 'RPC_RESPONSE': {
@@ -425,6 +447,23 @@ export default function PortalScreen() {
       <ReaderStatusModal
         visible={readerStatusVisible}
         onClose={() => setReaderStatusVisible(false)}
+      />
+
+      {/* Tap to Pay one-time setup — triggered by SETUP_TAP_TO_PAY from web POS */}
+      <TapToPaySetupModal
+        visible={tapSetupVisible}
+        onComplete={() => {
+          webViewRef.current?.injectJavaScript(
+            `window.dispatchEvent(new CustomEvent('certxa_native_taptopay_ready')); true;`
+          );
+        }}
+        onError={(message) => {
+          const safe = message.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' ');
+          webViewRef.current?.injectJavaScript(
+            `window.dispatchEvent(new CustomEvent('certxa_native_taptopay_error', { detail: { message: '${safe}' } })); true;`
+          );
+        }}
+        onClose={() => setTapSetupVisible(false)}
       />
 
       {/* ── Floating M2 reader badge ──────────────────────────────────────────

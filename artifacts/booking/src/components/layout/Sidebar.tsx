@@ -45,8 +45,11 @@ import { useAuth } from "@/hooks/use-auth";
 import { useSelectedStore } from "@/hooks/use-store";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useFeatureFlags } from "@/hooks/use-features";
+import { useLanguage } from "@/hooks/use-language";
 import { useQuery } from "@tanstack/react-query";
 import { PERMISSIONS } from "@shared/permissions";
+
+type Pick4 = (m: { en: string; vi: string; es: string; fr: string }) => string;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -63,156 +66,177 @@ type TopNavItem = {
 };
 
 type SubNavItem = { label: string; icon: typeof LayoutDashboard; to: string };
-type SubNavSection = { heading: string; items: SubNavItem[] };
+type SubNavSection = { headingKey: string; heading: string; items: SubNavItem[] };
 
 // ── Nav definitions ───────────────────────────────────────────────────────────
 
-const TOP_NAV: TopNavItem[] = [
-  {
-    label: "Dashboard",
-    icon: LayoutDashboard,
-    to: "/manage",
-    matches: ["/manage"],
-  },
-  {
-    label: "Calendar",
-    icon: Calendar,
-    to: "/calendar",
-    matches: ["/calendar", "/appointments", "/booking/new"],
-  },
-  {
-    label: "Clients",
-    icon: Users,
-    to: "/customers",
-    matches: ["/customers", "/client-lookup", "/clients", "/client", "/clients/at-risk"],
-    permission: PERMISSIONS.CUSTOMERS_VIEW,
-    hideForStaff: true,
-  },
-  // {
-  //   label: "Website Builder",
-  //   icon: Globe,
-  //   to: "/website-builder/websites",
-  //   getHref: () => `/website-builder/websites`,
-  //   matches: ["/website-builder"],
-  //   hideForStaff: true,
-  // },
-  {
-    label: "Support",
-    icon: HelpCircle,
-    to: "/support",
-    matches: ["/support", "/help"],
-  },
-];
+function buildTopNav(pick: Pick4): TopNavItem[] {
+  return [
+    {
+      label: pick({ en: "Dashboard", vi: "Tổng quan", es: "Panel", fr: "Tableau de bord" }),
+      icon: LayoutDashboard,
+      to: "/manage",
+      matches: ["/manage"],
+    },
+    {
+      label: pick({ en: "Calendar", vi: "Lịch", es: "Calendario", fr: "Calendrier" }),
+      icon: Calendar,
+      to: "/calendar",
+      matches: ["/calendar", "/appointments", "/booking/new"],
+    },
+    {
+      label: pick({ en: "Clients", vi: "Khách hàng", es: "Clientes", fr: "Clients" }),
+      icon: Users,
+      to: "/customers",
+      matches: ["/customers", "/client-lookup", "/clients", "/client", "/clients/at-risk"],
+      permission: PERMISSIONS.CUSTOMERS_VIEW,
+      hideForStaff: true,
+    },
+    // {
+    //   label: "Website Builder",
+    //   icon: Globe,
+    //   to: "/website-builder/websites",
+    //   getHref: () => `/website-builder/websites`,
+    //   matches: ["/website-builder"],
+    //   hideForStaff: true,
+    // },
+    {
+      label: pick({ en: "Support", vi: "Hỗ trợ", es: "Soporte", fr: "Support" }),
+      icon: HelpCircle,
+      to: "/support",
+      matches: ["/support", "/help"],
+    },
+  ];
+}
 
-const INSIGHTS_SUBNAV: SubNavItem[] = [
-  { label: "Analytics",  icon: BarChart3,   to: "/salon-dashboard" },
-  { label: "Reports",    icon: LineChart,    to: "/commission-report" },
-];
+function buildInsightsSubnav(pick: Pick4): SubNavItem[] {
+  return [
+    { label: pick({ en: "Analytics", vi: "Phân tích", es: "Analítica", fr: "Analytique" }), icon: BarChart3, to: "/salon-dashboard" },
+    { label: pick({ en: "Reports",   vi: "Báo cáo",   es: "Informes",  fr: "Rapports" }),   icon: LineChart, to: "/commission-report" },
+  ];
+}
 
 const INSIGHTS_MATCHES = [
   "/salon-dashboard", "/analytics", "/intelligence",
   "/commission-report", "/salon-earnings", "/register-reports", "/payroll",
 ];
 
-const CATALOG_SUBNAV: SubNavItem[] = [
-  { label: "Categories", icon: Tag,          to: "/catalog/categories" },
-  { label: "Services",   icon: Scissors,     to: "/catalog/services" },
-  { label: "Add-Ons",    icon: ClipboardList, to: "/catalog/addons" },
-  { label: "Products",   icon: ShoppingCart,  to: "/catalog/products" },
-];
+function buildCatalogSubnav(pick: Pick4): SubNavItem[] {
+  return [
+    { label: pick({ en: "Categories", vi: "Danh mục",       es: "Categorías",    fr: "Catégories" }),  icon: Tag,           to: "/catalog/categories" },
+    { label: pick({ en: "Services",   vi: "Dịch vụ",        es: "Servicios",     fr: "Services" }),     icon: Scissors,      to: "/catalog/services" },
+    { label: pick({ en: "Add-Ons",    vi: "Dịch vụ thêm",   es: "Complementos",  fr: "Suppléments" }),  icon: ClipboardList, to: "/catalog/addons" },
+    { label: pick({ en: "Nail Config", vi: "Cấu hình móng", es: "Config. de uñas", fr: "Config. ongles" }), icon: Star,       to: "/catalog/nail-services" },
+    { label: pick({ en: "Products",   vi: "Sản phẩm",       es: "Productos",     fr: "Produits" }),     icon: ShoppingCart,  to: "/catalog/products" },
+  ];
+}
 
-const MARKETING_SUBNAV: SubNavItem[] = [
-  { label: "Campaigns",       icon: Megaphone,       to: "/campaigns" },
-  { label: "SMS Activity",    icon: MessageSquare,   to: "/sms-activity" },
-  { label: "Loyalty",         icon: Heart,           to: "/loyalty" },
-  { label: "Waitlist",        icon: UserX,           to: "/waitlist" },
-  { label: "Google Business", icon: MapPin,          to: "/google-business" },
-];
+function buildMarketingSubnav(pick: Pick4): SubNavItem[] {
+  return [
+    { label: pick({ en: "Campaigns",       vi: "Chiến dịch",              es: "Campañas",           fr: "Campagnes" }),          icon: Megaphone,     to: "/campaigns" },
+    { label: pick({ en: "SMS Activity",    vi: "Hoạt động SMS",           es: "Actividad SMS",      fr: "Activité SMS" }),       icon: MessageSquare, to: "/sms-activity" },
+    { label: pick({ en: "Loyalty",         vi: "Khách hàng thân thiết",   es: "Fidelización",       fr: "Fidélité" }),           icon: Heart,         to: "/loyalty" },
+    { label: pick({ en: "Waitlist",        vi: "Danh sách chờ",           es: "Lista de espera",    fr: "Liste d'attente" }),    icon: UserX,         to: "/waitlist" },
+    { label: pick({ en: "Google Business", vi: "Google Doanh nghiệp",     es: "Google Negocio",     fr: "Google Entreprise" }),  icon: MapPin,        to: "/google-business" },
+  ];
+}
 
-const FINANCE_SUBNAV: SubNavSection[] = [
-  {
-    heading: "Point of Sale",
-    items: [
-      { label: "Cash Drawer",      icon: Layers,        to: "/cash-drawer" },
-      { label: "Gift Cards",       icon: CreditCard,    to: "/gift-cards" },
-    ],
-  },
-  {
-    heading: "Reports",
-    items: [
-      { label: "Commission",       icon: DollarSign,    to: "/commission-report" },
-      { label: "Salon Earnings",   icon: Receipt,       to: "/salon-earnings" },
-      { label: "Register Reports", icon: FileText,      to: "/register-reports" },
-      { label: "Payroll",          icon: ClipboardList, to: "/payroll" },
-    ],
-  },
-  {
-    heading: "Payouts",
-    items: [
-      { label: "Payouts Overview",  icon: Wallet,        to: "/payouts" },
-      { label: "Payouts Ledger",    icon: BookOpen,      to: "/payouts/ledger" },
-      { label: "Contractors",       icon: UserCircle,    to: "/payouts/contractors" },
-    ],
-  },
-];
+function buildFinanceSubnav(pick: Pick4): SubNavSection[] {
+  return [
+    {
+      headingKey: "pointOfSale",
+      heading: pick({ en: "Point of Sale", vi: "Điểm bán hàng", es: "Punto de venta", fr: "Point de vente" }),
+      items: [
+        { label: pick({ en: "Cash Drawer", vi: "Ngăn kéo tiền",   es: "Cajón de efectivo",   fr: "Tiroir-caisse" }),   icon: Layers,     to: "/cash-drawer" },
+        { label: pick({ en: "Gift Cards",  vi: "Thẻ quà tặng",    es: "Tarjetas de regalo",  fr: "Cartes cadeaux" }),  icon: CreditCard, to: "/gift-cards" },
+      ],
+    },
+    {
+      headingKey: "reports",
+      heading: pick({ en: "Reports", vi: "Báo cáo", es: "Informes", fr: "Rapports" }),
+      items: [
+        { label: pick({ en: "Commission",       vi: "Hoa hồng",           es: "Comisión",             fr: "Commission" }),         icon: DollarSign,    to: "/commission-report" },
+        { label: pick({ en: "Salon Earnings",   vi: "Thu nhập salon",     es: "Ganancias del salón",  fr: "Revenus du salon" }),   icon: Receipt,       to: "/salon-earnings" },
+        { label: pick({ en: "Register Reports", vi: "Báo cáo thu ngân",   es: "Informes de caja",     fr: "Rapports de caisse" }), icon: FileText,      to: "/register-reports" },
+        { label: pick({ en: "Payroll",          vi: "Bảng lương",         es: "Nómina",               fr: "Paie" }),               icon: ClipboardList, to: "/payroll" },
+      ],
+    },
+    {
+      headingKey: "payouts",
+      heading: pick({ en: "Payouts", vi: "Chi trả", es: "Pagos", fr: "Versements" }),
+      items: [
+        { label: pick({ en: "Payouts Overview", vi: "Tổng quan chi trả", es: "Resumen de pagos",  fr: "Aperçu des versements" }),   icon: Wallet,     to: "/payouts" },
+        { label: pick({ en: "Payouts Ledger",   vi: "Sổ cái chi trả",    es: "Libro de pagos",     fr: "Registre des versements" }), icon: BookOpen,   to: "/payouts/ledger" },
+        { label: pick({ en: "Contractors",      vi: "Nhà thầu",          es: "Contratistas",       fr: "Prestataires" }),           icon: UserCircle, to: "/payouts/contractors" },
+      ],
+    },
+  ];
+}
 
-const SETTINGS_SUBNAV: SubNavSection[] = [
-  {
-    heading: "Business",
-    items: [
-      { label: "Business Settings",    icon: Settings,    to: "/business-settings" },
-      { label: "Business Hours",       icon: CalendarDays, to: "/business-hours" },
-      { label: "Features",             icon: Sliders,     to: "/features-settings" },
-      { label: "Language",             icon: Languages,   to: "/language-settings" },
-      { label: "Content Translations", icon: Languages,   to: "/settings/translations" },
-    ],
-  },
-  {
-    heading: "Scheduling",
-    items: [
-      { label: "Calendar",          icon: CalendarDays, to: "/calendar-settings" },
-      { label: "Online Booking",    icon: Globe,        to: "/online-booking" },
-      { label: "Booking Policies",  icon: FileText,     to: "/booking-policies" },
-    ],
-  },
-  {
-    heading: "Client Experience",
-    items: [
-      { label: "Kiosk",             icon: Tablet,       to: "/kiosk-settings" },
-    ],
-  },
-  {
-    heading: "Staff & Earnings",
-    items: [
-      { label: "Earnings Settings", icon: Banknote,     to: "/payroll-settings" },
-    ],
-  },
-  {
-    heading: "POS & Payments",
-    items: [
-      { label: "POS Settings",      icon: ShoppingCart, to: "/pos-settings" },
-      { label: "Stripe Connect",    icon: CreditCard,   to: "/manage/payment-settings" },
-    ],
-  },
-  {
-    heading: "Communications",
-    items: [
-      { label: "SMS Settings",      icon: MessageSquare, to: "/sms-settings" },
-      { label: "Email Settings",    icon: Mail,          to: "/mail-settings" },
-    ],
-  },
-];
+function buildSettingsSubnav(pick: Pick4): SubNavSection[] {
+  return [
+    {
+      headingKey: "business",
+      heading: pick({ en: "Business", vi: "Kinh doanh", es: "Negocio", fr: "Entreprise" }),
+      items: [
+        { label: pick({ en: "Business Settings",    vi: "Cài đặt kinh doanh",   es: "Config. de negocio",          fr: "Param. entreprise" }),        icon: Settings,     to: "/business-settings" },
+        { label: pick({ en: "Business Hours",       vi: "Giờ làm việc",        es: "Horario comercial",           fr: "Heures d'ouverture" }),        icon: CalendarDays, to: "/business-hours" },
+        { label: pick({ en: "Features",             vi: "Tính năng",           es: "Funciones",                    fr: "Fonctionnalités" }),           icon: Sliders,      to: "/features-settings" },
+        { label: pick({ en: "Language",              vi: "Ngôn ngữ",            es: "Idioma",                       fr: "Langue" }),                    icon: Languages,    to: "/language-settings" },
+        { label: pick({ en: "Content Translations", vi: "Dịch nội dung",       es: "Traducciones de contenido",   fr: "Traductions de contenu" }),   icon: Languages,    to: "/settings/translations" },
+      ],
+    },
+    {
+      headingKey: "scheduling",
+      heading: pick({ en: "Scheduling", vi: "Lên lịch", es: "Programación", fr: "Planification" }),
+      items: [
+        { label: pick({ en: "Calendar",         vi: "Lịch",                  es: "Calendario",         fr: "Calendrier" }),           icon: CalendarDays, to: "/calendar-settings" },
+        { label: pick({ en: "Stations & Chairs", vi: "Bàn & Ghế",            es: "Estaciones y sillas", fr: "Postes et fauteuils" }),  icon: Layers,       to: "/settings/resources" },
+        { label: pick({ en: "Online Booking",   vi: "Đặt lịch trực tuyến",   es: "Reserva en línea",   fr: "Réservation en ligne" }), icon: Globe,        to: "/online-booking" },
+        { label: pick({ en: "Booking Policies", vi: "Chính sách đặt lịch",   es: "Políticas de reserva", fr: "Politiques de réservation" }), icon: FileText, to: "/booking-policies" },
+      ],
+    },
+    {
+      headingKey: "clientExperience",
+      heading: pick({ en: "Client Experience", vi: "Trải nghiệm KH", es: "Exp. del cliente", fr: "Exp. client" }),
+      items: [
+        { label: pick({ en: "Kiosk", vi: "Kiosk", es: "Kiosco", fr: "Kiosque" }), icon: Tablet, to: "/kiosk-settings" },
+      ],
+    },
+    {
+      headingKey: "staffEarnings",
+      heading: pick({ en: "Staff & Earnings", vi: "Nhân viên & Thu nhập", es: "Personal y ganancias", fr: "Personnel et revenus" }),
+      items: [
+        { label: pick({ en: "Earnings Settings", vi: "Cài đặt thu nhập", es: "Ajustes de ganancias", fr: "Paramètres de revenus" }), icon: Banknote, to: "/payroll-settings" },
+      ],
+    },
+    {
+      headingKey: "posPayments",
+      heading: pick({ en: "POS & Payments", vi: "POS & Thanh toán", es: "PDV y pagos", fr: "PDV et paiements" }),
+      items: [
+        { label: pick({ en: "Payments & Payouts", vi: "Thanh toán & Chi trả", es: "Pagos y liquidaciones", fr: "Paiements et versements" }), icon: DollarSign, to: "/manage/payment-settings" },
+        { label: pick({ en: "POS Settings",   vi: "Cài đặt POS",     es: "Ajustes PDV",     fr: "Paramètres PDV" }),   icon: ShoppingCart, to: "/pos-settings" },
+      ],
+    },
+    {
+      headingKey: "communications",
+      heading: pick({ en: "Communications", vi: "Truyền thông", es: "Comunicaciones", fr: "Communications" }),
+      items: [
+        { label: pick({ en: "SMS Settings",   vi: "Cài đặt SMS",   es: "Ajustes SMS",       fr: "Paramètres SMS" }),   icon: MessageSquare, to: "/sms-settings" },
+        { label: pick({ en: "Email Settings", vi: "Cài đặt Email", es: "Ajustes de correo", fr: "Paramètres Email" }), icon: Mail,          to: "/mail-settings" },
+      ],
+    },
+  ];
+}
 
-const TEAM_SUBNAV: SubNavItem[] = [
-  { label: "Staff",        icon: UserCircle, to: "/team" },
-  { label: "Commissions",  icon: DollarSign, to: "/commissions" },
-];
+function buildTeamSubnav(pick: Pick4): SubNavItem[] {
+  return [
+    { label: pick({ en: "Staff",       vi: "Nhân viên", es: "Personal",    fr: "Personnel" }),   icon: UserCircle, to: "/team" },
+    { label: pick({ en: "Commissions", vi: "Hoa hồng",  es: "Comisiones",  fr: "Commissions" }), icon: DollarSign, to: "/commissions" },
+  ];
+}
 
-const CATALOG_MATCHES   = CATALOG_SUBNAV.map((i) => i.to);
-const MARKETING_MATCHES = MARKETING_SUBNAV.map((i) => i.to);
-const TEAM_MATCHES      = ["/team", "/staff", "/team-permissions", "/timeclock", "/print-checks", "/commissions"];
-const FINANCE_MATCHES   = FINANCE_SUBNAV.flatMap((s) => s.items.map((i) => i.to));
-const SETTINGS_MATCHES  = SETTINGS_SUBNAV.flatMap((s) => s.items.map((i) => i.to));
+const TEAM_MATCHES = ["/team", "/staff", "/team-permissions", "/timeclock", "/print-checks", "/commissions"];
 
 // ── Sub-item link ──────────────────────────────────────────────────────────────
 
@@ -353,6 +377,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
   const { selectedStore, stores, setSelectedStoreId } = useSelectedStore();
   const { can, isStaff }  = usePermissions();
   const features          = useFeatureFlags();
+  const { pick }          = useLanguage();
 
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -368,6 +393,37 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [accountMenuOpen]);
+
+  // ── Localized nav definitions (rebuilt whenever the language changes) ──────
+  const TOP_NAV          = buildTopNav(pick);
+  const INSIGHTS_SUBNAV  = buildInsightsSubnav(pick);
+  const CATALOG_SUBNAV   = buildCatalogSubnav(pick);
+  const MARKETING_SUBNAV = buildMarketingSubnav(pick);
+  const FINANCE_SUBNAV   = buildFinanceSubnav(pick);
+  const SETTINGS_SUBNAV  = buildSettingsSubnav(pick);
+  const TEAM_SUBNAV      = buildTeamSubnav(pick);
+
+  const CATALOG_MATCHES   = CATALOG_SUBNAV.map((i) => i.to);
+  const MARKETING_MATCHES = MARKETING_SUBNAV.map((i) => i.to);
+  const FINANCE_MATCHES   = FINANCE_SUBNAV.flatMap((s) => s.items.map((i) => i.to));
+  const SETTINGS_MATCHES  = SETTINGS_SUBNAV.flatMap((s) => s.items.map((i) => i.to));
+
+  const t = {
+    insights:         pick({ en: "Insights",           vi: "Thông tin",              es: "Información",          fr: "Aperçus" }),
+    catalog:          pick({ en: "Catalog",            vi: "Danh mục hàng",          es: "Catálogo",             fr: "Catalogue" }),
+    team:             pick({ en: "Team",               vi: "Đội ngũ",                es: "Equipo",               fr: "Équipe" }),
+    marketing:        pick({ en: "Marketing",          vi: "Tiếp thị",               es: "Marketing",            fr: "Marketing" }),
+    financePos:       pick({ en: "Finance & POS",      vi: "Tài chính & POS",        es: "Finanzas y PDV",       fr: "Finances et PDV" }),
+    finance:          pick({ en: "Finance",            vi: "Tài chính",              es: "Finanzas",             fr: "Finances" }),
+    settings:         pick({ en: "Settings",           vi: "Cài đặt",                es: "Ajustes",              fr: "Paramètres" }),
+    accountSettings:  pick({ en: "Account settings",   vi: "Cài đặt tài khoản",      es: "Config. de cuenta",    fr: "Param. du compte" }),
+    subscriptionBilling: pick({ en: "Subscription & billing", vi: "Gói dịch vụ & Thanh toán", es: "Suscripción y facturación", fr: "Abonnement et facturation" }),
+    switchLocation:   pick({ en: "Switch location",    vi: "Chuyển địa điểm",        es: "Cambiar ubicación",    fr: "Changer de site" }),
+    signOut:          pick({ en: "Sign out",           vi: "Đăng xuất",              es: "Cerrar sesión",        fr: "Déconnexion" }),
+    myBusiness:       pick({ en: "My Business",        vi: "Doanh nghiệp của tôi",   es: "Mi negocio",           fr: "Mon entreprise" }),
+    staffFallback:    pick({ en: "Staff",               vi: "Nhân viên",              es: "Personal",             fr: "Personnel" }),
+    ownerFallback:    pick({ en: "Owner",               vi: "Chủ sở hữu",             es: "Propietario",          fr: "Propriétaire" }),
+  };
 
   const isInsightsActive = INSIGHTS_MATCHES.some(
     (m) => location.pathname === m || location.pathname.startsWith(m + "/")
@@ -470,13 +526,13 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   // Derived display values
-  const businessName = selectedStore?.name ?? "My Business";
+  const businessName = selectedStore?.name ?? t.myBusiness;
   const ownerFirstName = isStaff
-    ? (user as any)?.firstName ?? (user as any)?.name ?? "Staff"
-    : (user as any)?.firstName ?? (user as any)?.name?.split(" ")[0] ?? "Owner";
+    ? (user as any)?.firstName ?? (user as any)?.name ?? t.staffFallback
+    : (user as any)?.firstName ?? (user as any)?.name?.split(" ")[0] ?? t.ownerFallback;
   const ownerFullName = isStaff
-    ? [(user as any)?.firstName, (user as any)?.lastName].filter(Boolean).join(" ") || "Staff"
-    : [(user as any)?.firstName, (user as any)?.lastName].filter(Boolean).join(" ") || (user as any)?.name || "Owner";
+    ? [(user as any)?.firstName, (user as any)?.lastName].filter(Boolean).join(" ") || t.staffFallback
+    : [(user as any)?.firstName, (user as any)?.lastName].filter(Boolean).join(" ") || (user as any)?.name || t.ownerFallback;
   const initials = ownerFullName
     .split(" ")
     .slice(0, 2)
@@ -527,7 +583,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
                 className="flex items-center gap-3 w-full px-4 py-2.5 text-[13px] text-gray-700 hover:bg-gray-50 transition-colors"
               >
                 <User size={14} className="text-gray-400" />
-                Account settings
+                {t.accountSettings}
               </button>
               {!isStaff && (
                 <button
@@ -535,14 +591,14 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
                   className="flex items-center gap-3 w-full px-4 py-2.5 text-[13px] text-gray-700 hover:bg-gray-50 transition-colors"
                 >
                   <CreditCardIcon size={14} className="text-gray-400" />
-                  Subscription & billing
+                  {t.subscriptionBilling}
                 </button>
               )}
               {/* Multi-location switcher */}
               {!isStaff && stores.length > 1 && (
                 <>
                   <div className="mx-4 my-1 border-t border-gray-100" />
-                  <p className="px-4 pt-1 pb-0.5 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Switch location</p>
+                  <p className="px-4 pt-1 pb-0.5 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">{t.switchLocation}</p>
                   {stores.map((s) => (
                     <button
                       key={s.id}
@@ -566,7 +622,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
                 className="flex items-center gap-3 w-full px-4 py-2.5 text-[13px] text-red-600 hover:bg-red-50 transition-colors"
               >
                 <LogOut size={14} className="text-red-400" />
-                Sign out
+                {t.signOut}
               </button>
             </div>
           </div>
@@ -624,7 +680,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
                 <div className={cn("mt-0.5 rounded-xl transition-colors duration-150", insightsOpen && "bg-indigo-50 p-1.5")}>
                   <ExpandableTrigger
                     icon={LineChart}
-                    label="Insights"
+                    label={t.insights}
                     isOpen={insightsOpen}
                     isActive={isInsightsActive}
                     onToggle={() => setInsightsOpen((v) => !v)}
@@ -645,7 +701,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
                 <div className={cn("mt-0.5 rounded-xl transition-colors duration-150", catalogOpen && "bg-violet-50 p-1.5")}>
                   <ExpandableTrigger
                     icon={Package}
-                    label="Catalog"
+                    label={t.catalog}
                     isOpen={catalogOpen}
                     isActive={isCatalogActive}
                     onToggle={() => setCatalogOpen((v) => !v)}
@@ -666,7 +722,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
                 <div className={cn("mt-0.5 rounded-xl transition-colors duration-150", teamOpen && "bg-sky-50 p-1.5")}>
                   <ExpandableTrigger
                     icon={UserCircle}
-                    label="Team"
+                    label={t.team}
                     isOpen={teamOpen}
                     isActive={isTeamActive}
                     onToggle={() => setTeamOpen((v) => !v)}
@@ -692,7 +748,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
           <div className={cn("mt-0.5 rounded-xl transition-colors duration-150", marketingOpen && "bg-rose-50 p-1.5")}>
             <ExpandableTrigger
               icon={Megaphone}
-              label="Marketing"
+              label={t.marketing}
               isOpen={marketingOpen}
               isActive={isMarketingActive}
               onToggle={() => setMarketingOpen((v) => !v)}
@@ -720,7 +776,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
           <div className={cn("mt-0.5 rounded-xl transition-colors duration-150", financeOpen && "bg-emerald-50 p-1.5")}>
             <ExpandableTrigger
               icon={DollarSign}
-              label={features.pos ? "Finance & POS" : "Finance"}
+              label={features.pos ? t.financePos : t.finance}
               isOpen={financeOpen}
               isActive={isFinanceActive}
               onToggle={() => setFinanceOpen((v) => !v)}
@@ -728,7 +784,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
             {financeOpen && (
               <div className="mt-0.5">
                 {FINANCE_SUBNAV.map((section) => (
-                  <div key={section.heading}>
+                  <div key={section.headingKey}>
                     <SectionHeading label={section.heading} />
                     <div className="space-y-0.5">
                       {section.items.map((sub) => {
@@ -770,7 +826,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
           <div className={cn("rounded-xl transition-colors duration-150", settingsOpen && "bg-amber-50 p-1.5")}>
             <ExpandableTrigger
               icon={Settings}
-              label="Settings"
+              label={t.settings}
               isOpen={settingsOpen}
               isActive={isSettingsActive}
               onToggle={() => setSettingsOpen((v) => !v)}
@@ -778,10 +834,10 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
             {settingsOpen && (
               <div className="mt-0.5 max-h-64 overflow-y-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
                 {SETTINGS_SUBNAV.filter((section) => {
-                  if (section.heading === "POS & Payments" && !features.pos) return false;
+                  if (section.headingKey === "posPayments" && !features.pos) return false;
                   return true;
                 }).map((section) => (
-                  <div key={section.heading}>
+                  <div key={section.headingKey}>
                     <SectionHeading label={section.heading} />
                     <div className="space-y-0.5">
                       {section.items.map((sub) => {

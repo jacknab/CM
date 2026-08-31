@@ -268,11 +268,20 @@ router.post("/", isAuthenticated, async (req, res) => {
     if (phone) {
       const { e164, display } = normalizePhone(phone);
       if (e164) {
+        // Auto-detect whether this is a mobile, VoIP, or landline number so the
+        // system can route SMS/voice intelligently going forward.
+        let detectedType: "mobile" | "voip" | "landline" | "unknown" = "unknown";
+        try {
+          const { detectPhoneType } = await import("../lib/phoneTypeDetector");
+          detectedType = detectPhoneType(e164).phoneType;
+        } catch (e: any) {
+          console.warn(`[clients] phone-type detection skipped: ${e?.message ?? e}`);
+        }
         await db.insert(clientPhones).values({
           clientId: client.id,
           phoneNumberE164: e164,
           displayPhone: display,
-          phoneType: "mobile",
+          phoneType: detectedType,
           smsOptIn,
           isPrimary: true,
         });
@@ -1211,7 +1220,14 @@ router.post("/import/execute", isAuthenticated, upload.single("file"), async (re
         if (phone) {
           const { e164, display } = normalizePhone(phone);
           if (e164) {
-            await db.insert(clientPhones).values({ clientId: client.id, phoneNumberE164: e164, displayPhone: display, isPrimary: true }).onConflictDoNothing();
+            let detectedType: "mobile" | "voip" | "landline" | "unknown" = "unknown";
+            try {
+              const { detectPhoneType } = await import("../lib/phoneTypeDetector");
+              detectedType = detectPhoneType(e164).phoneType;
+            } catch (e: any) {
+              console.warn(`[clients-import] phone-type detection skipped: ${e?.message ?? e}`);
+            }
+            await db.insert(clientPhones).values({ clientId: client.id, phoneNumberE164: e164, displayPhone: display, phoneType: detectedType, isPrimary: true }).onConflictDoNothing();
           }
         }
         if (mapped.notes) {

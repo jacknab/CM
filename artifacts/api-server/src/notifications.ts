@@ -1,5 +1,8 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server } from "http";
+import { publishCrossProcess, subscribeCrossProcess, isCrossProcessBusAvailable } from "./lib/wsBroadcastBus";
+
+const CROSS_PROCESS_CHANNEL = "ws:notify";
 
 export type NotificationEvent =
   | { type: "new_booking"; storeId: number; customerName: string; serviceName: string; staffName?: string; time: string }
@@ -12,9 +15,17 @@ export type NotificationEvent =
   | { type: "job_status_updated"; storeId: number; jobId: number; status: string }
   | { type: "ai_call_updated"; storeId: number }
   | { type: "kiosk_checkout_start"; storeId: number; total: number }
-  | { type: "kiosk_checkout_tip_request"; storeId: number; total: number }
+  // POS → customer display: live cart mirror while the ticket is being built.
+  | { type: "kiosk_checkout_cart"; storeId: number; items: { label: string; price: number }[]; subtotal: number; discount: number; tip: number; tax: number; total: number; isWalkIn: boolean; customerName: string; appointmentId?: number }
+  // Server → clients: a walk-in customer joined rewards from the front-desk display.
+  | { type: "kiosk_checkout_customer_linked"; storeId: number; appointmentId: number; clientId: number; name: string; loyaltyPoints: number; isNew: boolean }
+  | { type: "kiosk_checkout_tip_request"; storeId: number; total: number; cardMethod?: "m2" | "tap" }
   | { type: "kiosk_checkout_tip_selected"; storeId: number; tipAmount: number; tipPercent: number }
-  | { type: "kiosk_checkout_payment_result"; storeId: number; success: boolean; total: number; last4?: string }
+  // POS → customer display: show a card-payment instruction screen while a card
+  // charge is collected. mode "m2" = tap on the Stripe M2 reader (display only);
+  // mode "tap" = Tap to Pay on this (NFC Android) tablet.
+  | { type: "kiosk_checkout_await_payment"; storeId: number; mode: "m2" | "tap"; total: number; appointmentId?: number }
+  | { type: "kiosk_checkout_payment_result"; storeId: number; success: boolean; total?: number; last4?: string; error?: string; via?: "pos" | "client_confirm"; method?: "m2" | "tap" }
   | { type: "kiosk_checkout_complete"; storeId: number }
   | { type: "kiosk_checkout_cancel"; storeId: number }
   | { type: "sms_inbound"; storeId: number; clientPhone: string; clientName: string | null; body: string; createdAt: string };
@@ -86,13 +97,29 @@ export function setupNotificationServer(httpServer: Server) {
   });
 }
 
-function broadcastToStore(storeId: number, payload: string) {
+// In PM2 cluster mode, a client connected to a different worker than the one
+// handling the triggering request would never receive this without relaying
+// through Redis (see lib/wsBroadcastBus.ts) — each worker only knows about
+// its own locally-connected sockets.
+function deliverToLocalClients(storeId: number, payload: string) {
   const clients = storeClients.get(storeId);
   if (!clients || clients.size === 0) return;
   for (const ws of Array.from(clients)) {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(payload);
     }
+  }
+}
+
+subscribeCrossProcess(CROSS_PROCESS_CHANNEL, (msg: { storeId: number; payload: string }) => {
+  deliverToLocalClients(msg.storeId, msg.payload);
+});
+
+function broadcastToStore(storeId: number, payload: string) {
+  if (isCrossProcessBusAvailable()) {
+    publishCrossProcess(CROSS_PROCESS_CHANNEL, { storeId, payload });
+  } else {
+    deliverToLocalClients(storeId, payload);
   }
 }
 

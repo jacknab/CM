@@ -663,6 +663,10 @@ h1, h2, h3, h4 {
 .highlight-box strong { font-weight: 700; }
 
 /* ── ACCORDION ── */
+/* FAQ question text is wrapped in this heading (inside the button) purely for
+   AI/SEO heading semantics — reset to inherit so it stays visually identical
+   to plain button text. */
+.accordion-heading { margin: 0; font: inherit; font-weight: inherit; color: inherit; display: contents; }
 .accordion { border: 1px solid var(--light-grey); border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm); }
 .accordion-item { border-bottom: 1px solid var(--light-grey); }
 .accordion-item:last-child { border-bottom: none; }

@@ -5,8 +5,11 @@
  * applies the appropriate restriction:
  *
  *   locked      → Full block (AccountLocked page) — sub canceled, past grace
- *   suspended   → Only calendar/appointment pages blocked (AccountSuspended);
- *                 all other pages render normally with a dismissible banner
+ *   suspended   → Only a small allowlist of pages remain reachable (clients,
+ *                 categories/services/addons/products, reports, account/billing)
+ *                 so the owner can keep serving clients and pay to restore
+ *                 service. Everything else (calendar, POS, marketing, staff,
+ *                 settings, etc.) shows the AccountSuspended screen instead.
  *   inGracePeriod → Full access with a warning banner (trial ended, 7-day window)
  *   trialExpired → Full block (TrialExpired page) — grace period also over
  *   active      → Children rendered normally
@@ -25,48 +28,26 @@ interface AccountStatusGateProps {
   children: React.ReactNode;
 }
 
-/** Routes that are blocked when the account is suspended. */
-const SUSPENDED_BLOCKED_PATHS = [
-  // Calendar
-  "/calendar",
-  "/appointments",
-  "/staff-calendar",
-  // Payroll
-  "/payroll",
-  "/payroll-settings",
-  "/payouts/reports",
-  // Reports & analytics
+/**
+ * The only pages reachable while an account is suspended. Everything not
+ * listed here (calendar, POS, marketing, team, most settings, etc.) shows
+ * the AccountSuspended screen instead.
+ */
+const SUSPENDED_ALLOWED_PATHS = [
+  // Clients
+  "/customers", "/client-lookup", "/client", "/clients",
+  // Catalog — categories, services, add-ons, products (+ legacy redirect paths)
+  "/catalog/categories", "/catalog/services", "/catalog/addons", "/catalog/products",
+  "/services", "/addons", "/products",
+  // Reports
   "/reports",
-  "/register-reports",
-  "/analytics",
+  // Account / billing — so the owner can pay to restore service
+  "/account", "/billing",
 ];
 
-type SuspendedSection = "calendar" | "payroll" | "reports";
-
-function getSuspendedSection(pathname: string): SuspendedSection {
-  if (["/payroll", "/payroll-settings", "/payouts/reports"].some((p) =>
-    pathname === p || pathname.startsWith(p + "/"),
-  )) return "payroll";
-  if (["/reports", "/register-reports", "/analytics"].some((p) =>
-    pathname === p || pathname.startsWith(p + "/"),
-  )) return "reports";
-  return "calendar";
+function isSuspendedAllowedPath(pathname: string): boolean {
+  return SUSPENDED_ALLOWED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
-
-const SECTION_COPY: Record<SuspendedSection, { title: string; body: string }> = {
-  calendar: {
-    title: "Calendar access suspended",
-    body: "Your account's free trial has ended. To access the calendar and start taking bookings again, please subscribe to a Certxa plan.",
-  },
-  payroll: {
-    title: "Payroll access suspended",
-    body: "Your account's free trial has ended. To access payroll and contractor reports, please subscribe to a Certxa plan.",
-  },
-  reports: {
-    title: "Reports access suspended",
-    body: "Your account's free trial has ended. To access reports and analytics, please subscribe to a Certxa plan.",
-  },
-};
 
 function GracePeriodBanner({ graceEndsAt, onDismiss }: { graceEndsAt: string | null; onDismiss: () => void }) {
   const daysLeft = graceEndsAt
@@ -99,31 +80,32 @@ function GracePeriodBanner({ graceEndsAt, onDismiss }: { graceEndsAt: string | n
   );
 }
 
-function SuspendedAccessScreen({ section }: { section: SuspendedSection }) {
-  const { title, body } = SECTION_COPY[section];
+function SuspendedAccessScreen() {
   return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-6">
       <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center space-y-4">
         <div className="w-14 h-14 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto">
           <AlertTriangle className="w-7 h-7 text-amber-400" />
         </div>
-        <h1 className="text-xl font-semibold text-white">{title}</h1>
-        <p className="text-zinc-400 text-sm leading-relaxed">{body}</p>
+        <h1 className="text-xl font-semibold text-white">Account suspended</h1>
+        <p className="text-zinc-400 text-sm leading-relaxed">
+          This page isn't available while your account is suspended. Pay any outstanding balance on your billing page to restore full access.
+        </p>
         <p className="text-zinc-500 text-sm">
-          You can still access your settings, client records, and export your data.
+          You can still manage clients, services, add-ons, products, and reports.
         </p>
         <div className="flex flex-col gap-2 pt-2">
           <a
             href="/billing"
             className="w-full py-2.5 px-4 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
           >
-            View subscription plans
+            Go to billing
           </a>
           <a
-            href="/overview"
+            href="/customers"
             className="w-full py-2.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-medium transition-colors"
           >
-            Go to dashboard
+            Go to clients
           </a>
         </div>
       </div>
@@ -232,16 +214,12 @@ export function AccountStatusGate({ children }: AccountStatusGateProps) {
     return <AccountLocked />;
   }
 
-  // ── Suspended — calendar, payroll, and reports pages are restricted ────────
+  // ── Suspended — only clients/catalog/reports/billing remain reachable ─────
   if (data.accountStatus === "suspended") {
-    const isBlockedPage = SUSPENDED_BLOCKED_PATHS.some((p) =>
-      location.pathname === p || location.pathname.startsWith(p + "/"),
-    );
-    if (isBlockedPage) {
-      return <SuspendedAccessScreen section={getSuspendedSection(location.pathname)} />;
+    if (isSuspendedAllowedPath(location.pathname)) {
+      return <>{children}</>;
     }
-    // All other pages (settings, clients, data exports, etc.) are accessible.
-    return <>{children}</>;
+    return <SuspendedAccessScreen />;
   }
 
   // ── Trial ended but still within 7-day grace period ───────────────────────

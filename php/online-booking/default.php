@@ -44,6 +44,17 @@ define('PAGE_SCHEMA', json_encode([
       ],
     ],
   ],
+  [
+    '@type'       => 'HowTo',
+    'name'        => 'How to set up online booking for your nail salon',
+    'description' => 'Get your Certxa online booking page live in three steps.',
+    'totalTime'   => 'PT10M',
+    'step' => [
+      ['@type'=>'HowToStep','position'=>1,'name'=>'Add your services','text'=>'List your services with names, durations, and prices. Organise them into categories so clients can find what they need instantly.','url'=>'https://certxa.com/online-booking#setup'],
+      ['@type'=>'HowToStep','position'=>2,'name'=>'Set your availability','text'=>'Tell Certxa your working hours and any blocked dates. Only your available slots are shown to clients.','url'=>'https://certxa.com/online-booking#setup'],
+      ['@type'=>'HowToStep','position'=>3,'name'=>'Share your booking link','text'=>'Copy your unique booking link and share it everywhere — your website, socials, email signature, wherever your clients find you.','url'=>'https://certxa.com/online-booking#setup'],
+    ],
+  ],
 ]));
 require 'includes/header.php';
 require 'includes/nav.php';
@@ -425,7 +436,7 @@ $now_top = cal_top('11:20'); // simulate current time line
 </section>
 
 <!-- HOW IT WORKS -->
-<section class="section section-alt">
+<section id="setup" class="section section-alt">
   <div class="container">
     <div class="section-header">
       <span class="tag tag-plum">Simple Setup</span>
@@ -460,19 +471,19 @@ $now_top = cal_top('11:20'); // simulate current time line
     </div>
     <div class="accordion">
       <div class="accordion-item">
-        <button class="accordion-btn">Do my clients need to create an account to book? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Do my clients need to create an account to book? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">No — clients can book instantly without creating an account or downloading anything. They simply choose a service, pick a time, and confirm with their name and contact details. It couldn't be simpler.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">Can I accept deposits or prepayments at booking? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Can I accept deposits or prepayments at booking? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">Absolutely. You can require a deposit (fixed amount or percentage) to secure bookings. This dramatically reduces no-shows and protects your time for high-value services.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">Can I manage multiple staff members' schedules? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Can I manage multiple staff members' schedules? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">Yes — Certxa supports unlimited staff members, each with their own calendar, services, and working hours. Clients can choose a specific stylist or let the system assign the next available one.</div>
       </div>
       <div class="accordion-item">
-        <button class="accordion-btn">Will I get notified when a new booking comes in? <span class="accordion-icon">+</span></button>
+        <h3 class="accordion-heading"><button class="accordion-btn">Will I get notified when a new booking comes in? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">You receive instant push notifications, email alerts, or SMS (your choice) every time a client books, cancels, or reschedules. You're always in the loop.</div>
       </div>
     </div>
@@ -484,7 +495,7 @@ $now_top = cal_top('11:20'); // simulate current time line
   <div class="container" style="position:relative;z-index:1;">
     <span class="tag" style="background:rgba(255,255,255,.15);color:#fff;margin-bottom:16px;display:inline-block;">Start Booking Today</span>
     <h2 class="cta-title">Fill your calendar.<br><em>Grow your business.</em></h2>
-    <p class="cta-text">Join thousands of salon owners who've transformed their booking process with Certxa. Start your free trial today.</p>
+    <p class="cta-text">Transform how your salon takes bookings with Certxa. Start your free trial today.</p>
     <div class="cta-actions">
           <a href="/auth?mode=register" class="btn btn-gold">Start Free Trial</a>
           <a href="/nail-salon-software" class="btn btn-outline-white">Explore nail salon software</a>

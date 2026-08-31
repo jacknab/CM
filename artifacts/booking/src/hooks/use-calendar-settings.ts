@@ -17,6 +17,8 @@ export function useCalendarSettings() {
       return res.json();
     },
     staleTime: 5 * 60_000,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10000),
   });
 }
 
@@ -51,7 +53,6 @@ export const DEFAULT_CALENDAR_SETTINGS = {
   nonWorkingHoursDisplay: 1,
   allowBookingOutsideHours: true,
   autoCompleteAppointments: true,
-  autoMarkNoShows: false,
   showPrices: true,
   walkInsEnabled: true,
   language: "en",

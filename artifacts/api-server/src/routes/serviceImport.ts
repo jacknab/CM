@@ -1,4 +1,4 @@
-/**
+ /**
  * Service Import Routes — AI-powered menu import from photos/PDF + manual review.
  *
  * POST /api/service-import/upload       — upload images/PDF, create job, fire async AI
@@ -12,9 +12,23 @@ import { Router, Request, Response } from "express";
 import multer from "multer";
 import { db, pool } from "../db";
 import { sql, eq } from "drizzle-orm";
-import { services, serviceCategories, locations } from "@shared/schema";
+import { services, serviceCategories, addons, locations } from "@shared/schema";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import { uploadToR2 } from "../lib/r2";
+import { autoAssignServiceImages } from "./serviceImages";
+import {
+  classifyImportedItem,
+  detectSalonBusinessType,
+  type SalonBusinessType,
+} from "../lib/salonServiceTaxonomy";
+import {
+  getFixedCategoryTemplate,
+  getFixedCategoryNames,
+  getFixedCategorySortOrder,
+  renderFixedCategoryPromptBlock,
+  matchFixedCategoryByPattern,
+  type FixedCategoryTemplate,
+} from "../lib/catalogCategoryTemplates";
 import {
   sendServiceImportSuccessEmail,
   sendServiceImportFailureEmail,
@@ -107,6 +121,10 @@ interface ExtractedService {
   description?: string;
 }
 
+interface ExtractedAddon extends ExtractedService {
+  addonCategory?: string;
+}
+
 interface ExtractedCategory {
   name: string;
   services: ExtractedService[];
@@ -116,6 +134,17 @@ interface ExtractedCategory {
 
 interface AIMenuResult {
   categories: ExtractedCategory[];
+  addons?: ExtractedAddon[];
+}
+
+async function getStoreCategoryRaw(storeId: number): Promise<string | null> {
+  const result = await pool.query("SELECT category FROM locations WHERE id = $1 LIMIT 1", [storeId]);
+  return result.rows[0]?.category ?? null;
+}
+
+async function getStoreBusinessType(storeId: number): Promise<SalonBusinessType> {
+  const raw = await getStoreCategoryRaw(storeId);
+  return detectSalonBusinessType(raw);
 }
 
 // ─── Fuzzy matching helper for fallback category assignment ───────────────────
@@ -166,7 +195,24 @@ function getOpenAIConfig(): { apiKey: string; baseURL?: string } {
   throw new Error("OpenAI API key is not configured");
 }
 
-const SYSTEM_PROMPT = `You are a nail salon service menu parser. The owner has uploaded photos or a PDF of their price board. Extract all services you can identify and return ONLY valid JSON.
+const SYSTEM_PROMPT = `You are a salon, spa, tattoo, and piercing menu parser. The owner has uploaded photos or a PDF of their price board. Extract every priced bookable service and every priced optional add-on you can identify, and return ONLY valid JSON.
+
+LAYOUT AND CATEGORY-HEADING RULES (VERY IMPORTANT):
+- First inspect the visual layout before reading individual prices. Menu category headings are usually larger, colored, centered, underlined, or separated from the service rows, and normally have no price beside them.
+- A category heading directly above a group of services owns the services beneath it until the next heading. Preserve that grouping.
+- Menus may have multiple side-by-side columns. Treat each column independently: do not attach a service or price from the left column to a heading or price in the right column.
+- A heading is not a service. Never create a service from a standalone title such as "Waxing" or "Threading" when it has no price. Use it as the category name for the rows below it.
+- Read the category title exactly enough to distinguish categories such as Waxing and Threading, even when they appear in separate columns. If a heading is clear, use that heading rather than guessing from an individual service name.
+- A service row normally contains a service name and a nearby numeric price. Keep the name and price from the same row.
+
+CATEGORY GUIDANCE FOR COMMON MENU WORDING:
+- "Mani", "Manis", "Manicure", or "Manicures" belong under Manicures.
+- "Pedi", "Pedis", "Pedicure", or "Pedicures" belong under Pedicures.
+- If one service contains both a mani/manicure term and a pedi/pedicure term (for example "Mani Pedi" or "Manicure & Pedicure"), it belongs under Combos/Combination.
+- Nail repairs, cut-downs, soak-offs/removals, new-set fees, shellac, Gelish, and gel polish belong under Enhancements unless the heading clearly indicates a more specific category.
+- Callus treatments, sea-salt scrubs, cooling masks, and toe-nail services belong under Pedicures.
+- Hand design, nail design, charms, French tips, and similar design services belong under Nail Art.
+- When a broad heading such as "Additional Services" contains these recognizable services, categorize each service by the rules above rather than using Additional Services as the category.
 
 Normalize service names to standard nail salon terminology:
 - "Gel X" / "Gel-X" / "Gel X Full" / "GelX" → "Gel-X Full Set"
@@ -177,9 +223,10 @@ Normalize service names to standard nail salon terminology:
 - "Hard Gel" / "Hard Gel Full Set" → "Hard Gel Full Set"
 - "Polygel" / "Poly Gel" / "Poly-Gel" → "Polygel Full Set"
 - "French" suffix → keep "French" in the name (e.g. "Gel French Manicure")
-- Add-ons and variations should be captured as separate services within the closest allowed category.
-Use ONLY these seven category names: Manicures, Pedicures, Enhancements, Nail Art, Waxing, Threading, Combos.
-Never invent another category. Put acrylic, gel, Gel-X, dip, fills, removals, and extensions under Enhancements. Put designs, charms, French tips, and similar add-ons under Nail Art. Put bundled services under Combos.
+ - Add-ons, upgrades, enhancements, and optional extras must not become services or categories. Put them in the top-level "addons" array.
+ - For nail menus, examples of add-ons include Polish Change, Rhinestones, Gems, Charms, Hot Towels, Extra Massage, and Nail Whitener. Preserve the listed price and estimate duration.
+ - For hair, spa, tattoo, or piercing menus, use the same rule: an optional upgrade or extra that is normally attached to a primary service belongs in "addons".
+ - Use the visual heading as the service category. Normalize obvious heading variants, but do not invent an "Add-ons" service category.
 For duration, estimate in minutes based on service type if not shown (e.g. manicure=45, pedicure=60, acrylic full set=90).
 For prices, extract the numeric value only (no $ sign). If a price range is shown (e.g. "$40-50"), use the lower value.
 Return ONLY valid JSON with no markdown, no commentary.
@@ -193,14 +240,30 @@ JSON format:
         { "name": "Classic Manicure", "price": 25, "duration": 45, "description": "" }
       ]
     }
+  ],
+  "addons": [
+    { "name": "Rhinestones", "price": 5, "duration": 5, "description": "" }
   ]
 }`;
+
+/**
+ * When the store's business type has a fixed category template (see
+ * lib/catalogCategoryTemplates.ts), append it to the base system prompt so
+ * extraction uses the same category names as the classification step below —
+ * the AI already knows the business type from onboarding, so it should never
+ * be guessing at category names from scratch.
+ */
+function buildSystemPrompt(fixedCategoryBlock: string | null): string {
+  if (!fixedCategoryBlock) return SYSTEM_PROMPT;
+  return `${SYSTEM_PROMPT}\n\n${fixedCategoryBlock}`;
+}
 
 /**
  * Extract services from image files using GPT-4o (vision).
  */
 async function extractServicesFromImages(
-  imageBuffers: { buffer: Buffer; mimeType: string; originalName: string }[]
+  imageBuffers: { buffer: Buffer; mimeType: string; originalName: string }[],
+  fixedCategoryBlock: string | null
 ): Promise<AIMenuResult> {
   const OpenAI = (await import("openai")).default;
   const openai = new OpenAI(getOpenAIConfig());
@@ -208,7 +271,7 @@ async function extractServicesFromImages(
   const content: any[] = [
     {
       type: "text",
-      text: "Please analyze these nail salon price menu photos and extract all services, categories, prices, and durations. Return structured JSON only.",
+      text: "Analyze these menu photos spatially. Identify each visually distinct category heading first, then assign every priced service beneath that heading to it. The heading may be larger, colored, centered, or directly above a column of rows. Carefully keep side-by-side columns separate and never treat an unpriced heading as a service. Return structured JSON only.",
     },
   ];
 
@@ -229,7 +292,7 @@ async function extractServicesFromImages(
     max_tokens: 4096,
     response_format: { type: "json_object" },
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: buildSystemPrompt(fixedCategoryBlock) },
       { role: "user", content },
     ],
   });
@@ -243,7 +306,8 @@ async function extractServicesFromImages(
  */
 async function extractServicesFromPDF(
   pdfBuffer: Buffer,
-  originalName: string
+  originalName: string,
+  fixedCategoryBlock: string | null
 ): Promise<AIMenuResult> {
   const { default: OpenAI, toFile } = await import("openai");
   const openai = new OpenAI(getOpenAIConfig());
@@ -260,16 +324,18 @@ async function extractServicesFromPDF(
   try {
     completion = await openai.chat.completions.create({
       model: "gpt-5.5",
-      max_tokens: 4096,
+      // GPT-5 reasoning models use max_completion_tokens; max_tokens causes
+      // the PDF request to fail before the document is processed.
+      max_completion_tokens: 8192,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: buildSystemPrompt(fixedCategoryBlock) },
         {
           role: "user",
           content: [
             {
               type: "text",
-              text: "Please analyze this nail salon price menu PDF and extract all services, categories, add-ons, variations, and prices. Return structured JSON only.",
+              text: "Analyze this PDF spatially. Identify each visually distinct category heading first, then assign every priced service beneath that heading to it. The heading may be larger, colored, centered, or directly above a column of rows. Carefully keep side-by-side columns separate and never treat an unpriced heading as a service. Return structured JSON only.",
             },
             {
               type: "file",
@@ -432,7 +498,12 @@ Guidelines:
 /**
  * Main orchestration: enrich AI result with intelligent category matching & auto-creation.
  *
- * Process:
+ * When the store's business type has a fixed category template (see
+ * lib/catalogCategoryTemplates.ts), every service is placed into one of that
+ * template's fixed categories — never invented — and a category is only ever
+ * created in the DB the first time a service actually needs it (no empty
+ * categories are pre-seeded). Business types without a template fall back to
+ * the original dynamic behavior unchanged:
  * 1. Fetch existing store categories
  * 2. For each service: try AI matching (Tier 1) → fuzzy matching (Tier 2)
  * 3. Collect unmatched services
@@ -441,7 +512,8 @@ Guidelines:
  */
 async function enrichAIResultWithCategoryMatching(
   aiResult: AIMenuResult,
-  storeId: number
+  storeId: number,
+  fixedTemplate: FixedCategoryTemplate | null
 ): Promise<AIMenuResult> {
   console.log(`[ServiceImport] Enriching AI result with category matching for store ${storeId}…`);
 
@@ -462,9 +534,217 @@ async function enrichAIResultWithCategoryMatching(
 
   const matchedServices: Map<string, { services: ExtractedService[]; confidence: number; isNew: boolean }> = new Map();
   const unmatchedServices: ExtractedService[] = [];
+  const extractedAddons: ExtractedAddon[] = [];
+  const forcedCategoriesCreated = new Set<string>();
+  const businessType = await getStoreBusinessType(storeId);
+
+  // Accept an AI-produced top-level add-ons array as well as rows that the
+  // deterministic classifier finds inside category groups.
+  for (const addon of aiResult.addons ?? []) {
+    if (!addon?.name?.trim()) continue;
+    const taxonomy = classifyImportedItem(addon.name, businessType);
+    extractedAddons.push({
+      ...addon,
+      name: taxonomy.normalizedName,
+      addonCategory: taxonomy.addonCategory,
+    });
+  }
+
+  // ── Fixed-template path ──────────────────────────────────────────────────
+  // The business type is already known from onboarding, so when a template
+  // exists for it, every non-addon service is placed into one of its fixed
+  // categories — Tier 0 (pattern rules) → Tier 1 (AI match) → Tier 2 (fuzzy
+  // match, no threshold — the fixed list is small enough that the closest
+  // one is always an acceptable placement). Categories are created lazily,
+  // case-insensitively deduped against the DB, and get the template's sort
+  // order — never a new/invented category name.
+  if (fixedTemplate) {
+    const allowedNames = getFixedCategoryNames(fixedTemplate);
+    console.log(`[ServiceImport] Fixed category template active for "${fixedTemplate.businessType}" — allowed categories: ${allowedNames.join(", ")}`);
+
+    const categoryCreationCache = new Map<string, { name: string; isNew: boolean }>();
+    const ensureCategory = async (name: string, sortOrder: number): Promise<{ name: string; isNew: boolean }> => {
+      const key = name.trim().toLowerCase();
+      const cached = categoryCreationCache.get(key);
+      if (cached) return cached;
+
+      const existing = await db
+        .select({ name: serviceCategories.name })
+        .from(serviceCategories)
+        .where(sql`store_id = ${storeId} AND lower(name) = lower(${name})`)
+        .limit(1);
+
+      if (existing.length) {
+        const result = { name: existing[0].name, isNew: false };
+        categoryCreationCache.set(key, result);
+        return result;
+      }
+
+      const [inserted] = await db
+        .insert(serviceCategories)
+        .values({ name, storeId, sortOrder })
+        .returning({ name: serviceCategories.name });
+      const result = { name: inserted?.name ?? name, isNew: true };
+      categoryCreationCache.set(key, result);
+      console.log(`[ServiceImport] Created fixed category "${result.name}" (sortOrder: ${sortOrder})`);
+      return result;
+    };
+
+    for (const svc of allServices) {
+      const taxonomy = classifyImportedItem(svc.name, businessType);
+      if (taxonomy.isAddon) {
+        extractedAddons.push({
+          ...svc,
+          name: taxonomy.normalizedName,
+          addonCategory: taxonomy.addonCategory,
+        });
+        console.log(`[ServiceImport] Classified "${svc.name}" as ${taxonomy.addonCategory}`);
+        continue;
+      }
+
+      let targetName: string | null = matchFixedCategoryByPattern(fixedTemplate, svc.name);
+      let confidence = 1;
+
+      if (!targetName) {
+        const aiMatch = await matchServiceToCategory(svc.name, svc.description, allowedNames);
+        if (aiMatch) {
+          targetName = aiMatch.categoryName;
+          confidence = aiMatch.confidence;
+          console.log(`[ServiceImport] Service "${svc.name}" AI-matched to fixed category "${targetName}" (confidence: ${confidence})`);
+        }
+      }
+
+      if (!targetName) {
+        // Guaranteed fallback — allowedNames is never empty, so this always
+        // resolves. There is no "unmatched" outcome for a fixed template:
+        // Rule 1 (never invent categories) means every service must land in
+        // the closest one of the fixed set, even at low confidence.
+        let bestMatch: { name: string; similarity: number } | null = null;
+        for (const catName of allowedNames) {
+          const similarity = calculateSimilarity(svc.name, catName);
+          if (!bestMatch || similarity > bestMatch.similarity) bestMatch = { name: catName, similarity };
+        }
+        targetName = bestMatch!.name;
+        confidence = bestMatch!.similarity;
+        console.log(`[ServiceImport] Service "${svc.name}" had no confident match — placed in closest fixed category "${targetName}" (similarity: ${confidence})`);
+      }
+
+      const sortOrder = getFixedCategorySortOrder(fixedTemplate, targetName);
+      const { name: categoryName, isNew: categoryIsNew } = await ensureCategory(targetName, sortOrder);
+      const entry = matchedServices.get(categoryName) ?? { services: [], confidence, isNew: categoryIsNew };
+      entry.services.push(svc);
+      entry.confidence = (entry.confidence + confidence) / 2;
+      matchedServices.set(categoryName, entry);
+    }
+
+    // No Step 3 here — fixed templates never invent new categories, and a
+    // category that had zero matching services was simply never created.
+    const enrichedResult: AIMenuResult = {
+      categories: Array.from(matchedServices.entries()).map(([categoryName, entry]) => ({
+        name: categoryName,
+        services: entry.services,
+        confidence: entry.confidence,
+        isAutoGenerated: entry.isNew,
+      })),
+      addons: extractedAddons,
+    };
+    console.log(`[ServiceImport] Enrichment complete (fixed template): ${enrichedResult.categories.length} categories, ${allServices.length - extractedAddons.length} services, ${extractedAddons.length} add-ons`);
+    return enrichedResult;
+  }
+
+  // ── Legacy dynamic path (business types with no fixed template) ─────────
+  // These two words are reliable category signals and should take precedence
+  // over the probabilistic category matcher. A combined manicure + pedicure is
+  // always a combo, never two separate categories.
+  const getForcedCategory = (serviceName: string, heading: string): { name: string; aliases: string[] } | null => {
+    const hasManicure = /\b(?:manis?|manicures?)\b/i.test(serviceName);
+    const hasPedicure = /\b(?:pedis?|pedicures?)\b/i.test(serviceName);
+    if (hasManicure && hasPedicure) return { name: "Combos", aliases: ["combo", "combos", "combination", "combinations"] };
+    if (hasManicure) return { name: "Manicures", aliases: ["manicures", "manicure"] };
+    if (hasPedicure) return { name: "Pedicures", aliases: ["pedicures", "pedicure"] };
+
+    // Common short names and add-ons often appear under a broad heading such
+    // as "Additional Services". Classify those rows by what the service does
+    // instead of leaving them in that catch-all heading.
+    const name = serviceName.toLowerCase();
+    if (/\b(?:callus|sea salt|cooling mask|toe nails?)\b/.test(name)) {
+      return { name: "Pedicures", aliases: ["pedicures", "pedicure"] };
+    }
+    if (/\b(?:nail repair|cut down|soak off|removal|new set|shellac|gelish|gel polish)\b/.test(name)) {
+      return { name: "Enhancements", aliases: ["enhancements", "enhancement"] };
+    }
+    if (/\b(?:hand design|nail design|charms?|french)\b/.test(name)) {
+      return { name: "Nail Art", aliases: ["nail art", "nailart"] };
+    }
+    if (/\b(?:polish change|trim nails?)\b/.test(name)) {
+      return { name: "Manicures", aliases: ["manicures", "manicure"] };
+    }
+
+    // The extracted category name represents the visual heading above this
+    // row. Prefer it for ambiguous names such as Eyebrows, Lip, or Chin,
+    // which can legitimately belong to Waxing or Threading depending on the
+    // column they came from.
+    const normalizedHeading = heading.trim().toLowerCase().replace(/[&_-]/g, " ").replace(/\s+/g, " ");
+    const headingAliases: Record<string, { name: string; aliases: string[] }> = {
+      waxing: { name: "Waxing", aliases: ["waxing", "wax"] },
+      wax: { name: "Waxing", aliases: ["waxing", "wax"] },
+      threading: { name: "Threading", aliases: ["threading", "thread"] },
+      thread: { name: "Threading", aliases: ["threading", "thread"] },
+      manicures: { name: "Manicures", aliases: ["manicures", "manicure"] },
+      manicure: { name: "Manicures", aliases: ["manicures", "manicure"] },
+      pedicures: { name: "Pedicures", aliases: ["pedicures", "pedicure"] },
+      pedicure: { name: "Pedicures", aliases: ["pedicures", "pedicure"] },
+      enhancements: { name: "Enhancements", aliases: ["enhancements", "enhancement"] },
+      "nail art": { name: "Nail Art", aliases: ["nail art", "nailart"] },
+      combos: { name: "Combos", aliases: ["combos", "combo", "combination", "combinations"] },
+      combo: { name: "Combos", aliases: ["combos", "combo", "combination", "combinations"] },
+      combination: { name: "Combos", aliases: ["combos", "combo", "combination", "combinations"] },
+    };
+    return headingAliases[normalizedHeading] ?? null;
+  };
+
+  const ensureForcedCategory = async (forced: { name: string; aliases: string[] }): Promise<string> => {
+    const existingName = existingCategoryNames.find((name) =>
+      forced.aliases.includes(name.trim().toLowerCase())
+    );
+    if (existingName) return existingName;
+
+    const [newCategory] = await db
+      .insert(serviceCategories)
+      .values({ name: forced.name, storeId, sortOrder: 999 })
+      .returning({ name: serviceCategories.name });
+    const categoryName = newCategory?.name ?? forced.name;
+    existingCategoryNames.push(categoryName);
+    forcedCategoriesCreated.add(categoryName);
+    return categoryName;
+  };
 
   for (const svc of allServices) {
+    const taxonomy = classifyImportedItem(svc.name, businessType);
+    if (taxonomy.isAddon) {
+      extractedAddons.push({
+        ...svc,
+        name: taxonomy.normalizedName,
+        addonCategory: taxonomy.addonCategory,
+      });
+      console.log(`[ServiceImport] Classified "${svc.name}" as ${taxonomy.addonCategory}`);
+      continue;
+    }
     let matched = false;
+
+    const forcedCategory = getForcedCategory(svc.name, svc.originalCategory);
+    if (forcedCategory) {
+      const categoryName = await ensureForcedCategory(forcedCategory);
+      const entry = matchedServices.get(categoryName) ?? {
+        services: [],
+        confidence: 1,
+        isNew: forcedCategoriesCreated.has(categoryName),
+      };
+      entry.services.push(svc);
+      matchedServices.set(categoryName, entry);
+      console.log(`[ServiceImport] Rule-matched service "${svc.name}" to "${categoryName}"`);
+      continue;
+    }
 
     // Tier 1: Try AI matching
     if (existingCategoryNames.length > 0) {
@@ -509,6 +789,7 @@ async function enrichAIResultWithCategoryMatching(
   // Step 3: Suggest & create new categories for unmatched services
   if (unmatchedServices.length > 0) {
     const suggestedCats = await suggestCategoriesForUnmatched(unmatchedServices);
+    if (suggestedCats.length === 0) suggestedCats.push("Other Services");
     console.log(`[ServiceImport] AI suggested ${suggestedCats.length} new categories`);
 
     for (const catName of suggestedCats) {
@@ -546,15 +827,16 @@ async function enrichAIResultWithCategoryMatching(
       confidence: entry.confidence,
       isAutoGenerated: entry.isNew,
     })),
+    addons: extractedAddons,
   };
 
-  console.log(`[ServiceImport] Enrichment complete: ${enrichedResult.categories.length} categories, ${allServices.length} services`);
+  console.log(`[ServiceImport] Enrichment complete: ${enrichedResult.categories.length} categories, ${allServices.length - extractedAddons.length} services, ${extractedAddons.length} add-ons`);
   return enrichedResult;
 }
 
 // ─── Merge helper — combines two AIMenuResult objects, merging same-name categories ──
 function mergeMenuResults(base: AIMenuResult, incoming: AIMenuResult): AIMenuResult {
-  const merged = { categories: [...base.categories] };
+  const merged: AIMenuResult = { categories: [...base.categories], addons: [...(base.addons ?? [])] };
   for (const inCat of incoming.categories) {
     const existing = merged.categories.find(
       c => c.name.toLowerCase() === inCat.name.toLowerCase()
@@ -565,6 +847,7 @@ function mergeMenuResults(base: AIMenuResult, incoming: AIMenuResult): AIMenuRes
       merged.categories.push(inCat);
     }
   }
+  merged.addons = [...(merged.addons ?? []), ...(incoming.addons ?? [])];
   return merged;
 }
 
@@ -610,6 +893,16 @@ async function processImportJob(
       throw new Error("No files could be loaded for AI processing");
     }
 
+    // The business type is already known from onboarding (the very first
+    // step) — if it has a fixed category template, use it to steer both
+    // extraction and classification so the AI never invents categories.
+    const storeCategoryRaw = await getStoreCategoryRaw(storeId);
+    const fixedTemplate = getFixedCategoryTemplate(storeCategoryRaw);
+    const fixedCategoryBlock = fixedTemplate ? renderFixedCategoryPromptBlock(fixedTemplate) : null;
+    if (fixedTemplate) {
+      console.log(`[ServiceImport] Fixed category template detected for business type "${storeCategoryRaw}"`);
+    }
+
     // Route PDFs through GPT-5.5 (native PDF understanding).
     // Images use GPT-4o (vision). If the upload is a mix, run both and merge.
     const pdfBuffers   = allBuffers.filter(f => f.mimeType === "application/pdf");
@@ -621,20 +914,20 @@ async function processImportJob(
       console.log(`[ServiceImport] Processing ${pdfBuffers.length} PDF(s) with GPT-5.5…`);
       // Process each PDF separately and merge categories
       for (const pdf of pdfBuffers) {
-        const pdfResult = await extractServicesFromPDF(pdf.buffer, pdf.originalName);
+        const pdfResult = await extractServicesFromPDF(pdf.buffer, pdf.originalName, fixedCategoryBlock);
         result = mergeMenuResults(result, pdfResult);
       }
     }
 
     if (imageBuffers.length > 0) {
       console.log(`[ServiceImport] Processing ${imageBuffers.length} image(s) with GPT-4o…`);
-      const imgResult = await extractServicesFromImages(imageBuffers);
+      const imgResult = await extractServicesFromImages(imageBuffers, fixedCategoryBlock);
       result = mergeMenuResults(result, imgResult);
     }
 
-    // ─── NEW: Enrich with intelligent category matching ────────────────────────
+    // ─── Enrich with intelligent category matching ─────────────────────────────
     console.log(`[ServiceImport] Running category enrichment for store ${storeId}…`);
-    result = await enrichAIResultWithCategoryMatching(result, storeId);
+    result = await enrichAIResultWithCategoryMatching(result, storeId, fixedTemplate);
     // ─────────────────────────────────────────────────────────────────────────────
 
     await updateJob(jobId, {
@@ -872,7 +1165,10 @@ router.post("/publish", async (req: Request, res: Response): Promise<void> => {
   }
 
   let totalServices = 0;
+  let totalAddons = 0;
   let autoGeneratedCategories: string[] = [];
+  const createdServiceIds: number[] = [];
+  const importedAddons = Array.isArray((req.body as any).addons) ? (req.body as any).addons as ExtractedAddon[] : [];
 
   for (const cat of categories) {
     if (!cat.name?.trim() || !Array.isArray(cat.services) || cat.services.length === 0) {
@@ -907,20 +1203,47 @@ router.post("/publish", async (req: Request, res: Response): Promise<void> => {
       const price = String(Math.max(0, Number(svc.price) || 0));
       const duration = Math.max(15, Number(svc.duration) || 60);
 
-      // AI-imported services start as inactive drafts — the owner reviews and activates them
-      await db.insert(services).values({
+      // The owner has reviewed these entries on the publish screen, so make them
+      // visible in the Services page and available for booking immediately.
+      const [createdService] = await db.insert(services).values({
         name:        svc.name.trim(),
         price,
         duration,
         category:    categoryName,
         categoryId:  existingCat.id,
         storeId,
-        isActive:    false,
+        isActive:    true,
         description: svc.description ?? null,
-      });
+      }).returning({ id: services.id });
 
       totalServices++;
+      if (createdService?.id) createdServiceIds.push(createdService.id);
     }
+  }
+
+  // Add-ons are deliberately stored in the add-ons catalog, not as services
+  // and not under a fabricated "Add-ons" service category.
+  for (const addon of importedAddons) {
+    if (!addon?.name?.trim()) continue;
+    await db.insert(addons).values({
+      name: addon.name.trim(),
+      price: String(Math.max(0, Number(addon.price) || 0)),
+      duration: Math.max(0, Number(addon.duration) || 0),
+      description: addon.description ?? null,
+      storeId,
+      isActive: true,
+    });
+    totalAddons++;
+  }
+
+  // Match each newly published service to the closest active image in the
+  // service image library. This is best-effort so a missing image library can
+  // never prevent the service import from completing.
+  let imagesAssigned = 0;
+  try {
+    imagesAssigned = await autoAssignServiceImages(storeId, createdServiceIds);
+  } catch (error: any) {
+    console.warn(`[ServiceImport] Automatic service image matching skipped: ${error?.message ?? error}`);
   }
 
   // Mark job as published
@@ -931,6 +1254,8 @@ router.post("/publish", async (req: Request, res: Response): Promise<void> => {
   res.json({
     ok: true,
     servicesCreated: totalServices,
+    addonsCreated: totalAddons,
+    imagesAssigned,
     autoGeneratedCategories,
   });
 });

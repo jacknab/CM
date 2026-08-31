@@ -73,18 +73,18 @@ function getComputedStatus(client: ClientListItem): ComputedStatus {
 
 // ─── Last visit formatting ────────────────────────────────────────────────────
 
-function formatLastVisit(dateStr: string | null): string {
-  if (!dateStr) return "Never";
+function formatLastVisit(dateStr: string | null, t: any): string {
+  if (!dateStr) return t.never;
   try {
     const date = parseISO(dateStr);
-    if (isNaN(date.getTime())) return "Never";
-    if (isToday(date)) return "Today";
-    if (isYesterday(date)) return "Yesterday";
+    if (isNaN(date.getTime())) return t.never;
+    if (isToday(date)) return t.today;
+    if (isYesterday(date)) return t.yesterday;
     const days = differenceInDays(new Date(), date);
-    if (days <= 30) return `${days} days ago`;
+    if (days <= 30) return t.daysAgo(days);
     return format(date, "MMM d, yyyy");
   } catch {
-    return "Never";
+    return t.never;
   }
 }
 
@@ -190,8 +190,14 @@ export default function Customers() {
     atRiskShortcut: pick({ en: "At-Risk",           vi: "Có nguy cơ",        es: "En riesgo",            fr: "À risque" }),
     // Note dialog
     noteTitle:      (name: string) => pick({ en: `Add Note — ${name}`, vi: `Thêm ghi chú — ${name}`, es: `Agregar nota — ${name}`, fr: `Ajouter note — ${name}` }),
+    clientFallback: pick({ en: "Client", vi: "Khách hàng", es: "Cliente", fr: "Client" }),
     notePlaceholder: pick({ en: "Enter a note about this client...", vi: "Nhập ghi chú về khách hàng này...", es: "Ingresa una nota sobre este cliente...", fr: "Entrez une note sur ce client..." }),
     noteSuccess:    pick({ en: "Note added",         vi: "Đã thêm ghi chú",   es: "Nota agregada",        fr: "Note ajoutée" }),
+    noteError:      pick({ en: "Failed to save note", vi: "Không thể lưu ghi chú", es: "No se pudo guardar la nota", fr: "Échec de l'enregistrement de la note" }),
+    never:          pick({ en: "Never",    vi: "Chưa từng",  es: "Nunca",     fr: "Jamais" }),
+    today:          pick({ en: "Today",    vi: "Hôm nay",    es: "Hoy",       fr: "Aujourd'hui" }),
+    yesterday:      pick({ en: "Yesterday", vi: "Hôm qua",   es: "Ayer",      fr: "Hier" }),
+    daysAgo:        (n: number) => pick({ en: `${n} days ago`, vi: `${n} ngày trước`, es: `hace ${n} días`, fr: `il y a ${n} jours` }),
     cancel:         pick({ en: "Cancel",             vi: "Hủy",               es: "Cancelar",             fr: "Annuler" }),
     saveNote:       pick({ en: "Save Note",          vi: "Lưu ghi chú",       es: "Guardar nota",         fr: "Enregistrer note" }),
     fullProfile:    pick({ en: "Full Profile",       vi: "Hồ sơ đầy đủ",      es: "Perfil completo",      fr: "Profil complet" }),
@@ -640,7 +646,7 @@ function ClientRow({
           : computedStatus === "inactive" ? "text-slate-400"
           : "text-foreground"
         }`}>
-          {formatLastVisit(client.lastVisitAt)}
+          {formatLastVisit(client.lastVisitAt, t)}
         </span>
       </td>
 
@@ -709,7 +715,7 @@ function ClientCard({
         </div>
         <div className="text-right text-xs text-muted-foreground shrink-0">
           <p className="font-medium text-foreground">{client.totalVisits} visits</p>
-          <p>{formatLastVisit(client.lastVisitAt)}</p>
+          <p>{formatLastVisit(client.lastVisitAt, t)}</p>
         </div>
       </button>
       <DropdownMenu>
@@ -803,7 +809,7 @@ function AddNoteDialog({
       { clientId: client.id, storeId: selectedStore.id, noteContent: content.trim(), noteType: "general" },
       {
         onSuccess: () => { toast({ title: t.noteSuccess }); handleClose(); },
-        onError: () => toast({ title: "Failed to save note", variant: "destructive" }),
+        onError: () => toast({ title: t.noteError, variant: "destructive" }),
       }
     );
   }
@@ -812,7 +818,7 @@ function AddNoteDialog({
     <Dialog open={!!client} onOpenChange={(v) => { if (!v) handleClose(); }}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>{t.noteTitle(client?.fullName || "Client")}</DialogTitle>
+          <DialogTitle>{t.noteTitle(client?.fullName || t.clientFallback)}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <Textarea
@@ -847,15 +853,28 @@ function EditClientDialog({
 }) {
   const { mutate, isPending } = useUpdateClient();
   const { toast } = useToast();
+  const { pick } = useLanguage();
   const { register, handleSubmit, reset, setValue: setEditValue } = useForm<{
     firstName: string; lastName: string; phone: string;
   }>();
 
+  const et = {
+    editClient:    pick({ en: "Edit Client",       vi: "Chỉnh sửa khách hàng", es: "Editar cliente",       fr: "Modifier le client" }),
+    firstName:     pick({ en: "First Name",        vi: "Tên",                  es: "Nombre",               fr: "Prénom" }),
+    lastName:      pick({ en: "Last Name",         vi: "Họ",                   es: "Apellido",             fr: "Nom" }),
+    phone:         pick({ en: "Phone",             vi: "Số điện thoại",        es: "Teléfono",             fr: "Téléphone" }),
+    cancel:        pick({ en: "Cancel",            vi: "Hủy",                  es: "Cancelar",             fr: "Annuler" }),
+    saving:        pick({ en: "Saving...",         vi: "Đang lưu...",          es: "Guardando...",         fr: "Enregistrement..." }),
+    saveChanges:   pick({ en: "Save Changes",      vi: "Lưu thay đổi",         es: "Guardar cambios",      fr: "Enregistrer" }),
+    clientUpdated: pick({ en: "Client updated",    vi: "Đã cập nhật khách hàng", es: "Cliente actualizado", fr: "Client mis à jour" }),
+    updateFailed:  pick({ en: "Failed to update client", vi: "Không thể cập nhật khách hàng", es: "No se pudo actualizar el cliente", fr: "Échec de la mise à jour du client" }),
+  };
+
   function onSubmit(data: { firstName: string; lastName: string; phone: string }) {
     if (!client) return;
     mutate({ id: client.id, ...data }, {
-      onSuccess: () => { toast({ title: "Client updated" }); onOpenChange(false); },
-      onError: () => toast({ title: "Failed to update client", variant: "destructive" }),
+      onSuccess: () => { toast({ title: et.clientUpdated }); onOpenChange(false); },
+      onError: () => toast({ title: et.updateFailed, variant: "destructive" }),
     });
   }
 
@@ -870,20 +889,20 @@ function EditClientDialog({
   return (
     <Dialog open={!!client} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>Edit Client</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{et.editClient}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" key={client.id}>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>First Name</Label>
+              <Label>{et.firstName}</Label>
               <Input {...register("firstName")} defaultValue={firstNameDefault} placeholder="Jane" />
             </div>
             <div className="space-y-1.5">
-              <Label>Last Name</Label>
+              <Label>{et.lastName}</Label>
               <Input {...register("lastName")} defaultValue={lastNameDefault} placeholder="Doe" />
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Phone</Label>
+            <Label>{et.phone}</Label>
             <Input
               {...register("phone")}
               defaultValue={formatPhoneInput(client.primaryPhone ?? "")}
@@ -896,9 +915,9 @@ function EditClientDialog({
             />
           </div>
           <div className="flex justify-end gap-2 pt-1">
-            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>{et.cancel}</Button>
             <Button type="submit" disabled={isPending} className="bg-primary text-white hover:bg-primary/90">
-              {isPending ? "Saving..." : "Save Changes"}
+              {isPending ? et.saving : et.saveChanges}
             </Button>
           </div>
         </form>
@@ -972,7 +991,7 @@ function ClientDetailSheet({
               </div>
               <div className="rounded-xl border bg-muted/30 p-3">
                 <p className="text-xs text-muted-foreground mb-0.5">Last Visit</p>
-                <p className="text-sm font-semibold leading-tight">{formatLastVisit(client.lastVisitAt)}</p>
+                <p className="text-sm font-semibold leading-tight">{formatLastVisit(client.lastVisitAt, t)}</p>
               </div>
             </div>
 
@@ -1025,38 +1044,56 @@ function ClientDetailSheet({
 function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const { mutate, isPending } = useCreateClient();
   const { toast } = useToast();
+  const { pick } = useLanguage();
   const { register, handleSubmit, reset, setValue: setAddValue } = useForm<{
     firstName: string; lastName: string; email: string; phone: string; notes: string; allergies: string;
   }>();
 
+  const ct = {
+    addNewClient: pick({ en: "Add New Client", vi: "Thêm khách hàng mới", es: "Agregar nuevo cliente", fr: "Ajouter un nouveau client" }),
+    firstName:    pick({ en: "First Name",      vi: "Tên",                es: "Nombre",               fr: "Prénom" }),
+    lastName:     pick({ en: "Last Name",       vi: "Họ",                 es: "Apellido",             fr: "Nom" }),
+    email:        pick({ en: "Email",           vi: "Email",              es: "Correo",               fr: "Email" }),
+    phone:        pick({ en: "Phone",           vi: "Số điện thoại",      es: "Teléfono",             fr: "Téléphone" }),
+    allergies:    pick({ en: "Allergies / Sensitivities", vi: "Dị ứng / Nhạy cảm", es: "Alergias / Sensibilidades", fr: "Allergies / Sensibilités" }),
+    allergiesPh:  pick({ en: "e.g. Latex, Ammonia, Perm solution...", vi: "vd: Cao su, Amoniac, Dung dịch uốn...", es: "ej. Látex, Amoníaco, Solución de permanente...", fr: "ex. Latex, Ammoniaque, Solution de permanente..." }),
+    notes:        pick({ en: "Notes",           vi: "Ghi chú",            es: "Notas",                fr: "Notes" }),
+    notesPh:      pick({ en: "Preferences, special requests...", vi: "Sở thích, yêu cầu đặc biệt...", es: "Preferencias, solicitudes especiales...", fr: "Préférences, demandes spéciales..." }),
+    cancel:       pick({ en: "Cancel",          vi: "Hủy",                es: "Cancelar",             fr: "Annuler" }),
+    adding:       pick({ en: "Adding...",       vi: "Đang thêm...",       es: "Agregando...",         fr: "Ajout en cours..." }),
+    addClient:    pick({ en: "Add Client",      vi: "Thêm khách hàng",    es: "Agregar cliente",      fr: "Ajouter un client" }),
+    clientAdded:  pick({ en: "Client added",    vi: "Đã thêm khách hàng", es: "Cliente agregado",     fr: "Client ajouté" }),
+    addFailed:    pick({ en: "Failed to add client", vi: "Không thể thêm khách hàng", es: "No se pudo agregar el cliente", fr: "Échec de l'ajout du client" }),
+  };
+
   function onSubmit(data: any) {
     mutate(data, {
-      onSuccess: () => { toast({ title: "Client added" }); reset(); onOpenChange(false); },
-      onError: (err: any) => { toast({ title: "Failed to add client", description: err.message, variant: "destructive" }); },
+      onSuccess: () => { toast({ title: ct.clientAdded }); reset(); onOpenChange(false); },
+      onError: (err: any) => { toast({ title: ct.addFailed, description: err.message, variant: "destructive" }); },
     });
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Add New Client</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{ct.addNewClient}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>First Name</Label>
+              <Label>{ct.firstName}</Label>
               <Input {...register("firstName")} placeholder="Jane" />
             </div>
             <div className="space-y-1.5">
-              <Label>Last Name</Label>
+              <Label>{ct.lastName}</Label>
               <Input {...register("lastName")} placeholder="Doe" />
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Email</Label>
+            <Label>{ct.email}</Label>
             <Input type="email" {...register("email")} placeholder="jane@example.com" />
           </div>
           <div className="space-y-1.5">
-            <Label>Phone</Label>
+            <Label>{ct.phone}</Label>
             <Input
               {...register("phone")}
               onChange={(e) => {
@@ -1068,17 +1105,17 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Allergies / Sensitivities</Label>
-            <Input {...register("allergies")} placeholder="e.g. Latex, Ammonia, Perm solution..." />
+            <Label>{ct.allergies}</Label>
+            <Input {...register("allergies")} placeholder={ct.allergiesPh} />
           </div>
           <div className="space-y-1.5">
-            <Label>Notes</Label>
-            <Input {...register("notes")} placeholder="Preferences, special requests..." />
+            <Label>{ct.notes}</Label>
+            <Input {...register("notes")} placeholder={ct.notesPh} />
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{ct.cancel}</Button>
             <Button type="submit" disabled={isPending} className="bg-primary text-white hover:bg-primary/90">
-              {isPending ? "Adding..." : "Add Client"}
+              {isPending ? ct.adding : ct.addClient}
             </Button>
           </div>
         </form>
@@ -1089,21 +1126,58 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
 
 // ─── Duplicate Merge Dialog ───────────────────────────────────────────────────
 
-const REASON_BADGE: Record<DuplicateGroup["reason"], { label: string; className: string }> = {
-  phone: { label: "Same phone",  className: "bg-blue-50 text-blue-700 border-blue-200" },
-  email: { label: "Same email",  className: "bg-violet-50 text-violet-700 border-violet-200" },
-  name:  { label: "Same name",   className: "bg-amber-50 text-amber-700 border-amber-200" },
-};
+function buildReasonBadge(pick: (m: { en: string; vi: string; es: string; fr: string }) => string): Record<DuplicateGroup["reason"], { label: string; className: string }> {
+  return {
+    phone: { label: pick({ en: "Same phone", vi: "Cùng số điện thoại", es: "Mismo teléfono", fr: "Même téléphone" }), className: "bg-blue-50 text-blue-700 border-blue-200" },
+    email: { label: pick({ en: "Same email", vi: "Cùng email",         es: "Mismo correo",   fr: "Même email" }),     className: "bg-violet-50 text-violet-700 border-violet-200" },
+    name:  { label: pick({ en: "Same name",  vi: "Cùng tên",           es: "Mismo nombre",   fr: "Même nom" }),       className: "bg-amber-50 text-amber-700 border-amber-200" },
+  };
+}
 
 function DuplicateMergeDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const { selectedStore } = useSelectedStore();
   const { toast } = useToast();
+  const { pick } = useLanguage();
   const { data, isLoading, refetch, isFetching } = useFindAllDuplicates(open);
   const { mutate: merge, isPending: isMerging } = useMergeClients();
 
   const [winners, setWinners] = useState<Record<string, number>>({});
   const [merged, setMerged] = useState<Set<string>>(new Set());
   const [mergingKey, setMergingKey] = useState<string | null>(null);
+
+  const REASON_BADGE = buildReasonBadge(pick);
+
+  const dt = {
+    title:          pick({ en: "Find & Merge Duplicates",   vi: "Tìm & Gộp trùng lặp",              es: "Buscar y fusionar duplicados",      fr: "Rechercher et fusionner les doublons" }),
+    scanning:       pick({ en: "Scanning for duplicates…",  vi: "Đang quét trùng lặp…",             es: "Buscando duplicados…",               fr: "Recherche de doublons…" }),
+    noneFound:      pick({ en: "No duplicate clients found.", vi: "Không tìm thấy khách hàng trùng lặp.", es: "No se encontraron clientes duplicados.", fr: "Aucun client en double trouvé." }),
+    allResolvedTick:pick({ en: "All duplicates resolved ✓", vi: "Đã xử lý tất cả trùng lặp ✓",      es: "Todos los duplicados resueltos ✓",   fr: "Tous les doublons résolus ✓" }),
+    groupsFound:    (n: number) => pick({ en: `${n} duplicate group${n !== 1 ? "s" : ""} found`, vi: `Tìm thấy ${n} nhóm trùng lặp`, es: `${n} grupo${n !== 1 ? "s" : ""} duplicado${n !== 1 ? "s" : ""} encontrado${n !== 1 ? "s" : ""}`, fr: `${n} groupe${n !== 1 ? "s" : ""} de doublons trouvé${n !== 1 ? "s" : ""}` }),
+    rescan:         pick({ en: "Rescan", vi: "Quét lại", es: "Reescanear", fr: "Rescanner" }),
+    scanningShort:  pick({ en: "Scanning…", vi: "Đang quét…", es: "Escaneando…", fr: "Analyse…" }),
+    cleanList:      pick({ en: "Your client list is clean — no duplicates found.", vi: "Danh sách khách hàng của bạn sạch — không có trùng lặp.", es: "Tu lista de clientes está limpia: no se encontraron duplicados.", fr: "Votre liste de clients est propre : aucun doublon trouvé." }),
+    allResolved:    pick({ en: "All duplicates have been resolved!", vi: "Tất cả trùng lặp đã được xử lý!", es: "¡Todos los duplicados han sido resueltos!", fr: "Tous les doublons ont été résolus !" }),
+    merge:          pick({ en: "Merge", vi: "Gộp", es: "Fusionar", fr: "Fusionner" }),
+    keep:           pick({ en: "KEEP", vi: "GIỮ", es: "MANTENER", fr: "GARDER" }),
+    visits:         (n: number) => pick({ en: `${n} visit${n !== 1 ? "s" : ""}`, vi: `${n} lượt thăm`, es: `${n} visita${n !== 1 ? "s" : ""}`, fr: `${n} visite${n !== 1 ? "s" : ""}` }),
+    spent:          (amt: string) => pick({ en: `$${amt} spent`, vi: `Đã chi $${amt}`, es: `$${amt} gastado`, fr: `$${amt} dépensé` }),
+    footerNote:     (othersCount: number) => pick({
+      en: `Click a row to choose which record to keep. The other${othersCount > 1 ? "s" : ""} will be archived — visits, contacts & notes merged in.`,
+      vi: `Nhấp vào một hàng để chọn hồ sơ cần giữ. (Các) hồ sơ còn lại sẽ được lưu trữ — lượt thăm, liên hệ & ghi chú sẽ được gộp vào.`,
+      es: `Haz clic en una fila para elegir qué registro conservar. Los demás se archivarán: visitas, contactos y notas se fusionarán.`,
+      fr: `Cliquez sur une ligne pour choisir l'enregistrement à conserver. Les autres seront archivés — visites, contacts et notes fusionnés.`,
+    }),
+    mergedTitle:    pick({ en: "Clients merged", vi: "Đã gộp khách hàng", es: "Clientes fusionados", fr: "Clients fusionnés" }),
+    mergedDesc:     (name: string, n: number) => pick({
+      en: `Kept "${name}" and archived ${n} duplicate${n !== 1 ? "s" : ""}.`,
+      vi: `Đã giữ "${name}" và lưu trữ ${n} bản trùng lặp.`,
+      es: `Se conservó "${name}" y se archivaron ${n} duplicado${n !== 1 ? "s" : ""}.`,
+      fr: `"${name}" conservé et ${n} doublon${n !== 1 ? "s" : ""} archivé${n !== 1 ? "s" : ""}.`,
+    }),
+    mergeFailedTitle: pick({ en: "Merge failed", vi: "Gộp thất bại", es: "Fusión fallida", fr: "Échec de la fusion" }),
+    somethingWrong:   pick({ en: "Something went wrong.", vi: "Đã xảy ra lỗi.", es: "Algo salió mal.", fr: "Une erreur est survenue." }),
+    clientFallback:   pick({ en: "client", vi: "khách hàng", es: "cliente", fr: "client" }),
+  };
 
   const groups = data?.groups ?? [];
   const remaining = groups.filter(g => !merged.has(g.key));
@@ -1119,12 +1193,12 @@ function DuplicateMergeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
         onSuccess: () => {
           setMerged(prev => new Set([...prev, group.key]));
           setMergingKey(null);
-          const keepName = group.clients.find(c => c.id === winnerId)?.fullName ?? "client";
-          toast({ title: "Clients merged", description: `Kept "${keepName}" and archived ${loserIds.length} duplicate${loserIds.length !== 1 ? "s" : ""}.` });
+          const keepName = group.clients.find(c => c.id === winnerId)?.fullName ?? dt.clientFallback;
+          toast({ title: dt.mergedTitle, description: dt.mergedDesc(keepName, loserIds.length) });
         },
         onError: (err: any) => {
           setMergingKey(null);
-          toast({ title: "Merge failed", description: err?.message ?? "Something went wrong.", variant: "destructive" });
+          toast({ title: dt.mergeFailedTitle, description: err?.message ?? dt.somethingWrong, variant: "destructive" });
         },
       }
     );
@@ -1136,21 +1210,21 @@ function DuplicateMergeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <GitMerge className="w-5 h-5 text-violet-600" />
-            Find &amp; Merge Duplicates
+            {dt.title}
           </DialogTitle>
         </DialogHeader>
 
         <div className="flex items-center justify-between pb-3 border-b">
           <p className="text-sm text-muted-foreground">
             {isLoading || isFetching
-              ? "Scanning for duplicates…"
+              ? dt.scanning
               : remaining.length === 0
-                ? groups.length === 0 ? "No duplicate clients found." : "All duplicates resolved ✓"
-                : `${remaining.length} duplicate group${remaining.length !== 1 ? "s" : ""} found`}
+                ? groups.length === 0 ? dt.noneFound : dt.allResolvedTick
+                : dt.groupsFound(remaining.length)}
           </p>
           <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isFetching} className="text-muted-foreground">
             <RefreshCw className={`w-4 h-4 mr-1.5 ${isFetching ? "animate-spin" : ""}`} />
-            Rescan
+            {dt.rescan}
           </Button>
         </div>
 
@@ -1158,7 +1232,7 @@ function DuplicateMergeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
           {(isLoading || isFetching) && remaining.length === 0 && (
             <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
               <Loader2 className="w-5 h-5 animate-spin" />
-              <span className="text-sm">Scanning…</span>
+              <span className="text-sm">{dt.scanningShort}</span>
             </div>
           )}
 
@@ -1167,8 +1241,8 @@ function DuplicateMergeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
               <CheckCircle2 className="w-10 h-10 text-emerald-500" />
               <p className="text-sm font-medium">
                 {groups.length === 0
-                  ? "Your client list is clean — no duplicates found."
-                  : "All duplicates have been resolved!"}
+                  ? dt.cleanList
+                  : dt.allResolved}
               </p>
             </div>
           )}
@@ -1198,7 +1272,7 @@ function DuplicateMergeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                     {isBusy
                       ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
                       : <GitMerge className="w-3.5 h-3.5 mr-1" />}
-                    Merge
+                    {dt.merge}
                   </Button>
                 </div>
 
@@ -1227,7 +1301,7 @@ function DuplicateMergeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                             <span className="text-sm font-medium">{client.fullName}</span>
                             {isWinner && (
                               <span className="text-[10px] font-semibold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">
-                                KEEP
+                                {dt.keep}
                               </span>
                             )}
                           </div>
@@ -1246,9 +1320,9 @@ function DuplicateMergeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                         </div>
                         {/* Stats */}
                         <div className="text-right shrink-0 hidden sm:block">
-                          <div className="text-xs font-medium">{client.totalVisits} visit{client.totalVisits !== 1 ? "s" : ""}</div>
+                          <div className="text-xs font-medium">{dt.visits(client.totalVisits)}</div>
                           <div className="text-xs text-muted-foreground">
-                            ${((client.totalSpentCents ?? 0) / 100).toFixed(0)} spent
+                            {dt.spent(((client.totalSpentCents ?? 0) / 100).toFixed(0))}
                           </div>
                         </div>
                       </button>
@@ -1257,7 +1331,7 @@ function DuplicateMergeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                 </div>
 
                 <div className="px-4 py-2 bg-muted/20 border-t text-xs text-muted-foreground">
-                  Click a row to choose which record to keep. The other{group.clients.length > 2 ? "s" : ""} will be archived — visits, contacts &amp; notes merged in.
+                  {dt.footerNote(group.clients.length - 1)}
                 </div>
               </div>
             );

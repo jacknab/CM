@@ -5,7 +5,8 @@ import {
   Search, 
   Edit3, 
   X,
-  Eye
+  Eye,
+  Trash2
 } from 'lucide-react';
 
 interface StoreAccount {
@@ -79,6 +80,28 @@ export const StockItemManager: React.FC<StockItemManagerProps> = ({
     setItems(items.map(item => 
       item.id === id ? { ...item, [field]: value } : item
     ));
+  };
+
+  const handleDeleteAccount = async (storeId: number) => {
+    if (!confirm('Are you sure you want to permanently delete this account and all associated data? This action cannot be undone.')) return;
+    try {
+      const res = await fetch(`/api/admin/stores/${storeId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const contentType = res.headers.get('content-type') ?? '';
+      const data = contentType.includes('application/json')
+        ? await res.json()
+        : { message: await res.text() };
+      if (!res.ok) {
+        throw new Error(data.error ?? data.message ?? 'Failed to delete account');
+      }
+      alert(data.message ?? 'Account deleted successfully');
+      setItems(currentItems => currentItems.filter(item => item.id !== storeId));
+    } catch (error: any) {
+      console.error('Error deleting account:', error);
+      alert(error.message ?? 'Failed to delete account');
+    }
   };
 
   const filteredItems = items.filter(item => {
@@ -329,6 +352,14 @@ export const StockItemManager: React.FC<StockItemManagerProps> = ({
           >
             <Eye size={12} />
             <span className="uppercase text-[9px] font-bold">View Account</span>
+          </button>
+          <button 
+            disabled={!selectedStoreId}
+            onClick={() => selectedStoreId && handleDeleteAccount(selectedStoreId)}
+            className={`px-8 py-1.5 border border-[#333333] flex items-center space-x-1.5 transition-all ${selectedStoreId ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-gray-600 text-gray-400 cursor-not-allowed'}`}
+          >
+            <Trash2 size={12} />
+            <span className="uppercase text-[9px] font-bold">Delete</span>
           </button>
           <button 
             onClick={() => setIsEditMode(true)}

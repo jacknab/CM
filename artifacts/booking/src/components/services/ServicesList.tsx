@@ -15,6 +15,7 @@ import { api } from "@shared/routes";
 import { ServiceForm } from "./ServiceForm";
 import type { ServiceWithOptions } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/hooks/use-language";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -56,6 +57,7 @@ export function ServicesList() {
   const { mutate: deleteService } = useDeleteService();
   const { mutate: deleteAllServices, isPending: isDeletingAll } = useDeleteAllServices();
   const { toast } = useToast();
+  const { pick } = useLanguage();
   const queryClient = useQueryClient();
 
   const [searchQuery, setSearchQuery]   = useState("");
@@ -85,12 +87,12 @@ export function ServicesList() {
 
   const all: ServiceWithOptions[] = services || [];
   const inactiveCount = all.filter((s) => (s as any).isActive === false).length;
-  const activeCount = all.length - inactiveCount;
+  const totalCount = all.length;
 
   const filtered = all
     .filter((s) => showInactive || (s as any).isActive !== false)
     .filter((s) =>
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ((s as any).displayName || s.name).toLowerCase().includes(searchQuery.toLowerCase()) ||
       (s.category || "").toLowerCase().includes(searchQuery.toLowerCase())
     );
 
@@ -109,12 +111,24 @@ export function ServicesList() {
   const groups: Group[] = [];
   for (const cat of orderedCats) {
     const svcs = catMap.get(cat.id);
-    if (svcs && svcs.length > 0) groups.push({ id: cat.id, name: cat.name, color: cat.color ?? null, services: svcs });
+    if (svcs && svcs.length > 0) {
+      groups.push({
+        id: cat.id,
+        name: cat.displayName || cat.name,
+        color: cat.color ?? null,
+        services: svcs,
+      });
+    }
   }
   // Uncategorised fallback
   const uncategorised = catMap.get(null);
   if (uncategorised && uncategorised.length > 0) {
-    groups.push({ id: null, name: "Uncategorised", color: null, services: uncategorised });
+    groups.push({
+      id: null,
+      name: pick({ en: "Uncategorised", vi: "Chưa phân loại", es: "Sin categoría", fr: "Non classé" }),
+      color: null,
+      services: uncategorised,
+    });
   }
 
   const editService = editServiceId ? all.find((s) => s.id === editServiceId) : null;
@@ -295,7 +309,7 @@ export function ServicesList() {
         setEditMode(false);
         setPendingDeletes(new Set());
         toast({
-          title: deleted === 0 ? "No active services to delete" : "All services deleted",
+          title: deleted === 0 ? "No services to delete" : "All services deleted",
           description: deleted > 0
             ? `${deleted} service${deleted === 1 ? " was" : "s were"} removed from this location.`
             : undefined,
@@ -407,7 +421,7 @@ export function ServicesList() {
           </Button>
         )}
 
-        {activeCount > 0 && (
+        {totalCount > 0 && (
           <Button
             variant="outline"
             size="sm"
@@ -576,7 +590,7 @@ export function ServicesList() {
                                     disabled={isMarked}
                                   />
                                 ) : (
-                                  <span className="font-medium truncate">{service.name}</span>
+                                  <span className="font-medium truncate">{(service as any).displayName || service.name}</span>
                                 )}
 
                                 {opts.length > 0 && (
@@ -783,7 +797,7 @@ export function ServicesList() {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-destructive">
               <AlertTriangle className="h-5 w-5" />
-              Delete all {activeCount} services?
+              Delete all {totalCount} services?
             </AlertDialogTitle>
             <AlertDialogDescription>
               This removes every active service from this location’s service menu, online booking,
@@ -819,7 +833,7 @@ export function ServicesList() {
               {isDeletingAll ? (
                 <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Deleting…</>
               ) : (
-                `Delete all ${activeCount} services`
+              `Delete all ${totalCount} services`
               )}
             </AlertDialogAction>
           </AlertDialogFooter>

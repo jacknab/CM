@@ -73,6 +73,23 @@ function schemaType(category: string | null | undefined): string {
   return CATEGORY_SCHEMA_TYPES[categoryKey(category)] ?? "BeautySalon";
 }
 
+// Schema.org / Google require ISO 8601 24-hour time ("09:30"), not "9:30 AM".
+// Normalizes either stored format so OpeningHoursSpecification always validates.
+function to24h(time: string): string {
+  const ampm = time.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (ampm) {
+    let h = parseInt(ampm[1], 10);
+    const m = ampm[2];
+    const suffix = ampm[3].toUpperCase();
+    if (suffix === "PM" && h !== 12) h += 12;
+    if (suffix === "AM" && h === 12) h = 0;
+    return `${String(h).padStart(2, "0")}:${m}`;
+  }
+  const iso = time.match(/^(\d{1,2}):(\d{2})/);
+  if (iso) return `${iso[1].padStart(2, "0")}:${iso[2]}`;
+  return time;
+}
+
 function trimText(value: string, max: number): string {
   if (value.length <= max) return value;
   const shortened = value.slice(0, max - 1).replace(/\s+\S*$/, "").trim();
@@ -110,8 +127,8 @@ function buildJsonLd(data: TenantData, canonical: string, image?: string | null)
     .map((entry: HoursEntry) => ({
       "@type": "OpeningHoursSpecification",
       dayOfWeek: DAY_NAMES[entry.day_of_week] ?? undefined,
-      opens: entry.open_time,
-      closes: entry.close_time,
+      opens: to24h(entry.open_time),
+      closes: to24h(entry.close_time),
     }));
 
   const reviews = data.reviews.filter((review) => Number.isFinite(Number(review.rating)));

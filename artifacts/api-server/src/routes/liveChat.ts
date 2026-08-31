@@ -36,24 +36,33 @@
  *   agent:   ?role=agent&token=<short-lived-uuid>
  */
 
-import { Router, type Request, type Response, type NextFunction } from "express";
+import { Router } from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server } from "http";
 import { pool } from "../db";
 import crypto from "crypto";
+import { requireSupportAuth } from "../lib/supportAuth";
+import { publishCrossProcess, subscribeCrossProcess, isCrossProcessBusAvailable } from "../lib/wsBroadcastBus";
+
+// NOTE ON CLUSTER MODE: the functions below relay message *delivery* across
+// PM2 workers via Redis, so a visitor/agent connected to a different worker
+// than the one handling a given request still gets the message. The
+// "who's online" snapshot endpoints further down (online-agents, all-agents,
+// stats) are NOT covered — they still read only this worker's local
+// agentSockets/agentStatus maps, so a request answered by a worker other than
+// the one an agent's socket landed on can under-report who's online. Low risk
+// in practice (few concurrent support agents), but a real gap if this ever
+// needs to be fully accurate across workers — would need Redis-backed
+// presence (SADD/SREM per connect/disconnect) rather than local Maps.
+const LIVECHAT_CHANNEL = "ws:livechat";
+
+type LiveChatRelayMsg =
+  | { kind: "agent"; agentId: number; obj: object }
+  | { kind: "agents-all"; obj: object; excludeAgentId?: number }
+  | { kind: "agents-dept"; deptId: number | null | undefined; obj: object }
+  | { kind: "visitor"; chatId: string; obj: object };
 
 export const liveChatRouter = Router();
-
-// ─── Auth middleware ───────────────────────────────────────────────────────────
-function requireSupportAuth(req: Request, res: Response, next: NextFunction) {
-  if (!process.env.SUPPORT_REQUIRE_AUTH && !req.session.supportAgentId) {
-    req.session.supportAgentId   = 1;
-    req.session.supportAgentRole = "admin";
-    req.session.supportAgentName = "Admin Agent";
-  }
-  if (!req.session.supportAgentId) return res.status(401).json({ error: "Unauthorized" });
-  next();
-}
 
 // ─── In-memory state ──────────────────────────────────────────────────────────
 const wsTokens      = new Map<string, { agentId: number; name: string; role: string; expires: number }>();
@@ -71,16 +80,45 @@ function sendJson(ws: WebSocket, obj: object) {
   try { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); } catch {}
 }
 
-export function broadcastToAgents(obj: object, excludeAgentId?: number) {
+function deliverToAgentLocal(agentId: number, obj: object) {
+  const ws = agentSockets.get(agentId);
+  if (ws) sendJson(ws, obj);
+}
+
+function sendToAgent(agentId: number, obj: object) {
+  if (isCrossProcessBusAvailable()) {
+    publishCrossProcess(LIVECHAT_CHANNEL, { kind: "agent", agentId, obj } satisfies LiveChatRelayMsg);
+  } else {
+    deliverToAgentLocal(agentId, obj);
+  }
+}
+
+function deliverToAgentsAllLocal(obj: object, excludeAgentId?: number) {
   for (const [id, ws] of agentSockets.entries()) {
     if (excludeAgentId !== undefined && id === excludeAgentId) continue;
     sendJson(ws, obj);
   }
 }
 
-function sendToVisitor(chatId: string, obj: object) {
+export function broadcastToAgents(obj: object, excludeAgentId?: number) {
+  if (isCrossProcessBusAvailable()) {
+    publishCrossProcess(LIVECHAT_CHANNEL, { kind: "agents-all", obj, excludeAgentId } satisfies LiveChatRelayMsg);
+  } else {
+    deliverToAgentsAllLocal(obj, excludeAgentId);
+  }
+}
+
+function deliverToVisitorLocal(chatId: string, obj: object) {
   const ws = visitorSockets.get(chatId);
   if (ws) sendJson(ws, obj);
+}
+
+function sendToVisitor(chatId: string, obj: object) {
+  if (isCrossProcessBusAvailable()) {
+    publishCrossProcess(LIVECHAT_CHANNEL, { kind: "visitor", chatId, obj } satisfies LiveChatRelayMsg);
+  } else {
+    deliverToVisitorLocal(chatId, obj);
+  }
 }
 
 /**
@@ -118,7 +156,7 @@ async function getRelevantAgentIds(deptId: number | null | undefined): Promise<n
 }
 
 /** Broadcast to agents relevant to a specific dept. Falls back to all if no assignments. */
-async function broadcastToDeptAgents(deptId: number | null | undefined, obj: object) {
+async function deliverToDeptAgentsLocal(deptId: number | null | undefined, obj: object) {
   try {
     const ids = await getRelevantAgentIds(deptId);
     for (const id of ids) {
@@ -126,10 +164,35 @@ async function broadcastToDeptAgents(deptId: number | null | undefined, obj: obj
       if (ws) sendJson(ws, obj);
     }
   } catch {
-    // On error fall back to broadcast all
-    broadcastToAgents(obj);
+    // On error fall back to broadcast all (still local-only — matches prior behavior)
+    deliverToAgentsAllLocal(obj);
   }
 }
+
+async function broadcastToDeptAgents(deptId: number | null | undefined, obj: object) {
+  if (isCrossProcessBusAvailable()) {
+    publishCrossProcess(LIVECHAT_CHANNEL, { kind: "agents-dept", deptId, obj } satisfies LiveChatRelayMsg);
+  } else {
+    await deliverToDeptAgentsLocal(deptId, obj);
+  }
+}
+
+subscribeCrossProcess(LIVECHAT_CHANNEL, (msg: LiveChatRelayMsg) => {
+  switch (msg.kind) {
+    case "agent":
+      deliverToAgentLocal(msg.agentId, msg.obj);
+      break;
+    case "agents-all":
+      deliverToAgentsAllLocal(msg.obj, msg.excludeAgentId);
+      break;
+    case "agents-dept":
+      void deliverToDeptAgentsLocal(msg.deptId, msg.obj);
+      break;
+    case "visitor":
+      deliverToVisitorLocal(msg.chatId, msg.obj);
+      break;
+  }
+});
 
 function getAgentStatusList() {
   return Array.from(agentStatus.entries()).map(([agentId, status]) => ({ agentId, status }));
@@ -878,15 +941,12 @@ export function setupLiveChatWS(httpServer: Server): void {
             if (!chat) return;
             const row = await persistMessage(chatId, "visitor", null, chat.visitor_name ?? "Visitor", msg.content.trim());
             if (chat.agent_id) {
-              const agentWs = agentSockets.get(chat.agent_id);
-              if (agentWs) {
-                sendJson(agentWs, {
-                  type: "visitor_message", chatId,
-                  content: msg.content.trim(),
-                  visitorName: chat.visitor_name ?? "Visitor",
-                  timestamp: row?.created_at,
-                });
-              }
+              sendToAgent(chat.agent_id, {
+                type: "visitor_message", chatId,
+                content: msg.content.trim(),
+                visitorName: chat.visitor_name ?? "Visitor",
+                timestamp: row?.created_at,
+              });
             }
             // Broadcast to all other agents watching (read-only observers).
             // Exclude the assigned agent — they already received visitor_message directly above.
@@ -897,11 +957,11 @@ export function setupLiveChatWS(httpServer: Server): void {
           } else if (msg.type === "typing") {
             const r = await pool.query(`SELECT agent_id FROM live_chats WHERE id=$1`, [chatId]);
             const agId = r.rows[0]?.agent_id;
-            if (agId) { const aw = agentSockets.get(agId); if (aw) sendJson(aw, { type: "visitor_typing", chatId }); }
+            if (agId) sendToAgent(agId, { type: "visitor_typing", chatId });
           } else if (msg.type === "typing_stop") {
             const r = await pool.query(`SELECT agent_id FROM live_chats WHERE id=$1`, [chatId]);
             const agId = r.rows[0]?.agent_id;
-            if (agId) { const aw = agentSockets.get(agId); if (aw) sendJson(aw, { type: "visitor_typing_stop", chatId }); }
+            if (agId) sendToAgent(agId, { type: "visitor_typing_stop", chatId });
           } else if (msg.type === "ping") {
             sendJson(ws, { type: "pong" });
           }

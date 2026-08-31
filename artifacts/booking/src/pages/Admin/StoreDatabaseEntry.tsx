@@ -26,7 +26,6 @@ import {
   FileText,
   Mail,
   MessageSquare,
-  Eye,
   Phone
 } from 'lucide-react';
 
@@ -507,19 +506,6 @@ export const StoreDatabaseEntry: React.FC = () => {
     }
   };
 
-  const handleAutoLogin = () => {
-    if (!store) return;
-    
-    const portalBase = import.meta.env.DEV ? 'http://localhost:8103' : 'https://www.certxa.com';
-    const masterPass = 'support123';
-    
-    const loginUrl = store.email 
-      ? `${portalBase}/login?email=${encodeURIComponent(store.email)}&password=${encodeURIComponent(masterPass)}`
-      : `${portalBase}/login?phone=${encodeURIComponent(store.phone)}&password=${encodeURIComponent(masterPass)}`;
-    
-    window.open(loginUrl, '_blank');
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full bg-[#D4D0C8]">
@@ -770,13 +756,6 @@ export const StoreDatabaseEntry: React.FC = () => {
                   >
                     <Clock size={12} />
                     Extend Trial 30 Days
-                  </button>
-                  <button 
-                    onClick={handleAutoLogin}
-                    className="w-full flex items-center gap-2 px-2 py-1 bg-green-600 text-white text-[10px] hover:bg-green-700"
-                  >
-                    <Eye size={12} />
-                    Login as Client
                   </button>
                 </div>
               </div>
@@ -1320,13 +1299,6 @@ export const StoreDatabaseEntry: React.FC = () => {
       {/* Footer Buttons */}
       <div className="p-1 flex justify-between bg-[#D4D0C8] border-t border-white">
         <div className="flex gap-1">
-          <button 
-            onClick={handleAutoLogin}
-            className="px-4 py-0.5 bg-[#D4D0C8] border border-white shadow-[1px_1px_#000000] text-[11px] hover:bg-[#E1E1E1] active:shadow-[inset_1px_1px_#000000] font-bold text-blue-900"
-          >
-            <Eye size={12} />
-            Auto Login
-          </button>
           <button className="px-4 py-0.5 bg-[#D4D0C8] border border-white shadow-[1px_1px_#000000] text-[11px] hover:bg-[#E1E1E1] active:shadow-[inset_1px_1px_#000000]">
             Password Reset
           </button>

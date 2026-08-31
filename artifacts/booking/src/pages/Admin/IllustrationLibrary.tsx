@@ -192,6 +192,41 @@ const SERVICE_SLOT_GROUPS = [
       { name: "", services: ["Russian Gel Manicure","E-File Manicure","Japanese Gel","Kokoist Gel","Luminary Nail System","Aprés Gel-X","Bio Sculpture Gel","Medical Pedicure","IBX Repair System","Dry Pedicure","Structured Gel Overlay","Builder Base Overlay","Nail Consultation","Nail Removal + New Set","Nail Design Consultation","Press-On Nail Application","Press-On Nail Removal","Press-On Custom Sizing","Press-On Custom Design"] },
     ],
   },
+  {
+    category: "Waxing",
+    color: "#c026d3",
+    subcategories: [
+      {
+        name: "Facial Waxing",
+        services: [
+          "Eyebrow Wax",
+          "Lip Wax",
+          "Chin Wax",
+          "Sideburns Wax",
+          "Full Face Wax",
+        ],
+      },
+      {
+        name: "Body Waxing",
+        services: [
+          "Stomach Area Wax",
+          "Half Arm Wax",
+          "Full Arm Wax",
+          "Underarm Wax",
+          "Half Leg Wax",
+          "Full Leg Wax",
+          "Bikini Wax",
+          "Brazilian Wax",
+          "Chest Wax",
+          "Back Wax",
+        ],
+      },
+      {
+        name: "Threading",
+        services: ["Eyebrow Threading"],
+      },
+    ],
+  },
 ];
 
 type ServiceSlotGroup = {

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -20,114 +20,23 @@ import {
   Clock,
   MapPin,
   Smile,
-  Plus,
-  Lock,
-  ShieldCheck,
+  Plus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatInTz, getNowInTimezone } from "@/lib/timezone";
 import { apiRequest } from "@/lib/queryClient";
 import { addDays, subDays, isSameDay } from "date-fns";
-import { StoreData, ServiceData, ServiceOptionData, CategoryData, TimeSlot, AddonData, ServiceAddonData } from "./types";
-import { detectBrowserLang, BOOKING_STRINGS } from "@/lib/bookingTranslations";
-import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
-import { loadStripe } from "@stripe/stripe-js/pure";
-import type { Stripe } from "@stripe/stripe-js";
+import { StoreData, ServiceData, CategoryData, TimeSlot, AddonData, ServiceAddonData } from "./types";
 
 interface MobileThemeProps {
   store: StoreData;
   slug: string;
   preselectedStaffId?: number;
-  preselectedServiceId?: number;
 }
 
-type ViewState = "client" | "home" | "category" | "time" | "confirm" | "payment" | "profile";
+type ViewState = "client" | "home" | "category" | "time" | "confirm" | "profile";
 
-// ── Inner Stripe payment form ─────────────────────────────────────────────────
-function PaymentForm({
-  intentType,
-  depositAmountCents,
-  onSuccess,
-  onBack,
-}: {
-  intentType: "setup" | "payment" | null;
-  depositAmountCents: number;
-  onSuccess: (info: Record<string, any>) => void;
-  onBack: () => void;
-}) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSubmit = async () => {
-    if (!stripe || !elements) return;
-    setIsSubmitting(true);
-    setError(null);
-    try {
-      if (intentType === "setup") {
-        const result = await stripe.confirmSetup({
-          elements,
-          confirmParams: { return_url: window.location.href },
-          redirect: "if_required",
-        });
-        if (result.error) throw new Error(result.error.message);
-        const si = result.setupIntent;
-        onSuccess({
-          paymentPolicy: "card_on_file",
-          paymentStatus: "card_saved",
-          stripeSetupIntentId: si?.id,
-          stripePaymentMethodId: typeof si?.payment_method === "string" ? si.payment_method : undefined,
-        });
-      } else {
-        const result = await stripe.confirmPayment({
-          elements,
-          confirmParams: { return_url: window.location.href },
-          redirect: "if_required",
-        });
-        if (result.error) throw new Error(result.error.message);
-        const pi = result.paymentIntent;
-        onSuccess({
-          paymentPolicy: "deposit",
-          paymentStatus: "deposit_paid",
-          stripePaymentIntentId: pi?.id,
-          stripePaymentMethodId: typeof pi?.payment_method === "string" ? pi.payment_method : undefined,
-          depositCollected: depositAmountCents / 100,
-        });
-      }
-    } catch (err: any) {
-      setError(err.message ?? "Payment failed. Please try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <PaymentElement options={{ layout: "tabs" }} />
-      {error && (
-        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-      <Button className="w-full mt-2 h-14 text-base rounded-xl" onClick={handleSubmit} disabled={isSubmitting || !stripe}>
-        {isSubmitting ? (
-          <Loader2 className="w-4 h-4 animate-spin mr-2" />
-        ) : (
-          <Lock className="w-4 h-4 mr-2" />
-        )}
-        {intentType === "setup"
-          ? "Save Card & Confirm Booking"
-          : `Pay $${(depositAmountCents / 100).toFixed(2)} & Confirm`}
-      </Button>
-      <Button variant="ghost" className="w-full text-sm text-muted-foreground" onClick={onBack}>
-        <ArrowLeft className="w-3.5 h-3.5 mr-1.5" /> Change booking details
-      </Button>
-    </div>
-  );
-}
-
-export default function MobileTheme({ store, slug, preselectedStaffId, preselectedServiceId }: MobileThemeProps) {
+export default function MobileTheme({ store, slug, preselectedStaffId }: MobileThemeProps) {
   const [searchParams] = useSearchParams();
   const hideHeader = searchParams.get("embed") === "true" || searchParams.get("hideHeader") === "true";
   const [view, setView] = useState<ViewState>("home");
@@ -136,12 +45,10 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
   const [selectedServices, setSelectedServices] = useState<ServiceData[]>([]);
   const [selectedAddons, setSelectedAddons] = useState<Record<number, number[]>>({});
   const [viewingAddonsForService, setViewingAddonsForService] = useState<ServiceData | null>(null);
-  const [optionPickerService, setOptionPickerService] = useState<ServiceData | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [weekStart, setWeekStart] = useState<Date | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
   const [preselectedStaffName, setPreselectedStaffName] = useState<string | null>(null);
-  const preselectionAppliedRef = useRef<number | null>(null);
 
   const { data: publicStaff = [] } = useQuery<any[]>({
     queryKey: ["/api/public/store", slug, "staff"],
@@ -161,17 +68,7 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
   const [customerPhone, setCustomerPhone] = useState("");
   const [returningPhone, setReturningPhone] = useState("");
   const [phoneError, setPhoneError] = useState("");
-  const [smsOptIn, setSmsOptIn] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(false);
-
-  // ── Payment policy / Stripe ──────────────────────────────────────────────
-  const [stripeInstance, setStripeInstance] = useState<Stripe | null>(null);
-  const [paymentClientSecret, setPaymentClientSecret] = useState<string | null>(null);
-  const [intentType, setIntentType] = useState<"setup" | "payment" | null>(null);
-  const [pendingStripeCustomerId, setPendingStripeCustomerId] = useState<string | null>(null);
-  const [depositAmountCents, setDepositAmountCents] = useState<number>(0);
-  const [isCreatingIntent, setIsCreatingIntent] = useState(false);
-  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   const timezone = store.timezone || "UTC";
 
@@ -189,36 +86,6 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
     queryKey: [`/api/public/store/${slug}`],
     enabled: !!slug,
   });
-
-  // ── Payment policy ──────────────────────────────────────────────────────────
-  const { data: paymentPolicyData } = useQuery<{
-    policy: "none" | "card_on_file" | "deposit";
-    depositType: "percentage" | "fixed" | null;
-    depositValue: number | null;
-    stripePublishableKey: string | null;
-    stripeConnectedAccountId: string | null;
-  }>({
-    queryKey: [`/api/public/booking-payment-policy/${slug}`],
-    queryFn: async () => {
-      const res = await fetch(`/api/public/booking-payment-policy/${slug}`);
-      if (!res.ok) return { policy: "none", depositType: null, depositValue: null, stripePublishableKey: null, stripeConnectedAccountId: null };
-      return res.json();
-    },
-    enabled: !!slug,
-    staleTime: 60_000,
-  });
-
-  // Load Stripe when publishable key is available
-  useEffect(() => {
-    if (!paymentPolicyData?.stripePublishableKey || stripeInstance) return;
-    const opts: any = {};
-    if (paymentPolicyData.stripeConnectedAccountId) {
-      opts.stripeAccount = paymentPolicyData.stripeConnectedAccountId;
-    }
-    loadStripe(paymentPolicyData.stripePublishableKey, opts).then(s => {
-      if (s) setStripeInstance(s);
-    });
-  }, [paymentPolicyData?.stripePublishableKey, paymentPolicyData?.stripeConnectedAccountId]);
 
   const services = servicesData?.services || [];
   const addons = servicesData?.addons || [];
@@ -306,23 +173,6 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
     }, { spend: 0, deposit: 0, noshow: 0, cancel: 0 });
   }, [history]);
 
-  const submitBooking = useCallback((paymentInfo: Record<string, any>) => {
-    if (!primaryService || !selectedSlot) return;
-    const allAddonIds = Object.values(selectedAddons).flat();
-    bookMutation.mutate({
-      serviceId: primaryService.id,
-      staffId: selectedSlot.staffId,
-      date: selectedSlot.time,
-      duration: totalDuration,
-      customerName: customerName.trim() || "Guest",
-      customerEmail: customerEmail.trim() || undefined,
-      customerPhone: customerPhone.trim(),
-      addonIds: allAddonIds,
-      smsOptIn,
-      ...paymentInfo,
-    });
-  }, [primaryService, selectedSlot, selectedAddons, totalDuration, customerName, customerEmail, customerPhone, smsOptIn]);
-
   const bookMutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
       const res = await apiRequest("POST", `/api/public/store/${slug}/book`, body);
@@ -344,9 +194,11 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
   useMemo(() => {
     if (selectedDate === null) {
       const today = getNowInTimezone(timezone);
+      // Check if it's 12:00 PM or later in the store's timezone
       const now = new Date();
       const currentHour = parseInt(formatInTz(now, timezone, "H"));
       const startDate = currentHour >= 12 ? addDays(today, 1) : today;
+
       setSelectedDate(startDate);
       setWeekStart(startDate);
     }
@@ -412,48 +264,13 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
   };
 
   const handleServiceSelect = (service: ServiceData) => {
-    if (service.options && service.options.length > 1) {
-      setOptionPickerService(service);
-      return;
-    }
-    const serviceAddonsList = getAddonsForService(service.id);
-    if (serviceAddonsList.length > 0) {
+    const serviceAddons = getAddonsForService(service.id);
+    if (serviceAddons.length > 0) {
       setViewingAddonsForService(service);
     } else {
       setSelectedServices([service]);
       setView("time");
     }
-  };
-
-  // Service cards link here with the exact service ID so customers go straight
-  // to date/time selection instead of having to pick the service again.
-  useEffect(() => {
-    const requestedServiceId = Number(preselectedServiceId);
-    if (!Number.isFinite(requestedServiceId) || requestedServiceId <= 0 || services.length === 0 || preselectionAppliedRef.current === requestedServiceId) {
-      return;
-    }
-    const service = services.find((candidate) => candidate.id === requestedServiceId);
-    if (!service) return;
-    preselectionAppliedRef.current = requestedServiceId;
-    handleServiceSelect(service);
-  }, [preselectedServiceId, services]);
-
-  const handlePickOption = (service: ServiceData, option: ServiceOptionData) => {
-    const serviceWithOption: ServiceData = {
-      ...service,
-      duration: option.durationMinutes,
-      price: option.price,
-      name: `${service.name} – ${option.name}`,
-      options: [],
-    };
-    const serviceAddonsList = getAddonsForService(service.id);
-    if (serviceAddonsList.length > 0) {
-      setViewingAddonsForService(serviceWithOption);
-    } else {
-      setSelectedServices([serviceWithOption]);
-      setView("time");
-    }
-    setOptionPickerService(null);
   };
   
   const confirmServiceWithAddons = () => {
@@ -469,8 +286,10 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
     setView("confirm");
   };
 
-  const handleConfirmBooking = async () => {
+  const handleConfirmBooking = () => {
     if (!primaryService || !selectedSlot) return;
+    
+    // Validate name if new client, or phone if returning
     if (clientType === "new" && !customerName.trim()) return;
     if (clientType === "returning" && !customerPhone.trim()) return;
 
@@ -480,47 +299,17 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
       return;
     }
 
-    const policy = paymentPolicyData?.policy ?? "none";
-
-    if (policy === "none") {
-      submitBooking({});
-      return;
-    }
-
-    setIsCreatingIntent(true);
-    setPaymentError(null);
-    try {
-      if (policy === "card_on_file") {
-        const res = await fetch("/api/public/booking-setup-intent", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ slug, customerName: customerName.trim() || "Guest", customerEmail: customerEmail.trim() || undefined, customerPhone: customerPhone.trim() }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Failed to initialize payment");
-        setPaymentClientSecret(data.clientSecret);
-        setIntentType("setup");
-        setPendingStripeCustomerId(data.stripeCustomerId);
-      } else {
-        const serviceTotalCents = Math.round(totalPrice * 100);
-        const res = await fetch("/api/public/booking-payment-intent", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ slug, customerName: customerName.trim() || "Guest", customerEmail: customerEmail.trim() || undefined, customerPhone: customerPhone.trim(), serviceTotalCents }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Failed to initialize payment");
-        setPaymentClientSecret(data.clientSecret);
-        setIntentType("payment");
-        setPendingStripeCustomerId(data.stripeCustomerId);
-        setDepositAmountCents(data.depositCents ?? serviceTotalCents);
-      }
-      setView("payment");
-    } catch (err: any) {
-      setPaymentError(err.message ?? "Failed to initialize payment");
-    } finally {
-      setIsCreatingIntent(false);
-    }
+    const addonIds = selectedAddons[primaryService.id] || [];
+    bookMutation.mutate({
+      serviceId: primaryService.id,
+      staffId: selectedSlot.staffId,
+      date: selectedSlot.time,
+      duration: totalDuration,
+      customerName: customerName.trim() || "Guest", // Fallback for returning flow if name not captured
+      customerEmail: customerEmail.trim() || undefined,
+      customerPhone: customerPhone.trim(),
+      addonIds,
+    });
   };
 
   const closingTime = useMemo(() => {
@@ -534,6 +323,7 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
     date.setHours(parseInt(h), parseInt(m));
     return formatInTz(date, timezone, "h:mm a");
   }, [store, timezone]);
+
 
   const navigateWeek = (direction: "prev" | "next") => {
     if (!weekStart) return;
@@ -554,11 +344,11 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
             <CheckCircle2 className="w-12 h-12 text-green-600" />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Booking Confirmed!</h2>
-          <p className="text-gray-500 mb-4">
+          <p className="text-gray-500 mb-6">
             Your appointment at {store.name} has been booked successfully.
           </p>
           {selectedSlot && (
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-4">
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
                <p className="text-gray-900 font-semibold text-lg">{primaryService?.name}</p>
                <p className="text-gray-500 text-sm mt-1">
                  {formatInTz(selectedSlot.time, timezone, "EEEE, d MMMM yyyy")}
@@ -568,30 +358,6 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
                </p>
             </div>
           )}
-
-          {/* Payment confirmation */}
-          {intentType === "setup" && (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4 text-left">
-              <div className="flex items-center gap-2 text-blue-800 font-medium text-sm mb-0.5">
-                <ShieldCheck className="w-4 h-4 shrink-0" />
-                Card securely stored
-              </div>
-              <p className="text-xs text-blue-600">No payment was taken today. Your card is on file for this appointment.</p>
-            </div>
-          )}
-          {intentType === "payment" && depositAmountCents > 0 && (
-            <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-4 text-left space-y-1">
-              <div className="flex justify-between text-sm font-semibold text-green-800">
-                <span>Deposit paid</span>
-                <span>${(depositAmountCents / 100).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-sm text-gray-500">
-                <span>Remaining at checkout</span>
-                <span>${Math.max(0, totalPrice - depositAmountCents / 100).toFixed(2)}</span>
-              </div>
-            </div>
-          )}
-
           {confirmationUrl && (
             <div className="mb-6 space-y-2">
               <p className="text-sm text-gray-500">Confirmation number: {confirmationDigits}</p>
@@ -600,7 +366,7 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
               </Button>
             </div>
           )}
-          <Button onClick={() => window.location.reload()} variant="outline" className="w-full rounded-full h-12 text-base">
+          <Button onClick={() => window.location.reload()} className="w-full rounded-full h-12 text-base">
             Book Another
           </Button>
         </div>
@@ -608,7 +374,8 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
     );
   }
 
-  const headerBg = "bg-primary";
+  // Header Background Color - using a rich red gradient
+  const headerBg = "bg-gradient-to-b from-[#D32F2F] to-[#B71C1C]";
   const isPhoneValid = customerPhone.replace(/\D/g, "").length === 10;
 
   return (
@@ -638,207 +405,160 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
             </div>
           </div>
         )}
-
-        {(view === "home" || view === "category") && (
-          <div className="pb-8">
-            {/* Store header card */}
-            {!hideHeader && (
-              <div className={cn("rounded-2xl p-6 mb-6 mt-4 text-white shadow-lg", headerBg)}>
-                <h1 className="text-2xl font-bold">{store.name}</h1>
-                {store.address && (
-                  <div className="flex items-center gap-1 mt-2 text-white/80 text-sm">
-                    <MapPin className="w-4 h-4" />
-                    <span>{store.address}</span>
-                  </div>
-                )}
-                {closingTime && (
-                  <div className="flex items-center gap-1 mt-1 text-white/80 text-sm">
-                    <Clock className="w-4 h-4" />
-                    <span>Closes at {closingTime}</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Quick book pill */}
-            <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
-              <button
-                onClick={() => setView("time")}
-                disabled={!primaryService}
-                className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full bg-primary text-white text-sm font-medium shadow disabled:opacity-40"
-              >
-                <Calendar className="w-4 h-4" />
-                {primaryService ? "Choose Time" : "Select a Service First"}
-              </button>
-            </div>
-
-            {/* Category list */}
-            <h2 className="font-bold text-lg text-gray-900 mb-3">Services</h2>
-            {servicesLoading ? (
-              <div className="flex justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-gray-300" />
-              </div>
-            ) : view === "home" ? (
-              <div className="space-y-3">
-                {categoriesList.map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => handleCategorySelect(cat)}
-                    className="w-full flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-gray-100 hover:border-primary/30 transition-all"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                        <Scissors className="w-5 h-5 text-primary" />
-                      </div>
-                      <div className="text-left">
-                        <p className="font-semibold text-gray-900">{cat}</p>
-                        <p className="text-xs text-gray-500">{groupedServices[cat].length} service{groupedServices[cat].length !== 1 ? "s" : ""}</p>
-                      </div>
+        {view === "home" && (
+            <>
+                <div className="mb-6">
+                    <div className="flex items-center gap-2 mb-2">
+                        <Button variant="ghost" size="icon" onClick={() => {
+                            window.history.back();
+                        }} className="-ml-2 h-8 w-8">
+                             <ArrowLeft className="w-4 h-4" />
+                        </Button>
+                        <h2 className="text-lg font-bold text-gray-800">Services</h2>
+                        <div className="h-[1px] bg-gray-200 flex-1 ml-2"></div>
                     </div>
-                    <ChevronRight className="w-5 h-5 text-gray-300" />
-                  </button>
-                ))}
-              </div>
-            ) : (
-              /* Category services */
-              <div>
-                <button
-                  onClick={() => setView("home")}
-                  className="flex items-center gap-1.5 text-sm text-gray-500 mb-4 hover:text-gray-700"
-                >
-                  <ArrowLeft className="w-4 h-4" /> Back to categories
-                </button>
-                <h3 className="font-bold text-gray-900 mb-3">{activeCategory}</h3>
-                <div className="space-y-3">
-                  {(groupedServices[activeCategory!] || []).map(service => {
-                    const isSelected = selectedServices.some(s => s.id === service.id);
-                    return (
-                      <button
-                        key={service.id}
-                        onClick={() => handleServiceSelect(service)}
-                        className={cn(
-                          "w-full flex items-center justify-between p-4 rounded-2xl border-2 transition-all",
-                          isSelected
-                            ? "border-primary bg-primary/5 shadow-md"
-                            : "border-gray-100 bg-white shadow-sm hover:border-primary/40"
-                        )}
-                      >
-                        <div className="text-left">
-                          <p className="font-semibold text-gray-900">{service.name}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">{service.duration} min</p>
+                    <div className="flex items-center gap-1 text-sm text-gray-600 mb-4">
+                        <div className="flex text-yellow-400">
+                            <Star className="w-5 h-5 fill-current" />
+                            <Star className="w-5 h-5 fill-current" />
+                            <Star className="w-5 h-5 fill-current" />
+                            <Star className="w-5 h-5 fill-current" />
+                            <Star className="w-5 h-5 fill-current" />
                         </div>
-                        <div className="flex items-center gap-2">
-                          {showPrices && <span className="font-bold text-primary">${Number(service.price).toFixed(2)}</span>}
-                          {isSelected
-                            ? <CheckCircle2 className="w-5 h-5 text-primary" />
-                            : <Plus className="w-5 h-5 text-gray-300" />
-                          }
-                        </div>
-                      </button>
-                    );
-                  })}
+                        <span className="font-semibold ml-1 text-lg">5.0</span>
+                        <span className="text-gray-400 text-base">(120 reviews)</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        {categoriesList.map(category => (
+                            <button 
+                                key={category}
+                                onClick={() => handleCategorySelect(category)}
+                                className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-4 hover:shadow-md transition-all active:scale-95 h-40"
+                            >
+                                {/* Large centered icon style to match "Image 2" cards */}
+                                <div className="flex-1 flex items-center justify-center w-full">
+                                    <Scissors className="w-16 h-16 text-gray-800 stroke-1" />
+                                </div>
+                                <span className="font-bold text-gray-900 text-lg">{category}</span>
+                            </button>
+                        ))}
+                        <button className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-4 hover:shadow-md transition-all active:scale-95 h-40">
+                            <div className="flex-1 flex items-center justify-center w-full">
+                                <Plus className="w-16 h-16 text-gray-300 stroke-1" />
+                            </div>
+                            <span className="font-bold text-gray-900 text-lg">More Services</span>
+                        </button>
+                    </div>
                 </div>
-                {selectedServices.length > 0 && (
-                  <div className="mt-4">
-                    <Button onClick={() => setView("time")} className="w-full h-12 rounded-xl">
-                      Choose Date & Time →
+            </>
+        )}
+
+        {view === "category" && (
+            <div className="pb-8">
+                <div className="flex items-center gap-2 mb-6">
+                    <Button variant="ghost" size="icon" onClick={() => setView("home")} className="-ml-2">
+                        <ArrowLeft className="w-5 h-5" />
                     </Button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+                    <h2 className="text-xl font-bold text-gray-800">{activeCategory}</h2>
+                </div>
+                
+                <div className="space-y-3">
+                    {groupedServices[activeCategory!]?.map(service => (
+                        <div key={service.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+                            <div>
+                                <h3 className="font-bold text-gray-800">{service.name}</h3>
+                                <p className="text-sm text-gray-500 mt-1">{service.duration} min</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {showPrices && <span className="font-bold text-gray-900">${Number(service.price).toFixed(2)}</span>}
+                                <Button size="sm" className="rounded-full px-4 bg-[#D32F2F] hover:bg-[#B71C1C]" onClick={() => handleServiceSelect(service)}>
+                                    Book
+                                </Button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
         )}
 
         {view === "time" && (
-          <div className="pb-8">
-            <div className="flex items-center gap-2 mb-6 mt-4">
-              <Button variant="ghost" size="icon" onClick={() => setView("home")} className="-ml-2">
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-              <h2 className="text-xl font-bold text-gray-800">Choose Time</h2>
-            </div>
-
-            {!primaryService ? (
-              <div className="text-center py-12 text-gray-500">
-                <p>Please select a service first.</p>
-                <Button variant="ghost" onClick={() => setView("home")} className="mt-2">Back to Services</Button>
-              </div>
-            ) : (
-              <>
-                {/* Week calendar */}
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <button onClick={() => navigateWeek("prev")} className="p-1.5 rounded-lg hover:bg-gray-100">
-                      <ChevronLeft className="w-5 h-5 text-gray-500" />
-                    </button>
-                    <span className="text-sm font-semibold text-gray-700">
-                      {weekDays[0] && formatInTz(weekDays[0], timezone, "MMM d")} – {weekDays[6] && formatInTz(weekDays[6], timezone, "MMM d, yyyy")}
-                    </span>
-                    <button onClick={() => navigateWeek("next")} className="p-1.5 rounded-lg hover:bg-gray-100">
-                      <ChevronRight className="w-5 h-5 text-gray-500" />
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-7 gap-1">
-                    {weekDays.map((day, i) => {
-                      const isToday = isSameDay(day, getNowInTimezone(timezone));
-                      const isSelected = selectedDate ? isSameDay(day, selectedDate) : false;
-                      return (
-                        <button
-                          key={i}
-                          onClick={() => setSelectedDate(day)}
-                          className={cn(
-                            "flex flex-col items-center py-2 rounded-xl transition-all",
-                            isSelected ? "bg-primary text-white" : isToday ? "bg-primary/10 text-primary" : "hover:bg-gray-50 text-gray-600"
-                          )}
-                        >
-                          <span className="text-[10px] font-medium">{formatInTz(day, timezone, "EEE")}</span>
-                          <span className="text-sm font-bold mt-0.5">{formatInTz(day, timezone, "d")}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+            <div className="pb-8">
+                <div className="flex items-center gap-2 mb-5">
+                    <Button variant="ghost" size="icon" onClick={() => setView("category")} className="-ml-2">
+                        <ArrowLeft className="w-5 h-5" />
+                    </Button>
+                    <h2 className="text-xl font-bold text-gray-800">Select Time</h2>
                 </div>
 
-                {/* Slots */}
+                {/* Calendar card */}
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-5">
+                    <div className="flex items-center justify-between px-3 pt-3 pb-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigateWeek("prev")}>
+                            <ChevronLeft className="w-4 h-4" />
+                        </Button>
+                        <span className="text-sm font-semibold text-gray-700">
+                            {formatInTz(weekDays[0], timezone, "MMMM yyyy")}
+                        </span>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigateWeek("next")}>
+                            <ChevronRight className="w-4 h-4" />
+                        </Button>
+                    </div>
+                    <div className="grid grid-cols-7 text-center px-1 py-3">
+                        {weekDays.map((day) => {
+                            const isSelected = selectedDate ? isSameDay(day, selectedDate) : false;
+                            const isToday = isSameDay(day, now);
+                            const dayAbbrev = formatInTz(day, timezone, "EEE");
+                            const dayNum = formatInTz(day, timezone, "d");
+                            const monthAbbrev = formatInTz(day, timezone, "MMM");
+                            return (
+                                <button
+                                    key={day.toISOString()}
+                                    onClick={() => setSelectedDate(day)}
+                                    className="flex flex-col items-center gap-0.5"
+                                >
+                                    <span className="text-[11px] font-medium text-gray-400 mb-1">{dayAbbrev}</span>
+                                    <span className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${
+                                        isSelected
+                                            ? 'bg-[#D32F2F] text-white shadow-sm'
+                                            : isToday
+                                                ? 'border-2 border-[#D32F2F] text-[#D32F2F]'
+                                                : 'text-gray-800 hover:bg-gray-50'
+                                    }`}>
+                                        {dayNum}
+                                    </span>
+                                    <span className="text-[10px] text-gray-400 leading-none mt-0.5">{monthAbbrev}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Time slots */}
+                <h3 className="text-center font-bold text-gray-900 text-base mb-3">What time works?</h3>
                 {slotsLoading ? (
-                  <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+                    <div className="flex justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-gray-400" /></div>
                 ) : !slots || slots.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500 bg-white rounded-2xl border border-dashed border-gray-200">
-                    No availability for this day
-                  </div>
+                    <p className="text-center text-gray-400 text-sm py-8">No available times for this date.</p>
                 ) : (
-                  <div className="space-y-4">
-                    {[
-                      { label: "Morning", items: groupedSlots.morning },
-                      { label: "Afternoon", items: groupedSlots.afternoon },
-                      { label: "Evening", items: groupedSlots.evening },
-                    ].filter(g => g.items.length > 0).map(group => (
-                      <div key={group.label}>
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{group.label}</p>
-                        <div className="grid grid-cols-3 gap-2">
-                          {group.items.map((slot, i) => (
+                    <div className="grid grid-cols-3 gap-3">
+                        {slots.map(slot => (
                             <button
-                              key={i}
-                              onClick={() => handleSelectSlot(slot)}
-                              className="bg-white border border-gray-200 rounded-xl py-2.5 text-sm font-medium text-gray-800 hover:border-primary hover:text-primary hover:bg-primary/5 transition-all shadow-sm"
+                                key={slot.time}
+                                onClick={() => handleSelectSlot(slot)}
+                                className="py-3 px-2 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-[#D32F2F] hover:text-[#D32F2F] active:bg-[#D32F2F] active:text-white transition-all"
                             >
-                              {formatInTz(slot.time, timezone, "h:mm a")}
+                                {formatInTz(slot.time, timezone, "h:mm a")}
                             </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                        ))}
+                    </div>
                 )}
-              </>
-            )}
-          </div>
+            </div>
         )}
 
         {view === "confirm" && (
             <div className="pb-8">
-                 <div className="flex items-center gap-2 mb-6 mt-4">
+                 <div className="flex items-center gap-2 mb-6">
                     <Button variant="ghost" size="icon" onClick={() => setView("time")} className="-ml-2">
                         <ArrowLeft className="w-5 h-5" />
                     </Button>
@@ -847,8 +567,8 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
 
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-6">
                     <div className="flex items-start gap-4 border-b border-gray-100 pb-4 mb-4">
-                        <div className="w-16 h-16 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <Scissors className="w-8 h-8 text-primary" />
+                        <div className="w-16 h-16 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <Scissors className="w-8 h-8 text-[#D32F2F]" />
                         </div>
                         <div>
                             <h3 className="font-bold text-lg text-gray-900">{primaryService?.name}</h3>
@@ -869,40 +589,12 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
                         <span className="text-gray-500">Time</span>
                         <span className="font-medium">{selectedSlot && formatInTz(selectedSlot.time, timezone, "h:mm a")}</span>
                     </div>
-
-                    {/* Payment policy info */}
-                    {paymentPolicyData?.policy === "card_on_file" && (
-                      <div className="mt-3 pt-3 border-t border-gray-100 flex items-start gap-2">
-                        <Lock className="w-3.5 h-3.5 text-blue-600 mt-0.5 shrink-0" />
-                        <p className="text-sm text-blue-800">
-                          A card is required to secure your booking. <strong>No charge will be made today.</strong>
-                        </p>
+                    {primaryService?.depositRequired && primaryService?.depositAmount && (
+                      <div className="mt-3 pt-3 border-t border-gray-100 flex justify-between items-center">
+                        <span className="text-sm text-amber-700 font-medium">Deposit required</span>
+                        <span className="text-sm font-bold text-amber-700">${Number(primaryService.depositAmount).toFixed(2)}</span>
                       </div>
                     )}
-                    {paymentPolicyData?.policy === "deposit" && (() => {
-                      const depositDollars = paymentPolicyData.depositType === "percentage"
-                        ? totalPrice * ((paymentPolicyData.depositValue ?? 0) / 100)
-                        : (paymentPolicyData.depositValue ?? 0);
-                      const remaining = totalPrice - depositDollars;
-                      return (
-                        <div className="mt-3 pt-3 border-t border-gray-100 space-y-1">
-                          {showPrices && (
-                            <div className="flex justify-between text-sm text-gray-600">
-                              <span>Service total</span>
-                              <span>${totalPrice.toFixed(2)}</span>
-                            </div>
-                          )}
-                          <div className="flex justify-between text-sm font-semibold text-amber-800">
-                            <span>Deposit due today</span>
-                            <span>${depositDollars.toFixed(2)}</span>
-                          </div>
-                          <div className="flex justify-between text-sm text-gray-500">
-                            <span>Remaining at checkout</span>
-                            <span>${remaining.toFixed(2)}</span>
-                          </div>
-                        </div>
-                      );
-                    })()}
                 </div>
 
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-6 space-y-4">
@@ -938,124 +630,16 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
                         onChange={e => setCustomerEmail(e.target.value)}
                         className="bg-gray-50 border-transparent focus:bg-white transition-all"
                      />
-                     {/* SMS opt-in consent */}
-                     <div className="border border-gray-200 rounded-lg p-4">
-                       <label className="flex items-start gap-3 cursor-pointer">
-                         <input
-                           type="checkbox"
-                           checked={smsOptIn}
-                           onChange={(e) => setSmsOptIn(e.target.checked)}
-                           className="mt-0.5 h-4 w-4 rounded border-gray-300 accent-primary cursor-pointer shrink-0"
-                         />
-                         <span className="text-sm font-medium text-gray-800 leading-snug">
-                           Get important appointment updates from Certxa LLC
-                         </span>
-                       </label>
-                       <p className="text-xs text-gray-500 mt-2 leading-relaxed">
-                         By checking this box, you consent to receive automated text messages from Certxa LLC on behalf of your selected salon. Messages may include appointment confirmations, reminders, cancellations, rescheduling updates, and other appointment-related notifications. Consent is not a condition of purchase. Message frequency varies. Message and data rates may apply. Reply STOP to unsubscribe and HELP for help. View{" "}
-                         <a href="/terms" target="_blank" rel="noopener noreferrer" className="font-semibold underline text-gray-700">TERMS</a>
-                         {" "}&{" "}
-                         <a href="/policy" target="_blank" rel="noopener noreferrer" className="font-semibold underline text-gray-700">PRIVACY</a>
-                       </p>
-                     </div>
                 </div>
-
-                {paymentError && (
-                  <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">
-                    {paymentError}
-                  </div>
-                )}
 
                 <Button 
                     onClick={handleConfirmBooking} 
-                    disabled={bookMutation.isPending || isCreatingIntent || !customerName.trim() || !isPhoneValid}
-                    className="w-full h-14 text-lg rounded-xl shadow-lg"
+                  disabled={bookMutation.isPending || !customerName.trim() || !isPhoneValid}
+                    className="w-full h-14 text-lg rounded-xl bg-[#D32F2F] hover:bg-[#B71C1C] shadow-lg shadow-red-200"
                 >
-                    {(bookMutation.isPending || isCreatingIntent) ? (
-                      <Loader2 className="animate-spin mr-2" />
-                    ) : (paymentPolicyData?.policy && paymentPolicyData.policy !== "none") ? (
-                      <Lock className="w-4 h-4 mr-2" />
-                    ) : null}
-                    {paymentPolicyData?.policy === "card_on_file"
-                      ? "Continue to Save Card"
-                      : paymentPolicyData?.policy === "deposit"
-                        ? "Continue to Pay Deposit"
-                        : "Confirm Booking"}
+                    {bookMutation.isPending ? <Loader2 className="animate-spin mr-2" /> : "Confirm Booking"}
                 </Button>
             </div>
-        )}
-
-        {/* Payment step */}
-        {view === "payment" && stripeInstance && paymentClientSecret && (
-          <div className="pb-8 mt-4">
-            <div className="flex items-center gap-2 mb-6">
-              <Button variant="ghost" size="icon" onClick={() => setView("confirm")} className="-ml-2">
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-              <h2 className="text-xl font-bold text-gray-800">
-                {intentType === "setup" ? "Save Payment Method" : "Pay Deposit"}
-              </h2>
-            </div>
-
-            {/* Booking recap */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-6 space-y-1">
-              <p className="font-semibold text-gray-900">{primaryService?.name}</p>
-              <p className="text-sm text-gray-600">
-                {selectedSlot && formatInTz(selectedSlot.time, timezone, "EEEE, d MMMM yyyy 'at' h:mm a")}
-              </p>
-              <p className="text-sm text-gray-500">With {selectedSlot?.staffName}</p>
-              {intentType === "payment" && depositAmountCents > 0 && (
-                <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
-                  {showPrices && (
-                    <div className="flex justify-between text-sm text-gray-600">
-                      <span>Service total</span>
-                      <span>${totalPrice.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm font-semibold text-amber-800">
-                    <span>Deposit due now</span>
-                    <span>${(depositAmountCents / 100).toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm text-gray-500">
-                    <span>Remaining at checkout</span>
-                    <span>${Math.max(0, totalPrice - depositAmountCents / 100).toFixed(2)}</span>
-                  </div>
-                </div>
-              )}
-              {intentType === "setup" && (
-                <div className="mt-3 pt-3 border-t border-gray-200 flex items-start gap-2">
-                  <Lock className="w-3.5 h-3.5 text-blue-600 mt-0.5 shrink-0" />
-                  <p className="text-sm text-blue-800">
-                    Your card will be securely stored. <strong>No charge will be made today.</strong>
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <Elements
-              stripe={stripeInstance}
-              options={{
-                clientSecret: paymentClientSecret,
-                appearance: { theme: "stripe", variables: { colorPrimary: "#e11d48" } },
-              }}
-            >
-              <PaymentForm
-                intentType={intentType}
-                depositAmountCents={depositAmountCents}
-                onSuccess={(paymentInfo) =>
-                  submitBooking({ ...paymentInfo, stripeCustomerId: pendingStripeCustomerId })
-                }
-                onBack={() => setView("confirm")}
-              />
-            </Elements>
-          </div>
-        )}
-
-        {view === "payment" && (!stripeInstance || !paymentClientSecret) && (
-          <div className="flex flex-col items-center justify-center h-64 gap-3 mt-4">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <p className="text-sm text-gray-500">Preparing payment…</p>
-          </div>
         )}
 
         {view === "profile" && (
@@ -1158,7 +742,7 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
       {/* Bottom Nav */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-6 py-2 flex justify-between items-center z-50 pb-safe">
         <button 
-            className={`flex flex-col items-center gap-1 ${view === 'home' || view === 'category' ? 'text-primary' : 'text-gray-400'}`}
+            className={`flex flex-col items-center gap-1 ${view === 'home' || view === 'category' ? 'text-[#D32F2F]' : 'text-gray-400'}`}
             onClick={() => setView('home')}
         >
             <Home className="w-6 h-6" />
@@ -1166,12 +750,12 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
         </button>
         
         <button className="flex flex-col items-center gap-1 text-gray-400 relative">
-            <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary rounded-full text-[10px] text-primary-foreground flex items-center justify-center border-2 border-white">0</div>
+            <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#D32F2F] rounded-full text-[10px] text-white flex items-center justify-center border-2 border-white">0</div>
             <ShoppingBag className="w-6 h-6" />
             <span className="text-[10px] font-medium">Cart</span>
         </button>
 
-        <button className={cn("flex flex-col items-center gap-1", view === "profile" ? "text-primary" : "text-gray-400")} onClick={() => setView("profile")}>
+        <button className={cn("flex flex-col items-center gap-1", view === "profile" ? "text-[#D32F2F]" : "text-gray-400")} onClick={() => setView("profile")}>
             <User className="w-6 h-6" />
             <span className="text-[10px] font-medium">Profile</span>
         </button>
@@ -1243,43 +827,6 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
             <Button onClick={confirmServiceWithAddons}>
               Choose Date/Time
             </Button>
-          </div>
-        </div>
-      )}
-      {/* Option Picker Modal */}
-      {optionPickerService && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl overflow-hidden">
-            <div className="px-5 pt-5 pb-3 border-b">
-              <h3 className="font-semibold text-base">{optionPickerService.name}</h3>
-              <p className="text-xs text-gray-500 mt-0.5">Choose an option to continue</p>
-            </div>
-            <div className="px-4 py-3 space-y-2 max-h-72 overflow-y-auto">
-              {optionPickerService.options.map((opt) => (
-                <button
-                  key={opt.id}
-                  onClick={() => handlePickOption(optionPickerService, opt)}
-                  className="w-full text-left p-3 rounded-xl border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition flex items-center justify-between"
-                >
-                  <div>
-                    <p className="font-medium text-sm">{opt.name}</p>
-                    {opt.description && <p className="text-xs text-gray-500 mt-0.5">{opt.description}</p>}
-                    <p className="text-xs text-gray-400 mt-0.5">{opt.durationMinutes} min</p>
-                  </div>
-                  {showPrices && (
-                    <span className="font-semibold text-sm ml-4 shrink-0">${Number(opt.price).toFixed(2)}</span>
-                  )}
-                </button>
-              ))}
-            </div>
-            <div className="px-4 pb-4 pt-2">
-              <button
-                onClick={() => setOptionPickerService(null)}
-                className="w-full text-center text-sm text-gray-500 hover:text-gray-700 py-2"
-              >
-                Cancel
-              </button>
-            </div>
           </div>
         </div>
       )}

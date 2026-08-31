@@ -455,9 +455,20 @@ function renderSalonPage(salon: SalonRecord, live: LiveStoreData | null): string
       ] as [string, string])
     : PLACEHOLDER_HOURS;
 
+  // Schema hours are built separately from real 24-hour values — never by
+  // parsing the 12-hour display string above (that was the source of the
+  // "9:30 AM" / "7:00 PM" values previously leaking into JSON-LD, which
+  // Schema.org/Google require as ISO 8601 "09:30" / "19:00"). Unclaimed
+  // listings have no real hours data, so none are asserted in schema.
+  const schemaHours: Array<[string, string | null, string | null]> | null = live?.hours.length
+    ? live.hours.map(h => [DAY_NAMES[h.day], h.closed ? null : h.open, h.closed ? null : h.close] as [string, string | null, string | null])
+    : null;
+
   const pageTitle = `${name} - ${street}, ${city}, ${state} ${zip} | Nail Salon`;
   const ratingStr = rating > 0 ? ` Rated ${rating}/5 from ${reviewCount} reviews.` : "";
-  const metaDesc  = `${name} is a nail salon located at ${fullAddr}. Book manicures, pedicures, gel nails, acrylic nails, and more.${ratingStr} View services and hours.`;
+  const metaDesc  = isVerified
+    ? `${name} is a nail salon located at ${fullAddr}. Book manicures, pedicures, gel nails, acrylic nails, and more.${ratingStr} View services and hours.`
+    : `${name} is a nail salon located at ${fullAddr}.${ratingStr} Find contact info and directions.`;
 
   // LD+JSON: LocalBusiness
   const jsonLd: Record<string, unknown> = {
@@ -478,11 +489,10 @@ function renderSalonPage(salon: SalonRecord, live: LiveStoreData | null): string
     ...(phone ? { telephone: phone } : {}),
     ...(lat && lng ? { geo: { "@type": "GeoCoordinates", latitude: lat, longitude: lng } } : {}),
     ...(lat && lng ? { hasMap: `https://www.google.com/maps/search/?api=1&query=${lat},${lng}` } : {}),
-    openingHoursSpecification: displayHours.map(([day, time]) => {
-      if (time === "Closed") return { "@type": "OpeningHoursSpecification", dayOfWeek: day, opens: "00:00", closes: "00:00" };
-      const [open, close] = time.split(" – ");
-      return { "@type": "OpeningHoursSpecification", dayOfWeek: day, opens: open, closes: close };
-    }),
+    ...(schemaHours ? { openingHoursSpecification: schemaHours.map(([day, opens, closes]) => {
+      if (opens === null || closes === null) return { "@type": "OpeningHoursSpecification", dayOfWeek: day, opens: "00:00", closes: "00:00" };
+      return { "@type": "OpeningHoursSpecification", dayOfWeek: day, opens, closes };
+    }) } : {}),
     makesOffer: displayServices.map(([svcName]) => ({
       "@type": "Offer",
       itemOffered: { "@type": "Service", name: svcName },
@@ -691,7 +701,7 @@ ${SITE_HEADER}
       </ul>
     </section>
 
-    <section class="about-section" aria-labelledby="about-heading">
+    ${isVerified ? `<section class="about-section" aria-labelledby="about-heading">
       <h2 class="section-title" id="about-heading">About ${esc(name)}</h2>
       <p>${esc(name)} is a nail salon located at ${esc(fullAddr)}.
       We offer a full range of nail services including manicures, pedicures, gel nails, acrylic nails,
@@ -699,7 +709,7 @@ ${SITE_HEADER}
       high-quality nail care in a clean and relaxing environment.
       ${city ? `Conveniently located in ${esc(city)}${state ? `, ${esc(state)}` : ""}, we welcome walk-ins and appointments.` : ""}
       Book your appointment online or call us today.</p>
-    </section>
+    </section>` : ""}
 
     ${isVerified
       ? `<div class="claimed-box" role="note">
@@ -737,7 +747,7 @@ ${SITE_HEADER}
       <a href="${esc(directionsUrl)}" target="_blank" rel="noopener noreferrer">Open in Google Maps</a>
     </address>
 
-    <section class="hours-section" aria-labelledby="hours-heading">
+    ${isVerified ? `<section class="hours-section" aria-labelledby="hours-heading">
       <h2 class="hours-title" id="hours-heading">Opening times</h2>
       <table class="hours-table">
         <tbody>
@@ -746,7 +756,7 @@ ${SITE_HEADER}
           ).join("")}
         </tbody>
       </table>
-    </section>
+    </section>` : ""}
   </aside>
 </div>
 

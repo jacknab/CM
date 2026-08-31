@@ -1,8 +1,8 @@
 <?php
 define('BRAND_NAME',     'Certxa');
-define('PAGE_TITLE',     'About Certxa | Salon Software');
-define('PAGE_DESC',      'We started Certxa with a simple idea: salon software should help you run your business—not overwhelm it. One platform for booking, POS, payments, team management, payroll, websites, and more.');
-define('PAGE_KEYWORDS',  'about certxa, certxa story, salon software platform, all-in-one salon software, certxa mission');
+define('PAGE_TITLE',     'About Certxa | Founded by a Nail Salon Owner in Phoenix, AZ');
+define('PAGE_DESC',      'Certxa was founded February 2026 in Phoenix, Arizona by Tom Tham, a nail salon owner who wanted to give salon owners a real alternative to long-term software contracts. One platform for booking, POS, payments, team management, payroll, websites, and more.');
+define('PAGE_KEYWORDS',  'about certxa, certxa founder, tom tham, certxa story, salon software platform, all-in-one salon software, certxa mission, phoenix arizona salon software');
 define('PAGE_CANONICAL', 'https://certxa.com/about');
 define('PAGE_OG_IMAGE',  'https://certxa.com/assets/images/og-about.jpg');
 define('PAGE_BREADCRUMBS', json_encode([
@@ -15,17 +15,11 @@ define('PAGE_SCHEMA', json_encode([
     '@id'         => 'https://certxa.com/about',
     'url'         => 'https://certxa.com/about',
     'name'        => 'About Certxa — Salon Software Built to Depend On',
-    'description' => 'Certxa brings online booking, point of sale, payments, client management, team management, payroll, websites, marketing, and AI-powered tools together in one platform.',
+    'description' => 'Certxa was founded by nail salon owner Tom Tham in Phoenix, Arizona to give salon owners an alternative to long-term software contracts.',
     'publisher'   => ['@id' => 'https://certxa.com/#organization'],
-    'mainEntity'  => [
-      '@type'       => 'Organization',
-      '@id'         => 'https://certxa.com/#organization',
-      'name'        => 'Certxa',
-      'url'         => 'https://certxa.com',
-      'foundingDate'=> '2023',
-      'description' => 'Certxa builds all-in-one salon management software with online booking, point of sale, payments, client management, team management, payroll, websites, marketing, and AI-powered tools.',
-      'knowsAbout'  => ['Salon Software','Beauty Business Management','Salon Booking Systems','Client Management Software'],
-    ],
+    // The canonical Organization node (with foundingDate, founder, address)
+    // is injected site-wide by includes/header.php — not redefined here.
+    'mainEntity'  => ['@id' => 'https://certxa.com/#organization'],
   ],
 ]));
 require 'includes/header.php';
@@ -109,12 +103,14 @@ require 'includes/nav.php';
 
 <div class="about-hero">
   <h1>About Certxa</h1>
-  <p>Salon software should help you run your business—not overwhelm it.</p>
+  <p>Founded by a nail salon owner, for nail salon owners.</p>
 </div>
 
 <div class="about-wrap">
 
-  <p>We started Certxa with a simple idea: salon software should help you run your business—not overwhelm it.</p>
+  <p>Certxa was founded in Phoenix, Arizona in February 2026 by Tom Tham, a Vietnamese nail salon owner himself. Tom started Certxa after watching Vietnamese-owned nail salons — a community he's part of — get pushed into long-term contracts with existing salon software providers like GoCheckIn just to get basic booking and check-in tools. He wanted to build a real alternative: no long-term lock-in, and software built by someone who has actually run a nail salon, not just sold to one.</p>
+
+  <p>That's still the idea behind Certxa today: salon software should help you run your business — not overwhelm it, and not trap you in a contract you can't get out of.</p>
 
   <p>Many platforms require multiple subscriptions, disconnected tools, and complicated workflows just to manage everyday tasks. We wanted to build something different.</p>
 

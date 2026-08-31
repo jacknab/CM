@@ -343,7 +343,7 @@ require 'includes/nav.php';
       <em>revenue co-pilot.</em>
     </h1>
     <p class="ri-sub">
-      SalonOS watches your booking data 24/7 — detecting drifting clients, predicting no-shows, finding dead seats, and automatically recovering lost revenue. No other salon platform does this.
+      SalonOS watches your booking data 24/7 — detecting drifting clients, predicting no-shows, finding dead seats, and automatically recovering lost revenue.
     </p>
     <div class="ri-hero-btns">
       <a href="/auth?mode=register" class="ri-btn-primary">Start Free — See It Working</a>
@@ -799,7 +799,7 @@ require 'includes/nav.php';
   <div class="container">
     <div class="text-center" style="margin-bottom:48px;">
       <div class="ri-section-label">How Certxa Compares</div>
-      <h2 class="ri-section-title" style="white-space:nowrap;">No other salon platform does this.</h2>
+      <h2 class="ri-section-title" style="white-space:nowrap;">See what's actually different.</h2>
     </div>
     <div style="max-height:560px;overflow-x:auto;overflow-y:auto;border-radius:16px;border:1px solid #ede9f7;box-shadow:0 8px 40px rgba(59,7,100,.06);">
       <table class="ri-compare">
@@ -836,46 +836,6 @@ require 'includes/nav.php';
           <?php endforeach; ?>
         </tbody>
       </table>
-    </div>
-  </div>
-</section>
-
-<!-- ── TESTIMONIALS ───────────────────────────────────── -->
-<section class="ri-section ri-section-mid">
-  <div class="container">
-    <div class="text-center" style="margin-bottom:48px;">
-      <div class="ri-section-label">What Salon Owners Say</div>
-      <h2 class="ri-section-title">The revenue difference<br>is measurable.</h2>
-    </div>
-    <div class="ri-testimonials">
-      <?php foreach ([
-        [
-          'MT','Marcus T.','Owner, Crown Barbershop',
-          '"The Client Drift Engine alone recovered 11 clients in the first month — clients I thought were just gone. SalonOS texted them at exactly the right moment and they booked. That\'s real money back in my pocket."',
-        ],
-        [
-          'AK','Aaliyah K.','Independent Stylist',
-          '"I used to manually check who hadn\'t been in a while and then remember to text them. Now the system does it for me. I wake up to bookings I didn\'t have to chase. The revenue report every Monday is brutal — it shows exactly what you\'re leaving on the table."',
-        ],
-        [
-          'PS','Priya S.','Owner, Glow Nail Studio',
-          '"The no-show predictor is eerie — it flags clients I already had a gut feeling about. The automated reminders have cut my no-show rate from 18% to under 6% without me chasing anyone. The dead seat intelligence found patterns in my calendar I never would have spotted myself."',
-        ],
-      ] as [$init,$name,$role,$quote]): ?>
-      <div class="ri-testimonial">
-        <div style="display:flex;gap:2px;margin-bottom:14px;">
-          <?php for($i=0;$i<5;$i++) echo '<span style="color:#f59e0b;font-size:.9rem;">★</span>'; ?>
-        </div>
-        <p class="ri-testimonial-quote"><?= $quote ?></p>
-        <div class="ri-testimonial-author">
-          <div class="ri-testimonial-avatar"><?= $init ?></div>
-          <div>
-            <div class="ri-testimonial-name"><?= $name ?></div>
-            <div class="ri-testimonial-role"><?= $role ?></div>
-          </div>
-        </div>
-      </div>
-      <?php endforeach; ?>
     </div>
   </div>
 </section>
