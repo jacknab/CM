@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useServices } from "@/hooks/use-services";
 import { useServiceCategories, useAddonsForService } from "@/hooks/use-addons";
 import { useToast } from "@/hooks/use-toast";
+import { useUpdateAppointment } from "@/hooks/use-appointments";
 import { ReceiptContent, useReceiptPrinter, type ReceiptData } from "@/components/Receipt";
 import { cn } from "@/lib/utils";
 import {
@@ -136,6 +137,7 @@ export default function StaffPOS() {
   const { selectedStore } = useSelectedStore();
   const { user } = useAuth();
   const { toast } = useToast();
+  const updateAppointment = useUpdateAppointment();
   const queryClient = useQueryClient();
   const { printReceipt } = useReceiptPrinter();
 
@@ -284,21 +286,13 @@ export default function StaffPOS() {
     setCheckingOut(true);
     try {
       const txnId = Math.random().toString(36).substring(2, 10).toUpperCase();
-      const res = await fetch(`/api/appointments/${appointmentIdParam}`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "completed",
-          totalPaid: grandTotal.toFixed(2),
-          tipAmount: tipAmount.toFixed(2),
-          paymentMethod,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Checkout failed");
-      }
+      await updateAppointment.mutateAsync({
+        id: Number(appointmentIdParam),
+        status: "completed",
+        totalPaid: grandTotal.toFixed(2),
+        tipAmount: tipAmount.toFixed(2),
+        paymentMethod,
+      } as any);
 
       const now = new Date();
       const data: ReceiptData = {

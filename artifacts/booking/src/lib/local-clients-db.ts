@@ -1,5 +1,5 @@
 const DB_NAME = "certxa_local_clients";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = "local_clients";
 
 export type LocalClient = {
@@ -10,9 +10,6 @@ export type LocalClient = {
   storeId: number;
   name: string;
   phone?: string | null;
-  email?: string | null;
-  notes?: string | null;
-  createdAt: string;
 };
 
 let _db: IDBDatabase | null = null;
@@ -26,6 +23,23 @@ function openDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const s = db.createObjectStore(STORE_NAME, { keyPath: "_id" });
         s.createIndex("storeId", "storeId", { unique: false });
+      } else {
+        const upgradeTransaction = (e.target as IDBOpenDBRequest).transaction;
+        const store = upgradeTransaction?.objectStore(STORE_NAME);
+        const request = store?.getAll();
+        request?.addEventListener("success", () => {
+          for (const record of request.result ?? []) {
+            store?.put({
+              _id: record._id,
+              _isLocal: true,
+              _tempId: record._tempId,
+              _syncedRealId: record._syncedRealId,
+              storeId: record.storeId,
+              name: record.name ?? "",
+              phone: record.phone ?? null,
+            });
+          }
+        });
       }
     };
     req.onsuccess = (e) => {
@@ -98,8 +112,7 @@ export const localClientsDB = {
     return all.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
-        (c.phone && c.phone.includes(q)) ||
-        (c.email && c.email.toLowerCase().includes(q))
+          (c.phone && c.phone.includes(q))
     );
   },
 };

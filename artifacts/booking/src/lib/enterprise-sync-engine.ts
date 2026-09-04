@@ -215,7 +215,11 @@ class EnterpriseSyncEngine {
     this.emit("syncing");
 
     try {
-      const pending = await actionQueueDB.getPending();
+      // TURN actions use the dedicated sync engine because the enterprise batch
+      // endpoint does not implement TURN_ASSIGN/TURN_LOG_OVERRIDE handlers.
+      const pending = (await actionQueueDB.getPending()).filter(
+        (action) => action.type !== "TURN_ASSIGN" && action.type !== "TURN_LOG_OVERRIDE",
+      );
       if (pending.length === 0) {
         this.emit("online");
         this.isSyncing = false;

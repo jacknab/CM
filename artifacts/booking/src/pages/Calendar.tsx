@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { useAppointments, useUpdateAppointment } from "@/hooks/use-appointments";
+import { OfflineStatusBanner } from "@/components/OfflineStatusBanner";
 import { useAppointmentSSE } from "@/hooks/use-appointment-sse";
 import { useStaffList, useAllStaffAvailability } from "@/hooks/use-staff";
 import { useSelectedStore } from "@/hooks/use-store";
@@ -1523,6 +1524,9 @@ export default function Calendar() {
           {isFetchingAppointments && !isLoadingAppointments && (
             <Loader2 className="w-3 h-3 text-slate-300 animate-spin flex-shrink-0" aria-label="Syncing calendar…" />
           )}
+
+          {/* Offline status sits immediately before the QR scanner indicator. */}
+          <OfflineStatusBanner inline />
 
           {/* QR scanner ready indicator — pulses green when a scan is detected */}
           <div

@@ -663,7 +663,7 @@ function AppRoutes() {
           <AccountStatusGate>
             {routes}
           </AccountStatusGate>
-          <OfflineStatusBanner />
+          {location.pathname !== "/calendar" && <OfflineStatusBanner />}
           <SyncConflictPanel />
           {/* Global mobile bottom nav — fixed bottom-0, visible on every authenticated page */}
           <MobileBottomNav />

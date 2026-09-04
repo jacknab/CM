@@ -1,5 +1,5 @@
 const DB_NAME = "certxa_client_phone_cache";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = "clients";
 
 export type CachedBookingClient = {
@@ -9,14 +9,6 @@ export type CachedBookingClient = {
   name: string;
   phone: string | null;
   phone10: string | null;
-  email: string | null;
-  loyaltyPoints: number | null;
-  notes: string | null;
-  createdAt: string;
-  updatedAt: string;
-  allergies: string | null;
-  marketingOptIn: boolean | null;
-  birthday: string | null;
   _isLocal?: boolean;
   _tempId?: string;
   _syncedRealId?: number;
@@ -42,6 +34,14 @@ function openDB(): Promise<IDBDatabase> {
         const s = db.createObjectStore(STORE_NAME, { keyPath: "cacheKey" });
         s.createIndex("storeId", "storeId", { unique: false });
         s.createIndex("phone10", "phone10", { unique: false });
+      } else {
+        // Rewrite v1 records so previously stored profile fields are removed.
+        const upgradeTransaction = (e.target as IDBOpenDBRequest).transaction;
+        const store = upgradeTransaction?.objectStore(STORE_NAME);
+        const request = store?.getAll();
+        request?.addEventListener("success", () => {
+          for (const record of request.result ?? []) store?.put(toCachedClient(record.storeId, record));
+        });
       }
     };
     req.onsuccess = (e) => resolve((e.target as IDBOpenDBRequest).result);
@@ -58,16 +58,8 @@ function toCachedClient(storeId: number, raw: any): CachedBookingClient {
     id,
     storeId,
     name: name ?? "",
-    phone,
+    phone: normalizePhone10(phone),
     phone10: normalizePhone10(phone),
-    email: raw.email ?? raw.primaryEmail ?? null,
-    loyaltyPoints: raw.loyaltyPoints ?? 0,
-    notes: raw.notes ?? null,
-    createdAt: raw.createdAt ?? "",
-    updatedAt: raw.updatedAt ?? "",
-    allergies: raw.allergies ?? null,
-    marketingOptIn: raw.marketingOptIn ?? null,
-    birthday: raw.birthday ?? null,
     _isLocal: raw._isLocal,
     _tempId: raw._tempId,
     _syncedRealId: raw._syncedRealId,
@@ -75,6 +67,30 @@ function toCachedClient(storeId: number, raw: any): CachedBookingClient {
 }
 
 export const clientPhoneCacheDB = {
+  async replaceStore(storeId: number, clients: any[]): Promise<void> {
+    if (!storeId) return;
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const t = db.transaction(STORE_NAME, "readwrite");
+      const s = t.objectStore(STORE_NAME);
+      const request = s.index("storeId").getAll(storeId);
+      request.onsuccess = () => {
+        const incomingIds = new Set(clients.map((client) => String(client.id ?? client._tempId)));
+        for (const existing of request.result ?? []) {
+          if (!existing._isLocal && !incomingIds.has(String(existing.id))) s.delete(existing.cacheKey);
+        }
+        for (const client of clients) {
+          const cached = toCachedClient(storeId, client);
+          if (cached.id != null) s.put(cached);
+        }
+      };
+      request.onerror = () => reject(request.error);
+      t.oncomplete = () => resolve();
+      t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error ?? new Error("IndexedDB transaction aborted"));
+    });
+  },
+
   async putMany(storeId: number, clients: any[]): Promise<void> {
     if (!storeId || clients.length === 0) return;
     const db = await openDB();

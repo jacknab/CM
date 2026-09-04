@@ -306,18 +306,24 @@ export function useCreateClient() {
   return useMutation({
     mutationFn: async (data: any) => {
       const storeId = selectedStore?.id;
+      const firstName = data.firstName ?? data.first_name ?? "";
+      const lastName = data.lastName ?? data.last_name ?? "";
 
       if (!navigator.onLine) {
         const tempId = `local_client_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         await actionQueueDB.add({
           type: "CREATE_CLIENT",
           entity_temp_id: tempId,
-          payload: { ...data, storeId, tempId },
+          payload: {
+            firstName,
+            lastName,
+            phone: data.phone ?? undefined,
+            storeId,
+            tempId,
+          },
           timestamp: Date.now(),
           idempotency_key: `${tempId}_CREATE_CLIENT`,
         });
-        const firstName = data.firstName ?? data.first_name ?? "";
-        const lastName = data.lastName ?? data.last_name ?? "";
         return {
           id: tempId,
           _isLocal: true,
@@ -356,25 +362,46 @@ export function useUpdateClient() {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, ...data }: { id: number; [k: string]: any }) => {
-      const res = await fetch(`${BASE}/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        const err: any = new Error(body.message || "Failed to update client");
-        err.code = body.code;
-        throw err;
+    mutationFn: async ({ id, ...data }: { id: number | string; [k: string]: any }) => {
+      const queueLocally = async () => {
+        const tempId = `local_update_client_${id}_${Date.now()}`;
+        await actionQueueDB.add({
+          type: "UPDATE_CLIENT",
+          entity_temp_id: tempId,
+          payload: { clientId: id, ...data },
+          timestamp: Date.now(),
+          idempotency_key: `${tempId}_UPDATE_CLIENT`,
+        });
+        return { id, ...data, _offline: true };
+      };
+
+      if (!navigator.onLine) return queueLocally();
+
+      try {
+        const res = await fetch(`${BASE}/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+          credentials: "include",
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          const err: any = new Error(body.message || "Failed to update client");
+          err.code = body.code;
+          err.status = res.status;
+          throw err;
+        }
+        return res.json();
+      } catch (error: any) {
+        if (error?.name === "TypeError" || error?.status >= 500) return queueLocally();
+        throw error;
       }
-      return res.json();
     },
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: [BASE] });
       qc.invalidateQueries({ queryKey: QK.detail(vars.id) });
     },
+    networkMode: "always",
   });
 }
 

@@ -67,8 +67,10 @@ function txAll<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBReques
       new Promise((resolve, reject) => {
         const t = db.transaction(STORE_NAME, mode);
         const req = fn(t.objectStore(STORE_NAME));
-        req.onsuccess = () => resolve(req.result ?? []);
+        req.onsuccess = () => {};
         req.onerror = () => reject(req.error);
+        t.oncomplete = () => resolve(req.result ?? []);
+        t.onabort = () => reject(t.error ?? new Error("IndexedDB transaction aborted"));
       })
   );
 }
@@ -79,8 +81,10 @@ function txOne<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBReques
       new Promise((resolve, reject) => {
         const t = db.transaction(STORE_NAME, mode);
         const req = fn(t.objectStore(STORE_NAME));
-        req.onsuccess = () => resolve(req.result);
+        req.onsuccess = () => {};
         req.onerror = () => reject(req.error);
+        t.oncomplete = () => resolve(req.result);
+        t.onabort = () => reject(t.error ?? new Error("IndexedDB transaction aborted"));
       })
   );
 }
@@ -125,6 +129,17 @@ export const actionQueueDB = {
         t.onerror = () => reject(t.error);
       };
       req.onerror = () => reject(req.error);
+    });
+  },
+
+  async updatePendingCreate(entityTempId: string, updates: Record<string, unknown>): Promise<void> {
+    const all = await this.getAll();
+    const action = all.find(
+      (candidate) => candidate.entity_temp_id === entityTempId && candidate.type === "CREATE_BOOKING" && candidate.state === "PENDING",
+    );
+    if (!action) return;
+    await this.setState(action.id, action.state, {
+      payload: { ...action.payload, ...updates },
     });
   },
 

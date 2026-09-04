@@ -332,7 +332,7 @@ async function handleCreateBooking(
   const p = action.payload as any;
   const date = new Date(p.date);
   const duration = Number(p.duration) || 30;
-  const customerId = p.customerId ? Number(p.customerId) : null;
+  const customerId = p.customerId ? resolveId(p.customerId, mappings) : null;
   const serviceId = p.serviceId ? Number(p.serviceId) : null;
   const resolvedStaffId = p.staffId ? resolveId(p.staffId, mappings) : null;
 
@@ -390,6 +390,13 @@ async function handleCreateBooking(
     depositPaid: p.depositPaid || false,
   } as any);
 
+  if (Array.isArray(p.addonIds) && p.addonIds.length > 0) {
+    await storage.setAppointmentAddons(
+      apt.id,
+      p.addonIds.map((id: unknown) => Number(id)).filter((id: number) => Number.isFinite(id)),
+    );
+  }
+
   broadcastSyncEvent({ type: "booking_created", storeId, appointmentId: apt.id, source: "sync" });
   return { actionId: action.id, type: action.type, status: "applied", realId: apt.id };
 }
@@ -400,7 +407,7 @@ async function handleUpdateBooking(
   mappings: Record<string, number>
 ): Promise<ActionResult> {
   const p = action.payload as any;
-  const realId = resolveId(p.appointmentId ?? action.entity_temp_id, mappings);
+  const realId = resolveId(p.appointmentId ?? p.id ?? action.entity_temp_id, mappings);
   if (!realId) return { actionId: action.id, type: action.type, status: "skipped", conflict: "No resolved ID" };
 
   const existing = await storage.getAppointment(realId);
@@ -412,6 +419,12 @@ async function handleUpdateBooking(
   if (p.notes !== undefined) updates.notes = p.notes;
   if (p.date !== undefined) updates.date = new Date(p.date);
   if (p.duration !== undefined) updates.duration = Number(p.duration);
+  if (p.status !== undefined) updates.status = p.status;
+  if (p.totalPaid !== undefined) updates.totalPaid = String(p.totalPaid);
+  if (p.tipAmount !== undefined) updates.tipAmount = String(p.tipAmount);
+  if (p.discountAmount !== undefined) updates.discountAmount = String(p.discountAmount);
+  if (p.paymentMethod !== undefined) updates.paymentMethod = p.paymentMethod;
+  if (p.status === "completed") updates.completedAt = new Date();
   if (p.serviceId !== undefined) {
     const valid = await validateService(Number(p.serviceId), storeId);
     if (valid) updates.serviceId = Number(p.serviceId);
@@ -550,6 +563,7 @@ async function handleCreateClient(
   mappings: Record<string, number>
 ): Promise<ActionResult> {
   const p = action.payload as any;
+  const fullName = p.name ?? [p.firstName, p.lastName].filter(Boolean).join(" ").trim();
 
   // Check for duplicate by phone in client_phones
   let dupId: number | null = null;
@@ -560,11 +574,11 @@ async function handleCreateClient(
     );
     if ((dupRows.rows as any[]).length > 0) dupId = Number((dupRows.rows as any[])[0].id);
   }
-  if (!dupId && p.name) {
+  if (!dupId && fullName) {
     const dupRows = await db
       .select({ id: clients.id })
       .from(clients)
-      .where(andOp(eqOp(clients.storeId, storeId), eqOp(clients.fullName, p.name)))
+      .where(andOp(eqOp(clients.storeId, storeId), eqOp(clients.fullName, fullName)))
       .limit(1);
     if (dupRows.length > 0) dupId = dupRows[0].id;
   }
@@ -577,12 +591,12 @@ async function handleCreateClient(
     };
   }
 
-  const nameParts = (p.name ?? "Unknown").split(" ");
+  const nameParts = (fullName || "Unknown").split(" ");
   const [newClient] = await db
     .insert(clients)
     .values({
       storeId,
-      fullName: p.name ?? "Unknown",
+      fullName: fullName || "Unknown",
       firstName: nameParts[0] || "",
       lastName: nameParts.slice(1).join(" ") || "",
       loyaltyPoints: 0,

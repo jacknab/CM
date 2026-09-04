@@ -47,6 +47,10 @@ function localBookingToAppointment(b: LocalBooking): any {
     notes: b.notes ?? "",
     status: b.status ?? "pending",
     type: b.type ?? "booking",
+    totalPaid: b.totalPaid ?? null,
+    tipAmount: b.tipAmount ?? null,
+    paymentMethod: b.paymentMethod ?? null,
+    completedAt: b.completedAt ?? null,
     createdAt: b.createdAt,
     staff: b.staffName ? { name: b.staffName, color: b.staffColor ?? null } : null,
     customer: b.customerName ? { name: b.customerName } : null,
@@ -141,7 +145,7 @@ export function useCreateAppointment() {
     ) => {
       let dateStr: string = String(data.date);
       if (!dateStr.endsWith("Z") && !dateStr.match(/[+-]\d{2}:\d{2}$/)) {
-        const timezone = selectedStore?.timezone || "UTC";
+        const timezone = selectedStore?.timezone || snapshot?.timezone || "UTC";
         const utcDate = storeLocalToUtc(dateStr, timezone);
         dateStr = utcDate.toISOString();
       }
@@ -159,6 +163,7 @@ export function useCreateAppointment() {
       // Prefer the live store; fall back to snapshot storeId so offline bookings
       // are always associated with the correct store even before hydration.
       const storeId = selectedStore?.id ?? snapshot?.storeId ?? null;
+      const createIdempotencyKey = `booking_create_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
       // Shared helper — saves booking locally and queues sync
       const saveLocally = async () => {
@@ -256,10 +261,11 @@ export function useCreateAppointment() {
             storeId,
             date: dateStr,
             addonIds: (_offlineAddons ?? []).map((addon) => addon.id),
+            offlineSync: true,
             tempId,
           },
           timestamp: Date.now(),
-          idempotency_key: `${tempId}_CREATE_BOOKING`,
+          idempotency_key: createIdempotencyKey,
         });
 
         return localBookingToAppointment(localBooking);
@@ -286,7 +292,10 @@ export function useCreateAppointment() {
 
         const res = await fetch(api.appointments.create.path, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Idempotency-Key": createIdempotencyKey,
+          },
           body: JSON.stringify(payload),
           credentials: "include",
         });
@@ -340,6 +349,12 @@ export function useUpdateAppointment() {
       // Local-only booking: update IndexedDB record so calendar actions still work
       // while waiting for a server-mapped real ID.
       if (isLocalId) {
+        if (updates.status === "cancelled") {
+          await actionQueueDB.discardByTempId(id);
+          await appointmentsCacheDB.deleteLocalBooking(id).catch(() => {});
+          return { id, ...updates };
+        }
+
         const localUpdates: Partial<LocalBooking> = {};
         if (updates.date) localUpdates.date = String(updates.date);
         if (updates.duration != null) localUpdates.duration = Number(updates.duration);
@@ -348,7 +363,15 @@ export function useUpdateAppointment() {
         if (updates.customerId !== undefined) localUpdates.customerId = updates.customerId as any;
         if (updates.notes !== undefined) localUpdates.notes = updates.notes as any;
         if (updates.status !== undefined) localUpdates.status = String(updates.status);
+        if (updates.totalPaid !== undefined) localUpdates.totalPaid = updates.totalPaid as any;
+        if (updates.tipAmount !== undefined) localUpdates.tipAmount = updates.tipAmount as any;
+        if (updates.paymentMethod !== undefined) localUpdates.paymentMethod = updates.paymentMethod as any;
+        if (updates.status === "completed") localUpdates.completedAt = new Date().toISOString();
         await appointmentsCacheDB.updateLocalBooking(id, localUpdates).catch(() => {});
+        await actionQueueDB.updatePendingCreate(id, {
+          ...updates,
+          ...(updates.date ? { date: String(updates.date) } : {}),
+        });
         return { id, ...updates };
       }
 

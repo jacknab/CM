@@ -12,11 +12,9 @@ function localClientToCustomer(c: LocalClient): Customer {
     storeId: c.storeId,
     name: c.name,
     phone: c.phone ?? null,
-    email: c.email ?? null,
-    notes: c.notes ?? null,
     loyaltyPoints: 0,
-    createdAt: c.createdAt,
-    updatedAt: c.createdAt,
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
   } as any;
 }
 
@@ -87,15 +85,17 @@ export function useCreateCustomer() {
           storeId: storeId!,
           name: data.name ?? "Unknown",
           phone: (data as any).phone ?? null,
-          email: (data as any).email ?? null,
-          notes: (data as any).notes ?? null,
-          createdAt: new Date().toISOString(),
         };
         await localClientsDB.add(localClient).catch(() => {});
         await actionQueueDB.add({
           type: "CREATE_CLIENT",
           entity_temp_id: tempId,
-          payload: { ...data, storeId, tempId },
+          payload: {
+            name: data.name ?? "Unknown",
+            phone: (data as any).phone ?? null,
+            storeId,
+            tempId,
+          },
           timestamp: Date.now(),
           idempotency_key: `${tempId}_CREATE_CLIENT`,
         });

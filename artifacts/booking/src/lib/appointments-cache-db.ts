@@ -21,6 +21,10 @@ export type LocalBooking = {
   notes?: string;
   status: string;
   type?: string;
+  totalPaid?: string | number | null;
+  tipAmount?: string | number | null;
+  paymentMethod?: string | null;
+  completedAt?: string | null;
   createdAt: string;
 };
 
@@ -70,8 +74,10 @@ function txOne<T>(
       new Promise((resolve, reject) => {
         const t = db.transaction(storeName, mode);
         const req = fn(t.objectStore(storeName));
-        req.onsuccess = () => resolve(req.result);
+        req.onsuccess = () => {};
         req.onerror = () => reject(req.error);
+        t.oncomplete = () => resolve(req.result);
+        t.onabort = () => reject(t.error ?? new Error("IndexedDB transaction aborted"));
       })
   );
 }
@@ -86,8 +92,10 @@ function txAll<T>(
       new Promise((resolve, reject) => {
         const t = db.transaction(storeName, mode);
         const req = fn(t.objectStore(storeName));
-        req.onsuccess = () => resolve(req.result ?? []);
+        req.onsuccess = () => {};
         req.onerror = () => reject(req.error);
+        t.oncomplete = () => resolve(req.result ?? []);
+        t.onabort = () => reject(t.error ?? new Error("IndexedDB transaction aborted"));
       })
   );
 }

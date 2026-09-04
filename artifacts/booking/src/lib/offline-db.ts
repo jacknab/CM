@@ -73,8 +73,10 @@ function tx<T>(
         const t = db.transaction(storeName, mode);
         const store = t.objectStore(storeName);
         const req = fn(store);
-        req.onsuccess = () => resolve(req.result);
+        req.onsuccess = () => {};
         req.onerror = () => reject(req.error);
+        t.oncomplete = () => resolve(req.result);
+        t.onabort = () => reject(t.error ?? new Error("IndexedDB transaction aborted"));
       })
   );
 }
@@ -90,8 +92,10 @@ function txAll<T>(
         const t = db.transaction(storeName, mode);
         const store = t.objectStore(storeName);
         const req = fn(store);
-        req.onsuccess = () => resolve(req.result ?? []);
+        req.onsuccess = () => {};
         req.onerror = () => reject(req.error);
+        t.oncomplete = () => resolve(req.result ?? []);
+        t.onabort = () => reject(t.error ?? new Error("IndexedDB transaction aborted"));
       })
   );
 }
@@ -103,8 +107,10 @@ function clearStore(storeName: keyof Stores): Promise<void> {
         const t = db.transaction(storeName, "readwrite");
         const store = t.objectStore(storeName);
         const req = store.clear();
-        req.onsuccess = () => resolve();
+        req.onsuccess = () => {};
         req.onerror = () => reject(req.error);
+        t.oncomplete = () => resolve();
+        t.onabort = () => reject(t.error ?? new Error("IndexedDB transaction aborted"));
       })
   );
 }

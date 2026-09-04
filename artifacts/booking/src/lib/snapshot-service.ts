@@ -86,7 +86,7 @@ class SnapshotService {
 
       if (!cacheValid || cached!.version !== fresh.version) {
         await snapshotDB.save(fresh).catch(() => {});
-        await clientPhoneCacheDB.putMany(storeId, fresh.customers ?? []).catch(() => {});
+        await clientPhoneCacheDB.replaceStore(storeId, fresh.customers ?? []).catch(() => {});
         this.setSnapshot(fresh);
       }
 

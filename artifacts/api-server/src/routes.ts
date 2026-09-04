@@ -5156,7 +5156,8 @@ If you have any questions, please contact your administrator.
 
       // noShowFill: front-desk is filling a past no-show slot — skip the guard.
       const isNoShowFill = req.body.noShowFill === true;
-      if (!isNoShowFill && input.date.getTime() <= Date.now()) {
+      const isOfflineSync = req.body.offlineSync === true;
+      if (!isNoShowFill && !isOfflineSync && input.date.getTime() <= Date.now()) {
         return res.status(400).json({ message: "Cannot create an appointment in the past" });
       }
 
@@ -16186,12 +16187,6 @@ or
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(404).json({ message: "Store not found" });
 
-      const windowStart = new Date();
-      windowStart.setHours(0, 0, 0, 0);
-      const windowEnd = new Date(windowStart);
-      windowEnd.setDate(windowEnd.getDate() + 30);
-      windowEnd.setHours(23, 59, 59, 999);
-
       // Store-local "today" — same computation as getTurnEligibility() (routes.ts
       // ~line 440-443) — must stay consistent so the client's offline turn
       // ranking (which reads this snapshot) agrees with the server's when online.
@@ -16199,6 +16194,10 @@ or
       const storeTimezone = (storeTzRow as any)?.timezone ?? "UTC";
       const localNowForToday = toZonedTime(new Date(), storeTimezone);
       const today = `${localNowForToday.getFullYear()}-${String(localNowForToday.getMonth() + 1).padStart(2, "0")}-${String(localNowForToday.getDate()).padStart(2, "0")}`;
+      const windowStart = fromZonedTime(new Date(`${today}T00:00:00`), storeTimezone);
+      const windowEndLocal = new Date(`${today}T23:59:59.999`);
+      windowEndLocal.setDate(windowEndLocal.getDate() + 30);
+      const windowEnd = fromZonedTime(windowEndLocal, storeTimezone);
 
       const [categoriesData, servicesData, addonsData, staffData, customersData, hoursData, appointmentsData, timeclockData, turnSettingsData] = await Promise.all([
         db.select({
@@ -16246,8 +16245,6 @@ or
           id: clients.id,
           name: clients.fullName,
           phone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
-          email: sql<string>`(SELECT email_address FROM client_emails WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
-          loyaltyPoints: clients.loyaltyPoints,
           storeId: clients.storeId,
         }).from(clients).where(and(eq(clients.storeId, storeId), isNull(clients.archivedAt))).orderBy(asc(clients.fullName)),
 
@@ -16673,19 +16670,31 @@ or
 
   app.post("/api/turn/assign-walkin", isAuthenticated, async (req, res) => {
     try {
+      const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
+      if (idempotencyKey) {
+        const cached = processedIdempotencyKeys.get(idempotencyKey);
+        if (cached && Date.now() - cached.ts < IDEMPOTENCY_TTL_MS) {
+          return res.json(Object.assign({}, cached.body, { alreadyProcessed: true }));
+        }
+      }
       const userId = (req.session as any)?.userId;
       const staffId = (req.session as any)?.staffId ? Number((req.session as any).staffId) : undefined;
       const storeId = req.body.storeId ? Number(req.body.storeId) : null;
       const serviceId = req.body.serviceId ? Number(req.body.serviceId) : null;
       const requestedStaffId = req.body.staffId ? Number(req.body.staffId) : null;
+      const isOfflineTurn = req.body.source === "offline_turn";
       if (!storeId) return res.status(400).json({ error: "storeId required" });
       const access = await assertStoreAccess(userId, staffId, storeId);
       if (!access) return res.status(403).json({ error: "Unauthorized" });
 
       const eligibility = await getTurnEligibility(storeId, serviceId);
-      const selected = requestedStaffId
+      let selected = requestedStaffId
         ? eligibility.eligibleTechnicians.find((tech) => tech.id === requestedStaffId)
         : eligibility.eligibleTechnicians[0];
+      // Offline ranking is only a snapshot. If another device consumed the
+      // turn while this device was disconnected, assign the booking to the
+      // current queue leader instead of leaving it on the stale technician.
+      if (!selected && isOfflineTurn) selected = eligibility.eligibleTechnicians[0];
       if (!selected) {
         return res.status(409).json({ error: "No technician is eligible for this walk-in right now." });
       }
@@ -16723,6 +16732,10 @@ or
         console.warn(`[turn] assign-walkin received an unresolved temp appointmentId: ${req.body.appointmentId} — audit log will have no appointment linkage`);
       }
       const appointmentId = req.body.appointmentId ? Number(req.body.appointmentId) : null;
+      if (isOfflineTurn && appointmentId && requestedStaffId !== selected.id) {
+        await storage.updateAppointment(appointmentId, { staffId: selected.id });
+        broadcastSyncEvent({ type: "staff_assigned", storeId, appointmentId, staffId: selected.id });
+      }
       const recommendedTech = eligibility.eligibleTechnicians[0];
       try {
         await db.insert(turnAssignmentLog).values({
@@ -16745,7 +16758,9 @@ or
         runEngineForStaff(storeId, selected.id).catch(() => {});
       }).catch(() => {});
 
-      return res.json({ technician: selected, eligibility, dequeAdvanced: !isRequestBypass });
+      const responseBody = { technician: selected, eligibility, dequeAdvanced: !isRequestBypass };
+      if (idempotencyKey) processedIdempotencyKeys.set(idempotencyKey, { ts: Date.now(), body: responseBody });
+      return res.json(responseBody);
     } catch (err: any) {
       console.error("[turn] Failed to assign walk-in:", err);
       return res.status(err.status || 500).json({ error: err.message || "Failed to assign walk-in" });
@@ -16756,6 +16771,13 @@ or
   // instead of using the Walk-In button (i.e. bypassing the Turn queue deliberately).
   app.post("/api/turn/log-override", isAuthenticated, async (req, res) => {
     try {
+      const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
+      if (idempotencyKey) {
+        const cached = processedIdempotencyKeys.get(idempotencyKey);
+        if (cached && Date.now() - cached.ts < IDEMPOTENCY_TTL_MS) {
+          return res.json(Object.assign({}, cached.body, { alreadyProcessed: true }));
+        }
+      }
       const userId = (req.session as any)?.userId;
       const storeId = req.body.storeId ? Number(req.body.storeId) : null;
       if (!storeId) return res.status(400).json({ error: "storeId required" });
@@ -16781,7 +16803,9 @@ or
       });
 
       console.log(`[turn] Override logged: user ${userId} booked staff ${assignedStaffId} (Turn recommended: ${turnRecommendedStaffId}, override=${isOverride})`);
-      return res.json({ logged: true, isOverride });
+      const responseBody = { logged: true, isOverride };
+      if (idempotencyKey) processedIdempotencyKeys.set(idempotencyKey, { ts: Date.now(), body: responseBody });
+      return res.json(responseBody);
     } catch (err: any) {
       console.error("[turn] Failed to log override:", err);
       return res.status(500).json({ error: "Failed to log override" });

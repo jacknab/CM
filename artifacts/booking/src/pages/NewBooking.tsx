@@ -199,7 +199,7 @@ export default function NewBooking() {
       fr: `${customer} a réservé ${service} avec ${staff} le ${date} à ${time}`,
     }),
   };
-  const timezone = selectedStore?.timezone || "UTC";
+  const timezone = selectedStore?.timezone || snapshot?.timezone || "UTC";
   const tzAbbr = getTimezoneAbbr(timezone);
 
   // "Today" at midnight in the STORE's timezone — used for the date-picker

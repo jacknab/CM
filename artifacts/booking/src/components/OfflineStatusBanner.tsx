@@ -1,6 +1,6 @@
 import { useReconciliationStatus } from "@/hooks/use-reconciliation-status";
 
-export function OfflineStatusBanner() {
+export function OfflineStatusBanner({ inline = false }: { inline?: boolean }) {
   const { bannerState } = useReconciliationStatus();
 
   if (bannerState === "online") return null;
@@ -35,12 +35,14 @@ export function OfflineStatusBanner() {
 
   return (
     <div
-      className="fixed top-2 inset-x-0 z-50 flex justify-center pointer-events-none"
+      className={inline
+        ? "flex items-center pointer-events-none"
+        : "fixed top-2 inset-x-0 z-50 flex justify-center pointer-events-none"}
       role="status"
       aria-live="polite"
     >
       <div
-        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-white text-xs font-medium shadow-md ${bg} transition-colors duration-300`}
+        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-white text-[10px] font-semibold shadow-md ${bg} transition-colors duration-300`}
       >
         <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}`} />
         {label}
