@@ -92,6 +92,7 @@ function AddBankDialog({
   });
   const [errors, setErrors] = useState<Partial<typeof form>>({});
   const [savedLast4, setSavedLast4] = useState("");
+  const [savedVerified, setSavedVerified] = useState(false);
 
   // Fetch Stripe publishable key once the dialog opens
   const { data: tokenConfig, isLoading: configLoading } = useQuery({
@@ -169,7 +170,9 @@ function AddBankDialog({
       }
 
       const saved = await res.json();
-      setSavedLast4(saved.accountLast4 ?? "");
+      // New response shape: { bankAccount, bankVerified, onboardingStatus, requirementsDue }.
+      setSavedLast4(saved.bankAccount?.accountLast4 ?? saved.accountLast4 ?? "");
+      setSavedVerified(!!saved.bankVerified);
       qc.invalidateQueries({ queryKey: ["/api/contractor-payouts/contractor-detail", contractorId] });
       setStep("success");
     } catch (e: any) {
@@ -184,6 +187,7 @@ function AddBankDialog({
     setErrors({});
     setStep("form");
     setSavedLast4("");
+    setSavedVerified(false);
     onClose();
   }
 
@@ -206,7 +210,11 @@ function AddBankDialog({
               {savedLast4 && (
                 <p className="text-sm text-gray-500 mt-1">Account ending in ···{savedLast4}</p>
               )}
-              <p className="text-xs text-gray-400 mt-2">Verification is pending. Payouts will be enabled once Stripe confirms the account.</p>
+              <p className="text-xs text-gray-400 mt-2">
+                {savedVerified
+                  ? "Payouts are enabled for this contractor."
+                  : "Verification is pending. Payouts will be enabled once Stripe confirms the account (usually within a minute)."}
+              </p>
             </div>
             <Button onClick={handleClose} className="rounded-xl mt-1 bg-teal-600 hover:bg-teal-700 text-white">Done</Button>
           </div>

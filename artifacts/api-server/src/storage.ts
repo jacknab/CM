@@ -37,6 +37,7 @@ import { eq, and, gte, lte, inArray, desc, isNotNull, ne, isNull, sql } from "dr
 import { toE164US, displayPhone as formatDisplayPhone } from "./lib/phoneUtils";
 import { claimStaffColor } from "./lib/staffColorUtils";
 import { snapshotCompletionFields } from "./lib/commissionSnapshot";
+import { recordCommissionAccrual } from "./lib/commissionAccrual";
 
 export interface IStorage {
   getStores(userId?: string): Promise<Store[]>;
@@ -556,8 +557,39 @@ export class DatabaseStorage implements IStorage {
     return staffMember;
   }
   async deleteStaff(id: number): Promise<void> {
-    await db.delete(staffServices).where(eq(staffServices.staffId, id));
-    await db.delete(staff).where(eq(staff.id, id));
+    await db.transaction(async (tx) => {
+      const deleteTables = [
+        "staff_work_photos",
+        "staff_settings",
+        "staff_pins",
+        "staff_sms_otps",
+        "staff_availability",
+        "staff_services",
+        "timeclock",
+        "staff_commission_accruals",
+        "staff_intelligence",
+        "contractors",
+      ];
+
+      for (const table of deleteTables) {
+        try {
+          await tx.execute(sql`DELETE FROM ${sql.identifier([table])} WHERE staff_id = ${id}`);
+        } catch {
+          // Some tables may not exist in every environment or may reference a different column name.
+        }
+      }
+
+      const updateTables = ["users", "appointments", "kiosk_checkins", "reviews", "waitlist"];
+      for (const table of updateTables) {
+        try {
+          await tx.execute(sql`UPDATE ${sql.identifier([table])} SET staff_id = NULL WHERE staff_id = ${id}`);
+        } catch {
+          // Some legacy tables store staff_id for audit/history and do not require a hard delete.
+        }
+      }
+
+      await tx.delete(staff).where(eq(staff.id, id));
+    });
   }
 
   // Staff Services
@@ -883,6 +915,10 @@ export class DatabaseStorage implements IStorage {
       if (snap.commissionRate !== undefined) (updateData as any).commissionRate = snap.commissionRate;
     }
     const [appointment] = await db.update(appointments).set(updateData).where(eq(appointments.id, id)).returning();
+    if (appointment && updateData.status === "completed") {
+      // Fire-and-forget: never let accrual bookkeeping block completing a ticket.
+      void recordCommissionAccrual(appointment).catch(() => {});
+    }
     return appointment;
   }
 

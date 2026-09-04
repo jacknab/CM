@@ -119,8 +119,8 @@ import ContactPage from "@/pages/ContactPage";
 import TeamPermissions from "@/pages/TeamPermissions";
 import PayrollSettings from "@/pages/PayrollSettings";
 import Payroll from "@/pages/Payroll";
+import PayrollHome from "@/pages/PayrollHome";
 import PayoutsLayout from "@/pages/payouts/PayoutsLayout";
-import PayoutsOverview from "@/pages/payouts/PayoutsOverview";
 import PayoutsContractors from "@/pages/payouts/PayoutsContractors";
 import ContractorDetail from "@/pages/payouts/ContractorDetail";
 import ContractorByStaffId from "@/pages/payouts/ContractorByStaffId";
@@ -585,9 +585,14 @@ function AppRoutes() {
       <Route path="/business-hours" element={<BusinessHoursPage />} />
       <Route path="/features-settings" element={<FeaturesSettings />} />
       <Route path="/payroll-settings" element={<PayrollSettings />} />
-      <Route path="/payroll" element={<Payroll />} />
+      {/* Payroll Home — single mobile-first hub for Team/Commission/Payroll.
+          Old employee payroll UI moved to /payroll/employees; old contractor
+          dashboard (/payouts) now redirects here — everything else under
+          /payouts/* stays put as a drill-down destination reachable from the hub. */}
+      <Route path="/payroll" element={<PayrollHome />} />
+      <Route path="/payroll/employees" element={<Payroll />} />
       <Route element={<PayoutsLayout />}>
-        <Route path="/payouts" element={<PayoutsOverview />} />
+        <Route path="/payouts" element={<Navigate to="/payroll" replace />} />
         <Route path="/payouts/contractors" element={<PayoutsContractors />} />
         <Route path="/payouts/contractors/by-staff/:staffId" element={<ContractorByStaffId />} />
         <Route path="/payouts/contractors/:id" element={<ContractorDetail />} />

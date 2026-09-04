@@ -575,7 +575,11 @@ CREATE TABLE IF NOT EXISTS contractors (
     onboarding_status character varying(32),
     bank_verified boolean DEFAULT false NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
-    notes text
+    notes text,
+    account_type text DEFAULT 'custom',
+    country text DEFAULT 'US',
+    requirements_due jsonb,
+    stripe_tos_accepted_at timestamp with time zone
 );
 CREATE SEQUENCE IF NOT EXISTS contractors_id_seq
     AS integer

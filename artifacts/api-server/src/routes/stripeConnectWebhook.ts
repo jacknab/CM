@@ -28,10 +28,11 @@
 
 import { Router, type Request, type Response } from "express";
 import { db, pool } from "../db";
-import { webhookEvents } from "@shared/schema";
+import { webhookEvents, payoutRunItems } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { getStripe } from "../lib/stripe";
 import { syncAccountFromStripe } from "../lib/stripeConnect";
+import { syncContractorAccountStatus, findContractorByStripeAccount } from "../lib/stripeContractorAccounts";
 import type Stripe from "stripe";
 
 const router = Router();
@@ -89,13 +90,29 @@ async function markAccountDisconnected(accountId: string): Promise<void> {
 
 // ─── Event handlers ───────────────────────────────────────────────────────────
 
+/** True if the connected account belongs to a contractor (recipient-configured
+ *  Custom account) — sync the contractor row and stop. */
+async function syncedAsContractor(connectedAccountId: string, tag: string): Promise<boolean> {
+  const contractor = await findContractorByStripeAccount(connectedAccountId);
+  if (!contractor) return false;
+  try {
+    const s = await syncContractorAccountStatus(contractor.id);
+    console.log(`[connect-webhook/${tag}] contractor ${contractor.id} → ${s?.onboardingStatus} bankVerified=${s?.bankVerified}`);
+  } catch (e: any) {
+    console.warn(`[connect-webhook/${tag}] contractor sync failed for ${connectedAccountId}:`, e?.message);
+  }
+  return true;
+}
+
 async function handleAccountUpdated(event: Stripe.Event): Promise<void> {
   const connectedAccountId = event.account;
   if (!connectedAccountId) return;
 
+  if (await syncedAsContractor(connectedAccountId, "account.updated")) return;
+
   const storeId = await storeByConnectedAccount(connectedAccountId);
   if (!storeId) {
-    console.log(`[connect-webhook/account.updated] No store for account ${connectedAccountId} — skipping`);
+    console.log(`[connect-webhook/account.updated] No store/contractor for account ${connectedAccountId} — skipping`);
     return;
   }
 
@@ -108,9 +125,12 @@ async function handleCapabilityUpdated(event: Stripe.Event): Promise<void> {
   if (!connectedAccountId) return;
 
   const capability = event.data.object as Stripe.Capability;
+
+  if (await syncedAsContractor(connectedAccountId, "capability.updated")) return;
+
   const storeId = await storeByConnectedAccount(connectedAccountId);
   if (!storeId) {
-    console.log(`[connect-webhook/capability.updated] No store for account ${connectedAccountId} — skipping`);
+    console.log(`[connect-webhook/capability.updated] No store/contractor for account ${connectedAccountId} — skipping`);
     return;
   }
 
@@ -120,6 +140,21 @@ async function handleCapabilityUpdated(event: Stripe.Event): Promise<void> {
     `[connect-webhook/capability.updated] capability=${capability.id} status=${capability.status} ` +
     `→ synced account ${connectedAccountId} storeId=${storeId}`
   );
+}
+
+/** transfer.failed / transfer.reversed → flip the matching payout run item to failed. */
+async function handleTransferProblem(event: Stripe.Event): Promise<void> {
+  const transfer = event.data.object as Stripe.Transfer;
+  const reason = event.type === "transfer.reversed" ? "Transfer reversed by Stripe" : "Transfer failed at Stripe";
+  const [item] = await db.select().from(payoutRunItems).where(eq(payoutRunItems.stripeTransferId, transfer.id));
+  if (!item) {
+    console.log(`[connect-webhook/${event.type}] no payout_run_item for transfer ${transfer.id}`);
+    return;
+  }
+  await db.update(payoutRunItems)
+    .set({ status: "failed", failureReason: reason })
+    .where(eq(payoutRunItems.id, item.id));
+  console.log(`[connect-webhook/${event.type}] payout_run_item ${item.id} → failed (${transfer.id})`);
 }
 
 async function handleApplicationDeauthorized(event: Stripe.Event): Promise<void> {
@@ -196,7 +231,16 @@ router.use(async (req: any, res: Response) => {
         await handleApplicationDeauthorized(event);
         break;
 
+      case "transfer.reversed":
+        await handleTransferProblem(event);
+        break;
+
       default:
+        // `transfer.failed` isn't in every API version's typed union — catch it here.
+        if ((event.type as string) === "transfer.failed") {
+          await handleTransferProblem(event);
+          break;
+        }
         // Log but don't error on unhandled events — Stripe sends many
         console.log(`[connect-webhook] Unhandled event type: ${event.type}`);
     }

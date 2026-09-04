@@ -12,11 +12,12 @@ module.exports = {
     // to on PATH. Pointing it at the real interpreter directly instead.
     interpreter: "/root/.nvm/versions/node/v20.20.0/bin/node",
     interpreter_args: "--enable-source-maps",
-    instances: 2,
+    instances: 1,
     exec_mode: "cluster",
     wait_ready: true,
     listen_timeout: 15000,
     kill_timeout: 5000,
+    max_memory_restart: "1000M",
     env: {
       NODE_ENV: "production",
       PORT: "9200",

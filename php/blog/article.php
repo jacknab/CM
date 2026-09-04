@@ -195,7 +195,7 @@ require __DIR__ . '/../includes/nav.php';
         <?= strtoupper(substr($author_display, 0, 1)) ?>
       </div>
       <div>
-        <div style="font-size:.82rem;font-weight:600;color:var(--charcoal);" itemprop="author"><?= htmlspecialchars($author_display) ?></div>
+        <div style="font-size:.82rem;font-weight:600;color:var(--charcoal);"><?= htmlspecialchars($author_display) ?></div>
         <div style="font-size:.73rem;color:var(--mid-grey);"><time datetime="<?= $pub_iso ?>"><?= $pub_date_human ?></time></div>
       </div>
     </div>
@@ -203,16 +203,15 @@ require __DIR__ . '/../includes/nav.php';
 </section>
 
 <!-- ARTICLE BODY -->
-<article itemscope itemtype="https://schema.org/BlogPosting" style="padding:56px 0 72px;">
-  <meta itemprop="headline"      content="<?= htmlspecialchars($post['title']) ?>">
-  <meta itemprop="datePublished" content="<?= $pub_iso ?>">
-  <meta itemprop="dateModified"  content="<?= $mod_iso ?>">
-  <meta itemprop="author"        content="<?= htmlspecialchars($post['author_name']) ?>">
-  <meta itemprop="image"         content="<?= htmlspecialchars($og_image) ?>">
-
+<!-- BlogPosting is already emitted once, correctly, as JSON-LD (see
+     $article_schema / PAGE_SCHEMA above) — this used to duplicate it as
+     Microdata too, with author flattened to a plain string instead of a
+     Person node. Two structured-data formats describing the same entity,
+     one of them wrong, is worse than just the one correct JSON-LD block. -->
+<article style="padding:56px 0 72px;">
   <div class="container" style="max-width:760px;">
     <?php if ($post['content']): ?>
-    <div class="blog-content" itemprop="articleBody">
+    <div class="blog-content">
       <?= $post['content'] /* stored as admin-entered HTML */ ?>
     </div>
     <?php else: ?>

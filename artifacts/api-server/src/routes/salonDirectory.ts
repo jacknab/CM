@@ -141,6 +141,87 @@ const STATE_NAMES: Record<string, string> = {
 
 const US_STATES = new Set(Object.keys(STATE_NAMES));
 
+// Canadian province/territory codes — the scraped dataset's `ss` ("state
+// abbreviation") field holds the literal string "Canada" for every Canadian
+// record instead of a province code (see deriveAddress() below), but this
+// still lets a corrected 2-letter province code render a readable name.
+const PROVINCE_NAMES: Record<string, string> = {
+  AB:"Alberta", BC:"British Columbia", MB:"Manitoba", NB:"New Brunswick",
+  NL:"Newfoundland and Labrador", NS:"Nova Scotia", NT:"Northwest Territories",
+  NU:"Nunavut", ON:"Ontario", PE:"Prince Edward Island", QC:"Quebec",
+  SK:"Saskatchewan", YT:"Yukon",
+};
+
+// Country names as they appear at the end of Google's formatted address
+// string (`a`) → ISO 3166-1 alpha-2. Anything not in here (or a bare city
+// name with no country at all — Google sometimes returns an incomplete
+// address for an unverified listing) falls back to "US", since this
+// directory is overwhelmingly US salons.
+const COUNTRY_NAMES: Record<string, string> = {
+  US: "United States", CA: "Canada", MX: "Mexico", BS: "The Bahamas",
+};
+
+const ADDRESS_COUNTRY_NAMES: Record<string, "US" | "CA" | "MX" | "BS"> = {
+  "usa": "US", "united states": "US", "united states of america": "US",
+  "canada": "CA",
+  "mexico": "MX",
+  "the bahamas": "BS", "bahamas": "BS",
+};
+
+/**
+ * `ss` ("state abbreviation") is a real 2-letter US state code for ~94% of
+ * the 51,499-record dataset — those render as-is below. For the other ~3,001
+ * (5.8%) — non-US businesses, and US businesses Google returned with no
+ * street number — the upstream scrape's US-shaped address parser
+ * ("street, City, ST zip, Country") shifted every field over by one, e.g. a
+ * Canadian address "Fenelon Falls, ON K0M 1N0, Canada" (only 3 comma-parts,
+ * no street) came out as street="Fenelon Falls" (really the city),
+ * city="ON K0M 1N0" (really province+postal), ss="Canada" (really the
+ * country), zip="" — which then rendered straight into the page title and
+ * PostalAddress JSON-LD: wrong city, wrong region, and addressCountry
+ * hardcoded to "US" for every single one, including real Canada/Mexico/
+ * Bahamas businesses.
+ *
+ * Fix: whenever `ss` isn't a real US state code, ignore the pre-split fields
+ * and re-derive everything from `a` — the one field that's always Google's
+ * correctly locale-formatted full address — by reading the country off the
+ * last comma-part and the region+postal off the second-to-last. When even
+ * that doesn't resolve to a recognizable country (an incomplete address with
+ * no country suffix at all), keep the original best-guess street/city but
+ * never assert a region we can't verify — Schema.org treats a missing
+ * property as "unknown", never as incorrect data, which is strictly better
+ * than asserting a wrong one.
+ */
+function deriveAddress(salon: SalonRecord): {
+  street: string; city: string; state: string; zip: string; country: "US" | "CA" | "MX" | "BS";
+} {
+  const rawState = (salon.ss || "").trim();
+
+  if (US_STATES.has(rawState)) {
+    return { street: salon.st || "", city: salon.c || "", state: rawState, zip: salon.z || "", country: "US" };
+  }
+
+  const parts = (salon.a || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const country = ADDRESS_COUNTRY_NAMES[(parts[parts.length - 1] || "").toLowerCase()];
+
+  if (!country) {
+    // No recognizable country suffix — keep the original guesses, omit region.
+    return { street: salon.st || "", city: salon.c || salon.st || "", state: "", zip: salon.z || "", country: "US" };
+  }
+
+  // Shifted format: [...street?, City, "REGION POSTAL", Country]
+  const regionPostal = parts.length >= 2 ? parts[parts.length - 2] : "";
+  const m = regionPostal.match(/^([A-Za-z.]{2,3})\s+(.+)$/);
+  const city = parts.length >= 3 ? parts[parts.length - 3] : (salon.st || salon.c || "");
+  return {
+    street: parts.length >= 4 ? parts.slice(0, parts.length - 3).join(", ") : "",
+    city,
+    state: m ? m[1].replace(/\./g, "").toUpperCase() : "",
+    zip: m ? m[2].toUpperCase() : "",
+    country,
+  };
+}
+
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
 const PLACEHOLDER_SERVICES: Array<[string, string]> = [
@@ -424,11 +505,12 @@ function renderStars(rating: number): string {
 
 function renderSalonPage(salon: SalonRecord, live: LiveStoreData | null): string {
   const name      = (live?.name || salon.n || "Nail Salon");
-  const city      = salon.c || "";
-  const state     = salon.ss || "";
-  const zip       = salon.z || "";
-  const street    = salon.st || "";
-  const fullAddr  = salon.a.replace(/, USA$/, "");
+  const addr      = deriveAddress(salon);
+  const city      = addr.city;
+  const state     = addr.state;
+  const zip       = addr.zip;
+  const street    = addr.street;
+  const fullAddr  = salon.a.replace(/, (USA|Canada)$/, "");
   const phone     = salon.p || "";
   const rating    = salon.r ? parseFloat(salon.r) : 0;
   const reviewCount = salon.rc ? parseInt(salon.rc) : 0;
@@ -436,7 +518,7 @@ function renderSalonPage(salon: SalonRecord, live: LiveStoreData | null): string
   const lng       = salon.lo || "";
   const slug      = salon.s;
   const canonical = `${CERTXA_DOMAIN}/salon/${slug}`;
-  const stateName = STATE_NAMES[state] || state;
+  const stateName = (addr.country === "CA" ? PROVINCE_NAMES[state] : STATE_NAMES[state]) || state;
   const img       = heroImage(slug);
   const isVerified = live !== null;
   const bookingUrl = (live?.bookingSlug)
@@ -464,7 +546,13 @@ function renderSalonPage(salon: SalonRecord, live: LiveStoreData | null): string
     ? live.hours.map(h => [DAY_NAMES[h.day], h.closed ? null : h.open, h.closed ? null : h.close] as [string, string | null, string | null])
     : null;
 
-  const pageTitle = `${name} - ${street}, ${city}, ${state} ${zip} | Nail Salon`;
+  // Some records (most Canadian ones, and a handful of US ones) have no
+  // street-level address at all — never render a leading ", " or trailing
+  // ", " from an empty component.
+  const addrLine = [street, [city, state].filter(Boolean).join(", "), zip]
+    .filter(Boolean)
+    .join(", ");
+  const pageTitle = `${name}${addrLine ? ` - ${addrLine}` : ""} | Nail Salon`;
   const ratingStr = rating > 0 ? ` Rated ${rating}/5 from ${reviewCount} reviews.` : "";
   const metaDesc  = isVerified
     ? `${name} is a nail salon located at ${fullAddr}. Book manicures, pedicures, gel nails, acrylic nails, and more.${ratingStr} View services and hours.`
@@ -480,11 +568,11 @@ function renderSalonPage(salon: SalonRecord, live: LiveStoreData | null): string
     image: img,
     address: {
       "@type": "PostalAddress",
-      streetAddress: street,
-      addressLocality: city,
-      addressRegion: state,
-      postalCode: zip,
-      addressCountry: "US",
+      ...(street ? { streetAddress: street } : {}),
+      ...(city  ? { addressLocality: city }  : {}),
+      ...(state ? { addressRegion: state }   : {}),
+      ...(zip   ? { postalCode: zip }        : {}),
+      addressCountry: addr.country,
     },
     ...(phone ? { telephone: phone } : {}),
     ...(lat && lng ? { geo: { "@type": "GeoCoordinates", latitude: lat, longitude: lng } } : {}),
@@ -497,7 +585,13 @@ function renderSalonPage(salon: SalonRecord, live: LiveStoreData | null): string
       "@type": "Offer",
       itemOffered: { "@type": "Service", name: svcName },
     })),
-    ...(rating > 0 && reviewCount > 0
+    // Only assert a rating for listings Certxa has actually verified (phone
+    // matched a real registered store — `isVerified`). An unclaimed/scraped
+    // listing has no review text or content backing the number anywhere on
+    // the page; asserting AggregateRating there is exactly the "spammy
+    // structured markup" pattern Google's review-rich-result policy flags —
+    // at 51k pages, a real sitewide manual-action risk, not a per-page one.
+    ...(isVerified && rating > 0 && reviewCount > 0
       ? { aggregateRating: { "@type": "AggregateRating", ratingValue: rating, reviewCount } }
       : {}),
     priceRange: "$$",
@@ -507,6 +601,14 @@ function renderSalonPage(salon: SalonRecord, live: LiveStoreData | null): string
   };
 
   // LD+JSON: Breadcrumb
+  // The /nail-salons/:stateSlug (and /:stateSlug/:citySlug) browse routes only
+  // resolve real US states (getStateBySlug looks them up in the US-only
+  // STATE_NAMES map) — so a state/province/city crumb is only ever a real,
+  // non-404 page for US listings. For non-US listings, don't invent dead
+  // links or mislabel the country as "United States" (previously hardcoded
+  // unconditionally here, wrong for the Canada/Mexico/Bahamas listings this
+  // directory has — same root cause as the addressCountry bug above).
+  const isUS = addr.country === "US";
   const stateSlug = toStateSlug(stateName);
   const citySlug  = toCitySlug(city);
   const breadcrumbLd = {
@@ -514,10 +616,10 @@ function renderSalonPage(salon: SalonRecord, live: LiveStoreData | null): string
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "Nail Salons", item: `${CERTXA_DOMAIN}/nail-salons` },
-      { "@type": "ListItem", position: 2, name: "United States", item: `${CERTXA_DOMAIN}/nail-salons/united-states` },
-      ...(state ? [{ "@type": "ListItem", position: 3, name: stateName, item: `${CERTXA_DOMAIN}/nail-salons/${stateSlug}` }] : []),
-      ...(city  ? [{ "@type": "ListItem", position: state ? 4 : 3, name: city, item: `${CERTXA_DOMAIN}/nail-salons/${stateSlug}/${citySlug}` }] : []),
-      { "@type": "ListItem", position: (state ? 1 : 0) + (city ? 1 : 0) + 3, name, item: canonical },
+      { "@type": "ListItem", position: 2, name: COUNTRY_NAMES[addr.country] ?? "United States", item: isUS ? `${CERTXA_DOMAIN}/nail-salons/united-states` : `${CERTXA_DOMAIN}/nail-salons` },
+      ...(isUS && state ? [{ "@type": "ListItem", position: 3, name: stateName, item: `${CERTXA_DOMAIN}/nail-salons/${stateSlug}` }] : []),
+      ...(isUS && city  ? [{ "@type": "ListItem", position: state ? 4 : 3, name: city, item: `${CERTXA_DOMAIN}/nail-salons/${stateSlug}/${citySlug}` }] : []),
+      { "@type": "ListItem", position: (isUS ? (state ? 1 : 0) + (city ? 1 : 0) : 0) + 3, name, item: canonical },
     ],
   };
 
@@ -531,9 +633,9 @@ function renderSalonPage(salon: SalonRecord, live: LiveStoreData | null): string
 
   const breadcrumbItems = [
     { label: "Nail Salons", href: "/nail-salons" },
-    { label: "United States", href: "/nail-salons/united-states" },
-    ...(state ? [{ label: stateName, href: `/nail-salons/${stateSlug}` }] : []),
-    ...(city  ? [{ label: city, href: `/nail-salons/${stateSlug}/${citySlug}` }] : []),
+    { label: COUNTRY_NAMES[addr.country] ?? "United States", href: isUS ? "/nail-salons/united-states" : "/nail-salons" },
+    ...(isUS && state ? [{ label: stateName, href: `/nail-salons/${stateSlug}` }] : []),
+    ...(isUS && city  ? [{ label: city, href: `/nail-salons/${stateSlug}/${citySlug}` }] : []),
     { label: name, href: null },
   ];
 
@@ -742,8 +844,8 @@ ${SITE_HEADER}
     </div>
 
     <address class="sidebar-address" itemscope itemtype="https://schema.org/PostalAddress">
-      <span itemprop="streetAddress">${esc(street)}</span><br>
-      <span itemprop="addressLocality">${esc(city)}</span>${state ? `, <span itemprop="addressRegion">${esc(state)}</span>` : ""} <span itemprop="postalCode">${esc(zip)}</span><br>
+      ${street ? `<span itemprop="streetAddress">${esc(street)}</span><br>` : ""}
+      <span itemprop="addressLocality">${esc(city)}</span>${state ? `, <span itemprop="addressRegion">${esc(state)}</span>` : ""}${zip ? ` <span itemprop="postalCode">${esc(zip)}</span>` : ""}<br>
       <a href="${esc(directionsUrl)}" target="_blank" rel="noopener noreferrer">Open in Google Maps</a>
     </address>
 

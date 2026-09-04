@@ -114,16 +114,21 @@ $_base_schema = [
     'url'                     => SITE_URL,
     'description'             => 'Certxa is the all-in-one nail salon software built for nail technicians and studio owners. Features include 24/7 online booking, self-service walk-in check-in kiosk, multi-tech calendar management, client nail records with product notes, automated SMS and email reminders, a POS system, waitlist management, Autumn AI receptionist, Google Reviews integration, and a branded website builder.',
     'softwareVersion'         => '2.0',
+    // `billingIncrement` is not a valid Offer property (it belongs on
+    // UnitPriceSpecification, and expects a Number, not an ISO-8601 duration
+    // string) — every Offer below now expresses monthly billing correctly via
+    // priceSpecification/billingDuration instead. price/lowPrice/highPrice/
+    // offerCount are real ints so they serialize as JSON numbers, not strings.
     'offers' => [
       '@type'      => 'AggregateOffer',
       'priceCurrency' => 'USD',
-      'lowPrice'   => '9',
-      'highPrice'  => '49',
-      'offerCount' => '3',
+      'lowPrice'   => 9,
+      'highPrice'  => 49,
+      'offerCount' => 3,
       'offers' => [
-        ['@type' => 'Offer', 'name' => 'Solo Plan',         'price' => '9',  'priceCurrency' => 'USD', 'billingIncrement' => 'P1M', 'url' => SITE_URL . '/pricing'],
-        ['@type' => 'Offer', 'name' => 'Professional Plan', 'price' => '22', 'priceCurrency' => 'USD', 'billingIncrement' => 'P1M', 'url' => SITE_URL . '/pricing'],
-        ['@type' => 'Offer', 'name' => 'Elite Plan',        'price' => '49', 'priceCurrency' => 'USD', 'billingIncrement' => 'P1M', 'url' => SITE_URL . '/pricing'],
+        ['@type' => 'Offer', 'name' => 'Solo Plan',         'price' => 9,  'priceCurrency' => 'USD', 'priceSpecification' => ['@type' => 'UnitPriceSpecification', 'price' => 9,  'priceCurrency' => 'USD', 'billingDuration' => ['@type' => 'QuantitativeValue', 'value' => 1, 'unitCode' => 'MON']], 'url' => SITE_URL . '/pricing'],
+        ['@type' => 'Offer', 'name' => 'Professional Plan', 'price' => 22, 'priceCurrency' => 'USD', 'priceSpecification' => ['@type' => 'UnitPriceSpecification', 'price' => 22, 'priceCurrency' => 'USD', 'billingDuration' => ['@type' => 'QuantitativeValue', 'value' => 1, 'unitCode' => 'MON']], 'url' => SITE_URL . '/pricing'],
+        ['@type' => 'Offer', 'name' => 'Elite Plan',        'price' => 49, 'priceCurrency' => 'USD', 'priceSpecification' => ['@type' => 'UnitPriceSpecification', 'price' => 49, 'priceCurrency' => 'USD', 'billingDuration' => ['@type' => 'QuantitativeValue', 'value' => 1, 'unitCode' => 'MON']], 'url' => SITE_URL . '/pricing'],
       ],
     ],
     'featureList' => [

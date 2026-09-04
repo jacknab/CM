@@ -1,7 +1,8 @@
 <?php
 define('BRAND_NAME',    'Certxa');
 define('PAGE_TITLE',    'Nail Salon Software | Certxa');
-define('PAGE_DESC',     'Certxa is the all-in-one nail salon software built for nail technicians and studio owners. Online booking, self-service walk-in kiosk, client nail records, waitlist, POS, and AI receptionist — all in one platform. Free ' . TRIAL_DAYS . '-day trial.');
+// Was 232 chars — truncated in Google/Bing SERPs (~155-160 char limit).
+define('PAGE_DESC',     'Certxa is all-in-one nail salon software: online booking, walk-in kiosk, client nail records, waitlist, POS, and AI receptionist. Free ' . TRIAL_DAYS . '-day trial.');
 define('PAGE_KEYWORDS', 'nail salon software, nail salon booking software, nail studio management software, nail salon scheduling app, nail salon POS system, nail technician software, nail salon check-in kiosk, nail salon waitlist, gel acrylic nail salon software');
 // PAGE_CANONICAL and PAGE_BREADCRUMBS are pre-set by index.php when this file
 // is served at certxa.com/ — use defined() guard so the root canonical wins.
@@ -28,7 +29,7 @@ define('PAGE_SCHEMA', json_encode([
       [
         '@type'          => 'Question',
         'name'           => 'Does Certxa work for solo nail technicians?',
-        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Yes — Certxa is designed to scale from solo nail technicians all the way to multi-location nail studio chains. The Starter plan is perfect for independent nail techs and booth renters, while Scale and Enterprise plans support unlimited staff and multiple locations.'],
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Yes — Certxa is designed to scale from solo nail technicians all the way to multi-location nail studio chains. The Solo plan is perfect for independent nail techs and booth renters, while Professional and Elite plans support unlimited staff and multiple locations.'],
       ],
       [
         '@type'          => 'Question',
@@ -809,7 +810,7 @@ require 'includes/nav.php';
 
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Does Certxa work for solo nail technicians and small salons? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Absolutely. Certxa scales from solo nail technicians all the way to multi-location salon chains. The Starter plan is designed specifically for independent nail techs and lash artists, while Scale and Enterprise plans support unlimited staff and multiple locations.</div>
+        <div class="accordion-body">Absolutely. Certxa scales from solo nail technicians all the way to multi-location salon chains. The Solo plan is designed specifically for independent nail techs and lash artists, while Professional and Elite plans support unlimited staff and multiple locations.</div>
       </div>
 
       <div class="accordion-item">

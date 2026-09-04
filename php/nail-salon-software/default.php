@@ -1,6 +1,11 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Nail Studio Software | Certxa');
+// Was "Nail Studio Software" — a real mismatch against this page's own H1
+// ("Nail salon software for every kind of studio") and URL slug. Titled
+// distinctly from the homepage ("Nail Salon Software | Certxa") to avoid
+// duplicate-title cannibalization while still carrying the exact phrase
+// ("nail salon booking software") this page is meant to rank for.
+define('PAGE_TITLE',    'Nail Salon Booking Software | Certxa');
 define('PAGE_DESC',     'Nail salon software for independent nail technicians and growing studios. Certxa connects online booking, client nail records, reminders, payments, POS, walk-ins, and a booking website in one platform. ' . TRIAL_DAYS . '-day free trial.');
 define('PAGE_KEYWORDS', 'nail salon software, nail salon booking software, nail studio management software, nail salon scheduling app, online booking for nail salons, nail salon POS, gel nail salon software, acrylic nail salon software, nail technician software');
 define('PAGE_CANONICAL','https://certxa.com/nail-salon-software');

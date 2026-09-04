@@ -41,6 +41,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { logActivityEvent } from "../lib/activityFeed";
 import { getStripe, isStripeConfigured } from "../lib/stripe";
 import { snapshotCompletionFields } from "../lib/commissionSnapshot";
+import { recordCommissionAccrual } from "../lib/commissionAccrual";
 
 const router = Router();
 
@@ -1016,15 +1017,16 @@ router.post("/terminal/capture-payment-intent", async (req: Request, res: Respon
           // Freeze service price + commission rate on first completion (no-op
           // if the follow-up client PATCH already recorded it).
           const snap = await snapshotCompletionFields(apptId);
-          await db.update(appointments).set({
+          const [completedApt] = await db.update(appointments).set({
             status:        "completed",
             paymentMethod,
             totalPaid,
             completedAt:   new Date(),
             ...(snap.servicePrice   !== undefined ? { servicePrice:   snap.servicePrice }   : {}),
             ...(snap.commissionRate !== undefined ? { commissionRate: snap.commissionRate } : {}),
-          }).where(eq(appointments.id, apptId));
+          }).where(eq(appointments.id, apptId)).returning();
           console.log(`[terminal/capture] Appointment ${apptId} marked completed — ${totalPaid} via ${paymentMethod}`);
+          if (completedApt) void recordCommissionAccrual(completedApt).catch(() => {});
 
           // ── Log activity events immediately so the dashboard updates ──────────
           // Fire-and-forget: a logging failure must never block the payment response.

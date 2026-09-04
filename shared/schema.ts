@@ -87,6 +87,8 @@ export {
   insertPayrollPrintBatchSchema,
   contractorCommissions,
   insertContractorCommissionSchema,
+  staffCommissionAccruals,
+  insertStaffCommissionAccrualSchema,
 } from "./schema/payouts";
 export type {
   CommissionStructure,
@@ -118,6 +120,8 @@ export type {
   InsertPayrollPrintBatch,
   ContractorCommission,
   InsertContractorCommission,
+  StaffCommissionAccrual,
+  InsertStaffCommissionAccrual,
 } from "./schema/payouts";
 
 

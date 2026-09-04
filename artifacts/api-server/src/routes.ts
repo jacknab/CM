@@ -22,6 +22,7 @@ import { businessTemplates } from "./onboarding-data";
 import { fromZonedTime, toZonedTime, formatInTimeZone } from "date-fns-tz";
 import { atomicCreateBooking, validateBookingSlot } from "./bookingEngine";
 import { resolvePackageForBooking } from "./lib/packageResolver";
+import { recordCommissionAccrual } from "./lib/commissionAccrual";
 import { sendBookingConfirmation, startReminderScheduler, sendSms } from "./sms";
 import { startQueueSmsScheduler } from "./queue-sms-scheduler";
 import bcrypt from "bcrypt";
@@ -18045,13 +18046,16 @@ or
           // Commission reproducibility snapshot (this INSERT is a completion).
           servicePrice:   itemSubtotal.toFixed(2),
           commissionRate: itemStaffId != null ? (staffRateMap.get(itemStaffId) ?? null) : null,
-        }).returning({ id: appointments.id });
+        }).returning();
 
         if (apt?.id) {
           createdIds.push(apt.id);
           if (pkg && pkg.addonIds.length > 0) {
             await storage.setAppointmentAddons(apt.id, pkg.addonIds);
           }
+          // Ticket completes at INSERT time here (walk-in POS sale) — accrue
+          // commission immediately, same as the storage.updateAppointment path.
+          void recordCommissionAccrual(apt).catch(() => {});
         }
       }
 
@@ -18995,17 +18999,19 @@ or
         return res.status(400).json({ message: "status must be active, deactivated, or removed" });
       }
 
-      const updates: Record<string, any> = { status };
+      const [existing] = await db.select().from(staff).where(eq(staff.id, staffId)).limit(1);
+      if (!existing) return res.status(404).json({ message: "Staff member not found" });
+
       if (status === "removed") {
-        updates.removedAt = new Date();
-        updates.showOnCalendar = false; // Removed staff must never appear on calendar or public booking
+        await storage.deleteStaff(staffId);
+        return res.json({ id: staffId, status: "removed", deleted: true });
       }
 
+      const updates: Record<string, any> = { status };
       const [updated] = await db.update(staff).set(updates).where(eq(staff.id, staffId)).returning();
-      if (!updated) return res.status(404).json({ message: "Staff member not found" });
 
       // If deactivated/removed, invalidate any linked user session by revoking the staffId link
-      if (status === "removed" || status === "deactivated") {
+      if (status === "deactivated") {
         await db.update(users).set({ role: "staff" }).where(eq(users.staffId, staffId));
       }
 

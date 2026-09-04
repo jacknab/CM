@@ -11,7 +11,7 @@ export const SEO_CONFIG: Record<string, PageSeo> = {
   // Commercial routes are normally server-rendered by PHP. Keeping their SEO
   // metadata here as well protects the raw HTML response if a PHP template is
   // removed and the URL falls through to the React application.
-  "/nail-salon-software": { title: "Nail Studio Software | Certxa", description: `Nail salon software for independent nail technicians and growing studios. Certxa connects online booking, client nail records, reminders, payments, POS, walk-ins, and a booking website in one platform. ${TRIAL_DAYS}-day free trial.`, canonical: `${BASE_URL}/nail-salon-software` },
+  "/nail-salon-software": { title: "Nail Salon Booking Software | Certxa", description: `Nail salon software for independent nail technicians and growing studios. Certxa connects online booking, client nail records, reminders, payments, POS, walk-ins, and a booking website in one platform. ${TRIAL_DAYS}-day free trial.`, canonical: `${BASE_URL}/nail-salon-software` },
   "/online-booking": { title: "Nail Salon Online Booking | Certxa", description: "Nail salon booking software for online appointments, technician selection, deposits, reminders, waitlists, and walk-ins. Let clients book from your website, social profiles, or Google with Certxa.", canonical: `${BASE_URL}/online-booking` },
   "/salonos": { title: "Nail Salon Management Software | Certxa", description: "Nail salon management software for appointments, staff calendars, client records, walk-ins, POS, waitlists, loyalty, and daily operations. SalonOS connects the workflows of growing nail studios.", canonical: `${BASE_URL}/salonos` },
   "/payment-processing": { title: "Nail Salon Payment Processing | Certxa", description: "Nail salon POS and payment processing powered by Stripe. Take card, chip, contactless, Apple Pay, and Google Pay payments through the Stripe M2 reader inside Certxa.", canonical: `${BASE_URL}/payment-processing` },
@@ -100,6 +100,44 @@ const GEO_PAGES: Array<{ route: string; file: string }> = [
   { route: "/phoenix-az-nail-salons", file: "phoenix-az-nail-salons.html" },
   { route: "/tempe-az-nail-salons", file: "tempe-az-nail-salons.html" },
 ];
+
+// ── Known top-level route prefixes ────────────────────────────────────────
+// First path segment of every <Route path="..."> in artifacts/booking/src/App.tsx
+// (e.g. "/team/:id" -> "team", "/catalog/services" -> "catalog"). A request
+// whose first segment isn't in this set is not a real app page and gets a
+// real 404 from the SPA catch-all below, instead of a 200 SPA shell.
+// Adding a brand-new *top-level* section to App.tsx requires adding its
+// prefix here too; new routes nested under an already-known prefix need no
+// change here.
+const KNOWN_APP_PREFIXES = new Set([
+  "accept-invite", "account", "addons", "ai-receptionist", "analytics",
+  "api-keys", "app-login", "appointments", "auth", "autumn", "billing",
+  "book", "booking", "booking-policies", "business-hours", "business-settings",
+  "calendar", "calendar-settings", "campaigns", "cash-drawer", "catalog",
+  "chat", "checkin-kiosk", "chkeditor", "client", "client-lookup", "clients",
+  "commission-report", "commissions", "complete-booking", "contact",
+  "contractor-onboarding", "customers", "dashboard", "data-transfer",
+  "elite-api-docs", "elite-details", "features-settings", "forgot-password",
+  "frontdesk", "gift-cards", "google-business", "help", "intake-forms",
+  "intelligence", "isTeam", "isadmin", "kiosk", "kiosk-settings",
+  "language-settings", "loyalty", "mail-settings", "manage", "marketing",
+  "multi-location", "online-booking", "overview", "payouts", "payroll",
+  "payroll-settings", "pos-settings", "print-checks", "products", "q",
+  "register-reports", "reports", "reset-password", "review", "reviews",
+  "salon-dashboard", "salon-earnings", "services", "settings", "setup",
+  "sms-activity", "sms-inbox", "sms-settings", "spa", "staff", "staff-1099",
+  "staff-auth", "staff-calendar", "staff-dashboard", "staff-financial-hub",
+  "staff-history", "staff-income", "staff-language", "staff-menu",
+  "staff-overview", "staff-pay", "staff-payouts", "staff-pos",
+  "staff-profile", "subscription", "support", "tattoo-studio", "team",
+  "timeclock", "waitlist", "walk-in-board", "walkins", "widget",
+]);
+
+const NOT_FOUND_HTML = `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><meta name="robots" content="noindex" /><title>404 Not Found | Certxa</title></head>
+<body><h1>404 Not Found</h1><p>The page you requested does not exist.</p></body>
+</html>`;
 
 export function serveStatic(app: Express) {
   const distPath = path.resolve(__dirname, "public");
@@ -343,6 +381,24 @@ ${urlEntries}
         .send(injectSeoMetadata(indexTemplate, seo));
       return;
     }
+
+    // A path shaped like a static asset (has a dot in its last segment) that
+    // reached this far means express.static already looked and missed —
+    // never serve the SPA shell for a deleted/stale hashed asset reference.
+    const segments = reqPath.split("/");
+    const lastSegment = segments[segments.length - 1] ?? "";
+    const firstSegment = segments[1] ?? "";
+    const isAssetShaped = lastSegment.includes(".");
+    const isKnownAppPath = reqPath === "/" || KNOWN_APP_PREFIXES.has(firstSegment);
+
+    if (isAssetShaped || !isKnownAppPath) {
+      res
+        .status(404)
+        .set({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" })
+        .send(NOT_FOUND_HTML);
+      return;
+    }
+
     res.setHeader("Cache-Control", "public, max-age=0, must-revalidate");
     res.sendFile(indexHtmlPath, (err) => {
       if (err) {

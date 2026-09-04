@@ -5,12 +5,17 @@ import {
   payoutRuns, payoutRunItems, payoutChecks, payoutW9Records, payoutAuditLogs, payoutAdjustments,
   appointments, staff, services, addons, appointmentAddons, locations,
   commissionStructures, storeSettings, contractorOnboardingTokens, storePaymentAccounts,
-  accountCorporateAddresses, payrollPrintBatches,
+  accountCorporateAddresses, payrollPrintBatches, contractorCommissions, staffCommissionAccruals,
 } from "@shared/schema";
 import { eq, and, ne, desc, gte, lte, sql, inArray, count, sum } from "drizzle-orm";
 import { isAuthenticated } from "../auth";
 import { z } from "zod";
 import { isStripeConfigured, getStripe, getReturnBaseUrl } from "../lib/stripe";
+import {
+  ensureContractorAccount,
+  attachExternalBankAccount,
+  syncContractorAccountStatus,
+} from "../lib/stripeContractorAccounts";
 import { getPaymentAccount } from "../lib/stripeConnect";
 import { sendContractorStripeVerifiedEmail, sendOwnerContractorVerifiedEmail, sendOwnerContractorRestrictedEmail, sendOwnerContractorResolvedEmail, sendContractorResolvedEmail, sendContractorOnboardingInvite } from "../lib/systemEmails";
 import { resolveSessionStoreId } from "../lib/sessionStore";
@@ -873,6 +878,9 @@ router.delete("/contractors/:id", isAuthenticated, async (req: Request, res: Res
 });
 
 // POST /api/contractor-payouts/contractors/:id/onboarding-link
+// Recipient-configured model: there is no Stripe-hosted onboarding. This mints a
+// 48h token and returns the Certxa self-serve bank-details portal URL for the
+// owner to hand to the contractor.
 router.post("/contractors/:id/onboarding-link", isAuthenticated, async (req: Request, res: Response): Promise<void> => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -890,71 +898,21 @@ router.post("/contractors/:id/onboarding-link", isAuthenticated, async (req: Req
       res.status(403).json({ error: "Forbidden" }); return;
     }
 
-    const stripe = getStripe();
-    const createFreshAccount = async (): Promise<string> => {
-      const account = await stripe.accounts.create({
-        type: "express",
-        email: contractor.email ?? undefined,
-        business_type: "individual",
-        metadata: { contractorId: String(id), storeId: String(contractor.storeId) },
-      });
-      const freshAccountId = account.id;
-      await db.update(contractors)
-        .set({ stripeAccountId: freshAccountId, onboardingStatus: "in_progress", bankVerified: false, updatedAt: new Date() })
-        .where(eq(contractors.id, id));
-      return freshAccountId;
-    };
+    // Ensure a recipient-configured Custom account exists (created lazily; the
+    // contractor just needs to supply bank details).
+    const accountId = await ensureContractorAccount(contractor, req.ip);
 
-    // Reuse existing Stripe account if still accessible; otherwise auto-recreate.
-    let accountId = contractor.stripeAccountId;
-    if (accountId) {
-      try {
-        await stripe.accounts.retrieve(accountId);
-      } catch (err: any) {
-        if (isStripeAccountAccessError(err)) {
-          accountId = await createFreshAccount();
-          await audit(contractor.storeId, "stripe_account_recreated", "contractor", id, req, {
-            reason: "account_access_lost",
-          });
-        } else {
-          throw err;
-        }
-      }
-    } else {
-      accountId = await createFreshAccount();
-    }
+    // Fresh 48h self-serve token
+    await db.delete(contractorOnboardingTokens)
+      .where(and(eq(contractorOnboardingTokens.contractorId, id), sql`${contractorOnboardingTokens.usedAt} IS NULL`));
+    const token = randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
+    await db.insert(contractorOnboardingTokens).values({ contractorId: id, storeId: contractor.storeId, token, expiresAt });
+
+    await audit(contractor.storeId, "stripe_onboarding_started", "contractor", id, req, { accountId, mode: "self_serve_link" });
 
     const baseUrl = getReturnBaseUrl(req);
-    let accountLink;
-    try {
-      accountLink = await stripe.accountLinks.create({
-        account: accountId,
-        refresh_url: `${baseUrl}/payouts/contractors/${id}?onboarding=refresh`,
-        return_url: `${baseUrl}/payouts/contractors/${id}?onboarding=complete`,
-        type: "account_onboarding",
-      });
-    } catch (err: any) {
-      // If access is lost between retrieve/create and link generation, auto-recover once.
-      if (!isStripeAccountAccessError(err)) throw err;
-      accountId = await createFreshAccount();
-      accountLink = await stripe.accountLinks.create({
-        account: accountId,
-        refresh_url: `${baseUrl}/payouts/contractors/${id}?onboarding=refresh`,
-        return_url: `${baseUrl}/payouts/contractors/${id}?onboarding=complete`,
-        type: "account_onboarding",
-      });
-      await audit(contractor.storeId, "stripe_account_recreated", "contractor", id, req, {
-        reason: "account_access_lost_during_link_create",
-      });
-    }
-
-    await db.update(contractors)
-      .set({ onboardingStatus: "in_progress", updatedAt: new Date() })
-      .where(eq(contractors.id, id));
-
-    await audit(contractor.storeId, "stripe_onboarding_started", "contractor", id, req, { accountId });
-
-    res.json({ url: accountLink.url });
+    res.json({ url: `${baseUrl}/contractor-onboarding/${token}`, token, expiresAt });
   } catch (err) {
     console.error("[payouts] onboarding-link:", err);
     res.status(500).json({ error: "Failed to create onboarding link" });
@@ -1010,23 +968,16 @@ router.post("/contractors/:id/sync-stripe", isAuthenticated, async (req: Request
       throw err;
     }
 
-    let onboardingStatus: string;
-    if (account.details_submitted && account.payouts_enabled) {
-      onboardingStatus = "complete";
-    } else if (account.requirements?.disabled_reason) {
-      onboardingStatus = "restricted";
-    } else {
-      onboardingStatus = "in_progress";
-    }
+    // Derive + persist via the shared helper (Custom-account aware:
+    // transfers capability + requirements + payouts_enabled).
+    const synced = await syncContractorAccountStatus(id);
+    const onboardingStatus = synced?.onboardingStatus ?? "pending";
+    const bankVerified = synced?.bankVerified ?? false;
+    const [updated] = await db.select().from(contractors).where(eq(contractors.id, id));
 
-    const bankVerified = account.payouts_enabled === true;
-
-    const [updated] = await db.update(contractors)
-      .set({ onboardingStatus, bankVerified, updatedAt: new Date() })
-      .where(eq(contractors.id, id))
-      .returning();
-
-    await audit(contractor.storeId, "stripe_synced", "contractor", id, req, { onboardingStatus, bankVerified });
+    await audit(contractor.storeId, "stripe_synced", "contractor", id, req, {
+      onboardingStatus, bankVerified, requirementsDue: synced?.requirementsDue ?? [],
+    });
 
     // Send verification emails the first time a contractor activates (not a recovery from restricted)
     if (onboardingStatus === "complete" && contractor.onboardingStatus !== "complete" && contractor.onboardingStatus !== "restricted") {
@@ -1155,49 +1106,88 @@ router.post("/contractors/:id/bank-accounts", isAuthenticated, async (req: Reque
   }
 
   try {
-    const stripe = getStripe();
-
-    // Retrieve token from Stripe to validate it and pull bank metadata
-    let token: Awaited<ReturnType<typeof stripe.tokens.retrieve>>;
-    try {
-      token = await stripe.tokens.retrieve(stripeToken);
-    } catch (err: any) {
-      res.status(400).json({ error: err?.message ?? "Invalid Stripe token" }); return;
+    const [contractor] = await db.select().from(contractors).where(eq(contractors.id, contractorId));
+    if (!contractor) { res.status(404).json({ error: "Contractor not found" }); return; }
+    const sessionStoreId = await resolveSessionStoreId(req);
+    if (!sessionStoreId || contractor.storeId !== sessionStoreId) {
+      res.status(403).json({ error: "Forbidden" }); return;
     }
 
-    if (token.type !== "bank_account" || !token.bank_account) {
-      res.status(400).json({ error: "Token is not a bank account token" }); return;
-    }
+    const result = await saveContractorBankAccount(contractor, {
+      stripeToken, accountType, accountHolderType, accountHolderName, ip: req.ip,
+    });
+    if ("error" in result) { res.status(result.status).json({ error: result.error }); return; }
 
-    const ba = token.bank_account;
-    const accountLast4  = ba.last4 ?? null;
-    const routingLast4  = ba.routing_number ? String(ba.routing_number).slice(-4) : null;
-    const bankName      = ba.bank_name ?? null;
-
-    // Demote all existing records for this contractor
-    await db.update(contractorBankAccounts)
-      .set({ isDefault: false })
-      .where(eq(contractorBankAccounts.contractorId, contractorId));
-
-    const [row] = await db.insert(contractorBankAccounts).values({
-      contractorId,
-      accountType:            accountType        ?? "checking",
-      accountHolderType:      accountHolderType  ?? "individual",
-      accountHolderName:      accountHolderName  ?? ba.account_holder_name ?? null,
-      bankName,
-      routingLast4,
-      accountLast4,
-      stripeBankAccountToken: stripeToken,
-      verificationStatus: "pending",
-      isDefault: true,
-    }).returning();
-
-    res.json(row);
+    await audit(contractor.storeId, "contractor_bank_attached", "contractor", contractorId, req, {
+      bankVerified: result.status_?.bankVerified ?? false,
+    });
+    res.json({ bankAccount: result.row, ...(result.status_ ?? {}) });
   } catch (err: any) {
     console.error("[bank-accounts] save:", err);
     res.status(500).json({ error: err?.message ?? "Failed to save bank account" });
   }
 });
+
+/**
+ * Shared: retrieve the client-tokenized bank account, persist a
+ * `contractor_bank_accounts` row, attach it to the contractor's Custom Stripe
+ * account as an external account, and sync status. Used by the owner endpoint
+ * and the public self-serve portal.
+ */
+async function saveContractorBankAccount(
+  contractor: typeof contractors.$inferSelect,
+  input: { stripeToken: string; accountType?: string; accountHolderType?: string; accountHolderName?: string; ip?: string | null },
+): Promise<
+  | { error: string; status: number }
+  | { row: typeof contractorBankAccounts.$inferSelect; status_: Awaited<ReturnType<typeof syncContractorAccountStatus>> }
+> {
+  const stripe = getStripe();
+
+  let token: Awaited<ReturnType<typeof stripe.tokens.retrieve>>;
+  try {
+    token = await stripe.tokens.retrieve(input.stripeToken);
+  } catch (err: any) {
+    return { error: err?.message ?? "Invalid Stripe token", status: 400 };
+  }
+  if (token.type !== "bank_account" || !token.bank_account) {
+    return { error: "Token is not a bank account token", status: 400 };
+  }
+
+  const ba = token.bank_account;
+  const accountLast4 = ba.last4 ?? null;
+  const routingLast4 = ba.routing_number ? String(ba.routing_number).slice(-4) : null;
+  const bankName     = ba.bank_name ?? null;
+
+  // Ensure the recipient-configured Custom account, then attach the bank.
+  const accountId = await ensureContractorAccount(contractor, input.ip);
+  let externalAccountId: string | null = null;
+  try {
+    externalAccountId = await attachExternalBankAccount(accountId, input.stripeToken);
+  } catch (err: any) {
+    return { error: err?.raw?.message ?? err?.message ?? "Stripe rejected the bank account", status: 400 };
+  }
+
+  await db.update(contractorBankAccounts)
+    .set({ isDefault: false })
+    .where(eq(contractorBankAccounts.contractorId, contractor.id));
+
+  const [row] = await db.insert(contractorBankAccounts).values({
+    contractorId:            contractor.id,
+    accountType:             input.accountType       ?? "checking",
+    accountHolderType:       input.accountHolderType ?? "individual",
+    accountHolderName:       input.accountHolderName ?? ba.account_holder_name ?? null,
+    bankName,
+    routingLast4,
+    accountLast4,
+    stripeBankAccountToken:  input.stripeToken,
+    stripeExternalAccountId: externalAccountId,
+    verificationStatus:      "pending",
+    isDefault:               true,
+  }).returning();
+
+  const status_ = await syncContractorAccountStatus(contractor.id);
+  return { row, status_ };
+}
 
 // ─── Deduction Rules ──────────────────────────────────────────────────────────
 
@@ -1521,6 +1511,91 @@ router.post("/checks/:id/mark-cleared", isAuthenticated, async (req: Request, re
   }
 });
 
+// ─── 1099 Summary (auto-computed, read-only) ──────────────────────────────────
+
+// GET /api/contractor-payouts/1099-summary?year=YYYY
+// Every contractor's total paid for the year + whether they clear the $600
+// 1099-NEC threshold + whether a W9 is on file. Sums live commission accrual
+// (contractor_commissions, status='paid'); falls back to paid payout_run_items
+// for a contractor/year with no accrual rows (periods before accrual existed).
+// Read-only — no e-filing; the owner still reviews and files.
+router.get("/1099-summary", isAuthenticated, async (req: Request, res: Response): Promise<void> => {
+  const sessionStoreId = await resolveSessionStoreId(req);
+  if (!sessionStoreId) { res.status(403).json({ error: "Forbidden" }); return; }
+  const year = parseInt(String(req.query.year), 10) || new Date().getFullYear();
+  const THRESHOLD_CENTS = 60000;
+
+  try {
+    const accrued = await db.select({
+      contractorId: contractorCommissions.contractorId,
+      total: sql<string>`COALESCE(SUM(${contractorCommissions.amount}), 0)`,
+    }).from(contractorCommissions)
+      .where(and(
+        eq(contractorCommissions.storeId, sessionStoreId),
+        eq(contractorCommissions.status, "paid"),
+        gte(contractorCommissions.earnedDate, `${year}-01-01`),
+        lte(contractorCommissions.earnedDate, `${year}-12-31`),
+      ))
+      .groupBy(contractorCommissions.contractorId);
+
+    const runPaid = await db.select({
+      contractorId: payoutRunItems.contractorId,
+      total: sql<string>`COALESCE(SUM(${payoutRunItems.netAmount}), 0)`,
+    }).from(payoutRunItems)
+      .innerJoin(contractors, eq(contractors.id, payoutRunItems.contractorId))
+      .where(and(
+        eq(contractors.storeId, sessionStoreId),
+        eq(payoutRunItems.status, "paid"),
+        gte(payoutRunItems.paidAt, new Date(`${year}-01-01T00:00:00Z`)),
+        lte(payoutRunItems.paidAt, new Date(`${year}-12-31T23:59:59Z`)),
+      ))
+      .groupBy(payoutRunItems.contractorId);
+
+    const totalsCents = new Map<number, number>();
+    for (const r of accrued) totalsCents.set(r.contractorId, Number(r.total));
+    for (const r of runPaid) {
+      // Accrual is the source of truth once it has rows for this contractor —
+      // the run-items sum is only a fallback for years that predate it.
+      if (!totalsCents.has(r.contractorId)) totalsCents.set(r.contractorId, Math.round(Number(r.total) * 100));
+    }
+
+    const allContractors = await db.select({
+      id: contractors.id, firstName: contractors.firstName, lastName: contractors.lastName,
+    }).from(contractors).where(and(eq(contractors.storeId, sessionStoreId), eq(contractors.isActive, true)));
+
+    const w9Rows = await db.select({ contractorId: payoutW9Records.contractorId })
+      .from(payoutW9Records)
+      .innerJoin(contractors, eq(contractors.id, payoutW9Records.contractorId))
+      .where(and(eq(contractors.storeId, sessionStoreId), eq(payoutW9Records.year, year)));
+    const hasW9 = new Set(w9Rows.map((r) => r.contractorId));
+
+    const summary = allContractors
+      .map((c) => {
+        const totalCents = totalsCents.get(c.id) ?? 0;
+        return {
+          contractorId: c.id,
+          name: `${c.firstName} ${c.lastName}`.trim(),
+          totalPaid: (totalCents / 100).toFixed(2),
+          eligible: totalCents >= THRESHOLD_CENTS,
+          hasW9: hasW9.has(c.id),
+        };
+      })
+      .filter((r) => Number(r.totalPaid) > 0)
+      .sort((a, b) => Number(b.totalPaid) - Number(a.totalPaid));
+
+    res.json({
+      year,
+      threshold: THRESHOLD_CENTS / 100,
+      eligibleCount: summary.filter((s) => s.eligible).length,
+      missingW9Count: summary.filter((s) => s.eligible && !s.hasW9).length,
+      contractors: summary,
+    });
+  } catch (err) {
+    console.error("[payouts] 1099-summary:", err);
+    res.status(500).json({ error: "Failed to compute 1099 summary" });
+  }
+});
+
 // ─── W9 Records ───────────────────────────────────────────────────────────────
 
 // GET /api/contractor-payouts/w9/:contractorId
@@ -1785,6 +1860,90 @@ router.get("/overview", isAuthenticated, async (req: Request, res: Response): Pr
   } catch (err) {
     console.error("[payouts] overview:", err);
     res.status(500).json({ error: "Failed to fetch overview" });
+  }
+});
+
+// GET /api/contractor-payouts/hub-summary?storeId=X
+// Everything the mobile-first Payroll Home page needs in one round trip: every
+// team member (contractor + plain employee) with their live accrued-pending
+// total (from continuous commission accrual — see lib/commissionAccrual.ts),
+// payable status, and roll-up alerts. Schedule config is fetched separately
+// via the existing GET /payroll-schedule (unchanged).
+router.get("/hub-summary", isAuthenticated, async (req: Request, res: Response): Promise<void> => {
+  const sId = storeId(req);
+  if (!sId) { res.status(400).json({ error: "storeId required" }); return; }
+  try {
+    const [contractorRows, pendingByContractor, staffRows, pendingByStaff] = await Promise.all([
+      db.select().from(contractors).where(and(eq(contractors.storeId, sId), eq(contractors.isActive, true))),
+      db.select({
+        contractorId: contractorCommissions.contractorId,
+        total: sql<string>`COALESCE(SUM(${contractorCommissions.amount}), 0)`,
+      }).from(contractorCommissions)
+        .where(and(eq(contractorCommissions.storeId, sId), eq(contractorCommissions.status, "pending")))
+        .groupBy(contractorCommissions.contractorId),
+      db.select().from(staff).where(and(eq(staff.storeId, sId), ne(staff.status, "removed"))),
+      db.select({
+        staffId: staffCommissionAccruals.staffId,
+        total: sql<string>`COALESCE(SUM(${staffCommissionAccruals.amount}), 0)`,
+      }).from(staffCommissionAccruals)
+        .where(and(eq(staffCommissionAccruals.storeId, sId), eq(staffCommissionAccruals.status, "pending")))
+        .groupBy(staffCommissionAccruals.staffId),
+    ]);
+
+    const contractorStaffIds = new Set(contractorRows.map((c) => c.staffId).filter((x): x is number => x != null));
+    const pendingContractorCents = new Map(pendingByContractor.map((r) => [r.contractorId, Number(r.total)]));
+    const pendingStaffCents = new Map(pendingByStaff.map((r) => [r.staffId, Number(r.total)]));
+
+    const contractorPeople = contractorRows.map((c) => {
+      const status =
+        c.bankVerified ? "ready" :
+        c.onboardingStatus === "restricted" ? "restricted" :
+        c.onboardingStatus === "in_progress" ? "in_progress" : "needs_bank";
+      return {
+        type: "contractor" as const,
+        id: c.id,
+        staffId: c.staffId,
+        name: `${c.firstName} ${c.lastName}`.trim() || c.name,
+        commissionRate: c.commissionRate,
+        accruedPending: (pendingContractorCents.get(c.id) ?? 0) / 100,
+        payoutMethod: c.payoutMethod,
+        status,
+      };
+    });
+
+    const employeePeople = staffRows
+      .filter((s) => !contractorStaffIds.has(s.id) && s.employmentType !== "owner")
+      .map((s) => ({
+        type: "employee" as const,
+        id: s.id,
+        staffId: s.id,
+        name: s.name,
+        commissionRate: s.commissionRate,
+        accruedPending: (pendingStaffCents.get(s.id) ?? 0) / 100,
+        payoutMethod: null as string | null,
+        status: s.commissionEnabled ? "ready" : "no_rate",
+      }));
+
+    const people = [...contractorPeople, ...employeePeople].sort(
+      (a, b) => b.accruedPending - a.accruedPending,
+    );
+
+    res.json({
+      people,
+      totals: {
+        accruedPending: people.reduce((s, p) => s + p.accruedPending, 0),
+        contractorCount: contractorPeople.length,
+        employeeCount: employeePeople.length,
+      },
+      alerts: {
+        needsBank: contractorPeople.filter((p) => p.status === "needs_bank" || p.status === "in_progress").length,
+        restricted: contractorPeople.filter((p) => p.status === "restricted").length,
+        noRate: employeePeople.filter((p) => p.status === "no_rate").length,
+      },
+    });
+  } catch (err) {
+    console.error("[payouts] hub-summary:", err);
+    res.status(500).json({ error: "Failed to load payroll summary" });
   }
 });
 
@@ -2531,168 +2690,92 @@ router.get("/public/onboarding/:token", async (req: Request, res: Response): Pro
   }
 });
 
+// Resolve a valid (existing, unexpired) self-serve token → its contractor row.
+async function loadOnboardingToken(token: string | undefined):
+  Promise<{ error: string; status: number } | { contractor: typeof contractors.$inferSelect; row: typeof contractorOnboardingTokens.$inferSelect }> {
+  if (!token) return { error: "Missing token", status: 400 };
+  const [row] = await db.select().from(contractorOnboardingTokens).where(eq(contractorOnboardingTokens.token, token));
+  if (!row) return { error: "Invalid or expired link", status: 404 };
+  if (row.expiresAt < new Date()) return { error: "This link has expired. Ask your manager to send a new one.", status: 410 };
+  const [contractor] = await db.select().from(contractors).where(eq(contractors.id, row.contractorId));
+  if (!contractor) return { error: "Contractor not found", status: 404 };
+  return { contractor, row };
+}
+
 // POST /api/contractor-payouts/public/onboarding/:token/start
-// Public — no auth. Creates/reuses a Stripe Connect account and returns the hosted onboarding URL.
+// Public — no auth. Ensures a recipient-configured Custom account exists so the
+// bank-details form has an account to attach to. No Stripe-hosted flow anymore.
 router.post("/public/onboarding/:token/start", async (req: Request, res: Response): Promise<void> => {
   const tokenParam = (req.params as Record<string, string | string[] | undefined>).token;
   const token = Array.isArray(tokenParam) ? tokenParam[0] : tokenParam;
-  if (!token) { res.status(400).json({ error: "Missing token" }); return; }
-
-  if (!isStripeConfigured()) {
-    res.status(400).json({ error: "Stripe is not configured on this server" }); return;
-  }
-
+  if (!isStripeConfigured()) { res.status(400).json({ error: "Stripe is not configured on this server" }); return; }
   try {
-    const [row] = await db.select().from(contractorOnboardingTokens).where(eq(contractorOnboardingTokens.token, token));
-    if (!row) { res.status(404).json({ error: "Invalid or expired link" }); return; }
-    if (row.expiresAt < new Date()) { res.status(410).json({ error: "This link has expired. Ask your manager to send a new one." }); return; }
-
-    const [contractor] = await db.select().from(contractors).where(eq(contractors.id, row.contractorId));
-    if (!contractor) { res.status(404).json({ error: "Contractor not found" }); return; }
-
-    const stripe = getStripe();
-
-    const createFreshAccount = async (): Promise<string> => {
-      const account = await stripe.accounts.create({
-        type: "express",
-        email: contractor.email ?? undefined,
-        business_type: "individual",
-        metadata: { contractorId: String(contractor.id), storeId: String(contractor.storeId) },
-      });
-      const freshAccountId = account.id;
-      await db.update(contractors)
-        .set({ stripeAccountId: freshAccountId, onboardingStatus: "in_progress", bankVerified: false, updatedAt: new Date() })
-        .where(eq(contractors.id, contractor.id));
-      return freshAccountId;
-    };
-
-    // Reuse existing Stripe account if still accessible; otherwise auto-recreate.
-    // (A prior account can become inaccessible if it was deleted on Stripe's side,
-    // or if the platform's Stripe keys were rotated/switched between test and live.)
-    let accountId = contractor.stripeAccountId;
-    if (accountId) {
-      try {
-        await stripe.accounts.retrieve(accountId);
-      } catch (err: any) {
-        if (isStripeAccountAccessError(err)) {
-          accountId = await createFreshAccount();
-          await audit(contractor.storeId, "stripe_account_recreated", "contractor", contractor.id, req, {
-            reason: "account_access_lost",
-          });
-        } else {
-          throw err;
-        }
-      }
-    } else {
-      accountId = await createFreshAccount();
-    }
-
-    const baseUrl = getReturnBaseUrl(req);
-    let accountLink;
-    try {
-      accountLink = await stripe.accountLinks.create({
-        account: accountId,
-        refresh_url: `${baseUrl}/contractor-onboarding/${token}?onboarding=refresh`,
-        return_url:  `${baseUrl}/contractor-onboarding/${token}?onboarding=complete`,
-        type: "account_onboarding",
-      });
-    } catch (err: any) {
-      // If access is lost between retrieve/create and link generation, auto-recover once.
-      if (!isStripeAccountAccessError(err)) throw err;
-      accountId = await createFreshAccount();
-      accountLink = await stripe.accountLinks.create({
-        account: accountId,
-        refresh_url: `${baseUrl}/contractor-onboarding/${token}?onboarding=refresh`,
-        return_url:  `${baseUrl}/contractor-onboarding/${token}?onboarding=complete`,
-        type: "account_onboarding",
-      });
-      await audit(contractor.storeId, "stripe_account_recreated", "contractor", contractor.id, req, {
-        reason: "account_access_lost_during_link_create",
-      });
-    }
-
-    await db.update(contractors)
-      .set({ onboardingStatus: "in_progress", updatedAt: new Date() })
-      .where(eq(contractors.id, contractor.id));
-
-    // Mark token as used (but keep it valid for return/refresh URLs)
-    await db.update(contractorOnboardingTokens)
-      .set({ usedAt: new Date() })
-      .where(eq(contractorOnboardingTokens.token, token));
-
-    res.json({ url: accountLink.url });
+    const loaded = await loadOnboardingToken(token);
+    if ("error" in loaded) { res.status(loaded.status).json({ error: loaded.error }); return; }
+    const accountId = await ensureContractorAccount(loaded.contractor, req.ip);
+    await audit(loaded.contractor.storeId, "stripe_onboarding_started", "contractor", loaded.contractor.id, req, { accountId, mode: "self_serve" });
+    res.json({ ok: true });
   } catch (err: any) {
     const stripeMsg = err?.raw?.message ?? err?.message ?? String(err);
     console.error("[payouts] public onboarding start:", stripeMsg, err);
-    res.status(500).json({ error: "Failed to create onboarding link", detail: stripeMsg });
+    res.status(500).json({ error: "Failed to start onboarding", detail: stripeMsg });
+  }
+});
+
+// POST /api/contractor-payouts/public/onboarding/:token/bank
+// Public — no auth. Contractor submits a client-tokenized bank account (btok_…);
+// we attach it to their Custom account and sync status.
+router.post("/public/onboarding/:token/bank", async (req: Request, res: Response): Promise<void> => {
+  const tokenParam = (req.params as Record<string, string | string[] | undefined>).token;
+  const token = Array.isArray(tokenParam) ? tokenParam[0] : tokenParam;
+  const { stripeToken, accountType, accountHolderType, accountHolderName } = req.body ?? {};
+  if (!stripeToken) { res.status(400).json({ error: "stripeToken is required" }); return; }
+  if (!isStripeConfigured()) { res.status(400).json({ error: "Stripe is not configured on this server" }); return; }
+  try {
+    const loaded = await loadOnboardingToken(token);
+    if ("error" in loaded) { res.status(loaded.status).json({ error: loaded.error }); return; }
+
+    const result = await saveContractorBankAccount(loaded.contractor, {
+      stripeToken, accountType, accountHolderType, accountHolderName, ip: req.ip,
+    });
+    if ("error" in result) { res.status(result.status).json({ error: result.error }); return; }
+
+    // Keep the token valid for polling /sync, but mark it used.
+    await db.update(contractorOnboardingTokens).set({ usedAt: new Date() })
+      .where(eq(contractorOnboardingTokens.token, token!));
+
+    await audit(loaded.contractor.storeId, "contractor_bank_attached", "contractor", loaded.contractor.id, req, {
+      via: "self_serve", bankVerified: result.status_?.bankVerified,
+    });
+    res.json({ bankAccount: result.row, ...result.status_ });
+  } catch (err: any) {
+    console.error("[payouts] public onboarding bank:", err);
+    res.status(500).json({ error: err?.message ?? "Failed to save bank account" });
   }
 });
 
 // POST /api/contractor-payouts/public/onboarding/:token/sync
-// Public — no auth. Syncs Stripe status after return from Stripe. Token must still exist.
+// Public — no auth. Re-reads the Custom account and refreshes status.
 router.post("/public/onboarding/:token/sync", async (req: Request, res: Response): Promise<void> => {
   const tokenParam = (req.params as Record<string, string | string[] | undefined>).token;
   const token = Array.isArray(tokenParam) ? tokenParam[0] : tokenParam;
-  if (!token) { res.status(400).json({ error: "Missing token" }); return; }
-
-  if (!isStripeConfigured()) {
-    res.status(400).json({ error: "Stripe is not configured" }); return;
-  }
-
+  if (!isStripeConfigured()) { res.status(400).json({ error: "Stripe is not configured" }); return; }
   try {
+    if (!token) { res.status(400).json({ error: "Missing token" }); return; }
     const [row] = await db.select().from(contractorOnboardingTokens).where(eq(contractorOnboardingTokens.token, token));
     if (!row) { res.status(404).json({ error: "Invalid link" }); return; }
 
-    const [contractor] = await db.select().from(contractors).where(eq(contractors.id, row.contractorId));
-    if (!contractor || !contractor.stripeAccountId) {
-      res.status(400).json({ error: "No Stripe account linked" }); return;
+    const status_ = await syncContractorAccountStatus(row.contractorId);
+    if (!status_) { res.status(400).json({ error: "No Stripe account linked", status: "pending", bankVerified: false }); return; }
+    res.json({ status: status_.onboardingStatus, bankVerified: status_.bankVerified, requirementsDue: status_.requirementsDue });
+  } catch (err: any) {
+    if (isStripeAccountAccessError(err)) {
+      res.status(409).json({
+        error: "Stripe account access was lost. Ask your manager for a new link.",
+        code: "STRIPE_ACCOUNT_ACCESS_LOST", status: "restricted", bankVerified: false,
+      });
+      return;
     }
-
-    const stripe = getStripe();
-    let account: Awaited<ReturnType<typeof stripe.accounts.retrieve>>;
-    try {
-      account = await stripe.accounts.retrieve(contractor.stripeAccountId);
-    } catch (err: any) {
-      if (isStripeAccountAccessError(err)) {
-        await db.update(contractors)
-          .set({ onboardingStatus: "restricted", bankVerified: false, updatedAt: new Date() })
-          .where(eq(contractors.id, contractor.id));
-
-        res.status(409).json({
-          error: "Stripe account access was lost. Ask your manager to resend onboarding.",
-          code: "STRIPE_ACCOUNT_ACCESS_LOST",
-          status: "restricted",
-          bankVerified: false,
-        });
-        return;
-      }
-      throw err;
-    }
-
-    const previousStatus = contractor.onboardingStatus;
-
-    let onboardingStatus: string;
-    if (account.details_submitted && account.payouts_enabled) {
-      onboardingStatus = "complete";
-    } else if (account.requirements?.disabled_reason) {
-      onboardingStatus = "restricted";
-    } else {
-      onboardingStatus = "in_progress";
-    }
-    const bankVerified = account.payouts_enabled === true;
-
-    await db.update(contractors)
-      .set({ onboardingStatus, bankVerified, updatedAt: new Date() })
-      .where(eq(contractors.id, contractor.id));
-
-    // Auto-send a new onboarding invite when the account transitions TO restricted
-    if (onboardingStatus === "restricted" && previousStatus !== "restricted") {
-      autoReinviteContractorOnRestriction(contractor, req)
-        .catch((e) => console.warn("[payouts] public sync auto-reinvite error:", (e as any)?.message));
-    }
-
-    res.json({ status: onboardingStatus, bankVerified });
-  } catch (err) {
     console.error("[payouts] public onboarding sync:", err);
     res.status(500).json({ error: "Failed to sync Stripe status" });
   }

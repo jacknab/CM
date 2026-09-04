@@ -112,13 +112,14 @@ function buildTopNav(pick: Pick4): TopNavItem[] {
 function buildInsightsSubnav(pick: Pick4): SubNavItem[] {
   return [
     { label: pick({ en: "Analytics", vi: "Phân tích", es: "Analítica", fr: "Analytique" }), icon: BarChart3, to: "/salon-dashboard" },
-    { label: pick({ en: "Reports",   vi: "Báo cáo",   es: "Informes",  fr: "Rapports" }),   icon: LineChart, to: "/commission-report" },
+    { label: pick({ en: "Payroll",   vi: "Bảng lương", es: "Nómina",   fr: "Paie" }),       icon: LineChart, to: "/payroll" },
   ];
 }
 
 const INSIGHTS_MATCHES = [
   "/salon-dashboard", "/analytics", "/intelligence",
   "/commission-report", "/salon-earnings", "/register-reports", "/payroll",
+  "/payouts", "/commissions",
 ];
 
 function buildCatalogSubnav(pick: Pick4): SubNavItem[] {
@@ -156,21 +157,13 @@ function buildFinanceSubnav(pick: Pick4): SubNavSection[] {
       headingKey: "reports",
       heading: pick({ en: "Reports", vi: "Báo cáo", es: "Informes", fr: "Rapports" }),
       items: [
-        { label: pick({ en: "Commission",       vi: "Hoa hồng",           es: "Comisión",             fr: "Commission" }),         icon: DollarSign,    to: "/commission-report" },
         { label: pick({ en: "Salon Earnings",   vi: "Thu nhập salon",     es: "Ganancias del salón",  fr: "Revenus du salon" }),   icon: Receipt,       to: "/salon-earnings" },
         { label: pick({ en: "Register Reports", vi: "Báo cáo thu ngân",   es: "Informes de caja",     fr: "Rapports de caisse" }), icon: FileText,      to: "/register-reports" },
-        { label: pick({ en: "Payroll",          vi: "Bảng lương",         es: "Nómina",               fr: "Paie" }),               icon: ClipboardList, to: "/payroll" },
       ],
     },
-    {
-      headingKey: "payouts",
-      heading: pick({ en: "Payouts", vi: "Chi trả", es: "Pagos", fr: "Versements" }),
-      items: [
-        { label: pick({ en: "Payouts Overview", vi: "Tổng quan chi trả", es: "Resumen de pagos",  fr: "Aperçu des versements" }),   icon: Wallet,     to: "/payouts" },
-        { label: pick({ en: "Payouts Ledger",   vi: "Sổ cái chi trả",    es: "Libro de pagos",     fr: "Registre des versements" }), icon: BookOpen,   to: "/payouts/ledger" },
-        { label: pick({ en: "Contractors",      vi: "Nhà thầu",          es: "Contratistas",       fr: "Prestataires" }),           icon: UserCircle, to: "/payouts/contractors" },
-      ],
-    },
+    // Payroll / Commission / Payouts all consolidated into one "Payroll" entry
+    // (see buildInsightsSubnav) — /payouts/* pages still exist as drill-downs
+    // reached from the Payroll hub, not as their own top-level nav section.
   ];
 }
 
@@ -233,11 +226,13 @@ function buildSettingsSubnav(pick: Pick4): SubNavSection[] {
 function buildTeamSubnav(pick: Pick4): SubNavItem[] {
   return [
     { label: pick({ en: "Staff",       vi: "Nhân viên", es: "Personal",    fr: "Personnel" }),   icon: UserCircle, to: "/team" },
-    { label: pick({ en: "Commissions", vi: "Hoa hồng",  es: "Comisiones",  fr: "Commissions" }), icon: DollarSign, to: "/commissions" },
   ];
 }
 
-const TEAM_MATCHES = ["/team", "/staff", "/team-permissions", "/timeclock", "/print-checks", "/commissions"];
+// Commissions/Payroll moved to the single Payroll nav entry (see
+// buildInsightsSubnav → /payroll); /commissions still exists as a page
+// (linked from the Payroll hub) but is no longer its own nav item here.
+const TEAM_MATCHES = ["/team", "/staff", "/team-permissions", "/timeclock", "/print-checks"];
 
 // ── Sub-item link ──────────────────────────────────────────────────────────────
 

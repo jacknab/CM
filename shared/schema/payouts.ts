@@ -53,6 +53,10 @@ export const contractors = pgTable("contractors", {
   taxClassification:   text("tax_classification").default("individual"),
   taxIdLast4:          text("tax_id_last4"),
   stripeAccountId:     text("stripe_account_id"),
+  accountType:         text("account_type").default("custom"),      // express (legacy) | custom
+  country:             text("country").default("US"),
+  requirementsDue:     jsonb("requirements_due").$type<string[] | null>(),
+  stripeTosAcceptedAt: timestamp("stripe_tos_accepted_at"),
   onboardingStatus:    text("onboarding_status").default("pending"), // pending | in_progress | complete | restricted
   bankVerified:        boolean("bank_verified").default(false),
   isActive:            boolean("is_active").default(true),
@@ -80,6 +84,7 @@ export const contractorBankAccounts = pgTable("contractor_bank_accounts", {
   routingLast4:            text("routing_last4"),
   accountLast4:            text("account_last4"),
   stripeBankAccountToken:  text("stripe_bank_account_token"),
+  stripeExternalAccountId: text("stripe_external_account_id"),          // ba_… once attached to the Stripe account
   verificationStatus:      text("verification_status").default("pending"), // pending | verified | failed
   isDefault:               boolean("is_default").default(true),
   createdAt:               timestamp("created_at").defaultNow().notNull(),
@@ -386,6 +391,8 @@ export const contractorCommissions = pgTable("contractor_commissions", {
   paidDate:            timestamp("paid_date", { withTimezone: true }),
   stripePayoutId:      text("stripe_payout_id"),
   stripeTransferId:    text("stripe_transfer_id"),
+  // Set once this accrual row is swept into a payout run (see lib/commissionAccrual.ts).
+  payoutRunItemId:     integer("payout_run_item_id").references(() => payoutRunItems.id),
   notes:               text("notes"),
   createdAt:           timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt:           timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -399,6 +406,33 @@ export const contractorCommissions = pgTable("contractor_commissions", {
 export const insertContractorCommissionSchema = createInsertSchema(contractorCommissions).omit({ id: true, createdAt: true, updatedAt: true });
 export type ContractorCommission       = typeof contractorCommissions.$inferSelect;
 export type InsertContractorCommission = z.infer<typeof insertContractorCommissionSchema>;
+
+// ─── Staff (W-2 employee) Commission Accrual ──────────────────────────────────
+// Same idea as contractorCommissions but for plain employees paid through the
+// legacy payrollRuns/payrollRunItems tracking system (defined in ../schema.ts —
+// referenced here only by a plain integer column to avoid a circular import).
+export const staffCommissionAccruals = pgTable("staff_commission_accruals", {
+  id:               serial("id").primaryKey(),
+  storeId:          integer("store_id").references(() => locations.id, { onDelete: "cascade" }).notNull(),
+  staffId:          integer("staff_id").notNull(),
+  appointmentId:    integer("appointment_id"),
+  serviceId:        integer("service_id"),
+  amount:           integer("amount").notNull(),                    // cents
+  status:           text("status").notNull().default("pending"),    // pending | included_in_run | paid | cancelled
+  earnedDate:       date("earned_date").notNull(),
+  payrollRunItemId: integer("payroll_run_item_id"),                 // set once swept into a payrollRunItems row
+  notes:            text("notes"),
+  createdAt:        timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:        timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("sca_store_status_idx").on(t.storeId, t.status),
+  index("sca_staff_idx").on(t.staffId),
+  index("sca_earned_date_idx").on(t.earnedDate, t.status),
+]);
+
+export const insertStaffCommissionAccrualSchema = createInsertSchema(staffCommissionAccruals).omit({ id: true, createdAt: true, updatedAt: true });
+export type StaffCommissionAccrual       = typeof staffCommissionAccruals.$inferSelect;
+export type InsertStaffCommissionAccrual = z.infer<typeof insertStaffCommissionAccrualSchema>;
 
 // ─── Relations ────────────────────────────────────────────────────────────────
 
