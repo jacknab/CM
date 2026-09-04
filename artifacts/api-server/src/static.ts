@@ -109,7 +109,7 @@ const GEO_PAGES: Array<{ route: string; file: string }> = [
 // Adding a brand-new *top-level* section to App.tsx requires adding its
 // prefix here too; new routes nested under an already-known prefix need no
 // change here.
-const KNOWN_APP_PREFIXES = new Set([
+export const KNOWN_APP_PREFIXES = new Set([
   "accept-invite", "account", "addons", "ai-receptionist", "analytics",
   "api-keys", "app-login", "appointments", "auth", "autumn", "billing",
   "book", "booking", "booking-policies", "business-hours", "business-settings",
@@ -133,7 +133,7 @@ const KNOWN_APP_PREFIXES = new Set([
   "timeclock", "waitlist", "walk-in-board", "walkins", "widget",
 ]);
 
-const NOT_FOUND_HTML = `<!doctype html>
+export const NOT_FOUND_HTML = `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8" /><meta name="robots" content="noindex" /><title>404 Not Found | Certxa</title></head>
 <body><h1>404 Not Found</h1><p>The page you requested does not exist.</p></body>

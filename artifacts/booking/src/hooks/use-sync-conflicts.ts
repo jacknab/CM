@@ -8,7 +8,8 @@ export type ConflictKind =
   | "staff_changed"
   | "batch_resumed"
   | "action_rejected"
-  | "generic";
+  | "generic"
+  | "turn_changed";
 
 export type ConflictEntry = {
   id: string;

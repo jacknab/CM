@@ -345,6 +345,10 @@ export function useCreateClient() {
       return res.json();
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: [BASE] }),
+    // Without this, TanStack Query's default networkMode:"online" pauses the
+    // mutation before mutationFn runs while offline, so the local-queue
+    // branch above is never reached.
+    networkMode: "always",
   });
 }
 
@@ -646,6 +650,10 @@ export function useCreateClientForBooking() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [BASE] });
     },
+    // Without this, TanStack Query's default networkMode:"online" pauses the
+    // mutation before mutationFn runs while offline, so saveLocal() above is
+    // never reached — directly relevant to creating a new walk-in client offline.
+    networkMode: "always",
   });
 }
 

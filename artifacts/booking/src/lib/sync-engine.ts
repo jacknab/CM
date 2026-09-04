@@ -12,7 +12,12 @@ export type SyncConflictKind =
   | "staff_changed"
   | "batch_resumed"
   | "action_rejected"
-  | "generic";
+  | "generic"
+  // The offline Turn pick (TURN_ASSIGN with source:"offline_turn") no longer
+  // matches server-side eligibility by the time it synced — someone else got
+  // there first. The appointment itself is unaffected (staffId already
+  // committed via CREATE_BOOKING); only Turn's lock/audit bookkeeping may be off.
+  | "turn_changed";
 
 type SyncListener = (status: SyncStatus) => void;
 type QueueListener = () => void;
@@ -254,6 +259,23 @@ class SyncEngine {
       };
       await mapField("customerId");
       await mapField("clientId");
+
+      // TURN_ASSIGN/TURN_LOG_OVERRIDE queued for an offline-created walk-in carry
+      // the CREATE_BOOKING temp id in payload.appointmentId — resolve it to the
+      // real id once that CREATE_BOOKING has confirmed earlier in this same pass
+      // (tempIdMappings only lives for the duration of one processActionQueue()
+      // call — cleanupSyncedLocalBookings() below deletes the local record's
+      // linkage at the end of every pass, so a later pass can't recover this).
+      if (action.type === "TURN_ASSIGN" || action.type === "TURN_LOG_OVERRIDE") {
+        const value = payload.appointmentId;
+        if (typeof value === "string" && value.startsWith("local_booking_")) {
+          const realId = tempIdMappings[value];
+          if (!realId) throw new Error(`Waiting for offline booking ${value} to sync before ${action.type}`);
+          payload.appointmentId = realId;
+          changed = true;
+        }
+      }
+
       if (changed) {
         await actionQueueDB.setState(action.id, action.state, { payload });
         return { ...action, payload };
@@ -292,8 +314,11 @@ class SyncEngine {
           }
         }
 
-        // Mark local booking as synced so calendar stops showing temp entry
+        // Mark local booking as synced so calendar stops showing temp entry,
+        // and make the real id available to any TURN_ASSIGN/TURN_LOG_OVERRIDE
+        // queued for this same booking later in this pass (see applyClientMappings).
         if (action.type === "CREATE_BOOKING" && action.entity_temp_id && realId) {
+          tempIdMappings[action.entity_temp_id] = realId;
           await appointmentsCacheDB
             .markLocalBookingSynced(action.entity_temp_id, realId)
             .catch(() => {});
@@ -512,8 +537,21 @@ class SyncEngine {
           body: JSON.stringify(payload),
           credentials: "include",
         });
-        // 409 = already assigned / idempotent — treat as success for this action
-        if (!res.ok && res.status !== 409) throw new Error(`TURN_ASSIGN failed: ${res.status}`);
+        if (res.status === 409) {
+          // For an offline-origin pick (payload carries staffId + source:"offline_turn"),
+          // a 409 means the tech this device claimed while offline is no longer
+          // eligible server-side (someone else got there first) — surface as a
+          // conflict so the UI can tell the front desk, rather than silently
+          // swallowing it. The appointment itself is unaffected either way.
+          if ((payload as any).source === "offline_turn") {
+            const detail = await extractConflictDetail(res, action.type);
+            throw new SyncConflictError("turn_changed", detail);
+          }
+          // Online-origin 409 = already assigned / idempotent — treat as success.
+          try { window.dispatchEvent(new CustomEvent("turn-eligibility-changed")); } catch {}
+          return null;
+        }
+        if (!res.ok) throw new Error(`TURN_ASSIGN failed: ${res.status}`);
         try { window.dispatchEvent(new CustomEvent("turn-eligibility-changed")); } catch {}
         return null;
       }

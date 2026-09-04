@@ -14,6 +14,8 @@ export type LocalBooking = {
   customerId: number | string | null;
   customerName?: string;
   serviceName?: string;
+  servicePrice?: number;
+  addons?: Array<{ id: number; name: string; price: number; duration?: number }>;
   staffName?: string;
   staffColor?: string;
   notes?: string;

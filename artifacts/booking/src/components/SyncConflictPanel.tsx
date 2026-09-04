@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { X, AlertTriangle, RefreshCw, Users, Merge } from "lucide-react";
+import { X, AlertTriangle, RefreshCw, Users, Merge, Repeat } from "lucide-react";
 import { useSyncConflicts, type ConflictEntry, dismissConflict } from "@/hooks/use-sync-conflicts";
 
 const ICONS: Record<ConflictEntry["kind"], React.ReactNode> = {
@@ -9,6 +9,7 @@ const ICONS: Record<ConflictEntry["kind"], React.ReactNode> = {
   batch_resumed: <RefreshCw className="w-4 h-4 shrink-0" />,
   action_rejected: <AlertTriangle className="w-4 h-4 shrink-0" />,
   generic: <AlertTriangle className="w-4 h-4 shrink-0" />,
+  turn_changed: <Repeat className="w-4 h-4 shrink-0" />,
 };
 
 const LABELS: Record<ConflictEntry["kind"], string> = {
@@ -18,6 +19,7 @@ const LABELS: Record<ConflictEntry["kind"], string> = {
   batch_resumed: "Sync resumed from last checkpoint",
   action_rejected: "Action rejected by server",
   generic: "Sync conflict",
+  turn_changed: "Offline walk-in may not match the current turn order — no booking was affected, but you may want to double check who's next.",
 };
 
 function ConflictItem({ entry }: { entry: ConflictEntry }) {

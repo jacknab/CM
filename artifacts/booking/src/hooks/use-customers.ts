@@ -124,5 +124,9 @@ export function useCreateCustomer() {
       }
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [api.customers.list.path] }),
+    // Without this, TanStack Query's default networkMode:"online" pauses the
+    // mutation before mutationFn runs while offline, so saveLocally() above is
+    // never reached.
+    networkMode: "always",
   });
 }

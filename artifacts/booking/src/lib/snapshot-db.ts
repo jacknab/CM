@@ -81,6 +81,34 @@ export type SnapshotBusinessHours = {
   isClosed: boolean;
 };
 
+export type SnapshotTimeclockEntry = {
+  staffId: number;
+  clockIn: string;
+  clockOut: string | null;
+  workDate: string;
+};
+
+export type SnapshotStaffService = {
+  staffId: number;
+  serviceId: number;
+};
+
+// Mirrors getTurnPreferences()'s return shape (artifacts/api-server/src/routes.ts) —
+// shipped as a whole object rather than hand-picked fields so client/server can't
+// drift on which fields exist.
+export type SnapshotTurnSettings = {
+  turnEnabled: boolean;
+  autoAdvanceOnCheckout: boolean;
+  useClockInOrder: boolean;
+  allowManagerOverrides: boolean;
+  turnValueThreshold: number;
+  appointmentExclusionWindowMinutes: number;
+  dequeOrder: number[];
+  lockedStaffIds: number[];
+  shortTurnProtectedId: number | null;
+  pausedStaffIds?: number[];
+};
+
 export type BusinessSnapshot = {
   version: string;
   generatedAt: string;
@@ -93,6 +121,10 @@ export type BusinessSnapshot = {
   appointments?: SnapshotAppointment[];
   storeHours?: SnapshotBusinessHours[];
   staffAvailability?: SnapshotStaffAvailability[];
+  timeclock?: SnapshotTimeclockEntry[];
+  staffServices?: SnapshotStaffService[];
+  turnSettings?: SnapshotTurnSettings;
+  timezone?: string;
 };
 
 let _db: IDBDatabase | null = null;

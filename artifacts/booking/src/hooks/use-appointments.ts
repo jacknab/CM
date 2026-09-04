@@ -37,13 +37,17 @@ function localBookingToAppointment(b: LocalBooking): any {
     customerId: b.customerId,
     customerName: b.customerName ?? "Walk-in",
     serviceName: b.serviceName ?? "",
+    price: b.servicePrice ?? 0,
+    service: b.serviceName ? { name: b.serviceName, price: b.servicePrice ?? 0 } : null,
+    appointmentAddons: (b.addons ?? []).map((addon) => ({
+      addon: { ...addon, price: addon.price ?? 0 },
+    })),
     staffName: b.staffName ?? "",
     staffColor: b.staffColor ?? null,
     notes: b.notes ?? "",
     status: b.status ?? "pending",
     type: b.type ?? "booking",
     createdAt: b.createdAt,
-    service: b.serviceName ? { name: b.serviceName } : null,
     staff: b.staffName ? { name: b.staffName, color: b.staffColor ?? null } : null,
     customer: b.customerName ? { name: b.customerName } : null,
   };
@@ -131,6 +135,8 @@ export function useCreateAppointment() {
         _offlineServiceName?: string;
         _offlineStaffName?: string;
         _offlineStaffColor?: string;
+        _offlineServicePrice?: number;
+        _offlineAddons?: Array<{ id: number; name: string; price: number; duration?: number }>;
       }
     ) => {
       let dateStr: string = String(data.date);
@@ -140,7 +146,16 @@ export function useCreateAppointment() {
         dateStr = utcDate.toISOString();
       }
 
-      const { date: _date, _offlineCustomerName, _offlineServiceName, _offlineStaffName, _offlineStaffColor, ...rest } = data;
+      const {
+        date: _date,
+        _offlineCustomerName,
+        _offlineServiceName,
+        _offlineStaffName,
+        _offlineStaffColor,
+        _offlineServicePrice,
+        _offlineAddons,
+        ...rest
+      } = data;
       // Prefer the live store; fall back to snapshot storeId so offline bookings
       // are always associated with the correct store even before hydration.
       const storeId = selectedStore?.id ?? snapshot?.storeId ?? null;
@@ -216,6 +231,13 @@ export function useCreateAppointment() {
           customerId: data.customerId,
           customerName,
           serviceName,
+          servicePrice: Number(_offlineServicePrice ?? snapshot?.services.find((s) => s.id === data.serviceId)?.price ?? 0),
+          addons: (_offlineAddons ?? []).map((addon) => ({
+            id: addon.id,
+            name: addon.name,
+            price: Number(addon.price ?? 0),
+            duration: Number(addon.duration ?? 0),
+          })),
           staffName,
           staffColor: staffColor ?? undefined,
           notes: (rest as any).notes ?? "",
@@ -233,6 +255,7 @@ export function useCreateAppointment() {
             ...rest,
             storeId,
             date: dateStr,
+            addonIds: (_offlineAddons ?? []).map((addon) => addon.id),
             tempId,
           },
           timestamp: Date.now(),
@@ -296,6 +319,11 @@ export function useCreateAppointment() {
         refetchType: "active",
       });
     },
+    // Without this, TanStack Query's default networkMode:"online" pauses the
+    // mutation BEFORE mutationFn ever runs while navigator.onLine is false —
+    // meaning the offline saveLocally() branch above is unreachable and the
+    // caller sees an eternally-pending mutation (isPending never resolves).
+    networkMode: "always",
   });
 }
 
@@ -407,5 +435,8 @@ export function useUpdateAppointment() {
         });
       }
     },
+    // See useCreateAppointment's comment — without this the queueLocally()
+    // branch above is unreachable while offline (mutationFn never runs).
+    networkMode: "always",
   });
 }

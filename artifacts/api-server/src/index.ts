@@ -188,7 +188,7 @@ const _cjsDirname: string | undefined = (globalThis as any).__dirname;
 import { storage } from "./storage";
 import { seoPageMiddleware } from "./seo-pages";
 import salonDirectoryRouter from "./routes/salonDirectory";
-import { SEO_CONFIG, injectSeoMetadata } from "./static";
+import { SEO_CONFIG, injectSeoMetadata, KNOWN_APP_PREFIXES, NOT_FOUND_HTML } from "./static";
 
 const app = express();
 const httpServer = createServer(app);
@@ -1545,6 +1545,26 @@ async function repairTwilioMessagingServiceInboundWebhook() {
             .send(injectSeoMetadata(indexTemplate, seo));
           return;
         }
+
+        // A path shaped like a static asset (dot in its last segment) that
+        // reached this far means express.static already looked and missed —
+        // never serve the SPA shell for a deleted/stale hashed asset reference.
+        // A path whose first segment isn't a known top-level app route is not
+        // a real page either — return a genuine 404 instead of the SPA shell
+        // so crawlers don't index garbage/scanner URLs as valid pages.
+        const segments = req.path.split("/");
+        const lastSegment = segments[segments.length - 1] ?? "";
+        const firstSegment = segments[1] ?? "";
+        const isAssetShaped = lastSegment.includes(".");
+        const isKnownAppPath = req.path === "/" || KNOWN_APP_PREFIXES.has(firstSegment);
+        if (isAssetShaped || !isKnownAppPath) {
+          res
+            .status(404)
+            .set({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" })
+            .send(NOT_FOUND_HTML);
+          return;
+        }
+
         // Never cache index.html so users always pick up the latest hashed
         // asset filenames after a redeploy.
         res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");

@@ -22,6 +22,9 @@ import { useSelectedStore } from "@/hooks/use-store";
 import { actionQueueDB } from "@/lib/action-queue-db";
 import { useNetworkStatus } from "@/hooks/use-network-status";
 import { syncEngine } from "@/lib/sync-engine";
+import { useSnapshot } from "@/hooks/use-snapshot";
+import { claimNextOfflineTurnTech, type OfflineTurnTechnician } from "@/lib/turn-offline";
+import { turnClaimsDB, type TurnClaim } from "@/lib/turn-claims-db";
 import { getTimezoneAbbr, formatInTz, storeLocalToUtc, getNowInTimezone, toLocalDateStringInTz } from "@/lib/timezone";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -88,6 +91,7 @@ export default function NewBooking() {
   const navigate = useNavigate();
   const { isLoading: authLoading } = useAuth();
   const { selectedStore } = useSelectedStore();
+  const { snapshot } = useSnapshot();
   const { pick } = useLanguage();
   const { translateName, translateDescription } = useEntityTranslations();
 
@@ -259,6 +263,10 @@ export default function NewBooking() {
   const [optionPickerService, setOptionPickerService] = useState<ServiceWithOptions | null>(null);
   const [optionPickerSelected, setOptionPickerSelected] = useState<ServiceOption | null>(null);
   const [walkInBookingPending, setWalkInBookingPending] = useState(false);
+  // Offline walk-in path: true while the local Turn pick + booking submission
+  // is resolving synchronously, so the button shows a spinner instead of
+  // looking inert (see triggerWalkInBooking).
+  const [walkInResolving, setWalkInResolving] = useState(false);
   const [detailsTab, setDetailsTab] = useState<"staff" | "time">(() =>
     isReschedule || isCalendarBooking || calStaffId ? "time" : "staff"
   );
@@ -269,6 +277,15 @@ export default function NewBooking() {
   // handleRequestBooking — avoids stale-closure issues when selectedService
   // is not yet in the deps array.
   const handleRequestBookingRef = useRef<() => void>(() => {});
+  // Stashes the offline Turn pick (technician + local claim record) between
+  // the offline-resolution effect (below) setting selectedSlot and finalize()
+  // reading it to build the TURN_ASSIGN payload / tag the claim.
+  const pendingOfflineTurnRef = useRef<{ technician: OfflineTurnTechnician; claim: TurnClaim } | null>(null);
+  // Re-entrancy guard for the offline-resolution effect — deliberately a ref,
+  // not the walkInResolving *state*: including that state in the effect's own
+  // dependency array would make setWalkInResolving(true) re-trigger the effect
+  // (cleanup-then-rerun), which would cancel the very claim it just started.
+  const walkInOfflineResolvingRef = useRef(false);
   // Tracks whether a booking has already been submitted this session so the
   // "Request Booking" button stays disabled after the mutation resolves and
   // the confirmation dialog is shown (prevents duplicate submissions).
@@ -425,8 +442,10 @@ export default function NewBooking() {
 
   // When the Turn system tells us who is next, lock the slot query to that tech
   // so the walk-in is booked against the correct technician.
+  // Online only — offline is handled by the dedicated effect below, and this
+  // effect's stale-localStorage-backed nextTurnTech must not clobber that pick.
   useEffect(() => {
-    if (!isWalkIn) return;
+    if (!isWalkIn || !navigator.onLine) return;
     if (!nextTurnTech) return;
     if (specificStaffId === nextTurnTech.id) return;
     setStaffMode("specific");
@@ -434,8 +453,9 @@ export default function NewBooking() {
     setSelectedSlot(null);
   }, [isWalkIn, nextTurnTech?.id]);
 
+  // Online only — see above.
   useEffect(() => {
-    if (!isWalkIn) return;
+    if (!isWalkIn || !navigator.onLine) return;
     if (selectedSlot) return;
     if (slotsLoading) return;
     if (!slots || slots.length === 0) return;
@@ -444,6 +464,54 @@ export default function NewBooking() {
     setSelectedSlot(next);
     setSelectedStaff(staffList?.find((s: Staff) => s.id === next.staffId) || null);
   }, [isWalkIn, selectedSlot, slots, slotsLoading, staffList]);
+
+  // Offline walk-in resolution: bypasses useAvailableSlots (a future-slot search
+  // tool — the wrong shape for "who's turn-next, right now") entirely. Computes
+  // a real Turn-fair pick from the snapshot + this device's local claim ledger,
+  // claims it (so a second offline walk-in moments later doesn't repick the
+  // same tech), and sets selectedSlot to "now" — the effect below then fires
+  // handleRequestBooking once that state update lands.
+  useEffect(() => {
+    if (!walkInBookingPending || navigator.onLine) return;
+    if (selectedSlot || walkInOfflineResolvingRef.current) return;
+
+    if (!snapshot || !selectedStore?.id) {
+      setWalkInBookingPending(false);
+      void appAlert(t.noStaffWalkinAlert);
+      navigate("/calendar");
+      return;
+    }
+
+    let cancelled = false;
+    walkInOfflineResolvingRef.current = true;
+    setWalkInResolving(true);
+    claimNextOfflineTurnTech(snapshot, selectedStore.id, selectedService?.id ?? null)
+      .then((result) => {
+        if (cancelled) return;
+        if (!result) {
+          setWalkInBookingPending(false);
+          void appAlert(t.noStaffWalkinAlert);
+          navigate("/calendar");
+          return;
+        }
+        pendingOfflineTurnRef.current = result;
+        setStaffMode("specific");
+        setSpecificStaffId(result.technician.id);
+        setSelectedStaff(staffList?.find((s: Staff) => s.id === result.technician.id) ?? null);
+        setSelectedSlot({ time: new Date().toISOString(), staffId: result.technician.id, staffName: result.technician.name });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setWalkInBookingPending(false);
+        void appAlert(t.bookingFailedGeneric);
+      })
+      .finally(() => {
+        walkInOfflineResolvingRef.current = false;
+        if (!cancelled) setWalkInResolving(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [walkInBookingPending, selectedSlot, snapshot, selectedStore?.id, selectedService?.id, staffList, navigate, t]);
 
   useEffect(() => {
     if (!walkInBookingPending) return;
@@ -851,23 +919,42 @@ export default function NewBooking() {
 
     const staffId = slotToUse.staffId;
 
-    const finalize = (appointmentId?: number) => {
+    const finalize = (appointmentId?: number | string) => {
       if (isWalkIn && selectedStore?.id) {
-        // Do NOT pass staffId — the server picks whoever is #1 in the queue and
-        // applies the Consideration Lock. Passing staffId would flag it as a
-        // manual request-bypass, skipping the lock entirely.
-        const turnPayload = {
+        // Online: do NOT pass staffId — the server picks whoever is #1 in the
+        // queue and applies the Consideration Lock. Passing staffId would flag
+        // it as a manual request-bypass, skipping the lock entirely.
+        //
+        // Offline: the client already ran Turn's own ranking (pendingOfflineTurnRef,
+        // set by the offline-resolution effect above) — pass that staffId back
+        // plus source:"offline_turn" so the server still applies the lock (it
+        // treats an unlabeled staffId as a manual override otherwise).
+        const offlineTurn = pendingOfflineTurnRef.current;
+        const turnPayload: Record<string, unknown> = {
           storeId: selectedStore.id,
           appointmentId,
           serviceId: selectedService?.id ?? null,
+          ...(offlineTurn ? { staffId: offlineTurn.technician.id, source: "offline_turn" } : {}),
         };
         if (!navigator.onLine) {
           const tempId = `turn_assign_${Date.now()}`;
+          // appointmentId is the CREATE_BOOKING temp id here (a "local_booking_..."
+          // string) — sync-engine's applyClientMappings resolves it to the real
+          // numeric id once CREATE_BOOKING confirms in the same sync pass. Give
+          // this action an explicit sequence_index derived from that temp id's
+          // embedded timestamp (+ a fixed offset) so it's guaranteed to sort
+          // after its parent CREATE_BOOKING, not left to Date.now() coincidence.
+          const parentTs = typeof appointmentId === "string" ? Number(appointmentId.split("_")[2]) : NaN;
+          const sequence_index = Number.isFinite(parentTs) ? parentTs + 1000 : Date.now();
+          if (offlineTurn) {
+            turnClaimsDB.tagClaim(offlineTurn.claim.id, String(appointmentId ?? "")).catch(() => {});
+          }
           actionQueueDB.add({
             type: "TURN_ASSIGN",
             entity_temp_id: tempId,
             payload: turnPayload,
             timestamp: Date.now(),
+            sequence_index,
             idempotency_key: tempId,
           }).catch(() => {});
         } else {
@@ -908,6 +995,7 @@ export default function NewBooking() {
           }).catch(() => {});
         }
       }
+      pendingOfflineTurnRef.current = null;
       setBookingSubmitted(true);
       setShowConfirmation(true);
     };
@@ -920,6 +1008,13 @@ export default function NewBooking() {
         customerId: selectedCustomer?.id || undefined,
         clientId: selectedCustomer?.id || undefined,
         _offlineCustomerName: selectedCustomer?.name || undefined,
+        _offlineServicePrice: Number(selectedService.price),
+        _offlineAddons: selectedAddons.map((addon) => ({
+          id: addon.id,
+          name: addon.name,
+          price: Number(addon.price),
+          duration: Number(addon.duration ?? 0),
+        })),
         duration: totalDuration,
         // Drop a stale resource pick if it doesn't match what the currently
         // selected service actually needs (e.g. the calendar's resource view
@@ -1456,9 +1551,14 @@ export default function NewBooking() {
                 <Button
                   className="h-12 px-6 bg-primary hover:bg-primary/90 text-white shrink-0 rounded-xl font-semibold"
                   onClick={handleContinueToDetails}
+                  disabled={walkInResolving || createAppointment.isPending || bookingSubmitted}
                   data-testid="button-request-booking-addons"
                 >
-                  {isCalendarBooking || isWalkIn ? t.bookBtn : t.continueBtn}
+                  {walkInResolving || createAppointment.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    isCalendarBooking || isWalkIn ? t.bookBtn : t.continueBtn
+                  )}
                 </Button>
               </div>
             </div>
@@ -1568,12 +1668,17 @@ export default function NewBooking() {
                   <Button
                     className="w-full bg-gray-900 hover:bg-gray-800 text-white h-12"
                     onClick={handleContinueToDetails}
+                    disabled={walkInResolving || createAppointment.isPending || bookingSubmitted}
                     data-testid="button-request-booking-addons"
                   >
-                    <span className="flex flex-col items-center leading-tight">
-                      <span className="font-semibold">{t.requestBooking}</span>
-                      <span className="font-semibold opacity-90">{t.minSuffix(totalDuration)}</span>
-                    </span>
+                    {walkInResolving || createAppointment.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <span className="flex flex-col items-center leading-tight">
+                        <span className="font-semibold">{t.requestBooking}</span>
+                        <span className="font-semibold opacity-90">{t.minSuffix(totalDuration)}</span>
+                      </span>
+                    )}
                   </Button>
                 )
               }

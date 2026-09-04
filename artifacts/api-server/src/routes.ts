@@ -86,6 +86,7 @@ import {
   appointmentAddons,
   turnAssignmentLog,
   staffAvailability,
+  staffServices,
   platformCreditTransactions,
   storeSubscriptions,
   subscriptionPlans,
@@ -5120,6 +5121,18 @@ If you have any questions, please contact your administrator.
 
   app.post(api.appointments.create.path, isAuthenticated, async (req, res) => {
     try {
+      const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
+      if (idempotencyKey) {
+        const cached = processedIdempotencyKeys.get(idempotencyKey);
+        if (cached) {
+          if (Date.now() - cached.ts < IDEMPOTENCY_TTL_MS) {
+            const cachedBody = cached.body && typeof cached.body === "object" ? cached.body : {};
+            return res.status(200).json(Object.assign({}, cachedBody, { alreadyProcessed: true }));
+          }
+          processedIdempotencyKeys.delete(idempotencyKey);
+        }
+      }
+
       const sessionStoreId = await resolveSessionStoreId(req);
       if (!sessionStoreId) return res.status(403).json({ message: "No store context" });
 
@@ -5390,6 +5403,15 @@ If you have any questions, please contact your administrator.
       // includes their time — do NOT re-extend).
       if (apptPackage && apptPackage.addonIds.length > 0) {
         await storage.setAppointmentAddons(appointment.id, apptPackage.addonIds);
+      } else if (Array.isArray(req.body.addonIds) && req.body.addonIds.length > 0) {
+        await storage.setAppointmentAddons(
+          appointment.id,
+          req.body.addonIds.map((id: unknown) => Number(id)).filter((id: number) => Number.isFinite(id))
+        );
+      }
+
+      if (idempotencyKey) {
+        processedIdempotencyKeys.set(idempotencyKey, { ts: Date.now(), body: appointment });
       }
 
       // Log appointment creation event (fire-and-forget)
@@ -16155,28 +16177,14 @@ or
   app.get("/api/offline/snapshot", isAuthenticated, async (req, res) => {
     try {
       const userId = (req.session as any)?.userId;
-      const storeIdParam = req.query.storeId ? parseInt(req.query.storeId as string) : null;
 
-      // Fetch ALL stores owned by this authenticated user so we can verify ownership.
-      const userStores = await db.select().from(locations).where(eq(locations.userId, userId));
-      if (!userStores.length) return res.status(404).json({ message: "Store not found" });
-
-      // If a storeId was requested, it MUST belong to the authenticated user.
-      // Never trust a client-supplied storeId without an ownership check — doing so
-      // would allow any logged-in user to read another salon's data (tenant leakage).
-      let storeId: number;
-      if (storeIdParam !== null) {
-        const owned = userStores.find((s) => s.id === storeIdParam);
-        if (!owned) {
-          console.warn(
-            `[snapshot] TENANT ISOLATION BLOCK — userId=${userId} requested storeId=${storeIdParam} which they do not own. Owned stores: [${userStores.map((s) => s.id).join(", ")}]`
-          );
-          return res.status(403).json({ message: "Forbidden: store does not belong to your account" });
-        }
-        storeId = owned.id;
-      } else {
-        storeId = userStores[0].id;
-      }
+      // resolveSessionStoreId() handles both owner sessions (userId → locations,
+      // with ownership validation against a client-hinted storeId) and staff
+      // sessions (staffId → staff.store_id, always their own store — no hint
+      // trusted at all). Staff members create walk-ins and need offline data
+      // too, so this must not be owner-only.
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
 
       const windowStart = new Date();
       windowStart.setHours(0, 0, 0, 0);
@@ -16184,7 +16192,15 @@ or
       windowEnd.setDate(windowEnd.getDate() + 30);
       windowEnd.setHours(23, 59, 59, 999);
 
-      const [categoriesData, servicesData, addonsData, staffData, customersData, hoursData, appointmentsData] = await Promise.all([
+      // Store-local "today" — same computation as getTurnEligibility() (routes.ts
+      // ~line 440-443) — must stay consistent so the client's offline turn
+      // ranking (which reads this snapshot) agrees with the server's when online.
+      const [storeTzRow] = await db.select({ timezone: locations.timezone }).from(locations).where(eq(locations.id, storeId)).limit(1);
+      const storeTimezone = (storeTzRow as any)?.timezone ?? "UTC";
+      const localNowForToday = toZonedTime(new Date(), storeTimezone);
+      const today = `${localNowForToday.getFullYear()}-${String(localNowForToday.getMonth() + 1).padStart(2, "0")}-${String(localNowForToday.getDate()).padStart(2, "0")}`;
+
+      const [categoriesData, servicesData, addonsData, staffData, customersData, hoursData, appointmentsData, timeclockData, turnSettingsData] = await Promise.all([
         db.select({
           id: serviceCategories.id,
           name: serviceCategories.name,
@@ -16256,6 +16272,18 @@ or
             sql`${appointments.date} <= ${windowEnd.toISOString()}`
           )
         ).orderBy(asc(appointments.date)),
+
+        db.select({
+          staffId: timeclock.staffId,
+          clockIn: timeclock.clockIn,
+          clockOut: timeclock.clockOut,
+          workDate: timeclock.workDate,
+        }).from(timeclock).where(and(eq(timeclock.storeId, storeId), eq(timeclock.workDate, today)))
+          .orderBy(asc(timeclock.clockIn)),
+
+        // Ship the whole turn-settings object (not hand-picked fields) so client
+        // and server can never drift on which fields exist — see getTurnPreferences().
+        getTurnPreferences(storeId),
       ]);
 
       // Fetch staff availability for all active staff members
@@ -16263,15 +16291,27 @@ or
         ? await Promise.all(staffData.map(s => storage.getStaffAvailability(s.id))).then(r => r.flat())
         : [];
 
+      // Staff→service eligibility mapping, scoped to this store's staff only.
+      const staffIdsForStore = staffData.map(s => s.id);
+      const staffServicesData = staffIdsForStore.length > 0
+        ? await db.select({ staffId: staffServices.staffId, serviceId: staffServices.serviceId })
+            .from(staffServices)
+            .where(inArray(staffServices.staffId, staffIdsForStore))
+        : [];
+
+      const staffId = (req.session as any)?.staffId;
       console.log(
-        `[snapshot] Generated for userId=${userId} storeId=${storeId} — ` +
+        `[snapshot] Generated for userId=${userId ?? "-"} staffId=${staffId ?? "-"} storeId=${storeId} — ` +
         `categories=${categoriesData.length} services=${servicesData.length} ` +
         `addons=${addonsData.length} staff=${staffData.length} clients=${customersData.length} ` +
         `hours=${hoursData.length} availability=${staffAvailabilityData.length} ` +
-        `appointments=${appointmentsData.length} (today+30d)`
+        `appointments=${appointmentsData.length} (today+30d) timeclock=${timeclockData.length} staffServices=${staffServicesData.length}`
       );
 
-      const raw = JSON.stringify({ categoriesData, servicesData, addonsData, staffData, customersData, hoursData, appointmentsData });
+      const raw = JSON.stringify({
+        categoriesData, servicesData, addonsData, staffData, customersData, hoursData, appointmentsData,
+        timeclockData, staffServicesData, turnSettingsData, storeTimezone,
+      });
       const version = crypto.createHash("sha1").update(raw).digest("hex").slice(0, 12);
 
       const snapshot = {
@@ -16308,6 +16348,15 @@ or
           startTime: a.startTime,
           endTime: a.endTime,
         })),
+        timeclock: timeclockData.map(t => ({
+          staffId: t.staffId,
+          clockIn: (t.clockIn instanceof Date ? t.clockIn : new Date(t.clockIn)).toISOString(),
+          clockOut: t.clockOut ? (t.clockOut instanceof Date ? t.clockOut : new Date(t.clockOut)).toISOString() : null,
+          workDate: t.workDate,
+        })),
+        staffServices: staffServicesData,
+        turnSettings: turnSettingsData,
+        timezone: storeTimezone,
       };
 
       res.setHeader("Cache-Control", "no-store");
@@ -16644,7 +16693,10 @@ or
       // Remove tech from the active queue entirely while they serve — Index 1 slides up to Index 0.
       // Tech re-enters the queue at checkout (unshift for short turn, push for standard turn).
       // Request bypass: the tech keeps their existing position (no lock).
-      const isRequestBypass = !!requestedStaffId;
+      // Exception: source === "offline_turn" means the client itself already
+      // ran Turn's own ranking while offline (not a manual front-desk override) —
+      // still apply the lock, same as an unrequested online pick would.
+      const isRequestBypass = !!requestedStaffId && req.body.source !== "offline_turn";
       if (!isRequestBypass) {
         const freshPrefs = await getTurnPreferences(storeId);
         const deque: number[] = Array.isArray(freshPrefs.dequeOrder)
@@ -16667,6 +16719,9 @@ or
       }
 
       // Log the assignment for favoritism monitoring
+      if (req.body.appointmentId && !Number.isFinite(Number(req.body.appointmentId))) {
+        console.warn(`[turn] assign-walkin received an unresolved temp appointmentId: ${req.body.appointmentId} — audit log will have no appointment linkage`);
+      }
       const appointmentId = req.body.appointmentId ? Number(req.body.appointmentId) : null;
       const recommendedTech = eligibility.eligibleTechnicians[0];
       try {

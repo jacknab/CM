@@ -9,9 +9,9 @@ import { checkAndRunMigrations } from "@/lib/storage-version";
 import { useSelectedStore } from "@/hooks/use-store";
 import { enterpriseSyncEngine } from "@/lib/enterprise-sync-engine";
 import { appointmentsCacheDB } from "@/lib/appointments-cache-db";
+import { turnClaimsDB } from "@/lib/turn-claims-db";
 import { api } from "@shared/routes";
 import { toast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
 
 function todayDateStr(): string {
   return new Date().toISOString().slice(0, 10);
@@ -44,17 +44,17 @@ async function runFullSnapshot(storeId: number): Promise<void> {
 
 export function SnapshotProvider({ children }: { children: React.ReactNode }) {
   const { selectedStore } = useSelectedStore();
-  const { user } = useAuth();
-  const isStaff = user?.role === "staff";
   const storeId = selectedStore?.id;
   const initialized = useRef<number | null>(null);
   const syncingRef = useRef(false);
   const state = useSnapshotState();
 
   useEffect(() => {
-    // Staff users don't own stores — the snapshot API only serves store owners.
-    // Skip snapshot initialization entirely for staff to avoid 404 noise.
-    if (!storeId || initialized.current === storeId || isStaff) return;
+    // /api/offline/snapshot resolves storeId for both owner sessions (userId)
+    // and staff sessions (staffId → their assigned store), so staff get the
+    // same offline snapshot/cache as owners — staff are the ones creating
+    // walk-ins at the front desk and need this to work offline too.
+    if (!storeId || initialized.current === storeId) return;
     initialized.current = storeId;
 
     syncEngine.setStoreId(storeId);
@@ -92,6 +92,11 @@ export function SnapshotProvider({ children }: { children: React.ReactNode }) {
     const handleReconnect = async () => {
       await reconciliationManager.begin([
         () => syncEngine.runSync(storeId),
+        // Local Turn claims (turn-claims-db.ts) exist only to stop this device
+        // from re-picking the same tech for a second offline walk-in. Once
+        // runSync() above has applied any queued TURN_ASSIGN actions, the
+        // server's own lockedStaffIds is authoritative again — clear them.
+        () => turnClaimsDB.clearForStore(storeId),
         () => snapshotService.refresh(storeId),
         () => enterpriseSyncEngine.runBulkSync(storeId),
         () => prewarmAppointmentsCache(storeId),
@@ -102,10 +107,14 @@ export function SnapshotProvider({ children }: { children: React.ReactNode }) {
     return () => unregister();
   }, [storeId]);
 
-  // ── Hourly auto-refresh: keep the 30-day booking cache current ─────────────
+  // ── Auto-refresh: keep the 30-day booking cache + Turn state current ───────
+  // 30 min (was 60) — Turn/staff state (clock-ins, deque order, locks) can
+  // change fast during a shift, and a fresher snapshot means a more accurate
+  // offline Turn pick. Tradeoff: doubles snapshot-fetch frequency per active
+  // device; each call is storeId-scoped/indexed so per-call cost is small.
   useEffect(() => {
     if (!storeId) return;
-    const HOUR_MS = 60 * 60 * 1000;
+    const SNAPSHOT_REFRESH_MS = 30 * 60 * 1000;
 
     const maybeRefresh = async () => {
       if (!navigator.onLine) return;
@@ -115,12 +124,12 @@ export function SnapshotProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       const ageMs = Date.now() - new Date(snap.generatedAt).getTime();
-      if (ageMs >= HOUR_MS) {
+      if (ageMs >= SNAPSHOT_REFRESH_MS) {
         await runFullSnapshot(storeId).catch(() => {});
       }
     };
 
-    const timer = setInterval(maybeRefresh, HOUR_MS);
+    const timer = setInterval(maybeRefresh, SNAPSHOT_REFRESH_MS);
     return () => clearInterval(timer);
   }, [storeId]);
 
