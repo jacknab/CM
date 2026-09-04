@@ -125,6 +125,7 @@ function buildCatalogSubnav(pick: Pick4): SubNavItem[] {
   return [
     { label: pick({ en: "Categories", vi: "Danh mục",       es: "Categorías",    fr: "Catégories" }),  icon: Tag,           to: "/catalog/categories" },
     { label: pick({ en: "Services",   vi: "Dịch vụ",        es: "Servicios",     fr: "Services" }),     icon: Scissors,      to: "/catalog/services" },
+    { label: pick({ en: "Packages",   vi: "Gói dịch vụ",    es: "Paquetes",      fr: "Forfaits" }),     icon: Package,       to: "/catalog/packages" },
     { label: pick({ en: "Add-Ons",    vi: "Dịch vụ thêm",   es: "Complementos",  fr: "Suppléments" }),  icon: ClipboardList, to: "/catalog/addons" },
     { label: pick({ en: "Nail Config", vi: "Cấu hình móng", es: "Config. de uñas", fr: "Config. ongles" }), icon: Star,       to: "/catalog/nail-services" },
     { label: pick({ en: "Products",   vi: "Sản phẩm",       es: "Productos",     fr: "Produits" }),     icon: ShoppingCart,  to: "/catalog/products" },

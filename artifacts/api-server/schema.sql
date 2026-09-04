@@ -108,7 +108,8 @@ CREATE TABLE IF NOT EXISTS appointments (
     calendar_hidden boolean DEFAULT false NOT NULL,
     created_at timestamp without time zone DEFAULT now(),
     service_price numeric(10,2),
-    commission_rate numeric(5,2)
+    commission_rate numeric(5,2),
+    package_id integer
 );
 CREATE SEQUENCE IF NOT EXISTS appointments_id_seq
     AS integer
@@ -1748,6 +1749,43 @@ CREATE TABLE IF NOT EXISTS service_categories (
     store_id integer,
     sort_order integer DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS packages (
+    id integer NOT NULL,
+    store_id integer,
+    name text NOT NULL,
+    description text,
+    image_url text,
+    pricing_mode text DEFAULT 'sum'::text NOT NULL,
+    fixed_price numeric(10,2),
+    sort_order integer DEFAULT 0 NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    hidden_from_public boolean DEFAULT false,
+    created_at timestamp without time zone DEFAULT now()
+);
+CREATE SEQUENCE IF NOT EXISTS packages_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER SEQUENCE packages_id_seq OWNED BY packages.id;
+CREATE TABLE IF NOT EXISTS package_items (
+    id integer NOT NULL,
+    package_id integer NOT NULL,
+    item_type text NOT NULL,
+    service_id integer,
+    addon_id integer,
+    sort_order integer DEFAULT 0 NOT NULL
+);
+CREATE SEQUENCE IF NOT EXISTS package_items_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER SEQUENCE package_items_id_seq OWNED BY package_items.id;
 CREATE SEQUENCE IF NOT EXISTS service_categories_id_seq
     AS integer
     START WITH 1

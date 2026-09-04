@@ -287,6 +287,9 @@ export interface AtomicCreateInput {
    */
   calendarHidden?: boolean;
   paymentStatus?: string;
+  /** Set when this booking is a Catalog Package. serviceId still holds the
+   *  package's primary service; duration is already the package total. */
+  packageId?: number | null;
 }
 
 /**
@@ -439,6 +442,7 @@ export async function atomicCreateBooking(
         depositPaid:        input.depositPaid ?? false,
         resourceId:         input.resourceId ?? null,
         calendarHidden:     input.calendarHidden ?? false,
+        packageId:          input.packageId ?? null,
         ...(input.paymentStatus ? { paymentStatus: input.paymentStatus } : {}),
       } as any)
       .returning({ id: appointments.id });

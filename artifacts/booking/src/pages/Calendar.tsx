@@ -2607,7 +2607,7 @@ export default function Calendar() {
                     const resEmoji = ({ station: "💅", chair: "🪑", room: "🚪", other: "🛋️" } as Record<string, string>)[resource.type] ?? "🛋️";
                     const resTypeLabel = ({ station: "Nail Station", chair: "Pedicure Chair", room: "Treatment Room", other: "Resource" } as Record<string, string>)[resource.type] ?? resource.type;
                     const resApts = (appointments ?? []).filter((a: any) =>
-                      a.resourceId === resource.id && isOnStoreDate(a.date, currentDate, timezone)
+                      a.resourceId === resource.id && isOnStoreDate(a.date, currentDate, timezone) && !a.calendarHidden
                     );
                     return (
                       <div key={resource.id} className={activeResources.length <= 10 ? "flex-1 min-w-0" : "flex-none"} style={activeResources.length <= 10 ? { minWidth: "120px" } : { width: `${STAFF_CALENDAR_COLUMN_WIDTH}px`, minWidth: `${STAFF_CALENDAR_COLUMN_WIDTH}px`, maxWidth: `${STAFF_CALENDAR_COLUMN_WIDTH}px` }}>

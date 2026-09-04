@@ -10,6 +10,7 @@
 
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "../db";
+import { matchLibraryImages } from "./serviceImageMatch";
 import {
   services,
   nailSizes,
@@ -218,15 +219,42 @@ export async function getPublicServiceNailConfig(serviceId: number) {
   });
   const onlyEnabled = (rows: any[]) => rows.filter((r) => r.isEnabled !== false).map(trim);
 
+  const sizes = onlyEnabled(full.sizes);
+  const shapes = onlyEnabled(full.shapes);
+  const effects = onlyEnabled(full.effects);
+
+  // Any card without its own image falls back to the best match from the
+  // Service Images Library so the kiosk pickers show a real photo, not a tile.
+  await Promise.all([
+    fillImagesFromLibrary(sizes,  ["nail", "length", "size"]),
+    fillImagesFromLibrary(shapes, ["nail", "shape"]),
+    fillImagesFromLibrary(effects, ["nail", "art", "design", "polish"]),
+  ]);
+
   return {
     enabled: true as const,
     lengthRequired: !!full.config.lengthRequired,
     shapeRequired: !!full.config.shapeRequired,
     artRequired: !!full.config.artRequired,
-    sizes: onlyEnabled(full.sizes),
-    shapes: onlyEnabled(full.shapes),
-    effects: onlyEnabled(full.effects),
+    sizes,
+    shapes,
+    effects,
   };
+}
+
+async function fillImagesFromLibrary(
+  rows: { name: string; imageUrl: string | null }[],
+  context: string[],
+): Promise<void> {
+  const need = rows.filter((r) => !r.imageUrl).map((r) => r.name);
+  if (!need.length) return;
+  const matched = await matchLibraryImages(need, context);
+  for (const r of rows) {
+    if (!r.imageUrl) {
+      const hit = matched.get(r.name);
+      if (hit) r.imageUrl = hit;
+    }
+  }
 }
 
 type JunctionEntry = {

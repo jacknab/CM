@@ -314,6 +314,35 @@ export const appointmentAddons = pgTable("appointment_addons", {
   addonId: integer("addon_id").references(() => addons.id).notNull(),
 });
 
+// ── Packages ────────────────────────────────────────────────────────────────
+// A package bundles existing services + add-ons into one named item. Duration
+// is always the sum of the components; price is that sum ('sum') or a fixed
+// owner-set amount ('fixed'). A booked package is a single appointment with
+// `packageId` set (see appointments.packageId) and the package's add-ons
+// attached as normal appointment_addons rows.
+export const packages = pgTable("packages", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id").references(() => locations.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  imageUrl: text("image_url"),
+  pricingMode: text("pricing_mode").notNull().default("sum"), // "sum" | "fixed"
+  fixedPrice: decimal("fixed_price", { precision: 10, scale: 2 }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  hiddenFromPublic: boolean("hidden_from_public").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const packageItems = pgTable("package_items", {
+  id: serial("id").primaryKey(),
+  packageId: integer("package_id").references(() => packages.id).notNull(),
+  itemType: text("item_type").notNull(),                     // "service" | "addon"
+  serviceId: integer("service_id").references(() => services.id),
+  addonId: integer("addon_id").references(() => addons.id),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
 export const staff = pgTable("staff", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -417,6 +446,10 @@ export const appointments = pgTable("appointments", {
   // consumers fall back to the live value when absent. See migration 0156.
   servicePrice:            decimal("service_price", { precision: 10, scale: 2 }),
   commissionRate:          decimal("commission_rate", { precision: 5, scale: 2 }),
+  // Set when this appointment was booked as a Catalog Package (see packages).
+  // serviceId still points at the package's primary service so existing
+  // scheduling / calendar / commission code is unaffected.
+  packageId:               integer("package_id").references(() => packages.id),
 });
 
 export const products = pgTable("products", {
@@ -1258,6 +1291,8 @@ export const insertServiceOptionSchema = createInsertSchema(serviceOptions).omit
 export const insertAddonSchema = createInsertSchema(addons).omit({ id: true });
 export const insertServiceAddonSchema = createInsertSchema(serviceAddons).omit({ id: true });
 export const insertAppointmentAddonSchema = createInsertSchema(appointmentAddons).omit({ id: true });
+export const insertPackageSchema = createInsertSchema(packages).omit({ id: true, createdAt: true });
+export const insertPackageItemSchema = createInsertSchema(packageItems).omit({ id: true });
 export const insertStaffSchema = createInsertSchema(staff).omit({ id: true });
 export const insertStaffServiceSchema = createInsertSchema(staffServices).omit({ id: true });
 export const insertStaffAvailabilitySchema = createInsertSchema(staffAvailability).omit({ id: true });
@@ -1329,6 +1364,31 @@ export type InsertServiceAddon = z.infer<typeof insertServiceAddonSchema>;
 
 export type AppointmentAddon = typeof appointmentAddons.$inferSelect;
 export type InsertAppointmentAddon = z.infer<typeof insertAppointmentAddonSchema>;
+
+export type Package = typeof packages.$inferSelect;
+export type InsertPackage = z.infer<typeof insertPackageSchema>;
+export type PackageItem = typeof packageItems.$inferSelect;
+
+/** One resolved component of a package, hydrated with name/price/duration. */
+export interface PackageItemDetail {
+  itemType: "service" | "addon";
+  serviceId: number | null;
+  addonId: number | null;
+  name: string;
+  price: number;
+  duration: number;
+}
+
+/** A package plus its hydrated items and the three derived numbers. */
+export type PackageWithItems = Package & {
+  items: PackageItemDetail[];
+  /** Σ component durations (minutes) — always the scheduling duration. */
+  duration: number;
+  /** Σ component prices. */
+  listPrice: number;
+  /** pricingMode === "fixed" ? Number(fixedPrice) : listPrice */
+  price: number;
+};
 
 export type Staff = typeof staff.$inferSelect;
 export type InsertStaff = z.infer<typeof insertStaffSchema>;

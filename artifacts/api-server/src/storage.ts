@@ -2,6 +2,7 @@ import {
   locations, services, serviceOptions, staff, appointments, products,
   clients, clientPhones, clientEmails, clientNotes,
   serviceCategories, addons, serviceAddons, appointmentAddons, staffServices, staffAvailability,
+  packages, packageItems,
   calendarSettings, cashDrawerSessions, drawerActions, businessHours,
   businessDays, businessDayActions,
   smsSettings, smsLog, mailSettings,
@@ -13,6 +14,7 @@ import {
   type Addon, type InsertAddon,
   type ServiceAddon, type InsertServiceAddon,
   type AppointmentAddon, type InsertAppointmentAddon,
+  type Package, type InsertPackage, type PackageWithItems, type PackageItemDetail,
   type Staff, type InsertStaff,
   type StaffService, type InsertStaffService,
   type StaffAvailability, type InsertStaffAvailability,
@@ -85,6 +87,13 @@ export interface IStorage {
   setAddonServices(addonId: number, serviceIds: number[]): Promise<void>;
   createServiceAddon(sa: InsertServiceAddon): Promise<ServiceAddon>;
   deleteServiceAddon(id: number): Promise<void>;
+
+  getPackages(storeId?: number): Promise<PackageWithItems[]>;
+  getPackage(id: number): Promise<PackageWithItems | undefined>;
+  createPackage(pkg: InsertPackage, items: { itemType: "service" | "addon"; serviceId?: number | null; addonId?: number | null }[]): Promise<PackageWithItems>;
+  updatePackage(id: number, pkg: Partial<InsertPackage>, items?: { itemType: "service" | "addon"; serviceId?: number | null; addonId?: number | null }[]): Promise<PackageWithItems | undefined>;
+  deletePackage(id: number): Promise<void>;
+  reorderPackages(storeId: number, orderedIds: number[]): Promise<void>;
 
   getAppointmentAddons(appointmentId: number): Promise<(AppointmentAddon & { addon: Addon })[]>;
   setAppointmentAddons(appointmentId: number, addonIds: number[]): Promise<void>;
@@ -385,6 +394,120 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteServiceAddon(id: number): Promise<void> {
     await db.delete(serviceAddons).where(eq(serviceAddons.id, id));
+  }
+
+  // ── Packages ──────────────────────────────────────────────────────────────
+  // Hydrate a package's item rows with the current name / price / duration of
+  // each component, and compute the three derived numbers (duration, listPrice,
+  // price). Kept in one place so every read path is consistent.
+  private async _hydratePackages(pkgs: Package[]): Promise<PackageWithItems[]> {
+    if (pkgs.length === 0) return [];
+    const pkgIds = pkgs.map(p => p.id);
+    const rows = await db.select().from(packageItems)
+      .where(inArray(packageItems.packageId, pkgIds))
+      .orderBy(packageItems.sortOrder, packageItems.id);
+
+    const svcIds = [...new Set(rows.filter(r => r.serviceId).map(r => r.serviceId as number))];
+    const adnIds = [...new Set(rows.filter(r => r.addonId).map(r => r.addonId as number))];
+    const svcRows = svcIds.length
+      ? await db.select({ id: services.id, name: services.name, price: services.price, duration: services.duration })
+          .from(services).where(inArray(services.id, svcIds))
+      : [];
+    const adnRows = adnIds.length
+      ? await db.select({ id: addons.id, name: addons.name, price: addons.price, duration: addons.duration })
+          .from(addons).where(inArray(addons.id, adnIds))
+      : [];
+    const svcMap = new Map(svcRows.map(s => [s.id, s]));
+    const adnMap = new Map(adnRows.map(a => [a.id, a]));
+
+    const byPkg = new Map<number, PackageItemDetail[]>();
+    for (const r of rows) {
+      const src = r.itemType === "addon" ? adnMap.get(r.addonId as number) : svcMap.get(r.serviceId as number);
+      if (!src) continue; // component was deleted — drop it from the hydrated view
+      const arr = byPkg.get(r.packageId) ?? [];
+      arr.push({
+        itemType: r.itemType === "addon" ? "addon" : "service",
+        serviceId: r.serviceId ?? null,
+        addonId: r.addonId ?? null,
+        name: src.name,
+        price: Number(src.price) || 0,
+        duration: Number(src.duration) || 0,
+      });
+      byPkg.set(r.packageId, arr);
+    }
+
+    return pkgs.map(p => {
+      const items = byPkg.get(p.id) ?? [];
+      const duration = items.reduce((s, it) => s + it.duration, 0);
+      const listPrice = items.reduce((s, it) => s + it.price, 0);
+      const price = p.pricingMode === "fixed" && p.fixedPrice != null
+        ? Number(p.fixedPrice) || 0
+        : listPrice;
+      return { ...p, items, duration, listPrice, price };
+    });
+  }
+
+  async getPackages(storeId?: number): Promise<PackageWithItems[]> {
+    if (!storeId) return [];
+    const pkgs = await db.select().from(packages)
+      .where(and(eq(packages.storeId, storeId), eq(packages.isActive, true)))
+      .orderBy(packages.sortOrder, packages.name);
+    return this._hydratePackages(pkgs);
+  }
+
+  async getPackage(id: number): Promise<PackageWithItems | undefined> {
+    const [pkg] = await db.select().from(packages).where(eq(packages.id, id));
+    if (!pkg) return undefined;
+    const [hydrated] = await this._hydratePackages([pkg]);
+    return hydrated;
+  }
+
+  private async _replacePackageItems(
+    packageId: number,
+    items: { itemType: "service" | "addon"; serviceId?: number | null; addonId?: number | null }[],
+  ): Promise<void> {
+    await db.delete(packageItems).where(eq(packageItems.packageId, packageId));
+    if (!items.length) return;
+    await db.insert(packageItems).values(items.map((it, i) => ({
+      packageId,
+      itemType: it.itemType,
+      serviceId: it.itemType === "service" ? (it.serviceId ?? null) : null,
+      addonId: it.itemType === "addon" ? (it.addonId ?? null) : null,
+      sortOrder: i,
+    })));
+  }
+
+  async createPackage(
+    pkg: InsertPackage,
+    items: { itemType: "service" | "addon"; serviceId?: number | null; addonId?: number | null }[],
+  ): Promise<PackageWithItems> {
+    const [row] = await db.insert(packages).values(pkg).returning();
+    await this._replacePackageItems(row.id, items);
+    return (await this.getPackage(row.id))!;
+  }
+
+  async updatePackage(
+    id: number,
+    pkg: Partial<InsertPackage>,
+    items?: { itemType: "service" | "addon"; serviceId?: number | null; addonId?: number | null }[],
+  ): Promise<PackageWithItems | undefined> {
+    if (Object.keys(pkg).length) {
+      await db.update(packages).set(pkg).where(eq(packages.id, id));
+    }
+    if (items) await this._replacePackageItems(id, items);
+    return this.getPackage(id);
+  }
+
+  async deletePackage(id: number): Promise<void> {
+    // Soft delete — a booked appointment may still reference this package_id.
+    await db.update(packages).set({ isActive: false }).where(eq(packages.id, id));
+  }
+
+  async reorderPackages(storeId: number, orderedIds: number[]): Promise<void> {
+    await Promise.all(orderedIds.map((id, i) =>
+      db.update(packages).set({ sortOrder: i })
+        .where(and(eq(packages.id, id), eq(packages.storeId, storeId))),
+    ));
   }
 
   // Appointment Addons

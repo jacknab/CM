@@ -21,6 +21,7 @@ import POSSettings from "@/pages/POSSettings";
 import Services from "@/pages/Services";
 import CatalogCategories from "@/pages/catalog/CatalogCategories";
 import CatalogServices from "@/pages/catalog/CatalogServices";
+import CatalogPackages from "@/pages/catalog/CatalogPackages";
 import CatalogAddons from "@/pages/catalog/CatalogAddons";
 import CatalogProducts from "@/pages/catalog/CatalogProducts";
 import NailServices from "@/pages/catalog/NailServices";
@@ -538,6 +539,7 @@ function AppRoutes() {
       {/* Catalog — individual pages */}
       <Route path="/catalog/categories" element={<OwnerOnlyRoute><CatalogCategories /></OwnerOnlyRoute>} />
       <Route path="/catalog/services"   element={<OwnerOnlyRoute><CatalogServices /></OwnerOnlyRoute>} />
+      <Route path="/catalog/packages"   element={<OwnerOnlyRoute><CatalogPackages /></OwnerOnlyRoute>} />
       <Route path="/catalog/addons"     element={<OwnerOnlyRoute><CatalogAddons /></OwnerOnlyRoute>} />
       <Route path="/catalog/products"   element={<OwnerOnlyRoute><CatalogProducts /></OwnerOnlyRoute>} />
       <Route path="/catalog/nail-services" element={<OwnerOnlyRoute><NailServices /></OwnerOnlyRoute>} />

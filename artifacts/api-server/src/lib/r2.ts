@@ -169,6 +169,32 @@ export async function uploadToR2(
 }
 
 /**
+ * If `value` is a base64/URL-encoded `data:` URI, decode it, push it to R2 and
+ * return the resulting public URL. Anything else (an existing http URL, null,
+ * undefined, empty string) is passed straight through unchanged.
+ *
+ * Lets endpoints that historically accepted an inline data-URI from the client
+ * (e.g. the catalog Category editor) transparently persist real R2 objects
+ * instead of bloating the DB row + every API response that returns it.
+ */
+export async function persistDataUriToR2(
+  value: string | null | undefined,
+  folder: string,
+): Promise<string | null | undefined> {
+  if (typeof value !== "string" || !value.startsWith("data:")) return value;
+  const match = /^data:([^;,]+)?(;base64)?,([\s\S]*)$/.exec(value);
+  if (!match) return value;
+  const mime = match[1] || "image/png";
+  const isBase64 = !!match[2];
+  const buffer = isBase64
+    ? Buffer.from(match[3], "base64")
+    : Buffer.from(decodeURIComponent(match[3]), "utf8");
+  if (!buffer.length) return value;
+  const ext = (mime.split("/")[1] || "png").split("+")[0];
+  return uploadToR2(buffer, folder, `upload.${ext}`, mime);
+}
+
+/**
  * Upload an avatar to R2 and also generate an 80×80 WebP thumbnail.
  * Falls back to local disk when R2 is not configured.
  * Returns { avatarUrl, thumbUrl }.

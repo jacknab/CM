@@ -21,6 +21,7 @@ import { sendEmail, sendBookingConfirmationEmail, sendReminderEmail, sendReviewR
 import { businessTemplates } from "./onboarding-data";
 import { fromZonedTime, toZonedTime, formatInTimeZone } from "date-fns-tz";
 import { atomicCreateBooking, validateBookingSlot } from "./bookingEngine";
+import { resolvePackageForBooking } from "./lib/packageResolver";
 import { sendBookingConfirmation, startReminderScheduler, sendSms } from "./sms";
 import { startQueueSmsScheduler } from "./queue-sms-scheduler";
 import bcrypt from "bcrypt";
@@ -28,7 +29,7 @@ import crypto from "crypto";
 import path from "path";
 import fs from "fs";
 import multer from "multer";
-import { uploadToR2, uploadAvatarToR2, memoryUpload, extractR2KeyFromUrl, getObjectFromR2 } from "./lib/r2";
+import { uploadToR2, uploadAvatarToR2, memoryUpload, extractR2KeyFromUrl, getObjectFromR2, persistDataUriToR2 } from "./lib/r2";
 import { encryptToken, decryptToken } from "./lib/googleTokenCrypto";
 import { 
   insertLocationSchema,
@@ -3215,6 +3216,8 @@ export async function registerRoutes(
       const sessionStoreId = await resolveSessionStoreId(req);
       if (!sessionStoreId) return res.status(403).json({ message: "No store context" });
       const input = insertServiceCategorySchema.parse({ ...req.body, storeId: sessionStoreId });
+      // Client sends a data: URI for a newly picked image — store it in R2, not the DB row.
+      if (input.imageUrl) input.imageUrl = (await persistDataUriToR2(input.imageUrl, "category")) ?? undefined;
       const cat = await storage.createServiceCategory(input);
       triggerTranslation({ entityType: "category", entityId: cat.id, name: cat.name });
       return res.status(201).json(cat);
@@ -3231,6 +3234,8 @@ export async function registerRoutes(
       if (!existing) return res.status(404).json({ message: "Category not found" });
       if (existing.storeId !== sessionStoreId) return res.status(403).json({ message: "Forbidden" });
       const input = insertServiceCategorySchema.partial().parse(req.body);
+      // Client sends a data: URI for a newly picked image — store it in R2, not the DB row.
+      if (input.imageUrl) input.imageUrl = (await persistDataUriToR2(input.imageUrl, "category")) ?? undefined;
       const cat = await storage.updateServiceCategory(Number(req.params.id), input);
       if (!cat) return res.status(404).json({ message: "Category not found" });
       if (input.name) triggerTranslation({ entityType: "category", entityId: cat.id, name: cat.name });
@@ -3248,6 +3253,80 @@ export async function registerRoutes(
     if (existing.storeId !== sessionStoreId) return res.status(403).json({ message: "Forbidden" });
     await storage.deleteServiceCategory(Number(req.params.id));
     return res.status(204).end();
+  });
+
+  // === PACKAGES ===
+  // A package bundles existing services + add-ons; duration is always the sum of
+  // the components, price is that sum or an owner-set fixed amount. See
+  // migration 0158 + lib/packageResolver.ts.
+  app.get(api.packages.list.path, isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(403).json({ message: "No store context" });
+    return res.json(await storage.getPackages(storeId));
+  });
+
+  app.get(api.packages.get.path, isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(403).json({ message: "No store context" });
+    const pkg = await storage.getPackage(Number(req.params.id));
+    if (!pkg) return res.status(404).json({ message: "Package not found" });
+    if (pkg.storeId !== storeId) return res.status(403).json({ message: "Forbidden" });
+    return res.json(pkg);
+  });
+
+  app.post(api.packages.create.path, isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      const { items, ...pkgInput } = api.packages.create.input.parse(req.body);
+      if (pkgInput.imageUrl) pkgInput.imageUrl = (await persistDataUriToR2(pkgInput.imageUrl, "package")) ?? undefined;
+      if (!pkgInput.name?.trim()) return res.status(400).json({ message: "Name is required" });
+      if (!items.some(i => i.itemType === "service")) return res.status(400).json({ message: "A package needs at least one service" });
+      const pkg = await storage.createPackage({ ...pkgInput, name: pkgInput.name, storeId } as any, items);
+      return res.status(201).json(pkg);
+    } catch (error) {
+      return res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  app.patch(api.packages.update.path, isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      const existing = await storage.getPackage(Number(req.params.id));
+      if (!existing) return res.status(404).json({ message: "Package not found" });
+      if (existing.storeId !== storeId) return res.status(403).json({ message: "Forbidden" });
+      const { items, ...pkgInput } = api.packages.update.input.parse(req.body);
+      if (pkgInput.imageUrl) pkgInput.imageUrl = (await persistDataUriToR2(pkgInput.imageUrl, "package")) ?? undefined;
+      if (items && !items.some(i => i.itemType === "service")) return res.status(400).json({ message: "A package needs at least one service" });
+      delete (pkgInput as any).storeId;
+      const pkg = await storage.updatePackage(Number(req.params.id), pkgInput, items);
+      return res.json(pkg);
+    } catch (error) {
+      return res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  app.delete(api.packages.delete.path, isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(403).json({ message: "No store context" });
+    const existing = await storage.getPackage(Number(req.params.id));
+    if (!existing) return res.status(404).json({ message: "Package not found" });
+    if (existing.storeId !== storeId) return res.status(403).json({ message: "Forbidden" });
+    await storage.deletePackage(Number(req.params.id));
+    return res.status(204).end();
+  });
+
+  app.post(api.packages.reorder.path, isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      const { orderedIds } = api.packages.reorder.input.parse({ ...req.body, storeId });
+      await storage.reorderPackages(storeId, orderedIds);
+      return res.json({ success: true });
+    } catch (error) {
+      return res.status(400).json({ message: "Invalid input" });
+    }
   });
 
   // === SERVICES ===
@@ -5042,8 +5121,21 @@ If you have any questions, please contact your administrator.
     try {
       const sessionStoreId = await resolveSessionStoreId(req);
       if (!sessionStoreId) return res.status(403).json({ message: "No store context" });
+
+      // Package booking → one appointment: resolve to a primary service + summed
+      // duration + add-on list before validation runs against them.
+      let apptPackage: Awaited<ReturnType<typeof resolvePackageForBooking>> | null = null;
+      if (req.body.packageId) {
+        try {
+          apptPackage = await resolvePackageForBooking(Number(req.body.packageId), sessionStoreId);
+        } catch {
+          return res.status(400).json({ message: "That package is no longer available." });
+        }
+      }
       const input = insertAppointmentSchema.parse({
         ...req.body,
+        ...(apptPackage ? { serviceId: apptPackage.primaryServiceId, duration: apptPackage.durationMinutes } : {}),
+        packageId: apptPackage ? apptPackage.packageId : (req.body.packageId ?? null),
         storeId: sessionStoreId,
         date: new Date(req.body.date),
       });
@@ -5292,6 +5384,12 @@ If you have any questions, please contact your administrator.
       }
 
       const appointment = await storage.createAppointment(input);
+
+      // Package add-ons: attach as normal appointment_addons (duration already
+      // includes their time — do NOT re-extend).
+      if (apptPackage && apptPackage.addonIds.length > 0) {
+        await storage.setAppointmentAddons(appointment.id, apptPackage.addonIds);
+      }
 
       // Log appointment creation event (fire-and-forget)
       void pool.query(
@@ -7260,7 +7358,29 @@ If you have any questions, please contact your administrator.
         usedCategoryIds.has(Number(category.id)) ||
         usedCategoryNames.has(String(category.name).trim().toLowerCase()),
       );
-      return res.json({ services: storeServices, categories });
+
+      // Packages — only those that are public and whose every component service
+      // is itself visible (an active, non-hidden service in a non-hidden category).
+      const visibleServiceIds = new Set(storeServices.map((s: any) => Number(s.id)));
+      const allPackages = await storage.getPackages(store.id);
+      const packages = allPackages
+        .filter((p) => !p.hiddenFromPublic)
+        .filter((p) => {
+          const svcItems = p.items.filter((it) => it.itemType === "service");
+          return svcItems.length > 0 && svcItems.every((it) => visibleServiceIds.has(Number(it.serviceId)));
+        })
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          description: p.description,
+          imageUrl: p.imageUrl,
+          duration: p.duration,
+          price: p.price,
+          listPrice: p.listPrice,
+          items: p.items.map((it) => ({ type: it.itemType, name: it.name })),
+        }));
+
+      return res.json({ services: storeServices, categories, packages });
     } catch (error) {
       return res.status(500).json({ message: "Internal server error" });
     }
@@ -7682,7 +7802,8 @@ If you have any questions, please contact your administrator.
       }
 
       const bookingSchema = z.object({
-        serviceId: z.number(),
+        serviceId: z.number().optional(),
+        packageId: z.number().optional(),
         staffId: z.number(),
         date: z.string(),
         duration: z.number(),
@@ -7702,7 +7823,28 @@ If you have any questions, please contact your administrator.
         remainingBalance: z.number().optional(),
       });
 
-      const input = bookingSchema.parse(req.body);
+      const parsed = bookingSchema.parse(req.body);
+
+      // A package books as ONE appointment: its primary service anchors
+      // serviceId, its summed duration is the appointment duration, and its
+      // add-ons are attached after create without re-extending the duration.
+      let resolvedPackage: Awaited<ReturnType<typeof resolvePackageForBooking>> | null = null;
+      if (parsed.packageId) {
+        try {
+          resolvedPackage = await resolvePackageForBooking(parsed.packageId, store.id);
+        } catch {
+          return res.status(400).json({ message: "That package is no longer available." });
+        }
+      } else if (!parsed.serviceId) {
+        return res.status(400).json({ message: "serviceId or packageId is required" });
+      }
+
+      const input = {
+        ...parsed,
+        serviceId: resolvedPackage ? resolvedPackage.primaryServiceId : parsed.serviceId!,
+        duration:  resolvedPackage ? resolvedPackage.durationMinutes  : parsed.duration,
+        addonIds:  resolvedPackage ? [] : parsed.addonIds,
+      };
 
       const e164CustomerPhone = toE164US(input.customerPhone);
       if (!e164CustomerPhone) {
@@ -7739,15 +7881,21 @@ If you have any questions, please contact your administrator.
       );
       const effectivePolicy = stripeConnected ? (storePolicy?.bookingPaymentPolicy ?? "none") : "none";
 
-      // Compute authoritative service total from DB prices (never from client)
+      // Compute authoritative service total from DB prices (never from client).
+      // For a package, the effective price (fixed override or component sum) is
+      // the authoritative total — its add-ons are already folded in.
       const serviceRecord = await storage.getService(input.serviceId);
       const servicePrice = Number(serviceRecord?.price ?? 0);
       let addonTotal = 0;
-      for (const addonId of input.addonIds) {
-        const addon = await storage.getAddon(addonId);
-        if (addon) addonTotal += Number(addon.price ?? 0);
+      if (!resolvedPackage) {
+        for (const addonId of input.addonIds) {
+          const addon = await storage.getAddon(addonId);
+          if (addon) addonTotal += Number(addon.price ?? 0);
+        }
       }
-      const serviceTotalCents = Math.round((servicePrice + addonTotal) * 100);
+      const serviceTotalCents = resolvedPackage
+        ? Math.round(resolvedPackage.price * 100)
+        : Math.round((servicePrice + addonTotal) * 100);
 
       // Compute expected deposit if policy requires it
       let expectedDepositCents: number | undefined;
@@ -7859,6 +8007,7 @@ If you have any questions, please contact your administrator.
         notes: input.notes || null,
         status: "pending",
         resourceId: assignedResourceId,
+        packageId: resolvedPackage ? resolvedPackage.packageId : null,
       });
       if (!createResult.ok) {
         return res.status(409).json({ message: createResult.error.message });
@@ -7912,6 +8061,12 @@ If you have any questions, please contact your administrator.
           await storage.updateAppointment(appointmentId, { duration: input.duration + addonDuration });
         }
         await storage.setAppointmentAddons(appointmentId, input.addonIds);
+      }
+
+      // Package add-ons: attach without re-extending duration (input.duration is
+      // already the package total, add-on time included).
+      if (resolvedPackage && resolvedPackage.addonIds.length > 0) {
+        await storage.setAppointmentAddons(appointmentId, resolvedPackage.addonIds);
       }
 
       // ── Save payment tracking fields ────────────────────────────────────────
@@ -17861,7 +18016,13 @@ or
       const createdIds: number[] = [];
 
       for (const item of items) {
-        const itemSubtotal = Number(item.serviceAmount || 0);
+        // A package line resolves to its primary service + summed duration; the
+        // client-sent serviceAmount stays authoritative for what was charged.
+        let pkg: Awaited<ReturnType<typeof resolvePackageForBooking>> | null = null;
+        if (item.packageId) {
+          try { pkg = await resolvePackageForBooking(Number(item.packageId), storeId); } catch { pkg = null; }
+        }
+        const itemSubtotal = Number(item.serviceAmount || (pkg ? pkg.price : 0));
         // Prorate each item's share of the after-discount total and tip
         const proportion = ticketSubtotal > 0 ? itemSubtotal / ticketSubtotal : 1 / items.length;
         const itemTip    = Math.round(Number(tipAmount || 0) * proportion * 100) / 100;
@@ -17872,20 +18033,26 @@ or
           storeId,
           staffId:       itemStaffId,
           customerId:    clientId        ? Number(clientId)        : null,
-          serviceId:     item.serviceId  ? Number(item.serviceId)  : null,
+          serviceId:     pkg ? pkg.primaryServiceId : (item.serviceId ? Number(item.serviceId) : null),
+          packageId:     pkg ? pkg.packageId : (item.packageId ? Number(item.packageId) : null),
           status:        "completed",
           date:          now,
-          duration:      Number(item.duration || 30),
+          duration:      pkg ? pkg.durationMinutes : Number(item.duration || 30),
           totalPaid:     itemPaid.toFixed(2),
           tipAmount:     itemTip.toFixed(2),
           paymentMethod: paymentMethod || "Card",
-          notes:         "Walk-in POS sale",
+          notes:         pkg ? "Walk-in POS sale (package)" : "Walk-in POS sale",
           // Commission reproducibility snapshot (this INSERT is a completion).
           servicePrice:   itemSubtotal.toFixed(2),
           commissionRate: itemStaffId != null ? (staffRateMap.get(itemStaffId) ?? null) : null,
         }).returning({ id: appointments.id });
 
-        if (apt?.id) createdIds.push(apt.id);
+        if (apt?.id) {
+          createdIds.push(apt.id);
+          if (pkg && pkg.addonIds.length > 0) {
+            await storage.setAppointmentAddons(apt.id, pkg.addonIds);
+          }
+        }
       }
 
       return res.json({ success: true, appointmentIds: createdIds });
@@ -19611,9 +19778,17 @@ or
 
       // Drop services that belong to a hidden category (matched by id or by
       // name), same rule the public booking catalogue uses.
-      const kioskCats = await db.select({ id: serviceCategories.id, name: serviceCategories.name, hiddenFromPublic: serviceCategories.hiddenFromPublic })
+      const kioskCats = await db.select({ id: serviceCategories.id, name: serviceCategories.name, imageUrl: serviceCategories.imageUrl, hiddenFromPublic: serviceCategories.hiddenFromPublic })
         .from(serviceCategories)
         .where(eq(serviceCategories.storeId, store.id));
+      // The image the owner set on the catalog category itself (Catalog → Categories).
+      // This is an explicit choice, so it outranks the fuzzy Service-Images-Library
+      // auto-match. Keyed by category name to match the kiosk's category cards.
+      const catalogCategoryImages: Record<string, string> = {};
+      for (const c of kioskCats) {
+        const nm = String(c.name ?? "").trim();
+        if (nm && c.imageUrl) catalogCategoryImages[nm] = c.imageUrl;
+      }
       const hiddenCatIds = new Set(kioskCats.filter(c => c.hiddenFromPublic).map(c => Number(c.id)));
       const hiddenCatNames = new Set(kioskCats.filter(c => c.hiddenFromPublic).map(c => String(c.name).trim().toLowerCase()));
       const storeServicesVisible = storeServices.filter(s => {
@@ -19622,50 +19797,10 @@ or
         return !cn || !hiddenCatNames.has(cn);
       });
 
-      // ── Best-match image per category from the Service Images Library ──────
-      // Used by the kiosk's category cards when the owner hasn't uploaded their
-      // own image for that category. Owner uploads (ks.categoryImages) win.
-      const kioskCatNames = Array.from(new Set(
-        storeServicesVisible.map(s => String(s.category ?? "").trim()).filter(Boolean),
-      ));
-      const autoCatImages: Record<string, string> = {};
-      if (kioskCatNames.length) {
-        const libImgs = await db.select({
-          name: serviceImages.name, category: serviceImages.category,
-          subcategory: serviceImages.subcategory, imageUrl: serviceImages.imageUrl,
-        }).from(serviceImages)
-          .where(and(eq(serviceImages.isActive, true), sql`${serviceImages.imageUrl} IS NOT NULL AND ${serviceImages.imageUrl} <> ''`))
-          .orderBy(asc(serviceImages.sortOrder), asc(serviceImages.name));
-
-        const norm = (x: string) => String(x ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-        const toks = (x: string) => new Set(norm(x).split(" ").filter(t => t.length >= 2));
-
-        for (const cat of kioskCatNames) {
-          const cn = norm(cat);
-          const cTokens = toks(cat);
-          const firstTok = norm(cat).split(" ")[0];
-          // 1) exact category match (ignores spaces/hyphens: "Gel X" ≈ "Gel-X")
-          let best = libImgs.find(i => norm(i.category) === cn);
-          if (!best) {
-            // 2) token-overlap score across category / subcategory / name
-            let bestScore = 0;
-            for (const i of libImgs) {
-              const inCat = toks(i.category);
-              const hay = new Set<string>([...inCat, ...toks(i.subcategory ?? ""), ...toks(i.name)]);
-              let score = 0;
-              for (const t of cTokens) if (hay.has(t)) score += inCat.has(t) ? 3 : 1;
-              const lc = norm(i.category);
-              if (lc && (lc.includes(cn) || cn.includes(lc))) score += 2;
-              // The category's leading word is the most defining ("Gel Nails" →
-              // prefer a Gel library category over an Acrylic one).
-              if (firstTok && firstTok.length >= 2 && inCat.has(firstTok)) score += 4;
-              if (score > bestScore) { bestScore = score; best = i; }
-            }
-            if (bestScore < 3) best = undefined; // not confident — fall back to emoji
-          }
-          if (best?.imageUrl) autoCatImages[cat] = best.imageUrl;
-        }
-      }
+      // Kiosk category-card images come only from what the owner explicitly set
+      // (catalog category image → legacy kiosk-settings upload; see the response
+      // below). The old fuzzy Service-Images-Library auto-match was removed — it
+      // guessed wrong often and cost an extra full-table scan on every load.
 
       // Auto-resolve illustration images on-the-fly for any service that
       // hasn't been manually assigned a category yet.
@@ -19791,8 +19926,12 @@ or
         welcomeHeadline: ks.welcomeHeadline ?? null,
         welcomeSubText: ks.welcomeSubText ?? null,
         loyaltyPromoText: ks.loyaltyPromoText ?? null,
-        // Auto-matched library image per category, overridden by any owner upload.
-        categoryImages: { ...autoCatImages, ...(ks.categoryImages ?? {}) },
+        // Only images the owner explicitly set: the catalog category's own image
+        // (Catalog → Categories) wins, with the legacy kiosk-settings upload as a
+        // fallback. The fuzzy Service-Images-Library auto-match (autoCatImages) is
+        // intentionally NOT merged here — categories without an explicit image
+        // fall back to their emoji on the kiosk.
+        categoryImages: { ...(ks.categoryImages ?? {}), ...catalogCategoryImages },
         timezone: store.timezone ?? "UTC",
         showServicePrice: ks.showServicePrice !== false,
         showServiceDuration: ks.showServiceDuration !== false,

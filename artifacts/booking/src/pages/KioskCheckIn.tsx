@@ -94,6 +94,19 @@ function fmtPhone(p: string) {
   return `(${p.slice(0,3)}) ${p.slice(3,6)}-${p.slice(6)}`;
 }
 
+/**
+ * Normalize a person's name for display: "JANE" → "Jane", "MARY-JANE O'BRIEN" →
+ * "Mary-Jane O'Brien". Clients are often stored/entered in all-caps, which looks
+ * like shouting on the kiosk greeting.
+ */
+function fmtName(raw: string | null | undefined): string {
+  if (!raw) return "";
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[\p{L}][\p{L}\p{M}'’]*/gu, (w) => w.charAt(0).toUpperCase() + w.slice(1));
+}
+
 // ─── Pill button variants ─────────────────────────────────────────────────────
 function PrimaryBtn({ children, onPress, disabled = false, size = "lg" }: {
   children: React.ReactNode; onPress: () => void; disabled?: boolean; size?: "sm"|"md"|"lg";
@@ -601,7 +614,7 @@ export default function KioskCheckIn() {
     kick();
   };
 
-  const clientFirst = clientInfo?.name?.split(" ")[0] ?? newClientName.split(" ")[0] ?? "there";
+  const clientFirst = fmtName(clientInfo?.name?.split(" ")[0] ?? newClientName.split(" ")[0]) || "there";
   const ticketUrl   = ticket ? `${window.location.origin}/kiosk/${slug}/ticket/${ticket.token}` : "";
   const selTotal    = selectedServices.reduce((s, x) => s + x.price, 0);
   const selDur      = selectedServices.reduce((s, x) => s + x.duration, 0);
@@ -1058,7 +1071,7 @@ export default function KioskCheckIn() {
   // ── WAIT CONFIRM ────────────────────────────────────────────────────────────
   // ── FULLY BOOKED — wait >1 hr, offer no-show waitlist ──────────────────────
   if (screen === "fully_booked") {
-    const clientFirst2 = (clientInfo?.name?.split(" ")[0] ?? newClientName.split(" ")[0]) || "there";
+    const clientFirst2 = fmtName(clientInfo?.name?.split(" ")[0] ?? newClientName.split(" ")[0]) || "there";
     return (
       <div className="fixed inset-0 flex flex-col select-none" onContextMenu={e => e.preventDefault()}
         style={{ ...NO_SELECT, background: BG }}>
@@ -1438,8 +1451,9 @@ export default function KioskCheckIn() {
           <div className={`grid ${gridCols} gap-6 w-full max-w-5xl mx-auto`}>
             {groups.map(group => {
               const isSel = selectedCategoryGroup === group.key;
-              // Owner upload keyed by category name, then legacy slug key, then
-              // the server's best-match from the Service Images Library.
+              // The image the owner set on the catalog category (Catalog →
+              // Categories) — resolved server-side into categoryImages, keyed by
+              // category name, falling back to the legacy slug key.
               const imgUrl = catImgs[group.label] ?? catImgs[group.key];
 
               return (
@@ -1465,7 +1479,16 @@ export default function KioskCheckIn() {
                   <div className="w-full flex-shrink-0" style={{ height: cardImgHeight }}>
                     <div className="w-full h-full overflow-hidden">
                       {imgUrl ? (
-                        <img src={imgUrl} alt={group.label} className="w-full h-full object-cover object-top" />
+                        <img
+                          src={imgUrl}
+                          alt={group.label}
+                          className="w-full h-full object-cover object-top"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).style.display = "none";
+                            (e.currentTarget.parentElement as HTMLElement).innerHTML =
+                              `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:${isSel ? `${PRIMARY}12` : "#f0eeff"}"><span style="font-size:80px;line-height:1;user-select:none">${group.fallbackEmoji}</span></div>`;
+                          }}
+                        />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center"
                           style={{ background: isSel ? `${PRIMARY}12` : "#f0eeff" }}>

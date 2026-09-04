@@ -2,8 +2,9 @@ import { z } from 'zod';
 import { 
   insertLocationSchema,
   insertServiceCategorySchema,
-  insertServiceSchema, 
+  insertServiceSchema,
   insertAddonSchema,
+  insertPackageSchema,
   insertServiceAddonSchema,
   insertAppointmentAddonSchema,
   insertStaffSchema,
@@ -22,6 +23,7 @@ import {
   serviceCategories,
   services,
   addons,
+  packages,
   serviceAddons,
   appointmentAddons,
   staffServices,
@@ -251,6 +253,74 @@ export const api = {
       responses: {
         204: z.void(),
         404: errorSchemas.notFound,
+      },
+    },
+  },
+  packages: {
+    list: {
+      method: 'GET' as const,
+      path: '/api/packages' as const,
+      input: z.object({ storeId: z.coerce.number().optional() }).optional(),
+      responses: {
+        200: z.array(z.custom<typeof packages.$inferSelect>()),
+      },
+    },
+    get: {
+      method: 'GET' as const,
+      path: '/api/packages/:id' as const,
+      responses: {
+        200: z.custom<typeof packages.$inferSelect>(),
+        404: errorSchemas.notFound,
+      },
+    },
+    create: {
+      method: 'POST' as const,
+      path: '/api/packages' as const,
+      input: insertPackageSchema.partial().extend({
+        items: z.array(z.object({
+          itemType: z.enum(['service', 'addon']),
+          serviceId: z.number().nullable().optional(),
+          addonId: z.number().nullable().optional(),
+        })).default([]),
+      }),
+      responses: {
+        201: z.custom<typeof packages.$inferSelect>(),
+        400: errorSchemas.validation,
+      },
+    },
+    update: {
+      method: 'PATCH' as const,
+      path: '/api/packages/:id' as const,
+      input: insertPackageSchema.partial().extend({
+        items: z.array(z.object({
+          itemType: z.enum(['service', 'addon']),
+          serviceId: z.number().nullable().optional(),
+          addonId: z.number().nullable().optional(),
+        })).optional(),
+      }),
+      responses: {
+        200: z.custom<typeof packages.$inferSelect>(),
+        404: errorSchemas.notFound,
+      },
+    },
+    delete: {
+      method: 'DELETE' as const,
+      path: '/api/packages/:id' as const,
+      responses: {
+        204: z.void(),
+        404: errorSchemas.notFound,
+      },
+    },
+    reorder: {
+      method: 'POST' as const,
+      path: '/api/packages/reorder' as const,
+      input: z.object({
+        orderedIds: z.array(z.number()),
+        storeId: z.number(),
+      }),
+      responses: {
+        200: z.object({ success: z.boolean() }),
+        400: errorSchemas.validation,
       },
     },
   },
