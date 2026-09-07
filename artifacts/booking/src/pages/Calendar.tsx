@@ -32,6 +32,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useToast } from "@/hooks/use-toast";
 import { CashDrawerPanel } from "@/pages/CashDrawer";
 import { MobileCalendarView } from "@/components/MobileCalendarView";
+import { useSnapshot } from "@/hooks/use-snapshot";
 
 import { WeeklyAgendaView } from "@/components/WeeklyAgendaView";
 import { OpenRegisterModal } from "@/components/cash/OpenRegisterModal";
@@ -136,6 +137,41 @@ function useCurrentTimeLine(timezone: string, startHour: number, endHour: number
   }, [updatePosition]);
 
   return { position, timeLabel };
+}
+
+function OfflineSnapshotHealth() {
+  const { snapshot, status } = useSnapshot();
+  const datasets = [
+    { key: "services", ready: !!snapshot && Array.isArray(snapshot.services) && snapshot.services.length > 0 },
+    { key: "staff", ready: !!snapshot && Array.isArray(snapshot.staff) && snapshot.staff.length > 0 },
+    { key: "clients", ready: !!snapshot && Array.isArray(snapshot.customers) },
+    { key: "appointments", ready: !!snapshot && Array.isArray(snapshot.appointments) },
+    { key: "turn", ready: !!snapshot?.turnSettings },
+  ];
+  const ageMs = snapshot?.generatedAt ? Date.now() - new Date(snapshot.generatedAt).getTime() : Infinity;
+  const fresh = ageMs <= 45 * 60 * 1000;
+  const readyCount = datasets.filter((dataset) => dataset.ready).length;
+  const percent = Math.round((readyCount / datasets.length) * 100);
+  const isHealthy = percent === 100 && fresh && status !== "idle";
+  const isDegraded = percent > 0 && !isHealthy;
+  const color = isHealthy ? "bg-emerald-500" : isDegraded ? "bg-amber-500" : "bg-rose-500";
+  const textColor = isHealthy ? "text-emerald-600" : isDegraded ? "text-amber-600" : "text-rose-600";
+  const stateLabel = isHealthy ? "Offline data healthy" : isDegraded ? "Offline data needs refresh" : "Offline data unavailable";
+
+  return (
+    <div className="w-14 mb-2 px-1" title={`${stateLabel} · ${percent}%`} role="status" aria-label={`${stateLabel}, ${percent}%`}>
+      <div className="flex items-center justify-between mb-1 px-0.5">
+        <span className="text-[8px] font-semibold uppercase tracking-tight text-slate-400">Offline</span>
+        <span className={cn("text-[9px] font-bold", textColor)}>{percent}%</span>
+      </div>
+      <div className="flex gap-0.5 h-1.5" aria-hidden="true">
+        {datasets.map((dataset) => (
+          <span key={dataset.key} className={cn("flex-1 rounded-full", dataset.ready ? color : "bg-slate-200")} />
+        ))}
+      </div>
+      <div className="mt-1 text-center text-[8px] text-slate-400">{fresh ? "Ready" : "Refresh"}</div>
+    </div>
+  );
 }
 
 export default function Calendar() {
@@ -1760,6 +1796,8 @@ export default function Calendar() {
           })}
             </>);
           })()}
+
+          <OfflineSnapshotHealth />
 
           {/* Timeclock In/Out button — only shown when Timeclock feature is enabled */}
           {timeclockEnabled && (
