@@ -11,6 +11,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { useServices } from "@/hooks/use-services";
 import { useStaffList } from "@/hooks/use-staff";
 import { useClientsForBooking, useCreateClientForBooking, useClientDetail, type BookingClient } from "@/hooks/use-clients";
+import { normalizePhone10 } from "@/lib/client-phone-cache-db";
 import { useCreateAppointment } from "@/hooks/use-appointments";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAddonsForService, useSetAppointmentAddons, useServiceCategories } from "@/hooks/use-addons";
@@ -2669,10 +2670,14 @@ function ClientPickerWidget({
     const q = query.toLowerCase().trim();
     if (!q) return customers.slice(0, 6);
     const digits = q.replace(/\D/g, "");
+    const normalizedQuery = normalizePhone10(q);
     return customers
       .filter(c =>
         c.name.toLowerCase().includes(q) ||
-        (digits.length >= 3 && c.phone != null && c.phone.replace(/\D/g, "").includes(digits))
+        (digits.length >= 3 && c.phone != null && (
+          c.phone.replace(/\D/g, "").includes(digits) ||
+          (normalizedQuery != null && normalizePhone10(c.phone) === normalizedQuery)
+        ))
       )
       .slice(0, 8);
   }, [customers, query]);

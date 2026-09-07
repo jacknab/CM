@@ -3,6 +3,7 @@ import { useSelectedStore } from "@/hooks/use-store";
 import { useSnapshot } from "@/hooks/use-snapshot";
 import { actionQueueDB } from "@/lib/action-queue-db";
 import { clientPhoneCacheDB } from "@/lib/client-phone-cache-db";
+import { normalizePhone10 } from "@/lib/client-phone-cache-db";
 
 const BASE = "/api/clients";
 
@@ -546,9 +547,30 @@ function toBookingClient(c: any, storeId: number): BookingClient {
 
 async function loadCachedBookingClients(storeId: number, snapshotCustomers: any[] = []): Promise<BookingClient[]> {
   const cached = await clientPhoneCacheDB.getAll(storeId).catch(() => [] as Awaited<ReturnType<typeof clientPhoneCacheDB.getAll>>);
-  if (cached.length > 0) return cached.filter((c) => !c._syncedRealId).map((c) => toBookingClient(c, storeId));
-  await clientPhoneCacheDB.putMany(storeId, snapshotCustomers).catch(() => {});
-  return snapshotCustomers.map((c) => toBookingClient(c, storeId));
+  const merged = new Map<string, any>();
+
+  for (const client of snapshotCustomers) {
+    const normalized = normalizePhone10(client.phone ?? client.primaryPhone);
+    merged.set(String(client.id), {
+      ...client,
+      phone: normalized,
+      phone10: normalized,
+    });
+  }
+
+  for (const client of cached) {
+    if (client._syncedRealId) continue;
+    const normalized = normalizePhone10(client.phone ?? client.phone10);
+    merged.set(String(client.id), {
+      ...client,
+      phone: normalized,
+      phone10: normalized,
+    });
+  }
+
+  const result = Array.from(merged.values()).map((client) => toBookingClient(client, storeId));
+  if (result.length > 0) await clientPhoneCacheDB.putMany(storeId, result).catch(() => {});
+  return result;
 }
 
 export function useClientsForBooking() {
@@ -557,7 +579,7 @@ export function useClientsForBooking() {
   const { snapshot } = useSnapshot();
 
   return useQuery<BookingClient[]>({
-    queryKey: [BASE, "booking-picker", storeId],
+    queryKey: [BASE, "booking-picker", storeId, snapshot?.version, snapshot?.generatedAt],
     networkMode: "always",
     queryFn: async () => {
       const snapshotCustomers = snapshot?.customers ?? [];
