@@ -80,8 +80,8 @@ router.get("/", isAuthenticated, async (req, res) => {
       .select({
         client: clients,
         primaryEmail: sql<string>`(SELECT email_address FROM client_emails WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
-        primaryPhone: sql<string>`(SELECT phone_number_e164 FROM client_phones WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
-        displayPhone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
+        primaryPhone: sql<string>`(SELECT phone_number_e164 FROM client_phones WHERE client_id = clients.id ORDER BY is_primary DESC, id ASC LIMIT 1)`,
+        displayPhone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id ORDER BY is_primary DESC, id ASC LIMIT 1)`,
         tags: sql<string>`(SELECT COALESCE(json_agg(json_build_object('id', t.id, 'tagName', t.tag_name, 'tagColor', t.tag_color)) FILTER (WHERE t.id IS NOT NULL), '[]'::json) FROM client_tags t JOIN client_tag_relationships r ON r.tag_id = t.id WHERE r.client_id = clients.id)`,
         loyaltyPointsLive: sql<number>`COALESCE(clients.loyalty_points, 0)`,
         // Live-computed from appointments — the denormalized columns are never

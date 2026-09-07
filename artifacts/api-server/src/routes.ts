@@ -9648,7 +9648,7 @@ or
         const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
         targetCustomers = await db.select({
           name: clients.fullName,
-          phone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
+          phone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id ORDER BY is_primary DESC, id ASC LIMIT 1)`,
           email: sql<string>`(SELECT email_address FROM client_emails WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
         }).from(clients)
           .where(
