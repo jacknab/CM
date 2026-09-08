@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,7 +8,8 @@ import { Switch } from "@/components/ui/switch";
 import { useCalendarSettings, useUpdateCalendarSettings, DEFAULT_CALENDAR_SETTINGS } from "@/hooks/use-calendar-settings";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { useForm, Controller } from "react-hook-form";
 import { Save, HelpCircle, Clock, Minus, Plus } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -26,7 +27,18 @@ type CalendarSettingsForm = {
   walkInsEnabled: boolean;
 };
 
-const BOOKING_WINDOW_MAX = 720; // 30 days
+const BOOKING_WINDOW_MAX = 720;  // 30 days
+const CANCEL_WINDOW_MAX = 168;   // 7 days
+const CANCEL_FEE_MAX = 100;      // percent
+
+/** Cancellation fee % + cancellation window live on the `locations` row and are
+ * shared with the Booking Policies page — served by /api/booking-policies. */
+type BookingPoliciesResponse = {
+  cancellationHoursCutoff: number;
+  cancellationFeeType: "percentage" | null;
+  cancellationFeeValue: number | null;
+  stripeConnected?: boolean;
+};
 
 function InfoTooltip({ text }: { text: string }) {
   return (
@@ -51,6 +63,40 @@ export default function CalendarSettings() {
     queryKey: ["/api/stores", selectedStore?.id],
     enabled: !!selectedStore?.id,
   });
+  const queryClient = useQueryClient();
+
+  // Cancellation fee % + cancellation window — stored on the location row, shared
+  // with the Booking Policies page, so they go through /api/booking-policies
+  // rather than the calendar_settings mutation this page otherwise uses.
+  const { data: policies, isLoading: policiesLoading } = useQuery<BookingPoliciesResponse>({
+    queryKey: ["/api/booking-policies", selectedStore?.id],
+    queryFn: async () => {
+      const res = await fetch("/api/booking-policies", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load booking policies");
+      return res.json();
+    },
+    enabled: !!selectedStore?.id,
+  });
+  const [cancelFeePct, setCancelFeePct] = useState(0);
+  const [cancelWindowHours, setCancelWindowHours] = useState(0);
+  const stripeConnected = !!policies?.stripeConnected;
+
+  useEffect(() => {
+    if (policies) {
+      setCancelFeePct(policies.cancellationFeeValue ?? 0);
+      setCancelWindowHours(policies.cancellationHoursCutoff ?? 0);
+    }
+  }, [policies]);
+
+  const updatePolicies = useMutation({
+    mutationFn: async (body: Record<string, unknown>) => {
+      const res = await apiRequest("PUT", "/api/booking-policies", body);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/booking-policies"] });
+    },
+  });
 
   const t = {
     loading:              pick({ en: "Loading...",               vi: "Đang tải...",         es: "Cargando...",                    fr: "Chargement..." }),
@@ -61,6 +107,13 @@ export default function CalendarSettings() {
     bookingWindow:        pick({ en: "Booking window (in hours)", vi: "Cửa sổ đặt lịch (giờ)", es: "Ventana de reserva (en horas)", fr: "Fenêtre de réservation (en heures)" }),
     bookingWindowField:   pick({ en: "Window",  vi: "Cửa sổ",  es: "Ventana",  fr: "Fenêtre" }),
     bookingWindowDesc:    pick({ en: "Enter the number of hours notice you require from clients to book an upcoming appointment.", vi: "Nhập số giờ báo trước bạn yêu cầu khách hàng để đặt lịch hẹn sắp tới.", es: "Introduce las horas de antelación que exiges a los clientes para reservar una cita.", fr: "Indiquez le nombre d'heures de préavis exigé des clients pour réserver un rendez-vous." }),
+    cancelFee:            pick({ en: "Cancellation fee (%)", vi: "Phí hủy lịch (%)", es: "Tarifa de cancelación (%)", fr: "Frais d'annulation (%)" }),
+    cancelFeeField:       pick({ en: "Fee percentage", vi: "Phần trăm phí", es: "Porcentaje de la tarifa", fr: "Pourcentage des frais" }),
+    cancelFeeDesc:        pick({ en: "Prevent no-shows and protect your time with a no-show fee. Most salons set it between 20-30% of the appointment cost. Set to 0 for no fee.", vi: "Ngăn khách không đến và bảo vệ thời gian của bạn bằng phí vắng mặt. Hầu hết tiệm đặt từ 20-30% giá trị lịch hẹn. Đặt 0 để không tính phí.", es: "Evita las ausencias y protege tu tiempo con una tarifa por no presentarse. La mayoría de los salones la fijan entre el 20-30% del coste de la cita. Ponla en 0 para no cobrar.", fr: "Évitez les absences et protégez votre temps avec des frais de non-présentation. La plupart des salons les fixent entre 20 et 30 % du coût du rendez-vous. Mettez 0 pour ne rien facturer." }),
+    cancelFeeNoStripe:    pick({ en: "Connect a Stripe account on the Booking Policies page to actually charge this fee.", vi: "Kết nối tài khoản Stripe ở trang Chính sách đặt lịch để thực sự tính phí này.", es: "Conecta una cuenta de Stripe en la página de Políticas de reserva para poder cobrar esta tarifa.", fr: "Connectez un compte Stripe sur la page Politiques de réservation pour facturer réellement ces frais." }),
+    cancelWindow:         pick({ en: "Cancellation window (in hours)", vi: "Cửa sổ hủy lịch (giờ)", es: "Ventana de cancelación (en horas)", fr: "Fenêtre d'annulation (en heures)" }),
+    cancelWindowField:    pick({ en: "Window", vi: "Cửa sổ", es: "Ventana", fr: "Fenêtre" }),
+    cancelWindowDesc:     pick({ en: "How far in advance your clients can cancel appointments online. They'll need to contact you to cancel after that.", vi: "Khách hàng có thể hủy lịch trực tuyến trước bao lâu. Sau thời gian đó họ phải liên hệ với bạn để hủy.", es: "Con cuánta antelación pueden cancelar tus clientes las citas en línea. Después de eso, tendrán que contactarte para cancelar.", fr: "Combien de temps à l'avance vos clients peuvent annuler leurs rendez-vous en ligne. Passé ce délai, ils devront vous contacter pour annuler." }),
     startOfWeek:          pick({ en: "Calendar start of week",  vi: "Ngày bắt đầu tuần",   es: "Inicio de semana del calendario", fr: "Début de semaine du calendrier" }),
     startOfWeekTip:       pick({ en: "Choose which day the calendar week starts on.", vi: "Chọn ngày bắt đầu tuần trên lịch.", es: "Elige qué día comienza la semana del calendario.", fr: "Choisissez le jour de début de semaine du calendrier." }),
     monday:               pick({ en: "Monday",    vi: "Thứ Hai",  es: "Lunes",    fr: "Lundi" }),
@@ -137,9 +190,23 @@ export default function CalendarSettings() {
         toast({ title: t.toastError, description: t.toastErrorDesc, variant: "destructive" });
       },
     });
+
+    // Cancellation fee % + window live on the location row — a value of 0 means
+    // "no fee", which the API rejects as a percentage, so clear the type/value
+    // instead.
+    const hasFee = cancelFeePct >= 1;
+    updatePolicies.mutate({
+      cancellationHoursCutoff: Math.max(0, Math.min(CANCEL_WINDOW_MAX, Math.trunc(cancelWindowHours) || 0)),
+      cancellationFeeType: hasFee ? "percentage" : null,
+      cancellationFeeValue: hasFee ? Math.min(CANCEL_FEE_MAX, Math.trunc(cancelFeePct)) : null,
+    }, {
+      onError: () => {
+        toast({ title: t.toastError, description: t.toastErrorDesc, variant: "destructive" });
+      },
+    });
   };
 
-  if (isLoading || storeLoading || !store) {
+  if (isLoading || storeLoading || !store || policiesLoading) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center py-20">{t.loading}</div>
@@ -152,9 +219,9 @@ export default function CalendarSettings() {
       <form onSubmit={handleSubmit(onSubmit)}>
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
           <h1 className="text-3xl font-display font-bold" data-testid="text-page-title">{t.pageTitle}</h1>
-          <Button type="submit" disabled={updateSettings.isPending} data-testid="button-save-settings">
+          <Button type="submit" disabled={updateSettings.isPending || updatePolicies.isPending} data-testid="button-save-settings">
             <Save className="w-4 h-4 mr-2" />
-            {updateSettings.isPending ? t.saving : t.save}
+            {updateSettings.isPending || updatePolicies.isPending ? t.saving : t.save}
           </Button>
         </div>
 
@@ -240,6 +307,81 @@ export default function CalendarSettings() {
                 }}
               />
               <p className="text-sm text-muted-foreground">{t.bookingWindowDesc}</p>
+            </div>
+
+            {/* Cancellation fee (%) — stored on the location row via /api/booking-policies */}
+            <div className="space-y-2">
+              <Label className="flex items-center">{t.cancelFee}</Label>
+              <div className="rounded-xl border border-input bg-background px-4 py-3">
+                <span className="text-xs text-muted-foreground">{t.cancelFeeField}</span>
+                <div className="flex items-baseline gap-1">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={CANCEL_FEE_MAX}
+                    value={cancelFeePct}
+                    onChange={(e) => {
+                      const n = parseInt(e.target.value, 10);
+                      setCancelFeePct(Math.max(0, Math.min(CANCEL_FEE_MAX, Number.isFinite(n) ? n : 0)));
+                    }}
+                    className="w-20 bg-transparent text-2xl font-semibold text-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    data-testid="input-cancellation-fee-pct"
+                  />
+                  <span className="text-lg font-semibold text-muted-foreground">%</span>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">{t.cancelFeeDesc}</p>
+              {cancelFeePct >= 1 && !stripeConnected && (
+                <p className="text-sm text-amber-600">{t.cancelFeeNoStripe}</p>
+              )}
+            </div>
+
+            {/* Cancellation window (in hours) — stored on the location row via /api/booking-policies */}
+            <div className="space-y-2">
+              <Label className="flex items-center">{t.cancelWindow}</Label>
+              {(() => {
+                const val = Number.isFinite(cancelWindowHours) ? Math.trunc(cancelWindowHours) : 0;
+                const clamp = (n: number) => Math.max(0, Math.min(CANCEL_WINDOW_MAX, n));
+                return (
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-input bg-background px-4 py-3">
+                    <div className="flex flex-col">
+                      <span className="text-xs text-muted-foreground">{t.cancelWindowField}</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        max={CANCEL_WINDOW_MAX}
+                        value={val}
+                        onChange={(e) => setCancelWindowHours(clamp(parseInt(e.target.value, 10) || 0))}
+                        className="w-24 bg-transparent text-2xl font-semibold text-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        data-testid="input-cancellation-window-hours"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        aria-label="Decrease"
+                        onClick={() => setCancelWindowHours(clamp(val - 1))}
+                        disabled={val <= 0}
+                        className="flex h-9 w-9 items-center justify-center rounded-full border border-input text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent"
+                      >
+                        <Minus className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Increase"
+                        onClick={() => setCancelWindowHours(clamp(val + 1))}
+                        disabled={val >= CANCEL_WINDOW_MAX}
+                        className="flex h-9 w-9 items-center justify-center rounded-full border border-input text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+              <p className="text-sm text-muted-foreground">{t.cancelWindowDesc}</p>
             </div>
 
             {/* Time slot intervals */}
