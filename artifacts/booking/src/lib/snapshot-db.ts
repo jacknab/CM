@@ -3,13 +3,6 @@ const DB_VERSION = 2;
 const STORE_NAME = "snapshots";
 const SNAPSHOT_KEY = "business_config";
 
-function normalizePhone10(value?: string | null): string | null {
-  const digits = String(value ?? "").replace(/\D/g, "");
-  if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
-  if (digits.length >= 10) return digits.slice(-10);
-  return null;
-}
-
 export type SnapshotCategory = {
   id: number;
   name: string;
@@ -54,6 +47,9 @@ export type SnapshotCustomer = {
   id: number;
   name: string;
   phone?: string | null;
+  email?: string | null;
+  notes?: string | null;
+  loyaltyPoints?: number | null;
   storeId?: number | null;
 };
 
@@ -141,22 +137,9 @@ function openDB(): Promise<IDBDatabase> {
       const db = (e.target as IDBOpenDBRequest).result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: "key" });
-      } else {
-        const upgradeTransaction = (e.target as IDBOpenDBRequest).transaction;
-        const store = upgradeTransaction?.objectStore(STORE_NAME);
-        const request = store?.getAll();
-        request?.addEventListener("success", () => {
-          for (const record of request.result ?? []) {
-            const customers = (record.customers ?? []).map((customer: any) => ({
-              id: customer.id,
-              name: customer.name ?? "",
-              phone: normalizePhone10(customer.phone),
-              storeId: customer.storeId ?? record.storeId,
-            }));
-            store?.put({ ...record, customers });
-          }
-        });
       }
+      // A stale cache from an older schema is harmless — snapshot-service
+      // overwrites it on the next online fetch whenever the version hash differs.
     };
     req.onsuccess = (e) => {
       _db = (e.target as IDBOpenDBRequest).result;
@@ -168,20 +151,11 @@ function openDB(): Promise<IDBDatabase> {
 
 export const snapshotDB = {
   async save(snapshot: BusinessSnapshot): Promise<void> {
-    const sanitizedSnapshot = {
-      ...snapshot,
-      customers: snapshot.customers.map((customer) => ({
-        id: customer.id,
-        name: customer.name,
-        phone: normalizePhone10(customer.phone),
-        storeId: customer.storeId ?? snapshot.storeId,
-      })),
-    };
     const db = await openDB();
     return new Promise((resolve, reject) => {
       const t = db.transaction(STORE_NAME, "readwrite");
       const store = t.objectStore(STORE_NAME);
-      const req = store.put({ key: `${SNAPSHOT_KEY}_${sanitizedSnapshot.storeId}`, ...sanitizedSnapshot });
+      const req = store.put({ key: `${SNAPSHOT_KEY}_${snapshot.storeId}`, ...snapshot });
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     });
@@ -197,15 +171,7 @@ export const snapshotDB = {
         const result = req.result;
         if (!result) return resolve(null);
         const { key: _key, ...snapshot } = result;
-        resolve({
-          ...snapshot,
-          customers: (snapshot.customers ?? []).map((customer: any) => ({
-            id: customer.id,
-            name: customer.name ?? "",
-            phone: normalizePhone10(customer.phone),
-            storeId: customer.storeId ?? snapshot.storeId,
-          })),
-        } as BusinessSnapshot);
+        resolve(snapshot as BusinessSnapshot);
       };
       req.onerror = () => reject(req.error);
     });

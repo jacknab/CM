@@ -864,15 +864,10 @@ export default function Calendar() {
   const getAppointmentsForStaff = (staffId: number) => {
     if (!appointments) return [];
     return appointments.filter((apt: any) => {
-      // calendarHidden is used for two things: cancelled-appointment cleanup
-      // (keep hidden) and payment-pending holds (deposit / card-on-file link
-      // texted to the client). Show the latter, dimmed with an "awaiting card"
-      // badge, so staff can see the booking exists instead of it silently
-      // vanishing after an offline booking syncs.
-      const isPaymentPending = apt.calendarHidden && apt.paymentStatus === "awaiting_payment";
-      return apt.staffId === staffId
-        && isOnStoreDate(apt.date, currentDate, timezone)
-        && (!apt.calendarHidden || isPaymentPending);
+      // calendarHidden hides cancelled-appointment cleanup rows AND
+      // deposit/card-on-file payment holds (online bookings only) — neither
+      // should appear on the grid until they're resolved/completed.
+      return apt.staffId === staffId && isOnStoreDate(apt.date, currentDate, timezone) && !apt.calendarHidden;
     });
   };
 
@@ -2399,10 +2394,6 @@ export default function Calendar() {
 
                             const isCancelled = apt.status === "cancelled";
                             const isNoShow = apt.status === "no_show";
-                            // Payment-pending hold: deposit / card-on-file link
-                            // texted to the client, not yet paid. Shown dimmed so
-                            // staff know the booking exists but isn't confirmed.
-                            const isAwaitingPayment = apt.calendarHidden && apt.paymentStatus === "awaiting_payment";
 
                             // Category colour for neutral-state appointments
                             const catColor = apt.service?.categoryId
@@ -2431,7 +2422,6 @@ export default function Calendar() {
                                 className={cn(
                                   "absolute left-1 right-1 rounded-lg overflow-hidden cursor-pointer z-[5] transition-shadow hover:shadow-md relative",
                                   isLocked && !isCancelled && "opacity-75",
-                                  isAwaitingPayment && "opacity-60 border-dashed",
                                   draggedAppointment?.id === apt.id && "opacity-50 ring-2 ring-dashed ring-blue-400",
                                 )}
                                 style={{
@@ -2508,17 +2498,6 @@ export default function Calendar() {
                                               style={{ backgroundColor: "#dcfce7", color: "#16a34a" }}
                                             >
                                               Paid
-                                            </span>
-                                          );
-                                        }
-                                        // Payment-pending hold — client was texted a deposit / card link
-                                        if (isAwaitingPayment) {
-                                          return (
-                                            <span
-                                              className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold leading-none flex-shrink-0"
-                                              style={{ backgroundColor: "#fef3c7", color: "#b45309" }}
-                                            >
-                                              Awaiting Payment
                                             </span>
                                           );
                                         }
@@ -2678,8 +2657,7 @@ export default function Calendar() {
                     const resEmoji = ({ station: "💅", chair: "🪑", room: "🚪", other: "🛋️" } as Record<string, string>)[resource.type] ?? "🛋️";
                     const resTypeLabel = ({ station: "Nail Station", chair: "Pedicure Chair", room: "Treatment Room", other: "Resource" } as Record<string, string>)[resource.type] ?? resource.type;
                     const resApts = (appointments ?? []).filter((a: any) =>
-                      a.resourceId === resource.id && isOnStoreDate(a.date, currentDate, timezone)
-                      && (!a.calendarHidden || a.paymentStatus === "awaiting_payment")
+                      a.resourceId === resource.id && isOnStoreDate(a.date, currentDate, timezone) && !a.calendarHidden
                     );
                     return (
                       <div key={resource.id} className={activeResources.length <= 10 ? "flex-1 min-w-0" : "flex-none"} style={activeResources.length <= 10 ? { minWidth: "120px" } : { width: `${STAFF_CALENDAR_COLUMN_WIDTH}px`, minWidth: `${STAFF_CALENDAR_COLUMN_WIDTH}px`, maxWidth: `${STAFF_CALENDAR_COLUMN_WIDTH}px` }}>

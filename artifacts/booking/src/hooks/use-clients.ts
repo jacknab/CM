@@ -110,7 +110,7 @@ export interface ClientDetail extends Omit<ClientListItem, "tags"> {
 
 const QK = {
   list: (storeId: number, params?: object) => [BASE, "list", storeId, params],
-  detail: (id: number) => [BASE, "detail", id],
+  detail: (id: number | string) => [BASE, "detail", id],
   tags: (storeId: number) => [BASE, "tags", storeId],
   notes: (clientId: number) => [BASE, "notes", clientId],
 };

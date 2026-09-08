@@ -138,7 +138,6 @@ import usageRouter from "./routes/usage";
 import { autoAssignTechnician } from "./services/appointment-assignment";
 import { autoAssignResource } from "./services/resource-assignment";
 import { getRequiredResourceType } from "@shared/resourceMatching";
-import { createBookingPaymentToken } from "./lib/bookingPaymentLinks";
 import { toE164US } from "./lib/phoneUtils";
 import { checkOAuthRateLimit, syncCooldowns, SYNC_COOLDOWN_MS, getRateLimitSnapshot, clearRateLimitEntry, clearAllRateLimits, type RateLimitCategory } from "./rate-limits";
 import { db as websiteDb, websitesTable, templatesTable } from "@workspace/db";
@@ -5323,80 +5322,12 @@ If you have any questions, please contact your administrator.
         input.customerId = clientId;
       }
 
-      // === PAYMENT POLICY GATE (deposit / card-on-file) ===========================
-      // Same rule as the AI receptionist's phone-booking gate, applied to staff
-      // creating a booking from /booking/new: if the store requires a deposit or
-      // card-on-file, hide the appointment and text the client a payment link
-      // instead of showing it on the calendar immediately.
-      //
-      // Never gate:
-      //   - Walk-ins (no client selected — input.customerId is null)
-      //   - Same-hour bookings (client is already at/about to be at the salon —
-      //     no realistic time for an SMS round-trip before the appointment)
-      //   - card_on_file when the client already has a card on file (requirement
-      //     already satisfied — nothing to collect)
-      let paymentRequirement: "deposit" | "card_on_file" | null = null;
-      let gateDepositAmountCents: number | null = null;
-      let gateClientPhone: string | null = null;
-
-      if (input.customerId && input.storeId && input.serviceId) {
-        const isImminent = input.date.getTime() - Date.now() <= 60 * 60 * 1000;
-        if (!isImminent) {
-          const [gateStorePolicy] = await db
-            .select({
-              bookingPaymentPolicy: locations.bookingPaymentPolicy,
-              depositType: locations.depositType,
-              depositValue: locations.depositValue,
-            })
-            .from(locations)
-            .where(eq(locations.id, input.storeId))
-            .limit(1);
-
-          const gateStripeConnected = !!(
-            process.env.STRIPE_SECRET_KEY &&
-            (await pool.query(
-              `SELECT 1 FROM store_payment_accounts WHERE store_id = $1 AND provider = 'stripe' AND status = 'connected' LIMIT 1`,
-              [input.storeId]
-            ).then((r: any) => r.rows.length > 0).catch(() => false))
-          );
-          const gateEffectivePolicy = gateStripeConnected ? (gateStorePolicy?.bookingPaymentPolicy ?? "none") : "none";
-
-          if (gateEffectivePolicy === "deposit" && gateStorePolicy?.depositValue) {
-            paymentRequirement = "deposit";
-          } else if (gateEffectivePolicy === "card_on_file") {
-            const [gateClientRow] = await db
-              .select({ stripeCustomerId: clients.stripeCustomerId, stripePaymentMethodId: clients.stripePaymentMethodId })
-              .from(clients)
-              .where(eq(clients.id, input.customerId))
-              .limit(1);
-            // Requirement already satisfied for this client — nothing to gate.
-            if (!gateClientRow?.stripeCustomerId || !gateClientRow?.stripePaymentMethodId) {
-              paymentRequirement = "card_on_file";
-            }
-          }
-
-          if (paymentRequirement) {
-            const gateCustomer = await storage.getCustomer(input.customerId);
-            gateClientPhone = gateCustomer?.phone ?? null;
-            if (!gateClientPhone) {
-              // No phone on file — can't text a link, so don't gate the booking.
-              paymentRequirement = null;
-            } else if (paymentRequirement === "deposit") {
-              const gateService = await storage.getService(input.serviceId);
-              const servicePriceCents = Math.round(Number(gateService?.price ?? 0) * 100);
-              gateDepositAmountCents = gateStorePolicy!.depositType === "percentage"
-                ? Math.round(servicePriceCents * (Number(gateStorePolicy!.depositValue) / 100))
-                : Math.round(Number(gateStorePolicy!.depositValue) * 100);
-              if (gateDepositAmountCents < 50) gateDepositAmountCents = 50;
-            }
-          }
-        }
-      }
-
-      if (paymentRequirement) {
-        input.calendarHidden = true;
-        (input as any).paymentStatus = "awaiting_payment";
-      }
+      // NOTE: the deposit / card-on-file payment gate is intentionally NOT
+      // applied here. Deposit / card-on-file holds (calendarHidden +
+      // paymentStatus:"awaiting_payment") are for CUSTOMER-initiated online
+      // bookings only (POST /api/public/store/:slug/book). Bookings made by
+      // staff or the check-in kiosk go straight onto the calendar — the client
+      // is dealt with in person, so there's nothing to collect up front.
 
       const appointment = await storage.createAppointment(input);
 
@@ -5424,36 +5355,15 @@ If you have any questions, please contact your administrator.
          JSON.stringify({ source: req.body.source ?? "staff", serviceId: input.serviceId, staffId: input.staffId })]
       ).catch((e: any) => console.error("[aptEvents] create:", e?.message));
 
-      if (paymentRequirement && gateClientPhone && input.storeId) {
-        const tokenRow = await createBookingPaymentToken({
-          storeId: input.storeId,
-          appointmentId: appointment.id,
-          customerId: input.customerId ?? null,
-          customerPhone: gateClientPhone,
-          requirement: paymentRequirement,
-          depositAmountCents: gateDepositAmountCents,
-        });
-        const link = `${process.env.APP_URL ?? "https://certxa.com"}/complete-booking/${tokenRow.token}`;
-        const gateCustomerForSms = await storage.getCustomer(input.customerId!);
-        const store = await storage.getStore(input.storeId);
-        const smsBody = paymentRequirement === "deposit"
-          ? `Hi ${gateCustomerForSms?.name || "there"}, please confirm your ${store?.name ?? "appointment"} booking by paying a $${(gateDepositAmountCents! / 100).toFixed(2)} deposit within the next hour: ${link}`
-          : `Hi ${gateCustomerForSms?.name || "there"}, please confirm your ${store?.name ?? "appointment"} booking by adding a card on file within the next hour: ${link}`;
-        sendSms(input.storeId, gateClientPhone, smsBody, "booking_payment_required", appointment.id, input.customerId ?? undefined, {
-          skipCreditDeduction: true,
-          smsSource: "platform",
-        }).catch((err) => console.error(`[appointments:create] Failed to send payment-link SMS for appointment ${appointment.id}:`, err));
-      } else {
-        const fullAppointment = await storage.getAppointment(appointment.id);
-        if (fullAppointment) {
-          sendBookingConfirmation(fullAppointment).catch(console.error);
-          sendBookingConfirmationEmail(fullAppointment).catch(console.error);
+      const fullAppointment = await storage.getAppointment(appointment.id);
+      if (fullAppointment) {
+        sendBookingConfirmation(fullAppointment).catch(console.error);
+        sendBookingConfirmationEmail(fullAppointment).catch(console.error);
 
-          if (appointment.storeId) {
-            broadcastTurnEligibilityChanged(appointment.storeId);
-            broadcastSyncEvent({ type: "booking_created", storeId: appointment.storeId, appointmentId: appointment.id, source: req.body.source ?? "staff" });
-            triggerDashboardBroadcast(appointment.storeId);
-          }
+        if (appointment.storeId) {
+          broadcastTurnEligibilityChanged(appointment.storeId);
+          broadcastSyncEvent({ type: "booking_created", storeId: appointment.storeId, appointmentId: appointment.id, source: req.body.source ?? "staff" });
+          triggerDashboardBroadcast(appointment.storeId);
         }
       }
 
@@ -16251,6 +16161,8 @@ or
           // (WHERE is_primary = true on display_phone, both nullable) returned
           // NULL for many real clients, breaking offline phone lookup.
           phone: sql<string>`(SELECT COALESCE(display_phone, phone_number_e164) FROM client_phones WHERE client_id = clients.id ORDER BY is_primary DESC, id ASC LIMIT 1)`,
+          email: sql<string>`(SELECT email_address FROM client_emails WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
+          loyaltyPoints: clients.loyaltyPoints,
           storeId: clients.storeId,
         }).from(clients).where(and(eq(clients.storeId, storeId), isNull(clients.archivedAt))).orderBy(asc(clients.fullName)),
 
