@@ -211,10 +211,9 @@ function useCurrentTimeLine(timezone: string, startHour: number, endHour: number
 // ─── Status badge config ──────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string }> = {
-  pending:   { label: "Pending",          color: "text-yellow-700", bg: "bg-yellow-50"  },
-  confirmed: { label: "Confirmed",        color: "text-blue-700",   bg: "bg-blue-50"    },
+  pending:   { label: "Booked",           color: "text-blue-700",   bg: "bg-blue-50"    },
+  confirmed: { label: "Confirmed",        color: "text-teal-700",   bg: "bg-teal-50"    },
   started:   { label: "In Progress",      color: "text-amber-700",  bg: "bg-amber-50"   },
-  finished:  { label: "Awaiting Checkout",color: "text-orange-700", bg: "bg-orange-50"  },
   completed: { label: "Completed",        color: "text-green-700",  bg: "bg-green-50"   },
   cancelled: { label: "Cancelled",        color: "text-red-700",    bg: "bg-red-50"     },
   no_show:   { label: "No Show",          color: "text-gray-600",   bg: "bg-gray-100"   },

@@ -545,7 +545,9 @@ export async function atomicRescheduleBooking(
 
       const [updated] = await tx
         .update(appointments)
-        .set({ date: input.newStartTime, status: "confirmed" as any })
+        // Only move the time — keep whatever lifecycle status the appointment
+        // already has (a reschedule is not a check-in).
+        .set({ date: input.newStartTime })
         .where(eq(appointments.id, input.appointmentId))
         .returning({ id: appointments.id });
 

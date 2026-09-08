@@ -46,8 +46,10 @@ export type OfflineTurnEligibility = {
   source: "offline";
 };
 
-const BUSY_STATUSES = new Set(["started", "checked_in"]);
-const EXCLUDED_TURN_COUNT_STATUSES = new Set(["cancelled", "no_show", "no-show"]);
+// Mirrors the server: only a service actually in progress marks a tech busy.
+// A checked-in ("confirmed") client is held by the Consideration Lock instead.
+const BUSY_STATUSES = new Set(["started"]);
+const EXCLUDED_TURN_COUNT_STATUSES = new Set(["cancelled", "no_show"]);
 
 async function buildOverlay(storeId: number, today: string) {
   const [pending, localBookingsToday] = await Promise.all([
@@ -66,7 +68,7 @@ async function buildOverlay(storeId: number, today: string) {
     const payload = a.payload as any;
     const id = payload?.id != null ? String(payload.id) : null;
     if (!id) continue;
-    if (a.type === "CHECKIN") statusOverrides.set(id, "checked_in");
+    if (a.type === "CHECKIN") statusOverrides.set(id, "confirmed");
     else if (a.type === "CHECKOUT") statusOverrides.set(id, "completed");
     else if (a.type === "CANCEL_BOOKING") statusOverrides.set(id, "cancelled");
     else if (a.type === "UPDATE_BOOKING" && typeof payload.status === "string") statusOverrides.set(id, payload.status);
@@ -172,7 +174,7 @@ export async function computeOfflineTurnEligibility(
   });
   const dequePos = new Map<number, number>(syncedDeque.map((id, pos) => [id, pos]));
 
-  // ── Busy right now: appointment status started/checked_in today ──
+  // ── Busy right now: appointment status started today ──
   const busyStaffIds = new Set<number>();
   for (const apt of aptViews) {
     if (apt.staffId != null && apt.status && BUSY_STATUSES.has(apt.status)) busyStaffIds.add(apt.staffId);

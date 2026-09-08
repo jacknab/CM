@@ -339,7 +339,7 @@ export default function StaffPOS() {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "finished" }),
+        body: JSON.stringify({ status: "completed" }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));

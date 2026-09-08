@@ -21,8 +21,8 @@ interface WeeklyAgendaViewProps {
 }
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
-  pending:   { bg: "#eff6ff", text: "#3b82f6", label: "Pending" },
-  confirmed: { bg: "#f0fdf4", text: "#22c55e", label: "Confirmed" },
+  pending:   { bg: "#eff6ff", text: "#3b82f6", label: "Booked" },
+  confirmed: { bg: "#ecfdf5", text: "#0d9488", label: "Confirmed" },
   started:   { bg: "#fefce8", text: "#eab308", label: "In Progress" },
   completed: { bg: "#f3f4f6", text: "#9ca3af", label: "Done" },
   cancelled: { bg: "#fff1f2", text: "#fb7185", label: "Cancelled" },

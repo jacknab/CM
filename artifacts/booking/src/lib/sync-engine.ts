@@ -427,7 +427,7 @@ class SyncEngine {
         const res = await fetch(`/api/appointments/${idNum}`, {
           method: "PATCH",
           headers,
-          body: JSON.stringify({ ...body, status: "checked_in" }),
+          body: JSON.stringify({ ...body, status: "confirmed" }),
           credentials: "include",
         });
         await throwIfConflict(res, action.type);

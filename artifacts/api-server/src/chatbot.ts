@@ -139,7 +139,10 @@ router.post("/confirm", async (req: Request, res: Response) => {
       });
     }
 
-    const updated = await storage.updateAppointment(appointmentId, { status: "confirmed" });
+    // No status change — "confirmed" now means the client has physically
+    // checked in. An SMS "yes, I'll be there" just sends the reassurance reply
+    // and leaves the appointment Booked.
+    const updated = appt;
 
     if (notifyCustomer && appt.customer?.phone && appt.storeId) {
       const dateStr = format(new Date(appt.date), "EEEE, MMMM d 'at' h:mm a");
@@ -240,7 +243,6 @@ router.post("/reschedule", async (req: Request, res: Response) => {
 
     const updated = await storage.updateAppointment(appointmentId, {
       date: newDateObj,
-      status: "confirmed",
     });
 
     if (notifyCustomer && appt.customer?.phone && appt.storeId) {

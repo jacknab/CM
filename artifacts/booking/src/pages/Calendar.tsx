@@ -1071,7 +1071,7 @@ export default function Calendar() {
         setSelectedAppointment(found);
         setShowCancelFlow(false);
         // If client already checked in, open directly to checkout
-        if (found.status === "checked_in") setShowCheckout(true);
+        if (found.status === "confirmed") setShowCheckout(true);
       } else {
         // Appointment exists but isn't on today's calendar — don't open it
         toast({
@@ -1231,6 +1231,21 @@ export default function Calendar() {
       {
         onSuccess: (updated: any) => {
           setSelectedAppointment({ ...apt, status: "started" });
+        },
+      }
+    );
+  };
+
+  // Check the client in. The server flips the status to "confirmed" and — unless
+  // the client requested a specific stylist — hands the booking to the next tech
+  // in the TURN queue, so refresh the appointment from the response.
+  const handleCheckIn = (apt: AppointmentWithDetails) => {
+    updateAppointment.mutate(
+      { id: apt.id, status: "confirmed" } as any,
+      {
+        onSuccess: (updated: any) => {
+          setSelectedAppointment({ ...apt, ...(updated || {}), status: "confirmed" });
+          queryClient.invalidateQueries({ queryKey: ["/api/turn/eligibility", selectedStore?.id] });
         },
       }
     );
@@ -2482,8 +2497,8 @@ export default function Calendar() {
                                       )}
                                       {(() => {
                                         const statusMap: Record<string, { bg: string; text: string; label: string }> = {
-                                          pending:   { bg: "#eff6ff", text: "#3b82f6", label: "Pending" },
-                                          confirmed: { bg: "#f0fdf4", text: "#22c55e", label: "Confirmed" },
+                                          pending:   { bg: "#eff6ff", text: "#3b82f6", label: "Booked" },
+                                          confirmed: { bg: "#ecfdf5", text: "#0d9488", label: "Confirmed" },
                                           started:   { bg: "#fefce8", text: "#ca8a04", label: "In Progress" },
                                           completed: { bg: "#f3f4f6", text: "#6b7280", label: "Done" },
                                           cancelled: { bg: "#fff1f2", text: "#f43f5e", label: "Cancelled" },
@@ -2870,7 +2885,7 @@ export default function Calendar() {
                   {(() => {
                     const arrivedAppts = (appointments || [])
                       .filter((apt: any) => {
-                        if (apt.status !== "checked_in") return false;
+                        if (apt.status !== "confirmed") return false;
                         return isOnStoreDate(apt.date, currentDate, timezone);
                       })
                       .sort((a: any, b: any) => {
@@ -3282,6 +3297,7 @@ export default function Calendar() {
             timezone={timezone}
             onClose={() => setSelectedAppointment(null)}
             onCancel={() => handleCancelAppointment(selectedAppointment)}
+            onCheckIn={() => handleCheckIn(selectedAppointment)}
             onStart={() => handleStartService(selectedAppointment)}
             onCheckout={() => handleCheckout(selectedAppointment)}
             onComplete={() => handleComplete(selectedAppointment)}
@@ -5077,6 +5093,7 @@ function AppointmentDetailsPanel({
   timezone,
   onClose,
   onCancel,
+  onCheckIn,
   onStart,
   onCheckout,
   onComplete,
@@ -5092,6 +5109,7 @@ function AppointmentDetailsPanel({
   timezone: string;
   onClose: () => void;
   onCancel: () => void;
+  onCheckIn: () => void;
   onStart: () => void;
   onCheckout: () => void;
   onComplete: () => void;
@@ -5172,7 +5190,7 @@ function AppointmentDetailsPanel({
 
   const statusMap: Record<string, { label: string; variant: "destructive" | "secondary"; color: string }> = {
     pending:   { label: pick({ en: "Booked",    vi: "Đã đặt",     es: "Reservado",  fr: "Réservé"  }), variant: "secondary",   color: "#3b82f6" },
-    confirmed: { label: pick({ en: "Booked",    vi: "Đã đặt",     es: "Reservado",  fr: "Réservé"  }), variant: "secondary",   color: "#3b82f6" },
+    confirmed: { label: pick({ en: "Confirmed", vi: "Đã đến",     es: "Registrado", fr: "Enregistré" }), variant: "secondary", color: "#0d9488" },
     started:   { label: pick({ en: "Started",   vi: "Đang làm",   es: "Iniciado",   fr: "Commencé" }), variant: "secondary",   color: "#22c55e" },
     cancelled: { label: pick({ en: "Cancelled", vi: "Đã hủy",     es: "Cancelado",  fr: "Annulé"   }), variant: "destructive", color: "#ef4444" },
     completed: { label: pick({ en: "Completed", vi: "Hoàn thành", es: "Completado", fr: "Terminé"  }), variant: "secondary",   color: "#22c55e" },
@@ -5564,6 +5582,19 @@ function AppointmentDetailsPanel({
               </Button>
             ) : isAppointmentToday ? (
               <div className="flex gap-2">
+                {appointment.status === "pending" && (
+                  <Button
+                    className="flex-1 bg-teal-600 hover:bg-teal-700 text-white h-12"
+                    onClick={onCheckIn}
+                    disabled={isUpdating}
+                    data-testid="button-check-in"
+                  >
+                    <span className="flex flex-col items-center leading-tight">
+                      <span className="font-semibold">Check In</span>
+                      <span className="text-[10px] opacity-80">Client has arrived</span>
+                    </span>
+                  </Button>
+                )}
                 <Button
                   className="flex-1 bg-blue-600 text-white h-12"
                   onClick={onStart}
@@ -6046,7 +6077,7 @@ function CheckoutPOSPanel({
     (a?.appointmentAddons?.map((aa: any) => aa.addon).filter(Boolean).reduce((s: number, ad: any) => s + Number(ad.price || 0), 0) || 0);
   const linkableTickets = siblingAppointments.filter((a) =>
     a.id !== appointment.id &&
-    ["started", "checked_in", "pending", "confirmed"].includes(String(a.status)) &&
+    ["started", "pending", "confirmed"].includes(String(a.status)) &&
     isOnStoreDate(a.date, getNowInTimezone(timezone), timezone),
   );
   const linkedAppointments = linkableTickets.filter((a) => linkedIds.includes(a.id));

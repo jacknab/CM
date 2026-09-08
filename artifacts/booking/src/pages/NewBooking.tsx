@@ -1025,12 +1025,11 @@ export default function NewBooking() {
           ? selectedResourceId!
           : undefined,
         notes: notes || undefined,
-        // A walk-in client has arrived and is waiting — mark them "checked_in",
-        // not "started". The grid shows it as "Pending" (staff taps Start when
-        // the tech actually begins), while the Turn Consideration Lock still
-        // holds the assigned tech out of the queue (the lock keys off
-        // started/checked_in, and the self-heal won't release a checked_in one).
-        status: isWalkIn ? "checked_in" : "pending",
+        // A walk-in client is physically present, so the booking is created
+        // already "confirmed" (checked in). The Turn Consideration Lock holds
+        // the assigned tech out of the queue; the service auto-starts at the
+        // booking start time.
+        status: isWalkIn ? "confirmed" : "pending",
         // Tell the server this is a no-show fill so it skips the
         // "no past appointments" guard and the conflict check for the
         // no-show slot itself.

@@ -7,10 +7,9 @@ const statusConfig: Record<string, { label: string; color: string; bg: string }>
   completed:  { label: "Completed",  color: "text-emerald-700", bg: "bg-emerald-50" },
   cancelled:  { label: "Cancelled",  color: "text-red-700",     bg: "bg-red-50"     },
   "no-show":  { label: "No-Show",    color: "text-orange-700",  bg: "bg-orange-50"  },
-  pending:    { label: "Pending",    color: "text-blue-700",    bg: "bg-blue-50"    },
-  confirmed:  { label: "Confirmed",  color: "text-indigo-700",  bg: "bg-indigo-50"  },
-  serving:    { label: "Serving",    color: "text-violet-700",  bg: "bg-violet-50"  },
-  checked_in: { label: "Checked In", color: "text-teal-700",    bg: "bg-teal-50"    },
+  pending:    { label: "Booked",     color: "text-blue-700",    bg: "bg-blue-50"    },
+  confirmed:  { label: "Confirmed",  color: "text-teal-700",    bg: "bg-teal-50"    },
+  started:    { label: "In Progress",color: "text-amber-700",   bg: "bg-amber-50"   },
 };
 
 function fmtDate(d: string) {

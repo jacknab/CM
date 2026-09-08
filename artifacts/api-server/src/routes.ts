@@ -139,6 +139,7 @@ import usageRouter from "./routes/usage";
 import { autoAssignTechnician } from "./services/appointment-assignment";
 import { autoAssignResource } from "./services/resource-assignment";
 import { getRequiredResourceType } from "@shared/resourceMatching";
+import { ACTIVE_APPOINTMENT_STATUSES, normalizeAppointmentStatus, appointmentStatusEnum } from "@shared/appointment-status";
 import { toE164US } from "./lib/phoneUtils";
 import { checkOAuthRateLimit, syncCooldowns, SYNC_COOLDOWN_MS, getRateLimitSnapshot, clearRateLimitEntry, clearAllRateLimits, type RateLimitCategory } from "./rate-limits";
 import { db as websiteDb, websitesTable, templatesTable } from "@workspace/db";
@@ -573,12 +574,10 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
     .from(appointments)
     .where(and(
       eq(appointments.storeId, storeId),
-      // "Busy" = genuinely in progress. A walk-in booked with status
-      // 'checked_in' (see the "create walk-ins as checked_in" flow) only
-      // counts once it has a real check-in timestamp — otherwise assigning a
-      // future walk-in would immediately flip the tech to Busy on the Turn
-      // panel while the grid still shows it as Pending.
-      sql`(${appointments.status} = 'started' OR (${appointments.status} = 'checked_in' AND ${appointments.checkedInAt} IS NOT NULL))`,
+      // "Busy" = service actually in progress. A checked-in client waiting for
+      // their tech does NOT make the tech busy here — the Consideration Lock
+      // (lockedStaffIds, applied at check-in / walk-in assignment) covers that.
+      sql`${appointments.status} = 'started'`,
       gte(appointments.date, todayStartUtc),
       sql`${appointments.date} <= ${todayEndUtc}`,
       isNotNull(appointments.staffId)
@@ -586,10 +585,10 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
   const busyStaffIds = new Set(activeNowRows.map((r) => r.staffId as number));
 
   // === SELF-HEALING: Release stale consideration locks ===
-  // A tech is stale-locked when they are in lockedStaffIds but have NO appointment
-  // that is actively in-progress RIGHT NOW (started / checked_in today).
-  // Future pending/confirmed appointments must NOT keep the lock alive — the tech
-  // is free until they actually start serving that client.
+  // A tech is stale-locked when they are in lockedStaffIds but have NO active
+  // appointment today (a checked-in `confirmed` client they're about to serve,
+  // or a `started` service in progress). Without this a cancelled/deleted
+  // appointment could leave the tech locked out of the queue forever.
   const rawLockedIds: number[] = Array.isArray(settings.lockedStaffIds)
     ? (settings.lockedStaffIds as any[]).map(Number).filter(Number.isFinite)
     : [];
@@ -599,12 +598,7 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
       .from(appointments)
       .where(and(
         eq(appointments.storeId, storeId),
-        // "Busy" = genuinely in progress. A walk-in booked with status
-      // 'checked_in' (see the "create walk-ins as checked_in" flow) only
-      // counts once it has a real check-in timestamp — otherwise assigning a
-      // future walk-in would immediately flip the tech to Busy on the Turn
-      // panel while the grid still shows it as Pending.
-      sql`(${appointments.status} = 'started' OR (${appointments.status} = 'checked_in' AND ${appointments.checkedInAt} IS NOT NULL))`,
+        sql`${appointments.status} IN ('started', 'confirmed')`,
         gte(appointments.date, todayStartUtc),
         sql`${appointments.date} <= ${todayEndUtc}`,
         isNotNull(appointments.staffId)
@@ -715,6 +709,95 @@ async function assertTurnEligibleForWalkIn(storeId: number, staffId?: number | n
     (err as any).status = 409;
     throw err;
   }
+}
+
+/**
+ * Core TURN assignment: pick the next eligible technician, apply the
+ * Consideration Lock (remove from the active deque + lock), write an audit
+ * row, and optionally move the appointment onto that tech. Shared by
+ * POST /api/turn/assign-walkin and the check-in flow (client checks in → the
+ * booking is handed to whoever TURN says is next).
+ *
+ * Returns null when no technician is eligible right now.
+ */
+async function assignAppointmentViaTurn(opts: {
+  storeId: number;
+  serviceId?: number | null;
+  appointmentId?: number | null;
+  requestedStaffId?: number | null;
+  bookedByUserId?: number | null;
+  offline?: boolean;
+  /** Force writing appointments.staff_id to the picked tech (check-in path). */
+  writeStaffId?: boolean;
+  source?: string;
+}): Promise<{ technician: any; eligibility: any; dequeAdvanced: boolean } | null> {
+  const {
+    storeId, serviceId = null, appointmentId = null,
+    requestedStaffId = null, bookedByUserId = null, offline = false,
+    writeStaffId = false, source,
+  } = opts;
+
+  const eligibility = await getTurnEligibility(storeId, serviceId);
+  let selected = requestedStaffId
+    ? eligibility.eligibleTechnicians.find((tech: any) => tech.id === requestedStaffId)
+    : eligibility.eligibleTechnicians[0];
+  // Offline ranking is only a snapshot — if another device consumed the turn,
+  // fall back to the current queue leader.
+  if (!selected && offline) selected = eligibility.eligibleTechnicians[0];
+  if (!selected) return null;
+
+  // Consideration Lock — a specific-tech request keeps their position (bypass);
+  // an offline_turn pick still locks, same as an unrequested online pick.
+  const isRequestBypass = !!requestedStaffId && source !== "offline_turn";
+  if (!isRequestBypass) {
+    const freshPrefs = await getTurnPreferences(storeId);
+    const deque: number[] = Array.isArray(freshPrefs.dequeOrder)
+      ? (freshPrefs.dequeOrder as any[]).map(Number)
+      : [];
+    const lockedIds: number[] = Array.isArray(freshPrefs.lockedStaffIds)
+      ? (freshPrefs.lockedStaffIds as any[]).map(Number).filter(Number.isFinite)
+      : [];
+    const updates: Record<string, any> = {
+      dequeOrder: deque.filter((id) => id !== selected.id),
+      lockedStaffIds: [...new Set([...lockedIds, selected.id])],
+    };
+    if ((freshPrefs.shortTurnProtectedId as any) === selected.id) {
+      updates.shortTurnProtectedId = null;
+    }
+    await saveTurnPreferences(storeId, updates);
+    broadcastTurnEligibilityChanged(storeId);
+    console.log(`[turn] Consideration Lock: staff ${selected.id} removed from active queue (serving)`);
+  }
+
+  const shouldWriteStaffId = appointmentId != null &&
+    (writeStaffId || (offline && requestedStaffId !== selected.id));
+  if (shouldWriteStaffId) {
+    await storage.updateAppointment(appointmentId!, { staffId: selected.id });
+    broadcastSyncEvent({ type: "staff_assigned", storeId, appointmentId: appointmentId!, staffId: selected.id });
+  }
+
+  const recommendedTech = eligibility.eligibleTechnicians[0];
+  try {
+    await db.insert(turnAssignmentLog).values({
+      storeId,
+      appointmentId: appointmentId || null,
+      assignedStaffId: selected.id,
+      turnRecommendedStaffId: recommendedTech?.id ?? null,
+      isOverride: isRequestBypass && selected.id !== recommendedTech?.id,
+      bookedByUserId: bookedByUserId ?? null,
+      source: source ?? (isRequestBypass ? "walkin_fallback" : "turn_system"),
+    });
+  } catch (logErr) {
+    console.error("[turn] Failed to write assignment log:", logErr);
+  }
+
+  // Give the Smart Booking Engine a chance to resolve any conflict this creates
+  // for the tech's upcoming scheduled appointments, without waiting for its cycle.
+  import("./services/smart-booking-reassignment").then(({ runEngineForStaff }) => {
+    runEngineForStaff(storeId, selected.id).catch(() => {});
+  }).catch(() => {});
+
+  return { technician: selected, eligibility, dequeAdvanced: !isRequestBypass };
 }
 
 // === TURN ROTATION: CHECKOUT EVALUATION GATE ===
@@ -4006,8 +4089,7 @@ export async function registerRoutes(
       const appointment = await storage.getAppointment(appointmentId);
       if (!appointment) return res.status(404).json({ message: "Appointment not found" });
 
-      const activeStatuses = ["pending", "confirmed", "checked_in", "in_progress"];
-      const isActive = activeStatuses.includes(appointment.status ?? "");
+      const isActive = (ACTIVE_APPOINTMENT_STATUSES as readonly string[]).includes(appointment.status ?? "");
 
       if (appointment.staffId && isActive && !force) {
         // Collect requested addon records
@@ -5053,9 +5135,8 @@ If you have any questions, please contact your administrator.
               apt.status !== "cancelled" &&
               apt.status !== "completed" &&
               apt.status !== "no_show" &&
-              apt.status !== "no-show" &&
               apt.status !== "started" &&
-              apt.status !== "checked_in"
+              apt.status !== "confirmed"
             ) {
               const noShowAt = new Date(aptDate.getTime() + graceMs);
               if (noShowAt < now) {
@@ -5119,11 +5200,31 @@ If you have any questions, please contact your administrator.
           }
         }
 
+        // Auto-Start: once a checked-in (confirmed) appointment with an assigned
+        // tech reaches its start time, the service begins automatically.
+        // A still-Booked (pending, never checked in) appointment does NOT start.
+        for (const apt of appointments) {
+          const aptDateS = new Date(apt.date);
+          if (aptDateS < twentyFourHoursAgo) continue;
+          if (apt.status === "confirmed" && apt.staffId && aptDateS <= now) {
+            await storage.updateAppointment(apt.id, { status: "started", startedAt: now });
+            apt.status = "started";
+            (apt as any).startedAt = now;
+            broadcastAppointmentStatus({
+              appointmentId: apt.id,
+              storeId: filters.storeId!,
+              status: "started",
+              source: "auto",
+            });
+            broadcastTurnEligibilityChanged(filters.storeId!);
+          }
+        }
+
         if (calSettings?.autoCompleteAppointments) {
           for (const apt of appointments) {
             const aptDate2 = new Date(apt.date);
             if (aptDate2 < twentyFourHoursAgo) continue;
-            if (apt.status === "confirmed" || apt.status === "started" || apt.status === "pending") {
+            if (apt.status === "confirmed" || apt.status === "started") {
               const aptEnd = new Date(aptDate2.getTime() + apt.duration * 60000);
               if (aptEnd < now) {
                 await storage.updateAppointment(apt.id, { status: "completed" });
@@ -5213,6 +5314,9 @@ If you have any questions, please contact your administrator.
         packageId: apptPackage ? apptPackage.packageId : (req.body.packageId ?? null),
         storeId: sessionStoreId,
         date: new Date(req.body.date),
+        ...(req.body.status !== undefined
+          ? { status: appointmentStatusEnum.parse(normalizeAppointmentStatus(req.body.status)) }
+          : {}),
       });
 
       // noShowFill: front-desk is filling a past no-show slot — skip the guard.
@@ -5466,6 +5570,9 @@ If you have any questions, please contact your administrator.
       const input = insertAppointmentSchema.partial().parse({
         ...req.body,
         date: req.body.date ? new Date(req.body.date) : undefined,
+        ...(req.body.status !== undefined
+          ? { status: appointmentStatusEnum.parse(normalizeAppointmentStatus(req.body.status)) }
+          : {}),
       });
       // Commission snapshot fields are server-managed (set once at first
       // completion by storage.updateAppointment) — never trust a client value.
@@ -5703,6 +5810,28 @@ If you have any questions, please contact your administrator.
               console.error("[kiosk/noshow-waitlist] manual notify error:", err.message);
             }
           });
+        }
+
+        // === Check-in: hand the booking to the next tech via TURN ===
+        // When an appointment transitions to 'confirmed' (client checked in),
+        // the TURN system reassigns it to whoever is next in line — unless the
+        // client requested this specific stylist. Mirrors the kiosk check-in.
+        if (
+          input.status === "confirmed" &&
+          existingAppointment.status !== "confirmed" &&
+          !(existingAppointment as any).clientRequestedStaff
+        ) {
+          try {
+            await assignAppointmentViaTurn({
+              storeId: appointment.storeId,
+              serviceId: appointment.serviceId ?? null,
+              appointmentId: appointment.id,
+              writeStaffId: true,
+              source: "checkin",
+            });
+          } catch (turnErr: any) {
+            console.error("[turn] check-in reassign failed:", turnErr?.message);
+          }
         }
 
         // === FIX: Consideration Lock on calendar appointment start ===
@@ -16754,78 +16883,29 @@ or
       const access = await assertStoreAccess(userId, staffId, storeId);
       if (!access) return res.status(403).json({ error: "Unauthorized" });
 
-      const eligibility = await getTurnEligibility(storeId, serviceId);
-      let selected = requestedStaffId
-        ? eligibility.eligibleTechnicians.find((tech) => tech.id === requestedStaffId)
-        : eligibility.eligibleTechnicians[0];
-      // Offline ranking is only a snapshot. If another device consumed the
-      // turn while this device was disconnected, assign the booking to the
-      // current queue leader instead of leaving it on the stale technician.
-      if (!selected && isOfflineTurn) selected = eligibility.eligibleTechnicians[0];
-      if (!selected) {
-        return res.status(409).json({ error: "No technician is eligible for this walk-in right now." });
-      }
-      // Standard turn (no specific tech requested): Consideration Lock.
-      // Remove tech from the active queue entirely while they serve — Index 1 slides up to Index 0.
-      // Tech re-enters the queue at checkout (unshift for short turn, push for standard turn).
-      // Request bypass: the tech keeps their existing position (no lock).
-      // Exception: source === "offline_turn" means the client itself already
-      // ran Turn's own ranking while offline (not a manual front-desk override) —
-      // still apply the lock, same as an unrequested online pick would.
-      const isRequestBypass = !!requestedStaffId && req.body.source !== "offline_turn";
-      if (!isRequestBypass) {
-        const freshPrefs = await getTurnPreferences(storeId);
-        const deque: number[] = Array.isArray(freshPrefs.dequeOrder)
-          ? (freshPrefs.dequeOrder as any[]).map(Number)
-          : [];
-        const lockedIds: number[] = Array.isArray(freshPrefs.lockedStaffIds)
-          ? (freshPrefs.lockedStaffIds as any[]).map(Number).filter(Number.isFinite)
-          : [];
-        const updates: Record<string, any> = {
-          dequeOrder: deque.filter((id) => id !== selected.id),
-          lockedStaffIds: [...new Set([...lockedIds, selected.id])],
-        };
-        // Clear short-turn protection when the protected tech accepts their next client
-        if ((freshPrefs.shortTurnProtectedId as any) === selected.id) {
-          updates.shortTurnProtectedId = null;
-        }
-        await saveTurnPreferences(storeId, updates);
-        broadcastTurnEligibilityChanged(storeId);
-        console.log(`[turn] Consideration Lock: staff ${selected.id} removed from active queue (serving)`);
-      }
-
-      // Log the assignment for favoritism monitoring
       if (req.body.appointmentId && !Number.isFinite(Number(req.body.appointmentId))) {
         console.warn(`[turn] assign-walkin received an unresolved temp appointmentId: ${req.body.appointmentId} — audit log will have no appointment linkage`);
       }
       const appointmentId = req.body.appointmentId ? Number(req.body.appointmentId) : null;
-      if (isOfflineTurn && appointmentId && requestedStaffId !== selected.id) {
-        await storage.updateAppointment(appointmentId, { staffId: selected.id });
-        broadcastSyncEvent({ type: "staff_assigned", storeId, appointmentId, staffId: selected.id });
-      }
-      const recommendedTech = eligibility.eligibleTechnicians[0];
-      try {
-        await db.insert(turnAssignmentLog).values({
-          storeId,
-          appointmentId: appointmentId || null,
-          assignedStaffId: selected.id,
-          turnRecommendedStaffId: recommendedTech?.id ?? null,
-          isOverride: isRequestBypass && selected.id !== recommendedTech?.id,
-          bookedByUserId: userId ? Number(userId) : null,
-          source: isRequestBypass ? "walkin_fallback" : "turn_system",
-        });
-      } catch (logErr) {
-        console.error("[turn] Failed to write assignment log:", logErr);
+
+      const assigned = await assignAppointmentViaTurn({
+        storeId,
+        serviceId,
+        appointmentId,
+        requestedStaffId,
+        bookedByUserId: userId ? Number(userId) : null,
+        offline: isOfflineTurn,
+        source: req.body.source,
+      });
+      if (!assigned) {
+        return res.status(409).json({ error: "No technician is eligible for this walk-in right now." });
       }
 
-      // Fire-and-forget: give the Smart Booking Engine a chance to immediately
-      // detect and resolve any conflict the new walk-in creates for this technician's
-      // upcoming scheduled appointments — without waiting for the 5-minute cycle.
-      import("./services/smart-booking-reassignment").then(({ runEngineForStaff }) => {
-        runEngineForStaff(storeId, selected.id).catch(() => {});
-      }).catch(() => {});
-
-      const responseBody = { technician: selected, eligibility, dequeAdvanced: !isRequestBypass };
+      const responseBody = {
+        technician: assigned.technician,
+        eligibility: assigned.eligibility,
+        dequeAdvanced: assigned.dequeAdvanced,
+      };
       if (idempotencyKey) processedIdempotencyKeys.set(idempotencyKey, { ts: Date.now(), body: responseBody });
       return res.json(responseBody);
     } catch (err: any) {
@@ -19769,7 +19849,8 @@ or
     }
   });
 
-  // POST /api/qr/checkin — staff portal: mark appointment as checked_in
+  // POST /api/qr/checkin — staff portal: check the client in (status → confirmed)
+  // and let TURN hand the booking to the next tech unless a stylist was requested.
   app.post("/api/qr/checkin", isAuthenticated, async (req: any, res: any) => {
     try {
       const { appointmentId } = req.body ?? {};
@@ -19789,11 +19870,30 @@ or
       }
 
       await storage.updateAppointment(id, {
-        status: "checked_in",
+        status: "confirmed",
         checkedInAt: new Date(),
       } as any);
 
-      return res.json({ ok: true, checkedInAt: new Date().toISOString() });
+      // On check-in the TURN system hands the booking to whoever is next in
+      // line — unless the client requested this specific stylist.
+      let reassignedStaffId: number | null = null;
+      if (existing.storeId && !(existing as any).clientRequestedStaff) {
+        try {
+          const assigned = await assignAppointmentViaTurn({
+            storeId: existing.storeId,
+            serviceId: existing.serviceId ?? null,
+            appointmentId: id,
+            writeStaffId: true,
+            source: "checkin",
+          });
+          if (assigned) reassignedStaffId = assigned.technician.id;
+        } catch (turnErr: any) {
+          console.error("[qr/checkin] turn reassign failed:", turnErr?.message);
+        }
+      }
+
+      broadcastAppointmentStatus({ appointmentId: id, storeId: existing.storeId!, status: "confirmed", source: "manual" });
+      return res.json({ ok: true, checkedInAt: new Date().toISOString(), reassignedStaffId });
     } catch (err: any) {
       console.error("[qr/checkin] error:", err?.message);
       return res.status(500).json({ error: "Check-in failed" });
@@ -20052,7 +20152,7 @@ or
         SELECT DISTINCT staff_id
         FROM appointments
         WHERE store_id = $1
-          AND status IN ('checked_in', 'serving')
+          AND status IN ('confirmed', 'started')
           AND date >= NOW() - INTERVAL '4 hours'
           AND staff_id IS NOT NULL
       `, [store.id]);
@@ -20193,7 +20293,7 @@ or
 
       // Search appointments by phone — matches via client_phones E.164 last-10-digit comparison.
       const { rows: apptRows } = await pool.query(`
-        SELECT a.id, a.date, a.status,
+        SELECT a.id, a.date, a.status, a.service_id, a.client_requested_staff,
                s.name  AS service_name,
                st.name AS staff_name,
                st.avatar_thumb_url AS staff_avatar_thumb
@@ -20203,7 +20303,7 @@ or
         WHERE a.store_id = $1
           AND a.date >= NOW() - INTERVAL '30 minutes'
           AND a.date <= $2
-          AND a.status NOT IN ('cancelled', 'no_show', 'completed', 'checked_in')
+          AND a.status NOT IN ('cancelled', 'no_show', 'completed', 'confirmed', 'started')
           AND a.customer_id IN (
             SELECT cl.id FROM clients cl
             JOIN client_phones cp ON cp.client_id = cl.id
@@ -20219,9 +20319,25 @@ or
         const appt = apptRows[0];
         // Mark the appointment as checked in immediately
         await pool.query(
-          `UPDATE appointments SET status = 'checked_in', checked_in_at = NOW() WHERE id = $1`,
+          `UPDATE appointments SET status = 'confirmed', checked_in_at = NOW() WHERE id = $1`,
           [appt.id]
         );
+        // On check-in the TURN system hands the booking to the next tech in
+        // line — unless the client requested this specific stylist.
+        if (!appt.client_requested_staff) {
+          try {
+            await assignAppointmentViaTurn({
+              storeId: store.id,
+              serviceId: appt.service_id ?? null,
+              appointmentId: appt.id,
+              writeStaffId: true,
+              source: "checkin",
+            });
+          } catch (turnErr: any) {
+            console.error("[kiosk/lookup] turn reassign failed:", turnErr?.message);
+          }
+        }
+        broadcastAppointmentStatus({ appointmentId: appt.id, storeId: store.id, status: "confirmed", source: "manual" });
         void logActivityEvent({
           storeId: store.id,
           eventType: "check_in",
@@ -20610,7 +20726,7 @@ or
             staffId: assignedStaffId!,
             serviceId: primaryServiceId,
             customerId: safeClientId,
-            status: "checked_in",
+            status: "confirmed",
             checkedInAt: now,
             clientRequestedStaff: clientRequestedStaffBool,
             resourceId: assignedResourceId,
@@ -20802,7 +20918,7 @@ or
         SELECT COUNT(DISTINCT staff_id)::int AS count
         FROM appointments
         WHERE store_id = $1
-          AND status IN ('checked_in', 'serving')
+          AND status IN ('confirmed', 'started')
           AND date >= NOW() - INTERVAL '4 hours'
           AND staff_id IS NOT NULL
       `, [store.id]);
@@ -20814,7 +20930,7 @@ or
         SELECT COUNT(DISTINCT staff_id)::int AS count
         FROM appointments
         WHERE store_id = $1
-          AND status IN ('checked_in', 'serving')
+          AND status IN ('confirmed', 'started')
           AND staff_id IS NOT NULL
           AND (date + (duration * INTERVAL '1 minute')) BETWEEN NOW() AND NOW() + INTERVAL '10 minutes'
       `, [store.id]);
