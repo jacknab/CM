@@ -5,7 +5,15 @@ import { db } from "./db";
 import { locations } from "@shared/schema";
 import { eq, and, gt, sql } from "drizzle-orm";
 import { toE164US } from "./lib/phoneUtils";
+import { getOrCreateManageToken, buildManageUrl } from "./lib/bookingManageLinks";
 import Twilio from "twilio";
+
+/** Append the {manageUrl} placeholder to a template that doesn't already use it. */
+function ensureManageUrlPlaceholder(template: string): string {
+  return template.includes("{manageUrl}")
+    ? template
+    : `${template.trimEnd()}\nManage or cancel: {manageUrl}`;
+}
 
 // ── Twilio direct sender (used for platform-level SMS like staff OTP) ──────────
 // Does NOT touch the store credit/allowance system — this is a platform cost.
@@ -408,9 +416,17 @@ export async function sendBookingConfirmation(
   if (!settings?.bookingConfirmationEnabled) return;
 
   const timezone = appointment.store?.timezone || "UTC";
-  const template =
+  const template = ensureManageUrlPlaceholder(
     settings.confirmationTemplate ||
-    "Hi {customerName}, your appointment at {storeName} is confirmed for {appointmentDate} at {appointmentTime}. See you then!";
+    "Hi {customerName}, your appointment at {storeName} is confirmed for {appointmentDate} at {appointmentTime}. See you then!"
+  );
+
+  let manageUrl = "";
+  try {
+    manageUrl = buildManageUrl(await getOrCreateManageToken(appointment.id));
+  } catch (e: any) {
+    console.error("[SMS] could not build manage link:", e?.message ?? e);
+  }
 
   const body = interpolateTemplate(template, {
     customerName: (appointment.customer as any)?.fullName || appointment.customer?.name || "there",
@@ -426,6 +442,7 @@ export async function sendBookingConfirmation(
       "h:mm a"
     ),
     serviceName: appointment.service?.name || "your service",
+    manageUrl,
   });
 
   await sendSms(
@@ -456,9 +473,17 @@ export async function sendAppointmentReminder(
   if (existing) return;
 
   const timezone = appointment.store?.timezone || "UTC";
-  const template =
+  const template = ensureManageUrlPlaceholder(
     settings.reminderTemplate ||
-    "Hi {customerName}, reminder: your appt at {storeName} is on {appointmentDate} at {appointmentTime}. Reply CANCEL to cancel.";
+    "Hi {customerName}, reminder: your appt at {storeName} is on {appointmentDate} at {appointmentTime}. Reply CANCEL to cancel."
+  );
+
+  let manageUrl = "";
+  try {
+    manageUrl = buildManageUrl(await getOrCreateManageToken(appointment.id));
+  } catch (e: any) {
+    console.error("[SMS] could not build manage link:", e?.message ?? e);
+  }
 
   const body = interpolateTemplate(template, {
     customerName: (appointment.customer as any)?.fullName || appointment.customer?.name || "there",
@@ -474,6 +499,7 @@ export async function sendAppointmentReminder(
       "h:mm a"
     ),
     serviceName: appointment.service?.name || "your service",
+    manageUrl,
   });
 
   await sendSms(

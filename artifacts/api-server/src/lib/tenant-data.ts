@@ -271,7 +271,8 @@ export async function buildTenantData(
   // Service-matched reviews (AI-matched Google reviews keyed by service_id)
   let serviceReviews: Record<number, ServiceReviewEntry> = {};
   try {
-    const { getServiceReviewsForStore } = await import("./serviceReviewMatcher");
+    const { getServiceReviewsForStore, ensureServiceReviewsFresh } = await import("./serviceReviewMatcher");
+    ensureServiceReviewsFresh(storeIdNum); // fire-and-forget: populate/refresh for next load
     serviceReviews = await getServiceReviewsForStore(storeIdNum);
   } catch {
     // Non-fatal — table may not exist yet in this environment

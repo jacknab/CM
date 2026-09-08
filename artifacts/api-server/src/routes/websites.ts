@@ -952,7 +952,8 @@ router.get("/tenant/:slug/data", async (req, res): Promise<void> => {
 
   if (storeid) {
     try {
-      const { getServiceReviewsForStore } = await import("../lib/serviceReviewMatcher");
+      const { getServiceReviewsForStore, ensureServiceReviewsFresh } = await import("../lib/serviceReviewMatcher");
+      ensureServiceReviewsFresh(Number(storeid)); // fire-and-forget: populate/refresh for next load
        serviceReviews = await getServiceReviewsForStore(Number(storeid));
     } catch { /* non-fatal — table may not exist yet */ }
   }

@@ -1360,6 +1360,7 @@ export async function registerRoutes(
     }
     if (req.path.startsWith("/seo-regions")) return next(); // SEO regions admin — public
     if (req.path.startsWith("/appointments/confirmation/")) return next(); // Public booking confirmation lookup & cancel
+    if (req.path.startsWith("/booking/manage/")) return next(); // Public per-booking manage token (SMS link) — view & cancel
     if (req.path.endsWith("/respond")) return next(); // Public intake form submission
     if (req.path.startsWith("/reviews/form/")) return next(); // Public review form lookup
     if (req.path === "/reviews/submit") return next(); // Public review submission
@@ -7437,7 +7438,8 @@ If you have any questions, please contact your administrator.
     try {
       const store = await storage.getStoreBySlug(req.params.slug);
       if (!store) return res.status(404).json({ message: "Store not found" });
-      const { getServiceReviewsForStore } = await import("./lib/serviceReviewMatcher");
+      const { getServiceReviewsForStore, ensureServiceReviewsFresh } = await import("./lib/serviceReviewMatcher");
+      ensureServiceReviewsFresh(store.id); // fire-and-forget: populate/refresh for next load
       const serviceReviews = await getServiceReviewsForStore(store.id);
       return res.json(serviceReviews);
     } catch (error) {
@@ -8206,72 +8208,69 @@ If you have any questions, please contact your administrator.
         return res.status(404).json({ message: "Booking not found" });
       }
 
-      if ((store as any).allowOnlineCancellation === false) {
-        return res.status(403).json({ message: "Online cancellation isn't available for this salon — please call to cancel." });
-      }
-
-      // Enforce cancellation window cutoff — with an optional late-cancel fee.
-      const cutoffHours = (store as any).cancellationHoursCutoff ?? 24;
-      let cancellationFeeCharged: number | null = null;
-      let cancellationFeeError = false;
-
-      if (cutoffHours > 0 && appointment.status !== "cancelled") {
-        const hoursUntilAppointment = (new Date(appointment.date).getTime() - Date.now()) / 3600_000;
-        if (hoursUntilAppointment < cutoffHours) {
-          const feePct = Number((store as any).cancellationFeeValue) || 0;
-          const feeCust = (appointment as any).stripeCustomerIdApt ?? (appointment as any).customer?.stripeCustomerId ?? null;
-          const feePm   = (appointment as any).stripePaymentMethodIdApt ?? (appointment as any).customer?.stripePaymentMethodId ?? null;
-
-          if (feePct > 0 && feeCust && feePm) {
-            // Fee configured AND the client has a card on file — charge it, then allow the cancel.
-            const servicePrice = Number((appointment as any).service?.price ?? 0);
-            const feeCents = Math.round(servicePrice * (feePct / 100) * 100);
-            if (feeCents >= 50) {
-              try {
-                const { chargeCancellationFee } = await import("./lib/cancellationFee");
-                await chargeCancellationFee({
-                  storeId: store.id,
-                  appointmentId: appointment.id,
-                  stripeCustomerId: feeCust,
-                  stripePaymentMethodId: feePm,
-                  feeCents,
-                });
-                cancellationFeeCharged = feeCents / 100;
-              } catch (feeErr: any) {
-                console.error(`[cancel] late-cancel fee charge failed for appointment ${appointment.id}:`, feeErr?.message);
-                cancellationFeeError = true;
-              }
-            }
-            // fall through → cancellation proceeds regardless of the charge outcome
-          } else if (feePct > 0) {
-            // Fee configured but no card on file — allow the cancel for free.
-          } else {
-            // No fee configured — keep the hard block.
-            return res.status(409).json({
-              message: `Cancellations must be made at least ${cutoffHours} hour${cutoffHours === 1 ? "" : "s"} in advance.`,
-              cutoffHours,
-            });
-          }
-        }
-      }
-
-      if (appointment.status !== "cancelled") {
-        await storage.updateAppointment(appointment.id, {
-          status: "cancelled",
-          cancellationReason: cancellationFeeCharged != null
-            ? `Cancelled by customer (late-cancel fee $${cancellationFeeCharged.toFixed(2)} charged)`
-            : "Cancelled by customer",
-        });
-      }
-
-      const refreshed = await storage.getAppointment(appointment.id);
-      const result = refreshed || appointment;
-      if (result?.staff) {
-        (result as any).staff = result.staff;
-      }
-      return res.json({ ...result, cancellationFeeCharged, cancellationFeeError });
+      const { cancelBookingWithPolicy } = await import("./lib/publicCancel");
+      const outcome = await cancelBookingWithPolicy(appointment, store);
+      return res.status(outcome.status).json(outcome.body);
     } catch (error) {
       console.error("Confirmation cancel error:", error);
+      return res.status(400).json({ message: "Failed to cancel booking" });
+    }
+  });
+
+  // ── Per-booking manage token flow ──────────────────────────────────────────
+  // certxa.com/b/<token> — one booking, addressed by an unguessable random
+  // token (never the numeric id). The token is the ONLY credential. Any
+  // missing / blank / unknown token is a flat 404 with no detail.
+  const loadAppointmentByManageToken = async (rawToken: string) => {
+    const token = (rawToken || "").trim();
+    if (!token) return null;
+    const row = await storage.getAppointmentByManageToken(token);
+    if (!row) return null;
+    return storage.getAppointment(row.id);
+  };
+
+  app.get("/api/booking/manage/:token", async (req, res) => {
+    try {
+      const appointment = await loadAppointmentByManageToken(req.params.token);
+      if (!appointment || !appointment.storeId) {
+        return res.status(404).json({ message: "Booking not found" });
+      }
+      const store = await storage.getStore(appointment.storeId);
+      if (!store) return res.status(404).json({ message: "Booking not found" });
+
+      return res.json({
+        appointment,
+        store: {
+          name: (store as any).name ?? "our salon",
+          phone: (store as any).phone ?? null,
+          timezone: (store as any).timezone ?? "UTC",
+        },
+        storePolicy: {
+          allowOnlineCancellation: (store as any).allowOnlineCancellation ?? true,
+          cancellationHoursCutoff: (store as any).cancellationHoursCutoff ?? 24,
+          cancellationPolicyText: (store as any).cancellationPolicyText ?? "",
+        },
+      });
+    } catch (error) {
+      console.error("Manage-token lookup error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/booking/manage/:token/cancel", async (req, res) => {
+    try {
+      const appointment = await loadAppointmentByManageToken(req.params.token);
+      if (!appointment || !appointment.storeId) {
+        return res.status(404).json({ message: "Booking not found" });
+      }
+      const store = await storage.getStore(appointment.storeId);
+      if (!store) return res.status(404).json({ message: "Booking not found" });
+
+      const { cancelBookingWithPolicy } = await import("./lib/publicCancel");
+      const outcome = await cancelBookingWithPolicy(appointment, store);
+      return res.status(outcome.status).json(outcome.body);
+    } catch (error) {
+      console.error("Manage-token cancel error:", error);
       return res.status(400).json({ message: "Failed to cancel booking" });
     }
   });
@@ -19298,6 +19297,14 @@ or
 
   // Start Google Reviews auto-sync (every 6 hours — new engine, new schema + legacy fallback)
   startGoogleReviewSyncScheduler();
+
+  // One-time backfill: populate service_review_matches for stores that have
+  // reviews but no matches yet (website service cards). Non-fatal.
+  setTimeout(() => {
+    import("./startup/backfillServiceReviews.js")
+      .then(({ backfillServiceReviews }) => backfillServiceReviews())
+      .catch((e) => console.warn("[ServiceReviewBackfill] skipped:", (e as any)?.message));
+  }, 90_000);
 
   } // end IS_SCHEDULER_INSTANCE
 

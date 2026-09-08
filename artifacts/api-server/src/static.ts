@@ -111,7 +111,7 @@ const GEO_PAGES: Array<{ route: string; file: string }> = [
 // change here.
 export const KNOWN_APP_PREFIXES = new Set([
   "accept-invite", "account", "addons", "ai-receptionist", "analytics",
-  "api-keys", "app-login", "appointments", "auth", "autumn", "billing",
+  "api-keys", "app-login", "appointments", "auth", "autumn", "b", "billing",
   "book", "booking", "booking-policies", "business-hours", "business-settings",
   "calendar", "calendar-settings", "campaigns", "cash-drawer", "catalog",
   "chat", "checkin-kiosk", "chkeditor", "client", "client-lookup", "clients",

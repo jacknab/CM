@@ -123,6 +123,7 @@ export interface IStorage {
   getAppointments(filters?: { from?: Date; to?: Date; staffId?: number; storeId?: number; customerId?: number }): Promise<AppointmentWithDetails[]>;
   getAppointmentsByCustomerPhone(phoneDigits: string, storeId?: number): Promise<AppointmentWithDetails[]>;
   getAppointment(id: number): Promise<AppointmentWithDetails | undefined>;
+  getAppointmentByManageToken(token: string): Promise<{ id: number } | undefined>;
   createAppointment(appointment: InsertAppointment): Promise<Appointment>;
   updateAppointment(id: number, appointment: Partial<InsertAppointment>): Promise<Appointment | undefined>;
   deleteAppointment(id: number): Promise<void>;
@@ -858,6 +859,16 @@ export class DatabaseStorage implements IStorage {
       },
     });
     return result as any;
+  }
+
+  async getAppointmentByManageToken(token: string): Promise<{ id: number } | undefined> {
+    if (!token) return undefined;
+    const [row] = await db
+      .select({ id: appointments.id })
+      .from(appointments)
+      .where(eq(appointments.manageToken, token))
+      .limit(1);
+    return row;
   }
 
   async createAppointment(insertAppointment: InsertAppointment): Promise<Appointment> {

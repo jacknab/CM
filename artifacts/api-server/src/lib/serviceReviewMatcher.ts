@@ -73,6 +73,13 @@ export interface ServiceReviewResult {
   reviewerAvatarUrl: string | null;
   reviewMediaItems: Array<Record<string, unknown>>;
   ownerReply: Record<string, unknown> | null;
+  /**
+   * Set when this entry was borrowed from a sibling service in the same
+   * category because the service itself had no directly-matched review.
+   * Metadata only — the website renders a borrowed entry exactly like a
+   * direct match.
+   */
+  borrowedFromServiceId?: number;
 }
 
 // ── OpenAI singleton ──────────────────────────────────────────────────────────
@@ -144,6 +151,33 @@ function keywordConfidence(serviceSignal: string, reviewText: string): number {
   // Confidence: proportion of service words matched, scaled to [0.55, 1.0]
   const raw = hits / serviceTokens.length;
   return Math.min(1.0, 0.55 + raw * 0.45);
+}
+
+/**
+ * Keyword-match a single Google review to its best service — the free,
+ * no-OpenAI fallback used when the OpenAI key is missing or the semantic
+ * pass produced nothing. Same signal as the client-review pass.
+ */
+function keywordMatchGoogleReview(
+  review: GoogleReviewRow,
+  services: ServiceRow[],
+): { serviceId: number; confidence: number } | null {
+  const text = review.review_text ?? "";
+  if (!text.trim()) return null;
+
+  let bestServiceId: number | null = null;
+  let bestConf = 0.55; // minimum threshold
+
+  for (const service of services) {
+    const signal = `${service.name} ${service.category_name ?? ""}`.trim();
+    const conf = keywordConfidence(signal, text);
+    if (conf > bestConf) {
+      bestConf = conf;
+      bestServiceId = service.id;
+    }
+  }
+
+  return bestServiceId === null ? null : { serviceId: bestServiceId, confidence: bestConf };
 }
 
 // ── Database I/O ──────────────────────────────────────────────────────────────
@@ -450,7 +484,9 @@ export async function matchServiceReviewsForStore(storeId: number): Promise<{
     const googleReviews = reviewResult.rows as unknown as GoogleReviewRow[];
     googleReviewed = googleReviews.length;
 
-    if (googleReviews.length > 0) {
+    const hasOpenAI = !!process.env.OPENAI_API_KEY;
+
+    if (googleReviews.length > 0 && hasOpenAI) {
       const CHUNK_SIZE = 40;
       for (let i = 0; i < googleReviews.length; i += CHUNK_SIZE) {
         const chunk = googleReviews.slice(i, i + CHUNK_SIZE);
@@ -479,6 +515,29 @@ export async function matchServiceReviewsForStore(storeId: number): Promise<{
         }
       }
     }
+
+    // Keyword fallback — no OpenAI key, or the semantic pass matched nothing.
+    // Keeps category buckets populated so the service-type fallback has donors.
+    if (googleReviews.length > 0 && googleMatched === 0) {
+      let kw = 0;
+      for (const gr of googleReviews) {
+        const m = keywordMatchGoogleReview(gr, services);
+        if (!m) continue;
+        try {
+          await persistGoogleMatch(storeId, gr.id, m.serviceId, m.confidence);
+          kw++;
+        } catch (err) {
+          console.warn(
+            `[ServiceReviewMatcher] Could not persist google keyword match reviewId=${gr.id}:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+      googleMatched += kw;
+      console.log(
+        `[ServiceReviewMatcher] Google keyword fallback matched ${kw} (storeId=${storeId}, openai=${hasOpenAI})`,
+      );
+    }
   } catch (err) {
     console.warn("[ServiceReviewMatcher] Google review pass failed:", err instanceof Error ? err.message : err);
   }
@@ -492,6 +551,71 @@ export async function matchServiceReviewsForStore(storeId: number): Promise<{
       ` google(reviewed=${googleReviewed}, matched=${googleMatched}) ──`,
   );
   return { reviewed: totalReviewed, matched: totalMatched };
+}
+
+// ── Lazy self-heal ───────────────────────────────────────────────────────────
+
+const _srmInFlight = new Set<number>();
+const _srmLastAttempt = new Map<number, number>();
+const SRM_STALE_MS = 7 * 24 * 60 * 60 * 1000; // matches older than a week → re-run
+const SRM_MIN_RETRY_MS = 30 * 60 * 1000; // never re-attempt a store within 30 min
+
+/**
+ * Fire-and-forget: ensure a store's service_review_matches are populated and
+ * not stale. Safe to call on every public tenant-data request — it
+ * self-throttles per store, never blocks, and never throws. The current
+ * request still returns whatever data exists now; the next load is fresh.
+ */
+export function ensureServiceReviewsFresh(storeId: number): void {
+  if (!Number.isFinite(storeId) || storeId <= 0) return;
+  if (_srmInFlight.has(storeId)) return;
+  const last = _srmLastAttempt.get(storeId) ?? 0;
+  if (Date.now() - last < SRM_MIN_RETRY_MS) return;
+
+  _srmInFlight.add(storeId);
+  _srmLastAttempt.set(storeId, Date.now());
+
+  void (async () => {
+    try {
+      const stat = await db.execute(sql`
+        SELECT
+          (SELECT COUNT(*) FROM service_review_matches WHERE store_id = ${storeId}) AS c,
+          (SELECT MAX(matched_at) FROM service_review_matches WHERE store_id = ${storeId}) AS m
+      `);
+      const row = (stat.rows?.[0] ?? {}) as { c?: string | number; m?: string | Date | null };
+      const count = Number(row.c ?? 0);
+      const matchedAt = row.m ? new Date(row.m as any).getTime() : 0;
+      if (count > 0 && Date.now() - matchedAt < SRM_STALE_MS) return; // already fresh
+
+      // Only run if there is actually something to match.
+      const cand = await db.execute(sql`
+        SELECT
+          EXISTS (
+            SELECT 1 FROM google_reviews
+            WHERE store_id = ${storeId} AND review_text IS NOT NULL AND review_text <> ''
+          ) AS has_google,
+          EXISTS (
+            SELECT 1 FROM reviews
+            WHERE store_id = ${storeId} AND photo_url IS NOT NULL AND photo_url <> '' AND rating >= 5
+          ) AS has_client
+      `);
+      const c0 = (cand.rows?.[0] ?? {}) as { has_google?: boolean; has_client?: boolean };
+      if (!c0.has_google && !c0.has_client) return;
+
+      console.log(`[ServiceReviewMatcher] self-heal storeId=${storeId} (count=${count}, stale/empty)`);
+      const r = await matchServiceReviewsForStore(storeId);
+      console.log(
+        `[ServiceReviewMatcher] self-heal storeId=${storeId} done reviewed=${r.reviewed} matched=${r.matched}`,
+      );
+    } catch (err) {
+      console.warn(
+        `[ServiceReviewMatcher] self-heal storeId=${storeId} failed:`,
+        err instanceof Error ? err.message : err,
+      );
+    } finally {
+      _srmInFlight.delete(storeId);
+    }
+  })();
 }
 
 // ── Query matched reviews for a store (used by tenant data & website builder) ─
@@ -657,6 +781,80 @@ export async function getServiceReviewsForStore(
         ownerReply: row.owner_reply ?? null,
       };
     }
+
+    // ── Service-type (category) fallback ────────────────────────────────────
+    // A service with no directly-matched review borrows the best review from a
+    // sibling service in the same category, cloned verbatim (photo/media
+    // included). Reviews are distributed round-robin so sibling cards don't all
+    // show the identical quote when a category has several matched reviews.
+    try {
+      const svcRes = await db.execute(sql`
+        SELECT id, category_id
+        FROM services
+        WHERE store_id = ${storeId}
+          AND (is_active IS NULL OR is_active = true)
+        ORDER BY id
+        LIMIT 500
+      `);
+      const activeServices = svcRes.rows as unknown as Array<{
+        id: number;
+        category_id: number | null;
+      }>;
+
+      const catKey = (cid: number | null | undefined) =>
+        cid == null ? "none" : String(cid);
+
+      // Best-first comparator: has review media, then a customer photo, then
+      // higher rating, then more recent.
+      const rankTuple = (r: ServiceReviewResult): number[] => {
+        const hasMedia =
+          Array.isArray(r.reviewMediaItems) && r.reviewMediaItems.length > 0 ? 1 : 0;
+        const hasPhoto = r.photoUrl ? 1 : 0;
+        const t = r.createdAt ? Date.parse(r.createdAt) : 0;
+        return [hasMedia, hasPhoto, r.rating || 0, Number.isFinite(t) ? t : 0];
+      };
+      const cmp = (a: ServiceReviewResult, b: ServiceReviewResult): number => {
+        const ta = rankTuple(a);
+        const tb = rankTuple(b);
+        for (let i = 0; i < ta.length; i++) {
+          if (tb[i] !== ta[i]) return tb[i] - ta[i];
+        }
+        return 0;
+      };
+
+      // category -> donor serviceIds already in dict, best-first
+      const catDonors = new Map<string, number[]>();
+      for (const s of activeServices) {
+        if (!dict[s.id]) continue;
+        const k = catKey(s.category_id);
+        const arr = catDonors.get(k) ?? [];
+        arr.push(s.id);
+        catDonors.set(k, arr);
+      }
+      for (const ids of catDonors.values()) {
+        ids.sort((a, b) => cmp(dict[a], dict[b]));
+      }
+
+      const cursor = new Map<string, number>();
+      for (const s of activeServices) {
+        if (dict[s.id]) continue;
+        const k = catKey(s.category_id);
+        const pool = catDonors.get(k);
+        if (!pool || pool.length === 0) continue;
+        const i = cursor.get(k) ?? 0;
+        cursor.set(k, i + 1);
+        const donorId = pool[i % pool.length];
+        const donor = dict[donorId];
+        if (!donor) continue;
+        dict[s.id] = { ...donor, serviceId: s.id, borrowedFromServiceId: donorId };
+      }
+    } catch (fallbackErr) {
+      console.warn(
+        "[ServiceReviewMatcher] category fallback failed:",
+        fallbackErr instanceof Error ? fallbackErr.message : fallbackErr,
+      );
+    }
+
     return dict;
   } catch (err) {
     console.warn("[ServiceReviewMatcher] getServiceReviewsForStore failed:", err instanceof Error ? err.message : err);

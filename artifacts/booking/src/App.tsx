@@ -100,6 +100,7 @@ import WebsiteSetupFlow from "@/pages/setup/WebsiteSetupFlow";
 import PublicBooking from "@/pages/PublicBooking";
 import BookingWidgetPage from "@/pages/BookingWidgetPage";
 import BookingConfirmation from "@/pages/public-booking/BookingConfirmation";
+import ManageBooking from "@/pages/public-booking/ManageBooking";
 import ReviewGate from "@/pages/public-review/ReviewGate";
 import ReviewFeedback from "@/pages/public-review/ReviewFeedback";
 import CompleteBooking from "@/pages/public-payment/CompleteBooking";
@@ -414,7 +415,9 @@ function App() {
 
 function AppRoutes() {
   const location = useLocation();
-  const isPublicConfirmation = location.pathname.startsWith("/booking/") && !location.pathname.startsWith("/booking/new");
+  const isPublicConfirmation =
+    (location.pathname.startsWith("/booking/") && !location.pathname.startsWith("/booking/new")) ||
+    location.pathname.startsWith("/b/");
 
   const isAuthenticatedRoute = authenticatedPaths.some(path =>
     location.pathname === path || location.pathname.startsWith(path + "/")
@@ -474,6 +477,7 @@ function AppRoutes() {
       <Route path="/widget" element={<BookingWidgetPage />} />
       <Route path="/book/:slug" element={<PublicBooking />} />
       <Route path="/booking/:confirmationNumber" element={<BookingConfirmation />} />
+      <Route path="/b/:token" element={<ManageBooking />} />
       <Route path="/review/:token" element={<ReviewGate />} />
       <Route path="/review/:token/feedback" element={<ReviewFeedback />} />
       <Route path="/review/:appointmentId" element={<ReviewSubmit />} />

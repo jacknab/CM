@@ -440,6 +440,9 @@ export const appointments = pgTable("appointments", {
   clientRequestedStaff: boolean("client_requested_staff").default(false),
   calendarHidden: boolean("calendar_hidden").default(false),
   createdAt: timestamp("created_at").defaultNow(),
+  // Short random token for the client-facing "manage my booking" link sent in
+  // confirmation/reminder SMS (certxa.com/b/<token>). Never the numeric id.
+  manageToken: text("manage_token"),
   // ── Payment tracking (set at booking time) ────────────────────────────────
   paymentPolicy:           text("payment_policy").notNull().default("none"),
   depositCollected:        decimal("deposit_collected", { precision: 10, scale: 2 }),

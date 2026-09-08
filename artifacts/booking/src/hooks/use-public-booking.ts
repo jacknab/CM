@@ -63,6 +63,59 @@ export function useCancellationPolicy(slug?: string) {
   });
 }
 
+export type ManagedBookingResult = {
+  appointment: AppointmentWithDetails;
+  store: { name: string; phone: string | null; timezone: string };
+  storePolicy: BookingStorePolicy;
+};
+
+/** GET /api/booking/manage/:token — the single booking behind an SMS manage link. */
+export function useManagedBooking(token?: string) {
+  return useQuery<ManagedBookingResult | null>({
+    queryKey: ["managed-booking", token],
+    queryFn: async () => {
+      const res = await fetch(`/api/booking/manage/${token}`, { credentials: "include" });
+      if (!res.ok) {
+        if (res.status === 404) return null;
+        throw new Error("Failed to fetch booking");
+      }
+      const body = await res.json();
+      return {
+        appointment: body.appointment,
+        store: body.store ?? { name: "our salon", phone: null, timezone: "UTC" },
+        storePolicy: { ...DEFAULT_POLICY, ...(body.storePolicy ?? {}) },
+      };
+    },
+    enabled: !!token,
+  });
+}
+
+/** POST /api/booking/manage/:token/cancel */
+export function useCancelManagedBooking(token?: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/booking/manage/${token}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+        credentials: "include",
+      });
+      const body = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        const err = new Error(body?.message || "Failed to cancel booking") as CancelBookingError;
+        err.status = res.status;
+        if (typeof body?.cutoffHours === "number") err.cutoffHours = body.cutoffHours;
+        throw err;
+      }
+      return body;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["managed-booking", token] });
+    },
+  });
+}
+
 type CancelBookingInput = {
   confirmationNumber: string;
   appointmentId: number;
