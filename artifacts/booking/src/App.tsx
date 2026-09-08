@@ -71,7 +71,6 @@ import AiReceptionistLive from "@/pages/AiReceptionistLive";
 import SmsInbox from "@/pages/SmsInbox";
 import SmsActivity from "@/pages/SmsActivity";
 import Campaigns from "@/pages/Campaigns";
-import BookingPolicies from "@/pages/BookingPolicies";
 import ClientAtRisk from "@/pages/ClientAtRisk";
 import ApiKeys from "@/pages/ApiKeys";
 import EliteApiDocs from "@/pages/EliteApiDocs";
@@ -623,7 +622,8 @@ function AppRoutes() {
           </RequirePermission>
         }
       />
-      <Route path="/booking-policies" element={<BookingPolicies />} />
+      {/* Booking Policies was merged into Booking Controls (/calendar-settings) */}
+      <Route path="/booking-policies" element={<Navigate to="/calendar-settings" replace />} />
       <Route path="/clients/at-risk" element={<OwnerOnlyRoute><ClientAtRisk /></OwnerOnlyRoute>} />
       <Route path="/online-booking" element={<OnlineBooking />} />
       <Route path="/sms-settings" element={<SmsSettings />} />

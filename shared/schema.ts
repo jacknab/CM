@@ -204,6 +204,11 @@ export const locations = pgTable("locations", {
   bookingPaymentPolicy: text("booking_payment_policy").notNull().default("none"),
   depositType:          text("deposit_type"),   // 'percentage' | 'fixed'
   depositValue:         decimal("deposit_value", { precision: 10, scale: 2 }),
+  // ── Online booking controls ─────────────────────────────────────────────
+  onlineBookingMode:            text("online_booking_mode").notNull().default("all"), // 'all' | 'existing' | 'off'
+  advanceBookingEnabled:        boolean("advance_booking_enabled").notNull().default(false),
+  advanceBookingMonths:         integer("advance_booking_months").notNull().default(3),
+  onlineWaitlistEnabled:        boolean("online_waitlist_enabled").notNull().default(false),
   // ── Online booking cancellation policy ───────────────────────────────────
   allowOnlineCancellation:    boolean("allow_online_cancellation").notNull().default(true),
   cancellationPolicyRequired: boolean("cancellation_policy_required").notNull().default(false),

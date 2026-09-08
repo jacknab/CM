@@ -15,7 +15,6 @@ import {
   Languages,
   Sliders,
   Globe,
-  FileText,
   Layers,
   Tablet,
   CreditCard,
@@ -85,18 +84,13 @@ export function buildSettingsNav(pick: Pick4): SettingsNavGroup[] {
       items: [
         {
           label: pick({ en: "Booking Controls", vi: "Kiểm soát đặt lịch", es: "Controles de reserva", fr: "Contrôles de réservation" }),
-          description: pick({ en: "Booking window, time-slot length and calendar rules.", vi: "Cửa sổ đặt lịch, độ dài khung giờ và quy tắc lịch.", es: "Ventana de reserva, duración de franjas y reglas del calendario.", fr: "Fenêtre de réservation, durée des créneaux et règles de l'agenda." }),
+          description: pick({ en: "Online booking, cancellation policy & fees, no-shows, waitlist, ban list and calendar rules.", vi: "Đặt lịch trực tuyến, chính sách & phí hủy, vắng mặt, danh sách chờ, danh sách chặn và quy tắc lịch.", es: "Reserva en línea, política y tarifas de cancelación, ausencias, lista de espera, lista de bloqueo y reglas del calendario.", fr: "Réservation en ligne, politique et frais d'annulation, absences, liste d'attente, liste de blocage et règles de l'agenda." }),
           icon: CalendarDays, to: "/calendar-settings", iconBg: "bg-violet-100", iconColor: "text-violet-500",
         },
         {
           label: pick({ en: "Online Booking", vi: "Đặt lịch trực tuyến", es: "Reserva en línea", fr: "Réservation en ligne" }),
           description: pick({ en: "Your public booking page, widget and availability.", vi: "Trang đặt lịch công khai, widget và tình trạng còn chỗ.", es: "Tu página de reserva pública, widget y disponibilidad.", fr: "Votre page de réservation publique, widget et disponibilités." }),
           icon: Globe, to: "/online-booking", iconBg: "bg-orange-100", iconColor: "text-orange-500",
-        },
-        {
-          label: pick({ en: "Booking Policies", vi: "Chính sách đặt lịch", es: "Políticas de reserva", fr: "Politiques de réservation" }),
-          description: pick({ en: "Cancellation policy & fees, no-show rules, deposits and the booking ban list.", vi: "Chính sách & phí hủy, quy tắc vắng mặt, đặt cọc và danh sách chặn đặt lịch.", es: "Política y tarifas de cancelación, reglas de ausencia, depósitos y lista de bloqueo.", fr: "Politique et frais d'annulation, règles de non-présentation, acomptes et liste de blocage." }),
-          icon: FileText, to: "/booking-policies", iconBg: "bg-red-100", iconColor: "text-red-500",
         },
         {
           label: pick({ en: "Stations & Chairs", vi: "Bàn & Ghế", es: "Estaciones y sillas", fr: "Postes et fauteuils" }),

@@ -7596,6 +7596,8 @@ If you have any questions, please contact your administrator.
       if (storeStatusAvail === "suspended" || storeStatusAvail === "canceled") {
         return res.status(403).json({ message: "This business is not currently accepting bookings." });
       }
+      // Booking Controls: online booking turned off for this store.
+      if (((store as any).onlineBookingMode ?? "all") === "off") return res.json([]);
 
       const serviceId = Number(req.query.serviceId);
       const date = String(req.query.date);
@@ -7654,6 +7656,11 @@ If you have any questions, please contact your administrator.
       // starts sooner than this many hours from now.
       const bookingWindowMs = Math.max(0, Number(calSettings?.bookingWindowHours ?? 0)) * 3600_000;
       const earliestBookableUtc = new Date(nowUtc.getTime() + bookingWindowMs);
+      // Booking Controls: advance-booking cap — clients can't book further ahead
+      // than N months from today when the limit is enabled.
+      const latestBookableUtc = (store as any).advanceBookingEnabled
+        ? (() => { const d = new Date(nowUtc); d.setMonth(d.getMonth() + Math.max(1, Number((store as any).advanceBookingMonths ?? 3))); return d; })()
+        : null;
 
       type SlotResult = { time: string; staffId: number; staffName: string };
       const slots: SlotResult[] = [];
@@ -7676,6 +7683,7 @@ If you have any questions, please contact your administrator.
           const slotEnd = new Date(slotStart.getTime() + duration * 60000);
 
           if (slotStart < earliestBookableUtc) continue;
+          if (latestBookableUtc && slotStart > latestBookableUtc) continue;
           if (slotEnd > businessEndUtc) continue;
 
           const availableForSlot: { staffMember: any; lastApt: Date | null }[] = [];
@@ -7772,6 +7780,8 @@ If you have any questions, please contact your administrator.
 
       const serviceId = Number(req.query.serviceId);
       const year = Number(req.query.year);
+      // Note: `off` (online booking disabled) is handled after daysInMonth is known
+      // so we can return every day of the requested month as unavailable.
       const month = Number(req.query.month); // 1-12
       const duration = Number(req.query.duration);
 
@@ -7784,6 +7794,17 @@ If you have any questions, please contact your administrator.
       const slotInterval = calSettings?.timeSlotInterval || 15;
       const businessHours = await storage.getBusinessHours(store.id);
       const daysInMonth = new Date(year, month, 0).getDate();
+
+      const allMonthDates = () => {
+        const out: string[] = [];
+        for (let d = 1; d <= daysInMonth; d++) out.push(`${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+        return out;
+      };
+
+      // Booking Controls: online booking turned off → nothing bookable this month.
+      if (((store as any).onlineBookingMode ?? "all") === "off") {
+        return res.json({ unavailableDates: allMonthDates() });
+      }
 
       const candidateStaff = await storage.getStaffForService(serviceId);
 
@@ -7822,6 +7843,11 @@ If you have any questions, please contact your administrator.
       // Minimum-notice window (Booking Controls) — slots sooner than this are not bookable.
       const bookingWindowMs = Math.max(0, Number(calSettings?.bookingWindowHours ?? 0)) * 3600_000;
       const earliestBookableUtc = new Date(nowUtc.getTime() + bookingWindowMs);
+      // Booking Controls: advance-booking cap — days beyond N months from today
+      // are not bookable when the limit is enabled.
+      const latestBookableUtc = (store as any).advanceBookingEnabled
+        ? (() => { const d = new Date(nowUtc); d.setMonth(d.getMonth() + Math.max(1, Number((store as any).advanceBookingMonths ?? 3))); return d; })()
+        : null;
       const unavailableDates: string[] = [];
 
       for (let d = 1; d <= daysInMonth; d++) {
@@ -7832,6 +7858,12 @@ If you have any questions, please contact your administrator.
         if (dayEndUtc < earliestBookableUtc) {
           unavailableDates.push(dateStr);
           continue;
+        }
+
+        // Beyond the advance-booking cap
+        if (latestBookableUtc) {
+          const dayStartUtc = fromZonedTime(new Date(`${dateStr}T00:00:00`), tz);
+          if (dayStartUtc > latestBookableUtc) { unavailableDates.push(dateStr); continue; }
         }
 
         // Closed by store business hours — use salon timezone, not server local time
@@ -7933,6 +7965,11 @@ If you have any questions, please contact your administrator.
       const storeStatus1 = ((store as any).accountStatus ?? "active").toLowerCase();
       if (storeStatus1 === "suspended" || storeStatus1 === "canceled") {
         return res.status(403).json({ message: "This business is not currently accepting bookings." });
+      }
+      // Booking Controls: online booking mode.
+      const bookingMode = (store as any).onlineBookingMode ?? "all";
+      if (bookingMode === "off") {
+        return res.status(403).json({ message: "This salon isn't accepting online bookings right now. Please call the salon directly." });
       }
 
       const bookingSchema = z.object({
@@ -8077,6 +8114,11 @@ If you have any questions, please contact your administrator.
 
       // Customer upsert — must happen before atomicCreateBooking (engine needs customerId)
       let customer = await storage.searchCustomerByPhone(e164CustomerPhone, store.id);
+      // Booking Controls: "existing clients only" — a phone with no client record
+      // for this store can't book online.
+      if (bookingMode === "existing" && !customer) {
+        return res.status(403).json({ message: "This salon only takes online bookings from existing clients. Please call the salon to book your first visit." });
+      }
       if (!customer) {
         customer = await storage.createCustomer({
           name: input.customerName,
@@ -8100,6 +8142,19 @@ If you have any questions, please contact your administrator.
               message: `This salon requires at least ${windowHours} hour${windowHours === 1 ? "" : "s"} notice for online bookings.`,
             });
           }
+        }
+      }
+
+      // Advance-booking cap (Booking Controls). Backstop for the availability
+      // endpoints, which already hide days beyond the cap.
+      if ((store as any).advanceBookingEnabled) {
+        const months = Math.max(1, Number((store as any).advanceBookingMonths ?? 3));
+        const cap = new Date();
+        cap.setMonth(cap.getMonth() + months);
+        if (new Date(input.date).getTime() > cap.getTime()) {
+          return res.status(400).json({
+            message: `This salon only takes online bookings up to ${months} month${months === 1 ? "" : "s"} in advance.`,
+          });
         }
       }
 
@@ -8313,6 +8368,81 @@ If you have any questions, please contact your administrator.
     } catch (error) {
       console.error("Public booking error:", error);
       return res.status(400).json({ message: "Failed to create booking" });
+    }
+  });
+
+  // POST /api/public/store/:slug/waitlist — online waitlist registration
+  // (Booking Controls → "Enable online waitlist registration"). A client who
+  // can't find a workable time registers interest and the salon follows up.
+  // Stored as status 'online_pending' so these future-dated entries surface in
+  // the owner's full waitlist view but never leak into the same-day kiosk queue.
+  app.post("/api/public/store/:slug/waitlist", async (req, res) => {
+    try {
+      const store = await storage.getStoreBySlug(req.params.slug);
+      if (!store) return res.status(404).json({ message: "Store not found" });
+      const st = ((store as any).accountStatus ?? "active").toLowerCase();
+      if (st === "suspended" || st === "canceled") {
+        return res.status(403).json({ message: "This business is not currently accepting bookings." });
+      }
+      if (!((store as any).onlineWaitlistEnabled)) {
+        return res.status(403).json({ message: "This salon isn't taking waitlist requests online." });
+      }
+
+      const body = z.object({
+        serviceId: z.number().optional(),
+        staffId: z.number().optional(),
+        customerName: z.string().min(1).max(120),
+        customerPhone: z.string().min(1),
+        customerEmail: z.string().email().optional(),
+        preferredDate: z.string().optional(),
+        preferredTimeStart: z.string().optional(),
+        preferredTimeEnd: z.string().optional(),
+        notes: z.string().max(1000).optional(),
+      }).parse(req.body);
+
+      const e164 = toE164US(body.customerPhone);
+      if (!e164) return res.status(400).json({ message: "Phone number must be a valid 10-digit US number" });
+
+      const [banned] = await db.select({ id: bookingBanList.id })
+        .from(bookingBanList)
+        .where(and(eq(bookingBanList.storeId, store.id), eq(bookingBanList.phoneE164, e164)))
+        .limit(1);
+      if (banned) {
+        return res.status(403).json({ message: "We can't add this number to the waitlist. Please call the salon directly." });
+      }
+
+      // One open online request per phone.
+      const existing = await db.select({ id: waitlist.id })
+        .from(waitlist)
+        .where(and(
+          eq(waitlist.storeId, store.id),
+          eq(waitlist.customerPhone, e164),
+          eq(waitlist.status, "online_pending"),
+        ))
+        .limit(1);
+      if (existing.length) return res.status(200).json({ ok: true, deduped: true });
+
+      const [entry] = await db.insert(waitlist).values({
+        storeId: store.id,
+        serviceId: body.serviceId ?? null,
+        staffId: body.staffId ?? null,
+        customerName: body.customerName.trim(),
+        customerPhone: e164,
+        customerEmail: body.customerEmail ?? null,
+        preferredDate: body.preferredDate ? new Date(body.preferredDate) : null,
+        preferredTimeStart: body.preferredTimeStart ?? null,
+        preferredTimeEnd: body.preferredTimeEnd ?? null,
+        notes: body.notes ?? null,
+        status: "online_pending",
+      } as any).returning({ id: waitlist.id });
+
+      return res.status(201).json({ ok: true, id: entry?.id });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: error.issues[0].message });
+      }
+      console.error("Public waitlist error:", error);
+      return res.status(400).json({ message: "Failed to join the waitlist" });
     }
   });
 
@@ -17684,6 +17814,10 @@ or
         cancellationFeeType: (store as any).cancellationFeeType ?? null,
         cancellationFeeValue: (store as any).cancellationFeeValue ? Number((store as any).cancellationFeeValue) : null,
          askClientsForPronouns: (store as any).askClientsForPronouns ?? false,
+        onlineBookingMode: (store as any).onlineBookingMode ?? "all",
+        advanceBookingEnabled: (store as any).advanceBookingEnabled ?? false,
+        advanceBookingMonths: (store as any).advanceBookingMonths ?? 3,
+        onlineWaitlistEnabled: (store as any).onlineWaitlistEnabled ?? false,
         stripeConnected: connectedAccount.length > 0,
       });
     } catch (err) {
@@ -17705,11 +17839,24 @@ or
         allowOnlineCancellation, cancellationPolicyRequired, cancellationPolicyText,
         cancellationFeeType, cancellationFeeValue,
          askClientsForPronouns,
+        onlineBookingMode, advanceBookingEnabled, advanceBookingMonths,
+        onlineWaitlistEnabled,
       } = req.body;
 
       // ── Server-side validation ────────────────────────────────────────────────
       const VALID_POLICIES = ["none", "card_on_file", "deposit"];
       const VALID_DEPOSIT_TYPES = ["percentage", "fixed"];
+      const VALID_BOOKING_MODES = ["all", "existing", "off"];
+
+      if (onlineBookingMode !== undefined && !VALID_BOOKING_MODES.includes(onlineBookingMode)) {
+        return res.status(400).json({ message: "Invalid onlineBookingMode value" });
+      }
+      if (advanceBookingMonths !== undefined && advanceBookingMonths !== null) {
+        const m = Number(advanceBookingMonths);
+        if (!Number.isInteger(m) || m < 1 || m > 24) {
+          return res.status(400).json({ message: "Advance booking months must be between 1 and 24" });
+        }
+      }
 
       if (cancellationFeeType !== undefined && cancellationFeeType !== null && cancellationFeeType !== "percentage") {
         return res.status(400).json({ message: "Invalid cancellationFeeType value" });
@@ -17753,6 +17900,10 @@ or
       if (cancellationFeeType !== undefined) locationUpdates.cancellationFeeType = cancellationFeeType ?? null;
       if (cancellationFeeValue !== undefined) locationUpdates.cancellationFeeValue = cancellationFeeValue != null ? String(Number(cancellationFeeValue)) : null;
        if (askClientsForPronouns !== undefined) locationUpdates.askClientsForPronouns = Boolean(askClientsForPronouns);
+      if (onlineBookingMode !== undefined) locationUpdates.onlineBookingMode = onlineBookingMode;
+      if (advanceBookingEnabled !== undefined) locationUpdates.advanceBookingEnabled = Boolean(advanceBookingEnabled);
+      if (advanceBookingMonths !== undefined && advanceBookingMonths !== null) locationUpdates.advanceBookingMonths = parseInt(advanceBookingMonths);
+      if (onlineWaitlistEnabled !== undefined) locationUpdates.onlineWaitlistEnabled = Boolean(onlineWaitlistEnabled);
       if (Object.keys(locationUpdates).length) {
         await db.update(locations).set(locationUpdates).where(eq(locations.id, storeId));
       }
