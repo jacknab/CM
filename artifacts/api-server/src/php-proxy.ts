@@ -312,6 +312,14 @@ const phpProxy = createProxyMiddleware({
   // upgrades (e.g. Twilio Media Streams) reach their intended listener.
   pathFilter: (pathname: string) => isPhpRoute(pathname),
   on: {
+    proxyRes: (proxyRes: any) => {
+      // The PHP built-in server (php -S 127.0.0.1:13200) echoes internal-only
+      // headers back on the response. Strip anything that would leak the
+      // backend address / stack to the public.
+      delete proxyRes.headers["host"];
+      delete proxyRes.headers["x-powered-by"];
+      delete proxyRes.headers["server"];
+    },
     error: (err: Error, _req: Request, res: any) => {
       console.error("[PHP Proxy] Error:", err.message);
       if (!(res as any).headersSent) {

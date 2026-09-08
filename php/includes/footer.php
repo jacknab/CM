@@ -60,7 +60,7 @@
   </div>
 </footer>
 
-<script src="/assets/js/main.js"></script>
+<script src="/assets/js/main.js?v=<?= @filemtime($_SERVER['DOCUMENT_ROOT'].'/assets/js/main.js') ?: '1' ?>"></script>
 <script>
 (function() {
   fetch('/api/public/trial-days').then(function(r){ return r.json(); }).then(function(d) {

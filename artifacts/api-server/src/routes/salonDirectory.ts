@@ -112,6 +112,33 @@ function getSalonList(): SalonRecord[] {
   return _salonList!;
 }
 
+// Only *claimed* listings (a registered Certxa store whose phone matches) get
+// indexed. Unclaimed listings render placeholder services/hours — at 51k pages
+// that thin-content footprint is a sitewide quality risk, so they are
+// `noindex` and kept out of the sitemaps.
+let _claimedCache: { list: SalonRecord[]; at: number } | null = null;
+const CLAIMED_TTL_MS = 10 * 60 * 1000;
+
+const phone10 = (p: string): string => {
+  const d = (p || "").replace(/\D/g, "");
+  return d.length >= 10 ? d.slice(-10) : "";
+};
+
+async function getClaimedSalonList(): Promise<SalonRecord[]> {
+  if (_claimedCache && Date.now() - _claimedCache.at < CLAIMED_TTL_MS) {
+    return _claimedCache.list;
+  }
+  const res = await pool.query<{ phone: string | null }>(
+    `SELECT phone FROM locations WHERE phone IS NOT NULL AND booking_slug IS NOT NULL`,
+  );
+  const claimed = new Set(
+    res.rows.map((r) => phone10(r.phone ?? "")).filter(Boolean),
+  );
+  const list = getSalonList().filter((r) => r.p && claimed.has(phone10(r.p)));
+  _claimedCache = { list, at: Date.now() };
+  return list;
+}
+
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const HERO_IMAGES = [
@@ -646,7 +673,7 @@ function renderSalonPage(salon: SalonRecord, live: LiveStoreData | null): string
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${esc(pageTitle)}</title>
   <meta name="description" content="${esc(metaDesc)}">
-  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+  <meta name="robots" content="${isVerified ? "index, follow, max-image-preview:large, max-snippet:-1" : "noindex, follow"}">
   <link rel="canonical" href="${esc(canonical)}">
   ${lat && lng ? `<meta name="geo.position" content="${esc(lat)};${esc(lng)}">` : ""}
   ${state ? `<meta name="geo.region" content="US-${esc(state)}">` : ""}
@@ -1805,14 +1832,15 @@ function sitemapRateLimit(req: Request, res: Response, next: () => void): void {
 
 // ── Sitemap routes ─────────────────────────────────────────────────────────────
 
-router.get("/salon/sitemap.xml", (_req: Request, res: Response) => {
+router.get("/salon/sitemap.xml", async (_req: Request, res: Response) => {
   try {
-    const list = getSalonList();
-    const totalPages = Math.ceil(list.length / SITEMAP_PAGE_SIZE);
+    const list = await getClaimedSalonList();
+    const lastmod = new Date().toISOString().slice(0, 10);
+    const totalPages = Math.max(1, Math.ceil(list.length / SITEMAP_PAGE_SIZE));
 
     if (totalPages <= 1) {
       const entries = list.map(r =>
-        `  <url><loc>${xmlEsc(`${CERTXA_DOMAIN}/salon/${r.s}`)}</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>`
+        `  <url><loc>${xmlEsc(`${CERTXA_DOMAIN}/salon/${r.s}`)}</loc><lastmod>${lastmod}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`
       ).join("\n");
       res.setHeader("Content-Type", "application/xml; charset=utf-8");
       res.setHeader("Cache-Control", "public, max-age=86400");
@@ -1820,7 +1848,7 @@ router.get("/salon/sitemap.xml", (_req: Request, res: Response) => {
     }
 
     const sitemapEntries = Array.from({ length: totalPages }, (_, i) =>
-      `  <sitemap><loc>${xmlEsc(`${CERTXA_DOMAIN}/salon/sitemap-${i + 1}.xml`)}</loc></sitemap>`
+      `  <sitemap><loc>${xmlEsc(`${CERTXA_DOMAIN}/salon/sitemap-${i + 1}.xml`)}</loc><lastmod>${lastmod}</lastmod></sitemap>`
     ).join("\n");
     res.setHeader("Content-Type", "application/xml; charset=utf-8");
     res.setHeader("Cache-Control", "public, max-age=86400");
@@ -1830,17 +1858,18 @@ router.get("/salon/sitemap.xml", (_req: Request, res: Response) => {
   }
 });
 
-router.get("/salon/sitemap-:page.xml", (req: Request, res: Response) => {
+router.get("/salon/sitemap-:page.xml", async (req: Request, res: Response) => {
   try {
-    const list = getSalonList();
+    const list = await getClaimedSalonList();
     const page = parseInt(String(req.params.page), 10);
     if (isNaN(page) || page < 1) { res.status(404).send("Not found"); return; }
     const start = (page - 1) * SITEMAP_PAGE_SIZE;
     const slice = list.slice(start, start + SITEMAP_PAGE_SIZE);
     if (slice.length === 0) { res.status(404).send("Not found"); return; }
 
+    const lastmod = new Date().toISOString().slice(0, 10);
     const entries = slice.map(r =>
-      `  <url><loc>${xmlEsc(`${CERTXA_DOMAIN}/salon/${r.s}`)}</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>`
+      `  <url><loc>${xmlEsc(`${CERTXA_DOMAIN}/salon/${r.s}`)}</loc><lastmod>${lastmod}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`
     ).join("\n");
     res.setHeader("Content-Type", "application/xml; charset=utf-8");
     res.setHeader("Cache-Control", "public, max-age=86400");

@@ -213,6 +213,17 @@ if ($uri === '/overview.php') {
     exit;
 }
 
+// ── Sitemaps (dynamic — fresh <lastmod> from template mtimes) ────────────────
+if ($uri === '/sitemap.xml') {
+    require __DIR__ . '/sitemap.php';
+    exit;
+}
+if ($uri === '/sitemap-pages.xml') {
+    $_GET['sitemap_kind'] = 'pages';
+    require __DIR__ . '/sitemap.php';
+    exit;
+}
+
 // Commercial pages use slashless canonical URLs. Keep the salon directory's
 // established slash behavior unchanged, while consolidating only the known
 // marketing routes without introducing redirect chains.

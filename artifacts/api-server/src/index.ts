@@ -191,6 +191,7 @@ import salonDirectoryRouter from "./routes/salonDirectory";
 import { SEO_CONFIG, injectSeoMetadata, KNOWN_APP_PREFIXES, NOT_FOUND_HTML } from "./static";
 
 const app = express();
+app.disable("x-powered-by"); // don't advertise the framework
 const httpServer = createServer(app);
 
 // --- CORS Setup ---
@@ -330,19 +331,30 @@ declare module "http" {
 // upstream's, so this app's would have been the one browsers actually used
 // per RFC 6797 (first Strict-Transport-Security header wins) — silently
 // downgrading HSTS from the nginx-configured preload policy.
+// This app (apex certxa.com HTML via the PHP proxy + every *.certxa.com
+// subdomain) is the single source of these headers. nginx sets only HSTS +
+// Permissions-Policy globally, and re-adds the static-file headers on its
+// own /assets/ locations (which bypass this app) — so there is exactly one
+// copy of each header on every response.
 app.use((req, res, next) => {
   // In development, omit X-Frame-Options so the Replit preview iframe can load.
   if (process.env.NODE_ENV === "production") {
     res.setHeader("X-Frame-Options", "SAMEORIGIN");
   }
   res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-XSS-Protection", "1; mode=block");
+  // X-XSS-Protection is deprecated and can introduce bugs in legacy browsers;
+  // CSP is the real protection. Explicitly disable the legacy filter.
+  res.setHeader("X-XSS-Protection", "0");
   // In production, explicitly allow wss: connections back to the same host so
   // the dashboard WebSocket works without relying on 'self' covering wss:.
   // (Some browsers do not extend 'self' to cover the ws/wss schemes.)
   const cspConnectSrc = process.env.NODE_ENV !== "production"
     ? "connect-src 'self' https: ws: wss:;"
     : `connect-src 'self' https: wss:${_appUrl ? ` ${_appUrl.replace(/^https?:/, "wss:")}` : ""};`;
+  // NOTE: script-src still allows 'unsafe-inline' + 'unsafe-eval'. Tightening
+  // this (nonces for inline GTM/Stripe, dropping unsafe-eval) needs a
+  // dedicated pass with full regression testing of the booking SPA + payment
+  // flows — deliberately not bundled into the header-hygiene cleanup.
   res.setHeader(
     "Content-Security-Policy",
     `default-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com${_appUrl ? ` ${_appUrl}` : ""}; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://js.stripe.com https://connect-js.stripe.com https://unpkg.com${_appUrl ? ` ${_appUrl}` : ""}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; media-src 'self' https:; ${cspConnectSrc} frame-src 'self' https://js.stripe.com https://connect-js.stripe.com https://hooks.stripe.com https://www.google.com https://maps.google.com${_appUrl ? ` ${_appUrl}` : ""};`
