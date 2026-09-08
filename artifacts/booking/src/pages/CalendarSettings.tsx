@@ -10,7 +10,7 @@ import { useSelectedStore } from "@/hooks/use-store";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { useForm, Controller } from "react-hook-form";
-import { Save, HelpCircle } from "lucide-react";
+import { Save, HelpCircle, Clock, Minus, Plus } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLanguage } from "@/hooks/use-language";
 import type { Store } from "@shared/schema";
@@ -18,12 +18,15 @@ import type { Store } from "@shared/schema";
 type CalendarSettingsForm = {
   startOfWeek: string;
   timeSlotInterval: number;
+  bookingWindowHours: number;
   nonWorkingHoursDisplay: number;
   allowBookingOutsideHours: boolean;
   autoCompleteAppointments: boolean;
   showPrices: boolean;
   walkInsEnabled: boolean;
 };
+
+const BOOKING_WINDOW_MAX = 720; // 30 days
 
 function InfoTooltip({ text }: { text: string }) {
   return (
@@ -51,10 +54,13 @@ export default function CalendarSettings() {
 
   const t = {
     loading:              pick({ en: "Loading...",               vi: "Đang tải...",         es: "Cargando...",                    fr: "Chargement..." }),
-    pageTitle:            pick({ en: "Calendar Settings",        vi: "Cài đặt lịch",        es: "Configuración del calendario",   fr: "Paramètres du calendrier" }),
+    pageTitle:            pick({ en: "Booking Controls",         vi: "Kiểm soát đặt lịch",  es: "Controles de reserva",           fr: "Contrôles de réservation" }),
     saving:               pick({ en: "Saving...",               vi: "Đang lưu...",          es: "Guardando...",                   fr: "Enregistrement..." }),
     save:                 pick({ en: "Save",                    vi: "Lưu",                  es: "Guardar",                        fr: "Enregistrer" }),
-    sectionTitle:         pick({ en: "Calendar Settings",        vi: "Cài đặt lịch",        es: "Configuración del calendario",   fr: "Paramètres du calendrier" }),
+    sectionTitle:         pick({ en: "Booking Controls",         vi: "Kiểm soát đặt lịch",  es: "Controles de reserva",           fr: "Contrôles de réservation" }),
+    bookingWindow:        pick({ en: "Booking window (in hours)", vi: "Cửa sổ đặt lịch (giờ)", es: "Ventana de reserva (en horas)", fr: "Fenêtre de réservation (en heures)" }),
+    bookingWindowField:   pick({ en: "Window",  vi: "Cửa sổ",  es: "Ventana",  fr: "Fenêtre" }),
+    bookingWindowDesc:    pick({ en: "Enter the number of hours notice you require from clients to book an upcoming appointment.", vi: "Nhập số giờ báo trước bạn yêu cầu khách hàng để đặt lịch hẹn sắp tới.", es: "Introduce las horas de antelación que exiges a los clientes para reservar una cita.", fr: "Indiquez le nombre d'heures de préavis exigé des clients pour réserver un rendez-vous." }),
     startOfWeek:          pick({ en: "Calendar start of week",  vi: "Ngày bắt đầu tuần",   es: "Inicio de semana del calendario", fr: "Début de semaine du calendrier" }),
     startOfWeekTip:       pick({ en: "Choose which day the calendar week starts on.", vi: "Chọn ngày bắt đầu tuần trên lịch.", es: "Elige qué día comienza la semana del calendario.", fr: "Choisissez le jour de début de semaine du calendrier." }),
     monday:               pick({ en: "Monday",    vi: "Thứ Hai",  es: "Lunes",    fr: "Lundi" }),
@@ -99,6 +105,7 @@ export default function CalendarSettings() {
       reset({
         startOfWeek: VALID_WEEK_STARTS.includes(rawStart) ? rawStart : DEFAULT_CALENDAR_SETTINGS.startOfWeek,
         timeSlotInterval: settings.timeSlotInterval ?? DEFAULT_CALENDAR_SETTINGS.timeSlotInterval,
+        bookingWindowHours: (settings as any).bookingWindowHours ?? DEFAULT_CALENDAR_SETTINGS.bookingWindowHours,
         nonWorkingHoursDisplay: settings.nonWorkingHoursDisplay ?? DEFAULT_CALENDAR_SETTINGS.nonWorkingHoursDisplay,
         allowBookingOutsideHours: settings.allowBookingOutsideHours ?? DEFAULT_CALENDAR_SETTINGS.allowBookingOutsideHours,
         autoCompleteAppointments: settings.autoCompleteAppointments ?? DEFAULT_CALENDAR_SETTINGS.autoCompleteAppointments,
@@ -116,6 +123,7 @@ export default function CalendarSettings() {
     updateSettings.mutate({
       startOfWeek: data.startOfWeek,
       timeSlotInterval: data.timeSlotInterval,
+      bookingWindowHours: data.bookingWindowHours,
       nonWorkingHoursDisplay: data.nonWorkingHoursDisplay,
       allowBookingOutsideHours: data.allowBookingOutsideHours,
       autoCompleteAppointments: data.autoCompleteAppointments,
@@ -181,17 +189,78 @@ export default function CalendarSettings() {
               />
             </div>
 
+            {/* Booking window (minimum notice, in hours) */}
             <div className="space-y-2">
               <Label className="flex items-center">
-                {t.timeSlot}
-                <InfoTooltip text={t.timeSlotTip} />
+                {t.bookingWindow}
               </Label>
+              <Controller
+                name="bookingWindowHours"
+                control={control}
+                render={({ field }) => {
+                  const val = Number.isFinite(field.value) ? Math.trunc(field.value) : 0;
+                  const clamp = (n: number) => Math.max(0, Math.min(BOOKING_WINDOW_MAX, n));
+                  return (
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-input bg-background px-4 py-3">
+                      <div className="flex flex-col">
+                        <span className="text-xs text-muted-foreground">{t.bookingWindowField}</span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          max={BOOKING_WINDOW_MAX}
+                          value={val}
+                          onChange={(e) => field.onChange(clamp(parseInt(e.target.value, 10) || 0))}
+                          className="w-24 bg-transparent text-2xl font-semibold text-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                          data-testid="input-booking-window-hours"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          aria-label="Decrease"
+                          onClick={() => field.onChange(clamp(val - 1))}
+                          disabled={val <= 0}
+                          className="flex h-9 w-9 items-center justify-center rounded-full border border-input text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Increase"
+                          onClick={() => field.onChange(clamp(val + 1))}
+                          disabled={val >= BOOKING_WINDOW_MAX}
+                          className="flex h-9 w-9 items-center justify-center rounded-full border border-input text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }}
+              />
+              <p className="text-sm text-muted-foreground">{t.bookingWindowDesc}</p>
+            </div>
+
+            {/* Time slot intervals */}
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <Label className="flex items-center text-base font-medium">
+                  {t.timeSlot}
+                  <InfoTooltip text={t.timeSlotTip} />
+                </Label>
+                <p className="text-sm text-muted-foreground mt-0.5">{t.timeSlotTip}</p>
+              </div>
               <Controller
                 name="timeSlotInterval"
                 control={control}
                 render={({ field }) => (
                   <Select value={String(field.value)} onValueChange={(v) => field.onChange(Number(v))}>
-                    <SelectTrigger data-testid="select-time-slot-interval">
+                    <SelectTrigger
+                      className="w-auto min-w-[128px] shrink-0 gap-2 rounded-full"
+                      data-testid="select-time-slot-interval"
+                    >
+                      <Clock className="h-4 w-4 opacity-60" />
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

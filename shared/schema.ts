@@ -505,6 +505,8 @@ export const calendarSettings = pgTable("calendar_settings", {
   storeId: integer("store_id").references(() => locations.id).notNull(),
   startOfWeek: text("start_of_week").notNull().default("monday"),
   timeSlotInterval: integer("time_slot_interval").notNull().default(15),
+  // Minimum notice (hours) a client must give to book online. 0 = no minimum.
+  bookingWindowHours: integer("booking_window_hours").notNull().default(0),
   nonWorkingHoursDisplay: integer("non_working_hours_display").notNull().default(1),
   allowBookingOutsideHours: boolean("allow_booking_outside_hours").notNull().default(true),
   autoCompleteAppointments: boolean("auto_complete_appointments").notNull().default(true),

@@ -84,8 +84,8 @@ export function buildSettingsNav(pick: Pick4): SettingsNavGroup[] {
       heading: pick({ en: "Booking & Calendar", vi: "Đặt lịch & Lịch", es: "Reservas y calendario", fr: "Réservations et agenda" }),
       items: [
         {
-          label: pick({ en: "Calendar", vi: "Lịch", es: "Calendario", fr: "Agenda" }),
-          description: pick({ en: "Calendar view, time-slot length and booking rules.", vi: "Chế độ xem lịch, độ dài khung giờ và quy tắc đặt lịch.", es: "Vista del calendario, duración de franjas y reglas de reserva.", fr: "Vue de l'agenda, durée des créneaux et règles de réservation." }),
+          label: pick({ en: "Booking Controls", vi: "Kiểm soát đặt lịch", es: "Controles de reserva", fr: "Contrôles de réservation" }),
+          description: pick({ en: "Booking window, time-slot length and calendar rules.", vi: "Cửa sổ đặt lịch, độ dài khung giờ và quy tắc lịch.", es: "Ventana de reserva, duración de franjas y reglas del calendario.", fr: "Fenêtre de réservation, durée des créneaux et règles de l'agenda." }),
           icon: CalendarDays, to: "/calendar-settings", iconBg: "bg-violet-100", iconColor: "text-violet-500",
         },
         {

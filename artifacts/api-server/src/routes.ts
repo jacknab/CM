@@ -1737,6 +1737,7 @@ export async function registerRoutes(
         id: calendarSettings.id,
         startOfWeek: calendarSettings.startOfWeek,
         timeSlotInterval: calendarSettings.timeSlotInterval,
+        bookingWindowHours: calendarSettings.bookingWindowHours,
         nonWorkingHoursDisplay: calendarSettings.nonWorkingHoursDisplay,
         allowBookingOutsideHours: calendarSettings.allowBookingOutsideHours,
         autoCompleteAppointments: calendarSettings.autoCompleteAppointments,
@@ -5940,6 +5941,7 @@ If you have any questions, please contact your administrator.
            startOfWeek: z.enum(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]).optional() as any,
             timeSlotInterval: z.union([z.literal(5), z.literal(10), z.literal(15), z.literal(20), z.literal(30), z.literal(60)]).optional() as any,
             nonWorkingHoursDisplay: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional() as any,
+            bookingWindowHours: z.coerce.number().int().min(0).max(720).optional() as any,
          }) as any)
          .parse(req.body);
       const settings = await storage.upsertCalendarSettings(storeId, validatedInput);
@@ -7519,6 +7521,10 @@ If you have any questions, please contact your administrator.
 
       const businessEndUtc = fromZonedTime(new Date(`${date}T${String(endHour).padStart(2, "0")}:00:00`), tz);
       const nowUtc = new Date();
+      // Minimum-notice window (Booking Controls). Clients can't book a slot that
+      // starts sooner than this many hours from now.
+      const bookingWindowMs = Math.max(0, Number(calSettings?.bookingWindowHours ?? 0)) * 3600_000;
+      const earliestBookableUtc = new Date(nowUtc.getTime() + bookingWindowMs);
 
       type SlotResult = { time: string; staffId: number; staffName: string };
       const slots: SlotResult[] = [];
@@ -7540,7 +7546,7 @@ If you have any questions, please contact your administrator.
           const slotStart = fromZonedTime(new Date(`${date}T${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}:00`), tz);
           const slotEnd = new Date(slotStart.getTime() + duration * 60000);
 
-          if (slotStart < nowUtc) continue;
+          if (slotStart < earliestBookableUtc) continue;
           if (slotEnd > businessEndUtc) continue;
 
           const availableForSlot: { staffMember: any; lastApt: Date | null }[] = [];
@@ -7684,6 +7690,9 @@ If you have any questions, please contact your administrator.
       });
 
       const nowUtc = new Date();
+      // Minimum-notice window (Booking Controls) — slots sooner than this are not bookable.
+      const bookingWindowMs = Math.max(0, Number(calSettings?.bookingWindowHours ?? 0)) * 3600_000;
+      const earliestBookableUtc = new Date(nowUtc.getTime() + bookingWindowMs);
       const unavailableDates: string[] = [];
 
       for (let d = 1; d <= daysInMonth; d++) {
@@ -7691,7 +7700,7 @@ If you have any questions, please contact your administrator.
 
         // Past days — always unavailable
         const dayEndUtc = fromZonedTime(new Date(`${dateStr}T23:59:59`), tz);
-        if (dayEndUtc < nowUtc) {
+        if (dayEndUtc < earliestBookableUtc) {
           unavailableDates.push(dateStr);
           continue;
         }
@@ -7728,7 +7737,7 @@ If you have any questions, please contact your administrator.
             );
             const slotEnd = new Date(slotStart.getTime() + duration * 60000);
 
-            if (slotStart < nowUtc) continue;
+            if (slotStart < earliestBookableUtc) continue;
             if (slotEnd > businessEndUtc) continue;
 
             for (const staffMember of candidateStaff) {
@@ -7947,6 +7956,22 @@ If you have any questions, please contact your administrator.
           storeId: store.id,
           notes: null,
         });
+      }
+
+      // Minimum-notice guard (Booking Controls → Booking window). The public
+      // availability endpoints already hide too-soon slots; this is the
+      // server-side backstop for a hand-crafted request.
+      {
+        const calSettings = await storage.getCalendarSettings(store.id);
+        const windowHours = Math.max(0, Number(calSettings?.bookingWindowHours ?? 0));
+        if (windowHours > 0) {
+          const startUtc = new Date(input.date);
+          if (startUtc.getTime() < Date.now() + windowHours * 3600_000) {
+            return res.status(400).json({
+              message: `This salon requires at least ${windowHours} hour${windowHours === 1 ? "" : "s"} notice for online bookings.`,
+            });
+          }
+        }
       }
 
       // Business hours guard — enforce that the booking start + duration
