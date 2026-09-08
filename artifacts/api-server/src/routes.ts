@@ -16244,7 +16244,13 @@ or
         db.select({
           id: clients.id,
           name: clients.fullName,
-          phone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
+          // Match the live /api/clients list endpoint (routes/clients.ts) exactly:
+          // prefer the primary phone, fall back to the oldest, and use e164 when
+          // there's no display_phone — so a client whose only phone isn't flagged
+          // is_primary is still findable by phone offline. The old query
+          // (WHERE is_primary = true on display_phone, both nullable) returned
+          // NULL for many real clients, breaking offline phone lookup.
+          phone: sql<string>`(SELECT COALESCE(display_phone, phone_number_e164) FROM client_phones WHERE client_id = clients.id ORDER BY is_primary DESC, id ASC LIMIT 1)`,
           storeId: clients.storeId,
         }).from(clients).where(and(eq(clients.storeId, storeId), isNull(clients.archivedAt))).orderBy(asc(clients.fullName)),
 

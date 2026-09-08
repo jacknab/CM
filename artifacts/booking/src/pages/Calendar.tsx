@@ -148,8 +148,16 @@ function OfflineSnapshotHealth() {
     { key: "appointments", ready: !!snapshot && Array.isArray(snapshot.appointments) },
     { key: "turn", ready: !!snapshot?.turnSettings },
   ];
+  // snapshot.generatedAt is "when the content last CHANGED" — snapshot-service
+  // only rewrites it when the server's version hash differs, so a salon with
+  // quiet data leaves it frozen even though the client keeps re-verifying.
+  // status === "fresh" means a live server fetch just confirmed the data is
+  // current — that's the real health signal. The generatedAt age is only a
+  // fallback for when we're offline and can't verify.
   const ageMs = snapshot?.generatedAt ? Date.now() - new Date(snapshot.generatedAt).getTime() : Infinity;
-  const fresh = ageMs <= 45 * 60 * 1000;
+  const recentlyChanged = ageMs <= 45 * 60 * 1000;
+  const verified = status === "fresh";
+  const fresh = verified || recentlyChanged;
   const readyCount = datasets.filter((dataset) => dataset.ready).length;
   const percent = Math.round((readyCount / datasets.length) * 100);
   const isHealthy = percent === 100 && fresh && status !== "idle";
@@ -160,16 +168,12 @@ function OfflineSnapshotHealth() {
 
   return (
     <div className="w-14 mb-2 px-1" title={`${stateLabel} · ${percent}%`} role="status" aria-label={`${stateLabel}, ${percent}%`}>
-      <div className="flex items-center justify-between mb-1 px-0.5">
-        <span className="text-[8px] font-semibold uppercase tracking-tight text-slate-400">Offline</span>
-        <span className={cn("text-[9px] font-bold", textColor)}>{percent}%</span>
-      </div>
       <div className="flex gap-0.5 h-1.5" aria-hidden="true">
         {datasets.map((dataset) => (
           <span key={dataset.key} className={cn("flex-1 rounded-full", dataset.ready ? color : "bg-slate-200")} />
         ))}
       </div>
-      <div className="mt-1 text-center text-[8px] text-slate-400">{fresh ? "Ready" : "Refresh"}</div>
+      <div className={cn("mt-1 text-center text-[8px] font-semibold", textColor)}>{percent}% {fresh ? "Ready" : "Refresh"}</div>
     </div>
   );
 }
