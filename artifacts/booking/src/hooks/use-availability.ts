@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSnapshot } from "@/hooks/use-snapshot";
 import { appointmentsCacheDB } from "@/lib/appointments-cache-db";
+import { storeLocalToUtc } from "@/lib/timezone";
 import type { SnapshotStaff, SnapshotStaffAvailability, SnapshotBusinessHours } from "@/lib/snapshot-db";
 
 export type TimeSlot = {
@@ -11,6 +12,8 @@ export type TimeSlot = {
 
 const SLOT_INTERVAL_MIN = 15;
 
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
 async function generateOfflineSlots(
   date: string,
   duration: number,
@@ -18,6 +21,7 @@ async function generateOfflineSlots(
   storeHours: SnapshotBusinessHours[],
   staffAvailabilityRules: SnapshotStaffAvailability[],
   storeId: number,
+  timezone: string,
   filterStaffId?: number | null
 ): Promise<TimeSlot[]> {
   if (!date || !staffMembers.length) return [];
@@ -85,7 +89,15 @@ async function generateOfflineSlots(
       minOffset + duration <= workEndMin;
       minOffset += SLOT_INTERVAL_MIN
     ) {
-      const slotStart = new Date(yr, mo - 1, dy, Math.floor(minOffset / 60), minOffset % 60, 0, 0);
+      // Build the slot at the STORE's wall-clock time, then convert to a real
+      // UTC instant — the same thing the server's /api/availability/slots does
+      // via fromZonedTime(). Constructing with new Date(y,m,d,h,m) instead used
+      // the browser's timezone, so a store on America/Phoenix viewed from a
+      // browser on Mountain time showed every slot an hour early.
+      const slotStart = storeLocalToUtc(
+        `${date}T${pad2(Math.floor(minOffset / 60))}:${pad2(minOffset % 60)}:00`,
+        timezone,
+      );
       const slotEnd = new Date(slotStart.getTime() + duration * 60000);
 
       if (slotStart.getTime() <= nowMs) continue;
@@ -150,6 +162,7 @@ export function useAvailableSlots(
         const staffFromSnapshot = (snapshot?.staff ?? []) as SnapshotStaff[];
         const storeHours = (snapshot?.storeHours ?? []) as SnapshotBusinessHours[];
         const staffAvailability = (snapshot?.staffAvailability ?? []) as SnapshotStaffAvailability[];
+        const timezone = snapshot?.timezone ?? "UTC";
 
         if (storeHours.length > 0 && date && storeId) {
           return generateOfflineSlots(
@@ -159,6 +172,7 @@ export function useAvailableSlots(
             storeHours,
             staffAvailability,
             storeId,
+            timezone,
             staffId
           );
         }
