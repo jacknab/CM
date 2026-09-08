@@ -41,6 +41,7 @@ import {
   CreditCard as CreditCardIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { buildSettingsNav } from "@/lib/settings-nav";
 import { useAuth } from "@/hooks/use-auth";
 import { useSelectedStore } from "@/hooks/use-store";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -168,59 +169,13 @@ function buildFinanceSubnav(pick: Pick4): SubNavSection[] {
 }
 
 function buildSettingsSubnav(pick: Pick4): SubNavSection[] {
-  return [
-    {
-      headingKey: "business",
-      heading: pick({ en: "Business", vi: "Kinh doanh", es: "Negocio", fr: "Entreprise" }),
-      items: [
-        { label: pick({ en: "Business Settings",    vi: "Cài đặt kinh doanh",   es: "Config. de negocio",          fr: "Param. entreprise" }),        icon: Settings,     to: "/business-settings" },
-        { label: pick({ en: "Business Hours",       vi: "Giờ làm việc",        es: "Horario comercial",           fr: "Heures d'ouverture" }),        icon: CalendarDays, to: "/business-hours" },
-        { label: pick({ en: "Features",             vi: "Tính năng",           es: "Funciones",                    fr: "Fonctionnalités" }),           icon: Sliders,      to: "/features-settings" },
-        { label: pick({ en: "Language",              vi: "Ngôn ngữ",            es: "Idioma",                       fr: "Langue" }),                    icon: Languages,    to: "/language-settings" },
-        { label: pick({ en: "Content Translations", vi: "Dịch nội dung",       es: "Traducciones de contenido",   fr: "Traductions de contenu" }),   icon: Languages,    to: "/settings/translations" },
-      ],
-    },
-    {
-      headingKey: "scheduling",
-      heading: pick({ en: "Scheduling", vi: "Lên lịch", es: "Programación", fr: "Planification" }),
-      items: [
-        { label: pick({ en: "Calendar",         vi: "Lịch",                  es: "Calendario",         fr: "Calendrier" }),           icon: CalendarDays, to: "/calendar-settings" },
-        { label: pick({ en: "Stations & Chairs", vi: "Bàn & Ghế",            es: "Estaciones y sillas", fr: "Postes et fauteuils" }),  icon: Layers,       to: "/settings/resources" },
-        { label: pick({ en: "Online Booking",   vi: "Đặt lịch trực tuyến",   es: "Reserva en línea",   fr: "Réservation en ligne" }), icon: Globe,        to: "/online-booking" },
-        { label: pick({ en: "Booking Policies", vi: "Chính sách đặt lịch",   es: "Políticas de reserva", fr: "Politiques de réservation" }), icon: FileText, to: "/booking-policies" },
-      ],
-    },
-    {
-      headingKey: "clientExperience",
-      heading: pick({ en: "Client Experience", vi: "Trải nghiệm KH", es: "Exp. del cliente", fr: "Exp. client" }),
-      items: [
-        { label: pick({ en: "Kiosk", vi: "Kiosk", es: "Kiosco", fr: "Kiosque" }), icon: Tablet, to: "/kiosk-settings" },
-      ],
-    },
-    {
-      headingKey: "staffEarnings",
-      heading: pick({ en: "Staff & Earnings", vi: "Nhân viên & Thu nhập", es: "Personal y ganancias", fr: "Personnel et revenus" }),
-      items: [
-        { label: pick({ en: "Earnings Settings", vi: "Cài đặt thu nhập", es: "Ajustes de ganancias", fr: "Paramètres de revenus" }), icon: Banknote, to: "/payroll-settings" },
-      ],
-    },
-    {
-      headingKey: "posPayments",
-      heading: pick({ en: "POS & Payments", vi: "POS & Thanh toán", es: "PDV y pagos", fr: "PDV et paiements" }),
-      items: [
-        { label: pick({ en: "Payments & Payouts", vi: "Thanh toán & Chi trả", es: "Pagos y liquidaciones", fr: "Paiements et versements" }), icon: DollarSign, to: "/manage/payment-settings" },
-        { label: pick({ en: "POS Settings",   vi: "Cài đặt POS",     es: "Ajustes PDV",     fr: "Paramètres PDV" }),   icon: ShoppingCart, to: "/pos-settings" },
-      ],
-    },
-    {
-      headingKey: "communications",
-      heading: pick({ en: "Communications", vi: "Truyền thông", es: "Comunicaciones", fr: "Communications" }),
-      items: [
-        { label: pick({ en: "SMS Settings",   vi: "Cài đặt SMS",   es: "Ajustes SMS",       fr: "Paramètres SMS" }),   icon: MessageSquare, to: "/sms-settings" },
-        { label: pick({ en: "Email Settings", vi: "Cài đặt Email", es: "Ajustes de correo", fr: "Paramètres Email" }), icon: Mail,          to: "/mail-settings" },
-      ],
-    },
-  ];
+  // Same source of truth as the /settings landing page (lib/settings-nav.ts)
+  // so the two never drift apart. The sidebar only needs label/icon/to.
+  return buildSettingsNav(pick).map((g) => ({
+    headingKey: g.key,
+    heading: g.heading,
+    items: g.items.map((it) => ({ label: it.label, icon: it.icon, to: it.to })),
+  }));
 }
 
 function buildTeamSubnav(pick: Pick4): SubNavItem[] {
@@ -830,7 +785,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
             {settingsOpen && (
               <div className="mt-0.5 max-h-64 overflow-y-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
                 {SETTINGS_SUBNAV.filter((section) => {
-                  if (section.headingKey === "posPayments" && !features.pos) return false;
+                  if (section.headingKey === "payments" && !features.pos) return false;
                   return true;
                 }).map((section) => (
                   <div key={section.headingKey}>
