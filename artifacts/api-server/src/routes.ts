@@ -105,6 +105,7 @@ import {
   googleServiceSyncSettings,
   gbpOptimizationLogs,
   salonResources,
+  bookingBanList,
   posGrids,
   posGridSlots,
 } from "@shared/schema";
@@ -4924,6 +4925,55 @@ If you have any questions, please contact your administrator.
     }
   });
 
+  // ── Booking Ban List — phones blocked from ONLINE booking ────────────────────
+  app.get("/api/booking-ban-list", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const rows = await db.select().from(bookingBanList)
+        .where(eq(bookingBanList.storeId, storeId))
+        .orderBy(desc(bookingBanList.createdAt));
+      return res.json(rows);
+    } catch (err) {
+      console.error("[GET /api/booking-ban-list]", err);
+      return res.status(500).json({ message: "Failed to fetch ban list" });
+    }
+  });
+
+  app.post("/api/booking-ban-list", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const phoneE164 = toE164US(String(req.body.phone ?? ""));
+      if (!phoneE164) return res.status(400).json({ message: "Enter a valid 10-digit US phone number" });
+      const reason = String(req.body.reason ?? "").trim() || null;
+      const [created] = await db.insert(bookingBanList)
+        .values({ storeId, phoneE164, reason })
+        .onConflictDoUpdate({
+          target: [bookingBanList.storeId, bookingBanList.phoneE164],
+          set: { reason },
+        })
+        .returning();
+      return res.status(201).json(created);
+    } catch (err) {
+      console.error("[POST /api/booking-ban-list]", err);
+      return res.status(500).json({ message: "Failed to add to ban list" });
+    }
+  });
+
+  app.delete("/api/booking-ban-list/:id", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const id = parseInt(String(req.params.id), 10);
+      await db.delete(bookingBanList).where(and(eq(bookingBanList.id, id), eq(bookingBanList.storeId, storeId)));
+      return res.status(204).end();
+    } catch (err) {
+      console.error("[DELETE /api/booking-ban-list/:id]", err);
+      return res.status(500).json({ message: "Failed to remove from ban list" });
+    }
+  });
+
   // ─────────────────────────────────────────────────────────────────────────
 
   app.get("/api/appointments/sse", isAuthenticated, async (req, res) => {
@@ -7755,6 +7805,7 @@ If you have any questions, please contact your administrator.
         stripePaymentMethodId: z.string().optional(),
         depositCollected: z.number().optional(),
         remainingBalance: z.number().optional(),
+        cancellationPolicyAccepted: z.boolean().optional(),
       });
 
       const parsed = bookingSchema.parse(req.body);
@@ -7785,6 +7836,15 @@ If you have any questions, please contact your administrator.
         return res.status(400).json({ message: "Phone number must be a valid 10-digit US number" });
       }
 
+      // ── Booking ban list — online bookings only ────────────────────────────
+      const [banned] = await db.select({ id: bookingBanList.id })
+        .from(bookingBanList)
+        .where(and(eq(bookingBanList.storeId, store.id), eq(bookingBanList.phoneE164, e164CustomerPhone)))
+        .limit(1);
+      if (banned) {
+        return res.status(403).json({ message: "We can't take an online booking for this number. Please call the salon directly." });
+      }
+
       // Validate staff is assigned to the requested service
       const staffServices = await storage.getStaffServices(input.staffId);
       const canPerformService = staffServices.some(ss => ss.serviceId === input.serviceId);
@@ -7796,13 +7856,22 @@ If you have any questions, please contact your administrator.
       // Fetch the store's authoritative policy — never trust client-declared paymentPolicy.
       const [storePolicy] = await db
         .select({
-          bookingPaymentPolicy: locations.bookingPaymentPolicy,
-          depositType:          locations.depositType,
-          depositValue:         locations.depositValue,
+          bookingPaymentPolicy:       locations.bookingPaymentPolicy,
+          depositType:                locations.depositType,
+          depositValue:               locations.depositValue,
+          cancellationPolicyRequired: locations.cancellationPolicyRequired,
+          cancellationPolicyText:     locations.cancellationPolicyText,
         })
         .from(locations)
         .where(eq(locations.id, store.id))
         .limit(1);
+
+      // ── Cancellation-policy acknowledgement gate ───────────────────────────
+      if (storePolicy?.cancellationPolicyRequired
+          && String(storePolicy.cancellationPolicyText ?? "").trim()
+          && parsed.cancellationPolicyAccepted !== true) {
+        return res.status(400).json({ message: "Please acknowledge the cancellation policy to continue." });
+      }
 
       // Determine effective policy (downgrade to 'none' if Stripe not connected)
       const { verifyStripeIntentForBooking: _verifyIntent } = await import("./routes/bookingPayments.js");
@@ -8102,7 +8171,14 @@ If you have any questions, please contact your administrator.
         }
         return apt;
       });
-      return res.json(safeAppointments);
+      return res.json({
+        appointments: safeAppointments,
+        storePolicy: {
+          allowOnlineCancellation: (store as any).allowOnlineCancellation ?? true,
+          cancellationHoursCutoff: (store as any).cancellationHoursCutoff ?? 24,
+          cancellationPolicyText: (store as any).cancellationPolicyText ?? "",
+        },
+      });
     } catch (error) {
       console.error("Confirmation lookup error:", error);
       return res.status(500).json({ message: "Internal server error" });
@@ -8130,22 +8206,61 @@ If you have any questions, please contact your administrator.
         return res.status(404).json({ message: "Booking not found" });
       }
 
-      // Enforce cancellation window cutoff
+      if ((store as any).allowOnlineCancellation === false) {
+        return res.status(403).json({ message: "Online cancellation isn't available for this salon — please call to cancel." });
+      }
+
+      // Enforce cancellation window cutoff — with an optional late-cancel fee.
       const cutoffHours = (store as any).cancellationHoursCutoff ?? 24;
-      if (cutoffHours > 0) {
+      let cancellationFeeCharged: number | null = null;
+      let cancellationFeeError = false;
+
+      if (cutoffHours > 0 && appointment.status !== "cancelled") {
         const hoursUntilAppointment = (new Date(appointment.date).getTime() - Date.now()) / 3600_000;
         if (hoursUntilAppointment < cutoffHours) {
-          return res.status(409).json({
-            message: `Cancellations must be made at least ${cutoffHours} hour${cutoffHours === 1 ? "" : "s"} in advance.`,
-            cutoffHours,
-          });
+          const feePct = Number((store as any).cancellationFeeValue) || 0;
+          const feeCust = (appointment as any).stripeCustomerIdApt ?? (appointment as any).customer?.stripeCustomerId ?? null;
+          const feePm   = (appointment as any).stripePaymentMethodIdApt ?? (appointment as any).customer?.stripePaymentMethodId ?? null;
+
+          if (feePct > 0 && feeCust && feePm) {
+            // Fee configured AND the client has a card on file — charge it, then allow the cancel.
+            const servicePrice = Number((appointment as any).service?.price ?? 0);
+            const feeCents = Math.round(servicePrice * (feePct / 100) * 100);
+            if (feeCents >= 50) {
+              try {
+                const { chargeCancellationFee } = await import("./lib/cancellationFee");
+                await chargeCancellationFee({
+                  storeId: store.id,
+                  appointmentId: appointment.id,
+                  stripeCustomerId: feeCust,
+                  stripePaymentMethodId: feePm,
+                  feeCents,
+                });
+                cancellationFeeCharged = feeCents / 100;
+              } catch (feeErr: any) {
+                console.error(`[cancel] late-cancel fee charge failed for appointment ${appointment.id}:`, feeErr?.message);
+                cancellationFeeError = true;
+              }
+            }
+            // fall through → cancellation proceeds regardless of the charge outcome
+          } else if (feePct > 0) {
+            // Fee configured but no card on file — allow the cancel for free.
+          } else {
+            // No fee configured — keep the hard block.
+            return res.status(409).json({
+              message: `Cancellations must be made at least ${cutoffHours} hour${cutoffHours === 1 ? "" : "s"} in advance.`,
+              cutoffHours,
+            });
+          }
         }
       }
 
       if (appointment.status !== "cancelled") {
         await storage.updateAppointment(appointment.id, {
           status: "cancelled",
-          cancellationReason: "Cancelled by customer",
+          cancellationReason: cancellationFeeCharged != null
+            ? `Cancelled by customer (late-cancel fee $${cancellationFeeCharged.toFixed(2)} charged)`
+            : "Cancelled by customer",
         });
       }
 
@@ -8154,7 +8269,7 @@ If you have any questions, please contact your administrator.
       if (result?.staff) {
         (result as any).staff = result.staff;
       }
-      return res.json(result);
+      return res.json({ ...result, cancellationFeeCharged, cancellationFeeError });
     } catch (error) {
       console.error("Confirmation cancel error:", error);
       return res.status(400).json({ message: "Failed to cancel booking" });
@@ -17449,6 +17564,11 @@ or
         bookingPaymentPolicy: (store as any).bookingPaymentPolicy ?? "none",
         depositType: (store as any).depositType ?? null,
         depositValue: (store as any).depositValue ? Number((store as any).depositValue) : null,
+        allowOnlineCancellation: (store as any).allowOnlineCancellation ?? true,
+        cancellationPolicyRequired: (store as any).cancellationPolicyRequired ?? false,
+        cancellationPolicyText: (store as any).cancellationPolicyText ?? "",
+        cancellationFeeType: (store as any).cancellationFeeType ?? null,
+        cancellationFeeValue: (store as any).cancellationFeeValue ? Number((store as any).cancellationFeeValue) : null,
         stripeConnected: connectedAccount.length > 0,
       });
     } catch (err) {
@@ -17467,11 +17587,23 @@ or
       const {
         cancellationHoursCutoff, lateGracePeriodMinutes, autoMarkNoShows,
         bookingPaymentPolicy, depositType, depositValue,
+        allowOnlineCancellation, cancellationPolicyRequired, cancellationPolicyText,
+        cancellationFeeType, cancellationFeeValue,
       } = req.body;
 
       // ── Server-side validation ────────────────────────────────────────────────
       const VALID_POLICIES = ["none", "card_on_file", "deposit"];
       const VALID_DEPOSIT_TYPES = ["percentage", "fixed"];
+
+      if (cancellationFeeType !== undefined && cancellationFeeType !== null && cancellationFeeType !== "percentage") {
+        return res.status(400).json({ message: "Invalid cancellationFeeType value" });
+      }
+      if (cancellationFeeValue !== undefined && cancellationFeeValue !== null) {
+        const cf = Number(cancellationFeeValue);
+        if (!isFinite(cf) || cf < 1 || cf > 100) {
+          return res.status(400).json({ message: "Cancellation fee must be a percentage between 1 and 100" });
+        }
+      }
 
       if (bookingPaymentPolicy !== undefined && !VALID_POLICIES.includes(bookingPaymentPolicy)) {
         return res.status(400).json({ message: "Invalid bookingPaymentPolicy value" });
@@ -17499,6 +17631,11 @@ or
       if (bookingPaymentPolicy !== undefined) locationUpdates.bookingPaymentPolicy = bookingPaymentPolicy;
       if (depositType !== undefined) locationUpdates.depositType = depositType ?? null;
       if (depositValue !== undefined) locationUpdates.depositValue = depositValue != null ? String(Number(depositValue)) : null;
+      if (allowOnlineCancellation !== undefined) locationUpdates.allowOnlineCancellation = Boolean(allowOnlineCancellation);
+      if (cancellationPolicyRequired !== undefined) locationUpdates.cancellationPolicyRequired = Boolean(cancellationPolicyRequired);
+      if (cancellationPolicyText !== undefined) locationUpdates.cancellationPolicyText = String(cancellationPolicyText ?? "").trim() || null;
+      if (cancellationFeeType !== undefined) locationUpdates.cancellationFeeType = cancellationFeeType ?? null;
+      if (cancellationFeeValue !== undefined) locationUpdates.cancellationFeeValue = cancellationFeeValue != null ? String(Number(cancellationFeeValue)) : null;
       if (Object.keys(locationUpdates).length) {
         await db.update(locations).set(locationUpdates).where(eq(locations.id, storeId));
       }

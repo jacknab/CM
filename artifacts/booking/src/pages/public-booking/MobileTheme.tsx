@@ -1,6 +1,8 @@
 import { useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useCancellationPolicy } from "@/hooks/use-public-booking";
+import { CancellationPolicyConsent } from "./CancellationPolicyConsent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -69,6 +71,9 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
   const [returningPhone, setReturningPhone] = useState("");
   const [phoneError, setPhoneError] = useState("");
   const [bookingSuccess, setBookingSuccess] = useState(false);
+  const [cancellationAccepted, setCancellationAccepted] = useState(false);
+  const cancelPolicy = useCancellationPolicy(slug);
+  const cancelAckNeeded = !!cancelPolicy.data?.required && !!cancelPolicy.data?.text;
 
   const timezone = store.timezone || "UTC";
 
@@ -309,6 +314,7 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
       customerEmail: customerEmail.trim() || undefined,
       customerPhone: customerPhone.trim(),
       addonIds,
+      cancellationPolicyAccepted: cancellationAccepted,
     });
   };
 
@@ -632,9 +638,17 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
                      />
                 </div>
 
-                <Button 
-                    onClick={handleConfirmBooking} 
-                  disabled={bookMutation.isPending || !customerName.trim() || !isPhoneValid}
+                {cancelAckNeeded && (
+                  <CancellationPolicyConsent
+                    text={cancelPolicy.data!.text}
+                    accepted={cancellationAccepted}
+                    onChange={setCancellationAccepted}
+                  />
+                )}
+
+                <Button
+                    onClick={handleConfirmBooking}
+                  disabled={bookMutation.isPending || !customerName.trim() || !isPhoneValid || (cancelAckNeeded && !cancellationAccepted)}
                     className="w-full h-14 text-lg rounded-xl bg-[#D32F2F] hover:bg-[#B71C1C] shadow-lg shadow-red-200"
                 >
                     {bookMutation.isPending ? <Loader2 className="animate-spin mr-2" /> : "Confirm Booking"}

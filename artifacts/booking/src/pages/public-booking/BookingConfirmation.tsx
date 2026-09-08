@@ -1,9 +1,10 @@
+import { useState } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import { useBooking, useCancelBooking } from "@/hooks/use-public-booking";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
-import { CheckCircle2, Calendar, Download, XCircle, Clock, User, Scissors } from "lucide-react";
+import { CheckCircle2, Calendar, Download, XCircle, Clock, User, Scissors, FileText, ChevronDown } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
 function buildGoogleCalendarUrl(booking: any): string {
@@ -70,8 +71,14 @@ export default function BookingConfirmation() {
   const confirmationNumber = params?.confirmationNumber;
   const searchParams = new URLSearchParams(location.search);
   const slug = searchParams.get("slug") || undefined;
-  const { data: bookings, isLoading, error } = useBooking(confirmationNumber, slug);
+  const { data, isLoading, error } = useBooking(confirmationNumber, slug);
+  const bookings = data?.appointments ?? [];
+  const storePolicy = data?.storePolicy;
   const cancelBooking = useCancelBooking();
+  const [showPolicy, setShowPolicy] = useState(false);
+
+  const feeCharged = (cancelBooking.data as any)?.cancellationFeeCharged as number | null | undefined;
+  const feeError = (cancelBooking.data as any)?.cancellationFeeError as boolean | undefined;
 
   const handleCancel = (appointmentId: number) => {
     if (!confirmationNumber) return;
@@ -127,6 +134,38 @@ export default function BookingConfirmation() {
             Confirmation #{confirmationNumber}
           </p>
         </div>
+
+        {feeCharged != null && feeCharged > 0 && (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+            A ${feeCharged.toFixed(2)} late-cancellation fee was charged to your card on file.
+          </div>
+        )}
+        {feeError && (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+            Your appointment was cancelled. We couldn't process the late-cancellation fee — the salon may follow up.
+          </div>
+        )}
+
+        {storePolicy?.cancellationPolicyText && (
+          <Card className="shadow-sm">
+            <button
+              type="button"
+              onClick={() => setShowPolicy((v) => !v)}
+              className="w-full flex items-center justify-between gap-2 px-4 py-3 text-sm font-medium text-gray-700"
+            >
+              <span className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-muted-foreground" />
+                Cancellation policy
+              </span>
+              <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showPolicy ? "rotate-180" : ""}`} />
+            </button>
+            {showPolicy && (
+              <div className="px-4 pb-4 text-sm text-muted-foreground whitespace-pre-wrap">
+                {storePolicy.cancellationPolicyText}
+              </div>
+            )}
+          </Card>
+        )}
 
         {bookings.map((booking: any) => {
           const isCancelled = booking.status === "cancelled";
@@ -226,8 +265,8 @@ export default function BookingConfirmation() {
                   </div>
                 )}
 
-                {/* Cancel button */}
-                {!isCancelled && (
+                {/* Cancel button — hidden when the salon has turned off online cancellation */}
+                {!isCancelled && storePolicy?.allowOnlineCancellation !== false && (
                   <div className="pt-1">
                     <Button
                       variant="ghost"
@@ -244,6 +283,11 @@ export default function BookingConfirmation() {
                       </p>
                     )}
                   </div>
+                )}
+                {!isCancelled && storePolicy?.allowOnlineCancellation === false && (
+                  <p className="pt-1 text-xs text-muted-foreground text-center">
+                    To cancel or reschedule, please call the salon.
+                  </p>
                 )}
               </CardContent>
             </Card>

@@ -91,6 +91,8 @@ publicBookingPaymentRouter.get("/booking-payment-policy/:slug", async (req, res)
         bookingPaymentPolicy: locations.bookingPaymentPolicy,
         depositType: locations.depositType,
         depositValue: locations.depositValue,
+        cancellationPolicyRequired: locations.cancellationPolicyRequired,
+        cancellationPolicyText: locations.cancellationPolicyText,
       })
       .from(locations)
       .where(eq(locations.bookingSlug, slug))
@@ -118,6 +120,8 @@ publicBookingPaymentRouter.get("/booking-payment-policy/:slug", async (req, res)
       depositValue: store.depositValue ? Number(store.depositValue) : null,
       stripePublishableKey: stripeEnabled ? (process.env.STRIPE_PUBLISHABLE_KEY ?? null) : null,
       stripeConnectedAccountId: stripeEnabled ? connectedAccountId : null,
+      cancellationPolicyRequired: !!store.cancellationPolicyRequired && !!String(store.cancellationPolicyText ?? "").trim(),
+      cancellationPolicyText: String(store.cancellationPolicyText ?? "").trim(),
     });
   } catch (err: any) {
     console.error("[bookingPayments/policy]", err?.message);

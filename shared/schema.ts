@@ -204,6 +204,12 @@ export const locations = pgTable("locations", {
   bookingPaymentPolicy: text("booking_payment_policy").notNull().default("none"),
   depositType:          text("deposit_type"),   // 'percentage' | 'fixed'
   depositValue:         decimal("deposit_value", { precision: 10, scale: 2 }),
+  // ── Online booking cancellation policy ───────────────────────────────────
+  allowOnlineCancellation:    boolean("allow_online_cancellation").notNull().default(true),
+  cancellationPolicyRequired: boolean("cancellation_policy_required").notNull().default(false),
+  cancellationPolicyText:     text("cancellation_policy_text"),
+  cancellationFeeType:        text("cancellation_fee_type"),   // 'percentage' (only, for now)
+  cancellationFeeValue:       decimal("cancellation_fee_value", { precision: 10, scale: 2 }),
   // ── Account lifecycle ─────────────────────────────────────────────────────
   suspendedAt:          timestamp("suspended_at"),
   suspendedReason:      text("suspended_reason"),
@@ -2499,6 +2505,20 @@ export const salonResources = pgTable("salon_resources", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 export type SalonResource = typeof salonResources.$inferSelect;
+
+// ── Booking Ban List ─────────────────────────────────────────────────────────
+// Phone numbers a store has blocked from making an ONLINE booking. Checked in
+// POST /api/public/store/:slug/book only — kiosk / AI / staff are unaffected.
+export const bookingBanList = pgTable("booking_ban_list", {
+  id:        serial("id").primaryKey(),
+  storeId:   integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  phoneE164: text("phone_e164").notNull(),
+  reason:    text("reason"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  storePhoneUdx: uniqueIndex("booking_ban_list_store_phone_udx").on(t.storeId, t.phoneE164),
+}));
+export type BookingBanListEntry = typeof bookingBanList.$inferSelect;
 
 // ── POS Grid Management ───────────────────────────────────────────────────────
 export const posGrids = pgTable("pos_grids", {

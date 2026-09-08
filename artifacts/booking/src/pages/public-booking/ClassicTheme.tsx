@@ -1,6 +1,8 @@
 import { useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useCancellationPolicy } from "@/hooks/use-public-booking";
+import { CancellationPolicyConsent } from "./CancellationPolicyConsent";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -63,6 +65,9 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [bookingSuccess, setBookingSuccess] = useState(false);
+  const [cancellationAccepted, setCancellationAccepted] = useState(false);
+  const cancelPolicy = useCancellationPolicy(slug);
+  const cancelAckNeeded = !!cancelPolicy.data?.required && !!cancelPolicy.data?.text;
 
   const timezone = store.timezone || "UTC";
 
@@ -234,6 +239,7 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
       customerName: customerName.trim(),
       customerEmail: customerEmail.trim() || undefined,
       customerPhone: customerPhone.trim() || undefined,
+      cancellationPolicyAccepted: cancellationAccepted,
     });
   };
 
@@ -671,10 +677,18 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
                 </div>
               </div>
 
+              {cancelAckNeeded && (
+                <CancellationPolicyConsent
+                  text={cancelPolicy.data!.text}
+                  accepted={cancellationAccepted}
+                  onChange={setCancellationAccepted}
+                />
+              )}
+
               <Button
                 className="w-full"
                 onClick={handleConfirmBooking}
-                disabled={!customerName.trim() || bookMutation.isPending}
+                disabled={!customerName.trim() || bookMutation.isPending || (cancelAckNeeded && !cancellationAccepted)}
                 data-testid="button-confirm-booking"
               >
                 {bookMutation.isPending ? (

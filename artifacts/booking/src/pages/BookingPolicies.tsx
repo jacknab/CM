@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { useSelectedStore } from "@/hooks/use-store";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Save, Clock, AlertCircle, Shield, CalendarX, ChevronLeft, CreditCard } from "lucide-react";
+import { Save, Clock, AlertCircle, Shield, CalendarX, ChevronLeft, CreditCard, Ban, Trash2, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -23,6 +24,11 @@ type Policies = {
   bookingPaymentPolicy: PaymentPolicy;
   depositType: DepositType | null;
   depositValue: number | null;
+  allowOnlineCancellation: boolean;
+  cancellationPolicyRequired: boolean;
+  cancellationPolicyText: string;
+  cancellationFeeType: "percentage" | null;
+  cancellationFeeValue: number | null;
   stripeConnected?: boolean;
 };
 
@@ -46,6 +52,7 @@ const GRACE_PRESETS = [
 export default function BookingPolicies() {
   const { selectedStore } = useSelectedStore();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [form, setForm] = useState<Policies>({
     cancellationHoursCutoff: 24,
     lateGracePeriodMinutes: 10,
@@ -53,6 +60,11 @@ export default function BookingPolicies() {
     bookingPaymentPolicy: "none",
     depositType: null,
     depositValue: null,
+    allowOnlineCancellation: true,
+    cancellationPolicyRequired: false,
+    cancellationPolicyText: "",
+    cancellationFeeType: null,
+    cancellationFeeValue: null,
   });
   const [dirty, setDirty] = useState(false);
 
@@ -81,6 +93,7 @@ export default function BookingPolicies() {
     onSuccess: () => {
       toast({ title: "Booking policies saved" });
       setDirty(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/booking-policies"] });
     },
     onError: () => toast({ title: "Failed to save", variant: "destructive" }),
   });
@@ -132,11 +145,115 @@ export default function BookingPolicies() {
           </Button>
         </div>
 
-        {/* Cancellation Policy */}
+        {/* Cancellations */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <CalendarX className="h-4 w-4 text-orange-500" />
+              Cancellations
+            </CardTitle>
+            <CardDescription>
+              Control whether clients can cancel online, require them to accept a policy at
+              booking, and charge a late-cancel fee.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium">Allow online cancellation</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Clients can cancel their own appointment from the confirmation page. Off = they must call the salon.
+                </p>
+              </div>
+              <Switch
+                checked={form.allowOnlineCancellation}
+                onCheckedChange={c => update("allowOnlineCancellation", c)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium">Require policy acknowledgement</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Clients must tick "I've read the cancellation policy" before an online booking goes through.
+                </p>
+              </div>
+              <Switch
+                checked={form.cancellationPolicyRequired}
+                onCheckedChange={c => update("cancellationPolicyRequired", c)}
+              />
+            </div>
+
+            <div>
+              <Label className="text-sm font-medium">Cancellation policy</Label>
+              <Textarea
+                value={form.cancellationPolicyText}
+                onChange={e => update("cancellationPolicyText", e.target.value)}
+                placeholder="e.g. Please give at least 24 hours' notice to cancel or reschedule. Cancellations inside that window may be charged a fee."
+                rows={4}
+                className="mt-2 text-sm"
+              />
+              <p className="text-xs text-muted-foreground mt-1.5">
+                Shown on the booking page and the client's confirmation page.
+                {form.cancellationPolicyRequired && !form.cancellationPolicyText.trim() && (
+                  <span className="text-amber-600"> Acknowledgement is required but there's no policy text yet.</span>
+                )}
+              </p>
+            </div>
+
+            {/* Late-cancel fee */}
+            <div className="rounded-xl border bg-muted/30 p-4 space-y-2">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium">Late-cancellation fee</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Charged as a % of the service price when a client cancels inside the cancellation window,
+                    to their card on file. Only clients with a saved card (deposit / card-on-file policy) are charged;
+                    others cancel free.
+                  </p>
+                </div>
+                {form.cancellationFeeValue != null && (
+                  <button
+                    type="button"
+                    onClick={() => { update("cancellationFeeType", null); update("cancellationFeeValue", null); }}
+                    className="text-xs text-muted-foreground hover:text-destructive shrink-0"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              {!form.stripeConnected ? (
+                <p className="text-xs text-amber-600">Connect a Stripe account (below) to charge a fee.</p>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-base font-semibold text-muted-foreground w-5 text-center select-none">%</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={3}
+                    value={form.cancellationFeeValue != null ? String(form.cancellationFeeValue) : ""}
+                    onChange={e => {
+                      const raw = e.target.value.replace(/[^0-9]/g, "").slice(0, 3);
+                      if (raw === "") { update("cancellationFeeType", null); update("cancellationFeeValue", null); return; }
+                      const n = Math.min(100, Math.max(1, parseInt(raw, 10) || 0));
+                      update("cancellationFeeType", "percentage");
+                      update("cancellationFeeValue", n);
+                    }}
+                    placeholder="50"
+                    className="w-24 text-xl font-bold bg-transparent border-0 border-b-2 border-orange-300 focus:border-orange-500 outline-none text-foreground py-1 text-center transition-colors"
+                  />
+                  <span className="text-xs text-muted-foreground">of the service price</span>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Cancellation Window */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Clock className="h-4 w-4 text-orange-500" />
               Cancellation Window
             </CardTitle>
             <CardDescription>
@@ -418,6 +535,23 @@ export default function BookingPolicies() {
         </Card>
         )}
 
+        {/* Booking Ban List */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Ban className="h-4 w-4 text-red-500" />
+              Booking Ban List
+            </CardTitle>
+            <CardDescription>
+              Phone numbers on this list can't make an online booking. Staff can still book them
+              manually, and it doesn't affect the check-in kiosk.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <BanList />
+          </CardContent>
+        </Card>
+
         {/* Save bar for mobile */}
         {dirty && (
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-background border border-border shadow-xl rounded-2xl px-6 py-3 flex items-center gap-4">
@@ -435,5 +569,115 @@ export default function BookingPolicies() {
         )}
       </div>
     </AppLayout>
+  );
+}
+
+// ── Booking ban list — self-managed CRUD, independent of the policies form ────
+
+type BanEntry = { id: number; phoneE164: string; reason: string | null; createdAt: string };
+
+function formatPhone(e164: string): string {
+  const d = e164.replace(/\D/g, "").slice(-10);
+  if (d.length !== 10) return e164;
+  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+}
+
+function BanList() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [phone, setPhone] = useState("");
+  const [reason, setReason] = useState("");
+
+  const { data: entries = [], isLoading } = useQuery<BanEntry[]>({
+    queryKey: ["/api/booking-ban-list"],
+    queryFn: async () => {
+      const res = await fetch("/api/booking-ban-list", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load ban list");
+      return res.json();
+    },
+  });
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["/api/booking-ban-list"] });
+
+  const addMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/booking-ban-list", { phone, reason: reason.trim() || undefined });
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}));
+        throw new Error(b?.message || "Failed to add");
+      }
+      return res.json();
+    },
+    onSuccess: () => { setPhone(""); setReason(""); invalidate(); toast({ title: "Added to ban list" }); },
+    onError: (e: any) => toast({ title: e?.message || "Failed to add", variant: "destructive" }),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("DELETE", `/api/booking-ban-list/${id}`);
+      if (!res.ok && res.status !== 204) throw new Error("Failed to remove");
+    },
+    onSuccess: () => { invalidate(); toast({ title: "Removed from ban list" }); },
+    onError: () => toast({ title: "Failed to remove", variant: "destructive" }),
+  });
+
+  const canAdd = phone.replace(/\D/g, "").length === 10 && !addMutation.isPending;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-col sm:flex-row gap-2">
+        <Input
+          value={phone}
+          onChange={e => setPhone(e.target.value)}
+          placeholder="(555) 000-0000"
+          type="tel"
+          inputMode="tel"
+          className="sm:w-44"
+        />
+        <Input
+          value={reason}
+          onChange={e => setReason(e.target.value)}
+          placeholder="Reason (optional)"
+          className="flex-1"
+        />
+        <Button
+          onClick={() => addMutation.mutate()}
+          disabled={!canAdd}
+          className="bg-[#1a1f36] hover:bg-[#2d3452] text-white shrink-0"
+        >
+          <Plus className="h-4 w-4 mr-1.5" />
+          {addMutation.isPending ? "Adding…" : "Add"}
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : entries.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No numbers are banned.</p>
+      ) : (
+        <div className="rounded-lg border divide-y">
+          {entries.map(entry => (
+            <div key={entry.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">{formatPhone(entry.phoneE164)}</p>
+                {entry.reason && <p className="text-xs text-muted-foreground truncate">{entry.reason}</p>}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(`Remove ${formatPhone(entry.phoneE164)} from the ban list?`)) {
+                    removeMutation.mutate(entry.id);
+                  }
+                }}
+                className="text-muted-foreground hover:text-destructive shrink-0"
+                aria-label="Remove"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

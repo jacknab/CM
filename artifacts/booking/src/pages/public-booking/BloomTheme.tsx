@@ -30,6 +30,8 @@ import {
   ZoomIn,
 } from "lucide-react";
 import { formatInTz } from "@/lib/timezone";
+import { useCancellationPolicy } from "@/hooks/use-public-booking";
+import { CancellationPolicyConsent } from "./CancellationPolicyConsent";
 import type { StoreData } from "./types";
 
 // ── Color tokens (mapped from nail-salon-bloom tailwind.config.js) ─────────────
@@ -299,6 +301,9 @@ function BookingPanel({
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting]   = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [cancellationAccepted, setCancellationAccepted] = useState(false);
+  const cancelPolicy = useCancellationPolicy(slug);
+  const cancelAckNeeded = !!cancelPolicy.data?.required && !!cancelPolicy.data?.text;
 
   const preselectionApplied = useRef<number | null>(null);
 
@@ -397,6 +402,7 @@ function BookingPanel({
           customerName: name.trim(),
           customerPhone: phone.trim(),
           customerEmail: email.trim() || undefined,
+          cancellationPolicyAccepted: cancellationAccepted,
         }),
       });
       if (!res.ok) {
@@ -409,7 +415,7 @@ function BookingPanel({
     } finally {
       setSubmitting(false);
     }
-  }, [selectedService, selectedSlot, name, phone, email, slug]);
+  }, [selectedService, selectedSlot, name, phone, email, slug, cancellationAccepted]);
 
   const weekStart = getWeekStart(weekOffset);
   const weekDays  = getWeekDays(weekStart);
@@ -761,10 +767,20 @@ function BookingPanel({
                 </div>
               )}
 
+              {cancelAckNeeded && (
+                <div className="mt-4">
+                  <CancellationPolicyConsent
+                    text={cancelPolicy.data!.text}
+                    accepted={cancellationAccepted}
+                    onChange={setCancellationAccepted}
+                  />
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={handleBook}
-                disabled={submitting || !name.trim() || !phone.trim()}
+                disabled={submitting || !name.trim() || !phone.trim() || (cancelAckNeeded && !cancellationAccepted)}
                 className="mt-5 w-full rounded-full px-6 py-4 text-base font-semibold text-white shadow-md transition-all hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:transform-none disabled:opacity-50"
                 style={{ background: C.gold700 }}
               >

@@ -95,7 +95,7 @@ export function buildSettingsNav(pick: Pick4): SettingsNavGroup[] {
         },
         {
           label: pick({ en: "Booking Policies", vi: "Chính sách đặt lịch", es: "Políticas de reserva", fr: "Politiques de réservation" }),
-          description: pick({ en: "Cancellation windows, no-show rules and deposits.", vi: "Thời hạn hủy, quy tắc vắng mặt và tiền đặt cọc.", es: "Ventanas de cancelación, reglas de ausencia y depósitos.", fr: "Délais d'annulation, règles de non-présentation et acomptes." }),
+          description: pick({ en: "Cancellation policy & fees, no-show rules, deposits and the booking ban list.", vi: "Chính sách & phí hủy, quy tắc vắng mặt, đặt cọc và danh sách chặn đặt lịch.", es: "Política y tarifas de cancelación, reglas de ausencia, depósitos y lista de bloqueo.", fr: "Politique et frais d'annulation, règles de non-présentation, acomptes et liste de blocage." }),
           icon: FileText, to: "/booking-policies", iconBg: "bg-red-100", iconColor: "text-red-500",
         },
         {

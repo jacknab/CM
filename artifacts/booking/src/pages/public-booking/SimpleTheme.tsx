@@ -182,6 +182,8 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
     depositValue: number | null;
     stripePublishableKey: string | null;
     stripeConnectedAccountId: string | null;
+    cancellationPolicyRequired?: boolean;
+    cancellationPolicyText?: string;
   }>({
     queryKey: [`/api/public/booking-payment-policy/${slug}`],
     queryFn: async () => {
@@ -192,6 +194,9 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
     enabled: !!slug,
     staleTime: 60_000,
   });
+
+  const [cancellationAccepted, setCancellationAccepted] = useState(false);
+  const cancelAckNeeded = !!paymentPolicyData?.cancellationPolicyRequired && !!paymentPolicyData?.cancellationPolicyText;
 
   // Load Stripe when publishable key is available
   useEffect(() => {
@@ -474,9 +479,10 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
       customerPhone: customerPhone.trim(),
       addonIds: allAddonIds,
       smsOptIn,
+      cancellationPolicyAccepted: cancellationAccepted,
       ...paymentInfo,
     });
-  }, [primaryService, selectedSlot, selectedAddons, totalDuration, customerName, customerEmail, customerPhone, smsOptIn, bookMutation]);
+  }, [primaryService, selectedSlot, selectedAddons, totalDuration, customerName, customerEmail, customerPhone, smsOptIn, cancellationAccepted, bookMutation]);
 
   // ── Calculate deposit in cents ─────────────────────────────────────────────
   const calculateDepositCents = useCallback((totalPriceDollars: number): number => {
@@ -1019,6 +1025,24 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
                 </p>
               </div>
 
+              {/* Cancellation policy acknowledgement */}
+              {cancelAckNeeded && (
+                <div className="border border-gray-200 rounded-lg p-4">
+                  <p className="text-xs text-gray-600 whitespace-pre-wrap mb-3">{paymentPolicyData?.cancellationPolicyText}</p>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={cancellationAccepted}
+                      onChange={(e) => setCancellationAccepted(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 accent-primary cursor-pointer shrink-0"
+                    />
+                    <span className="text-sm font-medium text-gray-800 leading-snug">
+                      I have read and agree to the cancellation policy
+                    </span>
+                  </label>
+                </div>
+              )}
+
               <div className="bg-gray-50 p-4 rounded-lg mt-6">
                 <h3 className="font-semibold mb-2">{primaryService?.name}</h3>
                 <p className="text-sm text-gray-600 mb-1">
@@ -1090,7 +1114,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
               <Button
                 className="w-full mt-4"
                 onClick={handleConfirmBooking}
-                disabled={!customerName.trim() || !isPhoneValid || bookMutation.isPending || isCreatingIntent}
+                disabled={!customerName.trim() || !isPhoneValid || bookMutation.isPending || isCreatingIntent || (cancelAckNeeded && !cancellationAccepted)}
                 data-testid="button-confirm-booking"
               >
                 {(bookMutation.isPending || isCreatingIntent) ? (
