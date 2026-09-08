@@ -25,6 +25,7 @@ import { AvailableTimeBanner } from "@/components/AvailableTimeBanner";
 import { useThermalPrinter } from "@/hooks/use-thermal-printer";
 import { buildCheckinTicket, buildCheckoutReceipt } from "@/lib/thermalPrinter";
 import { cn } from "@/lib/utils";
+import { clientPhoneCacheDB } from "@/lib/client-phone-cache-db";
 import { getPosLayout, getMobilePosActions, resolvePosIcon, type PosButton } from "@/lib/pos";
 import { POS_BUTTON_TX, POS_GUIDED_TX, POS_MISC_TX } from "@/lib/pos/labels";
 import type { AppointmentWithDetails } from "@shared/schema";
@@ -9268,27 +9269,48 @@ function ChooseClientPanel({
   }, []);
 
   useEffect(() => {
-    if (phoneDigits.length === 10 && !searchDone && selectedStore) {
-      setIsSearching(true);
-      fetch(`/api/customers/search?phone=${encodeURIComponent(phoneDigits)}&storeId=${selectedStore.id}`, {
-        credentials: "include",
-      })
-        .then(res => res.json())
-        .then((customer: any) => {
-          setIsSearching(false);
-          setSearchDone(true);
-          if (customer && customer.id) {
-            onSelectClient(customer.id);
-          } else {
-            setShowNameEntry(true);
-          }
-        })
-        .catch(() => {
-          setIsSearching(false);
-          setSearchDone(true);
-          setShowNameEntry(true);
-        });
-    }
+    if (phoneDigits.length !== 10 || searchDone || !selectedStore) return;
+    const storeId = selectedStore.id;
+    let cancelled = false;
+    setIsSearching(true);
+
+    const finish = (clientId: number | null) => {
+      if (cancelled) return;
+      setIsSearching(false);
+      setSearchDone(true);
+      if (clientId != null && Number.isFinite(clientId)) onSelectClient(clientId);
+      else setShowNameEntry(true);
+    };
+
+    // Offline fallback: the phone→client cache (clientPhoneCacheDB) is populated
+    // from the offline snapshot, so an existing client is still findable by
+    // phone when the network is down.
+    const lookupOffline = async (): Promise<number | null> => {
+      const match = await clientPhoneCacheDB.findByPhone10(storeId, phoneDigits).catch(() => null);
+      const id = match ? Number(match.id) : NaN;
+      return Number.isFinite(id) ? id : null;
+    };
+
+    (async () => {
+      if (!navigator.onLine) {
+        finish(await lookupOffline());
+        return;
+      }
+      try {
+        const res = await fetch(
+          `/api/customers/search?phone=${encodeURIComponent(phoneDigits)}&storeId=${storeId}`,
+          { credentials: "include" },
+        );
+        const customer = await res.json().catch(() => null);
+        finish(customer && customer.id ? Number(customer.id) : null);
+      } catch {
+        // Network error mid-session — fall back to the offline cache before
+        // giving up to "new client".
+        finish(await lookupOffline());
+      }
+    })();
+
+    return () => { cancelled = true; };
   }, [phoneDigits, searchDone, selectedStore, onSelectClient]);
 
   const handleNameKey = useCallback((key: string) => {
