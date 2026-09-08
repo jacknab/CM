@@ -573,7 +573,12 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
     .from(appointments)
     .where(and(
       eq(appointments.storeId, storeId),
-      sql`${appointments.status} IN ('started', 'checked_in')`,
+      // "Busy" = genuinely in progress. A walk-in booked with status
+      // 'checked_in' (see the "create walk-ins as checked_in" flow) only
+      // counts once it has a real check-in timestamp — otherwise assigning a
+      // future walk-in would immediately flip the tech to Busy on the Turn
+      // panel while the grid still shows it as Pending.
+      sql`(${appointments.status} = 'started' OR (${appointments.status} = 'checked_in' AND ${appointments.checkedInAt} IS NOT NULL))`,
       gte(appointments.date, todayStartUtc),
       sql`${appointments.date} <= ${todayEndUtc}`,
       isNotNull(appointments.staffId)
@@ -594,7 +599,12 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
       .from(appointments)
       .where(and(
         eq(appointments.storeId, storeId),
-        sql`${appointments.status} IN ('started', 'checked_in')`,
+        // "Busy" = genuinely in progress. A walk-in booked with status
+      // 'checked_in' (see the "create walk-ins as checked_in" flow) only
+      // counts once it has a real check-in timestamp — otherwise assigning a
+      // future walk-in would immediately flip the tech to Busy on the Turn
+      // panel while the grid still shows it as Pending.
+      sql`(${appointments.status} = 'started' OR (${appointments.status} = 'checked_in' AND ${appointments.checkedInAt} IS NOT NULL))`,
         gte(appointments.date, todayStartUtc),
         sql`${appointments.date} <= ${todayEndUtc}`,
         isNotNull(appointments.staffId)
