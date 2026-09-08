@@ -210,6 +210,7 @@ export const locations = pgTable("locations", {
   cancellationPolicyText:     text("cancellation_policy_text"),
   cancellationFeeType:        text("cancellation_fee_type"),   // 'percentage' (only, for now)
   cancellationFeeValue:       decimal("cancellation_fee_value", { precision: 10, scale: 2 }),
+  askClientsForPronouns:      boolean("ask_clients_for_pronouns").notNull().default(false),
   // ── Account lifecycle ─────────────────────────────────────────────────────
   suspendedAt:          timestamp("suspended_at"),
   suspendedReason:      text("suspended_reason"),

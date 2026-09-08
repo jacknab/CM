@@ -14,6 +14,8 @@ import html2canvas from "html2canvas";
 import { useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useStaffList } from "@/hooks/use-staff";
+import { useIsMobile } from "@/hooks/use-mobile";
+import MobileOnlineBookingSettings from "@/pages/MobileOnlineBookingSettings";
 
 /** Convert a salon name to a Yelp-style slug: lowercase, hyphens, alphanumeric only */
 function toYelpSlug(name: string): string {
@@ -33,6 +35,7 @@ export default function OnlineBooking() {
     const qrRef = useRef<HTMLDivElement>(null);
     const [showInstructions, setShowInstructions] = useState<"Google" | "Instagram" | "Facebook" | null>(null);
   const { isLoading: authLoading } = useAuth();
+  const isMobile = useIsMobile();
   const { selectedStore } = useSelectedStore();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -187,6 +190,10 @@ ${cards}
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
+  }
+
+  if (isMobile) {
+    return <MobileOnlineBookingSettings />;
   }
 
   const isSaved = selectedStore?.bookingSlug === slug;

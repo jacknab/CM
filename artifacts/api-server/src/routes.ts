@@ -17568,6 +17568,7 @@ or
         cancellationPolicyText: (store as any).cancellationPolicyText ?? "",
         cancellationFeeType: (store as any).cancellationFeeType ?? null,
         cancellationFeeValue: (store as any).cancellationFeeValue ? Number((store as any).cancellationFeeValue) : null,
+         askClientsForPronouns: (store as any).askClientsForPronouns ?? false,
         stripeConnected: connectedAccount.length > 0,
       });
     } catch (err) {
@@ -17588,6 +17589,7 @@ or
         bookingPaymentPolicy, depositType, depositValue,
         allowOnlineCancellation, cancellationPolicyRequired, cancellationPolicyText,
         cancellationFeeType, cancellationFeeValue,
+         askClientsForPronouns,
       } = req.body;
 
       // ── Server-side validation ────────────────────────────────────────────────
@@ -17635,6 +17637,7 @@ or
       if (cancellationPolicyText !== undefined) locationUpdates.cancellationPolicyText = String(cancellationPolicyText ?? "").trim() || null;
       if (cancellationFeeType !== undefined) locationUpdates.cancellationFeeType = cancellationFeeType ?? null;
       if (cancellationFeeValue !== undefined) locationUpdates.cancellationFeeValue = cancellationFeeValue != null ? String(Number(cancellationFeeValue)) : null;
+       if (askClientsForPronouns !== undefined) locationUpdates.askClientsForPronouns = Boolean(askClientsForPronouns);
       if (Object.keys(locationUpdates).length) {
         await db.update(locations).set(locationUpdates).where(eq(locations.id, storeId));
       }

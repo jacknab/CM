@@ -103,6 +103,8 @@ export function MobileBottomNav() {
   const isSolo = (selectedStore as any)?.teamSize === "myself" || !!subscription?.planCode?.toLowerCase().includes("solo");
   const features = useFeatureFlags();
 
+  if (pathname === "/online-booking") return null;
+
   return (
     <>
       {/* ── Bottom Tab Bar ── */}

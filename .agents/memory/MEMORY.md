@@ -63,4 +63,5 @@
 - [Dev sandbox ESM resolution quirk](esm-resolution-stale-node-modules.md) — plain `node file.mjs` inside a pnpm workspace subpackage can transiently fail with ERR_MODULE_NOT_FOUND for real, installed deps; fix is `pnpm install` (not a code bug).
 - [Kiosk check-in auto-cancel bug](kiosk-checkin-auto-cancel.md) — background dup-reconciliation job must never auto-cancel checked_in/started appointments; public creation endpoints need idempotency guards.
 - [Imported preview bootstrap](imported-preview-bootstrap.md) — template thumbnail generation can delay the production preview beyond workflow startup limits.
+- [Native dependency installs](native-dependency-installs.md) — imported pnpm workspaces use ignore-scripts; native modules such as bcrypt need an explicit rebuild before the API can start.
 - [Dashboard timezone display](dashboard-timezone-display.md) — format raw instants once; formatting a wall-clock Date again applies the store offset twice.

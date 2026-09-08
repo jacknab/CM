@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Menu } from "lucide-react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -23,11 +23,12 @@ function useIsMobile() {
  */
 export function GlobalMobileHeader() {
   const isMobile = useIsMobile();
+  const { pathname } = useLocation();
   const navigate = useNavigate();
   const [navOpen, setNavOpen] = useState(false);
 
   // Don't render anything on desktop — no DOM node at all.
-  if (!isMobile) return null;
+  if (!isMobile || pathname === "/online-booking") return null;
 
   return (
     <>
