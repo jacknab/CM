@@ -105,7 +105,6 @@ import StaffHistory from "@/pages/StaffHistory";
 import NotFound from "@/pages/not-found";
 import TeamLoginPage from "@/pages/isTeam/LoginPage";
 import TeamApp from "@/pages/isTeam/TeamApp";
-import CustomerChatPage from "@/pages/LiveChat/CustomerChatPage";
 import BookingPresenceBeacon from "@/components/BookingPresenceBeacon";
 import ContactPage from "@/pages/ContactPage";
 import TeamPermissions from "@/pages/TeamPermissions";
@@ -391,7 +390,10 @@ function App() {
           <BrowserRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
             <SeoManager />
             <AppRoutes />
-            <CustomerChatPage />
+            {/* No support chat bubble inside the booking app — the marketing
+                site keeps its own widget (php/assets/js/livechat-widget.js).
+                Signed-in users are still reported to isTeam via
+                <BookingPresenceBeacon/> (mounted in AppRoutes). */}
           </BrowserRouter>
         </ErrorBoundary>
       </TooltipProvider>
