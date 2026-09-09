@@ -69,5 +69,6 @@
   }).catch(function(){});
 })();
 </script>
+<script src="/assets/js/livechat-widget.js?v=<?= @filemtime($_SERVER['DOCUMENT_ROOT'].'/assets/js/livechat-widget.js') ?: '1' ?>" defer></script>
 </body>
 </html>

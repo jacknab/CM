@@ -290,11 +290,23 @@ function RatingScreen({ chatId, agentName, onDone }: {
 }
 
 // ─── Main widget ──────────────────────────────────────────────────────────────
+// Routes where the "chat with Certxa support" bubble should NOT appear: the
+// support back-office itself, full-screen operational surfaces (kiosk / front
+// desk / queue displays), and the pre-auth / onboarding screens.
+const CHAT_HIDDEN_PREFIXES = [
+  "/isTeam", "/isadmin", "/kiosk", "/frontdesk", "/queue-display", "/checkin",
+  "/auth", "/app-login", "/staff-auth", "/forgot-password", "/reset-password",
+  "/staff-forgot-password", "/staff-reset-password", "/onboarding", "/setup",
+  "/book/", "/widget", "/review/", "/b/",
+  // Staff-only + full-screen operational surfaces — not where an owner reaches
+  // for Certxa support.
+  "/staff-", "/calendar", "/staff-calendar", "/pos", "/turn",
+];
+
 export default function CustomerChatPage() {
   const location = useLocation();
-
-  // Only show on /contact — hide everywhere else
-  const hidden = !location.pathname.startsWith("/contact");
+  const p = location.pathname;
+  const hidden = p === "/" || CHAT_HIDDEN_PREFIXES.some((x) => p === x || p.startsWith(x));
   if (hidden) return null;
 
   return <ChatWidgetInner />;
