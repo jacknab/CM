@@ -274,6 +274,10 @@ export default function VisitorsPage() {
 
   const col5Header = isBooking ? "Type / Store" : "Returning Visitor";
   const title = isBooking ? "Booking App — Users & Devices" : "Real-Time Website Visitors";
+  // Booking App Users tab drops the "Time on Site" column.
+  const gridCls = isBooking
+    ? "grid-cols-[44px_140px_1fr_92px_1fr_104px_1fr_72px]"
+    : "grid-cols-[44px_140px_1fr_92px_1fr_104px_104px_1fr_72px]";
 
   return (
     <div className="flex-1 overflow-auto bg-slate-50">
@@ -396,14 +400,14 @@ export default function VisitorsPage() {
 
           <div className="overflow-x-auto">
             <div className="min-w-[900px]">
-              <div className="grid grid-cols-[44px_140px_1fr_92px_1fr_104px_104px_1fr_72px] px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-500 uppercase tracking-wide">
+              <div className={`grid ${gridCls} gap-x-4 px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-500 uppercase tracking-wide`}>
                 <div>#</div>
                 <div>IP Address</div>
                 <div>Location</div>
                 <div>Country</div>
                 <div>{col5Header}</div>
                 <div>Last Seen</div>
-                <div>Time on Site</div>
+                {!isBooking && <div>Time on Site</div>}
                 <div>Current Page</div>
                 <div className="text-right">View</div>
               </div>
@@ -428,7 +432,7 @@ export default function VisitorsPage() {
                   return (
                     <div
                       key={v.visitorId}
-                      className="grid grid-cols-[44px_140px_1fr_92px_1fr_104px_104px_1fr_72px] px-4 py-3 border-b border-slate-100 hover:bg-slate-50 transition text-sm items-center"
+                      className={`grid ${gridCls} gap-x-4 px-4 py-3 border-b border-slate-100 hover:bg-slate-50 transition text-sm items-center`}
                     >
                       <div className="flex items-center gap-1.5 text-slate-400">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -453,7 +457,7 @@ export default function VisitorsPage() {
                         )}
                       </div>
                       <div className="text-slate-500 tabular-nums">{fmtClock(v.lastSeen)}</div>
-                      <div className="text-slate-500 tabular-nums">{fmtOnSite(onSite)}</div>
+                      {!isBooking && <div className="text-slate-500 tabular-nums">{fmtOnSite(onSite)}</div>}
                       <div className="font-mono text-slate-700 truncate pr-2">{pagePath(v.url)}</div>
                       <div className="text-right">
                         <button
