@@ -31,6 +31,20 @@ interface Dept { id: number; name: string; description: string | null; is_active
 interface AllAgent { id: number; name: string; role: string; online: boolean; status: string }
 interface AgentDeptAssignment { agent_id: number; department_id: number; agent_name: string; department_name: string }
 interface CannedResponse { id: number; shortcut: string; title: string; content: string }
+interface LiveVisitor {
+  visitorId: string;
+  url: string;
+  title: string;
+  referrer: string;
+  country: string | null;
+  pages: number;
+  name: string | null;
+  chatId: string | null;
+  firstSeen: number;
+  lastSeen: number;
+  onSiteSec: number;
+}
+
 interface Stats {
   queued: number; active: number; closed_today: number;
   missed_today: number; avg_wait_min: number | null; avg_rating_7d: number | null;
@@ -162,6 +176,61 @@ function ChatRow({ chat, isSelected, isUnread, isLocked, onClick }: {
         </div>
       </div>
     </button>
+  );
+}
+
+// ─── Visitor row (passive "browsing now" list) ───────────────────────────────
+function fmtDuration(sec: number): string {
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  if (m < 60) return `${m}m ${sec % 60}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+function refDomain(ref: string): string {
+  if (!ref) return "direct";
+  try { return new URL(ref).hostname.replace(/^www\./, ""); } catch { return ref.slice(0, 24); }
+}
+function flagEmoji(cc: string | null): string {
+  if (!cc || cc.length !== 2) return "";
+  return String.fromCodePoint(...[...cc.toUpperCase()].map(c => 127397 + c.charCodeAt(0)));
+}
+
+function VisitorRow({ v, onClick }: { v: LiveVisitor; onClick?: () => void }) {
+  const [, force] = useState(0);
+  useEffect(() => { const t = setInterval(() => force(n => n + 1), 1000); return () => clearInterval(t); }, []);
+  const liveSec = v.onSiteSec + Math.floor((Date.now() - v.lastSeen) / 1000);
+  const Wrap: any = onClick ? "button" : "div";
+  return (
+    <Wrap
+      onClick={onClick}
+      className={`w-full text-left px-3 py-2 rounded-lg transition ${onClick ? "hover:bg-slate-700/50 cursor-pointer" : ""}`}
+    >
+      <div className="flex items-center gap-2">
+        <span className="relative flex h-2 w-2 flex-shrink-0">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+        </span>
+        <span className="text-xs font-medium text-slate-200 truncate flex-1">
+          {v.name || "Anonymous visitor"}
+        </span>
+        {v.country && <span className="text-xs flex-shrink-0" title={v.country}>{flagEmoji(v.country)}</span>}
+        {v.chatId && (
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-600/50 text-indigo-200 flex-shrink-0">
+            in chat
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-1 mt-1 text-[11px] text-slate-500 min-w-0">
+        <Globe className="w-3 h-3 flex-shrink-0" />
+        <span className="truncate">{v.url || "/"}</span>
+      </div>
+      <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-600">
+        <span className="flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" />{fmtDuration(liveSec)}</span>
+        <span>·</span>
+        <span className="truncate">{refDomain(v.referrer)}</span>
+        {v.pages > 1 && <><span>·</span><span>{v.pages} pages</span></>}
+      </div>
+    </Wrap>
   );
 }
 
@@ -309,7 +378,7 @@ export default function LiveChatPage() {
   const [localMsgs,      setLocalMsgs]      = useState<Record<string, ChatMessage[]>>({});
   const [showTransfer,   setShowTransfer]   = useState(false);
   const [rightTab,       setRightTab]       = useState<"info"|"canned"|"settings">("info");
-  const [sideTab,        setSideTab]        = useState<"queue"|"active"|"history">("queue");
+  const [sideTab,        setSideTab]        = useState<"queue"|"active"|"history"|"visitors">("queue");
   const [noteMode,       setNoteMode]       = useState(false);
   const [myStatus,       setMyStatus]       = useState<"online"|"away"|"busy">("online");
   const [soundEnabled,   setSoundEnabled]   = useState(true);
@@ -337,6 +406,12 @@ export default function LiveChatPage() {
   const { data: statsData, refetch: refetchStats } = useQuery({
     queryKey: ["lc-stats"], queryFn: () => api("/api/support/live-chat/stats"), refetchInterval: 30000,
   });
+  // Passive "who's browsing certxa.com right now" list. WS pushes a fresh
+  // snapshot on join/navigate/leave; the interval is a fallback.
+  const { data: visitorsData } = useQuery<{ visitors: LiveVisitor[] }>({
+    queryKey: ["lc-visitors"], queryFn: () => api("/api/support/live-chat/visitors"), refetchInterval: 20000,
+  });
+  const visitors: LiveVisitor[] = visitorsData?.visitors ?? [];
   const { data: deptData }   = useQuery({ queryKey: ["lc-depts"],  queryFn: () => api("/api/support/live-chat/departments") });
   const { data: cannedData } = useQuery({ queryKey: ["lc-canned"], queryFn: () => api("/api/support/live-chat/canned") });
   const { data: allAgentsData } = useQuery({ queryKey: ["lc-all-agents"], queryFn: () => api("/api/support/live-chat/all-agents") });
@@ -408,6 +483,9 @@ export default function LiveChatPage() {
               break;
             case "queue_update":
               refetchQueue(); refetchStats(); break;
+            case "visitors":
+              qc.setQueryData(["lc-visitors"], { visitors: msg.visitors ?? [] });
+              break;
             case "new_chat":
               refetchQueue(); refetchStats();
               if (soundEnabled) playNotificationSound("new_chat");
@@ -673,9 +751,10 @@ export default function LiveChatPage() {
           {/* Tabs */}
           <div className="flex border-b border-slate-700">
             {([
-              { id: "queue",   label: "Queue",   badge: queue.length },
-              { id: "active",  label: "Active",  badge: active.length },
-              { id: "history", label: "History", badge: 0 },
+              { id: "queue",    label: "Queue",    badge: queue.length },
+              { id: "active",   label: "Active",   badge: active.length },
+              { id: "visitors", label: "Visitors", badge: visitors.length },
+              { id: "history",  label: "History",  badge: 0 },
             ] as const).map(t => (
               <button key={t.id} onClick={() => setSideTab(t.id)}
                 className={`flex-1 flex items-center justify-center gap-1 py-2.5 text-xs font-semibold transition border-b-2 ${
@@ -686,7 +765,9 @@ export default function LiveChatPage() {
                 {t.label}
                 {t.badge > 0 && (
                   <span className={`rounded-full text-[10px] font-bold px-1.5 py-0.5 min-w-[18px] text-center ${
-                    t.id === "queue" ? "bg-amber-500 text-white" : "bg-indigo-600/60 text-indigo-200"
+                    t.id === "queue" ? "bg-amber-500 text-white"
+                      : t.id === "visitors" ? "bg-emerald-600/70 text-emerald-100"
+                      : "bg-indigo-600/60 text-indigo-200"
                   }`}>{t.badge > 99 ? "99+" : t.badge}</span>
                 )}
               </button>
@@ -714,6 +795,16 @@ export default function LiveChatPage() {
                       isUnread={unread.has(c.id)}
                       isLocked={(c as ActiveChat).agent_id !== myAgentId && myAgentRole !== "admin"}
                       onClick={() => selectChat(c.id)} />
+                  ))
+            )}
+            {sideTab === "visitors" && (
+              visitors.length === 0
+                ? <p className="text-slate-600 text-xs text-center py-8 flex flex-col items-center gap-2">
+                    <Users className="w-8 h-8 opacity-40" /> No one browsing right now
+                  </p>
+                : visitors.map(v => (
+                    <VisitorRow key={v.visitorId} v={v}
+                      onClick={v.chatId ? () => selectChat(v.chatId!) : undefined} />
                   ))
             )}
             {sideTab === "history" && (

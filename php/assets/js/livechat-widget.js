@@ -13,8 +13,51 @@
   window.__certxaChatLoaded = true;
 
   var LS_KEY = "certxa_chat";
+  var VID_KEY = "certxa_vid";
   var ACCENT = "#6d28d9";           // violet-700
   var ACCENT_DK = "#5b21b6";
+
+  // ── visitor presence beacon ───────────────────────────────────────────────
+  // A stable per-browser id + a heartbeat so the support team can see who's
+  // browsing the site in real time (passive list — no proactive chat).
+  var visitorId = (function () {
+    try {
+      var v = localStorage.getItem(VID_KEY);
+      if (!v) {
+        v = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+          : "v-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+        localStorage.setItem(VID_KEY, v);
+      }
+      return v;
+    } catch (e) { return "v-" + Math.random().toString(36).slice(2); }
+  })();
+
+  function beaconPing() {
+    try {
+      fetch("/api/live-chat/visitor/ping", {
+        method: "POST", credentials: "include", keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          visitorId: visitorId,
+          url: location.pathname + location.search,
+          title: (document.title || "").slice(0, 200),
+          referrer: document.referrer || "",
+        }),
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  function beaconLeave() {
+    try {
+      var body = new Blob([JSON.stringify({ visitorId: visitorId })], { type: "application/json" });
+      if (navigator.sendBeacon) navigator.sendBeacon("/api/live-chat/visitor/leave", body);
+    } catch (e) {}
+  }
+  beaconPing();
+  setInterval(beaconPing, 25000);
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") beaconPing();
+  });
+  window.addEventListener("pagehide", beaconLeave);
 
   // ── styles ────────────────────────────────────────────────────────────────
   var css = "\
@@ -245,6 +288,7 @@
       body: JSON.stringify({
         visitorName: v.name, visitorEmail: v.email,
         departmentId: v.deptId || undefined, subject: v.subject, pageUrl: location.href,
+        visitorId: visitorId,
       }),
     }).then(function (data) {
       chatId = data.chatId; visitorName = v.name;

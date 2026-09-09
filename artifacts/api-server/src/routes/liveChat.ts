@@ -198,6 +198,76 @@ function getAgentStatusList() {
   return Array.from(agentStatus.entries()).map(([agentId, status]) => ({ agentId, status }));
 }
 
+// ─── Visitor presence — passive "who's browsing right now" list ──────────────
+// Fed by a lightweight beacon from the marketing-site chat widget; shown to
+// agents read-only. Best-effort, per-worker in-memory (no cross-process relay
+// — like the agent-status maps above, a multi-worker deploy can under-report).
+interface VisitorPresence {
+  visitorId: string;
+  firstSeen: number;
+  lastSeen: number;
+  url: string;
+  title: string;
+  referrer: string;
+  ip: string;
+  ua: string;
+  country: string | null;
+  pages: number;
+  name: string | null;   // set once they start a chat
+  chatId: string | null;
+}
+const visitors = new Map<string, VisitorPresence>();
+const VISITOR_TTL_MS = 60_000;
+
+function clientIp(req: any): string {
+  const xff = String(req.headers?.["x-forwarded-for"] ?? "").split(",")[0].trim();
+  return xff || req.socket?.remoteAddress || "";
+}
+
+function visitorSnapshot() {
+  const now = Date.now();
+  return Array.from(visitors.values())
+    .filter((v) => now - v.lastSeen < VISITOR_TTL_MS)
+    .sort((a, b) => b.lastSeen - a.lastSeen)
+    .map((v) => ({
+      visitorId: v.visitorId,
+      url: v.url,
+      title: v.title,
+      referrer: v.referrer,
+      country: v.country,
+      pages: v.pages,
+      name: v.name,
+      chatId: v.chatId,
+      firstSeen: v.firstSeen,
+      lastSeen: v.lastSeen,
+      onSiteSec: Math.max(0, Math.round((v.lastSeen - v.firstSeen) / 1000)),
+    }));
+}
+
+function pushVisitorsToAgents() {
+  broadcastToAgents({ type: "visitors", visitors: visitorSnapshot() });
+}
+
+/** Link a live chat back to the visitor-presence row (called from /start). */
+function linkVisitorChat(visitorId: string | undefined, chatId: string, name?: string) {
+  if (!visitorId) return;
+  const v = visitors.get(visitorId);
+  if (!v) return;
+  v.chatId = chatId;
+  if (name && !v.name) v.name = name;
+  pushVisitorsToAgents();
+}
+
+// Drop stale visitors every 30s and refresh the agents' list.
+setInterval(() => {
+  const now = Date.now();
+  let changed = false;
+  for (const [id, v] of visitors) {
+    if (now - v.lastSeen >= VISITOR_TTL_MS) { visitors.delete(id); changed = true; }
+  }
+  if (changed) pushVisitorsToAgents();
+}, 30_000).unref?.();
+
 async function getQueuePosition(chatId: string, departmentId?: number | null): Promise<number> {
   const q = departmentId
     ? `SELECT COUNT(*)::int AS cnt FROM live_chats
@@ -342,6 +412,54 @@ liveChatRouter.get("/api/live-chat/me", async (req, res) => {
   }
 });
 
+// ── Visitor presence beacons (public, no auth) ──────────────────────────────
+liveChatRouter.post("/api/live-chat/visitor/ping", (req, res) => {
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const visitorId = String(b.visitorId ?? "").slice(0, 64);
+  if (!visitorId) return res.status(400).json({ error: "visitorId required" });
+
+  const url = String(b.url ?? "").slice(0, 512);
+  const now = Date.now();
+  const existing = visitors.get(visitorId);
+  const isNew = !existing;
+  const pageChanged = !!existing && existing.url !== url;
+  const geo = (req.headers["x-geo-country"] as string | undefined) || null;
+
+  const v: VisitorPresence = existing ?? {
+    visitorId, firstSeen: now, lastSeen: now,
+    url, title: "", referrer: String(b.referrer ?? "").slice(0, 256),
+    ip: clientIp(req),
+    ua: String(req.headers["user-agent"] ?? "").slice(0, 256),
+    country: geo, pages: 0, name: null, chatId: null,
+  };
+  v.lastSeen = now;
+  v.url = url;
+  v.title = String(b.title ?? "").slice(0, 200);
+  if (!v.referrer && b.referrer) v.referrer = String(b.referrer).slice(0, 256);
+  if (!v.country && geo) v.country = geo;
+  if (isNew || pageChanged) v.pages += 1;
+  visitors.set(visitorId, v);
+
+  // Only wake the agents' list on join / navigation, not every heartbeat.
+  if (isNew || pageChanged) pushVisitorsToAgents();
+  return res.json({ ok: true });
+});
+
+liveChatRouter.post("/api/live-chat/visitor/leave", (req, res) => {
+  let visitorId = "";
+  try {
+    const b = typeof req.body === "string" ? JSON.parse(req.body) : (req.body ?? {});
+    visitorId = String((b as any).visitorId ?? "");
+  } catch { /* ignore — beacon body may be malformed */ }
+  if (visitorId && visitors.delete(visitorId)) pushVisitorsToAgents();
+  return res.status(204).end();
+});
+
+// Agent-facing snapshot.
+liveChatRouter.get("/api/support/live-chat/visitors", requireSupportAuth, (_req, res) => {
+  return res.json({ visitors: visitorSnapshot() });
+});
+
 liveChatRouter.get("/api/live-chat/departments", async (_req, res) => {
   try {
     const r = await pool.query(
@@ -352,7 +470,7 @@ liveChatRouter.get("/api/live-chat/departments", async (_req, res) => {
 });
 
 liveChatRouter.post("/api/live-chat/start", async (req, res) => {
-  const { visitorName, visitorEmail, departmentId, subject, pageUrl, accountId } = req.body as Record<string, string>;
+  const { visitorName, visitorEmail, departmentId, subject, pageUrl, accountId, visitorId } = req.body as Record<string, string>;
   const visitorToken = crypto.randomUUID();
 
   try {
@@ -376,6 +494,7 @@ liveChatRouter.post("/api/live-chat/start", async (req, res) => {
        resolvedDeptId, subject || null, pageUrl || null, routedBy, accountId || null]
     );
     const chatId = r.rows[0].id;
+    linkVisitorChat(visitorId, chatId, visitorName || undefined);
 
     await persistMessage(chatId, "system", null, "system",
       routedBy === "keyword"
