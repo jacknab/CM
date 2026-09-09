@@ -17,7 +17,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/hooks/use-theme";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { FeatureGuard } from "@/components/FeatureGuard";
-import POSSettings from "@/pages/POSSettings";
 import Services from "@/pages/Services";
 import CatalogCategories from "@/pages/catalog/CatalogCategories";
 import CatalogServices from "@/pages/catalog/CatalogServices";
@@ -35,11 +34,6 @@ import POSInterface from "@/pages/POSInterface";
 import ClientProfile from "@/pages/ClientProfile";
 import ClientDetail from "@/pages/ClientDetail";
 import StaffWorkingHours from "@/pages/StaffWorkingHours";
-import CalendarSettingsPage from "@/pages/CalendarSettings";
-import LanguageSettings from "@/pages/LanguageSettings";
-import BusinessSettings from "@/pages/BusinessSettings";
-import BusinessHoursPage from "@/pages/BusinessHoursPage";
-import FeaturesSettings from "@/pages/FeaturesSettings";
 import CashDrawer from "@/pages/CashDrawer";
 import AddonsPage from "@/pages/Addons";
 import CommissionReport from "@/pages/CommissionReport";
@@ -63,9 +57,6 @@ import Loyalty from "@/pages/Loyalty";
 import Reviews from "@/pages/Reviews";
 import GoogleBusiness from "@/pages/GoogleBusiness";
 import ReviewSubmit from "@/pages/ReviewSubmit";
-import OnlineBooking from "@/pages/OnlineBooking";
-import SmsSettings from "@/pages/SmsSettings";
-import MailSettings from "@/pages/MailSettings";
 import AiReceptionist from "@/pages/AiReceptionist";
 import AiReceptionistLive from "@/pages/AiReceptionistLive";
 import SmsInbox from "@/pages/SmsInbox";
@@ -117,7 +108,6 @@ import TeamApp from "@/pages/isTeam/TeamApp";
 import CustomerChatPage from "@/pages/LiveChat/CustomerChatPage";
 import ContactPage from "@/pages/ContactPage";
 import TeamPermissions from "@/pages/TeamPermissions";
-import PayrollSettings from "@/pages/PayrollSettings";
 import Payroll from "@/pages/Payroll";
 import PayrollHome from "@/pages/PayrollHome";
 import PayoutsLayout from "@/pages/payouts/PayoutsLayout";
@@ -159,11 +149,7 @@ import CustomerSupportPage from "@/pages/manage/CustomerSupportPage";
 import FinancePosHub from "@/pages/manage/FinancePosHub";
 import StaffEarningsHub from "@/pages/manage/StaffEarningsHub";
 import PaymentSettings from "@/pages/manage/PaymentSettings";
-import PayoutAccountSettings from "@/pages/settings/PayoutAccountSettings";
-import ResourceSettings from "@/pages/settings/ResourceSettings";
-import SettingsLanding from "@/pages/SettingsLanding";
-import TranslationsPage from "@/pages/TranslationsPage";
-import KioskSettings from "@/pages/KioskSettings";
+import SettingsShell from "@/pages/SettingsShell";
 import WalkInBoard from "@/pages/WalkInBoard";
 import BillingPage from "@/pages/manage/BillingPage";
 import DashboardBilling from "@/pages/DashboardBilling";
@@ -442,7 +428,8 @@ function AppRoutes() {
       <Route path="/manage/finance-pos" element={<FinancePosHub />} />
       <Route path="/manage/staff-earnings" element={<StaffEarningsHub />} />
       <Route path="/manage/payment-settings" element={<PaymentSettings />} />
-      <Route path="/settings/payout-account" element={<PayoutAccountSettings />} />
+      {/* /settings/payout-account, /settings/translations, /settings/resources
+          are now served by the SettingsShell :section route. */}
 
       {/* Auth */}
       <Route path="/auth" element={<Auth />} />
@@ -538,7 +525,7 @@ function AppRoutes() {
       <Route path="/overview" element={<Navigate to="/analytics" replace />} />
       <Route path="/salon-dashboard" element={<OwnerOnlyRoute><OwnerDashboard /></OwnerOnlyRoute>} />
       <Route path="/dashboard" element={<Navigate to="/analytics" replace />} />
-      <Route path="/pos-settings" element={<POSSettings />} />
+      <Route path="/pos-settings" element={<Navigate to="/settings/pos" replace />} />
       {/* Catalog — individual pages */}
       <Route path="/catalog/categories" element={<OwnerOnlyRoute><CatalogCategories /></OwnerOnlyRoute>} />
       <Route path="/catalog/services"   element={<OwnerOnlyRoute><CatalogServices /></OwnerOnlyRoute>} />
@@ -575,19 +562,21 @@ function AppRoutes() {
       <Route path="/register-reports" element={<RegisterReports />} />
       <Route path="/commission-report" element={<CommissionReport />} />
       <Route path="/salon-earnings" element={<SalonEarningsReport />} />
-      <Route path="/settings" element={<SettingsLanding />} />
-      <Route path="/settings/translations" element={<TranslationsPage />} />
-      <Route path="/settings/resources" element={<ResourceSettings />} />
-      <Route path="/kiosk-settings" element={<KioskSettings />} />
+      {/* macOS-style Settings shell — left rail + detail pane, one URL per
+          section (/settings/:section). Inline settings pages mount in the pane;
+          the standalone routes below now redirect here. */}
+      <Route path="/settings" element={<SettingsShell />} />
+      <Route path="/settings/:section" element={<SettingsShell />} />
+      <Route path="/kiosk-settings" element={<Navigate to="/settings/kiosk" replace />} />
       <Route path="/subscription" element={<Navigate to="/billing" replace />} />
       <Route path="/walk-in-board" element={<WalkInBoard />} />
       <Route path="/walkins" element={<WalkInBoard />} />
-      <Route path="/calendar-settings" element={<CalendarSettingsPage />} />
-      <Route path="/language-settings" element={<LanguageSettings />} />
-      <Route path="/business-settings" element={<BusinessSettings />} />
-      <Route path="/business-hours" element={<BusinessHoursPage />} />
-      <Route path="/features-settings" element={<FeaturesSettings />} />
-      <Route path="/payroll-settings" element={<PayrollSettings />} />
+      <Route path="/calendar-settings" element={<Navigate to="/settings/booking-controls" replace />} />
+      <Route path="/language-settings" element={<Navigate to="/settings/language" replace />} />
+      <Route path="/business-settings" element={<Navigate to="/settings/business" replace />} />
+      <Route path="/business-hours" element={<Navigate to="/settings/hours" replace />} />
+      <Route path="/features-settings" element={<Navigate to="/settings/advanced" replace />} />
+      <Route path="/payroll-settings" element={<Navigate to="/settings/commission" replace />} />
       {/* Payroll Home — single mobile-first hub for Team/Commission/Payroll.
           Old employee payroll UI moved to /payroll/employees; old contractor
           dashboard (/payouts) now redirects here — everything else under
@@ -625,9 +614,9 @@ function AppRoutes() {
       {/* Booking Policies was merged into Booking Controls (/calendar-settings) */}
       <Route path="/booking-policies" element={<Navigate to="/calendar-settings" replace />} />
       <Route path="/clients/at-risk" element={<OwnerOnlyRoute><ClientAtRisk /></OwnerOnlyRoute>} />
-      <Route path="/online-booking" element={<OnlineBooking />} />
-      <Route path="/sms-settings" element={<SmsSettings />} />
-      <Route path="/mail-settings" element={<MailSettings />} />
+      <Route path="/online-booking" element={<Navigate to="/settings/online-booking" replace />} />
+      <Route path="/sms-settings" element={<Navigate to="/settings/sms" replace />} />
+      <Route path="/mail-settings" element={<Navigate to="/settings/email" replace />} />
       <Route path="/ai-receptionist" element={<AiReceptionist />} />
       <Route path="/ai-receptionist/live" element={<AiReceptionistLive />} />
       <Route path="/sms-inbox" element={<OwnerOnlyRoute><SmsInbox /></OwnerOnlyRoute>} />
@@ -644,7 +633,7 @@ function AppRoutes() {
       <Route path="/help" element={<HelpCenter />} />
       <Route path="/support" element={<SupportInbox />} />
       <Route path="/data-transfer" element={<DataTransferPage />} />
-      <Route path="/manage/data-transfer" element={<DataTransferPage />} />
+      <Route path="/manage/data-transfer" element={<Navigate to="/settings/data-transfer" replace />} />
       <Route path="/intelligence/launch" element={<Navigate to="/intelligence" replace />} />
       <Route path="/marketing" element={<Navigate to="/campaigns" replace />} />
 

@@ -169,12 +169,17 @@ function buildFinanceSubnav(pick: Pick4): SubNavSection[] {
 }
 
 function buildSettingsSubnav(pick: Pick4): SubNavSection[] {
-  // Same source of truth as the /settings landing page (lib/settings-nav.ts)
-  // so the two never drift apart. The sidebar only needs label/icon/to.
+  // Same source of truth as the Settings shell (lib/settings-nav.ts). Inline
+  // sections link into the shell (/settings/<slug>); external ones keep their
+  // own route.
   return buildSettingsNav(pick).map((g) => ({
     headingKey: g.key,
     heading: g.heading,
-    items: g.items.map((it) => ({ label: it.label, icon: it.icon, to: it.to })),
+    items: g.items.map((it) => ({
+      label: it.label,
+      icon: it.icon,
+      to: it.external ? it.to : `/settings/${it.slug}`,
+    })),
   }));
 }
 
