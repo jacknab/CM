@@ -80,8 +80,11 @@ export default function SettingsShell() {
 
   // ── routing guards ────────────────────────────────────────────────────────
   if (!section) {
-    // Desktop lands on the first section; mobile shows the rail as its own screen.
-    if (!isMobile) return <Navigate to={`/settings/${DEFAULT_SLUG}`} replace />;
+    // Desktop lands on the first section; mobile shows the rail as its own
+    // screen. Use a synchronous width check — useIsMobile() reports false on the
+    // very first render, which would otherwise flash-redirect on phones.
+    const isWide = typeof window !== "undefined" && window.innerWidth >= 768;
+    if (isWide) return <Navigate to={`/settings/${DEFAULT_SLUG}`} replace />;
   } else if (section !== "delete-account" && !PANES[section]) {
     // Unknown slug — an external item's slug or a typo. If it maps to a nav
     // item, bounce to its real route; otherwise go to the default section.

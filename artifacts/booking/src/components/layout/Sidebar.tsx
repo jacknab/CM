@@ -785,7 +785,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
               label={t.settings}
               isOpen={settingsOpen}
               isActive={isSettingsActive}
-              onToggle={() => setSettingsOpen((v) => !v)}
+              onToggle={() => { setSettingsOpen(true); navigate("/settings"); onLinkClick?.(); }}
             />
             {settingsOpen && (
               <div className="mt-0.5 max-h-64 overflow-y-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">

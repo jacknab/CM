@@ -68,7 +68,7 @@ const NAV_SECTIONS = [
     label: "Settings",
     ownerOnly: true,
     items: [
-      { to: "/business-settings", label: "Business Settings", icon: Building2 },
+      { to: "/settings", label: "Settings", icon: Settings },
     ],
   },
 ];
