@@ -2032,16 +2032,16 @@ export default function Calendar() {
                   {/* Pill — fills the full 90px time-column so it covers the label beneath */}
                   <div className="w-[90px] flex-shrink-0 flex px-1">
                     <span
-                      className="flex-1 inline-flex items-center justify-center rounded-md py-1 text-xs font-bold text-white shadow-[0_2px_8px_rgba(255,106,61,0.45)]"
-                      style={{ backgroundColor: "#ff6a3d" }}
+                      className="flex-1 inline-flex items-center justify-center rounded-md py-1 text-xs font-bold text-white shadow-[0_2px_8px_rgba(240,85,155,0.45)]"
+                      style={{ backgroundColor: "#f0559b" }}
                       data-testid="current-time-label"
                     >
                       {timeLineLabel}
                     </span>
                   </div>
-                  {/* Line anchored to pill's right edge — warm vermilion, kept
-                      distinct from every status hue so "now" never gets lost */}
-                  <div className="flex-1 h-[2px]" style={{ backgroundColor: "#ff6a3d" }} />
+                  {/* Line anchored to pill's right edge — magenta, kept distinct
+                      from every status hue so "now" never gets lost */}
+                  <div className="flex-1 h-[2px]" style={{ backgroundColor: "#f0559b" }} />
                 </div>
               )}
               <div className="w-[90px] flex-shrink-0 bg-white z-30 sticky left-0">
@@ -2633,11 +2633,11 @@ export default function Calendar() {
                   style={{ top: `${timeLinePosition + 88}px` }}
                 >
                   <div className="w-[90px] flex-shrink-0 flex px-1">
-                    <span className="flex-1 inline-flex items-center justify-center rounded-md py-1 text-xs font-bold text-white shadow-[0_2px_8px_rgba(255,106,61,0.45)]" style={{ backgroundColor: "#ff6a3d" }}>
+                    <span className="flex-1 inline-flex items-center justify-center rounded-md py-1 text-xs font-bold text-white shadow-[0_2px_8px_rgba(240,85,155,0.45)]" style={{ backgroundColor: "#f0559b" }}>
                       {timeLineLabel}
                     </span>
                   </div>
-                  <div className="flex-1 h-[2px]" style={{ backgroundColor: "#ff6a3d" }} />
+                  <div className="flex-1 h-[2px]" style={{ backgroundColor: "#f0559b" }} />
                 </div>
               )}
               {/* Time labels */}
