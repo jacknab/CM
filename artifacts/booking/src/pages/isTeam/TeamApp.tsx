@@ -1,4 +1,4 @@
-import { Navigate, Routes, Route, useLocation } from "react-router-dom";
+import { Navigate, Routes, Route } from "react-router-dom";
 import { useSupportAuth } from "@/hooks/use-support-auth";
 import TeamSidebar from "@/components/isTeam/Sidebar";
 import TeamTopBar from "@/components/isTeam/TopBar";
@@ -12,12 +12,8 @@ import BillingInvestigationPage from "./BillingInvestigationPage";
 import IncidentsPage from "./IncidentsPage";
 
 function TeamShell() {
-  // The live-chat console gets its own "Warm Plum" skin (see .tw-livechat in
-  // index.css) — scoped to that route so the rest of the back-office is
-  // unchanged.
-  const onLiveChat = useLocation().pathname.startsWith("/isTeam/live-chat");
   return (
-    <div className={`flex h-screen bg-slate-100 overflow-hidden${onLiveChat ? " tw-livechat" : ""}`}>
+    <div className="flex h-screen bg-slate-100 overflow-hidden">
       <TeamSidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TeamTopBar />

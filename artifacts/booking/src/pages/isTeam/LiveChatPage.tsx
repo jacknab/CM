@@ -112,17 +112,17 @@ const STATUS_LABELS: Record<string, string> = {
 function StatsBar({ stats }: { stats: Stats | undefined }) {
   if (!stats) return null;
   return (
-    <div className="flex items-center gap-6 px-5 py-2.5 bg-slate-800/50 border-b border-slate-700 text-xs">
+    <div className="flex items-center gap-6 px-5 py-2.5 bg-slate-50 border-b border-slate-200 text-xs">
       {[
-        { label: "Queue",        val: stats.queued,        color: "text-amber-400"   },
-        { label: "Active",       val: stats.active,        color: "text-emerald-400" },
-        { label: "Closed today", val: stats.closed_today,  color: "text-slate-300"   },
-        { label: "Missed today", val: stats.missed_today,  color: "text-rose-400"    },
+        { label: "Queue",        val: stats.queued,        color: "text-amber-600"   },
+        { label: "Active",       val: stats.active,        color: "text-emerald-600" },
+        { label: "Closed today", val: stats.closed_today,  color: "text-slate-400"   },
+        { label: "Missed today", val: stats.missed_today,  color: "text-rose-600"    },
         { label: "Avg wait",     val: stats.avg_wait_min != null ? `${stats.avg_wait_min}m` : "—", color: "text-slate-400" },
-        { label: "Avg rating",   val: stats.avg_rating_7d != null ? `${stats.avg_rating_7d}★` : "—", color: "text-amber-400" },
+        { label: "Avg rating",   val: stats.avg_rating_7d != null ? `${stats.avg_rating_7d}★` : "—", color: "text-amber-600" },
       ].map(s => (
         <div key={s.label} className="flex items-center gap-1.5">
-          <span className="text-slate-500">{s.label}:</span>
+          <span className="text-slate-400">{s.label}:</span>
           <span className={`font-bold ${s.color}`}>{s.val}</span>
         </div>
       ))}
@@ -138,17 +138,17 @@ function ChatRow({ chat, isSelected, isUnread, isLocked, onClick }: {
   return (
     <button onClick={onClick} className={`w-full text-left px-3 py-2.5 rounded-lg transition-all border ${
       isSelected
-        ? "bg-indigo-600/20 border-indigo-500/40 text-white"
-        : "border-transparent hover:bg-slate-700/50 text-slate-300"
+        ? "bg-indigo-100 border-indigo-200 text-white"
+        : "border-transparent hover:bg-slate-100 text-slate-400"
     }`}>
       <div className="flex items-start gap-2">
         <div className="relative w-7 h-7 flex-shrink-0 mt-0.5">
-          <div className="w-7 h-7 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-300 text-xs font-bold">
+          <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-xs font-bold">
             {(chat.visitor_name?.[0] ?? "?").toUpperCase()}
           </div>
           {isLocked && (
-            <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-amber-500/20 flex items-center justify-center">
-              <Lock className="w-2 h-2 text-amber-400" />
+            <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-amber-50 flex items-center justify-center">
+              <Lock className="w-2 h-2 text-amber-600" />
             </span>
           )}
         </div>
@@ -157,18 +157,18 @@ function ChatRow({ chat, isSelected, isUnread, isLocked, onClick }: {
             <span className="text-xs font-semibold truncate">{chat.visitor_name || "Anonymous"}</span>
             <div className="flex items-center gap-1 flex-shrink-0">
               {isUnread && <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />}
-              <span className="text-[10px] text-slate-500">{elapsed}m</span>
+              <span className="text-[10px] text-slate-400">{elapsed}m</span>
             </div>
           </div>
-          {chat.subject && <p className="text-[11px] text-slate-500 truncate mt-0.5">{chat.subject}</p>}
+          {chat.subject && <p className="text-[11px] text-slate-400 truncate mt-0.5">{chat.subject}</p>}
           <div className="flex items-center gap-1 mt-1 flex-wrap">
             {chat.department_name && (
-              <span className="text-[10px] bg-slate-700 text-slate-400 rounded px-1 py-0.5 inline-block">
+              <span className="text-[10px] bg-slate-100 text-slate-400 rounded px-1 py-0.5 inline-block">
                 {chat.department_name}
               </span>
             )}
             {isLocked && (chat as ActiveChat).agent_name && (
-              <span className="text-[10px] text-amber-500/70 inline-block">
+              <span className="text-[10px] text-amber-600 inline-block">
                 → {(chat as ActiveChat).agent_name}
               </span>
             )}
@@ -203,28 +203,28 @@ function VisitorRow({ v, onClick }: { v: LiveVisitor; onClick?: () => void }) {
   return (
     <Wrap
       onClick={onClick}
-      className={`w-full text-left px-3 py-2 rounded-lg transition ${onClick ? "hover:bg-slate-700/50 cursor-pointer" : ""}`}
+      className={`w-full text-left px-3 py-2 rounded-lg transition ${onClick ? "hover:bg-slate-100 cursor-pointer" : ""}`}
     >
       <div className="flex items-center gap-2">
         <span className="relative flex h-2 w-2 flex-shrink-0">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
           <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
         </span>
-        <span className="text-xs font-medium text-slate-200 truncate flex-1">
+        <span className="text-xs font-medium text-slate-800 truncate flex-1">
           {v.name || "Anonymous visitor"}
         </span>
         {v.country && <span className="text-xs flex-shrink-0" title={v.country}>{flagEmoji(v.country)}</span>}
         {v.chatId && (
-          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-600/50 text-indigo-200 flex-shrink-0">
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-600 flex-shrink-0">
             in chat
           </span>
         )}
       </div>
-      <div className="flex items-center gap-1 mt-1 text-[11px] text-slate-500 min-w-0">
+      <div className="flex items-center gap-1 mt-1 text-[11px] text-slate-400 min-w-0">
         <Globe className="w-3 h-3 flex-shrink-0" />
         <span className="truncate">{v.url || "/"}</span>
       </div>
-      <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-600">
+      <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400">
         <span className="flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" />{fmtDuration(liveSec)}</span>
         <span>·</span>
         <span className="truncate">{refDomain(v.referrer)}</span>
@@ -239,19 +239,19 @@ function Bubble({ msg }: { msg: ChatMessage }) {
   if (msg.sender_type === "system") {
     return (
       <div className="text-center py-1">
-        <span className="text-[11px] text-slate-500 bg-slate-700/50 rounded-full px-3 py-1">{msg.content}</span>
+        <span className="text-[11px] text-slate-400 bg-slate-100 rounded-full px-3 py-1">{msg.content}</span>
       </div>
     );
   }
   if (msg.sender_type === "note") {
     return (
       <div className="flex justify-center py-1">
-        <div className="max-w-[82%] bg-amber-900/30 border border-amber-700/40 rounded-xl px-3.5 py-2.5 text-sm">
+        <div className="max-w-[82%] bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5 text-sm">
           <div className="flex items-center gap-1.5 mb-1">
-            <StickyNote className="w-3 h-3 text-amber-400" />
-            <span className="text-[10px] font-semibold text-amber-400">Internal note — {msg.sender_name}</span>
+            <StickyNote className="w-3 h-3 text-amber-600" />
+            <span className="text-[10px] font-semibold text-amber-600">Internal note — {msg.sender_name}</span>
           </div>
-          <p className="text-amber-100/80 text-xs leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
+          <p className="text-amber-700 text-xs leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
           <div className="text-[10px] mt-1 text-amber-700">
             {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </div>
@@ -265,11 +265,11 @@ function Bubble({ msg }: { msg: ChatMessage }) {
       <div className={`max-w-[72%] rounded-2xl px-3.5 py-2.5 text-sm ${
         isAgent
           ? "bg-indigo-600 text-white rounded-br-sm"
-          : "bg-slate-700 text-slate-100 rounded-bl-sm"
+          : "bg-slate-100 text-slate-900 rounded-bl-sm"
       }`}>
-        {!isAgent && <div className="text-[10px] text-indigo-300 font-semibold mb-1">{msg.sender_name}</div>}
+        {!isAgent && <div className="text-[10px] text-indigo-600 font-semibold mb-1">{msg.sender_name}</div>}
         <p className="leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
-        <div className={`text-[10px] mt-1 ${isAgent ? "text-indigo-200" : "text-slate-500"}`}>
+        <div className={`text-[10px] mt-1 ${isAgent ? "text-indigo-600" : "text-slate-400"}`}>
           {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </div>
       </div>
@@ -300,22 +300,22 @@ function TransferModal({ chatId, depts, onDone, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-80 shadow-2xl">
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 w-80 shadow-2xl">
         <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-          <ArrowRightLeft className="w-4 h-4 text-indigo-400" /> Transfer Chat
+          <ArrowRightLeft className="w-4 h-4 text-indigo-600" /> Transfer Chat
         </h3>
         <div className="space-y-3">
           <div>
             <label className="text-xs text-slate-400 font-semibold mb-1 block">Transfer to department</label>
             <select value={deptId} onChange={e => setDeptId(e.target.value)}
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white">
+              className="w-full bg-slate-100 border border-slate-200 rounded-lg px-3 py-2 text-sm text-white">
               <option value="">Select…</option>
               {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </div>
-          {err && <p className="text-rose-400 text-xs">{err}</p>}
+          {err && <p className="text-rose-600 text-xs">{err}</p>}
           <div className="flex gap-2 pt-2">
-            <button onClick={onClose} className="flex-1 border border-slate-600 text-slate-300 text-sm py-2 rounded-lg hover:bg-slate-700 transition">
+            <button onClick={onClose} className="flex-1 border border-slate-200 text-slate-400 text-sm py-2 rounded-lg hover:bg-slate-100 transition">
               Cancel
             </button>
             <button onClick={submit} disabled={!deptId || busy}
@@ -341,19 +341,19 @@ function SlashPicker({ query, canned, onPick, onDismiss }: {
   if (!filtered.length) return null;
 
   return (
-    <div className="absolute bottom-full left-0 right-0 mb-1 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden z-10">
-      <div className="px-3 py-1.5 border-b border-slate-700 flex items-center gap-1.5">
-        <Zap className="w-3 h-3 text-indigo-400" />
+    <div className="absolute bottom-full left-0 right-0 mb-1 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden z-10">
+      <div className="px-3 py-1.5 border-b border-slate-200 flex items-center gap-1.5">
+        <Zap className="w-3 h-3 text-indigo-600" />
         <span className="text-[10px] text-slate-400 font-semibold">Canned responses</span>
-        <span className="ml-auto text-[10px] text-slate-600">ESC to dismiss</span>
+        <span className="ml-auto text-[10px] text-slate-400">ESC to dismiss</span>
       </div>
       {filtered.map((c, i) => (
         <button key={c.id} onMouseDown={() => onPick(c.content)}
-          className="w-full text-left px-3 py-2 hover:bg-slate-700 transition flex items-start gap-2.5 group">
-          <code className="text-[10px] bg-indigo-600/30 text-indigo-300 px-1.5 py-0.5 rounded mt-0.5 flex-shrink-0">/{c.shortcut}</code>
+          className="w-full text-left px-3 py-2 hover:bg-slate-100 transition flex items-start gap-2.5 group">
+          <code className="text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded mt-0.5 flex-shrink-0">/{c.shortcut}</code>
           <div className="min-w-0">
-            <p className="text-xs font-medium text-slate-200">{c.title}</p>
-            <p className="text-[10px] text-slate-500 truncate group-hover:text-slate-400">{c.content}</p>
+            <p className="text-xs font-medium text-slate-800">{c.title}</p>
+            <p className="text-[10px] text-slate-400 truncate group-hover:text-slate-400">{c.content}</p>
           </div>
         </button>
       ))}
@@ -697,20 +697,20 @@ export default function LiveChatPage() {
   );
 
   return (
-    <div className="flex flex-col h-full bg-slate-900 text-slate-200 overflow-hidden">
+    <div className="flex flex-col h-full bg-slate-50 text-slate-800 overflow-hidden">
       {/* New-ticket toast — appears top-right, auto-dismisses after 8s */}
       {ticketToast && (
         <div className="absolute top-4 right-4 z-50 w-80 bg-white border border-slate-200 rounded-xl shadow-2xl shadow-slate-900/30 overflow-hidden animate-in slide-in-from-top-2 duration-200">
           <div className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600">
             <Ticket className="w-3.5 h-3.5 text-white flex-shrink-0" />
             <span className="text-white text-xs font-bold flex-1">New ticket #{ticketToast.ticketNumber}</span>
-            <button onClick={() => setTicketToast(null)} className="text-indigo-200 hover:text-white transition">
+            <button onClick={() => setTicketToast(null)} className="text-indigo-600 hover:text-white transition">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
           <div className="px-4 py-3">
             <p className="text-sm font-semibold text-slate-800 leading-snug truncate">{ticketToast.subject}</p>
-            <p className="text-xs text-slate-500 mt-0.5">From: {ticketToast.senderName}</p>
+            <p className="text-xs text-slate-400 mt-0.5">From: {ticketToast.senderName}</p>
             <button
               onClick={() => { setTicketToast(null); navigate("/isTeam/tickets"); }}
               className="mt-2.5 w-full text-center text-xs text-indigo-600 font-semibold hover:text-indigo-800 transition"
@@ -726,30 +726,30 @@ export default function LiveChatPage() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* ── Left: Sidebar ──────────────────────────────────────────────── */}
-        <div className="w-64 flex-shrink-0 border-r border-slate-700 flex flex-col">
+        <div className="w-64 flex-shrink-0 border-r border-slate-200 flex flex-col">
           {/* Agent status + sound */}
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-700">
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200">
             <div className="relative flex-shrink-0">
               <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold">A</div>
-              <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-900 ${STATUS_COLORS[myStatus]}`} />
+              <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-200 ${STATUS_COLORS[myStatus]}`} />
             </div>
             <div className="flex-1 min-w-0">
               <select value={myStatus} onChange={e => changeStatus(e.target.value as any)}
-                className="w-full bg-transparent text-xs text-slate-300 font-semibold focus:outline-none cursor-pointer">
+                className="w-full bg-transparent text-xs text-slate-400 font-semibold focus:outline-none cursor-pointer">
                 <option value="online">Online</option>
                 <option value="away">Away</option>
                 <option value="busy">Busy</option>
               </select>
             </div>
             <button onClick={() => setSoundEnabled(v => !v)}
-              className="text-slate-500 hover:text-slate-300 transition p-1 rounded"
+              className="text-slate-400 hover:text-slate-400 transition p-1 rounded"
               title={soundEnabled ? "Mute sounds" : "Enable sounds"}>
               {soundEnabled ? <Bell className="w-3.5 h-3.5" /> : <BellOff className="w-3.5 h-3.5" />}
             </button>
           </div>
 
           {/* Tabs */}
-          <div className="flex border-b border-slate-700">
+          <div className="flex border-b border-slate-200">
             {([
               { id: "queue",    label: "Queue",    badge: queue.length },
               { id: "active",   label: "Active",   badge: active.length },
@@ -759,15 +759,15 @@ export default function LiveChatPage() {
               <button key={t.id} onClick={() => setSideTab(t.id)}
                 className={`flex-1 flex items-center justify-center gap-1 py-2.5 text-xs font-semibold transition border-b-2 ${
                   sideTab === t.id
-                    ? "border-indigo-500 text-indigo-400"
-                    : "border-transparent text-slate-500 hover:text-slate-300"
+                    ? "border-indigo-200 text-indigo-600"
+                    : "border-transparent text-slate-400 hover:text-slate-400"
                 }`}>
                 {t.label}
                 {t.badge > 0 && (
                   <span className={`rounded-full text-[10px] font-bold px-1.5 py-0.5 min-w-[18px] text-center ${
                     t.id === "queue" ? "bg-amber-500 text-white"
-                      : t.id === "visitors" ? "bg-emerald-600/70 text-emerald-100"
-                      : "bg-indigo-600/60 text-indigo-200"
+                      : t.id === "visitors" ? "bg-emerald-50 text-emerald-700"
+                      : "bg-indigo-100 text-indigo-600"
                   }`}>{t.badge > 99 ? "99+" : t.badge}</span>
                 )}
               </button>
@@ -777,7 +777,7 @@ export default function LiveChatPage() {
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
             {sideTab === "queue" && (
               queue.length === 0
-                ? <p className="text-slate-600 text-xs text-center py-8 flex flex-col items-center gap-2">
+                ? <p className="text-slate-400 text-xs text-center py-8 flex flex-col items-center gap-2">
                     <Inbox className="w-8 h-8 opacity-40" /> Queue is empty
                   </p>
                 : queue.map(c => (
@@ -787,7 +787,7 @@ export default function LiveChatPage() {
             )}
             {sideTab === "active" && (
               active.length === 0
-                ? <p className="text-slate-600 text-xs text-center py-8 flex flex-col items-center gap-2">
+                ? <p className="text-slate-400 text-xs text-center py-8 flex flex-col items-center gap-2">
                     <MessageSquare className="w-8 h-8 opacity-40" /> No active chats
                   </p>
                 : active.map(c => (
@@ -799,7 +799,7 @@ export default function LiveChatPage() {
             )}
             {sideTab === "visitors" && (
               visitors.length === 0
-                ? <p className="text-slate-600 text-xs text-center py-8 flex flex-col items-center gap-2">
+                ? <p className="text-slate-400 text-xs text-center py-8 flex flex-col items-center gap-2">
                     <Users className="w-8 h-8 opacity-40" /> No one browsing right now
                   </p>
                 : visitors.map(v => (
@@ -809,21 +809,21 @@ export default function LiveChatPage() {
             )}
             {sideTab === "history" && (
               history.length === 0
-                ? <p className="text-slate-600 text-xs text-center py-8">No recent history</p>
+                ? <p className="text-slate-400 text-xs text-center py-8">No recent history</p>
                 : history.map(c => (
-                    <div key={c.id} className="px-3 py-2 rounded-lg hover:bg-slate-700/50 cursor-pointer"
+                    <div key={c.id} className="px-3 py-2 rounded-lg hover:bg-slate-100 cursor-pointer"
                       onClick={() => setSelectedChatId(c.id)}>
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-medium truncate">{c.visitor_name}</span>
                         <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                          (c as any).status === "missed" ? "bg-rose-500/20 text-rose-400" : "bg-slate-700 text-slate-400"
+                          (c as any).status === "missed" ? "bg-rose-50 text-rose-600" : "bg-slate-100 text-slate-400"
                         }`}>{(c as any).status}</span>
                       </div>
-                      {c.subject && <p className="text-[11px] text-slate-500 truncate">{c.subject}</p>}
+                      {c.subject && <p className="text-[11px] text-slate-400 truncate">{c.subject}</p>}
                       {(c as any).rating && (
                         <div className="flex items-center gap-0.5 mt-0.5">
                           {Array.from({ length: (c as any).rating }).map((_: any, i: number) => (
-                            <Star key={i} className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
+                            <Star key={i} className="w-2.5 h-2.5 fill-amber-400 text-amber-600" />
                           ))}
                         </div>
                       )}
@@ -837,12 +837,12 @@ export default function LiveChatPage() {
         <div className="flex-1 flex flex-col overflow-hidden">
           {!selectedChatId ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8">
-              <div className="w-20 h-20 rounded-3xl bg-indigo-600/10 flex items-center justify-center">
-                <MessageCircle className="w-10 h-10 text-indigo-400 opacity-60" />
+              <div className="w-20 h-20 rounded-3xl bg-indigo-50 flex items-center justify-center">
+                <MessageCircle className="w-10 h-10 text-indigo-600 opacity-60" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-slate-300">Live Chat Dashboard</h3>
-                <p className="text-sm text-slate-500 mt-1">
+                <h3 className="text-lg font-bold text-slate-400">Live Chat Dashboard</h3>
+                <p className="text-sm text-slate-400 mt-1">
                   {queue.length > 0
                     ? `${queue.length} visitor${queue.length === 1 ? "" : "s"} waiting — pick one from the queue`
                     : "Queue is empty. Waiting for new conversations."}
@@ -852,7 +852,7 @@ export default function LiveChatPage() {
                 <div className="flex flex-col gap-2 w-48">
                   {queue.slice(0, 3).map(c => (
                     <button key={c.id} onClick={() => assignChat(c.id)}
-                      className="flex items-center gap-2 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 rounded-xl px-4 py-2.5 text-sm text-indigo-300 transition font-medium">
+                      className="flex items-center gap-2 bg-indigo-100 hover:bg-indigo-100 border border-indigo-200 rounded-xl px-4 py-2.5 text-sm text-indigo-600 transition font-medium">
                       <UserCheck className="w-4 h-4 flex-shrink-0" />
                       <span className="truncate">{c.visitor_name || "Anonymous"}</span>
                       <ChevronRight className="w-3.5 h-3.5 ml-auto flex-shrink-0" />
@@ -864,8 +864,8 @@ export default function LiveChatPage() {
           ) : (
             <>
               {/* Chat header */}
-              <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-700 bg-slate-800/60 flex-shrink-0">
-                <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-300 text-xs font-bold flex-shrink-0">
+              <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200 bg-slate-50 flex-shrink-0">
+                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-xs font-bold flex-shrink-0">
                   {(currentChat?.visitor_name?.[0] ?? "?").toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -874,16 +874,16 @@ export default function LiveChatPage() {
                       {currentChat?.visitor_name || "Anonymous"}
                     </span>
                     {isCurrentQueued && (
-                      <span className="text-[10px] bg-amber-500/20 text-amber-400 rounded-full px-2 py-0.5 font-semibold">Queued</span>
+                      <span className="text-[10px] bg-amber-50 text-amber-600 rounded-full px-2 py-0.5 font-semibold">Queued</span>
                     )}
                     {isCurrentActive && (
-                      <span className="text-[10px] bg-emerald-500/20 text-emerald-400 rounded-full px-2 py-0.5 font-semibold flex items-center gap-1">
+                      <span className="text-[10px] bg-emerald-50 text-emerald-600 rounded-full px-2 py-0.5 font-semibold flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Active
                       </span>
                     )}
                   </div>
                   {currentChat?.subject && (
-                    <p className="text-xs text-slate-500 truncate">{currentChat.subject}</p>
+                    <p className="text-xs text-slate-400 truncate">{currentChat.subject}</p>
                   )}
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
@@ -896,11 +896,11 @@ export default function LiveChatPage() {
                   {isCurrentActive && (
                     <>
                       <button onClick={() => setShowTransfer(true)}
-                        className="flex items-center gap-1.5 border border-slate-600 text-slate-300 hover:bg-slate-700 text-xs px-2.5 py-1.5 rounded-lg transition">
+                        className="flex items-center gap-1.5 border border-slate-200 text-slate-400 hover:bg-slate-100 text-xs px-2.5 py-1.5 rounded-lg transition">
                         <ArrowRightLeft className="w-3.5 h-3.5" /> Transfer
                       </button>
                       <button onClick={closeChat}
-                        className="flex items-center gap-1.5 border border-rose-700 text-rose-400 hover:bg-rose-900/30 text-xs px-2.5 py-1.5 rounded-lg transition">
+                        className="flex items-center gap-1.5 border border-rose-200 text-rose-600 hover:bg-rose-100 text-xs px-2.5 py-1.5 rounded-lg transition">
                         <X className="w-3.5 h-3.5" /> End
                       </button>
                     </>
@@ -911,15 +911,15 @@ export default function LiveChatPage() {
               {/* Messages */}
               <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
                 {allMsgs.length === 0 && (
-                  <p className="text-center text-slate-600 text-sm py-8">No messages yet</p>
+                  <p className="text-center text-slate-400 text-sm py-8">No messages yet</p>
                 )}
                 {allMsgs.map((m, i) => <Bubble key={m.id ?? i} msg={m} />)}
                 {visitorTyping[selectedChatId] && (
                   <div className="flex justify-start">
-                    <div className="bg-slate-700 rounded-2xl rounded-bl-sm px-4 py-3">
+                    <div className="bg-slate-100 rounded-2xl rounded-bl-sm px-4 py-3">
                       <div className="flex gap-1.5">
                         {[0,1,2].map(i => (
-                          <span key={i} className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce"
+                          <span key={i} className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-bounce"
                             style={{ animationDelay: `${i * 150}ms` }} />
                         ))}
                       </div>
@@ -931,29 +931,29 @@ export default function LiveChatPage() {
 
               {/* Input area */}
               {isCurrentActive && (
-                <div className="border-t border-slate-700 bg-slate-800/40 flex-shrink-0">
+                <div className="border-t border-slate-200 bg-slate-50 flex-shrink-0">
                   {/* Note/Message toggle */}
                   <div className="flex items-center gap-1 px-3 pt-2">
                     <button onClick={() => setNoteMode(false)}
                       className={`flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-md transition ${
-                        !noteMode ? "bg-indigo-600/30 text-indigo-300" : "text-slate-500 hover:text-slate-300"
+                        !noteMode ? "bg-indigo-100 text-indigo-600" : "text-slate-400 hover:text-slate-400"
                       }`}>
                       <MessageCircle className="w-3 h-3" /> Reply
                     </button>
                     <button onClick={() => setNoteMode(true)}
                       className={`flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-md transition ${
-                        noteMode ? "bg-amber-600/30 text-amber-300" : "text-slate-500 hover:text-slate-300"
+                        noteMode ? "bg-amber-50 text-amber-700" : "text-slate-400 hover:text-slate-400"
                       }`}>
                       <StickyNote className="w-3 h-3" /> Note
                     </button>
                     {!noteMode && (
-                      <span className="ml-auto text-[10px] text-slate-600">Type <kbd className="bg-slate-700 px-1 rounded text-slate-400">/</kbd> for canned responses</span>
+                      <span className="ml-auto text-[10px] text-slate-400">Type <kbd className="bg-slate-100 px-1 rounded text-slate-400">/</kbd> for canned responses</span>
                     )}
                   </div>
 
                   {/* Slash-command warning */}
                   {slashWarning && (
-                    <div className="mx-3 mb-1 flex items-center gap-2 text-[11px] text-amber-300 bg-amber-900/30 border border-amber-700/40 rounded-lg px-3 py-1.5">
+                    <div className="mx-3 mb-1 flex items-center gap-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
                       <span>⚠️</span>
                       <span>Select a canned response from the picker — slash commands are not sent directly to the client.</span>
                     </div>
@@ -978,13 +978,13 @@ export default function LiveChatPage() {
                       rows={1} placeholder={noteMode ? "Add internal note… (not visible to visitor)" : "Type a message… (Enter to send, Shift+Enter for newline)"}
                       className={`flex-1 border rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 max-h-28 ${
                         noteMode
-                          ? "bg-amber-900/20 border-amber-700/50 text-amber-100 placeholder-amber-800/80 focus:ring-amber-600"
-                          : "bg-slate-700/70 border-slate-600 text-white placeholder-slate-500 focus:ring-indigo-500"
+                          ? "bg-amber-50 border-amber-200 text-amber-700 placeholder-amber-500 focus:ring-amber-600"
+                          : "bg-slate-100 border-slate-200 text-white placeholder-slate-400 focus:ring-indigo-500"
                       }`}
                       style={{ minHeight: "42px" }} />
                     <button onClick={sendMessage} disabled={!text.trim() || !wsReady}
                       className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-xl disabled:opacity-40 text-white transition ${
-                        noteMode ? "bg-amber-600 hover:bg-amber-700" : "bg-indigo-600 hover:bg-indigo-700"
+                        noteMode ? "bg-amber-600 hover:bg-amber-100" : "bg-indigo-600 hover:bg-indigo-700"
                       }`}>
                       <Send className="w-4 h-4" />
                     </button>
@@ -996,8 +996,8 @@ export default function LiveChatPage() {
         </div>
 
         {/* ── Right panel ────────────────────────────────────────────────── */}
-        <div className="w-60 flex-shrink-0 border-l border-slate-700 flex flex-col">
-          <div className="flex border-b border-slate-700">
+        <div className="w-60 flex-shrink-0 border-l border-slate-200 flex flex-col">
+          <div className="flex border-b border-slate-200">
             {([
               { id: "info",     icon: <User className="w-3.5 h-3.5" />,      label: "Info"   },
               { id: "canned",   icon: <Zap className="w-3.5 h-3.5" />,       label: "Canned" },
@@ -1006,8 +1006,8 @@ export default function LiveChatPage() {
               <button key={t.id} onClick={() => setRightTab(t.id)}
                 className={`flex-1 flex flex-col items-center py-2 transition text-[10px] font-semibold border-b-2 gap-0.5 ${
                   rightTab === t.id
-                    ? "border-indigo-500 text-indigo-400"
-                    : "border-transparent text-slate-600 hover:text-slate-400"
+                    ? "border-indigo-200 text-indigo-600"
+                    : "border-transparent text-slate-400 hover:text-slate-400"
                 }`}>
                 {t.icon}{t.label}
               </button>
@@ -1020,18 +1020,18 @@ export default function LiveChatPage() {
               {currentChat ? (
                 <>
                   <div>
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Visitor</h4>
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Visitor</h4>
                     <div className="space-y-2 text-xs">
-                      <div><span className="text-slate-500">Name:</span> <span className="text-slate-200 ml-1">{currentChat.visitor_name || "—"}</span></div>
-                      <div><span className="text-slate-500">Email:</span> <span className="text-slate-200 ml-1 break-all">{currentChat.visitor_email || "—"}</span></div>
-                      <div><span className="text-slate-500">Dept:</span> <span className="text-slate-200 ml-1">{currentChat.department_name || "General"}</span></div>
+                      <div><span className="text-slate-400">Name:</span> <span className="text-slate-800 ml-1">{currentChat.visitor_name || "—"}</span></div>
+                      <div><span className="text-slate-400">Email:</span> <span className="text-slate-800 ml-1 break-all">{currentChat.visitor_email || "—"}</span></div>
+                      <div><span className="text-slate-400">Dept:</span> <span className="text-slate-800 ml-1">{currentChat.department_name || "General"}</span></div>
                       {isCurrentActive && (
                         <div>
-                          <span className="text-slate-500">Agent:</span>
-                          <span className="text-slate-200 ml-1">
+                          <span className="text-slate-400">Agent:</span>
+                          <span className="text-slate-800 ml-1">
                             {(currentChat as ActiveChat).agent_name || "—"}
                             {(currentChat as ActiveChat).agent_id === myAgentId && (
-                              <span className="ml-1 text-[9px] bg-emerald-700/40 text-emerald-300 rounded px-1 py-0.5">you</span>
+                              <span className="ml-1 text-[9px] bg-emerald-50 text-emerald-700 rounded px-1 py-0.5">you</span>
                             )}
                           </span>
                         </div>
@@ -1040,64 +1040,64 @@ export default function LiveChatPage() {
                   </div>
                   {currentChat.subject && (
                     <div>
-                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Issue</h4>
-                      <p className="text-xs text-slate-300 leading-relaxed">{currentChat.subject}</p>
+                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Issue</h4>
+                      <p className="text-xs text-slate-400 leading-relaxed">{currentChat.subject}</p>
                     </div>
                   )}
 
                   {/* Account info — shown when chat has an attached account */}
                   {chatAccount && (
                     <div>
-                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
                         <BarChart2 className="w-3 h-3" /> Account
                       </h4>
-                      <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-2.5 space-y-1.5">
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
                         <div className="flex items-start gap-1.5">
-                          <span className="text-[10px] text-slate-500 font-semibold w-12 flex-shrink-0 pt-0.5">Store</span>
-                          <span className="text-[11px] text-slate-200 font-semibold leading-tight">{chatAccount.storeName}</span>
+                          <span className="text-[10px] text-slate-400 font-semibold w-12 flex-shrink-0 pt-0.5">Store</span>
+                          <span className="text-[11px] text-slate-800 font-semibold leading-tight">{chatAccount.storeName}</span>
                         </div>
                         {(chatAccount.city || chatAccount.state) && (
                           <div className="flex items-start gap-1.5">
-                            <span className="text-[10px] text-slate-500 font-semibold w-12 flex-shrink-0 pt-0.5">Location</span>
-                            <span className="text-[11px] text-slate-300">{[chatAccount.city, chatAccount.state].filter(Boolean).join(", ")}</span>
+                            <span className="text-[10px] text-slate-400 font-semibold w-12 flex-shrink-0 pt-0.5">Location</span>
+                            <span className="text-[11px] text-slate-400">{[chatAccount.city, chatAccount.state].filter(Boolean).join(", ")}</span>
                           </div>
                         )}
                         {chatAccount.planName && (
                           <div className="flex items-start gap-1.5">
-                            <span className="text-[10px] text-slate-500 font-semibold w-12 flex-shrink-0 pt-0.5">Plan</span>
-                            <span className="text-[11px] text-indigo-300 font-semibold">{chatAccount.planName}</span>
+                            <span className="text-[10px] text-slate-400 font-semibold w-12 flex-shrink-0 pt-0.5">Plan</span>
+                            <span className="text-[11px] text-indigo-600 font-semibold">{chatAccount.planName}</span>
                           </div>
                         )}
                         {chatAccount.accountStatus && (
                           <div className="flex items-start gap-1.5">
-                            <span className="text-[10px] text-slate-500 font-semibold w-12 flex-shrink-0 pt-0.5">Status</span>
+                            <span className="text-[10px] text-slate-400 font-semibold w-12 flex-shrink-0 pt-0.5">Status</span>
                             <span className={`text-[11px] font-semibold capitalize ${
-                              chatAccount.accountStatus === "active" ? "text-emerald-400" :
-                              chatAccount.accountStatus === "suspended" ? "text-rose-400" : "text-slate-400"
+                              chatAccount.accountStatus === "active" ? "text-emerald-600" :
+                              chatAccount.accountStatus === "suspended" ? "text-rose-600" : "text-slate-400"
                             }`}>{chatAccount.accountStatus}</span>
                           </div>
                         )}
                         {chatAccount.ownerName && (
                           <div className="flex items-start gap-1.5">
-                            <span className="text-[10px] text-slate-500 font-semibold w-12 flex-shrink-0 pt-0.5">Owner</span>
-                            <span className="text-[11px] text-slate-300">{chatAccount.ownerName}</span>
+                            <span className="text-[10px] text-slate-400 font-semibold w-12 flex-shrink-0 pt-0.5">Owner</span>
+                            <span className="text-[11px] text-slate-400">{chatAccount.ownerName}</span>
                           </div>
                         )}
                         {chatAccount.ownerEmail && (
                           <div className="flex items-start gap-1.5">
-                            <span className="text-[10px] text-slate-500 font-semibold w-12 flex-shrink-0 pt-0.5">Email</span>
+                            <span className="text-[10px] text-slate-400 font-semibold w-12 flex-shrink-0 pt-0.5">Email</span>
                             <span className="text-[11px] text-slate-400 break-all">{chatAccount.ownerEmail}</span>
                           </div>
                         )}
                         {chatAccount.phone && (
                           <div className="flex items-start gap-1.5">
-                            <span className="text-[10px] text-slate-500 font-semibold w-12 flex-shrink-0 pt-0.5">Phone</span>
-                            <span className="text-[11px] text-slate-300">{chatAccount.phone}</span>
+                            <span className="text-[10px] text-slate-400 font-semibold w-12 flex-shrink-0 pt-0.5">Phone</span>
+                            <span className="text-[11px] text-slate-400">{chatAccount.phone}</span>
                           </div>
                         )}
                         <div className="pt-1">
                           <a href={`/admin/accounts/${chatAccount.id}`} target="_blank" rel="noopener noreferrer"
-                            className="text-[10px] text-indigo-400 hover:text-indigo-300 transition flex items-center gap-1">
+                            className="text-[10px] text-indigo-600 hover:text-indigo-700 transition flex items-center gap-1">
                             <Globe className="w-2.5 h-2.5" /> View account →
                           </a>
                         </div>
@@ -1106,24 +1106,24 @@ export default function LiveChatPage() {
                   )}
                   {(currentChat as any).page_url && (
                     <div>
-                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Page</h4>
+                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Page</h4>
                       <a href={(currentChat as any).page_url} target="_blank" rel="noopener noreferrer"
-                        className="flex items-start gap-1.5 text-[11px] text-indigo-400 hover:text-indigo-300 break-all transition">
+                        className="flex items-start gap-1.5 text-[11px] text-indigo-600 hover:text-indigo-700 break-all transition">
                         <Globe className="w-3 h-3 flex-shrink-0 mt-0.5" />
                         {(currentChat as any).page_url}
                       </a>
                     </div>
                   )}
                   <div>
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Timeline</h4>
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Timeline</h4>
                     <div className="space-y-1.5 text-xs">
                       <div className="flex items-center gap-2">
-                        <Clock className="w-3 h-3 text-slate-500 flex-shrink-0" />
+                        <Clock className="w-3 h-3 text-slate-400 flex-shrink-0" />
                         <span className="text-slate-400">Started {new Date(currentChat.started_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                       </div>
                       {(currentChat as ActiveChat).accepted_at && (
                         <div className="flex items-center gap-2">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600 flex-shrink-0" />
                           <span className="text-slate-400">Accepted {new Date((currentChat as ActiveChat).accepted_at!).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                         </div>
                       )}
@@ -1139,7 +1139,7 @@ export default function LiveChatPage() {
                   {isCurrentActive && (
                     <div className="space-y-2">
                       {!isCurrentOwner && (
-                        <div className="flex items-center gap-1.5 text-[10px] text-amber-400/90 bg-amber-900/20 border border-amber-700/30 rounded-lg px-2.5 py-2">
+                        <div className="flex items-center gap-1.5 text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">
                           <Lock className="w-3 h-3 flex-shrink-0" />
                           <span>Owned by {(currentChat as ActiveChat)?.agent_name || "another agent"}</span>
                         </div>
@@ -1147,20 +1147,20 @@ export default function LiveChatPage() {
                       <button onClick={() => setShowTransfer(true)}
                         disabled={!isCurrentOwner}
                         title={!isCurrentOwner ? "Only the assigned agent can transfer" : undefined}
-                        className="w-full border border-slate-600 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs py-2 rounded-lg transition flex items-center justify-center gap-1.5">
+                        className="w-full border border-slate-200 text-slate-400 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-xs py-2 rounded-lg transition flex items-center justify-center gap-1.5">
                         <ArrowRightLeft className="w-3.5 h-3.5" /> Transfer
                       </button>
                       <button onClick={closeChat}
                         disabled={!isCurrentOwner}
                         title={!isCurrentOwner ? "Only the assigned agent can end this chat" : undefined}
-                        className="w-full border border-rose-800 text-rose-400 hover:bg-rose-900/20 disabled:opacity-40 disabled:cursor-not-allowed text-xs py-2 rounded-lg transition flex items-center justify-center gap-1.5">
+                        className="w-full border border-rose-200 text-rose-600 hover:bg-rose-100 disabled:opacity-40 disabled:cursor-not-allowed text-xs py-2 rounded-lg transition flex items-center justify-center gap-1.5">
                         <X className="w-3.5 h-3.5" /> End Chat
                       </button>
                     </div>
                   )}
                 </>
               ) : (
-                <p className="text-slate-600 text-xs text-center py-8">Select a chat to see details</p>
+                <p className="text-slate-400 text-xs text-center py-8">Select a chat to see details</p>
               )}
             </div>
           )}
@@ -1168,8 +1168,8 @@ export default function LiveChatPage() {
           {/* Canned responses tab */}
           {rightTab === "canned" && (
             <div className="flex-1 overflow-hidden flex flex-col">
-              <div className="px-3 py-2 border-b border-slate-700 text-[10px] text-slate-500">
-                Click to insert, or type <kbd className="bg-slate-700 px-1 rounded">/</kbd> in the message box
+              <div className="px-3 py-2 border-b border-slate-200 text-[10px] text-slate-400">
+                Click to insert, or type <kbd className="bg-slate-100 px-1 rounded">/</kbd> in the message box
               </div>
               <CannedPanel canned={canned}
                 onPick={t => { setText(t); setRightTab("info"); inputRef.current?.focus(); }}
@@ -1181,12 +1181,12 @@ export default function LiveChatPage() {
           {rightTab === "settings" && (
             <div className="flex-1 overflow-y-auto p-3 space-y-4">
               <div>
-                <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Departments</h4>
+                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Departments</h4>
                 <div className="space-y-1.5">
                   {depts.map(d => (
-                    <div key={d.id} className="px-2 py-1.5 rounded-lg bg-slate-800/50">
-                      <p className="text-xs font-medium text-slate-300">{d.name}</p>
-                      {d.description && <p className="text-[10px] text-slate-600">{d.description}</p>}
+                    <div key={d.id} className="px-2 py-1.5 rounded-lg bg-slate-50">
+                      <p className="text-xs font-medium text-slate-400">{d.name}</p>
+                      {d.description && <p className="text-[10px] text-slate-400">{d.description}</p>}
                     </div>
                   ))}
                 </div>
@@ -1205,7 +1205,7 @@ export default function LiveChatPage() {
 
       {/* WS status */}
       <div className={`fixed bottom-4 right-4 flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-full transition-opacity ${
-        wsReady ? "bg-emerald-900/80 text-emerald-300" : "bg-rose-900/80 text-rose-300"
+        wsReady ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-600"
       }`}>
         <Radio className="w-3 h-3" />
         {wsReady ? "Connected" : "Reconnecting…"}
@@ -1255,39 +1255,39 @@ function CannedPanel({ canned, onPick, onAdded }: {
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
-      <div className="px-3 py-2 border-b border-slate-700">
+      <div className="px-3 py-2 border-b border-slate-200">
         <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Search…"
-          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none" />
+          className="w-full bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-400 focus:outline-none" />
       </div>
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
         {filtered.map(c => (
           <button key={c.id} onClick={() => onPick(c.content)}
-            className="w-full text-left p-2.5 rounded-lg hover:bg-slate-700 transition group">
+            className="w-full text-left p-2.5 rounded-lg hover:bg-slate-100 transition group">
             <div className="flex items-center gap-1.5 mb-0.5">
-              <code className="text-[10px] bg-indigo-600/30 text-indigo-300 px-1.5 py-0.5 rounded">/{c.shortcut}</code>
-              <span className="text-xs font-medium text-slate-300">{c.title}</span>
+              <code className="text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded">/{c.shortcut}</code>
+              <span className="text-xs font-medium text-slate-400">{c.title}</span>
             </div>
-            <p className="text-[11px] text-slate-500 line-clamp-2 group-hover:text-slate-400">{c.content}</p>
+            <p className="text-[11px] text-slate-400 line-clamp-2 group-hover:text-slate-400">{c.content}</p>
           </button>
         ))}
-        {!filtered.length && <p className="text-slate-600 text-xs text-center py-4">No matches</p>}
+        {!filtered.length && <p className="text-slate-400 text-xs text-center py-4">No matches</p>}
       </div>
-      <div className="p-2 border-t border-slate-700">
+      <div className="p-2 border-t border-slate-200">
         {!adding ? (
           <button onClick={() => setAdding(true)}
-            className="w-full flex items-center justify-center gap-1.5 text-[11px] text-slate-500 hover:text-indigo-400 py-1.5 transition">
+            className="w-full flex items-center justify-center gap-1.5 text-[11px] text-slate-400 hover:text-indigo-700 py-1.5 transition">
             <Plus className="w-3 h-3" /> Add response
           </button>
         ) : (
           <div className="space-y-1.5">
             <input value={newShortcut} onChange={e => setNewShortcut(e.target.value)} placeholder="Shortcut (e.g. hello)"
-              className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white placeholder-slate-600 focus:outline-none" />
+              className="w-full bg-slate-100 border border-slate-200 rounded px-2 py-1 text-xs text-white placeholder-slate-400 focus:outline-none" />
             <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Title"
-              className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white placeholder-slate-600 focus:outline-none" />
+              className="w-full bg-slate-100 border border-slate-200 rounded px-2 py-1 text-xs text-white placeholder-slate-400 focus:outline-none" />
             <textarea value={newContent} onChange={e => setNewContent(e.target.value)} placeholder="Response text" rows={2}
-              className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white placeholder-slate-600 resize-none focus:outline-none" />
+              className="w-full bg-slate-100 border border-slate-200 rounded px-2 py-1 text-xs text-white placeholder-slate-400 resize-none focus:outline-none" />
             <div className="flex gap-1.5">
-              <button onClick={() => setAdding(false)} className="flex-1 text-[11px] text-slate-500 hover:text-slate-300 py-1">Cancel</button>
+              <button onClick={() => setAdding(false)} className="flex-1 text-[11px] text-slate-400 hover:text-slate-400 py-1">Cancel</button>
               <button onClick={addCanned} disabled={busy}
                 className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-[11px] font-semibold py-1 rounded transition flex items-center justify-center gap-1">
                 {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save"}
@@ -1353,10 +1353,10 @@ function RoutingSettingsPanel({ depts, allAgents, agentDepts, onChanged }: {
 
   return (
     <div>
-      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
         <Tag className="w-3 h-3" /> Smart Routing
       </h4>
-      <p className="text-[10px] text-slate-600 mb-3 leading-relaxed">
+      <p className="text-[10px] text-slate-400 mb-3 leading-relaxed">
         Keywords auto-route new chats to the right dept. Agents with no dept assignment see all chats.
       </p>
       <div className="space-y-4">
@@ -1366,12 +1366,12 @@ function RoutingSettingsPanel({ depts, allAgents, agentDepts, onChanged }: {
           const unassigned = allAgents.filter(a => !deptAgents.some(da => da.agent_id === a.id));
 
           return (
-            <div key={d.id} className="bg-slate-800/60 rounded-xl p-3 space-y-2.5">
-              <p className="text-xs font-semibold text-slate-200">{d.name}</p>
+            <div key={d.id} className="bg-slate-50 rounded-xl p-3 space-y-2.5">
+              <p className="text-xs font-semibold text-slate-800">{d.name}</p>
 
               {/* Routing keywords */}
               <div>
-                <label className="text-[10px] text-slate-500 font-semibold mb-1 block flex items-center gap-1">
+                <label className="text-[10px] text-slate-400 font-semibold mb-1 block flex items-center gap-1">
                   <Tag className="w-2.5 h-2.5" /> Keywords (comma-separated)
                 </label>
                 <div className="flex gap-1">
@@ -1379,7 +1379,7 @@ function RoutingSettingsPanel({ depts, allAgents, agentDepts, onChanged }: {
                     value={currentKw}
                     onChange={e => setEditingKeywords(p => ({ ...p, [d.id]: e.target.value }))}
                     placeholder="billing, invoice, payment…"
-                    className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-[11px] text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="flex-1 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 text-[11px] text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   />
                   {editingKeywords[d.id] !== undefined && (
                     <button
@@ -1394,23 +1394,23 @@ function RoutingSettingsPanel({ depts, allAgents, agentDepts, onChanged }: {
 
               {/* Assigned agents */}
               <div>
-                <label className="text-[10px] text-slate-500 font-semibold mb-1 block flex items-center gap-1">
+                <label className="text-[10px] text-slate-400 font-semibold mb-1 block flex items-center gap-1">
                   <Users className="w-2.5 h-2.5" /> Assigned agents
                 </label>
                 <div className="space-y-1 mb-1.5">
                   {deptAgents.length === 0 && (
-                    <p className="text-[10px] text-slate-600 italic">All agents see this dept</p>
+                    <p className="text-[10px] text-slate-400 italic">All agents see this dept</p>
                   )}
                   {deptAgents.map(a => (
-                    <div key={a.agent_id} className="flex items-center justify-between gap-1 bg-slate-700/60 rounded-lg px-2 py-1">
+                    <div key={a.agent_id} className="flex items-center justify-between gap-1 bg-slate-100 rounded-lg px-2 py-1">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <div className="w-4 h-4 rounded-full bg-indigo-500/30 flex items-center justify-center text-indigo-300 text-[9px] font-bold flex-shrink-0">
+                        <div className="w-4 h-4 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-[9px] font-bold flex-shrink-0">
                           {a.agent_name[0].toUpperCase()}
                         </div>
-                        <span className="text-[11px] text-slate-300 truncate">{a.agent_name}</span>
+                        <span className="text-[11px] text-slate-400 truncate">{a.agent_name}</span>
                       </div>
                       <button onClick={() => removeAgent(a.agent_id, d.id)}
-                        className="text-slate-600 hover:text-rose-400 transition flex-shrink-0">
+                        className="text-slate-400 hover:text-rose-600 transition flex-shrink-0">
                         <X className="w-3 h-3" />
                       </button>
                     </div>
@@ -1421,7 +1421,7 @@ function RoutingSettingsPanel({ depts, allAgents, agentDepts, onChanged }: {
                     <select
                       value={addingAgent[d.id] ?? ""}
                       onChange={e => setAddingAgent(p => ({ ...p, [d.id]: e.target.value }))}
-                      className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-2 py-1 text-[11px] text-white focus:outline-none">
+                      className="flex-1 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 text-[11px] text-white focus:outline-none">
                       <option value="">Add agent…</option>
                       {unassigned.map(a => (
                         <option key={a.id} value={a.id}>
@@ -1462,10 +1462,10 @@ function AddDeptForm({ onAdded }: { onAdded: () => void }) {
     } finally { setBusy(false); }
   };
   return (
-    <div className="mt-4 pt-3 border-t border-slate-700 flex gap-1.5">
+    <div className="mt-4 pt-3 border-t border-slate-200 flex gap-1.5">
       <input value={name} onChange={e => setName(e.target.value)}
         placeholder="New dept…" onKeyDown={e => e.key === "Enter" && add()}
-        className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none" />
+        className="flex-1 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-white placeholder-slate-400 focus:outline-none" />
       <button onClick={add} disabled={busy || !name.trim()}
         className="w-7 h-7 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 rounded-lg flex items-center justify-center transition">
         {busy ? <Loader2 className="w-3 h-3 animate-spin text-white" /> : <Plus className="w-3 h-3 text-white" />}
