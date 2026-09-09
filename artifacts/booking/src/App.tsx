@@ -106,6 +106,7 @@ import NotFound from "@/pages/not-found";
 import TeamLoginPage from "@/pages/isTeam/LoginPage";
 import TeamApp from "@/pages/isTeam/TeamApp";
 import CustomerChatPage from "@/pages/LiveChat/CustomerChatPage";
+import BookingPresenceBeacon from "@/components/BookingPresenceBeacon";
 import ContactPage from "@/pages/ContactPage";
 import TeamPermissions from "@/pages/TeamPermissions";
 import Payroll from "@/pages/Payroll";
@@ -651,6 +652,8 @@ function AppRoutes() {
       <StoreProvider>
         <StaffPortalGuard>
         <SnapshotProvider>
+          {/* Reports this signed-in user to isTeam → Live Visitors → Booking App Users */}
+          <BookingPresenceBeacon />
           {/* Global mobile sticky header — fixed top-0, visible on every authenticated page */}
           <GlobalMobileHeader />
           <AccountStatusGate>

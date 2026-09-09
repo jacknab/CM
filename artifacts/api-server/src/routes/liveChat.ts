@@ -220,6 +220,12 @@ interface VisitorPresence {
   isReturning: boolean;         // seen on a previous visit (persisted lookup)
   name: string | null;   // set once they start a chat
   chatId: string | null;
+  // "web"  = anonymous visitor on the PHP marketing site (isReturning applies)
+  // "booking" = a user signed in to the booking app (storeId/userId apply)
+  app: "web" | "booking";
+  storeId: number | null;
+  storeName: string | null;
+  userId: string | null;
 }
 const visitors = new Map<string, VisitorPresence>();
 const VISITOR_TTL_MS = 60_000;
@@ -355,6 +361,10 @@ function visitorSnapshot() {
       isReturning: v.isReturning,
       name: v.name,
       chatId: v.chatId,
+      app: v.app,
+      storeId: v.storeId,
+      storeName: v.storeName,
+      userId: v.userId,
       firstSeen: v.firstSeen,
       lastSeen: v.lastSeen,
       onSiteSec: Math.max(0, Math.round((v.lastSeen - v.firstSeen) / 1000)),
@@ -541,6 +551,21 @@ liveChatRouter.post("/api/live-chat/visitor/ping", (req, res) => {
   const isNew = !existing;
   const pageChanged = !!existing && existing.url !== url;
   const ip = clientIp(req);
+
+  // "booking" = a signed-in booking-app user (must carry a real session);
+  // anything else is an anonymous marketing-site visitor.
+  const app: "web" | "booking" = b.app === "booking" ? "booking" : "web";
+  const sessionUserId = (req.session as any)?.userId as string | undefined;
+  if (app === "booking" && !sessionUserId) {
+    // No session — refuse to let an anonymous caller inject a fake app user.
+    return res.json({ ok: true, ignored: "no-session" });
+  }
+  const storeId =
+    app === "booking" && b.storeId != null && Number.isFinite(Number(b.storeId))
+      ? Number(b.storeId)
+      : null;
+  const storeName =
+    app === "booking" ? String(b.storeName ?? "").slice(0, 120) || null : null;
   // Resolve city/state/country from the mmdb on the box (nginx passes no geo
   // header for /api). An X-Geo-Country header, if ever added, wins for country.
   const geo = lookupGeo(ip);
@@ -555,6 +580,7 @@ liveChatRouter.post("/api/live-chat/visitor/ping", (req, res) => {
     country: geo.code, countryName: geo.name,
     city: geo.city, region: geo.region,
     pages: 0, isReturning: false, name: null, chatId: null,
+    app, storeId, storeName, userId: sessionUserId ?? null,
   };
   v.lastSeen = now;
   v.url = url;
@@ -564,12 +590,18 @@ liveChatRouter.post("/api/live-chat/visitor/ping", (req, res) => {
   if (!v.country && geo.code) { v.country = geo.code; v.countryName = geo.name; }
   if (!v.city && geo.city) v.city = geo.city;
   if (!v.region && geo.region) v.region = geo.region;
+  if (app === "booking") {
+    v.app = "booking";
+    if (storeId != null) v.storeId = storeId;
+    if (storeName) v.storeName = storeName;
+    if (sessionUserId) v.userId = sessionUserId;
+  }
   if (isNew || pageChanged) v.pages += 1;
   visitors.set(visitorId, v);
 
   // First time we've seen this id this process-life: check the persisted
-  // ledger to decide new-vs-returning, then refresh the agents' list.
-  if (isNew) {
+  // ledger to decide new-vs-returning (marketing visitors only), then refresh.
+  if (isNew && app === "web") {
     recordAndCheckReturning(visitorId).then((returning) => {
       const cur = visitors.get(visitorId);
       if (cur && returning && !cur.isReturning) {
