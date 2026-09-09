@@ -9125,20 +9125,8 @@ If you have any questions, please contact your administrator.
         return res.status(400).json({ message: "phone and body required" });
       }
 
-      // ── SMS gate: early check for clean error message before attempting send ─
-      const { resolveSmsAccess } = await import("./lib/featureAccess");
-      const smsGate = await resolveSmsAccess(storeId);
-      if (!smsGate.allowed) {
-        return res.status(403).json({
-          message: smsGate.blockReason === "insufficient_wallet"
-            ? `Insufficient wallet balance. SMS costs $0.02/message. Current balance: $${smsGate.walletBalance.toFixed(2)}.`
-            : "No SMS allowance remaining and no wallet balance. Add wallet funds or wait for your plan to renew.",
-          code: "SMS_NOT_AVAILABLE",
-          upgradeRequired: true,
-          walletBalance: smsGate.walletBalance,
-        });
-      }
-
+      // 1:1 SMS-inbox replies are platform-funded (not billed to the account's
+      // allowance/wallet — only marketing campaigns are), so no balance gate.
       const { sendSms } = await import("./sms");
       const { smsConversations } = await import("@shared/schema");
 
@@ -9227,19 +9215,7 @@ If you have any questions, please contact your administrator.
       const { phone, body, clientName } = req.body;
       if (!phone || !body) return res.status(400).json({ message: "phone and body required" });
 
-      const { resolveSmsAccess } = await import("./lib/featureAccess");
-      const smsGate = await resolveSmsAccess(storeId);
-      if (!smsGate.allowed) {
-        return res.status(403).json({
-          message: smsGate.blockReason === "insufficient_wallet"
-            ? `Insufficient wallet balance. SMS costs $0.02/message. Current balance: $${smsGate.walletBalance.toFixed(2)}.`
-            : "No SMS allowance remaining and no wallet balance. Add wallet funds or wait for your plan to renew.",
-          code: "SMS_NOT_AVAILABLE",
-          upgradeRequired: true,
-          walletBalance: smsGate.walletBalance,
-        });
-      }
-
+      // 1:1 SMS-inbox conversations are platform-funded — no balance gate.
       const { sendSms } = await import("./sms");
       const { smsConversations, smsContactRouting } = await import("@shared/schema");
 

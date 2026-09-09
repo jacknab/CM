@@ -107,6 +107,11 @@ export interface SendSmsOptions {
    */
   skipCreditDeduction?: boolean;
   /**
+   * Force this send to be billed to the account's SMS allowance / wallet even
+   * though its message type isn't a metered bulk type. Rarely needed.
+   */
+  billAccount?: boolean;
+  /**
    * Explicit source to store in sms_log.sms_source when deduction is skipped.
    */
   smsSource?: string;
@@ -232,19 +237,25 @@ export async function sendSms(
     }
   }
 
-  // ── System SMS are free to the account holder ──────────────────────────────
-  // Booking confirmations, appointment reminders, and Google review requests are
-  // platform-funded (Certxa absorbs the Twilio cost). These callers pass
-  //   { skipCreditDeduction: true, smsSource: "platform" }
-  // and NEVER touch the store's smsAllowance or platformCredits wallet.
-  // Any other message type (marketing, inbox replies, etc.) goes through the
-  // normal deductSmsCredit() flow below.
+  // ── Only marketing campaigns / bulk SMS are billed to the account ──────────
+  // Everything else the system sends — booking confirmations, reminders, review
+  // requests, chatbot & auto-dialer replies, kiosk / queue notifications, 1:1
+  // SMS-inbox replies, retention nudges (winback, no-show, rebooking, …) — is
+  // platform-funded: Certxa absorbs the Twilio cost and the store's
+  // smsAllowance / platformCredits wallet is never touched.
+  //
+  // Billing happens ONLY when the message type is a metered bulk type, or a
+  // caller explicitly opts in with { billAccount: true }.  `skipCreditDeduction`
+  // still force-bypasses for callers that charged via their own pre-flight.
+  const METERED_MESSAGE_TYPES = new Set(["campaign", "campaign_test", "bulk_sms"]);
+  const shouldCharge =
+    !options?.skipCreditDeduction &&
+    (options?.billAccount === true || METERED_MESSAGE_TYPES.has(messageType));
 
   let deductResult: DeductResult | null = null;
 
   // ── Credit deduction (atomic, race-condition safe) ─────────────────────────
-  // Bypass only for skipCreditDeduction callers (platform-cost SMS like staff invites).
-  if (!options?.skipCreditDeduction) {
+  if (shouldCharge) {
     deductResult = await deductSmsCredit(storeId);
 
     if ("error" in deductResult) {
@@ -311,8 +322,9 @@ export async function sendSms(
 
     console.log(`[SMS/Twilio] Sent to ${e164Phone} sid=${msg.sid} store=${storeId} type=${messageType}`);
 
-    // Deduction already happened atomically — log success
-    const smsSource = options?.smsSource ?? deductResult?.source ?? null;
+    // Deduction already happened atomically — log success.
+    // Not charged => platform-funded.
+    const smsSource = deductResult?.source ?? options?.smsSource ?? "platform";
     const costEstimate = smsSource === "wallet" ? SMS_WALLET_RATE_USD.toFixed(4) : "0.0000";
     await storage.createSmsLog({
       storeId,
