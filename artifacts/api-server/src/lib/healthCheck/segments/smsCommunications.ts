@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import type { SegmentResult } from "../types";
-import { pass, warn, fail, rollup } from "../types";
+import { pass, warn, rollup } from "../types";
 
 export async function smsCommunications(accountId: number, pool: Pool): Promise<SegmentResult> {
   const checks = [];
@@ -28,21 +28,32 @@ export async function smsCommunications(accountId: number, pool: Pool): Promise<
     checks.push(pass("twilio_config", "Twilio SMS configured", "Twilio configuration is present."));
   }
 
-  // 6b. SMS balance
+  // 6b. SMS balance.
+  // Transactional SMS — booking confirmations, appointment reminders, review
+  // requests, and other system notifications — are PLATFORM-FUNDED and send
+  // regardless of the account's balance (sms.ts passes skipCreditDeduction).
+  // The monthly allowance + platform-credit wallet are only drawn on by
+  // marketing campaigns / bulk SMS the owner sends, so a low balance is never
+  // an account-health problem, only a "can they run a campaign right now" note.
   const allowance = Number(store.sms_allowance ?? 0);
   const credits   = parseFloat(store.platform_credits ?? "0");
 
   if (allowance === 0 && credits < 0.02) {
-    checks.push(fail("sms_balance", "SMS balance available", "Both SMS allowance and platform credits are exhausted — the account cannot send any SMS messages.", "Billing → Credits → Add Credits"));
-  } else if (allowance < 10) {
-    checks.push(warn("sms_balance", "SMS balance available", `SMS allowance is nearly exhausted (${allowance} remaining) — will fall back to paid platform credits.`, "Billing → Credits"));
+    checks.push(warn(
+      "sms_balance", "SMS balance available",
+      `Marketing campaigns / bulk SMS are blocked — 0 monthly allowance and $${credits.toFixed(2)} platform credits. Transactional SMS (confirmations, reminders, review requests) are platform-funded and unaffected.`,
+      "Billing → Credits → Add Credits",
+    ));
   } else {
-    checks.push(pass("sms_balance", "SMS balance available", `SMS allowance: ${allowance} | Platform credits: $${credits.toFixed(2)}`));
+    checks.push(pass(
+      "sms_balance", "SMS balance available",
+      `SMS allowance: ${allowance} | Platform credits: $${credits.toFixed(2)} (used only for marketing/bulk SMS; transactional is platform-funded)`,
+    ));
   }
 
-  if (credits < 0 && allowance < 10) {
-    checks.push(warn("credits_balance", "Platform credits wallet positive", `Platform credits balance is $${credits.toFixed(2)} — negative balance may block paid SMS.`, "Billing → Credits → Top Up"));
-  } else if (credits >= 0) {
+  if (credits < 0) {
+    checks.push(warn("credits_balance", "Platform credits wallet positive", `Platform credits balance is $${credits.toFixed(2)} — a negative wallet can block AI Receptionist and paid marketing SMS.`, "Billing → Credits → Top Up"));
+  } else {
     checks.push(pass("credits_balance", "Platform credits wallet positive", `Wallet balance: $${credits.toFixed(2)}`));
   }
 
