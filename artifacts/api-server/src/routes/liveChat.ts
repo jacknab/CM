@@ -220,9 +220,11 @@ interface VisitorPresence {
   isReturning: boolean;         // seen on a previous visit (persisted lookup)
   name: string | null;   // set once they start a chat
   chatId: string | null;
-  // "web"  = anonymous visitor on the PHP marketing site (isReturning applies)
-  // "booking" = a user signed in to the booking app (storeId/userId apply)
-  app: "web" | "booking";
+  // "web"       = anonymous visitor on the PHP marketing site (isReturning applies)
+  // "booking"   = a user signed in to the booking app (storeId/userId apply)
+  // "kiosk"     = a self-check-in kiosk screen        (storeId via slug, no user)
+  // "frontdesk" = a front-desk customer display       (storeId via slug, no user)
+  app: "web" | "booking" | "kiosk" | "frontdesk";
   storeId: number | null;
   storeName: string | null;
   userId: string | null;
@@ -339,6 +341,26 @@ async function recordAndCheckReturning(visitorId: string): Promise<boolean> {
     return r.rows[0]?.inserted === false;
   } catch {
     return false;
+  }
+}
+
+// ── Kiosk / front-desk device presence: resolve booking slug -> store ────────
+// Slug→store is effectively immutable; cache for the life of the process
+// (a restart re-resolves). `null` is cached too, to avoid re-querying a
+// bogus slug on every heartbeat.
+const slugStoreCache = new Map<string, { id: number; name: string } | null>();
+async function resolveStoreBySlug(slug: string): Promise<{ id: number; name: string } | null> {
+  if (slugStoreCache.has(slug)) return slugStoreCache.get(slug) ?? null;
+  try {
+    const r = await pool.query<{ id: number; name: string }>(
+      `SELECT id, name FROM locations WHERE booking_slug = $1 LIMIT 1`,
+      [slug],
+    );
+    const store = r.rows[0] ?? null;
+    slugStoreCache.set(slug, store);
+    return store;
+  } catch {
+    return null;
   }
 }
 
@@ -542,7 +564,32 @@ liveChatRouter.get("/api/live-chat/me", async (req, res) => {
 // ── Visitor presence beacons (public, no auth) ──────────────────────────────
 liveChatRouter.post("/api/live-chat/visitor/ping", (req, res) => {
   const b = (req.body ?? {}) as Record<string, unknown>;
-  const visitorId = String(b.visitorId ?? "").slice(0, 64);
+
+  const app: VisitorPresence["app"] =
+    b.app === "booking" ? "booking" :
+    b.app === "kiosk" ? "kiosk" :
+    b.app === "frontdesk" ? "frontdesk" : "web";
+  const sessionUserId = (req.session as any)?.userId as string | undefined;
+
+  // Auth model per source:
+  //  • kiosk / frontdesk — device screens, identified by their booking slug
+  //  • booking           — a real signed-in user session
+  //  • web               — anonymous marketing-site visitor
+  let slug: string | null = null;
+  if (app === "kiosk" || app === "frontdesk") {
+    slug = String(b.slug ?? "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 200) || null;
+    if (!slug) return res.json({ ok: true, ignored: "no-slug" });
+  } else if (app === "booking" && !sessionUserId) {
+    return res.json({ ok: true, ignored: "no-session" });
+  }
+
+  // Canonical id — one row per user / per store device screen. Server-derived
+  // for the authenticated sources so a client can't spoof another's row.
+  const visitorId =
+    app === "booking"   ? `app_${sessionUserId}` :
+    app === "kiosk"     ? `kiosk_${slug}` :
+    app === "frontdesk" ? `frontdesk_${slug}` :
+    String(b.visitorId ?? "").slice(0, 64);
   if (!visitorId) return res.status(400).json({ error: "visitorId required" });
 
   const url = String(b.url ?? "").slice(0, 512);
@@ -552,20 +599,15 @@ liveChatRouter.post("/api/live-chat/visitor/ping", (req, res) => {
   const pageChanged = !!existing && existing.url !== url;
   const ip = clientIp(req);
 
-  // "booking" = a signed-in booking-app user (must carry a real session);
-  // anything else is an anonymous marketing-site visitor.
-  const app: "web" | "booking" = b.app === "booking" ? "booking" : "web";
-  const sessionUserId = (req.session as any)?.userId as string | undefined;
-  if (app === "booking" && !sessionUserId) {
-    // No session — refuse to let an anonymous caller inject a fake app user.
-    return res.json({ ok: true, ignored: "no-session" });
-  }
-  const storeId =
+  // Booking app sends its active store directly; kiosk/frontdesk are resolved
+  // from the slug below (async, once).
+  const clientStoreId =
     app === "booking" && b.storeId != null && Number.isFinite(Number(b.storeId))
       ? Number(b.storeId)
       : null;
-  const storeName =
+  const clientStoreName =
     app === "booking" ? String(b.storeName ?? "").slice(0, 120) || null : null;
+
   // Resolve city/state/country from the mmdb on the box (nginx passes no geo
   // header for /api). An X-Geo-Country header, if ever added, wins for country.
   const geo = lookupGeo(ip);
@@ -580,7 +622,8 @@ liveChatRouter.post("/api/live-chat/visitor/ping", (req, res) => {
     country: geo.code, countryName: geo.name,
     city: geo.city, region: geo.region,
     pages: 0, isReturning: false, name: null, chatId: null,
-    app, storeId, storeName, userId: sessionUserId ?? null,
+    app, storeId: clientStoreId, storeName: clientStoreName,
+    userId: app === "booking" ? (sessionUserId ?? null) : null,
   };
   v.lastSeen = now;
   v.url = url;
@@ -590,14 +633,26 @@ liveChatRouter.post("/api/live-chat/visitor/ping", (req, res) => {
   if (!v.country && geo.code) { v.country = geo.code; v.countryName = geo.name; }
   if (!v.city && geo.city) v.city = geo.city;
   if (!v.region && geo.region) v.region = geo.region;
+  v.app = app;
   if (app === "booking") {
-    v.app = "booking";
-    if (storeId != null) v.storeId = storeId;
-    if (storeName) v.storeName = storeName;
+    if (clientStoreId != null) v.storeId = clientStoreId;
+    if (clientStoreName) v.storeName = clientStoreName;
     if (sessionUserId) v.userId = sessionUserId;
   }
   if (isNew || pageChanged) v.pages += 1;
   visitors.set(visitorId, v);
+
+  // Kiosk / front desk: resolve the booking slug to a store once, then refresh.
+  if (isNew && slug && (app === "kiosk" || app === "frontdesk")) {
+    resolveStoreBySlug(slug).then((store) => {
+      const cur = visitors.get(visitorId);
+      if (cur && store && (cur.storeId !== store.id || cur.storeName !== store.name)) {
+        cur.storeId = store.id;
+        cur.storeName = store.name;
+        pushVisitorsToAgents();
+      }
+    });
+  }
 
   // First time we've seen this id this process-life: check the persisted
   // ledger to decide new-vs-returning (marketing visitors only), then refresh.

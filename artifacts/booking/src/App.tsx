@@ -106,6 +106,7 @@ import NotFound from "@/pages/not-found";
 import TeamLoginPage from "@/pages/isTeam/LoginPage";
 import TeamApp from "@/pages/isTeam/TeamApp";
 import BookingPresenceBeacon from "@/components/BookingPresenceBeacon";
+import DevicePresenceBeacon from "@/components/DevicePresenceBeacon";
 import ContactPage from "@/pages/ContactPage";
 import TeamPermissions from "@/pages/TeamPermissions";
 import Payroll from "@/pages/Payroll";
@@ -392,8 +393,9 @@ function App() {
             <AppRoutes />
             {/* No support chat bubble inside the booking app — the marketing
                 site keeps its own widget (php/assets/js/livechat-widget.js).
-                Signed-in users are still reported to isTeam via
-                <BookingPresenceBeacon/> (mounted in AppRoutes). */}
+                Signed-in users are reported to isTeam via <BookingPresenceBeacon/>
+                (mounted in AppRoutes); kiosk / front-desk screens via this one. */}
+            <DevicePresenceBeacon />
           </BrowserRouter>
         </ErrorBoundary>
       </TooltipProvider>

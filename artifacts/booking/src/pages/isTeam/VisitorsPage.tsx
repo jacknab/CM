@@ -2,19 +2,22 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Users, UserCheck, UserPlus, RefreshCw, Search, Eye, X, Globe,
-  Store as StoreIcon, MonitorSmartphone,
+  Store as StoreIcon, MonitorSmartphone, Tv, Monitor,
 } from "lucide-react";
 
 /**
- * isTeam → Live Visitors. Two tabs, same live feed
+ * isTeam → Live Visitors. Three tabs over one live feed
  * (GET /api/support/live-chat/visitors, polled every 10s):
- *   • Website Visitors  — anonymous visitors on the certxa marketing site
- *                         (PHP pages); New vs. Returning.
- *   • Booking App Users — users signed in to the booking app; shows storeId.
+ *   • Website Visitors   — anonymous visitors on the certxa marketing site
+ *                          (PHP pages); New vs. Returning.
+ *   • Booking App Users  — users signed in to the booking app; shows storeId.
+ *   • Kiosk & Front Desk — self-check-in kiosk + front-desk display screens,
+ *                          identified by store booking slug.
  */
 
 const REFRESH_MS = 10_000;
-type Tab = "web" | "booking";
+type Tab = "web" | "booking" | "devices";
+type App = "web" | "booking" | "kiosk" | "frontdesk";
 
 interface Visitor {
   visitorId: string;
@@ -30,7 +33,7 @@ interface Visitor {
   isReturning: boolean;
   name: string | null;
   chatId: string | null;
-  app: "web" | "booking";
+  app: App;
   storeId: number | null;
   storeName: string | null;
   userId: string | null;
@@ -84,8 +87,23 @@ function pagePath(url: string): string {
   }
 }
 function storeLabel(v: Visitor): string {
-  if (v.storeId == null) return "—";
+  if (v.storeId == null) return v.storeName || "—";
   return v.storeName ? `#${v.storeId} · ${v.storeName}` : `#${v.storeId}`;
+}
+function deviceKindLabel(app: App): string {
+  return app === "kiosk" ? "Kiosk" : app === "frontdesk" ? "Front Desk" : "";
+}
+
+function DeviceBadge({ app }: { app: App }) {
+  const isKiosk = app === "kiosk";
+  return (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium ${
+      isKiosk ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700"
+    }`}>
+      {isKiosk ? <Tv size={11} /> : <Monitor size={11} />}
+      {deviceKindLabel(app)}
+    </span>
+  );
 }
 
 // ── Stat card ────────────────────────────────────────────────────────────────
@@ -112,30 +130,44 @@ function StatCard({
 function VisitorDrawer({ visitor, now, onClose }: { visitor: Visitor; now: number; onClose: () => void }) {
   const onSite = Math.max(visitor.onSiteSec, Math.round((now - visitor.firstSeen) / 1000));
   const isBooking = visitor.app === "booking";
+  const isDevice = visitor.app === "kiosk" || visitor.app === "frontdesk";
+
   const rows: [string, React.ReactNode][] = [
     ["IP address", <span className="font-mono text-slate-800">{visitor.ip || "—"}</span>],
     ["Location", locationLabel(visitor)],
     ["Country", <span>{flagEmoji(visitor.country)} {visitor.country || "—"}{visitor.countryName ? ` · ${visitor.countryName}` : ""}</span>],
-    isBooking
-      ? ["Store", <span className="font-mono text-slate-800">{storeLabel(visitor)}</span>]
-      : ["Visitor type", visitor.isReturning
-          ? <span className="inline-flex px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">Returning</span>
-          : <span className="inline-flex px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">New</span>],
-    ...(isBooking ? [["User ID", <span className="font-mono text-[11px] text-slate-400 break-all">{visitor.userId || "—"}</span>] as [string, React.ReactNode]] : []),
+    ...(isDevice
+      ? ([
+          ["Device", <DeviceBadge app={visitor.app} />],
+          ["Store", <span className="font-mono text-slate-800">{storeLabel(visitor)}</span>],
+        ] as [string, React.ReactNode][])
+      : isBooking
+        ? ([
+            ["Store", <span className="font-mono text-slate-800">{storeLabel(visitor)}</span>],
+            ["User ID", <span className="font-mono text-[11px] text-slate-400 break-all">{visitor.userId || "—"}</span>],
+          ] as [string, React.ReactNode][])
+        : ([
+            ["Visitor type", visitor.isReturning
+              ? <span className="inline-flex px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">Returning</span>
+              : <span className="inline-flex px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">New</span>],
+          ] as [string, React.ReactNode][])),
     ["Current page", <span className="font-mono text-slate-800">{pagePath(visitor.url)}</span>],
     ["Page title", visitor.title || "—"],
-    ["Pages viewed", String(visitor.pages)],
-    ["Time on site", fmtOnSite(onSite)],
+    [isDevice ? "Screens seen" : "Pages viewed", String(visitor.pages)],
+    [isDevice ? "Uptime" : "Time on site", fmtOnSite(onSite)],
     ["First seen", fmtClock(visitor.firstSeen)],
     ["Last seen", fmtClock(visitor.lastSeen)],
-    ["Referrer", visitor.referrer
-      ? <span className="break-all text-slate-700">{visitor.referrer}</span>
-      : <span className="text-slate-400">Direct / none</span>],
-    ["In live chat", visitor.chatId
-      ? <span className="text-emerald-600">Yes{visitor.name ? ` — ${visitor.name}` : ""}</span>
-      : "No"],
-    ["Visitor ID", <span className="font-mono text-[11px] text-slate-400 break-all">{visitor.visitorId}</span>],
+    ...(isDevice ? [] : ([
+      ["Referrer", visitor.referrer
+        ? <span className="break-all text-slate-700">{visitor.referrer}</span>
+        : <span className="text-slate-400">Direct / none</span>],
+      ["In live chat", visitor.chatId
+        ? <span className="text-emerald-600">Yes{visitor.name ? ` — ${visitor.name}` : ""}</span>
+        : "No"],
+    ] as [string, React.ReactNode][])),
+    ["Presence ID", <span className="font-mono text-[11px] text-slate-400 break-all">{visitor.visitorId}</span>],
   ];
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-slate-900/30" onClick={onClose} />
@@ -144,7 +176,7 @@ function VisitorDrawer({ visitor, now, onClose }: { visitor: Visitor; now: numbe
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <h2 className="text-sm font-semibold text-slate-900">
-              {isBooking ? "Signed-in user detail" : "Visitor detail"}
+              {isDevice ? "Device detail" : isBooking ? "Signed-in user detail" : "Visitor detail"}
             </h2>
           </div>
           <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition">
@@ -169,7 +201,7 @@ export default function VisitorsPage() {
   const [tab, setTab] = useState<Tab>("web");
   const [now, setNow] = useState(() => Date.now());
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<string>("all"); // web: all|new|returning · booking: all|<storeId>
+  const [filter, setFilter] = useState<string>("all");
   const [selected, setSelected] = useState<string | null>(null);
 
   const { data, isLoading, isFetching, dataUpdatedAt, refetch } = useQuery<{ visitors: Visitor[] }>({
@@ -188,19 +220,23 @@ export default function VisitorsPage() {
   // Reset filter/search/selection when switching tabs.
   useEffect(() => { setFilter("all"); setSearch(""); setSelected(null); }, [tab]);
 
-  const { webAll, bookingAll } = useMemo(() => {
+  const { webAll, bookingAll, deviceAll } = useMemo(() => {
     const list = data?.visitors ?? [];
     const web: Visitor[] = [];
     const booking: Visitor[] = [];
+    const device: Visitor[] = [];
     for (const v of list) {
+      if (v.app === "kiosk" || v.app === "frontdesk") { device.push(v); continue; }
       const p = pagePath(v.url).toLowerCase();
       if (p.startsWith("/isteam") || p.startsWith("/api")) continue; // never surface back-office
       (v.app === "booking" ? booking : web).push(v);
     }
-    return { webAll: web, bookingAll: booking };
+    return { webAll: web, bookingAll: booking, deviceAll: device };
   }, [data]);
 
-  const all = tab === "web" ? webAll : bookingAll;
+  const isBooking = tab === "booking";
+  const isDevices = tab === "devices";
+  const all = isDevices ? deviceAll : isBooking ? bookingAll : webAll;
 
   const stores = useMemo(() => {
     const m = new Map<number, string>();
@@ -213,8 +249,11 @@ export default function VisitorsPage() {
     if (tab === "web") {
       if (filter === "new") list = list.filter((v) => !v.isReturning);
       if (filter === "returning") list = list.filter((v) => v.isReturning);
-    } else if (filter !== "all") {
-      list = list.filter((v) => String(v.storeId) === filter);
+    } else if (tab === "booking") {
+      if (filter !== "all") list = list.filter((v) => String(v.storeId) === filter);
+    } else {
+      if (filter === "kiosk") list = list.filter((v) => v.app === "kiosk");
+      if (filter === "frontdesk") list = list.filter((v) => v.app === "frontdesk");
     }
     const q = search.trim().toLowerCase();
     if (q) {
@@ -226,7 +265,8 @@ export default function VisitorsPage() {
         (v.country || "").toLowerCase().includes(q) ||
         (v.storeName || "").toLowerCase().includes(q) ||
         (v.storeId != null && String(v.storeId).includes(q)) ||
-        (v.userId || "").toLowerCase().includes(q),
+        (v.userId || "").toLowerCase().includes(q) ||
+        pagePath(v.url).toLowerCase().includes(q),
       );
     }
     return list;
@@ -236,10 +276,17 @@ export default function VisitorsPage() {
   const returning = webAll.filter((v) => v.isReturning).length;
   const fresh = webAll.length - returning;
   const activeStores = new Set(bookingAll.map((v) => v.storeId).filter((x) => x != null)).size;
+  const kiosks = deviceAll.filter((v) => v.app === "kiosk").length;
+  const frontdesks = deviceAll.filter((v) => v.app === "frontdesk").length;
   const selectedVisitor = selected ? all.find((v) => v.visitorId === selected) ?? null : null;
 
-  const isBooking = tab === "booking";
-  const col5Header = isBooking ? "Store" : "Returning Visitor";
+  const col5Header = isDevices ? "Device / Store" : isBooking ? "Store" : "Returning Visitor";
+  const col7Header = isDevices ? "Uptime" : "Time on Site";
+  const title = isDevices
+    ? "Kiosk & Front Desk — Live Devices"
+    : isBooking
+      ? "Booking App — Signed-In Users"
+      : "Real-Time Website Visitors";
 
   return (
     <div className="flex-1 overflow-auto bg-slate-50">
@@ -247,9 +294,7 @@ export default function VisitorsPage() {
       <div className="bg-[#0f1729] text-white">
         <div className="max-w-[1400px] mx-auto px-6 pt-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold">
-              {isBooking ? "Booking App — Signed-In Users" : "Real-Time Website Visitors"}
-            </h1>
+            <h1 className="text-lg font-semibold">{title}</h1>
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 text-xs font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               Live
@@ -271,6 +316,7 @@ export default function VisitorsPage() {
           {([
             ["web", "Website Visitors", <Globe size={14} key="g" />, webAll.length],
             ["booking", "Booking App Users", <MonitorSmartphone size={14} key="m" />, bookingAll.length],
+            ["devices", "Kiosk & Front Desk", <Tv size={14} key="t" />, deviceAll.length],
           ] as [Tab, string, React.ReactNode, number][]).map(([id, label, icon, count]) => (
             <button
               key={id}
@@ -294,16 +340,23 @@ export default function VisitorsPage() {
       <div className="max-w-[1400px] mx-auto p-6 space-y-5">
         {/* Stat cards */}
         <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${isBooking ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
-          {isBooking ? (
+          {isDevices ? (
             <>
+              <StatCard icon={<Tv size={20} />} tint="bg-indigo-50 text-indigo-600" value={online} label="Devices Online" />
+              <StatCard icon={<Tv size={20} />} tint="bg-amber-50 text-amber-600" value={kiosks} label="Kiosks" />
+              <StatCard icon={<Monitor size={20} />} tint="bg-sky-50 text-sky-600" value={frontdesks} label="Front Desks" />
               <StatCard
-                icon={<Users size={20} />} tint="bg-indigo-50 text-indigo-600"
-                value={online} label="Users Online"
+                icon={<RefreshCw size={20} className="animate-spin [animation-duration:3s]" />}
+                tint="bg-slate-100 text-slate-500"
+                value={<span className="text-base font-medium text-slate-700">Live Updates</span>}
+                label="Refreshing every 10 seconds"
+                sub={`Updated ${dataUpdatedAt ? fmtClock(dataUpdatedAt) : "—"}`}
               />
-              <StatCard
-                icon={<StoreIcon size={20} />} tint="bg-violet-50 text-violet-600"
-                value={activeStores} label="Active Stores"
-              />
+            </>
+          ) : isBooking ? (
+            <>
+              <StatCard icon={<Users size={20} />} tint="bg-indigo-50 text-indigo-600" value={online} label="Users Online" />
+              <StatCard icon={<StoreIcon size={20} />} tint="bg-violet-50 text-violet-600" value={activeStores} label="Active Stores" />
               <StatCard
                 icon={<RefreshCw size={20} className="animate-spin [animation-duration:3s]" />}
                 tint="bg-slate-100 text-slate-500"
@@ -314,18 +367,9 @@ export default function VisitorsPage() {
             </>
           ) : (
             <>
-              <StatCard
-                icon={<Users size={20} />} tint="bg-indigo-50 text-indigo-600"
-                value={online} label="Currently Online"
-              />
-              <StatCard
-                icon={<UserCheck size={20} />} tint="bg-blue-50 text-blue-600"
-                value={returning} label="Returning Visitors"
-              />
-              <StatCard
-                icon={<UserPlus size={20} />} tint="bg-emerald-50 text-emerald-600"
-                value={fresh} label="New Visitors"
-              />
+              <StatCard icon={<Users size={20} />} tint="bg-indigo-50 text-indigo-600" value={online} label="Currently Online" />
+              <StatCard icon={<UserCheck size={20} />} tint="bg-blue-50 text-blue-600" value={returning} label="Returning Visitors" />
+              <StatCard icon={<UserPlus size={20} />} tint="bg-emerald-50 text-emerald-600" value={fresh} label="New Visitors" />
               <StatCard
                 icon={<RefreshCw size={20} className="animate-spin [animation-duration:3s]" />}
                 tint="bg-slate-100 text-slate-500"
@@ -341,7 +385,7 @@ export default function VisitorsPage() {
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-200">
             <h2 className="text-sm font-semibold text-slate-700">
-              {isBooking ? "Signed-In Booking App Users" : "Live Website Visitors"}
+              {isDevices ? "Live Kiosk & Front-Desk Screens" : isBooking ? "Signed-In Booking App Users" : "Live Website Visitors"}
             </h2>
             <div className="flex items-center gap-2">
               <select
@@ -349,7 +393,13 @@ export default function VisitorsPage() {
                 onChange={(e) => setFilter(e.target.value)}
                 className="text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-600 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
               >
-                {isBooking ? (
+                {isDevices ? (
+                  <>
+                    <option value="all">All Devices</option>
+                    <option value="kiosk">Kiosk</option>
+                    <option value="frontdesk">Front Desk</option>
+                  </>
+                ) : isBooking ? (
                   <>
                     <option value="all">All Stores</option>
                     {stores.map(([id, name]) => (
@@ -369,7 +419,11 @@ export default function VisitorsPage() {
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder={isBooking ? "Search IP, city, store, or user..." : "Search IP, city, or country..."}
+                  placeholder={
+                    isDevices ? "Search IP, city, store, or slug..."
+                    : isBooking ? "Search IP, city, store, or user..."
+                    : "Search IP, city, or country..."
+                  }
                   className="text-sm border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 w-60 text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                 />
               </div>
@@ -385,7 +439,7 @@ export default function VisitorsPage() {
                 <div>Country</div>
                 <div>{col5Header}</div>
                 <div>Last Seen</div>
-                <div>Time on Site</div>
+                <div>{col7Header}</div>
                 <div>Current Page</div>
                 <div className="text-right">View</div>
               </div>
@@ -399,10 +453,12 @@ export default function VisitorsPage() {
               ) : visitors.length === 0 ? (
                 <div className="px-4 py-16 text-center text-sm text-slate-400">
                   {all.length === 0
-                    ? isBooking
-                      ? "No users signed into the booking app right now."
-                      : "No visitors on the site right now."
-                    : "No visitors match this filter."}
+                    ? isDevices
+                      ? "No kiosk or front-desk screens are online right now."
+                      : isBooking
+                        ? "No users signed into the booking app right now."
+                        : "No visitors on the site right now."
+                    : "No rows match this filter."}
                 </div>
               ) : (
                 visitors.map((v, i) => {
@@ -423,7 +479,12 @@ export default function VisitorsPage() {
                         {v.country || "—"}
                       </div>
                       <div className="truncate pr-2">
-                        {isBooking ? (
+                        {isDevices ? (
+                          <span className="inline-flex items-center gap-1.5 min-w-0">
+                            <DeviceBadge app={v.app} />
+                            <span className="text-slate-600 truncate">{storeLabel(v)}</span>
+                          </span>
+                        ) : isBooking ? (
                           v.storeId != null ? (
                             <span className="inline-flex items-center gap-1.5">
                               <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">#{v.storeId}</span>
@@ -459,16 +520,18 @@ export default function VisitorsPage() {
           {visitors.length > 0 && (
             <div className="px-4 py-2.5 text-xs text-slate-400 border-t border-slate-200">
               Showing {visitors.length} of {all.length}
-              {isBooking ? " signed-in user" : " live visitor"}{all.length === 1 ? "" : "s"}
+              {isDevices ? " device" : isBooking ? " signed-in user" : " live visitor"}{all.length === 1 ? "" : "s"}
             </div>
           )}
         </div>
 
         <p className="text-xs text-slate-400 flex items-center gap-1.5">
           <Globe size={12} />
-          {isBooking
-            ? "Users currently signed in to the booking app. A user drops off the list ~60 seconds after their last activity."
-            : "Only shows anonymous visitors currently browsing the certxa marketing site. A visitor drops off the list ~60 seconds after their last page view."}
+          {isDevices
+            ? "Kiosk and front-desk screens currently loaded, matched to a store by its booking slug. A screen drops off ~60 seconds after its last heartbeat."
+            : isBooking
+              ? "Users currently signed in to the booking app. A user drops off the list ~60 seconds after their last activity."
+              : "Only shows anonymous visitors currently browsing the certxa marketing site. A visitor drops off the list ~60 seconds after their last page view."}
         </p>
       </div>
 
