@@ -290,50 +290,147 @@
   --cal-nonworking: #f1f5f9;
 }
 
-/* ── Calendar dark theme: restore teal accent + readability fixes ──────
-   The Calendar page carries `.dark cx-cal`. `.dark` gives us the neutral
-   surfaces; this block undoes the app-wide teal→hot-pink remap for the
-   calendar only and lifts a few low-contrast colours.                   */
+/* ═══════════════════════════════════════════════════════════════════════
+   "Studio Slate" — calendar workspace theme
+   ─────────────────────────────────────────────────────────────────────
+   The Calendar page renders inside `.dark .cx-cal` all day, so this is
+   tuned for an 8-hour operational screen, not a marketing surface:
+
+   • Base is a soft blue-charcoal, NOT pure black — pure #000 + #fff text
+     causes halation and eye fatigue over a shift. Surfaces step up in
+     ~4% lightness so panels read without hard borders.
+   • Text runs on a 4-step ramp; every step used for real content clears
+     WCAG AA (≥4.5:1) on both the base and a busy appointment card.
+       primary   #e8ecf2  ~14:1   headings, service name
+       secondary #c4cad4  ~10:1   client name, times, prices  ← was the
+                                  DIMMEST value before; now clearly legible
+       tertiary  #969eaa  ~5.4:1  duration, add-ons, meta (AA)
+       quat      #767b85  ~3.3:1  disabled only — never readable content
+   • One accent (teal) for interactive/brand; status hues live on the
+     cards only and never carry text.
+   ═══════════════════════════════════════════════════════════════════════ */
 .cx-cal {
-  --primary: 172 66% 40%;              /* teal ~#14b8a6 */
-  --primary-foreground: 0 0% 100%;
-  --ring: 172 66% 45%;
-  --sidebar-primary: 172 66% 40%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --accent: 172 66% 40%;
-  --accent-foreground: 0 0% 100%;
+  /* neutral ramp */
+  --cx-bg:         222 16% 12%;   /* page / grid gutter            */
+  --cx-surface-1:  222 15% 15%;   /* grid columns, sticky headers  */
+  --cx-surface-2:  222 14% 18%;   /* cards, toolbar, side panels   */
+  --cx-surface-3:  222 13% 24%;   /* hover / pressed / chips       */
+  --cx-surface-4:  222 12% 30%;
+  --cx-line:       220 16% 100% / 0.09;
+  --cx-line-soft:  220 16% 100% / 0.05;
+  --cx-nonworking: 220 16% 100% / 0.028;
+  --cx-text:       213 24% 93%;
+  --cx-text-2:     214 16% 80%;
+  --cx-text-3:     216 11% 63%;
+  --cx-text-4:     220 8% 48%;
+  --cx-accent:     172 68% 46%;   /* teal — the calendar's identity */
+  --cx-accent-hi:  170 74% 62%;   /* brighter teal for text/icons   */
+
+  /* map the shadcn tokens the token-driven bits (side sheet, popovers,
+     buttons, selects) consume */
+  --background: var(--cx-bg);
+  --foreground: var(--cx-text);
+  --card: var(--cx-surface-2);
+  --card-foreground: var(--cx-text);
+  --popover: var(--cx-surface-2);
+  --popover-foreground: var(--cx-text);
+  --muted: var(--cx-surface-1);
+  --muted-foreground: var(--cx-text-3);
+  --border: var(--cx-line);
+  --input: 222 13% 27%;
+  --primary: var(--cx-accent);
+  --primary-foreground: 200 40% 8%;
+  --secondary: var(--cx-surface-3);
+  --secondary-foreground: var(--cx-text);
+  --accent: var(--cx-surface-3);
+  --accent-foreground: var(--cx-text);
+  --ring: 172 70% 52%;
+  --sidebar-primary: var(--cx-accent);
+  --sidebar-primary-foreground: 200 40% 8%;
+
+  /* grid tokens (read via inline var() in Calendar.tsx) */
+  --cal-grid-line: hsl(var(--cx-line));
+  --cal-nonworking: hsl(var(--cx-nonworking));
 }
-/* calendar "white" surfaces (grid columns, headers, turn-queue panel) sit at
-   page-black so only the grid lines separate them, matching the mockup */
-.cx-cal .bg-white          { background-color: hsl(var(--background)) !important; }
-.cx-cal .bg-teal-50        { background-color: rgba(20,184,166,0.14) !important; }
-.cx-cal .bg-teal-100       { background-color: rgba(20,184,166,0.22) !important; }
+
+/* ── surfaces: remap the page's hardcoded light utilities to the ramp ── */
+.cx-cal .bg-white            { background-color: hsl(var(--cx-surface-1)) !important; }
+.cx-cal .bg-white\/70        { background-color: hsl(var(--cx-surface-3) / 0.7) !important; }
+.cx-cal .bg-white\/30        { background-color: hsl(var(--cx-surface-4) / 0.5) !important; }
+.cx-cal .bg-slate-50,
+.cx-cal .bg-gray-50          { background-color: hsl(var(--cx-surface-2)) !important; }
+.cx-cal .bg-slate-100,
+.cx-cal .bg-gray-100         { background-color: hsl(var(--cx-surface-3)) !important; }
+.cx-cal .bg-slate-200,
+.cx-cal .bg-gray-200         { background-color: hsl(var(--cx-surface-4)) !important; }
+.cx-cal .bg-slate-300        { background-color: hsl(222 12% 36%) !important; }
+.cx-cal .bg-slate-800        { background-color: hsl(var(--cx-surface-2)) !important; }
+.cx-cal .bg-slate-900        { background-color: hsl(var(--cx-surface-1)) !important; }
+.cx-cal .hover\:bg-slate-50:hover,
+.cx-cal .hover\:bg-gray-50:hover   { background-color: hsl(var(--cx-surface-2)) !important; }
+.cx-cal .hover\:bg-slate-100:hover,
+.cx-cal .hover\:bg-gray-100:hover  { background-color: hsl(var(--cx-surface-3)) !important; }
+.cx-cal .hover\:bg-slate-200:hover { background-color: hsl(var(--cx-surface-4)) !important; }
+
+/* ── borders / dividers ─────────────────────────────────────────────── */
+.cx-cal .border-slate-50,
+.cx-cal .border-gray-50,
+.cx-cal .border-slate-100,
+.cx-cal .border-gray-100     { border-color: hsl(var(--cx-line-soft)) !important; }
+.cx-cal .border-slate-200,
+.cx-cal .border-gray-200,
+.cx-cal .border-slate-300    { border-color: hsl(var(--cx-line)) !important; }
+.cx-cal .border-slate-700    { border-color: hsl(222 12% 28%) !important; }
+.cx-cal .divide-slate-50 > * + *,
+.cx-cal .divide-gray-50 > * + *,
+.cx-cal .divide-slate-100 > * + *,
+.cx-cal .divide-gray-100 > * + * { border-color: hsl(var(--cx-line-soft)) !important; }
+.cx-cal .divide-slate-200 > * + * { border-color: hsl(var(--cx-line)) !important; }
+
+/* ── text ramp: the readability fix. Client name was text-gray-500 (the
+   dimmest value) — it now lands on the readable "secondary" step. ───── */
+.cx-cal .text-gray-950, .cx-cal .text-slate-950,
+.cx-cal .text-gray-900, .cx-cal .text-slate-900,
+.cx-cal .text-gray-800, .cx-cal .text-slate-800 { color: hsl(var(--cx-text)) !important; }
+.cx-cal .text-gray-700, .cx-cal .text-slate-700,
+.cx-cal .text-gray-600, .cx-cal .text-slate-600,
+.cx-cal .text-gray-500, .cx-cal .text-slate-500 { color: hsl(var(--cx-text-2)) !important; }
+.cx-cal .text-gray-400, .cx-cal .text-slate-400 { color: hsl(var(--cx-text-3)) !important; }
+.cx-cal .text-gray-300, .cx-cal .text-slate-300 { color: hsl(var(--cx-text-4)) !important; }
+
+/* hour-column markers — quiet periwinkle so the ruler doesn't shout */
+.cx-cal .text-indigo-600,
+.cx-cal .text-indigo-500     { color: hsl(226 30% 74%) !important; }
+
+/* ── teal accent (interactive + brand) ──────────────────────────────── */
+.cx-cal .bg-teal-50          { background-color: hsl(var(--cx-accent) / 0.14) !important; }
+.cx-cal .bg-teal-100         { background-color: hsl(var(--cx-accent) / 0.22) !important; }
 .cx-cal .bg-teal-400,
-.cx-cal .bg-teal-500       { background-color: #14b8a6 !important; }
-.cx-cal .bg-teal-600       { background-color: #0d9488 !important; }
+.cx-cal .bg-teal-500         { background-color: hsl(var(--cx-accent)) !important; }
+.cx-cal .bg-teal-600         { background-color: hsl(172 68% 38%) !important; }
 .cx-cal .text-teal-700,
 .cx-cal .text-teal-600,
-.cx-cal .text-teal-500     { color: #2dd4bf !important; }
-.cx-cal .text-teal-400     { color: rgba(45,212,191,0.8) !important; }
-.cx-cal .border-teal-100   { border-color: rgba(20,184,166,0.28) !important; }
-.cx-cal .border-teal-200   { border-color: rgba(20,184,166,0.38) !important; }
-.cx-cal .border-teal-300   { border-color: rgba(20,184,166,0.5) !important; }
-.cx-cal .border-teal-400   { border-color: rgba(20,184,166,0.65) !important; }
-.cx-cal .hover\:bg-teal-50:hover   { background-color: rgba(20,184,166,0.14) !important; }
-.cx-cal .hover\:bg-teal-600:hover  { background-color: #0d9488 !important; }
-.cx-cal .hover\:text-teal-600:hover { color: #2dd4bf !important; }
-.cx-cal .ring-teal-400     { --tw-ring-color: rgba(20,184,166,0.65) !important; }
-.cx-cal .ring-2.ring-teal-400 { box-shadow: 0 0 0 2px rgba(20,184,166,0.65) !important; }
-/* hour markers — indigo-600 is too dark on near-black */
-.cx-cal .text-indigo-600,
-.cx-cal .text-indigo-500   { color: #a5b4fc !important; }
-/* lift the dimmest body text a notch for legibility on black */
-.cx-cal .text-gray-600,
-.cx-cal .text-slate-600    { color: #b4b4b8 !important; }
-.cx-cal .text-gray-500,
-.cx-cal .text-slate-500    { color: #9a9aa0 !important; }
-.cx-cal .text-gray-400,
-.cx-cal .text-slate-400    { color: #7c7c82 !important; }
+.cx-cal .text-teal-500       { color: hsl(var(--cx-accent-hi)) !important; }
+.cx-cal .text-teal-400       { color: hsl(var(--cx-accent-hi) / 0.8) !important; }
+.cx-cal .border-teal-100     { border-color: hsl(var(--cx-accent) / 0.30) !important; }
+.cx-cal .border-teal-200     { border-color: hsl(var(--cx-accent) / 0.40) !important; }
+.cx-cal .border-teal-300     { border-color: hsl(var(--cx-accent) / 0.55) !important; }
+.cx-cal .border-teal-400     { border-color: hsl(var(--cx-accent) / 0.70) !important; }
+.cx-cal .hover\:bg-teal-50:hover   { background-color: hsl(var(--cx-accent) / 0.14) !important; }
+.cx-cal .hover\:bg-teal-600:hover  { background-color: hsl(172 68% 38%) !important; }
+.cx-cal .hover\:text-teal-600:hover { color: hsl(var(--cx-accent-hi)) !important; }
+.cx-cal .ring-teal-400       { --tw-ring-color: hsl(var(--cx-accent) / 0.70) !important; }
+.cx-cal .ring-2.ring-teal-400 { box-shadow: 0 0 0 2px hsl(var(--cx-accent) / 0.70) !important; }
+
+/* ── status tints used by the Turn panel rows ───────────────────────── */
+.cx-cal .bg-rose-50          { background-color: hsl(351 80% 71% / 0.13) !important; }
+.cx-cal .bg-green-50         { background-color: hsl(142 70% 60% / 0.13) !important; }
+.cx-cal .bg-emerald-50       { background-color: hsl(152 65% 55% / 0.12) !important; }
+.cx-cal .bg-blue-50          { background-color: hsl(217 90% 66% / 0.12) !important; }
+.cx-cal .bg-amber-50         { background-color: hsl(43 90% 60% / 0.12) !important; }
+.cx-cal .text-emerald-700    { color: hsl(152 60% 62%) !important; }
+.cx-cal .text-rose-600,
+.cx-cal .text-rose-500       { color: hsl(351 85% 74%) !important; }
 
 @layer base {
   * {

@@ -2032,15 +2032,16 @@ export default function Calendar() {
                   {/* Pill — fills the full 90px time-column so it covers the label beneath */}
                   <div className="w-[90px] flex-shrink-0 flex px-1">
                     <span
-                      className="flex-1 inline-flex items-center justify-center rounded-md py-1 text-xs font-bold text-white shadow-[0_2px_8px_rgba(232,24,92,0.4)]"
-                      style={{ backgroundColor: "#2dd4bf" }}
+                      className="flex-1 inline-flex items-center justify-center rounded-md py-1 text-xs font-bold text-white shadow-[0_2px_8px_rgba(255,106,61,0.45)]"
+                      style={{ backgroundColor: "#ff6a3d" }}
                       data-testid="current-time-label"
                     >
                       {timeLineLabel}
                     </span>
                   </div>
-                  {/* Line anchored to pill's right edge */}
-                  <div className="flex-1 h-[2px]" style={{ backgroundColor: "#2dd4bf" }} />
+                  {/* Line anchored to pill's right edge — warm vermilion, kept
+                      distinct from every status hue so "now" never gets lost */}
+                  <div className="flex-1 h-[2px]" style={{ backgroundColor: "#ff6a3d" }} />
                 </div>
               )}
               <div className="w-[90px] flex-shrink-0 bg-white z-30 sticky left-0">
@@ -2382,13 +2383,15 @@ export default function Calendar() {
                             const endTime = formatInTz(getEffectiveEndDate(apt), timezone, "h:mm a");
                             const isSelected = selectedAppointment?.id === apt.id;
 
-                            // Band color by status
+                            // Band color by status — "Studio Slate" status palette
+                            // (see .cx-cal in index.css). Tuned for a dark grid.
                             const bandColor =
-                              apt.status === "completed" ? "#9ca3af"
-                              : apt.status === "started" ? "#22c55e"
-                              : apt.status === "late" ? "#fb923c"
-                              : apt.status === "no_show" ? "#fb7185"
-                              : "#3b82f6"; // pending / confirmed / default = booked (blue)
+                              apt.status === "completed" ? "#94a3b8"  // slate — handled
+                              : apt.status === "started" ? "#4ade80"  // green — in progress
+                              : apt.status === "late" ? "#fbbf24"     // amber — overdue
+                              : apt.status === "no_show" ? "#f87171"  // red
+                              : apt.status === "confirmed" ? "#2dd4bf" // teal — checked in
+                              : "#5b9bff"; // pending / default = booked (blue)
 
                             const isLocked = apt.status === "completed";
 
@@ -2417,13 +2420,17 @@ export default function Calendar() {
 
                             // Dark calendar: a solid accent colour per status/category,
                             // rendered as a translucent fill + solid left/border accent.
+                            // Neutral states (pending/confirmed) keep their service
+                            // category colour on the card fill; the left band + chip
+                            // carry the status. Terminal states override with a
+                            // status colour so they read at a glance.
                             const cardAccent =
-                              isCancelled ? "#f472b6"
-                              : isNoShow ? "#fb7185"
+                              isCancelled ? "#fb7185"
+                              : isNoShow ? "#f87171"
                               : apt.status === "completed" ? "#94a3b8"
-                              : apt.status === "started" ? "#34d399"
+                              : apt.status === "started" ? "#4ade80"
                               : apt.status === "late" ? "#fbbf24"
-                              : (catColor?.border ?? "#a78bfa");
+                              : (catColor?.border ?? "#5b9bff");
 
                             const effectiveBg = (isAptOverdue && !isCancelled && !isNoShow)
                               ? "rgba(239,68,68,0.14)"
@@ -2496,21 +2503,25 @@ export default function Calendar() {
                                         <span className="text-[8px] font-bold text-amber-500 leading-none uppercase tracking-tight">REQ</span>
                                       )}
                                       {(() => {
+                                        // Translucent chips — bright white pills scattered
+                                        // on a dark grid are a real eye-strain source over
+                                        // a shift. Each chip = 18% status-colour fill + a
+                                        // lightened status-colour label.
                                         const statusMap: Record<string, { bg: string; text: string; label: string }> = {
-                                          pending:   { bg: "#eff6ff", text: "#3b82f6", label: "Booked" },
-                                          confirmed: { bg: "#ecfdf5", text: "#0d9488", label: "Confirmed" },
-                                          started:   { bg: "#fefce8", text: "#ca8a04", label: "In Progress" },
-                                          completed: { bg: "#f3f4f6", text: "#6b7280", label: "Done" },
-                                          cancelled: { bg: "#fff1f2", text: "#f43f5e", label: "Cancelled" },
-                                          no_show:   { bg: "#fff1f2", text: "#f43f5e", label: "No Show" },
-                                          late:      { bg: "#fff7ed", text: "#ea580c", label: "Late" },
+                                          pending:   { bg: "rgba(91,155,255,0.18)",  text: "#a9c8ff", label: "Booked" },
+                                          confirmed: { bg: "rgba(45,212,191,0.18)",  text: "#7fe9db", label: "Confirmed" },
+                                          started:   { bg: "rgba(74,222,128,0.18)",  text: "#95efb4", label: "In Progress" },
+                                          completed: { bg: "rgba(148,163,184,0.22)", text: "#cbd5e1", label: "Done" },
+                                          cancelled: { bg: "rgba(251,113,133,0.18)", text: "#fda9b4", label: "Cancelled" },
+                                          no_show:   { bg: "rgba(248,113,113,0.18)", text: "#fcaeae", label: "No Show" },
+                                          late:      { bg: "rgba(251,191,36,0.20)",  text: "#fcd670", label: "Late" },
                                         };
                                         // Paid appointments always show a green "Paid" badge
                                         if (apt.paymentStatus === "paid") {
                                           return (
                                             <span
                                               className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold leading-none flex-shrink-0"
-                                              style={{ backgroundColor: "#dcfce7", color: "#16a34a" }}
+                                              style={{ backgroundColor: "rgba(74,222,128,0.20)", color: "#95efb4" }}
                                             >
                                               Paid
                                             </span>
@@ -2622,11 +2633,11 @@ export default function Calendar() {
                   style={{ top: `${timeLinePosition + 88}px` }}
                 >
                   <div className="w-[90px] flex-shrink-0 flex px-1">
-                    <span className="flex-1 inline-flex items-center justify-center rounded-md py-1 text-xs font-bold text-white shadow-[0_2px_8px_rgba(232,24,92,0.4)]" style={{ backgroundColor: "#2dd4bf" }}>
+                    <span className="flex-1 inline-flex items-center justify-center rounded-md py-1 text-xs font-bold text-white shadow-[0_2px_8px_rgba(255,106,61,0.45)]" style={{ backgroundColor: "#ff6a3d" }}>
                       {timeLineLabel}
                     </span>
                   </div>
-                  <div className="flex-1 h-[2px]" style={{ backgroundColor: "#2dd4bf" }} />
+                  <div className="flex-1 h-[2px]" style={{ backgroundColor: "#ff6a3d" }} />
                 </div>
               )}
               {/* Time labels */}
