@@ -34,11 +34,11 @@ const BASE_NAV: NavItem[] = [
     children: [
       { label: "Tickets",               to: "/isTeam/tickets" },
       { label: "Live Chat",             to: "/isTeam/live-chat", dot: "green" },
-      { label: "Incidents & Service Health", to: "/isTeam/incidents" },
+      { label: "Website Visitors",      to: "/isTeam/visitors", dot: "green" },
     ],
   },
   { label: "Billing", icon: <CreditCard size={16} />, to: "/isTeam/billing-investigation" },
-  { label: "Monitoring", icon: <Monitor size={16} />, to: "/isTeam/incidents" },
+  { label: "Live Visitors", icon: <Monitor size={16} />, to: "/isTeam/visitors", dot: "green" },
   { label: "Data Transfers", icon: <ArrowRightLeft size={16} />, to: "/isTeam/data-transfers" },
 ];
 

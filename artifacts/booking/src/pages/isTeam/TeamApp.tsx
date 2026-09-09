@@ -9,7 +9,7 @@ import TicketsPage from "./TicketsPage";
 import LiveChatPage from "./LiveChatPage";
 import AccountTimelinePage from "./AccountTimelinePage";
 import BillingInvestigationPage from "./BillingInvestigationPage";
-import IncidentsPage from "./IncidentsPage";
+import VisitorsPage from "./VisitorsPage";
 
 function TeamShell() {
   return (
@@ -25,8 +25,10 @@ function TeamShell() {
             <Route path="live-chat" element={<LiveChatPage />} />
             <Route path="account-timeline" element={<AccountTimelinePage />} />
             <Route path="account-timeline/:accountId" element={<AccountTimelinePage />} />
-            <Route path="incidents" element={<IncidentsPage />} />
-            <Route path="incidents/:incidentId" element={<IncidentsPage />} />
+            <Route path="visitors" element={<VisitorsPage />} />
+            {/* Legacy path — the incidents route is now the live-visitors dashboard */}
+            <Route path="incidents" element={<VisitorsPage />} />
+            <Route path="incidents/:incidentId" element={<Navigate to="/isTeam/visitors" replace />} />
             <Route path="billing-investigation" element={<BillingInvestigationPage />} />
             <Route path="billing-investigation/:accountId" element={<BillingInvestigationPage />} />
             <Route path="data-transfers" element={<TeamDataTransferQueuePage />} />

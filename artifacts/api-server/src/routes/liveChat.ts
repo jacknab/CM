@@ -41,6 +41,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { Server } from "http";
 import { pool } from "../db";
 import crypto from "crypto";
+import maxmind, { type CountryResponse, type Reader } from "maxmind";
 import { requireSupportAuth } from "../lib/supportAuth";
 import { publishCrossProcess, subscribeCrossProcess, isCrossProcessBusAvailable } from "../lib/wsBroadcastBus";
 
@@ -211,8 +212,12 @@ interface VisitorPresence {
   referrer: string;
   ip: string;
   ua: string;
-  country: string | null;
+  country: string | null;       // ISO-3166 alpha-2, e.g. "US"
+  countryName: string | null;   // e.g. "United States"
+  city: string | null;
+  region: string | null;
   pages: number;
+  isReturning: boolean;         // seen on a previous visit (persisted lookup)
   name: string | null;   // set once they start a chat
   chatId: string | null;
 }
@@ -222,6 +227,74 @@ const VISITOR_TTL_MS = 60_000;
 function clientIp(req: any): string {
   const xff = String(req.headers?.["x-forwarded-for"] ?? "").split(",")[0].trim();
   return xff || req.socket?.remoteAddress || "";
+}
+
+// ── GeoIP (country-only DB-IP Lite mmdb on the box; no city DB) ──────────────
+const GEOIP_DB_PATH = process.env.GEOIP_COUNTRY_DB || "/var/lib/GeoIP/country.mmdb";
+let geoReader: Reader<CountryResponse> | null = null;
+let geoReaderTried = false;
+async function getGeoReader(): Promise<Reader<CountryResponse> | null> {
+  if (geoReader || geoReaderTried) return geoReader;
+  geoReaderTried = true;
+  try {
+    geoReader = await maxmind.open<CountryResponse>(GEOIP_DB_PATH);
+  } catch (e) {
+    console.warn("[live-chat] GeoIP DB unavailable:", (e as Error).message);
+    geoReader = null;
+  }
+  return geoReader;
+}
+function lookupGeo(ip: string): { code: string | null; name: string | null } {
+  if (!geoReader || !ip) return { code: null, name: null };
+  const bare = ip.replace(/^::ffff:/, "");
+  if (!/^[0-9a-fA-F:.]+$/.test(bare) || bare.startsWith("10.") || bare.startsWith("192.168.") || bare.startsWith("127.")) {
+    return { code: null, name: null };
+  }
+  try {
+    const r = geoReader.get(bare);
+    return { code: r?.country?.iso_code ?? null, name: r?.country?.names?.en ?? null };
+  } catch {
+    return { code: null, name: null };
+  }
+}
+void getGeoReader();
+
+// ── Returning-visitor persistence ──────────────────────────────────────────
+let knownVisitorsReady: Promise<void> | null = null;
+function ensureKnownVisitorsTable(): Promise<void> {
+  if (!knownVisitorsReady) {
+    knownVisitorsReady = pool
+      .query(
+        `CREATE TABLE IF NOT EXISTS known_visitors (
+           visitor_id  text PRIMARY KEY,
+           first_seen  timestamptz NOT NULL DEFAULT now(),
+           last_seen   timestamptz NOT NULL DEFAULT now(),
+           visits      integer NOT NULL DEFAULT 1
+         )`
+      )
+      .then(() => undefined)
+      .catch((e) => {
+        console.warn("[live-chat] known_visitors table init failed:", e.message);
+        knownVisitorsReady = null;
+      });
+  }
+  return knownVisitorsReady ?? Promise.resolve();
+}
+/** Upsert the visitor id; resolves true if this id was seen on a prior visit. */
+async function recordAndCheckReturning(visitorId: string): Promise<boolean> {
+  try {
+    await ensureKnownVisitorsTable();
+    const r = await pool.query(
+      `INSERT INTO known_visitors (visitor_id) VALUES ($1)
+         ON CONFLICT (visitor_id) DO UPDATE
+           SET visits = known_visitors.visits + 1, last_seen = now()
+       RETURNING (xmax = 0) AS inserted`,
+      [visitorId]
+    );
+    return r.rows[0]?.inserted === false;
+  } catch {
+    return false;
+  }
 }
 
 function visitorSnapshot() {
@@ -234,8 +307,13 @@ function visitorSnapshot() {
       url: v.url,
       title: v.title,
       referrer: v.referrer,
+      ip: v.ip,
       country: v.country,
+      countryName: v.countryName,
+      city: v.city,
+      region: v.region,
       pages: v.pages,
+      isReturning: v.isReturning,
       name: v.name,
       chatId: v.chatId,
       firstSeen: v.firstSeen,
@@ -423,22 +501,40 @@ liveChatRouter.post("/api/live-chat/visitor/ping", (req, res) => {
   const existing = visitors.get(visitorId);
   const isNew = !existing;
   const pageChanged = !!existing && existing.url !== url;
-  const geo = (req.headers["x-geo-country"] as string | undefined) || null;
+  const ip = clientIp(req);
+  // nginx doesn't pass a geo header; resolve country from the mmdb on the box.
+  const hdrGeo = (req.headers["x-geo-country"] as string | undefined) || null;
+  const geo = hdrGeo ? { code: hdrGeo, name: null } : lookupGeo(ip);
 
   const v: VisitorPresence = existing ?? {
     visitorId, firstSeen: now, lastSeen: now,
     url, title: "", referrer: String(b.referrer ?? "").slice(0, 256),
-    ip: clientIp(req),
+    ip,
     ua: String(req.headers["user-agent"] ?? "").slice(0, 256),
-    country: geo, pages: 0, name: null, chatId: null,
+    country: geo.code, countryName: geo.name,
+    city: null, region: null,
+    pages: 0, isReturning: false, name: null, chatId: null,
   };
   v.lastSeen = now;
   v.url = url;
   v.title = String(b.title ?? "").slice(0, 200);
   if (!v.referrer && b.referrer) v.referrer = String(b.referrer).slice(0, 256);
-  if (!v.country && geo) v.country = geo;
+  if (!v.ip && ip) v.ip = ip;
+  if (!v.country && geo.code) { v.country = geo.code; v.countryName = geo.name; }
   if (isNew || pageChanged) v.pages += 1;
   visitors.set(visitorId, v);
+
+  // First time we've seen this id this process-life: check the persisted
+  // ledger to decide new-vs-returning, then refresh the agents' list.
+  if (isNew) {
+    recordAndCheckReturning(visitorId).then((returning) => {
+      const cur = visitors.get(visitorId);
+      if (cur && returning && !cur.isReturning) {
+        cur.isReturning = true;
+        pushVisitorsToAgents();
+      }
+    });
+  }
 
   // Only wake the agents' list on join / navigation, not every heartbeat.
   if (isNew || pageChanged) pushVisitorsToAgents();
