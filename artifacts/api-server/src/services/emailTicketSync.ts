@@ -16,7 +16,7 @@ import { broadcastToAgents } from "../routes/liveChat";
 const IMAP_HOST     = "mail.privateemail.com";
 const IMAP_PORT     = 993;
 const IMAP_USER     = "support@certxa.com";
-const POLL_INTERVAL = 300_000;
+const POLL_INTERVAL = 60 * 60_000;  // 1 hour
 // Used by cleanBody to cap the stored description length
 const MAX_BODY_BYTES = 150_000;
 
@@ -370,6 +370,37 @@ async function resolveAccountId(email: string): Promise<number | null> {
   return r2.rows[0]?.store_id ?? null;
 }
 
+/**
+ * True for delivery-status notifications / bounces — mailer-daemon reports
+ * about a message that couldn't be delivered. These are not support requests
+ * and should never open a ticket. Detected by (any of):
+ *   - sender is the mail system (mailer-daemon@ / postmaster@)
+ *   - RFC 3464 report format (multipart/report; report-type=delivery-status,
+ *     or a message/delivery-status part)
+ *   - a well-known bounce subject line
+ */
+function isBounceOrDsn(parsed: ParsedMail, senderEmail: string, subject: string): boolean {
+  const from = (senderEmail || "").toLowerCase();
+  if (/(^|[<@.])(mailer-daemon|postmaster)@/.test(from) || from.startsWith("mailer-daemon")) {
+    return true;
+  }
+
+  const headerLine = (key: string) =>
+    (parsed.headerLines?.find((h) => h.key === key)?.line ?? "").toLowerCase();
+
+  const ctype = headerLine("content-type");
+  if (
+    ctype.includes("multipart/report") &&
+    ctype.replace(/["']/g, "").includes("report-type=delivery-status")
+  ) return true;
+  if (ctype.includes("message/delivery-status")) return true;
+
+  const subj = (subject || "").toLowerCase();
+  return /delivery status notification|undeliverable|undelivered mail|mail delivery (failed|subsystem)|returned mail|delivery has failed|delivery failure|delivery incomplete|failure notice|message not delivered|could not be delivered/.test(
+    subj,
+  );
+}
+
 async function processEmail(parsed: ParsedMail): Promise<"new" | "duplicate"> {
   const messageId = (parsed.messageId ?? "").replace(/[<>]/g, "").trim();
   if (!messageId) {
@@ -389,6 +420,13 @@ async function processEmail(parsed: ParsedMail): Promise<"new" | "duplicate"> {
 
   if (senderEmail === IMAP_USER.toLowerCase()) {
     log(`Skipping self-sent email ${messageId}`);
+    return "duplicate";
+  }
+
+  // Skip bounce / delivery-status-notification (failure) messages.
+  if (isBounceOrDsn(parsed, senderEmail, parsed.subject ?? "")) {
+    log(`Skipping delivery-status / bounce email ${messageId} from ${senderEmail}`);
+    await markProcessed(messageId, 0);  // record so it's never re-scanned
     return "duplicate";
   }
 
@@ -890,6 +928,6 @@ export async function startEmailTicketSync(): Promise<void> {
   // Fire every POLL_INTERVAL; the pollRunning guard prevents overlap.
   setInterval(() => { void pollInbox(); }, POLL_INTERVAL);
 
-  log(`Email ticket sync started (polling every ${POLL_INTERVAL / 1000}s)`);
+  log(`Email ticket sync started (polling every ${POLL_INTERVAL / 60_000} min)`);
   void pollInbox();  // run immediately on startup
 }
