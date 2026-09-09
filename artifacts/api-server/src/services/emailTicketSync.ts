@@ -253,8 +253,35 @@ async function ensureProcessedEmailsTable(): Promise<void> {
       ticket_id   INTEGER,
       created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
       CONSTRAINT processed_emails_message_id_key UNIQUE (message_id)
-    )
+    );
+    -- Persistent copy of the in-memory handledUids set. Without this every
+    -- restart re-fetches the whole 30-day "seen" window one IMAP connection
+    -- per message (~180 logins/boot), which the mailbox host rate-limits
+    -- ("Connection not available"). Loaded into handledUids on startup.
+    CREATE TABLE IF NOT EXISTS email_sync_handled_uids (
+      uid         BIGINT PRIMARY KEY,
+      handled_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
   `);
+}
+
+/** Load the persisted handled-UID set into memory (called once on startup). */
+async function loadHandledUids(): Promise<void> {
+  try {
+    const r = await pool.query("SELECT uid FROM email_sync_handled_uids");
+    for (const row of r.rows) handledUids.add(Number(row.uid));
+    if (handledUids.size) log(`restored ${handledUids.size} handled UID(s) from previous runs`);
+  } catch (e) {
+    logError("Could not load handled UIDs", e);
+  }
+}
+
+/** Persist a UID as handled (fire-and-forget; in-memory set is source of truth). */
+function persistHandledUid(uid: number): void {
+  pool.query(
+    "INSERT INTO email_sync_handled_uids (uid) VALUES ($1) ON CONFLICT (uid) DO NOTHING",
+    [uid],
+  ).catch(() => {});
 }
 
 async function isAlreadyProcessed(messageId: string): Promise<boolean> {
@@ -555,43 +582,59 @@ async function fetchOneUid(
   markSeen: boolean,
   deleteAfterProcess = false,
 ): Promise<"processed" | "skipped" | "error"> {
-  const c = makeImapClient();
-  const abort = setTimeout(() => { try { c.close(); } catch {} }, 30_000);
-  try {
-    await c.connect();
-    const mailbox = await c.getMailboxLock("INBOX");
+  // One fresh connection per attempt (the PrivateEmail per-UID workaround).
+  // Retry once on a connection-level failure — the mailbox host intermittently
+  // refuses back-to-back logins with "Connection not available".
+  const attempt = async (): Promise<"processed" | "skipped"> => {
+    const c = makeImapClient();
+    const abort = setTimeout(() => { try { c.close(); } catch {} }, 30_000);
     try {
-      const messages = c.fetch([uid], { source: true, uid: true, flags: true }, { uid: true });
-      let result: "processed" | "skipped" = "skipped";
-      for await (const msg of messages) {
-        const raw = msg.source as unknown as Buffer;
-        if (!raw || raw.length === 0) {
-          result = "skipped";
-          break;
+      await c.connect();
+      const mailbox = await c.getMailboxLock("INBOX");
+      try {
+        const messages = c.fetch([uid], { source: true, uid: true, flags: true }, { uid: true });
+        let result: "processed" | "skipped" = "skipped";
+        for await (const msg of messages) {
+          const raw = msg.source as unknown as Buffer;
+          if (!raw || raw.length === 0) { result = "skipped"; break; }
+          const parsed = await simpleParser(raw);
+          const outcome = await processEmail(parsed);
+          if (markSeen) {
+            await c.messageFlagsAdd({ uid: msg.uid }, ["\\Seen"], { uid: true });
+          }
+          result = outcome === "new" ? "processed" : "skipped";
         }
-        const parsed = await simpleParser(raw);
-        const outcome = await processEmail(parsed);
-        if (markSeen) {
-          await c.messageFlagsAdd({ uid: msg.uid }, ["\\Seen"], { uid: true });
-        }
-        // "new" = ticket created or reply appended; "duplicate" = dedup skip.
-        result = outcome === "new" ? "processed" : "skipped";
+        return result;
+      } finally {
+        try { mailbox.release(); } catch {}
       }
-      return result;
     } finally {
-      try { mailbox.release(); } catch {}
+      clearTimeout(abort);
+      try { await c.logout(); } catch {}
+      try { c.close(); } catch {}
     }
-  } catch (e) {
-    logError(`fetchOneUid uid=${uid}`, e);
-    const errMsg = `uid=${uid}: ${e instanceof Error ? e.message : String(e)}`;
-    recentMessageErrors.unshift(errMsg);
-    if (recentMessageErrors.length > 5) recentMessageErrors.pop();
-    return "error";
-  } finally {
-    clearTimeout(abort);
-    try { await c.logout(); } catch {}
-    try { c.close(); } catch {}
+  };
+
+  const isConnErr = (e: unknown) =>
+    /connection not available|not connected|connection closed|ECONNRESET|ETIMEDOUT|timed out/i
+      .test(e instanceof Error ? e.message : String(e));
+
+  for (let tries = 0; tries < 2; tries++) {
+    try {
+      return await attempt();
+    } catch (e) {
+      if (tries === 0 && isConnErr(e)) {
+        await new Promise((r) => setTimeout(r, 1000));
+        continue;
+      }
+      logError(`fetchOneUid uid=${uid}`, e);
+      const errMsg = `uid=${uid}: ${e instanceof Error ? e.message : String(e)}`;
+      recentMessageErrors.unshift(errMsg);
+      if (recentMessageErrors.length > 5) recentMessageErrors.pop();
+      return "error";
+    }
   }
+  return "error";
 }
 
 /**
@@ -706,10 +749,16 @@ async function fetchAndProcess(
     }
 
     const result = await fetchOneUid(uid, markSeen);
-    // Always record as handled — even errors — so we don't keep fetching a
-    // message that consistently fails.  (If a transient error is the cause,
-    // the next restart will retry it.)
+    // Record as handled — but only persist across restarts on a clean result.
+    // A transient error stays retryable on the next boot; a repeated error is
+    // still capped within the session by the in-memory set.
     handledUids.add(uid);
+    if (result !== "error") persistHandledUid(uid);
+
+    // Space out the per-UID logins so the mailbox host doesn't rate-limit us
+    // ("Connection not available"). Negligible once the persisted set is warm
+    // — the loop then iterates almost no uncached UIDs.
+    await new Promise((r) => setTimeout(r, 150));
 
     if (result !== "error") scanned++;
     if (result === "processed") processed++;
@@ -812,6 +861,7 @@ export async function rescanInbox(days = 30): Promise<{ scanned: number; errors:
     const result = await fetchOneUid(uid, false /* don't mark seen during rescan */);
     if (result !== "error") scanned++;
     if (result === "error") errors.push(`uid=${uid}: fetch failed`);
+    await new Promise((r) => setTimeout(r, 150)); // don't hammer the mailbox host
   }
 
   log(`Rescan complete — scanned ${scanned} messages, ${errors.length} errors`);
@@ -832,6 +882,7 @@ export async function startEmailTicketSync(): Promise<void> {
   try {
     await ensureProcessedEmailsTable();
     log("processed_emails table ready");
+    await loadHandledUids();
   } catch (e) {
     logError("Could not ensure processed_emails table", e);
   }
