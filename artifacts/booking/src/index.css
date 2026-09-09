@@ -432,6 +432,195 @@
 .cx-cal .text-rose-600,
 .cx-cal .text-rose-500       { color: hsl(351 85% 74%) !important; }
 
+/* ══════════════════════════════════════════════════════════════════════
+   "Warm Plum" — support console theme, scoped to /isTeam/live-chat.
+   TeamShell adds `.tw-livechat` on that route only. DM Sans + Space
+   Grotesk, plum surfaces, coral primary, muted green/gold/rose for
+   status. Remaps the page's hardcoded slate / indigo / emerald / amber /
+   rose utilities the same way .cx-cal does for the calendar.
+   ══════════════════════════════════════════════════════════════════════ */
+.tw-livechat {
+  --tw-plum-0: 274 31% 9%;    /* deepest — rail, sticky heads, modal */
+  --tw-plum-1: 274 28% 11%;   /* page base */
+  --tw-plum-2: 274 24% 15%;   /* cards, toolbar, panels */
+  --tw-plum-3: 274 20% 22%;   /* raised / hover / chips */
+  --tw-plum-4: 274 18% 28%;
+  --tw-line:      274 18% 25%;
+  --tw-line-soft: 274 16% 19%;
+  --tw-text:   35 38% 95%;    /* warm cream — primary */
+  --tw-text-2: 35 20% 84%;
+  --tw-text-3: 35 15% 70%;    /* muted (AA on plum) */
+  --tw-text-4: 274 10% 56%;
+  --tw-text-5: 274 10% 46%;
+  --tw-coral:    17 72% 64%;  /* --primary */
+  --tw-coral-hi: 17 84% 75%;  /* coral text on dark */
+  --tw-coral-dk: 17 62% 54%;
+  --tw-green:    156 40% 50%;
+  --tw-green-hi: 156 48% 64%;
+  --tw-gold:     39 78% 63%;
+  --tw-gold-hi:  39 86% 73%;
+  --tw-rose:     3 68% 62%;
+  --tw-rose-hi:  3 84% 76%;
+
+  /* shadcn tokens — anything token-based on the page picks these up */
+  --background: var(--tw-plum-1);
+  --foreground: var(--tw-text);
+  --card: var(--tw-plum-2);
+  --card-foreground: var(--tw-text);
+  --popover: var(--tw-plum-2);
+  --popover-foreground: var(--tw-text);
+  --muted: var(--tw-plum-3);
+  --muted-foreground: var(--tw-text-3);
+  --border: var(--tw-line);
+  --input: 274 18% 30%;
+  --primary: var(--tw-coral);
+  --primary-foreground: 274 27% 13%;
+  --secondary: var(--tw-plum-3);
+  --secondary-foreground: var(--tw-text);
+  --accent: var(--tw-green);
+  --accent-foreground: var(--tw-text);
+  --ring: var(--tw-coral);
+  --destructive: var(--tw-rose);
+
+  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+}
+.tw-livechat .font-mono,
+.tw-livechat code, .tw-livechat kbd { font-family: 'Space Grotesk', ui-monospace, monospace; }
+
+/* ── surfaces: slate / hex / white → plum ─────────────────────────────── */
+.tw-livechat .bg-\[\#0f1729\],
+.tw-livechat .bg-slate-900                       { background-color: hsl(var(--tw-plum-0)) !important; }
+.tw-livechat .bg-slate-800,
+.tw-livechat .bg-slate-800\/60,
+.tw-livechat .bg-slate-800\/50,
+.tw-livechat .bg-slate-800\/40,
+.tw-livechat .bg-white,
+.tw-livechat .focus\:bg-white:focus,
+.tw-livechat .bg-slate-50,
+.tw-livechat .hover\:bg-slate-50:hover           { background-color: hsl(var(--tw-plum-2)) !important; }
+.tw-livechat .bg-slate-100                       { background-color: hsl(var(--tw-plum-1)) !important; }
+.tw-livechat .bg-slate-700,
+.tw-livechat .bg-slate-700\/70,
+.tw-livechat .bg-slate-700\/60,
+.tw-livechat .bg-slate-700\/50,
+.tw-livechat .hover\:bg-slate-100:hover          { background-color: hsl(var(--tw-plum-3)) !important; }
+.tw-livechat .hover\:bg-slate-700:hover,
+.tw-livechat .hover\:bg-slate-700\/50:hover      { background-color: hsl(var(--tw-plum-4)) !important; }
+.tw-livechat .hover\:bg-white\/5:hover           { background-color: hsl(var(--tw-text) / .06) !important; }
+
+/* ── text ramp ───────────────────────────────────────────────────────── */
+.tw-livechat .text-slate-100,
+.tw-livechat .text-slate-200,
+.tw-livechat .text-slate-800                     { color: hsl(var(--tw-text)) !important; }
+.tw-livechat .text-slate-300                     { color: hsl(var(--tw-text-2)) !important; }
+.tw-livechat .text-slate-400,
+.tw-livechat .placeholder-slate-400::placeholder { color: hsl(var(--tw-text-3)) !important; }
+.tw-livechat .text-slate-500,
+.tw-livechat .placeholder-slate-500::placeholder { color: hsl(var(--tw-text-4)) !important; }
+.tw-livechat .text-slate-600,
+.tw-livechat .placeholder-slate-600::placeholder { color: hsl(var(--tw-text-5)) !important; }
+.tw-livechat .text-white                         { color: hsl(var(--tw-text)) !important; }
+.tw-livechat .hover\:text-slate-200:hover,
+.tw-livechat .hover\:text-slate-300:hover,
+.tw-livechat .hover\:text-slate-400:hover,
+.tw-livechat .hover\:text-slate-600:hover,
+.tw-livechat .hover\:text-slate-700:hover        { color: hsl(var(--tw-text-2)) !important; }
+
+/* ── borders / dividers ──────────────────────────────────────────────── */
+.tw-livechat .border-slate-900,
+.tw-livechat .border-slate-800,
+.tw-livechat .border-slate-700,
+.tw-livechat .border-slate-700\/60,
+.tw-livechat .border-slate-600,
+.tw-livechat .border-slate-200                   { border-color: hsl(var(--tw-line)) !important; }
+.tw-livechat .border-slate-100                   { border-color: hsl(var(--tw-line-soft)) !important; }
+.tw-livechat [class*="divide-slate-"] > *        { border-color: hsl(var(--tw-line-soft)) !important; }
+
+/* ── indigo → coral (primary) ────────────────────────────────────────── */
+.tw-livechat .bg-indigo-600,
+.tw-livechat .bg-indigo-500,
+.tw-livechat .bg-indigo-400                      { background-color: hsl(var(--tw-coral)) !important; }
+.tw-livechat .bg-indigo-600\/60                  { background-color: hsl(var(--tw-coral) / .55) !important; }
+.tw-livechat .bg-indigo-600\/50,
+.tw-livechat .bg-indigo-500\/30,
+.tw-livechat .bg-indigo-500\/20                  { background-color: hsl(var(--tw-coral) / .28) !important; }
+.tw-livechat .bg-indigo-600\/40,
+.tw-livechat .hover\:bg-indigo-600\/40:hover     { background-color: hsl(var(--tw-coral) / .22) !important; }
+.tw-livechat .bg-indigo-600\/30,
+.tw-livechat .bg-indigo-600\/20,
+.tw-livechat .bg-indigo-100                      { background-color: hsl(var(--tw-coral) / .15) !important; }
+.tw-livechat .bg-indigo-600\/10                  { background-color: hsl(var(--tw-coral) / .09) !important; }
+.tw-livechat .hover\:bg-indigo-700:hover         { background-color: hsl(var(--tw-coral-dk)) !important; }
+.tw-livechat .text-indigo-200,
+.tw-livechat .text-indigo-300,
+.tw-livechat .text-indigo-400,
+.tw-livechat .text-indigo-500,
+.tw-livechat .text-indigo-600,
+.tw-livechat .text-indigo-700,
+.tw-livechat .hover\:text-indigo-300:hover,
+.tw-livechat .hover\:text-indigo-400:hover,
+.tw-livechat .hover\:text-indigo-800:hover       { color: hsl(var(--tw-coral-hi)) !important; }
+.tw-livechat .border-indigo-500,
+.tw-livechat .border-indigo-500\/40,
+.tw-livechat .border-indigo-500\/30,
+.tw-livechat .focus\:border-indigo-400:focus     { border-color: hsl(var(--tw-coral) / .55) !important; }
+.tw-livechat .ring-indigo-500,
+.tw-livechat .focus\:ring-indigo-500:focus       { --tw-ring-color: hsl(var(--tw-coral) / .6) !important; }
+.tw-livechat .focus\:ring-indigo-100:focus       { --tw-ring-color: hsl(var(--tw-coral) / .22) !important; }
+
+/* ── emerald → theme green (success / online) ────────────────────────── */
+.tw-livechat .bg-emerald-500,
+.tw-livechat .bg-emerald-400                     { background-color: hsl(var(--tw-green)) !important; }
+.tw-livechat .bg-emerald-600\/70,
+.tw-livechat .bg-emerald-700\/40,
+.tw-livechat .bg-emerald-900\/80,
+.tw-livechat .bg-emerald-500\/20                 { background-color: hsl(var(--tw-green) / .2) !important; }
+.tw-livechat .text-emerald-100,
+.tw-livechat .text-emerald-300,
+.tw-livechat .text-emerald-400,
+.tw-livechat .text-emerald-500                   { color: hsl(var(--tw-green-hi)) !important; }
+
+/* ── amber → warm gold (notes / warnings) ────────────────────────────── */
+.tw-livechat .bg-amber-600,
+.tw-livechat .bg-amber-500,
+.tw-livechat .bg-amber-400                       { background-color: hsl(var(--tw-gold)) !important; }
+.tw-livechat .bg-amber-900\/30,
+.tw-livechat .bg-amber-900\/20,
+.tw-livechat .bg-amber-600\/30,
+.tw-livechat .bg-amber-500\/20                   { background-color: hsl(var(--tw-gold) / .15) !important; }
+.tw-livechat .hover\:bg-amber-700:hover          { background-color: hsl(var(--tw-gold) / .3) !important; }
+.tw-livechat .text-amber-100,
+.tw-livechat .text-amber-100\/80,
+.tw-livechat .text-amber-300,
+.tw-livechat .text-amber-400,
+.tw-livechat .text-amber-400\/90,
+.tw-livechat .text-amber-500,
+.tw-livechat .text-amber-500\/70,
+.tw-livechat .text-amber-600,
+.tw-livechat .text-amber-700                     { color: hsl(var(--tw-gold-hi)) !important; }
+.tw-livechat .placeholder-amber-800\/80::placeholder { color: hsl(var(--tw-gold-hi) / .6) !important; }
+.tw-livechat .border-amber-700,
+.tw-livechat .border-amber-700\/50,
+.tw-livechat .border-amber-700\/40,
+.tw-livechat .border-amber-700\/30              { border-color: hsl(var(--tw-gold) / .4) !important; }
+.tw-livechat .focus\:ring-amber-600:focus        { --tw-ring-color: hsl(var(--tw-gold) / .5) !important; }
+
+/* ── rose → destructive ──────────────────────────────────────────────── */
+.tw-livechat .bg-rose-500,
+.tw-livechat .bg-rose-400                        { background-color: hsl(var(--tw-rose)) !important; }
+.tw-livechat .bg-rose-900\/80,
+.tw-livechat .bg-rose-900\/30,
+.tw-livechat .bg-rose-900\/20,
+.tw-livechat .bg-rose-500\/20,
+.tw-livechat .hover\:bg-rose-900\/30:hover,
+.tw-livechat .hover\:bg-rose-900\/20:hover       { background-color: hsl(var(--tw-rose) / .18) !important; }
+.tw-livechat .text-rose-300,
+.tw-livechat .text-rose-400,
+.tw-livechat .text-rose-600,
+.tw-livechat .hover\:text-rose-400:hover         { color: hsl(var(--tw-rose-hi)) !important; }
+.tw-livechat .border-rose-800,
+.tw-livechat .border-rose-700                    { border-color: hsl(var(--tw-rose) / .45) !important; }
+
 @layer base {
   * {
     @apply border-border;
