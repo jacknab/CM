@@ -133,6 +133,19 @@ export const KNOWN_APP_PREFIXES = new Set([
   "timeclock", "waitlist", "walk-in-board", "walkins", "widget",
 ]);
 
+// React Router matches paths case-insensitively, so the allowlist check must
+// too — otherwise /isteam hard-404s at the server while /isTeam works.
+export const KNOWN_APP_PREFIXES_LC = new Set(
+  [...KNOWN_APP_PREFIXES].map((s) => s.toLowerCase()),
+);
+
+/** True when the first path segment is a known top-level app route (any case). */
+export function isKnownAppFirstSegment(reqPath: string): boolean {
+  if (reqPath === "/") return true;
+  const first = reqPath.split("/")[1] ?? "";
+  return KNOWN_APP_PREFIXES_LC.has(first.toLowerCase());
+}
+
 export const NOT_FOUND_HTML = `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8" /><meta name="robots" content="noindex" /><title>404 Not Found | Certxa</title></head>
@@ -389,7 +402,7 @@ ${urlEntries}
     const lastSegment = segments[segments.length - 1] ?? "";
     const firstSegment = segments[1] ?? "";
     const isAssetShaped = lastSegment.includes(".");
-    const isKnownAppPath = reqPath === "/" || KNOWN_APP_PREFIXES.has(firstSegment);
+    const isKnownAppPath = isKnownAppFirstSegment(reqPath);
 
     if (isAssetShaped || !isKnownAppPath) {
       res

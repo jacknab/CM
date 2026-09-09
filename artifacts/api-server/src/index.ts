@@ -188,7 +188,7 @@ const _cjsDirname: string | undefined = (globalThis as any).__dirname;
 import { storage } from "./storage";
 import { seoPageMiddleware } from "./seo-pages";
 import salonDirectoryRouter from "./routes/salonDirectory";
-import { SEO_CONFIG, injectSeoMetadata, KNOWN_APP_PREFIXES, NOT_FOUND_HTML } from "./static";
+import { SEO_CONFIG, injectSeoMetadata, isKnownAppFirstSegment, NOT_FOUND_HTML } from "./static";
 
 const app = express();
 app.disable("x-powered-by"); // don't advertise the framework
@@ -1566,9 +1566,10 @@ async function repairTwilioMessagingServiceInboundWebhook() {
         // so crawlers don't index garbage/scanner URLs as valid pages.
         const segments = req.path.split("/");
         const lastSegment = segments[segments.length - 1] ?? "";
-        const firstSegment = segments[1] ?? "";
         const isAssetShaped = lastSegment.includes(".");
-        const isKnownAppPath = req.path === "/" || KNOWN_APP_PREFIXES.has(firstSegment);
+        // Case-insensitive: React Router matches routes without regard to case,
+        // so /isteam must resolve to the SPA the same as /isTeam.
+        const isKnownAppPath = isKnownAppFirstSegment(req.path);
         if (isAssetShaped || !isKnownAppPath) {
           res
             .status(404)
