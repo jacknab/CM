@@ -41,7 +41,6 @@ import {
   CreditCard as CreditCardIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { buildSettingsNav } from "@/lib/settings-nav";
 import { useAuth } from "@/hooks/use-auth";
 import { useSelectedStore } from "@/hooks/use-store";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -166,21 +165,6 @@ function buildFinanceSubnav(pick: Pick4): SubNavSection[] {
     // (see buildInsightsSubnav) — /payouts/* pages still exist as drill-downs
     // reached from the Payroll hub, not as their own top-level nav section.
   ];
-}
-
-function buildSettingsSubnav(pick: Pick4): SubNavSection[] {
-  // Same source of truth as the Settings shell (lib/settings-nav.ts). Inline
-  // sections link into the shell (/settings/<slug>); external ones keep their
-  // own route.
-  return buildSettingsNav(pick).map((g) => ({
-    headingKey: g.key,
-    heading: g.heading,
-    items: g.items.map((it) => ({
-      label: it.label,
-      icon: it.icon,
-      to: it.external ? it.to : `/settings/${it.slug}`,
-    })),
-  }));
 }
 
 function buildTeamSubnav(pick: Pick4): SubNavItem[] {
@@ -356,13 +340,11 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
   const CATALOG_SUBNAV   = buildCatalogSubnav(pick);
   const MARKETING_SUBNAV = buildMarketingSubnav(pick);
   const FINANCE_SUBNAV   = buildFinanceSubnav(pick);
-  const SETTINGS_SUBNAV  = buildSettingsSubnav(pick);
   const TEAM_SUBNAV      = buildTeamSubnav(pick);
 
   const CATALOG_MATCHES   = CATALOG_SUBNAV.map((i) => i.to);
   const MARKETING_MATCHES = MARKETING_SUBNAV.map((i) => i.to);
   const FINANCE_MATCHES   = FINANCE_SUBNAV.flatMap((s) => s.items.map((i) => i.to));
-  const SETTINGS_MATCHES  = SETTINGS_SUBNAV.flatMap((s) => s.items.map((i) => i.to));
 
   const t = {
     insights:         pick({ en: "Insights",           vi: "Thông tin",              es: "Información",          fr: "Aperçus" }),
@@ -396,16 +378,16 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
   const isFinanceActive = FINANCE_MATCHES.some(
     (m) => location.pathname === m || location.pathname.startsWith(m + "/")
   ) || location.pathname === "/reports" || location.pathname.startsWith("/reports/");
-  const isSettingsActive = SETTINGS_MATCHES.some(
-    (m) => location.pathname === m || location.pathname.startsWith(m + "/")
-  ) || location.pathname === "/settings" || location.pathname.startsWith("/settings/");
+  // Settings is a plain link now — the /settings shell has its own nav rail —
+  // so this is just for the active highlight, no expand state.
+  const isSettingsActive =
+    location.pathname === "/settings" || location.pathname.startsWith("/settings/");
 
   const [insightsOpen,  setInsightsOpen]  = useState(isInsightsActive);
   const [catalogOpen,   setCatalogOpen]   = useState(isCatalogActive);
   const [teamOpen,      setTeamOpen]      = useState(isTeamActive);
   const [marketingOpen, setMarketingOpen] = useState(isMarketingActive);
   const [financeOpen,   setFinanceOpen]   = useState(isFinanceActive);
-  const [settingsOpen,  setSettingsOpen]  = useState(isSettingsActive);
 
   // Auto-open the section that contains the current route
   useEffect(() => {
@@ -414,8 +396,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
     if (isTeamActive)      setTeamOpen(true);
     if (isMarketingActive) setMarketingOpen(true);
     if (isFinanceActive)   setFinanceOpen(true);
-    if (isSettingsActive)  setSettingsOpen(true);
-  }, [isInsightsActive, isCatalogActive, isMarketingActive, isFinanceActive, isSettingsActive]);
+  }, [isInsightsActive, isCatalogActive, isMarketingActive, isFinanceActive]);
 
   // ── Queries ────────────────────────────────────────────────────────────────
 
@@ -777,35 +758,15 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
           );
         })()}
 
-        {/* Settings expandable */}
+        {/* Settings — plain link; the /settings shell has its own nav rail */}
         {!isStaff && can(PERMISSIONS.STORE_SETTINGS) && (
-          <div className={cn("rounded-xl transition-colors duration-150", settingsOpen && "bg-amber-50 p-1.5")}>
-            <ExpandableTrigger
-              icon={Settings}
-              label={t.settings}
-              isOpen={settingsOpen}
-              isActive={isSettingsActive}
-              onToggle={() => { setSettingsOpen(true); navigate("/settings"); onLinkClick?.(); }}
-            />
-            {settingsOpen && (
-              <div className="mt-0.5 max-h-64 overflow-y-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
-                {SETTINGS_SUBNAV.filter((section) => {
-                  if (section.headingKey === "payments" && !features.pos) return false;
-                  return true;
-                }).map((section) => (
-                  <div key={section.headingKey}>
-                    <SectionHeading label={section.heading} />
-                    <div className="space-y-0.5">
-                      {section.items.map((sub) => {
-                        const active = location.pathname === sub.to || location.pathname.startsWith(sub.to + "/");
-                        return <SubLink key={sub.to} item={sub} isActive={active} onLinkClick={onLinkClick} />;
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <NavItem
+            icon={Settings}
+            label={t.settings}
+            isActive={isSettingsActive}
+            to="/settings"
+            onLinkClick={onLinkClick}
+          />
         )}
 
         {/* Certxa branding wordmark */}
