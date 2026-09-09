@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Outfit:wght@400;500;600;700&family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
@@ -14,9 +14,11 @@
 
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
+  --color-card-border: hsl(var(--card-border));
 
   --color-popover: hsl(var(--popover));
   --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-popover-border: hsl(var(--popover-border));
 
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
@@ -49,9 +51,10 @@
   --color-sidebar-ring: hsl(var(--sidebar-ring));
 
   --font-sans: var(--font-body);
-  --font-display: 'Inter', 'Outfit', sans-serif;
-  --font-body: 'Inter', 'DM Sans', sans-serif;
-  --font-mono: Menlo, monospace;
+  --font-display: 'Fraunces', serif;
+  --font-serif: 'Fraunces', serif;
+  --font-body: 'DM Sans', sans-serif;
+  --font-mono: 'DM Sans', Menlo, monospace;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -60,100 +63,111 @@
 }
 
 :root {
-  --font-body: 'Inter', 'DM Sans', sans-serif;
-  --font-display: 'Inter', 'Outfit', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+  --font-display: 'Fraunces', serif;
 
-  /* GlossGenius-inspired palette — light mode (desktop) */
-  --primary: 337 86% 50%;          /* #e8185c hot pink */
-  --primary-foreground: 0 0% 100%;
+  /* ── "Warm salon / editorial paper" theme — light mode ───────────── */
+  --primary: 9 63% 58%;            /* terracotta / coral */
+  --primary-foreground: 35 42% 98%;
 
-  --secondary: 96 60% 11%;         /* dark olive — selected state */
-  --secondary-foreground: 0 0% 98%;
+  --secondary: 163 25% 40%;        /* muted teal — selected state */
+  --secondary-foreground: 35 42% 98%;
 
-  --accent: 75 100% 44%;           /* #c5d42a — lime brand accent */
-  --accent-foreground: 0 0% 8%;
+  --accent: 41 78% 65%;            /* warm gold */
+  --accent-foreground: 337 27% 20%;
 
-  --background: 0 0% 99%;
-  --foreground: 0 0% 10%;
+  --background: 34 38% 94%;        /* warm cream */
+  --foreground: 337 27% 20%;       /* deep plum */
 
-  --card: 0 0% 100%;
-  --card-foreground: 0 0% 10%;
+  --card: 35 42% 98%;
+  --card-foreground: 337 27% 20%;
+  --card-border: 31 27% 86%;
 
-  --popover: 0 0% 100%;
-  --popover-foreground: 0 0% 10%;
+  --popover: 35 42% 98%;
+  --popover-foreground: 337 27% 20%;
+  --popover-border: 31 27% 84%;
 
-  --muted: 0 0% 96%;
-  --muted-foreground: 0 0% 44%;
+  --muted: 31 29% 89%;
+  --muted-foreground: 337 10% 49%;
 
-  --destructive: 0 84% 60%;
-  --destructive-foreground: 0 0% 100%;
+  --destructive: 4 65% 51%;
+  --destructive-foreground: 35 42% 98%;
 
-  --border: 0 0% 90%;
-  --input: 0 0% 90%;
-  --ring: 337 86% 50%;
+  --border: 31 24% 83%;
+  --input: 31 24% 77%;
+  --ring: 9 63% 58%;
 
-  --sidebar: 0 0% 98%;
-  --sidebar-foreground: 0 0% 10%;
-  --sidebar-border: 0 0% 90%;
-  --sidebar-primary: 337 86% 50%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 0 0% 94%;
-  --sidebar-accent-foreground: 0 0% 10%;
-  --sidebar-ring: 337 86% 50%;
+  --sidebar: 337 27% 20%;          /* dark plum sidebar */
+  --sidebar-foreground: 35 42% 94%;
+  --sidebar-border: 337 20% 28%;
+  --sidebar-primary: 41 78% 65%;
+  --sidebar-primary-foreground: 337 27% 20%;
+  --sidebar-accent: 337 22% 27%;
+  --sidebar-accent-foreground: 35 42% 94%;
+  --sidebar-ring: 41 78% 65%;
 
-  --chart-1: 337 86% 50%;
-  --chart-2: 75 100% 38%;
-  --chart-3: 0 0% 20%;
-  --chart-4: 200 70% 50%;
-  --chart-5: 0 84% 60%;
+  /* charts — derived from the salon palette: coral / teal / gold / slate-blue / red */
+  --chart-1: 9 63% 58%;
+  --chart-2: 163 25% 40%;
+  --chart-3: 41 78% 65%;
+  --chart-4: 205 45% 52%;
+  --chart-5: 4 65% 51%;
 
-  --radius: 0.875rem;
+  --radius: 1rem;
+  --spacing: 0.25rem;
+  --elevate-1: rgba(93, 50, 66, 0.04);
+  --elevate-2: rgba(93, 50, 66, 0.08);
 }
 
 .dark {
-  /* ── GlossGenius-inspired dark palette ───────────────────────────── */
-  --background: 0 0% 6%;           /* #0f0f0f — near-pure black           */
-  --foreground: 0 0% 98%;          /* #fafafa — clean white               */
+  /* ── "Warm salon / editorial paper" theme — dark mode ────────────── */
+  --background: 337 25% 11%;       /* plum-black */
+  --foreground: 34 35% 94%;        /* warm off-white */
 
-  --card: 0 0% 10%;                /* #1a1a1a — dark card surface         */
-  --card-foreground: 0 0% 98%;
+  --card: 337 22% 16%;
+  --card-foreground: 34 35% 94%;
+  --card-border: 337 17% 25%;
 
-  --popover: 0 0% 10%;
-  --popover-foreground: 0 0% 98%;
+  --popover: 337 22% 16%;
+  --popover-foreground: 34 35% 94%;
+  --popover-border: 337 17% 28%;
 
-  --primary: 337 86% 50%;          /* #e8185c — hot pink CTA              */
-  --primary-foreground: 0 0% 100%;
+  --primary: 9 67% 67%;
+  --primary-foreground: 337 25% 11%;
 
-  --secondary: 96 60% 11%;         /* #1a2a0e — dark olive selected state */
-  --secondary-foreground: 0 0% 98%;
+  --secondary: 163 27% 57%;
+  --secondary-foreground: 337 25% 11%;
 
-  --muted: 0 0% 13%;               /* #222222                             */
-  --muted-foreground: 0 0% 55%;    /* #8c8c8c — readable muted text       */
+  --muted: 337 18% 22%;
+  --muted-foreground: 34 16% 70%;
 
-  --accent: 75 100% 44%;           /* #c5d42a — lime brand accent         */
-  --accent-foreground: 0 0% 8%;
+  --accent: 41 77% 70%;
+  --accent-foreground: 337 25% 11%;
 
-  --destructive: 0 72% 52%;
-  --destructive-foreground: 0 0% 98%;
+  --destructive: 4 69% 63%;
+  --destructive-foreground: 337 25% 11%;
 
-  --border: 0 0% 17%;              /* #2b2b2b — subtle dark border        */
-  --input: 0 0% 15%;               /* #262626                             */
-  --ring: 337 86% 50%;
+  --border: 337 16% 25%;
+  --input: 337 16% 32%;
+  --ring: 9 67% 67%;
 
-  --sidebar: 0 0% 6%;
-  --sidebar-foreground: 0 0% 98%;
-  --sidebar-border: 0 0% 17%;
-  --sidebar-primary: 337 86% 50%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 96 60% 11%;
-  --sidebar-accent-foreground: 0 0% 98%;
-  --sidebar-ring: 337 86% 50%;
+  --sidebar: 337 29% 8%;
+  --sidebar-foreground: 34 35% 94%;
+  --sidebar-border: 337 19% 18%;
+  --sidebar-primary: 41 77% 70%;
+  --sidebar-primary-foreground: 337 29% 8%;
+  --sidebar-accent: 337 24% 15%;
+  --sidebar-accent-foreground: 34 35% 94%;
+  --sidebar-ring: 41 77% 70%;
 
-  --chart-1: 337 86% 50%;
-  --chart-2: 75 100% 44%;
-  --chart-3: 0 0% 98%;
-  --chart-4: 200 80% 58%;
-  --chart-5: 0 72% 52%;
+  --chart-1: 9 67% 67%;
+  --chart-2: 163 27% 57%;
+  --chart-3: 41 77% 70%;
+  --chart-4: 205 55% 65%;
+  --chart-5: 4 69% 63%;
+
+  --elevate-1: rgba(255, 244, 230, 0.05);
+  --elevate-2: rgba(255, 244, 230, 0.10);
 }
 
 /* ── Dark mode overrides for hardcoded Tailwind gray utilities ─────────
@@ -396,4 +410,87 @@
     zoom: 0.82;
     height: 122% !important; /* 122% × 0.82 ≈ 100% of the viewport */
   }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   "Warm salon / editorial paper" decorative helpers
+   Applied to the app shell in AppLayout (salon-shell + paper-grain).
+   The rest are opt-in utility classes for cards / rows / skeletons.
+   ══════════════════════════════════════════════════════════════════════ */
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes salon-shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+.salon-shell {
+  background:
+    radial-gradient(circle at 92% -8%, hsl(41 78% 65% / .18), transparent 25rem),
+    radial-gradient(circle at -8% 46%, hsl(9 63% 58% / .08), transparent 27rem),
+    hsl(var(--background));
+}
+
+.dark .salon-shell {
+  background:
+    radial-gradient(circle at 92% -8%, hsl(41 77% 70% / .10), transparent 25rem),
+    radial-gradient(circle at -8% 46%, hsl(9 67% 67% / .08), transparent 27rem),
+    hsl(var(--background));
+}
+
+.paper-grain::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: .025;
+  z-index: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+}
+
+.rise-in { animation: rise-in 560ms cubic-bezier(.2,.8,.2,1) both; }
+.rise-delay-1 { animation-delay: 70ms; }
+.rise-delay-2 { animation-delay: 140ms; }
+.rise-delay-3 { animation-delay: 210ms; }
+.rise-delay-4 { animation-delay: 280ms; }
+
+.skeleton-shimmer {
+  background: linear-gradient(100deg, hsl(var(--muted)) 25%, hsl(var(--card)) 45%, hsl(var(--muted)) 65%);
+  background-size: 250% 100%;
+  animation: salon-shimmer 1.6s linear infinite;
+}
+
+.salon-card {
+  border: 1px solid hsl(var(--card-border));
+  background: hsl(var(--card));
+  box-shadow: 0 16px 34px hsl(337 27% 20% / .06);
+}
+
+.dark .salon-card { box-shadow: 0 16px 34px hsl(337 29% 4% / .22); }
+
+.appointment-row,
+.alert-row,
+.day-card {
+  transition: transform 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.appointment-row:hover,
+.alert-row:hover,
+.day-card:hover {
+  transform: translateY(-2px);
+  background-color: hsl(var(--muted) / .62);
+  box-shadow: 0 10px 24px hsl(337 27% 20% / .07);
+}
+
+@media print {
+  @page { margin: .4in; }
+  body,
+  .salon-shell { background: hsl(34 38% 94%) !important; }
+  .print-hidden { display: none !important; }
+  .salon-card { box-shadow: none !important; break-inside: avoid; }
+  * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }

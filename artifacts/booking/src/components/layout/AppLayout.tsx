@@ -9,7 +9,7 @@ import { ReactNode } from "react";
  */
 export function AppLayout({ children, fullHeight = false }: { children: ReactNode; fullHeight?: boolean }) {
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-background">
+    <div className="flex flex-col h-screen overflow-hidden bg-background salon-shell paper-grain">
       <div className="flex flex-1 overflow-hidden">
         {/* Desktop-only sidebar */}
         <div className="hidden md:block">
