@@ -76,7 +76,7 @@ function buildTopNav(pick: Pick4): TopNavItem[] {
     {
       label: pick({ en: "Dashboard", vi: "Tổng quan", es: "Panel", fr: "Tableau de bord" }),
       icon: LayoutDashboard,
-      to: "/manage",
+      to: "/manage/dashboard",
       matches: ["/manage"],
     },
     {
@@ -586,7 +586,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
         {/* Core items — split around Catalog section */}
         {(() => {
           // Routes that appear BEFORE the Catalog section
-          const beforeRoutes = new Set(["/manage", "/calendar", "/customers"]);
+          const beforeRoutes = new Set(["/manage/dashboard", "/calendar", "/customers"]);
           const beforeItems = visibleItems.filter((i) => beforeRoutes.has(i.to));
           const afterItems  = visibleItems.filter((i) => !beforeRoutes.has(i.to));
 
