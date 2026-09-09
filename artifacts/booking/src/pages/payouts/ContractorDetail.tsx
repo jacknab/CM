@@ -707,15 +707,18 @@ function TimeclockPinCard({ staffId, storeId, staffName }: { staffId: number; st
   );
 }
 
-function AdjustmentsTab({ contractorId }: { contractorId: number }) {
+function AdjustmentsTab({ contractorId, storeId }: { contractorId: number; storeId?: number }) {
   const { data, isLoading } = useQuery<Adjustment[]>({
-    queryKey: ["contractor-adjustments", contractorId],
+    queryKey: ["contractor-adjustments", contractorId, storeId],
     queryFn: async () => {
-      const res = await fetch(`/api/contractor-payouts/contractors/${contractorId}/adjustments`);
+      const res = await fetch(
+        `/api/contractor-payouts/contractors/${contractorId}/adjustments?storeId=${storeId}`,
+        { credentials: "include" },
+      );
       if (!res.ok) throw new Error("Failed to fetch adjustments");
       return res.json();
     },
-    enabled: !!contractorId,
+    enabled: !!contractorId && !!storeId,
   });
 
   if (isLoading) {
@@ -2325,7 +2328,7 @@ export default function ContractorDetail() {
 
         {/* Adjustments tab */}
         <TabsContent value="adjustments">
-          <AdjustmentsTab contractorId={contractorId} />
+          <AdjustmentsTab contractorId={contractorId} storeId={selectedStore?.id} />
         </TabsContent>
 
         {/* Tax Records tab */}

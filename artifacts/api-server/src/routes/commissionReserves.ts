@@ -133,10 +133,17 @@ router.get("/salon/pending-commissions", async (req: Request, res: Response) => 
   const storeId = await resolveSessionStoreId(req);
   if (!storeId) return res.status(400).json({ error: "No store found for this session" });
 
+  // Name: prefer the contractor's own first/last, then its `name`, then the
+  // linked staff `name`. `staff` has no first_name/last_name columns.
   const { rows } = await pool.query(
     `SELECT
        c.id                     AS contractor_id,
-       COALESCE(s.first_name || ' ' || s.last_name, 'Unknown')  AS contractor_name,
+       COALESCE(
+         NULLIF(TRIM(CONCAT_WS(' ', c.first_name, c.last_name)), ''),
+         NULLIF(TRIM(c.name), ''),
+         NULLIF(TRIM(s.name), ''),
+         'Unknown'
+       )                        AS contractor_name,
        cc.scheduled_payout_date,
        COUNT(cc.id)::INT        AS commission_count,
        SUM(cc.amount)::INT      AS total_cents,
@@ -146,7 +153,7 @@ router.get("/salon/pending-commissions", async (req: Request, res: Response) => 
      JOIN contractors c ON cc.contractor_id = c.id
      LEFT JOIN staff s ON c.staff_id = s.id
      WHERE cc.store_id = $1 AND cc.status = 'pending'
-     GROUP BY c.id, s.first_name, s.last_name, cc.scheduled_payout_date
+     GROUP BY c.id, s.name, cc.scheduled_payout_date
      ORDER BY cc.scheduled_payout_date ASC, total_cents DESC`,
     [storeId]
   );
