@@ -2032,7 +2032,7 @@ export default function Calendar() {
                   {/* Pill — fills the full 90px time-column so it covers the label beneath */}
                   <div className="w-[90px] flex-shrink-0 flex px-1">
                     <span
-                      className="flex-1 inline-flex items-center justify-center rounded-md py-1 text-xs font-bold text-white shadow-[0_2px_8px_rgba(240,85,155,0.45)]"
+                      className="flex-1 inline-flex items-center justify-center rounded-md py-1 text-xs font-bold text-black shadow-[0_2px_8px_rgba(240,85,155,0.45)]"
                       style={{ backgroundColor: "#f0559b" }}
                       data-testid="current-time-label"
                     >
@@ -2633,7 +2633,7 @@ export default function Calendar() {
                   style={{ top: `${timeLinePosition + 88}px` }}
                 >
                   <div className="w-[90px] flex-shrink-0 flex px-1">
-                    <span className="flex-1 inline-flex items-center justify-center rounded-md py-1 text-xs font-bold text-white shadow-[0_2px_8px_rgba(240,85,155,0.45)]" style={{ backgroundColor: "#f0559b" }}>
+                    <span className="flex-1 inline-flex items-center justify-center rounded-md py-1 text-xs font-bold text-black shadow-[0_2px_8px_rgba(240,85,155,0.45)]" style={{ backgroundColor: "#f0559b" }}>
                       {timeLineLabel}
                     </span>
                   </div>
