@@ -272,11 +272,13 @@ export default function VisitorsPage() {
   const activeStores = new Set(bookingAll.map((v) => v.storeId).filter((x) => x != null)).size;
   const selectedVisitor = selected ? all.find((v) => v.visitorId === selected) ?? null : null;
 
-  const col5Header = isBooking ? "Type / Store" : "Returning Visitor";
+  const col5Header = isBooking ? "Store" : "Returning Visitor";
   const title = isBooking ? "Booking App — Users & Devices" : "Real-Time Website Visitors";
-  // Booking App Users tab drops the "Time on Site" column.
+  // Booking App Users tab: no "Time on Site" column, and the last column is
+  // "App" (the type badge) instead of a "View" link — the row itself opens
+  // the detail drawer.
   const gridCls = isBooking
-    ? "grid-cols-[44px_140px_1fr_92px_1fr_104px_1fr_72px]"
+    ? "grid-cols-[44px_140px_1fr_92px_1fr_104px_1fr_92px]"
     : "grid-cols-[44px_140px_1fr_92px_1fr_104px_104px_1fr_72px]";
 
   return (
@@ -409,7 +411,7 @@ export default function VisitorsPage() {
                 <div>Last Seen</div>
                 {!isBooking && <div>Time on Site</div>}
                 <div>Current Page</div>
-                <div className="text-right">View</div>
+                <div className="text-right">{isBooking ? "App" : "View"}</div>
               </div>
 
               {isLoading ? (
@@ -432,7 +434,8 @@ export default function VisitorsPage() {
                   return (
                     <div
                       key={v.visitorId}
-                      className={`grid ${gridCls} gap-x-4 px-4 py-3 border-b border-slate-100 hover:bg-slate-50 transition text-sm items-center`}
+                      onClick={isBooking ? () => setSelected(v.visitorId) : undefined}
+                      className={`grid ${gridCls} gap-x-4 px-4 py-3 border-b border-slate-100 hover:bg-slate-50 transition text-sm items-center ${isBooking ? "cursor-pointer" : ""}`}
                     >
                       <div className="flex items-center gap-1.5 text-slate-400">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -446,10 +449,14 @@ export default function VisitorsPage() {
                       </div>
                       <div className="truncate pr-2">
                         {isBooking ? (
-                          <span className="inline-flex items-center gap-1.5 min-w-0">
-                            <TypeBadge app={v.app} />
-                            <span className="text-slate-600 truncate">{storeLabel(v)}</span>
-                          </span>
+                          v.storeId != null ? (
+                            <span className="inline-flex items-center gap-1.5 min-w-0">
+                              <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 shrink-0">#{v.storeId}</span>
+                              <span className="text-slate-600 truncate">{v.storeName || ""}</span>
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )
                         ) : v.isReturning ? (
                           <span className="inline-flex px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">Returning</span>
                         ) : (
@@ -459,14 +466,20 @@ export default function VisitorsPage() {
                       <div className="text-slate-500 tabular-nums">{fmtClock(v.lastSeen)}</div>
                       {!isBooking && <div className="text-slate-500 tabular-nums">{fmtOnSite(onSite)}</div>}
                       <div className="font-mono text-slate-700 truncate pr-2">{pagePath(v.url)}</div>
-                      <div className="text-right">
-                        <button
-                          onClick={() => setSelected(v.visitorId)}
-                          className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-700 text-xs font-medium"
-                        >
-                          <Eye size={13} /> View
-                        </button>
-                      </div>
+                      {isBooking ? (
+                        <div className="flex justify-end">
+                          <TypeBadge app={v.app} />
+                        </div>
+                      ) : (
+                        <div className="text-right">
+                          <button
+                            onClick={() => setSelected(v.visitorId)}
+                            className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-700 text-xs font-medium"
+                          >
+                            <Eye size={13} /> View
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })
