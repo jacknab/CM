@@ -41,7 +41,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { Server } from "http";
 import { pool } from "../db";
 import crypto from "crypto";
-import maxmind, { type CountryResponse, type Reader } from "maxmind";
+import maxmind, { type CountryResponse, type CityResponse, type Reader } from "maxmind";
 import { requireSupportAuth } from "../lib/supportAuth";
 import { publishCrossProcess, subscribeCrossProcess, isCrossProcessBusAvailable } from "../lib/wsBroadcastBus";
 
@@ -229,35 +229,74 @@ function clientIp(req: any): string {
   return xff || req.socket?.remoteAddress || "";
 }
 
-// ── GeoIP (country-only DB-IP Lite mmdb on the box; no city DB) ──────────────
-const GEOIP_DB_PATH = process.env.GEOIP_COUNTRY_DB || "/var/lib/GeoIP/country.mmdb";
-let geoReader: Reader<CountryResponse> | null = null;
-let geoReaderTried = false;
-async function getGeoReader(): Promise<Reader<CountryResponse> | null> {
-  if (geoReader || geoReaderTried) return geoReader;
-  geoReaderTried = true;
+// ── GeoIP ──────────────────────────────────────────────────────────────────
+// Primary: MaxMind GeoLite2-City.mmdb (city + subdivision/state + country),
+// refreshed weekly by /etc/cron.d/cx-geoipupdate. Fallback: the country-only
+// DB-IP Lite mmdb that nginx's country gate also uses. Both are best-effort —
+// IP→city is only right ~50-75% of the time, so callers must degrade
+// gracefully (see locationLabel() on the client).
+const GEOIP_CITY_DB_PATH = process.env.GEOIP_CITY_DB || "/var/lib/GeoIP/GeoLite2-City.mmdb";
+const GEOIP_COUNTRY_DB_PATH = process.env.GEOIP_COUNTRY_DB || "/var/lib/GeoIP/country.mmdb";
+let cityReader: Reader<CityResponse> | null = null;
+let countryReader: Reader<CountryResponse> | null = null;
+let geoReadersTried = false;
+async function initGeoReaders(): Promise<void> {
+  if (geoReadersTried) return;
+  geoReadersTried = true;
   try {
-    geoReader = await maxmind.open<CountryResponse>(GEOIP_DB_PATH);
+    cityReader = await maxmind.open<CityResponse>(GEOIP_CITY_DB_PATH);
   } catch (e) {
-    console.warn("[live-chat] GeoIP DB unavailable:", (e as Error).message);
-    geoReader = null;
-  }
-  return geoReader;
-}
-function lookupGeo(ip: string): { code: string | null; name: string | null } {
-  if (!geoReader || !ip) return { code: null, name: null };
-  const bare = ip.replace(/^::ffff:/, "");
-  if (!/^[0-9a-fA-F:.]+$/.test(bare) || bare.startsWith("10.") || bare.startsWith("192.168.") || bare.startsWith("127.")) {
-    return { code: null, name: null };
+    console.warn("[live-chat] GeoIP city DB unavailable:", (e as Error).message);
   }
   try {
-    const r = geoReader.get(bare);
-    return { code: r?.country?.iso_code ?? null, name: r?.country?.names?.en ?? null };
-  } catch {
-    return { code: null, name: null };
+    countryReader = await maxmind.open<CountryResponse>(GEOIP_COUNTRY_DB_PATH);
+  } catch (e) {
+    console.warn("[live-chat] GeoIP country DB unavailable:", (e as Error).message);
   }
 }
-void getGeoReader();
+void initGeoReaders();
+
+interface GeoResult {
+  code: string | null;    // ISO-3166 alpha-2
+  name: string | null;    // country name (en)
+  city: string | null;
+  region: string | null;  // subdivision — ISO code (e.g. "CO"), else its name
+}
+function lookupGeo(ip: string): GeoResult {
+  const empty: GeoResult = { code: null, name: null, city: null, region: null };
+  if (!ip) return empty;
+  const bare = ip.replace(/^::ffff:/, "");
+  if (
+    !/^[0-9a-fA-F:.]+$/.test(bare) ||
+    bare.startsWith("10.") || bare.startsWith("192.168.") ||
+    bare.startsWith("127.") || bare.startsWith("172.16.")
+  ) {
+    return empty;
+  }
+  try {
+    if (cityReader) {
+      const r = cityReader.get(bare);
+      if (r) {
+        const sub = r.subdivisions?.[0];
+        return {
+          code: r.country?.iso_code ?? null,
+          name: r.country?.names?.en ?? null,
+          city: r.city?.names?.en ?? null,
+          region: sub?.iso_code ?? sub?.names?.en ?? null,
+        };
+      }
+    }
+    if (countryReader) {
+      const r = countryReader.get(bare);
+      return {
+        code: r?.country?.iso_code ?? null,
+        name: r?.country?.names?.en ?? null,
+        city: null, region: null,
+      };
+    }
+  } catch { /* ignore — bad IP / DB miss */ }
+  return empty;
+}
 
 // ── Returning-visitor persistence ──────────────────────────────────────────
 let knownVisitorsReady: Promise<void> | null = null;
@@ -502,9 +541,11 @@ liveChatRouter.post("/api/live-chat/visitor/ping", (req, res) => {
   const isNew = !existing;
   const pageChanged = !!existing && existing.url !== url;
   const ip = clientIp(req);
-  // nginx doesn't pass a geo header; resolve country from the mmdb on the box.
+  // Resolve city/state/country from the mmdb on the box (nginx passes no geo
+  // header for /api). An X-Geo-Country header, if ever added, wins for country.
+  const geo = lookupGeo(ip);
   const hdrGeo = (req.headers["x-geo-country"] as string | undefined) || null;
-  const geo = hdrGeo ? { code: hdrGeo, name: null } : lookupGeo(ip);
+  if (hdrGeo && !geo.code) geo.code = hdrGeo;
 
   const v: VisitorPresence = existing ?? {
     visitorId, firstSeen: now, lastSeen: now,
@@ -512,7 +553,7 @@ liveChatRouter.post("/api/live-chat/visitor/ping", (req, res) => {
     ip,
     ua: String(req.headers["user-agent"] ?? "").slice(0, 256),
     country: geo.code, countryName: geo.name,
-    city: null, region: null,
+    city: geo.city, region: geo.region,
     pages: 0, isReturning: false, name: null, chatId: null,
   };
   v.lastSeen = now;
@@ -521,6 +562,8 @@ liveChatRouter.post("/api/live-chat/visitor/ping", (req, res) => {
   if (!v.referrer && b.referrer) v.referrer = String(b.referrer).slice(0, 256);
   if (!v.ip && ip) v.ip = ip;
   if (!v.country && geo.code) { v.country = geo.code; v.countryName = geo.name; }
+  if (!v.city && geo.city) v.city = geo.city;
+  if (!v.region && geo.region) v.region = geo.region;
   if (isNew || pageChanged) v.pages += 1;
   visitors.set(visitorId, v);
 
