@@ -58,19 +58,11 @@ const ALIASES: Record<string, string> = {
 
 const DEFAULT_SLUG = "business";
 
-// Legacy panes that still render their own page <h1> (not yet reworked with the
-// useInSettingsShell() guard). Suppress the shell's own section title for these
-// so it isn't stacked on top of the page's. Remove a slug once its page is
-// reworked to hide its header inside the shell.
-const SELF_TITLED = new Set([
-  "online-booking",
-  "booking-controls",
-  "kiosk",
-  "language",
-  "advanced",
-  "data-transfer",
-  "commission",
-]);
+// Panes that render their own page <h1> instead of hiding it via the
+// useInSettingsShell() guard — the shell then skips its own section title so
+// headers aren't stacked. (Empty now that every pane honours the guard; kept
+// as the escape hatch for any future page added without it.)
+const SELF_TITLED = new Set<string>([]);
 
 export default function SettingsShell() {
   const { section } = useParams<{ section?: string }>();

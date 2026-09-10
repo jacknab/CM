@@ -1,5 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
+import { useInSettingsShell } from "@/lib/settings-shell-context";
 import { useToast } from "@/hooks/use-toast";
 import { useCalendarSettings, useUpdateCalendarSettings } from "@/hooks/use-calendar-settings";
 import { Loader2, Languages, Check } from "lucide-react";
@@ -15,6 +16,7 @@ export default function LanguageSettings() {
   const { data: settings, isLoading } = useCalendarSettings();
   const updateSettings = useUpdateCalendarSettings();
   const { toast } = useToast();
+  const inShell = useInSettingsShell();
 
   const current = (settings as any)?.language ?? "en";
 
@@ -45,17 +47,15 @@ export default function LanguageSettings() {
 
   return (
     <AppLayout>
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
-          <Languages className="w-5 h-5 text-indigo-600" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-display font-bold">Language</h1>
-          <p className="text-sm text-muted-foreground">Display language for staff-facing screens</p>
-        </div>
-      </div>
+      <div className="mx-auto max-w-2xl px-4 py-6 md:px-8">
+        {!inShell && (
+          <div className="mb-6">
+            <h1 className="text-2xl font-semibold tracking-tight">Language</h1>
+            <p className="text-sm text-muted-foreground mt-1">Display language for staff-facing screens</p>
+          </div>
+        )}
 
-      <div className="space-y-3 max-w-2xl">
+      <div className="space-y-3">
         {LANGUAGES.map((lang) => {
           const isActive = current === lang.value;
           return (
@@ -92,9 +92,10 @@ export default function LanguageSettings() {
         })}
       </div>
 
-      <p className="text-xs text-muted-foreground mt-4 max-w-2xl">
+      <p className="text-xs text-muted-foreground mt-4">
         Currently applies to the TURN queue overlay — queue order explanations and rotation rules shown to staff.
       </p>
+      </div>
     </AppLayout>
   );
 }

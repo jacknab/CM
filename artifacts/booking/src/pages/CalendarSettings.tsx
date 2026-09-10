@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useCalendarSettings, useUpdateCalendarSettings, DEFAULT_CALENDAR_SETTINGS } from "@/hooks/use-calendar-settings";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useToast } from "@/hooks/use-toast";
+import { useInSettingsShell } from "@/lib/settings-shell-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useForm, Controller } from "react-hook-form";
@@ -181,6 +182,7 @@ export default function CalendarSettings() {
   const updateSettings = useUpdateCalendarSettings();
   const { toast } = useToast();
   const { pick } = useLanguage();
+  const inShell = useInSettingsShell();
   const queryClient = useQueryClient();
   const { data: store, isLoading: storeLoading } = useQuery<Store>({
     queryKey: ["/api/stores", selectedStore?.id],
@@ -440,10 +442,12 @@ export default function CalendarSettings() {
 
   return (
     <AppLayout>
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 pb-16">
+      <form onSubmit={handleSubmit(onSubmit)} className="mx-auto max-w-2xl space-y-6 px-4 py-6 pb-16 md:px-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-3xl font-display font-bold" data-testid="text-page-title">{t.pageTitle}</h1>
-          <Button type="submit" disabled={saving} data-testid="button-save-settings">
+          {!inShell && (
+            <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-page-title">{t.pageTitle}</h1>
+          )}
+          <Button type="submit" disabled={saving} data-testid="button-save-settings" className={inShell ? "ml-auto" : ""}>
             <Save className="w-4 h-4 mr-2" />
             {saving ? t.saving : t.save}
           </Button>

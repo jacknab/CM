@@ -1,4 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { useInSettingsShell } from "@/lib/settings-shell-context";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -43,6 +44,7 @@ const FLOOR_OPTIONS = [
 export default function FeaturesSettings() {
   const { selectedStore } = useSelectedStore();
   const { toast } = useToast();
+  const inShell = useInSettingsShell();
   const isNailSalon = isNailSalonBiz(selectedStore?.category);
 
   const { data: features, isLoading } = useQuery<FeatureFlags>({
@@ -104,12 +106,15 @@ export default function FeaturesSettings() {
 
   return (
     <AppLayout>
-      <div className="sticky top-0 z-20 bg-background border-b px-6 py-4 -mx-6 -mt-6 mb-6">
-        <h1 className="text-xl font-display font-bold">Features</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Enable or disable the features available to your salon.</p>
-      </div>
+      <div className="mx-auto max-w-2xl px-4 py-6 md:px-8">
+        {!inShell && (
+          <div className="mb-6">
+            <h1 className="text-2xl font-semibold tracking-tight">Advanced Features</h1>
+            <p className="text-sm text-muted-foreground mt-1">Enable or disable the features available to your salon.</p>
+          </div>
+        )}
 
-      <div className="space-y-6 max-w-2xl">
+      <div className="space-y-6">
 
         {/* ── Queue & Scheduling ── */}
         <div>
@@ -295,6 +300,7 @@ export default function FeaturesSettings() {
           </div>
         </div>
 
+      </div>
       </div>
     </AppLayout>
   );

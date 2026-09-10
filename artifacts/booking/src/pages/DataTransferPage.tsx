@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { useInSettingsShell } from "@/lib/settings-shell-context";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -127,6 +128,7 @@ function DropZone({
 // ─── Main page ───────────────────────────────────────────────────────────────
 
 export default function DataTransferPage() {
+  const inShell = useInSettingsShell();
   const { selectedStore } = useSelectedStore();
   const storeId = selectedStore?.id;
   const { toast } = useToast();
@@ -255,7 +257,7 @@ export default function DataTransferPage() {
 
   return (
     <AppLayout>
-      <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+      <div className="mx-auto max-w-2xl px-4 py-6 md:px-8 space-y-6">
 
         {/* Header */}
         <div className="flex items-center gap-3">
@@ -264,10 +266,12 @@ export default function DataTransferPage() {
               <ArrowLeft className="w-5 h-5" />
             </button>
           )}
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Free Data Transfer</h1>
-            <p className="text-sm text-gray-500">Move your existing data to Certxa — free, fast, and reversible.</p>
-          </div>
+          {!inShell && (
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">Import &amp; Export</h1>
+              <p className="text-sm text-muted-foreground">Move your existing data to Certxa — free, fast, and reversible.</p>
+            </div>
+          )}
         </div>
 
         {/* Step: History */}

@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { useInSettingsShell } from "@/lib/settings-shell-context";
 import { useToast } from "@/hooks/use-toast";
 
 interface KioskSettingsData {
@@ -46,6 +47,7 @@ const NAIL_GROUPS = [
 
 export default function KioskSettings() {
   const { toast } = useToast();
+  const inShell = useInSettingsShell();
   const qc = useQueryClient();
   const [copied, setCopied] = useState(false);
   const [formReady, setFormReady] = useState(false);
@@ -171,13 +173,15 @@ export default function KioskSettings() {
 
   return (
     <AppLayout>
-      <div className="max-w-2xl mx-auto px-4 py-8 space-y-8">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Kiosk Settings</h1>
-          <p className="text-slate-500 mt-1 text-sm">
-            Configure the self check-in tablet experience for your clients.
-          </p>
-        </div>
+      <div className="mx-auto max-w-2xl px-4 py-6 md:px-8 space-y-8">
+        {!inShell && (
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Check-in Kiosk</h1>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Configure the self check-in tablet experience for your clients.
+            </p>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="flex items-center gap-2 text-slate-400 py-12 justify-center">

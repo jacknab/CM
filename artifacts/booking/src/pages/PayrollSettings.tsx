@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { useInSettingsShell } from "@/lib/settings-shell-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -101,7 +101,7 @@ function ReadOnlyRow({ label, value }: { label: string; value: string }) {
 }
 
 export default function PayrollSettings() {
-  const navigate = useNavigate();
+  const inShell = useInSettingsShell();
   const { selectedStore } = useSelectedStore();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -188,32 +188,27 @@ export default function PayrollSettings() {
 
   return (
     <AppLayout>
-      {/* Back to hub */}
-      <div style={{ position:"sticky",top:0,zIndex:40,background:"#fff",borderBottom:"1px solid #e5e7eb",padding:"10px 24px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 1px 3px 0 rgb(0 0 0/.06)",marginLeft:-32,marginRight:-32,marginTop:-24,marginBottom:16 }}>
-        <button onClick={()=>navigate("/payouts/contractors")} style={{ display:"flex",alignItems:"center",gap:5,padding:"5px 12px",borderRadius:8,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:".82rem",fontWeight:600,color:"#374151",whiteSpace:"nowrap" }}>
-          ← Staff &amp; Earnings
-        </button>
-        <div style={{ width:1,height:18,background:"#e5e7eb",flexShrink:0 }} />
-        <span style={{ fontSize:".92rem",fontWeight:700,color:"#1c1917" }}>Earnings Settings</span>
-      </div>
+      <div className="mx-auto max-w-2xl px-4 py-6 md:px-8">
       {/* ── Page header ── */}
-      <div className="sticky top-0 z-20 bg-background border-b px-6 py-4 -mx-6 -mt-6 mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-display font-bold flex items-center gap-2">
-            Earnings Settings
-            {isConfigured && <Lock className="w-4 h-4 text-amber-500" />}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {isConfigured
-              ? "Settings are locked — pay periods are now being tracked automatically"
-              : "Set pay frequency and period dates used for commission tracking"}
-          </p>
-        </div>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        {!inShell ? (
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+              Earnings &amp; Commission
+              {isConfigured && <Lock className="w-4 h-4 text-muted-foreground" />}
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              {isConfigured
+                ? "Settings are locked — pay periods are now being tracked automatically"
+                : "Set pay frequency and period dates used for commission tracking"}
+            </p>
+          </div>
+        ) : <span />}
         {!isConfigured && (
           <Button
             onClick={() => setConfirmSaveOpen(true)}
             disabled={isPending || !isDirty}
-            className="bg-[#1a1f36] hover:bg-[#2d3452] text-white font-semibold px-6"
+            className="font-semibold px-6"
           >
             <Save className="w-4 h-4 mr-2" />
             {isPending ? "Saving…" : "Save & Lock Settings"}
@@ -221,7 +216,7 @@ export default function PayrollSettings() {
         )}
       </div>
 
-      <div className="max-w-2xl space-y-6">
+      <div className="space-y-6">
 
         {/* ── LOCKED STATE ── */}
         {isConfigured ? (
@@ -596,6 +591,7 @@ export default function PayrollSettings() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      </div>
     </AppLayout>
   );
 }

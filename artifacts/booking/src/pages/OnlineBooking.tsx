@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useAuth } from "@/hooks/use-auth";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { useInSettingsShell } from "@/lib/settings-shell-context";
 import { Globe, Copy, Check, ExternalLink, Link2, QrCode, Loader2, Smartphone, LayoutList, Layout, Users, User, Pencil } from "lucide-react";
 import { QRCodeImage } from "@/components/ui/qr-code";
 import { BookingInstructionsCard } from "@/components/BookingInstructionsCard";
@@ -36,6 +37,7 @@ export default function OnlineBooking() {
     const [showInstructions, setShowInstructions] = useState<"Google" | "Instagram" | "Facebook" | null>(null);
   const { isLoading: authLoading } = useAuth();
   const isMobile = useIsMobile();
+  const inShell = useInSettingsShell();
   const { selectedStore } = useSelectedStore();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -200,11 +202,13 @@ ${cards}
 
   return (
     <AppLayout>
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Online Booking</h1>
-        <p className="text-muted-foreground mt-1 mb-6">Set up your online booking page for clients.</p>
-      </div>
-      <div className="max-w-7xl space-y-6">
+      {!inShell && (
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Online Booking</h1>
+          <p className="text-muted-foreground mt-1 mb-6">Set up your online booking page for clients.</p>
+        </div>
+      )}
+      <div className="max-w-3xl space-y-6">
         <Card className="p-6">
           <h3 className="text-lg font-semibold mb-1" data-testid="text-booking-link-title">Booking Link</h3>
           <p className="text-sm text-muted-foreground mb-4">
