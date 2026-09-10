@@ -1,50 +1,23 @@
 /**
- * External calendar sync — OAuth connect, connection management, and the Google
- * push webhook. Mounted at /api/calendar-sync (see routes.ts).
+ * Calendar Sync — one-way iCalendar subscription feed.
  *
- * v1 scope: Google Calendar, owner-initiated. `staffId` on the connect call ties
- * the connection to one technician (NULL = store-level). Microsoft Graph / CalDAV
- * are separate adapters added later behind the same routes.
+ *   GET /api/calendar-sync/feed-url          (session)  → the shareable feed URLs
+ *   GET /api/calendar-sync/feed/:ref.ics     (PUBLIC)   → the iCalendar document
  *
- * The heavy lifting (outbound event push, inbound busy-block pull, channel renew)
- * lives in workers/calendarSyncWorker.ts. This file only sets connections up and
- * pokes the worker's inbound path when Google sends a change notification.
+ * The public feed route is allow-listed past the global /api auth gate in
+ * routes.ts. The ref is HMAC-signed (see lib/calendar/icsFeed.ts) so it needs
+ * no session and no database row.
+ *
+ * (The earlier two-way Google OAuth sync was removed in favour of this. Its
+ * dormant tables from migration 0168 are left in place, unused.)
  */
 
 import { Router, type Request, type Response } from "express";
-import crypto from "crypto";
 import { isAuthenticated } from "../auth";
 import { pool } from "../db";
-import { encryptToken } from "../lib/googleTokenCrypto";
-import * as gcal from "../lib/calendar/googleCalendar";
-import { runInboundSync } from "../workers/calendarSyncWorker";
+import { feedRef, feedUrl, parseFeedRef, buildIcs, type FeedEvent } from "../lib/calendar/icsFeed";
 
 const router = Router();
-
-const STATE_TTL_MS = 10 * 60 * 1000;
-const stateSecret = () => process.env.SESSION_SECRET ?? process.env.GOOGLE_TOKEN_ENCRYPTION_KEY ?? "certxa-calendar-state";
-
-function signState(payload: Record<string, unknown>): string {
-  const body = Buffer.from(JSON.stringify({ ...payload, ts: Date.now() })).toString("base64url");
-  const sig = crypto.createHmac("sha256", stateSecret()).update(body).digest("base64url");
-  return `${body}.${sig}`;
-}
-
-function verifyState(state: string): Record<string, any> | null {
-  try {
-    const [body, sig] = String(state).split(".");
-    if (!body || !sig) return null;
-    const expected = crypto.createHmac("sha256", stateSecret()).update(body).digest("base64url");
-    const a = Buffer.from(sig);
-    const b = Buffer.from(expected);
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-    const parsed = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
-    if (typeof parsed.ts !== "number" || Date.now() - parsed.ts > STATE_TTL_MS) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
 
 async function resolveStoreId(req: Request): Promise<number | null> {
   const userId = (req.session as any)?.userId;
@@ -60,194 +33,100 @@ async function resolveStoreId(req: Request): Promise<number | null> {
   return null;
 }
 
-const SETTINGS_RETURN =
-  (process.env.APP_URL ?? "https://certxa.com").replace(/\/$/, "") + "/settings/calendar-sync";
-
-// ── List connections for the caller's store ─────────────────────────────────
-router.get("/connections", isAuthenticated, async (req, res) => {
+// ── The shareable links ───────────────────────────────────────────────────
+router.get("/feed-url", isAuthenticated, async (req, res) => {
   const storeId = await resolveStoreId(req);
   if (!storeId) return res.status(404).json({ error: "No store for this account" });
-  const r = await pool.query(
-    `SELECT c.id, c.provider, c.provider_account_email, c.staff_id, s.name AS staff_name,
-            c.target_calendar_id, c.sync_direction, c.show_client_names, c.status,
-            c.last_synced_at, c.last_error, c.channel_expires_at, c.created_at
-       FROM calendar_connections c
-       LEFT JOIN staff s ON s.id = c.staff_id
-      WHERE c.store_id = $1
-      ORDER BY c.created_at DESC`,
+
+  const staff = await pool.query<{ id: number; name: string }>(
+    `SELECT id, name FROM staff
+      WHERE store_id = $1 AND COALESCE(status, 'active') <> 'removed'
+      ORDER BY name`,
     [storeId],
   );
-  res.json({ connections: r.rows });
+
+  res.json({
+    storeUrl: feedUrl(storeId),
+    ref: feedRef(storeId),
+    staff: staff.rows.map((s) => ({ id: s.id, name: s.name, url: feedUrl(storeId, s.id) })),
+  });
 });
 
-// ── Begin Google OAuth ─────────────────────────────────────────────────────
-// Returns { url } — the client redirects the browser there.
-router.get("/google/start", isAuthenticated, async (req, res) => {
-  const storeId = await resolveStoreId(req);
-  if (!storeId) return res.status(404).json({ error: "No store for this account" });
+// ── The feed itself (public, signed ref) ──────────────────────────────────
+router.get("/feed/:ref", async (req: Request, res: Response) => {
+  const parsed = parseFeedRef(String(req.params.ref ?? ""));
+  if (!parsed) return res.status(404).type("text/plain").send("Not found");
 
-  const staffId = req.query.staffId ? Number(req.query.staffId) : null;
-  const direction = ["both", "outbound", "inbound"].includes(String(req.query.direction))
-    ? String(req.query.direction)
-    : "both";
-
-  if (staffId != null) {
-    const ok = await pool.query("SELECT 1 FROM staff WHERE id = $1 AND store_id = $2", [staffId, storeId]);
-    if (!ok.rowCount) return res.status(400).json({ error: "staffId is not in this store" });
-  }
-
-  const url = gcal.getAuthUrl(signState({ storeId, staffId, direction }));
-  res.json({ url });
-});
-
-// ── Google OAuth callback (PUBLIC — Google redirects the browser here) ──────
-router.get("/google/callback", async (req: Request, res: Response) => {
-  const { code, state, error } = req.query as Record<string, string>;
-  if (error) return res.redirect(`${SETTINGS_RETURN}?error=${encodeURIComponent(error)}`);
-
-  const intent = state ? verifyState(state) : null;
-  if (!code || !intent) return res.redirect(`${SETTINGS_RETURN}?error=invalid_state`);
+  const { storeId, staffId } = parsed;
+  const from = new Date(Date.now() - 14 * 24 * 3600_000);
+  const to = new Date(Date.now() + 120 * 24 * 3600_000);
 
   try {
-    const tok = await gcal.exchangeCode(code);
-    if (!tok.refreshToken && !tok.accessToken) {
-      return res.redirect(`${SETTINGS_RETURN}?error=no_tokens`);
-    }
-
-    // One connection per (staff_id, provider). Store-level (staff_id NULL) is
-    // matched on (store_id, provider) with staff_id IS NULL.
-    const existing = await pool.query<{ id: number }>(
-      `SELECT id FROM calendar_connections
-        WHERE store_id = $1 AND provider = 'google'
-          AND staff_id IS NOT DISTINCT FROM $2
-        LIMIT 1`,
-      [intent.storeId, intent.staffId],
+    const rows = await pool.query<{
+      id: number;
+      date: Date;
+      duration: number;
+      status: string | null;
+      notes: string | null;
+      service_name: string | null;
+      client_first: string | null;
+      client_last: string | null;
+      staff_name: string | null;
+      loc_name: string | null;
+      loc_address: string | null;
+    }>(
+      `SELECT a.id, a.date, a.duration, a.status, a.notes,
+              svc.name AS service_name,
+              cl.first_name AS client_first, cl.last_name AS client_last,
+              stf.name AS staff_name,
+              loc.name AS loc_name, loc.address AS loc_address
+         FROM appointments a
+         LEFT JOIN services  svc ON svc.id = a.service_id
+         LEFT JOIN clients   cl  ON cl.id  = a.customer_id
+         LEFT JOIN staff     stf ON stf.id = a.staff_id
+         LEFT JOIN locations loc ON loc.id = a.store_id
+        WHERE a.store_id = $1
+          AND a.date >= $2 AND a.date < $3
+          ${staffId ? "AND a.staff_id = $4" : ""}
+        ORDER BY a.date`,
+      staffId ? [storeId, from, to, staffId] : [storeId, from, to],
     );
 
-    const expiresAt = tok.expiryDate ? new Date(tok.expiryDate) : null;
+    const events: FeedEvent[] = rows.rows.map((r) => {
+      const client = [r.client_first, r.client_last].filter(Boolean).join(" ").trim();
+      const svc = r.service_name ?? "Appointment";
+      const cancelled = r.status === "cancelled" || r.status === "no-show";
+      return {
+        id: r.id,
+        start: new Date(r.date),
+        durationMin: r.duration || 60,
+        summary: client ? `${svc} — ${client}` : svc,
+        description: [
+          client ? `Client: ${client}` : null,
+          `Service: ${svc}`,
+          r.staff_name && !staffId ? `Technician: ${r.staff_name}` : null,
+          r.notes ? `Notes: ${r.notes}` : null,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        location: r.loc_address ?? r.loc_name ?? undefined,
+        cancelled,
+      };
+    });
 
-    if (existing.rows[0]) {
-      await pool.query(
-        `UPDATE calendar_connections
-            SET provider_account_email = COALESCE($2, provider_account_email),
-                access_token_enc  = $3,
-                refresh_token_enc = COALESCE($4, refresh_token_enc),
-                token_expires_at  = $5,
-                scopes            = $6,
-                sync_direction    = $7,
-                status            = 'active',
-                sync_token        = NULL,
-                last_error        = NULL,
-                updated_at        = now()
-          WHERE id = $1`,
-        [
-          existing.rows[0].id,
-          tok.email,
-          encryptToken(tok.accessToken),
-          tok.refreshToken ? encryptToken(tok.refreshToken) : null,
-          expiresAt,
-          tok.scope,
-          intent.direction,
-        ],
-      );
-    } else {
-      await pool.query(
-        `INSERT INTO calendar_connections
-           (store_id, staff_id, provider, provider_account_email,
-            access_token_enc, refresh_token_enc, token_expires_at, scopes, sync_direction)
-         VALUES ($1, $2, 'google', $3, $4, $5, $6, $7, $8)`,
-        [
-          intent.storeId,
-          intent.staffId,
-          tok.email,
-          encryptToken(tok.accessToken),
-          tok.refreshToken ? encryptToken(tok.refreshToken) : null,
-          expiresAt,
-          tok.scope,
-          intent.direction,
-        ],
-      );
-    }
+    const label = staffId
+      ? `${rows.rows[0]?.staff_name ?? "Technician"} — Certxa`
+      : `${rows.rows[0]?.loc_name ?? "Certxa"} bookings`;
 
-    return res.redirect(`${SETTINGS_RETURN}?connected=google`);
+    res
+      .status(200)
+      .type("text/calendar; charset=utf-8")
+      .set("Cache-Control", "public, max-age=900")
+      .set("Content-Disposition", `inline; filename="certxa-${staffId ? "staff" : "store"}.ics"`)
+      .send(buildIcs(label, events));
   } catch (err: any) {
-    console.error("[calendar-sync] google callback failed:", err?.message);
-    return res.redirect(`${SETTINGS_RETURN}?error=exchange_failed`);
-  }
-});
-
-// ── Update a connection ────────────────────────────────────────────────────
-router.patch("/connections/:id", isAuthenticated, async (req, res) => {
-  const storeId = await resolveStoreId(req);
-  if (!storeId) return res.status(404).json({ error: "No store for this account" });
-  const id = Number(req.params.id);
-
-  const sets: string[] = [];
-  const vals: unknown[] = [id, storeId];
-  const add = (col: string, val: unknown) => {
-    vals.push(val);
-    sets.push(`${col} = $${vals.length}`);
-  };
-
-  if (["both", "outbound", "inbound"].includes(req.body.syncDirection)) add("sync_direction", req.body.syncDirection);
-  if (typeof req.body.showClientNames === "boolean") add("show_client_names", req.body.showClientNames);
-  if (typeof req.body.targetCalendarId === "string" && req.body.targetCalendarId) add("target_calendar_id", req.body.targetCalendarId);
-  if (["active", "disabled"].includes(req.body.status)) add("status", req.body.status);
-  if (!sets.length) return res.status(400).json({ error: "Nothing to update" });
-
-  const r = await pool.query(
-    `UPDATE calendar_connections SET ${sets.join(", ")}, updated_at = now()
-      WHERE id = $1 AND store_id = $2 RETURNING id`,
-    vals,
-  );
-  if (!r.rowCount) return res.status(404).json({ error: "Connection not found" });
-  res.json({ ok: true });
-});
-
-// ── Disconnect ────────────────────────────────────────────────────────────
-router.delete("/connections/:id", isAuthenticated, async (req, res) => {
-  const storeId = await resolveStoreId(req);
-  if (!storeId) return res.status(404).json({ error: "No store for this account" });
-  const id = Number(req.params.id);
-
-  const r = await pool.query<{
-    id: number; channel_id: string | null; channel_resource_id: string | null;
-    access_token_enc: string | null; refresh_token_enc: string | null;
-    token_expires_at: Date | null; target_calendar_id: string;
-  }>(
-    `SELECT id, channel_id, channel_resource_id, access_token_enc, refresh_token_enc,
-            token_expires_at, target_calendar_id
-       FROM calendar_connections WHERE id = $1 AND store_id = $2`,
-    [id, storeId],
-  );
-  const conn = r.rows[0];
-  if (!conn) return res.status(404).json({ error: "Connection not found" });
-
-  if (conn.channel_id && conn.channel_resource_id) {
-    await gcal.stopChannel(conn as any, conn.channel_id, conn.channel_resource_id);
-  }
-  await pool.query("DELETE FROM calendar_connections WHERE id = $1", [id]);
-  res.json({ ok: true });
-});
-
-// ── Google push webhook (PUBLIC) ──────────────────────────────────────────
-// Google sends header-only POSTs. We ack immediately and run an incremental
-// inbound sync out of band.
-router.post("/webhook/google", async (req: Request, res: Response) => {
-  const channelId = req.header("X-Goog-Channel-ID");
-  const resourceState = req.header("X-Goog-Resource-State");
-  res.status(200).end(); // ack fast — Google retries on non-2xx
-
-  if (!channelId || resourceState === "sync") return; // "sync" = channel-created handshake
-  try {
-    const r = await pool.query<{ id: number }>(
-      "SELECT id FROM calendar_connections WHERE channel_id = $1 AND status = 'active' LIMIT 1",
-      [channelId],
-    );
-    const connId = r.rows[0]?.id;
-    if (connId) void runInboundSync(connId).catch((e) => console.error("[calendar-sync] inbound (webhook) failed:", e?.message));
-  } catch (err: any) {
-    console.error("[calendar-sync] webhook lookup failed:", err?.message);
+    console.error("[calendar-feed] error:", err?.message);
+    res.status(500).type("text/plain").send("Feed temporarily unavailable");
   }
 });
 

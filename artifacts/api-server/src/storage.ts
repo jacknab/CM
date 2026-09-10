@@ -38,7 +38,6 @@ import { toE164US, displayPhone as formatDisplayPhone } from "./lib/phoneUtils";
 import { claimStaffColor } from "./lib/staffColorUtils";
 import { snapshotCompletionFields } from "./lib/commissionSnapshot";
 import { recordCommissionAccrual } from "./lib/commissionAccrual";
-import { enqueueAppointmentUpsert, enqueueAppointmentDelete } from "./lib/calendar/outbox";
 
 export interface IStorage {
   getStores(userId?: string): Promise<Store[]>;
@@ -874,9 +873,6 @@ export class DatabaseStorage implements IStorage {
 
   async createAppointment(insertAppointment: InsertAppointment): Promise<Appointment> {
     const [appointment] = await db.insert(appointments).values(insertAppointment).returning();
-    // Mirror to any connected external calendars (Google/Outlook). Fire-and-forget:
-    // enqueue only — the scheduler-instance worker does the API calls.
-    void enqueueAppointmentUpsert(appointment.id, appointment.storeId, appointment.staffId);
     return appointment;
   }
 
@@ -934,14 +930,10 @@ export class DatabaseStorage implements IStorage {
       // Fire-and-forget: never let accrual bookkeeping block completing a ticket.
       void recordCommissionAccrual(appointment).catch(() => {});
     }
-    if (appointment) {
-      void enqueueAppointmentUpsert(appointment.id, appointment.storeId, appointment.staffId);
-    }
     return appointment;
   }
 
   async deleteAppointment(id: number): Promise<void> {
-    await enqueueAppointmentDelete(id); // must run before the row (and its mappings) are gone
     await db.delete(appointmentAddons).where(eq(appointmentAddons.appointmentId, id));
     await db.delete(appointments).where(eq(appointments.id, id));
   }
@@ -962,7 +954,6 @@ export class DatabaseStorage implements IStorage {
    * it had never been booked.
    */
   async deleteAppointmentAndRelated(id: number): Promise<void> {
-    await enqueueAppointmentDelete(id); // capture external-event refs before the row is gone
     await db.transaction(async (tx) => {
       await tx.delete(appointmentAddons).where(eq(appointmentAddons.appointmentId, id));
       await tx.delete(smsLog).where(eq(smsLog.appointmentId, id));

@@ -63,7 +63,6 @@ import {
   atomicCreateBooking,
   atomicRescheduleBooking,
 } from "../bookingEngine";
-import { getStoreBusyBlocksByStaff, findBusyOverlap } from "../lib/calendar/busyBlocks";
 import { callEventBus } from "../lib/callEventBus";
 import { logActivityEvent } from "../lib/activityFeed";
 import { costMeter } from "../lib/costMeter";
@@ -1316,12 +1315,11 @@ async function computeAvailabilitySlots(
   const dayEndLocal   = fromZonedTime(new Date(`${date}T23:59:59.999`), tz);
 
   // Run all lookups in parallel — avoids serial DB round-trips
-  const [calSettings, hours, dayAppointments, candidateStaff, busyByStaff] = await Promise.all([
+  const [calSettings, hours, dayAppointments, candidateStaff] = await Promise.all([
     storage.getCalendarSettings(salon.storeId),
     storage.getBusinessHours(salon.storeId),
     storage.getAppointments({ from: dayStartLocal, to: dayEndLocal, storeId: salon.storeId }),
     getCandidateStaffForService(salon.storeId, serviceId, specificStaffId),
-    getStoreBusyBlocksByStaff(salon.storeId, dayStartLocal, dayEndLocal),
   ]);
   const slotInterval = calSettings?.timeSlotInterval || 15;
 
@@ -1384,11 +1382,6 @@ async function computeAvailabilitySlots(
             hasConflict = true;
             break;
           }
-        }
-
-        // External calendar busy block synced from the staff's Google/Outlook
-        if (!hasConflict && findBusyOverlap(busyByStaff.get(staffMember.id) ?? [], slotStart, slotEnd)) {
-          hasConflict = true;
         }
 
         if (!hasConflict) {

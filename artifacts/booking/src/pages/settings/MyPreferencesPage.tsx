@@ -159,7 +159,7 @@ export default function MyPreferencesPage() {
               <div>
                 <div className="text-[15px] font-medium">Calendar sync</div>
                 <div className="text-[13px] text-muted-foreground">
-                  Two-way sync between your bookings and a Google Calendar.
+                  Subscribe to your bookings from Apple, Google or Outlook Calendar.
                 </div>
               </div>
             </div>

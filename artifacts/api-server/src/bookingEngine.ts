@@ -32,7 +32,6 @@ import { appointments } from "@shared/schema";
 import { and, eq, gte, lte, ne, sql } from "drizzle-orm";
 import { fromZonedTime, formatInTimeZone } from "date-fns-tz";
 import { storage } from "./storage";
-import { getStaffBusyBlocks, findBusyOverlap } from "./lib/calendar/busyBlocks";
 
 /** The transaction type yielded by db.transaction(async (tx) => ...) */
 type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -228,27 +227,6 @@ export async function validateBookingSlot(
     };
   }
 
-  // ── External calendar busy-block check (non-atomic) ──────────────────────
-  // Personal events synced in from the technician's Google/Outlook calendar.
-  if (staffId) {
-    const blocks = await getStaffBusyBlocks(storeId, staffId, dayStart, dayEnd);
-    const busy = findBusyOverlap(blocks, startTime, newEnd);
-    if (busy) {
-      const busyDisplayTime = busy.startsAt.toLocaleTimeString("en-US", {
-        hour: "numeric",
-        minute: "2-digit",
-        timeZone: tz,
-      });
-      return {
-        ok: false,
-        error: {
-          code: "CONFLICT",
-          message: `The technician has a personal calendar event at ${busyDisplayTime} (salon time).`,
-        },
-      };
-    }
-  }
-
   // ── Resource conflict check (non-atomic) ─────────────────────────────────
   if (input.resourceId) {
     const resourceConflict = dayAppts.find((a) => {
@@ -404,27 +382,6 @@ export async function atomicCreateBooking(
           conflictId: conflict.id as number,
         },
       };
-    }
-
-    // ── External calendar busy-block check (atomic path) ───────────────────
-    // Busy blocks are only written by the calendar-sync worker, never by a
-    // concurrent booking, so a plain read (outside the advisory-locked tx) is
-    // race-safe here.
-    {
-      const blocks = await getStaffBusyBlocks(input.storeId, input.staffId, dayStart, dayEnd);
-      const busy = findBusyOverlap(blocks, newStart, newEnd);
-      if (busy) {
-        const busyDisplayTime = busy.startsAt.toLocaleTimeString("en-US", {
-          hour: "numeric", minute: "2-digit", timeZone: tz,
-        });
-        return {
-          ok: false as const,
-          error: {
-            code: "CONFLICT" as BookingErrorCode,
-            message: `The technician has a personal calendar event at ${busyDisplayTime} (salon time).`,
-          },
-        };
-      }
     }
 
     // ── Resource conflict check (atomic) ───────────────────────────────────
@@ -584,24 +541,6 @@ export async function atomicRescheduleBooking(
             conflictId: conflict.id as number,
           },
         };
-      }
-
-      // ── External calendar busy-block check (reschedule) ──────────────────
-      if (input.staffId) {
-        const blocks = await getStaffBusyBlocks(input.storeId, input.staffId, dayStart, dayEnd);
-        const busy = findBusyOverlap(blocks, newStart, newEnd);
-        if (busy) {
-          const busyDisplayTime = busy.startsAt.toLocaleTimeString("en-US", {
-            hour: "numeric", minute: "2-digit", timeZone: tz,
-          });
-          return {
-            ok: false as const,
-            error: {
-              code: "CONFLICT" as BookingErrorCode,
-              message: `That time is not available — the technician has a personal calendar event at ${busyDisplayTime} (salon time).`,
-            },
-          };
-        }
       }
 
       const [updated] = await tx

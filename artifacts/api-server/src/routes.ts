@@ -1466,8 +1466,7 @@ export async function registerRoutes(
 
     if (req.path === "/sync/heartbeat") return next(); // Public connectivity probe
     if (req.path.startsWith("/autumn/")) return next(); // Autumn demo — public endpoints
-    if (req.path.startsWith("/calendar-sync/webhook/")) return next(); // Google/Microsoft calendar push — provider-signed, no session
-    if (req.path === "/calendar-sync/google/callback") return next(); // OAuth redirect back from Google — cross-site, no session cookie
+    if (req.path.startsWith("/calendar-sync/feed/")) return next(); // Public iCalendar subscription feed — HMAC-signed ref, no session
     if (req.path === "/unsubscribe") return next(); // One-click email unsubscribe — signed token, no session
 
     // ── Live chat — visitor routes are fully public; support routes use requireSupportAuth internally ──
