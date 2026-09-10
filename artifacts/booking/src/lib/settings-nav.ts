@@ -29,6 +29,7 @@ import {
   ArrowLeftRight,
   CalendarSync,
   Zap,
+  Lock,
   type LucideIcon,
 } from "lucide-react";
 
@@ -72,26 +73,37 @@ export function buildSettingsNav(pick: Pick4): SettingsTab[] {
       icon: User,
       items: [
         {
-          label: pick({ en: "Account", vi: "Tài khoản", es: "Cuenta", fr: "Compte" }),
+          label: pick({ en: "Personal Details", vi: "Thông tin cá nhân", es: "Datos personales", fr: "Informations personnelles" }),
           description: pick({
-            en: "Your name, login email, password and account data.",
-            vi: "Tên, email đăng nhập, mật khẩu và dữ liệu tài khoản.",
-            es: "Tu nombre, correo de acceso, contraseña y datos de la cuenta.",
-            fr: "Votre nom, e-mail de connexion, mot de passe et données du compte.",
+            en: "Your name, photo and contact info as the account owner.",
+            vi: "Tên, ảnh và thông tin liên hệ của chủ tài khoản.",
+            es: "Tu nombre, foto y datos de contacto como titular de la cuenta.",
+            fr: "Votre nom, photo et coordonnées en tant que titulaire du compte.",
           }),
-          icon: User, to: "/account", slug: "account", external: true,
+          icon: User, to: "/settings/personal-details", slug: "personal-details",
           iconBg: "bg-slate-100", iconColor: "text-slate-600",
         },
         {
-          label: pick({ en: "Calendar Sync", vi: "Đồng bộ lịch", es: "Sincronización de calendario", fr: "Synchronisation d'agenda" }),
+          label: pick({ en: "My Preferences", vi: "Tùy chọn của tôi", es: "Mis preferencias", fr: "Mes préférences" }),
           description: pick({
-            en: "Two-way sync between your bookings and a Google Calendar.",
-            vi: "Đồng bộ hai chiều giữa lịch hẹn và Google Calendar.",
-            es: "Sincronización bidireccional entre tus reservas y Google Calendar.",
-            fr: "Synchronisation bidirectionnelle entre vos réservations et Google Agenda.",
+            en: "Notification defaults and calendar sync.",
+            vi: "Mặc định thông báo và đồng bộ lịch.",
+            es: "Preferencias de notificaciones y sincronización de calendario.",
+            fr: "Préférences de notifications et synchronisation d'agenda.",
           }),
-          icon: CalendarSync, to: "/settings/calendar-sync", slug: "calendar-sync",
+          icon: Sliders, to: "/settings/my-preferences", slug: "my-preferences",
           iconBg: "bg-violet-100", iconColor: "text-violet-600",
+        },
+        {
+          label: pick({ en: "Security", vi: "Bảo mật", es: "Seguridad", fr: "Sécurité" }),
+          description: pick({
+            en: "The password you sign in with.",
+            vi: "Mật khẩu bạn dùng để đăng nhập.",
+            es: "La contraseña con la que inicias sesión.",
+            fr: "Le mot de passe avec lequel vous vous connectez.",
+          }),
+          icon: Lock, to: "/settings/security", slug: "security",
+          iconBg: "bg-amber-100", iconColor: "text-amber-600",
         },
       ],
     },

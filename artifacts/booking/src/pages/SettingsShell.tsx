@@ -28,10 +28,16 @@ import TranslationsPage from "@/pages/TranslationsPage";
 import DataTransferPage from "@/pages/DataTransferPage";
 import FeaturesSettings from "@/pages/FeaturesSettings";
 import CalendarSyncSettings from "@/pages/CalendarSyncSettings";
+import PersonalDetailsPage from "@/pages/settings/PersonalDetailsPage";
+import MyPreferencesPage from "@/pages/settings/MyPreferencesPage";
+import SecurityPage from "@/pages/settings/SecurityPage";
 
 // slug → pane component. Every inline settings destination lives here; the nav
 // (settings-nav.ts) decides which appear in the rail and under which tab.
 const PANES: Record<string, React.ComponentType> = {
+  "personal-details": PersonalDetailsPage,
+  "my-preferences": MyPreferencesPage,
+  "security": SecurityPage,
   "business": BusinessSettings,
   "hours": BusinessHoursPage,
   "online-booking": OnlineBooking,
@@ -55,6 +61,7 @@ const ALIASES: Record<string, string> = {
   booking: "booking-controls",
   messaging: "sms",
   "booking-hub": "booking-controls",
+  account: "personal-details",
 };
 
 const DEFAULT_SLUG = "business";

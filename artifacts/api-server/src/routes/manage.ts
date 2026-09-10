@@ -1,4 +1,5 @@
 import { Router } from "express";
+import bcrypt from "bcrypt";
 import { db, pool } from "../db";
 import { locations } from "../../shared/schema";
 import { users } from "../../shared/models/auth";
@@ -26,6 +27,7 @@ router.get("/overview", requireAuth, async (req: any, res) => {
         email: users.email,
         firstName: users.firstName,
         lastName: users.lastName,
+        phone: users.phone,
         profileImageUrl: users.profileImageUrl,
         subscriptionStatus: users.subscriptionStatus,
         trialEndsAt: users.trialEndsAt,
@@ -91,6 +93,75 @@ router.post("/logout", (req: any, res) => {
     });
     res.json({ ok: true });
   });
+});
+
+// PATCH /api/manage/profile — update the account owner's personal details.
+// Email is intentionally NOT editable here (changing the login email needs a
+// verification flow).
+router.patch("/profile", requireAuth, async (req: any, res) => {
+  try {
+    const userId: string = req.session.userId;
+    const b = req.body ?? {};
+    const updates: Record<string, string | null> = {};
+
+    if (typeof b.firstName === "string") updates.firstName = b.firstName.trim().slice(0, 100);
+    if (typeof b.lastName === "string") updates.lastName = b.lastName.trim().slice(0, 100);
+    if (typeof b.phone === "string") updates.phone = b.phone.trim().slice(0, 40) || null;
+    if (typeof b.profileImageUrl === "string") updates.profileImageUrl = b.profileImageUrl.trim() || null;
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: "Nothing to update" });
+    }
+
+    const [row] = await db
+      .update(users)
+      .set(updates)
+      .where(eq(users.id, userId))
+      .returning({
+        firstName: users.firstName,
+        lastName: users.lastName,
+        phone: users.phone,
+        profileImageUrl: users.profileImageUrl,
+      });
+
+    if (!row) return res.status(404).json({ error: "User not found" });
+    return res.json(row);
+  } catch (err: any) {
+    console.error("[Manage] profile update error:", err);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
+// POST /api/manage/change-password — verify current password, set a new one.
+router.post("/change-password", requireAuth, async (req: any, res) => {
+  try {
+    const userId: string = req.session.userId;
+    const { currentPassword, newPassword } = req.body ?? {};
+
+    if (typeof newPassword !== "string" || newPassword.length < 8) {
+      return res.status(400).json({ error: "New password must be at least 8 characters." });
+    }
+    if (typeof currentPassword !== "string" || !currentPassword) {
+      return res.status(400).json({ error: "Current password is required." });
+    }
+
+    const [user] = await db
+      .select({ password: users.password })
+      .from(users)
+      .where(eq(users.id, userId));
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const ok = await bcrypt.compare(currentPassword, user.password ?? "");
+    if (!ok) return res.status(400).json({ error: "Current password is incorrect." });
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await db.update(users).set({ password: hashed, passwordChanged: true }).where(eq(users.id, userId));
+
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[Manage] change-password error:", err);
+    return res.status(500).json({ error: "Server error" });
+  }
 });
 
 export default router;
