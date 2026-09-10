@@ -435,13 +435,38 @@ export function useUpdateAppointment() {
         throw err;
       }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [api.appointments.list.path],
-        refetchType: "active",
-      });
+    // Optimistically patch the change into every cached appointments list so the
+    // calendar card flips to its new state (e.g. "completed" / paid) the instant
+    // the checkout closes, instead of waiting on the invalidate → refetch round
+    // trip (which can be slow, deduped, or fall back to a stale IndexedDB copy).
+    onMutate: async ({ id, ...updates }: { id: number | string } & Record<string, any>) => {
+      await queryClient.cancelQueries({ queryKey: [api.appointments.list.path] });
+      const snapshots = queryClient.getQueriesData<any[]>({ queryKey: [api.appointments.list.path] });
+
+      const { date: _skipDate, ...patch } = updates;
+      if (patch.status === "completed" && patch.completedAt == null) {
+        patch.completedAt = new Date().toISOString();
+      }
+      if (patch.totalPaid != null && patch.paymentStatus == null) {
+        patch.paymentStatus = "paid";
+      }
+
+      if (Object.keys(patch).length > 0) {
+        for (const [key, data] of snapshots) {
+          if (!Array.isArray(data)) continue;
+          queryClient.setQueryData(
+            key,
+            data.map((apt: any) => (apt?.id === id ? { ...apt, ...patch } : apt)),
+          );
+        }
+      }
+      return { snapshots };
     },
-    onError: (err: any) => {
+    onError: (err: any, _vars, context: any) => {
+      // Roll the optimistic patch back to the pre-mutation snapshot.
+      if (context?.snapshots) {
+        for (const [key, data] of context.snapshots) queryClient.setQueryData(key, data);
+      }
       const status = err?.status;
       const message = err?.message || "Failed to update appointment";
       if (status === 403) {
@@ -457,6 +482,10 @@ export function useUpdateAppointment() {
           variant: "destructive",
         });
       }
+    },
+    onSettled: () => {
+      // Reconcile with server truth regardless of success/failure.
+      queryClient.invalidateQueries({ queryKey: [api.appointments.list.path] });
     },
     // See useCreateAppointment's comment — without this the queueLocally()
     // branch above is unreachable while offline (mutationFn never runs).
