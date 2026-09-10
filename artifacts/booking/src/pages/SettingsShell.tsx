@@ -139,7 +139,7 @@ export default function SettingsShell() {
 
   // ── top tab bar (underline style, à la GlossGenius) ──────────────────────
   const TabBar = (
-    <div className="flex shrink-0 gap-6 overflow-x-auto border-b border-border bg-background px-4 md:px-8">
+    <div className="flex shrink-0 gap-7 overflow-x-auto border-b border-border bg-background px-4 md:px-8">
       {tabs.map((tab) => {
         const active = tab.key === activeTab?.key;
         return (
@@ -148,7 +148,7 @@ export default function SettingsShell() {
             onClick={() => goToTab(tab)}
             data-testid={`settings-tab-${tab.key}`}
             className={cn(
-              "-mb-px shrink-0 border-b-2 py-3.5 text-[15px] font-medium transition-colors",
+              "-mb-px shrink-0 border-b-2 py-4 text-[16px] font-semibold transition-colors",
               active
                 ? "border-foreground text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground",
@@ -180,9 +180,9 @@ export default function SettingsShell() {
             title={it.description}
             data-testid={`settings-nav-${it.slug}`}
             className={cn(
-              "group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[15px] transition-colors",
+              "group flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[15px] font-semibold transition-colors",
               active
-                ? "bg-muted font-medium text-foreground"
+                ? "bg-muted text-foreground"
                 : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
             )}
           >
@@ -204,9 +204,9 @@ export default function SettingsShell() {
           onClick={() => navigate("/settings/delete-account")}
           data-testid="settings-nav-delete-account"
           className={cn(
-            "mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[15px] transition-colors",
+            "mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[15px] font-semibold transition-colors",
             activeSlug === "delete-account"
-              ? "bg-destructive/10 font-medium text-destructive"
+              ? "bg-destructive/10 text-destructive"
               : "text-destructive/80 hover:bg-destructive/10",
           )}
         >
@@ -266,8 +266,8 @@ export default function SettingsShell() {
             Detail
           ) : (
             <>
-              <header className="border-b border-border px-4 py-3">
-                <h1 className="text-xl font-bold text-foreground">{t.title}</h1>
+              <header className="border-b border-border px-4 pb-4 pt-5">
+                <h1 className="text-2xl font-bold tracking-tight text-foreground">{t.title}</h1>
               </header>
               {TabBar}
               {Rail}
@@ -276,6 +276,9 @@ export default function SettingsShell() {
         </div>
       ) : (
         <div className="flex h-full min-h-0 flex-col bg-background">
+          <div className="shrink-0 px-4 pb-5 pt-9 md:px-8 md:pb-6 md:pt-11">
+            <h1 className="text-[28px] font-bold leading-none tracking-tight text-foreground">{t.title}</h1>
+          </div>
           {TabBar}
           <div className="flex min-h-0 flex-1">
             {Rail}
