@@ -1738,10 +1738,12 @@ function PayrollChecksTab({ settings }: { settings: PrintSettings }) {
     enabled: !!selectedRunId,
   });
 
-  const finalizedRuns = runs.filter(r => r.status === "finalized");
-  const visibleItems = checkData
+  // "approved" is the new Payroll page's finalized state; "finalized" is the legacy one.
+  const finalizedRuns = runs.filter(r => r.status === "finalized" || r.status === "approved");
+  const visibleItems = (checkData
     ? (selectedItemId ? checkData.items.filter(i => i.id === selectedItemId) : checkData.items)
-    : [];
+    : []
+  ).filter(i => Number((i as any).totalPay ?? 0) > 0); // never print a $0.00 paycheck
 
   function buildEarningsRows(item: PayrollCheckItem) {
     const rows: Array<{ label: string; amount: number; sub?: string; indent?: boolean }> = [
@@ -1754,6 +1756,12 @@ function PayrollChecksTab({ settings }: { settings: PrintSettings }) {
       { label: "Add-on Revenue",   amount: Number(item.addonRevenue),   indent: true },
     ];
     if (item.tipsAmount > 0) rows.push({ label: "Tips", amount: item.tipsAmount });
+    const oe = Number((item as any).otherEarnings ?? 0);
+    const br = Number((item as any).boothRent ?? 0);
+    const od = Number((item as any).otherDeductions ?? 0);
+    if (oe > 0) rows.push({ label: "Additions", amount: oe });
+    if (br > 0) rows.push({ label: "Booth rent", amount: -br });
+    if (od > 0) rows.push({ label: "Deductions", amount: -od });
     if (item.hoursWorked > 0) rows.push({ label: "Hours Worked", amount: 0, sub: `${item.hoursWorked.toFixed(1)} hrs` });
     return rows;
   }

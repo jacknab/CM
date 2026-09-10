@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -45,10 +46,7 @@ const fmtDate = (s: string | null) => (s ? new Date(s + "T00:00:00").toLocaleDat
 
 export default function TeamPayroll() {
   const [openRunId, setOpenRunId] = useState<number | null>(null);
-  const [printRunId, setPrintRunId] = useState<number | null>(null);
-
-  if (printRunId) return <PrintView runId={printRunId} onBack={() => setPrintRunId(null)} />;
-  if (openRunId) return <RunReview runId={openRunId} onBack={() => setOpenRunId(null)} onPrint={(id) => { setOpenRunId(null); setPrintRunId(id); }} />;
+  if (openRunId) return <RunReview runId={openRunId} onBack={() => setOpenRunId(null)} />;
   return <Overview onOpenRun={setOpenRunId} />;
 }
 
@@ -209,8 +207,9 @@ function Overview({ onOpenRun }: { onOpenRun: (id: number) => void }) {
 }
 
 // ── review + approve ─────────────────────────────────────────────────────
-function RunReview({ runId, onBack, onPrint }: { runId: number; onBack: () => void; onPrint: (id: number) => void }) {
+function RunReview({ runId, onBack }: { runId: number; onBack: () => void }) {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const { data, isLoading } = useQuery<{ run: Run; items: Line[] }>({
     queryKey: [`/api/payroll/runs/${runId}`],
@@ -319,7 +318,7 @@ function RunReview({ runId, onBack, onPrint }: { runId: number; onBack: () => vo
                     <Button variant="outline" onClick={() => voidRun.mutate()} disabled={voidRun.isPending}>
                       Reopen
                     </Button>
-                    <Button onClick={() => onPrint(runId)}>
+                    <Button onClick={() => navigate("/print-checks")}>
                       <Printer className="mr-1.5 h-4 w-4" /> Print paychecks
                     </Button>
                   </>
@@ -354,75 +353,5 @@ function EditCell({ value, locked, onCommit }: { value: string; locked: boolean;
         />
       )}
     </td>
-  );
-}
-
-// ── print view (paychecks + vouchers, net > 0 only) ─────────────────────
-function PrintView({ runId, onBack }: { runId: number; onBack: () => void }) {
-  const { data } = useQuery<{ run: Run; items: Line[] }>({
-    queryKey: [`/api/payroll/runs/${runId}`],
-    queryFn: async () => (await fetch(`/api/payroll/runs/${runId}`, { credentials: "include" })).json(),
-  });
-  const checks = (data?.items ?? []).filter((i) => Number(i.netPay) > 0);
-
-  return (
-    <div className="min-h-screen bg-white p-6 text-black">
-      <div className="mx-auto max-w-3xl print:max-w-none">
-        <div className="mb-4 flex items-center justify-between print:hidden">
-          <button onClick={onBack} className="flex items-center gap-1 text-sm font-medium text-primary hover:underline">
-            <ChevronLeft className="h-4 w-4" /> Back
-          </button>
-          <Button onClick={() => window.print()}>
-            <Printer className="mr-1.5 h-4 w-4" /> Print
-          </Button>
-        </div>
-        <p className="mb-4 text-xs text-gray-500 print:hidden">
-          {checks.length} paycheck{checks.length === 1 ? "" : "s"} · load check paper and print. Zero-balance staff are excluded.
-        </p>
-
-        {checks.map((c) => (
-          <div key={c.id} className="mb-6 break-inside-avoid border border-gray-300 p-5 print:mb-0 print:border-0 print:p-8" style={{ pageBreakAfter: "always" }}>
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-sm text-gray-500">Pay to the order of</div>
-                <div className="text-xl font-semibold">{c.staffName}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-sm text-gray-500">{fmtDate(data!.run.payDate)}</div>
-                <div className="text-2xl font-bold tabular-nums">{money(c.netPay)}</div>
-                {c.checkNumber && <div className="text-sm text-gray-500">Check #{c.checkNumber}</div>}
-              </div>
-            </div>
-            <div className="mt-6 border-t border-gray-200 pt-4">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                Pay stub · {fmtDate(data!.run.periodStart)} – {fmtDate(data!.run.periodEnd)}
-              </div>
-              <table className="w-full text-sm">
-                <tbody>
-                  <Row label="Commission" value={c.commissionAmount} />
-                  <Row label="Tips" value={c.tips} />
-                  {Number(c.otherEarnings) > 0 && <Row label="Additions" value={c.otherEarnings} />}
-                  {Number(c.boothRent) > 0 && <Row label="Booth rent" value={`-${c.boothRent}`} />}
-                  {Number(c.otherDeductions) > 0 && <Row label="Other deductions" value={`-${c.otherDeductions}`} />}
-                  <tr className="border-t border-gray-300 font-semibold">
-                    <td className="py-1">Net pay</td>
-                    <td className="py-1 text-right tabular-nums">{money(c.netPay)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <tr>
-      <td className="py-1 text-gray-600">{label}</td>
-      <td className="py-1 text-right tabular-nums">{money(value.replace("-", ""))}{value.startsWith("-") ? "" : ""}</td>
-    </tr>
   );
 }

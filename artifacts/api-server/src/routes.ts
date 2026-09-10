@@ -3156,11 +3156,22 @@ export async function registerRoutes(
           cursor.setDate(cursor.getDate() + 1);
         }
 
+        const tipAmt = tipsMap.get(item.staffId) || 0;
+        // New Payroll page stores an explicit net_pay (commission + tips + additions
+        // − booth rent − deductions). Legacy runs leave it 0 → fall back to
+        // commission + tips.
+        const storedNet = Number((item as any).netPay ?? 0);
+        const totalPay = storedNet > 0
+          ? parseFloat(storedNet.toFixed(2))
+          : parseFloat((Number(item.commissionAmount) + tipAmt).toFixed(2));
         return {
           ...item,
-          tipsAmount:   parseFloat((tipsMap.get(item.staffId) || 0).toFixed(2)),
+          tipsAmount:   parseFloat(tipAmt.toFixed(2)),
           hoursWorked:  parseFloat((hoursMap.get(item.staffId) || 0).toFixed(2)),
-          totalPay:     parseFloat((Number(item.commissionAmount) + (tipsMap.get(item.staffId) || 0)).toFixed(2)),
+          boothRent:       parseFloat(Number((item as any).boothRent ?? 0).toFixed(2)),
+          otherEarnings:   parseFloat(Number((item as any).otherEarnings ?? 0).toFixed(2)),
+          otherDeductions: parseFloat(Number((item as any).otherDeductions ?? 0).toFixed(2)),
+          totalPay,
           dailyBreakdown,
         };
       });
