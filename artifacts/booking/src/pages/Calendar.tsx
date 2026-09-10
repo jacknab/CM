@@ -292,6 +292,7 @@ export default function Calendar() {
     autoCompleteAppointments: calSettings?.autoCompleteAppointments ?? DEFAULT_CALENDAR_SETTINGS.autoCompleteAppointments,
   };
   const showPrices = calSettings?.showPrices ?? DEFAULT_CALENDAR_SETTINGS.showPrices;
+  const walkInsEnabled = (calSettings as any)?.walkInsEnabled ?? true;
 
   const storeNow = getNowInTimezone(timezone);
   const [currentDate, setCurrentDate] = useState(storeNow);
@@ -323,6 +324,15 @@ export default function Calendar() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showNewApptMenu, setShowNewApptMenu] = useState(false);
   const [lookupMode, setLookupMode] = useState(false);
+  // Walk-ins OFF: a slot "Book" click first opens the phone-entry sheet; this holds
+  // the slot so the picked client can be carried into /booking/new.
+  const [pendingSlotBooking, setPendingSlotBooking] = useState<
+    { staffId: number; dateStr: string; timeStr: string; availableMinutes: number } | null
+  >(null);
+  // 10 digits pushed from the /frontdesk tablet into the open phone-entry sheet.
+  const [frontdeskPhone, setFrontdeskPhone] = useState("");
+  // Dual-screen: the /frontdesk tablet mirrors the phone-entry prompt.
+  const [frontdeskDualScreen, setFrontdeskDualScreen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<{ staffId: number; hour: number; minute: number } | null>(null);
   const [openStaffMenu, setOpenStaffMenu] = useState<number | null>(null);
   const [staffAvailOverride, setStaffAvailOverride] = useState<Record<number, boolean>>({});
@@ -517,6 +527,29 @@ export default function Calendar() {
     refetchOnWindowFocus: true,
   });
 
+  // Is the /frontdesk customer tablet paired (dual-screen)? Governs whether the
+  // phone-entry prompt is mirrored to it.
+  useEffect(() => {
+    if (!selectedStore?.id) return;
+    fetch("/api/kiosk-settings", { credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => setFrontdeskDualScreen(d?.dualScreenMode === true))
+      .catch(() => {});
+  }, [selectedStore?.id]);
+
+  const broadcastToFrontdesk = useCallback(
+    (type: string, payload: Record<string, unknown> = {}) => {
+      if (!selectedStore?.id || !frontdeskDualScreen) return;
+      fetch("/api/kiosk/checkout-event", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, ...payload }),
+      }).catch(() => {});
+    },
+    [selectedStore?.id, frontdeskDualScreen],
+  );
+
   // Real-time appointment sync via WebSocket — works for ALL store types.
   // Instantly refreshes calendar when any booking is created, updated, or deleted
   // from any source: staff dashboard, online booking, AI receptionist, etc.
@@ -539,6 +572,12 @@ export default function Calendar() {
             data.type === "booking_deleted"
           ) {
             queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
+          }
+          // The /frontdesk tablet sent back the phone the client typed — feed it
+          // into the open phone-entry sheet so it searches / creates the client.
+          if (data.type === "kiosk_checkout_phone_result" && typeof data.phone === "string") {
+            const digits = data.phone.replace(/\D/g, "").slice(-10);
+            if (digits.length === 10) setFrontdeskPhone(digits);
           }
           // Kiosk check-in print jobs → auto-print on connected thermal printer
           if (data.type === "kiosk_print_job" && data.jobType === "checkin_ticket") {
@@ -1173,8 +1212,19 @@ export default function Calendar() {
     if (availMins <= 0) return;
     const dateStr = `${currentDate.getUTCFullYear()}-${String(currentDate.getUTCMonth() + 1).padStart(2, "0")}-${String(currentDate.getUTCDate()).padStart(2, "0")}`;
     const timeStr = `${String(slotHour).padStart(2, "0")}:${String(slotMinute).padStart(2, "0")}`;
+    if (!walkInsEnabled) {
+      // Walk-ins are off — a booking must have a client. Open the phone-entry
+      // sheet first, carrying the slot so the picked client flows into /booking/new.
+      setSelectedSlot(null);
+      setPendingSlotBooking({ staffId, dateStr, timeStr, availableMinutes: availMins });
+      setFrontdeskPhone("");
+      setLookupMode(false);
+      setShowClientLookup(true);
+      broadcastToFrontdesk("kiosk_checkout_phone_prompt");
+      return;
+    }
     navigate(`/booking/new?staffId=${staffId}&date=${dateStr}&time=${timeStr}&availableMinutes=${availMins}`);
-  }, [currentDate, navigate, getAvailableMinutesForSlot]);
+  }, [currentDate, navigate, getAvailableMinutesForSlot, walkInsEnabled, broadcastToFrontdesk]);
 
   const handleCancelAppointment = (apt: AppointmentWithDetails) => {
     setShowCancelFlow(true);
@@ -3375,10 +3425,28 @@ export default function Calendar() {
 
         {showClientLookup && (
           <ChooseClientPanel
-            walkInsEnabled={(calSettings as any)?.walkInsEnabled ?? true}
-            onClose={() => setShowClientLookup(false)}
+            walkInsEnabled={walkInsEnabled}
+            phoneFromFrontdesk={frontdeskPhone}
+            onClose={() => {
+              setShowClientLookup(false);
+              if (pendingSlotBooking) {
+                setPendingSlotBooking(null);
+                setFrontdeskPhone("");
+                broadcastToFrontdesk("kiosk_checkout_phone_cancel");
+              }
+            }}
             onSelectClient={(clientId) => {
               setShowClientLookup(false);
+              if (pendingSlotBooking) {
+                const { staffId, dateStr, timeStr, availableMinutes } = pendingSlotBooking;
+                setPendingSlotBooking(null);
+                setFrontdeskPhone("");
+                broadcastToFrontdesk("kiosk_checkout_phone_cancel");
+                navigate(
+                  `/booking/new?clientId=${clientId}&staffId=${staffId}&date=${dateStr}&time=${timeStr}&availableMinutes=${availableMinutes}`,
+                );
+                return;
+              }
               if (lookupMode) {
                 const now = Date.now();
                 const clientAppts = (appointments || []).filter(
@@ -3406,6 +3474,14 @@ export default function Calendar() {
             }}
             onWalkIn={() => {
               setShowClientLookup(false);
+              if (pendingSlotBooking || !walkInsEnabled) {
+                // Walk-ins off — this shouldn't be reachable (the keypad hides
+                // the walk-in key), but bail rather than create a client-less booking.
+                setPendingSlotBooking(null);
+                setFrontdeskPhone("");
+                broadcastToFrontdesk("kiosk_checkout_phone_cancel");
+                return;
+              }
               if (lookupMode) {
                 setLookupMode(false);
                 return;
@@ -9257,11 +9333,14 @@ function ChooseClientPanel({
   onSelectClient,
   onWalkIn,
   walkInsEnabled = true,
+  phoneFromFrontdesk = "",
 }: {
   onClose: () => void;
   onSelectClient: (clientId: number) => void;
   onWalkIn: () => void;
   walkInsEnabled?: boolean;
+  /** 10 digits pushed live from the /frontdesk tablet — fills the keypad. */
+  phoneFromFrontdesk?: string;
 }) {
   const { pick } = useLanguage();
   const tCC = {
@@ -9312,6 +9391,17 @@ function ChooseClientPanel({
     setPhoneDigits(prev => prev.slice(0, -1));
     setSearchDone(false);
   }, []);
+
+  // The /frontdesk tablet pushed the digits the client typed — mirror them into
+  // the keypad so the search / new-client flow runs exactly as if staff typed it.
+  useEffect(() => {
+    const digits = (phoneFromFrontdesk || "").replace(/\D/g, "").slice(-10);
+    if (digits.length === 10) {
+      setPhoneDigits(digits);
+      setSearchDone(false);
+      setShowNameEntry(false);
+    }
+  }, [phoneFromFrontdesk]);
 
   useEffect(() => {
     if (phoneDigits.length !== 10 || searchDone || !selectedStore) return;

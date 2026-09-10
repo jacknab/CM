@@ -240,6 +240,9 @@ export default function FrontDeskDisplay() {
   const [rwPhone, setRwPhone]     = useState("");
   const [rwStatus, setRwStatus]   = useState<"idle" | "submitting" | "done" | "error">("idle");
   const [rwResult, setRwResult]   = useState<{ name: string; loyaltyPoints: number; isNew: boolean } | null>(null);
+  // Booking-phone mode: staff on the calendar asked for a client's number.
+  const [bookingPhoneMode, setBookingPhoneMode] = useState(false);
+  const [bookingPhoneSent, setBookingPhoneSent] = useState(false);
 
   const idleRef     = useRef<ReturnType<typeof setTimeout>  | null>(null);
   const cdownRef    = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -252,6 +255,7 @@ export default function FrontDeskDisplay() {
   const payTriggerRef = useRef<"pos" | "client_confirm">("pos");
   const awaitModeRef = useRef<AwaitMode>("m2");
   const posCheckoutRef = useRef<PosCheckout>(null);
+  const bookingPhoneModeRef = useRef(false);
 
   const t = translations[lang];
   const isNative = typeof window !== "undefined" && !!(window as any).CERTXA_NATIVE_APP;
@@ -320,6 +324,7 @@ export default function FrontDeskDisplay() {
   }, []);
 
   useEffect(() => { posCheckoutRef.current = posCheckout; }, [posCheckout]);
+  useEffect(() => { bookingPhoneModeRef.current = bookingPhoneMode; }, [bookingPhoneMode]);
 
   useEffect(() => {
     if (!storeId) return;
@@ -405,6 +410,21 @@ export default function FrontDeskDisplay() {
             // Don't cut the "Thank you!" screen short — it clears itself on a timer.
             if (posCheckoutRef.current !== "thankyou") clearPosOverlay();
             break;
+          // Staff is creating a booking on the calendar and needs the client's
+          // number — show the phone keypad; on submit we send the digits back.
+          case "kiosk_checkout_phone_prompt":
+            setPhone("");
+            setBookingPhoneMode(true);
+            setBookingPhoneSent(false);
+            setScreen("phone");
+            break;
+          case "kiosk_checkout_phone_cancel":
+            if (bookingPhoneModeRef.current) {
+              setBookingPhoneMode(false);
+              setBookingPhoneSent(false);
+              resetToIdle();
+            }
+            break;
         }
       };
       ws.onclose = () => { wsRef.current = null; if (!destroyed) setTimeout(connect, 5_000); };
@@ -481,6 +501,7 @@ export default function FrontDeskDisplay() {
     if (posCheckoutRef.current !== null) return;
     setScreen("idle"); setPhone(""); setClientInfo(null);
     setNewClientName(""); setTodayAppointment(null); setError("");
+    setBookingPhoneMode(false); setBookingPhoneSent(false);
     if (cdownRef.current) clearInterval(cdownRef.current);
   }, []);
 
@@ -602,11 +623,29 @@ export default function FrontDeskDisplay() {
     }
   };
 
+  // Booking-phone mode: don't run the check-in lookup — just hand the digits
+  // back to the calendar and thank the client.
+  const submitBookingPhone = useCallback((digits: string) => {
+    const p = (digits || "").replace(/\D/g, "").slice(-10);
+    if (p.length !== 10) return;
+    sendWs("kiosk_checkout_phone_result", { phone: p });
+    setBookingPhoneSent(true);
+    if (idleRef.current) clearTimeout(idleRef.current);
+    idleRef.current = setTimeout(() => {
+      setBookingPhoneMode(false);
+      setBookingPhoneSent(false);
+      resetToIdle();
+    }, 6000);
+  }, [sendWs, resetToIdle]);
+
   const handleDigit = (d: string) => {
     if (phone.length >= 10) return;
     const next = phone + d;
     setPhone(next); kick();
-    if (next.length === 10) doLookup(next);
+    if (next.length === 10) {
+      if (bookingPhoneMode) submitBookingPhone(next);
+      else doLookup(next);
+    }
   };
 
   // ── Rewards sign-up (walk-in checkout, right panel of the cart mirror) ────
@@ -1074,9 +1113,21 @@ export default function FrontDeskDisplay() {
         )}
       </div>
       <div className="flex-1 flex flex-col items-center justify-center gap-5 px-8">
+        {bookingPhoneSent ? (
+          <div className="flex flex-col items-center gap-6 text-center">
+            <div className="w-28 h-28 rounded-full flex items-center justify-center shadow-xl" style={{ background: `linear-gradient(135deg, ${PRIMARY}, #a78bfa)` }}>
+              <span className="text-white text-6xl font-black">✓</span>
+            </div>
+            <div>
+              <h2 className="text-4xl font-black" style={{ color: TEXT }}>Thank you!</h2>
+              <p className="text-lg mt-2" style={{ color: SUBTLE }}>The front desk will finish your booking.</p>
+            </div>
+          </div>
+        ) : (
+        <>
         <div className="text-center mb-1">
           <p className="text-2xl font-bold" style={{ color: TEXT }}>{t.enterPhone}</p>
-          <p className="text-base mt-1" style={{ color: SUBTLE }}>{t.infoNeverShared}</p>
+          <p className="text-base mt-1" style={{ color: SUBTLE }}>{bookingPhoneMode ? "So the front desk can add you to the appointment" : t.infoNeverShared}</p>
         </div>
         <div className="rounded-2xl px-10 py-4 min-w-[320px] text-center" style={{ background: SURFACE, border: `1.5px solid ${BORDER}`, boxShadow: SHADOW }}>
           <span className="text-5xl font-mono tracking-[0.12em]" style={{ color: phone ? TEXT : BORDER }}>
@@ -1097,7 +1148,7 @@ export default function FrontDeskDisplay() {
           <button onPointerDown={e => { e.preventDefault(); handleDigit("0"); }}
             className="w-24 h-24 rounded-2xl text-3xl font-bold transition-all active:scale-90"
             style={{ background: SURFACE, border: `1.5px solid ${BORDER}`, color: TEXT, boxShadow: SHADOW }}>0</button>
-          <button onPointerDown={e => { e.preventDefault(); if (phone.length === 10) doLookup(phone); }}
+          <button onPointerDown={e => { e.preventDefault(); if (phone.length === 10) { bookingPhoneMode ? submitBookingPhone(phone) : doLookup(phone); } }}
             disabled={phone.length < 10}
             className="w-24 h-24 rounded-2xl text-3xl font-bold text-white transition-all active:scale-90 disabled:opacity-30"
             style={{ background: phone.length < 10 ? "#d1d5db" : PRIMARY, boxShadow: phone.length < 10 ? "none" : SHADOW }}>→</button>
@@ -1105,6 +1156,8 @@ export default function FrontDeskDisplay() {
         <div className="flex gap-3 mt-1">
           <GhostBtn onPress={resetToIdle}>{t.cancel}</GhostBtn>
         </div>
+        </>
+        )}
       </div>
     </div>
   );
