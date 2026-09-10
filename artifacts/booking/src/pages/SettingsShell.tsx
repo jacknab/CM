@@ -139,7 +139,7 @@ export default function SettingsShell() {
 
   // ── top tab bar (underline style, à la GlossGenius) ──────────────────────
   const TabBar = (
-    <div className="flex shrink-0 gap-7 overflow-x-auto border-b border-border bg-background px-4 md:px-8">
+    <div className="flex shrink-0 gap-7 overflow-x-auto border-b border-border px-4 md:px-8">
       {tabs.map((tab) => {
         const active = tab.key === activeTab?.key;
         return (
@@ -261,7 +261,7 @@ export default function SettingsShell() {
   return (
     <AppLayout fullHeight>
       {isMobile ? (
-        <div className="flex h-full min-h-0 flex-col bg-background">
+        <div className="settings-surface flex h-full min-h-0 flex-col">
           {section ? (
             Detail
           ) : (
@@ -275,7 +275,7 @@ export default function SettingsShell() {
           )}
         </div>
       ) : (
-        <div className="flex h-full min-h-0 flex-col bg-background">
+        <div className="settings-surface flex h-full min-h-0 flex-col">
           <div className="shrink-0 px-4 pb-5 pt-9 md:px-8 md:pb-6 md:pt-11">
             <h1 className="text-[28px] font-bold leading-none tracking-tight text-foreground">{t.title}</h1>
           </div>

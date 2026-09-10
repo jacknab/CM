@@ -549,6 +549,28 @@
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   Settings shell — a clean, GlossGenius-style surface that locally opts
+   OUT of the warm "editorial paper" theme: near-white page, white cards,
+   sans-serif headings (the global h1–h6 rule uses the Fraunces serif).
+   Applied via the `.settings-surface` class on the SettingsShell roots.
+   ══════════════════════════════════════════════════════════════════════ */
+.settings-surface {
+  background-color: hsl(36 33% 97%);
+}
+.dark .settings-surface {
+  background-color: hsl(var(--background));
+}
+.settings-surface .bg-card {
+  background-color: #fff;
+}
+.dark .settings-surface .bg-card {
+  background-color: hsl(var(--card));
+}
+.settings-surface :is(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--font-body);
+}
+
 .rise-in { animation: rise-in 560ms cubic-bezier(.2,.8,.2,1) both; }
 .rise-delay-1 { animation-delay: 70ms; }
 .rise-delay-2 { animation-delay: 140ms; }
