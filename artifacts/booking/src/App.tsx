@@ -584,8 +584,8 @@ function AppRoutes() {
       <Route path="/booking-policies" element={<Navigate to="/settings/booking-controls" replace />} />
       <Route path="/clients/at-risk" element={<OwnerOnlyRoute><ClientAtRisk /></OwnerOnlyRoute>} />
       <Route path="/online-booking" element={<Navigate to="/settings/online-booking" replace />} />
-      <Route path="/sms-settings" element={<Navigate to="/settings/sms" replace />} />
-      <Route path="/mail-settings" element={<Navigate to="/settings/email" replace />} />
+      <Route path="/sms-settings" element={<Navigate to="/settings/client-notifications" replace />} />
+      <Route path="/mail-settings" element={<Navigate to="/settings/client-notifications" replace />} />
       <Route path="/ai-receptionist" element={<AiReceptionist />} />
       <Route path="/ai-receptionist/live" element={<AiReceptionistLive />} />
       <Route path="/sms-inbox" element={<OwnerOnlyRoute><SmsInbox /></OwnerOnlyRoute>} />

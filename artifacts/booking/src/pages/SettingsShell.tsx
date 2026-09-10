@@ -22,8 +22,7 @@ import KioskSettings from "@/pages/KioskSettings";
 import PayoutAccountSettings from "@/pages/settings/PayoutAccountSettings";
 import POSSettings from "@/pages/POSSettings";
 import PayrollSettings from "@/pages/PayrollSettings";
-import SmsSettings from "@/pages/SmsSettings";
-import MailSettings from "@/pages/MailSettings";
+import ClientNotifications from "@/pages/settings/ClientNotifications";
 import TranslationsPage from "@/pages/TranslationsPage";
 import DataTransferPage from "@/pages/DataTransferPage";
 import FeaturesSettings from "@/pages/FeaturesSettings";
@@ -44,8 +43,7 @@ const PANES: Record<string, React.ComponentType> = {
   "booking-controls": CalendarSettings,
   "resources": ResourceSettings,
   "kiosk": KioskSettings,
-  "sms": SmsSettings,
-  "email": MailSettings,
+  "client-notifications": ClientNotifications,
   "pos": POSSettings,
   "payout-account": PayoutAccountSettings,
   "language": LanguageSettings,
@@ -59,7 +57,9 @@ const PANES: Record<string, React.ComponentType> = {
 // Retired slugs from the short-lived hub layout — redirect to a live destination.
 const ALIASES: Record<string, string> = {
   booking: "booking-controls",
-  messaging: "sms",
+  messaging: "client-notifications",
+  sms: "client-notifications",
+  email: "client-notifications",
   "booking-hub": "booking-controls",
   account: "personal-details",
 };

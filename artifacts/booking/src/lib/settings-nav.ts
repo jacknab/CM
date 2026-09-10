@@ -140,6 +140,16 @@ export function buildSettingsNav(pick: Pick4): SettingsTab[] {
           to: "/settings/booking-controls", slug: "booking-controls",
         },
         {
+          label: pick({ en: "Client Notifications", vi: "Thông báo cho khách", es: "Notificaciones a clientes", fr: "Notifications clients" }),
+          description: pick({
+            en: "Confirmations, reminders and review requests — by text, email or both.",
+            vi: "Xác nhận, nhắc nhở và yêu cầu đánh giá — qua SMS, email hoặc cả hai.",
+            es: "Confirmaciones, recordatorios y solicitudes de reseña — por SMS, correo o ambos.",
+            fr: "Confirmations, rappels et demandes d'avis — par SMS, e-mail ou les deux.",
+          }),
+          to: "/settings/client-notifications", slug: "client-notifications",
+        },
+        {
           label: pick({ en: "Stations & Chairs", vi: "Bàn & Ghế", es: "Estaciones y sillas", fr: "Postes et fauteuils" }),
           description: pick({ en: "Bookable nail stations, pedicure chairs and rooms.", vi: "Bàn làm nail, ghế pedicure và phòng có thể đặt.", es: "Estaciones de manicura, sillas de pedicura y salas reservables.", fr: "Postes de manucure, fauteuils de pédicure et salles réservables." }),
           to: "/settings/resources", slug: "resources",
@@ -148,16 +158,6 @@ export function buildSettingsNav(pick: Pick4): SettingsTab[] {
           label: pick({ en: "Check-in Kiosk", vi: "Kiosk check-in", es: "Kiosco de registro", fr: "Kiosque d'enregistrement" }),
           description: pick({ en: "Self check-in tablet URL, QR code and welcome text.", vi: "URL máy tính bảng tự check-in, mã QR và lời chào.", es: "URL del tablet de auto check-in, código QR y texto de bienvenida.", fr: "URL de la tablette d'enregistrement, QR code et message d'accueil." }),
           to: "/settings/kiosk", slug: "kiosk",
-        },
-        {
-          label: pick({ en: "Text Messages", vi: "Tin nhắn SMS", es: "Mensajes de texto", fr: "SMS" }),
-          description: pick({ en: "Text reminders, message templates and opt-outs.", vi: "Nhắc nhở qua SMS, mẫu tin nhắn và hủy nhận.", es: "Recordatorios por SMS, plantillas y exclusiones.", fr: "Rappels SMS, modèles de messages et désinscriptions." }),
-          to: "/settings/sms", slug: "sms",
-        },
-        {
-          label: pick({ en: "Email", vi: "Email", es: "Correo", fr: "E-mail" }),
-          description: pick({ en: "Email notifications and sender details.", vi: "Thông báo email và thông tin người gửi.", es: "Notificaciones por correo y datos del remitente.", fr: "Notifications par e-mail et coordonnées de l'expéditeur." }),
-          to: "/settings/email", slug: "email",
         },
         {
           label: pick({ en: "Payments & Checkout", vi: "Thanh toán & Tính tiền", es: "Pagos y cobro", fr: "Paiements et encaissement" }),
