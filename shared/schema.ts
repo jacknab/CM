@@ -1522,14 +1522,39 @@ export type InsertTimeclock = z.infer<typeof insertTimeclockSchema>;
 
 // === PAYROLL RUNS (commission-only contractor payroll) ===
 
+// ── PAYROLL (rebuilt 2026-09) ───────────────────────────────────────────────
+// Auto pay-period runs + printable paychecks (commission-only). Runs are
+// auto-created per elapsed period; the owner reviews then approves; approval
+// generates one PDF of checks + vouchers, skipping staff with $0 net.
+// The legacy payout_* / contractor_* subsystem is frozen (see plans/).
+
+export const paySchedules = pgTable("pay_schedules", {
+  id:                  serial("id").primaryKey(),
+  storeId:             integer("store_id").references(() => locations.id, { onDelete: "cascade" }).notNull().unique(),
+  frequency:           text("frequency").notNull().default("weekly"), // weekly | biweekly | semimonthly | monthly
+  anchorDate:          date("anchor_date").notNull(),                 // first pay date; periods roll from here
+  periodEndOffsetDays: integer("period_end_offset_days").notNull().default(0),
+  createdAt:           timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:           timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const payrollRuns = pgTable("payroll_runs", {
   id:               serial("id").primaryKey(),
   storeId:          integer("store_id").references(() => locations.id, { onDelete: "cascade" }).notNull(),
-  periodStart:      text("period_start").notNull(),
-  periodEnd:        text("period_end").notNull(),
-  status:           text("status").notNull().default("draft"),
+  periodStart:      text("period_start").notNull(),   // YYYY-MM-DD
+  periodEnd:        text("period_end").notNull(),     // YYYY-MM-DD
+  payDate:          date("pay_date"),
+  status:           text("status").notNull().default("draft"), // draft | approved | void
   totalCommission:  decimal("total_commission", { precision: 10, scale: 2 }).notNull().default("0"),
+  tipsTotal:        decimal("tips_total", { precision: 10, scale: 2 }).notNull().default("0"),
+  deductionsTotal:  decimal("deductions_total", { precision: 10, scale: 2 }).notNull().default("0"),
+  netTotal:         decimal("net_total", { precision: 10, scale: 2 }).notNull().default("0"),
   contractorCount:  integer("contractor_count").notNull().default(0),
+  approvedAt:       timestamp("approved_at", { withTimezone: true }),
+  approvedBy:       text("approved_by"),
+  pdfUrl:           text("pdf_url"),
+  pdfGeneratedAt:   timestamp("pdf_generated_at", { withTimezone: true }),
+  checksPrintedCount: integer("checks_printed_count").notNull().default(0),
   notes:            text("notes"),
   createdBy:        text("created_by"),
   createdAt:        timestamp("created_at").defaultNow().notNull(),
@@ -1545,11 +1570,21 @@ export const payrollRunItems = pgTable("payroll_run_items", {
   staffId:          integer("staff_id").references(() => staff.id, { onDelete: "cascade" }).notNull(),
   staffName:        text("staff_name").notNull().default(""),
   commissionRate:   decimal("commission_rate", { precision: 5, scale: 2 }).notNull().default("0"),
+  productCommissionRate: decimal("product_commission_rate", { precision: 5, scale: 2 }).notNull().default("0"),
   appointmentCount: integer("appointment_count").notNull().default(0),
   serviceRevenue:   decimal("service_revenue", { precision: 10, scale: 2 }).notNull().default("0"),
   addonRevenue:     decimal("addon_revenue", { precision: 10, scale: 2 }).notNull().default("0"),
+  productRevenue:   decimal("product_revenue", { precision: 10, scale: 2 }).notNull().default("0"),
   totalRevenue:     decimal("total_revenue", { precision: 10, scale: 2 }).notNull().default("0"),
-  commissionAmount: decimal("commission_amount", { precision: 10, scale: 2 }).notNull().default("0"),
+  commissionAmount: decimal("commission_amount", { precision: 10, scale: 2 }).notNull().default("0"), // legacy: = serviceCommission + productCommission
+  serviceCommission: decimal("service_commission", { precision: 10, scale: 2 }).notNull().default("0"),
+  productCommission: decimal("product_commission", { precision: 10, scale: 2 }).notNull().default("0"),
+  tips:             decimal("tips", { precision: 10, scale: 2 }).notNull().default("0"),
+  otherEarnings:    decimal("other_earnings", { precision: 10, scale: 2 }).notNull().default("0"),
+  boothRent:        decimal("booth_rent", { precision: 10, scale: 2 }).notNull().default("0"),
+  otherDeductions:  decimal("other_deductions", { precision: 10, scale: 2 }).notNull().default("0"),
+  netPay:           decimal("net_pay", { precision: 10, scale: 2 }).notNull().default("0"),
+  checkNumber:      text("check_number"),
   status:           text("status").notNull().default("pending"),
   notes:            text("notes"),
   createdAt:        timestamp("created_at").defaultNow().notNull(),
@@ -1557,8 +1592,12 @@ export const payrollRunItems = pgTable("payroll_run_items", {
   runIdx: index("pri_run_idx").on(t.payrollRunId),
 }));
 
+export const insertPayScheduleSchema    = createInsertSchema(paySchedules).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertPayrollRunSchema     = createInsertSchema(payrollRuns).omit({ id: true, createdAt: true });
 export const insertPayrollRunItemSchema = createInsertSchema(payrollRunItems).omit({ id: true, createdAt: true });
+
+export type PaySchedule       = typeof paySchedules.$inferSelect;
+export type InsertPaySchedule = z.infer<typeof insertPayScheduleSchema>;
 
 export type PayrollRun      = typeof payrollRuns.$inferSelect;
 export type InsertPayrollRun = z.infer<typeof insertPayrollRunSchema>;
