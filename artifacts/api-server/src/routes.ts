@@ -19573,6 +19573,12 @@ or
   const { default: syncRouter } = await import("./routes/sync.js");
   app.use("/api/sync", syncRouter);
 
+  // ── External Calendar Sync (Google Calendar; Outlook/CalDAV later) ───────────
+  // Per-route auth: /connections & /google/start require a session; the OAuth
+  // callback and the Google push webhook are intentionally public.
+  const { default: calendarSyncRouter } = await import("./routes/calendarSync.js");
+  app.use("/api/calendar-sync", calendarSyncRouter);
+
   if (IS_SCHEDULER_INSTANCE) {
     const { startReconciliationScheduler } = await import("./routes/sync-jobs.js");
     startReconciliationScheduler();

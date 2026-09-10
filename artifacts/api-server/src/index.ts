@@ -1467,6 +1467,11 @@ async function repairTwilioMessagingServiceInboundWebhook() {
   const { startSlotBuilderWorker } = await import("./workers/slotBuilder");
   startSlotBuilderWorker();
 
+  // External calendar sync — drains the outbound outbox, polls inbound busy
+  // blocks, and renews Google push channels. Scheduler instance only (self-gated).
+  const { startCalendarSyncWorker } = await import("./workers/calendarSyncWorker");
+  startCalendarSyncWorker();
+
   // Warm up precomputed slot cache for all stores on startup (fire-and-forget)
   try {
     const { db: _db } = await import("./db");

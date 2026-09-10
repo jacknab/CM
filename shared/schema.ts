@@ -3182,3 +3182,91 @@ export const insertAppointmentNailSelectionSchema = createInsertSchema(appointme
 
 export type AppointmentNailSelection       = typeof appointmentNailSelection.$inferSelect;
 export type InsertAppointmentNailSelection = typeof appointmentNailSelection.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EXTERNAL CALENDAR SYNC  (Google Calendar first; Microsoft Graph / CalDAV later)
+// See migration 0168_calendar_sync.sql. Tokens are AES-256-GCM encrypted at rest
+// via lib/googleTokenCrypto.ts (encryptToken / decryptToken).
+// ─────────────────────────────────────────────────────────────────────────────
+export const calendarConnections = pgTable("calendar_connections", {
+  id:                   serial("id").primaryKey(),
+  storeId:              integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  staffId:              integer("staff_id").references(() => staff.id, { onDelete: "cascade" }), // NULL = store-level
+  provider:             text("provider").notNull().default("google"), // 'google' | 'microsoft' | 'caldav'
+  providerAccountEmail: text("provider_account_email"),
+  accessTokenEnc:       text("access_token_enc"),
+  refreshTokenEnc:      text("refresh_token_enc"),
+  tokenExpiresAt:       timestamp("token_expires_at", { withTimezone: true }),
+  scopes:               text("scopes"),
+  targetCalendarId:     text("target_calendar_id").notNull().default("primary"),
+  syncDirection:        text("sync_direction").notNull().default("both"), // 'both' | 'outbound' | 'inbound'
+  showClientNames:      boolean("show_client_names").notNull().default(true),
+  syncToken:            text("sync_token"),
+  channelId:            text("channel_id"),
+  channelResourceId:    text("channel_resource_id"),
+  channelExpiresAt:     timestamp("channel_expires_at", { withTimezone: true }),
+  status:               text("status").notNull().default("active"), // 'active' | 'reauth_required' | 'disabled' | 'error'
+  lastSyncedAt:         timestamp("last_synced_at", { withTimezone: true }),
+  lastError:            text("last_error"),
+  lastErrorAt:          timestamp("last_error_at", { withTimezone: true }),
+  createdAt:            timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:            timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("calendar_connections_store_idx").on(table.storeId),
+  index("calendar_connections_staff_idx").on(table.staffId),
+  index("calendar_connections_channel_idx").on(table.channelId),
+]);
+
+export const appointmentExternalEvents = pgTable("appointment_external_events", {
+  appointmentId:   integer("appointment_id").notNull().references(() => appointments.id, { onDelete: "cascade" }),
+  connectionId:    integer("connection_id").notNull().references(() => calendarConnections.id, { onDelete: "cascade" }),
+  externalEventId: text("external_event_id").notNull(),
+  etag:            text("etag"),
+  lastPushedHash:  text("last_pushed_hash"),
+  lastPushedAt:    timestamp("last_pushed_at", { withTimezone: true }),
+  createdAt:       timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  // Real composite PK (appointment_id, connection_id) is declared in migration 0168.
+  uniqueIndex("appointment_external_events_pk").on(table.appointmentId, table.connectionId),
+  index("appointment_external_events_conn_idx").on(table.connectionId, table.externalEventId),
+]);
+
+export const externalBusyBlocks = pgTable("external_busy_blocks", {
+  id:              serial("id").primaryKey(),
+  connectionId:    integer("connection_id").notNull().references(() => calendarConnections.id, { onDelete: "cascade" }),
+  staffId:         integer("staff_id").references(() => staff.id, { onDelete: "cascade" }),
+  storeId:         integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  externalEventId: text("external_event_id").notNull(),
+  etag:            text("etag"),
+  title:           text("title"),
+  startsAt:        timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt:          timestamp("ends_at", { withTimezone: true }).notNull(),
+  allDay:          boolean("all_day").notNull().default(false),
+  status:          text("status").notNull().default("confirmed"), // 'confirmed' | 'tentative' | 'cancelled'
+  updatedAt:       timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("external_busy_blocks_conn_event_key").on(table.connectionId, table.externalEventId),
+  index("external_busy_blocks_staff_time_idx").on(table.staffId, table.startsAt, table.endsAt),
+  index("external_busy_blocks_store_time_idx").on(table.storeId, table.startsAt, table.endsAt),
+]);
+
+export const calendarSyncOutbox = pgTable("calendar_sync_outbox", {
+  id:            serial("id").primaryKey(),
+  appointmentId: integer("appointment_id").references(() => appointments.id, { onDelete: "set null" }),
+  externalRefs:  jsonb("external_refs").$type<{ connectionId: number; externalEventId: string }[]>(),
+  storeId:       integer("store_id").notNull(),
+  staffId:       integer("staff_id"),
+  op:            text("op").notNull(), // 'upsert' | 'delete'
+  enqueuedAt:    timestamp("enqueued_at", { withTimezone: true }).notNull().defaultNow(),
+  attempts:      integer("attempts").notNull().default(0),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+  lastError:     text("last_error"),
+  processedAt:   timestamp("processed_at", { withTimezone: true }),
+}, (table) => [
+  index("calendar_sync_outbox_pending_idx").on(table.nextAttemptAt),
+]);
+
+export type CalendarConnection       = typeof calendarConnections.$inferSelect;
+export type InsertCalendarConnection = typeof calendarConnections.$inferInsert;
+export type ExternalBusyBlock        = typeof externalBusyBlocks.$inferSelect;
+export type CalendarSyncOutboxRow    = typeof calendarSyncOutbox.$inferSelect;
