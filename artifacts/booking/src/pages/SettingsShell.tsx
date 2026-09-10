@@ -66,6 +66,24 @@ const ALIASES: Record<string, string> = {
 
 const DEFAULT_SLUG = "business";
 
+// Legacy panes that still render their own page <h1> (not yet reworked with the
+// useInSettingsShell() guard). Suppress the shell's own section title for these
+// so it isn't stacked on top of the page's. Remove a slug once its page is
+// reworked to hide its header inside the shell.
+const SELF_TITLED = new Set([
+  "online-booking",
+  "booking-controls",
+  "resources",
+  "kiosk",
+  "pos",
+  "payout-account",
+  "language",
+  "translations",
+  "advanced",
+  "data-transfer",
+  "commission",
+]);
+
 export default function SettingsShell() {
   const { section } = useParams<{ section?: string }>();
   const navigate = useNavigate();
@@ -236,7 +254,7 @@ export default function SettingsShell() {
       )}
 
       <div className="flex-1 overflow-y-auto">
-        {!isMobile && (
+        {!isMobile && !SELF_TITLED.has(activeSlug ?? "") && (
           <div className="mx-auto max-w-2xl px-4 pt-8 md:px-8">
             <h1 className="text-2xl font-semibold tracking-tight text-foreground" data-testid="settings-section-title">
               {activeSlug === "delete-account" ? t.deleteLabel : activeItem?.label ?? t.title}
