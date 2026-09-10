@@ -1,9 +1,13 @@
-import { useNavigate } from "react-router-dom";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { CalendarSync, ChevronRight } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useInSettingsShell } from "@/lib/settings-shell-context";
@@ -33,9 +37,13 @@ type EmailPrefs = {
   trialReminders: boolean;
 };
 
+interface FeedInfo {
+  storeUrl: string;
+  staff: { id: number; name: string; url: string }[];
+}
+
 export default function MyPreferencesPage() {
   const { toast } = useToast();
-  const navigate = useNavigate();
   const inShell = useInSettingsShell();
   const { selectedStore } = useSelectedStore();
   const storeId = selectedStore?.id;
@@ -94,6 +102,29 @@ export default function MyPreferencesPage() {
     onSettled: () => queryClient.invalidateQueries({ queryKey: DIGEST_KEY }),
   });
 
+  // ── calendar sync feed ────────────────────────────────────────────────
+  const { data: feed, isLoading: feedLoading } = useQuery<FeedInfo>({
+    queryKey: ["/api/calendar-sync/feed-url"],
+  });
+  const [feedStaffId, setFeedStaffId] = useState<string>("store");
+  const [copied, setCopied] = useState(false);
+  const feedUrl = useMemo(() => {
+    if (!feed) return "";
+    if (feedStaffId === "store") return feed.storeUrl;
+    return feed.staff.find((s) => String(s.id) === feedStaffId)?.url ?? feed.storeUrl;
+  }, [feed, feedStaffId]);
+
+  async function copyFeed() {
+    if (!feedUrl) return;
+    try {
+      await navigator.clipboard.writeText(feedUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast({ title: "Couldn't copy the link — try again", variant: "destructive" });
+    }
+  }
+
   const p = emailPrefs ?? { billingReceipts: true, lowBalanceAlerts: true, dataOperations: true, trialReminders: true };
 
   return (
@@ -150,23 +181,46 @@ export default function MyPreferencesPage() {
         </div>
 
         {/* Calendar sync */}
-        <div className="rounded-xl border border-border bg-card p-5 md:p-6">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
-                <CalendarSync className="h-[18px] w-[18px]" />
-              </span>
-              <div>
-                <div className="text-[15px] font-medium">Calendar sync</div>
-                <div className="text-[13px] text-muted-foreground">
-                  Subscribe to your bookings from Apple, Google or Outlook Calendar.
-                </div>
-              </div>
-            </div>
-            <Button variant="outline" size="sm" onClick={() => navigate("/settings/calendar-sync")}>
-              Manage <ChevronRight className="ml-1 h-4 w-4" />
-            </Button>
+        <div className="rounded-xl border border-border bg-card p-5 md:p-6 space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">Calendar sync</h2>
+            <p className="mt-1 text-[13px] text-muted-foreground">
+              Add this link to Apple, Google or Outlook Calendar and your bookings show up
+              automatically. It's read-only and refreshes about every 30&nbsp;minutes.
+            </p>
           </div>
+
+          {feedLoading || !feed ? (
+            <Skeleton className="h-9 w-full sm:w-[380px]" />
+          ) : (
+            <div className="space-y-1.5">
+              <label className="text-[15px] font-medium">Calendar</label>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select value={feedStaffId} onValueChange={setFeedStaffId}>
+                  <SelectTrigger className="w-full text-[15px] sm:w-[280px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="store">Whole business — all bookings</SelectItem>
+                    {feed.staff.map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>{s.name} — their bookings only</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" onClick={copyFeed} className="shrink-0">
+                  {copied ? <Check className="mr-1.5 h-4 w-4 text-emerald-600" /> : <Copy className="mr-1.5 h-4 w-4" />}
+                  {copied ? "Copied" : "Copy link"}
+                </Button>
+              </div>
+              <p className="text-[13px] text-muted-foreground">
+                Anyone with this link can see these bookings — share it carefully.
+              </p>
+            </div>
+          )}
+
+          <ul className="border-t border-border pt-4 space-y-1.5 text-[13px] text-muted-foreground">
+            <li><span className="font-medium text-foreground">Google Calendar:</span> Other calendars → From URL → paste the copied link.</li>
+            <li><span className="font-medium text-foreground">Apple Calendar:</span> File → New Calendar Subscription… → paste the copied link.</li>
+            <li><span className="font-medium text-foreground">Outlook:</span> Add calendar → Subscribe from web → paste the copied link.</li>
+          </ul>
         </div>
       </div>
     </AppLayout>

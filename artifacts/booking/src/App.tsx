@@ -531,6 +531,7 @@ function AppRoutes() {
       <Route path="/settings/payout-account" element={<Navigate to="/payments/payouts" replace />} />
       <Route path="/settings/resources" element={<Navigate to="/catalog/resources" replace />} />
       <Route path="/settings/translations" element={<Navigate to="/catalog/translations" replace />} />
+      <Route path="/settings/calendar-sync" element={<Navigate to="/settings/my-preferences" replace />} />
       {/* Legacy redirects */}
       <Route path="/services" element={<Navigate to="/catalog/services" replace />} />
       <Route path="/team" element={<StaffList />} />

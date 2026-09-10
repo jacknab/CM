@@ -22,7 +22,6 @@ import PayrollSettings from "@/pages/PayrollSettings";
 import ClientNotifications from "@/pages/settings/ClientNotifications";
 import DataTransferPage from "@/pages/DataTransferPage";
 import FeaturesSettings from "@/pages/FeaturesSettings";
-import CalendarSyncSettings from "@/pages/CalendarSyncSettings";
 import PersonalDetailsPage from "@/pages/settings/PersonalDetailsPage";
 import MyPreferencesPage from "@/pages/settings/MyPreferencesPage";
 import SecurityPage from "@/pages/settings/SecurityPage";
@@ -43,7 +42,6 @@ const PANES: Record<string, React.ComponentType> = {
   "advanced": FeaturesSettings,
   "data-transfer": DataTransferPage,
   "commission": PayrollSettings,
-  "calendar-sync": CalendarSyncSettings,
 };
 
 // Retired slugs from the short-lived hub layout — redirect to a live destination.
@@ -108,6 +106,16 @@ export default function SettingsShell() {
   const activeSlug = section ?? null;
   const activeItem = allItems.find((i) => i.slug === activeSlug) ?? null;
 
+  // If a pane is reachable by URL but has no rail item (activeItem null),
+  // fall back to a Title Case of the slug rather than the generic "Settings".
+  const sectionTitle =
+    activeSlug === "delete-account"
+      ? t.deleteLabel
+      : activeItem?.label ??
+        (activeSlug
+          ? activeSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+          : t.title);
+
   // The tab whose rail is shown. Normally derived from the active section; on the
   // mobile rail screen (no section) it's a local pick (mobileTabKey) so tapping a
   // tab reveals its list instead of jumping straight into the first page.
@@ -137,7 +145,7 @@ export default function SettingsShell() {
 
   // ── top tab bar (underline style, à la GlossGenius) ──────────────────────
   const TabBar = (
-    <div className="flex shrink-0 gap-7 overflow-x-auto border-b border-border px-4 md:px-8">
+    <div className="flex shrink-0 gap-7 overflow-x-auto overflow-y-hidden scrollbar-none border-b border-border px-4 md:px-8">
       {tabs.map((tab) => {
         const active = tab.key === activeTab?.key;
         return (
@@ -228,16 +236,16 @@ export default function SettingsShell() {
             {t.back}
           </button>
           <h1 className="truncate text-lg font-semibold text-foreground" data-testid="settings-section-title">
-            {activeSlug === "delete-account" ? t.deleteLabel : activeItem?.label ?? t.title}
+            {sectionTitle}
           </h1>
         </header>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
         {!isMobile && !SELF_TITLED.has(activeSlug ?? "") && (
           <div className="mx-auto max-w-2xl px-4 pt-8 md:px-8">
             <h1 className="text-2xl font-semibold tracking-tight text-foreground" data-testid="settings-section-title">
-              {activeSlug === "delete-account" ? t.deleteLabel : activeItem?.label ?? t.title}
+              {sectionTitle}
             </h1>
             {activeItem?.description && (
               <p className="mt-1 text-sm text-muted-foreground">{activeItem.description}</p>
