@@ -176,18 +176,6 @@ function HoursCard({ store }: { store: Store }) {
   const update = (dow: number, patch: Partial<DayHours>) =>
     setHours((prev) => prev.map((h) => (h.dayOfWeek === dow ? { ...h, ...patch } : h)));
 
-  const copyMondayToWeekdays = () => {
-    const mon = hours.find((h) => h.dayOfWeek === 1);
-    if (!mon) return;
-    setHours((prev) =>
-      prev.map((h) =>
-        [2, 3, 4, 5].includes(h.dayOfWeek)
-          ? { ...h, openTime: mon.openTime, closeTime: mon.closeTime, isClosed: mon.isClosed }
-          : h,
-      ),
-    );
-  };
-
   const saveHours = useMutation({
     mutationFn: (data: DayHours[]) => apiRequest("PUT", "/api/business-hours", { storeId: store.id, hours: data }),
     onSuccess: () => {
@@ -197,8 +185,6 @@ function HoursCard({ store }: { store: Store }) {
     },
     onError: () => toast({ title: "Couldn't save hours", variant: "destructive" }),
   });
-
-  const monday = hours.find((h) => h.dayOfWeek === 1);
 
   return (
     <div className="rounded-xl border border-border bg-card">
@@ -280,25 +266,15 @@ function HoursCard({ store }: { store: Store }) {
       </div>
 
       {/* Footer */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border p-4 md:p-5">
-        <button
-          type="button"
-          onClick={copyMondayToWeekdays}
-          disabled={!monday || monday.isClosed}
-          className="text-sm font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline"
+      <div className="flex items-center justify-end gap-3 border-t border-border p-4 md:p-5">
+        {dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
+        <Button
+          onClick={() => saveHours.mutate(hours)}
+          disabled={!dirty || !!invalidDay || saveHours.isPending}
+          data-testid="save-hours"
         >
-          Apply Monday's hours to Tue–Fri
-        </button>
-        <div className="flex items-center gap-3">
-          {dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
-          <Button
-            onClick={() => saveHours.mutate(hours)}
-            disabled={!dirty || !!invalidDay || saveHours.isPending}
-            data-testid="save-hours"
-          >
-            {saveHours.isPending ? "Saving…" : "Save changes"}
-          </Button>
-        </div>
+          {saveHours.isPending ? "Saving…" : "Save changes"}
+        </Button>
       </div>
     </div>
   );
