@@ -29,6 +29,7 @@ import {
   Wallet,
   Zap,
   ArrowLeftRight,
+  CalendarSync,
   type LucideIcon,
 } from "lucide-react";
 
@@ -181,6 +182,11 @@ export function buildSettingsNav(pick: Pick4): SettingsNavGroup[] {
           label: pick({ en: "Google Business Profile", vi: "Hồ sơ Google Business", es: "Perfil de Google Business", fr: "Profil Google Business" }),
           description: pick({ en: "Your Google listing, reviews and map presence.", vi: "Danh sách Google, đánh giá và hiển thị trên bản đồ.", es: "Tu ficha de Google, reseñas y presencia en el mapa.", fr: "Votre fiche Google, vos avis et votre présence sur la carte." }),
           icon: MapPin, to: "/google-business", slug: "google-business", external: true, iconBg: "bg-red-100", iconColor: "text-red-500",
+        },
+        {
+          label: pick({ en: "Calendar Sync", vi: "Đồng bộ lịch", es: "Sincronización de calendario", fr: "Synchronisation d'agenda" }),
+          description: pick({ en: "Two-way sync between bookings and a technician's Google Calendar.", vi: "Đồng bộ hai chiều giữa lịch hẹn và Google Calendar của thợ.", es: "Sincronización bidireccional entre las reservas y el Google Calendar del técnico.", fr: "Synchronisation bidirectionnelle entre les réservations et le Google Agenda d'un technicien." }),
+          icon: CalendarSync, to: "/settings/calendar-sync", slug: "calendar-sync", iconBg: "bg-violet-100", iconColor: "text-violet-600",
         },
         {
           label: pick({ en: "Content Translations", vi: "Dịch nội dung", es: "Traducciones de contenido", fr: "Traductions de contenu" }),

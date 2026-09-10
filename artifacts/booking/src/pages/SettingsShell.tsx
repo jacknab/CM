@@ -29,6 +29,7 @@ import MailSettings from "@/pages/MailSettings";
 import TranslationsPage from "@/pages/TranslationsPage";
 import DataTransferPage from "@/pages/DataTransferPage";
 import FeaturesSettings from "@/pages/FeaturesSettings";
+import CalendarSyncSettings from "@/pages/CalendarSyncSettings";
 
 const PANES: Record<string, React.ComponentType> = {
   "business": BusinessSettings,
@@ -46,6 +47,7 @@ const PANES: Record<string, React.ComponentType> = {
   "translations": TranslationsPage,
   "data-transfer": DataTransferPage,
   "advanced": FeaturesSettings,
+  "calendar-sync": CalendarSyncSettings,
 };
 
 const DEFAULT_SLUG = "business";
