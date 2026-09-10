@@ -197,10 +197,10 @@ function SubLink({
       to={item.to}
       onClick={onLinkClick}
       className={cn(
-        "flex items-center gap-3 w-full pl-9 pr-3 py-2 rounded-lg text-[13.5px] transition-colors duration-100",
+        "flex items-center gap-3 w-full pl-9 pr-3 py-2 rounded-lg text-[14px] transition-colors duration-100",
         isActive
-          ? "bg-gray-100 text-gray-900 font-medium"
-          : "text-gray-500 hover:bg-gray-100 hover:text-gray-800 font-normal"
+          ? "bg-gray-100 text-gray-900 font-semibold"
+          : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 font-medium"
       )}
     >
       <item.icon className={cn("h-3.5 w-3.5 flex-shrink-0", isActive ? "text-gray-700" : "text-gray-400")} />
@@ -232,15 +232,15 @@ function NavItem({
   onLinkClick?: () => void;
 }) {
   const cls = cn(
-    "flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[14px] transition-colors duration-100",
+    "flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[15px] font-semibold transition-colors duration-100",
     isActive
-      ? "bg-gray-100 text-gray-900 font-semibold"
-      : "text-gray-600 hover:bg-gray-100/70 hover:text-gray-900 font-medium"
+      ? "bg-gray-100 text-gray-900"
+      : "text-gray-800 hover:bg-gray-100/70 hover:text-gray-900"
   );
 
   const inner = (
     <>
-      <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-gray-700" : "text-gray-400")} />
+      <Icon className={cn("h-[18px] w-[18px] flex-shrink-0", isActive ? "text-gray-700" : "text-gray-500")} />
       <span className="flex-1">{label}</span>
       {badge}
     </>
@@ -280,13 +280,13 @@ function ExpandableTrigger({
     <button
       onClick={onToggle}
       className={cn(
-        "flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[14px] font-medium transition-colors duration-100",
+        "flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[15px] font-semibold transition-colors duration-100",
         isActive
-          ? "text-gray-900 font-semibold hover:bg-black/5"
-          : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+          ? "text-gray-900 hover:bg-black/5"
+          : "text-gray-800 hover:bg-gray-100 hover:text-gray-900"
       )}
     >
-      <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-gray-700" : "text-gray-400")} />
+      <Icon className={cn("h-[18px] w-[18px] flex-shrink-0", isActive ? "text-gray-700" : "text-gray-500")} />
       <span className="flex-1 text-left">{label}</span>
       {badge}
       <ChevronDown
