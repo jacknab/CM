@@ -18,6 +18,7 @@ import { SLOT_QUEUE_NAME, type SlotJobData } from "../lib/slotQueue";
 import { storage } from "../storage";
 import { db } from "../db";
 import { locations } from "@shared/schema";
+import { getStoreBusyBlocksByStaff, isInstantBusy } from "../lib/calendar/busyBlocks";
 
 let _worker: Worker<SlotJobData> | null = null;
 
@@ -69,8 +70,9 @@ async function buildSlotsForDate(
 
   const activeStaff = allStaff.filter((s) => (s as any).status !== "removed");
 
-  const [dayAppointments, ...availRulesPerStaff] = await Promise.all([
+  const [dayAppointments, busyByStaff, ...availRulesPerStaff] = await Promise.all([
     storage.getAppointments({ from: dayStart, to: dayEnd, storeId }),
+    getStoreBusyBlocksByStaff(storeId, dayStart, dayEnd),
     ...activeStaff.map((s) => storage.getStaffAvailability(s.id)),
   ]);
 
@@ -109,6 +111,11 @@ async function buildSlotsForDate(
             hasConflict = true;
             break;
           }
+        }
+
+        // ── External calendar busy block (synced from staff Google/Outlook) ──
+        if (!hasConflict && isInstantBusy(busyByStaff.get(staffMember.id) ?? [], slotStart)) {
+          hasConflict = true;
         }
 
         if (!hasConflict) {
