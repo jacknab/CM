@@ -20400,6 +20400,9 @@ or
     try {
       const { slug } = req.params;
       const { phone } = req.body;
+      // `checkin: false` — a pure lookup (front-desk booking flow): return the
+      // client + loyalty points WITHOUT searching for / checking in an appointment.
+      const skipCheckin = req.body?.checkin === false;
       if (!phone) return res.status(400).json({ error: "Phone required" });
 
       const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
@@ -20429,6 +20432,19 @@ or
         .limit(1);
 
       if (!client) return res.json({ found: false });
+
+      if (skipCheckin) {
+        return res.json({
+          found: true,
+          client: {
+            id:            client.id,
+            name:          client.fullName,
+            loyaltyPoints: (client as any).loyaltyPoints ?? 0,
+            totalVisits:   (client as any).totalVisits   ?? 0,
+          },
+          todayAppointment: null,
+        });
+      }
 
       // ── Check for today's appointment for this client ────────────────────────
       // Lower bound: scheduled time must be within the last 30 minutes or still

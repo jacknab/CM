@@ -243,6 +243,7 @@ export default function FrontDeskDisplay() {
   // Booking-phone mode: staff on the calendar asked for a client's number.
   const [bookingPhoneMode, setBookingPhoneMode] = useState(false);
   const [bookingPhoneSent, setBookingPhoneSent] = useState(false);
+  const [bookingClient, setBookingClient] = useState<{ name: string; loyaltyPoints: number } | null>(null);
 
   const idleRef     = useRef<ReturnType<typeof setTimeout>  | null>(null);
   const cdownRef    = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -416,6 +417,7 @@ export default function FrontDeskDisplay() {
             setPhone("");
             setBookingPhoneMode(true);
             setBookingPhoneSent(false);
+            setBookingClient(null);
             setScreen("phone");
             break;
           case "kiosk_checkout_phone_cancel":
@@ -501,7 +503,7 @@ export default function FrontDeskDisplay() {
     if (posCheckoutRef.current !== null) return;
     setScreen("idle"); setPhone(""); setClientInfo(null);
     setNewClientName(""); setTodayAppointment(null); setError("");
-    setBookingPhoneMode(false); setBookingPhoneSent(false);
+    setBookingPhoneMode(false); setBookingPhoneSent(false); setBookingClient(null);
     if (cdownRef.current) clearInterval(cdownRef.current);
   }, []);
 
@@ -623,20 +625,38 @@ export default function FrontDeskDisplay() {
     }
   };
 
-  // Booking-phone mode: don't run the check-in lookup — just hand the digits
-  // back to the calendar and thank the client.
-  const submitBookingPhone = useCallback((digits: string) => {
+  // Booking-phone mode: hand the digits to the calendar, then (for the on-screen
+  // greeting only) look the client up WITHOUT checking them in — `checkin: false`
+  // skips the appointment search/update — so we can show their loyalty points
+  // just like the /kiosk welcome screen.
+  const submitBookingPhone = useCallback(async (digits: string) => {
     const p = (digits || "").replace(/\D/g, "").slice(-10);
     if (p.length !== 10) return;
     sendWs("kiosk_checkout_phone_result", { phone: p });
+    setBookingClient(null);
     setBookingPhoneSent(true);
+    try {
+      const r = await fetch(`/api/public/kiosk/${slug}/lookup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: p, checkin: false }),
+      });
+      const d = await r.json();
+      if (d?.found && d.client) {
+        setBookingClient({
+          name: String(d.client.name || ""),
+          loyaltyPoints: Number(d.client.loyaltyPoints) || 0,
+        });
+      }
+    } catch { /* greeting is best-effort */ }
     if (idleRef.current) clearTimeout(idleRef.current);
     idleRef.current = setTimeout(() => {
       setBookingPhoneMode(false);
       setBookingPhoneSent(false);
+      setBookingClient(null);
       resetToIdle();
-    }, 6000);
-  }, [sendWs, resetToIdle]);
+    }, 7000);
+  }, [sendWs, slug, resetToIdle]);
 
   const handleDigit = (d: string) => {
     if (phone.length >= 10) return;
@@ -1105,10 +1125,12 @@ export default function FrontDeskDisplay() {
           <h1 className="text-4xl font-black leading-tight" style={{ color: TEXT }}>{storeConfig?.name ?? "Check In"}</h1>
           <p className="text-sm mt-2 uppercase tracking-widest font-semibold" style={{ color: SUBTLE }}>Front Desk Check-In</p>
         </div>
-        {kioskConfig?.loyaltyPromoText && (
+        {(kioskConfig?.loyaltyPromoText || bookingPhoneMode) && (
           <div className="w-full max-w-[280px] rounded-2xl p-5 space-y-2" style={{ background: SURFACE, border: `1.5px solid ${BORDER}`, boxShadow: SHADOW }}>
             <p className="text-xs font-bold uppercase tracking-widest" style={{ color: PRIMARY }}>{t.loyaltyRewards}</p>
-            <p className="text-base leading-relaxed" style={{ color: MUTED }}>{kioskConfig.loyaltyPromoText}</p>
+            <p className="text-base leading-relaxed" style={{ color: MUTED }}>
+              {kioskConfig?.loyaltyPromoText || "Earn points with every visit and redeem them for services."}
+            </p>
           </div>
         )}
       </div>
@@ -1116,12 +1138,23 @@ export default function FrontDeskDisplay() {
         {bookingPhoneSent ? (
           <div className="flex flex-col items-center gap-6 text-center">
             <div className="w-28 h-28 rounded-full flex items-center justify-center shadow-xl" style={{ background: `linear-gradient(135deg, ${PRIMARY}, #a78bfa)` }}>
-              <span className="text-white text-6xl font-black">✓</span>
+              <span className="text-white text-6xl font-black">{bookingClient ? "👋" : "✓"}</span>
             </div>
             <div>
-              <h2 className="text-4xl font-black" style={{ color: TEXT }}>Thank you!</h2>
-              <p className="text-lg mt-2" style={{ color: SUBTLE }}>The front desk will finish your booking.</p>
+              <h2 className="text-4xl font-black" style={{ color: TEXT }}>
+                {bookingClient?.name
+                  ? `Welcome back, ${bookingClient.name.trim().split(/\s+/)[0]}!`
+                  : "Thank you!"}
+              </h2>
+              <p className="text-lg mt-2" style={{ color: SUBTLE }}>The front desk is adding you to the appointment.</p>
             </div>
+            {bookingClient && bookingClient.loyaltyPoints > 0 && (
+              <div className="inline-flex items-center gap-3 px-8 py-4 rounded-full text-2xl font-semibold"
+                style={{ background: "#fffbeb", border: "1.5px solid #fde68a", color: "#92400e" }}>
+                <span className="text-3xl">⭐</span>
+                <span>You have {bookingClient.loyaltyPoints} point{bookingClient.loyaltyPoints === 1 ? "" : "s"}</span>
+              </div>
+            )}
           </div>
         ) : (
         <>
