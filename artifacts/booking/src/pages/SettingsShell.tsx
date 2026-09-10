@@ -10,6 +10,7 @@ import { useFeatureFlags } from "@/hooks/use-features";
 import { cn } from "@/lib/utils";
 import { buildSettingsNav, type SettingsNavItem } from "@/lib/settings-nav";
 import { SettingsShellContext } from "@/lib/settings-shell-context";
+import { SettingsHub, type HubTab } from "@/pages/settings/SettingsHub";
 
 // Section components mounted in the detail pane. Each still renders its own
 // <AppLayout>; inside the shell that collapses to a bare padded wrapper
@@ -31,23 +32,77 @@ import DataTransferPage from "@/pages/DataTransferPage";
 import FeaturesSettings from "@/pages/FeaturesSettings";
 import CalendarSyncSettings from "@/pages/CalendarSyncSettings";
 
+// Hub tab sets — a rail entry that bundles several existing pages. Kept at
+// module scope so the mounted component identity is stable across renders.
+const HUB_TABS: Record<string, HubTab[]> = {
+  business: [
+    { slug: "business", label: "Business Settings", component: BusinessSettings },
+    { slug: "hours", label: "Business Hours", component: BusinessHoursPage },
+    { slug: "language", label: "Language", component: LanguageSettings },
+    { slug: "translations", label: "Content Translations", component: TranslationsPage },
+  ],
+  booking: [
+    { slug: "booking-controls", label: "Booking Controls", component: CalendarSettings },
+    { slug: "online-booking", label: "Online Booking", component: OnlineBooking },
+    { slug: "resources", label: "Stations & Chairs", component: ResourceSettings },
+    { slug: "kiosk", label: "Kiosk", component: KioskSettings },
+  ],
+  pos: [
+    { slug: "pos", label: "POS Settings", component: POSSettings },
+    { slug: "payout-account", label: "Payout Account", component: PayoutAccountSettings },
+  ],
+  messaging: [
+    { slug: "sms", label: "SMS", component: SmsSettings },
+    { slug: "email", label: "Email", component: MailSettings },
+  ],
+  advanced: [
+    { slug: "advanced", label: "Advanced Features", component: FeaturesSettings },
+    { slug: "data-transfer", label: "Data Transfer", component: DataTransferPage },
+  ],
+};
+
+const BusinessHub = () => <SettingsHub tabs={HUB_TABS.business} />;
+const BookingHub = () => <SettingsHub tabs={HUB_TABS.booking} />;
+const PaymentsHub = () => <SettingsHub tabs={HUB_TABS.pos} />;
+const MessagingHub = () => <SettingsHub tabs={HUB_TABS.messaging} />;
+const AdvancedHub = () => <SettingsHub tabs={HUB_TABS.advanced} />;
+
 const PANES: Record<string, React.ComponentType> = {
-  "business": BusinessSettings,
+  // Rail entries
+  "business": BusinessHub,
+  "booking": BookingHub,
+  "pos": PaymentsHub,
+  "messaging": MessagingHub,
+  "advanced": AdvancedHub,
+  "commission": PayrollSettings,
+  "calendar-sync": CalendarSyncSettings,
+  // Legacy standalone slugs — kept resolvable for deep links and old redirects.
   "hours": BusinessHoursPage,
   "language": LanguageSettings,
+  "translations": TranslationsPage,
   "booking-controls": CalendarSettings,
   "online-booking": OnlineBooking,
   "resources": ResourceSettings,
   "kiosk": KioskSettings,
   "payout-account": PayoutAccountSettings,
-  "pos": POSSettings,
-  "commission": PayrollSettings,
   "sms": SmsSettings,
   "email": MailSettings,
-  "translations": TranslationsPage,
   "data-transfer": DataTransferPage,
-  "advanced": FeaturesSettings,
-  "calendar-sync": CalendarSyncSettings,
+};
+
+// Titles for the legacy standalone slugs that are no longer rail entries.
+const STANDALONE_TITLES: Record<string, string> = {
+  "hours": "Business Hours",
+  "language": "Language",
+  "translations": "Content Translations",
+  "booking-controls": "Booking Controls",
+  "online-booking": "Online Booking",
+  "resources": "Stations & Chairs",
+  "kiosk": "Kiosk",
+  "payout-account": "Payout Account",
+  "sms": "SMS Settings",
+  "email": "Email Settings",
+  "data-transfer": "Data Transfer",
 };
 
 const DEFAULT_SLUG = "business";
@@ -71,14 +126,25 @@ export default function SettingsShell() {
   };
 
   const groups = useMemo(
-    () => buildSettingsNav(pick).filter((g) => !(g.requiresPos && !features.pos)),
+    () =>
+      buildSettingsNav(pick)
+        .map((g) => ({
+          ...g,
+          items: g.items.filter((it) => !(it.requiresPos && !features.pos)),
+        }))
+        .filter((g) => g.items.length > 0),
     [pick, features.pos],
   );
 
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
   const q = query.trim().toLowerCase();
   const matches = (it: SettingsNavItem) =>
-    !q || it.label.toLowerCase().includes(q) || it.description.toLowerCase().includes(q);
+    !q ||
+    it.label.toLowerCase().includes(q) ||
+    it.description.toLowerCase().includes(q) ||
+    (it.tabs?.some(
+      (tab) => tab.label.toLowerCase().includes(q) || tab.description.toLowerCase().includes(q),
+    ) ?? false);
 
   // ── routing guards ────────────────────────────────────────────────────────
   if (!section) {
@@ -207,7 +273,9 @@ export default function SettingsShell() {
         )}
         <div className="min-w-0">
           <h1 className="truncate text-lg font-semibold text-foreground" data-testid="settings-section-title">
-            {activeSlug === "delete-account" ? t.deleteLabel : (activeItem?.label ?? t.title)}
+            {activeSlug === "delete-account"
+              ? t.deleteLabel
+              : activeItem?.label ?? (activeSlug ? STANDALONE_TITLES[activeSlug] : null) ?? t.title}
           </h1>
           {activeItem?.description && (
             <p className="truncate text-xs text-muted-foreground">{activeItem.description}</p>

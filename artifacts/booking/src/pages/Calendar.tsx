@@ -2675,7 +2675,7 @@ export default function Calendar() {
                   <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground text-sm py-20 gap-3">
                     <Layers className="w-8 h-8 text-slate-300" />
                     <p className="text-slate-500">No active stations or chairs configured.</p>
-                    <a href="/settings/resources" className="text-teal-600 underline text-sm font-medium">Add resources in Settings →</a>
+                    <a href="/settings/booking?tab=resources" className="text-teal-600 underline text-sm font-medium">Add resources in Settings →</a>
                   </div>
                 ) : (
                   <>
