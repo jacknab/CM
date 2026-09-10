@@ -150,34 +150,14 @@ export function buildSettingsNav(pick: Pick4): SettingsTab[] {
           to: "/settings/client-notifications", slug: "client-notifications",
         },
         {
-          label: pick({ en: "Stations & Chairs", vi: "Bàn & Ghế", es: "Estaciones y sillas", fr: "Postes et fauteuils" }),
-          description: pick({ en: "Bookable nail stations, pedicure chairs and rooms.", vi: "Bàn làm nail, ghế pedicure và phòng có thể đặt.", es: "Estaciones de manicura, sillas de pedicura y salas reservables.", fr: "Postes de manucure, fauteuils de pédicure et salles réservables." }),
-          to: "/settings/resources", slug: "resources",
-        },
-        {
           label: pick({ en: "Check-in Kiosk", vi: "Kiosk check-in", es: "Kiosco de registro", fr: "Kiosque d'enregistrement" }),
           description: pick({ en: "Self check-in tablet URL, QR code and welcome text.", vi: "URL máy tính bảng tự check-in, mã QR và lời chào.", es: "URL del tablet de auto check-in, código QR y texto de bienvenida.", fr: "URL de la tablette d'enregistrement, QR code et message d'accueil." }),
           to: "/settings/kiosk", slug: "kiosk",
         },
         {
-          label: pick({ en: "Payments & Checkout", vi: "Thanh toán & Tính tiền", es: "Pagos y cobro", fr: "Paiements et encaissement" }),
-          description: pick({ en: "Sales tax rate, card reader and point-of-sale configuration.", vi: "Thuế bán hàng, đầu đọc thẻ và cấu hình điểm bán.", es: "Impuesto sobre ventas, lector de tarjetas y configuración del PDV.", fr: "Taux de taxe, lecteur de carte et configuration du point de vente." }),
-          to: "/settings/pos", slug: "pos", requiresPos: true,
-        },
-        {
-          label: pick({ en: "Payout Account", vi: "Tài khoản nhận tiền", es: "Cuenta de cobros", fr: "Compte de versement" }),
-          description: pick({ en: "Verify your identity and link a bank account for payouts.", vi: "Xác minh danh tính và liên kết tài khoản ngân hàng để nhận tiền.", es: "Verifica tu identidad y vincula una cuenta bancaria para cobros.", fr: "Vérifiez votre identité et reliez un compte bancaire pour les versements." }),
-          to: "/settings/payout-account", slug: "payout-account", requiresPos: true,
-        },
-        {
           label: pick({ en: "Language", vi: "Ngôn ngữ", es: "Idioma", fr: "Langue" }),
           description: pick({ en: "Display language for staff screens and the queue overlay.", vi: "Ngôn ngữ hiển thị cho màn hình nhân viên và bảng hàng đợi.", es: "Idioma para las pantallas del personal y la cola.", fr: "Langue d'affichage pour les écrans du personnel et la file." }),
           to: "/settings/language", slug: "language",
-        },
-        {
-          label: pick({ en: "Content Translations", vi: "Dịch nội dung", es: "Traducciones de contenido", fr: "Traductions de contenu" }),
-          description: pick({ en: "AI translations for services, categories, add-ons and products.", vi: "Dịch bằng AI cho dịch vụ, danh mục, tiện ích và sản phẩm.", es: "Traducciones con IA para servicios, categorías, extras y productos.", fr: "Traductions IA pour services, catégories, extras et produits." }),
-          to: "/settings/translations", slug: "translations",
         },
         {
           label: pick({ en: "Advanced Features", vi: "Tính năng nâng cao", es: "Funciones avanzadas", fr: "Fonctions avancées" }),

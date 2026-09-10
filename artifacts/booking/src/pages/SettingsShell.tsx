@@ -17,13 +17,9 @@ import BusinessHoursPage from "@/pages/BusinessHoursPage";
 import LanguageSettings from "@/pages/LanguageSettings";
 import CalendarSettings from "@/pages/CalendarSettings";
 import OnlineBooking from "@/pages/OnlineBooking";
-import ResourceSettings from "@/pages/settings/ResourceSettings";
 import KioskSettings from "@/pages/KioskSettings";
-import PayoutAccountSettings from "@/pages/settings/PayoutAccountSettings";
-import POSSettings from "@/pages/POSSettings";
 import PayrollSettings from "@/pages/PayrollSettings";
 import ClientNotifications from "@/pages/settings/ClientNotifications";
-import TranslationsPage from "@/pages/TranslationsPage";
 import DataTransferPage from "@/pages/DataTransferPage";
 import FeaturesSettings from "@/pages/FeaturesSettings";
 import CalendarSyncSettings from "@/pages/CalendarSyncSettings";
@@ -41,13 +37,9 @@ const PANES: Record<string, React.ComponentType> = {
   "hours": BusinessHoursPage,
   "online-booking": OnlineBooking,
   "booking-controls": CalendarSettings,
-  "resources": ResourceSettings,
   "kiosk": KioskSettings,
   "client-notifications": ClientNotifications,
-  "pos": POSSettings,
-  "payout-account": PayoutAccountSettings,
   "language": LanguageSettings,
-  "translations": TranslationsPage,
   "advanced": FeaturesSettings,
   "data-transfer": DataTransferPage,
   "commission": PayrollSettings,
@@ -73,12 +65,8 @@ const DEFAULT_SLUG = "business";
 const SELF_TITLED = new Set([
   "online-booking",
   "booking-controls",
-  "resources",
   "kiosk",
-  "pos",
-  "payout-account",
   "language",
-  "translations",
   "advanced",
   "data-transfer",
   "commission",

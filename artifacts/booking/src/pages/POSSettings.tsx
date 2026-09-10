@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useToast } from "@/hooks/use-toast";
+import { useInSettingsShell } from "@/lib/settings-shell-context";
 import { api } from "@shared/routes";
 import { ShoppingCart, Percent, Package, Lock, Monitor } from "lucide-react";
 
@@ -63,6 +64,7 @@ export default function POSSettings() {
   const { selectedStore } = useSelectedStore();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const inShell = useInSettingsShell();
 
   const [taxRate, setTaxRate] = useState("");
   const [taxRules, setTaxRules] = useState<TaxRules>({
@@ -195,15 +197,17 @@ export default function POSSettings() {
   return (
     <AppLayout>
       <div className="max-w-2xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-3xl font-display font-bold flex items-center gap-3">
-            <ShoppingCart className="w-7 h-7 text-teal-600" />
-            POS Settings
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Configure your point-of-sale behavior and tax rules.
-          </p>
-        </div>
+        {!inShell && (
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-3">
+              <ShoppingCart className="w-6 h-6 text-muted-foreground" />
+              Checkout &amp; Tax
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Configure your point-of-sale behavior and tax rules.
+            </p>
+          </div>
+        )}
 
         {/* Sales Tax Rate ───────────────────────────────────────────────────── */}
         <Card>

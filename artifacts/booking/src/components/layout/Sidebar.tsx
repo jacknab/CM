@@ -31,6 +31,7 @@ import {
   Tablet,
   ShoppingCart,
   Banknote,
+  Armchair,
   Mail,
   Languages,
   BookOpen,
@@ -129,6 +130,7 @@ function buildCatalogSubnav(pick: Pick4): SubNavItem[] {
     { label: pick({ en: "Add-Ons",    vi: "Dịch vụ thêm",   es: "Complementos",  fr: "Suppléments" }),  icon: ClipboardList, to: "/catalog/addons" },
     { label: pick({ en: "Nail Config", vi: "Cấu hình móng", es: "Config. de uñas", fr: "Config. ongles" }), icon: Star,       to: "/catalog/nail-services" },
     { label: pick({ en: "Products",   vi: "Sản phẩm",       es: "Productos",     fr: "Produits" }),     icon: ShoppingCart,  to: "/catalog/products" },
+    { label: pick({ en: "Resources",  vi: "Tài nguyên",     es: "Recursos",     fr: "Ressources" }),   icon: Armchair,      to: "/catalog/resources" },
   ];
 }
 
@@ -142,8 +144,17 @@ function buildMarketingSubnav(pick: Pick4): SubNavItem[] {
   ];
 }
 
-function buildFinanceSubnav(pick: Pick4): SubNavSection[] {
+function buildFinanceSubnav(pick: Pick4, showPos: boolean): SubNavSection[] {
   return [
+    ...(showPos
+      ? [{
+          headingKey: "setup",
+          heading: pick({ en: "Setup", vi: "Thiết lập", es: "Configuración", fr: "Configuration" }),
+          items: [
+            { label: pick({ en: "Payments & Payouts", vi: "Thanh toán & Chi trả", es: "Pagos y liquidaciones", fr: "Paiements et versements" }), icon: CreditCard, to: "/payments/payouts" },
+          ],
+        }]
+      : []),
     {
       headingKey: "pointOfSale",
       heading: pick({ en: "Point of Sale", vi: "Điểm bán hàng", es: "Punto de venta", fr: "Point de vente" }),
@@ -340,7 +351,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
   const INSIGHTS_SUBNAV  = buildInsightsSubnav(pick);
   const CATALOG_SUBNAV   = buildCatalogSubnav(pick);
   const MARKETING_SUBNAV = buildMarketingSubnav(pick);
-  const FINANCE_SUBNAV   = buildFinanceSubnav(pick);
+  const FINANCE_SUBNAV   = buildFinanceSubnav(pick, !!features.pos);
   const TEAM_SUBNAV      = buildTeamSubnav(pick);
 
   const CATALOG_MATCHES   = CATALOG_SUBNAV.map((i) => i.to);
@@ -352,8 +363,8 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
     catalog:          pick({ en: "Catalog",            vi: "Danh mục hàng",          es: "Catálogo",             fr: "Catalogue" }),
     team:             pick({ en: "Team",               vi: "Đội ngũ",                es: "Equipo",               fr: "Équipe" }),
     marketing:        pick({ en: "Marketing",          vi: "Tiếp thị",               es: "Marketing",            fr: "Marketing" }),
-    financePos:       pick({ en: "Finance & POS",      vi: "Tài chính & POS",        es: "Finanzas y PDV",       fr: "Finances et PDV" }),
-    finance:          pick({ en: "Finance",            vi: "Tài chính",              es: "Finanzas",             fr: "Finances" }),
+    financePos:       pick({ en: "Payments & POS",     vi: "Thanh toán & POS",       es: "Pagos y PDV",          fr: "Paiements et PDV" }),
+    finance:          pick({ en: "Payments",           vi: "Thanh toán",             es: "Pagos",                fr: "Paiements" }),
     settings:         pick({ en: "Settings",           vi: "Cài đặt",                es: "Ajustes",              fr: "Paramètres" }),
     accountSettings:  pick({ en: "Account settings",   vi: "Cài đặt tài khoản",      es: "Config. de cuenta",    fr: "Param. du compte" }),
     subscriptionBilling: pick({ en: "Subscription & billing", vi: "Gói dịch vụ & Thanh toán", es: "Suscripción y facturación", fr: "Abonnement et facturation" }),

@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Pencil, Trash2, Check, X } from "lucide-react";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { useToast } from "@/hooks/use-toast";
 
 type Resource = {
@@ -93,13 +94,14 @@ export default function ResourceSettings() {
   }, {});
 
   return (
+    <AppLayout>
     <div className="max-w-2xl mx-auto py-8 px-4 space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Stations &amp; Chairs</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Resources</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Assign appointments to specific stations or chairs. They appear as columns in the Resources calendar view.
+            Bookable stations, pedicure chairs and rooms. They appear as columns in the Resources calendar view.
           </p>
         </div>
         <Button onClick={() => { setShowAdd(true); }} disabled={showAdd} className="flex-shrink-0">
@@ -260,5 +262,6 @@ export default function ResourceSettings() {
         </div>
       )}
     </div>
+    </AppLayout>
   );
 }

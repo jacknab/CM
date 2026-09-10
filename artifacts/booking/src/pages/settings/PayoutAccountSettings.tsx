@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useInSettingsShell } from "@/lib/settings-shell-context";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
@@ -124,6 +125,7 @@ export default function PayoutAccountSettings() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const inShell = useInSettingsShell();
   const [activeTab, setActiveTab] = useState<ManagementTab>("account");
 
   // ── Data fetching ──────────────────────────────────────────────────────────
@@ -201,14 +203,18 @@ export default function PayoutAccountSettings() {
 
         {/* ── Header ──────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900" style={{ fontFamily: "Outfit, sans-serif" }}>
-              Payout Account &amp; Verification
-            </h1>
-            <p className="text-sm text-gray-500 mt-0.5">
-              Accept payments and receive payouts — all managed within Certxa.
-            </p>
-          </div>
+          {!inShell ? (
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                Payout Account &amp; Verification
+              </h1>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Accept payments and receive payouts — all managed within Certxa.
+              </p>
+            </div>
+          ) : (
+            <span />
+          )}
           {isConnected && (
             <Button
               variant="ghost"

@@ -142,6 +142,9 @@ import Intelligence from "@/pages/Intelligence";
 import HelpCenter from "@/pages/HelpCenter";
 import SupportInbox from "@/pages/SupportInbox";
 import DataTransferPage from "@/pages/DataTransferPage";
+import ResourceSettings from "@/pages/settings/ResourceSettings";
+import TranslationsPage from "@/pages/TranslationsPage";
+import PaymentsPayouts from "@/pages/finance/PaymentsPayouts";
 import { RequirePermission } from "@/components/RequirePermission";
 import { PERMISSIONS } from "@shared/permissions";
 import { AccountStatusGate } from "@/components/AccountStatusGate";
@@ -177,8 +180,7 @@ const authenticatedPaths = [
   "/commission-report",
   "/salon-earnings",
   "/settings",
-  "/settings/translations",
-  "/settings/resources",
+  "/payments",
   "/booking-policies",
   "/calendar-settings",
   "/language-settings",
@@ -513,7 +515,7 @@ function AppRoutes() {
       <Route path="/overview" element={<Navigate to="/analytics" replace />} />
       <Route path="/salon-dashboard" element={<OwnerOnlyRoute><OwnerDashboard /></OwnerOnlyRoute>} />
       <Route path="/dashboard" element={<Navigate to="/analytics" replace />} />
-      <Route path="/pos-settings" element={<Navigate to="/settings/pos" replace />} />
+      <Route path="/pos-settings" element={<Navigate to="/payments/payouts" replace />} />
       {/* Catalog — individual pages */}
       <Route path="/catalog/categories" element={<OwnerOnlyRoute><CatalogCategories /></OwnerOnlyRoute>} />
       <Route path="/catalog/services"   element={<OwnerOnlyRoute><CatalogServices /></OwnerOnlyRoute>} />
@@ -521,6 +523,14 @@ function AppRoutes() {
       <Route path="/catalog/addons"     element={<OwnerOnlyRoute><CatalogAddons /></OwnerOnlyRoute>} />
       <Route path="/catalog/products"   element={<OwnerOnlyRoute><CatalogProducts /></OwnerOnlyRoute>} />
       <Route path="/catalog/nail-services" element={<OwnerOnlyRoute><NailServices /></OwnerOnlyRoute>} />
+      <Route path="/catalog/resources" element={<OwnerOnlyRoute><ResourceSettings /></OwnerOnlyRoute>} />
+      <Route path="/catalog/translations" element={<OwnerOnlyRoute><TranslationsPage /></OwnerOnlyRoute>} />
+      <Route path="/payments/payouts" element={<OwnerOnlyRoute><PaymentsPayouts /></OwnerOnlyRoute>} />
+      {/* legacy → new homes */}
+      <Route path="/settings/pos" element={<Navigate to="/payments/payouts" replace />} />
+      <Route path="/settings/payout-account" element={<Navigate to="/payments/payouts" replace />} />
+      <Route path="/settings/resources" element={<Navigate to="/catalog/resources" replace />} />
+      <Route path="/settings/translations" element={<Navigate to="/catalog/translations" replace />} />
       {/* Legacy redirects */}
       <Route path="/services" element={<Navigate to="/catalog/services" replace />} />
       <Route path="/team" element={<StaffList />} />
