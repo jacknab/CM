@@ -572,14 +572,14 @@ function AppRoutes() {
           the standalone routes below now redirect here. */}
       <Route path="/settings" element={<SettingsShell />} />
       <Route path="/settings/:section" element={<SettingsShell />} />
-      <Route path="/kiosk-settings" element={<Navigate to="/settings/booking?tab=kiosk" replace />} />
+      <Route path="/kiosk-settings" element={<Navigate to="/settings/kiosk" replace />} />
       <Route path="/subscription" element={<Navigate to="/billing" replace />} />
       <Route path="/walk-in-board" element={<WalkInBoard />} />
       <Route path="/walkins" element={<WalkInBoard />} />
-      <Route path="/calendar-settings" element={<Navigate to="/settings/booking?tab=booking-controls" replace />} />
-      <Route path="/language-settings" element={<Navigate to="/settings/business?tab=language" replace />} />
+      <Route path="/calendar-settings" element={<Navigate to="/settings/booking-controls" replace />} />
+      <Route path="/language-settings" element={<Navigate to="/settings/language" replace />} />
       <Route path="/business-settings" element={<Navigate to="/settings/business" replace />} />
-      <Route path="/business-hours" element={<Navigate to="/settings/business?tab=hours" replace />} />
+      <Route path="/business-hours" element={<Navigate to="/settings/hours" replace />} />
       <Route path="/features-settings" element={<Navigate to="/settings/advanced" replace />} />
       <Route path="/payroll-settings" element={<Navigate to="/settings/commission" replace />} />
       {/* Payroll Home — single mobile-first hub for Team/Commission/Payroll.
@@ -617,11 +617,11 @@ function AppRoutes() {
         }
       />
       {/* Booking Policies was merged into Booking Controls (/calendar-settings) */}
-      <Route path="/booking-policies" element={<Navigate to="/settings/booking?tab=booking-controls" replace />} />
+      <Route path="/booking-policies" element={<Navigate to="/settings/booking-controls" replace />} />
       <Route path="/clients/at-risk" element={<OwnerOnlyRoute><ClientAtRisk /></OwnerOnlyRoute>} />
-      <Route path="/online-booking" element={<Navigate to="/settings/booking?tab=online-booking" replace />} />
-      <Route path="/sms-settings" element={<Navigate to="/settings/messaging?tab=sms" replace />} />
-      <Route path="/mail-settings" element={<Navigate to="/settings/messaging?tab=email" replace />} />
+      <Route path="/online-booking" element={<Navigate to="/settings/online-booking" replace />} />
+      <Route path="/sms-settings" element={<Navigate to="/settings/sms" replace />} />
+      <Route path="/mail-settings" element={<Navigate to="/settings/email" replace />} />
       <Route path="/ai-receptionist" element={<AiReceptionist />} />
       <Route path="/ai-receptionist/live" element={<AiReceptionistLive />} />
       <Route path="/sms-inbox" element={<OwnerOnlyRoute><SmsInbox /></OwnerOnlyRoute>} />
@@ -638,7 +638,7 @@ function AppRoutes() {
       <Route path="/help" element={<HelpCenter />} />
       <Route path="/support" element={<SupportInbox />} />
       <Route path="/data-transfer" element={<DataTransferPage />} />
-      <Route path="/manage/data-transfer" element={<Navigate to="/settings/advanced?tab=data-transfer" replace />} />
+      <Route path="/manage/data-transfer" element={<Navigate to="/settings/data-transfer" replace />} />
       <Route path="/intelligence/launch" element={<Navigate to="/intelligence" replace />} />
       <Route path="/marketing" element={<Navigate to="/campaigns" replace />} />
 
