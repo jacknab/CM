@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import {
+  Percent,
   LayoutDashboard,
   BarChart3,
   LineChart,
@@ -169,14 +170,16 @@ function buildFinanceSubnav(pick: Pick4): SubNavSection[] {
 
 function buildTeamSubnav(pick: Pick4): SubNavItem[] {
   return [
-    { label: pick({ en: "Staff",       vi: "Nhân viên", es: "Personal",    fr: "Personnel" }),   icon: UserCircle, to: "/team" },
+    { label: pick({ en: "Staff",       vi: "Nhân viên",   es: "Personal",     fr: "Personnel" }),  icon: UserCircle, to: "/team" },
+    { label: pick({ en: "Commissions", vi: "Hoa hồng",    es: "Comisiones",   fr: "Commissions" }), icon: Percent,    to: "/commissions" },
+    { label: pick({ en: "Payroll",     vi: "Bảng lương",  es: "Nómina",       fr: "Paie" }),        icon: Wallet,     to: "/payroll" },
   ];
 }
 
 // Commissions/Payroll moved to the single Payroll nav entry (see
 // buildInsightsSubnav → /payroll); /commissions still exists as a page
 // (linked from the Payroll hub) but is no longer its own nav item here.
-const TEAM_MATCHES = ["/team", "/staff", "/team-permissions", "/timeclock", "/print-checks"];
+const TEAM_MATCHES = ["/team", "/staff", "/commissions", "/payroll", "/team-permissions", "/timeclock", "/print-checks"];
 
 // ── Sub-item link ──────────────────────────────────────────────────────────────
 

@@ -19580,6 +19580,10 @@ or
   const { default: calendarSyncRouter } = await import("./routes/calendarSync.js");
   app.use("/api/calendar-sync", calendarSyncRouter);
 
+  // ── Payroll — auto pay-period runs + printable paychecks (commission-only) ───
+  const { default: payrollRunsRouter } = await import("./routes/payrollRuns.js");
+  app.use("/api/payroll", payrollRunsRouter);
+
   if (IS_SCHEDULER_INSTANCE) {
     const { startReconciliationScheduler } = await import("./routes/sync-jobs.js");
     startReconciliationScheduler();

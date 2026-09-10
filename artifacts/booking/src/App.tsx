@@ -110,12 +110,14 @@ import DevicePresenceBeacon from "@/components/DevicePresenceBeacon";
 import ContactPage from "@/pages/ContactPage";
 import TeamPermissions from "@/pages/TeamPermissions";
 import Payroll from "@/pages/Payroll";
-import PayrollHome from "@/pages/PayrollHome";
+import TeamPayroll from "@/pages/team/TeamPayroll";
 import PayoutsLayout from "@/pages/payouts/PayoutsLayout";
 import PayoutsContractors from "@/pages/payouts/PayoutsContractors";
 import ContractorDetail from "@/pages/payouts/ContractorDetail";
 import ContractorByStaffId from "@/pages/payouts/ContractorByStaffId";
-import TeamMembers from "@/pages/team/TeamMembers";
+import StaffList from "@/pages/team/StaffList";
+import AddStaffWizard from "@/pages/team/AddStaffWizard";
+import StaffDetail from "@/pages/team/StaffDetail";
 import TeamMemberDetail from "@/pages/team/TeamMemberDetail";
 import StaffCalendarColors from "@/pages/team/StaffCalendarColors";
 import ContractorOnboardingPortal from "@/pages/ContractorOnboardingPortal";
@@ -127,7 +129,7 @@ import PayoutsReports from "@/pages/payouts/PayoutsReports";
 import PayoutsSchedule from "@/pages/payouts/PayoutsSchedule";
 import PayoutsDeductions from "@/pages/payouts/PayoutsDeductions";
 import PayoutsCommissions from "@/pages/payouts/PayoutsCommissions";
-import CommissionsPage from "@/pages/CommissionsPage";
+import TeamCommissions from "@/pages/team/TeamCommissions";
 import CommissionsSetupWizard from "@/pages/CommissionsSetupWizard";
 import BalanceDashboard from "@/pages/payouts/BalanceDashboard";
 import StaffPaySummary from "@/pages/StaffPaySummary";
@@ -540,9 +542,10 @@ function AppRoutes() {
       <Route path="/catalog/nail-services" element={<OwnerOnlyRoute><NailServices /></OwnerOnlyRoute>} />
       {/* Legacy redirects */}
       <Route path="/services" element={<Navigate to="/catalog/services" replace />} />
-      <Route path="/team" element={<TeamMembers />} />
+      <Route path="/team" element={<StaffList />} />
+      <Route path="/team/add" element={<AddStaffWizard />} />
       <Route path="/team/colors" element={<StaffCalendarColors />} />
-      <Route path="/team/:id" element={<TeamMemberDetail />} />
+      <Route path="/team/:id" element={<StaffDetail />} />
       <Route path="/staff" element={<Navigate to="/team" replace />} />
       <Route path="/staff/members" element={<Navigate to="/team" replace />} />
       <Route path="/staff/members/:id" element={<Navigate to="/team" replace />} />
@@ -586,7 +589,7 @@ function AppRoutes() {
           Old employee payroll UI moved to /payroll/employees; old contractor
           dashboard (/payouts) now redirects here — everything else under
           /payouts/* stays put as a drill-down destination reachable from the hub. */}
-      <Route path="/payroll" element={<PayrollHome />} />
+      <Route path="/payroll" element={<TeamPayroll />} />
       <Route path="/payroll/employees" element={<Payroll />} />
       <Route element={<PayoutsLayout />}>
         <Route path="/payouts" element={<Navigate to="/payroll" replace />} />
@@ -603,8 +606,8 @@ function AppRoutes() {
         <Route path="/payouts/reports" element={<PayoutsReports />} />
         <Route path="/payouts/schedule" element={<PayoutsSchedule />} />
       </Route>
-      <Route path="/commissions" element={<CommissionsPage />} />
-      <Route path="/commissions/new" element={<CommissionsSetupWizard />} />
+      <Route path="/commissions" element={<TeamCommissions />} />
+      <Route path="/commissions/new" element={<Navigate to="/commissions" replace />} />
       <Route path="/timeclock" element={<SoloGuard><FeatureGuard feature="timeclock"><Timeclock /></FeatureGuard></SoloGuard>} />
       <Route path="/print-checks" element={<SoloGuard><PrintChecks /></SoloGuard>} />
       <Route path="/chkeditor" element={<CheckLayoutEditor />} />
