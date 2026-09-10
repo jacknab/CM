@@ -222,6 +222,9 @@ export const locations = pgTable("locations", {
   lockedAt:             timestamp("locked_at"),
   // ── Online presence ───────────────────────────────────────────────────────
   website:              text("website"),
+  // Business Details → legal structure + federal tax ID (see migration 0169)
+  legalEntityType:      text("legal_entity_type"),
+  ein:                  text("ein"),
   // ── Onboarding ────────────────────────────────────────────────────────────
   setupComplete:        boolean("setup_complete").notNull().default(false),
 });

@@ -1,16 +1,15 @@
-import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
+import { useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { useSelectedStore } from "@/hooks/use-store";
+import { useInSettingsShell } from "@/lib/settings-shell-context";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Save, AlarmClock } from "lucide-react";
+import { AlarmClock } from "lucide-react";
 import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -18,8 +17,10 @@ import type { Store } from "@shared/schema";
 
 const businessProfileSchema = z.object({
   name: z.string().min(1, "Business name is required"),
-  email: z.string().email("Please enter a valid email").or(z.literal("")),
+  legalEntityType: z.string().optional().default(""),
+  ein: z.string().optional().default(""),
   category: z.string().optional().default(""),
+  email: z.string().email("Please enter a valid email").or(z.literal("")),
   phone: z.string().optional().default(""),
   city: z.string().optional().default(""),
   state: z.string().optional().default(""),
@@ -29,18 +30,19 @@ const businessProfileSchema = z.object({
 
 type BusinessProfileForm = z.infer<typeof businessProfileSchema>;
 
-export type SectionHandle = {
-  save: () => void;
-};
-
 const CATEGORIES = [
-  "Hair Salon",
-  "Nail Salon",
-  "Spa",
-  "Barbershop",
-  "Esthetician",
-  "Pet Groomer",
-  "Tattoo Studio",
+  "Hair Salon", "Nail Salon", "Spa", "Barbershop",
+  "Esthetician", "Pet Groomer", "Tattoo Studio", "Other",
+];
+
+const LEGAL_ENTITY_TYPES = [
+  "Sole proprietorship",
+  "Single-member LLC",
+  "Multi-member LLC",
+  "Partnership",
+  "S corporation",
+  "C corporation",
+  "Nonprofit",
   "Other",
 ];
 
@@ -63,232 +65,222 @@ type FeatureFlags = {
 };
 
 const DEFAULT_FLAGS: FeatureFlags = {
-  turnSystem: true,
-  timeclock: true,
-  waitlist: true,
-  pos: true,
-  rewardPoints: true,
-  autoClockOutFloor: "01:00",
+  turnSystem: true, timeclock: true, waitlist: true, pos: true,
+  rewardPoints: true, autoClockOutFloor: "01:00",
 };
 
-const BusinessProfile = forwardRef<SectionHandle, { store: Store }>(function BusinessProfile({ store }, ref) {
+/** "123456789" → "12-3456789"; leaves anything else untouched. */
+function formatEin(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 9);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+}
+
+// ── Field wrapper: label, control, helper text (GlossGenius layout) ─────────
+function Field({
+  label, hint, children,
+}: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <FormItem className="space-y-1.5">
+      <FormLabel className="text-[15px] font-medium">{label}</FormLabel>
+      <FormControl>{children}</FormControl>
+      {hint && <p className="text-[13px] text-muted-foreground">{hint}</p>}
+      <FormMessage />
+    </FormItem>
+  );
+}
+
+function BusinessProfile({ store }: { store: Store }) {
   const { toast } = useToast();
+
+  const defaults = (): BusinessProfileForm => ({
+    name: store.name || "",
+    legalEntityType: (store as any).legalEntityType || "",
+    ein: (store as any).ein || "",
+    category: store.category || "",
+    email: store.email || "",
+    phone: store.phone || "",
+    city: store.city || "",
+    state: store.state || "",
+    address: store.address || "",
+    postcode: store.postcode || "",
+  });
 
   const form = useForm<BusinessProfileForm>({
     resolver: zodResolver(businessProfileSchema) as Resolver<BusinessProfileForm>,
-    defaultValues: {
-      name: store.name || "",
-      category: store.category || "",
-      email: store.email || "",
-      phone: store.phone || "",
-      city: store.city || "",
-      state: store.state || "",
-      address: store.address || "",
-      postcode: store.postcode || "",
-    },
+    defaultValues: defaults(),
   });
 
-  useEffect(() => {
-    form.reset({
-      name: store.name || "",
-      category: store.category || "",
-      email: store.email || "",
-      phone: store.phone || "",
-      city: store.city || "",
-      state: store.state || "",
-      address: store.address || "",
-      postcode: store.postcode || "",
-    });
-  }, [store, form]);
+  useEffect(() => { form.reset(defaults()); }, [store]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateStore = useMutation({
-    mutationFn: async (data: BusinessProfileForm) => {
-      const res = await apiRequest("PATCH", `/api/stores/${store.id}`, data);
-      return res.json();
-    },
+    mutationFn: (data: BusinessProfileForm) => apiRequest("PATCH", `/api/stores/${store.id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/stores"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stores", store.id] });
-      toast({ title: "Profile saved", description: "Business profile has been updated." });
+      toast({ title: "Business details saved" });
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to save profile.", variant: "destructive" });
-    },
+    onError: () => toast({ title: "Couldn't save", variant: "destructive" }),
   });
 
-  const onSubmit = (data: BusinessProfileForm) => {
-    updateStore.mutate(data);
-  };
-
-  useImperativeHandle(ref, () => ({
-    save: () => {
-      form.handleSubmit(onSubmit)();
-    },
-  }));
-
   const isDirty = form.formState.isDirty;
+  const inputCls = "text-[15px]";
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)}>
-        {isDirty && (
-          <p className="text-xs text-amber-600 mb-4 flex items-center gap-1">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500" />
-            Unsaved changes
-          </p>
-        )}
+      <form onSubmit={form.handleSubmit((d) => updateStore.mutate(d))} className="space-y-8">
+        <div className="rounded-xl border border-border bg-card p-5 md:p-6 space-y-6">
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <Field label="Business name" hint="Shows up on your booking site. Shorter is easier for clients to remember.">
+                <Input {...field} className={inputCls} data-testid="input-store-name" />
+              </Field>
+            )}
+          />
 
-        <Card>
-          <CardContent className="p-6 space-y-6">
+          <FormField
+            control={form.control}
+            name="legalEntityType"
+            render={({ field }) => (
+              <Field label="Legal entity type" hint="The legal structure of your business.">
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger data-testid="select-legal-entity" className={inputCls}>
+                    <SelectValue placeholder="Select a structure" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LEGAL_ENTITY_TYPES.map((v) => (
+                      <SelectItem key={v} value={v}>{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
+          />
 
+          <FormField
+            control={form.control}
+            name="ein"
+            render={({ field }) => (
+              <Field label="Employer Identification Number (EIN)" hint="Your 9-digit federal tax ID number.">
+                <Input
+                  {...field}
+                  inputMode="numeric"
+                  placeholder="12-3456789"
+                  className={inputCls}
+                  data-testid="input-ein"
+                  onChange={(e) => field.onChange(formatEin(e.target.value))}
+                />
+              </Field>
+            )}
+          />
+
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-5 md:p-6 space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">Contact &amp; location</h2>
+            <p className="mt-1 text-[13px] text-muted-foreground">
+              Appears on your booking site and confirmations, and sets your time zone automatically.
+              When multi-location support ships, this moves to a dedicated Locations page.
+            </p>
+          </div>
+
+          <FormField
+            control={form.control}
+            name="category"
+            render={({ field }) => (
+              <Field label="Category" hint="Helps clients and search engines understand what you offer.">
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger data-testid="select-category" className={inputCls}>
+                    <SelectValue placeholder="Select a category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORIES.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="email"
+            render={({ field }) => (
+              <Field label="Business email" hint="Where client replies and booking notifications are sent.">
+                <Input type="email" {...field} className={inputCls} data-testid="input-email" />
+              </Field>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="phone"
+            render={({ field }) => (
+              <Field label="Phone" hint="Shown on your booking site and confirmations.">
+                <Input type="tel" {...field} className={inputCls} data-testid="input-phone" />
+              </Field>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="address"
+            render={({ field }) => (
+              <Field label="Street address">
+                <Input {...field} className={inputCls} data-testid="input-address" />
+              </Field>
+            )}
+          />
+
+          <div className="grid gap-6 sm:grid-cols-3">
             <FormField
               control={form.control}
-              name="name"
+              name="city"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Title</FormLabel>
-                  <FormControl>
-                    <Input {...field} data-testid="input-store-name" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+                <Field label="City">
+                  <Input {...field} className={inputCls} data-testid="input-city" />
+                </Field>
               )}
             />
-
             <FormField
               control={form.control}
-              name="category"
+              name="state"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Category</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger data-testid="select-category">
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {CATEGORIES.map((cat) => (
-                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
+                <Field label="State">
+                  <Input {...field} className={inputCls} data-testid="input-state" />
+                </Field>
               )}
             />
-
             <FormField
               control={form.control}
-              name="email"
+              name="postcode"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Business email</FormLabel>
-                  <FormControl>
-                    <Input type="email" {...field} data-testid="input-email" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+                <Field label="ZIP code">
+                  <Input {...field} className={inputCls} data-testid="input-postcode" />
+                </Field>
               )}
             />
+          </div>
+        </div>
 
-            <FormField
-              control={form.control}
-              name="phone"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Telephone</FormLabel>
-                  <FormControl>
-                    <Input type="tel" {...field} data-testid="input-phone" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="border-t pt-4">
-              <h3 className="text-base font-semibold mb-4">Address</h3>
-
-              <div className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="city"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>City or Town</FormLabel>
-                      <FormControl>
-                        <Input {...field} data-testid="input-city" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="state"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>State</FormLabel>
-                      <FormControl>
-                        <Input {...field} data-testid="input-state" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="address"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Address</FormLabel>
-                      <FormControl>
-                        <Input {...field} data-testid="input-address" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="postcode"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Postcode</FormLabel>
-                      <FormControl>
-                        <Input {...field} data-testid="input-postcode" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex items-center justify-end gap-3">
+          {isDirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
+          <Button
+            type="submit"
+            disabled={!isDirty || updateStore.isPending}
+            data-testid="button-save-all"
+          >
+            {updateStore.isPending ? "Saving…" : "Save changes"}
+          </Button>
+        </div>
       </form>
     </Form>
   );
-});
-
-/*
- * ── StripePaymentsSettings ────────────────────────────────────────────────────
- * Commented out — Stripe keys are configured at the platform/server level via
- * environment variables (STRIPE_SECRET_KEY / STRIPE_PUBLISHABLE_KEY).
- * Per-store key entry is not needed and should not be exposed to salon owners.
- * ─────────────────────────────────────────────────────────────────────────────
- */
-
-/*
- * ── CancellationSettings removed ─────────────────────────────────────────────
- * Cancellation window, late grace period, and no-show handling all live in
- * Booking Policies (/booking-policies) to keep policy settings in one place.
- * ─────────────────────────────────────────────────────────────────────────────
- */
-
+}
 
 function TimeclockSettings() {
   const { selectedStore } = useSelectedStore();
@@ -323,7 +315,7 @@ function TimeclockSettings() {
     onSuccess: (data, { updates, storeId }) => {
       const serverFlags = data && typeof data === "object" && "turnSystem" in data ? data as FeatureFlags : null;
       queryClient.setQueryData<FeatureFlags>(["/api/settings/features", storeId], (old) =>
-        serverFlags ?? { ...(old ?? DEFAULT_FLAGS), ...updates }
+        serverFlags ?? { ...(old ?? DEFAULT_FLAGS), ...updates },
       );
       queryClient.invalidateQueries({ queryKey: ["/api/settings/features", storeId] });
       toast({ title: "Setting saved" });
@@ -337,80 +329,66 @@ function TimeclockSettings() {
   const current = features ?? DEFAULT_FLAGS;
 
   return (
-    <div>
-      <h2 className="text-lg font-semibold mb-4">Timeclock Settings</h2>
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex items-start gap-3">
-            <AlarmClock className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm font-medium">Auto Clock-Out Floor</p>
-              <p className="text-xs text-muted-foreground mt-1 leading-relaxed mb-3">
-                The earliest time (in your salon's local timezone) that staff can be automatically clocked out. Staff will never be auto-clocked out before this time, regardless of your configured business hours.
-              </p>
-              <Select
-                value={current.autoClockOutFloor}
-                onValueChange={(val) => {
-                  if (!selectedStore?.id) return;
-                  mutation.mutate({ updates: { autoClockOutFloor: val }, storeId: selectedStore.id });
-                }}
-                disabled={mutation.isPending}
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {FLOOR_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="rounded-xl border border-border bg-card p-5 md:p-6">
+      <div className="flex items-start gap-3">
+        <AlarmClock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="flex-1">
+          <p className="text-[15px] font-medium">Auto clock-out floor</p>
+          <p className="mb-3 mt-1 text-[13px] leading-relaxed text-muted-foreground">
+            The earliest time (salon local) that staff can be automatically clocked out — they're
+            never auto-clocked out before this, regardless of business hours.
+          </p>
+          <Select
+            value={current.autoClockOutFloor}
+            onValueChange={(val) => {
+              if (!selectedStore?.id) return;
+              mutation.mutate({ updates: { autoClockOutFloor: val }, storeId: selectedStore.id });
+            }}
+            disabled={mutation.isPending}
+          >
+            <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {FLOOR_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
     </div>
   );
 }
 
 export default function BusinessSettings() {
   const { selectedStore } = useSelectedStore();
-
-  const profileRef = useRef<SectionHandle>(null);
+  const inShell = useInSettingsShell();
 
   const { data: store, isLoading } = useQuery<Store>({
     queryKey: ["/api/stores", selectedStore?.id],
     enabled: !!selectedStore?.id,
   });
 
-  const handleSaveAll = () => {
-    profileRef.current?.save();
-  };
-
   if (isLoading || !store) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center py-20">Loading...</div>
+        <div className="flex items-center justify-center py-24 text-muted-foreground">Loading…</div>
       </AppLayout>
     );
   }
 
   return (
     <AppLayout>
-      <div className="sticky top-0 z-20 bg-background border-b px-6 py-4 -mx-6 -mt-6 mb-6 flex items-center justify-between">
-        <h1 className="text-xl font-display font-bold" data-testid="text-page-title">Business Settings</h1>
-        <Button
-          onClick={handleSaveAll}
-          className="bg-[#1a1f36] hover:bg-[#2d3452] text-white font-semibold px-6"
-          data-testid="button-save-all"
-        >
-          <Save className="w-4 h-4 mr-2" />
-          Save
-        </Button>
-      </div>
-      <div className="space-y-8">
-        <BusinessProfile ref={profileRef} store={store} />
-        <TimeclockSettings />
+      <div className="mx-auto max-w-2xl px-4 py-6 md:px-8">
+        {!inShell && (
+          <header className="mb-6">
+            <h1 className="text-2xl font-semibold tracking-tight">Business Details</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Store name, legal structure and contact details.</p>
+          </header>
+        )}
+        <div className="space-y-8">
+          <BusinessProfile store={store} />
+          <TimeclockSettings />
+        </div>
       </div>
     </AppLayout>
   );
