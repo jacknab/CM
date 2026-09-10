@@ -24,7 +24,6 @@ import CatalogPackages from "@/pages/catalog/CatalogPackages";
 import CatalogAddons from "@/pages/catalog/CatalogAddons";
 import CatalogProducts from "@/pages/catalog/CatalogProducts";
 import NailServices from "@/pages/catalog/NailServices";
-import StaffPayrollLanding from "@/pages/StaffPayrollLanding";
 import Customers from "@/pages/Customers";
 import Calendar from "@/pages/Calendar";
 import Products from "@/pages/Products";
@@ -36,7 +35,6 @@ import ClientDetail from "@/pages/ClientDetail";
 import StaffWorkingHours from "@/pages/StaffWorkingHours";
 import CashDrawer from "@/pages/CashDrawer";
 import AddonsPage from "@/pages/Addons";
-import CommissionReport from "@/pages/CommissionReport";
 import SalonEarningsReport from "@/pages/SalonEarningsReport";
 import Analytics from "@/pages/Analytics";
 import OwnerDashboard from "@/pages/OwnerDashboard";
@@ -108,30 +106,13 @@ import TeamApp from "@/pages/isTeam/TeamApp";
 import BookingPresenceBeacon from "@/components/BookingPresenceBeacon";
 import DevicePresenceBeacon from "@/components/DevicePresenceBeacon";
 import ContactPage from "@/pages/ContactPage";
-import TeamPermissions from "@/pages/TeamPermissions";
-import Payroll from "@/pages/Payroll";
 import TeamPayroll from "@/pages/team/TeamPayroll";
-import PayoutsLayout from "@/pages/payouts/PayoutsLayout";
-import PayoutsContractors from "@/pages/payouts/PayoutsContractors";
-import ContractorDetail from "@/pages/payouts/ContractorDetail";
-import ContractorByStaffId from "@/pages/payouts/ContractorByStaffId";
 import StaffList from "@/pages/team/StaffList";
 import AddStaffWizard from "@/pages/team/AddStaffWizard";
 import StaffDetail from "@/pages/team/StaffDetail";
-import TeamMemberDetail from "@/pages/team/TeamMemberDetail";
 import StaffCalendarColors from "@/pages/team/StaffCalendarColors";
 import ContractorOnboardingPortal from "@/pages/ContractorOnboardingPortal";
-import PayoutsLedger from "@/pages/payouts/PayoutsLedger";
-import PayoutsRun from "@/pages/payouts/PayoutsRun";
-import PayoutsChecks from "@/pages/payouts/PayoutsChecks";
-import PayoutsTaxDocs from "@/pages/payouts/PayoutsTaxDocs";
-import PayoutsReports from "@/pages/payouts/PayoutsReports";
-import PayoutsSchedule from "@/pages/payouts/PayoutsSchedule";
-import PayoutsDeductions from "@/pages/payouts/PayoutsDeductions";
-import PayoutsCommissions from "@/pages/payouts/PayoutsCommissions";
 import TeamCommissions from "@/pages/team/TeamCommissions";
-import CommissionsSetupWizard from "@/pages/CommissionsSetupWizard";
-import BalanceDashboard from "@/pages/payouts/BalanceDashboard";
 import StaffPaySummary from "@/pages/StaffPaySummary";
 import StaffPayoutsSetup from "@/pages/StaffPayoutsSetup";
 import StaffFinancialHub from "@/pages/StaffFinancialHub";
@@ -568,7 +549,7 @@ function AppRoutes() {
       <Route path="/google-business" element={<OwnerOnlyRoute><GoogleBusiness /></OwnerOnlyRoute>} />
       <Route path="/reports" element={<Reports />} />
       <Route path="/register-reports" element={<RegisterReports />} />
-      <Route path="/commission-report" element={<CommissionReport />} />
+      <Route path="/commission-report" element={<Navigate to="/commissions" replace />} />
       <Route path="/salon-earnings" element={<SalonEarningsReport />} />
       {/* macOS-style Settings shell — left rail + detail pane, one URL per
           section (/settings/:section). Inline settings pages mount in the pane;
@@ -590,35 +571,15 @@ function AppRoutes() {
           dashboard (/payouts) now redirects here — everything else under
           /payouts/* stays put as a drill-down destination reachable from the hub. */}
       <Route path="/payroll" element={<TeamPayroll />} />
-      <Route path="/payroll/employees" element={<Payroll />} />
-      <Route element={<PayoutsLayout />}>
-        <Route path="/payouts" element={<Navigate to="/payroll" replace />} />
-        <Route path="/payouts/contractors" element={<PayoutsContractors />} />
-        <Route path="/payouts/contractors/by-staff/:staffId" element={<ContractorByStaffId />} />
-        <Route path="/payouts/contractors/:id" element={<ContractorDetail />} />
-        <Route path="/payouts/ledger" element={<PayoutsLedger />} />
-        <Route path="/payouts/run" element={<PayoutsRun />} />
-        <Route path="/payouts/deductions" element={<PayoutsDeductions />} />
-        <Route path="/payouts/commissions" element={<PayoutsCommissions />} />
-        <Route path="/payouts/balance" element={<BalanceDashboard />} />
-        <Route path="/payouts/checks" element={<PayoutsChecks />} />
-        <Route path="/payouts/tax-docs" element={<PayoutsTaxDocs />} />
-        <Route path="/payouts/reports" element={<PayoutsReports />} />
-        <Route path="/payouts/schedule" element={<PayoutsSchedule />} />
-      </Route>
+      <Route path="/payroll/employees" element={<Navigate to="/payroll" replace />} />
+      <Route path="/payouts" element={<Navigate to="/payroll" replace />} />
+      <Route path="/payouts/*" element={<Navigate to="/payroll" replace />} />
       <Route path="/commissions" element={<TeamCommissions />} />
       <Route path="/commissions/new" element={<Navigate to="/commissions" replace />} />
       <Route path="/timeclock" element={<SoloGuard><FeatureGuard feature="timeclock"><Timeclock /></FeatureGuard></SoloGuard>} />
       <Route path="/print-checks" element={<SoloGuard><PrintChecks /></SoloGuard>} />
       <Route path="/chkeditor" element={<CheckLayoutEditor />} />
-      <Route
-        path="/team-permissions"
-        element={
-          <RequirePermission permission={PERMISSIONS.STAFF_MANAGE}>
-            <TeamPermissions />
-          </RequirePermission>
-        }
-      />
+      <Route path="/team-permissions" element={<Navigate to="/team" replace />} />
       {/* Booking Policies was merged into Booking Controls (/calendar-settings) */}
       <Route path="/booking-policies" element={<Navigate to="/settings/booking-controls" replace />} />
       <Route path="/clients/at-risk" element={<OwnerOnlyRoute><ClientAtRisk /></OwnerOnlyRoute>} />
