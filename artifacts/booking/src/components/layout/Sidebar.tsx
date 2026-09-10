@@ -234,13 +234,13 @@ function NavItem({
   const cls = cn(
     "flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[14px] transition-colors duration-100",
     isActive
-      ? "bg-gray-900 text-white font-semibold"
-      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 font-medium"
+      ? "bg-gray-100 text-gray-900 font-semibold"
+      : "text-gray-600 hover:bg-gray-100/70 hover:text-gray-900 font-medium"
   );
 
   const inner = (
     <>
-      <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-white" : "text-gray-400")} />
+      <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-gray-700" : "text-gray-400")} />
       <span className="flex-1">{label}</span>
       {badge}
     </>

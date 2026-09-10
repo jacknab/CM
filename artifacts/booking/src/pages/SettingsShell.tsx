@@ -167,7 +167,7 @@ export default function SettingsShell() {
   const Rail = (
     <nav
       className={cn(
-        "flex flex-col gap-0.5 overflow-y-auto",
+        "flex flex-col gap-0.5 overflow-y-auto scrollbar-none",
         isMobile ? "flex-1 px-3 pb-24 pt-4" : "w-[240px] shrink-0 px-3 py-6",
       )}
     >
@@ -261,7 +261,7 @@ export default function SettingsShell() {
   return (
     <AppLayout fullHeight>
       {isMobile ? (
-        <div className="flex h-full flex-col bg-background">
+        <div className="flex h-full min-h-0 flex-col bg-background">
           {section ? (
             Detail
           ) : (
@@ -275,7 +275,7 @@ export default function SettingsShell() {
           )}
         </div>
       ) : (
-        <div className="flex h-full flex-col bg-background">
+        <div className="flex h-full min-h-0 flex-col bg-background">
           {TabBar}
           <div className="flex min-h-0 flex-1">
             {Rail}

@@ -190,7 +190,7 @@ function HoursCard({ store }: { store: Store }) {
     <div className="rounded-xl border border-border bg-card">
       {/* Time zone */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border p-4 md:p-5">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
           <Globe className="h-[18px] w-[18px]" />
         </span>
         <div className="min-w-0">

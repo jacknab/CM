@@ -59,10 +59,10 @@ export default function CalendarSyncSettings() {
 
   return (
     <AppLayout>
-      <div className="mx-auto max-w-2xl space-y-6 p-4 sm:p-6">
+      <div className="mx-auto max-w-2xl space-y-6 px-4 py-6 md:px-8">
         {!inShell && (
           <header className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-violet-100 text-violet-600">
+            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-foreground">
               <CalendarSync className="h-5 w-5" />
             </span>
             <h1 className="text-2xl font-semibold tracking-tight">Calendar Sync</h1>
