@@ -8,6 +8,7 @@ import { eq as eqOp, and as andOp, sql as sqlOp, isNull as isNullOp } from "driz
 import { eq, and, isNotNull } from "drizzle-orm";
 import { broadcastSyncEvent } from "../notifications";
 import { logAuditEntry, getAuditLog, getAuditStats } from "../lib/sync-audit";
+import { awardLoyaltyForCompletion } from "../lib/loyaltyAward";
 
 const router = Router();
 
@@ -433,6 +434,21 @@ async function handleUpdateBooking(
 
   await storage.updateAppointment(realId, updates as any);
   broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId: realId, changes: Object.keys(updates) });
+
+  // Offline-queued checkouts bypass the PATCH route's award logic entirely —
+  // award here too, only on the transition into "completed" (never re-award
+  // an already-completed booking, e.g. one a device completed online before
+  // this queued action replays).
+  if (p.status === "completed" && existing.status !== "completed") {
+    const totalPaidNum = p.totalPaid !== undefined ? Number(p.totalPaid) : Number(existing.totalPaid ?? 0);
+    void awardLoyaltyForCompletion({
+      storeId,
+      customerId: existing.customerId,
+      appointmentId: realId,
+      totalPaid: totalPaidNum,
+    }).catch(() => {});
+  }
+
   return { actionId: action.id, type: action.type, status: "applied", realId };
 }
 
@@ -483,6 +499,9 @@ async function handleCheckout(
   const realId = resolveId(p.appointmentId ?? action.entity_temp_id, mappings);
   if (!realId) return { actionId: action.id, type: action.type, status: "skipped" };
 
+  const existing = await storage.getAppointment(realId);
+  const wasAlreadyCompleted = existing?.status === "completed";
+
   const updates: any = { status: "completed", completedAt: new Date() };
   if (p.totalPaid !== undefined) updates.totalPaid = String(p.totalPaid);
   if (p.paymentMethod !== undefined) updates.paymentMethod = p.paymentMethod;
@@ -490,6 +509,21 @@ async function handleCheckout(
 
   await storage.updateAppointment(realId, updates);
   broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId: realId, changes: ["status", "completedAt"] });
+
+  // Offline-queued checkouts bypass the PATCH route's award logic entirely —
+  // award here too, guarded against double-awarding a booking that was
+  // already completed online (e.g. via Terminal capture) before this queued
+  // action replayed.
+  if (!wasAlreadyCompleted) {
+    const totalPaidNum = p.totalPaid !== undefined ? Number(p.totalPaid) : 0;
+    void awardLoyaltyForCompletion({
+      storeId,
+      customerId: existing?.customerId,
+      appointmentId: realId,
+      totalPaid: totalPaidNum,
+    }).catch(() => {});
+  }
+
   return { actionId: action.id, type: action.type, status: "applied", realId };
 }
 

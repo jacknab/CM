@@ -35,6 +35,7 @@ import {
   isConnectConfigured,
 } from "../lib/stripeConnect";
 import { resolveSessionStoreId } from "../lib/sessionStore";
+import { awardLoyaltyForCompletion } from "../lib/loyaltyAward";
 import { db, pool } from "../db";
 import { contractors, appointments, contractorInstantTransfers, storePaymentAccounts, clients, services } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -1026,7 +1027,18 @@ router.post("/terminal/capture-payment-intent", async (req: Request, res: Respon
             ...(snap.commissionRate !== undefined ? { commissionRate: snap.commissionRate } : {}),
           }).where(eq(appointments.id, apptId)).returning();
           console.log(`[terminal/capture] Appointment ${apptId} marked completed — ${totalPaid} via ${paymentMethod}`);
-          if (completedApt) void recordCommissionAccrual(completedApt).catch(() => {});
+          if (completedApt) {
+            void recordCommissionAccrual(completedApt).catch(() => {});
+            // Terminal (card / Tap to Pay) checkouts complete the appointment
+            // here directly, bypassing the PATCH route's award logic — this
+            // used to mean loyalty points were never earned on card payments.
+            void awardLoyaltyForCompletion({
+              storeId,
+              customerId: completedApt.customerId,
+              appointmentId: apptId,
+              totalPaid: parseFloat(totalPaid),
+            }).catch(() => {});
+          }
 
           // ── Log activity events immediately so the dashboard updates ──────────
           // Fire-and-forget: a logging failure must never block the payment response.

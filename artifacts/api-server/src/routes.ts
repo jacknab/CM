@@ -131,6 +131,7 @@ import { requireActiveTrial } from "./middleware/trial-middleware";
 import { isStripeConfigured, getStripe } from "./lib/stripe";
 import { setupNotificationServer, broadcastNotification, broadcastSyncEvent } from "./notifications";
 import { broadcastAppointmentStatus, registerSseClient } from "./lib/appointmentEvents";
+import { awardLoyaltyForCompletion } from "./lib/loyaltyAward";
 import { setupAiReceptionistRoutes } from "./routes/aiReceptionist";
 import { setupSupportAgentRoutes } from "./routes/supportAgent";
 import validateRouter from "./routes/validate";
@@ -5694,11 +5695,12 @@ If you have any questions, please contact your administrator.
         if (input.status === "completed") {
           // Guard: when the Stripe Terminal capture endpoint already marked this
           // appointment completed (server-side, immediately on M2/tap capture),
-          // skip activity events, loyalty points, and queue rotation — the capture
-          // endpoint's fire-and-forget async block handles those. Running them a
-          // second time would double-award loyalty points and create duplicate feed
-          // entries.  For all other completion paths (web POS, manual "Done" button)
-          // wasAlreadyCompleted is false, so side-effects run normally.
+          // skip activity events and queue rotation — the capture endpoint's
+          // fire-and-forget async block handles those itself, and loyalty is
+          // awarded there too (lib/loyaltyAward.ts). Running any of this a
+          // second time would double-award loyalty points and create duplicate
+          // feed entries. For all other completion paths (web POS, manual "Done"
+          // button) wasAlreadyCompleted is false, so side-effects run normally.
           if (!wasAlreadyCompleted) {
             // Owner Feed: log the completed service
             void logActivityEvent({
@@ -5726,36 +5728,19 @@ If you have any questions, please contact your administrator.
 
               // Auto-award loyalty points at the store's configured rate
               // (store_settings.preferences.loyalty.pointsPerDollar, default 1).
-              try {
-                const totalPaidNum = parseFloat(String(input.totalPaid));
-                if (totalPaidNum > 0) {
-                  const [ssRow] = await db.select({ preferences: storeSettings.preferences })
-                    .from(storeSettings).where(eq(storeSettings.storeId, appointment.storeId));
-                  const lp = ssRow?.preferences ? (JSON.parse(ssRow.preferences as string).loyalty ?? {}) : {};
-                  const loyaltyEnabled = lp.enabled !== false;
-                  const pointsPerDollar = Number(lp.pointsPerDollar) > 0 ? Number(lp.pointsPerDollar) : 1;
-                  const full = await storage.getAppointment(appointment.id);
-                  const customerId = full?.customerId ?? (full as any)?.customer?.id;
-                  if (customerId && loyaltyEnabled) {
-                    const pointsEarned = Math.round(totalPaidNum * pointsPerDollar);
-                    await db.insert(loyaltyTransactions).values({
-                      storeId: appointment.storeId,
-                      customerId,
-                      appointmentId: appointment.id,
-                      type: "earn",
-                      points: pointsEarned,
-                      description: `Earned for appointment #${appointment.id} (${totalPaidNum.toFixed(2)} @ ${pointsPerDollar}pt/$)`,
-                    });
-                    const [cust] = await db.select({ loyaltyPoints: clients.loyaltyPoints })
-                      .from(clients).where(eq(clients.id, customerId)).limit(1);
-                    const newTotal = (cust?.loyaltyPoints ?? 0) + pointsEarned;
-                    await db.update(clients).set({ loyaltyPoints: newTotal }).where(eq(clients.id, customerId));
-                    console.log(`[Loyalty] Awarded ${pointsEarned} pts to customer ${customerId}`);
-                  }
-                }
-              } catch (loyaltyErr) {
-                console.error("[Loyalty] Auto-earn error:", loyaltyErr);
-              }
+              // Shared with the Terminal-capture and offline-sync completion
+              // paths (lib/loyaltyAward.ts) — this used to be the only path
+              // that awarded points, so card/Tap-to-Pay and offline-queued
+              // checkouts silently never earned any.
+              const totalPaidNum = parseFloat(String(input.totalPaid));
+              const full = await storage.getAppointment(appointment.id);
+              const customerId = full?.customerId ?? (full as any)?.customer?.id;
+              await awardLoyaltyForCompletion({
+                storeId: appointment.storeId,
+                customerId,
+                appointmentId: appointment.id,
+                totalPaid: totalPaidNum,
+              });
             }
 
             // Always rotate the turn queue on any completion — paid or not.
