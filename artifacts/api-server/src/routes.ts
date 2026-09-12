@@ -13956,6 +13956,91 @@ or
   });
 
   /**
+   * POST /api/services/regenerate-all-ai
+   * Force-regenerates BOTH description and longevity for every service in
+   * the store, overwriting whatever is already there. Distinct from
+   * /bulk-generate-descriptions above (which only fills in services missing
+   * a description and never touches longevity) — this is the "standardize
+   * the whole catalog" action triggered from the Services page's
+   * "Regenerate All (AI)" button. Uses gpt-4o-mini in JSON mode — one call
+   * per service, concurrency capped at 3 to avoid rate limits.
+   */
+  app.post("/api/services/regenerate-all-ai", isAuthenticated, async (req, res) => {
+    const sessionStoreId = await resolveSessionStoreId(req);
+    if (!sessionStoreId) return res.status(403).json({ message: "No store context" });
+
+    const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+    if (!apiKey) return res.status(503).json({ message: "AI features not configured on this server." });
+
+    const targets = await storage.getServices(sessionStoreId);
+    if (targets.length === 0) {
+      return res.json({ updated: 0, failed: 0, total: 0 });
+    }
+
+    try {
+      const { default: OpenAI } = await import("openai");
+      const openai = new OpenAI({
+        apiKey,
+        ...(process.env.AI_INTEGRATIONS_OPENAI_BASE_URL
+          ? { baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL } : {}),
+      });
+
+      const buildPrompt = (name: string, category: string | null, price: string | number | null, duration: number | null) =>
+        [
+          `Write catalog copy for a beauty salon service and return it as a JSON object.`,
+          ``,
+          `Service name: ${name}`,
+          category ? `Category: ${category}` : "",
+          price    ? `Price: ${Number(price).toFixed(2)}` : "",
+          duration ? `Duration: ${duration} minutes` : "",
+          ``,
+          `Return a JSON object with exactly two string fields:`,
+          `- "description": ONE short sentence, 8-16 words, listing what the service includes. Start with a verb like "Includes". Match this exact style: "Includes nail shaping, cuticle care, and a soothing hand massage." No prices, no durations, no hashtags, no markdown.`,
+          `- "longevity": how long the result of this specific service typically lasts before a client needs to return, in the exact format "Lasts N weeks" or "Lasts N-M weeks" (e.g. "Lasts 2 weeks", "Lasts 4-6 weeks"). For a one-time/same-day service with no lasting result (e.g. a massage or facial), use "Lasts through the day" instead. Base the estimate on typical salon industry norms for this type of service.`,
+          ``,
+          `Return only the JSON object. No markdown code fences, no extra text.`,
+        ].filter(Boolean).join("\n");
+
+      const CONCURRENCY = 3;
+      let updated = 0;
+      let failed  = 0;
+
+      for (let i = 0; i < targets.length; i += CONCURRENCY) {
+        const batch = targets.slice(i, i + CONCURRENCY);
+        await Promise.all(batch.map(async (svc) => {
+          try {
+            const completion = await openai.chat.completions.create({
+              model:           "gpt-4o-mini",
+              messages:        [{ role: "user", content: buildPrompt(svc.name, svc.category, svc.price, svc.duration) }],
+              max_tokens:      150,
+              temperature:     0.65,
+              response_format: { type: "json_object" },
+            });
+            const raw = completion.choices[0]?.message?.content?.trim() ?? "";
+            const parsed = JSON.parse(raw);
+            const description = typeof parsed.description === "string" ? parsed.description.trim() : "";
+            const longevity   = typeof parsed.longevity === "string" ? parsed.longevity.trim() : "";
+            if (description && longevity) {
+              await storage.updateService(svc.id, { description, longevity });
+              updated++;
+            } else {
+              failed++;
+            }
+          } catch (err) {
+            console.error(`[RegenerateAllAI] Failed for service ${svc.id}:`, err);
+            failed++;
+          }
+        }));
+      }
+
+      return res.json({ updated, failed, total: targets.length });
+    } catch (error: any) {
+      console.error("[RegenerateAllAI] error:", error);
+      return res.status(500).json({ message: error?.message ?? "AI generation failed" });
+    }
+  });
+
+  /**
    * POST /api/services/:id/generate-description
    * Uses AI to suggest a short professional service description.
    * The owner can edit/accept before saving — never auto-saves.

@@ -8,7 +8,7 @@ import { useServices, useUpdateService, useDeleteService, useDeleteAllServices }
 import { useServiceCategories } from "@/hooks/use-addons";
 import {
   Plus, Search, PenLine, Check, Loader2, MoreHorizontal,
-  Power, PowerOff, ChevronDown, ChevronRight, Layers, Trash2, EyeOff, Sparkles, AlertTriangle,
+  Power, PowerOff, ChevronDown, ChevronRight, Layers, Trash2, EyeOff, Sparkles, AlertTriangle, RefreshCw,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@shared/routes";
@@ -68,6 +68,10 @@ export function ServicesList() {
 
   // Bulk AI description generation
   const [bulkGenerating, setBulkGenerating] = useState(false);
+
+  // Regenerate all (description + longevity) with AI — overwrites existing values
+  const [regeneratingAll, setRegeneratingAll] = useState(false);
+  const [regenerateAllOpen, setRegenerateAllOpen] = useState(false);
 
   // Per-service id: draft values (only populated when edit mode is on)
   const [drafts, setDrafts]   = useState<Record<number, Draft>>({});
@@ -354,6 +358,32 @@ export function ServicesList() {
     }
   }
 
+  // ── Regenerate all: overwrites description + longevity for every service ───
+  async function handleRegenerateAll() {
+    if (totalCount === 0) return;
+    setRegeneratingAll(true);
+    try {
+      const res = await fetch("/api/services/regenerate-all-ai", {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message ?? "Request failed");
+      await queryClient.invalidateQueries({ queryKey: [api.services.list.path] });
+      setRegenerateAllOpen(false);
+      toast({
+        title: `✨ ${data.updated} service${data.updated !== 1 ? "s" : ""} updated`,
+        description: data.failed
+          ? `${data.failed} service${data.failed !== 1 ? "s" : ""} could not be processed.`
+          : "Description and longevity regenerated for every service.",
+      });
+    } catch (e: any) {
+      toast({ title: "Generation failed", description: e.message, variant: "destructive" });
+    } finally {
+      setRegeneratingAll(false);
+    }
+  }
+
   // ── Loading skeleton ─────────────────────────────────────────────────────────
   if (isLoading) {
     return (
@@ -417,6 +447,23 @@ export function ServicesList() {
               <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Generating…</>
             ) : (
               <><Sparkles className="h-4 w-4 mr-1.5" />Auto-describe ({missingDescCount})</>
+            )}
+          </Button>
+        )}
+
+        {/* Force-regenerate description + longevity for every service */}
+        {totalCount > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setRegenerateAllOpen(true)}
+            disabled={regeneratingAll}
+            title="Regenerate the description and longevity for every service with AI, overwriting existing values"
+          >
+            {regeneratingAll ? (
+              <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Regenerating…</>
+            ) : (
+              <><RefreshCw className="h-4 w-4 mr-1.5" />Regenerate All (AI)</>
             )}
           </Button>
         )}
@@ -834,6 +881,42 @@ export function ServicesList() {
                 <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Deleting…</>
               ) : (
               `Delete all ${totalCount} services`
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Regenerate all (AI) confirmation ── */}
+      <AlertDialog
+        open={regenerateAllOpen}
+        onOpenChange={(open) => { if (!regeneratingAll) setRegenerateAllOpen(open); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5" />
+              Regenerate all {totalCount} services with AI?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This overwrites the description and longevity for every service on this location's menu —
+              including any you've already written by hand — with new AI-generated text. This can't be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={regeneratingAll}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                handleRegenerateAll();
+              }}
+              disabled={regeneratingAll}
+            >
+              {regeneratingAll ? (
+                <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Regenerating…</>
+              ) : (
+                `Regenerate all ${totalCount} services`
               )}
             </AlertDialogAction>
           </AlertDialogFooter>

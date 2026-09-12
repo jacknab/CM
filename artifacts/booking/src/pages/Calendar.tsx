@@ -26,6 +26,7 @@ import { useThermalPrinter } from "@/hooks/use-thermal-printer";
 import { buildCheckinTicket, buildCheckoutReceipt } from "@/lib/thermalPrinter";
 import { cn } from "@/lib/utils";
 import { clientPhoneCacheDB } from "@/lib/client-phone-cache-db";
+import { isValidNanpPrefix, isValidNanpNumber } from "@/lib/phone-validation";
 import { getPosLayout, getMobilePosActions, resolvePosIcon, type PosButton } from "@/lib/pos";
 import { POS_BUTTON_TX, POS_GUIDED_TX, POS_MISC_TX } from "@/lib/pos/labels";
 import type { AppointmentWithDetails } from "@shared/schema";
@@ -8913,6 +8914,7 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
   const [isSearching, setIsSearching] = useState(false);
   const [searchDone, setSearchDone] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [invalidNumber, setInvalidNumber] = useState(false);
   const [foundClient, setFoundClient] = useState<any>(null);
   const [activeSection, setActiveSection] = useState("overview");
 
@@ -8959,16 +8961,27 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
 
   const handleDigit = useCallback((digit: string) => {
     if (phoneDigits.length < 10) {
-      setPhoneDigits(prev => prev + digit);
+      const next = phoneDigits + digit;
       setSearchDone(false);
       setNotFound(false);
+      if (!isValidNanpPrefix(next)) {
+        // The number just became structurally impossible (e.g. an area code
+        // or exchange code starting with 0/1, or a reserved N11 pattern) —
+        // wipe it immediately rather than let staff keep typing a dead end.
+        setPhoneDigits("");
+        setInvalidNumber(true);
+        return;
+      }
+      setInvalidNumber(false);
+      setPhoneDigits(next);
     }
-  }, [phoneDigits.length]);
+  }, [phoneDigits]);
 
   const handleBackspace = useCallback(() => {
     setPhoneDigits(prev => prev.slice(0, -1));
     setSearchDone(false);
     setNotFound(false);
+    setInvalidNumber(false);
   }, []);
 
   useEffect(() => {
@@ -9284,6 +9297,9 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
             {notFound && !isSearching && (
               <p className="text-sm text-red-500 mt-2 font-medium">No client found with this number</p>
             )}
+            {invalidNumber && (
+              <p className="text-sm text-red-500 mt-2 font-medium">Not a valid North America phone number</p>
+            )}
           </div>
 
           {/* Numpad */}
@@ -9359,6 +9375,7 @@ function ChooseClientPanel({
   const [phoneDigits, setPhoneDigits] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [searchDone, setSearchDone] = useState(false);
+  const [invalidNumber, setInvalidNumber] = useState(false);
   const [showNameEntry, setShowNameEntry] = useState(false);
   const [clientName, setClientName] = useState("");
   const [shiftActive, setShiftActive] = useState(true);
@@ -9382,23 +9399,42 @@ function ChooseClientPanel({
 
   const handleDigit = useCallback((digit: string) => {
     if (phoneDigits.length < 10) {
-      setPhoneDigits(prev => prev + digit);
+      const next = phoneDigits + digit;
       setSearchDone(false);
+      if (!isValidNanpPrefix(next)) {
+        // The number just became structurally impossible (e.g. an area code
+        // or exchange code starting with 0/1, or a reserved N11 pattern) —
+        // wipe it immediately rather than let staff keep typing a dead end.
+        setPhoneDigits("");
+        setInvalidNumber(true);
+        return;
+      }
+      setInvalidNumber(false);
+      setPhoneDigits(next);
     }
-  }, [phoneDigits.length]);
+  }, [phoneDigits]);
 
   const handleBackspace = useCallback(() => {
     setPhoneDigits(prev => prev.slice(0, -1));
     setSearchDone(false);
+    setInvalidNumber(false);
   }, []);
 
   // The /frontdesk tablet pushed the digits the client typed — mirror them into
   // the keypad so the search / new-client flow runs exactly as if staff typed it.
+  // Same NANP structural check applies here: a customer can mistype on the
+  // tablet too, and an invalid number shouldn't get pushed through to a
+  // new-client lookup/create.
   useEffect(() => {
     const digits = (phoneFromFrontdesk || "").replace(/\D/g, "").slice(-10);
     if (digits.length === 10) {
+      if (!isValidNanpNumber(digits)) {
+        setInvalidNumber(true);
+        return;
+      }
       setPhoneDigits(digits);
       setSearchDone(false);
+      setInvalidNumber(false);
       setShowNameEntry(false);
     }
   }, [phoneFromFrontdesk]);
@@ -9694,6 +9730,9 @@ function ChooseClientPanel({
             )}
             {isSearching && (
               <p className="text-sm text-primary mt-2 animate-pulse" data-testid="text-searching">{tCC.searching}</p>
+            )}
+            {invalidNumber && (
+              <p className="text-sm text-red-500 mt-2 font-medium" data-testid="text-invalid-phone">Not a valid North America phone number</p>
             )}
           </div>
 
