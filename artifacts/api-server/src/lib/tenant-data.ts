@@ -96,6 +96,11 @@ export interface GalleryPhotoEntry {
   caption: string | null;
 }
 
+export interface StaffServiceLink {
+  staff_id: number;
+  service_id: number;
+}
+
 export interface WebsiteMeta {
   id: number;
   name: string;
@@ -118,6 +123,8 @@ export interface TenantData {
   serviceReviews: Record<number, ServiceReviewEntry>;
   /** Photos explicitly uploaded for the website gallery (show_on_website = true) */
   galleryPhotos: GalleryPhotoEntry[];
+  /** staff_id <-> service_id pairs, scoped to this store via the staff join */
+  staffServiceLinks: StaffServiceLink[];
 }
 
 export interface TenantDataWithMeta extends TenantData {
@@ -288,6 +295,15 @@ export async function buildTenantData(
         LIMIT 50`
   );
 
+  // Staff <-> service relationships, scoped to this store via the staff join
+  // (staff_services carries no store_id of its own).
+  const staffServiceLinks = await safeQuery<StaffServiceLink>(
+    sql`SELECT ss.staff_id, ss.service_id
+        FROM staff_services ss
+        JOIN staff s ON s.id = ss.staff_id
+        WHERE s.store_id = ${storeIdNum}`
+  );
+
   return {
     website,
     business,
@@ -300,6 +316,7 @@ export async function buildTenantData(
     googleAvgRating,
     serviceReviews,
     galleryPhotos,
+    staffServiceLinks,
   };
 }
 

@@ -189,6 +189,7 @@ import { storage } from "./storage";
 import { seoPageMiddleware } from "./seo-pages";
 import salonDirectoryRouter from "./routes/salonDirectory";
 import { SEO_CONFIG, injectSeoMetadata, isKnownAppFirstSegment, NOT_FOUND_HTML } from "./static";
+import { isRequestFromTrustedNetwork, resolveStoreIdBySlug } from "./lib/salonNetworkGuard";
 
 const app = express();
 app.disable("x-powered-by"); // don't advertise the framework
@@ -458,6 +459,12 @@ app.use("/api/support/auth/login", authLimiter);
 app.use("/api/public", publicLimiter);
 app.use("/api/book", publicLimiter);
 app.use("/api/reviews/gate", publicLimiter);
+// Public tenant-data endpoints (/api/tenant/:slug/data, /status, etc.) do
+// multiple DB round-trips per request with no other caching layer in front —
+// a plausible scraping/DoS target if left unthrottled. 60 req/min matches
+// the existing /api/public limiter and is generous enough for normal
+// crawling (Googlebot/Bingbot/AI crawlers) not to be affected in practice.
+app.use("/api/tenant", publicLimiter);
 // Prevent log-spamming / disk-filling via the client error reporter.
 // 10 reports per IP per minute is more than enough for a real browser error.
 const clientErrorLimiter = rateLimit({
@@ -1540,7 +1547,7 @@ async function repairTwilioMessagingServiceInboundWebhook() {
       });
 
       // SPA catch-all — handles all non-SSR, non-API routes
-      app.use((req: Request, res: Response, next: NextFunction) => {
+      app.use(async (req: Request, res: Response, next: NextFunction) => {
         if (req.path.startsWith("/api/")) return next();
         // Let missing /uploads/* fall through to a real 404 — never serve index.html
         // for image requests (broken <img> shows a blank icon, not a silent HTML response).
@@ -1577,6 +1584,31 @@ async function repairTwilioMessagingServiceInboundWebhook() {
             .set({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" })
             .send(NOT_FOUND_HTML);
           return;
+        }
+
+        // /kiosk/:slug and /frontdesk/:slug(/:registerId) can be restricted
+        // to the salon's own network (Kiosk Settings → Restrict to salon
+        // network). A blocked request gets a blank page — deliberately
+        // generic, so it doesn't confirm or deny that the slug/store exists.
+        const firstSegment = segments[1];
+        if (firstSegment === "kiosk" || firstSegment === "frontdesk") {
+          const slug = segments[2];
+          if (slug) {
+            try {
+              const storeId = await resolveStoreIdBySlug(slug);
+              if (storeId && !(await isRequestFromTrustedNetwork(storeId, req))) {
+                res
+                  .status(200)
+                  .set({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" })
+                  .send("<!doctype html><html><head></head><body></body></html>");
+                return;
+              }
+            } catch (err) {
+              // Fail open on an unexpected error — a transient DB hiccup
+              // should never brick a salon's own kiosk.
+              console.error("[salonNetworkGuard] SPA gate failed:", err);
+            }
+          }
         }
 
         // Never cache index.html so users always pick up the latest hashed

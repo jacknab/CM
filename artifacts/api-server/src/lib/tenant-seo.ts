@@ -118,7 +118,21 @@ function buildAddress(business: BusinessData): Record<string, unknown> | undefin
   };
 }
 
-function buildJsonLd(data: TenantData, canonical: string, image?: string | null): Record<string, unknown> | null {
+/**
+ * Business-level LocalBusiness-subtype JSON-LD, shared by the homepage and
+ * every auto-mode subpage so structured data is consistent across the site.
+ *
+ * `includeReviews` attaches the actual visible reviews as `review` entries —
+ * only pass true from the page that genuinely renders those reviews (the
+ * /reviews/ page), per Google's guideline that review markup must correspond
+ * to review content that's actually visible on the page.
+ */
+export function buildBusinessJsonLd(
+  data: TenantData,
+  canonical: string,
+  image?: string | null,
+  options: { includeReviews?: boolean } = {},
+): Record<string, unknown> | null {
   const business = data.business;
   if (!business) return null;
 
@@ -167,16 +181,78 @@ function buildJsonLd(data: TenantData, canonical: string, image?: string | null)
           },
         }
       : {}),
+    ...(options.includeReviews && reviews.length
+      ? {
+          review: reviews.slice(0, 20).map((r) => ({
+            "@type": "Review",
+            reviewRating: { "@type": "Rating", ratingValue: Number(r.rating) },
+            ...(r.customer_name ? { author: { "@type": "Person", name: r.customer_name } } : {}),
+            ...(r.comment ? { reviewBody: r.comment } : {}),
+          })),
+        }
+      : {}),
     ...(data.services.length
       ? {
-          makesOffer: data.services.slice(0, 24).map((service) => ({
+          makesOffer: data.services.slice(0, 24).map((service) => {
+            const priceNum = typeof service.price === "string" ? parseFloat(service.price) : service.price;
+            const hasPrice = typeof priceNum === "number" && Number.isFinite(priceNum);
+            return {
+              "@type": "Offer",
+              ...(hasPrice ? { price: priceNum, priceCurrency: "USD" } : {}),
+              itemOffered: {
+                "@type": "Service",
+                name: service.name,
+                ...(service.description ? { description: service.description } : {}),
+              },
+            };
+          }),
+        }
+      : {}),
+  };
+}
+
+/** Breadcrumb JSON-LD for a real subpage (Home > Services > Gel-X, etc). */
+export function buildBreadcrumbJsonLd(items: Array<{ name: string; url: string }>): Record<string, unknown> | null {
+  if (items.length < 2) return null;
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: items.map((item, i) => ({
+      "@type": "ListItem",
+      position: i + 1,
+      name: item.name,
+      item: item.url,
+    })),
+  };
+}
+
+/** Single-service JSON-LD for a real /services/{slug} detail page. Only real, present fields are included. */
+export function buildServiceJsonLd(
+  service: { name: string; description: string | null; price: string | number; duration: number },
+  business: BusinessData,
+  serviceUrl: string,
+): Record<string, unknown> {
+  const priceNum = typeof service.price === "string" ? parseFloat(service.price) : service.price;
+  const hasPrice = typeof priceNum === "number" && Number.isFinite(priceNum);
+  return {
+    "@context": "https://schema.org",
+    "@type": "Service",
+    name: service.name,
+    url: serviceUrl,
+    ...(service.description ? { description: service.description } : {}),
+    provider: {
+      "@type": schemaType(business.category),
+      name: business.name,
+    },
+    ...(hasPrice
+      ? {
+          offers: {
             "@type": "Offer",
-            itemOffered: {
-              "@type": "Service",
-              name: service.name,
-              ...(service.description ? { description: service.description } : {}),
-            },
-          })),
+            price: priceNum,
+            priceCurrency: "USD",
+            url: serviceUrl,
+            availability: "https://schema.org/InStock",
+          },
         }
       : {}),
   };
@@ -221,7 +297,7 @@ export function buildTenantSeo(
     googleVerification: overrides.googleVerification?.trim() || undefined,
     canonical,
     ogImage,
-    jsonLd: buildJsonLd(data, canonical, ogImage),
+    jsonLd: buildBusinessJsonLd(data, canonical, ogImage),
     geoPosition: Number.isFinite(latitude) && Number.isFinite(longitude) ? `${latitude};${longitude}` : null,
     geoRegion: business?.state ? `US-${business.state.toUpperCase()}` : null,
     geoPlacename: business?.city || null,

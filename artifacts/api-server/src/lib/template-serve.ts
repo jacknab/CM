@@ -963,7 +963,7 @@ type SiteWebsite = {
   updatedAt: Date | string | null;
 };
 
-function siteBaseUrl(website: Pick<SiteWebsite, "slug" | "customDomain" | "customDomainStatus">): string {
+export function siteBaseUrl(website: Pick<SiteWebsite, "slug" | "customDomain" | "customDomainStatus">): string {
   if (website.customDomainStatus === "active" && website.customDomain) {
     return `https://${website.customDomain}`;
   }
@@ -1002,23 +1002,51 @@ export function buildRobotsTxt(website: Pick<SiteWebsite, "slug" | "customDomain
 
 // ── Sitemap & robots.txt handlers (slug-based) ────────────────────────────────
 
-// Section anchors included in auto-mode sitemaps — helps Google index each
-// visible section as a distinct deep-link target with semantic meaning.
-const AUTO_MODE_SITEMAP_SECTIONS = [
-  "/#services",
-  "/#team",
-  "/#hours",
-  "/#reviews",
-  "/#contact",
-];
+/**
+ * Real, crawlable paths for a website's sitemap — never a `#fragment` (a
+ * fragment is stripped before the request reaches the server, so it is not a
+ * distinct indexable resource). Template-mode sites are a single-route CSR
+ * bundle, so they only ever get "/". Auto-mode sites get every real subpage
+ * that actually exists (services/team/reviews index + one entry per visible
+ * service/staff member), matching exactly what `renderAutoSite()` serves.
+ */
+async function buildTenantSitemapPaths(website: {
+  storeid?: string | number | null;
+  publisherType?: string | null;
+  publisher_type?: string | null;
+  autoSettings?: unknown;
+  auto_settings?: unknown;
+}): Promise<string[]> {
+  const isAuto = website.publisherType === "auto" || website.publisher_type === "auto";
+  const storeid = website.storeid;
+  if (!isAuto || storeid == null) return [];
 
-// Per-template section anchors for template-based published sites.
-// Keyed by the template's filesPath (directory name in templates-storage/).
-// Each template has its own section IDs — using wrong anchors produces
-// broken sitemap deep-links that return 404 fragments to Googlebot.
-const TEMPLATE_SITEMAP_SECTIONS: Record<string, string[]> = {
-  "nail-salon-bloom": ["/#services", "/#gallery", "/#about", "/#visit"],
-};
+  try {
+    const { buildTenantData } = await import("./tenant-data");
+    const { idSlugPath } = await import("./tenant-page-urls");
+    const settings = ((website.autoSettings ?? website.auto_settings ?? {}) as Record<string, unknown>);
+    const tenantData = await buildTenantData(storeid, { id: 0, name: "", slug: "" });
+
+    // No trailing slash here — buildSitemapXml() appends exactly one "/" to
+    // every non-root path itself; a pre-trailing-slashed entry would double up.
+    const paths: string[] = [];
+    if (settings.showServices !== false && tenantData.services.length > 0) {
+      paths.push("/services");
+      for (const s of tenantData.services) paths.push(`/services/${idSlugPath(s.id, s.name)}`);
+    }
+    if (settings.showStaff !== false && tenantData.staff.length > 0) {
+      paths.push("/team");
+      for (const m of tenantData.staff) paths.push(`/team/${idSlugPath(m.id, m.name)}`);
+    }
+    if (settings.showReviews !== false && tenantData.reviews.length > 0) {
+      paths.push("/reviews");
+    }
+    return paths;
+  } catch (err) {
+    logger.warn({ err, storeid }, "Failed to build auto-mode sitemap paths; falling back to homepage only");
+    return [];
+  }
+}
 
 export async function handleTenantSitemapBySlug(req: Request, res: Response): Promise<void> {
   const slug = (req.params as Record<string, string>).slug;
@@ -1031,37 +1059,8 @@ export async function handleTenantSitemapBySlug(req: Request, res: Response): Pr
 
   if (!website) { res.status(404).send("Not found"); return; }
 
-  // Auto-mode pages have known section anchors — add them as sitemap entries
-  // so search engines can directly index the Services, Team, Hours, etc. sections.
-  const isAuto = (website as any).publisherType === "auto" || (website as any).publisher_type === "auto";
-  const autoSettings = isAuto ? ((website as any).autoSettings ?? {}) as Record<string, unknown> : {};
-  let extraPaths: string[] = [];
-  if (isAuto) {
-    extraPaths = AUTO_MODE_SITEMAP_SECTIONS.filter((path) => {
-      if (path === "/#services") return autoSettings.showServices !== false;
-      if (path === "/#team") return autoSettings.showStaff !== false;
-      if (path === "/#hours") return autoSettings.showHours !== false;
-      if (path === "/#reviews") return autoSettings.showReviews !== false;
-      if (path === "/#contact") return autoSettings.showContact !== false;
-      return true;
-    });
-  } else if ((website as any).templateId) {
-    // Template-based sites: look up the template's filesPath and emit the
-    // correct per-template section anchors. Wrong anchors → broken sitemap
-    // deep-links that return 404 fragments to Googlebot.
-    try {
-      const [tmpl] = await db.select().from(templatesTable).where(eq(templatesTable.id, (website as any).templateId));
-      if (tmpl?.filesPath) {
-        // filesPath may be a full path like "/home/.../nail-salon-bloom" or just "nail-salon-bloom"
-        const dirName = tmpl.filesPath.split("/").filter(Boolean).pop() ?? tmpl.filesPath;
-        extraPaths = TEMPLATE_SITEMAP_SECTIONS[dirName] ?? [];
-      }
-    } catch (_err) {
-      // Non-fatal — emit sitemap without section anchors rather than failing
-    }
-  }
-
-  const xml = buildSitemapXml(website, extraPaths);
+  const extraPaths = await buildTenantSitemapPaths(website as any);
+  const xml = buildSitemapXml(website as unknown as SiteWebsite, extraPaths);
   res.setHeader("Content-Type", "application/xml; charset=utf-8");
   res.setHeader("Cache-Control", "public, max-age=3600");
   res.send(xml);
@@ -1295,10 +1294,10 @@ async function isWebsiteSuspendedOrCanceled(storeId: string | null): Promise<boo
 
 // ── Auto-page renderer (publisher_type === 'auto') ────────────────────────────
 
-async function serveAutoPage(website: Record<string, unknown>, res: Response): Promise<void> {
+async function serveAutoPage(website: Record<string, unknown>, routePath: string, res: Response): Promise<void> {
   try {
     const { buildTenantData } = await import("./tenant-data");
-    const { renderSalonPage } = await import("./render-salon-page");
+    const { renderAutoSite } = await import("./render-salon-page");
 
     const websiteMeta = { id: website.id as number, name: website.name as string, slug: website.slug as string };
     let tenantData: TenantData;
@@ -1318,20 +1317,26 @@ async function serveAutoPage(website: Record<string, unknown>, res: Response): P
         googleAvgRating: 0,
         serviceReviews: {},
         galleryPhotos: [],
+        staffServiceLinks: [],
       };
     }
 
     const appUrl = process.env.APP_URL ?? "https://certxa.com";
-    const customDomain = website.customDomain as string | null | undefined;
-    const slug = website.slug as string;
-    const canonicalUrl = customDomain ? `https://${customDomain}` : `${appUrl}/${slug}`;
+    // The tenant's own live URL (its subdomain, or active custom domain) —
+    // NOT `${appUrl}/${slug}`, which has no matching route under the main
+    // app domain and previously produced a broken canonical tag.
+    const canonicalBase = siteBaseUrl({
+      slug: website.slug as string,
+      customDomain: (website.customDomain as string | null) ?? null,
+      customDomainStatus: (website.customDomainStatus as string | null) ?? null,
+    });
 
     const autoSettings = ((website.autoSettings ?? {}) as Record<string, unknown>);
-    const html = renderSalonPage(tenantData, autoSettings, canonicalUrl, appUrl);
+    const { status, html } = renderAutoSite(tenantData, autoSettings, canonicalBase, appUrl, routePath);
 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=300");
-    res.send(html);
+    res.setHeader("Cache-Control", status === 200 ? "public, s-maxage=60, stale-while-revalidate=300" : "no-store");
+    res.status(status).send(html);
   } catch (err: any) {
     res.status(500).send(`<pre>Auto-render error: ${err.message}</pre>`);
   }
@@ -1355,7 +1360,8 @@ export async function handleTenantSiteBySlug(req: Request, res: Response): Promi
 
   // Subdomain host traffic hits this handler directly for these files.
   if (req.path === "/sitemap.xml") {
-    const xml = buildSitemapXml(website as unknown as SiteWebsite);
+    const extraPaths = await buildTenantSitemapPaths(website as any);
+    const xml = buildSitemapXml(website as unknown as SiteWebsite, extraPaths);
     res.setHeader("Content-Type", "application/xml; charset=utf-8");
     res.setHeader("Cache-Control", "public, max-age=3600");
     res.send(xml);
@@ -1378,7 +1384,7 @@ export async function handleTenantSiteBySlug(req: Request, res: Response): Promi
 
   // Auto-mode: server-render the GlossGenius-style page instead of serving a template
   if ((website as any).publisherType === "auto" || (website as any).publisher_type === "auto") {
-    await serveAutoPage(website, res);
+    await serveAutoPage(website, req.path, res);
     return;
   }
 
@@ -1446,7 +1452,8 @@ export async function handleTenantSiteByDomain(req: Request, res: Response): Pro
 
   // Serve sitemap.xml and robots.txt for custom-domain sites
   if (req.path === "/sitemap.xml") {
-    const xml = buildSitemapXml(website);
+    const extraPaths = await buildTenantSitemapPaths(website as any);
+    const xml = buildSitemapXml(website, extraPaths);
     res.setHeader("Content-Type", "application/xml; charset=utf-8");
     res.setHeader("Cache-Control", "public, max-age=3600");
     res.send(xml);
@@ -1461,7 +1468,7 @@ export async function handleTenantSiteByDomain(req: Request, res: Response): Pro
 
   // Auto-mode: server-render the GlossGenius-style page instead of serving a template
   if ((website as any).publisherType === "auto" || (website as any).publisher_type === "auto") {
-    await serveAutoPage(website as Record<string, unknown>, res);
+    await serveAutoPage(website as Record<string, unknown>, req.path, res);
     return;
   }
 

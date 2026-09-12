@@ -1,4 +1,4 @@
-import { Router, type IRouter, type Request, type Response } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { eq, and, sql, count, isNull, ne, or } from "drizzle-orm";
 import { db, websitesTable, templatesTable, pageViewsTable } from "@workspace/db";
 import { isAuthenticated } from "../auth";
@@ -512,8 +512,21 @@ router.post("/websites/:id/unpublish", isAuthenticated, async (req, res): Promis
 });
 
 // ── Website preview: serve template with text replacements injected ────────────
-router.get("/websites/:id/preview", handleWebsitePreview);
-router.get("/websites/:id/preview/*splat", handleWebsitePreview);
+// Previews an in-progress (possibly unpublished) website, so it must require
+// the same ownership check as every other per-website route below — this was
+// previously reachable by anyone who could guess/enumerate a numeric id.
+async function requireWebsitePreviewOwnership(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const params = GetWebsiteParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const website = await assertWebsiteOwnership(req, res, params.data.id);
+  if (!website) return;
+  next();
+}
+router.get("/websites/:id/preview", isAuthenticated, requireWebsitePreviewOwnership, handleWebsitePreview);
+router.get("/websites/:id/preview/*splat", isAuthenticated, requireWebsitePreviewOwnership, handleWebsitePreview);
 
 // ── Extract content fields from template via Puppeteer ────────────────────────
 router.post("/websites/:id/extract-content", isAuthenticated, async (req, res): Promise<void> => {
@@ -799,7 +812,8 @@ router.get("/websites/:id/auto-preview", isAuthenticated, async (req, res): Prom
 
   try {
     const { buildTenantData } = await import("../lib/tenant-data");
-    const { renderSalonPage } = await import("../lib/render-salon-page");
+    const { renderAutoSite } = await import("../lib/render-salon-page");
+    const { siteBaseUrl } = await import("../lib/template-serve");
 
     const websiteMeta = { id: website.id, name: website.name, slug: website.slug };
     let tenantData;
@@ -818,16 +832,23 @@ router.get("/websites/:id/auto-preview", isAuthenticated, async (req, res): Prom
         googleAvgRating: 0,
         serviceReviews: {},
         galleryPhotos: [],
+        staffServiceLinks: [],
       };
     }
 
     const appUrl = process.env.APP_URL ?? `http://localhost:${process.env.PORT ?? 9200}`;
-    const canonicalUrl = website.customDomain
-      ? `https://${website.customDomain}`
-      : `${appUrl}/${website.slug}`;
+    // The site's own live URL (its subdomain, or active custom domain) — not
+    // `${appUrl}/${slug}`, which has no matching route under the main app domain.
+    const canonicalBase = siteBaseUrl({
+      slug: website.slug,
+      customDomain: website.customDomain ?? null,
+      customDomainStatus: website.customDomainStatus ?? null,
+    });
+    // Preview a specific subpage via ?page=/services/ etc.; defaults to home.
+    const previewPath = typeof req.query.page === "string" ? req.query.page : "/";
 
     const autoSettings = (website.autoSettings ?? {}) as Record<string, unknown>;
-    const html = renderSalonPage(tenantData, autoSettings, canonicalUrl, appUrl);
+    const { html } = renderAutoSite(tenantData, autoSettings, canonicalBase, appUrl, previewPath);
 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
@@ -846,10 +867,13 @@ router.get("/tenant/:slug/data", async (req, res): Promise<void> => {
   const slug = (req.params as Record<string, string>).slug;
   if (!slug) { res.status(400).json({ error: "Missing slug" }); return; }
 
+  // Published state must be enforced here: this is a public, unauthenticated
+  // endpoint, and an unpublished/draft site's business data (address, phone,
+  // email, staff, services) must not be exposed before the owner goes live.
   const [website] = await db
     .select()
     .from(websitesTable)
-    .where(eq(websitesTable.slug, slug));
+    .where(and(eq(websitesTable.slug, slug), eq(websitesTable.published, true)));
 
   if (!website) { res.status(404).json({ error: "Website not found" }); return; }
 
@@ -968,10 +992,12 @@ router.get("/tenant/:slug/status", async (req, res): Promise<void> => {
   const slug = (req.params as Record<string, string>).slug;
   if (!slug) { res.status(400).json({ error: "Missing slug" }); return; }
 
+  // Published state must be enforced here too — an unpublished site's live
+  // staffing/operational status should not be queryable pre-launch.
   const [website] = await db
     .select({ id: websitesTable.id, storeid: websitesTable.storeid })
     .from(websitesTable)
-    .where(eq(websitesTable.slug, slug));
+    .where(and(eq(websitesTable.slug, slug), eq(websitesTable.published, true)));
 
   if (!website) { res.status(404).json({ error: "Website not found" }); return; }
 
@@ -1258,22 +1284,46 @@ router.get("/tenant/:slug", async (req, res): Promise<void> => {
     return;
   }
 
-  const [website] = await db
-    .select()
+  // Public, unauthenticated endpoint — select only what a live client bundle
+  // actually needs to render. A prior `SELECT *` here publicly leaked
+  // customDomainToken (the domain-ownership-verification secret),
+  // stripeCheckoutSessionId, and the template's server filesystem path and
+  // raw build-error text to anyone who knew a published slug.
+  const [websiteRow] = await db
+    .select({
+      id: websitesTable.id,
+      name: websitesTable.name,
+      slug: websitesTable.slug,
+      published: websitesTable.published,
+      publisherType: websitesTable.publisherType,
+      autoSettings: websitesTable.autoSettings,
+      content: websitesTable.content,
+      customDomain: websitesTable.customDomain,
+      customDomainStatus: websitesTable.customDomainStatus,
+      templateId: websitesTable.templateId,
+    })
     .from(websitesTable)
     .where(and(eq(websitesTable.slug, params.data.slug), eq(websitesTable.published, true)));
 
-  if (!website) {
+  if (!websiteRow) {
     res.status(404).json({ error: "Tenant not found or not published" });
     return;
   }
 
-  let template = null;
-  if (website.templateId) {
+  const { templateId, ...website } = websiteRow;
+
+  let template: { id: number; name: string; category: string; description: string | null; thumbnail: string | null } | null = null;
+  if (templateId) {
     const [tmpl] = await db
-      .select()
+      .select({
+        id: templatesTable.id,
+        name: templatesTable.name,
+        category: templatesTable.category,
+        description: templatesTable.description,
+        thumbnail: templatesTable.thumbnail,
+      })
       .from(templatesTable)
-      .where(eq(templatesTable.id, website.templateId));
+      .where(eq(templatesTable.id, templateId));
     template = tmpl ?? null;
   }
 
