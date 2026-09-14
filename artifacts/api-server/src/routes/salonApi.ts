@@ -189,7 +189,7 @@ router.get("/api/salons/:slug", async (req: Request, res: Response) => {
       : [];
 
     const services = live?.services.length
-      ? live.services.map((s, i) => ({ id: i + 1, name: s.name, durationMinutes: 0, price: parseFloat(s.price.replace(/[^0-9.]/g, "")) || 0 }))
+      ? live.services.map((s, i) => ({ id: i + 1, name: s.name, durationMinutes: s.durationMinutes, price: parseFloat(s.price.replace(/[^0-9.]/g, "")) || 0 }))
       : [];
 
     const highlights: string[] = [];

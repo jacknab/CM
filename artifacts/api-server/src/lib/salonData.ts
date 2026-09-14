@@ -40,7 +40,7 @@ export interface LiveStoreData {
   storeId: number;
   name: string;
   bookingSlug: string | null;
-  services: Array<{ name: string; price: string }>;
+  services: Array<{ name: string; price: string; durationMinutes: number }>;
   hours: Array<{ day: number; open: string; close: string; closed: boolean }>;
 }
 
@@ -436,8 +436,8 @@ export async function findMatchingStore(slug: string, phone: string): Promise<Li
     const loc = locRes.rows[0];
 
     const [svcRes, hoursRes] = await Promise.all([
-      pool.query<{ name: string; price: string }>(
-        `SELECT name, price::text FROM services
+      pool.query<{ name: string; price: string; duration: number }>(
+        `SELECT name, price::text, duration FROM services
          WHERE store_id = $1 AND is_active = true AND hidden_from_public = false
          ORDER BY id LIMIT 12`,
         [loc.id]
@@ -456,6 +456,7 @@ export async function findMatchingStore(slug: string, phone: string): Promise<Li
       services: svcRes.rows.map(r => ({
         name: r.name,
         price: `$${parseFloat(r.price).toFixed(0)}`,
+        durationMinutes: r.duration ?? 0,
       })),
       hours: hoursRes.rows.map(r => ({
         day: r.day_of_week,
