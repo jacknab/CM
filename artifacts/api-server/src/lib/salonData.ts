@@ -34,6 +34,7 @@ export interface SalonRecord {
   rc: string; // review count
   w:  string; // website
   pi: string; // place_id
+  ab: string; // AI-generated about text (nail_salons.about_text) — "" until backfilled
 }
 
 export interface LiveStoreData {
@@ -136,8 +137,9 @@ async function loadSalonDataFromDb(): Promise<void> {
     id: number; slug: string; name: string; phone: string | null; address: string | null;
     website: string | null; latitude: number; longitude: number;
     place_id: string; rating: number | null; review_count: number | null;
+    about_text: string | null;
   }>(
-    `SELECT id, slug, name, phone, address, website, latitude, longitude, place_id, rating, review_count
+    `SELECT id, slug, name, phone, address, website, latitude, longitude, place_id, rating, review_count, about_text
      FROM nail_salons WHERE slug IS NOT NULL`
   );
 
@@ -162,6 +164,7 @@ async function loadSalonDataFromDb(): Promise<void> {
       rc: row.review_count != null ? String(row.review_count) : "",
       w: website,
       pi: row.place_id,
+      ab: row.about_text || "",
     };
     map.set(rec.s, rec);
     list.push(rec);

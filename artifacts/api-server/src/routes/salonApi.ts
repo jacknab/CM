@@ -211,7 +211,7 @@ router.get("/api/salons/:slug", async (req: Request, res: Response) => {
       services,
       gallery: [],
       highlights,
-      about: undefined,
+      about: salon.ab || undefined,
       bookingUrl: live?.bookingSlug ? `${CERTXA_DOMAIN}/${live.bookingSlug}` : undefined,
       city: addr.city,
       state: addr.state,
