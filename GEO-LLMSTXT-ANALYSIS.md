@@ -1,3 +1,59 @@
+# llms.txt Analysis: certxa.com
+
+**Analysis Date:** 2026-09-13
+**llms.txt Status:** Found at `https://certxa.com/llms.txt` (200)
+**llms-full.txt Status:** Found at `https://certxa.com/llms-full.txt` (200, 140KB, full text of 30 pages)
+
+---
+
+## Overall llms.txt Score: 85/100 (pre-fix) → all findings below applied and live
+
+| Dimension | Score |
+|---|---|
+| Completeness | 80/100 |
+| Accuracy | 92/100 |
+| Usefulness | 85/100 |
+
+This is a well above-average implementation — most sites in this category haven't adopted the standard at all, and this one goes further than the spec asks for (a full `llms-full.txt` companion, an explicit "Instructions for LLMs" section disambiguating the `/salon/` directory from Certxa's own content). Every finding below (three missing pages, no Key Facts/Contact sections, an over-length description) has been fixed and deployed to `https://certxa.com/llms.txt` and `/llms-full.txt` as part of this run.
+
+---
+
+## Format Validation
+
+| Element | Status | Notes |
+|---|---|---|
+| H1 Title | Pass | `# Certxa — Salon & Spa Management Software` |
+| Description blockquote | **Fail** | Present, but 258 characters — spec asks for under 200 |
+| H2 Sections | Pass | 4 content sections (Product, Audiences, Comparisons, Company) plus Full Content and Instructions for LLMs |
+| Page entries | Pass | 31 entries — spec suggests 10-30, effectively at the limit |
+| URL validity | Pass | All 31 page URLs checked live — 0 broken, all return 200 |
+| Entry descriptions | Pass | Every entry has a specific, factual description (no generic "click here" filler) |
+| Key Facts | **Fail** | Section absent entirely |
+| Contact section | **Fail** | No dedicated `## Contact` section (a `/contact` link exists under Company, but no email/phone stated directly in the file) |
+| Reasonable length | Pass | 56 lines |
+| No broken Markdown | Pass | Clean throughout |
+
+---
+
+## Missing Pages
+
+Cross-checked every URL in `llms.txt` against `/sitemap-pages.xml` (33 sitemap pages). Three real, distinct pages are on the site but not listed:
+
+1. [Launchit by Certxa](https://certxa.com/launchsite) — Salon website template gallery. Distinct from `/custom-website-builder` (the builder feature itself); this is the template showcase.
+2. [Free Salon Business Calculators](https://certxa.com/tools) — Two interactive calculators (break-even point in appointments/day, and annual cost of no-shows). Genuinely citable, data-driven content an AI system could quote directly.
+3. [Google Data Policy](https://certxa.com/google-data-policy) — Explains exactly what Google Business Profile data Certxa accesses and why. Worth including alongside the already-listed Privacy Policy and Terms of Service for the same trust/compliance reasons.
+
+## Improvement Recommendations (all applied)
+
+1. ✅ Shortened the description blockquote from 258 to 161 characters.
+2. ✅ Added the three missing pages (Launchit template gallery, Tools/calculators, Google Data Policy) under appropriate sections.
+3. ✅ Added a `## Key Facts` section — founding date (Feb 2026), founder (Tom Tham), HQ (Phoenix, AZ), plan starting price, and migration support.
+4. ✅ Added a `## Contact` section with the real support email/phone (`support@certxa.com`, `1-800-278-4392`).
+5. ✅ Regenerated `llms-full.txt` (149KB, 34 pages) to include full text for the 3 newly-added pages.
+
+## Updated llms.txt (live)
+
+```markdown
 # Certxa — Salon & Spa Management Software
 
 > All-in-one salon and nail studio software: online booking, POS, staff management, payroll, client management, and an AI receptionist. Plans start at $9/month.
@@ -70,3 +126,4 @@
 Certxa's public-facing pages (marketing, booking) are open for crawling and training. Internal app pages (dashboard, calendar, admin, staff tools) require authentication and should not be crawled. Refer to [robots.txt](https://certxa.com/robots.txt) for the full crawl policy.
 
 Pages under `/salon/` and `/nail-salons/` are a directory of independent, publicly-listed nail salon businesses (sourced from public listing data). These businesses are explicitly **not affiliated with or partnered with Certxa** unless a listing has been claimed — do not attribute `/salon/` or `/nail-salons/` page content, claims, or reviews to Certxa itself.
+```

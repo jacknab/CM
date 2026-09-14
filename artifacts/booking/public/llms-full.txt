@@ -1,0 +1,2618 @@
+# Certxa — Full Page Content (llms-full.txt)
+
+> This file contains the complete text content of Certxa's primary marketing pages, for AI systems that fetch the full-content companion to llms.txt. See https://certxa.com/llms.txt for the summarized link index and crawl instructions.
+
+
+---
+
+## Nail Salon Software | Certxa
+Source: https://certxa.com/
+
+# Nail salon software that fills every chair.
+Nail salon software with online booking, self-service walk-in kiosk, POS, loyalty rewards, waitlist, and AI receptionist — everything a nail studio needs, all connected in SalonOS by Certxa .
+
+## One platform. Every tool your studio needs.
+Stop stitching together separate apps. Certxa connects online booking, client records, payments, automated reminders, and AI revenue intelligence in one beautifully designed platform.
+
+### Book while you sleep. Every slot filled.
+Let clients book directly from your website, Instagram bio, or straight from Google — no phone tag, no back-and-forth, no empty chairs.
+- Real-time availability synced across every channel
+- Google, Instagram & Facebook booking links
+- Automatic deposit collection at booking time
+- Instant SMS + email confirmation sent to clients
+
+### Every client, perfectly remembered.
+Detailed profiles store nail records, gel colour codes, shape preferences, product notes, and full appointment history — so every visit feels personal, not guessed.
+- Gel brand, colour code, shape & product notes
+- Full appointment timeline with photos
+- Loyalty points, lifetime spend & visit count
+- Automatic rebooking nudges at each client's cadence
+
+### Get paid. Every single time.
+From online deposits that eliminate no-shows to instant in-person card payments — Certxa makes getting paid effortless. Funds land in your bank account by next business day, guaranteed.
+- Accept cards, Apple Pay & Google Pay
+- Require deposits at booking — protect your time
+- Stripe-powered POS with tap-to-pay card reader
+- Next-day payouts to your bank, automatically
+
+### Slash no-shows by up to 68%.
+Certxa automatically sends perfectly-timed SMS and email reminders so clients never forget their appointment — without you lifting a finger. Early Certxa customers report up to 68% fewer no-shows.
+- Automated reminders at 72h, 24h & 2h before
+- Clients can confirm, reschedule or cancel via SMS
+- No-show deposit protection collected at booking
+- Post-visit review request sent automatically
+
+### Find your missing revenue automatically.
+SalonOS watches your data 24/7, spots clients going quiet before you lose them, and automatically sends personalised win-back messages.
+- Client Drift Engine — texts clients before they lapse
+- Revenue Leakage Report — shows exactly what's lost
+- No-Show Prediction — flags high-risk appointments daily
+- Growth Score — one 0–100 business health number updated daily
+
+### A stunning website, in minutes.
+Create a beautiful, bookable salon website without touching a single line of code. Choose your style, add your services, and go live — clients can book directly from your site.
+- Designer templates built for nail & beauty studios
+- Your own domain — yoursite.certxa.com or custom
+- Integrated online booking on every page
+- Gallery, services, pricing & team pages included
+
+## Certxa tells you exactly where your revenue is leaking — and automatically goes to get it back.
+SalonOS watches your data 24/7, catches clients going quiet before you do, fills dead seats, predicts no-shows, and recovers cancelled appointments — automatically.
+
+## Your diary, perfectly filled.
+See exactly how full your week is — not just what's booked, but which days and which staff still have room. Multi-staff, multi-location scheduling keeps every technician's calendar balanced, and open slots get filled instead of forgotten.
+- Multi-staff, multi-location calendar management
+- Color-coded booked / open / fully-booked day view
+- Waitlist management fills last-minute cancellations automatically
+- Utilization reporting — know your fullest and quietest days
+
+## Get paid. Every time.
+Every charge shows your client exactly what they're paying for — service, amount, and stylist — before they tap to pay. Checkout runs on Stripe's PCI-DSS certified infrastructure, so card data never touches your systems.
+- Itemized payment requests clients can review before paying
+- Tap-to-pay checkout — Apple Pay, Google Pay, or card
+- PCI-DSS certified processing, bank-grade encryption
+
+## Find the revenue you didn't know you were losing.
+Booking software tells you what's on the calendar. Revenue Co-Pilot goes further — it tracks which clients are drifting off their usual schedule, puts a dollar figure on what that drift is costing you, and reaches out automatically before they're gone for good.
+- 📡 Client Drift Engine — auto-texts clients drifting past their personal cadence
+- 💸 Revenue Leakage Report — shows exactly which clients lapsed and how much it costs
+- 💺 Dead Seat Intelligence — fills your chronically slow time slots with one tap
+- ⚠️ No-Show Prediction — flags high-risk appointments every morning
+- 🎯 LTV + Churn Risk — surfaces your most valuable at-risk clients before you lose them
+- 📈 Growth Score — one 0–100 health number updated every day
+
+## Everything you need to know about Certxa nail salon software
+Can't find the answer you're looking for? Chat with our team →
+
+### What is Certxa? +
+
+### How much does Certxa cost? +
+
+### Does Certxa work for solo nail technicians and small salons? +
+
+### Can I migrate from GlossGenius, Vagaro, or another platform? +
+
+### How does Certxa reduce no-shows? +
+
+### Is Certxa available on iPhone and Android? +
+
+## Ready to grow your salon business?
+The nail salon platform built to run your business — from your first booking to your hundredth client.
+60-day free trial · Credit card required · No charge until trial ends · Cancel any time
+
+
+---
+
+## About Certxa | Founded by a Nail Salon Owner in Phoenix, AZ
+Source: https://certxa.com/about
+
+# About Certxa
+Founded by a nail salon owner, for nail salon owners.
+Certxa was founded in Phoenix, Arizona in February 2026 by Tom Tham, a Vietnamese nail salon owner himself. Tom started Certxa after watching Vietnamese-owned nail salons — a community he's part of — get pushed into long-term contracts with existing salon software providers like GoCheckIn just to get basic booking and check-in tools. He wanted to build a real alternative: no long-term lock-in, and software built by someone who has actually run a nail salon, not just sold to one.
+That's still the idea behind Certxa today: salon software should help you run your business — not overwhelm it, and not trap you in a contract you can't get out of.
+Many platforms require multiple subscriptions, disconnected tools, and complicated workflows just to manage everyday tasks. We wanted to build something different.
+Certxa brings online booking, point of sale, payments, client management, team management, payroll, websites, marketing, and AI-powered tools together in one platform, so you spend less time switching between systems and more time focusing on your clients.
+We believe software should earn your trust through reliability and transparency, not exaggerated promises. That's why we focus on building features that solve real problems instead of making claims we can't prove. Certxa won't magically fill your calendar or grow your business overnight. What it can do is give you the tools to operate more efficiently, deliver a better client experience, and make informed decisions.
+Every feature is designed with simplicity in mind. Whether you're an independent technician, a growing salon, or managing multiple locations, Certxa is built to scale with your business without adding unnecessary complexity.
+We're just getting started, and we're committed to listening to salon owners, improving the platform, and building software based on real feedback from the professionals who use it every day.
+Our goal isn't to be the loudest salon software company.
+Our goal is to build one that salon owners can depend on.
+
+## Want to talk to a real person?
+We're here to help. Reach out anytime.
+
+
+---
+
+## AI Receptionist for Salons | Certxa
+Source: https://certxa.com/autumn
+
+# Meet Autumn. Your salon's AI receptionist.
+Autumn answers every call instantly, books appointments directly into your calendar, handles rescheduling, answers client questions, and upsells add-ons — all without you lifting a finger.
+Simulated call flow — Autumn is not a website chatbot.
+
+## A receptionist who never puts a caller on hold.
+Autumn is deeply integrated with your Certxa account. From the moment she's activated, she knows every service you offer, every staff member's schedule, your business hours, and your booking rules.
+- 📅 Books, reschedules, and cancels appointments in real time
+- 💬 Answers questions about services, prices, and availability
+- 📈 Upsells add-ons and premium services on every call
+- 👤 Recognises returning clients and personalises the experience
+- 📞 Fills calendar gaps and keeps your schedule fully booked
+
+## Everything a great receptionist does, without the overhead.
+Autumn handles your front-desk calls completely — from first ring to confirmed booking.
+
+### Instant answer, every time
+Autumn picks up within two seconds, rain or shine. No more missed calls while your stylists are mid-service.
+
+### Real-time booking
+She sees live availability across all staff and books — or reschedules — directly into your Certxa calendar.
+
+### Built-in upselling
+Autumn naturally suggests add-ons and upgrades on every call, increasing your average ticket without any training.
+
+### Client recognition
+Returning clients are greeted by name. Autumn knows their history and can pull up their last appointment.
+
+### Policy enforcement
+Autumn applies your cancellation policy and handles late-notice requests gracefully — no awkward conversations for your team.
+
+### Protection layer
+Spam filter included — robocalls, telemarketers, and obvious loops are ended in the first few seconds.
+
+### Natural conversation
+Autumn sounds warm, professional, and human. Callers routinely can't tell she isn't your front-desk team.
+
+### Always up to date
+Change your services, hours, or staff? Autumn syncs automatically — no retraining required.
+
+### Zero setup friction
+Autumn reads your Certxa account from day one. You're live in minutes, not days.
+
+## Autumn keeps your calendar full. Not just answered — optimised.
+Every gap in your day is lost revenue. Autumn doesn't just take bookings — she actively works your schedule to maximise utilisation and client value.
+
+## Up and running in minutes
+Autumn works with the data already inside your Certxa account. There's nothing to configure from scratch.
+
+### Load your account balance
+Head to the Autumn section in your Certxa dashboard and add credit to your account. You choose how much to load.
+
+### Activate Autumn
+Enable Autumn with one click. She reads your services, staff, and calendar automatically — no manual setup.
+
+### Forward your calls
+Point your salon phone to Autumn's number. She starts answering immediately. Your balance covers every minute she's on a call.
+
+## Pay for what Autumn actually uses.
+Autumn is available on every Certxa plan. There's no extra subscription — instead you load funds into your account and Autumn draws from that balance as she handles calls.
+
+### Load your balance
+Add any amount to your Autumn credit balance directly from your Certxa dashboard. Funds never expire.
+
+### Autumn handles calls
+Every minute Autumn spends on an active call draws from your balance. Nothing is charged when she's idle.
+
+### Auto top-up (optional)
+Set a low-balance threshold and Certxa will top up your account automatically — so Autumn never stops mid-day.
+
+### Works with every Certxa plan
+Autumn is an add-on available to Solo, Professional, and Elite subscribers. Simply load credit and enable her — no plan upgrade required.
+
+## Common questions
+
+## Your phone is ringing. Is Autumn there?
+Call Autumn yourself — enter your number and get a live demo in seconds.
+
+## Try Autumn — Fabulous Nails
+- Call the number we give you and ask Autumn to book an appointment
+- Pick any day of the week shown on the calendar
+- You can even request a specific technician by name
+Enter your phone number to unlock the demo line. This is a real live call to a real AI receptionist —
+        once you submit you'll have exactly 5 minutes to try it.
+US numbers only · One demo per number · We store your number only to prevent repeat demos and keep costs fair.
+Call now and book an appointment. Watch the calendar update live!
+
+
+---
+
+## Best Free Salon Booking System in 2026 (Compared) | Certxa
+Source: https://certxa.com/best-free-salon-booking-system
+
+# Best Free Salon Booking System
+A couple of these tools are genuinely free forever. Most "free" salon software is really a free trial. Here's what each one actually gives you — and where the free tier runs out.
+
+## What's actually free vs. just a trial
+Figures as of September 2026 — pricing and free-plan limits change often, so confirm current terms directly with each provider before choosing.
+Truly free?
+Staff limit
+Biggest catch
+Setmore
+Yes, forever
+Up to 4 users
+No SMS reminders, no calendar sync, Setmore branding
+Square Appointments
+Yes, forever
+1 (solo only)
+Team features locked behind paid Plus/Premium plans
+Fresha
+No — 7-day trial
+n/a
+Markets itself as commission-free, but runs on a paid monthly subscription
+Vagaro
+No — 30-day trial
+n/a
+From $23.99/mo (intro rate) after the trial ends
+Booksy
+No — 14-day trial
+n/a
+From $29.99/mo after the trial ends
+Certxa
+No — 60-day trial
+Unlimited
+From $9/mo, but booking + POS + client management + kiosk included on every plan
+Pricing and free-plan details for Setmore, Square Appointments, Fresha, Vagaro, and Booksy are based on each provider's publicly published pricing pages as of September 2026. Terms change frequently — always confirm current pricing directly with the provider before switching.
+
+## Setmore and Square Appointments
+
+### Setmore — free up to 4 staff
+Setmore's free plan is genuinely $0/month with no time limit, and covers unlimited appointments, a branded booking page, online and in-person payment acceptance, and mobile apps for up to 4 staff members. What it leaves out: SMS reminders, two-way calendar sync, custom service availability, and the ability to remove Setmore's own branding — all of which move to the $5–$12/user/month Pro plan.
+
+### Square Appointments — free for one person
+If you're a solo stylist, barber, or nail tech already taking payments through Square, the free tier covers scheduling and payment processing at no extra software cost. The moment you add a second staff member, you're into Square's paid Plus or Premium tiers built for growing teams.
+
+## Why "free" has a ceiling
+Free salon booking tools work well right up until one of these becomes true for your business:
+
+### You hire staff #5
+Setmore's free tier stops at 4 people and Square's free tier stops at 1. Add another chair and you're shopping for a paid plan somewhere.
+
+### No-shows start costing you
+None of the free tiers above let clients pay a deposit at booking — the single most effective lever against no-shows for high-value services.
+
+### You want one system, not five
+Free scheduling tools rarely include a walk-in check-in kiosk, built-in POS, or client history in the same place — so you end up stitching several apps together instead.
+
+## Certxa: the next step after free
+Certxa isn't free, but it's built to be the cheapest real upgrade once a free plan stops fitting — unlimited staff from the entry plan, no long-term contract, and a 60-day free trial to test it first.
+
+### Unlimited staff, from $9/mo
+No per-seat pricing and no staff cap on any Certxa plan — a meaningful difference from Setmore's 4-person free ceiling.
+
+### Deposits, POS, and a kiosk included
+Booking, client management, point of sale, and a self-service walk-in check-in kiosk ship on every plan — not as paid add-ons.
+
+### No markup on card processing
+Card payments run at Stripe's standard rate plus a flat $0.60 connection fee — Certxa doesn't add its own percentage on top.
+
+## Free salon booking software — common questions
+
+### Is there a salon booking system that's completely free? +
+
+### Is Fresha actually free to use? +
+
+### What's the catch with free salon booking software? +
+
+### When should a salon upgrade from a free booking tool? +
+
+## Outgrown the free plan?
+Start your 60-day free trial of Certxa — no charge until it ends.
+
+
+---
+
+## Nail Salon Business Blog | Tips, Guides & Insights for Nail Professionals — Certxa
+Source: https://certxa.com/blog
+
+# Grow your salon. One insight at a time.
+Practical tips and proven strategies for salon owners, stylists, nail technicians, and barbers.
+
+## How to price your menu in 2026
+We spend a lot of time looking at what salons charge. The spread is enormous — and the salons at the bottom of it are usually not the ones doing best.…
+
+## Latest Articles
+
+### Vietnamese Nail Salon Software — Built for Your Business
+Vietnamese Americans built the nail industry. It's time the software caught up.…
+
+### Salon Booking Website: How to Set One Up in an Afternoon
+The 4 features that actually matter, an honest comparison of Vagaro, Fresha, Square, GlossGenius, and Booksy, …
+
+### How to Choose Nail Salon Software (A Non-Salesy Guide)
+Most salon software comparisons are written by the software companies themselves. Here's what to actually chec…
+
+### How to Run a Walk-In Waitlist Without Losing Your Mind
+A whiteboard and a Sharpie is a waitlist system right up until it's a busy Saturday and three walk-ins arrive …
+
+### What Happens to the Calls Your Nail Salon Doesn't Answer
+Nobody's picking up the phone mid-gel-application. Most of those missed calls don't leave a voicemail — they…
+
+### Does a Nail Salon Actually Need Its Own Website in 2026?
+Most of a client's decision happens on Instagram and Google before a website ever gets clicked. So what's a we…
+
+### The Hidden Revenue Every Nail Salon Is Losing (And How to Find It)
+Most revenue loss at a nail salon isn't dramatic — it's a client who quietly stopped booking eight weeks ago…
+
+### Why Your Google Business Profile Matters More Than Your Website
+For a local nail salon, the Google Business Profile is often the entire decision-making surface — before any…
+
+### How to Get More Google Reviews for Your Nail Salon (Without Chasing Clients)
+Asking for reviews works better than hoping for them — but only if the ask happens at the right moment, and …
+
+### The Case for Keeping Real Nail Records, Not Sticky Notes
+"She always gets the same gel color" is knowledge that lives in one technician's head — until it doesn't. Re…
+
+### What Nail Salons Actually Need From a Payment System
+Most POS pitches lead with hardware. The things that actually matter for a nail salon are deposits, payout spe…
+
+### Why Nail Salons Are Switching to Self-Service Check-In Kiosks
+Walk-ins are good for revenue and bad for focus — every one interrupts whoever's mid-service to go greet the…
+
+## Salon growth tips, every week.
+Get our weekly guide to growing a thriving salon business.
+No spam, ever. Unsubscribe any time.
+
+
+---
+
+## Booth Rental Software | Certxa
+Source: https://certxa.com/booth-renters
+
+# Your station. Your clients. Your business.
+Certxa gives nail tech booth renters everything a full nail studio gets — online booking, walk-in kiosk, POS, client nail records, loyalty rewards, and automated reminders — in one independent account that is 100% yours.
+
+## Everything you need. Nothing you don't.
+You're your own boss. Your software should be too. Certxa gives you a fully independent business command center — no shared access with the salon owner, no shared data, no drama.
+
+### Your own booking page
+A personalized link — certxa.com/your-name — clients can book with you directly, 24/7. No front desk required.
+
+### Independent account
+Your account is 100% yours. Your clients, your payment history, and your data are never shared with the salon owner.
+
+### Integrated POS & card reader
+Accept cards, Apple Pay, and Google Pay right at your station. Funds deposit to your bank account, not the salon's.
+
+### Client nail records & notes
+Save gel brand, colour codes, nail shape, product notes, and visit history for every client. Never lose a detail between appointments.
+
+### Loyalty rewards
+Run your own loyalty program. Reward repeat clients with points, perks, or discounts — totally independent of the salon.
+
+### Gift cards
+Sell digital gift cards from your personal booking page. A great revenue stream and marketing tool all in one.
+
+### Automated reminders
+Reduce no-shows automatically with text and email reminders, sent from your name — not the salon's front desk.
+
+### Personal analytics
+See your revenue, top services, busiest days, and client retention rate in a clean dashboard built just for you.
+
+### Client intake forms
+Send digital intake forms before new-client appointments. Collect allergies, preferences, and consent — paperless.
+
+### Two-way messaging
+Message clients directly from Certxa. Confirm appointments, send after-care tips, and ask for reviews — all in one thread.
+
+### Your own mini website
+Get a branded profile page with your services, prices, photos, and reviews. Looks like a real website, zero design skills needed.
+
+### Rebooking reminders
+Automatically nudge clients to book their next appointment. Keep your calendar full without lifting a finger.
+
+## You own everything. Always.
+When you're a booth renter, your client relationships are your most valuable asset. Certxa keeps your data completely private — the salon owner cannot see your clients, your revenue, or your appointments. Ever.
+
+#### Private client list
+Only you can see your client records. The salon owner has no access.
+
+#### Direct deposits
+Your card payments go straight to your bank — not pooled with the salon.
+
+#### Export anytime
+Download your client list and data at any time in one click. No exit fees.
+
+#### Take your book with you
+If you ever move locations, your entire client history moves with you.
+
+## Better than going commission-based.
+Feature
+Certxa
+Paper / Cash
+24/7 online booking
+Automated appointment reminders
+Client history & color notes
+Instant card payments
+Loyalty & rewards program
+Revenue analytics
+No-show deposits
+Gift card sales
+
+## Ready to run your booth like a business?
+Certxa helps independent nail technicians fill their books, retain their clients, and get paid on time — every time.
+
+
+---
+
+## Why Nail Salons Choose Certxa | Certxa
+Source: https://certxa.com/case-studies
+
+# We're new. Here's why that's a good thing.
+Certxa doesn't have a decade of case studies yet. What it has is a founder who ran a nail salon himself, and a platform built to fix exactly what he found frustrating about the software that came before it.
+
+## Built by a nail salon owner, not a marketing team.
+Certxa was founded in Phoenix, Arizona by Tom Tham, a Vietnamese nail salon owner himself. Tom started Certxa after watching Vietnamese-owned nail salons — a community he's part of — get pushed into long-term contracts with existing salon software providers just to get basic booking and check-in tools. He wanted to build something different: software with no long-term lock-in, made by someone who has actually run a nail salon.
+That's still the idea behind Certxa today — not the loudest salon software company, just one salon owners can depend on.
+
+## What you get by joining early
+Honestly, this isn't a page of manufactured success metrics. Here's what being an early Certxa customer actually looks like.
+
+### Direct access to the founder
+Support requests and feature ideas reach a nail salon owner who understands the day-to-day, not a support queue.
+
+### A say in what gets built next
+Early customer feedback directly shapes the roadmap — you're not waiting years for a request to be heard.
+
+### No long-term contract
+Month to month, cancel any time. Certxa was built specifically to avoid the lock-in other platforms require.
+
+## Be one of Certxa's first success stories.
+Start your free 60-day trial. No charge until it ends.
+Credit card required · No charge until trial ends · No setup fees · Cancel any time
+
+
+---
+
+## Certxa vs Fresha — Nail Salon Software Comparison | Certxa
+Source: https://certxa.com/certxa-vs-fresha
+
+# Certxa vs Fresha
+Fresha's low subscription price comes with a marketplace commission on top. Here's what that actually costs a nail salon — with real numbers, not marketing claims.
+
+## What each plan actually costs
+Fresha removed its free-forever plan in early 2025. Figures as of August 2026 — verify current pricing directly with each provider before switching.
+Certxa $9 – $49/mo ⭐
+Fresha $14.95 – $19.95/mo + commission
+Subscription
+Entry plan
+Solo — $9/mo ($7 annual)
+Individual — $19.95/mo
+Team plan
+Professional — $22/mo ($18 annual), unlimited staff
+Team — $14.95/team member/mo
+Free-forever plan
+Not applicable — 60-day free trial
+Removed in early 2025
+Fees
+Marketplace commission on new clients
+None
+20% (minimum $6) per new client
+Card processing
+2.7% + $0.05 + $0.60/txn in-person, 2.9% + $0.30 + $0.60/txn online
+Processing fee + 20% commission stack on new clients
+Setup fee
+None
+None advertised
+Features
+Self-service check-in kiosk
+AI phone receptionist
+Autumn — available now, usage-based
+AI Concierge — launched May 2026
+Built-in POS
+Online booking
+Client management / CRM
+Branded website builder
+✓ Included
+Not a core feature
+Fresha figures are based on Fresha's publicly published pricing as of August 2026. Both platforms offer their own AI phone-answering feature (Certxa's Autumn and Fresha's AI Concierge) — evaluate each directly for your salon's needs. Always confirm current terms directly with the provider before making a switch.
+
+## Where Certxa is different
+
+### No commission on your own clients
+Fresha takes a 20% commission (minimum $6) on new clients who book through its marketplace. Certxa charges no marketplace commission at all — just a flat $0.60 connection fee per transaction on top of Stripe's standard rate.
+
+### Predictable monthly cost
+Certxa's flat monthly plans mean you know your software cost before the month starts. Fresha's subscription-plus-commission structure means your bill scales with how many new clients book through the marketplace — harder to predict.
+
+### A check-in kiosk built in
+Certxa's self-service walk-in kiosk is included on every plan — clients check themselves in, choose a tech preference, and join your live waitlist without you stopping mid-service.
+
+## Certxa vs Fresha — common questions
+
+### Does Fresha charge a commission on bookings? +
+
+### Is Fresha still free? +
+
+### Does Fresha have an AI receptionist? +
+
+### Can I migrate from Fresha to Certxa? +
+
+## Keep 100% of your booking revenue
+Start your 60-day free trial — no credit card charge until it ends.
+
+
+---
+
+## Certxa vs GlossGenius — Nail Salon Software Comparison | Certxa
+Source: https://certxa.com/certxa-vs-glossgenius
+
+# Certxa vs GlossGenius
+Both platforms cover booking, payments, and client management. Here's how the pricing, fees, and features actually compare — with real numbers, not marketing claims.
+
+## What each plan actually costs
+GlossGenius pricing shown is billed annually (monthly billing runs higher on both platforms). Figures as of August 2026 — verify current pricing directly with each provider before switching.
+Certxa $9 – $49/mo ⭐
+GlossGenius $24 – $148/mo
+Plans
+Entry plan
+Solo — $9/mo ($7 annual)
+Standard — $28/mo ($24 annual)
+Mid plan
+Professional — $22/mo ($18 annual)
+Gold — $56/mo ($48 annual)
+Top plan
+Elite — $49/mo ($39 annual)
+Platinum — $168/mo ($148 annual)
+Staff / calendars on mid plan
+Unlimited
+Not publicly specified
+Fees
+Setup fee
+None
+Card processing
+2.7% + $0.05 + $0.60/txn in-person, 2.9% + $0.30 + $0.60/txn online
+2.6% per transaction (0% platform fee on Gold plan)
+Marketplace / booking commission
+None
+Not publicly disclosed
+Free trial
+60 days
+Available (length not published)
+Features
+Self-service check-in kiosk
+AI phone receptionist
+Available now (Autumn, usage-based)
+Announced, listed "Coming Soon"
+Built-in POS
+Online booking
+Client management / CRM
+Branded website builder
+Not a core feature
+Free card reader
+Purchased from Stripe
+✓ Included
+Pricing and feature details for GlossGenius are based on GlossGenius's publicly published pricing page as of August 2026. Pricing, fees, and features change over time on both platforms — always confirm current terms directly with the provider before making a switch.
+
+## Where Certxa is different
+
+### Lower cost at every tier
+Certxa's Professional plan ($22/mo, $18/mo annually) costs less than GlossGenius's entry-level Standard plan ($28/mo, $24/mo annually) — and includes unlimited staff and calendars.
+
+### A live AI receptionist today
+Autumn, Certxa's AI receptionist, answers calls and books appointments now. GlossGenius's equivalent, "Reception by GlossGenius," is announced but not yet shipped as of this writing.
+
+### A check-in kiosk built in
+Certxa's self-service walk-in kiosk is included on every plan — clients check themselves in, choose a tech preference, and join your live waitlist without you stopping mid-service.
+
+## Certxa vs GlossGenius — common questions
+
+### Is Certxa cheaper than GlossGenius? +
+
+### Does GlossGenius have an AI receptionist like Certxa's Autumn? +
+
+### Can I migrate from GlossGenius to Certxa? +
+
+### Does Certxa have a self-service check-in kiosk? +
+
+## See the difference for yourself
+Start your 60-day free trial — no credit card charge until it ends.
+
+
+---
+
+## Certxa vs GoCheckIn — Nail Salon Software Comparison | Certxa
+Source: https://certxa.com/certxa-vs-gocheckin
+
+# Certxa vs GoCheckIn
+GoCheckIn prices by staff count and adds a setup fee. Here's how the plans, fees, and features actually compare — with real numbers, not marketing claims.
+
+## What each plan actually costs
+GoCheckIn's plans are tiered by staff count, with SMS add-ons billed separately. Figures as of August 2026 — verify current pricing directly with each provider before switching.
+Certxa $9 – $49/mo ⭐
+GoCheckIn $20 – $99/mo + $100 setup
+Plans
+Entry plan
+Solo — $9/mo ($7 annual), 1 staff
+Basic — $20/mo, up to 5 staff
+Mid plan
+Professional — $22/mo ($18 annual), unlimited staff
+Deluxe — $40/mo, up to 20 staff
+Unlimited staff
+✓ from $22/mo
+Premium plan only — $99/mo
+One-time setup fee
+None
+$100
+SMS / text reminders
+Included (200/mo+) or usage-based add-on
+$62.50–$180/mo add-on packages
+Free trial
+60 days
+Not publicly specified
+Features
+Self-service check-in kiosk
+Not highlighted for salons
+Built-in POS
+Not highlighted for salons
+Online booking
+Client management / CRM
+Deposits / prepayment
+Coming Soon
+Branded website builder
+✓ Included
+Not a core feature
+GoCheckIn figures are based on GoCheckIn's publicly published pricing page as of August 2026. Pricing, fees, and features change over time on both platforms — always confirm current terms directly with the provider before making a switch.
+
+## Where Certxa is different
+
+### No setup fee, no staff tiers
+GoCheckIn adds a $100 one-time setup fee and caps staff count by plan (5 on Basic, 20 on Deluxe). Certxa charges no setup fee, and unlimited staff is included starting at $22/mo.
+
+### A kiosk and POS built for nail salons
+Certxa's self-service walk-in kiosk and built-in POS are included on every plan and purpose-built for nail studios — not general check-in tools adapted from other industries.
+
+### Built by a nail salon owner
+Certxa was founded by Tom Tham, a nail salon owner in the Vietnamese nail salon community, specifically to give salon owners a simpler, more transparent alternative to existing check-in and booking vendors.
+
+## Certxa vs GoCheckIn — common questions
+
+### Does GoCheckIn charge a setup fee? +
+
+### Does GoCheckIn price by staff count? +
+
+### Does GoCheckIn have a self-service walk-in kiosk and POS for nail salons? +
+
+### Why was Certxa built as an alternative to platforms like GoCheckIn? +
+
+## Try software built by a salon owner
+Start your 60-day free trial — no credit card charge until it ends.
+
+
+---
+
+## Certxa vs Vagaro — Nail Salon Software Comparison | Certxa
+Source: https://certxa.com/certxa-vs-vagaro
+
+# Certxa vs Vagaro
+Vagaro's advertised price covers one calendar. Here's what a real multi-staff nail salon actually pays on each platform — with real numbers, not marketing claims.
+
+## What each plan actually costs
+Vagaro's core pricing model charges per bookable calendar (per staff member), with add-ons billed separately. Figures as of August 2026 — verify current pricing directly with each provider before switching.
+Certxa $9 – $49/mo ⭐
+Vagaro From $24–$30/mo + add-ons
+Pricing Model
+Base price (1 staff)
+Solo — $9/mo ($7 annual)
+$24–$30/mo (1 bookable calendar)
+Pricing structure
+Flat monthly plans
+Per-calendar (per staff member)
+Unlimited staff / calendars
+✓ on Professional ($22/mo)
+– (each calendar adds to the bill)
+4-staff salon w/ website + text marketing
+$22/mo flat
+~$110/mo reported, before processing fees
+Fees
+Setup fee
+None
+None advertised
+Card processing
+2.7% + $0.05 + $0.60/txn in-person, 2.9% + $0.30 + $0.60/txn online
+2.2%+ (add-on), 2.2%–3.5% reported real-world
+Text/SMS marketing
+Included (200/mo+) or usage-based add-on
+$20/mo add-on
+Branded mobile app
+Not offered
+$100/mo add-on
+Payroll
+Included
+$34 + $5/employee add-on
+Free trial
+60 days
+30 days, no card required
+Features
+Self-service check-in kiosk
+AI phone receptionist
+Available now (Autumn, usage-based)
+Third-party integration only
+Built-in POS
+Online booking
+Client management / CRM
+Branded website builder
+✓ Included
+Add-on
+Vagaro figures are based on Vagaro's publicly published pricing and independent third-party pricing breakdowns as of August 2026. Real-world costs vary by salon size and add-ons selected on both platforms — always confirm current terms directly with the provider before making a switch.
+
+## Where Certxa is different
+
+### One flat price, not per-seat
+Certxa's Professional plan is $22/mo flat with unlimited staff and calendars. On Vagaro, every additional staff member's calendar adds to your bill — a real cost difference for any salon with more than one or two technicians.
+
+### No add-on maze
+Text marketing, a branded app, and payroll are core parts of Certxa's plans. On Vagaro, each is a separate line-item add-on — $20/mo, $100/mo, and $34+$5/employee respectively.
+
+### AI receptionist built in
+Autumn, Certxa's AI receptionist, is available today as a native usage-based add-on. Vagaro has no native AI phone answering — it requires a separate third-party integration.
+
+## Certxa vs Vagaro — common questions
+
+### Does Vagaro charge per staff member? +
+
+### What does a multi-staff salon actually pay on Vagaro? +
+
+### Does Vagaro have an AI receptionist? +
+
+### Can I migrate from Vagaro to Certxa? +
+
+## See the real cost difference
+Start your 60-day free trial — no credit card charge until it ends.
+
+
+---
+
+## Nail Salon Check-In Kiosk | Certxa
+Source: https://certxa.com/checkin-kiosk
+
+# Walk-ins check in themselves. You stay in your zone.
+Place a tablet at your front desk. Clients pick a service and choose a tech preference — no interruption needed. They're instantly on your live waitlist and a ticket prints automatically at the front desk.
+
+## From the door to the chair in under 30 seconds.
+The entire check-in flow is self-serve — clients do it themselves while you stay focused on the service.
+
+### Tap the Kiosk
+Client walks up to the iPad on your counter and taps to start. No staff needed — the screen guides them.
+
+### Enter Phone Number
+They type their number on the numpad. Returning clients are recognised and welcomed back by name.
+
+### Pick a Service
+They select from your live service menu and optionally choose a preferred nail technician — or tap "any available."
+
+### Ticket Prints Automatically
+A check-in ticket fires to your front desk printer instantly. Next available staff picks it up — zero interruption to your workflow.
+
+## Everything a busy nail studio needs at the door
+
+### Bilingual Support
+Switches between English, Vietnamese, Spanish, and French — so every client feels welcome from the moment they walk in.
+
+### Tech Preference Selection
+Walk-in clients choose their preferred nail technician or "any available" — reducing awkward front-desk conversations.
+
+### Live Wait Time Display
+Clients see their estimated wait time on the kiosk and receive a text when it's almost their turn. No hovering.
+
+### Instant Print Ticket
+The moment a client checks in, a ticket is automatically sent to your front desk printer — the next available staff picks it up and gets to work.
+
+### Appointment Check-In
+Booked clients enter their phone number to confirm arrival — no front desk needed.
+
+### Automatic Google Review SMS
+After every service, Certxa sends the client an SMS asking about their experience. One tap takes them straight to your Google review page — so happy clients leave reviews without any awkward in-person asks.
+
+### Walk-In Analytics
+See how many walk-ins you get each day, which services they prefer, peak arrival times, and average wait times.
+
+### Kiosk Lock Mode
+Lock the Certxa app into kiosk mode so clients can only access the check-in flow. They can't accidentally exit or browse.
+
+### Branded to Your Studio
+Display your studio logo on the kiosk idle screen and customise the welcome text shown to clients. Simple, clean, and on-brand.
+
+## Turn happy clients into 5-star Google reviews
+After every completed service, Certxa automatically sends your client an SMS asking about their experience. Happy clients are guided directly to your Google review page — no awkward in-person asks, no QR codes to explain, no friction.
+- ✓ Sent automatically after every service — zero effort from you
+- ✓ Direct link to your Google Business review page
+- ✓ Timing is configurable (15 min after checkout, same evening, next day)
+- ✓ Unhappy clients are directed to you privately — not public reviews
+- ✓ Track review count and rating trends in your dashboard
+
+## Never miss another walk-in call with Autumn
+The kiosk handles walk-ins at your door. Autumn handles the phone — answering calls 24/7, booking appointments directly into your Certxa calendar, and upselling add-ons naturally on every call. Together they cover every channel, so nothing slips through.
+
+## Frequently asked questions
+
+## Set up your kiosk this afternoon.
+Included free with every Certxa plan. Use any iPad or Android tablet you already have — quick to configure and your kiosk is live.
+
+
+---
+
+## Salon Client Management | Certxa
+Source: https://certxa.com/client-management
+
+# Know every client. Personalise every visit.
+Build rich client profiles that remember preferences, allergies, colour formulas, and history — so every appointment feels like a VIP experience.
+Credit card required · No charge until trial ends · Unlimited client records
+
+## Your clients deserve to feel remembered
+Every detail about every client, organised and accessible at a glance — before they even walk through the door.
+
+### Complete client records at your fingertips
+Build detailed profiles that include contact information, booking history, service preferences, colour formulas, allergy notes, and any custom fields your business needs. Everything is searchable and instantly accessible.
+- Full appointment history with service details and technician
+- Nail records: gel brand, colour codes, shape, product notes
+- Allergy and sensitivity alerts shown at booking
+- Client-uploaded photos for style references
+- Tags and segments for targeted outreach
+
+### Understand your clients better than ever
+Certxa automatically analyses your client data to surface actionable insights — who your top spenders are, which clients are at risk of lapsing, and which services are driving the most repeat bookings.
+- Client retention and churn risk alerts
+- Top spender and VIP client identification
+- Average visit frequency per client
+- Service popularity and revenue breakdown
+
+## Build relationships that last a lifetime.
+Start building rich client profiles today and turn one-time visitors into loyal regulars who keep coming back.
+Credit card required · No charge until trial ends · Unlimited client records included
+
+
+---
+
+## Salon Appointment Reminders | Certxa
+Source: https://certxa.com/client-notifications
+
+# Fewer no-shows. More loyal clients.
+Automated reminders, booking confirmations, and follow-up messages that keep your clients engaged and your diary full — all running in the background without any effort from you.
+Fully automated · SMS, email and push · GDPR compliant
+
+## The right message, at the right time — automatically
+Certxa sends perfectly timed communications to your clients so you never have to think about it. Every message feels personal, because it is.
+
+### Stop losing money to forgotten appointments
+Certxa automatically sends reminders at the exact timing that works best — typically 48 hours and again 2 hours before an appointment. Clients can confirm, cancel, or reschedule right from the message, with no calls needed.
+- Customisable reminder timing (24h, 48h, 72h before)
+- SMS, email, and push notification options
+- One-tap confirm, cancel, or reschedule for clients
+- Instant notification to you when a client responds
+- Cancellation policy enforced automatically
+
+### Bring lapsed clients back on autopilot
+When a client hasn't visited in a while, Certxa sends a gentle, personalised message to bring them back — before they start going elsewhere. Fully automated, completely personal.
+- Customisable lapse triggers (e.g. 6, 8, 12 weeks)
+- Personalised messages using client name and service
+- Optional exclusive offer or discount to incentivise return
+- Track re-engagement rate per campaign
+
+### Keep clients coming back automatically
+Certxa sends the right message at the right moment — whether it's a thank-you after a visit, a rebooking nudge, or a seasonal offer. Small, timely touches that build lasting loyalty without any manual effort.
+- Post-visit thank-you and review request
+- Seasonal campaigns and promotional messages
+- Lapsed client re-engagement nudges
+- Personalised rebooking reminders
+Thank you for visiting today, Lisa! We loved having you. Please leave us a review — it means everything.
+Hey Sarah! It's been a little while — ready to book your next visit? Tap here to find a time that works for you.
+We miss you, Emma! Come back this month and enjoy 10% off your next appointment. Book now 💜
+
+## Reach clients wherever they are
+Choose SMS, email, push notifications — or all three. Certxa adapts to how your clients prefer to communicate.
+
+### SMS Text Messages
+Highest open rate of any channel — 98% of texts are read within 3 minutes. Perfect for time-sensitive reminders and confirmations.
+
+### Branded Email
+Beautiful, fully branded email templates for booking confirmations, receipts, newsletters, and promotional campaigns.
+
+### Push Notifications
+Instant push alerts for clients who have your branded app — bookings, reminders, and offers delivered straight to their lock screen.
+
+## Set it once. Profit forever.
+Spend 15 minutes setting up your notification flows and let Certxa handle every client communication from that moment on.
+Credit card required · No charge until trial ends · Unlimited notifications included
+
+
+---
+
+## Salon Review Management | Certxa
+Source: https://certxa.com/client-reviews
+
+# Your reputation, working for you.
+Certxa automatically asks every happy client for a review right after their appointment — when their experience is fresh and they're most likely to rave about you. Build five-star credibility on autopilot.
+Automated · Google, Facebook & Trustpilot · No chasing required
+
+## Build your five-star reputation effortlessly
+Stop hoping clients will leave reviews. Certxa asks them at exactly the right moment — after a great appointment when they're genuinely happy.
+
+### Ask for reviews at the perfect moment
+Within an hour of a completed appointment, Certxa automatically sends a friendly review request to your client. The message is personalised with their name and the service they received, making it feel genuine — because it is.
+- Sent automatically after every completed appointment
+- Personalised with client name and service received
+- Links directly to Google, Facebook, or Trustpilot
+- Smart filter — unhappy clients are handled privately first
+- Follow-up if no response (configurable)
+
+### Protect your reputation from negative reviews
+Certxa's intelligent review funnel first asks clients to rate their experience privately. If they score highly, they're directed to your public review platforms. If they have concerns, you're notified privately so you can address it before it goes public — protecting your hard-earned reputation.
+- Private satisfaction rating collected first
+- Happy clients directed to Google/Facebook
+- Unhappy clients send private feedback to you
+- Resolve issues before they become public
+
+### Show off your glowing reputation everywhere
+Display your best reviews automatically on your Certxa website, your booking page, and social media. Fresh five-star reviews posted automatically — turning your reputation into your most powerful marketing tool.
+- Review widget embedded on your website automatically
+- Best reviews highlighted on your booking page
+- Shareable review graphics for Instagram and Facebook
+- Aggregate rating shown on all your public profiles
+
+## How to get more 5-star Google reviews for your nail salon
+The mechanics are simple. Almost every salon knows them and almost none of them do it consistently — which is exactly why doing it works.
+
+### 1. Claim and complete your Google Business Profile
+Verify your salon on Google and fill in everything — hours, every service, real photos of your work, and your booking link. Reviews send new clients to that profile, so it has to be complete and accurate before you drive traffic to it. See Google Business Profile .
+
+### 2. Ask every happy client, right after the appointment
+The window that matters is the first hour after the service, while the result is fresh and the client is pleased. The single biggest reason review counts stay flat is that salons only ask when they remember. Ask after every completed appointment, automatically.
+
+### 3. Send it by text, with a one-tap link
+A text is opened far more often than an email, and it should link straight to your Google review form — not to a Google search for your salon. One tap, one screen, done.
+
+### 4. Make the message personal and specific
+Use the client's name and the service they had: "Hi Emma, thank you for coming in for your gel manicure today…" . A specific, human note gets a much higher response than a generic blast to everyone.
+
+### 5. Reply to every review — good and bad
+Thank your 5-star reviewers by name. Answer criticism calmly, publicly, and with an offer to make it right. Responding tells prospective clients you pay attention, and it keeps your profile active in Google's eyes.
+
+### Stay inside Google's rules
+Asking clients for honest reviews is fine. What is not: paying or discounting in exchange for reviews, only asking clients you know are happy, or filtering people by rating before they reach Google. Ask everyone, make it easy for everyone, and let the reviews be honest — it is also what performs best over time.
+
+## Let your happy clients do the marketing.
+Start collecting five-star reviews automatically from your very next appointment. The best marketing you'll ever do is letting your work speak for itself.
+Credit card required · No charge until trial ends · Setup in minutes
+
+
+---
+
+## Certxa Support | Contact Us
+Source: https://certxa.com/contact
+
+# We're here to help.
+Your success is our priority. Our team is on hand Monday–Friday to help you get the most from Certxa.
+
+### Call Us
+Speak directly with a Certxa specialist. Fastest way to resolve urgent issues.
+
+### Live Chat
+Chat with us right inside the Certxa app or on this page. Average response under 2 minutes.
+
+### Email Support
+Send us a message and we'll reply within one business day — usually much faster.
+
+## Real people, ready to help.
+Our support team is made up of nail industry experts who know your world. No scripts, no bots — just people who genuinely care about your business.
+Holiday notice: Support hours may vary on US public holidays. We'll always post updates inside the Certxa app.
+
+### Send us a message
+We'll get back to you within one business day.
+By submitting this form you agree to our Privacy Policy . We'll never share your data.
+
+#### Message received!
+We'll be in touch within one business day. If it's urgent, call us on 1 (800) 278-4392 .
+
+## Common questions
+
+## Not a Certxa customer yet? Start your 60-day free trial.
+The all-in-one platform built exclusively for nail studios and nail technicians.
+Credit card required · No charge until trial ends · Cancel any time
+Chat with Certxa Support
+We're here to help
+Hi there 👋 Start a conversation and a support agent will be with you shortly.
+
+
+---
+
+## Salon Website Builder | Certxa
+Source: https://certxa.com/custom-website-builder
+
+# A website as stunning as your best work.
+Build a gorgeous, fully-bookable website in under an afternoon — no web designers, no monthly agency fees, no technical knowledge required. Just your brand, your services, and your personality.
+No coding · Booking built-in · Live in minutes
+
+## A website built for bookings, not just looks
+Most website builders just give you a pretty page. Certxa gives you a website that actually converts visitors into booked clients — with booking built in from day one.
+
+### Start with a template. Make it entirely yours.
+Choose from 15+ professionally designed templates created specifically for beauty and wellness businesses. Then customise every colour, font, photo, and word to match your brand — without ever touching a line of code.
+- 15+ salon-specific designer templates
+- Drag-and-drop page builder — no coding
+- Upload your own logo, photos, and brand colours
+- Custom fonts — choose from hundreds of pairings
+- Mobile-perfect on every device, automatically
+
+### Booking built in — not bolted on
+Every Certxa website comes with your full booking system already embedded. Clients can browse your services and book an appointment without ever leaving your site — and every booking flows straight into your Certxa calendar.
+- Full booking system on every page of your site
+- Real-time availability always up to date
+- Online deposits and prepayments supported
+- Service menu with photos, descriptions, and pricing
+- Staff profiles and individual booking pages
+
+### A professional address that's entirely yours
+Get a free yourname.certxa.com subdomain instantly, or connect your own custom domain like www.ariahair.co.uk. Either way, your site is hosted by Certxa at no extra cost — with SSL, fast load times, and 99.9% uptime guaranteed.
+- Free subdomain included on all plans
+- Connect your own custom domain — we guide you
+- Free SSL certificate for secure HTTPS browsing
+- 99.9% uptime guarantee — always online
+- Blazing-fast load times on all devices
+
+## Your website ranks. Your clients find you.
+Certxa websites are built with search engines in mind from the very first line of code — so new clients in your area can find you on Google without you spending a penny on ads.
+
+### SEO Optimised
+Every page is built with proper meta tags, structured data, and semantic HTML — giving search engines everything they need to understand and index your business.
+
+### Local Discovery
+Your location and services are structured to appear in "near me" searches — capturing clients searching for exactly what you offer right in your area.
+
+### Lightning Fast
+Use a fast, mobile-friendly site as the starting point for local discovery. Certxa connects your site to your booking workflow so visitors can move from discovery to appointment.
+
+## What people ask before building
+
+### Do I need any design or coding experience? +
+
+### Can I use my own domain name? +
+
+### Is booking automatically included on the site? +
+
+### Can I show my portfolio and photo gallery? +
+
+### Is there an extra cost for the website? +
+
+## Your website is waiting. Build it in minutes.
+Build a stunning, fully-bookable nail studio website with Certxa — no designers, no developers, no stress.
+Credit card required · No charge until trial ends · Website included on all plans · Live in minutes
+
+
+---
+
+## Salon Software Data Migration | Certxa
+Source: https://certxa.com/data-transfer
+
+# Switching to Certxa has never been easier
+Sign up for our free data transfer service, and we'll import all of your appointments, services, inventory, and client lists for you.
+Credit card required · No charge until trial ends · 60-day free trial · Transfer completed in 24 hours
+We import from any platform, including
+
+## Up and running in three steps
+Our team handles the heavy lifting. You focus on running your salon.
+Sign up for Certxa — takes less than 2 minutes. A credit card is required to subscribe, but you won't be charged for 60 days. Cancel before the trial ends and you owe nothing.
+Export your data from your current software (we'll show you exactly how), then upload it securely in your Certxa dashboard.
+Our import engine normalises your data, detects duplicates, and maps everything to the right fields. Your data is ready within 24 hours.
+
+## We bring your entire business with you
+Not just contacts. Your full history, services, and setup — transferred cleanly and completely.
+
+#### Client Lists
+Full client records including contact details, visit history, notes, tags, and marketing preferences.
+
+#### Appointment History
+Past and upcoming appointments with service details, staff assignments, and pricing.
+
+#### Services & Menu
+Your complete service menu with names, durations, pricing, and staff assignments.
+
+#### Inventory & Products
+Your retail product catalogue with stock levels, suppliers, and pricing.
+
+#### Gift Cards & Loyalty
+Outstanding gift card balances and loyalty point totals for every client.
+
+#### Business Settings
+Opening hours, locations, staff profiles, and service categories.
+
+## Questions about switching
+
+## Your data. Your clients. Ready in 24 hours.
+Switch to the nail salon platform built to keep every client record safe and searchable from day one.
+Credit card required · No charge until trial ends · 60-day free trial · Cancel anytime
+
+
+---
+
+## Get More Reviews for Your Salon | Review Monitoring & Engagement | Certxa
+Source: https://certxa.com/get-more-reviews
+
+# Get more reviews. Without spending an hour a day on it.
+Certxa watches your Google reviews as they come in and responds automatically — a warm reply to your 5-star reviews, a careful private flag for anything under 3 stars. Your reputation gets managed every single day, whether or not you have time to look at it.
+
+## Every review, read and answered — automatically
+Most salon owners either ignore reviews or spend real time replying to each one by hand. Certxa does it for you, with rules built to protect your reputation, not just automate it.
+
+### Monitor
+New Google reviews sync to Certxa in real time — you see every review the moment it posts, with full history and an audit trail of every response sent.
+
+### Engage
+4 and 5-star reviews get a warm, individually-written AI reply after a short delay. Every response is checked against your recent replies so it never reads like a copy-pasted script.
+
+### Protect
+3-star reviews get a drafted reply held for your approval. 1 and 2-star reviews are never auto-published under any setting — you're notified privately so you stay in control.
+
+## Sentiment-aware, not a blanket auto-reply
+A one-size-fits-all auto-responder is a liability the moment a real complaint comes in. Certxa's rules are different for every rating tier.
+Rating
+What Certxa does
+★★★★★ / ★★★★
+Personalized AI reply, published automatically after a short delay (default: 1 hour) during your business hours.
+★★★
+Reply drafted by AI, held for your review — nothing goes out until you approve it.
+★★ / ★
+Never auto-published. You're notified privately so you can respond personally.
+
+### Your Google Business Profile, kept active automatically
+An engaged Google Business Profile — recent posts, current photos, answered reviews — is itself a signal Google and AI search tools use to decide who to show first. Certxa keeps yours active without you remembering to log in and post something.
+- Auto-posts when you add a new service, staff member, or gift cards
+- Never invents discounts, prices, or services — only posts what's actually true
+- Photo engine keeps your profile visually current
+- Full history of every post and response, always visible to you
+
+## Review monitoring & engagement — common questions
+
+### Does Certxa automatically respond to my Google reviews? +
+
+### Will my review responses sound repetitive or robotic? +
+
+### Can a bad review get auto-published without me seeing it? +
+
+### How is this different from Certxa's automated review requests? +
+
+### Does responding to reviews only happen during business hours? +
+
+## Let your reputation run itself.
+Start your 60-day free trial — no credit card charge until it ends.
+
+
+---
+
+## Salon Google Booking Link | Certxa
+Source: https://certxa.com/google-business-profile
+
+# Get booked directly from your Google listing.
+Certxa syncs your booking link to your Google Business Profile. When clients find your salon on Google Search or Maps, they see a direct link to book with you — no middlemen, no extra partnerships.
+Included on Professional & Elite plans · Setup in minutes
+
+## Your Google listing. Your booking page.
+Certxa connects your Google Business Profile to your Certxa booking page — so every client who finds you on Google can book directly, instantly.
+
+### Your booking link, right on your Google listing
+When you connect your Google Business Profile to Certxa, we inject your Certxa booking URL into your listing. Clients who find you on Google Search or Maps see a direct "Book an appointment" link that takes them straight to your Certxa booking page.
+- Booking link on your Google Search listing
+- Booking link on your Google Maps profile
+- Clients land on your real-time Certxa availability
+- Instant confirmation sent to client and you
+- Every booking synced to your Certxa calendar
+
+### Real availability, every time
+Because the booking link goes directly to Certxa, clients always see your real, live availability. No double bookings, no stale slots, no manual syncing required. Whatever changes in your Certxa calendar is instantly what clients see.
+- Live Certxa availability on every click
+- Blocked times and breaks respected automatically
+- Multi-staff support — clients choose a stylist
+- No manual updates needed — ever
+
+## Live on Google in three steps
+
+#### Connect your Google Business Profile
+Link your existing Google Business Profile to Certxa in one click from your dashboard. If you don't have one, Google makes it free and quick to set up.
+
+#### Certxa syncs your booking link
+We automatically update your Google listing with a direct link to your Certxa booking page. No copy-pasting, no manual entry — it just appears.
+
+#### Clients find you and book instantly
+From now on, anyone who finds your salon on Google can click straight through to your live booking page and confirm an appointment in seconds.
+
+## Your next client is already searching.
+Make it effortless for new clients to find and book you directly from Google — your real booking page, working for your salon 24 hours a day.
+Included on Professional & Elite plans · No setup fees
+
+
+---
+
+## Google Data Policy | How Certxa Uses Google Business Profile Data
+Source: https://certxa.com/google-data-policy
+
+# How Certxa Uses Your Google Business Profile
+Certxa helps nail studio and salon owners manage their bookings and Google Business Profile from one dashboard. This page explains exactly what Google data we access, why, and how to revoke access at any time.
+What does Certxa do?
+Certxa helps service businesses manage bookings and their Google Business Profile listing from one dashboard.
+Why does Certxa need Google data?
+To sync your business listing info and public reviews so you can manage and respond to them inside Certxa — without leaving the dashboard.
+What happens to your data?
+Your Google Business Profile data is used only to operate the Certxa integration for you. It is never sold, shared with third parties, or used for advertising.
+Can you disconnect instantly?
+Yes. Disconnect from your Certxa dashboard in one click, or revoke directly from Google Account Settings. Access is revoked immediately.
+
+## 1. Who Certxa Is — and Who We Are Not
+
+### 🔴 Certxa is NOT Google
+Certxa is an independent, third-party SaaS platform for salons and service businesses. We are not affiliated with, endorsed by, or a product of Google LLC. "Google" and "Google Business Profile" are trademarks of Google LLC. Google is not responsible for Certxa's actions, data practices, or this policy.
+Certxa is a multi-feature salon management platform providing appointment scheduling, POS, client management, staff scheduling, and Google Business Profile integration — all in one place, built specifically for beauty and wellness professionals.
+We connect to Google Business Profile using Google's official OAuth 2.0 authorization. The connection is optional, initiated entirely by you, and can be revoked at any time.
+
+## 2. What Google Data We Access
+Certxa requests the business.manage scope — Google's standard scope for managing a business listing — and uses it only to:
+Data
+Purpose
+Accessed?
+Business name, address, hours
+Display connected listing info in your Certxa dashboard
+Yes — read
+Public Google reviews
+Sync reviews so you can view and respond to them inside Certxa
+Yes — read
+Business website URL field
+Update to point to your Certxa booking page — only when you initiate this
+Yes — write (on request)
+Gmail / email
+Never accessed
+Google Drive / Docs / Sheets
+Never accessed
+Google Calendar
+Never accessed
+Google Contacts
+Never accessed
+Personal Google account data
+Never accessed
+
+## 3. How We Use Google Data
+
+### ✅ What Certxa DOES with Google data
+- Displays your business listing details inside your Certxa dashboard
+- Shows your Google reviews so you can read and respond to them in one place
+- Syncs review data automatically every 6 hours to keep your dashboard current
+- Updates your Google Business Profile website URL to your Certxa booking page (only when you click "update")
+
+### ❌ What Certxa does NOT do with Google data
+- Does NOT sell, rent, or share your Google data with any third party
+- Does NOT use Google data for advertising, marketing analytics, or insights
+- Does NOT use Google data to train AI models
+- Does NOT access your Google account without your explicit authorization
+- Does NOT make changes to your Google Business Profile without your direct action
+- Does NOT allow any human to read your Google data except to provide the service, resolve a support request you raised, or comply with law
+- Does NOT combine Google Business Profile data with AI Receptionist call data (these are entirely separate systems)
+
+### AI Receptionist — Entirely Separate
+Certxa's AI Receptionist (automated phone booking) is a completely separate feature. It does not read, access, or use any data obtained from Google APIs. The AI Receptionist uses only your Certxa account data — client records, services, and availability — to answer calls and book appointments. These two features share no data whatsoever.
+
+## 4. How We Store Google Data
+- OAuth tokens are stored encrypted at rest on our servers. They are used only to make authorized API calls on your behalf.
+- Review data is cached to reduce repeated API calls and improve dashboard performance. Cached data is refreshed automatically every 6 hours.
+- On disconnection , your OAuth token is revoked immediately and all cached Google data is deleted within 30 days.
+- On account deletion , all associated Google data (tokens and cached reviews) is deleted within 30 days.
+- We never store data beyond what is necessary to operate the integration for you.
+
+## 5. How to Revoke Access — Instantly
+
+### Disconnect in one click
+You can revoke Certxa's access to your Google Business Profile at any time. Disconnecting immediately revokes our OAuth token and stops all further data retrieval. You can also revoke directly from your Google Account settings — both methods work instantly.
+
+### What happens after you disconnect
+- Certxa's OAuth token is revoked immediately — we can no longer access your Google account
+- Your Certxa account and all non-Google data remain intact
+- Cached Google review data is deleted from our servers within 30 days
+- You can reconnect at any time from your Certxa dashboard if you change your mind
+
+## 6. Compliance
+Certxa's use and transfer of information received from Google APIs adheres to the Google API Services User Data Policy , including all applicable Limited Use requirements . Specifically:
+- We only use Google data to provide and improve the Google Business Profile integration feature for you
+- We do not use Google data to serve advertising
+- We do not allow humans to read Google data except to provide the service, respond to your support requests, or comply with applicable law
+- We do not transfer Google data to third parties except as necessary to operate the integration (e.g., secure hosting infrastructure)
+Our full data handling practices for Google APIs are documented in our Privacy Policy, Section 3 .
+
+## 7. Contact Us
+Questions about how Certxa uses your Google data?
+- Privacy: privacy@certxa.com
+- Support: support@certxa.com
+- Full Privacy Policy: certxa.com/privacy
+- Terms of Service: certxa.com/terms
+Last updated: September 13, 2026  ·  © 2026 Certxa. All rights reserved. Certxa is not affiliated with or endorsed by Google LLC.
+
+
+---
+
+## Salon Website Templates — Launchit by Certxa
+Source: https://certxa.com/launchsite
+
+# Find your perfect website template
+Professional designs built for salons & beauty businesses. Pick one, go live with your domain.
+
+### No templates found
+Try a different keyword or clear the search .
+
+## Up and running in three steps
+
+### Pick your design
+Browse the catalogue and choose a website that fits your salon's vibe. Preview it in full before you commit.
+
+### Add your domain
+Point your existing domain or grab a new one. We handle the hosting, SSL, and setup for you.
+
+### Go live — optionally edit
+Your site is live instantly. Want to change any text? Log in and update it at any time — no design skills needed.
+
+## Ready to launch your salon's website?
+Pick a design, connect your domain, and go live today.
+Loading preview…
+
+
+---
+
+## Nail Salon Booking Software | Certxa
+Source: https://certxa.com/nail-salon-software
+
+# Nail salon software for every kind of studio.
+Certxa is a complete operating platform for independent nail technicians, booth renters, and growing nail studios: online booking, nail-specific client records, reminders, payments, POS, walk-ins, and a booking website in one place.
+
+## From the first booking to the next visit
+Nail salons need more than a calendar. Certxa connects the client experience and the work behind the chair so your team can manage appointments, payments, walk-ins, and retention from one operating system.
+
+### Attract and book clients
+Share a booking link through your website, social profiles, Google Business Profile, or a QR code. Clients can choose a service, technician, and available time without phone tag. See the nail salon booking workflow .
+
+### Prepare for every appointment
+Keep client history, nail formulas, product notes, sensitivities, and appointment history together so your team can deliver a more consistent visit. Explore client management for salons .
+
+### Handle the front desk and walk-ins
+Coordinate technician calendars, live availability, walk-ins, and waitlists while you stay focused on the service. The self-service check-in kiosk helps clients enter the queue without interrupting the team.
+
+### Get paid and grow repeat business
+Connect booking, deposits, checkout, tips, client communication, reviews, and revenue visibility. Review the nail salon POS and payment workflow or see revenue intelligence for salons .
+Certxa also supports independent audiences: explore software for solo nail technicians or booking software for nail tech booth renters .
+
+## Everything your nail salon needs to run and grow
+
+### 24/7 Online Booking
+Clients book gel sets, acrylics, pedicures, and nail art sessions any time — from your website, Instagram bio, or Google. No phone calls, no back-and-forth.
+
+### Client Nail History
+Every client profile stores gel brands, colour codes, nail shape, enhancements, sensitivity notes, and photos. See everything before they walk through the door.
+
+### Multi-Tech Scheduling
+Let clients book with their favourite nail technician. Each tech has their own calendar, services, and working hours — perfectly organised at a glance.
+
+### No-Show Deposits
+Require a deposit when clients book colour or enhancement services. Block your time from cancellations with one simple setting.
+
+### Automated Reminders
+SMS and email reminders go out automatically — reducing no-shows without you lifting a finger. Clients appreciate the heads-up, you appreciate the filled chair.
+
+### Integrated Card Payments
+Accept card in-salon and online. Certxa POS handles tips, splits, gift card redemptions, and membership discounts — all from one screen.
+
+## Nail salon software — common questions
+
+### What is the best software for nail salons? +
+
+### Can clients choose their nail technician when booking? +
+
+### Can I store client nail formulas and preferences? +
+
+### Can I take deposits for nail appointments? +
+
+## The nail salon software your studio deserves.
+Run your whole studio — booking, client records, payments, and walk-ins — on one platform.
+60-day free trial · Credit card required · No charge until trial ends · Setup in 5 minutes
+
+
+---
+
+## Salon Online Booking Service | Certxa
+Source: https://certxa.com/online-booking
+
+# Nail salon booking that fills your calendar.
+Let clients choose a service, technician, and available time online while Certxa keeps your team calendar organised. Accept bookings around the clock from your website, social profiles, or Google.
+
+## Booking that works around the clock
+Certxa is a salon online booking service built for nail salons, spas, and studios. Your booking page never sleeps — clients can see your real-time availability and confirm appointments instantly, without ever picking up the phone.
+
+### Real-time booking, zero back-and-forth
+Clients see your live calendar and choose from available slots immediately. No waiting, no phone tag, no double bookings — ever. Your schedule stays perfectly organised automatically.
+- Live calendar synced across all devices
+- Clients choose services, stylists, and times themselves
+- Instant confirmation sent automatically
+- Buffer times and breaks handled for you
+
+### Book from anywhere your clients find you
+Share your booking link everywhere — your website, Instagram bio, Facebook page, Google listing, or even a QR code at your front desk. Clients book wherever they discover you.
+- Embeddable booking widget for any website
+- Direct link for Instagram & social profiles
+- Google Business Profile booking link built-in
+- QR code for in-salon display
+
+### Your rules, your schedule — always
+Set your working hours, block out holidays, add custom booking rules, and manage multiple staff members with ease. Certxa adapts to how your business actually works.
+- Custom hours and holiday blocking
+- Multi-staff scheduling and individual calendars
+- Minimum notice and advance booking windows
+- Service-specific durations and pricing
+
+## Up and running in minutes
+
+#### Add your services
+List your services with names, durations, and prices. Organise them into categories so clients can find what they need instantly.
+
+#### Set your availability
+Tell us your working hours and any blocked dates. Certxa automatically shows only your available slots to clients.
+
+#### Share your booking link
+Copy your unique booking link and share it everywhere — your website, socials, email signature, wherever your clients find you.
+
+## Common questions
+
+### Do my clients need to create an account to book? +
+
+### Can I accept deposits or prepayments at booking? +
+
+### Can I manage multiple staff members' schedules? +
+
+### Will I get notified when a new booking comes in? +
+
+### What is a salon online booking service? +
+
+## Fill your calendar. Grow your business.
+Transform how your salon takes bookings with Certxa. Start your free trial today.
+Credit card required · No charge until trial ends · 60-day free trial
+
+
+---
+
+## Nail Salon Payment Processing | Certxa
+Source: https://certxa.com/payment-processing
+
+# Nail salon POS, powered by Stripe
+Certxa partners with Stripe — the world's leading payment infrastructure — to give every nail salon a professional, built-in POS. Accept cards, contactless tap, Apple Pay, and Google Pay right inside Certxa. No third-party terminal app. No separate login. Just tap and done.
+
+## Up and taking payments in under 10 minutes
+Connect your Stripe account, pair your M2 reader, and you're live. No installers, no POS contracts, no hardware rental fees.
+
+### Connect your Stripe account
+Open Certxa's Payment Settings and click "Connect with Stripe." Stripe's secure OAuth flow takes under 3 minutes — no paperwork, no approvals, no waiting.
+
+### Order & pair your M2 reader
+Purchase the Stripe M2 card reader directly from Stripe's hardware store. Once it arrives, pair it to Certxa via Bluetooth in seconds — right from the Payment Settings page.
+
+### Take payments anywhere
+Charge clients at checkout, at the styling chair, or anywhere in the shop. Every transaction records automatically in Certxa with instant payout to your Stripe balance.
+
+## The Stripe M2 card reader
+The Stripe M2 is a compact, wireless Bluetooth card reader designed for modern service businesses. Small enough to fit in a pocket, powerful enough to handle every payment type your clients use — chip, swipe, and contactless tap. It pairs with Certxa and your phone or tablet in seconds.
+
+## Everything your salon needs to get paid
+The Certxa POS is woven into every part of the platform — from appointments to checkout to reporting — not bolted on as an afterthought.
+
+### One-tap checkout
+When an appointment is complete, tap "Check Out" and the total populates automatically — services, add-ons, tip, and tax included. Hand the reader to the client and you're done in two taps.
+
+### Bank-grade security
+Stripe is PCI DSS Level 1 certified — the highest certification in payments. Card data is encrypted at the reader and never touches Certxa's servers. Your clients are always protected.
+
+### Direct-to-bank payouts
+Every payment goes straight to your Stripe account — Certxa never holds your funds. Stripe pays out to your bank on your schedule, as fast as next business day.
+
+### Automatic SMS receipts
+After every checkout, Certxa sends the client an SMS receipt automatically. No manual emails. No printing paper. Just a clean digital receipt straight to their phone.
+
+### Real-time sales reporting
+Every transaction syncs instantly to Certxa's reports dashboard. Track daily revenue, top services, staff sales, and tips — all in one place without logging into Stripe separately.
+
+### Loyalty rewards built in
+Every payment automatically triggers loyalty point calculations. Clients earn points on every visit without you lifting a finger — fully integrated into checkout, no separate loyalty app needed.
+
+## Simple, honest fees. No surprises.
+Payment costs depend on the configured payment provider, payment method, and your account terms. Review the current pricing details before taking live payments so you understand processing fees, hardware costs, and any applicable platform charges.
+
+## Payments, answered
+
+## Start accepting payments in your salon today.
+Connect Stripe, pair your M2 reader, and take your first payment — all within the same afternoon. Free 60-day trial — credit card required to subscribe, no charge until the trial ends.
+
+
+---
+
+## Payments & Billing | Certxa
+Source: https://certxa.com/payments
+
+# No hidden fees. No surprises. Ever.
+Certxa keeps every billing stream transparent: Stripe handles your card payments, your Wallet covers pay-as-you-go extras, and your plan's included SMS keeps clients in the loop. Here's exactly how each piece works.
+
+## Card payments, powered by Stripe
+Certxa does not process payments itself. We connect your business directly to Stripe — the same infrastructure used by Amazon, Shopify, and millions of businesses worldwide. Your money flows from client card to your Stripe account, and we never touch it.
+
+### Connect your Stripe account
+From your Certxa dashboard, go to Payments → Connect Stripe . If you don't have a Stripe account yet, you'll create one for free in about 3 minutes. Your Certxa account and Stripe are now linked via Stripe Connect.
+
+### Get the Stripe M2 card reader
+Purchase the Stripe M2 card reader directly from Stripe Terminal — not from us. The M2 is a compact Bluetooth reader that accepts chip, swipe, and contactless tap. You own it outright.
+
+### Take your first payment
+Open a checkout from any appointment in Certxa and tap to charge. The M2 reader communicates directly with Stripe — card data never passes through Certxa. Funds settle in your Stripe account on Stripe's payout schedule.
+
+### Stripe pays you out
+Stripe deposits your earnings directly into your linked bank account — typically the next business day. Certxa has no access to your funds, cannot hold them, and plays no part in your payouts.
+
+### What does it cost per transaction?
+Stripe charges their standard card-present processing rate on every transaction
+          ( see Stripe's pricing → — typically 2.7% + 5¢ for US cards in-person).
+          On top of that, Certxa charges a flat $0.60 connection fee per transaction. That's it — no percentage cut, no monthly gateway fee, no minimums.
+Example: A $100 service with a US card costs roughly $2.70 + $0.05 (Stripe) + $0.60 (Certxa) = $3.35 total — leaving you $96.65 .
+
+## Your prepaid balance for pay-as-you-go extras
+The Certxa Wallet is a dollar balance inside your account. It funds usage-based extras like AI Receptionist calls and overflow SMS — separate from your subscription, separate from your Stripe payments. You only add money when you need those features.
+What the Wallet covers
+One balance. Every pay-as-you-go feature on your account draws from it.
+
+### Autumn AI Receptionist
+Every call Autumn handles draws from your Wallet balance. Billing is per minute — $0.0041 per second, which works out to $0.25 per minute of connected call time.
+
+### SMS Overage
+When your plan's monthly SMS allowance is used up, your Wallet covers additional messages so notifications keep going without interruption.
+
+### AI Phone Number
+Provisioning the dedicated phone number that Autumn uses to take inbound calls is a one-time charge drawn from your Wallet.
+
+### Future Extras
+As Certxa rolls out new usage-based features, your existing Wallet balance will cover them automatically — no new payment method needed.
+How topping up works
+Add funds manually any time, or let auto-refill keep your balance healthy automatically.
+
+#### Open Wallet
+Go to Billing → Wallet inside your dashboard
+
+#### Add funds
+Choose an amount and pay via Stripe Checkout — one-click with a saved card
+
+#### Balance is live instantly
+Funds appear immediately — Autumn and other extras can draw from them right away
+
+#### Review usage
+Every charge is logged in a transaction ledger so you see exactly where every cent went
+
+### Auto-Refill — set it and forget it
+Set a low-balance threshold (e.g. $5) and a refill amount (e.g. $25). When your Wallet drops below the threshold, Certxa automatically charges your saved card and restores the balance — so Autumn never drops a call and SMS notifications never miss a beat. Enable it from Billing → Wallet → Auto-Refill in your dashboard.
+
+## Your plan includes SMS — Wallet covers the rest
+Every Certxa subscription includes a monthly SMS allowance at no extra cost. If you send more than your plan allows, each additional message is billed at a flat rate drawn directly from your Platform Wallet — no packages to buy, no credits to manage.
+
+### 📅 Monthly SMS Allowance
+Every subscription comes with a built-in SMS allowance that resets automatically at the start of each billing period. Use it for appointment reminders, confirmations, and marketing — it's already part of what you pay.
+- No extra cost — included in every plan
+- Solo plan: 200 SMS/month
+- Professional & Elite: Unlimited SMS
+- Resets automatically each billing cycle
+
+### 💼 Wallet SMS Overage
+Once your monthly allowance is used up, additional messages are charged directly to your Platform Wallet at a flat per-message rate. Your Wallet balance is the same one used for AI Receptionist calls — one balance, all usage-based features.
+- $0.026 per SMS beyond your plan allowance
+- Charged to your Platform Wallet automatically
+- Set Wallet auto-refill so messages never stop
+- Full usage log in your dashboard
+
+### Most salons never hit their limit
+On the Professional or Elite plan, SMS is unlimited — you'll never pay overage. On the Solo plan, 200 messages covers the average solo stylist's reminders for the month. If you do go over, the Wallet rate is simple and transparent: $0.026 per message . Enable Auto-Refill on your Wallet and it handles itself automatically.
+
+## See your real monthly cost
+Choose your plan and adjust the sliders to match your expected volume. The full breakdown updates instantly — so you go into your first month with zero surprises.
+
+### 🧮 Monthly Cost Estimator
+Select a plan, then adjust the sliders to reflect your expected usage. All calculations are estimates based on typical Stripe US card-present rates.
+
+## Billing questions, answered
+
+### Does Certxa take a percentage of my card sales? +
+
+### Do I buy the card reader from Certxa? +
+
+### What is the Platform Wallet and how is it different from my subscription? +
+
+### What happens if my Wallet runs out during an Autumn call? +
+
+### What happens to unused SMS when my billing period resets? +
+
+### Is there a minimum amount I need to add to the Wallet? +
+
+## No surprises on day one. Or any day after.
+Start your free 60-day trial — a credit card is required to subscribe, but you won't be charged until the trial ends. Connect Stripe and pick up the M2 reader whenever you're ready to take in-person payments.
+Questions? Chat with our team — typical response time under 5 minutes.
+
+
+---
+
+## Salon Software Pricing | Certxa
+Source: https://certxa.com/pricing
+
+# Plans that grow with your business.
+Everything you need to book, manage, and grow your salon — in one straightforward plan. Start free for 60 days. Cancel before the trial ends and you won't be charged a thing.
+Credit card required to subscribe
+- ✓ Online booking page
+- ✓ 1 calendar
+- ✓ 1 staff member (you)
+- ✓ Up to 500 client profiles
+- ✓ SMS & email reminders (200/mo)
+- ✓ Basic website builder
+- ✓ Stripe Connect POS & card reader
+- ◷ iOS & Android app Coming Soon
+- – Google Business Profile Booking Link
+- – Automated review requests
+- – Advanced reporting
+- – Multi-location support
+- – Priority support
+Credit card required to subscribe
+- ✓ Everything in Solo, plus:
+- ✓ Unlimited calendars
+- ✓ Unlimited staff members
+- ✓ SMS & email reminders (unlimited)
+- ✓ Premium website builder + custom domain
+- ✓ Google Business Profile Booking Link
+- ✓ Automated review requests
+- ✓ Client re-engagement campaigns
+- ✓ Advanced revenue reporting
+- ✓ Priority support
+Credit card required to subscribe
+- ✓ Everything in Professional, plus:
+- ✓ Up to 5 locations included
+- ✓ Multi-location dashboard
+- ✓ Cross-location reporting
+- ✓ API access for integrations
+- ✓ Priority phone support
+- ✓ Staff commission tracking
+
+## What's included in each plan
+Every detail, side by side — so you can choose with complete confidence.
+Solo From $7/mo
+Professional From $18/mo ⭐
+Elite From $39/mo
+Booking & Scheduling
+Online booking page
+Calendars
+Unlimited
+Staff members
+1 (solo)
+Unlimited
+Google Business Profile Booking Link
+Deposits & prepayments
+Coming Soon
+Multi-location booking
+Waiting list management
+Client Management
+Client profiles
+Up to 500
+Unlimited
+Appointment history & notes
+Allergy & sensitivity alerts
+Client segments & tags
+Lapsed client alerts
+Notifications & Marketing
+Booking confirmations
+SMS & email reminders
+200/month
+Unlimited
+Re-engagement campaigns
+Automated review requests
+Payments & POS
+Stripe Connect POS
+Stripe M2 card reader support (device purchased from Stripe)
+Payment processing fee 2.7% + $0.05/txn (in-person) or 2.9% + $0.30/txn (online) — Stripe's rate, plus our $0.60 connection fee
+2.7% + $0.05 + $0.60/txn
+Gift cards (Certxa-managed; redeemed at checkout)
+Tips & service add-ons at checkout
+Staff commission tracking & payroll
+Website & Branding
+Website builder
+Basic (1 site, 3 templates)
+Premium (2 sites, 15+ templates)
+Premium (5 sites, 15+ templates)
+Custom domain
+Instagram gallery sync
+Coming Soon
+Reporting & Support
+Revenue reporting
+Advanced
+Advanced + export
+Multi-location dashboard
+Support
+Email & chat
+Priority chat
+Phone + account manager
+Onboarding session
+
+## Extras for when you need more
+Available on all plans — only pay for what you actually need.
+Have questions about how payments, the Platform Wallet, or SMS credits work? Read the full Payments & Billing guide →
+
+## What will your first month actually cost?
+Move the sliders to match your volume — see plan fee + payment processing + AI calls in one number.
+
+### 🧮 Monthly Cost Estimator
+Adjust to your expected usage. Updates live — no guesswork.
+
+## Pricing questions, answered
+
+### Is a credit card required to start the trial? +
+
+### Can I switch plans after I sign up? +
+
+### What happens to my data if I cancel? +
+
+### Are there any setup fees or hidden costs? +
+
+### Does the annual plan auto-renew? +
+
+### Do you offer a discount for new salons or students? +
+
+## 60 days free. Cancel anytime. No catch.
+The all-in-one platform built exclusively for nail studios and nail technicians. A credit card is required to start — but you won't be charged until your 60-day trial ends.
+Questions? Chat with our team — typical response time under 5 minutes.
+
+
+---
+
+## Privacy Policy | Certxa
+Source: https://certxa.com/privacy
+
+# Privacy Policy
+Effective: February 1, 2026  ·  Last updated: September 12, 2026
+Plain-English summary: Certxa collects only what we need to run our service. We never sell your personal data or use it for advertising. We never share it with third parties except to operate the platform (payments, messaging, AI). If you connect Google Business Profile, your Google data is used solely to manage your listing inside Certxa. You can request deletion or export of your data at any time.
+Table of Contents
+- Who We Are
+- Data We Collect
+- Google Business Profile API Data
+- How We Use Your Data
+- Data Sharing & Third Parties
+- Data Retention
+- Security
+- Your Rights (GDPR & CCPA)
+- California Privacy Rights (CCPA/CPRA)
+- Cookies & Tracking
+- Children's Privacy
+- Changes to This Policy
+- SMS Communications
+- Contact Us
+
+## 1. Who We Are
+Certxa ("Certxa", "we", "us", "our") operates the SalonOS salon management platform available at certxa.com and its sub-domains. We provide appointment scheduling, point-of-sale, client management, AI receptionist, loyalty programs, staff management, payroll, multi-location tools, and Google Business Profile review management to beauty and wellness professionals.
+This Privacy Policy describes how we collect, use, store, and share information when you use our platform. By using Certxa, you agree to the practices described in this Policy.
+For privacy-related questions, contact us at privacy@certxa.com .
+
+## 2. Data We Collect
+
+### Account & Profile Data
+- Name, email address, phone number
+- Business name, address, type (nail salon, nail studio, etc.), and operating hours
+- Password (stored as a salted bcrypt hash — never in plain text)
+- Profile photo and business logo (if uploaded)
+- Billing and subscription information (processed by Stripe — we do not store raw card numbers or CVVs)
+- Government-issued ID or tax information if required for Stripe Connect payouts
+
+### Business Operational Data
+- Services offered, pricing, and service duration settings
+- Staff profiles, schedules, roles, and commission structures
+- Contractor and booth-renter agreements and payout records
+- Appointment records, cancellations, and no-show history
+- Point-of-sale transaction records, cash drawer logs, and end-of-day reports
+- Inventory and retail product records
+- Multi-location configurations and location-specific settings
+- Subscription tier and billing cycle information
+
+### Client Data You Provide
+When you add clients to Certxa, you provide us with their names, phone numbers, email addresses, visit history, appointment notes, and optional loyalty point balances. You represent that you have obtained any necessary consent from your clients to store their data and contact them through our platform. Your clients' data belongs to you — we process it on your behalf to operate the platform.
+
+### AI Receptionist & Communication Data
+- Inbound and outbound call logs, including AI-generated call transcripts
+- SMS message logs sent or received through the platform (via Twilio)
+- Email communication logs for appointment reminders and marketing
+- Audio recordings of calls where legally permitted and with appropriate disclosures
+
+### Usage & Technical Data
+- Log data: IP address, browser type, pages visited, and timestamps
+- Device information: screen resolution, operating system, and browser version
+- Session tokens (stored in encrypted, server-side sessions via secure HttpOnly cookies)
+- In-app feature usage and navigation patterns (aggregated and anonymised)
+
+### Analytics & Check-In Kiosk Data
+- Walk-in queue events, kiosk check-in timestamps, and service selection logs
+- Revenue reporting metrics and trend data tied to your business account
+- Booking source attribution (online, kiosk, staff-created, AI-booked)
+
+## 3. Google Business Profile API Data
+
+### Google API Services User Data Policy
+Certxa's use and transfer of information received from Google APIs adheres to the Google API Services User Data Policy , including all applicable Limited Use requirements. We do not use Google user data to serve advertising, and we do not allow humans to read Google user data except as required to provide the service, respond to your support requests, or comply with applicable law.
+
+### What Google Data We Access
+Certxa allows business owners to connect their Google Business Profile account using Google's secure OAuth 2.0 authorization process. This connection is entirely optional and requires explicit user consent before any Google data is accessed. When a business owner connects their Google Business Profile, Certxa may access:
+- Business location and profile information (name, address, operating hours, categories)
+- Public Google reviews associated with the business listing
+- Business website URL field (only when you choose to update or synchronize your Certxa-hosted website URL)
+- Business photos already published to the listing (read-only, for dashboard display)
+
+### How We Use This Google Data
+We use Google Business Profile data solely to provide functionality within the Certxa platform, specifically to:
+- Display your Google reviews inside your Certxa dashboard and on your Certxa-hosted website
+- Help you manage and respond to reviews from within Certxa
+- Allow you to update your Google Business Profile website URL to point to your Certxa booking page
+- Synchronize business profile information for display and verification within the Certxa dashboard
+
+### What We Do Not Do With Google Data
+- We do not access any Google account without explicit, active user authorization
+- We do not access personal Gmail, Google Drive, Google Calendar, or any unrelated Google services
+- We do not sell, rent, or share Google Business Profile data with any third party
+- We do not modify your Google Business Profile data without a direct action or approval from you
+- We do not use Google data to train AI models or for any purpose beyond operating Certxa for you
+- We do not allow humans to read your Google data except to provide the service, resolve a support issue you raised, or comply with law
+
+### Data Storage & Disconnection
+Certxa may temporarily cache Google Business Profile data (e.g., review lists) to reduce API calls and improve performance. You may disconnect your Google account at any time from your Certxa dashboard settings, which immediately revokes our access token and stops further data retrieval. Upon disconnection or account deletion, cached Google data is deleted within 30 days unless a shorter period is required by applicable law.
+
+### AI Receptionist & Google Data Separation
+Certxa's AI Receptionist feature is completely separate from the Google Business Profile integration. The AI Receptionist does not access, read, or use any data obtained from Google APIs. Call transcripts, booking context, and AI responses are processed using only data in your Certxa account (client records, services, and availability settings). Google Business Profile data and AI Receptionist data are stored separately and never combined for any purpose whatsoever.
+
+## 4. How We Use Your Data
+
+### To Provide the Service
+We use your data to operate Certxa — running your appointment calendar, online booking page, POS, client management, staff scheduling, payroll calculations, and loyalty program.
+
+### To Process Payments
+We pass payment information to Stripe to process charges, issue refunds, and manage subscriptions. For businesses using Stripe Connect, we facilitate payouts to staff and contractors. We do not store full card numbers or CVV codes at any point.
+
+### To Send Communications
+We use your data to send appointment reminders, booking confirmations, and marketing messages to your clients via SMS (Twilio) and email (Mailgun), on your behalf and at your direction. We also send you platform notifications, billing receipts, and service updates.
+
+### To Power the AI Receptionist
+Call transcripts and booking context are used by our AI systems to answer calls, book appointments, and identify returning clients. These calls are processed using AI services (including OpenAI). Transcripts are stored in your account and may be reviewed by you at any time.
+
+### To Sync Google Business Profile
+If connected, we use the Google API to display and help you manage your business listing, reviews, and website URL — as described in Section 3.
+
+### To Improve the Platform
+We analyze aggregated, anonymised usage patterns to improve product features, fix bugs, and prioritize development. We never share individual-level data externally for this purpose.
+
+### To Prevent Fraud & Comply With Law
+We use data to detect abuse, enforce our Terms of Service, and comply with applicable legal obligations including tax reporting and financial record-keeping.
+
+### Legal Basis for Processing (GDPR)
+If you are located in the European Economic Area (EEA) or UK, our lawful basis for processing your personal data is:
+- Contract performance — processing necessary to provide the service you signed up for
+- Legitimate interests — fraud prevention, security monitoring, product improvement, and analytics
+- Legal obligation — financial record-keeping, tax compliance
+- Consent — marketing communications and Google API access (withdrawable at any time)
+
+## 5. Data Sharing & Third Parties
+We do not sell your personal data. We do not share your data with third parties for their own marketing or advertising purposes. We share data only with the following service providers, strictly to operate Certxa:
+Provider
+Purpose
+Data Shared
+Stripe
+Payment processing & payouts
+Billing info, identity data for Stripe Connect
+Twilio
+SMS and voice call delivery
+Phone numbers, message content
+Mailgun
+Transactional & marketing email
+Email addresses, message content
+OpenAI
+AI Receptionist — call handling & booking automation
+Call transcripts, appointment context (no raw PII beyond what's needed for the call)
+Google APIs
+Business Profile sync, OAuth login
+Only data you explicitly authorize via OAuth
+Cloud hosting
+Infrastructure & storage
+All platform data (stored encrypted at rest)
+Analytics
+Aggregated usage analysis
+Anonymised, aggregated usage events only
+We require all service providers to maintain appropriate data protection standards and contractual data processing agreements where required by law. We do not permit them to use your data for their own independent purposes.
+We may also disclose data when required by applicable law, valid legal process (such as a court order or subpoena), or to protect the rights, property, or safety of Certxa, our users, or the public.
+
+## 6. Data Retention
+- Active accounts: Data is retained for the full duration of your active subscription.
+- Cancelled or expired accounts: We retain your data for 90 days after cancellation to allow account recovery, then delete or anonymise it.
+- Client data: Deleted with your account unless you export it first. You may export all client records from your dashboard at any time.
+- Google API data: OAuth tokens are revoked immediately on disconnection. Synced review records are deleted within 30 days of account deletion or disconnection.
+- Billing & financial records: Retained for 7 years as required by applicable financial and tax regulations.
+- Call transcripts & AI logs: Retained for 90 days, then purged unless you choose to archive them.
+- Server logs: Retained for 30 days for security monitoring, then purged.
+
+## 7. Security
+We take data security seriously and maintain the following controls:
+- All data is transmitted over HTTPS/TLS — plain HTTP is redirected and not accepted
+- Passwords are stored using bcrypt with per-user random salts — we never store or log plain-text passwords
+- OAuth tokens and API keys are stored encrypted at rest using server-side encryption
+- Session tokens use HttpOnly, Secure, and SameSite=Lax cookie attributes to prevent XSS and CSRF attacks
+- Role-based access control (RBAC) restricts what staff accounts can view or modify
+- Database servers are not publicly accessible — only accessible from application servers within a private network
+- API credentials and service secrets are stored in secure environment secret vaults, never committed to source code
+- Audit logging records sensitive admin actions with timestamps and actor IDs
+- We conduct periodic security reviews and dependency vulnerability audits
+If you believe you have discovered a security vulnerability in Certxa, please report it responsibly to security@certxa.com . We investigate all credible reports promptly.
+
+## 8. Your Rights (GDPR & Global)
+Depending on your jurisdiction, you may have the following rights regarding your personal data:
+- Access: Request a copy of the personal data we hold about you or your business account
+- Correction: Request correction of inaccurate or incomplete data
+- Deletion ("Right to be forgotten"): Request deletion of your account and associated personal data
+- Portability: Receive your data in a structured, machine-readable format (e.g., CSV export)
+- Objection: Object to processing for direct marketing or based on legitimate interests
+- Restriction: Request that we restrict processing in specific circumstances (e.g., while a dispute is being resolved)
+- Withdraw consent: Where processing is based on consent (e.g., marketing emails, Google connection), you may withdraw at any time without affecting lawfulness of prior processing
+To exercise any of these rights, email privacy@certxa.com from the email address on your account. We will respond within 30 days. For Google-specific data access, you may also manage or revoke our permissions directly via Google Account Settings .
+
+## 9. California Privacy Rights (CCPA / CPRA)
+If you are a California resident, you have additional rights under the California Consumer Privacy Act (CCPA) and California Privacy Rights Act (CPRA):
+- Right to Know: Request disclosure of the categories and specific pieces of personal information we have collected about you in the past 12 months
+- Right to Delete: Request deletion of your personal information, subject to certain exceptions
+- Right to Correct: Request correction of inaccurate personal information
+- Right to Opt-Out of Sale or Sharing: We do not sell your personal information, and we do not share it for cross-context behavioral advertising. You do not need to opt out, but you may contact us to confirm.
+- Right to Limit Use of Sensitive Personal Information: You may request that we limit our use of sensitive personal information to what is necessary to provide the service
+- Right to Non-Discrimination: We will not discriminate against you for exercising any of these rights
+Do Not Sell or Share My Personal Information: Certxa does not sell personal information. We do not share personal information with third parties for cross-context behavioral advertising.
+To submit a California privacy request, email privacy@certxa.com with the subject line "California Privacy Request." We will respond within 45 days as required by law.
+
+## 10. Cookies & Tracking
+We use the following types of cookies and similar technologies:
+- Strictly necessary: Session authentication cookie — required for you to stay logged in. Cannot be disabled without breaking login.
+- Functional: Remembers your UI preferences such as timezone and display settings. These expire after your session or within 30 days.
+- Analytics: Aggregated, anonymised page-view analytics to help us understand how the platform is used. No cross-site tracking, no fingerprinting, no individual user profiles shared externally.
+We do not use third-party advertising cookies or tracking pixels. We do not engage in cross-site behavioral advertising. You can manage or clear cookies through your browser settings at any time; disabling the session cookie will log you out.
+
+## 11. Children's Privacy
+Certxa is a business platform intended for users aged 18 and over. We do not knowingly collect personal data from children under 13. If we become aware that a child under 13 has provided us with personal information, we will delete it promptly. If you believe a child's data has been submitted, contact privacy@certxa.com .
+
+## 12. Changes to This Policy
+We may update this Privacy Policy from time to time to reflect changes in our practices, technology, or legal requirements. When we make material changes, we will notify you by email (to the address on your account) at least 14 days before the effective date, and post the updated policy here with a revised "Last updated" date. Continued use of Certxa after the effective date of the updated policy constitutes acceptance. If you do not accept the changes, you may close your account and request deletion of your data.
+
+## 13. SMS Communications
+Certxa LLC provides appointment management and customer communication services for salons using the Certxa platform. If you provide your phone number and consent to receive text messages, Certxa LLC may send SMS messages on behalf of the salon you are interacting with.
+
+### SMS messages may include:
+- Appointment confirmations
+- Appointment reminders
+- Appointment cancellations
+- Appointment rescheduling updates
+- Waitlist availability notifications
+- Other appointment-related communications
+By providing your phone number and opting in to receive SMS messages, you consent to receive automated text messages from Certxa LLC on behalf of the selected salon. Message frequency varies depending on your appointments and interactions with the salon. Message and data rates may apply.
+You may opt out of SMS communications at any time by replying STOP to any message. After you send STOP, you may receive a confirmation message that your request has been processed. You may also reply HELP for assistance.
+Your SMS consent is separate from any other communication preferences, and consent to receive text messages is not a condition of purchasing any products or services.
+Certxa LLC does not sell, rent, or share your phone number or SMS consent information with third parties for their own marketing purposes. Phone numbers collected for SMS communications are used only for providing appointment-related notifications and supporting the services requested by you or the salon you are booking with.
+If you have questions about SMS communications, please contact Certxa LLC through the support channels provided on our website.
+
+## 14. Contact Us
+For privacy-related questions, data requests, or to exercise your rights:
+- Privacy inquiries: privacy@certxa.com
+- General support: support@certxa.com
+- Security reports: security@certxa.com
+- Website: certxa.com/contact
+© 2026 Certxa. All rights reserved.
+
+
+---
+
+## Salon Revenue Intelligence | Certxa
+Source: https://certxa.com/revenue-intelligence
+
+# Your salon's revenue co-pilot.
+SalonOS watches your booking data 24/7 — detecting drifting clients, predicting no-shows, finding dead seats, and automatically recovering lost revenue.
+Based on early Certxa customer data.
+
+## Set it up once. It runs forever.
+Revenue Intelligence is fully automatic. There's no configuration, no dashboards you have to check. It works silently in the background and surfaces only what matters.
+
+## Catches clients going quiet before you even notice.
+Every client develops a personal visit cadence — every 5 weeks, every 8 weeks, whatever their rhythm is. SalonOS learns it. When someone drifts 20% past that cadence without rebooking, a personalized SMS fires automatically at exactly the right moment — not a blast campaign, a personal nudge.
+- Individual cadence learned from visit history — not a one-size-fits-all trigger
+- SMS is personalized with client's name, service type, and how long it's been
+- Recovers 10–15% of quietly lapsing clients on average
+- Frequency capped so clients never feel spammed (14-day cooldown)
+- Only fires if the client has no upcoming booking already
+
+## Cold hard numbers, monthly. Not stats — action items.
+Every month SalonOS calculates exactly how much revenue slipped through your fingers — from no-shows, cancellations, and lapsed clients. It doesn't bury this in a chart. It shows you the names, the dollars, and automatically sends personalized win-back messages to recover them — no action required from you.
+- Breaks down losses by no-shows, cancellations, and lapsed clients separately
+- Shows estimated annual revenue impact per lapsed client
+- Win-back messages sent automatically to all lapsed clients who opted in
+- 90-day rolling trend so you can see if things are improving
+- Delivered automatically every Monday with your weekly digest
+
+## Know who you absolutely cannot afford to lose.
+Every client in your system gets two live numbers: their Lifetime Value (total and 12-month) and a Churn Risk Score. High LTV + rising churn risk is the most dangerous combination in your business. SalonOS surfaces those clients at the top of your priority list so you can act before it's too late.
+- LTV calculated from actual spend history — not estimates
+- Churn risk uses visit cadence, no-show history, and days since last visit
+- Labels each client: Low / Medium / High / Critical risk
+- Your 8 highest-value at-risk clients are highlighted every week
+- One-tap win-back SMS for any individual client
+
+## 8 engines. All running, all the time.
+Every feature below is live in your dashboard from day one on Professional and Elite plans. No configuration required.
+Learns each client's personal visit cadence. When they drift 20%+ past it without booking, fires a personalized win-back SMS automatically.
+Calculates exactly how much revenue was lost to no-shows, cancellations, and lapsed clients — with names, dollars, and automated win-back messages sent without you lifting a finger.
+Detects consistently under-booked time slots, identifies which clients have historically booked those times and are now overdue, and queues a targeted "fill those seats" campaign.
+Every upcoming appointment is scored for risk using lead time, client history, day of week, and service type. High-risk appointments surface every morning and automated reminders fire to at-risk clients.
+"Ashley rebooks 78% of her colour clients. Jake rebooks 39%." The data is sitting in your system right now. SalonOS surfaces it with 90-day trends so you can coach the gap.
+The moment a cancellation hits, SalonOS scans your waitlist, lapsed clients at-cadence, and clients who've taken the same service — then fires a targeted "slot just opened" text to the top 3.
+Every client gets a lifetime value and a multi-factor churn risk score. High LTV + rising churn risk is surfaced as a priority — giving you the list of clients worth fighting for.
+A 0–100 health score updated daily — composed of retention rate, rebooking rate, seat utilization, avg ticket trend, and new client conversion. When it moves, you know exactly why.
+
+## Your business report, every Monday at 9am.
+Every Monday morning SalonOS sends you a clear, concise email digest — growth score, retention rate, revenue for the week, who's drifting, who's at risk, and the three most important things to do that day. No logging in required.
+- Weekly revenue vs prior week comparison
+- Top 3 priority actions with links to act immediately
+- Growth Score trend with explanation of what changed
+- Drifting clients list with direct win-back link
+- Pause or re-enable from inside your dashboard any time
+
+## More tools hidden inside your dashboard.
+Beyond the 8 core engines, Revenue Intelligence includes analytics you won't find anywhere else in salon software.
+
+## See what's actually different.
+Feature
+Certxa
+GlossGenius
+Vagaro
+Square
+Client Drift Engine (auto win-back SMS)
+Churn Risk Scoring per client
+Revenue Leakage Report
+Dead Seat Intelligence
+No-Show Risk Prediction
+Partial
+Rebooking Rate by Stylist
+Partial
+Business Growth Score (0–100)
+Weekly Intelligence Digest Email
+Price Optimization Suggestions
+Targeted Segment Campaigns
+Partial
+Included in base plan (no add-on)
+N/A
+Partial
+N/A
+
+## Common questions.
+
+## See your revenue co-pilot in action.
+Start a 60-day free trial. Credit card required to subscribe — no charge until your trial ends. Revenue Intelligence is live from your first appointment.
+Credit card required · No charge until trial ends · All 8 intelligence engines included · Cancel any time
+
+
+---
+
+## Nail Salon Management Software | Certxa
+Source: https://certxa.com/salonos
+
+# Nail salon management software. One connected system.
+SalonOS connects booking, your front desk, POS, loyalty, check-in, waitlist, and Google reviews into one operating platform for nail salons and nail professionals.
+
+## Seven tools. One subscription. Zero switching costs.
+Every module in SalonOS is purpose-built for salons and synced in real time — so your booking, your desk, your payments, and your marketing always know what the others are doing.
+
+### Smart booking your clients love
+Let clients book 24/7 from your website, Google, Instagram, or a direct link. SalonOS shows real-time availability, matches clients to their preferred nail tech, and sends automated reminders so no-shows become a thing of the past.
+- 24/7 booking from any device
+- Real-time tech availability
+- Automated SMS & email reminders
+- Instant confirmations & rescheduling
+- Embedded directly on your website
+
+### A front desk that never sleeps
+Your receptionist's dream. A live multi-tech calendar gives your whole team instant visibility of every appointment, break, and booking gap. Drag-and-drop rescheduling, colour-coded by nail tech, with a daily run sheet that prints in one click.
+- Multi-tech live calendar view
+- Drag-and-drop rescheduling
+- Colour-coded by team member
+- Printable daily run sheets
+- Block time, breaks & holidays
+
+### Checkout in seconds, not minutes
+SalonOS's built-in point of sale handles services, retail, gift cards, splits, tips, and discounts — all synced instantly to every client record. Pair with Certxa Terminal Pro, Reader Flex, or iPhone Tap to Pay.
+- Service + retail in one checkout
+- Tipping prompts on every transaction
+- Split payments & gift card redemption
+- Next-day payouts to your bank
+- Syncs to client profiles automatically
+
+### Punch-card loyalty, built right in
+Set up a digital loyalty programme in minutes — no separate app required. Clients earn a stamp with every visit and unlock rewards you define. It's the classic punch-card experience, beautifully modernised and fully automated inside SalonOS.
+- Custom stamp-per-visit rules
+- Configurable rewards & tiers
+- Clients track progress in their booking app
+- Auto-applied at checkout
+- Push-notification reward alerts
+
+### Effortless arrival, every time
+Clients tap a QR code at your door or check in via their confirmation link. SalonOS notifies the nail tech instantly, moves the appointment to "Arrived", and your front desk stays free to focus on the experience rather than the admin.
+- QR code self check-in at the door
+- Instant tech notification
+- Auto-updates appointment status
+- Walk-in check-in from front desk
+- Works on any device — no app download
+
+### Never lose a walk-in again
+When you're fully booked, SalonOS captures walk-ins on a live digital waitlist. The moment a slot opens up, the next client is automatically notified and given a one-tap confirmation window. You fill cancellations instantly and clients feel looked after.
+- Live digital waitlist for walk-ins
+- Auto-text when a slot opens
+- One-tap client confirmation
+- Priority bumping for loyalty members
+- Estimated wait time display
+
+### More 5-star reviews, on autopilot
+After every appointment, SalonOS sends a perfectly timed review request via SMS. Positive reviews are directed straight to Google. Negative ones are captured privately so you can resolve them first. Your rating climbs without you lifting a finger.
+- Auto review request after checkout
+- Direct link to your Google listing
+- Negative review intercept & private inbox
+- Track rating trends over time
+- Works with your Google Business Profile booking link
+
+## While everyone else says "we grow your business" we actually show you how.
+SalonOS mines your own booking data 24/7 and tells you exactly where revenue is leaking — then takes action to recover it automatically.
+Every client has a visit cadence — every 5 weeks, every 8 weeks. SalonOS learns it. When someone drifts 20% past their personal cadence without rebooking, it fires a personalized SMS at exactly the right moment.
+Cold hard numbers, monthly. Which clients haven't booked since, what they used to spend, and exactly how much annual revenue you're on track to lose. Not a dashboard stat — an action item with one tap to reach them.
+Tuesday 2–4pm is consistently 20% booked. SalonOS finds that pattern, identifies clients who've booked Tuesdays before and are overdue, then gives you a one-click "fill those seats" campaign.
+Every upcoming appointment gets scored for no-show risk using booking lead time, client history, day of week, and service type. High-risk appointments surface every morning so you can send a targeted confirmation.
+The data is sitting in your system right now. SalonOS surfaces it. "Ashley rebooks 78% of her gel manicure clients. Jake rebooks 39%." That number changes behavior — and your bottom line — overnight.
+The moment a cancellation hits, SalonOS instantly scans your waitlist, lapsed clients at-cadence, and clients who've taken that same service. It fires a targeted "slot just opened" text to the top 3 candidates.
+Every client gets two numbers: their lifetime value and a churn risk score. High LTV + rising churn risk is the most dangerous combination. SalonOS surfaces those clients prominently so you can act before it's too late.
+A single 0–100 health score on your dashboard every day — composed of retention rate, rebooking rate, seat utilization, avg ticket trend, and new client conversion. When it moves, you know exactly why.
+
+## All 7 modules. One straightforward price.
+No picking and choosing features. SalonOS gives you everything from day one — booking, POS, loyalty, check-in, waitlist, and reviews — all in one plan.
+Credit card required · No charge until trial ends · All 7 modules included · Cancel any time
+
+## Your salon's new operating system.
+The only operating system built exclusively for nail studios — booking, POS, loyalty, kiosk, and revenue intelligence, all in one place.
+60-day free trial · All modules included · Credit card required · No charge until trial ends
+
+
+---
+
+## Independent Nail Tech Software | Certxa
+Source: https://certxa.com/solo-professionals
+
+# You are the front desk, the nail tech, and the boss.
+Certxa is the all-in-one nail salon app that handles your bookings, walk-in kiosk, client nail records, payments, and marketing — so you can focus on doing the work you love.
+
+## Built for every solo beauty professional.
+
+## Your virtual front desk, open 24/7.
+No receptionist? No problem. Certxa handles the tasks that eat your time so you can stay behind the chair and making money.
+
+### 24/7 Online Booking
+Clients book, reschedule, and cancel themselves — any time of day, from any device. You get notified instantly.
+
+### Auto Confirmations & Reminders
+Every client gets a confirmation when they book, and a reminder before their appointment. No-shows drop dramatically.
+
+### Integrated Card Payments
+Tap, swipe, or type — accept any payment at checkout. Funds hit your bank account within 1 business day.
+
+### Client Profiles
+Save service notes, color formulas, intake responses, and visit history for every client — forever.
+
+### Digital Intake Forms
+Send customizable forms before new appointments. Collect allergies, preferences, and consents automatically.
+
+### Loyalty Program
+Reward your best clients with points they earn every visit. A simple loyalty program that runs itself.
+
+### Review Requests
+After each appointment, Certxa sends a review request automatically. Build your Google rating on autopilot.
+
+### Revenue Analytics
+See what's working — your busiest days, top services, best clients, and monthly revenue trends at a glance.
+
+### Gift Cards
+Sell digital gift cards from your booking page. Perfect for holidays, birthdays, and upselling referrals.
+
+### Rebooking Nudges
+When a client hasn't rebooked, Certxa sends a friendly nudge at the right time to bring them back.
+
+### Client Photos
+Attach before/after photos directly to client profiles. Build a visual record of every transformation.
+
+### Google Business Profile
+Sync your booking link to your Google listing so clients can book you directly from Google Search and Maps.
+
+## One flat rate. Core platform included.
+Your monthly subscription covers all core platform features. Optional add-ons like the Autumn AI receptionist and SMS beyond your plan allowance are usage-based and billed separately.
+
+## Stop running your business on sticky notes.
+Get the full Certxa platform free for 60 days. Credit card required to subscribe — no charge until your trial ends.
+
+
+---
+
+## Terms of Service | Certxa
+Source: https://certxa.com/terms
+
+# Terms of Service
+Last updated: June 27, 2026
+By creating an account or using Certxa, you agree to these Terms of Service and our Privacy Policy . If you do not agree, do not use the platform. These Terms constitute a binding agreement between you (the business or individual account holder) and Certxa.
+Table of Contents
+- Description of Service
+- Accounts & Eligibility
+- Subscription & Billing
+- Data Ownership
+- AI Receptionist
+- Payments & Stripe Connect
+- Staff Accounts & Multi-Location
+- Google Business Profile Integration
+- Acceptable Use
+- Third-Party Services
+- Service Availability
+- Disclaimer of Warranties
+- Limitation of Liability
+- Indemnification
+- Termination
+- Governing Law & Disputes
+- Changes to These Terms
+- Contact
+
+## 1. Description of Service
+Certxa provides a multi-tenant SaaS platform ("the Service") built for nail salons, nail studios, and independent nail technicians. The Service includes:
+- Online appointment scheduling and client-facing booking pages
+- Point-of-sale (POS) system including product sales, tipping, and cash drawer management
+- Client CRM, visit history, notes, and loyalty point management
+- Staff scheduling, role management, and commission/payroll tracking
+- Contractor and booth-renter agreement and payout management
+- Walk-in kiosk and waitlist system
+- AI Receptionist for automated phone call handling and booking
+- SMS and email marketing and reminder automation
+- Multi-location management tools
+- Revenue analytics and reporting
+- Custom website builder and Certxa-hosted booking websites
+- Google Business Profile integration for review management and website sync
+- Subscription billing management via Stripe
+We reserve the right to modify, add, or discontinue features at any time. Material changes will be communicated with reasonable notice.
+
+## 2. Accounts & Eligibility
+
+### Eligibility
+You must be at least 18 years old and legally capable of entering into a binding contract to create a Certxa account. By using the Service, you represent that you meet these requirements.
+
+### Account Responsibility
+You are responsible for maintaining the confidentiality of your login credentials. You agree to notify us immediately at support@certxa.com if you become aware of any unauthorized access to your account. Certxa is not liable for any loss or damage resulting from unauthorized access caused by your failure to safeguard your credentials.
+
+### Business Representation
+Each Certxa account must represent a real, lawfully operating business entity or an independent professional. You may not create accounts to impersonate others, misrepresent your business, or engage in fraudulent activity. If you create an account on behalf of a company or organization, you represent that you have authority to bind that entity to these Terms.
+
+### Account Accuracy
+You agree to provide accurate, current, and complete information during registration and to keep it updated. Inaccurate or misleading information may result in suspension or termination of your account.
+
+## 3. Subscription & Billing
+
+### Plans & Fees
+Certxa offers paid subscription plans billed monthly or annually. Current plan details and pricing are displayed at certxa.com/pricing . Prices may change with at least 30 days' advance notice to active subscribers.
+
+### Trial Period
+New accounts may be eligible for a free trial period as displayed at sign-up. No payment information is required during the trial unless otherwise stated. At the end of the trial, you will be prompted to select a paid plan to continue using the Service.
+
+### Billing & Auto-Renewal
+Subscriptions are billed automatically at the start of each billing period (monthly or annual) using the payment method on file, processed securely through Stripe. By subscribing, you authorize Certxa to charge your payment method on a recurring basis until you cancel.
+
+### Refund Policy
+All subscription fees are non-refundable except where required by applicable law. If you cancel your subscription, you will retain access to the Service through the end of your current billing period. We do not provide prorated refunds for partial months unless required by law. In exceptional circumstances (e.g., significant service outages attributable to Certxa), we may issue account credits at our sole discretion.
+
+### Late Payments & Failed Charges
+If a payment fails, we will attempt to retry the charge. Continued failure to pay may result in suspension of your account. You remain responsible for any amounts owed even after suspension or termination.
+
+### Cancellation
+You may cancel your subscription at any time from your account settings or by contacting support@certxa.com . Cancellation takes effect at the end of the current billing period. We do not charge cancellation fees.
+
+## 4. Data Ownership
+
+### Your Data Belongs to You
+All business data, client data, appointment records, and content you create or upload within Certxa remains your property. You grant Certxa a limited, non-exclusive license to process and store your data solely to provide the Service.
+
+### Client Data
+You are the data controller for client information you enter into Certxa. Certxa acts as a data processor on your behalf. You are responsible for ensuring you have the necessary consents, permissions, and legal bases to collect your clients' personal information and use our platform to contact them.
+
+### Data Export
+You may export your data (clients, appointments, financial records) at any time from your dashboard. We will provide your data in standard formats (CSV, JSON). After account deletion, data may be irretrievable, so we recommend exporting before cancellation.
+
+### Account Deletion & Data Retention
+You may permanently delete your account at any time directly from your Account Settings page (Account → Danger Zone → Delete my account). Deletion requires your current password and confirmation. Once deleted:
+- Your access to the platform is removed immediately
+- Your active subscription is cancelled at end of the current billing period
+- Business data, client records, and appointments are deactivated and no longer accessible to you
+- Financial records (appointments, payroll, invoices, payments) are retained until February 1st of the following calendar year for tax and legal compliance purposes, after which they are permanently purged
+- Staff accounts linked to your business also lose access upon account deletion
+If you signed up with Google, contact support@certxa.com to initiate deletion (password confirmation is not possible for Google-linked accounts via the in-app flow). We will process your request within 5 business days.
+
+### No Claim on Your Data
+Certxa will never sell your business data or client data to third parties, use it to train AI models without your consent, or use it for purposes beyond operating the Service for you.
+
+## 5. AI Receptionist
+Important: The AI Receptionist is an automated tool. It may make mistakes. You are responsible for verifying all bookings, cancellations, and reschedules created by the AI before treating them as confirmed.
+
+### How It Works
+Certxa's AI Receptionist answers inbound phone calls on your behalf, uses AI voice and language models (including OpenAI) to understand caller requests, and can book, cancel, or reschedule appointments based on your live availability settings.
+
+### Accuracy Disclaimer
+The AI Receptionist may mishear callers, misinterpret requests, or generate incorrect responses. AI-created booking actions are not legally binding commitments from Certxa. You remain solely responsible for verifying and honoring (or correcting) appointments created by the AI.
+
+### Not Legal or Medical Advice
+The AI Receptionist does not provide legal, medical, financial, or professional advice of any kind. Any information it conveys is for appointment coordination purposes only.
+
+### Google Data Separation
+The AI Receptionist does not access, read, or use any data from Google Business Profile or any other Google API. Call handling, appointment booking, and all AI Receptionist responses are based solely on data stored in your Certxa account (client records, services, and availability). The AI Receptionist and Google Business Profile integration are completely separate systems that do not share data.
+
+### Call Recording & Transcripts
+Calls handled by the AI Receptionist may be transcribed and stored in your account for your review. If your jurisdiction requires disclosure to callers that a call is being recorded or handled by AI, you are responsible for ensuring that disclosure is made (e.g., via a greeting message you configure in the platform).
+
+### Caller Recognition
+The AI Receptionist may attempt to identify returning callers based on phone number matching to existing client records. This feature uses only data stored in your Certxa account.
+
+## 6. Payments & Stripe Connect
+
+### Payment Processing
+Certxa uses Stripe to process all payments made through the platform, including client charges, subscription billing, and staff/contractor payouts via Stripe Connect. By using payment features, you agree to Stripe's Connected Account Agreement and Stripe's Privacy Policy .
+
+### Certxa Is Not a Bank
+Certxa is a software platform, not a bank, money services business, or payment processor. All payment processing, fund holding, and payout operations are performed by Stripe. Certxa does not hold client funds on your behalf.
+
+### Platform Fees
+Certxa may charge platform fees separate from your subscription (e.g., per-transaction fees for certain payment features). These fees are disclosed clearly before you enable them. Stripe also charges its own processing fees, which are separate from Certxa's fees.
+
+### Chargebacks & Disputes
+You are responsible for managing payment disputes and chargebacks with your clients. Certxa will provide transaction records to assist with disputes but is not liable for funds lost due to chargebacks or fraud initiated by your clients.
+
+### Payout Timing
+Payout timing for Stripe Connect accounts is governed by Stripe's policies, not Certxa's. Certxa is not responsible for delays in payouts caused by Stripe's verification processes, banking delays, or regulatory holds.
+
+## 7. Staff Accounts & Multi-Location
+
+### Staff Access
+As a business owner, you may invite staff members to your Certxa account. You are responsible for managing your staff's access levels and revoking access promptly when a staff member leaves your business. Staff accounts operate under your master account and are bound by these Terms.
+
+### Role Permissions
+Certxa offers role-based access control (e.g., owner, manager, staff). You are responsible for assigning appropriate roles. Certxa is not liable for actions taken by staff members using permissions you have granted them.
+
+### Multi-Location Accounts
+Multi-location features allow a single account owner to manage multiple business locations. All locations under an account are governed by a single subscription (depending on your plan). You are responsible for ensuring compliance across all locations you manage through the platform.
+
+### Contractors & Booth Renters
+Certxa provides tools for managing booth renters and independent contractors. You are solely responsible for classifying workers correctly under applicable employment and tax law. Certxa is not an employer of your contractors and does not determine their employment status.
+
+## 8. Google Business Profile Integration
+
+### Google API Compliance
+Certxa integrates with the Google Business Profile API under Google API Services User Data Policy . Your use of this integration is also subject to Google's own Terms of Service and policies.
+
+### Certxa is an Independent Third-Party Tool — NOT Google
+Certxa is not Google LLC. Certxa is an independent, third-party software company. We are not affiliated with, endorsed by, sponsored by, or in any way a product of Google. "Google", "Google Business Profile", and related marks are trademarks of Google LLC.
+Google LLC is not responsible for Certxa's features, actions, pricing, data practices, service availability, content, or these Terms. Your relationship with Google is governed entirely by Google's own terms and policies.
+
+### Scope of Google Access
+Certxa requests the Google Business Profile management scope ( business.manage ) solely to operate the Google Business Profile integration on your behalf. This access is used only to:
+- Read your business listing name, address, and operating information
+- Sync public Google reviews associated with your business location
+- Update your Google Business Profile website URL field when you initiate this action
+Certxa does not request access to Gmail, Google Drive, Google Calendar, Google Contacts, or any Google service unrelated to your business listing. We never request more Google access than is required to provide the integration.
+
+### AI Receptionist and Google Scope — Separate Systems
+Certxa's AI Receptionist feature is entirely separate from the Google Business Profile integration. The AI Receptionist does not access, read, write, or use any data obtained from Google APIs. Call transcripts, appointment booking, and AI responses are based solely on data within your Certxa account — not on Google Business Profile data. These two systems share no data.
+
+### Authorization Required
+You must explicitly authorize Certxa to connect to your Google Business Profile via Google's OAuth 2.0 consent flow. By granting authorization, you confirm that you own or are duly authorized to manage the connected Google Business Profile(s).
+
+### Permitted Use
+The Google Business Profile integration is permitted only for:
+- Displaying your public Google reviews inside your Certxa dashboard and Certxa-hosted website
+- Updating your Google Business Profile website URL to point to your Certxa booking page (only when you initiate this action)
+- Syncing business profile information for display within Certxa
+
+### Prohibited Actions
+You must not use the Google Business Profile integration to:
+- Access Google Business Profiles you do not own or are not authorized to manage
+- Manipulate, falsify, or spam reviews in violation of Google's policies
+- Perform actions on Google's platform in a way that violates Google's Terms of Service
+
+### Misuse & Suspension
+Misuse of the Google Business Profile integration — including accessing unauthorized profiles or violating Google's API policies — may result in immediate suspension of the Google integration feature, suspension of your Certxa account, or both. Certxa will report confirmed misuse to Google as required. Additionally, misuse may result in Google LLC independently terminating or suspending API access to your Google account, which is outside of Certxa's control. Your API usage is subject to Google's API Terms of Service .
+
+### API Availability
+The Google Business Profile integration depends on Google's API availability. Certxa is not responsible for disruptions to this integration caused by Google's API changes, downtime, or policy updates. We will make reasonable efforts to maintain compatibility with Google's current API versions.
+
+## 9. Acceptable Use
+You agree to use Certxa only for lawful purposes and in accordance with these Terms. You must not:
+- Use the platform to conduct fraudulent transactions or impersonate another person or business
+- Upload or transmit content that is illegal, defamatory, obscene, or infringes third-party intellectual property rights
+- Attempt to gain unauthorized access to other users' accounts, data, or systems
+- Scrape, crawl, or systematically harvest data from Certxa's platform or API without written permission
+- Use the platform to send unsolicited commercial communications (spam) to your clients or others
+- Interfere with or disrupt the platform's infrastructure, servers, or networks
+- Reverse-engineer, decompile, or attempt to extract source code from the platform
+- Resell or sublicense access to the platform without Certxa's prior written consent
+- Use the AI Receptionist to deceive callers into believing they are speaking to a human when required disclosures are mandated by law
+- Violate any applicable local, state, national, or international law or regulation
+Violation of this Acceptable Use Policy may result in immediate suspension or termination of your account without refund.
+
+## 10. Third-Party Services
+Certxa integrates with third-party services including Stripe, Twilio, Mailgun, OpenAI, and Google. Your use of these services through Certxa is also governed by each provider's own terms and privacy policies. Certxa is not responsible for the actions, availability, or data practices of third-party providers. Relevant policies include:
+- Stripe Terms & Privacy
+- Twilio Terms of Service
+- Mailgun Terms of Service
+- OpenAI Terms of Use
+- Google Terms of Service
+
+## 11. Service Availability
+We strive to maintain high availability of the platform but we do not guarantee uninterrupted or error-free operation. The Service may be temporarily unavailable due to maintenance, infrastructure issues, or events outside our control. We will make reasonable efforts to schedule maintenance during off-peak hours and provide advance notice for planned downtime.
+Certxa is not liable for losses arising from service outages, downtime, missed appointments, delayed SMS or email messages, or AI Receptionist failures. See the Limitation of Liability section below.
+
+## 12. Disclaimer of Warranties
+The service is provided "as is" and "as available" without warranties of any kind, express or implied, including but not limited to implied warranties of merchantability, fitness for a particular purpose, accuracy, or non-infringement.
+Certxa does not warrant that the service will be uninterrupted, error-free, or free of viruses or other harmful components. Certxa does not warrant the accuracy or completeness of any information provided through the platform, including AI-generated responses.
+Some jurisdictions do not allow the exclusion of implied warranties. In such cases, the above exclusions apply to the maximum extent permitted by applicable law.
+
+## 13. Limitation of Liability
+To the maximum extent permitted by applicable law, Certxa and its officers, directors, employees, and agents shall not be liable for any indirect, incidental, special, consequential, or punitive damages, including but not limited to:
+- Loss of revenue or profits
+- Missed or incorrectly booked appointments
+- Delayed or undelivered SMS or email messages
+- AI Receptionist errors or miscommunications
+- Data loss caused by hardware failure, software bugs, or user error
+- Downtime, service interruptions, or third-party API failures
+- Unauthorized access to your account due to compromised credentials
+In no event shall Certxa's total liability to you for all claims arising out of or relating to these terms or your use of the service exceed the greater of (a) the total fees you paid to Certxa in the three months immediately preceding the claim, or (b) one hundred US dollars ($100).
+Some jurisdictions do not allow the limitation of liability for consequential or incidental damages. In such jurisdictions, our liability is limited to the greatest extent permitted by law.
+
+## 14. Indemnification
+You agree to indemnify, defend, and hold harmless Certxa and its officers, directors, employees, and agents from any claims, damages, liabilities, costs, or expenses (including reasonable legal fees) arising out of or relating to: (a) your use of the Service; (b) your violation of these Terms; (c) your violation of any applicable law or the rights of a third party; (d) data you upload, store, or transmit through the platform; or (e) your clients' complaints or claims related to your business operations.
+
+## 15. Termination
+
+### Termination by You (Self-Service)
+You may delete your account at any time through your Account Settings (Account → Danger Zone → Delete my account). Deletion requires your current password and typing DELETE to confirm. Upon deletion, access is removed immediately and your subscription is cancelled at the end of your current billing period. We strongly recommend exporting your data before deleting. Financial records are retained for tax and legal compliance as described in Section 4.
+
+### Termination by Certxa
+We may suspend or terminate your account immediately, without prior notice, if:
+- You materially violate these Terms or our Acceptable Use Policy
+- You engage in fraudulent activity, chargebacks abuse, or conduct that poses risk to the platform or other users
+- You fail to pay amounts owed after reasonable notice
+- We are required to do so by law, court order, or regulatory obligation
+- Your use of Google API features violates Google's policies
+In cases of less serious violations, we will provide notice and a reasonable opportunity to cure before termination.
+
+### Effect of Termination
+Upon termination, your right to access the Service ends immediately. Provisions of these Terms that by their nature should survive (including data ownership, limitation of liability, indemnification, and governing law) will continue to apply after termination.
+
+## 16. Governing Law & Disputes
+These Terms are governed by and construed in accordance with the laws of the State of Delaware, United States, without regard to conflict of law principles. Any disputes arising under these Terms will be resolved first through good-faith negotiation. If negotiation fails, disputes shall be resolved through binding arbitration conducted by a recognized arbitration body (such as JAMS or AAA), except that either party may seek injunctive or other equitable relief in a court of competent jurisdiction to prevent irreparable harm.
+Class Action Waiver: You agree that any dispute resolution proceedings will be conducted solely on an individual basis and not in a class, consolidated, or representative action.
+
+## 17. Changes to These Terms
+We may update these Terms from time to time. When we make material changes, we will notify you by email at least 14 days before the changes take effect and post the updated Terms here with a revised "Last updated" date. Your continued use of the Service after the effective date of the updated Terms constitutes acceptance. If you do not accept the updated Terms, you may cancel your account before they take effect.
+
+## 18. Contact
+Questions about these Terms?
+- Email: support@certxa.com
+- Legal inquiries: legal@certxa.com
+- Website: certxa.com/contact
+© 2026 Certxa. All rights reserved.
+
+
+---
+
+## Free Salon Business Calculators | Certxa Tools
+Source: https://certxa.com/tools
+
+# Know your numbers before they know you.
+Two free calculators built for nail salon and salon owners — find your break-even point, and see exactly what no-shows are costing you every year.
+
+## Salon Break-Even Analysis Calculator
+How many clients per day does your salon need to break even? Enter your numbers and get an instant answer — with a chair-utilization score and no-show impact analysis.
+
+### Your Salon Numbers
+Sets a realistic clients-per-chair capacity for your industry.
+Rent + utilities + insurance + software + loan payments. Not staff commission.
+Percentage of each ticket paid to the stylist. For booth rental, set to 0% and enter net fixed costs above.
+
+#### Break-Even vs. Capacity
+Every client above break-even drops straight to profit.
+
+#### How No-Shows Raise Your Break-Even
+Every no-show is a blocked slot that earns $0. Drag the slider to see how many appointments you actually need to book to net your target number of paying clients.
+Fill more chairs, faster — see how 24/7 online booking works →
+
+## How much are no-shows costing your salon?
+Enter your salon's numbers below. See exactly how much revenue walks out the door every week, month, and year — and how much you could recover.
+
+### Your Salon Numbers
+
+#### Without Automated Reminders
+
+#### With Certxa
+
+#### Annual Revenue Lost to No-Shows
+Certxa's automated SMS & email reminders cut no-shows by an average of 50%.
+Certxa sends automated reminders and supports deposits on every booking — see client notifications → or deposit protection →
+
+## Calculator questions, answered
+
+### What is break-even analysis for a salon? +
+
+### How do you calculate the break-even point for a salon? +
+
+### What is a healthy chair utilization rate for a salon? +
+
+### How do no-shows affect my salon's break-even point? +
+
+### Is the break-even calculator accurate for my specific salon? +
+
+### How much do no-shows cost salons? +
+
+### How can I reduce no-shows at my salon? +
+
+### Are these calculators free to use? +
+
+## Hit break-even faster. Lose fewer bookings to no-shows.
+Certxa brings 24/7 online booking, automated reminders, and deposit protection into one platform built for nail salons. Start free for 60 days.
+Credit card required · No charge until trial ends
+
+
+---
+
+## Phần Mềm Quản Lý Tiệm Nail Cho Chủ Tiệm Người Việt | Certxa
+Source: https://certxa.com/vietnamese-salon-software
+
+# Phần mềm tiệm nail do người Việt làm chủ, cho người Việt.
+Certxa được sáng lập bởi một chủ tiệm nail người Việt tại Phoenix, Arizona — không phải bởi một công ty phần mềm xa lạ chưa từng bước vào một tiệm nail. Đặt lịch trực tuyến, máy check-in, POS, nhắc hẹn tự động — tất cả trong một hệ thống, không hợp đồng dài hạn.
+
+## Xây dựng bởi người đã từng đứng sau bàn tiếp tân, không phải bởi một đội ngũ tiếp thị.
+Certxa được sáng lập tại Phoenix, Arizona bởi Tom Tham — một chủ tiệm nail người Việt. Anh bắt đầu xây dựng Certxa sau khi chứng kiến nhiều tiệm nail người Việt, trong đó có cộng đồng của chính mình, bị các công ty phần mềm hiện có ép ký hợp đồng dài hạn chỉ để có được những công cụ cơ bản như đặt lịch hẹn và check-in.
+Anh muốn xây dựng một lựa chọn khác thật sự: không ràng buộc hợp đồng dài hạn, và phần mềm được làm ra bởi một người đã thật sự điều hành một tiệm nail — không chỉ bán phần mềm cho tiệm nail.
+"Tôi xây dựng Certxa cho những chủ tiệm giống như tôi — những người muốn một hệ thống đáng tin cậy, không ràng buộc, và không phải trả giá đắt để có được điều đó."
+— Tom Tham, Người Sáng Lập Certxa
+
+## Một hệ thống, đầy đủ những gì tiệm nail cần
+Certxa hỗ trợ giao diện Tiếng Việt cho chủ tiệm và nhân viên — quý vị và thợ trong tiệm có thể dùng hệ thống bằng ngôn ngữ mình quen thuộc nhất.
+
+### Đặt Lịch Trực Tuyến 24/7
+Khách hàng tự đặt lịch hẹn bất cứ lúc nào — qua website, Instagram, hoặc Google — không cần gọi điện qua lại.
+
+### Máy Check-In Tự Động
+Khách vãng lai tự check-in trên máy tính bảng, chọn dịch vụ và thợ mong muốn, tự động vào danh sách chờ.
+
+### Hồ Sơ Khách Hàng
+Lưu công thức màu gel, kiểu dáng, ghi chú riêng cho từng khách — mỗi lần khách đến, thợ đều nhớ chính xác họ muốn gì.
+
+### Nhắc Hẹn Tự Động
+Tin nhắn SMS và email nhắc lịch hẹn tự động gửi đến khách — giảm đáng kể số lượng khách "no-show".
+
+### Hệ Thống Thanh Toán (POS)
+Nhận thanh toán thẻ, Apple Pay, Google Pay ngay tại tiệm hoặc trực tuyến — tiền chuyển vào tài khoản ngân hàng vào ngày làm việc kế tiếp.
+
+### Website Riêng Cho Tiệm
+Tạo website đẹp, có sẵn chức năng đặt lịch, trong vài phút — không cần biết thiết kế web.
+
+## Không hợp đồng. Không phí ẩn.
+Gói giá bắt đầu từ $9/tháng. Dùng thử miễn phí 60 ngày, cần thẻ tín dụng nhưng sẽ không bị tính phí cho đến khi hết thời gian dùng thử.
+
+## Những câu hỏi thường gặp
+
+### Certxa có hỗ trợ giao diện Tiếng Việt không? +
+
+### Certxa có bắt ký hợp đồng dài hạn không? +
+
+### Ai đã sáng lập ra Certxa? +
+
+### Certxa có phù hợp với tiệm nail nhỏ, chỉ có một hai thợ không? +
+
+### Certxa có dùng thử miễn phí không? +
+
+## Hãy thử Certxa ngay hôm nay.
+Dùng thử miễn phí 60 ngày — không bị tính phí cho đến khi hết thời gian dùng thử.

@@ -82,6 +82,12 @@ Allow: /
 User-agent: Cohere-ai
 Allow: /
 
+User-agent: FacebookBot
+Allow: /
+
+User-agent: GoogleOther
+Allow: /
+
 # ── Known scraper / data-harvesting agents — block from the salon directory
 # (unclaimed third-party listings, not Certxa's own content) ───────────────
 User-agent: AhrefsBot

@@ -1,8 +1,8 @@
 # AI Crawler Access Report: certxa.com
 
-**Analysis Date:** 2026-09-12
+**Analysis Date:** 2026-09-13
 **Domain:** certxa.com
-**robots.txt Status:** Found (well-structured, per-bot directives)
+**robots.txt Status:** Found (`https://certxa.com/robots.txt`)
 
 ---
 
@@ -10,62 +10,61 @@
 
 | Crawler | Operator | Tier | Status | Impact |
 |---|---|---|---|---|
-| GPTBot | OpenAI | 1 | **Allowed** | Explicit `Allow: /` — content eligible for ChatGPT Search and model training |
-| OAI-SearchBot | OpenAI | 1 | **Allowed** | Explicit `Allow: /` — content eligible for ChatGPT Search results |
-| ChatGPT-User | OpenAI | 1 | **Allowed** | Explicit `Allow: /` — users can ask ChatGPT to browse certxa.com directly |
-| ClaudeBot | Anthropic | 1 | **Allowed** | Explicit `Allow: /` — content eligible for Claude web search/analysis |
-| PerplexityBot | Perplexity | 1 | **Allowed** | Explicit `Allow: /` — content eligible for Perplexity's cited search results |
-| Google-Extended | Google | 2 | **Allowed** | Explicit `Allow: /` — content eligible for Gemini training / AI Overviews improvement |
-| GoogleOther | Google | 2 | **Allowed** (via wildcard) | No dedicated block; inherits `User-agent: * / Allow: /` |
-| Applebot-Extended | Apple | 2 | **Allowed** | Explicit `Allow: /` — content eligible for Apple Intelligence |
-| Amazonbot | Amazon | 2 | **Allowed** | Explicit `Allow: /` — content eligible for Alexa/Amazon AI answers |
-| FacebookBot | Meta | 2 | **Allowed** (via wildcard) | No dedicated block; inherits `User-agent: * / Allow: /` |
-| CCBot | Common Crawl | 3 | **Allowed** | Explicit `Allow: /` — content included in the public Common Crawl training dataset |
-| anthropic-ai | Anthropic | 3 | **Allowed** | Explicit `Allow: /` — content eligible for Claude training (separate from live ClaudeBot) |
-| Bytespider | ByteDance | 3 | **Partially Blocked** | `Disallow: /salon/`, `/nail-salons/` only — blocked from the 51k-page directory, allowed on all marketing/blog content |
-| cohere-ai | Cohere | 3 | **Allowed** | Explicit `Allow: /` (matched case-insensitively as `Cohere-ai`) |
-
-**Bonus coverage beyond the standard checklist:** the robots.txt also explicitly allows `Claude-User` and `Claude-Web` (Anthropic's user-initiated-browsing agents, analogous to `ChatGPT-User`) and `Perplexity-User` — both correctly anticipated even though not required.
+| GPTBot | OpenAI | 1 | **Allowed** (explicit) | Full content access for ChatGPT Search |
+| OAI-SearchBot | OpenAI | 1 | **Allowed** (explicit) | Appears in ChatGPT's search results |
+| ChatGPT-User | OpenAI | 1 | **Allowed** (explicit) | ChatGPT can browse pages a user asks it to visit |
+| ClaudeBot | Anthropic | 1 | **Allowed** (explicit, plus `Claude-User` and `Claude-Web` also explicitly allowed) | Full access for Claude web search/analysis |
+| PerplexityBot | Perplexity | 1 | **Allowed** (explicit, plus `Perplexity-User` also explicitly allowed) | Eligible for Perplexity's sourced answers with citation links |
+| Google-Extended | Google | 2 | **Allowed** (explicit) | Content eligible for Gemini training / AI Overviews improvement |
+| GoogleOther | Google | 2 | **Allowed** (explicit) | Eligible for Google's AI research / experimental features |
+| Applebot-Extended | Apple | 2 | **Allowed** (explicit) | Eligible for Apple Intelligence features |
+| Amazonbot | Amazon | 2 | **Allowed** (explicit) | Eligible for Alexa answers |
+| FacebookBot | Meta | 2 | **Allowed** (explicit) | Eligible for Meta AI |
+| CCBot | Common Crawl | 3 | **Allowed** (explicit) | Included in the open training dataset used by many AI labs |
+| anthropic-ai | Anthropic | 3 | **Allowed** (explicit) | Eligible for Claude training data |
+| Bytespider | ByteDance | 3 | **Restricted** | Blocked only from `/salon/` and `/nail-salons/` (the unclaimed third-party salon directory); full access to all marketing/blog content |
+| cohere-ai | Cohere | 3 | **Allowed** (explicit, as `Cohere-ai`) | Eligible for Cohere training data |
 
 ## AI Visibility Score: 100/100
 
 **Tier 1 Access:** 5/5 crawlers allowed
 **Tier 2 Access:** 5/5 crawlers allowed
-**Tier 3 Access:** 4/4 crawlers allowed (one, Bytespider, scoped-blocked from low-value pages only — not a blanket block)
+**Tier 3 Access:** 4/4 crawlers allowed (with one, Bytespider, sensibly scoped away from a low-value directory rather than blocked outright)
 
 ---
 
 ## Critical Issues
 
-None. No Tier 1 crawler is blocked.
-
----
+None. No Tier 1 crawler is blocked, restricted, or missing an explicit rule.
 
 ## Recommendations
 
 ### Immediate Actions
 
-None required for crawler access — this is a model configuration. Two small, low-priority polish items:
+None outstanding. The one optional refinement identified in this audit — explicitly naming `FacebookBot` and `GoogleOther` rather than relying on the wildcard `Allow: /` — has been applied to `artifacts/booking/public/robots.txt` and is live. Both already had access before this change (inherited from the wildcard); this just brings them under the same "explicitly named so a future accidental broad Disallow can't silently catch them" protection the file's own header comment describes for the other crawlers.
 
-1. **`/.well-known/ai-plugin.json` and `/ai.txt` return no real file.** `ai-plugin.json` returns HTTP 200 but with `content-type: text/html` — it's the SPA/PHP catch-all shell being served for an unmatched path, not an actual plugin manifest (confirmed by diffing against a real 404). `/ai.txt` returns a clean 404. Neither standard is required (ai-plugin.json is a largely-superseded OpenAI-specific format, `ai.txt` is a non-standardized proposal), so this is cosmetic, not a visibility blocker. If addressed, make the catch-all route return a real 404 for `.well-known/*` paths that don't exist, to avoid soft-404 confusion for any bot that treats a 200 response as "found."
-2. **Re-verify the unclaimed-`/salon/`-listing `noindex` fix from the prior full GEO audit (issue #2 in `GEO-AUDIT-REPORT.md`).** This report only sampled one `/salon/:slug` page (a verified paying customer, correctly `index, follow`) — it did not re-check an unclaimed listing. Crawler *access* to `/salon/` is intentionally open (only data-scraper bots like Ahrefs/Semrush/Bytespider are blocked there); whether unclaimed pages should be `noindex` is an indexability-quality question, not a crawler-access one, so it's flagged here for follow-up rather than re-scored.
+The Bytespider scoping to `/salon/`/`/nail-salons/` (alongside the same treatment for AhrefsBot, SemrushBot, MJ12bot, DotBot, BLEXBot, DataForSeoBot, PetalBot) needs no change — it's a deliberate, sensible choice that keeps scraper/low-value bots off a large directory of unclaimed third-party listings without touching AI crawler access to the site's actual content.
 
 ### robots.txt Recommendation
 
-No changes needed. The current configuration already matches (and exceeds) the "Maximum AI Visibility" reference configuration:
+Already applied — `artifacts/booking/public/robots.txt` now includes:
 
-- Every Tier 1 and Tier 2 crawler is either explicitly allowed or allowed via a permissive wildcard default.
-- Tier 3's only scraper-adjacent bot (Bytespider) is blocked with surgical precision — from the 51k-page low-value salon directory only, not from the marketing/blog content that actually benefits from AI training exposure. This is arguably a *better* pattern than the skill's blanket "BLOCK Bytespider" default, since it keeps the content worth being trained on eligible while denying the directory pages that are a pure scraping/duplication liability.
-- Legitimate data-scraper SEO-tool bots (AhrefsBot, SemrushBot, MJ12bot, DotBot, BLEXBot, DataForSeoBot, PetalBot) are correctly scoped to the same `/salon/` + `/nail-salons/` exclusion, not blocked site-wide.
-- A `Sitemap:` directive is present and points to a live, 200-OK sitemap index.
+```
+User-agent: FacebookBot
+Allow: /
+
+User-agent: GoogleOther
+Allow: /
+```
 
 ### Additional Technical Findings
 
-- **Meta Robots Tags:** Consistent, favorable directives across all sampled pages (homepage, pricing, blog, salon directory): `index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1`. No `noai`, `noimageai`, or bot-specific `noindex` tags found anywhere.
-- **X-Robots-Tag Headers:** None present on any sampled page (homepage, pricing, blog article, salon listing) — no HTTP-header-level blocks of any kind. Only `x-content-type-options: nosniff` is set.
-- **JavaScript Rendering:** No risk. The marketing/blog/directory site is server-rendered PHP (confirmed in the prior full audit and re-confirmed here — page content is present in the raw HTML response, not injected client-side).
-- **llms.txt:** Present and valid at `/llms.txt` (HTTP 200, correct `text/...` content, well-structured with a product summary and categorized page links).
-- **Sitemap Accessibility:** `/sitemap.xml` returns a valid sitemap index (200 OK) fanning out to `sitemap-pages.xml`, `blog/sitemap.xml`, and `salon/sitemap.xml`, all dated `lastmod: 2026-09-12` (today) — the stale-`lastmod` issue flagged in the prior full GEO audit (2026-09-08) appears to have since been resolved.
+- **Meta Robots Tags:** Sampled `/`, `/pricing`, `/blog`, `/nail-salons` — all `index, follow`, with `max-snippet:-1, max-image-preview:large, max-video-preview:-1` on the marketing/blog pages (explicitly removes any snippet-length cap, which is favorable for AI Overviews and chat assistants quoting the page). No `noai`/`noimageai` tags anywhere sampled.
+- **X-Robots-Tag Headers:** None present on any sampled page (checked via response headers on `/`, `/pricing`, `/blog`, `/nail-salons`) — nothing overriding the permissive meta-tag/robots.txt posture.
+- **JavaScript Rendering:** Low risk. The marketing site, blog, and salon directory (`/salon/`, `/nail-salons/`) are all server-rendered PHP/Node — full content is present in the initial HTML response, so GPTBot/ClaudeBot/PerplexityBot's limited JS execution isn't a barrier. (The booking app itself, `/calendar`, `/booking`, etc., is a client-rendered React SPA, but those paths are already disallowed in robots.txt as internal app routes, so this doesn't affect public AI-crawler visibility.)
+- **llms.txt:** Present and well-formed at `/llms.txt`, plus a full-content companion at `/llms-full.txt` (140KB, covers all 30 primary marketing pages) — above the norm for this standard, which most sites haven't adopted at all yet.
+- **Sitemap Accessibility:** `/sitemap.xml` is a valid, publicly accessible sitemap index (no auth, no bot-blocking), referencing `/sitemap-pages.xml`, `/blog/sitemap.xml`, `/salon/sitemap.xml`, and `/nail-salons/sitemap.xml` — all four confirmed reachable.
+- **Other AI-specific files:** `/.well-known/ai-plugin.json` and `/ai.txt` were checked. `/ai.txt` returns a real 404. `/.well-known/ai-plugin.json` returns HTTP 200, but the response is the React app's catch-all `index.html` shell (`content-type: text/html`), not an actual plugin manifest — the SPA's routing serves that page for any unmatched path rather than a true 404. Not a meaningful gap (the OpenAI plugin manifest standard it would represent was deprecated in 2024), but worth knowing it's a soft-200 rather than a real 404 if anyone later checks for that file's presence.
 
 ### Content Signals (IETF Draft)
 
@@ -73,9 +72,9 @@ No changes needed. The current configuration already matches (and exceeds) the "
 
 | Signal Key | Value | Meaning |
 |---|---|---|
-| search | yes | Permits use of this content in AI-powered search results |
-| ai-train | yes | Permits this content to be used for AI model training |
-| ai-retrieval | yes | Permits AI systems to retrieve this content live (e.g. RAG/browsing) |
-| ai-personalization | no | Opts out of using this content to personalize AI responses to individual users |
+| search | yes | Permits use in AI-powered search results |
+| ai-train | yes | Opts in to AI model training on this content |
+| ai-retrieval | yes | Permits retrieval/quoting in AI-generated answers |
+| ai-personalization | no | Does not permit use for personalizing responses to individual users |
 
-All four keys are from the known set and both value tokens used (`yes`/`no`) are valid — no warnings. This is a deliberate, fully-specified stance rather than an omission, sitting on the wildcard `User-agent: *` line rather than duplicated per-bot. Certxa is ahead of the curve here — this IETF draft (`draft-romm-aipref-contentsignals`) is not yet widely adopted, and declaring it removes ambiguity for any crawler that respects it.
+All four keys and values validate against the current draft spec (`draft-romm-aipref-contentsignals`) — no unknown keys, no invalid values. This is a rare, forward-leaning adoption; very few sites in this vertical have declared Content-Signal preferences yet.
