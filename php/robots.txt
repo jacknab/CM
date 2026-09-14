@@ -27,38 +27,36 @@ Disallow: /launchsite/hair-salons
 # ── Raw data files — never serve to crawlers ──────────────────────────────────
 Disallow: /salon-data.json
 
-# ── Known scraper / data-harvesting agents — block from salon directory ───────
+# ── Known scraper / data-harvesting agents — block from the salon listings ────
+# NOTE: individual salon pages are flat at root (certxa.com/{slug}, matching
+# Vagaro's URL structure) so they can't be targeted by a robots.txt prefix
+# without also disallowing real marketing pages — only the /listings/ state
+# and city hub pages can be blocked this way. The sitemap rate limiter
+# (routes/salonDirectory.ts, sitemapRateLimit) is the actual backstop against
+# bulk harvesting of the flat listing pages themselves.
 User-agent: AhrefsBot
-Disallow: /salon/
-Disallow: /nail-salons/
+Disallow: /listings/
 
 User-agent: SemrushBot
-Disallow: /salon/
-Disallow: /nail-salons/
+Disallow: /listings/
 
 User-agent: MJ12bot
-Disallow: /salon/
-Disallow: /nail-salons/
+Disallow: /listings/
 
 User-agent: DotBot
-Disallow: /salon/
-Disallow: /nail-salons/
+Disallow: /listings/
 
 User-agent: BLEXBot
-Disallow: /salon/
-Disallow: /nail-salons/
+Disallow: /listings/
 
 User-agent: DataForSeoBot
-Disallow: /salon/
-Disallow: /nail-salons/
+Disallow: /listings/
 
 User-agent: PetalBot
-Disallow: /salon/
-Disallow: /nail-salons/
+Disallow: /listings/
 
 User-agent: Bytespider
-Disallow: /salon/
-Disallow: /nail-salons/
+Disallow: /listings/
 
 # ── Search-engine crawlers — no crawl-delay (override the wildcard above) ────
 User-agent: Googlebot

@@ -33,6 +33,7 @@ $PAGES = [
     '/nail-salon-software'       => '0.93',
     '/autumn'                    => '0.93',
     '/online-booking'            => '0.90',
+    '/best-free-salon-booking-system' => '0.86',
     '/payments'                  => '0.90',
     '/revenue-intelligence'      => '0.88',
     '/checkin-kiosk'             => '0.87',
@@ -52,6 +53,7 @@ $PAGES = [
     '/salonos'                   => '0.82',
     '/solo-professionals'        => '0.82',
     '/booth-renters'             => '0.81',
+    '/tools'                     => '0.82',
     '/case-studies'              => '0.80',
     '/data-transfer'             => '0.79',
     '/contact'                   => '0.76',
@@ -81,5 +83,6 @@ if ($which === 'pages') {
 echo '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
 echo "  <sitemap><loc>https://certxa.com/sitemap-pages.xml</loc><lastmod>{$today}</lastmod></sitemap>\n";
 echo "  <sitemap><loc>https://certxa.com/blog/sitemap.xml</loc><lastmod>{$today}</lastmod></sitemap>\n";
-echo "  <sitemap><loc>https://certxa.com/salon/sitemap.xml</loc><lastmod>{$today}</lastmod></sitemap>\n";
+echo "  <sitemap><loc>https://certxa.com/sitemap-salons.xml</loc><lastmod>{$today}</lastmod></sitemap>\n";
+echo "  <sitemap><loc>https://certxa.com/sitemap-listings.xml</loc><lastmod>{$today}</lastmod></sitemap>\n";
 echo '</sitemapindex>';

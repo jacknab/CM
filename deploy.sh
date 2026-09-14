@@ -1003,6 +1003,19 @@ if [[ "$API_ONLY" == "false" ]]; then
   NODE_ENV=production PORT=3002 BASE_PATH="/website-builder/" \
     pnpm --filter @workspace/website-builder run build
   success "Website Builder built → artifacts/website-builder/dist/public"
+
+  # Must run AFTER the Booking app build above — booking's Vite build has
+  # emptyOutDir:true on artifacts/api-server/dist/public (the same shared
+  # directory this writes its mp-assets/ subfolder into), so building this
+  # first would get wiped out.
+  info "Building Marketplace (client)..."
+  NODE_ENV=production PORT=4174 \
+    pnpm --filter @workspace/marketplace run build
+  success "Marketplace client built → artifacts/api-server/dist/public/mp-assets"
+
+  info "Building Marketplace (SSR)..."
+  pnpm --filter @workspace/marketplace run build:ssr
+  success "Marketplace SSR bundle built → artifacts/marketplace/dist/server"
 fi
 
 # ── 5. export tenant data (optional) ─────────────────────────────────────────
@@ -1237,7 +1250,7 @@ success "  Deploy complete in ${ELAPSED}s"
 success "  Commit : $(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
 success ""
 if [[ "$API_ONLY" == "false" ]]; then
-  success "  To rollback frontends: git checkout $PREV_COMMIT -- artifacts/booking/dist artifacts/website-builder/dist && systemctl reload nginx"
+  success "  To rollback frontends: git checkout $PREV_COMMIT -- artifacts/booking/dist artifacts/website-builder/dist artifacts/marketplace/dist && systemctl reload nginx"
 fi
 if [[ "$FRONTEND_ONLY" == "false" ]]; then
   success "  To rollback API: git checkout $PREV_COMMIT -- artifacts/api-server/dist && (pm2 restart certxa-api --update-env || systemctl restart certxa-api)"

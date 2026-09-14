@@ -187,7 +187,8 @@ const _cjsDirname: string | undefined = (globalThis as any).__dirname;
 // Replace with your actual DB functions
 import { storage } from "./storage";
 import { seoPageMiddleware } from "./seo-pages";
-import salonDirectoryRouter from "./routes/salonDirectory";
+import salonDirectoryRouter, { salonSlugFallbackRouter } from "./routes/salonDirectory";
+import salonApiRouter from "./routes/salonApi";
 import { SEO_CONFIG, injectSeoMetadata, isKnownAppFirstSegment, NOT_FOUND_HTML } from "./static";
 import { isRequestFromTrustedNetwork, resolveStoreIdBySlug } from "./lib/salonNetworkGuard";
 
@@ -753,19 +754,30 @@ app.get("/app", (req: Request, res: Response) => {
 </html>`);
 });
 
-// --- Salon Business Directory (/salon/:slug, /salon/sitemap.xml) ---
-// Must be BEFORE phpMiddleware so these Node-rendered pages are never
-// accidentally proxied to the PHP built-in server.
+// --- Salon marketplace: homepage ("/"), /listings/*, sitemaps, legacy redirects ---
+// Must be BEFORE phpMiddleware so "/" and these Node-rendered pages are
+// never accidentally proxied to the PHP built-in server. isPhpRoute()
+// hardcodes "/" as a PHP route, so this router intercepting it first is
+// what makes the marketplace the actual homepage.
 app.use(salonDirectoryRouter);
+app.use(salonApiRouter);
 
-// --- PHP Site Proxy (certxa.com root pages, template catalog, assets) ---
-// Must run before auth setup so PHP pages (/, /hair-salons, etc.) are
+// --- PHP Site Proxy (certxa.com marketing pages, template catalog, assets) ---
+// Must run before auth setup so PHP pages (/about, /hair-salons, etc.) are
 // served directly without needing a session.
 app.use(phpMiddleware);
 
 // --- Friendly redirects for common booking-app paths ---
 app.get("/login", (_req, res) => res.redirect(301, "/auth"));
 app.get("/signup", (_req, res) => res.redirect(301, "/auth"));
+
+// --- Salon marketplace: flat individual listing page ("/:slug") ---
+// Deliberately mounted AFTER phpMiddleware (and the two redirects above) so
+// every real marketing page, PHP directory, and named app route always gets
+// first refusal — this only ever fires for a single-segment path nothing
+// else claimed. Calls next() for anything that isn't a known salon slug, so
+// behavior for every other path is completely unchanged from before.
+app.use(salonSlugFallbackRouter);
 
 // --- Logging Helper ---
 export function log(message: string, source = "express") {
@@ -1037,6 +1049,18 @@ async function repairTwilioMessagingServiceInboundWebhook() {
     app.use("/lib", express.static(libRoot, {
       maxAge: "7d",
       immutable: false,
+    }));
+  }
+
+  // Marketplace client bundle (artifacts/marketplace's `build` output) —
+  // hashed JS/CSS the SSR-rendered shell references via <script>/<link>.
+  const mpAssetsRoot = _cjsDirname
+    ? path.resolve(_cjsDirname, "public", "mp-assets")
+    : path.resolve(process.cwd(), "dist/public/mp-assets");
+  if (fs.existsSync(mpAssetsRoot)) {
+    app.use("/mp-assets", express.static(mpAssetsRoot, {
+      maxAge: "7d",
+      immutable: true,
     }));
   }
 
