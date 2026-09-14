@@ -18,6 +18,7 @@ import {
   getStateBySlug, getCityData,
   type SalonRecord,
 } from "../lib/salonData";
+import { requestIp, resolveVisitorCity } from "../lib/geoLookup";
 
 const router = Router();
 
@@ -118,13 +119,26 @@ router.get("/api/salons", async (req: Request, res: Response) => {
 });
 
 // ── GET /api/salons/featured ─────────────────────────────────────────────────
+// Optional ?citySlug=&stateSlug= (set from IP-detected city, see /api/geo)
+// scopes the pool to that city; falls back to the global pool when the city
+// has too few rated listings to make a meaningful "featured" list.
 
-router.get("/api/salons/featured", async (_req: Request, res: Response) => {
+router.get("/api/salons/featured", async (req: Request, res: Response) => {
   try {
     await ensureLoaded();
     const claimedList = await getClaimedSalonList();
     const claimed = new Set(claimedList.map((r) => r.s));
-    const pool_ = claimedList.length >= 8 ? claimedList : getSalonList();
+
+    const citySlug = typeof req.query.citySlug === "string" ? req.query.citySlug : "";
+    const stateSlug = typeof req.query.stateSlug === "string" ? req.query.stateSlug : "";
+    let pool_: SalonRecord[] | null = null;
+    if (citySlug && stateSlug) {
+      const state = getStateBySlug(stateSlug);
+      const city = state ? getCityData(state.code, citySlug) : undefined;
+      if (city && city.records.length >= 4) pool_ = city.records;
+    }
+    if (!pool_) pool_ = claimedList.length >= 8 ? claimedList : getSalonList();
+
     const scored = pool_
       .map((r) => ({ r, rating: r.r ? parseFloat(r.r) : 0, reviews: r.rc ? parseInt(r.rc, 10) : 0 }))
       .filter((x) => x.rating > 0);
@@ -133,6 +147,20 @@ router.get("/api/salons/featured", async (_req: Request, res: Response) => {
   } catch (err) {
     logger.error({ err }, "[salonApi] featured salons failed");
     res.status(503).json({ error: "Salon data unavailable" });
+  }
+});
+
+// ── GET /api/geo — IP-detected city, used to scope the homepage's featured list ──
+
+router.get("/api/geo", async (req: Request, res: Response) => {
+  try {
+    await ensureLoaded();
+    const geo = resolveVisitorCity(requestIp(req));
+    res.setHeader("Cache-Control", "private, max-age=300");
+    res.json(geo);
+  } catch (err) {
+    logger.error({ err }, "[salonApi] geo lookup failed");
+    res.json(null);
   }
 });
 

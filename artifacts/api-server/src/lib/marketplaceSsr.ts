@@ -35,8 +35,15 @@ interface SsrRenderResult {
   dehydratedState: unknown;
 }
 
+interface GeoCity {
+  city: string;
+  state: string;
+  citySlug: string;
+  stateSlug: string;
+}
+
 interface SsrModule {
-  render: (url: string, apiOrigin: string, publicOrigin: string) => Promise<SsrRenderResult>;
+  render: (url: string, apiOrigin: string, publicOrigin: string, geo?: GeoCity | null) => Promise<SsrRenderResult>;
 }
 
 let _ssrModule: SsrModule | null = null;
@@ -102,16 +109,21 @@ export interface RenderedPage {
  * `originalUrl` — the request path+query (req.originalUrl).
  * `internalApiOrigin` — loopback address this same process listens on, used
  * for the SSR entry's own server-to-server data prefetch.
+ * `geo` — IP-resolved visitor city (see lib/geoLookup.ts), resolved from the
+ * *real* incoming request before this internal loopback call — the SSR
+ * entry's own data prefetch can't determine this itself since it only ever
+ * sees this process's own address, not the original visitor's.
  */
 export async function renderMarketplacePage(
   originalUrl: string,
   internalApiOrigin: string,
+  geo: GeoCity | null = null,
 ): Promise<RenderedPage | null> {
   const ssr = await loadSsrModule();
   const assets = loadClientAssets();
   if (!ssr || !assets) return null;
 
-  const result = await ssr.render(originalUrl, internalApiOrigin, "https://certxa.com");
+  const result = await ssr.render(originalUrl, internalApiOrigin, "https://certxa.com", geo);
 
   if (result.redirectTo) {
     return { html: "", statusCode: result.statusCode || 302, redirectTo: result.redirectTo };

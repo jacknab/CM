@@ -107,8 +107,28 @@ export function listSalons(params: ListSalonsParams = {}): Promise<Salon[]> {
   return apiFetch(`/api/salons${qs ? `?${qs}` : ''}`);
 }
 
-export function getFeaturedSalons(): Promise<Salon[]> {
-  return apiFetch('/api/salons/featured');
+export interface FeaturedSalonsParams {
+  citySlug?: string;
+  stateSlug?: string;
+}
+
+export function getFeaturedSalons(params: FeaturedSalonsParams = {}): Promise<Salon[]> {
+  const q = new URLSearchParams();
+  if (params.citySlug) q.set('citySlug', params.citySlug);
+  if (params.stateSlug) q.set('stateSlug', params.stateSlug);
+  const qs = q.toString();
+  return apiFetch(`/api/salons/featured${qs ? `?${qs}` : ''}`);
+}
+
+export interface GeoCity {
+  city: string;
+  state: string;
+  citySlug: string;
+  stateSlug: string;
+}
+
+export function getGeoCity(): Promise<GeoCity | null> {
+  return apiFetch('/api/geo');
 }
 
 export function getSalonBySlug(slug: string): Promise<SalonProfile> {
@@ -162,9 +182,14 @@ export function useListSalons(params: ListSalonsParams = {}, options?: QueryOpt<
   return useQuery({ queryKey: getListSalonsQueryKey(params), queryFn: () => listSalons(params), ...options?.query });
 }
 
-export const getGetFeaturedSalonsQueryKey = () => ['salons', 'featured'] as const;
-export function useGetFeaturedSalons(options?: QueryOpt<Salon[]>) {
-  return useQuery({ queryKey: getGetFeaturedSalonsQueryKey(), queryFn: () => getFeaturedSalons(), ...options?.query });
+export const getGetFeaturedSalonsQueryKey = (params: FeaturedSalonsParams = {}) => ['salons', 'featured', params] as const;
+export function useGetFeaturedSalons(params: FeaturedSalonsParams = {}, options?: QueryOpt<Salon[]>) {
+  return useQuery({ queryKey: getGetFeaturedSalonsQueryKey(params), queryFn: () => getFeaturedSalons(params), ...options?.query });
+}
+
+export const getGeoCityQueryKey = () => ['geo', 'city'] as const;
+export function useGetGeoCity(options?: QueryOpt<GeoCity | null>) {
+  return useQuery({ queryKey: getGeoCityQueryKey(), queryFn: () => getGeoCity(), staleTime: 5 * 60 * 1000, ...options?.query });
 }
 
 export const getGetSalonBySlugQueryKey = (slug: string) => ['salons', 'bySlug', slug] as const;

@@ -9,7 +9,8 @@ import {
   getSalonBySlug, getGetSalonBySlugQueryKey,
   getStateListing, getStateListingQueryKey,
   getCityListing, getCityListingQueryKey,
-  type SalonProfile,
+  getGeoCityQueryKey,
+  type SalonProfile, type GeoCity,
 } from '@/lib/api';
 
 export interface RenderResult {
@@ -51,7 +52,7 @@ function jsonLdScript(data: unknown): string {
  * /for-business still render a real shell (via wouter's SSR path) without a
  * data prefetch — they're not pages that need to rank or be cited.
  */
-export async function render(url: string, apiOrigin: string, publicOrigin: string): Promise<RenderResult> {
+export async function render(url: string, apiOrigin: string, publicOrigin: string, geo: GeoCity | null = null): Promise<RenderResult> {
   setApiBaseUrl(apiOrigin);
   const queryClient = new QueryClient();
   const [pathname, search = ''] = url.split('?');
@@ -61,11 +62,15 @@ export async function render(url: string, apiOrigin: string, publicOrigin: strin
 
   try {
     if (pathname === '/') {
-      const featured = await getFeaturedSalons();
-      queryClient.setQueryData(getGetFeaturedSalonsQueryKey(), featured);
+      queryClient.setQueryData(getGeoCityQueryKey(), geo);
+      const featuredParams = geo ? { citySlug: geo.citySlug, stateSlug: geo.stateSlug } : {};
+      const featured = await getFeaturedSalons(featuredParams);
+      queryClient.setQueryData(getGetFeaturedSalonsQueryKey(featuredParams), featured);
       headTags = baseHead(
-        `${SITE_NAME} — Find your good place`,
-        'Certxa is a considered local guide to independent salons, studios, and beauty people worth knowing.',
+        geo ? `Nail salons in ${geo.city}, ${geo.state} — ${SITE_NAME}` : `${SITE_NAME} — Find your good place`,
+        geo
+          ? `Find and book independent nail salons in ${geo.city}, ${geo.state}, curated by Certxa.`
+          : 'Certxa is a considered local guide to independent salons, studios, and beauty people worth knowing.',
         canonical,
       );
     } else if (pathname.startsWith('/listings/')) {

@@ -34,6 +34,7 @@ import { Router } from "express";
 import type { Request, Response } from "express";
 import { logger } from "../lib/logger";
 import { renderMarketplacePage } from "../lib/marketplaceSsr";
+import { requestIp, resolveVisitorCity } from "../lib/geoLookup";
 import {
   ensureLoaded, getClaimedSalonList, getStateIndex,
   CERTXA_DOMAIN, SITEMAP_PAGE_SIZE,
@@ -43,11 +44,15 @@ function xmlEsc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-async function serveSsrPage(req: Request, res: Response): Promise<void> {
+async function serveSsrPage(req: Request, res: Response, opts: { withGeo?: boolean } = {}): Promise<void> {
   try {
     const port = process.env.PORT || "9200";
     const internalApiOrigin = `http://127.0.0.1:${port}`;
-    const page = await renderMarketplacePage(req.originalUrl, internalApiOrigin);
+    // Homepage content is IP-personalized (see lib/geoLookup.ts) — must
+    // never be cached publicly/shared, or one visitor's detected city could
+    // be served to a visitor elsewhere.
+    const geo = opts.withGeo ? resolveVisitorCity(requestIp(req)) : null;
+    const page = await renderMarketplacePage(req.originalUrl, internalApiOrigin, geo);
     if (!page) {
       res.status(503).send("Marketplace unavailable — SSR bundle not built. Run `pnpm --filter @workspace/marketplace run build && run build:ssr`.");
       return;
@@ -58,7 +63,7 @@ async function serveSsrPage(req: Request, res: Response): Promise<void> {
     }
     res.status(page.statusCode);
     res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
+    res.setHeader("Cache-Control", opts.withGeo ? "private, no-cache" : "public, max-age=3600, stale-while-revalidate=86400");
     res.send(page.html);
   } catch (err) {
     logger.error({ err, url: req.originalUrl }, "[salonDirectory] SSR render error");
@@ -193,12 +198,12 @@ router.get("/sitemap-listings.xml", sitemapRateLimit, async (_req: Request, res:
 // Homepage — isPhpRoute() hardcodes "/" as a PHP route, but this router is
 // mounted before phpMiddleware, so Express matches this exact "/" handler
 // first and the marketplace becomes the actual certxa.com homepage.
-router.get("/", serveSsrPage);
+router.get("/", (req: Request, res: Response) => serveSsrPage(req, res, { withGeo: true }));
 
 // State + city hub pages, Vagaro-style: /listings/california (state) and
 // /listings/los-angeles--california (city) — disambiguated inside the SSR
 // entry itself by whether the param contains "--".
-router.get("/listings/:param", serveSsrPage);
+router.get("/listings/:param", (req: Request, res: Response) => serveSsrPage(req, res));
 
 export default router;
 
