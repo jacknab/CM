@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -157,6 +157,76 @@ function SalonSkeletons({ count = 3 }: { count?: number }) {
   return <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3" data-testid="state-loading">{Array.from({ length: count }).map((_, i) => <div key={i}><div className="skeleton aspect-[1.18/1] rounded-[3px]" /><div className="skeleton mt-4 h-5 w-2/3 rounded" /><div className="skeleton mt-2 h-4 w-1/2 rounded" /></div>)}</div>;
 }
 
+function BusinessAutocomplete({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [debounced, setDebounced] = useState('');
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const wrapRef = useRef<HTMLLabelElement>(null);
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value.trim()), 250);
+    return () => clearTimeout(t);
+  }, [value]);
+
+  const params = useMemo(() => ({ search: debounced, limit: 6 }), [debounced]);
+  const enabled = debounced.length >= 2;
+  const { data, isFetching } = useListSalons(params, { query: { queryKey: getListSalonsQueryKey(params), enabled } });
+  const results = enabled ? (data || []) : [];
+
+  useEffect(() => {
+    setOpen(enabled);
+    setActiveIndex(-1);
+  }, [debounced]);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  const select = (salon: Salon) => {
+    setOpen(false);
+    onChange(salon.name);
+    setLocation(`/${salon.slug}`);
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (!open || !results.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex((i) => Math.min(i + 1, results.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex((i) => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter' && activeIndex >= 0) { e.preventDefault(); select(results[activeIndex]); }
+    else if (e.key === 'Escape') { setOpen(false); }
+  };
+
+  return <label ref={wrapRef} className="relative flex h-12 items-center border-b border-border md:border-b-0 md:border-r">
+    <Search size={16} className="ml-4 shrink-0 text-muted-foreground" />
+    <input
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onFocus={() => { if (enabled) setOpen(true); }}
+      onKeyDown={onKeyDown}
+      placeholder="Business name or location"
+      className="h-full w-full bg-transparent px-3 text-sm outline-none"
+      data-testid="input-hero-business"
+      autoComplete="off"
+      role="combobox"
+      aria-expanded={open}
+      aria-autocomplete="list"
+    />
+    {open && (results.length > 0 || isFetching) && <div className="absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-[4px] border border-border bg-card text-left shadow-xl" role="listbox" data-testid="list-hero-business-suggestions">
+      {isFetching && !results.length ? <div className="px-4 py-3 text-sm text-muted-foreground">Searching…</div>
+        : results.length === 0 ? <div className="px-4 py-3 text-sm text-muted-foreground">No matches found.</div>
+        : results.map((salon, i) => <button key={salon.id} type="button" role="option" aria-selected={i === activeIndex} onMouseDown={(e) => { e.preventDefault(); select(salon); }} onMouseEnter={() => setActiveIndex(i)} className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition ${i === activeIndex ? 'bg-secondary' : ''}`} data-testid={`option-hero-business-${salon.id}`}>
+          <span className="min-w-0"><span className="font-semibold text-foreground">{salon.name}</span><span className="text-muted-foreground"> in {salon.city}, {salon.state}</span></span>
+          {salon.rating > 0 && <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-primary"><Star size={11} fill="currentColor" className="text-accent" /> {salon.rating.toFixed(1)}</span>}
+        </button>)}
+    </div>}
+  </label>;
+}
+
 function Home() {
   const { data: geo } = useGetGeoCity({ query: { queryKey: getGeoCityQueryKey() } });
   const featuredParams = useMemo(() => (geo ? { citySlug: geo.citySlug, stateSlug: geo.stateSlug } : {}), [geo]);
@@ -169,7 +239,7 @@ function Home() {
   const submit = (event: FormEvent) => { event.preventDefault(); setLocation(`/search?search=${encodeURIComponent(businessQuery)}&service=${encodeURIComponent(serviceQuery)}`); };
   const salons = data || [];
   const heroImage = 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1600&q=85';
-  return <div className="page-in bg-background"><section className="relative min-h-[445px] overflow-hidden bg-primary bg-cover bg-center" style={{ backgroundImage: `linear-gradient(90deg, rgba(61,34,51,.86), rgba(61,34,51,.5)), url(${salons[0]?.imageUrl || heroImage})` }}><div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_25%,rgba(240,195,107,.3),transparent_28%)]" /><div className="relative mx-auto flex min-h-[445px] max-w-[1120px] flex-col justify-center px-5 py-16 text-white lg:px-10"><p className="font-mono text-[10px] uppercase tracking-[.24em] text-accent">Independent beauty, found locally</p><h1 className="mt-5 font-display text-[clamp(3.5rem,7vw,6.5rem)] leading-[.92] tracking-[-.02em] not-italic">Book your next<br />good day.</h1><form onSubmit={submit} className="mt-9 grid max-w-[920px] gap-1 rounded-[4px] bg-white p-1 text-primary shadow-2xl md:grid-cols-[1fr_1fr_170px_105px]" data-testid="form-hero-search"><label className="relative flex h-12 items-center border-b border-border md:border-b-0 md:border-r"><Search size={16} className="ml-4 text-muted-foreground" /><input value={businessQuery} onChange={(e) => setBusinessQuery(e.target.value)} placeholder="Business name or location" className="h-full w-full bg-transparent px-3 text-sm outline-none" data-testid="input-hero-business" /></label><label className="relative flex h-12 items-center border-b border-border md:border-b-0 md:border-r"><Search size={16} className="ml-4 text-muted-foreground" /><input value={serviceQuery} onChange={(e) => setServiceQuery(e.target.value)} placeholder="Search services and classes" className="h-full w-full bg-transparent px-3 text-sm outline-none" data-testid="input-hero-service" /></label><label className="relative flex h-12 items-center border-b border-border md:border-b-0 md:border-r"><select value={timeQuery} onChange={(e) => setTimeQuery(e.target.value)} className="h-full w-full appearance-none bg-transparent px-4 text-sm outline-none" data-testid="select-hero-time"><option>Anytime</option><option>Today</option><option>This week</option><option>This weekend</option></select><ChevronDown size={15} className="pointer-events-none absolute right-3 text-muted-foreground" /></label><button className="h-12 rounded-[3px] bg-primary px-5 text-sm font-bold text-primary-foreground transition hover:bg-primary/90" data-testid="button-hero-search">Search</button></form><div className="mt-5 flex max-w-[920px] gap-2 overflow-x-auto pb-2 [scrollbar-width:none]">{browseCategories.map((category) => <Link href={`/search?service=${encodeURIComponent(category)}`} key={category} className="shrink-0 rounded-full border border-white/50 bg-white/10 px-4 py-2 text-xs font-medium text-white backdrop-blur-sm transition hover:bg-white hover:text-primary" data-testid={`link-hero-category-${category.toLowerCase().replace(/\s+/g, '-')}`}>{category}</Link>)}</div></div></section><main className="mx-auto max-w-[1320px] px-5 pb-20 lg:px-10"><section className="border-t border-border py-10"><div className="flex items-center justify-between gap-4"><h2 className="text-3xl font-display text-primary">{geo ? `Featured in ${geo.city}, ${geo.state}` : 'Featured salons'}</h2><Link href="/search" className="flex items-center gap-1 text-sm font-semibold text-primary" data-testid="link-featured-see-all">See all <ArrowRight size={14} /></Link></div><div className="mt-6">{isLoading ? <SalonSkeletons count={4} /> : isError ? <ErrorState onRetry={() => refetch()} /> : salons.length ? <div className="grid grid-cols-2 gap-x-4 gap-y-9 md:grid-cols-4 md:gap-x-6">{salons.map((salon) => <FeaturedMarketplaceCard key={salon.id} salon={salon} saved={saved.includes(salon.slug)} toggle={toggle} />)}</div> : <EmptyState title="The list is taking shape." copy="Check back soon for new independent places in your city." />}</div></section><section className="border-t border-border py-10"><div className="flex items-center justify-between gap-4"><h2 className="text-3xl font-display text-primary">Browse by ritual</h2><Link href="/search" className="flex items-center gap-1 text-sm font-semibold text-primary" data-testid="link-browse-all">All services <ArrowRight size={14} /></Link></div><div className="mt-5 grid grid-cols-2 gap-x-5 md:grid-cols-5">{categories.map((category) => <Link href={`/search?service=${category}`} key={category} className="flex items-center justify-between border-b border-border py-4 text-sm font-semibold text-primary transition hover:text-primary/80" data-testid={`link-category-${category.toLowerCase()}`}><span>{category}</span><ArrowUpRight size={14} className="text-muted-foreground" /></Link>)}</div></section></main></div>;
+  return <div className="page-in bg-background"><section className="relative min-h-[445px] overflow-hidden bg-primary bg-cover bg-center" style={{ backgroundImage: `linear-gradient(90deg, rgba(61,34,51,.86), rgba(61,34,51,.5)), url(${salons[0]?.imageUrl || heroImage})` }}><div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_25%,rgba(240,195,107,.3),transparent_28%)]" /><div className="relative mx-auto flex min-h-[445px] max-w-[1120px] flex-col justify-center px-5 py-16 text-white lg:px-10"><p className="font-mono text-[10px] uppercase tracking-[.24em] text-accent">Independent beauty, found locally</p><h1 className="mt-5 font-display text-[clamp(3.5rem,7vw,6.5rem)] leading-[.92] tracking-[-.02em] not-italic">Book your next<br />good day.</h1><form onSubmit={submit} className="mt-9 grid max-w-[920px] gap-1 rounded-[4px] bg-white p-1 text-primary shadow-2xl md:grid-cols-[1fr_1fr_170px_105px]" data-testid="form-hero-search"><BusinessAutocomplete value={businessQuery} onChange={setBusinessQuery} /><label className="relative flex h-12 items-center border-b border-border md:border-b-0 md:border-r"><Search size={16} className="ml-4 text-muted-foreground" /><input value={serviceQuery} onChange={(e) => setServiceQuery(e.target.value)} placeholder="Search services and classes" className="h-full w-full bg-transparent px-3 text-sm outline-none" data-testid="input-hero-service" /></label><label className="relative flex h-12 items-center border-b border-border md:border-b-0 md:border-r"><select value={timeQuery} onChange={(e) => setTimeQuery(e.target.value)} className="h-full w-full appearance-none bg-transparent px-4 text-sm outline-none" data-testid="select-hero-time"><option>Anytime</option><option>Today</option><option>This week</option><option>This weekend</option></select><ChevronDown size={15} className="pointer-events-none absolute right-3 text-muted-foreground" /></label><button className="h-12 rounded-[3px] bg-primary px-5 text-sm font-bold text-primary-foreground transition hover:bg-primary/90" data-testid="button-hero-search">Search</button></form><div className="mt-5 flex max-w-[920px] gap-2 overflow-x-auto pb-2 [scrollbar-width:none]">{browseCategories.map((category) => <Link href={`/search?service=${encodeURIComponent(category)}`} key={category} className="shrink-0 rounded-full border border-white/50 bg-white/10 px-4 py-2 text-xs font-medium text-white backdrop-blur-sm transition hover:bg-white hover:text-primary" data-testid={`link-hero-category-${category.toLowerCase().replace(/\s+/g, '-')}`}>{category}</Link>)}</div></div></section><main className="mx-auto max-w-[1320px] px-5 pb-20 lg:px-10"><section className="border-t border-border py-10"><div className="flex items-center justify-between gap-4"><h2 className="text-3xl font-display text-primary">{geo ? `Featured in ${geo.city}, ${geo.state}` : 'Featured salons'}</h2><Link href="/search" className="flex items-center gap-1 text-sm font-semibold text-primary" data-testid="link-featured-see-all">See all <ArrowRight size={14} /></Link></div><div className="mt-6">{isLoading ? <SalonSkeletons count={4} /> : isError ? <ErrorState onRetry={() => refetch()} /> : salons.length ? <div className="grid grid-cols-2 gap-x-4 gap-y-9 md:grid-cols-4 md:gap-x-6">{salons.map((salon) => <FeaturedMarketplaceCard key={salon.id} salon={salon} saved={saved.includes(salon.slug)} toggle={toggle} />)}</div> : <EmptyState title="The list is taking shape." copy="Check back soon for new independent places in your city." />}</div></section><section className="border-t border-border py-10"><div className="flex items-center justify-between gap-4"><h2 className="text-3xl font-display text-primary">Browse by ritual</h2><Link href="/search" className="flex items-center gap-1 text-sm font-semibold text-primary" data-testid="link-browse-all">All services <ArrowRight size={14} /></Link></div><div className="mt-5 grid grid-cols-2 gap-x-5 md:grid-cols-5">{categories.map((category) => <Link href={`/search?service=${category}`} key={category} className="flex items-center justify-between border-b border-border py-4 text-sm font-semibold text-primary transition hover:text-primary/80" data-testid={`link-category-${category.toLowerCase()}`}><span>{category}</span><ArrowUpRight size={14} className="text-muted-foreground" /></Link>)}</div></section></main></div>;
 }
 
 type SearchSort = 'recommended' | 'rating' | 'distance';
