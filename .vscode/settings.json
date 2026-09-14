@@ -1,0 +1,41 @@
+{
+  "files.watcherExclude": {
+    "**/.git/**": true,
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/.local/**": true,
+    "**/backups/**": true,
+    "**/logs/**": true,
+    "**/attached_assets/**": true,
+    "**/snap/**": true,
+    "**/templates-storage/**": true,
+    "**/thumbnails-storage/**": true,
+    "**/videos/**": true
+  },
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.local": true,
+    "**/backups": true,
+    "**/logs": true,
+    "**/attached_assets": true,
+    "**/snap": true,
+    "**/templates-storage": true,
+    "**/thumbnails-storage": true,
+    "**/videos": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.local": true,
+    "**/backups": true,
+    "**/logs": true,
+    "**/attached_assets": true,
+    "**/snap": true,
+    "**/templates-storage": true,
+    "**/thumbnails-storage": true,
+    "**/videos": true
+  },
+  "typescript.disableAutomaticTypeAcquisition": true,
+  "typescript.tsserver.maxTsServerMemory": 1024
+}
