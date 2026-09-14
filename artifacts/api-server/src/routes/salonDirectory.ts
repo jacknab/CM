@@ -48,6 +48,11 @@ async function serveSsrPage(req: Request, res: Response, opts: { withGeo?: boole
   try {
     const port = process.env.PORT || "9200";
     const internalApiOrigin = `http://127.0.0.1:${port}`;
+    // resolveVisitorCity() reads the in-memory salon/city index synchronously
+    // — must be loaded first (a fresh process otherwise throws here on its
+    // very first "/" request, before any /api/* handler has had a chance to
+    // lazily trigger the load itself).
+    if (opts.withGeo) await ensureLoaded();
     // Homepage content is IP-personalized (see lib/geoLookup.ts) — must
     // never be cached publicly/shared, or one visitor's detected city could
     // be served to a visitor elsewhere.
