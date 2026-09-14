@@ -21,7 +21,7 @@ import {
   useListSalons,
 } from '@/lib/api';
 import type { Salon, SalonProfile } from '@/lib/api';
-import { ArrowRight, ArrowUpDown, ArrowUpRight, BadgeCheck, Bookmark, CalendarDays, Check, CheckCircle2, ChevronDown, Clock3, ExternalLink, Heart, LocateFixed, MapPin, Menu, MessageCircle, Minus, Navigation, Phone, Plus, Search, ShieldCheck, SlidersHorizontal, Sparkles, Star, Store, X } from 'lucide-react';
+import { ArrowRight, ArrowUpDown, ArrowUpRight, BadgeCheck, Bookmark, CalendarDays, Check, CheckCircle2, ChevronDown, Clock3, ExternalLink, Heart, LocateFixed, MapPin, Menu, MessageCircle, Minus, Navigation, Phone, Plus, Search, ShieldCheck, Sparkles, Star, Store, X } from 'lucide-react';
 import { Link, Route, Switch, useLocation, useParams, Router as WouterRouter } from 'wouter';
 import type { SsrContext } from 'wouter';
 
@@ -319,7 +319,7 @@ function SearchMap({ results, selectedId, setSelectedId }: { results: Salon[]; s
     const seed = String(salon.id || salon.slug).split('').reduce((total, character) => total + character.charCodeAt(0), index * 17);
     return { top: 22 + (seed % 57), left: 16 + ((seed * 7) % 68) };
   };
-  return <section className="relative min-h-[470px] flex-1 overflow-hidden border-l border-border bg-[#e8e2d5] md:min-h-0" aria-label="Map of nearby salons" data-testid="panel-search-map">
+  return <section className="relative h-full min-h-0 flex-1 overflow-hidden border-l border-border bg-[#e8e2d5]" aria-label="Map of nearby salons" data-testid="panel-search-map">
     <div className="absolute inset-0 overflow-hidden">
       <div className="absolute inset-[-8%] transition-transform duration-500" style={{ transform: `scale(${zoom})` }}>
         <div className="search-map-grid absolute inset-0 opacity-80" />
@@ -355,7 +355,7 @@ function SearchMap({ results, selectedId, setSelectedId }: { results: Salon[]; s
 }
 
 function SearchLoading() {
-  return <div className="grid min-h-[600px] md:grid-cols-[minmax(360px,440px)_1fr]" data-testid="state-search-loading"><div className="border-r border-border p-5"><div className="skeleton h-5 w-44 rounded" /><div className="skeleton mt-3 h-3 w-24 rounded" />{Array.from({ length: 4 }).map((_, index) => <div key={index} className="mt-5 flex gap-4 border-b border-border pb-5"><div className="skeleton h-28 w-28 shrink-0 rounded-[4px]" /><div className="flex-1"><div className="skeleton h-4 w-4/5 rounded" /><div className="skeleton mt-3 h-3 w-1/2 rounded" /><div className="skeleton mt-4 h-8 w-full rounded" /></div></div>)}</div><div className="skeleton hidden rounded-none md:block" /></div>;
+  return <div className="grid min-h-0 flex-1 overflow-hidden md:grid-cols-[minmax(360px,440px)_1fr]" data-testid="state-search-loading"><div className="overflow-hidden border-r border-border p-5"><div className="skeleton h-5 w-44 rounded" /><div className="skeleton mt-3 h-3 w-24 rounded" />{Array.from({ length: 4 }).map((_, index) => <div key={index} className="mt-5 flex gap-4 border-b border-border pb-5"><div className="skeleton h-28 w-28 shrink-0 rounded-[4px]" /><div className="flex-1"><div className="skeleton h-4 w-4/5 rounded" /><div className="skeleton mt-3 h-3 w-1/2 rounded" /><div className="skeleton mt-4 h-8 w-full rounded" /></div></div>)}</div><div className="skeleton hidden rounded-none md:block" /></div>;
 }
 
 function SearchPage() {
@@ -364,9 +364,26 @@ function SearchPage() {
   const [search, setSearch] = useState(() => initialParams.get('search') || '');
   const [service, setService] = useState(() => initialParams.get('service') || '');
   const [sort, setSort] = useState<SearchSort>(() => safeSearchSort(initialParams.get('sort')));
+  const [radius, setRadius] = useState(() => {
+    const paramRadius = initialParams.get('radius');
+    return paramRadius ? Number(paramRadius) : 5;
+  });
+  const updateRadius = (newRadius: number) => {
+    setRadius(newRadius);
+    syncUrl(search, service, sort);
+  };
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [mobileMapOpen, setMobileMapOpen] = useState(false);
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const { data: geo } = useGetGeoCity({ query: { queryKey: getGeoCityQueryKey() } });
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (position) => setCoords({ lat: position.coords.latitude, lng: position.coords.longitude }),
+      () => setCoords(null),
+      { enableHighAccuracy: false, maximumAge: 10 * 60 * 1000, timeout: 6000 },
+    );
+  }, []);
   useEffect(() => {
     const nextParams = new URLSearchParams(location.split('?')[1] || '');
     const nextSearch = nextParams.get('search') || '';
@@ -376,7 +393,19 @@ function SearchPage() {
     setService(nextService);
     setSort(safeSort);
   }, [location]);
-  const params = useMemo(() => ({ search: search || undefined, service: service || undefined, sort, limit: 50 }), [search, service, sort]);
+  const searchedLocation = search.includes(',') ? search.trim() : '';
+  const geoLocation = geo ? `${geo.city}, ${geo.state}` : '';
+  const activeLocation = searchedLocation || geoLocation;
+  const params = useMemo(() => ({
+    search: searchedLocation ? undefined : search || undefined,
+    location: activeLocation || undefined,
+    lat: coords?.lat,
+    lng: coords?.lng,
+    service: service || undefined,
+    sort,
+    radius,
+    limit: 50,
+  }), [activeLocation, coords?.lat, coords?.lng, search, searchedLocation, service, sort, radius]);
   const { data, isLoading, isError, refetch } = useListSalons(params, { query: { queryKey: getListSalonsQueryKey(params) } });
   const { saved, toggle } = useSavedSalons();
   const results = data || [];
@@ -386,36 +415,27 @@ function SearchPage() {
     if (nextSearch.trim()) next.set('search', nextSearch.trim());
     if (nextService) next.set('service', nextService);
     if (nextSort !== 'recommended') next.set('sort', nextSort);
+    // Always include radius=5 for service-based searches to show nearby results
+    next.set('radius', String(radius));
     const query = next.toString();
     setLocation(query ? `/search?${query}` : '/search');
   };
-  const submit = (event: FormEvent) => { event.preventDefault(); syncUrl(search, service, sort); };
-  const chooseService = (nextService: string) => { setService(nextService); setSelectedId(null); syncUrl(search, nextService, sort); };
   const chooseSort = (nextSort: SearchSort) => { setSort(nextSort); setSelectedId(null); syncUrl(search, service, nextSort); };
-  return <div className="page-in bg-background">
-    <main className="mx-auto flex min-h-[calc(100dvh-68px)] w-full max-w-[1440px] flex-col">
-      <section className="border-b border-border bg-secondary/35 px-5 py-6 lg:px-8">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
-          <div className="min-w-0 flex-1"><Link href="/" className="font-mono text-[10px] uppercase tracking-[.2em] text-muted-foreground" data-testid="link-search-breadcrumb">Certxa / Discover</Link><h1 className="mt-3 font-display text-[clamp(2.6rem,5vw,4.8rem)] leading-[.9] tracking-[-.055em] text-primary">Find your place.</h1></div>
-          <form onSubmit={submit} className="flex w-full max-w-[610px] gap-2 rounded-[4px] border border-border bg-card p-2 shadow-sm" data-testid="form-search-results">
-            <div className="relative flex min-h-11 min-w-0 flex-1 items-center"><Search size={16} className="ml-3 shrink-0 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search salons, services, or neighborhoods" className="w-full bg-transparent px-3 text-sm outline-none" data-testid="input-search-page" />{search && <button type="button" onClick={() => { setSearch(''); syncUrl('', service, sort); }} aria-label="Clear search" className="mr-2 rounded-full p-1 text-muted-foreground hover:bg-secondary" data-testid="button-clear-search-page"><X size={14} /></button>}</div>
-            <button type="submit" className="rounded-[3px] bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90" data-testid="button-search-page">Search</button>
-          </form>
-        </div>
-        <div className="mt-6 flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
-          {['', ...categories].map((item) => <button key={item || 'all'} type="button" onClick={() => chooseService(item)} className={`shrink-0 rounded-full border px-4 py-2 text-xs font-semibold transition ${service === item ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-muted-foreground hover:border-primary hover:text-primary'}`} data-testid={`button-filter-${item || 'all'}`}>{item || 'All services'}</button>)}
-          <div className="relative ml-auto shrink-0">
-            <button type="button" onClick={() => setFiltersOpen((open) => !open)} className={`flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold transition ${filtersOpen ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-primary hover:border-primary'}`} aria-expanded={filtersOpen} data-testid="button-search-filters"><SlidersHorizontal size={14} /> Filters</button>
-            {filtersOpen && <div className="absolute right-0 top-11 z-40 w-[240px] rounded-[4px] border border-border bg-card p-4 shadow-lg" data-testid="panel-search-filters"><div className="flex items-center justify-between"><p className="text-xs font-bold text-primary">Refine your search</p><button type="button" onClick={() => setFiltersOpen(false)} aria-label="Close filters" data-testid="button-close-search-filters"><X size={15} /></button></div><p className="mt-3 text-xs leading-5 text-muted-foreground">Choose a service above, or sort the nearby places by what matters most.</p><div className="mt-4 grid gap-2">{(['recommended', 'rating', 'distance'] as SearchSort[]).map((option) => <button type="button" key={option} onClick={() => { chooseSort(option); setFiltersOpen(false); }} className={`flex items-center justify-between rounded-[3px] px-3 py-2 text-left text-xs font-semibold ${sort === option ? 'bg-secondary text-primary' : 'text-muted-foreground hover:bg-secondary/60'}`} data-testid={`button-filter-sort-${option}`}>{option === 'recommended' ? 'Recommended' : option === 'rating' ? 'Top rated' : 'Nearest first'}{sort === option && <Check size={14} />}</button>)}</div></div>}
-          </div>
-        </div>
-      </section>
-      {isLoading ? <SearchLoading /> : isError ? <div className="mx-5 my-8 lg:mx-8"><ErrorState onRetry={() => refetch()} label="We could not load nearby places just now." /></div> : <div className="flex min-h-[600px] flex-1 flex-col md:flex-row">
+  const resultHeading = searchedLocation
+    ? `Beauty in ${searchedLocation}`
+    : search
+      ? `Places matching "${search}"`
+      : activeLocation
+        ? `Beauty near ${activeLocation}`
+        : 'Beauty near you';
+  return <div className="page-in h-[calc(100dvh-68px)] overflow-hidden bg-background">
+    <main className="mx-auto flex h-full min-h-0 w-full max-w-[1440px] flex-col overflow-hidden">
+      {isLoading ? <SearchLoading /> : isError ? <div className="min-h-0 flex-1 overflow-hidden px-5 py-8 lg:px-8"><ErrorState onRetry={() => refetch()} label="We could not load nearby places just now." /></div> : <div className="flex min-h-0 flex-1 overflow-hidden flex-col md:flex-row">
         <section className={`${mobileMapOpen ? 'hidden md:flex' : 'flex'} min-h-0 w-full flex-col bg-background md:w-[440px] md:shrink-0`} aria-label="Search results">
-          <div className="flex items-center justify-between border-b border-border px-5 py-4"><div><h2 className="text-[15px] font-bold tracking-[-.02em] text-primary">{search ? `Places matching "${search}"` : 'Beauty near you'}</h2><p className="mt-1 font-mono text-[10px] uppercase tracking-[.13em] text-muted-foreground">{results.length} {results.length === 1 ? 'place' : 'places'} to explore</p></div><label className="relative"><span className="sr-only">Sort results</span><select value={sort} onChange={(event) => chooseSort(event.target.value as SearchSort)} className="h-9 appearance-none rounded-[3px] border border-border bg-card py-0 pl-3 pr-8 text-[11px] font-bold text-primary outline-none" data-testid="select-sort-results"><option value="recommended">Recommended</option><option value="rating">Top rated</option><option value="distance">Nearest first</option></select><ArrowUpDown size={13} className="pointer-events-none absolute right-2.5 top-3 text-muted-foreground" /></label></div>
-          <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto">{results.length ? results.map((salon) => <SearchResultCard key={salon.id} salon={salon} selected={String(salon.id) === activeId} saved={saved.includes(salon.slug)} toggle={toggle} onSelect={() => setSelectedId(String(salon.id))} />) : <div className="flex min-h-[390px] flex-col items-center justify-center px-8 text-center"><span className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-secondary text-primary"><Sparkles size={22} /></span><h2 className="font-display text-3xl text-primary">A quiet corner.</h2><p className="mt-2 max-w-[250px] text-xs leading-6 text-muted-foreground">Nothing matched that search. Try another neighborhood, service, or a wider search.</p><button type="button" onClick={() => { setSearch(''); setService(''); setSort('recommended'); setSelectedId(null); syncUrl('', '', 'recommended'); }} className="mt-5 rounded-full bg-primary px-5 py-2.5 text-xs font-semibold text-primary-foreground" data-testid="button-clear-search-filters">Clear filters</button></div>}</div>
+          <div className="flex items-center justify-between border-b border-border px-5 py-4"><div><h2 className="text-[15px] font-bold tracking-[-.02em] text-primary">{resultHeading}</h2><p className="mt-1 font-mono text-[10px] uppercase tracking-[.13em] text-muted-foreground">{results.length} {results.length === 1 ? 'place' : 'places'} to explore</p></div><label className="relative"><span className="sr-only">Sort results</span><select value={sort} onChange={(event) => chooseSort(event.target.value as SearchSort)} className="h-9 appearance-none rounded-[3px] border border-border bg-card py-0 pl-3 pr-8 text-[11px] font-bold text-primary outline-none" data-testid="select-sort-results"><option value="recommended">Recommended</option><option value="rating">Top rated</option><option value="distance">Nearest first</option></select><ArrowUpDown size={13} className="pointer-events-none absolute right-2.5 top-3 text-muted-foreground" /></label></div>
+          <div className="min-h-0 flex-1 overflow-y-auto">{results.length ? results.map((salon) => <SearchResultCard key={salon.id} salon={salon} selected={String(salon.id) === activeId} saved={saved.includes(salon.slug)} toggle={toggle} onSelect={() => setSelectedId(String(salon.id))} />) : <div className="flex min-h-[390px] flex-col items-center justify-center px-8 text-center"><span className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-secondary text-primary"><Sparkles size={22} /></span><h2 className="font-display text-3xl text-primary">A quiet corner.</h2><p className="mt-2 max-w-[250px] text-xs leading-6 text-muted-foreground">Nothing matched that search. Try another neighborhood, service, or a wider search.</p><button type="button" onClick={() => { setSearch(''); setService(''); setSort('recommended'); setSelectedId(null); syncUrl('', '', 'recommended'); }} className="mt-5 rounded-full bg-primary px-5 py-2.5 text-xs font-semibold text-primary-foreground" data-testid="button-clear-search-filters">Clear filters</button></div>}</div>
         </section>
-        <div className={`${mobileMapOpen ? 'flex' : 'hidden'} min-h-0 flex-1 md:flex`}><SearchMap results={results} selectedId={activeId} setSelectedId={setSelectedId} /></div>
+        <div className={`${mobileMapOpen ? 'flex' : 'hidden'} min-h-0 flex-1 overflow-hidden md:flex`}><SearchMap results={results} selectedId={activeId} setSelectedId={setSelectedId} /></div>
       </div>}
     </main>
     <button type="button" onClick={() => setMobileMapOpen((open) => !open)} className="fixed bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full bg-primary px-5 py-3 text-xs font-bold text-primary-foreground shadow-lg transition hover:bg-primary/90 md:hidden" data-testid="button-toggle-search-map">Toggle map</button>
@@ -548,5 +568,11 @@ export interface AppProps {
 }
 
 export default function App({ queryClient, ssrPath, ssrSearch, ssrContext }: AppProps) {
-  return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter ssrPath={ssrPath} ssrSearch={ssrSearch} ssrContext={ssrContext}><SeoManager /><div className="site-grain min-h-[100dvh]"><Header /><Router /><Footer /></div></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter ssrPath={ssrPath} ssrSearch={ssrSearch} ssrContext={ssrContext}><SeoManager /><AppShell /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
+}
+
+function AppShell() {
+  const [location] = useLocation();
+  const isSearchPage = location.split('?')[0] === '/search';
+  return <div className="site-grain min-h-[100dvh]"><Header /><Router />{!isSearchPage && <Footer />}</div>;
 }

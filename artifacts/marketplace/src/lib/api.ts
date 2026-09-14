@@ -89,9 +89,12 @@ export interface Inquiry extends InquiryInput {
 export interface ListSalonsParams {
   search?: string;
   location?: string;
+  lat?: number;
+  lng?: number;
   service?: string;
   sort?: 'recommended' | 'rating' | 'distance';
   limit?: number;
+  radius?: number;
 }
 
 // ── Plain fetch functions — directly callable for SSR prefetch ─────────────
@@ -100,9 +103,12 @@ export function listSalons(params: ListSalonsParams = {}): Promise<Salon[]> {
   const q = new URLSearchParams();
   if (params.search) q.set('search', params.search);
   if (params.location) q.set('location', params.location);
+  if (typeof params.lat === 'number') q.set('lat', String(params.lat));
+  if (typeof params.lng === 'number') q.set('lng', String(params.lng));
   if (params.service) q.set('service', params.service);
   if (params.sort) q.set('sort', params.sort);
   if (params.limit) q.set('limit', String(params.limit));
+  if (params.radius) q.set('radius', String(params.radius));
   const qs = q.toString();
   return apiFetch(`/api/salons${qs ? `?${qs}` : ''}`);
 }

@@ -15,7 +15,8 @@ import {
   ensureLoaded, getSalonMap, getSalonList, getClaimedSalonList,
   findMatchingStore, findEnrichment, deriveAddress, heroImage,
   formatHour12, DAY_NAMES, CERTXA_DOMAIN,
-  getStateBySlug, getCityData,
+  getStateBySlug, getCityData, getStateIndex, toCitySlug,
+  STATE_NAMES, US_STATES, haversineMiles,
   type SalonRecord,
 } from "../lib/salonData";
 import { requestIp, resolveVisitorCity } from "../lib/geoLookup";
@@ -44,7 +45,11 @@ interface ApiSalon {
   longitude?: number;
 }
 
-function toApiSalon(r: SalonRecord, claimedSet: Set<string>): ApiSalon {
+function formatDistanceMiles(miles: number): string {
+  return miles < 10 ? `${miles.toFixed(1)} mi` : `${Math.round(miles)} mi`;
+}
+
+function toApiSalon(r: SalonRecord, claimedSet: Set<string>, distanceMiles?: number): ApiSalon {
   const addr = deriveAddress(r);
   const rating = r.r ? parseFloat(r.r) : 0;
   const reviewCount = r.rc ? parseInt(r.rc, 10) : 0;
@@ -62,7 +67,7 @@ function toApiSalon(r: SalonRecord, claimedSet: Set<string>): ApiSalon {
     priceLevel: "",
     imageUrl: heroImage(r.s),
     tags: [],
-    distance: "",
+    distance: typeof distanceMiles === "number" ? formatDistanceMiles(distanceMiles) : "",
     featured: claimedSet.has(r.s),
     description: addr.city ? `Nail salon in ${addr.city}${addr.state ? `, ${addr.state}` : ""}.` : "Nail salon.",
     ...(lat != null && !Number.isNaN(lat) ? { latitude: lat } : {}),
@@ -70,14 +75,41 @@ function toApiSalon(r: SalonRecord, claimedSet: Set<string>): ApiSalon {
   };
 }
 
+function resolveLocationRecords(value: string): SalonRecord[] | null {
+  const raw = value.trim();
+  if (!raw) return null;
+
+  const [cityPart, statePart = ""] = raw.split(",").map((part) => part.trim()).filter(Boolean);
+  if (!cityPart || !statePart) return null;
+
+  const stateToken = statePart.toUpperCase();
+  let stateCode = US_STATES.has(stateToken) ? stateToken : "";
+  if (!stateCode) {
+    const normalizedState = statePart.toLowerCase().replace(/\s+/g, "-");
+    const state = getStateIndex().find((item) =>
+      item.slug === normalizedState || item.name.toLowerCase() === statePart.toLowerCase()
+    );
+    stateCode = state?.code || "";
+  }
+  if (!stateCode || !STATE_NAMES[stateCode]) return null;
+
+  return getCityData(stateCode, toCitySlug(cityPart))?.records || [];
+}
+
 // ── GET /api/salons — search / list ─────────────────────────────────────────
 
 router.get("/api/salons", async (req: Request, res: Response) => {
   try {
     await ensureLoaded();
-    const search = typeof req.query.search === "string" ? req.query.search.trim().toLowerCase() : "";
+    const rawSearch = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    let search = rawSearch.toLowerCase();
+    const rawLocation = typeof req.query.location === "string" ? req.query.location.trim() : "";
+    const userLat = typeof req.query.lat === "string" ? Number(req.query.lat) : NaN;
+    const userLng = typeof req.query.lng === "string" ? Number(req.query.lng) : NaN;
+    const hasUserCoords = Number.isFinite(userLat) && Number.isFinite(userLng);
     const service = typeof req.query.service === "string" ? req.query.service.trim().toLowerCase() : "";
     const sort = typeof req.query.sort === "string" ? req.query.sort : "recommended";
+    const radius = Math.min(Math.max(parseInt(String(req.query.radius ?? "0"), 10) || 0, 0), 100);
     const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "12"), 10) || 12, 1), 50);
 
     // The dataset is nail salons only — an honest empty result for any other
@@ -88,7 +120,10 @@ router.get("/api/salons", async (req: Request, res: Response) => {
     }
 
     const claimed = new Set((await getClaimedSalonList()).map((r) => r.s));
-    let list = getSalonList();
+    const locationRecords = rawLocation ? resolveLocationRecords(rawLocation) : null;
+    const searchLocationRecords = !locationRecords && rawSearch.includes(",") ? resolveLocationRecords(rawSearch) : null;
+    let list = locationRecords ?? searchLocationRecords ?? getSalonList();
+    if (searchLocationRecords) search = "";
     if (search) {
       list = list.filter((r) =>
         r.n.toLowerCase().includes(search) ||
@@ -97,12 +132,31 @@ router.get("/api/salons", async (req: Request, res: Response) => {
       );
     }
 
-    const scored = list.map((r) => ({ r, rating: r.r ? parseFloat(r.r) : 0, reviews: r.rc ? parseInt(r.rc, 10) : 0 }));
+    const scored = list.map((r) => {
+      const salonLat = r.la ? Number(r.la) : NaN;
+      const salonLng = r.lo ? Number(r.lo) : NaN;
+      const distanceMiles = hasUserCoords && Number.isFinite(salonLat) && Number.isFinite(salonLng)
+        ? haversineMiles(userLat, userLng, salonLat, salonLng)
+        : null;
+      return {
+        r,
+        rating: r.r ? parseFloat(r.r) : 0,
+        reviews: r.rc ? parseInt(r.rc, 10) : 0,
+        distanceMiles,
+      };
+    });
     if (sort === "rating") {
       scored.sort((a, b) => b.rating - a.rating || b.reviews - a.reviews);
+    } else if (hasUserCoords) {
+      scored.sort((a, b) => {
+        if (a.distanceMiles == null && b.distanceMiles == null) return b.rating - a.rating || b.reviews - a.reviews;
+        if (a.distanceMiles == null) return 1;
+        if (b.distanceMiles == null) return -1;
+        return a.distanceMiles - b.distanceMiles || b.rating - a.rating || b.reviews - a.reviews;
+      });
     } else {
-      // "recommended" and "distance" (no user location sent, so it degrades
-      // to the same recommended order) — claimed listings first, then rating.
+      // Without precise coordinates, "recommended" and "distance" degrade to
+      // city-scoped recommended order: claimed listings first, then rating.
       scored.sort((a, b) => {
         const aClaimed = claimed.has(a.r.s) ? 1 : 0;
         const bClaimed = claimed.has(b.r.s) ? 1 : 0;
@@ -111,7 +165,13 @@ router.get("/api/salons", async (req: Request, res: Response) => {
       });
     }
 
-    res.json(scored.slice(0, limit).map(({ r }) => toApiSalon(r, claimed)));
+    // When a radius is requested and the user has precise coordinates, drop
+    // anything beyond that many miles — the map should only show what's
+    // genuinely reachable from where they are.
+    const visible = radius > 0 && hasUserCoords
+      ? scored.filter((s) => s.distanceMiles != null && s.distanceMiles <= radius)
+      : scored;
+    res.json(visible.slice(0, limit).map(({ r, distanceMiles }) => toApiSalon(r, claimed, distanceMiles ?? undefined)));
   } catch (err) {
     logger.error({ err }, "[salonApi] list salons failed");
     res.status(503).json({ error: "Salon data unavailable" });
