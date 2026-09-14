@@ -653,6 +653,7 @@ export const api = {
       path: '/api/cash-drawer/sessions' as const,
       input: z.object({
         storeId: z.number(),
+        drawerId: z.number().nullable().optional(),
         openingBalance: z.string().optional().default("0.00"),
         openingDenominationBreakdown: z.string().nullable().optional(),
         openedBy: z.string().nullable().optional(),

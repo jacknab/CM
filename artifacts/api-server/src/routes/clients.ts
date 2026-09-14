@@ -34,6 +34,7 @@ import {
 } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import { normalizePhone } from "../lib/phoneUtils";
+import { regenerateAiProfileNote } from "../lib/clientVisitNotes";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -268,12 +269,14 @@ router.post("/", isAuthenticated, async (req, res) => {
     if (phone) {
       const { e164, display } = normalizePhone(phone);
       if (e164) {
-        // Auto-detect whether this is a mobile, VoIP, or landline number so the
-        // system can route SMS/voice intelligently going forward.
-        let detectedType: "mobile" | "voip" | "landline" | "unknown" = "unknown";
+        // Detect whether this is a mobile, VoIP, or landline number (Twilio
+        // Lookup when configured, else an offline heuristic) so SMS sends can
+        // skip numbers that can never receive a text.
+        let resolved: { phoneType: "mobile" | "voip" | "landline" | "unknown"; source: "twilio_lookup" | "heuristic"; carrierName: string | null } =
+          { phoneType: "unknown", source: "heuristic", carrierName: null };
         try {
-          const { detectPhoneType } = await import("../lib/phoneTypeDetector");
-          detectedType = detectPhoneType(e164).phoneType;
+          const { resolvePhoneType } = await import("../lib/phoneTypeDetector");
+          resolved = await resolvePhoneType(e164);
         } catch (e: any) {
           console.warn(`[clients] phone-type detection skipped: ${e?.message ?? e}`);
         }
@@ -281,7 +284,10 @@ router.post("/", isAuthenticated, async (req, res) => {
           clientId: client.id,
           phoneNumberE164: e164,
           displayPhone: display,
-          phoneType: detectedType,
+          phoneType: resolved.phoneType,
+          phoneTypeSource: resolved.source,
+          phoneTypeCheckedAt: resolved.source === "twilio_lookup" ? new Date() : null,
+          carrierName: resolved.carrierName,
           smsOptIn,
           isPrimary: true,
         });
@@ -658,16 +664,69 @@ router.delete("/:id/notes/:noteId", isAuthenticated, async (req, res) => {
   }
 });
 
+// ─── AI PROFILE NOTE ────────────────────────────────────────────────────────
+// Separate from GET /:id/notes above so the system-only "visit_auto" rows
+// (raw per-visit source data for the AI) are never exposed to the client —
+// only the single "ai_profile_summary" row is ever returned here.
+
+router.get("/:id/profile-note", isAuthenticated, async (req, res) => {
+  try {
+    const clientId = Number(req.params.id);
+    const [note] = await db
+      .select()
+      .from(clientNotes)
+      .where(and(eq(clientNotes.clientId, clientId), eq(clientNotes.noteType, "ai_profile_summary")));
+    return res.json({ note: note ?? null });
+  } catch (err) {
+    return res.status(500).json({ message: "Failed to fetch profile note" });
+  }
+});
+
+router.post("/:id/profile-note/regenerate", isAuthenticated, async (req, res) => {
+  try {
+    const clientId = Number(req.params.id);
+    const [client] = await db.select({ storeId: clients.storeId }).from(clients).where(eq(clients.id, clientId));
+    if (!client) return res.status(404).json({ message: "Client not found" });
+
+    const result = await regenerateAiProfileNote(clientId, client.storeId);
+    if (!result) return res.status(503).json({ message: "Unable to generate a profile note yet (no completed visits, or AI is not configured)." });
+    return res.json({ note: result });
+  } catch (err) {
+    return res.status(500).json({ message: "Failed to regenerate profile note" });
+  }
+});
+
 // ─── PHONES ───────────────────────────────────────────────────────────────────
 
 router.post("/:id/phones", isAuthenticated, async (req, res) => {
   try {
     const clientId = Number(req.params.id);
-    const { phoneNumber, phoneType = "mobile", smsOptIn = true, isPrimary = false } = req.body;
+    const { phoneNumber, phoneType: explicitPhoneType, smsOptIn = true, isPrimary = false } = req.body;
     if (!phoneNumber) return res.status(400).json({ message: "phoneNumber required" });
 
     const { e164, display } = normalizePhone(phoneNumber);
     if (!e164) return res.status(400).json({ message: "Invalid phone number format.", code: "INVALID_PHONE" });
+
+    // Caller-supplied type is trusted as-is (manual override); otherwise detect
+    // via Twilio Lookup (falls back to the offline heuristic) so SMS sends
+    // downstream know whether this number can receive a text at all.
+    let phoneType = explicitPhoneType;
+    let phoneTypeSource: "twilio_lookup" | "heuristic" | "manual" = explicitPhoneType ? "manual" : "heuristic";
+    let phoneTypeCheckedAt: Date | null = null;
+    let carrierName: string | null = null;
+    if (!explicitPhoneType) {
+      try {
+        const { resolvePhoneType } = await import("../lib/phoneTypeDetector");
+        const resolved = await resolvePhoneType(e164);
+        phoneType = resolved.phoneType;
+        phoneTypeSource = resolved.source;
+        carrierName = resolved.carrierName;
+        if (resolved.source === "twilio_lookup") phoneTypeCheckedAt = new Date();
+      } catch (e: any) {
+        console.warn(`[clients] phone-type detection skipped: ${e?.message ?? e}`);
+        phoneType = "unknown";
+      }
+    }
 
     // Prevent adding a phone that already belongs to another client in the same store
     const [thisClient] = await db.select({ storeId: clients.storeId }).from(clients).where(eq(clients.id, clientId));
@@ -686,13 +745,47 @@ router.post("/:id/phones", isAuthenticated, async (req, res) => {
     if (isPrimary) {
       await db.update(clientPhones).set({ isPrimary: false }).where(eq(clientPhones.clientId, clientId));
     }
-    const [phone] = await db.insert(clientPhones).values({ clientId, phoneNumberE164: e164, displayPhone: display, phoneType, smsOptIn, isPrimary }).returning();
+    const [phone] = await db.insert(clientPhones).values({ clientId, phoneNumberE164: e164, displayPhone: display, phoneType, phoneTypeSource, phoneTypeCheckedAt, carrierName, smsOptIn, isPrimary }).returning();
     return res.status(201).json(phone);
   } catch (err: any) {
     if (err?.code === "23505") {
       return res.status(409).json({ message: "A customer with this phone number already exists.", code: "PHONE_DUPLICATE" });
     }
     return res.status(500).json({ message: "Failed to add phone" });
+  }
+});
+
+// GET /api/clients/phone-types/summary — counts by verification status/type,
+// for the "Verify phone numbers" panel in Settings.
+router.get("/phone-types/summary", isAuthenticated, async (req, res) => {
+  try {
+    const storeId = Number(req.query.storeId);
+    if (!storeId) return res.status(400).json({ message: "storeId required" });
+
+    const { getPhoneTypeSummaryForStore } = await import("../lib/phoneTypeBackfill");
+    const summary = await getPhoneTypeSummaryForStore(storeId);
+    return res.json(summary);
+  } catch (err: any) {
+    console.error("[clients] phone-types/summary error:", err?.message ?? err);
+    return res.status(500).json({ message: "Failed to load phone type summary" });
+  }
+});
+
+// POST /api/clients/phone-types/backfill — verifies up to a batch of
+// not-yet-checked numbers via Twilio Lookup. Each call is a paid Twilio
+// request, so this only ever runs when an owner explicitly clicks the button
+// (call again to continue past one batch).
+router.post("/phone-types/backfill", isAuthenticated, async (req, res) => {
+  try {
+    const storeId = Number(req.body?.storeId ?? req.query.storeId);
+    if (!storeId) return res.status(400).json({ message: "storeId required" });
+
+    const { backfillPhoneTypesForStore } = await import("../lib/phoneTypeBackfill");
+    const result = await backfillPhoneTypesForStore(storeId);
+    return res.json(result);
+  } catch (err: any) {
+    console.error("[clients] phone-types/backfill error:", err?.message ?? err);
+    return res.status(500).json({ message: "Failed to verify phone numbers" });
   }
 });
 

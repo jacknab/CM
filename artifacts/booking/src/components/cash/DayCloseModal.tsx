@@ -15,6 +15,8 @@ interface DayCloseModalProps {
   onClose: () => void;
   storeId: number;
   userName: string;
+  /** Which cash drawer to close — 0/undefined = the store's default/shared drawer. */
+  drawerId?: number;
 }
 
 interface OpenTicket {
@@ -47,7 +49,7 @@ function paymentLabel(key: string): string {
   return map[key.toLowerCase()] ?? (key.charAt(0).toUpperCase() + key.slice(1));
 }
 
-export function DayCloseModal({ open, onClose, storeId, userName }: DayCloseModalProps) {
+export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0 }: DayCloseModalProps) {
   const { toast } = useToast();
   const [cashInput, setCashInput] = useState("");
   const [note, setNote] = useState("");
@@ -62,7 +64,7 @@ export function DayCloseModal({ open, onClose, storeId, userName }: DayCloseModa
 
   // ── Data queries ────────────────────────────────────────────────────────────
   const { data: openSession, isLoading: sessionLoading } = useQuery<CashDrawerSessionWithActions | null>({
-    queryKey: [`/api/cash-drawer/open?storeId=${storeId}`],
+    queryKey: [`/api/cash-drawer/open?storeId=${storeId}&drawerId=${drawerId}`],
     enabled: open && !!storeId,
   });
 
@@ -148,7 +150,7 @@ export function DayCloseModal({ open, onClose, storeId, userName }: DayCloseModa
       return res.json();
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: [`/api/cash-drawer/open?storeId=${storeId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/cash-drawer/open?storeId=${storeId}&drawerId=${drawerId}`] });
       queryClient.invalidateQueries({ queryKey: [`/api/cash-drawer/sessions?storeId=${storeId}`] });
       setSuccessData({
         bankDeposit: data.bankDepositAmount ?? "0.00",

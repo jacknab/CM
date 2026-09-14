@@ -109,7 +109,13 @@ export async function computeRevenueForecast(
   let trendPct = 0;
   let trend: "growing" | "stable" | "declining" = "stable";
   if (prior4 > 0) {
-    trendPct = Math.round(((last4 - prior4) / prior4) * 100);
+    // Clamp the DISPLAYED trend to a sane range — a tiny prior-4-week
+    // baseline (common for a new/low-volume store) can otherwise produce a
+    // nonsensical percentage like "+9900%". The forecast math itself already
+    // caps its own trend multiplier separately (Math.min(...,20) below), so
+    // this only affects what's shown/quoted to the user, not the projection.
+    const rawTrendPct = ((last4 - prior4) / prior4) * 100;
+    trendPct = Math.round(Math.max(-999, Math.min(999, rawTrendPct)));
     if (trendPct >= 5) trend = "growing";
     else if (trendPct <= -5) trend = "declining";
   } else if (weeklyAvgRevenue > 0) {

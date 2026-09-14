@@ -17,6 +17,7 @@ import { Save, HelpCircle, Clock, Minus, Plus } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLanguage } from "@/hooks/use-language";
 import { BookingBanList } from "@/components/BookingBanList";
+import { cn } from "@/lib/utils";
 import type { Store } from "@shared/schema";
 
 type CalendarSettingsForm = {
@@ -29,6 +30,7 @@ type CalendarSettingsForm = {
   autoMarkNoShows: boolean;
   showPrices: boolean;
   walkInsEnabled: boolean;
+  requireClientForWalkin: boolean;
 };
 
 const BOOKING_WINDOW_MAX = 720;  // 30 days
@@ -349,6 +351,8 @@ export default function CalendarSettings() {
     showPricesDesc:       pick({ en: "Display service prices on calendar appointment cards and in the appointment details panel.", vi: "Hiển thị giá dịch vụ trên thẻ lịch hẹn và trong bảng chi tiết lịch hẹn.", es: "Mostrar precios de servicios en las tarjetas del calendario y en el panel de detalles.", fr: "Afficher les prix des services sur les cartes du calendrier et dans le panneau de détails." }),
     walkIns:              pick({ en: "Allow walk-ins",                           vi: "Cho phép khách vãng lai",           es: "Permitir entrada directa",               fr: "Autoriser les entrées directes" }),
     walkInsDesc:          pick({ en: "When off, the walk-in button is hidden and staff must always look up or create a client.", vi: "Khi tắt, nút khách vãng lai bị ẩn và nhân viên phải luôn tra cứu hoặc tạo hồ sơ khách hàng.", es: "Cuando está desactivado, el botón de entrada directa está oculto y el personal debe buscar o crear un perfil de cliente.", fr: "Désactivé, le bouton d'entrée directe est masqué et le personnel doit chercher ou créer un profil client." }),
+    requireClientWalkin:     pick({ en: "Require a client record for walk-ins", vi: "Yêu cầu hồ sơ khách hàng cho khách vãng lai", es: "Requerir un perfil de cliente para entradas directas", fr: "Exiger un profil client pour les entrées directes" }),
+    requireClientWalkinDesc: pick({ en: "When on, staff must look up or create a client before starting a walk-in — the walk-in button is hidden on the phone-lookup screen.", vi: "Khi bật, nhân viên phải tra cứu hoặc tạo hồ sơ khách hàng trước khi bắt đầu cho khách vãng lai — nút khách vãng lai sẽ bị ẩn trên màn hình tra cứu số điện thoại.", es: "Cuando está activado, el personal debe buscar o crear un cliente antes de iniciar una entrada directa — el botón de entrada directa se oculta en la pantalla de búsqueda por teléfono.", fr: "Activé, le personnel doit chercher ou créer un client avant de commencer une entrée directe — le bouton d'entrée directe est masqué sur l'écran de recherche par téléphone." }),
 
     min:                  pick({ en: "min",  vi: "phút", es: "min",  fr: "min" }),
     toastSaved:           pick({ en: "Settings saved",                    vi: "Đã lưu cài đặt",                  es: "Configuración guardada",                 fr: "Paramètres enregistrés" }),
@@ -357,9 +361,10 @@ export default function CalendarSettings() {
     toastErrorDesc:       pick({ en: "Failed to save settings.", vi: "Không thể lưu cài đặt.", es: "Error al guardar la configuración.", fr: "Impossible d'enregistrer les paramètres." }),
   };
 
-  const { control, handleSubmit, reset } = useForm<CalendarSettingsForm>({
+  const { control, handleSubmit, reset, watch } = useForm<CalendarSettingsForm>({
     defaultValues: DEFAULT_CALENDAR_SETTINGS,
   });
+  const walkInsEnabledWatch = watch("walkInsEnabled");
 
   const VALID_WEEK_STARTS = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
 
@@ -376,6 +381,7 @@ export default function CalendarSettings() {
         autoMarkNoShows: (settings as any).autoMarkNoShows ?? false,
         showPrices: settings.showPrices ?? true,
         walkInsEnabled: (settings as any).walkInsEnabled ?? true,
+        requireClientForWalkin: (settings as any).requireClientForWalkin ?? DEFAULT_CALENDAR_SETTINGS.requireClientForWalkin,
       });
     }
   }, [settings, reset]);
@@ -392,6 +398,7 @@ export default function CalendarSettings() {
       autoMarkNoShows: data.autoMarkNoShows,
       showPrices: data.showPrices,
       walkInsEnabled: data.walkInsEnabled,
+      requireClientForWalkin: data.requireClientForWalkin,
     }, {
       onSuccess: () => toast({ title: t.toastSaved, description: t.toastSavedDesc }),
       onError: () => toast({ title: t.toastError, description: t.toastErrorDesc, variant: "destructive" }),
@@ -879,6 +886,25 @@ export default function CalendarSettings() {
                 control={control}
                 render={({ field }) => (
                   <Switch checked={field.value} onCheckedChange={field.onChange} data-testid="switch-walk-ins-enabled" />
+                )}
+              />
+            </div>
+
+            <div className={cn("flex items-center justify-between gap-4 border-t pt-6", !walkInsEnabledWatch && "opacity-50")}>
+              <div>
+                <Label className="text-base font-medium">{t.requireClientWalkin}</Label>
+                <p className="text-sm text-muted-foreground mt-0.5">{t.requireClientWalkinDesc}</p>
+              </div>
+              <Controller
+                name="requireClientForWalkin"
+                control={control}
+                render={({ field }) => (
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    disabled={!walkInsEnabledWatch}
+                    data-testid="switch-require-client-for-walkin"
+                  />
                 )}
               />
             </div>

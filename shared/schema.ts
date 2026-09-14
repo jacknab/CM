@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, decimal, index, uniqueIndex, unique, varchar, pgEnum, jsonb, date } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, decimal, index, uniqueIndex, unique, varchar, pgEnum, jsonb, date, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations, sql } from "drizzle-orm";
@@ -185,6 +185,9 @@ export const locations = pgTable("locations", {
   lateGracePeriodMinutes: integer("late_grace_period_minutes").notNull().default(10),
   cancellationHoursCutoff: integer("cancellation_hours_cutoff").notNull().default(24),
   posEnabled: boolean("pos_enabled").notNull().default(true),
+  // When true, /kiosk/:slug and /frontdesk/:slug(/:registerId) are only
+  // reachable from the salon's own network — see storeNetworkTrust below.
+  restrictKioskNetwork: boolean("restrict_kiosk_network").notNull().default(false),
   weeklyDigestOptOut: boolean("weekly_digest_opt_out").notNull().default(false),
   parkingOptions: jsonb("parking_options").$type<string[]>().default([]),
   accessibilityFeatures: jsonb("accessibility_features").$type<string[]>().default([]),
@@ -490,6 +493,10 @@ export const products = pgTable("products", {
 export const cashDrawerSessions = pgTable("cash_drawer_sessions", {
   id: serial("id").primaryKey(),
   storeId: integer("store_id").references(() => locations.id).notNull(),
+  // Null = the store's implicit default/shared drawer (today's behavior for
+  // every store that hasn't configured multiple cash drawers). See the
+  // cashDrawers table below.
+  drawerId: integer("drawer_id").references((): AnyPgColumn => cashDrawers.id, { onDelete: "set null" }),
   openedAt: timestamp("opened_at").notNull(),
   closedAt: timestamp("closed_at"),
   openingBalance: decimal("opening_balance", { precision: 10, scale: 2 }).notNull().default("0.00"),
@@ -521,6 +528,10 @@ export const calendarSettings = pgTable("calendar_settings", {
   autoMarkNoShows: boolean("auto_mark_no_shows").notNull().default(false),
   showPrices: boolean("show_prices").notNull().default(true),
   walkInsEnabled: boolean("walk_ins_enabled").notNull().default(true),
+  // When true, walk-in appointments must be linked to a real client record —
+  // no anonymous/no-client walk-ins. Distinct from walkInsEnabled (whether
+  // walk-ins are allowed at all).
+  requireClientForWalkin: boolean("require_client_for_walkin").notNull().default(false),
   language: text("language").notNull().default("en"),
 });
 
@@ -2558,6 +2569,85 @@ export const salonResources = pgTable("salon_resources", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 export type SalonResource = typeof salonResources.$inferSelect;
+
+// ── Registers (checkout station pairing — /calendar ↔ /frontdesk) ──────────────
+// Optional named checkout stations. A store with zero rows here has every
+// /calendar and /frontdesk connection implicitly share registerId 0 (today's
+// single-station behavior) — the very first store to add a second station
+// gets a real "POS #1" row (isDefault=true) created alongside it, so from
+// that point on every station for that store is a real row and registerId 0
+// is no longer used for it. NOT the same concept as salonResources above
+// (physical scheduling chairs an appointment occupies) — this is about which
+// staff POS terminal is paired with which customer-facing tablet.
+export const registers = pgTable("registers", {
+  id:        serial("id").primaryKey(),
+  storeId:   integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  name:      text("name").notNull(),
+  // True for exactly one row per store (enforced by a partial unique index in
+  // migrations/0178) — the original/default station, reachable at both its
+  // own /frontdesk/:slug/:id URL and the bare /frontdesk/:slug URL.
+  isDefault: boolean("is_default").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive:  boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type Register = typeof registers.$inferSelect;
+export type InsertRegister = typeof registers.$inferInsert;
+
+// ── Register Claims (which device currently "owns" each POS station) ───────────
+// registerId 0 = the implicit default station ("POS #1"), which has no row in
+// `registers` — intentionally no FK on registerId here. A claim without a
+// recent heartbeat is stale and free for any device to reclaim (see the
+// claim route in routes.ts), so a retired terminal never permanently locks
+// a station.
+export const registerClaims = pgTable("register_claims", {
+  id:         serial("id").primaryKey(),
+  storeId:    integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  registerId: integer("register_id").notNull(),
+  deviceId:   text("device_id").notNull(),
+  claimedAt:  timestamp("claimed_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("register_claims_store_register_uidx").on(table.storeId, table.registerId),
+]);
+export type RegisterClaim = typeof registerClaims.$inferSelect;
+
+// ── Store Network Trust (restrict /kiosk & /frontdesk to the salon's network) ──
+// One row per store. The FIRST device to ever report from /calendar becomes
+// the "anchor" and its IP becomes trusted; only that same device (identified
+// by its client-side fingerprint, not a login) can update the trusted IP
+// afterward — e.g. if the salon's ISP-assigned IP rotates. A different
+// device loading /calendar later (an owner checking the schedule from home,
+// say) is silently ignored here, so it can neither steal the anchor nor
+// dilute/overwrite the trusted IP. See lib/salonNetworkGuard.ts.
+export const storeNetworkTrust = pgTable("store_network_trust", {
+  id:             serial("id").primaryKey(),
+  storeId:        integer("store_id").notNull().unique().references(() => locations.id, { onDelete: "cascade" }),
+  anchorDeviceId: text("anchor_device_id").notNull(),
+  trustedIp:      text("trusted_ip").notNull(),
+  createdAt:      timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:      timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type StoreNetworkTrust = typeof storeNetworkTrust.$inferSelect;
+
+// ── Cash Drawers (physical cash boxes — distinct from registers above) ─────────
+// A salon can run 2 checkout registers sharing 1 drawer, or 1 register with 2
+// drawers, or any other combination — drawer count is NOT tied to register
+// count. A store with zero rows here has every cash_drawer_sessions row
+// implicitly share drawerId null (today's single-shared-drawer behavior).
+export const cashDrawers = pgTable("cash_drawers", {
+  id:          serial("id").primaryKey(),
+  storeId:     integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  name:        text("name").notNull(),
+  registerId:  integer("register_id").references(() => registers.id, { onDelete: "set null" }),
+  // Optional per-drawer override of locations.registerTargetFloat — falls
+  // back to the store-wide value when null.
+  targetFloat: decimal("target_float", { precision: 10, scale: 2 }),
+  sortOrder:   integer("sort_order").notNull().default(0),
+  isActive:    boolean("is_active").notNull().default(true),
+  createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type CashDrawer = typeof cashDrawers.$inferSelect;
+export type InsertCashDrawer = typeof cashDrawers.$inferInsert;
 
 // ── Booking Ban List ─────────────────────────────────────────────────────────
 // Phone numbers a store has blocked from making an ONLINE booking. Checked in

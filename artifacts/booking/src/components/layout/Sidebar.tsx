@@ -114,12 +114,13 @@ function buildTopNav(pick: Pick4): TopNavItem[] {
 function buildInsightsSubnav(pick: Pick4): SubNavItem[] {
   return [
     { label: pick({ en: "Analytics", vi: "Phân tích", es: "Analítica", fr: "Analytique" }), icon: BarChart3, to: "/salon-dashboard" },
+    { label: pick({ en: "Reports", vi: "Báo cáo", es: "Informes", fr: "Rapports" }), icon: FileText, to: "/reports" },
   ];
 }
 
 const INSIGHTS_MATCHES = [
   "/salon-dashboard", "/analytics", "/intelligence",
-  "/salon-earnings", "/register-reports",
+  "/salon-earnings", "/register-reports", "/reports",
 ];
 
 function buildCatalogSubnav(pick: Pick4): SubNavItem[] {

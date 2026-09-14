@@ -95,6 +95,7 @@ router.get("/dashboard", async (req, res) => {
         lastWinbackSentAt: clientIntelligence.lastWinbackSentAt,
         isDrifting: clientIntelligence.isDrifting,
         isAtRisk: clientIntelligence.isAtRisk,
+        marketingOptIn: sql<boolean>`(SELECT sms_opt_in FROM client_phones WHERE client_id = ${clientIntelligence.customerId} AND is_primary = true LIMIT 1)`,
       })
       .from(clientIntelligence)
       .leftJoin(clients, eq(clientIntelligence.customerId, clients.id))
@@ -229,7 +230,11 @@ router.get("/revenue-leakage", async (req, res) => {
 
   try {
     const deadSeats = await computeDeadSeats(storeId);
-    const report = await computeRevenueLeakage(storeId, deadSeats.totalLostRevenuePotential / 3);
+    // totalLostRevenuePotential is already a monthly figure (see dead-seats.ts) —
+    // computeRevenueLeakage expects a monthly loss and itself multiplies by 3 to
+    // project the 90-day window, so it must NOT be divided again here (that
+    // previously understated the dead-seat contribution to leakage ~3x).
+    const report = await computeRevenueLeakage(storeId, deadSeats.totalLostRevenuePotential);
     res.json(report);
   } catch (err: any) {
     console.error("[intelligence] revenue-leakage error:", err);
@@ -519,7 +524,7 @@ router.get("/staff-performance", async (req, res) => {
             s.name AS staff_name,
             s.role AS staff_role,
             COUNT(a.id) FILTER (WHERE a.status IN ('completed','started')) AS completed_count,
-            COUNT(a.id) FILTER (WHERE a.status = 'no_show') AS no_show_count,
+            COUNT(a.id) FILTER (WHERE a.status IN ('no_show','no-show')) AS no_show_count,
             COUNT(a.id) FILTER (WHERE a.status = 'cancelled') AS cancelled_count,
             COUNT(DISTINCT a.customer_id) FILTER (WHERE a.status IN ('completed','started')) AS unique_clients,
             COALESCE(SUM(CAST(a.total_paid AS DECIMAL(10,2))) FILTER (WHERE a.status = 'completed'), 0)::float AS total_revenue,
@@ -529,7 +534,7 @@ router.get("/staff-performance", async (req, res) => {
             AND a.store_id = ${storeId}
             AND a.date >= ${ninetyDaysAgo.toISOString()}
           WHERE s.store_id = ${storeId}
-            AND s.active = true
+            AND s.status NOT IN ('removed', 'deactivated')
           GROUP BY s.id, s.name, s.role
           ORDER BY total_revenue DESC`
     );
@@ -560,7 +565,7 @@ router.get("/staff-performance", async (req, res) => {
 
     const enriched = staffList.map((s) => {
       const rb = rebookingMap.get(s.staffId);
-      const noShowRate = s.completedCount > 0 ? Math.round((s.noShowCount / (s.completedCount + s.noShowCount)) * 100) : 0;
+      const noShowRate = (s.completedCount + s.noShowCount) > 0 ? Math.round((s.noShowCount / (s.completedCount + s.noShowCount)) * 100) : 0;
       return {
         ...s,
         rebookingRatePct: rb?.rebookingRatePct ?? 0,
@@ -891,7 +896,8 @@ router.get("/service-performance", async (req, res) => {
       LEFT JOIN appointments a ON a.service_id = s.id
         AND a.store_id = ${storeId}
         AND a.date >= ${ninetyDaysAgo}
-      WHERE s.store_id = ${storeId} AND s.active = true
+        AND a.date <= NOW()
+      WHERE s.store_id = ${storeId} AND s.is_active = true
       GROUP BY s.id, s.name, s.price, s.duration
       ORDER BY total_revenue DESC
       LIMIT 30`
@@ -949,16 +955,20 @@ router.get("/campaigns/segments", async (req, res) => {
   if (!storeId) return;
 
   try {
+    // Excludes known landlines (can never receive an SMS) AND requires
+    // sms_opt_in = true — matching exactly what /campaigns/send actually
+    // requires, so the count shown here doesn't overstate real reach
+    // (previously this count ignored opt-in while the send didn't).
     const [atRisk] = await db.execute(
-      sql`SELECT COUNT(*) AS count FROM client_intelligence ci JOIN client_phones cp ON cp.client_id = ci.customer_id AND cp.is_primary = true WHERE ci.store_id = ${storeId} AND churn_risk_label IN ('high','critical') AND cp.phone_number_e164 IS NOT NULL`
+      sql`SELECT COUNT(*) AS count FROM client_intelligence ci JOIN client_phones cp ON cp.client_id = ci.customer_id AND cp.is_primary = true WHERE ci.store_id = ${storeId} AND churn_risk_label IN ('high','critical') AND cp.phone_number_e164 IS NOT NULL AND cp.phone_type != 'landline' AND cp.sms_opt_in = true`
     ).then(r => [{ count: Number((r.rows as any[])[0]?.count || 0) }]);
 
     const [drifting] = await db.execute(
-      sql`SELECT COUNT(*) AS count FROM client_intelligence ci JOIN client_phones cp ON cp.client_id = ci.customer_id AND cp.is_primary = true WHERE ci.store_id = ${storeId} AND ci.is_drifting = true AND cp.phone_number_e164 IS NOT NULL`
+      sql`SELECT COUNT(*) AS count FROM client_intelligence ci JOIN client_phones cp ON cp.client_id = ci.customer_id AND cp.is_primary = true WHERE ci.store_id = ${storeId} AND ci.is_drifting = true AND cp.phone_number_e164 IS NOT NULL AND cp.phone_type != 'landline' AND cp.sms_opt_in = true`
     ).then(r => [{ count: Number((r.rows as any[])[0]?.count || 0) }]);
 
     const [highLtv] = await db.execute(
-      sql`SELECT COUNT(*) AS count FROM client_intelligence ci JOIN client_phones cp ON cp.client_id = ci.customer_id AND cp.is_primary = true WHERE ci.store_id = ${storeId} AND CAST(ltv_12_month AS DECIMAL) > 200 AND cp.phone_number_e164 IS NOT NULL`
+      sql`SELECT COUNT(*) AS count FROM client_intelligence ci JOIN client_phones cp ON cp.client_id = ci.customer_id AND cp.is_primary = true WHERE ci.store_id = ${storeId} AND CAST(ltv_12_month AS DECIMAL) > 200 AND cp.phone_number_e164 IS NOT NULL AND cp.phone_type != 'landline' AND cp.sms_opt_in = true`
     ).then(r => [{ count: Number((r.rows as any[])[0]?.count || 0) }]);
 
     res.json({
@@ -1039,8 +1049,10 @@ router.post("/campaigns/send", async (req, res) => {
       : null;
 
     if (segmentSql) {
+      // Excludes known landlines from the send list — they can never receive
+      // an SMS, so skipping them here avoids paying for a doomed message.
       const rows = (await db.execute(
-        sql`SELECT ci.customer_id AS id, c.full_name AS name, (SELECT phone_number_e164 FROM client_phones WHERE client_id = ci.customer_id AND is_primary = true LIMIT 1) AS phone FROM client_intelligence ci JOIN clients c ON c.id = ci.customer_id WHERE ci.store_id = ${storeId} AND ${segmentSql} AND EXISTS(SELECT 1 FROM client_phones WHERE client_id = ci.customer_id AND is_primary = true AND sms_opt_in = true)`
+        sql`SELECT ci.customer_id AS id, c.full_name AS name, (SELECT phone_number_e164 FROM client_phones WHERE client_id = ci.customer_id AND is_primary = true LIMIT 1) AS phone FROM client_intelligence ci JOIN clients c ON c.id = ci.customer_id WHERE ci.store_id = ${storeId} AND ${segmentSql} AND EXISTS(SELECT 1 FROM client_phones WHERE client_id = ci.customer_id AND is_primary = true AND sms_opt_in = true AND phone_type != 'landline')`
       )).rows as any[];
       customerRows = rows.map(r => ({ id: Number(r.id), phone: r.phone, name: r.name }));
     } else {
@@ -1304,7 +1316,8 @@ router.get("/price-optimization", async (req, res) => {
       LEFT JOIN appointments a ON a.service_id = s.id
         AND a.store_id = ${storeId}
         AND a.date >= ${ninetyDaysAgo}
-      WHERE s.store_id = ${storeId} AND s.active = true
+        AND a.date <= NOW()
+      WHERE s.store_id = ${storeId} AND s.is_active = true
       GROUP BY s.id, s.name, s.price, s.duration
       HAVING COUNT(a.id) >= 3
       ORDER BY total_bookings DESC`
@@ -1330,7 +1343,7 @@ router.get("/price-optimization", async (req, res) => {
         const suggestedIncrease = Math.round(listPrice * 0.1 / 5) * 5; // Round to nearest $5
         recommendedPrice = listPrice + suggestedIncrease;
         recommendation = "Consider a price increase";
-        reasoning = `Strong demand with ${completionRate * 100}% completion rate — clients are price-insensitive.`;
+        reasoning = `Strong demand with ${Math.round(completionRate * 100)}% completion rate — clients are price-insensitive.`;
         priority = "medium";
       }
 
@@ -1384,11 +1397,18 @@ router.get("/booking-heatmap", async (req, res) => {
   if (!storeId) return;
 
   try {
+    const [storeRow] = await db.select({ timezone: locations.timezone }).from(locations).where(eq(locations.id, storeId));
+    const storeTz = storeRow?.timezone ?? "UTC";
     const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    // `date` is stored as UTC timestamptz — EXTRACT evaluates it in the DB
+    // session's timezone (usually UTC), not the salon's, so it must be
+    // converted to the salon's local time first or every bucket here can be
+    // shifted by the UTC offset (e.g. a late-evening local booking landing
+    // on the next calendar day/DOW).
     const rows = await db.execute(
       sql`SELECT
-        EXTRACT(DOW FROM date)::int AS dow,
-        EXTRACT(HOUR FROM date)::int AS hour,
+        EXTRACT(DOW FROM date AT TIME ZONE 'UTC' AT TIME ZONE ${storeTz})::int AS dow,
+        EXTRACT(HOUR FROM date AT TIME ZONE 'UTC' AT TIME ZONE ${storeTz})::int AS hour,
         COUNT(*) AS booking_count,
         SUM(CASE WHEN status = 'no_show' THEN 1 ELSE 0 END) AS no_show_count
       FROM appointments

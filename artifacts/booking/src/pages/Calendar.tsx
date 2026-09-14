@@ -13,10 +13,14 @@ import { useAppointmentSSE } from "@/hooks/use-appointment-sse";
 import { useStaffList, useAllStaffAvailability } from "@/hooks/use-staff";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useCalendarSettings, DEFAULT_CALENDAR_SETTINGS } from "@/hooks/use-calendar-settings";
+import { useActiveRegisterId } from "@/hooks/use-registers";
+import { getDeviceId } from "@/lib/device-id";
+import { useActiveDrawerId } from "@/hooks/use-cash-drawers";
 import { formatInTz, formatStoreDate, getTimezoneAbbr, getNowInTimezone, storeLocalToUtc, isStoreLocalSlotInPast, isSameLocalDay, isSameStoreDay, isOnStoreDate, addStoreDays, toLocalDateStringInTz } from "@/lib/timezone";
 import { addMinutes, format } from "date-fns";
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CalendarPlus, Users, Globe, ArrowLeft, ArrowUp, X, Clock, Loader2, CreditCard, Banknote, Smartphone, DollarSign, Check, Receipt, Percent, Tag, Delete, Printer, XCircle, Settings, PersonStanding, LayoutDashboard, TrendingUp, CalendarDays, Scissors, ShoppingBag, UserCircle, Gift, ClipboardList, FileText, BarChart3, MessageSquare, Mail, Building2, MapPin, Star, ThumbsUp, ListOrdered, Search, AlertCircle, Lock, Unlock, Bell, ListFilter, MoreVertical, Plus, LayoutList, Zap, Send, HelpCircle, ChevronDown as ChevronDownIcon, Calendar as CalendarIcon, Phone, AlertTriangle, LogIn, QrCode, Layers, WifiOff, Utensils, CupSoda, Package, BadgePercent, Barcode, ScanSearch, Scale, Ticket, Wallet } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CalendarPlus, Users, Globe, ArrowLeft, ArrowUp, X, Clock, Loader2, CreditCard, Banknote, Smartphone, DollarSign, Check, Receipt, Percent, Tag, Delete, Printer, XCircle, Settings, PersonStanding, LayoutDashboard, TrendingUp, CalendarDays, Scissors, ShoppingBag, UserCircle, Gift, ClipboardList, FileText, BarChart3, MessageSquare, Mail, Building2, MapPin, Star, ThumbsUp, ListOrdered, Search, AlertCircle, Lock, Unlock, Bell, ListFilter, MoreVertical, Plus, LayoutList, Zap, Send, HelpCircle, ChevronDown as ChevronDownIcon, Calendar as CalendarIcon, Phone, AlertTriangle, LogIn, QrCode, Layers, WifiOff, Utensils, CupSoda, Package, BadgePercent, Barcode, ScanSearch, Scale, Ticket, Wallet, Sparkles, RefreshCw } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -270,9 +274,14 @@ export default function Calendar() {
     navInOut:            pick({ en: "In/Out",       vi: "Vào/Ra",           es: "Entrada/Salida", fr: "Arrivée/Départ" }),
   };
 
+  // Which cash drawer this browser is acting as. A store with 0 or 1 drawers
+  // never shows a picker — see hooks/use-cash-drawers.ts.
+  const { drawerId: activeDrawerId, needsPicker: needsDrawerPicker, drawers: drawerOptions, selectDrawer } =
+    useActiveDrawerId(selectedStore?.id);
+
   // Query the open cash drawer session so we know whether to auto-prompt on mount
   const { data: openDrawerSession } = useQuery({
-    queryKey: [`/api/cash-drawer/open?storeId=${selectedStore?.id}`],
+    queryKey: [`/api/cash-drawer/open?storeId=${selectedStore?.id}&drawerId=${activeDrawerId}`],
     enabled: !!posEnabled && !!selectedStore?.id,
     staleTime: 60_000,
     // Use cached value offline rather than blocking on the network
@@ -294,6 +303,51 @@ export default function Calendar() {
   };
   const showPrices = calSettings?.showPrices ?? DEFAULT_CALENDAR_SETTINGS.showPrices;
   const walkInsEnabled = (calSettings as any)?.walkInsEnabled ?? true;
+  const requireClientForWalkin = (calSettings as any)?.requireClientForWalkin ?? false;
+  const canWalkIn = walkInsEnabled && !requireClientForWalkin;
+
+  // Which checkout station (register) this browser is acting as. A store with
+  // 0 or 1 registers never shows a picker — see hooks/use-registers.ts. Only
+  // stations not already claimed by another device are offered.
+  const {
+    registerId: activeRegisterId,
+    needsPicker: needsRegisterPicker,
+    registers: registerOptions,
+    allStationsTaken,
+    selectRegister,
+  } = useActiveRegisterId(selectedStore?.id);
+  const [registerPickError, setRegisterPickError] = useState<string | null>(null);
+  const [registerPickBusy, setRegisterPickBusy] = useState<number | null>(null);
+
+  const handleSelectRegister = async (id: number) => {
+    setRegisterPickError(null);
+    setRegisterPickBusy(id);
+    const result = await selectRegister(id);
+    setRegisterPickBusy(null);
+    if (!result.ok) setRegisterPickError(result.error ?? "Couldn't select that station.");
+  };
+
+  // Reports this terminal's IP so /kiosk and /frontdesk can optionally be
+  // restricted to the salon's own network (Kiosk Settings). Only the first
+  // device to ever report for a store becomes the trusted "anchor" — see
+  // lib/salonNetworkGuard.ts — so this is safe to fire from every /calendar
+  // session unconditionally; it's a no-op for any device that isn't the
+  // anchor. Fires once on load, then keeps the anchor's IP fresh for as long
+  // as /calendar stays open (which is normally all day).
+  useEffect(() => {
+    if (!selectedStore?.id) return;
+    const report = () => {
+      fetch("/api/store-network/report", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceId: getDeviceId() }),
+      }).catch(() => {});
+    };
+    report();
+    const iv = setInterval(report, 10 * 60_000);
+    return () => clearInterval(iv);
+  }, [selectedStore?.id]);
 
   const storeNow = getNowInTimezone(timezone);
   const [currentDate, setCurrentDate] = useState(storeNow);
@@ -334,6 +388,16 @@ export default function Calendar() {
   const [frontdeskPhone, setFrontdeskPhone] = useState("");
   // Dual-screen: the /frontdesk tablet mirrors the phone-entry prompt.
   const [frontdeskDualScreen, setFrontdeskDualScreen] = useState(false);
+  // Read inside the persistent WS handler below, which would otherwise close
+  // over a stale `showClientLookup` from whenever the socket first connected.
+  const showClientLookupRef = useRef(showClientLookup);
+  useEffect(() => { showClientLookupRef.current = showClientLookup; }, [showClientLookup]);
+  // True while "Choose a client" was auto-opened because the /frontdesk kiosk
+  // hit an unrecognized phone number (kiosk_checkin_unknown_phone), not because
+  // staff opened it manually — governs whether we mirror-broadcast back to the
+  // kiosk (we must not: it would clobber the kiosk's own name-entry screen)
+  // and whether a kiosk-side resolution should auto-close this panel.
+  const kioskInitiatedLookupRef = useRef(false);
   const [selectedSlot, setSelectedSlot] = useState<{ staffId: number; hour: number; minute: number } | null>(null);
   const [openStaffMenu, setOpenStaffMenu] = useState<number | null>(null);
   const [staffAvailOverride, setStaffAvailOverride] = useState<Record<number, boolean>>({});
@@ -445,6 +509,37 @@ export default function Calendar() {
     schedule();
     return () => clearTimeout(t);
   }, [posEnabled]);
+
+  // Keep a ref of the latest currentDate so the 1 AM rollover timer below
+  // (which only re-schedules when `timezone` changes, to keep its countdown
+  // precise) always reads the live value instead of a stale closure.
+  const currentDateRef = useRef(currentDate);
+  useEffect(() => { currentDateRef.current = currentDate; }, [currentDate]);
+  const lastKnownTodayRef = useRef(storeNow);
+
+  // Auto-advance the calendar to the new day at 1 AM store-local time. A POS
+  // terminal is normally left open for 9-10 hours a day and never reloaded —
+  // without this, the grid keeps showing yesterday's date and appointments
+  // until someone manually taps "Today" or reloads the tab. Only advances
+  // when the view is still following "today" — if staff manually navigated to
+  // a different date, that selection is left untouched.
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      t = setTimeout(() => {
+        const newToday = getNowInTimezone(timezone);
+        const wasFollowingToday = isSameStoreDay(currentDateRef.current, lastKnownTodayRef.current);
+        lastKnownTodayRef.current = newToday;
+        if (wasFollowingToday) {
+          setCurrentDate(newToday);
+          setWeekStart(newToday);
+        }
+        schedule(); // re-schedule for next 1 AM
+      }, msUntilNext1AM());
+    };
+    schedule();
+    return () => clearTimeout(t);
+  }, [timezone]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const nowLineRef = useRef<HTMLDivElement>(null);
   const quickListRef = useRef<HTMLDivElement>(null);
@@ -481,6 +576,24 @@ export default function Calendar() {
   const { toast } = useToast();
 
   const { data: appointments, isFetching: isFetchingAppointments, isLoading: isLoadingAppointments } = useAppointments();
+  // Walk-ins checked in by phone on /frontdesk with no matching appointment
+  // (see /api/public/kiosk/:slug/lookup) — not a real appointment yet, so they
+  // don't show up in `appointments`. Shown in the "Arrived" Quick List merged
+  // alongside real checked-in appointments; tapping one sends staff to the
+  // walk-in booking flow instead of the normal appointment editor. Only
+  // fetched while that sheet is open, refreshed while it stays open so new
+  // walk-ins appear without staff needing to close and reopen it.
+  const { data: pendingWalkinCheckins = [] } = useQuery<{ id: number; clientId: number | null; clientName: string | null; phone: string | null; createdAt: string; appointmentId: number | null }[]>({
+    queryKey: ["/api/kiosk/walkins/today"],
+    enabled: quickCheckoutOpen,
+    refetchInterval: quickCheckoutOpen ? 15_000 : false,
+    queryFn: async () => {
+      const res = await fetch("/api/kiosk/walkins/today", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+  const pendingWalkins = pendingWalkinCheckins.filter((c) => c.appointmentId == null);
   const { data: staffList, isLoading: staffLoading } = useStaffList();
   const { data: allStaffAvailability } = useAllStaffAvailability(selectedStore?.id);
   const { data: calendarResources = [] } = useQuery<{ id: number; type: string; name: string; isActive: boolean }[]>({
@@ -545,11 +658,21 @@ export default function Calendar() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, ...payload }),
+        body: JSON.stringify({ type, registerId: activeRegisterId, ...payload }),
       }).catch(() => {});
     },
-    [selectedStore?.id, frontdeskDualScreen],
+    [selectedStore?.id, frontdeskDualScreen, activeRegisterId],
   );
+
+  // Mirror the "Choose a client" sheet to the paired /frontdesk tablet the
+  // whole time it's open, no matter which button opened it (slot click,
+  // "+" menu Book/Look Up, agenda New Booking/Lookup, …) — not just the
+  // walk-ins-off slot-click path this originally shipped for.
+  useEffect(() => {
+    if (!showClientLookup || kioskInitiatedLookupRef.current) return;
+    broadcastToFrontdesk("kiosk_checkout_phone_prompt");
+    return () => broadcastToFrontdesk("kiosk_checkout_phone_cancel");
+  }, [showClientLookup, broadcastToFrontdesk]);
 
   // Real-time appointment sync via WebSocket — works for ALL store types.
   // Instantly refreshes calendar when any booking is created, updated, or deleted
@@ -563,7 +686,7 @@ export default function Calendar() {
     const connect = () => {
       if (destroyed) return;
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${protocol}://${window.location.host}/ws/notifications?storeId=${selectedStore.id}`);
+      ws = new WebSocket(`${protocol}://${window.location.host}/ws/notifications?storeId=${selectedStore.id}&registerId=${activeRegisterId}`);
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -579,6 +702,30 @@ export default function Calendar() {
           if (data.type === "kiosk_checkout_phone_result" && typeof data.phone === "string") {
             const digits = data.phone.replace(/\D/g, "").slice(-10);
             if (digits.length === 10) setFrontdeskPhone(digits);
+          }
+          // The /frontdesk kiosk hit an unrecognized phone number — mirror its
+          // "Enter Client Name" moment here so staff can type it in for a
+          // client who needs help, without stealing a lookup staff already
+          // has open for something unrelated.
+          if (data.type === "kiosk_checkin_unknown_phone" && typeof data.phone === "string") {
+            const digits = data.phone.replace(/\D/g, "").slice(-10);
+            if (digits.length === 10 && !showClientLookupRef.current) {
+              kioskInitiatedLookupRef.current = true;
+              setFrontdeskPhone(digits);
+              setShowClientLookup(true);
+            }
+          }
+          // The kiosk resolved this itself (customer finished naming, or backed
+          // out) — close the mirrored sheet rather than leave it open to
+          // duplicate what already happened, but only if we're the one who
+          // opened it for this reason.
+          if (
+            (data.type === "kiosk_checkin_client_named" || data.type === "kiosk_checkin_cancelled") &&
+            kioskInitiatedLookupRef.current
+          ) {
+            kioskInitiatedLookupRef.current = false;
+            setShowClientLookup(false);
+            setFrontdeskPhone("");
           }
           // Kiosk check-in print jobs → auto-print on connected thermal printer
           if (data.type === "kiosk_print_job" && data.jobType === "checkin_ticket") {
@@ -610,7 +757,12 @@ export default function Calendar() {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       ws?.close();
     };
-  }, [queryClient, selectedStore?.id]);
+    // activeRegisterId starts at 0 and resolves to the real default register
+    // id (once useRegisters loads) shortly after mount — without it in this
+    // array, this connection opens on registerId 0 and never reconnects, so
+    // it sits in the wrong bucket forever and never sees anything the paired
+    // /frontdesk sends back (e.g. kiosk_checkout_phone_result).
+  }, [queryClient, selectedStore?.id, activeRegisterId]);
 
   // Real-time turn queue updates via WebSocket + window event (nail salons only).
   // Auto-reconnects on drop so the queue stays live even after network blips.
@@ -1213,19 +1365,19 @@ export default function Calendar() {
     if (availMins <= 0) return;
     const dateStr = `${currentDate.getUTCFullYear()}-${String(currentDate.getUTCMonth() + 1).padStart(2, "0")}-${String(currentDate.getUTCDate()).padStart(2, "0")}`;
     const timeStr = `${String(slotHour).padStart(2, "0")}:${String(slotMinute).padStart(2, "0")}`;
-    if (!walkInsEnabled) {
-      // Walk-ins are off — a booking must have a client. Open the phone-entry
-      // sheet first, carrying the slot so the picked client flows into /booking/new.
+    if (!canWalkIn) {
+      // Walk-ins are off, or a client record is required for walk-ins — a
+      // booking must have a client. Open the phone-entry sheet first, carrying
+      // the slot so the picked client flows into /booking/new.
       setSelectedSlot(null);
       setPendingSlotBooking({ staffId, dateStr, timeStr, availableMinutes: availMins });
       setFrontdeskPhone("");
       setLookupMode(false);
       setShowClientLookup(true);
-      broadcastToFrontdesk("kiosk_checkout_phone_prompt");
       return;
     }
     navigate(`/booking/new?staffId=${staffId}&date=${dateStr}&time=${timeStr}&availableMinutes=${availMins}`);
-  }, [currentDate, navigate, getAvailableMinutesForSlot, walkInsEnabled, broadcastToFrontdesk]);
+  }, [currentDate, navigate, getAvailableMinutesForSlot, canWalkIn]);
 
   const handleCancelAppointment = (apt: AppointmentWithDetails) => {
     setShowCancelFlow(true);
@@ -1912,7 +2064,85 @@ export default function Calendar() {
               }}
               storeId={selectedStore.id}
               userName={user?.firstName || user?.email || "Staff"}
+              drawerId={activeDrawerId}
             />
+          )}
+
+          {/* Cash drawer picker — one-time per browser, only shown once a store
+              has configured 2+ cash drawers (Settings → Cash Drawers). Drawer
+              count isn't tied to register count, so this is independent of
+              the register picker below. */}
+          {needsDrawerPicker && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4">
+              <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Which cash drawer is this?</h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    This salon has multiple cash drawers set up. Pick which one this terminal uses —
+                    you won't be asked again on this device.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {drawerOptions.map((d) => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => selectDrawer(d.id)}
+                      className="w-full text-left px-4 py-3 rounded-xl border border-gray-200 hover:border-primary hover:bg-primary/5 transition-colors font-medium text-gray-800"
+                      data-testid={`button-drawer-${d.id}`}
+                    >
+                      {d.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Register picker — one-time per browser, only shown once a store has
+              configured 2+ checkout stations (Settings → Registers). Picking
+              here is what keeps this terminal's checkout traffic paired to
+              its own front-desk tablet instead of cross-talking with another
+              station's. */}
+          {needsRegisterPicker && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4">
+              <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Which register is this?</h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {allStationsTaken
+                      ? "Every station is currently in use on another device."
+                      : "This salon has multiple checkout stations set up. Pick which one this terminal is — you won't be asked again on this device."}
+                  </p>
+                </div>
+                {allStationsTaken ? (
+                  <p className="text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+                    If a station's terminal has been retired or is offline, its slot frees up automatically
+                    after about 15 minutes. Try again shortly, or add another station in Settings → POS Stations.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {registerOptions.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => handleSelectRegister(r.id)}
+                        disabled={registerPickBusy !== null}
+                        className="w-full text-left px-4 py-3 rounded-xl border border-gray-200 hover:border-primary hover:bg-primary/5 transition-colors font-medium text-gray-800 disabled:opacity-50"
+                        data-testid={`button-register-${r.id}`}
+                      >
+                        {registerPickBusy === r.id ? "Selecting…" : r.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {registerPickError && (
+                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                    {registerPickError}
+                  </p>
+                )}
+              </div>
+            </div>
           )}
 
           {/* Day Close modal — opened from the toolbar Lock icon */}
@@ -1922,6 +2152,7 @@ export default function Calendar() {
               onClose={() => setShowDayClose(false)}
               storeId={selectedStore.id}
               userName={user?.firstName || user?.email || "Staff"}
+              drawerId={activeDrawerId}
             />
           )}
 
@@ -1956,7 +2187,7 @@ export default function Calendar() {
           {showJumpToNow && calView === "grid" && !isMobile && (
             <button
               onClick={scrollToNow}
-              className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-1.5 px-4 py-2 rounded-full bg-blue-500 text-white text-sm font-semibold shadow-lg hover:bg-blue-600 transition-colors"
+              className="fixed bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-4 py-2 rounded-full bg-blue-500 text-white text-sm font-semibold shadow-lg hover:bg-blue-600 transition-colors"
               data-testid="button-jump-to-now"
             >
               <Clock className="w-4 h-4" />
@@ -2950,13 +3181,21 @@ export default function Calendar() {
                         if (apt.status !== "confirmed") return false;
                         return isOnStoreDate(apt.date, currentDate, timezone);
                       })
-                      .sort((a: any, b: any) => {
-                        const aTime = a.checkedInAt ? new Date(a.checkedInAt).getTime() : new Date(a.date).getTime();
-                        const bTime = b.checkedInAt ? new Date(b.checkedInAt).getTime() : new Date(b.date).getTime();
-                        return aTime - bTime;
-                      });
+                      .map((apt: any) => ({ kind: "appointment" as const, sortTime: apt.checkedInAt ? new Date(apt.checkedInAt).getTime() : new Date(apt.date).getTime(), apt }));
 
-                    if (arrivedAppts.length === 0) {
+                    // Checked in by phone on /frontdesk with no matching appointment
+                    // (see /api/public/kiosk/:slug/lookup) — not bookable from here,
+                    // tapping one sends staff into the walk-in booking flow instead
+                    // of the normal appointment editor.
+                    const walkinRows = pendingWalkins.map((w) => ({
+                      kind: "walkin" as const,
+                      sortTime: new Date(w.createdAt).getTime(),
+                      walkin: w,
+                    }));
+
+                    const merged = [...arrivedAppts, ...walkinRows].sort((a, b) => a.sortTime - b.sortTime);
+
+                    if (merged.length === 0) {
                       return (
                         <div className="text-center py-12 text-sm text-muted-foreground">
                           {t.noArrived}
@@ -2964,7 +3203,36 @@ export default function Calendar() {
                       );
                     }
 
-                    return arrivedAppts.map((apt: any) => {
+                    return merged.map((row) => {
+                      if (row.kind === "walkin") {
+                        const w = row.walkin;
+                        const customerFirst = (w.clientName || "").trim().split(/\s+/)[0] || t.walkIn;
+                        const checkedInTime = format(new Date(w.createdAt), "h:mm a");
+                        return (
+                          <button
+                            key={`walkin-${w.id}`}
+                            type="button"
+                            onClick={() => {
+                              setQuickCheckoutOpen(false);
+                              navigate(`/booking/new?clientId=${w.clientId}&walkIn=1&checkinId=${w.id}`);
+                            }}
+                            className="w-full text-left rounded-lg border bg-card hover:bg-muted active:bg-muted/70 transition-colors p-3 flex items-center gap-3"
+                            style={{ borderLeft: "4px solid #94a3b8" }}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-sm truncate">{customerFirst}</div>
+                              <div className="text-[11px] text-muted-foreground truncate">{t.walkIn} · not yet booked</div>
+                            </div>
+                            <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                              <span className="text-[10px] font-semibold text-violet-600 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded">
+                                {checkedInTime}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      }
+
+                      const apt = row.apt;
                       const staffMember = (staffList || []).find((s: any) => s.id === apt.staffId);
                       const staffColor = staffMember ? getStaffColor(staffMember) : "#94a3b8";
                       const customerName = ((apt as any).customer?.fullName || apt.customer?.name || apt.customerName || apt.clientName || "").trim() || t.walkIn;
@@ -3426,23 +3694,23 @@ export default function Calendar() {
 
         {showClientLookup && (
           <ChooseClientPanel
-            walkInsEnabled={walkInsEnabled}
+            walkInsEnabled={canWalkIn}
             phoneFromFrontdesk={frontdeskPhone}
             onClose={() => {
+              kioskInitiatedLookupRef.current = false;
               setShowClientLookup(false);
               if (pendingSlotBooking) {
                 setPendingSlotBooking(null);
                 setFrontdeskPhone("");
-                broadcastToFrontdesk("kiosk_checkout_phone_cancel");
               }
             }}
             onSelectClient={(clientId) => {
+              kioskInitiatedLookupRef.current = false;
               setShowClientLookup(false);
               if (pendingSlotBooking) {
                 const { staffId, dateStr, timeStr, availableMinutes } = pendingSlotBooking;
                 setPendingSlotBooking(null);
                 setFrontdeskPhone("");
-                broadcastToFrontdesk("kiosk_checkout_phone_cancel");
                 navigate(
                   `/booking/new?clientId=${clientId}&staffId=${staffId}&date=${dateStr}&time=${timeStr}&availableMinutes=${availableMinutes}`,
                 );
@@ -3474,13 +3742,14 @@ export default function Calendar() {
               }
             }}
             onWalkIn={() => {
+              kioskInitiatedLookupRef.current = false;
               setShowClientLookup(false);
-              if (pendingSlotBooking || !walkInsEnabled) {
-                // Walk-ins off — this shouldn't be reachable (the keypad hides
-                // the walk-in key), but bail rather than create a client-less booking.
+              if (pendingSlotBooking || !canWalkIn) {
+                // Walk-ins off, or a client record is required for walk-ins —
+                // this shouldn't be reachable (the keypad hides the walk-in
+                // key), but bail rather than create a client-less booking.
                 setPendingSlotBooking(null);
                 setFrontdeskPhone("");
-                broadcastToFrontdesk("kiosk_checkout_phone_cancel");
                 return;
               }
               if (lookupMode) {
@@ -4174,7 +4443,10 @@ function TurnPageModal({
   const [nowTime, setNowTime] = useState(() =>
     formatInTz(new Date(), timezone, "h:mm a")
   );
-  const [todayDate] = useState(() =>
+  // Not a useState initializer — this modal can stay open/mounted for hours,
+  // so the date label must be recomputed on the same tick as nowTime below,
+  // not frozen at whatever date it happened to be when the modal first opened.
+  const [todayDate, setTodayDate] = useState(() =>
     formatInTz(new Date(), timezone, "EEEE, MMMM d")
   );
   const turnByStaff = new Map((turnEligibility?.technicians ?? []).map((tech) => [tech.id, tech]));
@@ -4193,7 +4465,10 @@ function TurnPageModal({
 
   useEffect(() => {
     const id = setInterval(
-      () => setNowTime(formatInTz(new Date(), timezone, "h:mm a")),
+      () => {
+        setNowTime(formatInTz(new Date(), timezone, "h:mm a"));
+        setTodayDate(formatInTz(new Date(), timezone, "EEEE, MMMM d"));
+      },
       30000
     );
     return () => clearInterval(id);
@@ -6008,6 +6283,10 @@ function CheckoutPOSPanel({
   const { toast } = useToast();
   const posQueryClient = useQueryClient();
   const storeId = selectedStore?.id ?? null;
+  // Same resolved id the calendar grid uses (real default register when one
+  // exists, not the raw/legacy localStorage value) — must match so this
+  // panel's WS bucket lines up with whichever /frontdesk is paired.
+  const { registerId: activeRegisterId } = useActiveRegisterId(storeId ?? undefined);
   // POS layout for this store's business type (nail-salon config today).
   const posLayout = getPosLayout((selectedStore as any)?.category);
   const posTaxRate = posLayout.taxRate ?? TAX_RATE;
@@ -6247,7 +6526,7 @@ function CheckoutPOSPanel({
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, ...payload }),
+      body: JSON.stringify({ type, registerId: activeRegisterId, ...payload }),
     }).catch(() => {});
   };
 
@@ -6261,8 +6540,14 @@ function CheckoutPOSPanel({
 
   useEffect(() => {
     if (!storeId || !dualScreenEnabled) return;
+    let ws: WebSocket;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let destroyed = false;
+
+    const connect = () => {
+    if (destroyed) return;
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${window.location.host}/ws/notifications?storeId=${storeId}`);
+    ws = new WebSocket(`${proto}://${window.location.host}/ws/notifications?storeId=${storeId}&registerId=${activeRegisterId}`);
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
@@ -6341,9 +6626,20 @@ function CheckoutPOSPanel({
         }
       } catch {}
     };
-    return () => ws.close();
+    ws.onerror = () => ws.close();
+    ws.onclose = () => {
+      if (!destroyed) reconnectTimer = setTimeout(connect, 3000);
+    };
+    };
+    connect();
+
+    return () => {
+      destroyed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws?.close();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeId, dualScreenEnabled]);
+  }, [storeId, dualScreenEnabled, activeRegisterId]);
 
   // ── Reliable "customer linked" sync (no WebSocket dependency) ─────────────
   // When a walk-in customer types their phone on the /frontdesk check-in panel,
@@ -8178,6 +8474,10 @@ function WalkInCheckoutPanel({ onClose, onThermalPrint }: { onClose: () => void;
   // ── Dual Screen POS ───────────────────────────────────────────────────────
   const { selectedStore: wiStore } = useSelectedStore();
   const wiStoreId = wiStore?.id ?? null;
+  // Same resolved id the calendar grid uses (real default register when one
+  // exists, not the raw/legacy localStorage value) — must match so this
+  // panel's WS bucket lines up with whichever /frontdesk is paired.
+  const { registerId: wiActiveRegisterId } = useActiveRegisterId(wiStoreId ?? undefined);
   const [dualScreenEnabled, setDualScreenEnabled] = useState(false);
   const [waitingForTip, setWaitingForTip] = useState(false);
   // Walk-in checkout has no separate subtotal/tip breakdown — amountDisplay
@@ -8199,8 +8499,14 @@ function WalkInCheckoutPanel({ onClose, onThermalPrint }: { onClose: () => void;
 
   useEffect(() => {
     if (!wiStoreId || !dualScreenEnabled) return;
+    let ws: WebSocket;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let destroyed = false;
+
+    const connect = () => {
+    if (destroyed) return;
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${window.location.host}/ws/notifications?storeId=${wiStoreId}`);
+    ws = new WebSocket(`${proto}://${window.location.host}/ws/notifications?storeId=${wiStoreId}&registerId=${wiActiveRegisterId}`);
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
@@ -8217,9 +8523,19 @@ function WalkInCheckoutPanel({ onClose, onThermalPrint }: { onClose: () => void;
         }
       } catch {}
     };
-    ws.onerror = () => {};
-    return () => { ws.close(); };
-  }, [wiStoreId, dualScreenEnabled]);
+    ws.onerror = () => ws.close();
+    ws.onclose = () => {
+      if (!destroyed) reconnectTimer = setTimeout(connect, 3000);
+    };
+    };
+    connect();
+
+    return () => {
+      destroyed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws?.close();
+    };
+  }, [wiStoreId, dualScreenEnabled, wiActiveRegisterId]);
 
   const broadcastToKiosk = (type: string, payload: Record<string, unknown> = {}) => {
     if (!wiStoreId || !dualScreenEnabled) return;
@@ -8227,7 +8543,7 @@ function WalkInCheckoutPanel({ onClose, onThermalPrint }: { onClose: () => void;
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, ...payload }),
+      body: JSON.stringify({ type, registerId: wiActiveRegisterId, ...payload }),
     }).catch(() => {});
   };
 
@@ -8824,16 +9140,16 @@ function ClientDepositsTab({ clientId, appointments }: { clientId: number; appoi
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-bold">Deposits & Payment</h2>
+      <h2 className="text-2xl font-bold">Deposits & Payment</h2>
 
       {/* Saved card section */}
       <div>
-        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Saved Card</h3>
+        <h3 className="text-base font-semibold text-muted-foreground uppercase tracking-wide mb-3">Saved Card</h3>
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p className="text-base text-muted-foreground">Loading…</p>
         ) : savedCards.length === 0 ? (
-          <Card className="p-4 flex items-center gap-3 text-sm text-muted-foreground border-dashed">
-            <CreditCard className="w-4 h-4 shrink-0" />
+          <Card className="p-4 flex items-center gap-3 text-base text-muted-foreground border-dashed">
+            <CreditCard className="w-5 h-5 shrink-0" />
             No card on file
           </Card>
         ) : (
@@ -8841,20 +9157,20 @@ function ClientDepositsTab({ clientId, appointments }: { clientId: number; appoi
             {savedCards.map((pm: any) => (
               <Card key={pm.id} className="p-3 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-6 bg-gray-100 rounded flex items-center justify-center text-base">
+                  <div className="w-9 h-6 bg-gray-100 rounded flex items-center justify-center text-lg">
                     {CARD_BRAND_ICONS[pm.brand?.toLowerCase()] ?? "💳"}
                   </div>
                   <div>
-                    <p className="text-sm font-medium capitalize">
+                    <p className="text-base font-medium capitalize">
                       {pm.brand} •••• {pm.last4}
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-sm text-muted-foreground">
                       Expires {pm.expMonth}/{pm.expYear}
                     </p>
                   </div>
                 </div>
                 {pm.isDefault && (
-                  <span className="text-xs bg-green-100 text-green-700 font-medium px-2 py-0.5 rounded-full">
+                  <span className="text-sm bg-green-100 text-green-700 font-medium px-2 py-0.5 rounded-full">
                     Default
                   </span>
                 )}
@@ -8866,9 +9182,9 @@ function ClientDepositsTab({ clientId, appointments }: { clientId: number; appoi
 
       {/* Deposit history */}
       <div>
-        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Deposit History</h3>
+        <h3 className="text-base font-semibold text-muted-foreground uppercase tracking-wide mb-3">Deposit History</h3>
         {depositAppts.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No deposits on record.</p>
+          <p className="text-base text-muted-foreground">No deposits on record.</p>
         ) : (
           <div className="space-y-2">
             {depositAppts.map((apt: any) => {
@@ -8885,12 +9201,12 @@ function ClientDepositsTab({ clientId, appointments }: { clientId: number; appoi
               return (
                 <Card key={apt.id} className="p-3 space-y-1">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium">{apt.service?.name ?? "Service"}</span>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${badge.cls}`}>
+                    <span className="text-base font-medium">{apt.service?.name ?? "Service"}</span>
+                    <span className={`text-sm font-medium px-2 py-0.5 rounded-full ${badge.cls}`}>
                       {badge.label}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
                     <span>{format(new Date(apt.date), "MMM d, yyyy")}</span>
                     {amount > 0 && (
                       <span className="font-semibold text-foreground">${amount.toFixed(2)}</span>
@@ -8908,6 +9224,7 @@ function ClientDepositsTab({ clientId, appointments }: { clientId: number; appoi
 
 function ClientLookupSheet({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { selectedStore } = useSelectedStore();
   const featureFlags = useFeatureFlags();
   const [phoneDigits, setPhoneDigits] = useState("");
@@ -8917,6 +9234,7 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
   const [invalidNumber, setInvalidNumber] = useState(false);
   const [foundClient, setFoundClient] = useState<any>(null);
   const [activeSection, setActiveSection] = useState("overview");
+  const [viewAppointment, setViewAppointment] = useState<any>(null);
 
   const clientId = foundClient?.id;
   const storeId = selectedStore?.id;
@@ -8930,6 +9248,28 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
     },
     enabled: !!clientId && !!storeId,
   });
+
+  const { data: profileNoteData } = useQuery<{ note: { noteContent: string } | null }>({
+    queryKey: [`/api/clients`, clientId, "profile-note"],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/profile-note`, { credentials: "include" });
+      if (!res.ok) return { note: null };
+      return res.json();
+    },
+    enabled: !!clientId,
+  });
+
+  const [isRegeneratingProfileNote, setIsRegeneratingProfileNote] = useState(false);
+  const regenerateProfileNote = useCallback(async () => {
+    if (!clientId) return;
+    setIsRegeneratingProfileNote(true);
+    try {
+      await fetch(`/api/clients/${clientId}/profile-note/regenerate`, { method: "POST", credentials: "include" });
+      await queryClient.invalidateQueries({ queryKey: [`/api/clients`, clientId, "profile-note"] });
+    } finally {
+      setIsRegeneratingProfileNote(false);
+    }
+  }, [clientId, queryClient]);
 
   const now = new Date();
   const nextAppointments = useMemo(() =>
@@ -9024,9 +9364,6 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
     { id: "deposits",  label: "Deposits" },
     { id: "memberships", label: "Memberships",      count: 0 },
     { id: "notes",     label: "Notes",              count: foundClient?.notes ? 1 : 0 },
-    { id: "purchases", label: "Purchases",          count: 0 },
-    { id: "data-privacy", label: "Data Privacy" },
-    { id: "forms",     label: "Forms" },
   ];
 
   const renderProfileContent = () => {
@@ -9034,44 +9371,48 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
       case "overview":
         return (
           <div className="space-y-6">
-            <h2 className="text-xl font-bold">Overview</h2>
-            <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+            <h2 className="text-2xl font-bold">Overview</h2>
+            <div className="grid grid-cols-2 gap-x-8 gap-y-4">
               <div className="flex items-baseline gap-2">
-                <span className="text-sm text-muted-foreground">Total Spend:</span>
-                <span className="font-semibold">$ {totalSpend.toFixed(2)}</span>
+                <span className="text-base text-muted-foreground">Total Spend:</span>
+                <span className="text-lg font-semibold">$ {totalSpend.toFixed(2)}</span>
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="text-sm text-muted-foreground">Deposit:</span>
-                <span className="font-semibold">$ 0.00</span>
+                <span className="text-base text-muted-foreground">Deposit:</span>
+                <span className="text-lg font-semibold">$ 0.00</span>
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="text-sm text-muted-foreground">No-Shows:</span>
-                <span className="font-semibold">{noShows}</span>
+                <span className="text-base text-muted-foreground">No-Shows:</span>
+                <span className="text-lg font-semibold">{noShows}</span>
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="text-sm text-muted-foreground">Cancellations:</span>
-                <span className="font-semibold">{cancellations}</span>
+                <span className="text-base text-muted-foreground">Cancellations:</span>
+                <span className="text-lg font-semibold">{cancellations}</span>
               </div>
             </div>
             {allAppointments.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <CalendarIcon className="w-14 h-14 text-gray-300 mb-4" />
-                <p className="font-semibold text-gray-700">No Appointments</p>
-                <p className="text-sm text-gray-400 mt-1">The client has no appointments</p>
+                <p className="font-semibold text-lg text-gray-700">No Appointments</p>
+                <p className="text-base text-gray-400 mt-1">The client has no appointments</p>
               </div>
             ) : (
               <div className="space-y-3">
-                <h3 className="text-base font-semibold">Recent Appointments</h3>
+                <h3 className="text-lg font-semibold">Recent Appointments</h3>
                 {allAppointments
                   .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
                   .slice(0, 5)
                   .map((apt: any) => (
-                    <Card key={apt.id} className="p-3">
+                    <Card
+                      key={apt.id}
+                      className="p-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                      onClick={() => setViewAppointment(apt)}
+                    >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium">{apt.service?.name || "Service"}</span>
-                        <span className="text-xs text-muted-foreground capitalize">{apt.status}</span>
+                        <span className="text-base font-medium">{apt.service?.name || "Service"}</span>
+                        <span className="text-sm text-muted-foreground capitalize">{apt.status}</span>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1">
+                      <p className="text-sm text-muted-foreground mt-1">
                         {apt.staff?.name} · {format(new Date(apt.date), "MMM d, yyyy")}
                       </p>
                     </Card>
@@ -9083,18 +9424,22 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
       case "next":
         return (
           <div className="space-y-4">
-            <h2 className="text-xl font-bold">Next Appointments</h2>
+            <h2 className="text-2xl font-bold">Next Appointments</h2>
             {nextAppointments.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No upcoming appointments</p>
+              <p className="text-base text-muted-foreground">No upcoming appointments</p>
             ) : (
               <div className="space-y-3">
                 {nextAppointments.map((apt: any) => (
-                  <Card key={apt.id} className="p-3">
+                  <Card
+                    key={apt.id}
+                    className="p-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => setViewAppointment(apt)}
+                  >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium">{apt.service?.name || "Service"}</span>
-                      <span className="text-xs text-muted-foreground capitalize">{apt.status}</span>
+                      <span className="text-base font-medium">{apt.service?.name || "Service"}</span>
+                      <span className="text-sm text-muted-foreground capitalize">{apt.status}</span>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                       {apt.staff?.name} · {format(new Date(apt.date), "MMM d, yyyy h:mm a")}
                     </p>
                   </Card>
@@ -9106,18 +9451,22 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
       case "past":
         return (
           <div className="space-y-4">
-            <h2 className="text-xl font-bold">Past Appointments</h2>
+            <h2 className="text-2xl font-bold">Past Appointments</h2>
             {pastAppointments.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No past appointments</p>
+              <p className="text-base text-muted-foreground">No past appointments</p>
             ) : (
               <div className="space-y-3">
                 {pastAppointments.map((apt: any) => (
-                  <Card key={apt.id} className="p-3">
+                  <Card
+                    key={apt.id}
+                    className="p-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => setViewAppointment(apt)}
+                  >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium">{apt.service?.name || "Service"}</span>
-                      <span className="text-xs text-muted-foreground capitalize">{apt.status}</span>
+                      <span className="text-base font-medium">{apt.service?.name || "Service"}</span>
+                      <span className="text-sm text-muted-foreground capitalize">{apt.status}</span>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                       {apt.staff?.name} · {format(new Date(apt.date), "MMM d, yyyy h:mm a")}
                     </p>
                   </Card>
@@ -9131,19 +9480,40 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
       case "notes":
         return (
           <div className="space-y-4">
-            <h2 className="text-xl font-bold">Notes</h2>
+            <h2 className="text-2xl font-bold">Notes</h2>
+            <Card className="p-4 bg-primary/5 border-primary/20">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-1.5 text-base font-semibold text-primary">
+                  <Sparkles className="w-4 h-4" />
+                  Client Insights
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground -mt-1 -mr-1"
+                  disabled={isRegeneratingProfileNote}
+                  onClick={regenerateProfileNote}
+                  data-testid="button-regenerate-client-insights"
+                >
+                  <RefreshCw className={cn("w-4 h-4", isRegeneratingProfileNote && "animate-spin")} />
+                </Button>
+              </div>
+              <p className="text-base text-gray-700 mt-2 leading-relaxed">
+                {profileNoteData?.note?.noteContent || "Insights appear after the client's first completed visit."}
+              </p>
+            </Card>
             {foundClient?.notes ? (
-              <Card className="p-4 text-sm">{foundClient.notes}</Card>
+              <Card className="p-4 text-base">{foundClient.notes}</Card>
             ) : (
-              <p className="text-sm text-muted-foreground">No notes</p>
+              <p className="text-base text-muted-foreground">No notes</p>
             )}
           </div>
         );
       default:
         return (
           <div className="space-y-4">
-            <h2 className="text-xl font-bold capitalize">{activeSection.replace("-", " ")}</h2>
-            <p className="text-sm text-muted-foreground">No records found</p>
+            <h2 className="text-2xl font-bold capitalize">{activeSection.replace("-", " ")}</h2>
+            <p className="text-base text-muted-foreground">No records found</p>
           </div>
         );
     }
@@ -9172,12 +9542,12 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
                 onClick={() => { setFoundClient(null); setPhoneDigits(""); setSearchDone(false); setNotFound(false); }}
                 data-testid="button-back-client-lookup"
               >
-                <ArrowLeft className="w-4 h-4" />
+                <ArrowLeft className="w-5 h-5" />
               </Button>
-              <span className="font-semibold text-base text-gray-900">Clients</span>
+              <span className="font-semibold text-lg text-gray-900">Clients</span>
             </div>
             <Button variant="ghost" size="icon" onClick={onClose} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100" data-testid="button-close-client-lookup">
-              <X className="w-4 h-4" />
+              <X className="w-5 h-5" />
             </Button>
           </div>
 
@@ -9187,30 +9557,29 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
             <div className="w-[220px] flex-shrink-0 border-r bg-white flex flex-col">
               {/* Client info */}
               <div className="px-5 py-5 flex flex-col items-center text-center border-b border-gray-100">
-                <h3 className="font-bold text-lg text-gray-900 leading-tight">{foundClient.name}</h3>
+                <h3 className="font-bold text-xl text-gray-900 leading-tight">{foundClient.name}</h3>
                 {foundClient.phone && (
-                  <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                    <Phone className="w-3 h-3" />{foundClient.phone}
+                  <p className="text-sm text-muted-foreground mt-1.5 flex items-center gap-1">
+                    <Phone className="w-3.5 h-3.5" />{foundClient.phone}
                   </p>
                 )}
                 {featureFlags.rewardPoints && (foundClient.loyaltyPoints ?? 0) >= 0 && (
-                  <p className="text-xs font-medium text-amber-600 mt-1.5">
+                  <p className="text-sm font-medium text-amber-600 mt-1.5">
                     ⭐ {foundClient.loyaltyPoints ?? 0} pts
                   </p>
                 )}
                 {foundClient.allergies && (
-                  <div className="mt-2 w-full flex items-start gap-1.5 rounded-md border border-orange-300 bg-orange-50 px-2.5 py-1.5 text-xs font-medium text-orange-700 text-left">
-                    <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                  <div className="mt-2 w-full flex items-start gap-1.5 rounded-md border border-orange-300 bg-orange-50 px-2.5 py-1.5 text-sm font-medium text-orange-700 text-left">
+                    <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
                     <span className="leading-tight">{foundClient.allergies}</span>
                   </div>
                 )}
                 <div className="flex items-center gap-2 mt-3">
-                  <Button variant="outline" size="icon" className="h-8 w-8">
-                    <MoreVertical className="w-4 h-4" />
+                  <Button variant="outline" size="icon" className="h-10 w-10">
+                    <MoreVertical className="w-5 h-5" />
                   </Button>
                   <Button
-                    size="sm"
-                    className="h-8 px-4"
+                    className="h-10 px-5 text-base"
                     onClick={() => { onClose(); navigate(`/booking/new?clientId=${foundClient.id}`); }}
                   >
                     Book Now
@@ -9225,7 +9594,7 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
                     key={sec.id}
                     onClick={() => setActiveSection(sec.id)}
                     className={cn(
-                      "w-full flex items-center justify-between px-4 py-3 text-sm font-medium transition-colors text-left",
+                      "w-full flex items-center justify-between px-4 py-3.5 text-base font-medium transition-colors text-left",
                       activeSection === sec.id
                         ? "text-primary bg-primary/5"
                         : "text-gray-600 hover:bg-gray-50"
@@ -9234,11 +9603,11 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
                     <span>{sec.label}</span>
                     <div className="flex items-center gap-1.5">
                       {sec.count !== undefined && (
-                        <span className="text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5 min-w-[20px] text-center leading-tight">
+                        <span className="text-sm bg-gray-100 text-gray-600 rounded px-1.5 py-0.5 min-w-[22px] text-center leading-tight">
                           {sec.count}
                         </span>
                       )}
-                      <ChevronRight className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                      <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
                     </div>
                   </button>
                 ))}
@@ -9251,6 +9620,82 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         </div>
+
+        <Dialog open={!!viewAppointment} onOpenChange={(open) => { if (!open) setViewAppointment(null); }}>
+          <DialogContent className="sm:max-w-lg">
+            {viewAppointment && (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center justify-between gap-2 pr-6 text-xl">
+                    <span>{viewAppointment.service?.name || "Appointment"}</span>
+                    <Badge variant="secondary" className="capitalize text-sm">{viewAppointment.status?.replace("_", " ")}</Badge>
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3 text-base">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Date &amp; Time</span>
+                    <span className="font-medium">{format(new Date(viewAppointment.date), "EEE, MMM d, yyyy · h:mm a")}</span>
+                  </div>
+                  {!!viewAppointment.duration && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Duration</span>
+                      <span className="font-medium">{viewAppointment.duration} min</span>
+                    </div>
+                  )}
+                  {viewAppointment.staff?.name && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Staff</span>
+                      <span className="font-medium">{viewAppointment.staff.name}</span>
+                    </div>
+                  )}
+                  {viewAppointment.service?.price != null && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Price</span>
+                      <span className="font-medium">${Number(viewAppointment.service.price).toFixed(2)}</span>
+                    </div>
+                  )}
+                  {Array.isArray(viewAppointment.appointmentAddons) && viewAppointment.appointmentAddons.length > 0 && (
+                    <div>
+                      <span className="text-muted-foreground">Add-ons</span>
+                      <ul className="mt-1 space-y-1">
+                        {viewAppointment.appointmentAddons.map((a: any) => (
+                          <li key={a.id} className="flex items-center justify-between">
+                            <span>{a.addon?.name || "Add-on"}</span>
+                            {a.addon?.price != null && <span className="font-medium">${Number(a.addon.price).toFixed(2)}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {viewAppointment.paymentMethod && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Payment Method</span>
+                      <span className="font-medium capitalize">{viewAppointment.paymentMethod}</span>
+                    </div>
+                  )}
+                  {viewAppointment.totalPaid != null && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Total Paid</span>
+                      <span className="font-medium">${Number(viewAppointment.totalPaid).toFixed(2)}</span>
+                    </div>
+                  )}
+                  {viewAppointment.status === "cancelled" && viewAppointment.cancellationReason && (
+                    <div>
+                      <span className="text-muted-foreground">Cancellation Reason</span>
+                      <p className="mt-1">{viewAppointment.cancellationReason}</p>
+                    </div>
+                  )}
+                  {viewAppointment.notes && (
+                    <div>
+                      <span className="text-muted-foreground">Notes</span>
+                      <p className="mt-1">{viewAppointment.notes}</p>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
@@ -9723,9 +10168,11 @@ function ChooseClientPanel({
             ) : (
               <>
                 <p className="text-base font-semibold text-gray-900" data-testid="text-enter-phone">{tCC.enterPhone}</p>
-                <p className="text-sm text-gray-400 mt-1 flex items-center justify-center gap-1.5">
-                  <PersonStanding className="w-4 h-4 inline" /> {tCC.tapWalkIn}
-                </p>
+                {walkInsEnabled && (
+                  <p className="text-sm text-gray-400 mt-1 flex items-center justify-center gap-1.5">
+                    <PersonStanding className="w-4 h-4 inline" /> {tCC.tapWalkIn}
+                  </p>
+                )}
               </>
             )}
             {isSearching && (

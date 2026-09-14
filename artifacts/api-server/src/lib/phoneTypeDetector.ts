@@ -181,3 +181,27 @@ export function detectPhoneType(raw: string | null | undefined): PhoneTypeResult
   // Unknown country — fall through to "unknown"
   return { phoneType: "unknown", countryCode: cc, e164, source: "unknown", confidence: "low" };
 }
+
+export interface ResolvedPhoneType {
+  phoneType: PhoneType;
+  source: "twilio_lookup" | "heuristic";
+  carrierName: string | null;
+}
+
+/**
+ * Best available phone type: tries Twilio's paid Lookup API first (high
+ * confidence, ~$0.005-0.01/call), falling back to the free offline heuristic
+ * above when Twilio isn't configured or the call fails. Never throws.
+ */
+export async function resolvePhoneType(raw: string): Promise<ResolvedPhoneType> {
+  const e164 = normalizeToE164(raw);
+  if (!e164) return { phoneType: "unknown", source: "heuristic", carrierName: null };
+
+  const { lookupPhoneType } = await import("./twilioLookup");
+  const looked = await lookupPhoneType(e164);
+  if (looked) {
+    return { phoneType: looked.phoneType, source: "twilio_lookup", carrierName: looked.carrierName };
+  }
+
+  return { phoneType: detectPhoneType(e164).phoneType, source: "heuristic", carrierName: null };
+}

@@ -57,5 +57,6 @@ export const DEFAULT_CALENDAR_SETTINGS = {
   autoMarkNoShows: false,
   showPrices: true,
   walkInsEnabled: true,
+  requireClientForWalkin: false,
   language: "en",
 };

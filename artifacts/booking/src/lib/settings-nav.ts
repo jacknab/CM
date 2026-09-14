@@ -150,9 +150,19 @@ export function buildSettingsNav(pick: Pick4): SettingsTab[] {
           to: "/settings/client-notifications", slug: "client-notifications",
         },
         {
-          label: pick({ en: "Check-in Kiosk", vi: "Kiosk check-in", es: "Kiosco de registro", fr: "Kiosque d'enregistrement" }),
+          label: pick({ en: "Check-in & Kiosk", vi: "Kiosk check-in", es: "Kiosco de registro", fr: "Kiosque d'enregistrement" }),
           description: pick({ en: "Self check-in tablet URL, QR code and welcome text.", vi: "URL máy tính bảng tự check-in, mã QR và lời chào.", es: "URL del tablet de auto check-in, código QR y texto de bienvenida.", fr: "URL de la tablette d'enregistrement, QR code et message d'accueil." }),
           to: "/settings/kiosk", slug: "kiosk",
+        },
+        {
+          label: pick({ en: "POS Stations", vi: "Quầy thu ngân", es: "Cajas registradoras", fr: "Caisses" }),
+          description: pick({ en: "Set up multiple checkout stations, each with its own front-desk tablet URL.", vi: "Thiết lập nhiều quầy thanh toán, mỗi quầy có URL máy tính bảng riêng.", es: "Configura varias cajas de cobro, cada una con su propia URL de tablet.", fr: "Configurez plusieurs caisses, chacune avec sa propre URL de tablette." }),
+          to: "/settings/registers", slug: "registers",
+        },
+        {
+          label: pick({ en: "Cash Drawers", vi: "Két tiền mặt", es: "Cajones de efectivo", fr: "Tiroirs-caisses" }),
+          description: pick({ en: "Set up multiple physical cash drawers, each with its own Day Close and target float.", vi: "Thiết lập nhiều két tiền mặt, mỗi két có quy trình đóng ca và hạn mức riêng.", es: "Configura varios cajones de efectivo, cada uno con su propio cierre de caja y fondo fijo.", fr: "Configurez plusieurs tiroirs-caisses, chacun avec sa propre clôture et son propre fonds de caisse." }),
+          to: "/settings/cash-drawers", slug: "cash-drawers",
         },
         {
           label: pick({ en: "Language", vi: "Ngôn ngữ", es: "Idioma", fr: "Langue" }),

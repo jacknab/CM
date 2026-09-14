@@ -341,7 +341,10 @@ export default function Intelligence() {
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
-    enabled: !!storeId && activeTab === "noshow",
+    // Not gated to the "noshow" tab — the Overview tab's "high-risk no-shows
+    // upcoming" Quick Win card also reads this, and previously never loaded
+    // on first visit because this query hadn't fired yet.
+    enabled: !!storeId,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -1119,11 +1122,10 @@ export default function Intelligence() {
               storeId={storeId}
               tab="overview"
               metrics={{
-                growthScore: score?.score,
+                growthScore: score?.overallScore,
                 grade: score?.grade,
                 atRiskClients: dashboard?.atRiskClients?.length ?? 0,
-                monthlyRevenue: summary?.monthlyRevenue,
-                noShowRate30dPct: summary?.noShowRate30d != null ? +(summary.noShowRate30d * 100).toFixed(1) : undefined,
+                monthlyRevenue: score?.monthlyRevenue,
               }}
               enabled={!!dashboard || !!growthData}
             />
@@ -1234,11 +1236,12 @@ export default function Intelligence() {
                   tab: "leakage",
                 });
               }
-              if (noShowData?.upcomingRisks?.length > 0) {
+              const highRiskCount = (noShowData?.risks ?? []).filter((r: any) => r.noShowRiskLabel === "high").length;
+              if (highRiskCount > 0) {
                 wins.push({
                   icon: <AlertCircle className="h-4 w-4 text-amber-500" />,
                   color: "border-amber-200 bg-amber-50/50 dark:bg-amber-950/10",
-                  action: `${noShowData.upcomingRisks.length} high-risk no-shows upcoming`,
+                  action: `${highRiskCount} high-risk no-shows upcoming`,
                   value: autoEngageEnabled
                     ? "System monitoring · confirm slots to eliminate risk"
                     : "Confirm appointments to reduce losses",
@@ -1518,7 +1521,7 @@ export default function Intelligence() {
                 criticalRisk: dashboard?.atRiskClients?.filter((c: any) => c.churnRiskLabel === "critical").length ?? 0,
                 highRisk: dashboard?.atRiskClients?.filter((c: any) => c.churnRiskLabel === "high").length ?? 0,
                 avgLtv: dashboard?.atRiskClients?.length
-                  ? Math.round(dashboard.atRiskClients.reduce((s: number, c: any) => s + (c.ltv12Month ?? 0), 0) / dashboard.atRiskClients.length)
+                  ? Math.round(dashboard.atRiskClients.reduce((s: number, c: any) => s + parseFloat(c.ltv12Month || "0"), 0) / dashboard.atRiskClients.length)
                   : 0,
               }}
               enabled={!!dashboard}
@@ -1617,10 +1620,10 @@ export default function Intelligence() {
               storeId={storeId}
               tab="leakage"
               metrics={{
-                totalLeakedDollars: leakageData?.totals?.totalLeaked,
-                noShowRevenue: leakageData?.totals?.noShowRevenue,
-                cancellationRevenue: leakageData?.totals?.cancellationRevenue,
-                driftingClients: leakageData?.driftingClients?.length ?? 0,
+                totalLeakedDollars: leakageData?.totalLeakage,
+                noShowRevenue: leakageData?.breakdown?.noShowLoss,
+                cancellationRevenue: leakageData?.breakdown?.cancellationLoss,
+                driftingClients: summary?.driftingClients ?? 0,
               }}
               enabled={!!leakageData}
             />
@@ -1874,7 +1877,7 @@ export default function Intelligence() {
                 lostRevenuePotential: deadSeatsData?.totalLostRevenuePotential,
                 worstDay: deadSeatsData?.worstDay,
                 worstHour: deadSeatsData?.worstHour,
-                emptySlots: deadSeatsData?.deadSlots?.length ?? 0,
+                emptySlots: deadSeatsData?.totalDeadSlotCount ?? deadSeatsData?.deadSlots?.length ?? 0,
               }}
               enabled={!!deadSeatsData}
             />

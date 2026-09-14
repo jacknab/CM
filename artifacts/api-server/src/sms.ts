@@ -202,6 +202,41 @@ export async function sendSms(
     }
   }
 
+  // ── Landline gate ──────────────────────────────────────────────────────────
+  // A landline physically cannot receive SMS. Skip before ever calling Twilio
+  // so we don't pay for (or, for billed message types, charge the store for)
+  // a message that can never be delivered.
+  if (normalizedPhone.length >= 10) {
+    try {
+      const { clientPhones } = await import("@shared/schema");
+      const [knownPhone] = await db
+        .select({ phoneType: clientPhones.phoneType })
+        .from(clientPhones)
+        .where(eq(clientPhones.phoneNumberE164, e164Phone))
+        .limit(1);
+      if (knownPhone?.phoneType === "landline") {
+        console.log(`[SMS] Skipping landline number ${e164Phone} (messageType=${messageType})`);
+        await storage.createSmsLog({
+          storeId,
+          appointmentId: appointmentId ?? null,
+          customerId: customerId ?? null,
+          phone: e164Phone,
+          messageType,
+          messageBody: body,
+          status: "skipped",
+          twilioSid: null,
+          errorMessage: "Landline number — cannot receive SMS",
+          sentAt: new Date(),
+          smsSource: "none",
+          costEstimate: "0.0000",
+        }).catch(() => {});
+        return { success: true, skipped: true };
+      }
+    } catch (err) {
+      console.warn("[SMS] Landline check failed:", err);
+    }
+  }
+
   // ── Account status gate ────────────────────────────────────────────────────
   // Suspended and canceled accounts must not receive ANY SMS — system or otherwise.
   // This guard runs before credit deduction so no balance is ever touched.

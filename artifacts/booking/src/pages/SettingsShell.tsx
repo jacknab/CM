@@ -18,6 +18,8 @@ import LanguageSettings from "@/pages/LanguageSettings";
 import CalendarSettings from "@/pages/CalendarSettings";
 import OnlineBooking from "@/pages/OnlineBooking";
 import KioskSettings from "@/pages/KioskSettings";
+import Registers from "@/pages/Registers";
+import CashDrawers from "@/pages/CashDrawers";
 import PayrollSettings from "@/pages/PayrollSettings";
 import ClientNotifications from "@/pages/settings/ClientNotifications";
 import DataTransferPage from "@/pages/DataTransferPage";
@@ -37,6 +39,8 @@ const PANES: Record<string, React.ComponentType> = {
   "online-booking": OnlineBooking,
   "booking-controls": CalendarSettings,
   "kiosk": KioskSettings,
+  "registers": Registers,
+  "cash-drawers": CashDrawers,
   "client-notifications": ClientNotifications,
   "language": LanguageSettings,
   "advanced": FeaturesSettings,

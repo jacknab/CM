@@ -76,6 +76,16 @@ function formatEin(raw: string): string {
   return `${digits.slice(0, 2)}-${digits.slice(2)}`;
 }
 
+// Display-only formatting: the stored value stays whatever was typed (digits),
+// this just renders it as (555) 123-4567 in the input.
+function formatPhoneDisplay(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 10);
+  if (digits.length === 0) return "";
+  if (digits.length < 4) return `(${digits}`;
+  if (digits.length < 7) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
 // ── Field wrapper: label, control, helper text (GlossGenius layout) ─────────
 function Field({
   label, hint, children,
@@ -221,7 +231,14 @@ function BusinessProfile({ store }: { store: Store }) {
             name="phone"
             render={({ field }) => (
               <Field label="Phone" hint="Shown on your booking site and confirmations.">
-                <Input type="tel" {...field} className={inputCls} data-testid="input-phone" />
+                <Input
+                  type="tel"
+                  {...field}
+                  value={formatPhoneDisplay(field.value)}
+                  onChange={(e) => field.onChange(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                  className={inputCls}
+                  data-testid="input-phone"
+                />
               </Field>
             )}
           />

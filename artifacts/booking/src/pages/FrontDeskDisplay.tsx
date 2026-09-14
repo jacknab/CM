@@ -28,7 +28,7 @@ import { KIOSK_LANGS, LangCode, translations } from "../lib/kioskTranslations";
 type Screen =
   | "idle" | "phone" | "loading"
   | "appointment_confirmed" | "checked_in_generic" | "name_entry"
-  | "error" | "closed" | "suspended";
+  | "error" | "closed" | "suspended" | "unknown_register";
 
 /** POS-driven checkout overlay states (render over every check-in screen). */
 type PosCheckout = null | "cart" | "tip" | "await_payment" | "thankyou";
@@ -205,9 +205,13 @@ function CardTapAnimation({ variant }: { variant: AwaitMode }) {
 }
 
 export default function FrontDeskDisplay() {
-  const { slug } = useParams<{ slug: string }>();
+  const { slug, registerId: registerIdParam } = useParams<{ slug: string; registerId?: string }>();
   const [screen, setScreen]           = useState<Screen>("idle");
   const [storeId, setStoreId]         = useState<number | null>(null);
+  // Resolved by the server (validated against this store, falls back to 0
+  // for a stale/foreign id) — this, not the raw route param, is what's used
+  // to open the checkout WebSocket. See migrations/0174_registers.sql.
+  const [registerId, setRegisterId]   = useState(0);
   const [storeConfig, setStoreConfig] = useState<StoreConfig | null>(null);
   const [kioskConfig, setKioskConfig] = useState<KioskConfig | null>(null);
   const [phone, setPhone]             = useState("");
@@ -264,8 +268,13 @@ export default function FrontDeskDisplay() {
   // ── Config load + periodic refresh while idle ─────────────────────────────
   const applyConfig = useCallback((d: any, initial: boolean) => {
     if (d?.accountSuspended) { setStoreId(d.storeId ?? null); setScreen("suspended"); return; }
+    // The URL named a register id that isn't an active station for this
+    // store (typo, retired station, stale bookmark) — say so clearly rather
+    // than silently pairing to the default station's checkout traffic.
+    if (d?.registerNotFound) { setStoreConfig(d.store ?? null); setScreen("unknown_register"); return; }
     if (d?.error) { if (initial) { setError(d.error); setScreen("error"); } return; }
     setStoreId(d.store?.id ?? d.storeId ?? null);
+    setRegisterId(Number(d.registerId) || 0);
     setStoreConfig(d.store ?? null);
     setKioskConfig({
       kioskEnabled: d.kioskEnabled !== false,
@@ -277,13 +286,15 @@ export default function FrontDeskDisplay() {
     if (initial) setScreen(d.kioskEnabled === false ? "closed" : "idle");
   }, []);
 
+  const configUrl = `/api/public/kiosk/${slug}/config${registerIdParam ? `?registerId=${registerIdParam}` : ""}`;
+
   useEffect(() => {
     if (!slug) return;
-    fetch(`/api/public/kiosk/${slug}/config`)
+    fetch(configUrl)
       .then(r => r.json())
       .then(d => applyConfig(d, true))
       .catch(() => { setError("Failed to connect."); setScreen("error"); });
-  }, [slug, applyConfig]);
+  }, [slug, configUrl, applyConfig]);
 
   useEffect(() => {
     if (!slug) return;
@@ -297,7 +308,7 @@ export default function FrontDeskDisplay() {
     if (!slug || screen !== "idle") return;
     let cancelled = false;
     const refresh = () => {
-      fetch(`/api/public/kiosk/${slug}/config`)
+      fetch(configUrl)
         .then(r => r.json())
         .then(d => { if (!cancelled) applyConfig(d, false); })
         .catch(() => {});
@@ -305,7 +316,7 @@ export default function FrontDeskDisplay() {
     refresh();
     const iv = setInterval(refresh, 5 * 60_000);
     return () => { cancelled = true; clearInterval(iv); };
-  }, [slug, screen, applyConfig]);
+  }, [slug, configUrl, screen, applyConfig]);
 
   // ── Notifications WebSocket (unauthenticated, keyed by storeId) ───────────
   const sendWs = useCallback((type: string, payload: Record<string, unknown> = {}) => {
@@ -334,7 +345,7 @@ export default function FrontDeskDisplay() {
     let ws: WebSocket;
     const connect = () => {
       if (destroyed) return;
-      ws = new WebSocket(`${proto}://${window.location.host}/ws/notifications?storeId=${storeId}`);
+      ws = new WebSocket(`${proto}://${window.location.host}/ws/notifications?storeId=${storeId}&registerId=${registerId}`);
       wsRef.current = ws;
       ws.onmessage = (e) => {
         let msg: any;
@@ -433,7 +444,7 @@ export default function FrontDeskDisplay() {
     };
     connect();
     return () => { destroyed = true; ws?.close(); wsRef.current = null; };
-  }, [storeId, clearPosOverlay]);
+  }, [storeId, registerId, clearPosOverlay]);
 
   // ── Suspended: poll config to auto-recover ───────────────────────────────
   useEffect(() => {
@@ -568,6 +579,10 @@ export default function FrontDeskDisplay() {
         loyaltyPoints: points,
         isNew: !!d.isNew,
       });
+      // Tell the paired /calendar screen this phone is resolved, so a
+      // name-entry sheet it may have auto-opened (see kiosk_checkin_unknown_phone)
+      // closes instead of duplicating what the customer just did here.
+      sendWs("kiosk_checkin_client_named", { phone: digits });
     } catch {
       setError(t.somethingWrong);
       setScreen("error");
@@ -618,6 +633,10 @@ export default function FrontDeskDisplay() {
         // Unknown number → ask for a name (on-screen keyboard) before creating.
         setNewClientName("");
         setScreen("name_entry");
+        // Mirror this moment to the paired /calendar screen so staff can type
+        // the name in themselves — useful for an older client who needs help
+        // with the touchscreen.
+        sendWs("kiosk_checkin_unknown_phone", { phone: p });
       }
     } catch {
       setError(t.somethingWrong);
@@ -855,7 +874,7 @@ export default function FrontDeskDisplay() {
                 </div>
                 <div style={{ display: "flex", gap: 10, marginTop: 2 }}>
                   <button
-                    onPointerDown={e => { e.preventDefault(); setNewClientName(""); setPhone(""); setScreen("idle"); }}
+                    onPointerDown={e => { e.preventDefault(); sendWs("kiosk_checkin_cancelled", { phone }); setNewClientName(""); setPhone(""); setScreen("idle"); }}
                     style={{ background: "rgba(255,255,255,0.14)", border: "none", color: "#fff", fontSize: 14, fontWeight: 700, borderRadius: 12, padding: "10px 18px", cursor: "pointer" }}>
                     Back
                   </button>
@@ -1039,6 +1058,21 @@ export default function FrontDeskDisplay() {
   if (screen === "suspended") {
     return <div className="fixed inset-0" style={{ ...NO_SELECT, background: "radial-gradient(ellipse at center, #1c1c1c 0%, #0a0a0a 100%)", cursor: "none" }} />;
   }
+
+  if (screen === "unknown_register") return (
+    <div className="fixed inset-0 flex flex-col items-center justify-center gap-8" style={{ ...NO_SELECT, background: BG }}>
+      <div className="w-32 h-32 rounded-full flex items-center justify-center text-6xl shadow-lg" style={{ background: SURFACE, border: `2px solid ${BORDER}` }}>❓</div>
+      <div className="text-center space-y-3 max-w-lg px-8">
+        <h1 className="text-5xl font-black" style={{ color: TEXT }}>Unknown POS Station</h1>
+        <p className="text-xl" style={{ color: MUTED }}>
+          {storeConfig?.name ? `This URL isn't a station set up for ${storeConfig.name}.` : "This URL isn't a station set up for this salon."}
+        </p>
+        <p className="text-base" style={{ color: SUBTLE }}>
+          Check the URL, or ask a manager to find the correct one in Settings → POS Stations.
+        </p>
+      </div>
+    </div>
+  );
 
   if (screen === "closed") return (
     <div className="fixed inset-0 flex flex-col items-center justify-center gap-8" style={{ ...NO_SELECT, background: BG }}>

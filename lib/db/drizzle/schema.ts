@@ -1442,6 +1442,9 @@ export const clientPhones = pgTable("client_phones", {
         phoneNumberE164: text("phone_number_e164").notNull(),
         displayPhone: text("display_phone"),
         phoneType: text("phone_type").default('mobile').notNull(),
+        phoneTypeSource: text("phone_type_source").default('heuristic').notNull(),
+        phoneTypeCheckedAt: timestamp("phone_type_checked_at", { mode: 'string' }),
+        carrierName: text("carrier_name"),
         smsOptIn: boolean("sms_opt_in").default(true).notNull(),
         verified: boolean().default(false).notNull(),
         isPrimary: boolean("is_primary").default(false).notNull(),
@@ -1451,6 +1454,7 @@ export const clientPhones = pgTable("client_phones", {
 }, (table) => [
         index("client_phones_client_id_idx").using("btree", table.clientId.asc().nullsLast().op("int4_ops")),
         index("client_phones_e164_idx").using("btree", table.phoneNumberE164.asc().nullsLast().op("text_ops")),
+        index("client_phones_phone_type_idx").using("btree", table.phoneType.asc().nullsLast().op("text_ops")),
         foreignKey({
                         columns: [table.clientId],
                         foreignColumns: [clients.id],

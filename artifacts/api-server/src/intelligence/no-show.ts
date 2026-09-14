@@ -2,12 +2,13 @@ import { db } from "../db";
 import { appointments, staff, services, locations } from "@shared/schema";
 import { clients } from "@shared/schema/clients";
 import { eq, and, gte, lte, inArray, sql, desc } from "drizzle-orm";
-import { formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 
 export interface NoShowRisk {
   appointmentId: number;
   customerId: number | null;
   customerName: string;
+  customerPhone: string | null;
   staffName: string | null;
   serviceName: string | null;
   appointmentDate: Date;
@@ -28,18 +29,13 @@ export async function computeNoShowRisks(
     .limit(1);
   const storeTimezone = storeRow?.timezone ?? "UTC";
 
-  const date = targetDate || new Date();
-  const startOfDay = new Date(date);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(date);
-  endOfDay.setHours(23, 59, 59, 999);
-
-  // Get tomorrow's appointments if checking for tomorrow
+  // Get tomorrow's appointments if checking for tomorrow — boundaries computed
+  // in the salon's own timezone (not the server's), same as the hour-risk
+  // check below, so "tomorrow" means the salon's local tomorrow.
   const checkDate = targetDate || new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const dayStart = new Date(checkDate);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(checkDate);
-  dayEnd.setHours(23, 59, 59, 999);
+  const checkDateStr = formatInTimeZone(checkDate, storeTimezone, "yyyy-MM-dd");
+  const dayStart = fromZonedTime(`${checkDateStr}T00:00:00`, storeTimezone);
+  const dayEnd = fromZonedTime(`${checkDateStr}T23:59:59.999`, storeTimezone);
 
   const upcomingAppts = await db
     .select({
@@ -142,6 +138,7 @@ export async function computeNoShowRisks(
       appointmentId: appt.id,
       customerId: appt.customerId,
       customerName: appt.customerName || "Walk-in",
+      customerPhone: appt.customerPhone ?? null,
       staffName: appt.staffName,
       serviceName: appt.serviceName,
       appointmentDate: appt.date,

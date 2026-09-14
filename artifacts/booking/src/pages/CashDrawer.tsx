@@ -12,6 +12,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatInTz } from "@/lib/timezone";
 import { BusinessDayGate } from "@/components/cash/BusinessDayOverlay";
+import { useCashDrawers } from "@/hooks/use-cash-drawers";
 import type { CashDrawerSessionWithActions } from "@shared/schema";
 import {
   DollarSign, Lock, Unlock, FileText, Clock, ArrowDownCircle,
@@ -74,6 +75,16 @@ export function CashDrawerPanel({ embedded = false, onClose }: CashDrawerPanelPr
   const { toast } = useToast();
   const timezone = selectedStore?.timezone || "UTC";
   const userName = user?.firstName || user?.email || "Staff";
+
+  // Drawer names, for a small badge on each session row — only meaningful once
+  // a store has configured more than one (see hooks/use-cash-drawers.ts).
+  const { data: drawerList } = useCashDrawers(selectedStore?.id);
+  const drawerNameById = useMemo(() => {
+    const map = new Map<number, string>();
+    (drawerList ?? []).forEach((d) => map.set(d.id, d.name));
+    return map;
+  }, [drawerList]);
+  const showDrawerBadges = (drawerList?.length ?? 0) >= 2;
 
   const [openingAmount, setOpeningAmount] = useState("0.00");
   const [closeNotes, setCloseNotes] = useState("");
@@ -634,8 +645,13 @@ export function CashDrawerPanel({ embedded = false, onClose }: CashDrawerPanelPr
                         {expandedHistory === session.id ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                       </button>
                       <div>
-                        <p className="text-sm font-medium">
+                        <p className="text-sm font-medium flex items-center gap-2">
                           {formatInTz(session.openedAt, timezone, "MMM d, yyyy")}
+                          {showDrawerBadges && (
+                            <Badge variant="secondary" className="text-[10px] font-normal">
+                              {drawerNameById.get((session as any).drawerId) ?? "Default Drawer"}
+                            </Badge>
+                          )}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {formatInTz(session.openedAt, timezone, "h:mm a")} - {session.closedAt ? formatInTz(session.closedAt, timezone, "h:mm a") : "N/A"}

@@ -36,9 +36,11 @@ import StaffWorkingHours from "@/pages/StaffWorkingHours";
 import CashDrawer from "@/pages/CashDrawer";
 import AddonsPage from "@/pages/Addons";
 import SalonEarningsReport from "@/pages/SalonEarningsReport";
+import CommissionReport from "@/pages/CommissionReport";
 import Analytics from "@/pages/Analytics";
 import OwnerDashboard from "@/pages/OwnerDashboard";
 import Reports from "@/pages/Reports";
+import ReportsHub from "@/pages/ReportsHub";
 import RegisterReports from "@/pages/RegisterReports";
 import Waitlist from "@/pages/Waitlist";
 import QueueDashboard from "@/pages/queue/QueueDashboard";
@@ -471,6 +473,7 @@ function AppRoutes() {
       {/* Front-desk customer-facing display (POS tablet): lightweight check-in
           + tip screen + card-payment instruction screens. NOT a self-serve kiosk. */}
       <Route path="/frontdesk/:slug" element={<FrontDeskDisplay />} />
+      <Route path="/frontdesk/:slug/:registerId" element={<FrontDeskDisplay />} />
 
       {/* Industry landing pages */}
       <Route path="/spa" element={<SpaLandingPage />} />
@@ -558,9 +561,10 @@ function AppRoutes() {
       <Route path="/loyalty" element={<OwnerOnlyRoute><FeatureGuard feature="rewardPoints"><Loyalty /></FeatureGuard></OwnerOnlyRoute>} />
       <Route path="/reviews" element={<OwnerOnlyRoute><Reviews /></OwnerOnlyRoute>} />
       <Route path="/google-business" element={<OwnerOnlyRoute><GoogleBusiness /></OwnerOnlyRoute>} />
-      <Route path="/reports" element={<Reports />} />
+      <Route path="/reports" element={<ReportsHub />} />
+      <Route path="/reports/dashboard" element={<Reports />} />
       <Route path="/register-reports" element={<RegisterReports />} />
-      <Route path="/commission-report" element={<Navigate to="/commissions" replace />} />
+      <Route path="/commission-report" element={<CommissionReport />} />
       <Route path="/salon-earnings" element={<SalonEarningsReport />} />
       {/* macOS-style Settings shell — left rail + detail pane, one URL per
           section (/settings/:section). Inline settings pages mount in the pane;

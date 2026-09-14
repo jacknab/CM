@@ -9,6 +9,7 @@ import {
   uniqueIndex,
   varchar,
   jsonb,
+  unique,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -17,6 +18,7 @@ import { z } from "zod";
 const _locations = pgTable("locations", { id: serial("id").primaryKey() });
 const _users = pgTable("users", { id: varchar("id").primaryKey() });
 const _staff = pgTable("staff", { id: serial("id").primaryKey() });
+const _appointments = pgTable("appointments", { id: serial("id").primaryKey() });
 
 // ─── clients ──────────────────────────────────────────────────────────────────
 export const clients = pgTable(
@@ -95,6 +97,13 @@ export const clientPhones = pgTable(
     phoneNumberE164: text("phone_number_e164").notNull(),
     displayPhone: text("display_phone"),
     phoneType: text("phone_type").notNull().default("mobile"),
+    // How phoneType was determined: "twilio_lookup" (paid Twilio Line Type
+    // Intelligence call, high confidence) | "heuristic" (free offline area-code
+    // guess) | "manual" (explicitly set by a caller). checkedAt is null until a
+    // Twilio lookup has actually run for this number.
+    phoneTypeSource: text("phone_type_source").notNull().default("heuristic"),
+    phoneTypeCheckedAt: timestamp("phone_type_checked_at"),
+    carrierName: text("carrier_name"),
     smsOptIn: boolean("sms_opt_in").notNull().default(true),
     verified: boolean("verified").notNull().default(false),
     isPrimary: boolean("is_primary").notNull().default(false),
@@ -104,6 +113,7 @@ export const clientPhones = pgTable(
   (t) => [
     index("client_phones_client_id_idx").on(t.clientId),
     index("client_phones_e164_idx").on(t.phoneNumberE164),
+    index("client_phones_phone_type_idx").on(t.phoneType),
   ]
 );
 
@@ -182,6 +192,12 @@ export const clientNotes = pgTable(
     visibility: text("visibility").notNull().default("internal"),
     noteContent: text("note_content").notNull(),
     pinned: boolean("pinned").notNull().default(false),
+    // Set only on system-generated "visit_auto" rows (one per completed
+    // appointment) — traces the note back to its source visit and, via the
+    // unique constraint below, makes visit-note creation idempotent. Left
+    // null on manual/general notes and on the single "ai_profile_summary"
+    // row a client can have.
+    appointmentId: integer("appointment_id").references(() => _appointments.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -189,6 +205,7 @@ export const clientNotes = pgTable(
     index("client_notes_client_id_idx").on(t.clientId),
     index("client_notes_store_id_idx").on(t.storeId),
     index("client_notes_pinned_idx").on(t.pinned),
+    unique("client_notes_appointment_id_key").on(t.appointmentId),
   ]
 );
 

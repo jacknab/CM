@@ -8,6 +8,7 @@ import supportRouter from "./routes/support";
 import { resolveSessionStoreId } from "./lib/sessionStore";
 import { resolveTimezoneFromAddress, hasAddressChange } from "./lib/resolveTimezone";
 import { getOrCreateTodayBusinessDay, getPendingReconciliation, getLocalDateString, computeBusinessDayTotals } from "./lib/businessDay";
+import { getClientIp, reportCalendarNetwork, isRequestFromTrustedNetwork } from "./lib/salonNetworkGuard";
 import { api } from "@shared/routes";
 import { isAuthenticated } from "./auth";
 import { attachAuthContext, requirePermission, ownStaffScope, can } from "./middleware/permissions";
@@ -105,6 +106,10 @@ import {
   googleServiceSyncSettings,
   gbpOptimizationLogs,
   salonResources,
+  registers,
+  registerClaims,
+  storeNetworkTrust,
+  cashDrawers,
   bookingBanList,
   posGrids,
   posGridSlots,
@@ -5501,6 +5506,17 @@ If you have any questions, please contact your administrator.
         input.customerId = clientId;
       }
 
+      // Salons can require a real client record for every walk-in (Calendar
+      // Settings → "Require a client record for walk-ins"). The UI hides the
+      // walk-in button when this is on, but enforce it here too in case this
+      // route is ever hit directly with no customerId.
+      if (!input.customerId) {
+        const calSettings = await storage.getCalendarSettings(sessionStoreId);
+        if ((calSettings as any)?.requireClientForWalkin) {
+          return res.status(400).json({ message: "A client record is required for this booking. Please look up or add a client first." });
+        }
+      }
+
       // NOTE: the deposit / card-on-file payment gate is intentionally NOT
       // applied here. Deposit / card-on-file holds (calendarHidden +
       // paymentStatus:"awaiting_payment") are for CUSTOMER-initiated online
@@ -6309,7 +6325,8 @@ If you have any questions, please contact your administrator.
   app.get(api.cashDrawer.open.path, isAuthenticated, async (req, res) => {
     const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(403).json({ message: "No store context" });
-    const session = await storage.getOpenCashDrawerSession(storeId);
+    const drawerId = req.query.drawerId ? Number(req.query.drawerId) || null : null;
+    const session = await storage.getOpenCashDrawerSession(storeId, drawerId);
     return res.json(session || null);
   });
 
@@ -6325,10 +6342,11 @@ If you have any questions, please contact your administrator.
   app.post(api.cashDrawer.create.path, isAuthenticated, async (req, res) => {
     try {
       const input = api.cashDrawer.create.input.parse(req.body);
+      const drawerId = input.drawerId ?? null;
 
-      const existing = await storage.getOpenCashDrawerSession(input.storeId);
+      const existing = await storage.getOpenCashDrawerSession(input.storeId, drawerId);
       if (existing) {
-        return res.status(409).json({ message: "A drawer session is already open for this store" });
+        return res.status(409).json({ message: "A drawer session is already open for this drawer" });
       }
 
       // If a denomination breakdown was provided, compute the opening balance from it
@@ -6355,11 +6373,11 @@ If you have any questions, please contact your administrator.
       }
       const openingBalance = computedOpening ?? input.openingBalance ?? "0.00";
 
-      // Compare against the most recent closed session for the store. If the prior
+      // Compare against the most recent closed session for THIS drawer. If the prior
       // closing balance differs from this opening count, flag for manager review.
       const allSessions = await storage.getCashDrawerSessions(input.storeId);
       const lastClosed = allSessions
-        .filter(s => s.status === "closed")
+        .filter(s => s.status === "closed" && ((s as any).drawerId ?? null) === drawerId)
         .sort((a, b) => {
           const at = a.closedAt ? new Date(a.closedAt).getTime() : 0;
           const bt = b.closedAt ? new Date(b.closedAt).getTime() : 0;
@@ -6380,6 +6398,7 @@ If you have any questions, please contact your administrator.
 
       const session = await storage.createCashDrawerSession({
         storeId: input.storeId,
+        drawerId,
         openedAt: new Date(),
         openingBalance,
         openingDenominationBreakdown: input.openingDenominationBreakdown || null,
@@ -6387,7 +6406,7 @@ If you have any questions, please contact your administrator.
         priorClosingVariance,
         openedBy: input.openedBy || null,
         status: "open",
-      });
+      } as any);
 
       await storage.createDrawerAction({
         sessionId: session.id,
@@ -6397,9 +6416,14 @@ If you have any questions, please contact your administrator.
         performedAt: new Date(),
       });
 
-      // On initial setup, save the opening balance as the store's target float
+      // On initial setup, save the opening balance as the target float — the
+      // specific drawer's, if one was given, else the store-wide default.
       if (input.isInitialSetup) {
-        await storage.updateStore(input.storeId, { registerTargetFloat: openingBalance } as any);
+        if (drawerId) {
+          await db.update(cashDrawers).set({ targetFloat: openingBalance }).where(eq(cashDrawers.id, drawerId));
+        } else {
+          await storage.updateStore(input.storeId, { registerTargetFloat: openingBalance } as any);
+        }
       }
 
       return res.status(201).json(session);
@@ -6486,18 +6510,33 @@ If you have any questions, please contact your administrator.
       let bankDepositAmount = "0.00";
       if (input.autoOpenNext) {
         const store = await storage.getStore(session.storeId);
-        const targetFloat = store && (store as any).registerTargetFloat
-          ? Number((store as any).registerTargetFloat)
-          : 0;
+        const sessionDrawerId = (session as any).drawerId ?? null;
+        const drawer = sessionDrawerId
+          ? (await db.select().from(cashDrawers).where(eq(cashDrawers.id, sessionDrawerId)))[0]
+          : null;
+        // Per-drawer target float override, falling back to the store-wide
+        // default — unchanged behavior for stores with no drawers configured.
+        const targetFloat = drawer?.targetFloat
+          ? Number(drawer.targetFloat)
+          : store && (store as any).registerTargetFloat
+            ? Number((store as any).registerTargetFloat)
+            : 0;
         const closingBal = Number(finalClosingBalance);
-        const bankDeposit = targetFloat > 0
-          ? Math.max(0, Math.round((closingBal - targetFloat) * 100) / 100)
-          : 0;
+        // Sweep everything above the target float to the bank deposit, and reset
+        // the next session's opening balance down to the float. When no float is
+        // configured (targetFloat === 0), this deposits the full drawer and resets
+        // the next day to $0 — previously the `targetFloat > 0` guard skipped this
+        // entirely for stores with no float set, so the full closing balance rolled
+        // forward as next day's opening balance and kept compounding night after
+        // night, which is why "expected cash" could balloon even on a day with zero
+        // cash sales.
+        const bankDeposit = Math.max(0, Math.round((closingBal - targetFloat) * 100) / 100);
         bankDepositAmount = bankDeposit.toFixed(2);
         const nextOpening = Math.max(0, Math.round((closingBal - bankDeposit) * 100) / 100);
 
         newSession = await storage.createCashDrawerSession({
           storeId: session.storeId,
+          drawerId: sessionDrawerId,
           openedAt: new Date(),
           openingBalance: nextOpening.toFixed(2),
           openedBy: input.closedBy || null,
@@ -17081,7 +17120,12 @@ or
         serviceId,
         appointmentId,
         requestedStaffId,
-        bookedByUserId: userId ? Number(userId) : null,
+        // userId isn't always a numeric session field (e.g. a staff-login
+        // session) — Number(userId) silently produces NaN for those, which
+        // Postgres then rejects on the audit-log INSERT below ("invalid
+        // input syntax for type integer"), silently dropping every walk-in's
+        // audit row. Validate it's actually numeric before using it.
+        bookedByUserId: Number.isFinite(Number(userId)) ? Number(userId) : null,
         offline: isOfflineTurn,
         source: req.body.source,
       });
@@ -20230,6 +20274,87 @@ or
       ADD COLUMN IF NOT EXISTS add_ons JSONB DEFAULT '[]'::jsonb
   `).catch(() => {});
 
+  // Salon-network restriction (Kiosk Settings → Restrict to salon network):
+  // when a store has this enabled, every /api/public/kiosk/:slug/* endpoint
+  // (and the /kiosk, /frontdesk pages themselves — gated separately in
+  // index.ts's SPA catch-all) is only reachable from the salon's own
+  // network. Deliberately returns 404 rather than 403 when blocked, so a
+  // blocked request can't be used to confirm a slug/store exists.
+  app.use("/api/public/kiosk/:slug", async (req, res, next) => {
+    try {
+      const [store] = await db.select({ id: locations.id }).from(locations)
+        .where(eq(locations.bookingSlug, req.params.slug));
+      if (!store) return next(); // let the route's own "not found" handling apply
+      if (await isRequestFromTrustedNetwork(store.id, req)) return next();
+      return res.status(404).json({ error: "Not found" });
+    } catch (err) {
+      console.error("[salonNetworkGuard] API gate failed:", err);
+      return next(); // fail open on an unexpected error
+    }
+  });
+
+  // === SALON NETWORK TRUST (restrict /kiosk & /frontdesk to the salon's network) ===
+  app.post("/api/store-network/report", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const deviceId = String(req.body?.deviceId ?? "").trim();
+      if (!deviceId) return res.status(400).json({ message: "deviceId is required" });
+      await reportCalendarNetwork(storeId, deviceId, getClientIp(req));
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[POST /api/store-network/report]", err);
+      return res.status(500).json({ message: "Failed to report network" });
+    }
+  });
+
+  app.get("/api/store-network/status", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const [store] = await db.select({ restrict: locations.restrictKioskNetwork }).from(locations).where(eq(locations.id, storeId));
+      const [trust] = await db.select().from(storeNetworkTrust).where(eq(storeNetworkTrust.storeId, storeId));
+      const deviceId = String(req.query.deviceId ?? "");
+      return res.json({
+        enabled: !!store?.restrict,
+        established: !!trust,
+        trustedIp: trust?.trustedIp ?? null,
+        updatedAt: trust?.updatedAt ?? null,
+        isThisDeviceAnchor: !!trust && !!deviceId && trust.anchorDeviceId === deviceId,
+      });
+    } catch (err) {
+      console.error("[GET /api/store-network/status]", err);
+      return res.status(500).json({ message: "Failed to fetch network status" });
+    }
+  });
+
+  app.put("/api/store-network/settings", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const enabled = Boolean(req.body?.enabled);
+      await storage.updateStore(storeId, { restrictKioskNetwork: enabled } as any);
+      return res.json({ enabled });
+    } catch (err) {
+      console.error("[PUT /api/store-network/settings]", err);
+      return res.status(500).json({ message: "Failed to update network settings" });
+    }
+  });
+
+  // Clears the current anchor/trusted IP so the next device to open /calendar
+  // establishes a fresh one — the safety valve for "we replaced the salon's
+  // POS terminal" or "the trusted IP is wrong and kiosk stopped working".
+  app.post("/api/store-network/reset", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      await db.delete(storeNetworkTrust).where(eq(storeNetworkTrust.storeId, storeId));
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[POST /api/store-network/reset]", err);
+      return res.status(500).json({ message: "Failed to reset network trust" });
+    }
+  });
 
   // GET /api/public/kiosk/:slug/config — store info + all services
   app.get("/api/public/kiosk/:slug/config", async (req, res) => {
@@ -20237,6 +20362,45 @@ or
       const { slug } = req.params;
       const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
       if (!store) return res.status(404).json({ error: "Store not found" });
+
+      // Optional register (checkout station) identity for /frontdesk/:slug/:registerId.
+      // No registerId in the URL at all (the base /frontdesk/:slug) always
+      // means the default station — that's not an error. But if a specific
+      // id WAS given and doesn't match an active register for this store,
+      // that's a real mistake (typo, retired station, stale bookmark) and
+      // should say so clearly instead of silently pairing to the default
+      // station, which would otherwise cross-talk into POS #1's traffic with
+      // no indication anything was wrong.
+      let resolvedRegisterId = 0;
+      let resolvedRegisterName: string | null = null;
+      const requestedRegisterId = Number(req.query.registerId) || 0;
+      if (requestedRegisterId) {
+        const [reg] = await db.select().from(registers)
+          .where(and(eq(registers.id, requestedRegisterId), eq(registers.storeId, store.id)));
+        if (reg && reg.isActive) {
+          resolvedRegisterId = reg.id;
+          resolvedRegisterName = reg.name;
+        } else {
+          return res.json({
+            registerNotFound: true,
+            store: { id: store.id, name: store.name, phone: store.phone, address: store.address },
+          });
+        }
+      } else {
+        // Bare /frontdesk/:slug with no id — if this store has graduated to
+        // having a real "POS #1" row (isDefault=true, created the first time
+        // it added a second station), resolve to THAT row's real id instead
+        // of the legacy hardcoded 0, so the bare URL and the explicit
+        // /frontdesk/:slug/:id URL for POS #1 land in the same WS bucket
+        // instead of silently splitting into two disconnected stations.
+        const [defaultReg] = await db.select().from(registers)
+          .where(and(eq(registers.storeId, store.id), eq(registers.isDefault, true)));
+        if (defaultReg && defaultReg.isActive) {
+          resolvedRegisterId = defaultReg.id;
+          resolvedRegisterName = defaultReg.name;
+        }
+      }
+
       const storeStatus3 = ((store as any).accountStatus ?? "active").toLowerCase();
       if (storeStatus3 === "suspended" || storeStatus3 === "canceled") {
         return res.json({
@@ -20440,6 +20604,8 @@ or
         showServicePrice: ks.showServicePrice !== false,
         showServiceDuration: ks.showServiceDuration !== false,
         dualScreenMode: ks.dualScreenMode === true,
+        registerId: resolvedRegisterId,
+        registerName: resolvedRegisterName,
       });
     } catch (err) {
       console.error("[kiosk/config]", err);
@@ -20585,6 +20751,37 @@ or
           staffAvatarThumbUrl: appt.staff_avatar_thumb ?? null,
           appointmentTime:     appt.date,
         };
+      } else {
+        // No appointment today — record a walk-in check-in marker (no
+        // appointment_id yet) so this client shows up on staff's Quick List
+        // right away. Deliberately NOT a real appointments row: this
+        // phone-only step has no service-selection UI, so there's nothing
+        // bookable yet. Tapping the marker in the Quick List sends staff to
+        // /booking/new?clientId=X&walkIn=1&checkinId=<id> — the walk-in
+        // booking flow — which resolves this marker (sets appointment_id)
+        // once the real appointment is created. No expires_at, so this is
+        // excluded from the public queue/wait-estimate math (kiosk/availability),
+        // which only counts real waitlist tickets.
+        const { rows: recentCheckin } = await pool.query(
+          `SELECT id FROM kiosk_checkins
+           WHERE store_id = $1 AND client_id = $2 AND appointment_id IS NULL
+             AND created_at >= NOW() - INTERVAL '2 hours'
+           LIMIT 1`,
+          [store.id, client.id]
+        );
+        if (recentCheckin.length === 0) {
+          const token = crypto.randomBytes(24).toString("hex");
+          await pool.query(
+            `INSERT INTO kiosk_checkins (store_id, client_id, phone, client_name, token, status)
+             VALUES ($1, $2, $3, $4, $5, 'waiting')`,
+            [store.id, client.id, digits, client.fullName ?? null, token]
+          );
+          void logActivityEvent({
+            storeId: store.id,
+            eventType: "check_in",
+            message: `${client.fullName || "A client"} checked in (walk-in)`,
+          });
+        }
       }
 
       return res.json({
@@ -21308,7 +21505,7 @@ or
       );
 
       const { rows } = await pool.query(`
-        SELECT kc.id, kc.token, kc.client_name, kc.phone, kc.services,
+        SELECT kc.id, kc.token, kc.client_id, kc.client_name, kc.phone, kc.services,
                kc.status, kc.appointment_id, kc.created_at,
                kc.staff_id, kc.assigned_staff_name,
                s.name AS staff_name, s.color AS staff_color, s.avatar_thumb_url AS staff_avatar
@@ -21328,6 +21525,7 @@ or
       return res.json(rows.map((r: any) => ({
         id:            r.id,
         token:         r.token,
+        clientId:      r.client_id,
         clientName:    r.client_name,
         phone:         r.phone,
         services:      r.services ?? [],
@@ -21342,6 +21540,31 @@ or
     } catch (err) {
       console.error("[kiosk/walkins/today]", err);
       return res.status(500).json({ error: "Failed to load walk-ins" });
+    }
+  });
+
+  // PUT /api/kiosk/walkins/:id/link-appointment — resolve a phone check-in
+  // marker (created with no appointment_id — see /api/public/kiosk/:slug/lookup)
+  // once staff finishes the walk-in booking flow for it, so it stops showing
+  // as "not yet booked" in the Quick List.
+  app.put("/api/kiosk/walkins/:id/link-appointment", isAuthenticated, async (req: any, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(400).json({ error: "No store context" });
+      const checkinId = Number(req.params.id);
+      const appointmentId = Number(req.body?.appointmentId);
+      if (!Number.isFinite(checkinId) || !Number.isFinite(appointmentId)) {
+        return res.status(400).json({ error: "Invalid id" });
+      }
+      const { rowCount } = await pool.query(
+        `UPDATE kiosk_checkins SET appointment_id = $1 WHERE id = $2 AND store_id = $3`,
+        [appointmentId, checkinId, storeId]
+      );
+      if (!rowCount) return res.status(404).json({ error: "Check-in not found" });
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[kiosk/walkins/link-appointment]", err);
+      return res.status(500).json({ error: "Failed to link appointment" });
     }
   });
 
@@ -21611,18 +21834,257 @@ or
     }
   });
 
-  // POST /api/kiosk/checkout-event — broadcast a dual-screen POS checkout event to all kiosk clients
+  // POST /api/kiosk/checkout-event — broadcast a dual-screen POS checkout event
+  // to its paired register's kiosk clients (registerId 0 / omitted = the
+  // store's default register, i.e. every store that hasn't set up multiple
+  // checkout stations — see migrations/0174_registers.sql).
   app.post("/api/kiosk/checkout-event", isAuthenticated, async (req: any, res) => {
     try {
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(400).json({ error: "No store selected" });
-      const { type, ...payload } = req.body;
+      const { type, registerId, ...payload } = req.body;
       if (!type) return res.status(400).json({ error: "type is required" });
-      broadcastNotification({ type, storeId, ...payload } as any);
+      broadcastNotification({ type, storeId, registerId: Number(registerId) || 0, ...payload } as any);
       return res.json({ ok: true });
     } catch (err) {
       console.error("[kiosk/checkout-event]", err);
       return res.status(500).json({ error: "Failed to broadcast" });
+    }
+  });
+
+  // === REGISTERS (checkout station pairing: /calendar ↔ /frontdesk) ─────────
+  // Optional named checkout stations. A store with zero rows here has every
+  // /calendar and /frontdesk connection implicitly share registerId 0 — see
+  // shared/schema.ts's `registers` table and artifacts/api-server/src/notifications.ts.
+  app.get("/api/registers", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const rows = await db
+        .select()
+        .from(registers)
+        .where(eq(registers.storeId, storeId))
+        .orderBy(registers.sortOrder, registers.id);
+      return res.json(rows);
+    } catch (err) {
+      console.error("[GET /api/registers]", err);
+      return res.status(500).json({ message: "Failed to fetch registers" });
+    }
+  });
+
+  app.post("/api/registers", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      // Name is auto-assigned server-side ("POS #2", "POS #3", …), never taken
+      // from the request body — so support can rely on "POS #2" meaning the
+      // same thing on every account, and it can't be spoofed via a direct API
+      // call either. Numbers are never reused after a delete (based on the
+      // highest number ever assigned).
+      const existing = await db.select({ name: registers.name }).from(registers).where(eq(registers.storeId, storeId));
+      const usedNumbers = existing
+        .map((r) => { const m = r.name.match(/^POS #(\d+)$/); return m ? parseInt(m[1], 10) : null; })
+        .filter((n): n is number => n !== null);
+
+      // First time this store has ever added a station: create a real "POS #1"
+      // row for the original/default station too (isDefault=true), so from
+      // this point on every station is a real, equally-treated row instead of
+      // leaving POS #1 as a hardcoded registerId-0 concept forever.
+      if (existing.length === 0) {
+        const created = await db.transaction(async (tx) => {
+          await tx.insert(registers).values({ storeId, name: "POS #1", isDefault: true, sortOrder: 0 });
+          const [posTwo] = await tx.insert(registers)
+            .values({ storeId, name: "POS #2", sortOrder: 1 })
+            .returning();
+          return posTwo;
+        });
+        return res.status(201).json(created);
+      }
+
+      const nextPosNumber = Math.max(1, ...usedNumbers) + 1;
+      const [created] = await db
+        .insert(registers)
+        .values({ storeId, name: `POS #${nextPosNumber}`, sortOrder: req.body?.sortOrder ?? 0 })
+        .returning();
+      return res.status(201).json(created);
+    } catch (err) {
+      console.error("[POST /api/registers]", err);
+      return res.status(500).json({ message: "Failed to create register" });
+    }
+  });
+
+  app.put("/api/registers/:id", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const id = parseInt(String(req.params.id), 10);
+      // Name is intentionally NOT editable here — it's auto-assigned at
+      // creation ("POS #2", "POS #3", …) and kept fixed so support can rely
+      // on "POS #2" meaning the same thing on every account.
+      const { sortOrder, isActive } = req.body;
+      const patch: Record<string, any> = {};
+      if (sortOrder != null) patch.sortOrder = Number(sortOrder);
+      if (isActive != null)  patch.isActive  = Boolean(isActive);
+      if (!Object.keys(patch).length) return res.status(400).json({ message: "Nothing to update" });
+      const [updated] = await db
+        .update(registers)
+        .set(patch)
+        .where(and(eq(registers.id, id), eq(registers.storeId, storeId)))
+        .returning();
+      if (!updated) return res.status(404).json({ message: "Register not found" });
+      return res.json(updated);
+    } catch (err) {
+      console.error("[PUT /api/registers/:id]", err);
+      return res.status(500).json({ message: "Failed to update register" });
+    }
+  });
+
+  app.delete("/api/registers/:id", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const id = parseInt(String(req.params.id), 10);
+      await db.delete(registers).where(and(eq(registers.id, id), eq(registers.storeId, storeId)));
+      // Free up its claim too, so the (now-invalid) id can't linger as "in use".
+      await db.delete(registerClaims).where(and(eq(registerClaims.registerId, id), eq(registerClaims.storeId, storeId)));
+      return res.status(204).end();
+    } catch (err) {
+      console.error("[DELETE /api/registers/:id]", err);
+      return res.status(500).json({ message: "Failed to delete register" });
+    }
+  });
+
+  // === REGISTER CLAIMS (which device currently "owns" each POS station) ────
+  // A claim without a heartbeat in the last 15 minutes is stale and treated
+  // as free — see migrations/0176_register_claims.sql.
+  const REGISTER_CLAIM_STALE_MS = 15 * 60 * 1000;
+
+  app.get("/api/registers/claims", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const rows = await db.select().from(registerClaims).where(eq(registerClaims.storeId, storeId));
+      const cutoff = Date.now() - REGISTER_CLAIM_STALE_MS;
+      const active = rows.filter((r) => new Date(r.claimedAt as any).getTime() >= cutoff);
+      return res.json(active.map((r) => ({ registerId: r.registerId, deviceId: r.deviceId, claimedAt: r.claimedAt })));
+    } catch (err) {
+      console.error("[GET /api/registers/claims]", err);
+      return res.status(500).json({ message: "Failed to fetch register claims" });
+    }
+  });
+
+  app.post("/api/registers/claim", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const registerId = Number(req.body?.registerId) || 0;
+      const deviceId = String(req.body?.deviceId ?? "").trim();
+      if (!deviceId) return res.status(400).json({ message: "deviceId is required" });
+
+      const [existing] = await db.select().from(registerClaims)
+        .where(and(eq(registerClaims.storeId, storeId), eq(registerClaims.registerId, registerId)));
+
+      const isStale = existing && (Date.now() - new Date(existing.claimedAt as any).getTime() >= REGISTER_CLAIM_STALE_MS);
+      if (existing && existing.deviceId !== deviceId && !isStale) {
+        return res.status(409).json({ message: "This station is already in use on another device" });
+      }
+
+      if (existing) {
+        const [updated] = await db.update(registerClaims)
+          .set({ deviceId, claimedAt: new Date() })
+          .where(eq(registerClaims.id, existing.id))
+          .returning();
+        return res.json(updated);
+      }
+      const [created] = await db.insert(registerClaims)
+        .values({ storeId, registerId, deviceId })
+        .returning();
+      return res.status(201).json(created);
+    } catch (err) {
+      console.error("[POST /api/registers/claim]", err);
+      return res.status(500).json({ message: "Failed to claim register" });
+    }
+  });
+
+  // === CASH DRAWERS (physical cash boxes — distinct from registers) ─────────
+  // Optional named cash drawers. A store with zero rows here has every
+  // cash-drawer session implicitly share drawerId null — see shared/schema.ts's
+  // `cashDrawers` table.
+  app.get("/api/cash-drawers", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const rows = await db
+        .select()
+        .from(cashDrawers)
+        .where(eq(cashDrawers.storeId, storeId))
+        .orderBy(cashDrawers.sortOrder, cashDrawers.id);
+      return res.json(rows);
+    } catch (err) {
+      console.error("[GET /api/cash-drawers]", err);
+      return res.status(500).json({ message: "Failed to fetch cash drawers" });
+    }
+  });
+
+  app.post("/api/cash-drawers", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const { name, registerId, targetFloat, sortOrder } = req.body;
+      if (!String(name ?? "").trim()) return res.status(400).json({ message: "name is required" });
+      const [created] = await db
+        .insert(cashDrawers)
+        .values({
+          storeId,
+          name: String(name).trim(),
+          registerId: registerId != null ? Number(registerId) : null,
+          targetFloat: targetFloat != null ? String(targetFloat) : null,
+          sortOrder: sortOrder ?? 0,
+        })
+        .returning();
+      return res.status(201).json(created);
+    } catch (err) {
+      console.error("[POST /api/cash-drawers]", err);
+      return res.status(500).json({ message: "Failed to create cash drawer" });
+    }
+  });
+
+  app.put("/api/cash-drawers/:id", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const id = parseInt(String(req.params.id), 10);
+      const { name, registerId, targetFloat, sortOrder, isActive } = req.body;
+      const patch: Record<string, any> = {};
+      if (name != null)       patch.name       = String(name).trim();
+      if (registerId !== undefined) patch.registerId = registerId != null ? Number(registerId) : null;
+      if (targetFloat !== undefined) patch.targetFloat = targetFloat != null ? String(targetFloat) : null;
+      if (sortOrder != null)  patch.sortOrder  = Number(sortOrder);
+      if (isActive != null)   patch.isActive   = Boolean(isActive);
+      if (!Object.keys(patch).length) return res.status(400).json({ message: "Nothing to update" });
+      const [updated] = await db
+        .update(cashDrawers)
+        .set(patch)
+        .where(and(eq(cashDrawers.id, id), eq(cashDrawers.storeId, storeId)))
+        .returning();
+      if (!updated) return res.status(404).json({ message: "Cash drawer not found" });
+      return res.json(updated);
+    } catch (err) {
+      console.error("[PUT /api/cash-drawers/:id]", err);
+      return res.status(500).json({ message: "Failed to update cash drawer" });
+    }
+  });
+
+  app.delete("/api/cash-drawers/:id", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const id = parseInt(String(req.params.id), 10);
+      await db.delete(cashDrawers).where(and(eq(cashDrawers.id, id), eq(cashDrawers.storeId, storeId)));
+      return res.status(204).end();
+    } catch (err) {
+      console.error("[DELETE /api/cash-drawers/:id]", err);
+      return res.status(500).json({ message: "Failed to delete cash drawer" });
     }
   });
 

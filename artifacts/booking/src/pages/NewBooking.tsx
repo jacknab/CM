@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
 import { useServices } from "@/hooks/use-services";
 import { useStaffList } from "@/hooks/use-staff";
@@ -29,7 +29,7 @@ import { turnClaimsDB, type TurnClaim } from "@/lib/turn-claims-db";
 import { getTimezoneAbbr, formatInTz, storeLocalToUtc, getNowInTimezone, toLocalDateStringInTz } from "@/lib/timezone";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Clock, User, Users, X, Scissors, Sparkles, Loader2, Check, CalendarDays, Timer, AlertCircle, Trash2, Plus, WifiOff, Star } from "lucide-react";
+import { ArrowLeft, ArrowRight, Clock, User, Users, X, Scissors, Sparkles, Loader2, Check, CalendarDays, Timer, AlertCircle, Trash2, Plus, WifiOff, Star, NotebookPen } from "lucide-react";
 import { cn, formatPhoneInput } from "@/lib/utils";
 import type { Service, ServiceWithOptions, ServiceOption, Staff, Customer, Addon } from "@shared/schema";
 import { getRequiredResourceType } from "@shared/resourceMatching";
@@ -223,6 +223,11 @@ export default function NewBooking() {
   const isReschedule = params.get("reschedule") === "1";
   const isCalendarBooking = !!(calStaffId && calDate && calTime);
   const isWalkIn = params.get("walkIn") === "1";
+  // Set when this walk-in booking started from a phone check-in on /frontdesk
+  // with no matching appointment (Calendar's Quick List "Arrived" tab) — once
+  // the appointment below is created, this check-in marker gets linked to it
+  // so it stops showing as "not yet booked".
+  const checkinId = params.get("checkinId") ? Number(params.get("checkinId")) : null;
   // noShowFill: sent by the no-show sheet when "Book Walk-In for This Slot" is clicked.
   // Treated as a calendar booking (specific staff + slot) but bypasses the past-time guard
   // and the Turn system, so the appointment lands exactly on the no-show slot.
@@ -453,6 +458,22 @@ export default function NewBooking() {
     setSpecificStaffId(nextTurnTech.id);
     setSelectedSlot(null);
   }, [isWalkIn, nextTurnTech?.id]);
+
+  // Re-validate the auto-picked slot if the total duration changes after it
+  // was locked in (staff adds an addon on the Extras screen, extending the
+  // ticket past the service's base duration). Without this, the stale slot
+  // — checked against the shorter, pre-addon duration — gets submitted
+  // as-is, and the server correctly rejects it once the real total duration
+  // no longer fits that tech's calendar ("staff already has an appointment
+  // at that time"). Clearing it here lets the effect below re-pick a slot
+  // that actually fits the new duration.
+  const walkInDurationRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!isWalkIn || !navigator.onLine) return;
+    if (walkInDurationRef.current === totalDurationEarly) return;
+    walkInDurationRef.current = totalDurationEarly;
+    setSelectedSlot(null);
+  }, [isWalkIn, totalDurationEarly]);
 
   // Online only — see above.
   useEffect(() => {
@@ -919,8 +940,23 @@ export default function NewBooking() {
     if (!slotToUse) { bookingSubmittingRef.current = false; return; }
 
     const staffId = slotToUse.staffId;
+    // The walk-in slot-resolution effects (above) pick the assigned tech's
+    // NEXT available slot, which is only literally "now" when they're free —
+    // if they're currently busy it resolves to whenever they free up instead.
+    // A 5-minute buffer absorbs slot-grid rounding (slots land on fixed
+    // increments, not the exact current second) without treating a real
+    // wait as "available now".
+    const isWalkInSlotNow = isWalkIn && (new Date(slotToUse.time).getTime() - Date.now()) <= 5 * 60_000;
 
     const finalize = (appointmentId?: number | string) => {
+      if (isWalkIn && checkinId && typeof appointmentId === "number" && navigator.onLine) {
+        fetch(`/api/kiosk/walkins/${checkinId}/link-appointment`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ appointmentId }),
+        }).catch(() => {});
+      }
       if (isWalkIn && selectedStore?.id) {
         // Online: do NOT pass staffId — the server picks whoever is #1 in the
         // queue and applies the Consideration Lock. Passing staffId would flag
@@ -1025,11 +1061,15 @@ export default function NewBooking() {
           ? selectedResourceId!
           : undefined,
         notes: notes || undefined,
-        // A walk-in client is physically present, so the booking is created
-        // already "confirmed" (checked in). The Turn Consideration Lock holds
-        // the assigned tech out of the queue; the service auto-starts at the
-        // booking start time.
-        status: isWalkIn ? "confirmed" : "pending",
+        // A walk-in client is physically present, so if the assigned tech is
+        // actually free right now the booking is created already "confirmed"
+        // (checked in) — the Turn Consideration Lock holds them out of the
+        // queue and the service auto-starts at the booking start time. But if
+        // the next-in-line tech is busy and the resolved slot is really some
+        // later time (they have to wait), it's not truly "confirmed" yet —
+        // leave it "pending" like a normal scheduled booking; it becomes
+        // confirmed once that time arrives or staff manually checks them in.
+        status: isWalkIn && isWalkInSlotNow ? "confirmed" : "pending",
         // Tell the server this is a no-show fill so it skips the
         // "no past appointments" guard and the conflict check for the
         // no-show slot itself.
@@ -2890,6 +2930,19 @@ function BookingSummaryPanel({
     staleTime: 5 * 60 * 1000,
   });
   const bookingIntel = clientIntelData?.intel;
+
+  const { data: clientProfileNoteData } = useQuery<{ note: { noteContent: string } | null }>({
+    queryKey: ["/api/clients", selectedCustomer?.id, "profile-note"],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${selectedCustomer!.id}/profile-note`, { credentials: "include" });
+      if (!res.ok) return { note: null };
+      return res.json();
+    },
+    enabled: selectedCustomerHasServerId,
+    staleTime: 60_000,
+  });
+  const clientProfileNote = clientProfileNoteData?.note ?? null;
+  const [showClientNoteDialog, setShowClientNoteDialog] = useState(false);
   const noShowInfo = useMemo(() => {
     if (!selectedCustomer) return null;
     const mine = (allAppts as any[]).filter(a => a.customerId === selectedCustomer.id);
@@ -2907,18 +2960,31 @@ function BookingSummaryPanel({
         <div className="flex-1 min-w-0">
           {selectedCustomer ? (
             <>
-              <button
-                type="button"
-                onClick={() => onSetCustomer(null)}
-                className="w-full text-left flex items-center gap-2 -m-1 p-1 rounded-md hover:bg-muted/50 active:bg-muted transition-colors"
-                data-testid="button-replace-client"
-                title={bt.replaceClient}
-              >
-                <span className="text-xl font-bold text-foreground truncate">
-                  {selectedCustomer.name}
-                </span>
-                <X className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => onSetCustomer(null)}
+                  className="flex-1 min-w-0 text-left flex items-center gap-2 -m-1 p-1 rounded-md hover:bg-muted/50 active:bg-muted transition-colors"
+                  data-testid="button-replace-client"
+                  title={bt.replaceClient}
+                >
+                  <span className="text-xl font-bold text-foreground truncate">
+                    {selectedCustomer.name}
+                  </span>
+                  <X className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                </button>
+                {clientProfileNote && (
+                  <button
+                    type="button"
+                    onClick={() => setShowClientNoteDialog(true)}
+                    className="flex-shrink-0 p-1.5 rounded-md text-primary hover:bg-primary/10 active:bg-primary/15 transition-colors"
+                    data-testid="button-view-client-note"
+                    title="View AI client note"
+                  >
+                    <NotebookPen className="w-6 h-6" />
+                  </button>
+                )}
+              </div>
               {selectedCustomer.phone && (
                 <p className="text-xs text-muted-foreground mt-0.5">{formatPhoneNumber(selectedCustomer.phone)}</p>
               )}
@@ -2988,6 +3054,26 @@ function BookingSummaryPanel({
           </button>
         )}
       </div>
+
+      <Dialog open={showClientNoteDialog} onOpenChange={setShowClientNoteDialog}>
+        <DialogContent className="sm:max-w-3xl p-8 [&>button]:hidden">
+          <button
+            type="button"
+            onClick={() => setShowClientNoteDialog(false)}
+            className="absolute right-4 top-4 h-11 w-11 flex items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            data-testid="button-close-client-note"
+          >
+            <X className="h-6 w-6" />
+          </button>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-2xl">
+              <Sparkles className="w-6 h-6 text-primary" />
+              Client Insights
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-lg text-foreground leading-relaxed">{clientProfileNote?.noteContent}</p>
+        </DialogContent>
+      </Dialog>
 
       <div className="flex-1 overflow-y-auto">
         {selectedService ? (

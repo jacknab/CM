@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -74,6 +74,10 @@ function StatCard({
 
 export default function Reports() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const validTabs = ["revenue", "appointments", "staff", "services", "customers", "tax"];
+  const tabFromUrl = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState(validTabs.includes(tabFromUrl ?? "") ? tabFromUrl! : "revenue");
   const { selectedStore } = useSelectedStore();
   const { pick } = useLanguage();
   const [range, setRange] = useState<Range>("30d");
@@ -551,8 +555,8 @@ export default function Reports() {
     <AppLayout>
       {/* Back to hub */}
       <div style={{ position:"sticky",top:0,zIndex:40,background:"#fff",borderBottom:"1px solid #e5e7eb",padding:"10px 24px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 1px 3px 0 rgb(0 0 0/.06)",marginLeft:-32,marginRight:-32,marginTop:-24,marginBottom:0 }}>
-        <button onClick={()=>navigate("/payouts/contractors")} style={{ display:"flex",alignItems:"center",gap:5,padding:"5px 12px",borderRadius:8,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:".82rem",fontWeight:600,color:"#374151",whiteSpace:"nowrap" }}>
-          ← Staff &amp; Earnings
+        <button onClick={()=>navigate("/reports")} style={{ display:"flex",alignItems:"center",gap:5,padding:"5px 12px",borderRadius:8,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontSize:".82rem",fontWeight:600,color:"#374151",whiteSpace:"nowrap" }}>
+          ← Reports
         </button>
         <div style={{ width:1,height:18,background:"#e5e7eb",flexShrink:0 }} />
         <span style={{ fontSize:".92rem",fontWeight:700,color:"#1c1917" }}>Reports</span>
@@ -583,7 +587,7 @@ export default function Reports() {
           </div>
         </div>
 
-        <Tabs defaultValue="revenue">
+        <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); setSearchParams(v === "revenue" ? {} : { tab: v }, { replace: true }); }}>
           <TabsList className="mb-4 flex-wrap">
             <TabsTrigger value="revenue">{t.tabRevenue}</TabsTrigger>
             <TabsTrigger value="appointments">{t.tabAppointments}</TabsTrigger>

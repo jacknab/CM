@@ -38,6 +38,7 @@ import { toE164US, displayPhone as formatDisplayPhone } from "./lib/phoneUtils";
 import { claimStaffColor } from "./lib/staffColorUtils";
 import { snapshotCompletionFields } from "./lib/commissionSnapshot";
 import { recordCommissionAccrual } from "./lib/commissionAccrual";
+import { createVisitNoteForAppointment, regenerateAiProfileNote } from "./lib/clientVisitNotes";
 
 export interface IStorage {
   getStores(userId?: string): Promise<Store[]>;
@@ -140,7 +141,7 @@ export interface IStorage {
 
   getCashDrawerSessions(storeId: number): Promise<CashDrawerSessionWithActions[]>;
   getCashDrawerSession(id: number): Promise<CashDrawerSessionWithActions | undefined>;
-  getOpenCashDrawerSession(storeId: number): Promise<CashDrawerSessionWithActions | undefined>;
+  getOpenCashDrawerSession(storeId: number, drawerId?: number | null): Promise<CashDrawerSessionWithActions | undefined>;
   createCashDrawerSession(session: InsertCashDrawerSession): Promise<CashDrawerSession>;
   updateCashDrawerSession(id: number, data: Partial<InsertCashDrawerSession>): Promise<CashDrawerSession | undefined>;
   createDrawerAction(action: InsertDrawerAction): Promise<DrawerAction>;
@@ -758,11 +759,13 @@ export class DatabaseStorage implements IStorage {
     }
     if (phone) {
       const e164 = toE164US(phone) ?? phone;
-      // Auto-detect whether this phone is mobile, VoIP, or landline
-      let detectedType: "mobile" | "voip" | "landline" | "unknown" = "unknown";
+      // Detect whether this phone is mobile, VoIP, or landline (Twilio Lookup
+      // when configured, else an offline heuristic).
+      let resolved: { phoneType: "mobile" | "voip" | "landline" | "unknown"; source: "twilio_lookup" | "heuristic"; carrierName: string | null } =
+        { phoneType: "unknown", source: "heuristic", carrierName: null };
       try {
-        const { detectPhoneType } = await import("./lib/phoneTypeDetector");
-        detectedType = detectPhoneType(e164).phoneType;
+        const { resolvePhoneType } = await import("./lib/phoneTypeDetector");
+        resolved = await resolvePhoneType(e164);
       } catch (e: any) {
         console.warn(`[storage] phone-type detection skipped: ${e?.message ?? e}`);
       }
@@ -770,7 +773,10 @@ export class DatabaseStorage implements IStorage {
         clientId: newClient.id,
         phoneNumberE164: e164,
         displayPhone: formatDisplayPhone(e164) || phone,
-        phoneType: detectedType,
+        phoneType: resolved.phoneType,
+        phoneTypeSource: resolved.source,
+        phoneTypeCheckedAt: resolved.source === "twilio_lookup" ? new Date() : null,
+        carrierName: resolved.carrierName,
         smsOptIn: true,
         isPrimary: true,
         storeId: storeId ?? null,
@@ -806,7 +812,25 @@ export class DatabaseStorage implements IStorage {
       const e164 = toE164US(updateData.phone);
       if (e164) {
         const display = formatDisplayPhone(e164) || updateData.phone;
-        await db.insert(clientPhones).values({ clientId: id, phoneNumberE164: e164, displayPhone: display, phoneType: "mobile", smsOptIn: true, isPrimary: true }).onConflictDoNothing();
+        let resolved: { phoneType: "mobile" | "voip" | "landline" | "unknown"; source: "twilio_lookup" | "heuristic"; carrierName: string | null } =
+          { phoneType: "unknown", source: "heuristic", carrierName: null };
+        try {
+          const { resolvePhoneType } = await import("./lib/phoneTypeDetector");
+          resolved = await resolvePhoneType(e164);
+        } catch (e: any) {
+          console.warn(`[storage] phone-type detection skipped: ${e?.message ?? e}`);
+        }
+        await db.insert(clientPhones).values({
+          clientId: id,
+          phoneNumberE164: e164,
+          displayPhone: display,
+          phoneType: resolved.phoneType,
+          phoneTypeSource: resolved.source,
+          phoneTypeCheckedAt: resolved.source === "twilio_lookup" ? new Date() : null,
+          carrierName: resolved.carrierName,
+          smsOptIn: true,
+          isPrimary: true,
+        }).onConflictDoNothing();
       }
     }
     if (updateData.email) {
@@ -920,15 +944,41 @@ export class DatabaseStorage implements IStorage {
     // appointment is completed, so commission reports / payroll runs stay
     // reproducible if either is edited (or the service deleted) afterwards.
     // Idempotent — a no-op if it was already completed or already snapshotted.
+    let wasAlreadyCompleted = false;
     if (updateData.status === "completed") {
+      const [cur] = await db.select({ status: appointments.status }).from(appointments).where(eq(appointments.id, id));
+      wasAlreadyCompleted = cur?.status === "completed";
       const snap = await snapshotCompletionFields(id);
       if (snap.servicePrice   !== undefined) (updateData as any).servicePrice   = snap.servicePrice;
       if (snap.commissionRate !== undefined) (updateData as any).commissionRate = snap.commissionRate;
+    }
+    // Visit notes/AI profile note also log no-shows (not just completions) so
+    // the note can tell a nail tech "their last appointment was a no-show" —
+    // check pre-update status the same way, just without the commission
+    // snapshot work above (no-shows don't accrue commission).
+    let wasAlreadyNoShow = false;
+    if (updateData.status === "no_show") {
+      const [cur] = await db.select({ status: appointments.status }).from(appointments).where(eq(appointments.id, id));
+      wasAlreadyNoShow = cur?.status === "no_show";
     }
     const [appointment] = await db.update(appointments).set(updateData).where(eq(appointments.id, id)).returning();
     if (appointment && updateData.status === "completed") {
       // Fire-and-forget: never let accrual bookkeeping block completing a ticket.
       void recordCommissionAccrual(appointment).catch(() => {});
+    }
+    // Fire-and-forget: log this visit + refresh the client's AI profile note.
+    // Guarded by wasAlready* so a repeat write of the same terminal status
+    // (e.g. Terminal capture followed by a client-side follow-up PATCH) never
+    // double-logs the same visit.
+    if (appointment && appointment.customerId && appointment.storeId) {
+      const shouldLogVisit =
+        (updateData.status === "completed" && !wasAlreadyCompleted) ||
+        (updateData.status === "no_show" && !wasAlreadyNoShow);
+      if (shouldLogVisit) {
+        void createVisitNoteForAppointment(appointment.id)
+          .then(() => regenerateAiProfileNote(appointment.customerId!, appointment.storeId!))
+          .catch((err) => console.error("[client-notes] failed for appointment", appointment.id, err));
+      }
     }
     return appointment;
   }
@@ -1028,9 +1078,12 @@ export class DatabaseStorage implements IStorage {
     return result as any;
   }
 
-  async getOpenCashDrawerSession(storeId: number): Promise<CashDrawerSessionWithActions | undefined> {
+  async getOpenCashDrawerSession(storeId: number, drawerId?: number | null): Promise<CashDrawerSessionWithActions | undefined> {
+    const drawerCondition = drawerId
+      ? eq(cashDrawerSessions.drawerId, drawerId)
+      : isNull(cashDrawerSessions.drawerId);
     const result = await db.query.cashDrawerSessions.findFirst({
-      where: and(eq(cashDrawerSessions.storeId, storeId), eq(cashDrawerSessions.status, "open")),
+      where: and(eq(cashDrawerSessions.storeId, storeId), eq(cashDrawerSessions.status, "open"), drawerCondition),
       with: { actions: true },
     });
     return result as any;

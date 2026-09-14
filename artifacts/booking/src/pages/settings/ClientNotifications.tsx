@@ -10,6 +10,7 @@ import {
   Send,
   CheckCircle2,
   XCircle,
+  Smartphone,
 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,16 @@ interface ChannelSettings {
 
 interface SmsSettings extends ChannelSettings {
   smsCancellationEnabled: boolean;
+}
+
+interface PhoneTypeSummary {
+  total: number;
+  verified: number;
+  unverified: number;
+  mobile: number;
+  voip: number;
+  landline: number;
+  unknown: number;
 }
 
 interface SmsLogEntry {
@@ -273,6 +284,42 @@ export default function ClientNotifications() {
     enabled: !!storeId,
     staleTime: 1000 * 60 * 10,
   });
+
+  const phoneTypesQ = useQuery<PhoneTypeSummary | null>({
+    queryKey: ["/api/clients/phone-types/summary", storeId],
+    queryFn: async () => {
+      if (!storeId) return null;
+      const res = await fetch(`/api/clients/phone-types/summary?storeId=${storeId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load phone number verification status");
+      return res.json();
+    },
+    enabled: !!storeId,
+  });
+
+  const [verifying, setVerifying] = useState(false);
+  const verifyPhoneTypes = async () => {
+    if (!storeId) return;
+    setVerifying(true);
+    try {
+      const res = await apiRequest("POST", "/api/clients/phone-types/backfill", { storeId });
+      const result = await res.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/clients/phone-types/summary", storeId] });
+      if (result.checked === 0) {
+        toast({ title: "All numbers already verified" });
+      } else {
+        toast({
+          title: `Checked ${result.checked} number${result.checked === 1 ? "" : "s"}`,
+          description: result.landlinesFound > 0
+            ? `Found ${result.landlinesFound} landline${result.landlinesFound === 1 ? "" : "s"} — they'll be skipped for texts.`
+            : "No landlines found in this batch.",
+        });
+      }
+    } catch (err: any) {
+      toast({ title: "Verification failed", description: err?.message, variant: "destructive" });
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   const { data: logs } = useQuery<SmsLogEntry[]>({
     queryKey: ["/api/sms-log", storeId],
@@ -544,6 +591,38 @@ export default function ClientNotifications() {
                   When a client replies <span className="font-mono">CANCEL</span>, the system finds and
                   cancels their nearest upcoming appointment, then sends a confirmation text.
                 </p>
+              )}
+            </Section>
+
+            {/* Phone number verification */}
+            <Section
+              icon={<Smartphone className="h-[18px] w-[18px]" />}
+              title="Phone number verification"
+              description="Checks each client's number with your carrier to confirm it can actually receive a text — landlines can't, so skipping them avoids wasted texts and cost."
+            >
+              {phoneTypesQ.data && phoneTypesQ.data.total > 0 ? (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted-foreground">
+                  <span>{phoneTypesQ.data.mobile + phoneTypesQ.data.voip} can receive texts</span>
+                  {phoneTypesQ.data.landline > 0 && (
+                    <span className="font-medium text-foreground">{phoneTypesQ.data.landline} landline{phoneTypesQ.data.landline === 1 ? "" : "s"} (skipped)</span>
+                  )}
+                  {phoneTypesQ.data.unverified > 0 && (
+                    <span>{phoneTypesQ.data.unverified} not yet checked</span>
+                  )}
+                </div>
+              ) : (
+                <p className="text-[13px] text-muted-foreground">No client phone numbers yet.</p>
+              )}
+              <Button
+                variant="outline"
+                onClick={verifyPhoneTypes}
+                disabled={verifying || !phoneTypesQ.data?.unverified}
+              >
+                {verifying && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Verify phone numbers
+              </Button>
+              {!phoneTypesQ.data?.unverified && phoneTypesQ.data && phoneTypesQ.data.total > 0 && (
+                <p className="text-[12px] text-muted-foreground">All numbers verified.</p>
               )}
             </Section>
 

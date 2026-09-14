@@ -14,24 +14,27 @@ interface OpenRegisterModalProps {
   onClose: () => void;
   storeId: number;
   userName: string;
+  /** Which cash drawer to open — 0/undefined = the store's default/shared drawer. */
+  drawerId?: number;
 }
 
-export function OpenRegisterModal({ open, onClose, storeId, userName }: OpenRegisterModalProps) {
+export function OpenRegisterModal({ open, onClose, storeId, userName, drawerId = 0 }: OpenRegisterModalProps) {
   const { toast } = useToast();
   const [openingAmount, setOpeningAmount] = useState("");
 
   const { data: openSession, isLoading: sessionLoading } = useQuery<CashDrawerSessionWithActions | null>({
-    queryKey: [`/api/cash-drawer/open?storeId=${storeId}`],
+    queryKey: [`/api/cash-drawer/open?storeId=${storeId}&drawerId=${drawerId}`],
     enabled: open && !!storeId,
   });
 
-  // Check if this is the initial setup (no sessions exist yet for this store)
+  // Check if this is the initial setup (no sessions exist yet for THIS drawer)
   const { data: allSessions, isLoading: historyLoading } = useQuery<any[]>({
     queryKey: [`/api/cash-drawer/sessions?storeId=${storeId}`],
     enabled: open && !!storeId && !openSession,
   });
 
-  const isInitialSetup = !openSession && Array.isArray(allSessions) && allSessions.length === 0;
+  const isInitialSetup = !openSession && Array.isArray(allSessions) &&
+    allSessions.filter((s) => (s.drawerId ?? 0) === drawerId).length === 0;
   const isLoading = sessionLoading || historyLoading;
 
   const openDrawerMutation = useMutation({
@@ -39,6 +42,7 @@ export function OpenRegisterModal({ open, onClose, storeId, userName }: OpenRegi
       const amount = parseFloat(openingAmount || "0").toFixed(2);
       const res = await apiRequest("POST", "/api/cash-drawer/sessions", {
         storeId,
+        drawerId: drawerId || null,
         openingBalance: amount,
         openedBy: userName,
         isInitialSetup,
@@ -50,7 +54,7 @@ export function OpenRegisterModal({ open, onClose, storeId, userName }: OpenRegi
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/cash-drawer/open?storeId=${storeId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/cash-drawer/open?storeId=${storeId}&drawerId=${drawerId}`] });
       queryClient.invalidateQueries({ queryKey: [`/api/cash-drawer/sessions?storeId=${storeId}`] });
       toast({
         title: "Register opened",

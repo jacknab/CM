@@ -162,6 +162,10 @@ export async function computeDeadSeats(storeId: number): Promise<DeadSeatReport>
 
   return {
     deadSlots: deadSlots.slice(0, 20),
+    // The full count, before truncating the list above to the top 20 for
+    // display — callers that need "how many empty slots total" (not just the
+    // top offenders shown) should use this, not deadSlots.length.
+    totalDeadSlotCount: deadSlots.length,
     totalLostRevenuePotential: Math.round(totalLostRevenuePotential),
     worstDay: worstSlot ? worstSlot.dayName : null,
     worstHour: worstSlot ? worstSlot.hourLabel : null,
