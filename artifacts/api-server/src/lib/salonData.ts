@@ -98,7 +98,7 @@ const ADDRESS_COUNTRY_NAMES: Record<string, "US" | "CA" | "MX" | "BS"> = {
  * incomplete addresses), falls back to a best-effort city guess and leaves
  * state/zip blank rather than asserting something unverified.
  */
-function splitAddress(a: string): { street: string; city: string; state: string; zip: string } {
+export function splitAddress(a: string): { street: string; city: string; state: string; zip: string } {
   const parts = (a || "").split(",").map((s) => s.trim()).filter(Boolean);
   const country = ADDRESS_COUNTRY_NAMES[(parts[parts.length - 1] || "").toLowerCase()];
 

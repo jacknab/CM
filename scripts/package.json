@@ -6,6 +6,7 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "export-tenant-data": "tsx ./src/export-tenant-data.ts",
+    "delete-invalid-phone-clients": "tsx ./src/delete-invalid-phone-clients.ts",
     "run-service-image-auto-match": "tsx ./src/run-service-image-auto-match.ts",
     "check-schema-sync": "node ./src/check-schema-sync.mjs",
     "check-nullability": "node ./src/check-nullability.mjs",
@@ -17,6 +18,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "openai": "^6.38.0",
     "pg": "^8.16.0"
   },
   "devDependencies": {
