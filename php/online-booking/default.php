@@ -1,8 +1,8 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Nail Salon Online Booking | Certxa');
-define('PAGE_DESC',     'Nail salon booking software for online appointments, technician selection, deposits, reminders, waitlists, and walk-ins. Let clients book from your website, social profiles, or Google with Certxa.');
-define('PAGE_KEYWORDS', 'nail salon booking software, nail salon booking system, nail salon scheduling software, online booking for nail salons, nail technician booking software, salon appointment scheduling');
+define('PAGE_TITLE',    'Salon Online Booking Service | Certxa');
+define('PAGE_DESC',     'Certxa is a salon online booking service for nail salons, spas, and studios — online appointments, technician selection, deposits, reminders, waitlists, and walk-ins. Let clients book from your website, social profiles, or Google.');
+define('PAGE_KEYWORDS', 'salon online booking service, online booking service for salons, best salon online booking service, nail salon booking software, nail salon booking system, nail salon scheduling software, online booking for nail salons, nail technician booking software, salon appointment scheduling');
 define('PAGE_CANONICAL', 'https://certxa.com/online-booking');
 define('PAGE_BREADCRUMBS', json_encode([
   ['name'=>'Home','url'=>'https://certxa.com/'],
@@ -12,8 +12,8 @@ define('PAGE_SCHEMA', json_encode([
   [
     '@type'       => 'WebPage',
     '@id'         => 'https://certxa.com/online-booking',
-    'name'        => 'Online Booking for Salons — Certxa',
-    'description' => 'Let clients book salon appointments 24/7 from your website, social media, and Google. No phone calls needed.',
+    'name'        => 'Salon Online Booking Service — Certxa',
+    'description' => 'Certxa is a salon online booking service: let clients book salon appointments 24/7 from your website, social media, and Google. No phone calls needed.',
     'url'         => 'https://certxa.com/online-booking',
     'isPartOf'    => ['@id'=>'https://certxa.com/#website'],
     'about'       => ['@id'=>'https://certxa.com/#software'],
@@ -41,6 +41,11 @@ define('PAGE_SCHEMA', json_encode([
         '@type'          => 'Question',
         'name'           => 'Will I get notified when a new booking comes in?',
         'acceptedAnswer' => ['@type'=>'Answer','text'=>'You receive instant push notifications, email alerts, or SMS every time a client books, cancels, or reschedules. You can also view all upcoming bookings in real time from your Certxa dashboard.'],
+      ],
+      [
+        '@type'          => 'Question',
+        'name'           => 'What is a salon online booking service?',
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'A salon online booking service is software that lets clients schedule their own appointments — choosing a service, staff member, and time slot — without calling the front desk. Certxa is a salon online booking service built for nail salons, spas, and studios, with real-time technician availability, deposits, and automated reminders included on every plan.'],
       ],
     ],
   ],
@@ -304,7 +309,7 @@ $now_top = cal_top('11:20'); // simulate current time line
     <div class="section-header">
       <span class="tag tag-plum">How It Works</span>
       <h2 class="section-title">Booking that works around the clock</h2>
-      <p class="section-subtitle">Your booking page never sleeps. Clients can see your real-time availability and confirm appointments instantly — without ever picking up the phone.</p>
+      <p class="section-subtitle">Certxa is a salon online booking service built for nail salons, spas, and studios. Your booking page never sleeps — clients can see your real-time availability and confirm appointments instantly, without ever picking up the phone.</p>
     </div>
 
     <div class="feature-block">
@@ -485,6 +490,10 @@ $now_top = cal_top('11:20'); // simulate current time line
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Will I get notified when a new booking comes in? <span class="accordion-icon">+</span></button></h3>
         <div class="accordion-body">You receive instant push notifications, email alerts, or SMS (your choice) every time a client books, cancels, or reschedules. You're always in the loop.</div>
+      </div>
+      <div class="accordion-item">
+        <h3 class="accordion-heading"><button class="accordion-btn">What is a salon online booking service? <span class="accordion-icon">+</span></button></h3>
+        <div class="accordion-body">A salon online booking service is software that lets clients schedule their own appointments — choosing a service, staff member, and time slot — without calling the front desk. Certxa is a salon online booking service built for nail salons, spas, and studios, with real-time technician availability, deposits, and automated reminders included on every plan.</div>
       </div>
     </div>
   </div>

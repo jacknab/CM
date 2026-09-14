@@ -866,7 +866,7 @@ require 'includes/nav.php';
     <div class="accordion">
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Is a credit card required to start the trial? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Yes — a credit card is required when you create your subscription. Your card will not be charged during the <?= TRIAL_DAYS ?>-day trial period. If you cancel before the trial ends, you'll owe nothing. If you continue past the trial, your card is billed at the start of your first paid period.</div>
+        <div class="accordion-body">Yes — a credit card is required when you create your subscription. Your card will not be charged during the <?= TRIAL_DAYS ?>-day trial period. If you cancel before the trial ends, you'll owe nothing. If you continue past the trial, your card is billed at the start of your first paid period. Looking for something free while your salon is small? See how <a href="/best-free-salon-booking-system">free salon booking systems compare</a>.</div>
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Can I switch plans after I sign up? <span class="accordion-icon">+</span></button></h3>

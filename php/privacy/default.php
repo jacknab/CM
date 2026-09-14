@@ -11,8 +11,8 @@ define('PAGE_BREADCRUMBS', json_encode([
 require 'includes/header.php';
 require 'includes/nav.php';
 
-$updated   = 'June 26, 2025';
-$effective = 'June 26, 2025';
+$updated   = 'September 12, 2026';
+$effective = 'February 1, 2026';
 ?>
 
 <style>

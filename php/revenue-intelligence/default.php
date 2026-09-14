@@ -436,6 +436,7 @@ require 'includes/nav.php';
       </div>
       <?php endforeach; ?>
     </div>
+    <p style="text-align:center;font-size:.78rem;color:var(--mid-grey,#8b8b8b);margin-top:16px;">Based on early Certxa customer data.</p>
   </div>
 </section>
 

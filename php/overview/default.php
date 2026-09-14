@@ -14,6 +14,15 @@ define('PAGE_SCHEMA', json_encode([
   // The canonical SoftwareApplication entity (@id #software) is injected
   // site-wide by includes/header.php — do not redefine it per-page.
   [
+    '@type' => 'WebPage',
+    '@id'   => 'https://certxa.com/#webpage',
+    'url'   => 'https://certxa.com/',
+    'speakable' => [
+      '@type'      => 'SpeakableSpecification',
+      'cssSelector'=> ['.hero-dark-sub', '.accordion-body'],
+    ],
+  ],
+  [
     '@type'        => 'FAQPage',
     'mainEntity'   => [
       [
@@ -39,7 +48,7 @@ define('PAGE_SCHEMA', json_encode([
       [
         '@type'          => 'Question',
         'name'           => 'How does Certxa reduce no-shows?',
-        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Certxa sends automated SMS and email reminders at intervals you choose — typically 72 hours and 24 hours before each appointment. Salons using Certxa report an average 68% reduction in no-shows. You can also require a deposit at booking for additional protection.'],
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Certxa sends automated SMS and email reminders at intervals you choose — typically 72 hours and 24 hours before each appointment. Early Certxa customers report up to a 68% reduction in no-shows. You can also require a deposit at booking for additional protection.'],
       ],
       [
         '@type'          => 'Question',
@@ -410,8 +419,8 @@ require 'includes/nav.php';
       <div class="feat-panel" id="feat-reminders" role="tabpanel">
         <div class="feat-copy">
           <div class="feat-eyebrow">Automation</div>
-          <h3 class="feat-title">Slash no-shows<br><em>by up to 70%.</em></h3>
-          <p class="feat-desc">Certxa automatically sends perfectly-timed SMS and email reminders so clients never forget their appointment — without you lifting a finger. Salons see 68% fewer no-shows in the first week.</p>
+          <h3 class="feat-title">Slash no-shows<br><em>by up to 68%.</em></h3>
+          <p class="feat-desc">Certxa automatically sends perfectly-timed SMS and email reminders so clients never forget their appointment — without you lifting a finger. Early Certxa customers report up to 68% fewer no-shows.</p>
           <ul class="feat-list">
             <li>Automated reminders at 72h, 24h &amp; 2h before</li>
             <li>Clients can confirm, reschedule or cancel via SMS</li>
@@ -820,7 +829,7 @@ require 'includes/nav.php';
 
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">How does Certxa reduce no-shows? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Certxa sends fully automated SMS and email reminders at intervals you control — typically 72 hours and 24 hours before each appointment. Salons using Certxa report an average 68% reduction in no-shows. You can also require an upfront deposit at the time of booking for additional protection on high-value services.</div>
+        <div class="accordion-body">Certxa sends fully automated SMS and email reminders at intervals you control — typically 72 hours and 24 hours before each appointment. Early Certxa customers report up to a 68% reduction in no-shows. You can also require an upfront deposit at the time of booking for additional protection on high-value services.</div>
       </div>
 
       <div class="accordion-item">

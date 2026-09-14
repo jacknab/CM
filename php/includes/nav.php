@@ -43,6 +43,8 @@
           </div>
         </li>
 
+        <li><a href="/tools">Tools</a></li>
+
         <!-- Mobile-only: Login + Start Free Trial (hidden on desktop) -->
         <li class="mobile-nav-cta">
           <a href="/auth" class="mobile-nav-login">Log In</a>

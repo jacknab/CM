@@ -61,8 +61,10 @@ $_base_schema = [
     'founder' => ['@id' => SITE_URL . '/#founder-tom-tham'],
     'address' => [
       '@type'           => 'PostalAddress',
+      'streetAddress'   => '2325 E Camelback Rd, Ste 400',
       'addressLocality' => 'Phoenix',
       'addressRegion'   => 'AZ',
+      'postalCode'      => '85016',
       'addressCountry'  => 'US',
     ],
     'logo'  => [
@@ -71,9 +73,15 @@ $_base_schema = [
       'width'  => 512,
       'height' => 512,
     ],
-    // No sameAs entries — Facebook, Instagram, LinkedIn, and Twitter/X
-    // profiles don't exist yet. Add real URLs here once each is created;
-    // asserting profiles that don't exist is worse than omitting sameAs.
+    // Facebook, Instagram, and LinkedIn profiles don't exist yet — add real
+    // URLs here once each is created; asserting profiles that don't exist is
+    // worse than omitting sameAs. The X/Twitter handle and BBB listing below
+    // are both confirmed live (BBB profile independently fetched and verified
+    // to reference this exact business and website).
+    'sameAs' => [
+      'https://x.com/certxa',
+      'https://www.bbb.org/us/az/phoenix/profile/software-consultants/certxa-llc-1126-1000175065',
+    ],
     'contactPoint' => [
       '@type'            => 'ContactPoint',
       'contactType'      => 'customer support',
@@ -95,7 +103,13 @@ $_base_schema = [
     '@type'    => 'Person',
     '@id'      => SITE_URL . '/#founder-tom-tham',
     'name'     => 'Tom Tham',
+    // Legal name on file with the state and BBB (see Organization.sameAs) is
+    // "Thanh Lam" — "Tom Tham" is the name he goes by publicly. Listing both
+    // lets AI systems resolve BBB's "Thanh Lam, CEO" and the site's "Tom Tham"
+    // as the same person instead of two different ones.
+    'alternateName' => 'Thanh Lam',
     'jobTitle' => 'Founder',
+    'url'      => SITE_URL . '/about',
     'worksFor' => ['@id' => SITE_URL . '/#organization'],
     'knowsAbout' => ['Nail salon management', 'Salon software', 'Vietnamese-owned nail salon industry'],
   ],
@@ -192,6 +206,7 @@ $_schema_output = json_encode(['@context' => 'https://schema.org', '@graph' => $
   <meta name="author"      content="<?= BRAND_NAME ?>">
   <meta name="robots"      content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
   <link rel="canonical"    href="<?= htmlspecialchars(PAGE_CANONICAL) ?>">
+  <meta name="msvalidate.01" content="261005E6A952E6B004A337B7532827B4" />
 <?php
   // ── hreflang alternates ──────────────────────
   // A page declares PAGE_ALTERNATES as a JSON array of

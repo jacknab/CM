@@ -8,6 +8,7 @@
       <div class="footer-brand">
         <a href="/overview" class="footer-logo"><?= BRAND_NAME ?><span>.</span></a>
         <p class="footer-tagline">The all-in-one platform built for nail salons — booking, POS, kiosk, waitlist, and AI receptionist in one system.</p>
+        <p class="footer-tagline" style="margin-top:8px;opacity:.7;">Phoenix, AZ</p>
       </div>
 
       <div>
@@ -33,12 +34,18 @@
           <li><a href="/blog">Blog</a></li>
           <li><a href="/contact">Contact</a></li>
         </ul>
+        <p class="footer-col-title" style="margin-top:20px;">Tools</p>
+        <ul class="footer-col-links">
+          <li><a href="/tools">Free Salon Calculators</a></li>
+          <li><a href="/nail-salons">Nail Salon Directory</a></li>
+        </ul>
         <p class="footer-col-title" style="margin-top:20px;">Compare</p>
         <ul class="footer-col-links">
           <li><a href="/certxa-vs-glossgenius">vs GlossGenius</a></li>
           <li><a href="/certxa-vs-vagaro">vs Vagaro</a></li>
           <li><a href="/certxa-vs-fresha">vs Fresha</a></li>
           <li><a href="/certxa-vs-gocheckin">vs GoCheckIn</a></li>
+          <li><a href="/best-free-salon-booking-system">Best Free Booking System</a></li>
         </ul>
         <p class="footer-col-title" style="margin-top:20px;">Login</p>
         <ul class="footer-col-links">

@@ -113,9 +113,11 @@ $article_schema = json_encode([
         '@type' => 'WebPage',
         '@id'   => 'https://certxa.com/blog/' . $post['slug'],
     ],
-    // A named byline is a real Person; the generic "Certxa Team" fallback is the
-    // Organization, not a Person (Google flags Person nodes without a real name).
-    'author' => $post['author_name']
+    // A named byline is a real Person; the generic "Certxa Team" placeholder
+    // (whether it's the DB value or just an empty field) is the Organization,
+    // not a Person — Google/AI models flag Person nodes with no real name
+    // behind them.
+    'author' => ($post['author_name'] && strcasecmp(trim($post['author_name']), 'Certxa Team') !== 0)
         ? ['@type' => 'Person', 'name' => $post['author_name']]
         : ['@type' => 'Organization', '@id' => 'https://certxa.com/#organization', 'name' => 'Certxa'],
     'publisher' => [
@@ -136,6 +138,10 @@ $article_schema = json_encode([
     'articleSection' => $post['category'],
     'keywords'       => $post['category'] . ', nail salon, certxa',
     'inLanguage'     => 'en-US',
+    'speakable' => [
+        '@type'       => 'SpeakableSpecification',
+        'cssSelector' => ['.blog-content'],
+    ],
     'isPartOf'       => [
         '@type' => 'Blog',
         '@id'   => 'https://certxa.com/blog#blog',
