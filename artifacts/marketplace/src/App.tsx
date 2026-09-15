@@ -4,6 +4,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
+import 'leaflet/dist/leaflet.css';
 import {
   getGetFeaturedSalonsQueryKey,
   getGetSalonBySlugQueryKey,
@@ -54,10 +55,10 @@ function Wordmark({ className = '' }: { className?: string }) {
 function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-background" data-testid="header-site">
+    <header className="sticky top-0 z-40 border-b border-border bg-[#f7f3ed]" data-testid="header-site">
       <div className="mx-auto flex h-[68px] max-w-[1320px] items-center gap-5 px-5 lg:px-10">
-        <Link href="/" className="group flex shrink-0 items-baseline gap-2 focus-ring" data-testid="link-logo"><Wordmark className="text-[26px] leading-none text-foreground" /><span className="hidden font-mono text-[9px] uppercase tracking-[.2em] text-muted-foreground sm:inline">salon marketplace</span></Link>
-        <nav className="ml-auto hidden items-center gap-6 text-[13px] font-semibold md:flex" data-testid="nav-primary"><Link href="/search" className="text-muted-foreground transition hover:text-primary focus-ring" data-testid="link-discover">Discover</Link><Link href="/saved" className="text-muted-foreground transition hover:text-primary focus-ring" data-testid="link-saved">Saved</Link><Link href="/for-business" className="rounded-[3px] bg-primary px-4 py-2.5 text-primary-foreground transition hover:bg-primary/90 focus-ring" data-testid="link-business">For salons</Link></nav>
+        <Link href="/" className="group flex shrink-0 items-baseline gap-2 focus-ring" data-testid="link-logo"><Wordmark className="text-[36px] leading-none text-foreground" /></Link>
+        <nav className="ml-auto hidden items-center gap-6 text-[16px] font-bold md:flex" data-testid="nav-primary"><Link href="/search" className="text-muted-foreground transition hover:text-primary focus-ring" data-testid="link-discover">Discover</Link><Link href="/saved" className="text-muted-foreground transition hover:text-primary focus-ring" data-testid="link-saved">Saved</Link><Link href="/for-business" className="rounded-[3px] bg-primary px-4 py-2.5 text-primary-foreground transition hover:bg-primary/90 focus-ring" data-testid="link-business">For salons</Link></nav>
         <button onClick={() => setMenuOpen(!menuOpen)} className="ml-auto rounded-full p-2 text-primary md:hidden" aria-label="Toggle menu" data-testid="button-mobile-menu">{menuOpen ? <X size={21} /> : <Menu size={21} />}</button>
       </div>
       {menuOpen && <div className="border-t border-border bg-background px-5 py-5 md:hidden" data-testid="menu-mobile"><div className="grid gap-3 text-lg"><Link href="/search" onClick={() => setMenuOpen(false)} data-testid="link-mobile-discover">Discover salons</Link><Link href="/saved" onClick={() => setMenuOpen(false)} data-testid="link-mobile-saved">Saved salons</Link><Link href="/for-business" onClick={() => setMenuOpen(false)} data-testid="link-mobile-business">For salon owners</Link></div></div>}
@@ -228,18 +229,91 @@ function BusinessAutocomplete({ value, onChange }: { value: string; onChange: (v
 }
 
 function Home() {
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [locationPromptOpen, setLocationPromptOpen] = useState(false);
+  const [locationRequesting, setLocationRequesting] = useState(false);
   const { data: geo } = useGetGeoCity({ query: { queryKey: getGeoCityQueryKey() } });
-  const featuredParams = useMemo(() => (geo ? { citySlug: geo.citySlug, stateSlug: geo.stateSlug } : {}), [geo]);
+  const featuredParams = useMemo(() => coords
+    ? { lat: coords.lat, lng: coords.lng }
+    : geo ? { citySlug: geo.citySlug, stateSlug: geo.stateSlug } : {}, [coords, geo]);
   const { data, isLoading, isError, refetch } = useGetFeaturedSalons(featuredParams, { query: { queryKey: getGetFeaturedSalonsQueryKey(featuredParams) } });
   const { saved, toggle } = useSavedSalons();
   const [businessQuery, setBusinessQuery] = useState('');
   const [serviceQuery, setServiceQuery] = useState('');
   const [timeQuery, setTimeQuery] = useState('Anytime');
   const [, setLocation] = useLocation();
+  const nearbyParams = useMemo(() => ({
+    lat: coords?.lat,
+    lng: coords?.lng,
+    sort: 'distance' as const,
+    limit: 10,
+  }), [coords?.lat, coords?.lng]);
+  const { data: nearbyData, isLoading: isNearbyLoading, isError: isNearbyError, refetch: refetchNearby } = useListSalons(nearbyParams, {
+    query: { queryKey: getListSalonsQueryKey(nearbyParams), enabled: coords !== null },
+  });
+  const getLocation = () => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setLocationError('Location sharing is not supported by this browser.');
+      return;
+    }
+    setLocationError(null);
+    setLocationRequesting(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const nextCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
+        setCoords(nextCoords);
+        localStorage.setItem('certxa-marketplace-location', JSON.stringify(nextCoords));
+        setLocationRequesting(false);
+        setLocationPromptOpen(false);
+      },
+      (error) => {
+        setLocationRequesting(false);
+        setLocationPromptOpen(true);
+        setLocationError(error.code === error.PERMISSION_DENIED
+          ? 'Location access is blocked. Use the location icon in your browser address bar to allow access, then try again.'
+          : 'We could not determine your location. Please try again.');
+      },
+      { enableHighAccuracy: false, maximumAge: 10 * 60 * 1000, timeout: 8000 },
+    );
+  };
+  useEffect(() => {
+    let savedCoords: { lat: number; lng: number } | null = null;
+    try {
+      savedCoords = JSON.parse(localStorage.getItem('certxa-marketplace-location') || 'null');
+      if (savedCoords && Number.isFinite(savedCoords.lat) && Number.isFinite(savedCoords.lng)) {
+        setCoords(savedCoords);
+      } else {
+        savedCoords = null;
+      }
+    } catch {
+      localStorage.removeItem('certxa-marketplace-location');
+    }
+
+    if (!navigator.geolocation) {
+      if (!savedCoords) setLocationPromptOpen(true);
+      return;
+    }
+
+    if (navigator.permissions?.query) {
+      navigator.permissions.query({ name: 'geolocation' }).then((permission) => {
+        if (permission.state === 'granted') getLocation();
+        else if (!savedCoords) setLocationPromptOpen(true);
+      }).catch(() => {
+        if (!savedCoords) setLocationPromptOpen(true);
+      });
+    } else if (!savedCoords) {
+      setLocationPromptOpen(true);
+    }
+  }, []);
   const submit = (event: FormEvent) => { event.preventDefault(); setLocation(`/search?search=${encodeURIComponent(businessQuery)}&service=${encodeURIComponent(serviceQuery)}`); };
   const salons = data || [];
+  const nearbySalons = nearbyData || [];
+  const localCity = coords && nearbySalons[0]
+    ? `${nearbySalons[0].city}, ${nearbySalons[0].state}`
+    : geo ? `${geo.city}, ${geo.state}` : '';
   const heroImage = 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1600&q=85';
-  return <div className="page-in bg-background"><section className="relative min-h-[445px] bg-primary bg-cover bg-center" style={{ backgroundImage: `linear-gradient(90deg, rgba(61,34,51,.86), rgba(61,34,51,.5)), url(${salons[0]?.imageUrl || heroImage})` }}><div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_25%,rgba(240,195,107,.3),transparent_28%)]" /><div className="relative mx-auto flex min-h-[445px] max-w-[1120px] flex-col justify-center px-5 py-16 text-white lg:px-10"><p className="font-mono text-[10px] uppercase tracking-[.24em] text-accent">Independent beauty, found locally</p><h1 className="mt-5 font-display text-[clamp(3.5rem,7vw,6.5rem)] leading-[.92] tracking-[-.02em] not-italic">Book your next<br />good day.</h1><form onSubmit={submit} className="mt-9 grid max-w-[920px] gap-1 rounded-[4px] bg-white p-1 text-primary shadow-2xl md:grid-cols-[1fr_1fr_170px_105px]" data-testid="form-hero-search"><BusinessAutocomplete value={businessQuery} onChange={setBusinessQuery} /><label className="relative flex h-12 items-center border-b border-border md:border-b-0 md:border-r"><Search size={16} className="ml-4 text-muted-foreground" /><input value={serviceQuery} onChange={(e) => setServiceQuery(e.target.value)} placeholder="Search services and classes" className="h-full w-full bg-transparent px-3 text-sm outline-none" data-testid="input-hero-service" /></label><label className="relative flex h-12 items-center border-b border-border md:border-b-0 md:border-r"><select value={timeQuery} onChange={(e) => setTimeQuery(e.target.value)} className="h-full w-full appearance-none bg-transparent px-4 text-sm outline-none" data-testid="select-hero-time"><option>Anytime</option><option>Today</option><option>This week</option><option>This weekend</option></select><ChevronDown size={15} className="pointer-events-none absolute right-3 text-muted-foreground" /></label><button className="h-12 rounded-[3px] bg-primary px-5 text-sm font-bold text-primary-foreground transition hover:bg-primary/90" data-testid="button-hero-search">Search</button></form><div className="mt-5 flex max-w-[920px] gap-2 overflow-x-auto pb-2 [scrollbar-width:none]">{browseCategories.map((category) => <Link href={`/search?service=${encodeURIComponent(category)}`} key={category} className="shrink-0 rounded-full border border-white/50 bg-white/10 px-4 py-2 text-xs font-medium text-white backdrop-blur-sm transition hover:bg-white hover:text-primary" data-testid={`link-hero-category-${category.toLowerCase().replace(/\s+/g, '-')}`}>{category}</Link>)}</div></div></section><main className="mx-auto max-w-[1320px] px-5 pb-20 lg:px-10"><section className="border-t border-border py-10"><div className="flex items-center justify-between gap-4"><h2 className="text-3xl font-display text-primary">{geo ? `Featured in ${geo.city}, ${geo.state}` : 'Featured salons'}</h2><Link href="/search" className="flex items-center gap-1 text-sm font-semibold text-primary" data-testid="link-featured-see-all">See all <ArrowRight size={14} /></Link></div><div className="mt-6">{isLoading ? <SalonSkeletons count={4} /> : isError ? <ErrorState onRetry={() => refetch()} /> : salons.length ? <div className="grid grid-cols-2 gap-x-4 gap-y-9 md:grid-cols-4 md:gap-x-6">{salons.map((salon) => <FeaturedMarketplaceCard key={salon.id} salon={salon} saved={saved.includes(salon.slug)} toggle={toggle} />)}</div> : <EmptyState title="The list is taking shape." copy="Check back soon for new independent places in your city." />}</div></section><section className="border-t border-border py-10"><div className="flex items-center justify-between gap-4"><h2 className="text-3xl font-display text-primary">Browse by ritual</h2><Link href="/search" className="flex items-center gap-1 text-sm font-semibold text-primary" data-testid="link-browse-all">All services <ArrowRight size={14} /></Link></div><div className="mt-5 grid grid-cols-2 gap-x-5 md:grid-cols-5">{categories.map((category) => <Link href={`/search?service=${category}`} key={category} className="flex items-center justify-between border-b border-border py-4 text-sm font-semibold text-primary transition hover:text-primary/80" data-testid={`link-category-${category.toLowerCase()}`}><span>{category}</span><ArrowUpRight size={14} className="text-muted-foreground" /></Link>)}</div></section></main></div>;
+  return <>{locationPromptOpen && !coords && <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 p-0 backdrop-blur-[2px] sm:px-5 sm:pt-[108px]" role="dialog" aria-modal="true" aria-labelledby="location-permission-title" data-testid="dialog-location-permission"><div className="flex h-[100dvh] w-full max-w-none flex-col justify-center border-0 bg-card p-7 shadow-2xl sm:block sm:h-auto sm:max-w-[460px] sm:rounded-[9px] sm:border sm:border-border sm:p-9"><div className="grid h-12 w-12 place-items-center rounded-full bg-accent/25 text-primary"><LocateFixed size={21} /></div><p className="mt-6 font-mono text-[10px] uppercase tracking-[.2em] text-accent">Local recommendations</p><h2 id="location-permission-title" className="mt-2 font-display text-4xl leading-tight text-primary">See the best places near you.</h2><p className="mt-4 text-sm font-medium leading-6 text-foreground/85">Allow Certxa to use your location so the home page can feature salons in your city. Your precise location is only used to find nearby listings.</p>{locationError && <p className="mt-4 rounded-[4px] bg-destructive/10 px-4 py-3 text-sm leading-5 text-destructive" role="alert">{locationError}</p>}<div className="mt-7 grid gap-3 sm:grid-cols-[1fr_auto]"><button type="button" onClick={getLocation} disabled={locationRequesting} className="inline-flex h-12 items-center justify-center gap-2 rounded-[4px] bg-primary px-5 text-sm font-bold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-wait disabled:opacity-65" data-testid="button-allow-location"><Navigation size={16} />{locationRequesting ? 'Waiting for permission…' : locationError ? 'Try location again' : 'Share my location'}</button><button type="button" onClick={() => setLocationPromptOpen(false)} className="h-12 rounded-[4px] border border-border px-5 text-sm font-semibold text-foreground/80 transition hover:bg-secondary" data-testid="button-location-not-now">Not now</button></div></div></div>}<div className="page-in bg-background"><section className="relative min-h-[445px] bg-primary bg-cover bg-center" style={{ backgroundImage: `url(${salons[0]?.imageUrl || heroImage})` }}><div className="relative mx-auto flex min-h-[445px] max-w-[1120px] flex-col justify-center px-5 py-16 text-white lg:px-10"><p className="font-mono text-[10px] uppercase tracking-[.24em] text-accent">Independent beauty, found locally</p><h1 className="mt-5 font-display text-[clamp(3.5rem,7vw,6.5rem)] leading-[.92] tracking-[-.02em] not-italic">Book your next<br />good day.</h1><form onSubmit={submit} className="mt-9 grid max-w-[920px] gap-1 rounded-[4px] bg-white p-1 text-primary shadow-2xl md:grid-cols-[1fr_1fr_170px_105px]" data-testid="form-hero-search"><BusinessAutocomplete value={businessQuery} onChange={setBusinessQuery} /><label className="relative flex h-12 items-center border-b border-border md:border-b-0 md:border-r"><Search size={16} className="ml-4 text-muted-foreground" /><input value={serviceQuery} onChange={(e) => setServiceQuery(e.target.value)} placeholder="Search services and classes" className="h-full w-full bg-transparent px-3 text-sm outline-none" data-testid="input-hero-service" /></label><label className="relative flex h-12 items-center border-b border-border md:border-b-0 md:border-r"><select value={timeQuery} onChange={(e) => setTimeQuery(e.target.value)} className="h-full w-full appearance-none bg-transparent px-4 text-sm outline-none" data-testid="select-hero-time"><option>Anytime</option><option>Today</option><option>This week</option><option>This weekend</option></select><ChevronDown size={15} className="pointer-events-none absolute right-3 text-muted-foreground" /></label><button className="h-12 rounded-[3px] bg-primary px-5 text-sm font-bold text-primary-foreground transition hover:bg-primary/90" data-testid="button-hero-search">Search</button></form><div className="mt-5 flex max-w-[920px] gap-2 overflow-x-auto pb-2 [scrollbar-width:none]">{browseCategories.map((category) => <Link href={`/search?service=${encodeURIComponent(category)}`} key={category} className="shrink-0 rounded-full border border-white/50 bg-white/10 px-4 py-2 text-xs font-medium text-white backdrop-blur-sm transition hover:bg-white hover:text-primary" data-testid={`link-hero-category-${category.toLowerCase().replace(/\s+/g, '-')}`}>{category}</Link>)}</div></div></section><main className="mx-auto max-w-[1320px] px-5 pb-20 lg:px-10"><section className="py-10" aria-labelledby="nearby-heading" data-testid="section-nearby-listings"><div className="rounded-[7px] border border-border bg-card px-5 py-7 sm:px-8"><div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center"><div><p className="font-mono text-[10px] uppercase tracking-[.2em] text-accent">Closer is better</p><h2 id="nearby-heading" className="mt-2 font-display text-3xl text-primary">Places near you</h2><p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Share your location to filter the home page to salons and studios closest to you. Your precise location is only used for this search.</p></div><button type="button" onClick={getLocation} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 focus-ring" data-testid="button-home-use-location"><LocateFixed size={16} />{coords ? 'Update my location' : 'Use my location'}</button></div>{locationError && <p className="mt-4 rounded-[3px] bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert" data-testid="text-home-location-error">{locationError}</p>}{coords && <div className="mt-8">{isNearbyLoading ? <SalonSkeletons count={4} /> : isNearbyError ? <ErrorState onRetry={() => refetchNearby()} label="We could not load listings near your location just now." /> : nearbySalons.length ? <><div className="mb-5 flex items-center gap-2 text-sm font-semibold text-primary"><MapPin size={15} /> Showing the closest listings first</div><div className="grid gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">{nearbySalons.map((salon) => <SalonCard key={salon.id} salon={salon} saved={saved.includes(salon.slug)} toggle={toggle} />)}</div></> : <EmptyState title="Nothing nearby yet." copy="We could not find listings close to your current location." />}</div>}</div></section><section className="border-t border-border py-10"><div className="flex items-center justify-between gap-4"><h2 className="text-3xl font-display text-primary">{localCity ? `Featured in ${localCity}` : 'Featured salons'}</h2><Link href="/search" className="flex items-center gap-1 text-sm font-semibold text-primary" data-testid="link-featured-see-all">See all <ArrowRight size={14} /></Link></div><div className="mt-6">{isLoading ? <SalonSkeletons count={4} /> : isError ? <ErrorState onRetry={() => refetch()} /> : salons.length ? <div className="grid grid-cols-2 gap-x-4 gap-y-9 md:grid-cols-4 md:gap-x-6">{salons.map((salon) => <FeaturedMarketplaceCard key={salon.id} salon={salon} saved={saved.includes(salon.slug)} toggle={toggle} />)}</div> : <EmptyState title="The list is taking shape." copy="Check back soon for new independent places in your city." />}</div></section><section className="border-t border-border py-10"><div className="flex items-center justify-between gap-4"><h2 className="text-3xl font-display text-primary">Browse by ritual</h2><Link href="/search" className="flex items-center gap-1 text-sm font-semibold text-primary" data-testid="link-browse-all">All services <ArrowRight size={14} /></Link></div><div className="mt-5 grid grid-cols-2 gap-x-5 md:grid-cols-5">{categories.map((category) => <Link href={`/search?service=${category}`} key={category} className="flex items-center justify-between border-b border-border py-4 text-sm font-semibold text-primary transition hover:text-primary/80" data-testid={`link-category-${category.toLowerCase()}`}><span>{category}</span><ArrowUpRight size={14} className="text-muted-foreground" /></Link>)}</div></section></main></div></>;
 }
 
 type SearchSort = 'recommended' | 'rating' | 'distance';
@@ -262,92 +336,144 @@ function resultInitials(name: string) {
 }
 
 function SearchResultCard({ salon, selected, saved, toggle, onSelect }: { salon: Salon; selected: boolean; saved: boolean; toggle: (slug: string) => void; onSelect: () => void }) {
-  return <article className={`group relative border-b border-border/80 transition ${selected ? 'bg-secondary/65' : 'hover:bg-card'}`} data-testid={`card-search-result-${salon.id}`}>
-    <Link href={`/${salon.slug}`} onClick={onSelect} className="block p-4 pr-16 focus-ring sm:p-5 sm:pr-16">
-      <div className="flex gap-4">
-        <div className="relative h-[108px] w-[108px] shrink-0 overflow-hidden rounded-[4px] sm:h-[124px] sm:w-[124px]">
+  return <article className={`group relative border-b border-border/80 border-l-[3px] transition-colors ${selected ? 'border-l-accent bg-secondary/70' : 'border-l-transparent bg-background hover:bg-card'}`} data-testid={`card-search-result-${salon.id}`}>
+    <Link href={`/${salon.slug}`} onClick={onSelect} className="block p-5 pr-16 focus-ring sm:p-6 sm:pr-16">
+      <div className="flex gap-5">
+        <div className="relative h-[118px] w-[118px] shrink-0 overflow-hidden rounded-[6px] sm:h-[138px] sm:w-[138px]">
           <ImageBlock salon={salon} className="h-full w-full" />
-          <span className="absolute bottom-2 left-2 rounded-[3px] bg-primary/75 px-2 py-1 font-mono text-[9px] tracking-[.14em] text-primary-foreground">{resultInitials(salon.name)}</span>
+          {salon.featured && <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-background/95 px-2.5 py-1 font-mono text-[9px] font-medium uppercase tracking-[.08em] text-primary shadow-sm"><BadgeCheck size={11} className="text-accent" /> Pick</span>}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <h2 className="truncate text-[16px] font-bold tracking-[-.02em] text-primary">{salon.name}</h2>
-              <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">{salon.neighborhood || salon.city}<span className="text-border">·</span>{resultDistance(salon)}</p>
-            </div>
-            {salon.featured && <BadgeCheck size={16} className="mt-0.5 shrink-0 text-accent" aria-label="Certxa pick" />}
+          <h2 className="text-[17px] font-bold leading-[1.25] tracking-[-.02em] text-primary sm:text-[18px]">{salon.name}</h2>
+          <p className="mt-1.5 flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground"><MapPin size={13} className="shrink-0 text-primary/65" />{salon.neighborhood || salon.city}<span aria-hidden="true">·</span>{resultDistance(salon)}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px]">
+            {salon.rating > 0 && <span className="flex items-center gap-1 font-bold text-primary"><Star size={13} fill="currentColor" className="text-accent" />{salon.rating.toFixed(1)} <span className="font-normal text-muted-foreground">{resultReviews(salon)}</span></span>}
+            {salon.category && <span className="font-medium text-muted-foreground">{salon.category}</span>}
+            {salon.priceLevel && <span className="rounded-[3px] bg-accent/25 px-2 py-0.5 font-mono text-[10px] text-primary">{salon.priceLevel}</span>}
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-            <span className="flex items-center gap-1 font-bold text-primary"><Star size={12} fill="currentColor" className="text-accent" />{salon.rating?.toFixed(1)} <span className="font-normal text-muted-foreground">{resultReviews(salon)}</span></span>
-            {salon.priceLevel && <span className="rounded-[3px] bg-accent/25 px-1.5 py-0.5 font-mono text-[10px] text-primary">{salon.priceLevel}</span>}
-            {salon.category && <span className="text-muted-foreground">{salon.category}</span>}
-          </div>
-          <p className="mt-2 line-clamp-2 text-[11px] leading-[1.45] text-muted-foreground">{salon.description || 'A thoughtful local place with a point of view.'}</p>
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <span className={`flex min-w-0 items-center gap-1.5 text-[10px] font-bold ${salon.isOpen ? 'text-[#2d6843]' : 'text-muted-foreground'}`}><Clock3 size={12} /><span className="truncate">{salon.isOpen ? 'Open now' : 'By appointment'}</span></span>
-            {salon.tags?.[0] && <span className="max-w-[125px] truncate text-[10px] text-muted-foreground">{salon.tags[0]}</span>}
+          <p className="mt-3 line-clamp-2 text-[13px] leading-[1.55] text-muted-foreground">{salon.description || 'A thoughtful local place with a point of view.'}</p>
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <span className={`flex min-w-0 items-center gap-1.5 text-[12px] font-bold ${salon.isOpen ? 'text-[#2d6843]' : 'text-muted-foreground'}`}><Clock3 size={13} /><span className="truncate">{salon.isOpen ? 'Open now' : 'By appointment'}</span></span>
+            <span className="font-mono text-[9px] uppercase tracking-[.12em] text-muted-foreground">{resultInitials(salon.name)}</span>
           </div>
         </div>
       </div>
     </Link>
-    <button type="button" onClick={() => toggle(salon.slug)} className={`absolute right-4 top-5 z-10 grid h-9 w-9 place-items-center rounded-full bg-background/90 transition hover:scale-105 focus-ring ${saved ? 'text-accent' : 'text-muted-foreground'}`} aria-label={saved ? `Remove ${salon.name} from saved` : `Save ${salon.name}`} data-testid={`button-save-search-${salon.id}`}><Heart size={17} fill={saved ? 'currentColor' : 'none'} /></button>
+    <button type="button" onClick={() => toggle(salon.slug)} className={`absolute right-4 top-5 z-10 grid h-10 w-10 place-items-center rounded-full border border-border bg-background/95 shadow-sm transition hover:scale-105 focus-ring ${saved ? 'text-accent' : 'text-muted-foreground'}`} aria-label={saved ? `Remove ${salon.name} from saved` : `Save ${salon.name}`} data-testid={`button-save-search-${salon.id}`}><Heart size={18} fill={saved ? 'currentColor' : 'none'} /></button>
   </article>;
 }
 
-function SearchMap({ results, selectedId, setSelectedId }: { results: Salon[]; selectedId: string | null; setSelectedId: (id: string) => void }) {
-  const [zoom, setZoom] = useState(1);
+function salonCoordinates(salon: Salon): [number, number] | null {
+  if (salon.latitude == null || salon.longitude == null) return null;
+  const latitude = Number(salon.latitude);
+  const longitude = Number(salon.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+  return [latitude, longitude];
+}
+
+function SearchMap({ results, selectedId, setSelectedId, userCoords }: { results: Salon[]; selectedId: string | null; setSelectedId: (id: string) => void; userCoords?: { lat: number; lng: number } | null }) {
+  const mapElementRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<import('leaflet').Map | null>(null);
+  const leafletRef = useRef<typeof import('leaflet') | null>(null);
+  const markersRef = useRef<Map<string, import('leaflet').Marker>>(new Map());
+  const markerLayerRef = useRef<import('leaflet').LayerGroup | null>(null);
+  const [mapReady, setMapReady] = useState(false);
   const selected = results.find((salon) => String(salon.id) === selectedId);
-  const hasRealCoords = results.some((s) => s.latitude != null && s.longitude != null);
-  const bounds = useMemo(() => {
-    const coords = results.filter((s) => s.latitude != null && s.longitude != null);
-    if (!coords.length) return null;
-    const lats = coords.map((s) => s.latitude!);
-    const lngs = coords.map((s) => s.longitude!);
-    return { minLat: Math.min(...lats), maxLat: Math.max(...lats), minLng: Math.min(...lngs), maxLng: Math.max(...lngs) };
-  }, [results]);
-  // Real lat/lng when available (proportionally placed within the salons'
-  // own bounding box), falling back to a deterministic hash-based scatter
-  // only when a listing genuinely has no coordinates.
-  const mapPoint = (salon: Salon, index: number) => {
-    if (salon.latitude != null && salon.longitude != null && bounds) {
-      const latSpan = bounds.maxLat - bounds.minLat || 1;
-      const lngSpan = bounds.maxLng - bounds.minLng || 1;
-      const top = 12 + (1 - (salon.latitude - bounds.minLat) / latSpan) * 76;
-      const left = 12 + ((salon.longitude - bounds.minLng) / lngSpan) * 76;
-      return { top, left };
-    }
-    const seed = String(salon.id || salon.slug).split('').reduce((total, character) => total + character.charCodeAt(0), index * 17);
-    return { top: 22 + (seed % 57), left: 16 + ((seed * 7) % 68) };
+  const mappedResults = useMemo(() => results.flatMap((salon) => {
+    const coordinates = salonCoordinates(salon);
+    return coordinates ? [{ salon, coordinates }] : [];
+  }), [results]);
+
+  const makeMarkerIcon = (isSelected: boolean) => leafletRef.current!.divIcon({
+    className: 'salon-marker-icon',
+    html: `<span class="salon-map-pin${isSelected ? ' is-selected' : ''}"><span></span></span>`,
+    iconSize: [40, 48],
+    iconAnchor: [20, 48],
+    tooltipAnchor: [0, -44],
+  });
+
+  const fitResults = () => {
+    const map = mapRef.current;
+    const leaflet = leafletRef.current;
+    if (!map || !leaflet) return;
+    if (mappedResults.length === 1) map.setView(mappedResults[0].coordinates, 14);
+    else if (mappedResults.length > 1) map.fitBounds(leaflet.latLngBounds(mappedResults.map(({ coordinates }) => coordinates)), { padding: [52, 52], maxZoom: 14 });
+    else if (userCoords) map.setView([userCoords.lat, userCoords.lng], 12);
+    else map.setView([39.5, -98.35], 4);
   };
-  return <section className="relative h-full min-h-0 flex-1 overflow-hidden border-l border-border bg-[#e8e2d5]" aria-label="Map of nearby salons" data-testid="panel-search-map">
-    <div className="absolute inset-0 overflow-hidden">
-      <div className="absolute inset-[-8%] transition-transform duration-500" style={{ transform: `scale(${zoom})` }}>
-        <div className="search-map-grid absolute inset-0 opacity-80" />
-        {!hasRealCoords && <>
-          <div className="search-map-water left-[-12%] top-[32%] h-[58%] w-[46%] rotate-[18deg] rounded-[48%]" />
-          <div className="search-map-water right-[-16%] top-[-12%] h-[42%] w-[44%] rotate-[-22deg] rounded-[48%]" />
-          <div className="search-map-road left-[-4%] top-[28%] w-[120%] rotate-[28deg]" />
-          <div className="search-map-road left-[-10%] top-[68%] w-[118%] rotate-[-14deg]" />
-          <div className="search-map-road left-[50%] top-[-3%] w-[115%] rotate-[78deg]" />
-        </>}
-        {results.map((salon, index) => {
-          const point = mapPoint(salon, index);
-          const isSelected = String(salon.id) === selectedId;
-          return <button key={salon.id} type="button" onClick={() => setSelectedId(String(salon.id))} className={`search-pin-pop absolute z-10 -translate-x-1/2 -translate-y-full transition hover:z-20 hover:scale-110 ${isSelected ? 'z-20 scale-[1.16]' : ''}`} style={{ top: `${point.top}%`, left: `${point.left}%`, animationDelay: `${index * 55}ms` }} aria-label={`Show ${salon.name} on map`} data-testid={`pin-search-${salon.id}`}>
-            <span className={`relative flex h-9 w-9 items-center justify-center rounded-full border-[3px] border-card shadow-md ${isSelected ? 'bg-primary text-primary-foreground' : 'bg-primary/80 text-white'}`}><MapPin size={17} fill="currentColor" strokeWidth={1.5} /></span>
-            <span className={`absolute left-1/2 top-[30px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 ${isSelected ? 'bg-primary' : 'bg-primary/80'}`} />
-          </button>;
-        })}
-      </div>
-    </div>
-    <div className="absolute right-5 top-5 z-20 flex flex-col overflow-hidden rounded-[4px] border border-card/80 bg-card/90 shadow-md backdrop-blur-sm">
-      <button type="button" onClick={() => setZoom((value) => Math.min(1.25, value + .1))} aria-label="Zoom in map" className="p-2.5 text-primary transition hover:bg-secondary" data-testid="button-search-map-zoom-in"><Plus size={16} /></button>
+
+  useEffect(() => {
+    let cancelled = false;
+    let resizeObserver: ResizeObserver | undefined;
+    void import('leaflet').then((module) => {
+      if (cancelled || !mapElementRef.current) return;
+      const leaflet = module;
+      leafletRef.current = leaflet;
+      const map = leaflet.map(mapElementRef.current, { zoomControl: false, minZoom: 3, maxZoom: 18 });
+      leaflet.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+        maxZoom: 19,
+      }).addTo(map);
+      markerLayerRef.current = leaflet.layerGroup().addTo(map);
+      mapRef.current = map;
+      resizeObserver = new ResizeObserver(() => map.invalidateSize({ pan: false }));
+      resizeObserver.observe(mapElementRef.current);
+      setMapReady(true);
+    });
+    return () => {
+      cancelled = true;
+      resizeObserver?.disconnect();
+      mapRef.current?.remove();
+      mapRef.current = null;
+      leafletRef.current = null;
+      markerLayerRef.current = null;
+      markersRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    const leaflet = leafletRef.current;
+    const markerLayer = markerLayerRef.current;
+    if (!mapReady || !leaflet || !markerLayer) return;
+    markerLayer.clearLayers();
+    markersRef.current.clear();
+    mappedResults.forEach(({ salon, coordinates }) => {
+      const id = String(salon.id);
+      const marker = leaflet.marker(coordinates, {
+        icon: makeMarkerIcon(id === selectedId),
+        keyboard: true,
+        title: salon.name,
+        alt: `${salon.name} map marker`,
+      });
+      const tooltip = document.createElement('span');
+      tooltip.textContent = salon.name;
+      marker.bindTooltip(tooltip, { direction: 'top', opacity: .96 });
+      marker.on('click', () => setSelectedId(id));
+      marker.addTo(markerLayer);
+      markersRef.current.set(id, marker);
+    });
+    fitResults();
+  }, [mapReady, mappedResults]);
+
+  useEffect(() => {
+    if (!mapReady || !leafletRef.current) return;
+    markersRef.current.forEach((marker, id) => {
+      marker.setIcon(makeMarkerIcon(id === selectedId));
+      marker.setZIndexOffset(id === selectedId ? 1000 : 0);
+    });
+  }, [mapReady, selectedId]);
+
+  return <section className="relative h-full min-h-0 w-full flex-1 overflow-hidden overscroll-none border-l border-border bg-[#e8e2d5]" aria-label="Map of nearby salons" data-testid="panel-search-map">
+    <div ref={mapElementRef} className="absolute inset-0 z-0" data-testid="search-map-canvas" />
+    <div className="absolute right-5 top-5 z-[1000] flex flex-col overflow-hidden rounded-[4px] border border-card/80 bg-card/95 shadow-md backdrop-blur-sm">
+      <button type="button" onClick={() => mapRef.current?.zoomIn()} aria-label="Zoom in map" className="p-2.5 text-primary transition hover:bg-secondary" data-testid="button-search-map-zoom-in"><Plus size={16} /></button>
       <div className="h-px bg-border" />
-      <button type="button" onClick={() => setZoom((value) => Math.max(.9, value - .1))} aria-label="Zoom out map" className="p-2.5 text-primary transition hover:bg-secondary" data-testid="button-search-map-zoom-out"><Minus size={16} /></button>
+      <button type="button" onClick={() => mapRef.current?.zoomOut()} aria-label="Zoom out map" className="p-2.5 text-primary transition hover:bg-secondary" data-testid="button-search-map-zoom-out"><Minus size={16} /></button>
     </div>
-    <button type="button" onClick={() => setZoom(1)} aria-label="Center map" className="absolute bottom-5 right-5 z-20 rounded-[4px] border border-card/80 bg-card/90 p-3 text-primary shadow-md backdrop-blur-sm transition hover:bg-card" data-testid="button-search-map-center"><LocateFixed size={17} /></button>
-    <div className="absolute bottom-5 left-5 z-20 hidden items-center gap-2 rounded-[4px] border border-card/80 bg-card/85 px-3 py-2 font-mono text-[10px] uppercase tracking-[.1em] text-muted-foreground shadow-sm backdrop-blur-sm sm:flex"><span className="h-2 w-2 rounded-full bg-accent" /> {results.length} {results.length === 1 ? 'place' : 'places'} nearby</div>
-    {selected && <div className="absolute bottom-5 left-1/2 z-30 hidden w-[270px] -translate-x-1/2 rounded-[4px] border border-border bg-card p-4 shadow-lg sm:block" data-testid={`map-selected-${selected.id}`}>
+    <button type="button" onClick={fitResults} aria-label="Center map on results" className="absolute bottom-5 right-5 z-[1000] rounded-[4px] border border-card/80 bg-card/95 p-3 text-primary shadow-md backdrop-blur-sm transition hover:bg-card" data-testid="button-search-map-center"><LocateFixed size={17} /></button>
+    <div className="absolute bottom-5 left-5 z-[1000] hidden items-center gap-2 rounded-[4px] border border-card/80 bg-card/90 px-3 py-2 font-mono text-[10px] uppercase tracking-[.1em] text-muted-foreground shadow-sm backdrop-blur-sm sm:flex"><span className="h-2 w-2 rounded-full bg-accent" /> {mappedResults.length} {mappedResults.length === 1 ? 'place' : 'places'} mapped</div>
+    {!mappedResults.length && <div className="pointer-events-none absolute left-1/2 top-5 z-[1000] -translate-x-1/2 rounded-[4px] border border-border bg-card/95 px-4 py-2 text-center text-xs font-medium text-muted-foreground shadow-md">Map locations are not available for these results.</div>}
+    {selected && salonCoordinates(selected) && <div className="absolute bottom-5 left-1/2 z-[1000] hidden w-[270px] -translate-x-1/2 rounded-[4px] border border-border bg-card p-4 shadow-lg sm:block" data-testid={`map-selected-${selected.id}`}>
       <div className="flex items-start justify-between gap-3"><div><p className="text-[13px] font-bold text-primary">{selected.name}</p><p className="mt-1 text-[11px] text-muted-foreground">{selected.neighborhood || selected.city} · {resultDistance(selected)}</p></div><span className="flex items-center gap-1 text-xs font-bold text-primary"><Star size={12} fill="currentColor" className="text-accent" /> {selected.rating?.toFixed(1)}</span></div>
       <Link href={`/${selected.slug}`} className="mt-3 flex w-full items-center justify-center gap-1 rounded-[3px] bg-secondary py-2 text-[11px] font-bold text-primary transition hover:bg-accent/30" data-testid={`link-map-details-${selected.id}`}>View details <Navigation size={12} /></Link>
     </div>}
@@ -360,6 +486,11 @@ function SearchLoading() {
 
 function SearchPage() {
   const [location, setLocation] = useLocation();
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, []);
   const initialParams = useMemo(() => new URLSearchParams(location.split('?')[1] || ''), [location]);
   const [search, setSearch] = useState(() => initialParams.get('search') || '');
   const [service, setService] = useState(() => initialParams.get('service') || '');
@@ -428,14 +559,14 @@ function SearchPage() {
       : activeLocation
         ? `Beauty near ${activeLocation}`
         : 'Beauty near you';
-  return <div className="page-in h-[calc(100dvh-68px)] overflow-hidden bg-background">
-    <main className="mx-auto flex h-full min-h-0 w-full max-w-[1440px] flex-col overflow-hidden">
+  return <div className="page-in fixed inset-x-0 bottom-0 top-[68px] z-30 overflow-hidden bg-background">
+    <main className="flex h-full min-h-0 w-full flex-col overflow-hidden">
       {isLoading ? <SearchLoading /> : isError ? <div className="min-h-0 flex-1 overflow-hidden px-5 py-8 lg:px-8"><ErrorState onRetry={() => refetch()} label="We could not load nearby places just now." /></div> : <div className="flex min-h-0 flex-1 overflow-hidden flex-col md:flex-row">
-        <section className={`${mobileMapOpen ? 'hidden md:flex' : 'flex'} min-h-0 w-full flex-col bg-background md:w-[440px] md:shrink-0`} aria-label="Search results">
-          <div className="flex items-center justify-between border-b border-border px-5 py-4"><div><h2 className="text-[15px] font-bold tracking-[-.02em] text-primary">{resultHeading}</h2><p className="mt-1 font-mono text-[10px] uppercase tracking-[.13em] text-muted-foreground">{results.length} {results.length === 1 ? 'place' : 'places'} to explore</p></div><label className="relative"><span className="sr-only">Sort results</span><select value={sort} onChange={(event) => chooseSort(event.target.value as SearchSort)} className="h-9 appearance-none rounded-[3px] border border-border bg-card py-0 pl-3 pr-8 text-[11px] font-bold text-primary outline-none" data-testid="select-sort-results"><option value="recommended">Recommended</option><option value="rating">Top rated</option><option value="distance">Nearest first</option></select><ArrowUpDown size={13} className="pointer-events-none absolute right-2.5 top-3 text-muted-foreground" /></label></div>
-          <div className="min-h-0 flex-1 overflow-y-auto">{results.length ? results.map((salon) => <SearchResultCard key={salon.id} salon={salon} selected={String(salon.id) === activeId} saved={saved.includes(salon.slug)} toggle={toggle} onSelect={() => setSelectedId(String(salon.id))} />) : <div className="flex min-h-[390px] flex-col items-center justify-center px-8 text-center"><span className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-secondary text-primary"><Sparkles size={22} /></span><h2 className="font-display text-3xl text-primary">A quiet corner.</h2><p className="mt-2 max-w-[250px] text-xs leading-6 text-muted-foreground">Nothing matched that search. Try another neighborhood, service, or a wider search.</p><button type="button" onClick={() => { setSearch(''); setService(''); setSort('recommended'); setSelectedId(null); syncUrl('', '', 'recommended'); }} className="mt-5 rounded-full bg-primary px-5 py-2.5 text-xs font-semibold text-primary-foreground" data-testid="button-clear-search-filters">Clear filters</button></div>}</div>
+        <section className={`${mobileMapOpen ? 'hidden md:flex' : 'flex'} min-h-0 w-full flex-col overflow-hidden bg-background md:w-[500px] md:shrink-0 xl:w-[540px]`} aria-label="Search results">
+          <div className="flex shrink-0 items-center justify-between gap-5 border-b border-border bg-card/60 px-6 py-5"><div className="min-w-0"><h1 className="truncate text-[18px] font-bold tracking-[-.025em] text-primary">{resultHeading}</h1><p className="mt-1.5 font-mono text-[10px] uppercase tracking-[.13em] text-muted-foreground">{results.length} {results.length === 1 ? 'place' : 'places'} to explore</p></div><label className="relative shrink-0"><span className="sr-only">Sort results</span><select value={sort} onChange={(event) => chooseSort(event.target.value as SearchSort)} className="h-10 appearance-none rounded-[4px] border border-border bg-background py-0 pl-3 pr-9 text-[12px] font-bold text-primary outline-none focus:border-primary" data-testid="select-sort-results"><option value="recommended">Recommended</option><option value="rating">Top rated</option><option value="distance">Nearest first</option></select><ArrowUpDown size={14} className="pointer-events-none absolute right-3 top-3.5 text-muted-foreground" /></label></div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]" data-testid="list-search-results">{results.length ? results.map((salon) => <SearchResultCard key={salon.id} salon={salon} selected={String(salon.id) === activeId} saved={saved.includes(salon.slug)} toggle={toggle} onSelect={() => setSelectedId(String(salon.id))} />) : <div className="flex min-h-[390px] flex-col items-center justify-center px-8 text-center"><span className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-secondary text-primary"><Sparkles size={22} /></span><h2 className="font-display text-3xl text-primary">A quiet corner.</h2><p className="mt-2 max-w-[250px] text-sm leading-6 text-muted-foreground">Nothing matched that search. Try another neighborhood, service, or a wider search.</p><button type="button" onClick={() => { setSearch(''); setService(''); setSort('recommended'); setSelectedId(null); syncUrl('', '', 'recommended'); }} className="mt-5 rounded-full bg-primary px-5 py-2.5 text-xs font-semibold text-primary-foreground" data-testid="button-clear-search-filters">Clear filters</button></div>}</div>
         </section>
-        <div className={`${mobileMapOpen ? 'flex' : 'hidden'} min-h-0 flex-1 overflow-hidden md:flex`}><SearchMap results={results} selectedId={activeId} setSelectedId={setSelectedId} /></div>
+        <div className={`${mobileMapOpen ? 'flex' : 'hidden'} h-full min-h-0 min-w-0 flex-1 overflow-hidden overscroll-none md:flex`}><SearchMap results={results} selectedId={activeId} setSelectedId={setSelectedId} userCoords={coords} /></div>
       </div>}
     </main>
     <button type="button" onClick={() => setMobileMapOpen((open) => !open)} className="fixed bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full bg-primary px-5 py-3 text-xs font-bold text-primary-foreground shadow-lg transition hover:bg-primary/90 md:hidden" data-testid="button-toggle-search-map">Toggle map</button>
