@@ -36,7 +36,7 @@ import { logger } from "../lib/logger";
 import { renderMarketplacePage } from "../lib/marketplaceSsr";
 import { requestIp, resolveVisitorCity } from "../lib/geoLookup";
 import {
-  ensureLoaded, getClaimedSalonList, getStateIndex,
+  ensureLoaded, getSalonList, getStateIndex,
   CERTXA_DOMAIN, SITEMAP_PAGE_SIZE,
 } from "../lib/salonData";
 
@@ -127,7 +127,8 @@ const router = Router();
 
 router.get("/sitemap-salons.xml", sitemapRateLimit, async (_req: Request, res: Response) => {
   try {
-    const list = await getClaimedSalonList();
+    await ensureLoaded();
+    const list = getSalonList();
     const lastmod = new Date().toISOString().slice(0, 10);
     const totalPages = Math.max(1, Math.ceil(list.length / SITEMAP_PAGE_SIZE));
 
@@ -153,7 +154,8 @@ router.get("/sitemap-salons.xml", sitemapRateLimit, async (_req: Request, res: R
 
 router.get("/sitemap-salons-:page.xml", sitemapRateLimit, async (req: Request, res: Response) => {
   try {
-    const list = await getClaimedSalonList();
+    await ensureLoaded();
+    const list = getSalonList();
     const page = parseInt(String(req.params.page), 10);
     if (isNaN(page) || page < 1) { res.status(404).send("Not found"); return; }
     const start = (page - 1) * SITEMAP_PAGE_SIZE;
@@ -173,9 +175,10 @@ router.get("/sitemap-salons-:page.xml", sitemapRateLimit, async (req: Request, r
 });
 
 // State and city hub pages (e.g. /listings/arizona, /listings/tucson--arizona)
-// are real aggregator pages — each lists many real business listings and is
-// `index, follow` — unlike individual unclaimed salon pages, which are
-// deliberately noindex'd (see getClaimedSalonList) and excluded here.
+// are real aggregator pages, each listing many real businesses — this
+// sitemap covers only the hub pages themselves; individual salon URLs are
+// covered by /sitemap-salons.xml instead (all real records, not just
+// claimed listings — see GEO-AUDIT-REPORT.md).
 router.get("/sitemap-listings.xml", sitemapRateLimit, async (_req: Request, res: Response) => {
   try {
     await ensureLoaded();

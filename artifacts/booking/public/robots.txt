@@ -88,39 +88,35 @@ Allow: /
 User-agent: GoogleOther
 Allow: /
 
-# ── Known scraper / data-harvesting agents — block from the salon directory
-# (unclaimed third-party listings, not Certxa's own content) ───────────────
+# ── Known scraper / data-harvesting agents — block from the salon listing
+# hub pages. Individual salon pages are flat at root (certxa.com/{slug}), so
+# they can't be targeted by a robots.txt prefix without also disallowing
+# real marketing pages — only /listings/ (state/city hubs) can be blocked
+# this way; the sitemap rate limiter is the actual backstop against bulk
+# harvesting of the flat salon pages themselves. ────────────────────────────
 User-agent: AhrefsBot
-Disallow: /salon/
-Disallow: /nail-salons/
+Disallow: /listings/
 
 User-agent: SemrushBot
-Disallow: /salon/
-Disallow: /nail-salons/
+Disallow: /listings/
 
 User-agent: MJ12bot
-Disallow: /salon/
-Disallow: /nail-salons/
+Disallow: /listings/
 
 User-agent: DotBot
-Disallow: /salon/
-Disallow: /nail-salons/
+Disallow: /listings/
 
 User-agent: BLEXBot
-Disallow: /salon/
-Disallow: /nail-salons/
+Disallow: /listings/
 
 User-agent: DataForSeoBot
-Disallow: /salon/
-Disallow: /nail-salons/
+Disallow: /listings/
 
 User-agent: PetalBot
-Disallow: /salon/
-Disallow: /nail-salons/
+Disallow: /listings/
 
 User-agent: Bytespider
-Disallow: /salon/
-Disallow: /nail-salons/
+Disallow: /listings/
 
 # Sitemap
 Sitemap: https://certxa.com/sitemap.xml

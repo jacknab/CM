@@ -139,6 +139,7 @@ export async function renderMarketplacePage(
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.svg" sizes="any">
+<link rel="preconnect" href="https://images.pexels.com">
 ${result.headTags}
 ${cssLinks}
 </head>
