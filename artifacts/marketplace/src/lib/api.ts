@@ -73,6 +73,8 @@ export interface SalonProfile extends Salon {
   about?: string;
   /** Present only when this listing is claimed by a real Certxa store — links to the real booking flow. */
   bookingUrl?: string;
+  /** Real nearby salons sorted by actual distance — [] when this salon has no coordinates on file. */
+  nearby: Salon[];
 }
 
 export interface InquiryInput {
@@ -116,12 +118,16 @@ export function listSalons(params: ListSalonsParams = {}): Promise<Salon[]> {
 export interface FeaturedSalonsParams {
   citySlug?: string;
   stateSlug?: string;
+  lat?: number;
+  lng?: number;
 }
 
 export function getFeaturedSalons(params: FeaturedSalonsParams = {}): Promise<Salon[]> {
   const q = new URLSearchParams();
   if (params.citySlug) q.set('citySlug', params.citySlug);
   if (params.stateSlug) q.set('stateSlug', params.stateSlug);
+  if (typeof params.lat === 'number') q.set('lat', String(params.lat));
+  if (typeof params.lng === 'number') q.set('lng', String(params.lng));
   const qs = q.toString();
   return apiFetch(`/api/salons/featured${qs ? `?${qs}` : ''}`);
 }

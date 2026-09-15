@@ -6,6 +6,15 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-09-15 — `SalonCard`'s "Open now" badge is never actually true
+
+**File:** `artifacts/marketplace/src/App.tsx` — `SalonCard` component, `{salon.isOpen ? 'Open now' : 'By appointment'}`
+**Found while:** adding a "Nearby salons" section to the salon profile page and checking whether `Salon.isOpen` (used by `SalonCard`'s status badge) is ever actually populated from real hours data before reusing the component.
+**Issue:** `isOpen?: boolean` is declared on the `Salon` type (both `lib/api.ts` and `salonApi.ts`) but no API response ever sets it — `toApiSalon()` never includes an `isOpen` field. So every `SalonCard` renders "By appointment" unconditionally, regardless of the salon's real hours or the current time. Not a false claim (it's a static fallback, not a fabricated "Open now"), but it's dead/misleading UI — the badge implies live status that doesn't exist.
+**Why not fixed now:** `SalonCard` wasn't part of the nearby-salons change (swapped to `FeaturedMarketplaceCard` instead, which has no such badge). Fixing it properly means computing real open/closed state from `salon.hours` + current time server-side or client-side, which is a small but distinct feature, not a one-line fix.
+
+---
+
 ## 2026-09-14 — `timezone.test.ts` — missing test-runner type definitions
 
 **Files:** `artifacts/api-server/src/__tests__/timezone.test.ts` (throughout — `describe`, `test`, `expect` all unresolved)

@@ -261,6 +261,24 @@ router.get("/api/salons/:slug", async (req: Request, res: Response) => {
       if (attr.allowsDogs) highlights.push("Dog friendly");
     }
 
+    // Real nearby salons (by actual distance from this salon's own real
+    // coordinates) — adds genuine content depth and internal linking to
+    // what would otherwise be a short, mostly-AI-written page. No
+    // fabrication: every listing here is a real record, sorted by real
+    // distance, and simply omitted (not faked) when this salon has no
+    // coordinates on file.
+    const salonLat = salon.la ? Number(salon.la) : NaN;
+    const salonLng = salon.lo ? Number(salon.lo) : NaN;
+    let nearby: ReturnType<typeof toApiSalon>[] = [];
+    if (Number.isFinite(salonLat) && Number.isFinite(salonLng)) {
+      const withDistance = getSalonList()
+        .filter((r) => r.s !== salon.s && r.la && r.lo)
+        .map((r) => ({ r, miles: haversineMiles(salonLat, salonLng, Number(r.la), Number(r.lo)) }))
+        .filter((x) => Number.isFinite(x.miles));
+      withDistance.sort((a, b) => a.miles - b.miles);
+      nearby = withDistance.slice(0, 6).map(({ r, miles }) => toApiSalon(r, new Set(), miles));
+    }
+
     res.json({
       ...base,
       name: live?.name || base.name,
@@ -275,6 +293,7 @@ router.get("/api/salons/:slug", async (req: Request, res: Response) => {
       bookingUrl: live?.bookingSlug ? `${CERTXA_DOMAIN}/${live.bookingSlug}` : undefined,
       city: addr.city,
       state: addr.state,
+      nearby,
     });
   } catch (err) {
     logger.error({ err }, "[salonApi] salon profile failed");
