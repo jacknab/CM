@@ -172,6 +172,20 @@ async function loadSalonDataFromDb(): Promise<void> {
   _salonMap = map;
   _salonList = list;
   logger.info({ count: map.size }, "[salonData] loaded salon data from DB");
+
+  try {
+    const imgRes = await pool.query<{ r2_url: string }>(
+      `SELECT r2_url FROM site_assets WHERE key NOT LIKE 'kiosk-%' ORDER BY key`
+    );
+    if (imgRes.rows.length > 0) {
+      _salonImagePool = imgRes.rows.map((r) => r.r2_url);
+      logger.info({ count: _salonImagePool.length }, "[salonData] loaded salon image pool from site_assets");
+    } else {
+      logger.warn("[salonData] site_assets has no usable images — falling back to stock photos");
+    }
+  } catch (err) {
+    logger.warn({ err }, "[salonData] failed to load site_assets image pool — falling back to stock photos");
+  }
 }
 
 /** Call before touching the sync helpers below. */
@@ -229,7 +243,9 @@ export async function getClaimedSalonList(): Promise<SalonRecord[]> {
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-export const HERO_IMAGES = [
+// Used only if the site_assets image pool (below) can't be loaded — e.g. a
+// fresh DB with no admin-uploaded photos yet.
+const FALLBACK_HERO_IMAGES = [
   "https://images.pexels.com/photos/3997389/pexels-photo-3997389.jpeg?auto=compress&cs=tinysrgb&w=1200",
   "https://images.pexels.com/photos/939836/pexels-photo-939836.jpeg?auto=compress&cs=tinysrgb&w=1200",
   "https://images.pexels.com/photos/704815/pexels-photo-704815.jpeg?auto=compress&cs=tinysrgb&w=1200",
@@ -237,6 +253,14 @@ export const HERO_IMAGES = [
   "https://images.pexels.com/photos/1570827/pexels-photo-1570827.jpeg?auto=compress&cs=tinysrgb&w=1200",
   "https://images.pexels.com/photos/3997385/pexels-photo-3997385.jpeg?auto=compress&cs=tinysrgb&w=1200",
 ];
+
+// Salon records have no real per-listing photo, so each one is assigned a
+// deterministic (same salon always gets the same photo, so OG tags/JSON-LD
+// stay stable) but effectively random-looking pick from the admin's
+// uploaded photo library (site_assets in R2 — see /isadmin/illustration-
+// library's "Site Images" tab), instead of a tiny hardcoded stock-photo set.
+// Pre-defined non-photo slots (kiosk UI screenshots) are excluded.
+let _salonImagePool: string[] = FALLBACK_HERO_IMAGES;
 
 export const STATE_NAMES: Record<string, string> = {
   AL:"Alabama",    AK:"Alaska",       AZ:"Arizona",      AR:"Arkansas",
@@ -304,7 +328,7 @@ export const SITEMAP_PAGE_SIZE = 5_000;
 export function heroImage(slug: string): string {
   let hash = 0;
   for (let i = 0; i < slug.length; i++) hash = ((hash * 31) | 0) + slug.charCodeAt(i);
-  return HERO_IMAGES[Math.abs(hash) % HERO_IMAGES.length];
+  return _salonImagePool[Math.abs(hash) % _salonImagePool.length];
 }
 
 export function formatPhone(p: string): string {
