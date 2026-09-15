@@ -424,8 +424,6 @@ require 'includes/nav.php';
   <div class="container">
     <div class="ri-stats-row">
       <?php foreach ([
-        ['10–15%','of drifting clients recovered automatically'],
-        ['68%','average reduction in no-shows'],
         ['6 hrs','how often the engine runs in the background'],
         ['$0','extra cost — included in every SalonOS plan'],
         ['8+','intelligence engines running simultaneously'],
@@ -436,7 +434,6 @@ require 'includes/nav.php';
       </div>
       <?php endforeach; ?>
     </div>
-    <p style="text-align:center;font-size:.78rem;color:var(--mid-grey,#8b8b8b);margin-top:16px;">Based on early Certxa customer data.</p>
   </div>
 </section>
 

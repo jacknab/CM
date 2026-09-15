@@ -1,14 +1,21 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Nail Salon Software | Certxa');
+// Distinct from /nail-salon-software's "Nail Salon Booking Software | Certxa"
+// — that page is the tight, booking-focused landing page; this one is the
+// full platform tour (booking, client records, payments, reminders, revenue
+// intelligence, website builder), so it's titled around the broader phrase
+// to avoid the two pages competing for the same exact title/keyword.
+define('PAGE_TITLE',    'Nail Salon Management Platform | Certxa');
 // Was 232 chars — truncated in Google/Bing SERPs (~155-160 char limit).
 define('PAGE_DESC',     'Certxa is all-in-one nail salon software: online booking, walk-in kiosk, client nail records, waitlist, POS, and AI receptionist. Free ' . TRIAL_DAYS . '-day trial.');
-define('PAGE_KEYWORDS', 'nail salon software, nail salon booking software, nail studio management software, nail salon scheduling app, nail salon POS system, nail technician software, nail salon check-in kiosk, nail salon waitlist, gel acrylic nail salon software');
-// PAGE_CANONICAL and PAGE_BREADCRUMBS are pre-set by index.php when this file
-// is served at certxa.com/ — use defined() guard so the root canonical wins.
-defined('PAGE_CANONICAL')   or define('PAGE_CANONICAL',   'https://certxa.com/');
-defined('PAGE_BREADCRUMBS') or define('PAGE_BREADCRUMBS', json_encode([
+define('PAGE_KEYWORDS', 'nail salon management platform, nail salon software, nail studio management software, nail salon scheduling app, nail salon POS system, nail technician software, nail salon check-in kiosk, nail salon waitlist, gel acrylic nail salon software');
+// This page used to be required by index.php to render at certxa.com/ with
+// canonical pre-set to root. certxa.com/ is now the separate marketplace
+// app, so this page is reached directly at /overview and is self-canonical.
+define('PAGE_CANONICAL',   'https://certxa.com/overview');
+define('PAGE_BREADCRUMBS', json_encode([
   ['name'=>'Home','url'=>'https://certxa.com/'],
+  ['name'=>'Overview','url'=>'https://certxa.com/overview'],
 ]));
 define('PAGE_SCHEMA', json_encode([
   // The canonical SoftwareApplication entity (@id #software) is injected
@@ -48,7 +55,7 @@ define('PAGE_SCHEMA', json_encode([
       [
         '@type'          => 'Question',
         'name'           => 'How does Certxa reduce no-shows?',
-        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Certxa sends automated SMS and email reminders at intervals you choose — typically 72 hours and 24 hours before each appointment. Early Certxa customers report up to a 68% reduction in no-shows. You can also require a deposit at booking for additional protection.'],
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Certxa sends automated SMS and email reminders at intervals you choose — typically 72 hours and 24 hours before each appointment. Automated reminders are one of the most effective ways to cut no-shows since most missed appointments come down to clients simply forgetting. You can also require a deposit at booking for additional protection.'],
       ],
       [
         '@type'          => 'Question',
@@ -419,8 +426,8 @@ require 'includes/nav.php';
       <div class="feat-panel" id="feat-reminders" role="tabpanel">
         <div class="feat-copy">
           <div class="feat-eyebrow">Automation</div>
-          <h3 class="feat-title">Slash no-shows<br><em>by up to 68%.</em></h3>
-          <p class="feat-desc">Certxa automatically sends perfectly-timed SMS and email reminders so clients never forget their appointment — without you lifting a finger. Early Certxa customers report up to 68% fewer no-shows.</p>
+          <h3 class="feat-title">Fewer no-shows,<br><em>on autopilot.</em></h3>
+          <p class="feat-desc">Certxa automatically sends perfectly-timed SMS and email reminders so clients never forget their appointment — without you lifting a finger. Most missed appointments come down to clients simply forgetting, which is exactly what automated reminders fix.</p>
           <ul class="feat-list">
             <li>Automated reminders at 72h, 24h &amp; 2h before</li>
             <li>Clients can confirm, reschedule or cancel via SMS</li>
@@ -455,10 +462,6 @@ require 'includes/nav.php';
               <div class="fvph-input">Type a message…</div>
               <div class="fvph-send">↑</div>
             </div>
-          </div>
-          <div class="feat-stat-badge">
-            <div class="fsb-value">68%</div>
-            <div class="fsb-label">fewer no-shows</div>
           </div>
         </div>
       </div>
@@ -829,7 +832,7 @@ require 'includes/nav.php';
 
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">How does Certxa reduce no-shows? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Certxa sends fully automated SMS and email reminders at intervals you control — typically 72 hours and 24 hours before each appointment. Early Certxa customers report up to a 68% reduction in no-shows. You can also require an upfront deposit at the time of booking for additional protection on high-value services.</div>
+        <div class="accordion-body">Certxa sends fully automated SMS and email reminders at intervals you control — typically 72 hours and 24 hours before each appointment. Automated reminders are one of the most effective ways to cut no-shows since most missed appointments come down to clients simply forgetting. You can also require an upfront deposit at the time of booking for additional protection on high-value services.</div>
       </div>
 
       <div class="accordion-item">

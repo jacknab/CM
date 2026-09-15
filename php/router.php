@@ -200,16 +200,14 @@ if ($uri === '/') {
     exit;
 }
 
-// ── 301 redirect: /overview → / ──────────────────────────────────────────────
-// certxa.com/ is the canonical homepage. Any old links or Google index entries
-// pointing to /overview are permanently redirected here so link equity and
-// Google Business Profile verification both resolve to the root URL.
-if ($uri === '/overview' || $uri === '/overview/') {
-    header('Location: /', true, 301);
-    exit;
-}
+// certxa.com/ is now the consumer salon-marketplace homepage (a separate
+// Node/React app, routed before this PHP layer ever runs) — it is NOT the
+// same content as overview/default.php any more, so /overview must render
+// its own real page rather than redirect into the marketplace. The generic
+// slug → directory/default.php routing further below already does this
+// correctly; only the stray .php-extension cleanup redirect is needed here.
 if ($uri === '/overview.php') {
-    header('Location: /', true, 301);
+    header('Location: /overview', true, 301);
     exit;
 }
 
