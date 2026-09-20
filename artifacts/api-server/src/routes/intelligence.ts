@@ -1567,6 +1567,139 @@ Keep your entire response under 55 words.`;
   }
 });
 
+// ── Growth assistant chat (Members Home) ─────────────────────────────────────
+// POST /api/intelligence/growth-assistant  { messages: [{ role, content }] }  →  { reply, highlights, actions }
+// Answers strictly from the store's own numbers (gathered here, never from the client) and may only
+// suggest links from ASSISTANT_LINKS, so it can't invent data or send the owner to a dead route.
+const ASSISTANT_LINKS: Record<string, { label: string; to: string }> = {
+  intelligence: { label: "Open Growth Intelligence", to: "/intelligence" },
+  at_risk: { label: "Review at-risk clients", to: "/clients/at-risk" },
+  campaigns: { label: "Send a win-back campaign", to: "/campaigns" },
+  calendar: { label: "Open the calendar", to: "/calendar" },
+  reports: { label: "See reports", to: "/reports" },
+  online_booking: { label: "Tune online booking", to: "/settings/online-booking" },
+};
+
+export async function buildAssistantSnapshot(storeId: number) {
+  const [store] = await db.select({ name: locations.name, timezone: locations.timezone }).from(locations).where(eq(locations.id, storeId)).limit(1);
+  const tz = store?.timezone || "UTC";
+
+  const revenue = await db.execute(sql`
+    SELECT
+      COALESCE(SUM(CASE WHEN date_trunc('month', date AT TIME ZONE ${tz}) = date_trunc('month', NOW() AT TIME ZONE ${tz})
+                        THEN CAST(total_paid AS DECIMAL(10,2)) END), 0)::float AS this_month,
+      COALESCE(SUM(CASE WHEN date_trunc('month', date AT TIME ZONE ${tz}) = date_trunc('month', NOW() AT TIME ZONE ${tz}) - INTERVAL '1 month'
+                        THEN CAST(total_paid AS DECIMAL(10,2)) END), 0)::float AS last_month,
+      COUNT(*) FILTER (WHERE date_trunc('month', date AT TIME ZONE ${tz}) = date_trunc('month', NOW() AT TIME ZONE ${tz}))::int AS visits_this_month,
+      COUNT(*) FILTER (WHERE date_trunc('month', date AT TIME ZONE ${tz}) = date_trunc('month', NOW() AT TIME ZONE ${tz}) - INTERVAL '1 month')::int AS visits_last_month,
+      EXTRACT(DAY FROM (NOW() AT TIME ZONE ${tz}))::int AS day_of_month
+    FROM appointments
+    WHERE store_id = ${storeId} AND status = 'completed'
+      AND date >= NOW() - INTERVAL '70 days'
+  `);
+  const r: any = (revenue as any).rows?.[0] ?? {};
+
+  const [cs] = await db
+    .select({
+      total: sql<number>`COUNT(*)`,
+      drifting: sql<number>`COALESCE(SUM(CASE WHEN is_drifting THEN 1 ELSE 0 END), 0)`,
+      atRisk: sql<number>`COALESCE(SUM(CASE WHEN is_at_risk THEN 1 ELSE 0 END), 0)`,
+      avgRebooking: sql<string>`COALESCE(AVG(CAST(rebooking_rate AS DECIMAL(10,2))), 0)`,
+    })
+    .from(clientIntelligence)
+    .where(eq(clientIntelligence.storeId, storeId));
+
+  const deadSeats = await computeDeadSeats(storeId);
+  const growth = await computeGrowthScore(
+    storeId,
+    { activeClients: Number(cs?.total || 0), driftingClients: Number(cs?.drifting || 0), atRiskClients: Number(cs?.atRisk || 0), avgRebookingRate: parseFloat(cs?.avgRebooking || "0") },
+    deadSeats.overallUtilization,
+  );
+  const leakage = await computeRevenueLeakage(storeId, deadSeats.totalLostRevenuePotential);
+  const round = (n: unknown) => Math.round(Number(n) || 0);
+
+  return {
+    salon: store?.name ?? "the salon",
+    revenue: {
+      thisMonthSoFar: round(r.this_month), lastFullMonth: round(r.last_month),
+      visitsThisMonthSoFar: r.visits_this_month ?? 0, visitsLastMonth: r.visits_last_month ?? 0,
+      dayOfMonth: r.day_of_month ?? null,
+    },
+    clients: { total: round(cs?.total), drifting: round(cs?.drifting), atRisk: round(cs?.atRisk), avgRebookingRatePct: round(parseFloat(cs?.avgRebooking || "0")) },
+    schedule: { utilizationPct: round(deadSeats.overallUtilization), emptySlots: deadSeats.totalDeadSlotCount, monthlyRevenueLostToEmptySeats: round(deadSeats.totalLostRevenuePotential) },
+    // Revenue is reported once, above — drop the score's own revenue figures so the model never sees two versions.
+    growthScore: (() => {
+      const { monthlyRevenue: _m, breakdown, ...rest } = growth as any;
+      const { revenue: _r, ...b } = breakdown ?? {};
+      return { ...rest, breakdown: b };
+    })(),
+    leakageLast90Days: {
+      total: round(leakage.totalLeakage), noShowLoss: round(leakage.breakdown.noShowLoss), noShows: leakage.breakdown.noShowCount,
+      cancellationLoss: round(leakage.breakdown.cancellationLoss), cancellations: leakage.breakdown.cancellationCount,
+      discountLoss: round(leakage.breakdown.discountLoss), recoveryPotential: round(leakage.recoveryPotential),
+    },
+  };
+}
+
+router.post("/growth-assistant", async (req, res) => {
+  const storeId = await requireStoreId(req, res);
+  if (!storeId) return;
+  if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
+    return res.status(503).json({ error: "The assistant isn't set up on this account yet." });
+  }
+
+  const raw = Array.isArray(req.body?.messages) ? req.body.messages : [];
+  const messages = raw
+    .filter((m: any) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
+    .slice(-8)
+    .map((m: any) => ({ role: m.role as "user" | "assistant", content: String(m.content).slice(0, 1200) }));
+  if (messages.length === 0 || messages[messages.length - 1].role !== "user") {
+    return res.status(400).json({ error: "A question is required." });
+  }
+
+  try {
+    const snapshot = await buildAssistantSnapshot(storeId);
+    const system = `You are Certxa's growth analyst for one salon owner, talking like a smart friend — plain words, no jargon.
+Answer ONLY from the salon data below. If the data can't answer the question, say so and say which number would help. Never invent figures, clients, or dates.
+Month-to-date revenue is a partial month — compare it fairly (say so) rather than calling it a drop.
+Reply with a JSON object: {"reply": string (under 90 words, specific numbers, end with one concrete next step),
+"highlights": up to 4 of {"label": string, "value": string, "detail": string (optional)} taken from the data,
+"actions": up to 2 of {"id": one of ${Object.keys(ASSISTANT_LINKS).join(" | ")}}}.
+
+SALON DATA (JSON):
+${JSON.stringify(snapshot)}`;
+
+    const completion = await getCoachingClient().chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "system", content: system }, ...messages],
+      response_format: { type: "json_object" },
+      max_tokens: 500,
+      temperature: 0.4,
+    });
+    let parsed: any = {};
+    try { parsed = JSON.parse(completion.choices[0]?.message?.content ?? "{}"); } catch { /* fall through to defaults */ }
+
+    const highlights = (Array.isArray(parsed.highlights) ? parsed.highlights : [])
+      .filter((h: any) => h && typeof h.label === "string" && typeof h.value === "string")
+      .slice(0, 4)
+      .map((h: any) => ({ label: h.label.slice(0, 40), value: h.value.slice(0, 24), ...(typeof h.detail === "string" ? { detail: h.detail.slice(0, 120) } : {}) }));
+    const seen = new Set<string>();
+    const actions = (Array.isArray(parsed.actions) ? parsed.actions : [])
+      .map((a: any) => (a && typeof a.id === "string" ? ASSISTANT_LINKS[a.id] && { id: a.id, ...ASSISTANT_LINKS[a.id] } : null))
+      .filter((a: any) => a && !seen.has(a.id) && seen.add(a.id))
+      .slice(0, 2);
+
+    return res.json({
+      reply: typeof parsed.reply === "string" && parsed.reply.trim() ? parsed.reply.trim() : "I couldn't find a reliable answer in your salon data.",
+      highlights,
+      actions,
+    });
+  } catch (err: any) {
+    console.error("[intelligence] growth-assistant error:", err?.message);
+    return res.status(500).json({ error: "The assistant is unavailable right now. Please try again shortly." });
+  }
+});
+
 // GET /api/intelligence/owner-dashboard
 // Returns server-side aggregations for the Owner Command Center page (owner-only)
 router.get("/owner-dashboard", async (req, res) => {

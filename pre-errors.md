@@ -6,12 +6,6 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
-## 2026-09-20 — `pnpm run typecheck` in `artifacts/api-server` runs out of memory and reports nothing
-
-**Found while:** typechecking the new nail-salon server code. `artifacts/api-server/package.json:13` (`"typecheck": "tsc -p tsconfig.json --noEmit"`) dies with a V8 "heap out of memory" (~2 GB default) on this box, so a plain `npx tsc --noEmit -p .` prints no `error TS` lines and looks clean even though it never finished. With `NODE_OPTIONS=--max-old-space-size=6144` it completes and reports the **65 existing errors** (test config, `intelligence/dead-seats.ts`, storage), none in recently changed files.
-**Why it matters:** anyone (or CI) relying on the script's silence gets a false "0 errors". **Suggested fix:** set `NODE_OPTIONS=--max-old-space-size=6144` in the script (or split the project with `references`/`skipLibCheck`), then triage the 65.
-**Why not fixed now:** unrelated to the nail-screen task; the box is RAM-starved (see memory note on certxa-api host tuning), so the right heap size is a deliberate call.
-
 ---
 
 ## 2026-09-20 — Stripe M2 / Terminal card-payment path: audit findings (items 1-9 FIXED the same day; see status below)
@@ -32,71 +26,17 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
-## 2026-09-20 — Owner app WebView reloads itself right after login: `sessionReady` Provider swap remounts the whole screen tree
-
-**Found while:** investigating "after login the calendar loads, then reloads again" in the owner APK.
-**File:line:** `apps/certxa-owner/app/_layout.tsx:234-242` — `{sessionReady ? <StripeTerminalProvider>…{screenStack}</StripeTerminalProvider> : screenStack}`.
-**Symptom / evidence:** nginx access log shows `GET /app-login` (page), calendar API calls, then ~6-7s later `POST /api/live-chat/visitor/leave` (page unload) and a second `GET /app-login` from the Android WebView UA, then `/calendar` loads a second time (seen at 05:49:14→05:49:20 and 05:58:18→05:58:25 on 2026-09-20).
-**Root cause:** `notifySessionReady()` (fired by `index.tsx` once the WebView leaves `/app-login`) flips `sessionReady`, which changes the parent of `screenStack` (bare → inside `StripeTerminalProvider`). React treats that as a different tree, unmounts and remounts `Stack` → `PortalScreen` → `<WebView source={{uri: PORTAL_URL}}>`, so the WebView restarts at `/app-login` and the web app redirects to `/calendar` again. The file's own comment (lines 33-35) acknowledges "the Provider swap unmounts and remounts the portal screen, so its WebView reloads" and works around it with `initialize()` retries rather than removing the remount.
-**Suggested fix (not applied):** always mount `StripeTerminalProvider` so `screenStack` keeps a stable position, and gate only `<TerminalInitializer />` on `sessionReady` (`{sessionReady && <TerminalInitializer />}`); then the `INIT_MAX_ATTEMPTS` retry workaround for the WebView-still-loading race can likely be dropped. Needs an on-device check that the provider doesn't call `tokenProvider` on mount before login, then a new EAS build to ship.
-**Why not fixed now:** the task was to investigate; the fix touches the Stripe Terminal initialization path (payments) and needs a new APK build plus on-device testing.
-
----
-
-## 2026-09-19 — `timezone.test.ts` doesn't compile: no test-runner types configured, breaks `tsc --noEmit` for the whole api-server package
-
-**Found while:** running `pnpm tsc --noEmit` in `artifacts/api-server` to verify the salon-slug-redirect changes (`routes/salonApi.ts`, `lib/salonData.ts`).
-**Symptom:** `src/__tests__/timezone.test.ts` uses Jest/Mocha globals (`describe`, `test`, `expect`) with no corresponding `@types/jest` or `@types/mocha` installed and no `types` entry in `tsconfig.json` — ~40 `TS2304`/`TS2593` "Cannot find name" errors, e.g. `timezone.test.ts(91,3): error TS2593: Cannot find name 'test'`. This means `tsc --noEmit` never actually passes clean for this package right now — every run reports this same unrelated noise, which will mask a real new type error in the same run.
-**Why not fixed now:** wasn't touched or introduced by the current task (slug regeneration); fixing it means picking a test runner (the file's own header comment says `pnpm --filter @workspace/api-server test`, implying one is intended) and wiring its types into `tsconfig.json`, which is a small but separate decision from what was asked here.
-
----
-
-## 2026-09-19 — Same infinite-render-loop pattern (React error #185) likely lurking elsewhere: `useQuery({ data: x = [] })` used as an unguarded effect/memo dependency
-
-**Found while:** fixing a live crash on `/team/:id` (`StaffDetail.tsx`) — see the fix below. Root cause there: `const { data: savedRules = [] } = useQuery(...)` creates a **new** `[]` reference on every render while the query is still loading (inline destructuring defaults are re-evaluated each render), and an unguarded `useEffect(() => setRules(savedRules.map(...)), [savedRules])` fired on every one of those renders, calling `setState` in a tight loop until React's "Maximum update depth exceeded" safeguard tripped.
-**Scope of the risk:** `grep -rn "data: [a-zA-Z]* = \[\]"` across `artifacts/booking/src` turns up **92 occurrences** of this same destructuring-default pattern. Only a subset are actually dangerous — the bug requires the specific combination of (a) the defaulted value feeding an unguarded `useEffect`/`useMemo` that (b) calls a state setter unconditionally. Most of the 92 are probably just read directly in JSX (harmless). Did not audit all 92 to find every dangerous instance — that's a real, separate follow-up.
-**Update 2026-09-20:** the same pattern caused a second real bug — `pages/team/TeamCommissions.tsx` (`data: staff = []` → `useMemo` → `useEffect(setDraft)`) looped forever whenever the store wasn't selected/loaded, starving the router so Team → Commissions → Payroll clicks changed the URL but not the page. Fixed there and in `StaffList.tsx` with a module-level `EMPTY_STAFF`. The other ~90 call sites are still unaudited.
-**Why not fixed further now:** auditing 92 call sites across files unrelated to the reported crash is a much larger task than the one bug report; fixed only the confirmed, reported instance (`StaffDetail.tsx`, using stable module-level `EMPTY_*` constants instead of inline `[]` fallbacks). Whoever picks this up: grep for the pattern, then check each hit for an effect/memo keyed on that value with no reference-stability guard.
-
----
-
-## 2026-09-19 — `tsc --noEmit` for `api-server` OOMs on this box without a raised Node heap; two real type errors + a test-config gap found once it could complete
-
-**Found while:** the user asked me to look into "an error" in `supportAgent.ts` after opening it in the IDE. A plain `pnpm --filter @workspace/api-server exec tsc --noEmit` reliably crashes with `FATAL ERROR: ... JavaScript heap out of memory` on this host (only ~1.8GB free RAM at the time — see [[certxa-api-db-and-host-tuning]]) before finishing, so it silently never reports real errors. Re-ran with `NODE_OPTIONS="--max-old-space-size=3500" node_modules/.bin/tsc --noEmit` (bypassing pnpm's wrapper) and it completed. `supportAgent.ts` itself has zero errors — whatever the user is seeing there isn't a `tsc` error. The full run did surface three real, unrelated pre-existing issues:
-
-1. **`src/intelligence/dead-seats.ts:168`** — `computeDeadSeats()` returns a `totalDeadSlotCount` field that isn't declared on the `DeadSeatReport` interface (`intelligence/dead-seats.ts:20-26`). Runtime is unaffected (the field is genuinely returned), but any typed consumer can't see it exists. Fix is a one-line addition to the interface.
-2. **`src/storage.ts:627` and `:636`** — `sql.identifier([table])` passes a `string[]` where the installed `drizzle-orm` version's types want a plain `string`. Both call sites are already wrapped in `try/catch` that silently swallows failures, so this may or may not be a real runtime issue — worth checking whether `sql.identifier` actually accepts an array at runtime in this drizzle-orm version despite the type signature, or whether these deletes have been silently no-op'ing.
-3. **`src/__tests__/timezone.test.ts`** — the whole file errors (`Cannot find name 'describe'/'test'/'expect'`) because no test-runner types (`@types/jest` or `@types/mocha`) are installed/configured in `tsconfig`. Not a logic bug, but it means this test file has never actually typechecked or (likely) run.
-
-**Why not fixed now:** all three are in files unrelated to the task at hand, and the eventual real fix for the OOM (bumping the heap flag permanently in the `typecheck` script, or reducing project size/references) is an infra decision, not a drive-by patch.
-
----
-
-## 2026-09-19 — `PayoutAccountSettings.tsx` was found reduced to a single stray character `o`, restored from HEAD but flow may be stale
-
-**File:** `artifacts/booking/src/pages/settings/PayoutAccountSettings.tsx`
-**Found while:** rebuilding `booking` to ship an unrelated Sidebar.tsx nav fix — the whole-file corruption broke `tsc --noEmit` (`File is not a module` / `Cannot find name 'o'`) and would have broken the production build too.
-**Issue:** the entire 415-line file's uncommitted working-tree content was just the single character `o` — clearly accidental (a bad save, not real in-progress work). Restored verbatim from the last commit (`git show HEAD:...` → `Write`) since the broken state had zero salvageable content and was blocking the build.
-**Why flagged, not fully resolved:** the restored file uses an OAuth-based "Connect Stripe Account" flow (`POST /api/payments/stripe/connect` → redirect) for the salon owner's own payout account. Per [[contractor-custom-accounts]] memory, *contractor* payouts were separately migrated from Express to recipient-configured Custom accounts this session — it's unconfirmed whether the owner-level flow this file drives was meant to move to the same Custom-account pattern, or is intentionally still OAuth/Express since it's a different account type. Whoever picks this up should check `lib/stripeContractorAccounts.ts` and the Custom-accounts migration notes before assuming this restored version is the currently-intended flow.
-
----
-
-## 2026-09-19 — `static.ts`'s hardcoded `/robots.txt` fallback route is stale and duplicates the real file
-
-**File:** `artifacts/api-server/src/static.ts:210-230` (the `app.get("/robots.txt", ...)` handler, registered after `app.use(express.static(distPath, ...))`)
-**Found while:** tracing exactly how `/assets/*` static requests get served, as part of fixing a Semrush "unminified JS/CSS" warning.
-**Issue:** This inline handler builds a hardcoded robots.txt string from scratch — no `Content-Signal:` line, no `Allow: /api/r2/` carve-out, missing several AI-crawler user-agent blocks — that's already out of sync with the real, maintained `artifacts/booking/public/robots.txt` (built into `dist/public/robots.txt`). It's currently harmless: Express's static middleware matches the real file first and this route handler is never reached. But it's a live footgun — if `dist/public/robots.txt` is ever missing (a bad build, a wiped `dist/public`), this stale fallback would silently activate with the old, more restrictive rules (including a bare `Disallow: /api/` with no `/api/r2/` exception, re-introducing the salon-photo-blocking bug fixed earlier this session).
-**Why not fixed now:** out of scope for the task at hand (fixing Semrush warnings) and touches server bootstrap code I wasn't asked to change. Fix is straightforward whenever picked up: either delete the dead handler, or have it read from the same source robots.txt file instead of a second hardcoded copy.
-
----
-
 ## 2026-09-18 — `/checkin-kiosk`'s 3 "real screenshot" images are 404 in R2, no replacement exists
 
 **File:** `php/checkin-kiosk/default.php:983-1035` (SCREEN 3, 4, 6 of the interactive kiosk-flow demo)
 **Found while:** working through a real Semrush site audit's "broken internal images" finding.
 **Issue:** Three `<img>` tags point at `https://certxa.com/api/r2/site-assets/{uuid}.webp` object keys that no longer exist in R2 (confirmed 404 directly). These are meant to be real product screenshots (category selection, service selection, check-in confirmation) — checked `site_assets` in the DB for a `kiosk-*` replacement; only one exists (`kiosk-screen.png`) and it isn't referenced anywhere on this page, so there's no already-uploaded substitute to swap in.
 **What was done:** added `onerror="this.style.display='none';"` to all three `<img>` tags so real visitors see a clean gap instead of a broken-image icon. This does not fix the underlying gap.
-**Why not fixed further:** the actual fix is new screenshots of the real kiosk product flow, re-uploaded to R2 and re-linked here — that needs someone to actually capture them, not a code change. (and by a second, separate setup flow) has no backing field anywhere
+**Why not fixed further:** the actual fix is new screenshots of the real kiosk product flow, re-uploaded to R2 and re-linked here — that needs someone to actually capture them, not a code change.
+
+---
+
+## 2026-09-16 — `bufferTime` (buffer between appointments) has no backing field anywhere
 
 **Files:** `artifacts/booking/src/hooks/use-onboarding-session.ts` (the `buffer_time` onboarding-chat step collects `a.bufferTime` but it is no longer sent anywhere as of this session's fix — see below); `artifacts/booking/src/pages/setup/BookingCalendarFlow.tsx:69,44-46` — a separate, non-chat setup-hub flow that independently PATCHes `bufferTime` to `/api/calendar-settings` the same broken way, and reads it back the same way on load.
 **Found while:** fixing the onboarding-chat "save calendar settings" step, which was POSTing to a path with no POST handler and sending field names (`slotInterval`, `bufferTime`, `allowOnlineBooking`, `maxAdvanceDays`) that don't match `/api/calendar-settings`'s real PUT schema (`timeSlotInterval`, `startOfWeek`, `nonWorkingHoursDisplay`, `allowBookingOutsideHours`, ...). Fixed in this session: `slotInterval`→`timeSlotInterval` via `PUT /api/calendar-settings`; `allowOnlineBooking`/`maxAdvanceDays` now correctly route to `PUT /api/booking-policies` as `onlineBookingMode`/`advanceBookingEnabled`/`advanceBookingMonths` (with boolean→enum and days→months conversion).
@@ -105,34 +45,23 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
-## 2026-09-16 — `POST /api/intelligence/growth-assistant` called by the dashboard but never implemented on the backend
-
-**File:** `artifacts/booking/src/pages/manage/MembersHome.tsx:153` — POSTs to `/api/intelligence/growth-assistant`, `credentials: "include"`.
-**Found while:** chasing down console 404s surfaced during a live fresh-signup test of the onboarding flow (this one fires post-onboarding, once the tester reaches the dashboard, not during onboarding itself).
-**Issue:** `api-server/src/routes/intelligence.ts` implements `growth-score`, `dashboard`, `revenue-leakage`, `dead-seats`, `no-show-risks`, `rebooking-rates`, `winback`, etc. — but no `growth-assistant` route exists anywhere in that router or in `routes.ts`. Always 404s.
-**Why not fixed now:** this isn't a wiring bug like the others found this session — the endpoint was simply never built. Implementing it means deciding what a "growth assistant" response actually returns (likely some AI-driven synthesis of the existing intelligence endpoints), which is new feature work, not a fix.
-
----
-
-## 2026-09-16 — WebSocket `wss://certxa.com/ws/notifications?storeId=15` failed with `ERR_NAME_NOT_RESOLVED` during a live test session
-
-**Found while:** same fresh-signup console-error sweep as the two entries above.
-**Investigated, not a code bug:** all 13 frontend call sites (`use-notifications.ts:86`, `enterprise-sync-engine.ts:48`, `AccountStatusGate.tsx:177`, `Calendar.tsx`, etc.) build the WS URL from `window.location.host` — never a hardcoded host or env var — and the backend upgrade handler exists at `notifications.ts:67`. A DNS-resolution failure for a same-origin request, on a page that just loaded fine over HTTPS from that same host, isn't explainable from the app code. Most likely infra (nginx not proxying the `/ws/` Upgrade for that host, or a mismatched test-environment origin) — flagging for whoever owns the reverse-proxy config, not a queued code fix.
-
----
-
-## 2026-09-15 — Plan switch grants a fresh free trial to already-paying customers
-
-**File:** `artifacts/api-server/src/routes/subscription.ts` — `computeTrialPeriodDays()` (was inlined in `POST /subscribe`, extracted verbatim into this helper while embedding Stripe's Payment Element for subscription checkout)
-**Found while:** rewriting the paid-plan branch of `/subscribe` to use an embedded SetupIntent instead of a Stripe Checkout Session redirect. The trial-days logic itself was pre-existing and untouched in effect.
-**Issue:** The function only checks whether the store has a *currently trialing* subscription (`inArray(status, ["trialing"])`). If none is found, it falls into the "first-ever checkout" branch and grants a brand-new default trial (`TrialService.getFreeTrialDays()`, e.g. 30 days) to any logged-in user — including a store that already has an **active, paying** subscription and is simply switching to a different paid plan. There is no check for an existing `active` subscription before granting the trial. In practice this means every plan switch by an already-paying customer would size a new SetupIntent/Subscription with a fresh trial period instead of charging immediately, effectively giving free months on every plan change.
-**Why not fixed now:** Out of scope for the embedding task (UI/transport change only); this is a business-logic correctness bug that predates this session and deserves its own deliberate fix + verification (e.g. also checking for `status = "active"` before the fallback branch, and confirming `DashboardBilling.tsx`'s separate `changePlanMutation`/`/api/billing/change-plan` path — used for the same "switch plans while active" case in the live UI — doesn't already avoid this by not calling `/subscribe` at all, which would make the impact narrower than it looks here).
-
 ## 2026-09-15 — DB-cached plan price ($9.00) doesn't match the live Stripe Price ($14.95) it's tied to
 
 **File:** `subscription_plans` table, row `code='solo'` (`price_monthly_cents: 900`) vs. its `stripe_price_id_monthly` (`price_1TtSVmRDJayCN7TTfV9etfV7`), which Stripe reports as a real unit amount of $14.95/mo.
 **Found while:** verifying the new embedded subscribe flow against real Stripe data — creating a test invoice against that price ID to check `latest_invoice.payment_intent` behavior surfaced `amount_due: 1495` for a plan the UI displays everywhere (`DashboardBilling.tsx`'s hardcoded `PLANS` array, `SubscriptionPage.tsx`'s DB-driven card) as $9/mo.
 **Why not fixed now:** Unrelated to the checkout-embedding task; fixing it requires knowing which number is authoritative (was the Stripe Price changed after the DB was seeded, or is the DB stale?) — a business decision, not a code fix. Whoever picks this up should reconcile `subscription_plans.price_monthly_cents` with the actual Stripe Price unit amount for every plan with a `stripe_price_id_monthly`, not just `solo`.
+
+**Update 2026-09-20 (checked against live Stripe, read-only) — it is wider than `solo`, and the billing UI disagrees with both:**
+
+| plan | `subscription_plans` monthly / yearly | live Stripe Price monthly / yearly | `DashboardBilling.tsx` `PLANS` shows |
+|---|---|---|---|
+| solo | $9.00 / $90.00 | **$14.95 / $168.00** | $9 |
+| professional | $45.95 / $468.00 | $45.95 / $468.00 (matches DB) | **$22** |
+| elite | $79.00 / $875.00 | $79.00 / $875.00 (matches DB) | **$49** |
+
+So Stripe would charge $14.95 for a plan the DB and billing UI advertise at $9, and $45.95 / $79 for plans the billing UI advertises at $22 / $49. There is currently exactly one store subscription row (trialing), so nobody has been charged a wrong amount yet. **Needs a decision:** which numbers are the real prices. Then either fix the Stripe Price (create a new one — Prices are immutable) or the DB + the hardcoded `PLANS` array (better: make `DashboardBilling` read the DB like `SubscriptionPage` does so there is one source).
+
+---
 
 ## 2026-09-15 — Two divergent, independent commission calculations that can silently disagree
 
@@ -163,50 +92,20 @@ Because #2 is driven by `totalPaid` (the sum of checkout tenders), a manual POS 
 **Issue:** `isOpen?: boolean` is declared on the `Salon` type (both `lib/api.ts` and `salonApi.ts`) but no API response ever sets it — `toApiSalon()` never includes an `isOpen` field. So every `SalonCard` renders "By appointment" unconditionally, regardless of the salon's real hours or the current time. Not a false claim (it's a static fallback, not a fabricated "Open now"), but it's dead/misleading UI — the badge implies live status that doesn't exist.
 **Why not fixed now:** `SalonCard` wasn't part of the nearby-salons change (swapped to `FeaturedMarketplaceCard` instead, which has no such badge). Fixing it properly means computing real open/closed state from `salon.hours` + current time server-side or client-side, which is a small but distinct feature, not a one-line fix.
 
----
-
-## 2026-09-14 — `timezone.test.ts` — missing test-runner type definitions
-
-**Files:** `artifacts/api-server/src/__tests__/timezone.test.ts` (throughout — `describe`, `test`, `expect` all unresolved)
-**Found while:** running `tsc --noEmit` across the whole api-server package to verify the salon-directory rewrite (`routes/salonDirectory.ts`) introduced no type errors — this file is unrelated.
-**Error (`tsc --noEmit`):**
-```
-src/__tests__/timezone.test.ts(27,1): error TS2593: Cannot find name 'describe'. Do you need to install type definitions for a test runner? ...
-src/__tests__/timezone.test.ts(33,5): error TS2304: Cannot find name 'expect'.
-(repeats throughout the file for describe/test/expect)
-```
-**Context:** The project uses vitest (`"test": "vitest run"` in package.json), but `tsconfig.json`'s `types` field doesn't include vitest's globals (or the file isn't picking up `vitest/globals`), so a plain `tsc --noEmit` run treats `describe`/`test`/`expect` as undefined identifiers. `vitest run` itself likely still passes since vitest provides its own type-aware runtime, but any CI step that runs bare `tsc --noEmit` over the whole project would fail on this file.
-**Not fixed because:** unrelated to the salon-directory task in progress; the fix (adding `"types": ["vitest/globals"]` to tsconfig, or importing from `"vitest"` explicitly in the test file) touches shared tsconfig/test infra that deserves its own verification pass rather than a drive-by edit.
+**Update 2026-09-20:** re-checked — marketplace list rows (`SalonRecord`, ~47k scraped salons) carry no hours at all; hours only exist per salon in `salon_google_hours` (detail page). A real "Open now" on cards would need hours joined into the list payload. Cheapest honest options: (a) drop the `isOpen` badge and its ternaries (`App.tsx:244` and `:518`) and the two `isOpen?: boolean` type fields, or (b) add hours to the list query. Not done: it needs a marketplace rebuild/deploy and a product call on (a) vs (b).
 
 ---
 
-## 2026-09-12 — `storage.ts` — `sql.identifier()` called with an array instead of a string
+## Resolved 2026-09-20 (kept as a one-line record; details are in git history)
 
-**Files:** `artifacts/api-server/src/storage.ts:578`, `:587`
-**Found while:** implementing the client visit-notes / AI profile note feature (unrelated file).
-**Error (`tsc --noEmit`):**
-```
-src/storage.ts(578,61): error TS2345: Argument of type 'string[]' is not assignable to parameter of type 'string'.
-src/storage.ts(587,56): error TS2345: Argument of type 'string[]' is not assignable to parameter of type 'string'.
-```
-**Context:** Inside a staff-deletion transaction, two loops build a dynamic table name and call `sql.identifier([table])`:
-```ts
-await tx.execute(sql`DELETE FROM ${sql.identifier([table])} WHERE staff_id = ${id}`);
-...
-await tx.execute(sql`UPDATE ${sql.identifier([table])} SET staff_id = NULL WHERE staff_id = ${id}`);
-```
-The installed drizzle-orm version's `sql.identifier()` type signature wants a single `string`, not `string[]`. Likely fix is `sql.identifier(table)` (drop the array wrapper) — but verify against the actual installed drizzle-orm version's signature before changing, since array form is valid in some versions (for multi-part/schema-qualified identifiers).
-**Not fixed because:** unrelated to the task in progress, and touches a staff-deletion code path that deserves its own careful look rather than a drive-by edit.
-
----
-
-## 2026-09-12 — `dead-seats.ts` — `totalDeadSlotCount` missing from `DeadSeatReport` type
-
-**File:** `artifacts/api-server/src/intelligence/dead-seats.ts:168`
-**Found while:** same session as above (unrelated file).
-**Error (`tsc --noEmit`):**
-```
-src/intelligence/dead-seats.ts(168,5): error TS2353: Object literal may only specify known properties, and 'totalDeadSlotCount' does not exist in type 'DeadSeatReport'.
-```
-**Context:** The function's return object sets a `totalDeadSlotCount` field (with a comment explaining it's the full count before the `deadSlots` array is truncated to the top 20), but the `DeadSeatReport` type/interface this function returns doesn't declare that field yet. Likely fix: add `totalDeadSlotCount: number;` to the `DeadSeatReport` type definition.
-**Not fixed because:** unrelated to the task in progress; this file already had other uncommitted changes in progress when this session started, so a drive-by fix risked colliding with that work.
+- **api-server `typecheck` OOM** — script now runs tsc with a 6 GB heap (`package.json`); it completes in ~1 min and reports **0 errors**.
+- **`timezone.test.ts`** (65 errors, two entries) — imports `describe/test/expect` from `vitest`; 24 tests pass.
+- **api-server unit tests** — `vitest.config.ts` now sets a dummy `DATABASE_URL`, so `emailTicketSync.test.ts` (which imports `db.ts`) loads instead of failing the suite; all 5 files / 99 tests pass with or without the real env var, and unit tests can never reach a real database.
+- **`storage.ts` `sql.identifier([table])`** and **`dead-seats.ts` `totalDeadSlotCount`** — already fixed in the tree by an earlier change (typecheck confirms).
+- **React error #185 pattern** — all 92 `data: x = []` sites (57 files) now use a shared frozen `EMPTY_ARRAY` (`booking/src/lib/empty.ts`); none of them mutated the default in place.
+- **`static.ts` stale `/robots.txt`** — hardcoded fallback removed; the real `dist/public/robots.txt` is served by `express.static`.
+- **`POST /api/intelligence/growth-assistant`** — implemented (`routes/intelligence.ts`): answers only from the store's own numbers (revenue vs last month, clients, seat utilisation, growth score, 90-day leakage), returns `{reply, highlights, actions}` with actions restricted to a fixed list of real routes.
+- **Plan-switch trial** — `computeTrialPeriodDays` returns no trial when the store already has an active/past-due/unpaid *paid* subscription. (The billing page already routes active customers through `/api/billing/change-plan`, so this closes the direct-API gap.) Unchanged on purpose: a first-ever checkout still gets the full default trial.
+- **`PayoutAccountSettings.tsx`** — confirmed the owner-level Express/OAuth flow is the intended design (only *contractors* moved to Custom accounts; see the stripe-connect-payouts skill).
+- **WebSocket `ERR_NAME_NOT_RESOLVED`** — not a code bug: nginx proxies `/ws` and a fresh HTTP/1.1 upgrade to `/ws/notifications` returns 101 today; it was the tester's environment.
+- **Owner-app WebView reload after login** — `StripeTerminalProvider` is now always mounted (only `TerminalInitializer` waits for login), so the screen tree/WebView is no longer remounted. **Needs an on-device check** (M2 connect + payment still work, no second `/app-login` load) — shipped in the next APK.

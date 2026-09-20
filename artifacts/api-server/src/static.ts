@@ -213,78 +213,9 @@ export function serveStatic(app: Express) {
     dotfiles: "deny",
   }));
 
-  app.get("/robots.txt", (_req: Request, res: Response) => {
-    res.setHeader("Content-Type", "text/plain; charset=utf-8");
-    res.setHeader("Cache-Control", "public, max-age=86400");
-    res.send(`# Robots.txt for Certxa — https://certxa.com
-# Public marketing and booking pages are open to all crawlers.
-# Internal app pages (dashboard, admin, staff tools) are disallowed.
-
-User-agent: *
-Allow: /
-Crawl-delay: 2
-
-# Internal app sections — not for public indexing
-Disallow: /api/
-Disallow: /auth/
-Disallow: /manage/
-Disallow: /admin/
-Disallow: /isadmin/
-Disallow: /isTeam/
-Disallow: /onboarding/
-Disallow: /staff/
-Disallow: /staff-auth/
-Disallow: /staff-forgot-password/
-Disallow: /staff-reset-password/
-Disallow: /staff-dashboard/
-Disallow: /dashboard/
-Disallow: /calendar/
-Disallow: /customers/
-Disallow: /products/
-
-# Raw data files — never serve to crawlers
-Disallow: /salon-data.json
-
-# Known scraper / data-harvesting agents
-User-agent: AhrefsBot
-Disallow: /salon/
-
-User-agent: SemrushBot
-Disallow: /salon/
-
-User-agent: MJ12bot
-Disallow: /salon/
-
-User-agent: DotBot
-Disallow: /salon/
-
-User-agent: BLEXBot
-Disallow: /salon/
-
-User-agent: DataForSeoBot
-Disallow: /salon/
-
-User-agent: PetalBot
-Disallow: /salon/
-
-# Search-engine crawlers — no crawl-delay (override the wildcard above)
-User-agent: Googlebot
-Allow: /
-Crawl-delay: 0
-
-User-agent: Bingbot
-Allow: /
-Crawl-delay: 0
-
-User-agent: Slurp
-Allow: /
-Crawl-delay: 0
-
-# Sitemap index
-Sitemap: https://certxa.com/sitemap.xml
-Sitemap: https://certxa.com/salon/sitemap.xml
-`);
-  });
+  // /robots.txt is served by express.static above from dist/public/robots.txt (built from
+  // artifacts/booking/public/robots.txt). There is deliberately no hardcoded fallback copy here —
+  // a stale duplicate once re-blocked /api/r2/ salon photos whenever the real file was missing.
 
   // ── Sitemaps ──────────────────────────────────────────────────────────────
   app.get("/sitemap.xml", (_req: Request, res: Response) => {

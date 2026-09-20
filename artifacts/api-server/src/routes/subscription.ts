@@ -96,6 +96,24 @@ async function computeTrialPeriodDays(req: any, storeId: number): Promise<number
     return daysLeft > 0 ? daysLeft : undefined;
   }
 
+  // A store that already has a live PAID subscription is switching plans, not starting out —
+  // it must never be handed a fresh free trial (which would defer the first charge for the full
+  // trial length on every plan change). Free-plan rows don't count: upgrading from free is a
+  // first paid checkout.
+  const [payingSub] = await db
+    .select({ id: storeSubscriptions.id })
+    .from(storeSubscriptions)
+    .innerJoin(subscriptionPlans, eq(subscriptionPlans.id, storeSubscriptions.planId))
+    .where(
+      and(
+        eq(storeSubscriptions.storeId, storeId),
+        inArray(storeSubscriptions.status, ["active", "past_due", "unpaid"]),
+        sql`(COALESCE(${subscriptionPlans.priceMonthly}, 0) > 0 OR COALESCE(${subscriptionPlans.priceYearly}, 0) > 0)`,
+      )
+    )
+    .limit(1);
+  if (payingSub) return undefined;
+
   // First-ever checkout — check if the user's account is still in trial
   const userId: string | null = req.session?.userId ?? req.auth?.userId ?? null;
   if (userId) return TrialService.getFreeTrialDays();
