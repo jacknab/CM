@@ -32,7 +32,7 @@ index 6ea5fa81e488daba98c9139b3f611768ecd94d3b..463bbcc59d1fa77dfe6167bd8c9c0bb4
  
      @Override
 diff --git a/android/src/main/java/com/pinmi/react/printer/adapter/USBPrinterAdapter.java b/android/src/main/java/com/pinmi/react/printer/adapter/USBPrinterAdapter.java
-index f5089b27c0172d01beb851e6d0dc2307a214947d..27a6023b3d1e233318f66578c53502ec999fef7b 100644
+index f5089b27c0172d01beb851e6d0dc2307a214947d..c35c58dd76bac78f2d71e690b864bbe80aa5f6ae 100644
 --- a/android/src/main/java/com/pinmi/react/printer/adapter/USBPrinterAdapter.java
 +++ b/android/src/main/java/com/pinmi/react/printer/adapter/USBPrinterAdapter.java
 @@ -15,6 +15,7 @@ import android.hardware.usb.UsbDeviceConnection;
@@ -65,7 +65,7 @@ index f5089b27c0172d01beb851e6d0dc2307a214947d..27a6023b3d1e233318f66578c53502ec
                          Toast.makeText(context, "User refuses to obtain USB device permissions" + usbDevice.getDeviceName(), Toast.LENGTH_LONG).show();
                      }
                  }
-@@ -105,16 +106,32 @@ public class USBPrinterAdapter implements PrinterAdapter {
+@@ -105,16 +106,33 @@ public class USBPrinterAdapter implements PrinterAdapter {
  
      @SuppressLint("UnspecifiedImmutableFlag")
      public void init(ReactApplicationContext reactContext, Callback successCallback, Callback errorCallback) {
@@ -93,7 +93,8 @@ index f5089b27c0172d01beb851e6d0dc2307a214947d..27a6023b3d1e233318f66578c53502ec
 +                filter.addAction(UsbManager.ACTION_USB_ACCESSORY_ATTACHED);
 +                filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
 +                if (Build.VERSION.SDK_INT >= 33) {
-+                    mContext.registerReceiver(mUsbDeviceReceiver, filter, Context.RECEIVER_EXPORTED);
++                    // 2 == Context.RECEIVER_EXPORTED (the constant is missing from this module's compileSdk).
++                    mContext.registerReceiver(mUsbDeviceReceiver, filter, 2);
 +                } else {
 +                    mContext.registerReceiver(mUsbDeviceReceiver, filter);
 +                }
@@ -108,7 +109,7 @@ index f5089b27c0172d01beb851e6d0dc2307a214947d..27a6023b3d1e233318f66578c53502ec
      }
  
  
-@@ -131,7 +148,9 @@ public class USBPrinterAdapter implements PrinterAdapter {
+@@ -131,7 +149,9 @@ public class USBPrinterAdapter implements PrinterAdapter {
      public List<PrinterDevice> getDeviceList(Callback errorCallback) {
          List<PrinterDevice> lists = new ArrayList<>();
          if (mUSBManager == null) {
@@ -119,7 +120,7 @@ index f5089b27c0172d01beb851e6d0dc2307a214947d..27a6023b3d1e233318f66578c53502ec
              return lists;
          }
  
-@@ -151,13 +170,15 @@ public class USBPrinterAdapter implements PrinterAdapter {
+@@ -151,13 +171,15 @@ public class USBPrinterAdapter implements PrinterAdapter {
  
          USBPrinterDeviceId usbPrinterDeviceId = (USBPrinterDeviceId) printerDeviceId;
          if (mUsbDevice != null && mUsbDevice.getVendorId() == usbPrinterDeviceId.getVendorId() && mUsbDevice.getProductId() == usbPrinterDeviceId.getProductId()) {
@@ -141,7 +142,7 @@ index f5089b27c0172d01beb851e6d0dc2307a214947d..27a6023b3d1e233318f66578c53502ec
          }
          closeConnectionIfExists();
          if (mUSBManager.getDeviceList().size() == 0) {
-@@ -168,6 +189,10 @@ public class USBPrinterAdapter implements PrinterAdapter {
+@@ -168,6 +190,10 @@ public class USBPrinterAdapter implements PrinterAdapter {
              if (usbDevice.getVendorId() == usbPrinterDeviceId.getVendorId() && usbDevice.getProductId() == usbPrinterDeviceId.getProductId()) {
                  Log.v(LOG_TAG, "request for device: vendor_id: " + usbPrinterDeviceId.getVendorId() + ", product_id: " + usbPrinterDeviceId.getProductId());
                  closeConnectionIfExists();
@@ -152,7 +153,7 @@ index f5089b27c0172d01beb851e6d0dc2307a214947d..27a6023b3d1e233318f66578c53502ec
                  mUSBManager.requestPermission(usbDevice, mPermissionIndent);
                  successCallback.invoke(new USBPrinterDevice(usbDevice).toRNWritableMap());
                  return;
-@@ -193,6 +218,16 @@ public class USBPrinterAdapter implements PrinterAdapter {
+@@ -193,6 +219,16 @@ public class USBPrinterAdapter implements PrinterAdapter {
              return true;
          }
  
@@ -169,7 +170,7 @@ index f5089b27c0172d01beb851e6d0dc2307a214947d..27a6023b3d1e233318f66578c53502ec
          UsbInterface usbInterface = mUsbDevice.getInterface(0);
          for (int i = 0; i < usbInterface.getEndpointCount(); i++) {
              final UsbEndpoint ep = usbInterface.getEndpoint(i);
-@@ -218,29 +253,42 @@ public class USBPrinterAdapter implements PrinterAdapter {
+@@ -218,29 +254,42 @@ public class USBPrinterAdapter implements PrinterAdapter {
                  }
              }
          }
