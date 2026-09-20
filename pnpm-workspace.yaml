@@ -135,3 +135,4 @@ overrides:
 
 patchedDependencies:
   '@stripe/stripe-terminal-react-native@0.0.1-beta.31': patches/@stripe__stripe-terminal-react-native@0.0.1-beta.31.patch
+  react-native-thermal-receipt-printer-image-qr@0.1.12: patches/react-native-thermal-receipt-printer-image-qr@0.1.12.patch
