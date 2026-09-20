@@ -48,7 +48,11 @@ export function StripeConnectProvider({ publishableKey, children }: StripeConnec
           return clientSecret as string;
         },
         appearance: {
-          overlays: "dialog",
+          // "drawer" slides sub-flows in from the side, staying visually
+          // embedded in the page. "dialog" renders them as a centered modal
+          // with a backdrop, which reads as a popup even though it's still
+          // technically mounted inline — not what we want here.
+          overlays: "drawer",
           variables: {
             colorPrimary:     "#7c3aed",   // Certxa violet
             fontFamily:       "Outfit, Inter, system-ui, sans-serif",
@@ -57,6 +61,9 @@ export function StripeConnectProvider({ publishableKey, children }: StripeConnec
             colorText:        "#111827",
             colorSecondaryText: "#6b7280",
             colorBorder:      "#e5e7eb",
+            colorDanger:      "#dc2626",
+            fontSizeBase:     "16px",
+            spacingUnit:      "4px",
           },
         },
       }),

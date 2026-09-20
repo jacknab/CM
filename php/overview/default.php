@@ -9,14 +9,19 @@ define('PAGE_TITLE',    'Nail Salon Management Platform | Certxa');
 // Was 232 chars — truncated in Google/Bing SERPs (~155-160 char limit).
 define('PAGE_DESC',     'Certxa is all-in-one nail salon software: online booking, walk-in kiosk, client nail records, waitlist, POS, and AI receptionist. Free ' . TRIAL_DAYS . '-day trial.');
 define('PAGE_KEYWORDS', 'nail salon management platform, nail salon software, nail studio management software, nail salon scheduling app, nail salon POS system, nail technician software, nail salon check-in kiosk, nail salon waitlist, gel acrylic nail salon software');
-// This page used to be required by index.php to render at certxa.com/ with
-// canonical pre-set to root. certxa.com/ is now the separate marketplace
-// app, so this page is reached directly at /overview and is self-canonical.
-define('PAGE_CANONICAL',   'https://certxa.com/overview');
-define('PAGE_BREADCRUMBS', json_encode([
-  ['name'=>'Home','url'=>'https://certxa.com/'],
-  ['name'=>'Overview','url'=>'https://certxa.com/overview'],
-]));
+// Self-canonical at /overview by default. index.php still requires this file
+// as a fallback path and pre-defines both constants with the root URL before
+// doing so (canonical https://certxa.com/ instead of /overview) — guarded so
+// that override doesn't trigger a "Constant already defined" PHP warning.
+if (!defined('PAGE_CANONICAL')) {
+  define('PAGE_CANONICAL', 'https://certxa.com/overview');
+}
+if (!defined('PAGE_BREADCRUMBS')) {
+  define('PAGE_BREADCRUMBS', json_encode([
+    ['name'=>'Home','url'=>'https://certxa.com/'],
+    ['name'=>'Overview','url'=>'https://certxa.com/overview'],
+  ]));
+}
 define('PAGE_SCHEMA', json_encode([
   // The canonical SoftwareApplication entity (@id #software) is injected
   // site-wide by includes/header.php — do not redefine it per-page.

@@ -1,6 +1,6 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Nail Salon Business Blog | Tips, Guides & Insights for Nail Professionals — Certxa');
+define('PAGE_TITLE',    'Nail Salon Business Blog | Certxa');
 define('PAGE_DESC',     'The Certxa blog — practical guides and insights to help nail studio owners and nail technicians grow their business. Booking tips, marketing advice, software guides, and more.');
 define('PAGE_KEYWORDS', 'nail salon business blog, nail salon owner tips, nail salon marketing, how to grow a nail salon, nail salon booking tips, nail tech business advice, nail salon software guides, reduce no-shows nail salon');
 define('PAGE_CANONICAL','https://certxa.com/blog');

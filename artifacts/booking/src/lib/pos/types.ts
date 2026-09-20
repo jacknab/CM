@@ -61,6 +61,15 @@ export interface PosButton {
    * instead of swapping the desktop grid. Defaults to false.
    */
   mobile?: boolean;
+  /**
+   * Surface this action in the desktop checkout's bottom action-tile strip,
+   * shown alongside the category/service grid (which replaced the old
+   * always-visible function grid as the desktop default view). Defaults to
+   * false — most function buttons are reached through the grid; this is for
+   * the handful that need to stay one tap away regardless of which category
+   * tab is active.
+   */
+  desktopTile?: boolean;
 }
 
 export interface PosLayout {

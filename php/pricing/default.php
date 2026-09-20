@@ -22,22 +22,41 @@ define('PAGE_SCHEMA', json_encode([
   // $9/$22/$49 AggregateOffer) is injected site-wide by includes/header.php —
   // 'about' above already points at it, so it isn't redefined here.
   [
+    // Mirrors the visible accordion below word-for-word (question text and
+    // answer text, HTML stripped) — Google and AI systems treat FAQPage
+    // markup that doesn't match the rendered page as unreliable, so this
+    // must stay in sync with the accordion. Edit both together.
     '@type'      => 'FAQPage',
     'mainEntity' => [
       [
         '@type'          => 'Question',
-        'name'           => 'Is there a free trial for Certxa?',
-        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Yes — every Certxa plan includes a free ' . TRIAL_DAYS . '-day trial. A credit card is required when you start your subscription. You can cancel before the trial ends and will not be charged.'],
+        'name'           => 'Is a credit card required to start the trial?',
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Yes — a credit card is required when you create your subscription. Your card will not be charged during the ' . TRIAL_DAYS . '-day trial period. If you cancel before the trial ends, you\'ll owe nothing. If you continue past the trial, your card is billed at the start of your first paid period.'],
       ],
       [
         '@type'          => 'Question',
-        'name'           => 'Are there any hidden fees or contracts?',
-        'acceptedAnswer' => ['@type'=>'Answer','text'=>'No hidden fees, no setup costs, and no long-term contracts. You pay month-to-month and can cancel any time. Payment processing uses Stripe Connect — Stripe\'s standard rates apply plus a $0.60 connection fee per transaction. In-person: 2.7% + $0.05 + $0.60/txn. Online: 2.9% + $0.30 + $0.60/txn. The $0.60 is our only fee; the rest goes directly to Stripe.'],
+        'name'           => 'Can I switch plans after I sign up?',
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Yes — you can upgrade or downgrade at any time. Upgrades take effect immediately and you\'re only charged the prorated difference. Downgrades take effect at the end of your current billing period. There are no penalties for changing plans.'],
       ],
       [
         '@type'          => 'Question',
-        'name'           => 'Can I switch plans at any time?',
-        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Yes — you can upgrade or downgrade your Certxa plan at any time. Changes take effect at the start of your next billing cycle.'],
+        'name'           => 'What happens to my data if I cancel?',
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Your data stays in your account for 90 days after cancellation. You can export everything — client lists, appointment history, financial records — at any time.'],
+      ],
+      [
+        '@type'          => 'Question',
+        'name'           => 'Are there any setup fees or hidden costs?',
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'None. The price you see is the price you pay — monthly or annually. Website hosting, SSL, and your free subdomain are all included. If you use our POS, the total per-transaction cost is Stripe\'s standard rate plus our flat $0.60 connection fee: 2.7% + $0.05 + $0.60 for in-person card payments, or 2.9% + $0.30 + $0.60 for online payments. The $0.60 is our only charge — everything else goes directly to Stripe. You\'ll also need to purchase a Stripe M2 card reader directly from Stripe. The only other potential cost is a custom domain registration (typically $10–15/year from your registrar).'],
+      ],
+      [
+        '@type'          => 'Question',
+        'name'           => 'Does the annual plan auto-renew?',
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Yes — annual plans renew automatically at the end of each year. We send a reminder email 30 days before renewal so you have plenty of time to review, change plans, or cancel if needed. You can also turn off auto-renewal from your account settings at any time.'],
+      ],
+      [
+        '@type'          => 'Question',
+        'name'           => 'Do you offer a discount for new salons or students?',
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'We offer a 30% discount for newly qualified nail technicians and therapists in their first year of business — just contact our team with proof of qualification. We also have educational institution pricing for salon schools and colleges training the next generation of professionals.'],
       ],
     ],
   ],
@@ -404,7 +423,7 @@ require 'includes/nav.php';
           'fee'         => null,
           'featured'    => false,
           'cta_label'   => 'See Details',
-          'cta_href'    => '/elite-details',
+          'cta_href'    => '/online-booking', // was '/elite-details', which 301s here — link straight to the target
           'cta_class'   => 'btn-secondary',
           'features'    => [
             [true,  'Everything in Professional, plus:'],

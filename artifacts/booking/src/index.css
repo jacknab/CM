@@ -613,3 +613,16 @@
   .salon-card { box-shadow: none !important; break-inside: avoid; }
   * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
+
+
+/* Certxa Android app: never zoom or drift. `touch-action: pan-x pan-y` disables pinch and
+   double-tap zoom without swallowing taps; the class is added by installNativeViewportLock(). */
+html.native-app,
+html.native-app body {
+  touch-action: pan-x pan-y;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+html.native-app {
+  overflow-x: hidden;
+}

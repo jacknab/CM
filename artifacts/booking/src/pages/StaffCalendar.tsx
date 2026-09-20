@@ -473,7 +473,7 @@ function AppointmentTicketSheet({
         hideCloseButton
         className="h-[100dvh] max-h-[100dvh] rounded-none flex flex-col overflow-hidden p-0 bg-white"
       >
-        <SheetTitle className="sr-only">Booking #{apt.id}</SheetTitle>
+        <SheetTitle className="sr-only">Booking #{String((apt as any).ticketNumber ?? apt.id).padStart(3, "0")}</SheetTitle>
 
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-gray-100">
@@ -483,7 +483,7 @@ function AppointmentTicketSheet({
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <h2 className="text-base font-bold text-gray-900">#{apt.id}</h2>
+          <h2 className="text-base font-bold text-gray-900">#{String((apt as any).ticketNumber ?? apt.id).padStart(3, "0")}</h2>
           <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${cfg.bg} ${cfg.color}`}>
             {cfg.label}
           </span>

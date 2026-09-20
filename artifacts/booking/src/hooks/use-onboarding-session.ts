@@ -223,7 +223,7 @@ export interface OnboardingSessionHook {
   goBack: () => void;
   goToStep: (id: string) => void;
   submit: () => Promise<void>;
-  prepareGoogle: () => Promise<void>;
+  prepareGoogle: () => Promise<number | null>;
   reset: () => void;
   isSubmitting: boolean;
   submitError: string | null;
@@ -552,8 +552,8 @@ export function useOnboardingSession(userId: string): OnboardingSessionHook {
 
   // ── Submission ────────────────────────────────────────────────────────────
 
-  const prepareGoogle = useCallback(async () => {
-    if (session.createdStoreId) return;
+  const prepareGoogle = useCallback(async (): Promise<number | null> => {
+    if (session.createdStoreId) return session.createdStoreId;
     const a = session.answers;
     setIsSubmitting(true);
     setSubmitError(null);
@@ -576,8 +576,10 @@ export function useOnboardingSession(userId: string): OnboardingSessionHook {
       if (!storeId) throw new Error("Your salon was saved, but Google setup could not start.");
       setSession((prev) => ({ ...prev, createdStoreId: storeId }));
       await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      return storeId;
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Google setup could not start. Please try again.");
+      return null;
     } finally {
       setIsSubmitting(false);
     }
@@ -655,17 +657,23 @@ export function useOnboardingSession(userId: string): OnboardingSessionHook {
       }
 
       // 3. Save calendar settings
-      if (
-        a.slotInterval !== undefined ||
-        a.bufferTime !== undefined ||
-        a.onlineBooking !== undefined
-      ) {
+      if (a.slotInterval !== undefined) {
         try {
-          await apiRequest("POST", "/api/calendar-settings", {
-            slotInterval: a.slotInterval ?? 30,
-            bufferTime: a.bufferTime ?? 0,
-            allowOnlineBooking: a.onlineBooking ?? true,
-            maxAdvanceDays: a.maxAdvanceDays ?? 30,
+          await apiRequest("PUT", "/api/calendar-settings", {
+            timeSlotInterval: a.slotInterval ?? 30,
+          });
+        } catch {
+          // Non-fatal
+        }
+      }
+
+      // 3b. Save booking policy (online booking mode + advance booking window)
+      if (a.onlineBooking !== undefined || a.maxAdvanceDays !== undefined) {
+        try {
+          await apiRequest("PUT", "/api/booking-policies", {
+            onlineBookingMode: (a.onlineBooking ?? true) ? "all" : "off",
+            advanceBookingEnabled: true,
+            advanceBookingMonths: Math.min(24, Math.max(1, Math.round((a.maxAdvanceDays ?? 30) / 30))),
           });
         } catch {
           // Non-fatal

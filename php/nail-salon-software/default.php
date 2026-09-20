@@ -20,11 +20,14 @@ define('PAGE_BREADCRUMBS', json_encode([
 ]));
 define('PAGE_SCHEMA', json_encode([
   [
+    // Mirrors the visible accordion below word-for-word — see the /pricing
+    // page's PAGE_SCHEMA comment for why this must stay in sync.
     '@type'      => 'FAQPage',
     'mainEntity' => [
-      ['@type'=>'Question','name'=>'What is the best software for nail salons?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa is purpose-built for nail salons and nail studios. It includes 24/7 online booking, client profiles with detailed nail service history and product notes, automated appointment reminders to reduce no-shows, integrated card payments, a POS system, and a branded website builder — all in one platform. Start with a ' . TRIAL_DAYS . '-day free trial.']],
-      ['@type'=>'Question','name'=>'Can clients book specific nail technicians online?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes — with Certxa, clients can choose their preferred nail technician when booking online. Each technician has their own calendar, services, and availability. Clients can also request "any available tech" if they\'re flexible.']],
-      ['@type'=>'Question','name'=>'Can I track nail formulas and product notes per client?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes — Certxa\'s client profiles let you record detailed service notes including gel brand, colour codes, nail shape, enhancements used, and anything else that makes each client\'s experience personal. Available to view before every appointment.']],
+      ['@type'=>'Question','name'=>'What is the best software for nail salons?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa is purpose-built for nail salons and studios. It includes 24/7 online booking, detailed client profiles with nail history and product notes, automated reminders to cut no-shows, integrated payments, a POS system, and a branded website — all in one platform. Start with a ' . TRIAL_DAYS . '-day free trial.']],
+      ['@type'=>'Question','name'=>'Can clients choose their nail technician when booking?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes — clients can select their preferred technician, or choose "any available" for maximum flexibility. Each technician has their own calendar, service list, and availability — all managed from your Certxa dashboard.']],
+      ['@type'=>'Question','name'=>'Can I store client nail formulas and preferences?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes — Certxa client profiles let you record gel brand, colour codes, nail shape, enhancements, sensitivities, photos, and any custom notes. Everything is there before a client arrives so you can deliver a personalised experience every single time.']],
+      ['@type'=>'Question','name'=>'Can I take deposits for nail appointments?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Absolutely — Certxa lets you require a deposit (fixed amount or percentage) for any service. This is particularly popular for long nail art and full-set sessions where no-shows are most costly. Deposits are processed automatically at booking and are fully refundable or non-refundable based on your policy.']],
     ],
   ],
   // Canonical SoftwareApplication (@id #software) is injected site-wide by includes/header.php.

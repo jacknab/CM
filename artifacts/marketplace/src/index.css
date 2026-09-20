@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Inter:wght@700;800;900&family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Cormorant+Garamond:wght@700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
@@ -56,9 +56,8 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* LIGHT MODE — Certxa "warm salon / editorial paper" palette, matching
-   artifacts/booking/src/index.css: terracotta primary, cream background,
-   deep plum text, warm gold accent. */
+/* LIGHT MODE — Certxa Professional "Vagaro-inspired" palette
+   Clean blue primary, white background, professional grays */
 :root {
   --button-outline: rgba(0, 0, 0, 0.1);
   --badge-outline: rgba(0, 0, 0, 0.05);
@@ -66,50 +65,51 @@
   --elevate-1: rgba(0, 0, 0, 0.03);
   --elevate-2: rgba(0, 0, 0, 0.08);
 
-  --background: 34 38% 94%;
-  --foreground: 337 27% 20%;
-  --border: 31 24% 85%;
-  --card: 35 42% 98%;
-  --card-foreground: 337 27% 20%;
-  --card-border: 31 27% 86%;
+  --background: 0 0% 100%;
+  --foreground: 222 84% 5%;
+  --border: 214 32% 91%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 84% 5%;
+  --card-border: 220 14% 96%;
 
-  --sidebar: 337 27% 20%;
-  --sidebar-foreground: 34 35% 94%;
-  --sidebar-border: 337 20% 28%;
-  --sidebar-primary: 41 78% 65%;
-  --sidebar-primary-foreground: 337 27% 17%;
-  --sidebar-accent: 337 20% 27%;
-  --sidebar-accent-foreground: 34 35% 94%;
-  --sidebar-ring: 41 78% 65%;
+  --sidebar: 222 84% 5%;
+  --sidebar-foreground: 210 40% 98%;
+  --sidebar-border: 217 33% 17%;
+  --sidebar-primary: 221 83% 53%;
+  --sidebar-primary-foreground: 210 40% 98%;
+  --sidebar-accent: 217 33% 17%;
+  --sidebar-accent-foreground: 210 40% 98%;
+  --sidebar-ring: 221 83% 53%;
 
-  --popover: 35 42% 98%;
-  --popover-foreground: 337 27% 20%;
-  --popover-border: 31 27% 86%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 84% 5%;
+  --popover-border: 220 14% 96%;
 
-  --primary: 9 63% 58%;
-  --primary-foreground: 34 38% 97%;
+  --primary: 221 83% 53%;
+  --primary-foreground: 210 40% 98%;
 
-  --secondary: 31 29% 90%;
-  --secondary-foreground: 337 27% 20%;
+  --secondary: 210 40% 98%;
+  --secondary-foreground: 222 84% 5%;
 
-  --muted: 31 24% 91%;
-  --muted-foreground: 337 10% 45%;
+  --muted: 210 40% 98%;
+  --muted-foreground: 215 16% 47%;
 
-  --accent: 41 78% 65%;
-  --accent-foreground: 337 27% 20%;
+  --accent: 221 83% 53%;
+  --accent-foreground: 210 40% 98%;
 
   --destructive: 4 65% 51%;
-  --destructive-foreground: 34 38% 96%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 210 40% 98%;
 
-  --input: 31 24% 85%;
-  --ring: 9 63% 58%;
-  --chart-1: 9 63% 58%;
-  --chart-2: 163 25% 40%;
-  --chart-3: 41 78% 65%;
-  --chart-4: 337 27% 20%;
-  --chart-5: 31 24% 85%;
+  --input: 214 32% 91%;
+  --ring: 221 83% 53%;
+  --chart-1: 221 83% 53%;
+  --chart-2: 142 76% 36%;
+  --chart-3: 38 92% 50%;
+  --chart-4: 222 84% 5%;
+  --chart-5: 214 32% 91%;
 
-  --app-font-sans: 'DM Sans', sans-serif;
+  --app-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --app-font-serif: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --app-font-mono: 'DM Mono', monospace;
   --radius: 0.8rem;
@@ -275,6 +275,34 @@ button, a, input, textarea, select { -webkit-tap-highlight-color: transparent; }
 .font-editorial { font-family: 'Fraunces', Georgia, serif; font-weight: 500; letter-spacing: -.01em; }
 .font-mono { font-family: var(--app-font-mono); }
 .font-wordmark { font-family: 'Cormorant Garamond', serif; }
+
+/* ── Hero text readability ──
+   The hero headline sits on a photograph; a subtle text shadow keeps it
+   legible regardless of what's behind it. */
+.hero-text-shadow {
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.hero-text-shadow-lg {
+  text-shadow: 0 4px 40px rgba(0, 0, 0, 0.55), 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Hero gradient overlay ──
+   A left-to-right gradient darkens the photo behind the text block so the
+   headline always reads against a darker band, regardless of the image. */
+.hero-gradient-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.55) 0%,
+    rgba(0, 0, 0, 0.38) 35%,
+    rgba(0, 0, 0, 0.18) 65%,
+    rgba(0, 0, 0, 0.08) 100%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
 .site-grain::after {
   content: '';
   position: fixed;
@@ -294,25 +322,75 @@ button, a, input, textarea, select { -webkit-tap-highlight-color: transparent; }
 .cover-image { background: linear-gradient(135deg, hsl(9 63% 58%), hsl(337 27% 20%) 55%, hsl(41 78% 65%)); }
 .cover-image::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 35%, rgba(61, 34, 51, .74)); }
 .focus-ring:focus-visible { outline: 3px solid hsl(var(--accent)); outline-offset: 3px; }
-.search-map-grid {
-  background-image: linear-gradient(hsl(9 30% 40% / .09) 1px, transparent 1px), linear-gradient(90deg, hsl(9 30% 40% / .09) 1px, transparent 1px);
-  background-size: 46px 46px;
+
+/* ── Hero search bar ──
+   A subtle shadow gives the multi-input search row more presence than a
+   flat white rectangle, and a focus ring highlights the active field. */
+.hero-search-bar {
+  box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.45), 0 4px 10px -6px rgba(0, 0, 0, 0.25);
 }
-.search-map-road {
-  position: absolute;
-  height: 2px;
-  transform-origin: left center;
-  background: hsl(0 0% 100% / .74);
-  box-shadow: 0 0 0 1px hsl(9 16% 45% / .14);
+.hero-search-bar:focus-within {
+  box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.55), 0 0 0 3px hsl(var(--primary) / 0.25), 0 4px 10px -6px rgba(0, 0, 0, 0.25);
 }
-.search-map-water {
-  position: absolute;
-  border: 1px solid hsl(163 29% 55% / .38);
-  background: hsl(163 32% 70% / .22);
-  filter: blur(.2px);
+
+/* ── Category pills (hero + browse) ── */
+.category-pill {
+  transition: background-color .2s ease, color .2s ease, border-color .2s ease, transform .15s ease;
 }
-.search-pin-pop { animation: search-pin-pop .36s cubic-bezier(.2,.8,.2,1) both; }
-@keyframes search-pin-pop {
-  from { opacity: 0; transform: translate(-50%, -100%) scale(.65); }
-  to { opacity: 1; transform: translate(-50%, -100%) scale(1); }
+.category-pill:hover {
+  transform: translateY(-1px);
+}
+
+/* ── Hero sub-copy ── */
+.hero-subcopy {
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.5);
+}
+
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  font-family: var(--app-font-sans);
+  background: #e8e2d5;
+}
+.leaflet-div-icon.salon-marker-icon {
+  border: 0;
+  background: transparent;
+}
+.salon-map-pin {
+  position: relative;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 3px solid hsl(var(--card));
+  border-radius: 50% 50% 50% 0;
+  background: hsl(var(--accent));
+  box-shadow: 0 3px 10px hsl(194 31% 18% / .34);
+  color: white;
+  transform: rotate(-45deg);
+  transform-origin: 50% 100%;
+  transition: background .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+.salon-map-pin > span {
+  width: 12px;
+  height: 12px;
+  border: 2px solid white;
+  border-radius: 50%;
+  transform: rotate(45deg);
+}
+.salon-map-pin:hover,
+.salon-map-pin.is-selected {
+  z-index: 2;
+  background: hsl(var(--primary));
+  box-shadow: 0 5px 15px hsl(194 31% 18% / .42);
+  transform: rotate(-45deg) scale(1.18);
+}
+.leaflet-tooltip {
+  border: 1px solid hsl(var(--border));
+  border-radius: 4px;
+  background: hsl(var(--card));
+  color: hsl(var(--primary));
+  box-shadow: 0 4px 14px hsl(194 31% 18% / .16);
+  font-size: 12px;
+  font-weight: 700;
 }

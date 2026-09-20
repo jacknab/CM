@@ -2,7 +2,7 @@
 define('BRAND_NAME',    'Certxa');
 define('PAGE_TITLE',    'Why Nail Salons Choose Certxa | Certxa');
 define('PAGE_DESC',     'Certxa is a new platform, built by a nail salon owner — not a marketing team. Here is the story behind it, and what early customers actually get.');
-define('PAGE_KEYWORDS', 'certxa story, nail salon software founder, tom tham certxa, why choose certxa, nail salon software built by a salon owner');
+define('PAGE_KEYWORDS', 'certxa story, nail salon software founder, thanh lam certxa, why choose certxa, nail salon software built by a salon owner');
 define('PAGE_CANONICAL','https://certxa.com/case-studies');
 define('PAGE_BREADCRUMBS', json_encode([
   ['name'=>'Home','url'=>'https://certxa.com/'],
@@ -42,7 +42,7 @@ require 'includes/nav.php';
       <div class="feature-content">
         <span class="tag tag-plum">Why Certxa Exists</span>
         <h2 class="feature-title">Built by a nail salon owner, not a marketing team.</h2>
-        <p class="feature-text">Certxa was founded in Phoenix, Arizona by Tom Tham, a Vietnamese nail salon owner himself. Tom started Certxa after watching Vietnamese-owned nail salons — a community he's part of — get pushed into long-term contracts with existing salon software providers just to get basic booking and check-in tools. He wanted to build something different: software with no long-term lock-in, made by someone who has actually run a nail salon.</p>
+        <p class="feature-text">Certxa was founded in Phoenix, Arizona by Thanh Lam, a Vietnamese nail salon owner himself. Thanh started Certxa after watching Vietnamese-owned nail salons — a community he's part of — get pushed into long-term contracts with existing salon software providers just to get basic booking and check-in tools. He wanted to build something different: software with no long-term lock-in, made by someone who has actually run a nail salon.</p>
         <p class="feature-text">That's still the idea behind Certxa today — not the loudest salon software company, just one salon owners can depend on.</p>
         <div style="margin-top:20px;display:flex;gap:10px;">
           <a href="/about" class="btn btn-primary">Read the Full Story</a>

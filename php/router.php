@@ -308,6 +308,23 @@ if (is_file($public_file . '/default.php')) {
     exit;
 }
 
+// Slug → standalone {slug}.php file (main root) — e.g. /pro → pro.php.
+// Distinct from the directory/default.php pattern above: a handful of pages
+// are a single root-level file rather than their own directory. Without
+// this, a clean-URL request for one of these 404s even though the Node
+// layer's isPhpRoute() correctly proxies it to PHP — this router had no
+// matching resolution step for that case.
+if (is_file($file . '.php')) {
+    require $file . '.php';
+    exit;
+}
+
+// Slug → standalone {slug}.php file (public/ root)
+if (is_file($public_file . '.php')) {
+    require $public_file . '.php';
+    exit;
+}
+
 // Last resort: serve a .php file directly (main root, only PHP internals)
 if (is_file($file) && pathinfo($file, PATHINFO_EXTENSION) === 'php') {
     require $file;

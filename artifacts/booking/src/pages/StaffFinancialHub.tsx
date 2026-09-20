@@ -106,7 +106,7 @@ export default function StaffFinancialHub() {
           publishableKey: data.publishableKey,
           fetchClientSecret: fetchDashboardClientSecret,
           appearance: {
-            overlays: "dialog",
+            overlays: "drawer", // stays visually embedded instead of a modal popup
             variables: {
               colorPrimary: "#0d9488",
               fontFamily:   "Inter, system-ui, sans-serif",

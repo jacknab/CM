@@ -3,12 +3,12 @@
  *
  * Fully embedded Stripe Connect experience — no redirects to stripe.com.
  * Uses @stripe/react-connect-js embedded components for onboarding,
- * account management, payments, payouts, and the notification banner.
+ * payments, payouts, and the notification banner.
  *
  * Flow:
  *   1. Not connected  → "Connect Stripe Account" button (OAuth → comes back here)
  *   2. Connected, incomplete onboarding → embedded ConnectAccountOnboarding
- *   3. Fully set up  → ConnectAccountManagement + Payments / Payouts tabs
+ *   3. Fully set up  → Payments / Payouts tabs
  *
  * The ConnectNotificationBanner is always shown when connected so Stripe can
  * surface important alerts (e.g. verification deadlines) without leaving the app.
@@ -33,14 +33,12 @@ import {
   Building2,
   ShieldCheck,
   Banknote,
-  LayoutDashboard,
   ArrowLeftRight,
   Wallet,
 } from "lucide-react";
 import { StripeConnectProvider } from "@/components/stripe/StripeConnectProvider";
 import {
   ConnectAccountOnboarding,
-  ConnectAccountManagement,
   ConnectNotificationBanner,
   ConnectPayments,
   ConnectPayouts,
@@ -62,7 +60,7 @@ interface StripeStatus {
   publishableKey?: string | null;
 }
 
-type ManagementTab = "account" | "payments" | "payouts";
+type ManagementTab = "payments" | "payouts";
 
 // ─── Small helpers ────────────────────────────────────────────────────────────
 
@@ -126,7 +124,7 @@ export default function PayoutAccountSettings() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const inShell = useInSettingsShell();
-  const [activeTab, setActiveTab] = useState<ManagementTab>("account");
+  const [activeTab, setActiveTab] = useState<ManagementTab>("payments");
 
   // ── Data fetching ──────────────────────────────────────────────────────────
   const { data: status, isLoading } = useQuery<StripeStatus>({
@@ -343,7 +341,7 @@ export default function PayoutAccountSettings() {
           </StripeConnectProvider>
         )}
 
-        {/* ── Embedded account management (fully set up) ────────────────── */}
+        {/* ── Payments / Payouts dashboard (fully set up) ─────────────────── */}
         {isConnected && allGood && publishableKey && (
           <StripeConnectProvider publishableKey={publishableKey}>
             <Card className="rounded-2xl border-gray-100 shadow-sm overflow-hidden">
@@ -353,42 +351,17 @@ export default function PayoutAccountSettings() {
                     Payment Dashboard
                   </CardTitle>
                   <div style={{ display: "flex", gap: 4, background: "#f9fafb", padding: 4, borderRadius: 10 }}>
-                    <TabBtn active={activeTab === "account"}  onClick={() => setActiveTab("account")}  icon={LayoutDashboard} label="Account"  />
                     <TabBtn active={activeTab === "payments"} onClick={() => setActiveTab("payments")} icon={ArrowLeftRight}  label="Payments" />
                     <TabBtn active={activeTab === "payouts"}  onClick={() => setActiveTab("payouts")}  icon={Wallet}          label="Payouts"  />
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                {activeTab === "account"  && <ConnectAccountManagement />}
                 {activeTab === "payments" && <ConnectPayments />}
                 {activeTab === "payouts"  && <ConnectPayouts />}
               </CardContent>
             </Card>
           </StripeConnectProvider>
-        )}
-
-        {/* ── Connected account details ─────────────────────────────────── */}
-        {isConnected && status?.providerAccountId && (
-          <Card className="rounded-2xl border-gray-100 shadow-sm">
-            <CardContent className="px-6 py-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">
-                    Connected Stripe Account
-                  </p>
-                  <p className="text-sm font-medium text-gray-700">
-                    ···{status.providerAccountId.slice(-8)}
-                  </p>
-                  {status.currency && (
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {status.currency.toUpperCase()} · {status.country?.toUpperCase()}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         )}
 
         {/* ── POS / Terminal link ───────────────────────────────────────── */}

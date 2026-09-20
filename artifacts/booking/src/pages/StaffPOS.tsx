@@ -543,7 +543,7 @@ export default function StaffPOS() {
               {(appointment?.customer as any)?.fullName ?? appointment?.customer?.name ?? "Walk-in"}
             </p>
             <p className="text-xs text-muted-foreground truncate">
-              {appointment?.service?.name ?? "Appointment"} · #{appointmentIdParam}
+              {appointment?.service?.name ?? "Appointment"} · #{String((appointment as any)?.ticketNumber ?? appointmentIdParam).padStart(3, "0")}
             </p>
           </div>
           <div className="text-right flex-shrink-0">

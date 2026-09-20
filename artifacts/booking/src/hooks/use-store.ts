@@ -25,6 +25,15 @@ export function useStores() {
       }
     },
     initialData: () => offlineSessionBootstrap.getStores(),
+    // Without this, TanStack Query treats initialData as fetched "now" and
+    // won't refetch until staleTime elapses AND a refetch trigger fires
+    // (focus/reconnect/remount) — so a brand-new session, where the offline
+    // cache is still an empty array, would silently show that empty array
+    // as ground truth for a full minute with no loading indicator and no
+    // real fetch ever happening. Marking it as already-stale (epoch 0)
+    // makes the real fetch fire immediately on mount instead, while still
+    // painting the cached value first for a fast initial render.
+    initialDataUpdatedAt: 0,
     enabled: !!user,
     // A tab left open for hours (e.g. the calendar page) otherwise never
     // re-fetches this — nothing naturally triggers it (no interval, no focus

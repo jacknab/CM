@@ -4,9 +4,14 @@
 
 User-agent: *
 Allow: /
-Content-Signal: search=yes, ai-train=yes, ai-retrieval=yes, ai-personalization=no
 
 # Internal app sections — not for public indexing
+# /api/r2/ is a real exception: it's how every salon photo (and the founder's
+# own headshot) is actually served — a blanket Disallow: /api/ was blocking
+# crawlers from every image on every one of the ~50k salon pages, confirmed
+# via a real Semrush site audit (233 disallowed resources, all /api/r2/
+# site-assets/*.webp, sourced from real, live 200-loading salon photos).
+Allow: /api/r2/
 Disallow: /api/
 Disallow: /auth/
 Disallow: /manage/

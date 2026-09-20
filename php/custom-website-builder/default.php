@@ -19,13 +19,23 @@ define('PAGE_SCHEMA', json_encode([
     'about'       => ['@id'=>'https://certxa.com/#software'],
   ],
   [
-    '@type'           => 'WebApplication',
-    'name'            => 'Certxa Salon Website Builder',
-    'applicationCategory' => 'WebApplication',
-    'description'     => 'Drag-and-drop salon website builder with designer templates, custom branding, and integrated online booking.',
+    // 'Service', not 'WebApplication': any SoftwareApplication-family @type
+    // is validated by Google/Semrush as a SOFTWARE_APP item, which REQUIRES
+    // aggregateRating or review. This builder is a feature bundled into
+    // Certxa plans, not an independently-rated product — the one real
+    // rating Certxa has (Capterra) is for the whole platform, already on
+    // the main SoftwareApplication node (see #software in header.php).
+    // Fabricating a separate rating for this feature would be dishonest,
+    // so 'Service' is used instead — it carries no such requirement and
+    // accurately describes what this is.
+    '@type'       => 'Service',
+    'name'        => 'Certxa Salon Website Builder',
+    'serviceType' => 'Website builder',
+    'provider'    => ['@id' => 'https://certxa.com/#organization'],
+    'description' => 'Drag-and-drop salon website builder with designer templates, custom branding, and integrated online booking.',
     'offers' => [
       '@type'         => 'Offer',
-      'price'         => '0',
+      'price'         => 0,
       'priceCurrency' => 'USD',
       'description'   => 'Included with all Certxa plans.',
     ],

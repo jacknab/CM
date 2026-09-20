@@ -1,41 +1,40 @@
 /**
- * ReviewGate — step 1 of the SMS review-request flow.
+ * ReviewGate — Certxa's native, direct-to-public review form.
  *
- * Adapted from the standalone /opt/review app's MyReview.tsx. A customer
- * lands here from a one-time SMS link (/review/:token) and picks Great /
- * Just OK / Bad. Great and Just OK redirect out to the store's real
- * Google/Yelp review page; Bad continues to ReviewFeedback.tsx instead of
- * ever reaching a public review site.
+ * A customer lands here from a one-time SMS/email review-request link
+ * (/review/:token) whenever their salon has no Google review destination
+ * configured (see routes/reviewGating.ts's GET /review/:token branch — a
+ * store WITH a Google destination redirects straight there instead, and
+ * never reaches this page). Every rating (1-5) is treated identically and
+ * always published — no "rate us privately first" step. An earlier version
+ * of this page implemented a great/ok/bad chooser that routed low ratings to
+ * a separate private-feedback page instead of a public review; that pattern
+ * was deliberately replaced, not extended (see ReviewFeedback.tsx's removal).
  */
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { CheckCircle, Frown, Meh, SmilePlus, Loader2 } from 'lucide-react';
-import './MyReview.css';
+import { useParams } from 'react-router-dom';
+import { CheckCircle2, Loader2 } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { ReviewStarForm, type ReviewStarFormSubmitData } from '@/components/review/ReviewStarForm';
 
 interface ValidateResponse {
   valid: boolean;
   error?: string;
-  storeId?: number;
-  appointmentId?: number | null;
-  storeName?: string;
+  storeName?: string | null;
   customerName?: string | null;
-  externalReviewUrl?: string | null;
+  serviceName?: string | null;
+  staffName?: string | null;
+  date?: string | null;
 }
 
-const RATING_OPTIONS = [
-  { value: 'great', label: 'Great', icon: SmilePlus, toneClassName: 'my-review__option--great' },
-  { value: 'ok', label: 'Just OK', icon: Meh, toneClassName: 'my-review__option--okay' },
-  { value: 'bad', label: 'Bad', icon: Frown, toneClassName: 'my-review__option--bad' },
-] as const;
-
 export default function ReviewGate() {
-  const navigate = useNavigate();
-  const { token } = useParams();
+  const { id: token } = useParams<{ id: string }>();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [storeName, setStoreName] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [context, setContext] = useState<ValidateResponse | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
@@ -55,7 +54,7 @@ export default function ReviewGate() {
         if (!data.valid) {
           setError(data.error || 'This review link is no longer valid');
         } else {
-          setStoreName(data.storeName || '');
+          setContext(data);
         }
       } catch {
         setError('This review link is no longer valid');
@@ -66,100 +65,116 @@ export default function ReviewGate() {
     validate();
   }, [token]);
 
-  const handleSubmit = async (rating: (typeof RATING_OPTIONS)[number]['value']) => {
-    if (rating === 'bad') {
-      navigate(`/review/${token}/feedback`);
-      return;
-    }
-
-    setIsSubmitting(true);
-    setError(null);
-
+  async function handleSubmit(data: ReviewStarFormSubmitData) {
+    setSubmitting(true);
+    setSubmitError(null);
     try {
       const res = await fetch('/api/reviews/gate/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, tier: rating }),
+        body: JSON.stringify({
+          token,
+          rating: data.rating,
+          comment: data.comment || undefined,
+          photoUrl: data.photoUrl || undefined,
+        }),
       });
-      const data = await res.json();
-      if (!data.ok) {
-        setError(data.error || 'Failed to submit review. Please try again.');
-        setIsSubmitting(false);
-        return;
-      }
-      if (data.redirectUrl) {
-        window.location.assign(data.redirectUrl);
+      const result = await res.json();
+      if (!result.ok) {
+        setSubmitError(result.error || 'Failed to submit review. Please try again.');
+        setSubmitting(false);
         return;
       }
       setSubmitted(true);
     } catch {
-      setError('Failed to submit review. Please try again.');
-      setIsSubmitting(false);
+      setSubmitError('Failed to submit review. Please try again.');
+      setSubmitting(false);
     }
-  };
+  }
 
   if (loading) {
     return (
-      <div className="my-review my-review--centered">
-        <Loader2 size={28} className="animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="my-review my-review--centered">
-        <div className="my-review__panel my-review__panel--message">
-          <p className="my-review__error">{error}</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-background p-6">
+        <Card className="p-8 max-w-md w-full text-center space-y-3">
+          <p className="text-lg font-semibold">Review link not found</p>
+          <p className="text-sm text-muted-foreground">{error}</p>
+        </Card>
       </div>
     );
   }
 
   if (submitted) {
     return (
-      <div className="my-review my-review--centered">
-        <div className="my-review__panel my-review__panel--message">
-          <CheckCircle className="my-review__success-icon" size={48} />
-          <h2 className="my-review__success-title">Thank you for your feedback!</h2>
-          <p className="my-review__success-copy">Your review has been submitted.</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-background p-6">
+        <Card className="p-8 max-w-md w-full text-center space-y-4">
+          <CheckCircle2 className="h-14 w-14 text-green-500 mx-auto" />
+          <div>
+            <p className="text-xl font-bold">Thank you!</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Your review has been submitted successfully.
+            </p>
+          </div>
+          {context?.storeName && (
+            <p className="text-sm text-muted-foreground">
+              We appreciate your feedback at <strong>{context.storeName}</strong>.
+            </p>
+          )}
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="my-review">
-      <div className="my-review__panel">
-        <div className="my-review__hero">
-          <div className="my-review__eyebrow">Customer Feedback</div>
-          <h1 className="my-review__title">{storeName ? storeName.toUpperCase() : 'LOADING...'}</h1>
-          <p className="my-review__subtitle">How would you rate the service you received?</p>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-muted/30 p-6">
+      <Card className="p-8 max-w-md w-full space-y-6 shadow-lg">
+        {/* Header */}
+        <div className="text-center space-y-1">
+          <p className="text-xl font-bold">{context?.storeName || 'Your Experience'}</p>
+          <p className="text-sm text-muted-foreground">
+            How was your visit{context?.customerName ? `, ${context.customerName.split(' ')[0]}` : ''}?
+          </p>
         </div>
 
-        {error && <p className="my-review__error my-review__error--inline">{error}</p>}
+        {/* Appointment summary */}
+        {(context?.serviceName || context?.staffName || context?.date) && (
+          <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-1">
+            {context.serviceName && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Service</span>
+                <span className="font-medium">{context.serviceName}</span>
+              </div>
+            )}
+            {context.staffName && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">With</span>
+                <span className="font-medium">{context.staffName}</span>
+              </div>
+            )}
+            {context.date && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Date</span>
+                <span className="font-medium">
+                  {new Date(context.date).toLocaleDateString('en-US', {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
-        <div className="my-review__options">
-          {RATING_OPTIONS.map((option) => {
-            const Icon = option.icon;
-            return (
-              <button
-                key={option.value}
-                onClick={() => handleSubmit(option.value)}
-                disabled={isSubmitting}
-                className={`my-review__option ${option.toneClassName}`}
-              >
-                <div className="my-review__option-copy">
-                  <span className="my-review__option-label">{option.label}</span>
-                </div>
-                <div className="my-review__option-icon">
-                  <Icon size={30} strokeWidth={1.9} />
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+        <ReviewStarForm onSubmit={handleSubmit} submitting={submitting} submitError={submitError} />
+      </Card>
     </div>
   );
 }

@@ -5,8 +5,15 @@
 
 ---
 
-## Nail Salon Software | Certxa
+## Certxa — Find your good place
 Source: https://certxa.com/
+
+Certxa is a considered local guide to independent salons, studios, and beauty people worth knowing — a separate, consumer-facing product from the same company as the SaaS platform described below. The root URL is a personalized directory homepage (deals and featured salons vary by visitor location and day), not the SaaS marketing pitch. It surfaces: today's limited-time deals, featured/"Certxa pick" salons, and browsing by category (Hair, Nails, Skin, Barber, Wellness) or by location. Individual salon listing pages are flat at the root (e.g. `https://certxa.com/{business-slug}`); city and state browse pages live under `/listings/{state}` and `/listings/{city}--{state}`. These listed businesses are independent third parties sourced from public listing data and are not affiliated with or partnered with Certxa unless claimed — see the Instructions section of https://certxa.com/llms.txt.
+
+---
+
+## Nail Salon Management Platform | Certxa
+Source: https://certxa.com/overview
 
 # Nail salon software that fills every chair.
 Nail salon software with online booking, self-service walk-in kiosk, POS, loyalty rewards, waitlist, and AI receptionist — everything a nail studio needs, all connected in SalonOS by Certxa .
@@ -108,7 +115,7 @@ Source: https://certxa.com/about
 
 # About Certxa
 Founded by a nail salon owner, for nail salon owners.
-Certxa was founded in Phoenix, Arizona in February 2026 by Tom Tham, a Vietnamese nail salon owner himself. Tom started Certxa after watching Vietnamese-owned nail salons — a community he's part of — get pushed into long-term contracts with existing salon software providers like GoCheckIn just to get basic booking and check-in tools. He wanted to build a real alternative: no long-term lock-in, and software built by someone who has actually run a nail salon, not just sold to one.
+Certxa was founded in Phoenix, Arizona in February 2026 by Thanh Lam, a Vietnamese nail salon owner himself. Thanh started Certxa after watching Vietnamese-owned nail salons — a community he's part of — get pushed into long-term contracts with existing salon software providers like GoCheckIn just to get basic booking and check-in tools. He wanted to build a real alternative: no long-term lock-in, and software built by someone who has actually run a nail salon, not just sold to one.
 That's still the idea behind Certxa today: salon software should help you run your business — not overwhelm it, and not trap you in a contract you can't get out of.
 Many platforms require multiple subscriptions, disconnected tools, and complicated workflows just to manage everyday tasks. We wanted to build something different.
 Certxa brings online booking, point of sale, payments, client management, team management, payroll, websites, marketing, and AI-powered tools together in one platform, so you spend less time switching between systems and more time focusing on your clients.
@@ -441,7 +448,7 @@ Source: https://certxa.com/case-studies
 Certxa doesn't have a decade of case studies yet. What it has is a founder who ran a nail salon himself, and a platform built to fix exactly what he found frustrating about the software that came before it.
 
 ## Built by a nail salon owner, not a marketing team.
-Certxa was founded in Phoenix, Arizona by Tom Tham, a Vietnamese nail salon owner himself. Tom started Certxa after watching Vietnamese-owned nail salons — a community he's part of — get pushed into long-term contracts with existing salon software providers just to get basic booking and check-in tools. He wanted to build something different: software with no long-term lock-in, made by someone who has actually run a nail salon.
+Certxa was founded in Phoenix, Arizona by Thanh Lam, a Vietnamese nail salon owner himself. Thanh started Certxa after watching Vietnamese-owned nail salons — a community he's part of — get pushed into long-term contracts with existing salon software providers just to get basic booking and check-in tools. He wanted to build something different: software with no long-term lock-in, made by someone who has actually run a nail salon.
 That's still the idea behind Certxa today — not the loudest salon software company, just one salon owners can depend on.
 
 ## What you get by joining early
@@ -662,7 +669,7 @@ GoCheckIn adds a $100 one-time setup fee and caps staff count by plan (5 on Basi
 Certxa's self-service walk-in kiosk and built-in POS are included on every plan and purpose-built for nail studios — not general check-in tools adapted from other industries.
 
 ### Built by a nail salon owner
-Certxa was founded by Tom Tham, a nail salon owner in the Vietnamese nail salon community, specifically to give salon owners a simpler, more transparent alternative to existing check-in and booking vendors.
+Certxa was founded by Thanh Lam, a nail salon owner in the Vietnamese nail salon community, specifically to give salon owners a simpler, more transparent alternative to existing check-in and booking vendors.
 
 ## Certxa vs GoCheckIn — common questions
 
@@ -2573,10 +2580,10 @@ Source: https://certxa.com/vietnamese-salon-software
 Certxa được sáng lập bởi một chủ tiệm nail người Việt tại Phoenix, Arizona — không phải bởi một công ty phần mềm xa lạ chưa từng bước vào một tiệm nail. Đặt lịch trực tuyến, máy check-in, POS, nhắc hẹn tự động — tất cả trong một hệ thống, không hợp đồng dài hạn.
 
 ## Xây dựng bởi người đã từng đứng sau bàn tiếp tân, không phải bởi một đội ngũ tiếp thị.
-Certxa được sáng lập tại Phoenix, Arizona bởi Tom Tham — một chủ tiệm nail người Việt. Anh bắt đầu xây dựng Certxa sau khi chứng kiến nhiều tiệm nail người Việt, trong đó có cộng đồng của chính mình, bị các công ty phần mềm hiện có ép ký hợp đồng dài hạn chỉ để có được những công cụ cơ bản như đặt lịch hẹn và check-in.
+Certxa được sáng lập tại Phoenix, Arizona bởi Thanh Lam — một chủ tiệm nail người Việt. Anh bắt đầu xây dựng Certxa sau khi chứng kiến nhiều tiệm nail người Việt, trong đó có cộng đồng của chính mình, bị các công ty phần mềm hiện có ép ký hợp đồng dài hạn chỉ để có được những công cụ cơ bản như đặt lịch hẹn và check-in.
 Anh muốn xây dựng một lựa chọn khác thật sự: không ràng buộc hợp đồng dài hạn, và phần mềm được làm ra bởi một người đã thật sự điều hành một tiệm nail — không chỉ bán phần mềm cho tiệm nail.
 "Tôi xây dựng Certxa cho những chủ tiệm giống như tôi — những người muốn một hệ thống đáng tin cậy, không ràng buộc, và không phải trả giá đắt để có được điều đó."
-— Tom Tham, Người Sáng Lập Certxa
+— Thanh Lam, Người Sáng Lập Certxa
 
 ## Một hệ thống, đầy đủ những gì tiệm nail cần
 Certxa hỗ trợ giao diện Tiếng Việt cho chủ tiệm và nhân viên — quý vị và thợ trong tiệm có thể dùng hệ thống bằng ngôn ngữ mình quen thuộc nhất.

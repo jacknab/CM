@@ -81,7 +81,7 @@ export default function StaffPayoutsSetup() {
         publishableKey: data.publishableKey,
         fetchClientSecret: async () => data.clientSecret,
         appearance: {
-          overlays: "dialog",
+          overlays: "drawer", // stays visually embedded instead of a modal popup
           variables: {
             colorPrimary:    "#0d9488", // teal-600
             fontFamily:      "Inter, system-ui, sans-serif",

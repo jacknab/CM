@@ -1,12 +1,20 @@
 <?php
 define('BRAND_NAME',    'Certxa');
-define('PAGE_TITLE',    'Nail Salon Payment Processing | Certxa');
-define('PAGE_DESC',     'Nail salon POS and payment processing powered by Stripe. Take card, chip, contactless, Apple Pay, and Google Pay payments through the Stripe M2 reader inside Certxa.');
-define('PAGE_KEYWORDS', 'nail salon payment processing, stripe for nail salons, nail salon card reader, nail salon POS system, stripe M2 reader, nail salon point of sale, certxa payments, nail salon credit card processing, tap to pay nail salon');
+// Broadened from nail-only to cover the whole salon POS keyword cluster —
+// "salon pos", "hair salon pos", and "pos system for hair salon" are real,
+// winnable search terms (KD 18-28) with no page targeting them anywhere on
+// the site, and Certxa genuinely serves hair salons too (see
+// /hair-salon-software, /barbershop-software). This page already has the
+// real, deep POS feature content (checkout, reporting, receipts, security)
+// that those searches want — broadening it beats building a second,
+// cannibalizing page for the same feature set.
+define('PAGE_TITLE',    'Salon POS & Payment Processing | Certxa');
+define('PAGE_DESC',     'Salon POS and payment processing powered by Stripe — built for nail salons, hair salons, and spas. Take card, chip, contactless, Apple Pay, and Google Pay payments through the Stripe M2 reader inside Certxa.');
+define('PAGE_KEYWORDS', 'salon pos, salon pos system, hair salon pos, pos system for hair salon, nail salon pos, salon payment processing, stripe for salons, salon card reader, stripe M2 reader, certxa payments, salon point of sale, salon credit card processing, tap to pay salon');
 define('PAGE_CANONICAL','https://certxa.com/payment-processing');
 define('PAGE_BREADCRUMBS', json_encode([
   ['name'=>'Home','url'=>'https://certxa.com/'],
-  ['name'=>'Payment Processing','url'=>'https://certxa.com/payment-processing'],
+  ['name'=>'Salon POS & Payments','url'=>'https://certxa.com/payment-processing'],
 ]));
 define('PAGE_SCHEMA', json_encode([
   [
@@ -604,11 +612,11 @@ require __DIR__ . '/../includes/nav.php';
           Official Partner&nbsp;&nbsp;<span class="sp-partner-stripe">Stripe</span>
         </div>
         <h1 class="sp-headline">
-          Nail salon POS,<br>
+          Salon POS,<br>
           <em>powered by Stripe</em>
         </h1>
         <p class="sp-sub">
-          Certxa partners with Stripe — the world's leading payment infrastructure — to give every nail salon a professional, built-in POS. Accept cards, contactless tap, Apple Pay, and Google Pay right inside Certxa. No third-party terminal app. No separate login. Just tap and done.
+          Certxa partners with Stripe — the world's leading payment infrastructure — to give every nail salon, hair salon, and spa a professional, built-in POS. Accept cards, contactless tap, Apple Pay, and Google Pay right inside Certxa. No third-party terminal app. No separate login. Just tap and done.
         </p>
         <div class="sp-hero-btns">
           <a href="/auth?mode=register" class="sp-btn-primary">Start Free Trial →</a>

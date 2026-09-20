@@ -193,6 +193,10 @@ export const locations = pgTable("locations", {
   accessibilityFeatures: jsonb("accessibility_features").$type<string[]>().default([]),
   beverageOptions: jsonb("beverage_options").$type<{ complimentary: string[]; paid: string[] }>(),
   platformCredits: decimal("platform_credits", { precision: 10, scale: 2 }).notNull().default("0.00"),
+  // The next per-store sequential "Booking #"/"Ticket #" to assign — see
+  // storage.getNextTicketNumber(). Independent of appointments.id (a global
+  // key shared across every store on the platform).
+  nextTicketNumber: integer("next_ticket_number").notNull().default(1),
   salesTaxRate: decimal("sales_tax_rate", { precision: 5, scale: 4 }).notNull().default("0.0000"),
   taxServicesTaxable: boolean("tax_services_taxable").notNull().default(false),
   taxAddonsTaxable: boolean("tax_addons_taxable").notNull().default(false),
@@ -365,6 +369,108 @@ export const packageItems = pgTable("package_items", {
   sortOrder: integer("sort_order").notNull().default(0),
 });
 
+// ── Deals (marketplace "Groupon-style" vouchers) ───────────────────────────
+// A deal wraps an existing Catalog Package with marketing + limited-quantity
+// sale fields and lists it on the certxa.com marketplace. `listPrice` is a
+// snapshot of the package's effective price at deal-creation time so a later
+// package price edit doesn't retroactively change a live deal's strikethrough.
+// "Sold out" / "expired" are computed from capacity/dates at read time, not
+// stored — `status` here only tracks the owner's active/paused/archived intent.
+export const deals = pgTable("deals", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id").references(() => locations.id).notNull(),
+  packageId: integer("package_id").references(() => packages.id).notNull(),
+  title: text("title").notNull(),
+  marketingDescription: text("marketing_description"),
+  heroImage: text("hero_image"),
+  dealPrice: decimal("deal_price", { precision: 10, scale: 2 }).notNull(),
+  listPrice: decimal("list_price", { precision: 10, scale: 2 }).notNull(),
+  capacity: integer("capacity").notNull(),
+  purchasedCount: integer("purchased_count").notNull().default(0),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  // How many days a purchased voucher stays redeemable after ITS OWN
+  // purchase date (30/60/90-day presets in DealForm) — unrelated to
+  // startsAt/endsAt, which only control the sale window. See migration 0190.
+  expiryDays: integer("expiry_days").notNull().default(30),
+  status: text("status").notNull().default("active"), // "active" | "paused" | "archived"
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+// A purchased voucher. `appointmentId` is set once the customer books through
+// the store's real booking flow; `status` only reaches "redeemed" via a staff
+// member physically scanning the customer's code/QR at check-in (see
+// POST /api/qr/redeem-voucher) — never automatically from an appointment's
+// status changing, and never at purchase or at booking time. See migration
+// 0183 for rationale.
+export const dealVouchers = pgTable("deal_vouchers", {
+  id: serial("id").primaryKey(),
+  dealId: integer("deal_id").references(() => deals.id).notNull(),
+  code: text("code").notNull().unique(),
+  qrToken: text("qr_token").notNull().unique(),
+  customerEmail: text("customer_email").notNull(),
+  customerName: text("customer_name"),
+  // Required at checkout (a 10-digit mobile number that can receive SMS) —
+  // nullable here because vouchers purchased before this field existed have
+  // none on file. See migration 0191. Lets support look a caller's voucher
+  // up by the phone number they're calling from, same as how they identify
+  // themselves at redemption.
+  customerPhone: text("customer_phone"),
+  stripePaymentIntentId: text("stripe_payment_intent_id"),
+  appointmentId: integer("appointment_id").references(() => appointments.id),
+  status: text("status").notNull().default("pending_booking"), // "pending_booking" | "booked" | "redeemed" | "expired" | "refunded"
+  // Opaque per-voucher link token — sent alongside the human code in the
+  // confirmation email, resolves to a one-step "book with this voucher"
+  // page (package pre-selected; customer only picks a time + gives name/
+  // phone). Deliberately separate from `code` (the redemption code shown/
+  // scanned at the salon) so the booking link can't be reverse-derived from
+  // a code seen at checkout, and vice versa.
+  bookingToken: text("booking_token").unique(),
+  purchasedAt: timestamp("purchased_at", { withTimezone: true }).defaultNow(),
+  redeemedAt: timestamp("redeemed_at", { withTimezone: true }),
+  // Audit trail: which staff session performed the redemption scan. Null for
+  // an owner-login session (no staffId) or for pre-existing rows.
+  redeemedByStaffId: integer("redeemed_by_staff_id").references(() => staff.id),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+
+// Opaque, DB-stored magic-link token for a guest customer's "My vouchers"
+// wallet page — same pattern as appointments.manageToken (a real row, not a
+// stateless signed token, so it can be revoked/expired and isn't tied to a
+// signing secret staying stable across deploys). Looked up by email, not
+// tied to a single voucher, so newly purchased vouchers show up under an
+// already-issued link without re-emailing anything.
+export const dealWalletTokens = pgTable("deal_wallet_tokens", {
+  token: text("token").primaryKey(),
+  email: text("email").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+
+// One row per redeemed voucher's payout to the salon. Recorded regardless of
+// outcome (status: pending | succeeded | failed | skipped) for a full audit
+// trail — mirrors contractorInstantTransfers' gross/rate/net shape. Certxa
+// keeps `commissionAmountCents`; `amountCents` (the net) is what actually
+// gets transferred to the salon's Connect account via source_transaction
+// against the original purchase charge.
+export const dealVoucherPayouts = pgTable("deal_voucher_payouts", {
+  id: serial("id").primaryKey(),
+  voucherId: integer("voucher_id").references(() => dealVouchers.id).notNull(),
+  dealId: integer("deal_id").references(() => deals.id).notNull(),
+  storeId: integer("store_id").references(() => locations.id).notNull(),
+  stripeTransferId: text("stripe_transfer_id"),
+  stripeChargeId: text("stripe_charge_id"),
+  grossAmountCents: integer("gross_amount_cents").notNull(),
+  commissionRate: decimal("commission_rate", { precision: 5, scale: 4 }).notNull(),
+  commissionAmountCents: integer("commission_amount_cents").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  status: text("status").notNull().default("pending"), // pending | succeeded | failed | skipped
+  failureReason: text("failure_reason"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
 export const staff = pgTable("staff", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -420,6 +526,10 @@ export const staffAvailability = pgTable("staff_availability", {
 
 export const appointments = pgTable("appointments", {
   id: serial("id").primaryKey(),
+  // Per-store sequential display number (see locations.nextTicketNumber /
+  // storage.getNextTicketNumber) — null on every row created before this
+  // column existed; display logic falls back to `id` for those, unchanged.
+  ticketNumber: integer("ticket_number"),
   // TIMESTAMPTZ — all appointment times are stored in UTC.
   // The API always converts salon-local input via fromZonedTime() before storage,
   // and returns UTC ISO-8601 strings. Display conversion is done client-side
@@ -475,6 +585,14 @@ export const appointments = pgTable("appointments", {
   // serviceId still points at the package's primary service so existing
   // scheduling / calendar / commission code is unaffected.
   packageId:               integer("package_id").references(() => packages.id),
+  // Set when this appointment was booked using a purchased deal voucher (see
+  // deal_vouchers). storage.updateAppointment() redeems the voucher exactly
+  // when status transitions to "started" — never at booking time. No
+  // `.references()` here (deal_vouchers.appointmentId already references this
+  // table, and Drizzle/TS can't type-infer a two-way circular reference) —
+  // the FK constraint itself is still enforced at the DB level by migration
+  // 0183.
+  voucherId:               integer("voucher_id"),
 });
 
 export const products = pgTable("products", {
@@ -1328,6 +1446,8 @@ export const insertServiceAddonSchema = createInsertSchema(serviceAddons).omit({
 export const insertAppointmentAddonSchema = createInsertSchema(appointmentAddons).omit({ id: true });
 export const insertPackageSchema = createInsertSchema(packages).omit({ id: true, createdAt: true });
 export const insertPackageItemSchema = createInsertSchema(packageItems).omit({ id: true });
+export const insertDealSchema = createInsertSchema(deals).omit({ id: true, purchasedCount: true, createdAt: true, updatedAt: true });
+export const insertDealVoucherSchema = createInsertSchema(dealVouchers).omit({ id: true, purchasedAt: true });
 export const insertStaffSchema = createInsertSchema(staff).omit({ id: true });
 export const insertStaffServiceSchema = createInsertSchema(staffServices).omit({ id: true });
 export const insertStaffAvailabilitySchema = createInsertSchema(staffAvailability).omit({ id: true });
@@ -1425,6 +1545,22 @@ export type PackageWithItems = Package & {
   price: number;
 };
 
+export type Deal = typeof deals.$inferSelect;
+export type InsertDeal = z.infer<typeof insertDealSchema>;
+export type DealVoucher = typeof dealVouchers.$inferSelect;
+export type InsertDealVoucher = z.infer<typeof insertDealVoucherSchema>;
+
+/** A deal plus the read-time-computed availability and its source package. */
+export type DealWithDetails = Deal & {
+  package: Pick<Package, "id" | "name" | "description" | "imageUrl">;
+  availability: "scheduled" | "active" | "sold-out" | "expired" | "paused" | "archived";
+  discountPercent: number;
+};
+
+export type DealWalletToken = typeof dealWalletTokens.$inferSelect;
+export type DealVoucherPayout = typeof dealVoucherPayouts.$inferSelect;
+export type InsertDealVoucherPayout = typeof dealVoucherPayouts.$inferInsert;
+
 export type Staff = typeof staff.$inferSelect;
 export type InsertStaff = z.infer<typeof insertStaffSchema>;
 
@@ -1457,6 +1593,14 @@ export type AppointmentWithDetails = Appointment & {
   customer: Customer | null;
   store: Store | null;
   appointmentAddons?: Array<AppointmentAddon & { addon: Addon | null }>;
+  /** Only populated once the linked voucher's status is "redeemed" — see storage.ts's _hydrateVoucherCodes. */
+  voucherCode?: string | null;
+  /** The linked deal voucher's real status ("pending_booking"|"booked"|"redeemed"|"expired"|"refunded"), always present when appointment.voucherId is set. */
+  voucherStatus?: string | null;
+  /** The amount the salon actually nets after Certxa's platform commission, when appointment.voucherId is set — see storage.ts's _hydrateVoucherCodes. */
+  voucherNetAmount?: number | null;
+  /** The linked deal's title (e.g. "Deluxe Manicure Deal"), when appointment.voucherId is set — see storage.ts's _hydrateVoucherCodes. */
+  voucherDealTitle?: string | null;
 };
 
 export type Product = typeof products.$inferSelect;
@@ -2520,6 +2664,10 @@ export const storePaymentAccounts = pgTable("store_payment_accounts", {
   provider:          varchar("provider", { length: 32 }).notNull().default("stripe"),
   providerAccountId: text("provider_account_id").notNull(),
   status:            varchar("status", { length: 32 }).notNull().default("connected"),
+  // 'standard' (legacy OAuth, owner's own Stripe dashboard) | 'express'
+  // (platform-created via stripe.accounts.create, embedded onboarding).
+  // Every pre-existing row is 'standard' — see migration 0187.
+  accountType:       varchar("account_type", { length: 16 }).notNull().default("standard"),
   chargesEnabled:    boolean("charges_enabled").notNull().default(false),
   payoutsEnabled:    boolean("payouts_enabled").notNull().default(false),
   detailsSubmitted:  boolean("details_submitted").notNull().default(false),

@@ -19,6 +19,16 @@ interface Staff {
 interface Category { id: number; name: string }
 interface Service { id: number; name: string; categoryId: number | null }
 
+// Stable references for the `data = []` query fallbacks below — a fresh `[]`
+// literal there would be a new array on every render while the query is
+// still loading, and effects keyed on that value (or on the useMemo derived
+// from it) would then fire every render, calling setState in a tight loop
+// (React error #185, "Maximum update depth exceeded").
+const EMPTY_CATEGORIES: Category[] = [];
+const EMPTY_SERVICES: Service[] = [];
+const EMPTY_IDS: number[] = [];
+const EMPTY_RULES: DayRule[] = [];
+
 export default function StaffDetail() {
   const { id } = useParams<{ id: string }>();
   const staffId = Number(id);
@@ -36,19 +46,24 @@ export default function StaffDetail() {
       return res.json();
     },
   });
-  const { data: categories = [] } = useQuery<Category[]>({
+  const { data: categories = EMPTY_CATEGORIES } = useQuery<Category[]>({
     queryKey: ["/api/service-categories"],
     queryFn: async () => (await fetch("/api/service-categories", { credentials: "include" })).json(),
   });
-  const { data: allServices = [] } = useQuery<Service[]>({
+  const { data: allServices = EMPTY_SERVICES } = useQuery<Service[]>({
     queryKey: ["/api/services"],
     queryFn: async () => (await fetch("/api/services", { credentials: "include" })).json(),
   });
-  const { data: assignedIds = [] } = useQuery<number[]>({
+  const { data: assignedIds = EMPTY_IDS } = useQuery<number[]>({
     queryKey: [`/api/staff/${staffId}/services`],
-    queryFn: async () => (await fetch(`/api/staff/${staffId}/services`, { credentials: "include" })).json(),
+    queryFn: async () => {
+      const res = await fetch(`/api/staff/${staffId}/services`, { credentials: "include" });
+      if (!res.ok) return [];
+      const body = await res.json();
+      return Array.isArray(body) ? body : (body?.serviceIds ?? []);
+    },
   });
-  const { data: savedRules = [] } = useQuery<DayRule[]>({
+  const { data: savedRules = EMPTY_RULES } = useQuery<DayRule[]>({
     queryKey: [`/api/staff/${staffId}/availability`],
     queryFn: async () => (await fetch(`/api/staff/${staffId}/availability`, { credentials: "include" })).json(),
   });

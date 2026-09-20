@@ -18,7 +18,7 @@ import { getDeviceId } from "@/lib/device-id";
 import { useActiveDrawerId } from "@/hooks/use-cash-drawers";
 import { formatInTz, formatStoreDate, getTimezoneAbbr, getNowInTimezone, storeLocalToUtc, isStoreLocalSlotInPast, isSameLocalDay, isSameStoreDay, isOnStoreDate, addStoreDays, toLocalDateStringInTz } from "@/lib/timezone";
 import { addMinutes, format } from "date-fns";
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CalendarPlus, Users, Globe, ArrowLeft, ArrowUp, X, Clock, Loader2, CreditCard, Banknote, Smartphone, DollarSign, Check, Receipt, Percent, Tag, Delete, Printer, XCircle, Settings, PersonStanding, LayoutDashboard, TrendingUp, CalendarDays, Scissors, ShoppingBag, UserCircle, Gift, ClipboardList, FileText, BarChart3, MessageSquare, Mail, Building2, MapPin, Star, ThumbsUp, ListOrdered, Search, AlertCircle, Lock, Unlock, Bell, ListFilter, MoreVertical, Plus, LayoutList, Zap, Send, HelpCircle, ChevronDown as ChevronDownIcon, Calendar as CalendarIcon, Phone, AlertTriangle, LogIn, QrCode, Layers, WifiOff, Utensils, CupSoda, Package, BadgePercent, Barcode, ScanSearch, Scale, Ticket, Wallet, Sparkles, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CalendarPlus, Users, Globe, ArrowLeft, ArrowUp, X, Clock, Loader2, CreditCard, Banknote, Smartphone, DollarSign, Check, Receipt, Percent, Tag, Delete, Printer, XCircle, Settings, PersonStanding, LayoutDashboard, TrendingUp, CalendarDays, Scissors, ShoppingBag, UserCircle, Gift, ClipboardList, FileText, BarChart3, MessageSquare, Mail, Building2, MapPin, Star, ThumbsUp, ListOrdered, Search, AlertCircle, Lock, Unlock, Bell, ListFilter, MoreVertical, Plus, LayoutList, Zap, Send, HelpCircle, ChevronDown as ChevronDownIcon, Calendar as CalendarIcon, Phone, AlertTriangle, LogIn, QrCode, Layers, WifiOff, Utensils, CupSoda, Package, BadgePercent, Barcode, ScanSearch, Scale, Ticket, Wallet, Sparkles, RefreshCw, KeyRound } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
@@ -28,6 +28,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AvailableTimeBanner } from "@/components/AvailableTimeBanner";
 import { useThermalPrinter } from "@/hooks/use-thermal-printer";
 import { buildCheckinTicket, buildCheckoutReceipt } from "@/lib/thermalPrinter";
+import { buildNativeReceiptPayload } from "@/lib/receiptPayload";
+import { openCashDrawerHardware } from "@/lib/cashDrawer";
 import { cn } from "@/lib/utils";
 import { clientPhoneCacheDB } from "@/lib/client-phone-cache-db";
 import { isValidNanpPrefix, isValidNanpNumber } from "@/lib/phone-validation";
@@ -54,7 +56,7 @@ import { AppointmentSyncBadge } from "@/components/AppointmentSyncBadge";
 
 type SidebarItem =
   | { kind: "link"; to: string; label: string; icon: any }
-  | { kind: "action"; action: "quick-checkout" | "cash-drawer" | "day-close" | "open-register" | "client-lookup"; label: string; icon: any };
+  | { kind: "action"; action: "quick-checkout" | "cash-drawer" | "day-close" | "open-register" | "client-lookup" | "redeem-voucher"; label: string; icon: any };
 
 type TurnTechnician = {
   id: number;
@@ -74,6 +76,7 @@ const calendarSidebarItems: SidebarItem[] = [
   { kind: "link", to: "/calendar", label: "Calendar", icon: CalendarDays },
   { kind: "action", action: "quick-checkout", label: "Quick Lists", icon: LayoutList },
   { kind: "action", action: "client-lookup", label: "Clients", icon: Users },
+  { kind: "action", action: "redeem-voucher", label: "Redeem Voucher", icon: Ticket },
   { kind: "action", action: "open-register", label: "POS", icon: CreditCard },
   { kind: "link", to: "/reports", label: "Reports", icon: BarChart3 },
   { kind: "action", action: "cash-drawer", label: "Cash Drawer", icon: Banknote },
@@ -82,6 +85,19 @@ const calendarSidebarItems: SidebarItem[] = [
 
 const HOUR_HEIGHT = 180;
 const STAFF_CALENDAR_COLUMN_WIDTH = 210;
+// Columns shrink toward this floor so every staff member fits on a 10" tablet before the grid scrolls.
+const STAFF_CALENDAR_MIN_COLUMN_WIDTH = 88;
+
+// Whole minutes since `since`, ticking on its own so only the badge re-renders.
+function WaitingTimer({ since, unit }: { since: string | number | Date; unit: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(id);
+  }, []);
+  const mins = Math.max(0, Math.floor((now - new Date(since).getTime()) / 60_000));
+  return <span className="tabular-nums">{mins} {unit}</span>;
+}
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
@@ -173,7 +189,7 @@ function OfflineSnapshotHealth() {
   const stateLabel = isHealthy ? "Offline data healthy" : isDegraded ? "Offline data needs refresh" : "Offline data unavailable";
 
   return (
-    <div className="w-14 mb-2 px-1" title={`${stateLabel} · ${percent}%`} role="status" aria-label={`${stateLabel}, ${percent}%`}>
+    <div className="w-16 px-1" title={`${stateLabel} · ${percent}%`} role="status" aria-label={`${stateLabel}, ${percent}%`}>
       <div className="flex gap-0.5 h-1.5" aria-hidden="true">
         {datasets.map((dataset) => (
           <span key={dataset.key} className={cn("flex-1 rounded-full", dataset.ready ? color : "bg-slate-200")} />
@@ -231,6 +247,8 @@ export default function Calendar() {
     quickCheckIn:        pick({ en: "Quick Check-In",     vi: "Check-In Nhanh",              es: "Registro rápido",          fr: "Arrivée rapide" }),
     quickCheckOut:       pick({ en: "Quick Check-Out",    vi: "Check-Out Nhanh",             es: "Pago rápido",              fr: "Paiement rapide" }),
     arrivedList:         pick({ en: "Arrived Clients",    vi: "Khách Đã Đến",                es: "Clientes llegados",        fr: "Clients arrivés" }),
+    waiting:             pick({ en: "waiting",            vi: "đang chờ",                    es: "en espera",                fr: "en attente" }),
+    minShort:            pick({ en: "min",                vi: "phút",                        es: "min",                      fr: "min" }),
     tapToOpen:           pick({ en: "Tap a ticket to open",          vi: "Nhấn vào vé để mở",             es: "Toca un ticket para abrirlo",   fr: "Appuyez sur un ticket pour l'ouvrir" }),
     up:                  pick({ en: "Up",   vi: "Lên",    es: "Arriba",  fr: "Monter" }),
     down:                pick({ en: "Down", vi: "Xuống",  es: "Abajo",   fr: "Descendre" }),
@@ -257,6 +275,13 @@ export default function Calendar() {
       vi: `${client} — ${service} được đặt vào ${date}, không phải hôm nay.`,
       es: `${client} — ${service} está programado para ${date}, no hoy.`,
       fr: `${client} — ${service} est prévu pour le ${date}, pas aujourd'hui.` }),
+    voucherRedeemed:      pick({ en: "Voucher redeemed",               vi: "Đã đổi phiếu giảm giá",                es: "Vale canjeado",                         fr: "Bon échangé" }),
+    voucherRedeemedDesc:  (dealTitle: string) => pick({
+      en: `${dealTitle} — service started.`,
+      vi: `${dealTitle} — đã bắt đầu dịch vụ.`,
+      es: `${dealTitle} — servicio iniciado.`,
+      fr: `${dealTitle} — service commencé.` }),
+    voucherRedeemFailed:  pick({ en: "Couldn't redeem voucher",        vi: "Không thể đổi phiếu giảm giá",         es: "No se pudo canjear el vale",            fr: "Échec de l'échange du bon" }),
     ticketsNotSaved:     pick({ en: "Some tickets didn't save",       vi: "Một số vé chưa được lưu",               es: "Algunos tickets no se guardaron",       fr: "Certains tickets n'ont pas été enregistrés" }),
     ticketsNotSavedDesc: pick({ en: "Check the calendar and retry any that are still open.", vi: "Kiểm tra lịch và thử lại những vé vẫn còn mở.", es: "Revisa el calendario y reintenta los que sigan abiertos.", fr: "Vérifiez le calendrier et réessayez ceux encore ouverts." }),
     couldNotMarkUnavail: pick({ en: "Could not mark unavailable",     vi: "Không thể đánh dấu bận",                es: "No se pudo marcar como no disponible",   fr: "Impossible de marquer indisponible" }),
@@ -267,8 +292,10 @@ export default function Calendar() {
     navCalendar:         pick({ en: "Calendar",     vi: "Lịch",             es: "Calendario",     fr: "Agenda" }),
     navQuickLists:       pick({ en: "Quick Lists",  vi: "Danh sách nhanh",  es: "Listas rápidas", fr: "Listes rapides" }),
     navClients:          pick({ en: "Clients",      vi: "Khách hàng",       es: "Clientes",       fr: "Clients" }),
+    navRedeemVoucher:    pick({ en: "Redeem Voucher", vi: "Đổi phiếu",      es: "Canjear vale",   fr: "Échanger un bon" }),
     navPos:              pick({ en: "POS",          vi: "Thu ngân",         es: "TPV",            fr: "Caisse" }),
     navReports:          pick({ en: "Reports",      vi: "Báo cáo",          es: "Informes",       fr: "Rapports" }),
+    navManager:          pick({ en: "Manager",      vi: "Quản lý",          es: "Gerente",        fr: "Gérant" }),
     navCashDrawer:       pick({ en: "Cash Drawer",  vi: "Ngăn kéo tiền",    es: "Caja",           fr: "Tiroir-caisse" }),
     navDayClose:         pick({ en: "Day Close",    vi: "Chốt ngày",        es: "Cierre del día", fr: "Clôture" }),
     navInOut:            pick({ en: "In/Out",       vi: "Vào/Ra",           es: "Entrada/Salida", fr: "Arrivée/Départ" }),
@@ -315,9 +342,13 @@ export default function Calendar() {
     registers: registerOptions,
     allStationsTaken,
     selectRegister,
+    isMultiStation,
+    currentRegisterName,
+    resetRegister,
   } = useActiveRegisterId(selectedStore?.id);
   const [registerPickError, setRegisterPickError] = useState<string | null>(null);
   const [registerPickBusy, setRegisterPickBusy] = useState<number | null>(null);
+  const [showResetRegisterConfirm, setShowResetRegisterConfirm] = useState(false);
 
   const handleSelectRegister = async (id: number) => {
     setRegisterPickError(null);
@@ -325,6 +356,11 @@ export default function Calendar() {
     const result = await selectRegister(id);
     setRegisterPickBusy(null);
     if (!result.ok) setRegisterPickError(result.error ?? "Couldn't select that station.");
+  };
+
+  const handleResetRegister = () => {
+    setShowResetRegisterConfirm(false);
+    resetRegister();
   };
 
   // Reports this terminal's IP so /kiosk and /frontdesk can optionally be
@@ -376,6 +412,8 @@ export default function Calendar() {
   const [showCheckout, setShowCheckout] = useState(false);
   const [showClientLookup, setShowClientLookup] = useState(false);
   const [showClientLookupSheet, setShowClientLookupSheet] = useState(false);
+  const [showVoucherRedeemSheet, setShowVoucherRedeemSheet] = useState(false);
+  const [showManagerPinSheet, setShowManagerPinSheet] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showNewApptMenu, setShowNewApptMenu] = useState(false);
   const [lookupMode, setLookupMode] = useState(false);
@@ -388,16 +426,6 @@ export default function Calendar() {
   const [frontdeskPhone, setFrontdeskPhone] = useState("");
   // Dual-screen: the /frontdesk tablet mirrors the phone-entry prompt.
   const [frontdeskDualScreen, setFrontdeskDualScreen] = useState(false);
-  // Read inside the persistent WS handler below, which would otherwise close
-  // over a stale `showClientLookup` from whenever the socket first connected.
-  const showClientLookupRef = useRef(showClientLookup);
-  useEffect(() => { showClientLookupRef.current = showClientLookup; }, [showClientLookup]);
-  // True while "Choose a client" was auto-opened because the /frontdesk kiosk
-  // hit an unrecognized phone number (kiosk_checkin_unknown_phone), not because
-  // staff opened it manually — governs whether we mirror-broadcast back to the
-  // kiosk (we must not: it would clobber the kiosk's own name-entry screen)
-  // and whether a kiosk-side resolution should auto-close this panel.
-  const kioskInitiatedLookupRef = useRef(false);
   const [selectedSlot, setSelectedSlot] = useState<{ staffId: number; hour: number; minute: number } | null>(null);
   const [openStaffMenu, setOpenStaffMenu] = useState<number | null>(null);
   const [staffAvailOverride, setStaffAvailOverride] = useState<Record<number, boolean>>({});
@@ -585,8 +613,8 @@ export default function Calendar() {
   // walk-ins appear without staff needing to close and reopen it.
   const { data: pendingWalkinCheckins = [] } = useQuery<{ id: number; clientId: number | null; clientName: string | null; phone: string | null; createdAt: string; appointmentId: number | null }[]>({
     queryKey: ["/api/kiosk/walkins/today"],
-    enabled: quickCheckoutOpen,
-    refetchInterval: quickCheckoutOpen ? 15_000 : false,
+    enabled: !!selectedStore?.id,
+    refetchInterval: 10_000,
     queryFn: async () => {
       const res = await fetch("/api/kiosk/walkins/today", { credentials: "include" });
       if (!res.ok) return [];
@@ -594,6 +622,11 @@ export default function Calendar() {
     },
   });
   const pendingWalkins = pendingWalkinCheckins.filter((c) => c.appointmentId == null);
+  // Header badge: same rows as the "Arrived" list — today's checked-in appointments
+  // (status "confirmed") plus phone check-ins not yet booked.
+  const waitingCheckinCount =
+    (appointments || []).filter((apt: any) => apt.status === "confirmed" && isOnStoreDate(apt.date, storeNow, timezone)).length +
+    pendingWalkins.length;
   const { data: staffList, isLoading: staffLoading } = useStaffList();
   const { data: allStaffAvailability } = useAllStaffAvailability(selectedStore?.id);
   const { data: calendarResources = [] } = useQuery<{ id: number; type: string; name: string; isActive: boolean }[]>({
@@ -669,7 +702,7 @@ export default function Calendar() {
   // "+" menu Book/Look Up, agenda New Booking/Lookup, …) — not just the
   // walk-ins-off slot-click path this originally shipped for.
   useEffect(() => {
-    if (!showClientLookup || kioskInitiatedLookupRef.current) return;
+    if (!showClientLookup) return;
     broadcastToFrontdesk("kiosk_checkout_phone_prompt");
     return () => broadcastToFrontdesk("kiosk_checkout_phone_cancel");
   }, [showClientLookup, broadcastToFrontdesk]);
@@ -697,35 +730,14 @@ export default function Calendar() {
           ) {
             queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
           }
+          if (data.type === "kiosk_checkin_created") {
+            queryClient.invalidateQueries({ queryKey: ["/api/kiosk/walkins/today"] });
+          }
           // The /frontdesk tablet sent back the phone the client typed — feed it
           // into the open phone-entry sheet so it searches / creates the client.
           if (data.type === "kiosk_checkout_phone_result" && typeof data.phone === "string") {
             const digits = data.phone.replace(/\D/g, "").slice(-10);
             if (digits.length === 10) setFrontdeskPhone(digits);
-          }
-          // The /frontdesk kiosk hit an unrecognized phone number — mirror its
-          // "Enter Client Name" moment here so staff can type it in for a
-          // client who needs help, without stealing a lookup staff already
-          // has open for something unrelated.
-          if (data.type === "kiosk_checkin_unknown_phone" && typeof data.phone === "string") {
-            const digits = data.phone.replace(/\D/g, "").slice(-10);
-            if (digits.length === 10 && !showClientLookupRef.current) {
-              kioskInitiatedLookupRef.current = true;
-              setFrontdeskPhone(digits);
-              setShowClientLookup(true);
-            }
-          }
-          // The kiosk resolved this itself (customer finished naming, or backed
-          // out) — close the mirrored sheet rather than leave it open to
-          // duplicate what already happened, but only if we're the one who
-          // opened it for this reason.
-          if (
-            (data.type === "kiosk_checkin_client_named" || data.type === "kiosk_checkin_cancelled") &&
-            kioskInitiatedLookupRef.current
-          ) {
-            kioskInitiatedLookupRef.current = false;
-            setShowClientLookup(false);
-            setFrontdeskPhone("");
           }
           // Kiosk check-in print jobs → auto-print on connected thermal printer
           if (data.type === "kiosk_print_job" && data.jobType === "checkin_ticket") {
@@ -736,6 +748,7 @@ export default function Calendar() {
                 staffName: data.staffName,
                 services: data.services ?? [],
                 appointmentId: data.appointmentId,
+                ticketNumber: data.ticketNumber,
                 bookingCode: data.bookingCode ?? `BK:${data.appointmentId}`,
                 timeStr: data.timeStr ?? "",
                 dateStr: data.dateStr ?? "",
@@ -1255,6 +1268,36 @@ export default function Calendar() {
         return;
       }
 
+      // Deal voucher: the scan itself is the confirmation (physical possession
+      // of the code/QR is the security check) — redeem immediately, then open
+      // the now-started ticket like any other. See POST /api/qr/redeem-voucher.
+      if (data.type === "voucher") {
+        const redeemRes = await fetch("/api/qr/redeem-voucher", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ qrToken: raw }),
+        });
+        const redeemData = await redeemRes.json().catch(() => ({}));
+        if (!redeemRes.ok) {
+          toast({ title: t.voucherRedeemFailed, description: redeemData.error ?? t.qrErrorDesc, variant: "destructive" });
+          return;
+        }
+        toast({ title: t.voucherRedeemed, description: t.voucherRedeemedDesc(redeemData.dealTitle ?? "") });
+        await queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
+        const refreshed = await queryClient.fetchQuery<AppointmentWithDetails[]>({ queryKey: ["/api/appointments"] });
+        const startedAppt = (refreshed ?? []).find((a) => a.id === redeemData.appointmentId);
+        if (startedAppt) {
+          // Same as checking in any other client — open the normal detail
+          // view, not the checkout/payment screen. Staff opens checkout
+          // separately, later, once the service is actually done.
+          setSelectedAppointment(startedAppt);
+          setShowCancelFlow(false);
+          if (startedAppt.status === "confirmed") setShowCheckout(true);
+        }
+        return;
+      }
+
       // Try to find the appointment in the already-loaded list first (fast path)
       const loaded = (appointments ?? []) as AppointmentWithDetails[];
       const found = loaded.find((a) => a.id === data.appointmentId);
@@ -1276,7 +1319,7 @@ export default function Calendar() {
       toast({ title: t.qrError, description: t.qrErrorDesc, variant: "destructive" });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appointments, toast]);
+  }, [appointments, toast, queryClient]);
 
   useEffect(() => {
     const INTER_KEY_MAX_MS = 50;   // scanner chars arrive < 50 ms apart
@@ -1474,14 +1517,26 @@ export default function Calendar() {
   useEffect(() => {
     if (!(window as any).CERTXA_NATIVE_APP) return;
     const handler = (e: Event) => {
-      const { appointmentId, method, amount } = (e as CustomEvent).detail ?? {};
+      const detail = (e as CustomEvent).detail ?? {};
+      const { appointmentId, method, amount } = detail;
       if (!appointmentId) return;
+      // The Checkout sheet (open for this appointment) records the payment as a tender
+      // and completes the ticket with the full tip/discount/total. Deferred one tick so
+      // the sheet's own listener has already flagged the event.
+      setTimeout(() => {
+        if (detail.handledBySheet) return;
+        // A paymentIntentId means the server already recorded the full amount (tip,
+        // discount, cash + card) at capture — don't overwrite it with the card portion.
+        completeFromNative(appointmentId, method, amount, !!detail.paymentIntentId);
+      }, 0);
+    };
+    const completeFromNative = (appointmentId: number, method: string, amount: number, serverRecorded: boolean) => {
       updateAppointment.mutate(
         {
           id: appointmentId,
           status: "completed",
           paymentMethod: method || 'cash',
-          totalPaid: String(amount || 0),
+          ...(serverRecorded ? {} : { totalPaid: String(amount || 0) }),
         } as any,
         { onSuccess: () => {
             setSelectedAppointment(null);
@@ -1635,63 +1690,169 @@ export default function Calendar() {
     );
   }
 
+  // Shared tile list for both the icon sidebar and the header's "menu" popup
+  // — same items, same handlers, same labels, so the two never drift apart.
+  const menuNavLabel = (item: SidebarItem) => {
+    const key = item.kind === "action" ? item.action : item.to;
+    switch (key) {
+      case "/calendar":       return t.navCalendar;
+      case "quick-checkout":  return t.navQuickLists;
+      case "client-lookup":   return t.navClients;
+      case "redeem-voucher":  return t.navRedeemVoucher;
+      case "open-register":   return t.navPos;
+      case "/reports":        return t.navReports;
+      case "cash-drawer":     return t.navCashDrawer;
+      case "day-close":       return t.navDayClose;
+      default:                return item.label;
+    }
+  };
+  const sidebarTiles = calendarSidebarItems.filter((item) => {
+    if (item.kind === "action" && item.action === "cash-drawer") return false;
+    if (!posFeatureEnabled && item.kind === "action" && (item.action === "open-register" || item.action === "day-close")) return false;
+    // The menu popup doesn't need a Calendar tile — it's opened from the
+    // calendar page itself.
+    if (item.kind === "link" && item.to === "/calendar") return false;
+    return true;
+  }).map((item) => {
+    // "Reports" is repurposed as "Manager" in this popup — a PIN-gated
+    // shortcut to /salon-dashboard rather than a direct link to /reports.
+    if (item.kind === "link" && item.to === "/reports") {
+      return {
+        key: "/reports",
+        testId: "button-menu-tile-manager",
+        label: t.navManager,
+        icon: KeyRound,
+        isActive: false,
+        onClick: () => setShowManagerPinSheet(true),
+      };
+    }
+    return {
+      key: item.kind === "action" ? item.action : item.to,
+      testId: `button-menu-tile-${(item.kind === "action" ? item.action : item.to).replace(/[^a-z0-9]+/gi, "-")}`,
+      label: menuNavLabel(item),
+      icon: item.icon,
+      isActive: item.kind === "link" && location.pathname === item.to,
+      onClick: () => {
+        if (item.kind === "link") {
+          navigate(item.to);
+          return;
+        }
+        if (item.action === "open-register") {
+          navigate("/pos");
+        } else if (item.action === "day-close") {
+          setShowDayClose(true);
+        } else if (item.action === "client-lookup") {
+          setShowClientLookupSheet(true);
+        } else if (item.action === "redeem-voucher") {
+          setShowVoucherRedeemSheet(true);
+        } else {
+          if (!openDrawerSession) {
+            setShowOpenRegister(true);
+          } else {
+            setListView("menu");
+            setQuickCheckoutOpen(true);
+          }
+        }
+      },
+    };
+  });
+  const menuTiles = [
+    {
+      key: "book",
+      testId: "button-create-new-appointment",
+      label: t.book,
+      icon: CalendarPlus,
+      isActive: false,
+      onClick: () => {
+        setLookupMode(false);
+        setSelectedAppointment(null);
+        setShowCancelFlow(false);
+        setShowCheckout(false);
+        setShowClientLookup(true);
+      },
+    },
+    {
+      key: "lookup",
+      testId: "button-lookup-appointment",
+      label: t.lookUp,
+      icon: Search,
+      isActive: false,
+      onClick: () => {
+        setLookupMode(true);
+        setSelectedAppointment(null);
+        setShowCancelFlow(false);
+        setShowCheckout(false);
+        setShowClientLookup(true);
+      },
+    },
+    ...sidebarTiles,
+    ...(timeclockEnabled ? [{
+      key: "timeclock",
+      testId: "button-timeclock-inout",
+      label: t.navInOut,
+      icon: Clock,
+      isActive: false,
+      onClick: () => setShowTimeclockSheet(true),
+    }] : []),
+  ];
+
   return (
     <div className="dark cx-cal text-foreground h-app w-full overflow-hidden flex flex-col bg-background">
 
       {/* ── Desktop header ── */}
       {!isMobile && (
-      <div className="flex items-center h-[56px] px-4 border-b bg-white gap-0 flex-shrink-0" data-testid="calendar-header">
+      <div className="flex items-center h-[76px] px-5 border-b bg-white gap-0 flex-shrink-0" data-testid="calendar-header">
 
         {/* LEFT: View toggle + All Staff dropdown */}
         {/* View toggle — desktop only, moved to far left */}
-        <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5 gap-0 flex-shrink-0 mr-3">
+        <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-1 gap-0.5 flex-shrink-0 mr-4">
           <button
             onClick={() => setCalView("grid")}
             aria-label="Grid view"
             className={cn(
-              "flex items-center justify-center w-8 h-8 rounded-md transition-all",
+              "flex items-center justify-center w-10 h-10 rounded-md transition-all",
               calView === "grid"
                 ? "bg-white shadow-sm text-teal-600"
                 : "text-slate-400 hover:text-slate-600"
             )}
           >
-            <CalendarDays className="w-4 h-4" />
+            <CalendarDays className="w-5 h-5" />
           </button>
           <button
             onClick={() => setCalView("agenda")}
             aria-label="Agenda view"
             className={cn(
-              "flex items-center justify-center w-8 h-8 rounded-md transition-all",
+              "flex items-center justify-center w-10 h-10 rounded-md transition-all",
               calView === "agenda"
                 ? "bg-white shadow-sm text-teal-600"
                 : "text-slate-400 hover:text-slate-600"
             )}
           >
-            <LayoutList className="w-4 h-4" />
+            <LayoutList className="w-5 h-5" />
           </button>
           <button
             onClick={() => setCalView("resources")}
             aria-label="Resources view"
             title="Resources view — one column per station / chair"
             className={cn(
-              "flex items-center justify-center w-8 h-8 rounded-md transition-all",
+              "flex items-center justify-center w-10 h-10 rounded-md transition-all",
               calView === "resources"
                 ? "bg-white shadow-sm text-teal-600"
                 : "text-slate-400 hover:text-slate-600"
             )}
           >
-            <Layers className="w-4 h-4" />
+            <Layers className="w-5 h-5" />
           </button>
         </div>
 
         {!isStaffUser && calView === "grid" && (
-          <div className="flex-shrink-0 mr-4">
+          <div className="hidden min-[1400px]:block flex-shrink-0 mr-5">
             <Select
               value={selectedStaffId === "all" ? "all" : String(selectedStaffId)}
               onValueChange={(val) => setSelectedStaffId(val === "all" ? "all" : Number(val))}
             >
-              <SelectTrigger className="h-9 w-[150px] border-slate-200 bg-slate-50 text-sm rounded-full pl-3" data-testid="select-staff-filter">
-                <Users className="w-3.5 h-3.5 mr-1.5 text-slate-400 flex-shrink-0" />
+              <SelectTrigger className="h-11 w-[170px] border-slate-200 bg-slate-50 text-base rounded-full pl-4" data-testid="select-staff-filter">
+                <Users className="w-4 h-4 mr-1.5 text-slate-400 flex-shrink-0" />
                 <SelectValue placeholder="All Staff" />
               </SelectTrigger>
               <SelectContent>
@@ -1709,7 +1870,7 @@ export default function Calendar() {
           {!isToday && (
             <button
               onClick={goToday}
-              className="mr-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-500 text-white hover:bg-teal-600 transition-colors flex-shrink-0"
+              className="mr-2 px-3.5 py-1.5 rounded-full text-sm font-semibold bg-teal-500 text-white hover:bg-teal-600 transition-colors flex-shrink-0"
               data-testid="button-go-today"
             >
               Today
@@ -1718,13 +1879,13 @@ export default function Calendar() {
           <button
             onClick={goPrev}
             disabled={isToday}
-            className="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors flex-shrink-0 disabled:opacity-25 disabled:cursor-not-allowed disabled:pointer-events-none"
+            className="w-10 h-10 flex items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors flex-shrink-0 disabled:opacity-25 disabled:cursor-not-allowed disabled:pointer-events-none"
             data-testid="button-prev-day"
           >
-            <ChevronLeft className="w-4 h-4" />
+            <ChevronLeft className="w-5 h-5" />
           </button>
           <button
-            className="text-[18px] font-bold text-slate-800 whitespace-nowrap px-2 hover:text-teal-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed disabled:pointer-events-none"
+            className="text-[22px] font-bold text-slate-800 whitespace-nowrap px-3 hover:text-teal-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed disabled:pointer-events-none"
             onClick={() => { if (!isDateLocked) setShowDatePicker(true); }}
             disabled={isDateLocked}
             title={isDateLocked ? "Settle unpaid appointments before changing dates" : undefined}
@@ -1732,22 +1893,22 @@ export default function Calendar() {
           >
             {formatStoreDate(currentDate, "EEE d MMM, yyyy")}
             {isDateLocked && (
-              <svg className="inline-block ml-1.5 w-3.5 h-3.5 text-amber-500 align-middle" viewBox="0 0 20 20" fill="currentColor">
+              <svg className="inline-block ml-2 w-4 h-4 text-amber-500 align-middle" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
               </svg>
             )}
           </button>
           <button
             onClick={goNext}
-            className="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors flex-shrink-0"
+            className="w-10 h-10 flex items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors flex-shrink-0"
             data-testid="button-next-day"
           >
-            <ChevronRight className="w-4 h-4" />
+            <ChevronRight className="w-5 h-5" />
           </button>
 
           {/* Week day chips — inline after date nav; tapping only moves highlight, not week anchor.
-              Hidden below ~1180px (10" tablets) where the row would push header controls off-screen. */}
-          <div className="hidden min-[1180px]:flex items-center gap-0.5 ml-3">
+              Hidden below ~1280px (10" tablets) where the row would push header controls off-screen. */}
+          <div className="hidden min-[1280px]:flex items-center gap-1 ml-4">
             {weekDayLabels.map((wd) => {
               const isSelected = isSameStoreDay(wd.date, currentDate);
               const chipLocked = isDateLocked && !isSelected;
@@ -1759,7 +1920,7 @@ export default function Calendar() {
                   title={chipLocked ? "Settle unpaid appointments before changing dates" : undefined}
                   data-testid={`button-weekday-${wd.label.toLowerCase()}`}
                   className={cn(
-                    "flex flex-col items-center justify-center w-[38px] h-[38px] rounded-lg transition-all leading-none gap-[2px]",
+                    "flex flex-col items-center justify-center w-[46px] h-[46px] rounded-lg transition-all leading-none gap-[3px]",
                     isSelected
                       ? "bg-teal-500 text-white shadow-sm"
                       : chipLocked
@@ -1767,10 +1928,10 @@ export default function Calendar() {
                         : "text-slate-600 bg-slate-100 hover:bg-slate-200"
                   )}
                 >
-                  <span className={cn("text-[10px]", isSelected ? "font-semibold" : "font-medium")}>
+                  <span className={cn("text-[11px]", isSelected ? "font-semibold" : "font-medium")}>
                     {wd.label}
                   </span>
-                  <span className={cn("text-[11px] font-bold leading-none")}>
+                  <span className={cn("text-sm font-bold leading-none")}>
                     {formatStoreDate(wd.date, "d")}
                   </span>
                 </button>
@@ -1780,74 +1941,62 @@ export default function Calendar() {
         </div>
 
         {/* RIGHT: TURN | view toggle | Certxa+CX as new-appt trigger */}
-        <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="flex items-center gap-4 flex-shrink-0">
 
           {/* Silent background-sync indicator — only visible during background refetches, never on initial load */}
           {isFetchingAppointments && !isLoadingAppointments && (
-            <Loader2 className="w-3 h-3 text-slate-300 animate-spin flex-shrink-0" aria-label="Syncing calendar…" />
+            <Loader2 className="w-4 h-4 text-slate-300 animate-spin flex-shrink-0" aria-label="Syncing calendar…" />
           )}
 
           {/* Offline status sits immediately before the QR scanner indicator. */}
           <OfflineStatusBanner inline />
 
+          {/* Checked-in clients waiting to be served — same footprint as a week-day chip; opens the Arrived list */}
+          <button
+            type="button"
+            onClick={() => { setListView("arrived"); setQuickCheckoutOpen(true); }}
+            data-testid="button-waiting-checkins"
+            aria-label={`${waitingCheckinCount} ${t.waiting}`}
+            title={`${waitingCheckinCount} ${t.waiting}`}
+            className={cn(
+              "relative flex flex-col items-center justify-center w-[46px] h-[46px] flex-shrink-0 rounded-lg bg-slate-100 leading-none gap-[3px] select-none transition-colors hover:bg-slate-200 active:scale-95"
+            )}
+          >
+            <span
+              aria-hidden
+              className={cn("absolute bottom-0 left-2 right-2 h-[3px] rounded-full", waitingCheckinCount > 0 ? "bg-teal-500" : "bg-slate-300")}
+            />
+            <span className={cn("text-[20px] font-black tabular-nums", waitingCheckinCount > 0 ? "text-slate-800" : "text-slate-400")}>
+              {waitingCheckinCount}
+            </span>
+            <span className="text-[10px] font-medium text-slate-500 capitalize">{t.waiting}</span>
+          </button>
+
           {/* QR scanner ready indicator — pulses green when a scan is detected */}
           <div
             title="QR scanner active — scan a kiosk ticket to open booking"
             className={cn(
-              "flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold flex-shrink-0 transition-all duration-300 select-none",
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold flex-shrink-0 transition-all duration-300 select-none",
               qrFlash
                 ? "bg-green-500 text-white scale-110"
                 : "bg-slate-100 text-slate-400"
             )}
           >
-            <QrCode className="w-3 h-3" />
+            <QrCode className="w-4 h-4" />
             <span className="hidden lg:inline">{qrFlash ? "Scanned!" : "Scan"}</span>
           </div>
 
-          {/* Thermal printer connect button */}
-          {thermalPrinter.isAvailable && (
-            <button
-              onClick={thermalPrinter.isConnected ? thermalPrinter.disconnect : thermalPrinter.connect}
-              title={
-                thermalPrinter.isConnected
-                  ? `${thermalPrinter.deviceName ?? "Printer"} connected — click to disconnect`
-                  : thermalPrinter.status === "error"
-                  ? `Error: ${thermalPrinter.error} — click to retry`
-                  : "Connect Bluetooth thermal printer"
-              }
-              className={cn(
-                "flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold flex-shrink-0 transition-all duration-300 select-none",
-                thermalPrinter.isConnected
-                  ? "bg-green-100 text-green-700 border border-green-200"
-                  : thermalPrinter.status === "connecting"
-                  ? "bg-amber-100 text-amber-600 animate-pulse"
-                  : thermalPrinter.status === "error"
-                  ? "bg-red-100 text-red-600"
-                  : "bg-slate-100 text-slate-400 hover:bg-slate-200"
-              )}
-            >
-              <Printer className="w-3 h-3" />
-              <span className="hidden lg:inline">
-                {thermalPrinter.isConnected
-                  ? (thermalPrinter.deviceName?.split(" ")[0] ?? "Printer")
-                  : thermalPrinter.status === "connecting"
-                  ? "Connecting…"
-                  : "Printer"}
-              </span>
-            </button>
-          )}
-
           {/* Certxa branding — doubles as new-appointment trigger */}
-          <div className="relative pl-3 border-l border-slate-200">
+          <div className="relative pl-4 border-l border-slate-200">
             <button
               onClick={() => setShowNewApptMenu(v => !v)}
               data-testid="button-new-appointment"
               aria-label="New appointment"
-              className="flex items-center gap-2 hover:opacity-75 active:scale-95 transition-all duration-100"
+              className="flex items-center gap-2.5 hover:opacity-75 active:scale-95 transition-all duration-100"
             >
               <div className="hidden min-[1100px]:block text-right leading-none">
-                <div className="text-[16px] font-black text-teal-500 tracking-tight">Certxa</div>
-                <div className="text-[10px] font-semibold text-slate-400 tracking-wide">SalonOS</div>
+                <div className="text-[19px] font-black text-teal-500 tracking-tight">Certxa</div>
+                <div className="text-xs font-semibold text-slate-400 tracking-wide">SalonOS</div>
               </div>
               {/* Animated light-sweep ring around CX avatar */}
               <div className="relative flex-shrink-0">
@@ -1860,7 +2009,7 @@ export default function Calendar() {
                     animationDuration: "2.4s",
                   }}
                 />
-                <div className="relative w-9 h-9 rounded-full bg-teal-500 flex items-center justify-center text-white font-black text-sm shadow-sm z-10">
+                <div className="relative w-11 h-11 rounded-full bg-teal-500 flex items-center justify-center text-white font-black text-base shadow-sm z-10">
                   CX
                 </div>
               </div>
@@ -1868,57 +2017,132 @@ export default function Calendar() {
             {showNewApptMenu && (
               <>
                 <div
-                  className="fixed inset-0 z-40"
+                  className="fixed inset-0 z-40 bg-black/40"
                   onClick={() => setShowNewApptMenu(false)}
                 />
                 <div
-                  className="absolute right-0 top-full mt-2 z-50 bg-card border border-border rounded-lg shadow-xl overflow-hidden"
+                  className="fixed left-1/2 top-24 -translate-x-1/2 z-50 w-[min(94vw,560px)] bg-white border border-border rounded-2xl shadow-2xl overflow-hidden"
                   onClick={e => e.stopPropagation()}
                   data-testid="popover-new-appointment-menu"
                 >
-                  <div className="px-3 py-2 border-b bg-muted/50">
-                    <span className="text-xs font-semibold text-foreground">{t.appointment}</span>
+                  <div className="flex items-center justify-between gap-3 px-5 py-4 border-b bg-muted/50">
+                    <span className="text-base font-semibold text-foreground">{t.appointment}</span>
+                    <div className="flex items-center gap-2">
+                      {/* Thermal printer connect button */}
+                      {thermalPrinter.isAvailable && (
+                        <button
+                          onClick={thermalPrinter.isConnected ? thermalPrinter.disconnect : thermalPrinter.connect}
+                          title={
+                            thermalPrinter.isConnected
+                              ? `${thermalPrinter.deviceName ?? "Printer"} connected — click to disconnect`
+                              : thermalPrinter.status === "error"
+                              ? `Error: ${thermalPrinter.error} — click to retry`
+                              : "Connect Bluetooth thermal printer"
+                          }
+                          className={cn(
+                            "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold flex-shrink-0 transition-all duration-300 select-none",
+                            thermalPrinter.isConnected
+                              ? "bg-green-100 text-green-700 border border-green-200"
+                              : thermalPrinter.status === "connecting"
+                              ? "bg-amber-100 text-amber-600 animate-pulse"
+                              : thermalPrinter.status === "error"
+                              ? "bg-red-100 text-red-600"
+                              : "bg-slate-100 text-slate-400 hover:bg-slate-200"
+                          )}
+                        >
+                          <Printer className="w-4 h-4" />
+                          <span className="hidden lg:inline">
+                            {thermalPrinter.isConnected
+                              ? (thermalPrinter.deviceName?.split(" ")[0] ?? "Printer")
+                              : thermalPrinter.status === "connecting"
+                              ? "Connecting…"
+                              : "Printer"}
+                          </span>
+                        </button>
+                      )}
+
+                      {/* Which POS station this tablet is paired to — only shown once a store
+                          has 2+ checkout stations. Tap to reset the pairing on this device
+                          (e.g. before physically moving it to a different station) rather
+                          than getting stuck with a stale/wrong pairing later. */}
+                      {isMultiStation && currentRegisterName && (
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setShowResetRegisterConfirm((v) => !v)}
+                            title="Which station this tablet is paired to — tap to reset"
+                            data-testid="button-register-badge"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold flex-shrink-0 transition-all duration-300 select-none bg-slate-100 text-slate-500 hover:bg-slate-200"
+                          >
+                            <CreditCard className="w-4 h-4" />
+                            <span className="hidden lg:inline">{currentRegisterName}</span>
+                          </button>
+                          {showResetRegisterConfirm && (
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={() => setShowResetRegisterConfirm(false)} />
+                              <div
+                                className="absolute right-0 top-full mt-2 z-50 w-64 bg-white border border-slate-200 rounded-lg shadow-xl p-3 space-y-2"
+                                onClick={(e) => e.stopPropagation()}
+                                data-testid="popover-reset-register"
+                              >
+                                <p className="text-xs text-slate-600">
+                                  This tablet is paired as <strong>{currentRegisterName}</strong>. Reset if it's being moved to a different station — you'll be asked to pick again.
+                                </p>
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowResetRegisterConfirm(false)}
+                                    className="flex-1 px-3 py-1.5 rounded-md border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleResetRegister}
+                                    data-testid="button-confirm-reset-register"
+                                    className="flex-1 px-3 py-1.5 rounded-md bg-slate-800 text-white text-xs font-semibold hover:bg-slate-700"
+                                  >
+                                    Reset pairing
+                                  </button>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setShowNewApptMenu(false)}
+                        aria-label="Close"
+                        data-testid="button-close-appointment-menu"
+                        className="text-slate-400 hover:text-slate-600 transition-colors"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="p-2 flex flex-col gap-2 min-w-[200px]">
-                  <button
-                    className="w-full min-h-[56px] px-3 py-3 rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
-                    onClick={() => {
-                      setShowNewApptMenu(false);
-                      setLookupMode(false);
-                      setSelectedAppointment(null);
-                      setShowCancelFlow(false);
-                      setShowCheckout(false);
-                      setShowClientLookup(true);
-                    }}
-                    data-testid="button-create-new-appointment"
-                  >
-                    <CalendarPlus className="w-4 h-4 shrink-0" />
-                    <span>{t.book}</span>
-                  </button>
-                  <button
-                    className="w-full min-h-[56px] px-3 py-3 rounded-md bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
-                    onClick={() => {
-                      setShowNewApptMenu(false);
-                      setLookupMode(true);
-                      setSelectedAppointment(null);
-                      setShowCancelFlow(false);
-                      setShowCheckout(false);
-                      setShowClientLookup(true);
-                    }}
-                    data-testid="button-lookup-appointment"
-                  >
-                    <Search className="w-4 h-4 shrink-0" />
-                    <span>{t.lookUp}</span>
-                  </button>
-                  <button
-                    className="w-full min-h-[56px] px-3 py-3 rounded-md border border-border text-sm font-semibold hover:bg-muted transition-colors flex items-center justify-center gap-2"
-                    onClick={() => {
-                      setShowNewApptMenu(false);
-                    }}
-                    data-testid="button-cancel-new-appointment-menu"
-                  >
-                    <span>{t.cancel}</span>
-                  </button>
+                  <div className="p-4 grid grid-cols-4 gap-3">
+                    {menuTiles.map((tile) => (
+                      <button
+                        key={tile.key}
+                        type="button"
+                        onClick={() => {
+                          setShowNewApptMenu(false);
+                          tile.onClick();
+                        }}
+                        data-testid={tile.testId}
+                        className={cn(
+                          "flex flex-col items-center justify-center rounded-xl py-5 gap-2 border border-transparent transition-all duration-150 cursor-pointer",
+                          tile.isActive
+                            ? "text-teal-600 bg-teal-50 border-teal-100"
+                            : "text-slate-500 hover:text-teal-600 hover:bg-teal-50 hover:border-teal-100"
+                        )}
+                      >
+                        <tile.icon className="h-8 w-8" />
+                        <span className="text-xs font-medium leading-tight text-center">{tile.label}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
               </>
@@ -1941,104 +2165,6 @@ export default function Calendar() {
       )}
 
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Icon sidebar — always icon + label, teal active */}
-        <nav
-          className="hidden sm:flex flex-shrink-0 w-[72px] border-r border-slate-100 bg-white flex-col items-center py-3 gap-1 z-30"
-          data-testid="calendar-nav-drawer"
-        >
-          {/* CX logo mark */}
-          <div className="w-10 h-10 rounded-xl bg-teal-500 flex items-center justify-center text-white font-black text-sm mb-3 flex-shrink-0">
-            CX
-          </div>
-          {(() => {
-            const navLabel = (item: SidebarItem) => {
-              const key = item.kind === "action" ? item.action : item.to;
-              switch (key) {
-                case "/calendar":       return t.navCalendar;
-                case "quick-checkout":  return t.navQuickLists;
-                case "client-lookup":   return t.navClients;
-                case "open-register":   return t.navPos;
-                case "/reports":        return t.navReports;
-                case "cash-drawer":     return t.navCashDrawer;
-                case "day-close":       return t.navDayClose;
-                default:                return item.label;
-              }
-            };
-            return (<>
-          {calendarSidebarItems.filter((item) => {
-            if (item.kind === "action" && item.action === "cash-drawer") return false;
-            if (!posFeatureEnabled && item.kind === "action" && (item.action === "open-register" || item.action === "day-close")) return false;
-            return true;
-          }).map((item, idx) => {
-            const baseClasses = "w-14 flex flex-col items-center justify-center rounded-xl py-2.5 gap-1 border border-transparent transition-all duration-150 cursor-pointer";
-            if (item.kind === "action") {
-              const isOpenRegister = item.action === "open-register";
-              const isAppointments = item.action === "quick-checkout";
-              return (
-                <button
-                  key={`action-${idx}`}
-                  type="button"
-                  onClick={() => {
-                    if (isOpenRegister) {
-                      setListView("checkout");
-                      setQuickCheckoutOpen(true);
-                    } else if (item.action === "day-close") {
-                      setShowDayClose(true);
-                    } else if (item.action === "client-lookup") {
-                      setShowClientLookupSheet(true);
-                    } else {
-                      if (!openDrawerSession) {
-                        setShowOpenRegister(true);
-                      } else {
-                        setListView("menu");
-                        setQuickCheckoutOpen(true);
-                      }
-                    }
-                  }}
-                  data-testid={isOpenRegister ? "button-open-register" : item.action === "day-close" ? "button-day-close" : "button-quick-checkout"}
-                  className={cn(baseClasses, "text-slate-400 hover:text-teal-600 hover:bg-teal-50 hover:border-teal-100")}
-                >
-                  <item.icon className="h-5 w-5" />
-                  <span className="text-[10px] font-medium leading-tight text-center">{navLabel(item)}</span>
-                </button>
-              );
-            }
-            const isActive = location.pathname === item.to;
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={cn(
-                  baseClasses,
-                  isActive
-                    ? "text-teal-600 bg-teal-50 border-teal-100"
-                    : "text-slate-400 hover:text-teal-600 hover:bg-teal-50 hover:border-teal-100"
-                )}
-              >
-                <item.icon className="h-5 w-5" />
-                <span className="text-[10px] font-medium leading-tight text-center">{navLabel(item)}</span>
-              </Link>
-            );
-          })}
-            </>);
-          })()}
-
-          <OfflineSnapshotHealth />
-
-          {/* Timeclock In/Out button — only shown when Timeclock feature is enabled */}
-          {timeclockEnabled && (
-            <button
-              type="button"
-              onClick={() => setShowTimeclockSheet(true)}
-              className="w-14 flex flex-col items-center justify-center rounded-xl py-2.5 gap-1 border border-transparent transition-all duration-150 cursor-pointer text-slate-400 hover:text-teal-600 hover:bg-teal-50 hover:border-teal-100 mt-auto"
-              data-testid="button-timeclock-inout"
-            >
-              <Clock className="h-5 w-5" />
-              <span className="text-[10px] font-medium leading-tight text-center">{t.navInOut}</span>
-            </button>
-          )}
-        </nav>
-
         <div className="flex-1 overflow-hidden relative">
           {showCashDrawer && (
             <div
@@ -2048,6 +2174,7 @@ export default function Calendar() {
               <CashDrawerPanel
                 embedded
                 onClose={() => setShowCashDrawer(false)}
+                onOpenDrawer={() => openCashDrawerHardware({ onThermalPrint: thermalPrinter.isConnected ? thermalPrinter.print : undefined })}
               />
             </div>
           )}
@@ -2327,7 +2454,9 @@ export default function Calendar() {
                 </div>
               )}
               <div className="w-[90px] flex-shrink-0 bg-white z-30 sticky left-0">
-                <div className="h-[68px] border-b sticky top-0 bg-white z-40" />
+                <div className="h-[68px] border-b sticky top-0 bg-white z-40 flex items-center justify-center">
+                  <OfflineSnapshotHealth />
+                </div>
                 <div className="relative" style={{ height: `${TOTAL_HOURS * HOUR_HEIGHT}px` }}>
                   {Array.from({ length: TOTAL_HOURS * 4 + 1 }, (_, i) => {
                     const totalMins = i * 15;
@@ -2383,10 +2512,9 @@ export default function Calendar() {
                     return (
                       <div
                         key={member.id}
-                        className="flex-none"
                         style={{
-                          width: `${STAFF_CALENDAR_COLUMN_WIDTH}px`,
-                          minWidth: `${STAFF_CALENDAR_COLUMN_WIDTH}px`,
+                          flex: "1 1 0%",
+                          minWidth: `${STAFF_CALENDAR_MIN_COLUMN_WIDTH}px`,
                           maxWidth: `${STAFF_CALENDAR_COLUMN_WIDTH}px`,
                         }}
                       >
@@ -3207,7 +3335,7 @@ export default function Calendar() {
                       if (row.kind === "walkin") {
                         const w = row.walkin;
                         const customerFirst = (w.clientName || "").trim().split(/\s+/)[0] || t.walkIn;
-                        const checkedInTime = format(new Date(w.createdAt), "h:mm a");
+                        const checkedInTime = formatInTz(w.createdAt, timezone, "h:mm a");
                         return (
                           <button
                             key={`walkin-${w.id}`}
@@ -3221,11 +3349,11 @@ export default function Calendar() {
                           >
                             <div className="flex-1 min-w-0">
                               <div className="font-semibold text-sm truncate">{customerFirst}</div>
-                              <div className="text-[11px] text-muted-foreground truncate">{t.walkIn} · not yet booked</div>
+                              <div className="text-[11px] text-muted-foreground truncate">{t.walkIn} · @ {checkedInTime}</div>
                             </div>
                             <div className="flex flex-col items-end gap-1 flex-shrink-0">
                               <span className="text-[10px] font-semibold text-violet-600 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded">
-                                {checkedInTime}
+                                <WaitingTimer since={w.createdAt} unit={t.minShort} />
                               </span>
                             </div>
                           </button>
@@ -3237,9 +3365,7 @@ export default function Calendar() {
                       const staffColor = staffMember ? getStaffColor(staffMember) : "#94a3b8";
                       const customerName = ((apt as any).customer?.fullName || apt.customer?.name || apt.customerName || apt.clientName || "").trim() || t.walkIn;
                       const customerFirst = customerName.split(/\s+/)[0];
-                      const checkedInTime = apt.checkedInAt
-                        ? format(new Date(apt.checkedInAt), "h:mm a")
-                        : formatInTz(apt.date, timezone, "h:mm a");
+                      const checkedInTime = formatInTz(apt.checkedInAt ?? apt.date, timezone, "h:mm a");
                       const serviceName = apt.services?.[0]?.name || "";
 
                       return (
@@ -3260,11 +3386,12 @@ export default function Calendar() {
                             <div className="text-[11px] text-muted-foreground truncate">
                               {staffMember ? staffMember.name : t.walkIn}
                               {serviceName ? ` · ${serviceName}` : ""}
+                              {apt.checkedInAt ? ` · @ ${checkedInTime}` : ""}
                             </div>
                           </div>
                           <div className="flex flex-col items-end gap-1 flex-shrink-0">
                             <span className="text-[10px] font-semibold text-violet-600 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded">
-                              {checkedInTime}
+                              {apt.checkedInAt ? <WaitingTimer since={apt.checkedInAt} unit={t.minShort} /> : checkedInTime}
                             </span>
                           </div>
                         </button>
@@ -3653,6 +3780,7 @@ export default function Calendar() {
 
         {selectedAppointment && showCheckout && (
           <CheckoutPOSPanel
+            onThermalPrint={thermalPrinter.isConnected ? thermalPrinter.print : undefined}
             appointment={selectedAppointment}
             timezone={timezone}
             siblingAppointments={(appointments as AppointmentWithDetails[]) || []}
@@ -3692,12 +3820,40 @@ export default function Calendar() {
           />
         )}
 
+        {showVoucherRedeemSheet && (
+          <VoucherRedeemSheet
+            onClose={() => setShowVoucherRedeemSheet(false)}
+            onRedeemed={async (appointmentId) => {
+              setShowVoucherRedeemSheet(false);
+              await queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
+              const refreshed = await queryClient.fetchQuery<AppointmentWithDetails[]>({ queryKey: ["/api/appointments"] });
+              const startedAppt = (refreshed ?? []).find((a) => a.id === appointmentId);
+              if (startedAppt) {
+                // Same as checking in any other client — open the normal
+                // detail view, not the checkout/payment screen.
+                setSelectedAppointment(startedAppt);
+                setShowCancelFlow(false);
+                if (startedAppt.status === "confirmed") setShowCheckout(true);
+              }
+            }}
+          />
+        )}
+
+        {showManagerPinSheet && (
+          <ManagerPinSheet
+            onClose={() => setShowManagerPinSheet(false)}
+            onSuccess={() => {
+              setShowManagerPinSheet(false);
+              navigate("/salon-dashboard");
+            }}
+          />
+        )}
+
         {showClientLookup && (
           <ChooseClientPanel
             walkInsEnabled={canWalkIn}
             phoneFromFrontdesk={frontdeskPhone}
             onClose={() => {
-              kioskInitiatedLookupRef.current = false;
               setShowClientLookup(false);
               if (pendingSlotBooking) {
                 setPendingSlotBooking(null);
@@ -3705,7 +3861,6 @@ export default function Calendar() {
               }
             }}
             onSelectClient={(clientId) => {
-              kioskInitiatedLookupRef.current = false;
               setShowClientLookup(false);
               if (pendingSlotBooking) {
                 const { staffId, dateStr, timeStr, availableMinutes } = pendingSlotBooking;
@@ -3742,7 +3897,6 @@ export default function Calendar() {
               }
             }}
             onWalkIn={() => {
-              kioskInitiatedLookupRef.current = false;
               setShowClientLookup(false);
               if (pendingSlotBooking || !canWalkIn) {
                 // Walk-ins off, or a client record is required for walk-ins —
@@ -6109,8 +6263,6 @@ function CancelAppointmentPanel({
   );
 }
 
-const TAX_RATE = 0.07;
-
 const PAYMENT_METHODS = [
   { id: "cash", label: "Cash", icon: Banknote },
   { id: "card", label: "Card", icon: CreditCard },
@@ -6140,6 +6292,8 @@ type TenderLine = {
   id: number;
   method: string;
   amount: number;
+  /** Human-readable annotation shown alongside the method (e.g. a redeemed voucher code). */
+  note?: string;
 };
 
 interface GroupTicketShare {
@@ -6157,6 +6311,7 @@ function CheckoutPOSPanel({
   isUpdating,
   siblingAppointments = [],
   onCustomerLinked,
+  onThermalPrint,
 }: {
   appointment: AppointmentWithDetails;
   timezone: string;
@@ -6165,6 +6320,8 @@ function CheckoutPOSPanel({
   isUpdating: boolean;
   siblingAppointments?: AppointmentWithDetails[];
   onCustomerLinked?: (clientId: number, name: string, loyaltyPoints: number) => void;
+  /** Connected thermal receipt printer, if any — prints without needing a tap. */
+  onThermalPrint?: (bytes: Uint8Array) => Promise<void>;
 }) {
   const { pick } = useLanguage();
   const tPOS = {
@@ -6202,7 +6359,6 @@ function CheckoutPOSPanel({
     m2Insert:         pick({ en: "M2 READER — INSERT / TAP CARD",      vi: "ĐẦU ĐỌC M2 — QUẸT / CHẠM THẺ",         es: "LECTOR M2 — INSERTA / ACERCA LA TARJETA", fr: "LECTEUR M2 — INSÉREZ / APPROCHEZ LA CARTE" }),
     noAddons:         pick({ en: "NO ADD-ONS IN CATALOGUE",            vi: "KHÔNG CÓ DỊCH VỤ THÊM",                es: "NO HAY EXTRAS EN EL CATÁLOGO",           fr: "AUCUN SUPPLÉMENT AU CATALOGUE" }),
     noOtherTickets:   pick({ en: "NO OTHER ACTIVE TICKETS",            vi: "KHÔNG CÓ VÉ NÀO KHÁC ĐANG MỞ",         es: "NO HAY OTROS TICKETS ACTIVOS",           fr: "AUCUN AUTRE TICKET ACTIF" }),
-    noSaleDrawer:     pick({ en: "NO SALE — DRAWER OPENED",            vi: "KHÔNG BÁN — ĐÃ MỞ NGĂN KÉO",           es: "SIN VENTA — CAJÓN ABIERTO",              fr: "PAS DE VENTE — TIROIR OUVERT" }),
     nothingDue:       pick({ en: "NOTHING DUE",                        vi: "KHÔNG CÒN NỢ",                        es: "NADA PENDIENTE",                        fr: "RIEN À PAYER" }),
     nothingToUndo:    pick({ en: "NOTHING TO UNDO",                    vi: "KHÔNG CÓ GÌ ĐỂ HOÀN TÁC",             es: "NADA QUE DESHACER",                     fr: "RIEN À ANNULER" }),
     quickCancelled:   pick({ en: "QUICK TICKET CANCELLED",             vi: "ĐÃ HỦY VÉ NHANH",                     es: "TICKET RÁPIDO CANCELADO",               fr: "TICKET RAPIDE ANNULÉ" }),
@@ -6289,7 +6445,13 @@ function CheckoutPOSPanel({
   const { registerId: activeRegisterId } = useActiveRegisterId(storeId ?? undefined);
   // POS layout for this store's business type (nail-salon config today).
   const posLayout = getPosLayout((selectedStore as any)?.category);
-  const posTaxRate = posLayout.taxRate ?? TAX_RATE;
+  // Tax must come from the store's own owner-configured settings, never a
+  // hardcoded/layout-guessed default — a brand-new account has salesTaxRate=0
+  // until the owner explicitly sets a real rate (tax varies by city/state and
+  // is the owner's call, not something the platform should assume).
+  const posTaxRate = (selectedStore as any)?.taxServicesTaxable
+    ? Number((selectedStore as any)?.salesTaxRate ?? 0)
+    : 0;
 
   // Single-line status shown in the POS sheet header — replaces all POS toasts.
   const [posStatus, setPosStatus] = useState<{ text: string; tone: "error" | "success" | "info" } | null>(null);
@@ -6361,11 +6523,16 @@ function CheckoutPOSPanel({
   const [showComplete, setShowComplete] = useState(false);
 
   // Ad-hoc ticket lines added from the POS function buttons (add-ons, retail,
-  // custom charges). Folded into `subtotal` below and shown in the cart panel.
-  const [posExtraItems, setPosExtraItems] = useState<{ id: number; name: string; price: number; kind: string }[]>([]);
+  // custom charges, and — via the category/service grid — real services).
+  // Folded into `subtotal` below and shown in the cart panel. `serviceId`/
+  // `categoryId` are optional traceability fields for "service" lines only
+  // (nothing reads them back yet — see the POS reskin plan's "out of scope"
+  // note on future reporting); every existing consumer of this array reads
+  // only `.name`/`.price`/`.id`, so their presence is purely additive.
+  const [posExtraItems, setPosExtraItems] = useState<{ id: number; name: string; price: number; kind: string; serviceId?: number; categoryId?: number | null }[]>([]);
   const posExtraNextId = useRef(1);
-  const addPosExtraItem = (name: string, price: number, kind = "item") => {
-    setPosExtraItems((prev) => [...prev, { id: posExtraNextId.current++, name, price: Math.max(0, price), kind }]);
+  const addPosExtraItem = (name: string, price: number, kind = "item", meta?: { serviceId?: number; categoryId?: number | null }) => {
+    setPosExtraItems((prev) => [...prev, { id: posExtraNextId.current++, name, price: Math.max(0, price), kind, ...meta }]);
   };
   const removePosExtraItem = (id: number) => setPosExtraItems((prev) => prev.filter((it) => it.id !== id));
 
@@ -6385,7 +6552,15 @@ function CheckoutPOSPanel({
   // cancel, or failure (covers both M2 Reader and Tap to Pay).
   useEffect(() => {
     if (!(window as any).CERTXA_NATIVE_APP) return;
-    const handler = () => setNativeM2Active(false);
+    const handler = (e: Event) => {
+      setNativeM2Active(false);
+      // Show WHY it failed (reader not found, declined, capture failed…) — a plain
+      // "Cancelled" from the staff backing out needs no message.
+      const message = (e as CustomEvent).detail?.message;
+      if (message && message !== "Cancelled") {
+        toast({ title: tSt.cardFailed, description: String(message), variant: "destructive" });
+      }
+    };
     window.addEventListener('certxa_native_m2_error', handler);
     window.addEventListener('certxa_native_payment_failed', handler);
     return () => {
@@ -6395,9 +6570,51 @@ function CheckoutPOSPanel({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const termRef = useRef<any>(null);
   const aptAddons = appointment.appointmentAddons?.map(aa => aa.addon).filter(Boolean) || [];
+  // Per-store sequential display number — falls back to the real (global,
+  // pre-migration) id when ticketNumber hasn't been assigned to this row.
+  const ticketLabel = String((appointment as any).ticketNumber ?? appointment.id).padStart(3, "0");
   const servicePrice = Number(appointment.service?.price || 0);
   const addonTotal = aptAddons.reduce((sum, a) => sum + Number(a!.price), 0);
   const posExtraTotal = posExtraItems.reduce((sum, it) => sum + it.price, 0);
+
+  // Voucher-backed appointment: the deal already paid for the original
+  // booking (its service + the add-ons attached at booking time). The
+  // ticket still shows the full list price as the service value, but only
+  // the NET amount the salon actually receives (after Certxa's platform
+  // commission — appointment.voucherNetAmount) is pre-filled as a "Card"
+  // tender, with the gap recorded as a plain Discount so financial reports
+  // reconcile against real bank deposits. Staff commission is unaffected —
+  // see the pre-discount-basis fix applied to the recompute-from-totalPaid
+  // commission paths (contractorPayouts.ts, payrollRuns.ts, CommissionReport.tsx,
+  // SalonEarningsReport.tsx). Only genuine extras rung up live at this
+  // checkout (posExtraItems) remain payable. Seeds once per appointment;
+  // if staff removes/edits it, it stays as staff left it (this effect never
+  // re-fires for the same appointment id).
+  useEffect(() => {
+    const code = appointment.voucherCode;
+    // Only ever show this as "paid" once the voucher has actually been
+    // redeemed via a physical scan (POST /api/qr/redeem-voucher) — a
+    // merely-linked-but-unredeemed voucher must never pre-fill a paid
+    // tender, or staff could bypass the scan requirement just by opening
+    // this checkout sheet.
+    if (appointment.voucherStatus !== "redeemed" || !appointment.voucherId || !code) return;
+    const coveredAmount = Number(appointment.service?.price || 0)
+      + (appointment.appointmentAddons?.map(aa => aa.addon).filter(Boolean).reduce((s, a: any) => s + Number(a.price || 0), 0) || 0);
+    if (coveredAmount <= 0) return;
+    const netAmount = appointment.voucherNetAmount != null
+      ? Math.min(coveredAmount, Math.max(0, appointment.voucherNetAmount))
+      : coveredAmount;
+    const dealDiscount = Math.round((coveredAmount - netAmount) * 100) / 100;
+    setTenders((prev) => (prev.length === 0
+      ? [{ id: 1, method: "card", amount: Math.round(netAmount * 100) / 100, note: `Voucher ${code}` }]
+      : prev));
+    setNextTenderId((prev) => Math.max(prev, 2));
+    if (dealDiscount > 0) {
+      setDiscountType("dollar");
+      setDiscountValue((prev) => (prev ? prev : String(dealDiscount)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointment.id]);
 
   // ── Group Pay — other active tickets folded into this one for a single payment.
   //    The linked appointments are NOT merged; on finalize each is completed and
@@ -6507,6 +6724,7 @@ function CheckoutPOSPanel({
   const handleApplyTender = (method: string) => {
     const amount = Number(keypadDisplay);
     if (amount <= 0) return;
+    if (method === "cash") kickDrawer();
     setTenders(prev => [...prev, { id: nextTenderId, method, amount }]);
     setNextTenderId(prev => prev + 1);
     setKeypadDisplay("0");
@@ -6529,6 +6747,189 @@ function CheckoutPOSPanel({
       body: JSON.stringify({ type, registerId: activeRegisterId, ...payload }),
     }).catch(() => {});
   };
+
+  // Ticket context sent with every native card request: the app stores it on the
+  // PaymentIntent so the server can record the tip, the discount and the FULL amount
+  // paid (card + anything tendered before it), not just this card charge.
+  const nativePayContext = () => ({
+    tipCents: Math.max(0, Math.round(tip * 100)),
+    discountCents: Math.max(0, Math.round(discount * 100)),
+    priorTenderedCents: Math.max(0, Math.round(totalTendered * 100)),
+  });
+
+  // Native app: the M2 reader / Tap to Pay finished. Add the charge as a tender so this
+  // sheet shows "paid in full" and staff complete the ticket the normal way, which saves
+  // the tip, discount, any redeemed loyalty reward and the total tendered. The handler is
+  // re-created every render (fresh state); a single stable listener calls the latest one.
+  const nativePaidSeen = useRef(new Set<string>());
+  const [paymentNotice, setPaymentNotice] = useState<{ amount: number; last4: string | null; label: string; paymentIntentId: string | null } | null>(null);
+  const [printingReceipt, setPrintingReceipt] = useState(false);
+  const nativeCompleteRef = useRef<(d: any) => void>(() => {});
+  nativeCompleteRef.current = (d: any) => {
+    if (Number(d?.appointmentId) !== appointment.id) return;
+    const key = d?.paymentIntentId ? String(d.paymentIntentId) : "";
+    if (key) {
+      if (nativePaidSeen.current.has(key)) return;
+      nativePaidSeen.current.add(key);
+    }
+    const amount = Number(d?.amount) || 0;
+    if (amount <= 0) return;
+    setNativeM2Active(false);
+    setTenders((prev) => [...prev, { id: (prev[prev.length - 1]?.id ?? 0) + 1, method: d?.method === "tap_to_pay" ? "tap" : "m2", amount }]);
+    showPosStatus(tSt.paymentApproved, "success");
+    setPaymentNotice({ amount, last4: d?.last4 ? String(d.last4) : null, label: d?.method === "tap_to_pay" ? "Tap to Pay" : "Card", paymentIntentId: d?.paymentIntentId ? String(d.paymentIntentId) : null });
+    broadcastToKiosk("kiosk_checkout_payment_result", { success: true, total: amount, last4: d?.last4 });
+  };
+
+  // ── Customer's receipt choice from the /frontdesk "Payment successful" screen ──
+  //  none  → complete the ticket without a receipt
+  //  text  → text the receipt to the number they typed, then complete
+  //  print → ask staff to tap Print Receipt (a browser print window needs a real tap)
+  const [receiptRequest, setReceiptRequest] = useState<null | "print" | "text">(null);
+  const receiptHandledRef = useRef(false);
+  const receiptChoiceRef = useRef<(choice: string, phone: string) => void>(() => {});
+  // Pop the cash drawer through the receipt printer. Silent by design: if a printer and drawer
+  // are set up it opens, otherwise nothing happens and nothing is shown.
+  const kickDrawer = () => { void openCashDrawerHardware({ onThermalPrint }); };
+
+  const receiptItems = () => [
+    ...(appointment.service ? [{ label: appointment.service.name || "Service", price: servicePrice }] : []),
+    ...aptAddons.filter(Boolean).map((a: any) => ({ label: `+ ${a.name}`, price: Number(a.price) })),
+    ...posExtraItems.map((x: any) => ({ label: String(x.name), price: Number(x.price) })),
+  ];
+
+  // Android app: print on the USB/Bluetooth thermal printer through the app. Resolves true only
+  // when the app reports it printed; on failure it shows why (the sheet stays open to retry).
+  // Only builds of the app that announce CERTXA_PRINT_BRIDGE can print; older ones keep the old behavior.
+  const canNativePrint = () => typeof window !== "undefined" && !!(window as any).CERTXA_NATIVE_APP && !!(window as any).CERTXA_PRINT_BRIDGE;
+  const nativePrintReceipt = (): Promise<boolean> => new Promise((resolve) => {
+    const requestId = `pr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    let finished = false;
+    const finish = (ok: boolean, error?: string) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      window.removeEventListener("certxa_native_print_result", onResult);
+      if (!ok) toast({ title: "Receipt did not print", description: error || "The printer did not respond.", variant: "destructive" });
+      resolve(ok);
+    };
+    const onResult = (e: Event) => {
+      const d = (e as CustomEvent).detail ?? {};
+      if (d.requestId === requestId) finish(!!d.ok, d.error || undefined);
+    };
+    const timer = setTimeout(() => finish(false, "The printer did not respond. Check that it is on and connected."), 45_000);
+    window.addEventListener("certxa_native_print_result", onResult);
+    const st: any = selectedStore;
+    (window as any).ReactNativeWebView?.postMessage(JSON.stringify({
+      type: "PRINT_RECEIPT",
+      requestId,
+      paymentIntentId: paymentNotice?.paymentIntentId ?? null,
+      receipt: buildNativeReceiptPayload({
+        storeName: st?.name || "Salon",
+        storeAddress: [st?.address, st?.city, st?.state, st?.zipCode].filter(Boolean).join(", "),
+        storePhone: st?.phone || "",
+        ticketNumber: (appointment as any).ticketNumber ?? appointment.id,
+        dateIso: new Date().toISOString(),
+        clientName: posCustomerName,
+        items: receiptItems(),
+        subtotal, discount, tax, tip, grandTotal,
+        tenders: tenders.map((t) => ({ method: t.method, amount: t.amount })),
+        changeDue,
+      }),
+    }));
+  });
+
+  const sendSmsReceipt = async (phone: string): Promise<boolean> => {
+    try {
+      const items = receiptItems();
+      const r = await fetch("/api/pos/sms-receipt", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone,
+          clientName: posCustomerName,
+          items,
+          discountAmount: discount,
+          taxAmount: tax,
+          tipAmount: tip,
+          grandTotal,
+          paymentMethod: tenders.map((t) => t.method).join(","),
+          last4: paymentNotice?.last4 ?? undefined,
+          appointmentId: appointment.id,
+          customerId: (appointment as any).customerId ?? undefined,
+        }),
+      });
+      return r.ok;
+    } catch { return false; }
+  };
+  receiptChoiceRef.current = (choice, phone) => {
+    if (receiptHandledRef.current) return;
+    if (!(tenders.length > 0 && totalTendered >= grandTotal)) return; // only once paid in full
+    receiptHandledRef.current = true;
+    if (choice === "print" && canNativePrint()) {
+      setReceiptRequest("print");
+      showPosStatus("PRINTING RECEIPT…", "info");
+      broadcastToKiosk("kiosk_checkout_receipt_result", { choice: "print", ok: true });
+      void nativePrintReceipt().then((printed) => {
+        if (printed) handleCompleteTransaction();
+        else { receiptHandledRef.current = false; showPosStatus("COULD NOT PRINT — CHECK THE PRINTER, THEN TAP PRINT RECEIPT", "error"); }
+      });
+    } else if (choice === "print") {
+      setReceiptRequest("print");
+      showPosStatus("PRINTING RECEIPT…", "info");
+      void (async () => {
+        let printed = false;
+        try {
+          if (onThermalPrint) {
+            const now = new Date();
+            await onThermalPrint(buildCheckoutReceipt({
+              storeName: (selectedStore as any)?.name ?? "Salon",
+              clientName: posCustomerName,
+              tenders,
+              grandTotal,
+              changeDue,
+              transactionId: `A-${appointment.id}`,
+              dateStr: formatInTz(now, timezone, "MM/dd/yyyy"),
+              timeStr: formatInTz(now, timezone, "hh:mm aa"),
+            }));
+            printed = true;
+          } else {
+            // A browser print window needs a real tap in most browsers; it may be blocked.
+            printed = handlePrintReceipt() === true;
+          }
+        } catch { printed = false; }
+        broadcastToKiosk("kiosk_checkout_receipt_result", { choice: "print", ok: true });
+        if (printed) {
+          handleCompleteTransaction();
+        } else {
+          // Never lose the receipt: leave the sheet open and let staff tap Print Receipt.
+          receiptHandledRef.current = false;
+          showPosStatus("COULD NOT PRINT AUTOMATICALLY — TAP PRINT RECEIPT", "error");
+        }
+      })();
+    } else if (choice === "text") {
+      setReceiptRequest("text");
+      showPosStatus("TEXTING RECEIPT…", "info");
+      void sendSmsReceipt(phone).then((ok) => {
+        broadcastToKiosk("kiosk_checkout_receipt_result", { choice: "text", ok });
+        if (ok) { showPosStatus("RECEIPT TEXTED", "success"); handleCompleteTransaction(); }
+        else { receiptHandledRef.current = false; setReceiptRequest(null); showPosStatus("COULD NOT TEXT RECEIPT", "error"); }
+      });
+    } else {
+      broadcastToKiosk("kiosk_checkout_receipt_result", { choice: "none", ok: true });
+      handleCompleteTransaction();
+    }
+  };
+  useEffect(() => {
+    if (!(window as any).CERTXA_NATIVE_APP) return;
+    const listener = (e: Event) => {
+      const detail = (e as CustomEvent).detail ?? {};
+      nativeCompleteRef.current(detail);
+      // Tell the page-level handler this checkout sheet owns the payment.
+      if (Number(detail.appointmentId) === appointment.id) detail.handledBySheet = true;
+    };
+    window.addEventListener("certxa_native_payment_complete", listener);
+    return () => window.removeEventListener("certxa_native_payment_complete", listener);
+  }, [appointment.id]);
 
   useEffect(() => {
     if (!storeId) return;
@@ -6608,6 +7009,10 @@ function CheckoutPOSPanel({
           }
           showPosStatus(nm ? tSt.customerLinked(nm.toUpperCase(), !!msg.isNew) : tSt.customerEnrolled, "success");
           posQueryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
+        }
+        // The customer picked Print / Text / No receipt on the front-desk "Payment successful" screen.
+        if (msg.type === "kiosk_checkout_receipt_choice") {
+          receiptChoiceRef.current(String(msg.choice || ""), String(msg.phone || ""));
         }
         // Client tapped "Redeem" on a loyalty reward on the front-desk display →
         // apply it to this ticket as a points redemption (discount). Points are
@@ -6901,7 +7306,7 @@ function CheckoutPOSPanel({
       .map(
         (t) => `
         <tr>
-          <td>${escapeHtml(t.method.toUpperCase())}</td>
+          <td>${escapeHtml(t.method.toUpperCase())}${t.note ? ` <span style="font-weight:normal">(${escapeHtml(t.note)})</span>` : ""}</td>
           <td class="r">$${t.amount.toFixed(2)}</td>
         </tr>`,
       )
@@ -6911,7 +7316,7 @@ function CheckoutPOSPanel({
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Receipt #${appointment.id}</title>
+<title>Receipt #${ticketLabel}</title>
 <style>
   @page { margin: 8mm; }
   * { box-sizing: border-box; }
@@ -6941,13 +7346,14 @@ function CheckoutPOSPanel({
   ${storeAddr ? `<div class="center muted">${storeAddr}</div>` : ""}
   ${storePhone ? `<div class="center muted">${storePhone}</div>` : ""}
   <hr />
-  <div>Receipt #${appointment.id}</div>
+  <div>Receipt #${ticketLabel}</div>
   <div>${printedAt}</div>
   <div>Appt: ${apptDate} ${apptTime}</div>
   <div>Client: ${customerName}</div>
   ${staffName ? `<div>Staff: ${staffName}</div>` : ""}
   <hr />
   <table>${itemsHtml}</table>
+  ${appointment.voucherStatus === "redeemed" ? `<div class="muted">Deal voucher redeemed${appointment.voucherDealTitle ? ` — ${escapeHtml(appointment.voucherDealTitle)}` : ""}</div>` : ""}
   <hr />
   <table>
     <tr><td>Subtotal</td><td class="r">$${subtotal.toFixed(2)}</td></tr>
@@ -6993,14 +7399,25 @@ function CheckoutPOSPanel({
         description: tSt.popupBlockedDesc,
         variant: "destructive",
       });
-      return;
+      return false;
     }
     w.document.open();
     w.document.write(html);
     w.document.close();
+    return true;
   };
 
-  const handlePrintAndComplete = () => {
+  const handlePrintAndComplete = async () => {
+    if (canNativePrint()) {
+      // Print on the thermal printer; only close the sale once it actually printed.
+      // If it fails the sheet stays open so staff can fix the printer and retry (or choose No Receipt).
+      if (printingReceipt) return;
+      setPrintingReceipt(true);
+      const printed = await nativePrintReceipt();
+      setPrintingReceipt(false);
+      if (printed) handleCompleteTransaction();
+      return;
+    }
     handlePrintReceipt();
     handleCompleteTransaction();
   };
@@ -7065,7 +7482,12 @@ function CheckoutPOSPanel({
   //   custom button; the rest are the store's add-ons, each tapping to a cart
   //   line named after it. "Back" doubles as "previous page" while paging.
   const { data: storeAddons } = useAddons();
-  const addonPages = useMemo<PosButton[][]>(() => {
+  // Flat, unpaginated add-on tile list — the source of truth for both the
+  // desktop checkout's always-visible Popular Add-Ons row (passed straight
+  // to ServiceCategoryGrid) and the mobile Actions-tab submenu (chunked into
+  // `addonPages` below, since the phone grid is too small to show them all
+  // at once).
+  const addonItems = useMemo<PosButton[]>(() => {
     const custom: PosButton = {
       id: "dyn.addon.custom",
       label: "+Addon",
@@ -7073,7 +7495,7 @@ function CheckoutPOSPanel({
       band: "#e879b0",
       action: { type: "add-custom-item", payload: { kind: "addon" } },
     };
-    const items: PosButton[] = [
+    return [
       custom,
       ...(storeAddons ?? [])
         .filter((a: any) => a.isActive !== false)
@@ -7085,6 +7507,9 @@ function CheckoutPOSPanel({
           action: { type: "add-addon", payload: { addonId: a.id, addonName: String(a.name), price: Number(a.price) || 0 } },
         })),
     ];
+  }, [storeAddons]);
+  const addonPages = useMemo<PosButton[][]>(() => {
+    const items = addonItems;
     const chunks: PosButton[][] = [];
     for (let i = 0; i < items.length; ) {
       const remaining = items.length - i;
@@ -7108,7 +7533,7 @@ function CheckoutPOSPanel({
       }
     });
     return pages;
-  }, [storeAddons]);
+  }, [addonItems]);
 
   // Keypad value, in dollars (the phase-1 numpad stores cents: "2500" -> 25.00).
   const posKeypadDollars = () => (Number(cartKeypad) || 0) / 100;
@@ -7181,6 +7606,7 @@ function CheckoutPOSPanel({
   const applyMobileTender = (method: string) => {
     const amt = posKeypadDollars();
     if (amt <= 0) { showPosStatus(tSt.enterAmountFirst, "error"); return; }
+    if (method === "cash") kickDrawer();
     setTenders((prev) => [...prev, { id: nextTenderId, method, amount: amt }]);
     setNextTenderId((n) => n + 1);
     clearPosKeypad();
@@ -7216,6 +7642,17 @@ function CheckoutPOSPanel({
       }
 
       // ── Ticket lines ──────────────────────────────────────────────────────
+      case "add-service": {
+        const price = kd > 0 ? kd : Number(p.price) || 0;
+        const name = String(p.serviceName ?? flat);
+        addPosExtraItem(name, price, "service", {
+          serviceId: typeof p.serviceId === "number" ? p.serviceId : undefined,
+          categoryId: p.categoryId == null ? null : Number(p.categoryId),
+        });
+        clearPosKeypad();
+        showPosStatus(tSt.itemAdded(name.toUpperCase(), price.toFixed(2)), "success");
+        return;
+      }
       case "add-addon": {
         const price = kd > 0 ? kd : Number(p.price) || 0;
         const name = String(p.addonName ?? flat);
@@ -7287,8 +7724,7 @@ function CheckoutPOSPanel({
         setShowLinkPicker(true);
         return;
       case "no-sale":
-        // TODO: hardware/native drawer kick.
-        showPosStatus(tSt.noSaleDrawer, "info");
+        kickDrawer();
         return;
 
       case "loyalty-redeem":
@@ -7363,7 +7799,7 @@ function CheckoutPOSPanel({
           <button onClick={onClose} data-testid="pos-mobile-close" style={{ color: "#8e8e93" }}><X className="w-5 h-5" /></button>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold truncate" style={{ color: "#f5f5f7" }}>{posCustomerName}</p>
-            <p className="text-[11px]" style={{ color: "#8e8e93" }}>#{appointment.id} · {tPOS.checkoutHdr}</p>
+            <p className="text-[11px]" style={{ color: "#8e8e93" }}>#{ticketLabel} · {tPOS.checkoutHdr}</p>
           </div>
           <span className="text-lg font-bold" style={{ color: "#34d399" }}>${grandTotal.toFixed(2)}</span>
         </div>
@@ -7515,7 +7951,7 @@ function CheckoutPOSPanel({
                         const cents = Math.round(balanceDue * 100);
                         if (cents <= 0) { showPosStatus(tSt.nothingDue, "error"); return; }
                         setNativeM2Active(true); setTermError("");
-                        (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "M2_PAY", appointmentId: appointment?.id ?? 0, amountCents: cents, clientName: posCustomerName }));
+                        (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "M2_PAY", appointmentId: appointment?.id ?? 0, amountCents: cents, clientName: posCustomerName, ...nativePayContext() }));
                         showPosStatus(tSt.m2Insert, "info");
                       }}
                       disabled={nativeM2Active || balanceDue <= 0}
@@ -7532,7 +7968,7 @@ function CheckoutPOSPanel({
                         const cents = Math.round(balanceDue * 100);
                         if (cents <= 0) { showPosStatus(tSt.nothingDue, "error"); return; }
                         setNativeM2Active(true); setTermError("");
-                        (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "TAP_TO_PAY", appointmentId: appointment?.id ?? 0, amountCents: cents, clientName: posCustomerName }));
+                        (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "TAP_TO_PAY", appointmentId: appointment?.id ?? 0, amountCents: cents, clientName: posCustomerName, ...nativePayContext() }));
                         showPosStatus(tSt.tapPrompt, "info");
                       }}
                       disabled={nativeM2Active || balanceDue <= 0}
@@ -7598,7 +8034,7 @@ function CheckoutPOSPanel({
                     const Icon = getMethodIcon(t.method);
                     return (
                       <div key={t.id} className="flex items-center justify-between rounded-md p-2.5" style={{ backgroundColor: "#242426", border: "1px solid #3a3a3c" }}>
-                        <span className="flex items-center gap-2 text-sm capitalize" style={{ color: "#e5e5e7" }}><Icon className="w-4 h-4" style={{ color: "#8e8e93" }} />{t.method}</span>
+                        <span className="flex items-center gap-2 text-sm capitalize" style={{ color: "#e5e5e7" }}><Icon className="w-4 h-4" style={{ color: "#8e8e93" }} />{t.method === "m2" ? "Card" : t.method === "tap" ? "Tap to Pay" : t.method}{t.note && <span className="normal-case opacity-70">&nbsp;— {t.note}</span>}</span>
                         <span className="flex items-center gap-2">
                           <span className="text-sm font-semibold" style={{ color: "#34d399" }}>${t.amount.toFixed(2)}</span>
                           <button onClick={() => handleRemoveTender(t.id)} style={{ color: "#8e8e93" }}><XCircle className="w-4 h-4" /></button>
@@ -7611,8 +8047,8 @@ function CheckoutPOSPanel({
 
               {paidInFull && (
                 <div className="grid grid-cols-2 gap-2">
-                  <button onClick={handlePrintAndComplete} disabled={isUpdating} className="h-12 rounded-md font-semibold flex items-center justify-center gap-2 disabled:opacity-50" style={{ backgroundColor: "#2a2a2c", border: "1px solid #3a3a3c", color: "#f5f5f7" }}>
-                    <Printer className="w-4 h-4" /> {isUpdating ? tPOS.processing : tPOS.printReceipt}
+                  <button onClick={handlePrintAndComplete} disabled={isUpdating || printingReceipt} className="h-12 rounded-md font-semibold flex items-center justify-center gap-2 disabled:opacity-50" style={{ backgroundColor: "#2a2a2c", border: "1px solid #3a3a3c", color: "#f5f5f7" }}>
+                    <Printer className="w-4 h-4" /> {isUpdating || printingReceipt ? tPOS.processing : tPOS.printReceipt}
                   </button>
                   <button onClick={handleCompleteTransaction} disabled={isUpdating} className="h-12 rounded-md font-semibold flex items-center justify-center gap-2 text-white disabled:opacity-50" style={{ backgroundColor: "#16a34a" }} data-testid="pos-mobile-complete">
                     <Check className="w-4 h-4" /> {isUpdating ? tPOS.processing : tPOS.noReceipt}
@@ -7704,13 +8140,13 @@ function CheckoutPOSPanel({
                 <Star className="w-3 h-3" />
                 {customerLoyaltyPoints}
               </span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0" style={{ borderColor: "#3f3f42", color: "#a1a1a6" }}>#{appointment.id}</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0" style={{ borderColor: "#3f3f42", color: "#a1a1a6" }}>#{ticketLabel}</span>
             </div>
           ) : (
             <div className="flex items-center gap-2">
               <DollarSign className="w-5 h-5" style={{ color: "#8e8e93" }} />
               <h2 className="font-semibold text-lg" style={{ color: "#f5f5f7" }}>{tPOS.checkoutHdr}</h2>
-              <span className="text-[10px] px-1.5 py-0.5 rounded border" style={{ borderColor: "#3f3f42", color: "#a1a1a6" }}>#{appointment.id}</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded border" style={{ borderColor: "#3f3f42", color: "#a1a1a6" }}>#{ticketLabel}</span>
             </div>
           )}
           <div className="flex items-center gap-1">
@@ -7795,6 +8231,23 @@ function CheckoutPOSPanel({
                         </span>
                       </span>
                     </button>
+                    {canNativePrint() && (
+                    <button
+                      onClick={() => {
+                        (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "SETUP_PRINTER", storeName: (selectedStore as any)?.name || "Receipt" }));
+                        setShowPosSettings(false);
+                      }}
+                      data-testid="pos-setup-printer"
+                      className="w-full flex items-center gap-2 rounded-md p-2 text-left mt-2"
+                      style={{ backgroundColor: "#242426", border: "1px solid #3a3a3c" }}
+                    >
+                      <Printer className="w-4 h-4 flex-shrink-0" style={{ color: "#8e8e93" }} />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold" style={{ color: "#f5f5f7" }}>Receipt printer</span>
+                        <span className="block text-[11px]" style={{ color: "#8e8e93" }}>USB printers are found automatically. Choose or test one here.</span>
+                      </span>
+                    </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -7876,6 +8329,14 @@ function CheckoutPOSPanel({
                   <span className="text-sm font-semibold" style={{ color: "#f5f5f7" }}>${it.price.toFixed(2)}</span>
                 </div>
               ))}
+              {appointment.voucherStatus === "redeemed" && (
+                <div className="flex items-center gap-1.5 p-3" style={{ borderTop: "1px solid #3a3a3c" }} data-testid="pos-voucher-note">
+                  <Tag className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "#8e8e93" }} />
+                  <p className="text-xs" style={{ color: "#8e8e93" }}>
+                    Deal voucher redeemed{appointment.voucherDealTitle ? ` — ${appointment.voucherDealTitle}` : ""}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -7961,7 +8422,7 @@ function CheckoutPOSPanel({
                 {tenders.map((t) => (
                   <div key={t.id} className="flex justify-between" style={{ color: "#34d399" }}>
                     <span className="capitalize">
-                      {t.method === "m2" ? "M2 Card" : t.method === "tap" ? "Tap to Pay" : t.method}
+                      {t.method === "m2" ? "Card" : t.method === "tap" ? "Tap to Pay" : t.method}{t.note && <span className="normal-case opacity-70">&nbsp;— {t.note}</span>}
                     </span>
                     <span data-testid={`pos-left-tender-${t.id}`}>&minus;${t.amount.toFixed(2)}</span>
                   </div>
@@ -8079,7 +8540,13 @@ function CheckoutPOSPanel({
                   onClick={() => {
                     if (guided) { handleGuidedEnter(); return; }
                     // In the payment phase, ENTER commits the keypad amount as a cash payment.
-                    if (phase === "payment") applyMobileTender("cash");
+                    if (phase === "payment") { applyMobileTender("cash"); return; }
+                    // Cart phase: a typed amount (cents, "1000" = $10.00) becomes an Extra line item.
+                    const amt = posKeypadDollars();
+                    if (amt <= 0) { showPosStatus(tSt.enterAmountFirst, "error"); return; }
+                    addPosExtraItem("+Extra", amt, "custom");
+                    clearPosKeypad();
+                    showPosStatus(tSt.extraAdded("extra", amt.toFixed(2)), "success");
                   }}
                   data-testid="cart-keypad-enter"
                 >
@@ -8201,7 +8668,7 @@ function CheckoutPOSPanel({
                             const cents = Math.round(balanceDue * 100);
                             if (cents <= 0) { showPosStatus(tSt.nothingDue, "error"); return; }
                             setNativeM2Active(true); setTermError("");
-                            (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "M2_PAY", appointmentId: appointment?.id ?? 0, amountCents: cents, clientName: posCustomerName }));
+                            (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "M2_PAY", appointmentId: appointment?.id ?? 0, amountCents: cents, clientName: posCustomerName, ...nativePayContext() }));
                             showPosStatus(tSt.m2Insert, "info");
                           }}
                           data-testid="tender-m2"
@@ -8243,7 +8710,7 @@ function CheckoutPOSPanel({
                         const cents = Math.round(balanceDue * 100);
                         if (cents <= 0) { showPosStatus(tSt.nothingDue, "error"); return; }
                         setNativeM2Active(true); setTermError("");
-                        (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "TAP_TO_PAY", appointmentId: appointment?.id ?? 0, amountCents: cents, clientName: posCustomerName }));
+                        (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "TAP_TO_PAY", appointmentId: appointment?.id ?? 0, amountCents: cents, clientName: posCustomerName, ...nativePayContext() }));
                         showPosStatus(tSt.tapPrompt, "info");
                       }}
                       data-testid="tender-tap"
@@ -8276,6 +8743,22 @@ function CheckoutPOSPanel({
                 </div>
                 {termError && <p style={{ fontSize: 11, color: "#f87171", flexShrink: 0 }}>{termError}</p>}
 
+                {paymentNotice && (
+                  <div
+                    data-testid="pos-payment-success"
+                    style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, borderRadius: 6, padding: "12px 14px", backgroundColor: "#0f2f22", border: "1px solid #1f6b4c", color: "#34d399" }}
+                  >
+                    <Check className="w-5 h-5" />
+                    <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.25 }}>
+                      <span style={{ fontSize: 14, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase" }}>Payment successful · ${paymentNotice.amount.toFixed(2)}</span>
+                      <span style={{ fontSize: 12, opacity: 0.85 }}>
+                        {paymentNotice.label}{paymentNotice.last4 ? ` ••••${paymentNotice.last4}` : ""}
+                        {receiptRequest === "print" ? " · customer wants a printed receipt" : receiptRequest === "text" ? " · texting receipt…" : ""}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 {tenders.length > 0 && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
                     <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: "#8e8e93" }}>{tPOS.paymentsApplied}</p>
@@ -8284,7 +8767,7 @@ function CheckoutPOSPanel({
                       return (
                         <div key={t.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", backgroundColor: "#242426", border: "1px solid #3a3a3c", borderRadius: 6, padding: "8px 10px" }} data-testid={`tender-line-${t.id}`}>
                           <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, textTransform: "capitalize", color: "#e5e5e7" }}>
-                            <Icon className="w-4 h-4" style={{ color: "#8e8e93" }} />{t.method}
+                            <Icon className="w-4 h-4" style={{ color: "#8e8e93" }} />{t.method === "m2" ? "Card" : t.method === "tap" ? "Tap to Pay" : t.method}{t.note && <span style={{ textTransform: "none", opacity: 0.7 }}>&nbsp;— {t.note}</span>}
                           </span>
                           <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <span style={{ fontSize: 13, fontWeight: 700, color: "#34d399" }}>${t.amount.toFixed(2)}</span>
@@ -8298,8 +8781,8 @@ function CheckoutPOSPanel({
 
                 {payPaidInFull && (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, flexShrink: 0, marginTop: "auto" }}>
-                    <button onClick={handlePrintAndComplete} disabled={isUpdating} style={{ height: 48, borderRadius: 6, backgroundColor: "#2a2a2c", border: "1px solid #3a3a3c", color: "#f5f5f7", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: isUpdating ? 0.5 : 1 }} data-testid="button-print-receipt">
-                      <Printer className="w-4 h-4" /> {isUpdating ? tPOS.processing : tPOS.printReceipt}
+                    <button onClick={handlePrintAndComplete} disabled={isUpdating || printingReceipt} style={{ height: 48, borderRadius: 6, backgroundColor: "#2a2a2c", border: "1px solid #3a3a3c", color: "#f5f5f7", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: isUpdating ? 0.5 : 1 }} data-testid="button-print-receipt">
+                      <Printer className="w-4 h-4" /> {isUpdating || printingReceipt ? tPOS.processing : tPOS.printReceipt}
                     </button>
                     <button onClick={handleCompleteTransaction} disabled={isUpdating} style={{ height: 48, borderRadius: 6, backgroundColor: "#16a34a", color: "#fff", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: isUpdating ? 0.5 : 1 }} data-testid="button-no-receipt">
                       <Check className="w-4 h-4" /> {isUpdating ? tPOS.processing : tPOS.noReceipt}
@@ -8601,6 +9084,7 @@ function WalkInCheckoutPanel({ onClose, onThermalPrint }: { onClose: () => void;
   const handleApplyTender = (method: string, overrideAmount?: number) => {
     const amount = overrideAmount ?? Number(keypadDisplay);
     if (amount <= 0) return;
+    if (method === "cash") void openCashDrawerHardware({ onThermalPrint });
     const newTenders = [...tenders, { id: nextTenderId, method, amount }];
     setTenders(newTenders);
     setNextTenderId(prev => prev + 1);
@@ -9744,6 +10228,266 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
             )}
             {invalidNumber && (
               <p className="text-sm text-red-500 mt-2 font-medium">Not a valid North America phone number</p>
+            )}
+          </div>
+
+          {/* Numpad */}
+          <div className="flex-1 flex flex-col gap-2 justify-end">
+            {numKeys.map((row, ri) => (
+              <div key={ri} className="grid grid-cols-3 gap-2">
+                {row.map((key) => {
+                  if (key === "blank") {
+                    return <div key="blank" />;
+                  }
+                  if (key === "backspace") {
+                    return (
+                      <button
+                        key="backspace"
+                        type="button"
+                        onPointerDown={e => e.preventDefault()}
+                        onClick={handleBackspace}
+                        className="h-[68px] rounded-2xl bg-white border border-gray-200 shadow-sm text-muted-foreground flex items-center justify-center hover:bg-gray-50 active:scale-95 transition-transform"
+                      >
+                        <Delete className="w-5 h-5" />
+                      </button>
+                    );
+                  }
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onPointerDown={e => e.preventDefault()}
+                      onClick={() => handleDigit(key)}
+                      className="h-[68px] rounded-2xl bg-white border border-gray-200 shadow-sm text-2xl font-semibold text-foreground flex items-center justify-center hover:bg-gray-50 active:scale-95 transition-transform"
+                    >
+                      {key}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Manual-entry alternative to the barcode-scanner voucher redemption
+// (handleQRScan's "voucher" branch) — for stores with no physical scanner.
+// Staff type only the last 7 digits of the voucher code (the random secret
+// portion — see generateVoucherCode in stripeWebhook.ts); the lookup itself
+// is scoped server-side to the staff's own store, so a code typed here can
+// never resolve to a different store's voucher.
+function VoucherRedeemSheet({ onClose, onRedeemed }: { onClose: () => void; onRedeemed: (appointmentId: number) => void }) {
+  const [digits, setDigits] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleDigit = useCallback((digit: string) => {
+    if (digits.length < 7) {
+      setSubmitted(false);
+      setErrorMsg(null);
+      setDigits((prev) => prev + digit);
+    }
+  }, [digits]);
+
+  const handleBackspace = useCallback(() => {
+    setDigits((prev) => prev.slice(0, -1));
+    setSubmitted(false);
+    setErrorMsg(null);
+  }, []);
+
+  useEffect(() => {
+    if (digits.length !== 7 || submitted) return;
+    setSubmitted(true);
+    setIsSubmitting(true);
+    setErrorMsg(null);
+    fetch("/api/qr/redeem-voucher", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ manualCode: digits }),
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        setIsSubmitting(false);
+        if (!res.ok) {
+          setErrorMsg(data.error ?? "Could not redeem this voucher.");
+          return;
+        }
+        onRedeemed(data.appointmentId);
+      })
+      .catch(() => {
+        setIsSubmitting(false);
+        setErrorMsg("Connection error. Please try again.");
+      });
+  }, [digits, submitted, onRedeemed]);
+
+  const numKeys = [
+    ["1", "2", "3"],
+    ["4", "5", "6"],
+    ["7", "8", "9"],
+    ["blank", "0", "backspace"],
+  ];
+
+  return (
+    <div className="dark cx-cal fixed inset-0 z-50 text-foreground" data-testid="voucher-redeem-sheet">
+      <button
+        type="button"
+        aria-label="Close voucher redeem"
+        className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]"
+        onClick={onClose}
+      />
+      <div className="absolute right-0 top-0 h-full w-full sm:w-[380px] bg-[#161618] flex flex-col shadow-[-8px_0_24px_rgba(0,0,0,0.12)] border-l">
+        {/* Header */}
+        <div className="px-4 py-4 flex items-center justify-between gap-2 bg-white border-b border-gray-200">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={onClose} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100">
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+            <span className="font-semibold text-base text-gray-900">Redeem Voucher</span>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100">
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
+
+        {/* Content */}
+        <div
+          className="flex-1 flex flex-col px-4 pt-5 min-h-0 bg-[#161618] md:pb-4"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 72px)" }}
+        >
+          <div className="w-full rounded-2xl bg-white border border-gray-200 shadow-sm py-6 px-4 mb-5 text-center">
+            {digits.length > 0 ? (
+              <p className="text-4xl font-bold tracking-widest text-primary">{digits}</p>
+            ) : (
+              <p className="text-2xl font-medium text-muted-foreground/40">Last 7 digits</p>
+            )}
+            {isSubmitting && (
+              <p className="text-sm text-muted-foreground mt-2 animate-pulse">Checking...</p>
+            )}
+            {errorMsg && !isSubmitting && (
+              <p className="text-sm text-red-500 mt-2 font-medium">{errorMsg}</p>
+            )}
+          </div>
+
+          {/* Numpad */}
+          <div className="flex-1 flex flex-col gap-2 justify-end">
+            {numKeys.map((row, ri) => (
+              <div key={ri} className="grid grid-cols-3 gap-2">
+                {row.map((key) => {
+                  if (key === "blank") {
+                    return <div key="blank" />;
+                  }
+                  if (key === "backspace") {
+                    return (
+                      <button
+                        key="backspace"
+                        type="button"
+                        onPointerDown={e => e.preventDefault()}
+                        onClick={handleBackspace}
+                        className="h-[68px] rounded-2xl bg-white border border-gray-200 shadow-sm text-muted-foreground flex items-center justify-center hover:bg-gray-50 active:scale-95 transition-transform"
+                      >
+                        <Delete className="w-5 h-5" />
+                      </button>
+                    );
+                  }
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onPointerDown={e => e.preventDefault()}
+                      onClick={() => handleDigit(key)}
+                      className="h-[68px] rounded-2xl bg-white border border-gray-200 shadow-sm text-2xl font-semibold text-foreground flex items-center justify-center hover:bg-gray-50 active:scale-95 transition-transform"
+                    >
+                      {key}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Default PIN unless/until this becomes a real per-store setting — 2026 per
+// the initial ask, kept as a plain client-side gate (not tied to the
+// per-staff `staff_pins` system used for timeclock).
+const DEFAULT_MANAGER_PIN = "2026";
+
+function ManagerPinSheet({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const [digits, setDigits] = useState("");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleDigit = useCallback((digit: string) => {
+    if (digits.length < 4) {
+      setErrorMsg(null);
+      setDigits((prev) => prev + digit);
+    }
+  }, [digits]);
+
+  const handleBackspace = useCallback(() => {
+    setDigits((prev) => prev.slice(0, -1));
+    setErrorMsg(null);
+  }, []);
+
+  useEffect(() => {
+    if (digits.length !== 4) return;
+    if (digits === DEFAULT_MANAGER_PIN) {
+      onSuccess();
+      return;
+    }
+    setErrorMsg("Incorrect PIN.");
+    setDigits("");
+  }, [digits, onSuccess]);
+
+  const numKeys = [
+    ["1", "2", "3"],
+    ["4", "5", "6"],
+    ["7", "8", "9"],
+    ["blank", "0", "backspace"],
+  ];
+
+  return (
+    <div className="dark cx-cal fixed inset-0 z-50 text-foreground" data-testid="manager-pin-sheet">
+      <button
+        type="button"
+        aria-label="Close manager PIN"
+        className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]"
+        onClick={onClose}
+      />
+      <div className="absolute right-0 top-0 h-full w-full sm:w-[380px] bg-[#161618] flex flex-col shadow-[-8px_0_24px_rgba(0,0,0,0.12)] border-l">
+        {/* Header */}
+        <div className="px-4 py-4 flex items-center justify-between gap-2 bg-white border-b border-gray-200">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={onClose} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100">
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+            <span className="font-semibold text-base text-gray-900">Manager Access</span>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100">
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
+
+        {/* Content */}
+        <div
+          className="flex-1 flex flex-col px-4 pt-5 min-h-0 bg-[#161618] md:pb-4"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 72px)" }}
+        >
+          <div className="w-full rounded-2xl bg-white border border-gray-200 shadow-sm py-6 px-4 mb-5 text-center">
+            {digits.length > 0 ? (
+              <p className="text-4xl font-bold tracking-widest text-primary">{"•".repeat(digits.length)}</p>
+            ) : (
+              <p className="text-2xl font-medium text-muted-foreground/40">Enter manager PIN</p>
+            )}
+            {errorMsg && (
+              <p className="text-sm text-red-500 mt-2 font-medium">{errorMsg}</p>
             )}
           </div>
 

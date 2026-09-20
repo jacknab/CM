@@ -20,27 +20,29 @@ define('PAGE_SCHEMA', json_encode([
     'breadcrumb'  => ['@id'=>'https://certxa.com/online-booking#breadcrumb'],
   ],
   [
+    // Mirrors the visible accordion below word-for-word — see the /pricing
+    // page's PAGE_SCHEMA comment for why this must stay in sync.
     '@type'      => 'FAQPage',
     'mainEntity' => [
       [
         '@type'          => 'Question',
-        'name'           => 'Do my clients need to create an account to book online?',
-        'acceptedAnswer' => ['@type'=>'Answer','text'=>'No — clients can book instantly without creating an account or downloading anything. They simply choose a service, pick a time, and confirm with their name and contact details.'],
+        'name'           => 'Do my clients need to create an account to book?',
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'No — clients can book instantly without creating an account or downloading anything. They simply choose a service, pick a time, and confirm with their name and contact details. It couldn\'t be simpler.'],
       ],
       [
         '@type'          => 'Question',
-        'name'           => 'Can I accept deposits or prepayments when clients book online?',
-        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Yes. You can require a deposit (fixed amount or percentage of the service price) to secure bookings. This dramatically reduces no-shows and protects your time for high-value services like gel manicures and acrylic sets.'],
+        'name'           => 'Can I accept deposits or prepayments at booking?',
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Absolutely. You can require a deposit (fixed amount or percentage) to secure bookings. This dramatically reduces no-shows and protects your time for high-value services.'],
       ],
       [
         '@type'          => 'Question',
-        'name'           => 'Can I manage multiple staff members with online booking?',
-        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Yes — Certxa supports unlimited staff members, each with their own calendar, services, and working hours. Clients can choose a specific stylist or let the system assign the next available technician.'],
+        'name'           => 'Can I manage multiple staff members\' schedules?',
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Yes — Certxa supports unlimited staff members, each with their own calendar, services, and working hours. Clients can choose a specific stylist or let the system assign the next available one.'],
       ],
       [
         '@type'          => 'Question',
         'name'           => 'Will I get notified when a new booking comes in?',
-        'acceptedAnswer' => ['@type'=>'Answer','text'=>'You receive instant push notifications, email alerts, or SMS every time a client books, cancels, or reschedules. You can also view all upcoming bookings in real time from your Certxa dashboard.'],
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'You receive instant push notifications, email alerts, or SMS (your choice) every time a client books, cancels, or reschedules. You\'re always in the loop.'],
       ],
       [
         '@type'          => 'Question',

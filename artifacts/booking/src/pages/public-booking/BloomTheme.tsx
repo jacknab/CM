@@ -81,6 +81,9 @@ interface GoogleReviewEntry {
   reviewImageUrls?: string | null;
   reviewerPhotoUrl?: string | null;
   reviewMediaItems?: Array<Record<string, unknown>> | null;
+  /** Only present on Certxa's own native reviews — a synced Google review never has this. */
+  serviceName?: string | null;
+  staffName?: string | null;
 }
 
 /** Mirrors ServiceReviewResult from serviceReviewMatcher.ts — one per service, keyed by service ID */
@@ -885,9 +888,11 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
   const city           = extractCity(store.address);
   const phoneHref      = store.phone ? `tel:${store.phone}` : undefined;
   const directionsUrl  = buildDirectionsUrl(store.address);
-  const reviewCount    = store.googleReviewCount ?? reviews.length;
-  const avgRating      = typeof store.googleRating === "number" ? store.googleRating : 0;
+  const reviewCount    = store.displayReviewCount ?? store.googleReviewCount ?? reviews.length;
+  const avgRating      = typeof store.displayRating === "number" ? store.displayRating
+                        : typeof store.googleRating === "number" ? store.googleRating : 0;
   const filledStars    = Math.round(avgRating);
+  const isGoogleSourced = store.reviewSource ? store.reviewSource === "google" : true; // unset (older cached data) defaults to the prior Google-only behavior
   const hours          = formatBusinessHours(store.businessHours);
 
   // Scroll detection
@@ -1202,7 +1207,7 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
                   ))}
                 </span>
                 <span className="text-xs font-semibold" style={{ color: "#92400E" }}>
-                  {avgRating > 0 ? Number(avgRating).toFixed(1) : "★★★★★"} — {reviewCount.toLocaleString()} Google Reviews
+                  {avgRating > 0 ? Number(avgRating).toFixed(1) : "★★★★★"} — {reviewCount.toLocaleString()} {isGoogleSourced ? "Google Reviews" : "Reviews"}
                 </span>
               </div>
             )}
@@ -1536,12 +1541,40 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
           </div>
         )}
 
+        {/* Review cards — real review text with the service/staff the client
+            actually received, when known (only ever present on Certxa's own
+            native reviews; synced Google reviews never carry this). */}
+        {reviews.length > 0 && (
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            {reviews.slice(0, 6).map((r) => (
+              <div key={r.id} className="rounded-2xl bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[13px] font-semibold" style={{ color: C.ink900 }}>{r.customerName || "Certxa customer"}</p>
+                  {typeof r.rating === "number" && (
+                    <span className="flex shrink-0 items-center gap-1 text-[12px] font-semibold" style={{ color: C.rose600 }}>
+                      <Star className="h-3 w-3 fill-current" aria-hidden="true" /> {r.rating}
+                    </span>
+                  )}
+                </div>
+                {(r.serviceName || r.staffName) && (
+                  <p className="mt-0.5 text-[11px]" style={{ color: C.ink500 }}>
+                    {[r.serviceName, r.staffName ? `with ${r.staffName}` : null].filter(Boolean).join(" · ")}
+                  </p>
+                )}
+                {r.reviewText && (
+                  <p className="mt-2 text-[13px] leading-5" style={{ color: C.ink700 }}>{r.reviewText}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* "See more reviews" banner */}
         {reviewCount > 0 && (
           <a
             href="#visit"
             className="mt-5 flex items-center justify-between rounded-2xl bg-white px-4 py-3.5 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none"
-            aria-label="View all Google reviews"
+            aria-label={isGoogleSourced ? "View all Google reviews" : "View all reviews"}
           >
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: C.rose50 }}>
@@ -1549,7 +1582,7 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
               </div>
               <div>
                 <p className="text-[13px] font-semibold" style={{ color: C.ink900 }}>See more real results from our clients!</p>
-                <p className="text-[12px]" style={{ color: C.ink500 }}>View all reviews on Google</p>
+                <p className="text-[12px]" style={{ color: C.ink500 }}>{isGoogleSourced ? "View all reviews on Google" : "View all reviews"}</p>
               </div>
             </div>
             <ChevronDown className="h-4 w-4 -rotate-90" style={{ color: C.ink400 }} aria-hidden="true" />

@@ -38,7 +38,7 @@ interface StaffItem          { id: number; name: string; role: string | null; co
 interface ClientInfo         { id: number; name: string; loyaltyPoints: number; totalVisits: number; }
 interface StoreConfig        { name: string; phone: string; address: string; }
 interface KioskConfig        { kioskEnabled: boolean; welcomeHeadline: string | null; welcomeSubText: string | null; loyaltyPromoText: string | null; categoryImages: Record<string, string> | null; timezone: string | null; showServicePrice: boolean; showServiceDuration: boolean; dualScreenMode: boolean; }
-interface TicketData         { token: string; clientName: string; appointmentId: number | null; services: ServiceItem[]; addons?: AddonItem[]; staffName: string | null; }
+interface TicketData         { token: string; clientName: string; appointmentId: number | null; ticketNumber?: number | null; services: ServiceItem[]; addons?: AddonItem[]; staffName: string | null; }
 interface TodayAppointment   { id: number; serviceName: string; staffName: string | null; staffAvatarThumbUrl: string | null; appointmentTime: string; }
 
 const QWERTY: string[][] = [
@@ -598,6 +598,7 @@ export default function KioskCheckIn() {
           staffName: d.staffName ?? undefined,
           services: d.services ?? [],
           appointmentId: d.appointmentId,
+          ticketNumber: d.ticketNumber,
           bookingCode: `BK:${d.appointmentId}`,
           timeStr,
           dateStr,
@@ -2356,7 +2357,7 @@ export default function KioskCheckIn() {
             <div className="px-6 py-3 flex justify-between items-center"
               style={{ background: PRIMARY_S, borderTop: `1.5px solid ${BORDER}` }}>
               <span className="text-sm uppercase tracking-widest font-semibold" style={{ color: SUBTLE }}>{t.bookingHash}</span>
-              <span className="font-mono font-bold text-xl" style={{ color: PRIMARY }}>{ticket.appointmentId}</span>
+              <span className="font-mono font-bold text-xl" style={{ color: PRIMARY }}>{String(ticket.ticketNumber ?? ticket.appointmentId).padStart(3, "0")}</span>
             </div>
           )}
         </div>
@@ -2371,7 +2372,7 @@ export default function KioskCheckIn() {
           <QRCodeCanvas value={ticketUrl} size={280} level="M" includeMargin={false} />
         </div>
         <p className="text-xs font-mono" style={{ color: SUBTLE }}>
-          {ticket.appointmentId ?? ticket.token.substring(0, 10)}
+          {ticket.ticketNumber != null ? String(ticket.ticketNumber).padStart(3, "0") : (ticket.appointmentId ?? ticket.token.substring(0, 10))}
         </p>
       </div>
     </div>

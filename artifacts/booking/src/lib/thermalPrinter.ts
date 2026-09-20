@@ -127,9 +127,18 @@ export interface CheckinTicketData {
   staffName?: string;
   services: { name: string; duration?: number; price?: number }[];
   appointmentId: number;
+  ticketNumber?: number | null; // per-store display number — printed text only, QR stays id-based
   bookingCode: string; // e.g. "BK:123" — encoded in the QR
   timeStr: string;     // e.g. "2:30 PM"
   dateStr: string;     // e.g. "Jun 18"
+}
+
+/**
+ * ESC/POS "open cash drawer": ESC p m t1 t2 — a 50 ms pulse on drawer pin 2 (m=0) then pin 5 (m=1),
+ * so a drawer wired to either pin opens. Sent to the receipt printer, which drives the drawer.
+ */
+export function buildDrawerKick(): Uint8Array {
+  return new Uint8Array([0x1b, 0x70, 0x00, 0x19, 0xfa, 0x1b, 0x70, 0x01, 0x19, 0xfa]);
 }
 
 export function buildCheckinTicket(d: CheckinTicketData): Uint8Array {
@@ -160,7 +169,7 @@ export function buildCheckinTicket(d: CheckinTicketData): Uint8Array {
 
   p.divider(W)
    .center()
-   .text(`Booking #${d.appointmentId}`).lf()
+   .text(`Booking #${String(d.ticketNumber ?? d.appointmentId).padStart(3, "0")}`).lf()
    .lf()
    .qr(d.bookingCode, 5)
    .lf()

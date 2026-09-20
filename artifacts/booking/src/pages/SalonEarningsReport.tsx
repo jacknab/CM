@@ -308,11 +308,18 @@ export default function SalonEarningsReport() {
     // addonRev is already embedded in totalPaid — do NOT fall back to it when
     // totalPaid is 0, or appointments with unpaid add-ons would show a business
     // cut while revenue shows "—" (the bug visible in the per-staff table).
+    const discountAmount = Number((apt as any).discountAmount || 0);
     const commissionableRev = Math.max(0, totalPaid - tipAmount);
+    // Staff commission is computed on the PRE-discount amount — a discount
+    // (manual, loyalty, or a deal voucher's platform-fee net) is a cost the
+    // business absorbs, not something that reduces what staff earns.
+    const commissionBasis   = Math.max(0, totalPaid + discountAmount - tipAmount);
     const rate              = member?.commissionEnabled ? Number(member.commissionRate || 0) : 0;
-    const commissionPaid    = commissionableRev * (rate / 100);
-    // Business cut = commissionable revenue minus what staff earns on it
-    // Tips pass through to staff and are NOT included in business cut
+    const commissionPaid    = commissionBasis * (rate / 100);
+    // Business cut = revenue actually collected minus what staff earns on it
+    // (computed on the higher pre-discount basis) — can go negative on a
+    // heavily-discounted ticket, correctly reflecting the business eating
+    // the cost of the discount rather than the staff member.
     const businessCut       = commissionableRev - commissionPaid;
     return { totalPaid, tipAmount, addonRev, commissionableRev, commissionPaid, businessCut, rate };
   }

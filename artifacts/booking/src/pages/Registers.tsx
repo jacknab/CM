@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
-import { Copy, Check, Tablet, ExternalLink, Plus, Trash2, Loader2 } from "lucide-react";
+import { Copy, Check, Tablet, ExternalLink, Plus, Trash2, Loader2, CircleSlash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useInSettingsShell } from "@/lib/settings-shell-context";
@@ -10,8 +10,20 @@ import {
   useRegisters,
   useCreateRegister,
   useDeleteRegister,
+  useRegisterClaims,
+  useReleaseRegisterClaim,
+  type RegisterClaimInfo,
 } from "@/hooks/use-registers";
 import type { Register } from "@shared/schema";
+
+function claimAgeLabel(claimedAt: string): string {
+  const ms = Date.now() - new Date(claimedAt).getTime();
+  const min = Math.round(ms / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  const hr = Math.round(min / 60);
+  return `${hr} hr ago`;
+}
 
 // Names are auto-assigned ("POS #2", "POS #3", …) and not editable by the
 // salon owner, on purpose: support needs "POS #2" to mean the same thing on
@@ -22,14 +34,21 @@ function StationRow({
   isDefault,
   onDelete,
   deletePending,
+  claim,
+  onRelease,
+  releasePending,
 }: {
   name: string;
   url: string;
   isDefault: boolean;
   onDelete?: () => void;
   deletePending?: boolean;
+  claim?: RegisterClaimInfo | null;
+  onRelease?: () => void;
+  releasePending?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
+  const [confirmRelease, setConfirmRelease] = useState(false);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(url).then(() => {
@@ -57,6 +76,41 @@ function StationRow({
           </Button>
         )}
       </div>
+
+      {/* Live claim status — which device (browser fingerprint, not a login)
+          currently has this station picked on /calendar, if any. */}
+      {onRelease && (
+        claim ? (
+          <div className="flex items-center justify-between gap-2 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 text-xs">
+            <span className="text-teal-700">
+              <strong>In use</strong> · device {claim.deviceId.replace(/^fp_/, "").slice(0, 8)} · {claimAgeLabel(claim.claimedAt)}
+            </span>
+            {confirmRelease ? (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-teal-600">Release it?</span>
+                <button type="button" onClick={() => setConfirmRelease(false)}
+                  className="px-2 py-1 rounded-md text-slate-500 hover:bg-white font-medium">
+                  Cancel
+                </button>
+                <button type="button" onClick={() => { setConfirmRelease(false); onRelease(); }}
+                  disabled={releasePending}
+                  className="px-2 py-1 rounded-md bg-teal-600 text-white font-medium hover:bg-teal-700 disabled:opacity-50">
+                  {releasePending ? "…" : "Release"}
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setConfirmRelease(true)}
+                className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-teal-700 hover:bg-white font-medium">
+                <CircleSlash className="w-3.5 h-3.5" /> Release
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-400">
+            Not currently paired to any tablet
+          </div>
+        )
+      )}
 
       <div className="flex items-center gap-2">
         <code className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 font-mono truncate">
@@ -93,6 +147,15 @@ export default function Registers() {
 
   const bookingSlug = (selectedStore as any)?.bookingSlug ?? null;
   const registerList = allRegisters ?? [];
+
+  // Claim status only means anything once this store actually has 2+
+  // possible stations (registerList.length > 0 → multi-station mode active
+  // client-side, same threshold as /calendar's picker) — a single-station
+  // store never produces claims at all.
+  const claimsEnabled = registerList.length > 0;
+  const { data: claimList } = useRegisterClaims(selectedStore?.id, claimsEnabled);
+  const claimByRegisterId = new Map((claimList ?? []).map((c) => [c.registerId, c]));
+  const releaseClaim = useReleaseRegisterClaim();
 
   // The server assigns the actual name ("POS #2", "POS #3", …) — this is only
   // a preview for the button label, computed the same way it does. The
@@ -161,6 +224,9 @@ export default function Registers() {
                 name="POS #1"
                 url={`${window.location.origin}/frontdesk/${bookingSlug}`}
                 isDefault
+                claim={claimsEnabled ? (claimByRegisterId.get(0) ?? null) : undefined}
+                onRelease={claimsEnabled ? () => releaseClaim.mutate(0) : undefined}
+                releasePending={releaseClaim.isPending && releaseClaim.variables === 0}
               />
             )}
 
@@ -179,6 +245,9 @@ export default function Registers() {
                 isDefault={r.isDefault}
                 onDelete={() => handleDelete(r)}
                 deletePending={deleteRegister.isPending}
+                claim={claimByRegisterId.get(r.id) ?? null}
+                onRelease={() => releaseClaim.mutate(r.id)}
+                releasePending={releaseClaim.isPending && releaseClaim.variables === r.id}
               />
             ))}
 

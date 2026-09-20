@@ -66,6 +66,45 @@ const minutesOf = (t: string) => {
   return (h || 0) * 60 + (m || 0);
 };
 
+// ── 12-hour time picker (value stays "HH:MM" 24h so storage is unchanged) ──
+// 5-minute steps plus :59 so a day can end at 11:59 PM.
+const MINUTE_OPTIONS = [...Array.from({ length: 12 }, (_, i) => i * 5), 59];
+
+function TimeSelect({
+  value, onChange, invalid, testId,
+}: { value: string; onChange: (v: string) => void; invalid: boolean; testId: string }) {
+  const [h24 = 0, m = 0] = value.split(":").map((n) => parseInt(n, 10) || 0);
+  const period = h24 >= 12 ? "PM" : "AM";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  const minutes = MINUTE_OPTIONS.includes(m) ? MINUTE_OPTIONS : [...MINUTE_OPTIONS, m].sort((a, b) => a - b);
+
+  const emit = (nextH12: number, nextM: number, nextPeriod: string) => {
+    const h = (nextH12 % 12) + (nextPeriod === "PM" ? 12 : 0);
+    onChange(`${String(h).padStart(2, "0")}:${String(nextM).padStart(2, "0")}`);
+  };
+
+  const cls = cn(
+    "cursor-pointer appearance-none rounded-lg border bg-background px-2 py-1.5 text-center text-[15px] outline-none",
+    invalid ? "border-destructive" : "border-border",
+  );
+
+  return (
+    <div className="flex items-center gap-1" data-testid={testId}>
+      <select aria-label="Hour" value={h12} onChange={(e) => emit(Number(e.target.value), m, period)} className={cls}>
+        {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
+      </select>
+      <span className="text-muted-foreground">:</span>
+      <select aria-label="Minute" value={m} onChange={(e) => emit(h12, Number(e.target.value), period)} className={cls}>
+        {minutes.map((n) => <option key={n} value={n}>{String(n).padStart(2, "0")}</option>)}
+      </select>
+      <select aria-label="AM or PM" value={period} onChange={(e) => emit(h12, m, e.target.value)} className={cls}>
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </select>
+    </div>
+  );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 export default function BusinessHoursPage() {
   const { selectedStore } = useSelectedStore();
@@ -235,29 +274,21 @@ function HoursCard({ store }: { store: Store }) {
               {h.isClosed ? (
                 <span className="text-[15px] text-muted-foreground">Closed</span>
               ) : (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="time"
+                <div className="flex flex-wrap items-center gap-2">
+                  <TimeSelect
                     value={h.openTime}
-                    onChange={(e) => update(dow, { openTime: e.target.value })}
-                    data-testid={`open-${dow}`}
-                    className={cn(
-                      "rounded-lg border bg-background px-2.5 py-1.5 text-[15px] outline-none",
-                      bad ? "border-destructive" : "border-border",
-                    )}
+                    onChange={(v) => update(dow, { openTime: v })}
+                    invalid={bad}
+                    testId={`open-${dow}`}
                   />
                   <span className="text-muted-foreground">–</span>
-                  <input
-                    type="time"
+                  <TimeSelect
                     value={h.closeTime}
-                    onChange={(e) => update(dow, { closeTime: e.target.value })}
-                    data-testid={`close-${dow}`}
-                    className={cn(
-                      "rounded-lg border bg-background px-2.5 py-1.5 text-[15px] outline-none",
-                      bad ? "border-destructive" : "border-border",
-                    )}
+                    onChange={(v) => update(dow, { closeTime: v })}
+                    invalid={bad}
+                    testId={`close-${dow}`}
                   />
-                  {bad && <span className="text-xs text-destructive">End must be after start</span>}
+                  {bad && <span className="text-xs text-destructive">Close must be later the same day</span>}
                 </div>
               )}
             </div>

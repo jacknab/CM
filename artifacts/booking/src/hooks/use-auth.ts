@@ -31,6 +31,38 @@ async function fetchUser(): Promise<User | null> {
   }
 }
 
+// Some WebViews (notably the native owner app — react-native-webview) can
+// have the Set-Cookie from a same-tick fetch() response not yet visible to
+// the *next* fetch() fired immediately after, even though both are
+// same-origin. The login/register mutations below used to trust the
+// response body and immediately invalidateQueries() the rest of the app's
+// data in the same tick — if that refetch storm raced the cookie jar, every
+// one of those requests came back 401 and, since queries default to
+// `retry: false`, silently and permanently rendered as empty. The user still
+// looked "logged in" (this hook's own /api/auth/user was set optimistically
+// from the login response, never re-checked) but every other page showed no
+// account data — intermittently, since it's a timing race, not a hard
+// failure. This does one real round-trip to /api/auth/user first (retrying
+// once after a short pause if it still 401s) to confirm the cookie actually
+// took before trusting it and waking up the rest of the app's queries.
+async function verifySessionAfterAuth(fallbackUser: User): Promise<User> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch("/api/auth/user", { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data) return data;
+      }
+    } catch {
+      // network hiccup — fall through to retry/fallback below
+    }
+    if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  // Verification was inconclusive twice in a row — fall back to the
+  // optimistic user rather than blocking login on a slow/flaky network.
+  return fallbackUser;
+}
+
 export function useAuth() {
   const queryClient = useQueryClient();
 
@@ -50,10 +82,11 @@ export function useAuth() {
       const res = await apiRequest("POST", "/api/auth/login", data);
       return res.json();
     },
-    onSuccess: (user) => {
-      queryClient.setQueryData(["/api/auth/user"], user);
+    onSuccess: async (user) => {
       offlineSessionBootstrap.setUser(user);
       if (typeof window !== "undefined") localStorage.setItem(STORAGE_KEY, "true");
+      const verifiedUser = await verifySessionAfterAuth(user);
+      queryClient.setQueryData(["/api/auth/user"], verifiedUser);
       // Any store/staff/appointment queries mounted before login may have been
       // cached from a 401'd/logged-out state — force them to refetch now that
       // the session is authenticated, or the dashboard keeps showing stale
@@ -63,14 +96,15 @@ export function useAuth() {
   });
 
   const registerMutation = useMutation({
-    mutationFn: async (data: { email: string; password: string; firstName?: string; lastName?: string; keepSignedIn?: boolean }) => {
+    mutationFn: async (data: { email: string; password: string; firstName?: string; lastName?: string; phone?: string; keepSignedIn?: boolean }) => {
       const res = await apiRequest("POST", "/api/auth/register", data);
       return res.json();
     },
-    onSuccess: (user) => {
+    onSuccess: async (user) => {
       if (typeof window !== "undefined") localStorage.setItem(STORAGE_KEY, "true");
       offlineSessionBootstrap.setUser(user);
-      queryClient.setQueryData(["/api/auth/user"], user);
+      const verifiedUser = await verifySessionAfterAuth(user);
+      queryClient.setQueryData(["/api/auth/user"], verifiedUser);
       queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "/api/auth/user" });
     },
   });

@@ -19,12 +19,15 @@ interface StaffRow {
   avatarUrl: string | null;
 }
 
+// Stable fallback so memos keyed on `staff` stay referentially stable while the query is idle/loading.
+const EMPTY_STAFF: StaffRow[] = [];
+
 export default function StaffList() {
   const navigate = useNavigate();
   const { selectedStore } = useSelectedStore();
   const [q, setQ] = useState("");
 
-  const { data: staff = [], isLoading } = useQuery<StaffRow[]>({
+  const { data: staff = EMPTY_STAFF, isLoading } = useQuery<StaffRow[]>({
     queryKey: ["/api/staff", selectedStore?.id],
     queryFn: async () => {
       const res = await fetch("/api/staff", { credentials: "include" });

@@ -73,14 +73,20 @@ $_base_schema = [
       'width'  => 512,
       'height' => 512,
     ],
-    // Facebook, Instagram, and LinkedIn profiles don't exist yet — add real
-    // URLs here once each is created; asserting profiles that don't exist is
-    // worse than omitting sameAs. The X/Twitter handle and BBB listing below
-    // are both confirmed live (BBB profile independently fetched and verified
-    // to reference this exact business and website).
+    // X/Twitter, BBB, LinkedIn, Facebook, G2, and Instagram are all
+    // confirmed live. Reddit (linked from the marketplace half of the site
+    // in an earlier version) is deliberately left out: that account has no
+    // independently-verifiable activity. Keep this array identical to the
+    // Organization sameAs list in artifacts/marketplace/src/entry-server.tsx
+    // — the two halves of the site share one @id and must describe the same
+    // entity, not two different ones.
     'sameAs' => [
       'https://x.com/certxa',
+      'https://www.facebook.com/certxa',
+      'https://www.instagram.com/certxa',
       'https://www.bbb.org/us/az/phoenix/profile/software-consultants/certxa-llc-1126-1000175065',
+      'https://www.linkedin.com/company/certxa',
+      'https://www.g2.com/products/certxa-booking-software',
     ],
     'contactPoint' => [
       '@type'            => 'ContactPoint',
@@ -101,15 +107,19 @@ $_base_schema = [
   ],
   [
     '@type'    => 'Person',
+    // @id fragment kept as-is (internal identifier only, not shown to
+    // users) — article.php's BlogPosting author references this exact
+    // string, so it must stay in sync if ever changed.
     '@id'      => SITE_URL . '/#founder-tom-tham',
-    'name'     => 'Tom Tham',
-    // Legal name on file with the state and BBB (see Organization.sameAs) is
-    // "Thanh Lam" — "Tom Tham" is the name he goes by publicly. Listing both
-    // lets AI systems resolve BBB's "Thanh Lam, CEO" and the site's "Tom Tham"
-    // as the same person instead of two different ones.
-    'alternateName' => 'Thanh Lam',
+    'name'     => 'Thanh Lam',
+    // "Thanh Lam" is the legal name on file with the state and BBB (see
+    // Organization.sameAs) and is now the name used site-wide for
+    // consistency. "Tom Tham" was used publicly for a time — kept as
+    // alternateName so AI systems still resolve both to the same person.
+    'alternateName' => 'Tom Tham',
     'jobTitle' => 'Founder',
     'url'      => SITE_URL . '/about',
+    'image'    => 'https://certxa.com/api/r2/site-assets/42d8d1f8-28a0-40ee-99fd-ca3217518624.webp',
     'worksFor' => ['@id' => SITE_URL . '/#organization'],
     'knowsAbout' => ['Nail salon management', 'Salon software', 'Vietnamese-owned nail salon industry'],
   ],
@@ -128,6 +138,11 @@ $_base_schema = [
     'url'                     => SITE_URL,
     'description'             => 'Certxa is the all-in-one nail salon software built for nail technicians and studio owners. Features include 24/7 online booking, self-service walk-in check-in kiosk, multi-tech calendar management, client nail records with product notes, automated SMS and email reminders, a POS system, waitlist management, Autumn AI receptionist, Google Reviews integration, and a branded website builder.',
     'softwareVersion'         => '2.0',
+    // Real, verifiable rating from https://www.capterra.ca/software/1237764/Certxa-Booking-Software
+    // (1 review, 5.0/5, as of Sep 2026) — genuinely thin, but real. Update
+    // ratingCount as more reviews come in on Capterra/G2/Product Hunt; never
+    // bump this without a real source to point to.
+    'aggregateRating'         => ['@type' => 'AggregateRating', 'ratingValue' => 5.0, 'ratingCount' => 1, 'bestRating' => 5, 'worstRating' => 1],
     // `billingIncrement` is not a valid Offer property (it belongs on
     // UnitPriceSpecification, and expects a Number, not an ISO-8601 duration
     // string) — every Offer below now expresses monthly billing correctly via

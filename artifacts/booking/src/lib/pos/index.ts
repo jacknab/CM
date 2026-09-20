@@ -52,3 +52,23 @@ export function getMobilePosActions(layout: PosLayout): PosButton[] {
   }
   return out;
 }
+
+/**
+ * The subset of a layout's top-level actions to show in the desktop
+ * checkout's bottom action-tile strip (rendered alongside the category/
+ * service grid). Keeps those flagged `desktopTile: true`, de-duped by id,
+ * preserving authored order. Only looks at `layout.buttons` — the
+ * `keypadButtons` row (Tip Adjust/Discount/No Sale/Reprint on the nail-salon
+ * layout) already has its own dedicated spot next to the numpad and isn't
+ * duplicated here.
+ */
+export function getDesktopTileActions(layout: PosLayout): PosButton[] {
+  const out: PosButton[] = [];
+  const seen = new Set<string>();
+  for (const b of layout.buttons) {
+    if (!b || seen.has(b.id) || !b.desktopTile) continue;
+    out.push(b);
+    seen.add(b.id);
+  }
+  return out;
+}

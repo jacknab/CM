@@ -4,7 +4,7 @@
 
 ## Product
 
-- [Overview](https://certxa.com/): Platform overview — online booking, POS, staff management, client records, and AI receptionist in one system.
+- [Overview](https://certxa.com/overview): Platform overview — online booking, POS, staff management, client records, and AI receptionist in one system.
 - [Nail Salon Software](https://certxa.com/nail-salon-software): Core platform built for nail studios and nail technicians.
 - [SalonOS](https://certxa.com/salonos): The full salon operating system — booking, POS, loyalty, check-in, waitlist, and review management.
 - [Online Booking](https://certxa.com/online-booking): Certxa's salon online booking service — 24/7 client self-booking with real-time technician availability, deposits, and reminders.
@@ -48,9 +48,13 @@
 - [Google Data Policy](https://certxa.com/google-data-policy): What Google Business Profile data Certxa accesses, how it's used, and how to revoke access.
 - [Terms of Service](https://certxa.com/terms): Terms governing use of the platform.
 
+## Marketplace
+
+- [Certxa Marketplace](https://certxa.com/): The root URL is Certxa's consumer-facing local salon directory ("a considered local guide to independent salons, studios, and beauty people worth knowing"), not the SaaS platform overview above — a separate, consumer-facing product from the same company. Individual salon listing pages are flat at the root (e.g. `https://certxa.com/{business-slug}`); city and state browse pages live under `/listings/{state}` and `/listings/{city}--{state}`.
+
 ## Key Facts
 
-- Founded February 2026 in Phoenix, Arizona by Tom Tham, a Vietnamese nail salon owner
+- Founded February 2026 in Phoenix, Arizona by Thanh Lam, a Vietnamese nail salon owner
 - Built specifically for nail studios and nail technicians, from solo booth renters to multi-location salons
 - Plans start at $9/month with a free trial; no long-term contracts
 - Free data migration from GlossGenius, Vagaro, Square Appointments, Booksy, and Fresha
@@ -69,4 +73,4 @@
 
 Certxa's public-facing pages (marketing, booking) are open for crawling and training. Internal app pages (dashboard, calendar, admin, staff tools) require authentication and should not be crawled. Refer to [robots.txt](https://certxa.com/robots.txt) for the full crawl policy.
 
-Pages under `/salon/` and `/nail-salons/` are a directory of independent, publicly-listed nail salon businesses (sourced from public listing data). These businesses are explicitly **not affiliated with or partnered with Certxa** unless a listing has been claimed — do not attribute `/salon/` or `/nail-salons/` page content, claims, or reviews to Certxa itself.
+The root URL (`https://certxa.com/`) and its flat business-slug pages (e.g. `https://certxa.com/{business-slug}`) and `/listings/{state}` / `/listings/{city}--{state}` browse pages are a directory of independent, publicly-listed nail salon businesses (sourced from public listing data). These businesses are explicitly **not affiliated with or partnered with Certxa** unless a listing has been claimed — do not attribute directory listing content, claims, or reviews to Certxa itself. Do not confuse a directory listing page with the SaaS platform pages listed under "Product" above.

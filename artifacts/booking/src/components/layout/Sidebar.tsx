@@ -38,9 +38,12 @@ import {
   ClipboardList,
   Package,
   Tag,
+  BadgePercent,
   LogOut,
   User,
   CreditCard as CreditCardIcon,
+  PhoneCall,
+  Store,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
@@ -128,6 +131,7 @@ function buildCatalogSubnav(pick: Pick4): SubNavItem[] {
     { label: pick({ en: "Categories", vi: "Danh mục",       es: "Categorías",    fr: "Catégories" }),  icon: Tag,           to: "/catalog/categories" },
     { label: pick({ en: "Services",   vi: "Dịch vụ",        es: "Servicios",     fr: "Services" }),     icon: Scissors,      to: "/catalog/services" },
     { label: pick({ en: "Packages",   vi: "Gói dịch vụ",    es: "Paquetes",      fr: "Forfaits" }),     icon: Package,       to: "/catalog/packages" },
+    { label: pick({ en: "Deals",      vi: "Ưu đãi",         es: "Ofertas",       fr: "Offres" }),        icon: BadgePercent,  to: "/catalog/deals" },
     { label: pick({ en: "Add-Ons",    vi: "Dịch vụ thêm",   es: "Complementos",  fr: "Suppléments" }),  icon: ClipboardList, to: "/catalog/addons" },
     { label: pick({ en: "Nail Config", vi: "Cấu hình móng", es: "Config. de uñas", fr: "Config. ongles" }), icon: Star,       to: "/catalog/nail-services" },
     { label: pick({ en: "Products",   vi: "Sản phẩm",       es: "Productos",     fr: "Produits" }),     icon: ShoppingCart,  to: "/catalog/products" },
@@ -138,7 +142,9 @@ function buildCatalogSubnav(pick: Pick4): SubNavItem[] {
 function buildMarketingSubnav(pick: Pick4): SubNavItem[] {
   return [
     { label: pick({ en: "Campaigns",       vi: "Chiến dịch",              es: "Campañas",           fr: "Campagnes" }),          icon: Megaphone,     to: "/campaigns" },
+    { label: pick({ en: "Marketplace Ads", vi: "Quảng cáo trên chợ",      es: "Anuncios en el mercado", fr: "Annonces marketplace" }), icon: Store,      to: "/marketplace-ads" },
     { label: pick({ en: "SMS Activity",    vi: "Hoạt động SMS",           es: "Actividad SMS",      fr: "Activité SMS" }),       icon: MessageSquare, to: "/sms-activity" },
+    { label: pick({ en: "AI Receptionist", vi: "Lễ tân AI",               es: "Recepcionista IA",   fr: "Réceptionniste IA" }),  icon: PhoneCall,     to: "/manage/ai-receptionist" },
     { label: pick({ en: "Loyalty",         vi: "Khách hàng thân thiết",   es: "Fidelización",       fr: "Fidélité" }),           icon: Heart,         to: "/loyalty" },
     { label: pick({ en: "Waitlist",        vi: "Danh sách chờ",           es: "Lista de espera",    fr: "Liste d'attente" }),    icon: UserX,         to: "/waitlist" },
     { label: pick({ en: "Google Business", vi: "Google Doanh nghiệp",     es: "Google Negocio",     fr: "Google Entreprise" }),  icon: MapPin,        to: "/google-business" },
@@ -153,6 +159,7 @@ function buildFinanceSubnav(pick: Pick4, showPos: boolean): SubNavSection[] {
           heading: pick({ en: "Setup", vi: "Thiết lập", es: "Configuración", fr: "Configuration" }),
           items: [
             { label: pick({ en: "Payments & Payouts", vi: "Thanh toán & Chi trả", es: "Pagos y liquidaciones", fr: "Paiements et versements" }), icon: CreditCard, to: "/payments/payouts" },
+            { label: pick({ en: "Checkout & Tax", vi: "Thanh toán & Thuế", es: "Pago y impuestos", fr: "Caisse et taxes" }), icon: ShoppingCart, to: "/payments/checkout-tax" },
           ],
         }]
       : []),

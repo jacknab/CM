@@ -22,13 +22,16 @@ interface StaffRow {
 
 type Tab = "services" | "products";
 
+// Stable fallback: a fresh `[]` each render re-triggers the effect below and loops forever while the query is idle/loading.
+const EMPTY_STAFF: StaffRow[] = [];
+
 export default function TeamCommissions() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const { selectedStore } = useSelectedStore();
   const [tab, setTab] = useState<Tab>("services");
 
-  const { data: staff = [], isLoading } = useQuery<StaffRow[]>({
+  const { data: staff = EMPTY_STAFF, isLoading } = useQuery<StaffRow[]>({
     queryKey: ["/api/staff", selectedStore?.id],
     queryFn: async () => {
       const res = await fetch("/api/staff", { credentials: "include" });

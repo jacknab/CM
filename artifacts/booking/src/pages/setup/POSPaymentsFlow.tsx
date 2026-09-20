@@ -119,14 +119,14 @@ export default function POSPaymentsFlow() {
               </div>
             </div>
             <a
-              href="/manage/payment-settings"
+              href="/payments/payouts"
               className="flex items-center justify-center gap-2 bg-[#635BFF] hover:bg-[#5249D7] text-white text-sm font-semibold px-6 py-3.5 rounded-xl transition-colors shadow-sm w-full"
             >
               <CreditCard className="w-4 h-4" />
               Connect with Stripe
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
-            <p className="text-xs text-slate-400 text-center">You'll be redirected to Stripe's secure OAuth flow.</p>
+            <p className="text-xs text-slate-400 text-center">Set up and verify your payout account right inside Certxa.</p>
           </div>
         )}
       </div>
@@ -219,7 +219,7 @@ export default function POSPaymentsFlow() {
         <h2 className="text-xl font-bold text-slate-800 mb-2">POS ready! 🎉</h2>
         <p className="text-sm text-slate-500 max-w-sm mx-auto">Payment settings, taxes, and tips are configured. Your checkout is ready to use.</p>
         <div className="mt-6 flex gap-3 justify-center flex-wrap">
-          <button onClick={() => navigate("/manage/payment-settings")} className="text-sm font-semibold text-[#1A0333] border border-[#1A0333]/20 px-4 py-2 rounded-xl hover:bg-[#1A0333]/5 transition-colors">Payment settings →</button>
+          <button onClick={() => navigate("/payments/payouts")} className="text-sm font-semibold text-[#1A0333] border border-[#1A0333]/20 px-4 py-2 rounded-xl hover:bg-[#1A0333]/5 transition-colors">Payment settings →</button>
           <button onClick={() => navigate("/pos-settings")} className="text-sm font-semibold text-slate-500 border border-slate-200 px-4 py-2 rounded-xl hover:bg-slate-50 transition-colors">POS settings →</button>
         </div>
       </div>

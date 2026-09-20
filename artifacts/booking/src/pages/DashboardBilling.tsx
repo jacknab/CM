@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useSelectedStore } from "@/hooks/use-store";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { SubscriptionPaymentModal, type SubscriptionPaymentSession } from "@/components/billing/SubscriptionPaymentModal";
 
 // ─── Plans ────────────────────────────────────────────────────────────────────
 const PLANS = [
@@ -162,6 +163,7 @@ export default function DashboardBilling() {
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
   const [showPlanConfirm, setShowPlanConfirm] = useState(false);
   const [selectingPlanCode, setSelectingPlanCode] = useState<string | null>(null);
+  const [paymentSession, setPaymentSession] = useState<SubscriptionPaymentSession | null>(null);
   const [cancelStep, setCancelStep] = useState<"idle" | "reason" | "retention" | "confirm">("idle");
   const [cancelReason, setCancelReason] = useState("");
 
@@ -284,15 +286,21 @@ export default function DashboardBilling() {
     onMutate: (planCode) => setSelectingPlanCode(planCode),
     onSettled: () => setSelectingPlanCode(null),
     onSuccess: (data, planCode) => {
-      if (data?.checkoutUrl) {
-        window.location.href = data.checkoutUrl;
+      const plan = PLANS.find((p) => p.code === planCode) ?? PLANS[0];
+      if (data?.requiresPayment) {
+        setShowPlanConfirm(false);
+        setSwitchingTo(null);
+        setPaymentSession({
+          clientSecret: data.clientSecret,
+          publishableKey: data.publishableKey,
+          planName: plan.name,
+        });
         return;
       }
       queryClient.invalidateQueries({ queryKey: ["billing-profile", salonId] });
       setShowPlanConfirm(false);
       setSwitchingTo(null);
       setCancelStep("idle");
-      const plan = PLANS.find((p) => p.code === planCode) ?? PLANS[0];
       toast({ title: "Plan selected", description: `You're now on the ${plan.name} plan — $${plan.price}/mo.` });
     },
     onError: (err: any) =>
@@ -379,6 +387,7 @@ export default function DashboardBilling() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
+    <>
     <AppLayout>
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 space-y-8 pb-24">
 
@@ -1297,5 +1306,17 @@ export default function DashboardBilling() {
         )}
       </div>
     </AppLayout>
+    <SubscriptionPaymentModal
+      session={paymentSession}
+      onClose={() => setPaymentSession(null)}
+      onSuccess={() => {
+        queryClient.invalidateQueries({ queryKey: ["billing-profile", salonId] });
+        queryClient.invalidateQueries({ queryKey: ["billing-upcoming", salonId] });
+        queryClient.invalidateQueries({ queryKey: ["billing-invoices", salonId] });
+        toast({ title: "Subscription activated", description: "Welcome aboard! Your plan is now active." });
+        setTimeout(() => setPaymentSession(null), 1500);
+      }}
+    />
+    </>
   );
 }

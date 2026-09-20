@@ -17,7 +17,16 @@ module.exports = {
     wait_ready: true,
     listen_timeout: 15000,
     kill_timeout: 5000,
-    max_memory_restart: "1000M",
+    // Was hitting this ceiling roughly every 1-2 hours all day (real pm2 log
+    // pattern: "[PM2][WORKER] Process 9 restarted because it exceeds
+    // --max-memory-restart value"), and a site crawler running that whole
+    // window landed 502s scattered across dozens of unrelated pages — each
+    // one just happened to be in flight during one of those restarts. Raised
+    // with real headroom to spare (~4GB available on this box) to cut restart
+    // frequency; the actual memory-growth driver (see _enrichmentCache in
+    // artifacts/api-server/src/lib/salonData.ts, an unbounded per-salon
+    // cache) is a separate, real fix — this alone doesn't address that.
+    max_memory_restart: "2000M",
     env: {
       NODE_ENV: "production",
       PORT: "9200",

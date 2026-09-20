@@ -21,11 +21,13 @@ import Services from "@/pages/Services";
 import CatalogCategories from "@/pages/catalog/CatalogCategories";
 import CatalogServices from "@/pages/catalog/CatalogServices";
 import CatalogPackages from "@/pages/catalog/CatalogPackages";
+import CatalogDeals from "@/pages/catalog/CatalogDeals";
 import CatalogAddons from "@/pages/catalog/CatalogAddons";
 import CatalogProducts from "@/pages/catalog/CatalogProducts";
 import NailServices from "@/pages/catalog/NailServices";
 import Customers from "@/pages/Customers";
 import Calendar from "@/pages/Calendar";
+import PosCheckout from "@/pages/PosCheckout";
 import Products from "@/pages/Products";
 import NewBooking from "@/pages/NewBooking";
 import ClientLookup from "@/pages/ClientLookup";
@@ -56,12 +58,13 @@ import IntakeForms from "@/pages/IntakeForms";
 import Loyalty from "@/pages/Loyalty";
 import Reviews from "@/pages/Reviews";
 import GoogleBusiness from "@/pages/GoogleBusiness";
-import ReviewSubmit from "@/pages/ReviewSubmit";
+import ReviewEntry from "@/pages/ReviewEntry";
 import AiReceptionist from "@/pages/AiReceptionist";
 import AiReceptionistLive from "@/pages/AiReceptionistLive";
 import SmsInbox from "@/pages/SmsInbox";
 import SmsActivity from "@/pages/SmsActivity";
 import Campaigns from "@/pages/Campaigns";
+import MarketplaceAdsInfo from "@/pages/MarketplaceAdsInfo";
 import ClientAtRisk from "@/pages/ClientAtRisk";
 import ApiKeys from "@/pages/ApiKeys";
 import EliteApiDocs from "@/pages/EliteApiDocs";
@@ -88,11 +91,10 @@ import MarketingFlow from "@/pages/setup/MarketingFlow";
 import AIReceptionistFlow from "@/pages/setup/AIReceptionistFlow";
 import WebsiteSetupFlow from "@/pages/setup/WebsiteSetupFlow";
 import PublicBooking from "@/pages/PublicBooking";
+import VoucherBookingPage from "@/pages/VoucherBookingPage";
 import BookingWidgetPage from "@/pages/BookingWidgetPage";
 import BookingConfirmation from "@/pages/public-booking/BookingConfirmation";
 import ManageBooking from "@/pages/public-booking/ManageBooking";
-import ReviewGate from "@/pages/public-review/ReviewGate";
-import ReviewFeedback from "@/pages/public-review/ReviewFeedback";
 import CompleteBooking from "@/pages/public-payment/CompleteBooking";
 import StaffCalendar from "@/pages/StaffCalendar";
 import StaffProfile from "@/pages/StaffProfile";
@@ -147,6 +149,7 @@ import DataTransferPage from "@/pages/DataTransferPage";
 import ResourceSettings from "@/pages/settings/ResourceSettings";
 import TranslationsPage from "@/pages/TranslationsPage";
 import PaymentsPayouts from "@/pages/finance/PaymentsPayouts";
+import POSSettings from "@/pages/POSSettings";
 import { RequirePermission } from "@/components/RequirePermission";
 import { PERMISSIONS } from "@shared/permissions";
 import { AccountStatusGate } from "@/components/AccountStatusGate";
@@ -202,6 +205,7 @@ const authenticatedPaths = [
   "/mail-settings",
   "/ai-receptionist",
   "/campaigns",
+  "/marketplace-ads",
   "/sms-inbox",
   "/sms-activity",
   "/cash-drawer",
@@ -454,11 +458,10 @@ function AppRoutes() {
       {/* Public booking & review */}
       <Route path="/widget" element={<BookingWidgetPage />} />
       <Route path="/book/:slug" element={<PublicBooking />} />
+      <Route path="/redeem/:token" element={<VoucherBookingPage />} />
       <Route path="/booking/:confirmationNumber" element={<BookingConfirmation />} />
       <Route path="/b/:token" element={<ManageBooking />} />
-      <Route path="/review/:token" element={<ReviewGate />} />
-      <Route path="/review/:token/feedback" element={<ReviewFeedback />} />
-      <Route path="/review/:appointmentId" element={<ReviewSubmit />} />
+      <Route path="/review/:id" element={<ReviewEntry />} />
       <Route path="/complete-booking/:token" element={<CompleteBooking />} />
 
       {/* Public queue */}
@@ -518,19 +521,21 @@ function AppRoutes() {
       <Route path="/overview" element={<Navigate to="/analytics" replace />} />
       <Route path="/salon-dashboard" element={<OwnerOnlyRoute><OwnerDashboard /></OwnerOnlyRoute>} />
       <Route path="/dashboard" element={<Navigate to="/analytics" replace />} />
-      <Route path="/pos-settings" element={<Navigate to="/payments/payouts" replace />} />
+      <Route path="/pos-settings" element={<Navigate to="/payments/checkout-tax" replace />} />
       {/* Catalog — individual pages */}
       <Route path="/catalog/categories" element={<OwnerOnlyRoute><CatalogCategories /></OwnerOnlyRoute>} />
       <Route path="/catalog/services"   element={<OwnerOnlyRoute><CatalogServices /></OwnerOnlyRoute>} />
       <Route path="/catalog/packages"   element={<OwnerOnlyRoute><CatalogPackages /></OwnerOnlyRoute>} />
+      <Route path="/catalog/deals"      element={<OwnerOnlyRoute><CatalogDeals /></OwnerOnlyRoute>} />
       <Route path="/catalog/addons"     element={<OwnerOnlyRoute><CatalogAddons /></OwnerOnlyRoute>} />
       <Route path="/catalog/products"   element={<OwnerOnlyRoute><CatalogProducts /></OwnerOnlyRoute>} />
       <Route path="/catalog/nail-services" element={<OwnerOnlyRoute><NailServices /></OwnerOnlyRoute>} />
       <Route path="/catalog/resources" element={<OwnerOnlyRoute><ResourceSettings /></OwnerOnlyRoute>} />
       <Route path="/catalog/translations" element={<OwnerOnlyRoute><TranslationsPage /></OwnerOnlyRoute>} />
       <Route path="/payments/payouts" element={<OwnerOnlyRoute><PaymentsPayouts /></OwnerOnlyRoute>} />
+      <Route path="/payments/checkout-tax" element={<OwnerOnlyRoute><POSSettings /></OwnerOnlyRoute>} />
       {/* legacy → new homes */}
-      <Route path="/settings/pos" element={<Navigate to="/payments/payouts" replace />} />
+      <Route path="/settings/pos" element={<Navigate to="/payments/checkout-tax" replace />} />
       <Route path="/settings/payout-account" element={<Navigate to="/payments/payouts" replace />} />
       <Route path="/settings/resources" element={<Navigate to="/catalog/resources" replace />} />
       <Route path="/settings/translations" element={<Navigate to="/catalog/translations" replace />} />
@@ -548,6 +553,7 @@ function AppRoutes() {
       <Route path="/customers" element={<OwnerOnlyRoute><Customers /></OwnerOnlyRoute>} />
       <Route path="/calendar" element={<Calendar />} />
       <Route path="/appointments" element={<Calendar />} />
+      <Route path="/pos" element={<PosCheckout />} />
       <Route path="/booking/new" element={<NewBooking />} />
       <Route path="/client-lookup" element={<ClientLookup />} />
       <Route path="/client/:id" element={<OwnerOnlyRoute><ClientProfile /></OwnerOnlyRoute>} />
@@ -606,6 +612,7 @@ function AppRoutes() {
       <Route path="/sms-inbox" element={<OwnerOnlyRoute><SmsInbox /></OwnerOnlyRoute>} />
       <Route path="/sms-activity" element={<OwnerOnlyRoute><SmsActivity /></OwnerOnlyRoute>} />
       <Route path="/campaigns" element={<OwnerOnlyRoute><Campaigns /></OwnerOnlyRoute>} />
+      <Route path="/marketplace-ads" element={<OwnerOnlyRoute><MarketplaceAdsInfo /></OwnerOnlyRoute>} />
       <Route path="/api-keys" element={<ApiKeys />} />
       <Route path="/elite-api-docs" element={<EliteApiDocs />} />
       <Route path="/elite-details" element={<EliteDetails />} />

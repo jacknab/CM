@@ -226,6 +226,15 @@ export default function FrontDeskDisplay() {
   const [rewards, setRewards] = useState<{ id: number; name: string; pointsCost: number; dollarValue: number }[]>([]);
   const [redeemedRewardId, setRedeemedRewardId] = useState<number | null>(null);
 
+  // "Payment successful" → receipt choice (Print / Text / No receipt)
+  const [receiptStep, setReceiptStep]   = useState<"choose" | "text" | "sending" | "done">("choose");
+  const [receiptPhone, setReceiptPhone] = useState("");
+  const [receiptNote, setReceiptNote]   = useState("");
+  const [receiptError, setReceiptError] = useState("");
+  const receiptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const receiptStepRef  = useRef<"choose" | "text" | "sending" | "done">("choose");
+  useEffect(() => { receiptStepRef.current = receiptStep; }, [receiptStep]);
+
   // POS-driven overlay
   const [posCheckout, setPosCheckout] = useState<PosCheckout>(null);
   const [posApptId, setPosApptId]     = useState(0);
@@ -327,6 +336,8 @@ export default function FrontDeskDisplay() {
 
   const clearPosOverlay = useCallback(() => {
     if (posResetRef.current) clearTimeout(posResetRef.current);
+    if (receiptTimerRef.current) clearTimeout(receiptTimerRef.current);
+    setReceiptStep("choose"); setReceiptPhone(""); setReceiptNote(""); setReceiptError("");
     setPosCheckout(null); setPosTipPct(null); setPayError("");
     setCart(null); setRwPhone(""); setRwStatus("idle"); setRwResult(null);
     tapArmedRef.current = false;
@@ -334,6 +345,23 @@ export default function FrontDeskDisplay() {
     setScreen("idle"); setPhone(""); setClientInfo(null); setTodayAppointment(null); setNewClientName("");
     setRedeemedRewardId(null); setPosApptId(0);
   }, []);
+
+  // Payment succeeded → "Payment successful" screen with the receipt choices.
+  const enterThankYou = useCallback(() => {
+    if (receiptTimerRef.current) clearTimeout(receiptTimerRef.current);
+    setReceiptStep("choose"); setReceiptPhone(""); setReceiptNote(""); setReceiptError("");
+    setPosCheckout("thankyou");
+    if (posResetRef.current) clearTimeout(posResetRef.current);
+    posResetRef.current = setTimeout(clearPosOverlay, 60_000);
+  }, [clearPosOverlay]);
+
+  // The customer has chosen (or staff finished the sale): show the final message, then reset.
+  const finishReceipt = useCallback((note: string, ms: number) => {
+    if (receiptTimerRef.current) clearTimeout(receiptTimerRef.current);
+    setReceiptNote(note); setReceiptStep("done");
+    if (posResetRef.current) clearTimeout(posResetRef.current);
+    posResetRef.current = setTimeout(clearPosOverlay, ms);
+  }, [clearPosOverlay]);
 
   useEffect(() => { posCheckoutRef.current = posCheckout; }, [posCheckout]);
   useEffect(() => { bookingPhoneModeRef.current = bookingPhoneMode; }, [bookingPhoneMode]);
@@ -410,17 +438,24 @@ export default function FrontDeskDisplay() {
           case "kiosk_checkout_payment_result":
             if (msg.success) {
               if (msg.total != null) setPosTotal(Number(msg.total) || 0);
-              setPosCheckout("thankyou");
-              if (posResetRef.current) clearTimeout(posResetRef.current);
-              posResetRef.current = setTimeout(clearPosOverlay, 15_000);
+              enterThankYou();
             } else {
               setPayError(String(msg.error || "Payment was declined. Please try another card."));
               setPosCheckout("await_payment");
             }
             break;
+          case "kiosk_checkout_receipt_result":
+            // The POS reports whether the receipt the customer asked for went through.
+            if (msg.choice === "text") {
+              if (receiptTimerRef.current) clearTimeout(receiptTimerRef.current);
+              if (msg.ok) finishReceipt("Receipt sent — thank you!", 6_000);
+              else { setReceiptStep("text"); setReceiptError("We couldn't send that text. Please check the number, or choose No Receipt."); }
+            }
+            break;
           case "kiosk_checkout_cancel":
-            // Don't cut the "Thank you!" screen short — it clears itself on a timer.
             if (posCheckoutRef.current !== "thankyou") clearPosOverlay();
+            // Staff finished the sale before the customer picked a receipt option.
+            else if (receiptStepRef.current === "choose" || receiptStepRef.current === "text") finishReceipt("Thank you — have a great day!", 4_000);
             break;
           // Staff is creating a booking on the calendar and needs the client's
           // number — show the phone keypad; on submit we send the digits back.
@@ -444,7 +479,7 @@ export default function FrontDeskDisplay() {
     };
     connect();
     return () => { destroyed = true; ws?.close(); wsRef.current = null; };
-  }, [storeId, registerId, clearPosOverlay]);
+  }, [storeId, registerId, clearPosOverlay, enterThankYou, finishReceipt]);
 
   // ── Suspended: poll config to auto-recover ───────────────────────────────
   useEffect(() => {
@@ -488,9 +523,7 @@ export default function FrontDeskDisplay() {
       const total = d.amount != null ? Number(d.amount) : posTotal;
       sendWs("kiosk_checkout_payment_result", { success: true, total, last4: d.last4, via: payTriggerRef.current, method: awaitModeRef.current });
       setPosTotal(total);
-      setPosCheckout("thankyou");
-      if (posResetRef.current) clearTimeout(posResetRef.current);
-      posResetRef.current = setTimeout(clearPosOverlay, 15_000);
+      enterThankYou();
     };
     const onFail = (e: Event) => {
       const d = (e as CustomEvent).detail ?? {};
@@ -504,7 +537,7 @@ export default function FrontDeskDisplay() {
       window.removeEventListener("certxa_native_payment_complete", onDone);
       window.removeEventListener("certxa_native_payment_failed", onFail);
     };
-  }, [sendWs, posTotal, clearPosOverlay]);
+  }, [sendWs, posTotal, enterThankYou]);
 
   // ── Idle / countdown resets ─────────────────────────────────────────────
   const resetToIdle = useCallback(() => {
@@ -553,7 +586,7 @@ export default function FrontDeskDisplay() {
     try {
       const r = await fetch(`/api/public/kiosk/${slug}/rewards-signup`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: digits, name: name?.trim() || undefined, appointmentId: apptId }),
+        body: JSON.stringify({ phone: digits, name: name?.trim() || undefined, appointmentId: apptId, checkin: !apptId }),
       });
       const d = await r.json();
       if (r.status === 422 && d?.error === "name_required") {
@@ -1028,25 +1061,77 @@ export default function FrontDeskDisplay() {
       );
     }
 
-    // thankyou
+    // Payment successful → receipt choice
+    const chooseReceipt = (choice: "print" | "none") => {
+      sendWs("kiosk_checkout_receipt_choice", { choice, appointmentId: posApptId });
+      finishReceipt(choice === "print" ? "Your receipt will be printed at the counter — thank you!" : "No receipt — have a great day!", 6_000);
+    };
+    const sendTextReceipt = () => {
+      if (receiptPhone.length !== 10) return;
+      sendWs("kiosk_checkout_receipt_choice", { choice: "text", phone: receiptPhone, appointmentId: posApptId });
+      setReceiptStep("sending"); setReceiptError("");
+      if (receiptTimerRef.current) clearTimeout(receiptTimerRef.current);
+      receiptTimerRef.current = setTimeout(() => {
+        setReceiptStep("text");
+        setReceiptError("We couldn't send that text. Please try again, or choose No Receipt.");
+      }, 12_000);
+    };
+    const bigBtn: React.CSSProperties = { width: 260, height: 130, borderRadius: 22, border: `2px solid ${BORDER}`, background: SURFACE, boxShadow: SHADOW, fontSize: 24, fontWeight: 800, color: TEXT, cursor: "pointer" };
+    const compact = receiptStep === "text"; // keypad step: tighter so it fits an 800px-high tablet
+    const keyBtn: React.CSSProperties = { width: 96, height: compact ? 62 : 76, borderRadius: 18, border: `1.5px solid ${BORDER}`, background: SURFACE, boxShadow: SHADOW, fontSize: 30, fontWeight: 700, color: TEXT, cursor: "pointer" };
     return (
-      <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: BG, zIndex: 9999, gap: 32, ...NO_SELECT }}>
-        <div style={{ width: 110, height: 110, borderRadius: "50%", background: "#dcfce7", border: "3px solid #86efac", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <svg width="58" height="58" viewBox="0 0 58 58" fill="none">
+      <div data-testid="fd-payment-success" style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: BG, zIndex: 9999, gap: compact ? 12 : 22, ...NO_SELECT }}>
+        <div style={{ width: compact ? 58 : 96, height: compact ? 58 : 96, borderRadius: "50%", background: "#dcfce7", border: "3px solid #86efac", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <svg width={compact ? 32 : 52} height={compact ? 32 : 52} viewBox="0 0 58 58" fill="none">
             <polyline points="11,31 24,44 47,18" stroke="#16a34a" strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </div>
         <div style={{ textAlign: "center" }}>
-          <h2 style={{ fontSize: 48, fontWeight: 900, color: TEXT, margin: "0 0 10px", letterSpacing: "-0.02em" }}>Thank you!</h2>
-          <p style={{ fontSize: 20, color: MUTED, margin: 0 }}>Payment complete · <strong style={{ color: TEXT }}>${posTotal.toFixed(2)}</strong></p>
+          <h2 style={{ fontSize: compact ? 34 : 46, fontWeight: 900, color: TEXT, margin: "0 0 6px", letterSpacing: "-0.02em" }}>Payment successful</h2>
+          <p style={{ fontSize: 20, color: MUTED, margin: 0 }}>Amount paid · <strong style={{ color: TEXT }}>${posTotal.toFixed(2)}</strong></p>
         </div>
-        <button
-          onPointerDown={e => { e.preventDefault(); clearPosOverlay(); }}
-          style={{ padding: "16px 34px", borderRadius: 16, border: `2px solid ${BORDER}`, background: SURFACE, boxShadow: SHADOW, fontSize: 16, fontWeight: 700, color: MUTED, cursor: "pointer" }}
-        >
-          Done
-        </button>
-        <p style={{ fontSize: 14, color: SUBTLE }}>This screen will reset automatically</p>
+
+        {receiptStep === "choose" && (
+          <>
+            <p style={{ fontSize: 24, fontWeight: 700, color: TEXT, margin: "10px 0 0" }}>Would you like a receipt?</p>
+            <div style={{ display: "flex", gap: 20 }}>
+              <button data-testid="fd-receipt-print" onPointerDown={e => { e.preventDefault(); chooseReceipt("print"); }} style={bigBtn}>Print Receipt</button>
+              <button data-testid="fd-receipt-text" onPointerDown={e => { e.preventDefault(); setReceiptError(""); setReceiptPhone(""); setReceiptStep("text"); }} style={bigBtn}>Text Receipt</button>
+              <button data-testid="fd-receipt-none" onPointerDown={e => { e.preventDefault(); chooseReceipt("none"); }} style={{ ...bigBtn, background: "transparent", boxShadow: "none", color: MUTED }}>No Receipt</button>
+            </div>
+          </>
+        )}
+
+        {receiptStep === "text" && (
+          <>
+            <p style={{ fontSize: 22, fontWeight: 700, color: TEXT, margin: "4px 0 0" }}>Enter your mobile number</p>
+            <div style={{ background: SURFACE, border: `2px solid ${receiptPhone.length === 10 ? PRIMARY : BORDER}`, borderRadius: 16, padding: "10px 28px", minWidth: 320, textAlign: "center", boxShadow: SHADOW }}>
+              <span data-testid="fd-receipt-phone" style={{ fontSize: 32, fontFamily: "ui-monospace, monospace", letterSpacing: "0.06em", color: receiptPhone ? TEXT : BORDER }}>
+                {receiptPhone ? fmtPhone(receiptPhone) : "(•••) •••-••••"}
+              </span>
+            </div>
+            {receiptError && <p style={{ fontSize: 16, color: "#dc2626", margin: 0, maxWidth: 480, textAlign: "center" }}>{receiptError}</p>}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 96px)", gap: 8 }} onPointerDown={e => e.stopPropagation()}>
+              {["1","2","3","4","5","6","7","8","9"].map(d => (
+                <button key={d} onPointerDown={e => { e.preventDefault(); setReceiptPhone(p => (p.length < 10 ? p + d : p)); setReceiptError(""); }} style={keyBtn}>{d}</button>
+              ))}
+              <button onPointerDown={e => { e.preventDefault(); setReceiptPhone(p => p.slice(0, -1)); }} style={{ ...keyBtn, fontSize: 24, color: MUTED }}>⌫</button>
+              <button onPointerDown={e => { e.preventDefault(); setReceiptPhone(p => (p.length < 10 ? p + "0" : p)); setReceiptError(""); }} style={keyBtn}>0</button>
+              <button data-testid="fd-receipt-send" onPointerDown={e => { e.preventDefault(); sendTextReceipt(); }} disabled={receiptPhone.length !== 10}
+                style={{ ...keyBtn, background: receiptPhone.length === 10 ? PRIMARY : SURFACE, color: receiptPhone.length === 10 ? "#fff" : BORDER, fontSize: 20 }}>Send</button>
+            </div>
+            <button onPointerDown={e => { e.preventDefault(); setReceiptError(""); setReceiptStep("choose"); }}
+              style={{ padding: "8px 28px", borderRadius: 14, border: `2px solid ${BORDER}`, background: "transparent", fontSize: 16, fontWeight: 700, color: MUTED, cursor: "pointer" }}>Back</button>
+          </>
+        )}
+
+        {receiptStep === "sending" && (
+          <p data-testid="fd-receipt-sending" style={{ fontSize: 24, fontWeight: 700, color: MUTED, margin: "14px 0 0" }}>Sending your receipt…</p>
+        )}
+
+        {receiptStep === "done" && (
+          <p data-testid="fd-receipt-done" style={{ fontSize: 26, fontWeight: 700, color: TEXT, margin: "14px 0 0", maxWidth: 620, textAlign: "center" }}>{receiptNote}</p>
+        )}
       </div>
     );
   }
@@ -1265,7 +1350,7 @@ export default function FrontDeskDisplay() {
         </button>
       </div>
       <div className="flex gap-4 mt-1">
-        <PrimaryBtn onPress={() => newClientName.trim() && setScreen("checked_in_generic")} disabled={!newClientName.trim()}>
+        <PrimaryBtn onPress={() => submitNewClient(newClientName)} disabled={newClientName.trim().length < 2}>
           {t.continueBtn}
         </PrimaryBtn>
       </div>

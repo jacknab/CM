@@ -5,6 +5,7 @@ import {
   insertServiceSchema,
   insertAddonSchema,
   insertPackageSchema,
+  insertDealSchema,
   insertServiceAddonSchema,
   insertAppointmentAddonSchema,
   insertStaffSchema,
@@ -24,6 +25,7 @@ import {
   services,
   addons,
   packages,
+  deals,
   serviceAddons,
   appointmentAddons,
   staffServices,
@@ -321,6 +323,43 @@ export const api = {
       responses: {
         200: z.object({ success: z.boolean() }),
         400: errorSchemas.validation,
+      },
+    },
+  },
+  deals: {
+    list: {
+      method: 'GET' as const,
+      path: '/api/deals' as const,
+      responses: {
+        200: z.array(z.custom<typeof deals.$inferSelect>()),
+      },
+    },
+    get: {
+      method: 'GET' as const,
+      path: '/api/deals/:id' as const,
+      responses: {
+        200: z.custom<typeof deals.$inferSelect>(),
+        404: errorSchemas.notFound,
+      },
+    },
+    create: {
+      method: 'POST' as const,
+      path: '/api/deals' as const,
+      // listPrice is never client-supplied — the route snapshots it from the
+      // package's current effective price at creation time.
+      input: insertDealSchema.omit({ storeId: true, listPrice: true }),
+      responses: {
+        201: z.custom<typeof deals.$inferSelect>(),
+        400: errorSchemas.validation,
+      },
+    },
+    update: {
+      method: 'PATCH' as const,
+      path: '/api/deals/:id' as const,
+      input: insertDealSchema.omit({ storeId: true, listPrice: true }).partial(),
+      responses: {
+        200: z.custom<typeof deals.$inferSelect>(),
+        404: errorSchemas.notFound,
       },
     },
   },

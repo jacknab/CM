@@ -25,6 +25,12 @@ export function setLocalRegisterId(id: number): void {
   } catch {}
 }
 
+export function clearLocalRegisterId(): void {
+  try {
+    localStorage.removeItem(LOCAL_REGISTER_KEY);
+  } catch {}
+}
+
 /** Has this browser ever been told which register it is (picker answered)? */
 function hasLocalRegisterChoice(): boolean {
   try {
@@ -35,7 +41,7 @@ function hasLocalRegisterChoice(): boolean {
 }
 
 export interface RegisterOption { id: number; name: string; }
-interface RegisterClaim { registerId: number; deviceId: string; claimedAt: string; }
+export interface RegisterClaimInfo { registerId: number; deviceId: string; claimedAt: string; }
 
 export function useRegisters(storeId: number | undefined) {
   return useQuery<Register[]>({
@@ -52,8 +58,10 @@ export function useRegisters(storeId: number | undefined) {
 
 // Which device currently "owns" each station. Only polled while a store is
 // actually in multi-station mode (2+ possible stations) — see `enabled`.
-function useRegisterClaims(storeId: number | undefined, enabled: boolean) {
-  return useQuery<RegisterClaim[]>({
+// Exported so the Settings → POS Stations page can show live claim status
+// per station (Registers.tsx), separately from the /calendar picker's use.
+export function useRegisterClaims(storeId: number | undefined, enabled = true) {
+  return useQuery<RegisterClaimInfo[]>({
     queryKey: [`/api/registers/claims?storeId=${storeId}`],
     enabled: enabled && !!storeId,
     queryFn: async () => {
@@ -63,6 +71,22 @@ function useRegisterClaims(storeId: number | undefined, enabled: boolean) {
     },
     staleTime: 10_000,
     refetchInterval: enabled ? 10_000 : false,
+  });
+}
+
+// Owner/staff-facing force-release for a stuck station — frees it
+// immediately regardless of which device holds the claim, instead of
+// waiting up to 15 minutes for staleness. Used by Registers.tsx.
+export function useReleaseRegisterClaim() {
+  const queryClient = useQueryClient();
+  const { selectedStore } = useSelectedStore();
+  return useMutation({
+    mutationFn: async (registerId: number) => {
+      await apiRequest("POST", `/api/registers/${registerId}/release`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/registers/claims?storeId=${selectedStore?.id}`] });
+    },
   });
 }
 
@@ -200,6 +224,28 @@ export function useActiveRegisterId(storeId: number | undefined) {
     }
   }, [deviceId, queryClient, storeId]);
 
+  // Forgets which station this device is paired to and immediately releases
+  // its server-side claim (rather than leaving it to expire after 15 min),
+  // so the picker re-appears and the freed station is instantly available to
+  // whichever device claims it next. For "tablet got physically moved to a
+  // different station" — the actual scenario this exists for — tap this
+  // BEFORE moving it; if the tablet already ended up moved with a stale
+  // pairing, this still fixes it, it just leaves the old slot occupied until
+  // the existing 15-minute staleness window passes on its own.
+  const resetRegister = useCallback(async () => {
+    clearLocalRegisterId();
+    setLocalId(0);
+    setHasChoice(false);
+    try {
+      await apiRequest("POST", "/api/registers/unclaim", { deviceId });
+    } catch {
+      // Best-effort — the local reset above is what actually re-triggers the
+      // picker; a failed unclaim just means the old slot frees up on its own
+      // after 15 minutes instead of immediately.
+    }
+    queryClient.invalidateQueries({ queryKey: [`/api/registers/claims?storeId=${storeId}`] });
+  }, [deviceId, queryClient, storeId]);
+
   return {
     registerId,
     needsPicker,
@@ -209,5 +255,9 @@ export function useActiveRegisterId(storeId: number | undefined) {
     // nothing left to offer.
     allStationsTaken: needsPicker && availableOptions.length === 0,
     selectRegister,
+    isMultiStation,
+    // Display name for whichever station this device currently is, e.g. "POS #2" — null outside multi-station mode.
+    currentRegisterName: isMultiStation ? (allOptions.find((o) => o.id === registerId)?.name ?? null) : null,
+    resetRegister,
   };
 }

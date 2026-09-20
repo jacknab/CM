@@ -60,9 +60,11 @@ export const nailSalonPosLayout: PosLayout = {
   // keep their original positions (empty cells are reserved for later use).
   buttons: [
     // Row 1 — build the ticket
+    // nail.addon has no desktopTile — the desktop checkout's always-visible
+    // Popular Add-Ons row supersedes it there; it stays mobile-only.
     { id: "nail.addon",   label: "Add-Ons",  icon: "Sparkles",    mobile: true, action: { type: "addon-browser" } },
-    { id: "nail.retail",  label: "Retail",   icon: "ShoppingBag", mobile: true, action: { type: "add-product" } },
-    { id: "nail.removal", label: "Removal",  icon: "Undo2",       mobile: true, action: { type: "submenu", submenu: removalSubmenu } },
+    { id: "nail.retail",  label: "Retail",   icon: "ShoppingBag", mobile: true, desktopTile: true, action: { type: "add-product" } },
+    { id: "nail.removal", label: "Removal",  icon: "Undo2",       mobile: true, desktopTile: true, action: { type: "submenu", submenu: removalSubmenu } },
 
     // Row 2
     {
@@ -71,6 +73,7 @@ export const nailSalonPosLayout: PosLayout = {
       icon: "Zap",
       band: "#f4d000",
       mobile: true,
+      desktopTile: true,
       action: {
         type: "guided-ticket",
         payload: {
@@ -86,7 +89,7 @@ export const nailSalonPosLayout: PosLayout = {
       },
     },
     null, // Discount — moved to the keypad row
-    { id: "nail.loyalty",    label: "Loyalty",    icon: "Star",         action: { type: "loyalty-redeem" } },
+    { id: "nail.loyalty",    label: "Loyalty",    icon: "Star",         desktopTile: true, action: { type: "loyalty-redeem" } },
 
     // Row 3
     null, // Tip Adjust — moved to the keypad row
@@ -99,9 +102,9 @@ export const nailSalonPosLayout: PosLayout = {
     null,
 
     // Row 5
-    { id: "nail.custom",  label: "Custom\nCharge", icon: "Calculator", mobile: true, action: { type: "add-custom-item" } },
-    { id: "nail.grouppay", label: "Group\nPay",    icon: "Users",      action: { type: "link-tickets" } },
-    { id: "nail.giftcard", label: "Gift\nCard",    icon: "Gift",       action: { type: "submenu", submenu: giftCardSubmenu } },
+    { id: "nail.custom",  label: "Custom\nCharge", icon: "Calculator", mobile: true, desktopTile: true, action: { type: "add-custom-item" } },
+    { id: "nail.grouppay", label: "Group\nPay",    icon: "Users",      desktopTile: true, action: { type: "link-tickets" } },
+    { id: "nail.giftcard", label: "Gift\nCard",    icon: "Gift",       desktopTile: true, action: { type: "submenu", submenu: giftCardSubmenu } },
   ],
   // Beneath the numpad, replacing the quick-cash buttons.
   keypadButtons: [

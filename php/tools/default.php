@@ -19,41 +19,47 @@ define('PAGE_SCHEMA', json_encode([
     'about'       => ['@id'=>'https://certxa.com/#software'],
   ],
   [
+    // ItemList.itemListElement[].item as a plain URL (not a nested Thing) —
+    // embedding full WebApplication objects here was flagged as a real
+    // structured-data error by Semrush; Google's ItemList/carousel rich
+    // result only supports a specific set of types (Recipe, Course,
+    // Restaurant, etc.) and generic apps aren't among them. The full
+    // WebApplication descriptions still exist below as their own @graph
+    // entries — nothing is lost, just no longer nested inside the list.
     '@type'    => 'ItemList',
     '@id'      => 'https://certxa.com/tools#tool-list',
     'name'     => 'Certxa Salon Business Calculators',
     'itemListElement' => [
-      [
-        '@type'    => 'ListItem',
-        'position' => 1,
-        'item'     => [
-          '@type'               => 'WebApplication',
-          '@id'                 => 'https://certxa.com/tools#breakeven-calculator',
-          'name'                => 'Salon Break-Even Calculator',
-          'url'                 => 'https://certxa.com/tools#breakeven',
-          'applicationCategory' => 'BusinessApplication',
-          'operatingSystem'     => 'Any (web browser)',
-          'description'         => 'Calculates how many clients per day a salon needs to break even, based on monthly fixed costs, average ticket price, stylist commission rate, stations, and days open — plus a chair-utilization score and no-show impact analysis.',
-          'offers'              => ['@type' => 'Offer', 'price' => 0, 'priceCurrency' => 'USD'],
-          'isAccessibleForFree' => true,
-        ],
-      ],
-      [
-        '@type'    => 'ListItem',
-        'position' => 2,
-        'item'     => [
-          '@type'               => 'WebApplication',
-          '@id'                 => 'https://certxa.com/tools#no-show-calculator',
-          'name'                => 'Salon No-Show Cost Calculator',
-          'url'                 => 'https://certxa.com/tools#no-show',
-          'applicationCategory' => 'BusinessApplication',
-          'operatingSystem'     => 'Any (web browser)',
-          'description'         => 'Calculates how much revenue a salon loses to client no-shows each year, and how much automated reminders can recover.',
-          'offers'              => ['@type' => 'Offer', 'price' => 0, 'priceCurrency' => 'USD'],
-          'isAccessibleForFree' => true,
-        ],
-      ],
+      ['@type' => 'ListItem', 'position' => 1, 'name' => 'Salon Break-Even Calculator', 'item' => 'https://certxa.com/tools#breakeven'],
+      ['@type' => 'ListItem', 'position' => 2, 'name' => 'Salon No-Show Cost Calculator', 'item' => 'https://certxa.com/tools#no-show'],
     ],
+  ],
+  [
+    // 'Service', not 'WebApplication': Google/Semrush validate any
+    // SoftwareApplication-family type as a SOFTWARE_APP item, which REQUIRES
+    // aggregateRating or review. These are free in-page calculators with no
+    // independent rating of their own (the one real rating Certxa has, on
+    // Capterra, is for the whole platform — not these tools specifically),
+    // so fabricating a rating here would be dishonest. 'Service' carries no
+    // such requirement and accurately describes what these are.
+    '@type'       => 'Service',
+    '@id'         => 'https://certxa.com/tools#breakeven-calculator',
+    'name'        => 'Salon Break-Even Calculator',
+    'url'         => 'https://certxa.com/tools#breakeven',
+    'serviceType' => 'Business calculator',
+    'provider'    => ['@id' => 'https://certxa.com/#organization'],
+    'description' => 'Calculates how many clients per day a salon needs to break even, based on monthly fixed costs, average ticket price, stylist commission rate, stations, and days open — plus a chair-utilization score and no-show impact analysis.',
+    'offers'      => ['@type' => 'Offer', 'price' => 0, 'priceCurrency' => 'USD'],
+  ],
+  [
+    '@type'       => 'Service',
+    '@id'         => 'https://certxa.com/tools#no-show-calculator',
+    'name'        => 'Salon No-Show Cost Calculator',
+    'url'         => 'https://certxa.com/tools#no-show',
+    'serviceType' => 'Business calculator',
+    'provider'    => ['@id' => 'https://certxa.com/#organization'],
+    'description' => 'Calculates how much revenue a salon loses to client no-shows each year, and how much automated reminders can recover.',
+    'offers'      => ['@type' => 'Offer', 'price' => 0, 'priceCurrency' => 'USD'],
   ],
   [
     '@type'    => 'FAQPage',

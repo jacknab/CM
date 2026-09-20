@@ -980,14 +980,19 @@ require __DIR__ . '/../includes/nav.php';
   </div>
 
   <!-- ── SCREEN 3: Service Type (real screenshot) ────────── -->
+  <!-- TODO: this screenshot's R2 object is gone (404, confirmed via a real
+       Semrush site audit) — no replacement exists in site_assets. Needs a
+       fresh screenshot re-uploaded; onerror hides the broken-image icon in
+       the meantime rather than showing it to real visitors. -->
   <div class="ksim" id="ks3">
-    <img src="https://certxa.com/api/r2/site-assets/b50e8bfb-421c-49ef-b8fc-58a606271055.webp" class="ks-real-shot" alt="Kiosk category selection">
+    <img src="https://certxa.com/api/r2/site-assets/b50e8bfb-421c-49ef-b8fc-58a606271055.webp" class="ks-real-shot" alt="Kiosk category selection" onerror="this.style.display='none';">
     <div id="ks3-tap-ring" class="ks-tap-ring" style="display:none;"></div>
   </div>
 
   <!-- ── SCREEN 4: Services (real screenshot) ─────────────── -->
+  <!-- TODO: same as SCREEN 3 — R2 object gone, needs a fresh screenshot. -->
   <div class="ksim" id="ks4">
-    <img src="https://certxa.com/api/r2/site-assets/3f1e87d3-9924-47ec-899e-85c935a98d52.webp" class="ks-real-shot" alt="Kiosk service selection">
+    <img src="https://certxa.com/api/r2/site-assets/3f1e87d3-9924-47ec-899e-85c935a98d52.webp" class="ks-real-shot" alt="Kiosk service selection" onerror="this.style.display='none';">
     <div id="ks4-tap-ring" class="ks-tap-ring" style="display:none;"></div>
   </div>
 
@@ -1028,8 +1033,9 @@ require __DIR__ . '/../includes/nav.php';
   </div>
 
   <!-- ── SCREEN 6: Confirmation (real screenshot) ─────────── -->
+  <!-- TODO: same as SCREEN 3/4 — R2 object gone, needs a fresh screenshot. -->
   <div class="ksim" id="ks6">
-    <img src="https://certxa.com/api/r2/site-assets/6b11fd91-5713-4dc9-a516-cac64de3bc32.webp" class="ks-real-shot" alt="Kiosk check-in confirmation">
+    <img src="https://certxa.com/api/r2/site-assets/6b11fd91-5713-4dc9-a516-cac64de3bc32.webp" class="ks-real-shot" alt="Kiosk check-in confirmation" onerror="this.style.display='none';">
     <div class="ks-confirm-cdown" id="ks-confirm-cdown">
       <svg viewBox="0 0 40 40" width="40" height="40">
         <circle cx="20" cy="20" r="16" fill="none" stroke="rgba(232,72,145,.2)" stroke-width="3"/>

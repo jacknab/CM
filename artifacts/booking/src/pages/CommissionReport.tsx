@@ -21,8 +21,11 @@ function fmt(n: number) {
 function calcCommission(apt: AppointmentWithDetails, member: Staff | undefined) {
   const totalPaid = Number((apt as any).totalPaid || 0);
   const tipAmount = Number((apt as any).tipAmount || 0);
-  // Commissionable revenue excludes tips (tips pass straight through to staff).
-  const commissionableRev = Math.max(0, totalPaid - tipAmount);
+  const discountAmount = Number((apt as any).discountAmount || 0);
+  // Commissionable revenue excludes tips (tips pass straight through to staff)
+  // but adds back any discount — a discount (manual, loyalty, or a deal
+  // voucher's platform-fee net) must not reduce staff commission.
+  const commissionableRev = Math.max(0, totalPaid + discountAmount - tipAmount);
   const rate = member?.commissionEnabled ? Number(member.commissionRate || 0) : 0;
   const commissionEarned = commissionableRev * (rate / 100);
   return { totalPaid, tipAmount, commissionableRev, rate, commissionEarned };

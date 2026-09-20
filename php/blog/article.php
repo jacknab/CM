@@ -60,6 +60,13 @@ try {
     $related = [];
 }
 
+// A real, named author overrides the "Certxa Team" placeholder — which is
+// the actual literal value stored for every post today, not an empty field,
+// so a plain truthy/empty check doesn't catch it. Used for the JSON-LD
+// author, the visible byline, and PAGE_ARTICLE_AUTHOR below so all three
+// stay in sync instead of schema and visible content disagreeing.
+$has_named_author = $post['author_name'] && strcasecmp(trim($post['author_name']), 'Certxa Team') !== 0;
+
 // ── Date helpers ─────────────────────────────────────────────────────────────
 $pub_date_human = $post['published_at']
     ? date('F j, Y', strtotime($post['published_at']))
@@ -113,13 +120,15 @@ $article_schema = json_encode([
         '@type' => 'WebPage',
         '@id'   => 'https://certxa.com/blog/' . $post['slug'],
     ],
-    // A named byline is a real Person; the generic "Certxa Team" placeholder
-    // (whether it's the DB value or just an empty field) is the Organization,
-    // not a Person — Google/AI models flag Person nodes with no real name
-    // behind them.
-    'author' => ($post['author_name'] && strcasecmp(trim($post['author_name']), 'Certxa Team') !== 0)
+    // A named byline is a real Person. Default to the founder — he's a real,
+    // already-defined Person node (see #founder-tom-tham in header.php) and
+    // the one genuine expertise/experience asset the brand has; attributing
+    // every post to the generic Organization instead wastes that signal.
+    // A per-post author_name still overrides this when one is set (for a
+    // future guest author, for instance).
+    'author' => $has_named_author
         ? ['@type' => 'Person', 'name' => $post['author_name']]
-        : ['@type' => 'Organization', '@id' => 'https://certxa.com/#organization', 'name' => 'Certxa'],
+        : ['@type' => 'Person', '@id' => 'https://certxa.com/#founder-tom-tham', 'name' => 'Thanh Lam'],
     'publisher' => [
         '@type' => 'Organization',
         '@id'   => 'https://certxa.com/#organization',
@@ -159,7 +168,7 @@ define('PAGE_CANONICAL',       'https://certxa.com/blog/' . $post['slug']);
 define('PAGE_OG_TYPE',         'article');
 define('PAGE_OG_IMAGE',        $og_image);
 define('PAGE_OG_IMAGE_ALT',    $post['title'] . ' — Certxa Blog');
-define('PAGE_ARTICLE_AUTHOR',    $post['author_name'] ?: 'Certxa Team');
+define('PAGE_ARTICLE_AUTHOR',    $has_named_author ? $post['author_name'] : 'Thanh Lam');
 define('PAGE_ARTICLE_PUBLISHED', $pub_iso);
 define('PAGE_ARTICLE_MODIFIED',  $mod_iso);
 define('PAGE_ARTICLE_SECTION',   $post['category']);
@@ -195,13 +204,13 @@ require __DIR__ . '/../includes/nav.php';
       <?= htmlspecialchars($post['excerpt']) ?>
     </p>
     <?php endif; ?>
-    <?php $author_display = $post['author_name'] ?: 'Certxa Team'; ?>
+    <?php $author_display = $has_named_author ? $post['author_name'] : 'Thanh Lam'; ?>
     <div style="display:flex;align-items:center;gap:10px;">
       <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--plum),#6d28d9);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.85rem;" aria-hidden="true">
         <?= strtoupper(substr($author_display, 0, 1)) ?>
       </div>
       <div>
-        <div style="font-size:.82rem;font-weight:600;color:var(--charcoal);"><?= htmlspecialchars($author_display) ?></div>
+        <div style="font-size:.82rem;font-weight:600;color:var(--charcoal);"><?php if (!$has_named_author): ?><a href="/about" style="color:inherit;text-decoration:none;"><?= htmlspecialchars($author_display) ?></a><?php else: ?><?= htmlspecialchars($author_display) ?><?php endif; ?></div>
         <div style="font-size:.73rem;color:var(--mid-grey);"><time datetime="<?= $pub_iso ?>"><?= $pub_date_human ?></time></div>
       </div>
     </div>

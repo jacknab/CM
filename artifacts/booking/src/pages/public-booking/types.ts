@@ -9,6 +9,13 @@ export interface StoreData {
   bookingTheme?: string;
   googleRating?: number | null;
   googleReviewCount?: number;
+  /** Rating to actually display — Google's if connected, else Certxa's own
+   * native reviews aggregate (both gated at >=3 reviews server-side). Prefer
+   * these over googleRating/googleReviewCount directly so themes don't have
+   * to reimplement the fallback. */
+  displayRating?: number | null;
+  displayReviewCount?: number;
+  reviewSource?: "google" | "native" | null;
   businessHours?: {
     id: number;
     dayOfWeek: number;

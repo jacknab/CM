@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { openCashDrawerHardware } from "@/lib/cashDrawer";
 import { formatInTz } from "@/lib/timezone";
 import { BusinessDayGate } from "@/components/cash/BusinessDayOverlay";
 import { useCashDrawers } from "@/hooks/use-cash-drawers";
@@ -67,9 +68,11 @@ export default function CashDrawer() {
 interface CashDrawerPanelProps {
   embedded?: boolean;
   onClose?: () => void;
+  /** Sends the drawer-kick to the receipt printer; defaults to the Android app's printer. */
+  onOpenDrawer?: () => Promise<{ ok: boolean; error?: string }>;
 }
 
-export function CashDrawerPanel({ embedded = false, onClose }: CashDrawerPanelProps = {}) {
+export function CashDrawerPanel({ embedded = false, onClose, onOpenDrawer }: CashDrawerPanelProps = {}) {
   const { selectedStore } = useSelectedStore();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -245,6 +248,9 @@ export function CashDrawerPanel({ embedded = false, onClose }: CashDrawerPanelPr
 
   const openDrawerKickMutation = useMutation({
     mutationFn: async () => {
+      // Pop the drawer through the receipt printer without waiting on it or reporting on it —
+      // silent by design — and record the manual open as before.
+      void (onOpenDrawer ?? (() => openCashDrawerHardware()))();
       return apiRequest("POST", `/api/cash-drawer/sessions/${openSession!.id}/action`, {
         type: "open_drawer",
         reason: "Manual drawer open",
@@ -253,7 +259,6 @@ export function CashDrawerPanel({ embedded = false, onClose }: CashDrawerPanelPr
     },
     onSuccess: () => {
       invalidateDrawerQueries();
-      toast({ title: "Drawer opened", description: "Cash drawer kick signal sent." });
     },
   });
 

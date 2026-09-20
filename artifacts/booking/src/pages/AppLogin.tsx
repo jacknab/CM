@@ -107,7 +107,7 @@ export default function AppLogin() {
     if (!user.onboardingCompleted) {
       navigate("/onboarding", { replace: true });
     } else {
-      navigate("/manage", { replace: true });
+      navigate("/calendar", { replace: true });
     }
   }, [isAuthenticated, user, navigate, redirectTo]);
 

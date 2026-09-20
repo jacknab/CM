@@ -10,6 +10,7 @@ interface TicketData {
   services: ServiceItem[];
   status: string;
   appointmentId: number | null;
+  ticketNumber: number | null;
   staffName: string | null;
   createdAt: string;
   storeName: string;
@@ -159,7 +160,7 @@ export default function KioskTicket() {
         {ticket.appointmentId && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-3 flex justify-between items-center">
             <span className="text-zinc-400 text-sm">Booking Reference</span>
-            <span className="text-white font-mono font-bold text-lg">#{ticket.appointmentId}</span>
+            <span className="text-white font-mono font-bold text-lg">#{String(ticket.ticketNumber ?? ticket.appointmentId).padStart(3, "0")}</span>
           </div>
         )}
 

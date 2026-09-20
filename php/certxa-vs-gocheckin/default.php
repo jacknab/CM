@@ -24,7 +24,7 @@ define('PAGE_SCHEMA', json_encode([
       ['@type'=>'Question','name'=>'Does GoCheckIn charge a setup fee?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes — GoCheckIn lists a $100 one-time setup fee in addition to its $20–$99/month plans. Certxa charges no setup fee on any plan.']],
       ['@type'=>'Question','name'=>'Does GoCheckIn price by staff count?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. GoCheckIn\'s Basic plan ($20/mo) supports up to 5 staff, Deluxe ($40/mo) up to 20 staff, and only its Premium plan ($99/mo) includes unlimited staff. Certxa\'s Professional plan includes unlimited staff for $22/month ($18/month billed annually).']],
       ['@type'=>'Question','name'=>'Does GoCheckIn have a self-service walk-in kiosk and POS for nail salons?','acceptedAnswer'=>['@type'=>'Answer','text'=>'GoCheckIn\'s publicly listed salon features center on booking, reminders, and client profiles — a dedicated self-service walk-in check-in kiosk and built-in point-of-sale system are not highlighted for the salon vertical. Certxa includes both on every plan.']],
-      ['@type'=>'Question','name'=>'Why was Certxa built as an alternative to platforms like GoCheckIn?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa was founded by Tom Tham, a Vietnamese nail salon owner, after seeing salon owners in his community offered long-term commitments by existing check-in and booking vendors just to get basic tools. Certxa runs on flat monthly plans with no setup fee and no long-term lock-in.']],
+      ['@type'=>'Question','name'=>'Why was Certxa built as an alternative to platforms like GoCheckIn?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa was founded by Thanh Lam, a Vietnamese nail salon owner, after seeing salon owners in his community offered long-term commitments by existing check-in and booking vendors just to get basic tools. Certxa runs on flat monthly plans with no setup fee and no long-term lock-in.']],
     ],
   ],
 ]));
@@ -142,12 +142,12 @@ require 'includes/nav.php';
       </div>
       <div class="bento-card">
         <h3 class="bento-title">Built by a nail salon owner</h3>
-        <p class="bento-text">Certxa was founded by Tom Tham, a nail salon owner in the Vietnamese nail salon community, specifically to give salon owners a simpler, more transparent alternative to existing check-in and booking vendors.</p>
+        <p class="bento-text">Certxa was founded by Thanh Lam, a nail salon owner in the Vietnamese nail salon community, specifically to give salon owners a simpler, more transparent alternative to existing check-in and booking vendors.</p>
       </div>
     </div>
 
     <div class="founder-note">
-      💡 Certxa was founded by <a href="/about">Tom Tham, a Vietnamese nail salon owner</a>, in Phoenix, Arizona — built for salon owners who wanted transparent, flat monthly pricing without setup fees or staff-count tiers standing between them and the tools they need.
+      💡 Certxa was founded by <a href="/about">Thanh Lam, a Vietnamese nail salon owner</a>, in Phoenix, Arizona — built for salon owners who wanted transparent, flat monthly pricing without setup fees or staff-count tiers standing between them and the tools they need.
     </div>
   </div>
 </section>
@@ -173,7 +173,7 @@ require 'includes/nav.php';
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Why was Certxa built as an alternative to platforms like GoCheckIn? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Certxa was founded by Tom Tham, a Vietnamese nail salon owner, after seeing salon owners in his community offered long-term commitments by existing check-in and booking vendors just to get basic tools. Certxa runs on flat monthly plans with no setup fee and no long-term lock-in.</div>
+        <div class="accordion-body">Certxa was founded by Thanh Lam, a Vietnamese nail salon owner, after seeing salon owners in his community offered long-term commitments by existing check-in and booking vendors just to get basic tools. Certxa runs on flat monthly plans with no setup fee and no long-term lock-in.</div>
       </div>
     </div>
 

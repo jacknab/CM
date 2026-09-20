@@ -37,7 +37,7 @@
         <p class="footer-col-title" style="margin-top:20px;">Tools</p>
         <ul class="footer-col-links">
           <li><a href="/tools">Free Salon Calculators</a></li>
-          <li><a href="/nail-salons">Nail Salon Directory</a></li>
+          <li><a href="/">Nail Salon Directory</a></li>
         </ul>
         <p class="footer-col-title" style="margin-top:20px;">Compare</p>
         <ul class="footer-col-links">

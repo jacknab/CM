@@ -32,7 +32,7 @@ define('PAGE_SCHEMA', json_encode([
     'mainEntity' => [
       ['@type'=>'Question','name'=>'Certxa có hỗ trợ giao diện Tiếng Việt không?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Có. Certxa hỗ trợ giao diện Tiếng Việt cho chủ tiệm và nhân viên, ngoài tiếng Anh. Quý vị có thể chọn ngôn ngữ Tiếng Việt trong phần cài đặt tài khoản bất cứ lúc nào.']],
       ['@type'=>'Question','name'=>'Certxa có bắt ký hợp đồng dài hạn không?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Không. Certxa tính phí theo tháng, không có hợp đồng dài hạn và không có phí thiết lập ban đầu. Quý vị có thể hủy bất cứ lúc nào mà không bị phạt.']],
-      ['@type'=>'Question','name'=>'Ai đã sáng lập ra Certxa?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa được sáng lập bởi Tom Tham, một chủ tiệm nail người Việt, tại Phoenix, Arizona vào tháng 2 năm 2026. Anh xây dựng Certxa sau khi chứng kiến nhiều tiệm nail người Việt bị các công ty phần mềm khác ép ký hợp đồng dài hạn chỉ để có được những công cụ cơ bản như đặt lịch và check-in.']],
+      ['@type'=>'Question','name'=>'Ai đã sáng lập ra Certxa?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa được sáng lập bởi Thanh Lam, một chủ tiệm nail người Việt, tại Phoenix, Arizona vào tháng 2 năm 2026. Anh xây dựng Certxa sau khi chứng kiến nhiều tiệm nail người Việt bị các công ty phần mềm khác ép ký hợp đồng dài hạn chỉ để có được những công cụ cơ bản như đặt lịch và check-in.']],
       ['@type'=>'Question','name'=>'Certxa có phù hợp với tiệm nail nhỏ, chỉ có một hai thợ không?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Có. Gói Solo của Certxa được thiết kế riêng cho thợ nail độc lập hoặc chủ tiệm nhỏ, với đầy đủ tính năng đặt lịch, quản lý khách hàng, và thanh toán — không cần trả thêm phí cho nhân viên không có.']],
       ['@type'=>'Question','name'=>'Certxa có dùng thử miễn phí không?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Có, Certxa cho dùng thử miễn phí 60 ngày. Cần có thẻ tín dụng để đăng ký nhưng sẽ không bị tính phí cho đến khi hết thời gian dùng thử.']],
     ],
@@ -93,7 +93,7 @@ require 'includes/nav.php';
       <div class="feature-content">
         <span class="tag tag-plum">Câu Chuyện Sáng Lập</span>
         <h2 class="feature-title">Xây dựng bởi người đã từng đứng sau bàn tiếp tân, không phải bởi một đội ngũ tiếp thị.</h2>
-        <p class="feature-text">Certxa được sáng lập tại Phoenix, Arizona bởi Tom Tham — một chủ tiệm nail người Việt. Anh bắt đầu xây dựng Certxa sau khi chứng kiến nhiều tiệm nail người Việt, trong đó có cộng đồng của chính mình, bị các công ty phần mềm hiện có ép ký hợp đồng dài hạn chỉ để có được những công cụ cơ bản như đặt lịch hẹn và check-in.</p>
+        <p class="feature-text">Certxa được sáng lập tại Phoenix, Arizona bởi Thanh Lam — một chủ tiệm nail người Việt. Anh bắt đầu xây dựng Certxa sau khi chứng kiến nhiều tiệm nail người Việt, trong đó có cộng đồng của chính mình, bị các công ty phần mềm hiện có ép ký hợp đồng dài hạn chỉ để có được những công cụ cơ bản như đặt lịch hẹn và check-in.</p>
         <p class="feature-text">Anh muốn xây dựng một lựa chọn khác thật sự: không ràng buộc hợp đồng dài hạn, và phần mềm được làm ra bởi một người đã thật sự điều hành một tiệm nail — không chỉ bán phần mềm cho tiệm nail.</p>
         <div style="margin-top:20px;display:flex;gap:10px;">
           <a href="/about" class="btn btn-primary">Đọc Thêm Về Certxa</a>
@@ -104,7 +104,7 @@ require 'includes/nav.php';
         <div style="text-align:center;padding:16px;">
           <div style="font-size:3.5rem;margin-bottom:12px;">💅</div>
           <p style="font-size:.92rem;color:var(--plum);font-weight:600;line-height:1.6;">"Tôi xây dựng Certxa cho những chủ tiệm giống như tôi — những người muốn một hệ thống đáng tin cậy, không ràng buộc, và không phải trả giá đắt để có được điều đó."</p>
-          <p style="font-size:.78rem;color:var(--mid-grey);margin-top:14px;">— Tom Tham, Người Sáng Lập Certxa</p>
+          <p style="font-size:.78rem;color:var(--mid-grey);margin-top:14px;">— Thanh Lam, Người Sáng Lập Certxa</p>
         </div>
       </div>
     </div>
@@ -181,7 +181,7 @@ require 'includes/nav.php';
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Ai đã sáng lập ra Certxa? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Certxa được sáng lập bởi Tom Tham, một chủ tiệm nail người Việt, tại Phoenix, Arizona vào tháng 2 năm 2026. Anh xây dựng Certxa sau khi chứng kiến nhiều tiệm nail người Việt bị các công ty phần mềm khác ép ký hợp đồng dài hạn chỉ để có được những công cụ cơ bản như đặt lịch và check-in.</div>
+        <div class="accordion-body">Certxa được sáng lập bởi Thanh Lam, một chủ tiệm nail người Việt, tại Phoenix, Arizona vào tháng 2 năm 2026. Anh xây dựng Certxa sau khi chứng kiến nhiều tiệm nail người Việt bị các công ty phần mềm khác ép ký hợp đồng dài hạn chỉ để có được những công cụ cơ bản như đặt lịch và check-in.</div>
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Certxa có phù hợp với tiệm nail nhỏ, chỉ có một hai thợ không? <span class="accordion-icon">+</span></button></h3>

@@ -2,13 +2,47 @@
 require_once dirname(__DIR__) . '/config.php';
 $current_page = basename($_SERVER['PHP_SELF']);
 $is_preview   = ($current_page === 'preview.php');
+
+// This subsystem has its own standalone header (not the main site's
+// includes/header.php), so it never got the canonical/meta description/
+// OG/Twitter/schema treatment every other marketing page has — flagged by
+// a GEO audit as the only page on the site with none of them. Preview pages
+// (template iframes, meant to be embedded, not indexed) stay noindex/bare.
+$page_title       = $page_title       ?? 'Launchit by Certxa';
+$page_description = $page_description ?? 'Launchit is Certxa\'s salon and beauty website builder — pick a professionally designed template, connect your domain, and go live today. Hosting and SSL included.';
+$page_canonical   = 'https://certxa.com' . strtok($_SERVER['REQUEST_URI'], '?');
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo isset($page_title) ? htmlspecialchars($page_title) . ' — Launchit by Certxa' : 'Launchit by Certxa'; ?></title>
+    <title><?php echo htmlspecialchars($page_title) . ' — Launchit by Certxa'; ?></title>
+    <?php if ($is_preview): ?>
+    <meta name="robots" content="noindex, nofollow">
+    <?php else: ?>
+    <meta name="description" content="<?php echo htmlspecialchars($page_description); ?>">
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
+    <link rel="canonical" href="<?php echo htmlspecialchars($page_canonical); ?>">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Certxa">
+    <meta property="og:title" content="<?php echo htmlspecialchars($page_title); ?>">
+    <meta property="og:description" content="<?php echo htmlspecialchars($page_description); ?>">
+    <meta property="og:url" content="<?php echo htmlspecialchars($page_canonical); ?>">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="<?php echo htmlspecialchars($page_title); ?>">
+    <meta name="twitter:description" content="<?php echo htmlspecialchars($page_description); ?>">
+    <script type="application/ld+json"><?php echo json_encode([
+        '@context'    => 'https://schema.org',
+        '@type'       => 'WebPage',
+        '@id'         => $page_canonical,
+        'url'         => $page_canonical,
+        'name'        => $page_title,
+        'description' => $page_description,
+        'isPartOf'    => ['@id' => 'https://certxa.com/#website'],
+        'about'       => ['@id' => 'https://certxa.com/#software'],
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?></script>
+    <?php endif; ?>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,700&display=swap" rel="stylesheet">

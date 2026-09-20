@@ -1,5 +1,6 @@
 <?php
-$page_title = 'Salon Website Templates';
+$page_title       = 'Salon Website Templates';
+$page_description = 'Browse Launchit\'s catalogue of professionally designed website templates for salons, spas, and barbershops. Pick a design, connect your domain, and go live — hosting and SSL included.';
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/includes/categories.php';
 require_once __DIR__ . '/includes/header.php';

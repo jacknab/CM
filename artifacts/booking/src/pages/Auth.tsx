@@ -466,7 +466,7 @@ export default function Auth() {
     if (!onboardingCompleted) {
       return navigate("/onboarding");
     }
-    return navigate("/manage");
+    return navigate("/calendar", { replace: true });
   };
 
   useEffect(() => {
@@ -482,7 +482,7 @@ export default function Auth() {
       if (user && !user.onboardingCompleted) {
         navigate("/onboarding");
       } else {
-        navigate("/manage");
+        navigate("/calendar", { replace: true });
       }
     }
   }, [isAuthenticated, user, navigate, group, redirectTo]);
@@ -624,16 +624,15 @@ export default function Auth() {
     };
 
 
-    const handleOtpSubmit = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (otpCode.length !== 6 || otpVerifying) return;
+    const submitOtpCode = async (code: string) => {
+      if (code.length !== 6 || otpVerifying) return;
       setOtpVerifying(true);
       setOtpVerifyError("");
       try {
         const res = await fetch("/api/auth/owner-verify-otp", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone, code: otpCode }),
+          body: JSON.stringify({ phone, code }),
         });
         const data = await res.json();
         if (!res.ok) {
@@ -648,6 +647,11 @@ export default function Auth() {
       }
     };
 
+    const handleOtpSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      submitOtpCode(otpCode);
+    };
+
     const handlePasswordSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       if (password.length < 6 || password !== confirmPassword) return;
@@ -657,6 +661,7 @@ export default function Auth() {
           password,
           firstName: firstName || undefined,
           lastName:  lastName  || undefined,
+          phone:     phone     || undefined,
           keepSignedIn,
         });
         postAuthRedirect(!!(result && result.onboardingCompleted));
@@ -716,7 +721,11 @@ export default function Auth() {
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 value={otpCode}
-                onChange={e => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                onChange={e => {
+                  const next = e.target.value.replace(/\D/g, "").slice(0, 6);
+                  setOtpCode(next);
+                  if (next.length === 6) submitOtpCode(next);
+                }}
                 placeholder="6-digit verification code"
                 minLength={6}
                 maxLength={6}

@@ -75,6 +75,9 @@ export interface SalonProfile extends Salon {
   bookingUrl?: string;
   /** Real nearby salons sorted by actual distance — [] when this salon has no coordinates on file. */
   nearby: Salon[];
+  /** Real review text — scraped Google reviews when present, else Certxa's own native reviews for a claimed store. [] when neither exists. */
+  /** serviceName/staffName are only ever present on Certxa's own native reviews — a scraped Google review never has this data. */
+  reviews: Array<{ author: string; rating: number | null; text: string | null; serviceName?: string | null; staffName?: string | null }>;
 }
 
 export interface InquiryInput {
@@ -242,4 +245,127 @@ export function useCreateInquiry() {
 
 export function useCreateBusinessInquiry() {
   return useMutation({ mutationFn: (data: InquiryInput) => createBusinessInquiry(data) });
+}
+
+// ── Deals (marketplace vouchers, built on top of Catalog Packages) ─────────
+
+export interface MarketplaceDeal {
+  id: number;
+  title: string;
+  description: string | null;
+  heroImage: string | null;
+  dealPrice: number;
+  listPrice: number;
+  discountPercent: number;
+  capacity: number;
+  purchasedCount: number;
+  spotsLeft: number;
+  endsAt: string;
+  /** Real average from the salon's synced Google reviews — null when it has none yet. */
+  rating: number | null;
+  reviewCount: number;
+  /** Formatted like "2.4 mi" — only present when the caller sent lat/lng and the salon has real coordinates on file. */
+  distance: string | null;
+  salon: { name: string; city: string | null; state: string | null; address: string | null; phone: string | null };
+}
+
+export interface MarketplaceDealDetail extends MarketplaceDeal {
+  availability: 'scheduled' | 'active' | 'sold-out' | 'expired' | 'paused' | 'archived';
+  includes: Array<{ name: string; durationMinutes: number }>;
+  /** How many days after purchase a voucher stays redeemable — independent of the deal's own sale window (endsAt). */
+  expiryDays: number;
+  /** The salon's own real cancellation policy text (or a sensible platform default when they haven't set one). */
+  cancellationPolicy: string;
+}
+
+export interface ListDealsParams {
+  city?: string;
+  state?: string;
+  limit?: number;
+  lat?: number;
+  lng?: number;
+}
+
+export function listDeals(params: ListDealsParams = {}): Promise<MarketplaceDeal[]> {
+  const q = new URLSearchParams();
+  if (params.city) q.set('city', params.city);
+  if (params.state) q.set('state', params.state);
+  if (params.limit) q.set('limit', String(params.limit));
+  if (typeof params.lat === 'number') q.set('lat', String(params.lat));
+  if (typeof params.lng === 'number') q.set('lng', String(params.lng));
+  const qs = q.toString();
+  return apiFetch(`/api/marketplace/deals${qs ? `?${qs}` : ''}`);
+}
+
+export function getDeal(id: number | string): Promise<MarketplaceDealDetail> {
+  return apiFetch(`/api/marketplace/deals/${encodeURIComponent(String(id))}`);
+}
+
+export const getListDealsQueryKey = (params: ListDealsParams = {}) => ['deals', 'list', params] as const;
+export function useListDeals(params: ListDealsParams = {}, options?: QueryOpt<MarketplaceDeal[]>) {
+  return useQuery({ queryKey: getListDealsQueryKey(params), queryFn: () => listDeals(params), ...options?.query });
+}
+
+export const getGetDealQueryKey = (id: number | string) => ['deals', 'byId', id] as const;
+export function useGetDeal(id: number | string, options?: QueryOpt<MarketplaceDealDetail>) {
+  return useQuery({ queryKey: getGetDealQueryKey(id), queryFn: () => getDeal(id), enabled: !!id, ...options?.query });
+}
+
+export interface DealCheckoutInput {
+  customerEmail: string;
+  customerName?: string;
+  // 10-digit US mobile number, required — lets support look up a voucher by
+  // the phone number a caller is calling from.
+  customerPhone: string;
+  quantity?: number;
+}
+
+export interface DealCheckoutResult {
+  clientSecret: string;
+  publishableKey: string | null;
+  amount: number;
+}
+
+export function checkoutDeal(id: number | string, data: DealCheckoutInput): Promise<DealCheckoutResult> {
+  return apiFetch(`/api/marketplace/deals/${encodeURIComponent(String(id))}/checkout`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function useCheckoutDeal() {
+  return useMutation({ mutationFn: ({ id, data }: { id: number | string; data: DealCheckoutInput }) => checkoutDeal(id, data) });
+}
+
+// ── Wallet — guest "My vouchers" access by emailed magic link ──────────────
+
+export interface WalletVoucher {
+  id: number;
+  code: string;
+  status: 'pending_booking' | 'booked' | 'redeemed' | 'expired' | 'refunded';
+  purchasedAt: string;
+  expiresAt: string;
+  redeemedAt: string | null;
+  deal: { id: number; title: string; dealPrice: number };
+  salon: { name: string; city: string | null; state: string | null };
+}
+
+export function requestWalletLink(email: string): Promise<{ sent: boolean }> {
+  return apiFetch('/api/marketplace/vouchers/request-link', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function useRequestWalletLink() {
+  return useMutation({ mutationFn: (email: string) => requestWalletLink(email) });
+}
+
+export function getMyVouchers(token: string): Promise<WalletVoucher[]> {
+  return apiFetch(`/api/marketplace/vouchers/mine?token=${encodeURIComponent(token)}`);
+}
+
+export const getMyVouchersQueryKey = (token: string) => ['vouchers', 'mine', token] as const;
+export function useGetMyVouchers(token: string, options?: QueryOpt<WalletVoucher[]>) {
+  return useQuery({ queryKey: getMyVouchersQueryKey(token), queryFn: () => getMyVouchers(token), enabled: !!token, retry: false, ...options?.query });
 }

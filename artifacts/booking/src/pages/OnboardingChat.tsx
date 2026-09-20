@@ -223,7 +223,7 @@ function useSlugCheck(slug: string) {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(async () => {
       try {
-        const res = await apiRequest("GET", `/api/google-business/check-slug?slug=${encodeURIComponent(slug)}`);
+        const res = await apiRequest("GET", `/api/websites/check-slug?slug=${encodeURIComponent(slug)}`);
         const data = await res.json();
         setStatus(data.available ? "available" : "taken");
       } catch {
@@ -340,9 +340,10 @@ function WebsiteNameInput({
 
 // ── Website template picker (2 visual cards) ──────────────────────────────────
 function WebsiteTemplatePick({
-  selected, onSelect
-}: { selected: string; onSelect: (v: string) => void }) {
+  selected, onSelect, businessName
+}: { selected: string; onSelect: (v: string) => void; businessName: string }) {
   const PLUM_LOCAL = "#5B2D8E";
+  const displayName = businessName.trim() || "Your Salon";
 
   const templates = [
     {
@@ -358,7 +359,7 @@ function WebsiteTemplatePick({
           {/* Content */}
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-4">
             <div className="w-6 h-6 rounded-full bg-white/30 mb-1" />
-            <div className="text-white text-sm font-bold tracking-wide text-center" style={{ fontFamily: "Georgia, serif" }}>Lux Nails</div>
+            <div className="text-white text-sm font-bold tracking-wide text-center" style={{ fontFamily: "Georgia, serif" }}>{displayName}</div>
             <div className="text-white/80 text-[9px] tracking-widest uppercase">Nail & Beauty Studio</div>
             <div className="mt-2 px-4 py-1 rounded-full text-[10px] font-semibold text-purple-900 bg-white/90">Book Now</div>
           </div>
@@ -380,7 +381,7 @@ function WebsiteTemplatePick({
         <div className="relative w-full h-36 overflow-hidden rounded-t-xl bg-white border-b border-gray-100">
           {/* Top nav bar */}
           <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100">
-            <div className="text-[10px] font-bold text-gray-900 tracking-wider uppercase">LUX NAILS</div>
+            <div className="text-[10px] font-bold text-gray-900 tracking-wider uppercase">{displayName}</div>
             <div className="text-[8px] text-gray-400">Menu · About · Book</div>
           </div>
           {/* Hero area */}
@@ -1694,6 +1695,7 @@ export default function OnboardingChat() {
         return (
           <WebsiteTemplatePick
             selected={String(localValue ?? "")}
+            businessName={answers.businessName ?? ""}
             onSelect={v => {
               setLocalValue(v);
               setAnswer("websiteTemplateId" as keyof typeof answers, v as unknown as string);
@@ -1785,6 +1787,10 @@ export default function OnboardingChat() {
                   setSvcUploading(true);
                   setSvcJobError(null);
                   try {
+                    if (!session.createdStoreId) {
+                      const storeId = await prepareGoogle();
+                      if (!storeId) throw new Error("Could not save your business details yet. Please try again.");
+                    }
                     const fd = new FormData();
                     fd.append("importType", svcFile.type === "application/pdf" ? "pdf" : "photos");
                     fd.append("files", svcFile);
