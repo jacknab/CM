@@ -22430,12 +22430,22 @@ or
       const registerId = Number(req.body?.registerId) || 0;
       const deviceId = String(req.body?.deviceId ?? "").trim();
       if (!deviceId) return res.status(400).json({ message: "deviceId is required" });
+      // A reinstalled app gets a new deviceId, orphaning its old claim until it
+      // goes stale. `takeover` lets the signed-in user reclaim the station now;
+      // it grants nothing beyond /api/registers/:id/release, which already exists.
+      const takeover = req.body?.takeover === true;
+      // A device holding a cached copy of a since-deleted station must not re-create its claim.
+      if (registerId !== 0) {
+        const [reg] = await db.select({ id: registers.id }).from(registers)
+          .where(and(eq(registers.id, registerId), eq(registers.storeId, storeId)));
+        if (!reg) return res.status(404).json({ message: "That station no longer exists" });
+      }
 
       const [existing] = await db.select().from(registerClaims)
         .where(and(eq(registerClaims.storeId, storeId), eq(registerClaims.registerId, registerId)));
 
       const isStale = existing && (Date.now() - new Date(existing.claimedAt as any).getTime() >= REGISTER_CLAIM_STALE_MS);
-      if (existing && existing.deviceId !== deviceId && !isStale) {
+      if (existing && existing.deviceId !== deviceId && !isStale && !takeover) {
         return res.status(409).json({ message: "This station is already in use on another device" });
       }
 

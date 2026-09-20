@@ -340,7 +340,7 @@ export default function Calendar() {
     registerId: activeRegisterId,
     needsPicker: needsRegisterPicker,
     registers: registerOptions,
-    allStationsTaken,
+    takenRegisters,
     selectRegister,
     isMultiStation,
     currentRegisterName,
@@ -350,10 +350,10 @@ export default function Calendar() {
   const [registerPickBusy, setRegisterPickBusy] = useState<number | null>(null);
   const [showResetRegisterConfirm, setShowResetRegisterConfirm] = useState(false);
 
-  const handleSelectRegister = async (id: number) => {
+  const handleSelectRegister = async (id: number, takeover = false) => {
     setRegisterPickError(null);
     setRegisterPickBusy(id);
-    const result = await selectRegister(id);
+    const result = await selectRegister(id, { takeover });
     setRegisterPickBusy(null);
     if (!result.ok) setRegisterPickError(result.error ?? "Couldn't select that station.");
   };
@@ -2237,32 +2237,42 @@ export default function Calendar() {
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">Which register is this?</h2>
                   <p className="text-sm text-gray-500 mt-1">
-                    {allStationsTaken
-                      ? "Every station is currently in use on another device."
-                      : "This salon has multiple checkout stations set up. Pick which one this terminal is — you won't be asked again on this device."}
+                    {registerOptions.length > 0
+                      ? "This salon has multiple checkout stations set up. Pick which one this terminal is — you won't be asked again on this device."
+                      : "Every station is marked in use. If one of them is this tablet (for example after reinstalling the app), take it over below."}
                   </p>
                 </div>
-                {allStationsTaken ? (
-                  <p className="text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
-                    If a station's terminal has been retired or is offline, its slot frees up automatically
-                    after about 15 minutes. Try again shortly, or add another station in Settings → POS Stations.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {registerOptions.map((r) => (
-                      <button
-                        key={r.id}
-                        type="button"
-                        onClick={() => handleSelectRegister(r.id)}
-                        disabled={registerPickBusy !== null}
-                        className="w-full text-left px-4 py-3 rounded-xl border border-gray-200 hover:border-primary hover:bg-primary/5 transition-colors font-medium text-gray-800 disabled:opacity-50"
-                        data-testid={`button-register-${r.id}`}
-                      >
-                        {registerPickBusy === r.id ? "Selecting…" : r.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div className="space-y-2">
+                  {registerOptions.map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => handleSelectRegister(r.id)}
+                      disabled={registerPickBusy !== null}
+                      className="w-full text-left px-4 py-3 rounded-xl border border-gray-200 hover:border-primary hover:bg-primary/5 transition-colors font-medium text-gray-800 disabled:opacity-50"
+                      data-testid={`button-register-${r.id}`}
+                    >
+                      {registerPickBusy === r.id ? "Selecting…" : r.name}
+                    </button>
+                  ))}
+                  {takenRegisters.map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm(`${r.name} is marked in use on another device. Take it over only if that device is this tablet's old install or is retired — two tablets on the same station will cross-talk. Continue?`)) {
+                          handleSelectRegister(r.id, true);
+                        }
+                      }}
+                      disabled={registerPickBusy !== null}
+                      className="w-full text-left px-4 py-3 rounded-xl border border-dashed border-gray-300 hover:border-primary hover:bg-primary/5 transition-colors text-gray-500 disabled:opacity-50"
+                      data-testid={`button-register-takeover-${r.id}`}
+                    >
+                      <span className="font-medium text-gray-700">{registerPickBusy === r.id ? "Taking over…" : r.name}</span>
+                      <span className="block text-xs">In use on another device — tap to take over</span>
+                    </button>
+                  ))}
+                </div>
                 {registerPickError && (
                   <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
                     {registerPickError}

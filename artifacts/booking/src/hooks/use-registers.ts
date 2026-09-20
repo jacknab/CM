@@ -142,11 +142,12 @@ export function useDeleteRegister() {
  * one station).
  *
  * Stations already claimed by a DIFFERENT device (another terminal that has
- * picked it and is actively heartbeating) are excluded from `registers` —
- * without this, two terminals could both pick "POS #1" and silently
- * recreate the checkout cross-talk bug this feature exists to prevent. A
- * claim goes stale after ~15 minutes with no heartbeat (see the api-server
- * route) and becomes available again — no manual "release" needed.
+ * picked it and is actively heartbeating) are listed in `takenRegisters`, not
+ * `registers` — the picker only lets them be picked via an explicit takeover,
+ * so two terminals can't silently pick "POS #1" and recreate the checkout
+ * cross-talk bug. A claim also goes stale after ~15 minutes with no heartbeat
+ * (see the api-server route); takeover covers a reinstalled app, whose new
+ * deviceId would otherwise leave its old claim blocking the station.
  */
 export function useActiveRegisterId(storeId: number | undefined) {
   const queryClient = useQueryClient();
@@ -179,6 +180,7 @@ export function useActiveRegisterId(storeId: number | undefined) {
   // What the picker should actually offer — this browser's own already-valid
   // pick stays visible even if (edge case) it also shows as self-claimed.
   const availableOptions = allOptions.filter((o) => !claimedByOther.has(o.id));
+  const takenOptions = allOptions.filter((o) => claimedByOther.has(o.id));
 
   // id:0 is only ever a valid pick in legacy/synthetic mode (no real default
   // row yet) — once a real default row exists, a stale "0" from before that
@@ -207,9 +209,9 @@ export function useActiveRegisterId(storeId: number | undefined) {
     return () => clearInterval(iv);
   }, [isMultiStation, localIsValid, localId, storeId, deviceId]);
 
-  const selectRegister = useCallback(async (id: number): Promise<{ ok: boolean; error?: string }> => {
+  const selectRegister = useCallback(async (id: number, opts?: { takeover?: boolean }): Promise<{ ok: boolean; error?: string }> => {
     try {
-      const res = await apiRequest("POST", "/api/registers/claim", { registerId: id, deviceId });
+      const res = await apiRequest("POST", "/api/registers/claim", { registerId: id, deviceId, takeover: opts?.takeover === true });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         queryClient.invalidateQueries({ queryKey: [`/api/registers/claims?storeId=${storeId}`] });
@@ -251,13 +253,15 @@ export function useActiveRegisterId(storeId: number | undefined) {
     needsPicker,
     // Only stations nobody else currently holds — this is what the picker renders.
     registers: availableOptions,
-    // True once every station is claimed by someone else — the picker has
-    // nothing left to offer.
-    allStationsTaken: needsPicker && availableOptions.length === 0,
+    // Stations another device holds — the picker offers these as an explicit
+    // "take over" so a reinstalled tablet isn't locked out for ~15 minutes.
+    takenRegisters: takenOptions,
     selectRegister,
     isMultiStation,
-    // Display name for whichever station this device currently is, e.g. "POS #2" — null outside multi-station mode.
-    currentRegisterName: isMultiStation ? (allOptions.find((o) => o.id === registerId)?.name ?? null) : null,
+    // Display name for the station this device is explicitly paired to, e.g. "POS #2". Null when
+    // there's nothing to pair (fewer than 2 stations) or the pairing was just reset — otherwise the
+    // badge would keep showing the fallback default station and "Reset" would look like it did nothing.
+    currentRegisterName: allOptions.length >= 2 && localIsValid ? (allOptions.find((o) => o.id === registerId)?.name ?? null) : null,
     resetRegister,
   };
 }
