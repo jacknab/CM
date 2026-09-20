@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -323,7 +324,7 @@ export default function NewBooking() {
   const activeServices = (services as Service[] | undefined)?.filter((s) => s.isActive !== false);
   const { data: categories } = useServiceCategories();
   const { data: staffList } = useStaffList();
-  const { data: bookingResources = [] } = useQuery<{ id: number; type: string; name: string; isActive: boolean }[]>({
+  const { data: bookingResources = EMPTY_ARRAY } = useQuery<{ id: number; type: string; name: string; isActive: boolean }[]>({
     queryKey: ["/api/resources"],
     queryFn: async () => {
       const res = await fetch("/api/resources", { credentials: "include" });
@@ -2908,7 +2909,7 @@ function BookingSummaryPanel({
   };
   const { selectedStore: panelStore } = useSelectedStore();
   const selectedCustomerHasServerId = typeof selectedCustomer?.id === "number";
-  const { data: allAppts = [] } = useQuery<any[]>({
+  const { data: allAppts = EMPTY_ARRAY } = useQuery<any[]>({
     queryKey: ["/api/appointments", panelStore?.id],
     queryFn: () =>
       fetch(`/api/appointments?storeId=${panelStore?.id}`, { credentials: "include" }).then(r => r.json()),

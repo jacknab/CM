@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -62,7 +63,7 @@ export default function IntakeForms() {
   const [requireBeforeBooking, setRequireBeforeBooking] = useState(false);
   const [fields, setFields] = useState<FormField[]>([]);
 
-  const { data: forms = [], isLoading } = useQuery<IntakeForm[]>({
+  const { data: forms = EMPTY_ARRAY, isLoading } = useQuery<IntakeForm[]>({
     queryKey: ["/api/intake-forms"],
     enabled: !!selectedStore,
   });
@@ -148,7 +149,7 @@ export default function IntakeForms() {
     }
   };
 
-  const { data: responses = [] } = useQuery<any[]>({
+  const { data: responses = EMPTY_ARRAY } = useQuery<any[]>({
     queryKey: ["/api/intake-forms/responses"],
     enabled: !!selectedStore,
   });

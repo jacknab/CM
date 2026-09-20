@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, X, Bell, MessageSquare } from "lucide-react";
@@ -21,7 +22,7 @@ export default function TeamTopBar() {
   const dq = useDebounce(query, 250);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { data: results = [] } = useQuery<SearchResult[]>({
+  const { data: results = EMPTY_ARRAY } = useQuery<SearchResult[]>({
     queryKey: ["support-search", dq],
     queryFn: () => supportApi.search(dq),
     enabled: dq.trim().length >= 2,

@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -12,7 +13,7 @@ import { Card } from "@/components/ui/card";
 
 export default function StaffCalendarColors() {
   const navigate = useNavigate();
-  const { data: staffList = [], isLoading } = useStaffList();
+  const { data: staffList = EMPTY_ARRAY, isLoading } = useStaffList();
   const staff = (staffList as Staff[]).filter(s => (s as any).status !== "removed");
   const qc = useQueryClient();
   const { toast } = useToast();

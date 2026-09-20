@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -31,7 +32,7 @@ export default function ApiKeys() {
   const [newKey, setNewKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const { data: keys = [], isLoading } = useQuery<ApiKeyRow[]>({
+  const { data: keys = EMPTY_ARRAY, isLoading } = useQuery<ApiKeyRow[]>({
     queryKey: ["/api/api-keys", selectedStore?.id],
     queryFn: async () => {
       if (!selectedStore?.id) return [];

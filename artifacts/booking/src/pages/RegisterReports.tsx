@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useMemo, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,7 +43,7 @@ export default function RegisterReports() {
   const timezone = selectedStore?.timezone || "UTC";
   const [limit, setLimit] = useState(20);
 
-  const { data: sessions = [], isLoading } = useQuery<CashDrawerSessionWithActions[]>({
+  const { data: sessions = EMPTY_ARRAY, isLoading } = useQuery<CashDrawerSessionWithActions[]>({
     queryKey: [`/api/cash-drawer/sessions?storeId=${selectedStore?.id}`],
     enabled: !!selectedStore,
   });

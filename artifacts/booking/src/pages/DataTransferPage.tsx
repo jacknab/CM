@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useCallback, useRef, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useInSettingsShell } from "@/lib/settings-shell-context";
@@ -144,7 +145,7 @@ export default function DataTransferPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // ── Fetch job history ──
-  const { data: jobs = [], refetch: refetchJobs } = useQuery<TransferJob[]>({
+  const { data: jobs = EMPTY_ARRAY, refetch: refetchJobs } = useQuery<TransferJob[]>({
     queryKey: ["data-transfer-jobs", storeId],
     queryFn: async () => {
       if (!storeId) return [];

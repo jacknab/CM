@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { CalendarFaderScrollbar } from "@/components/CalendarFaderScrollbar";
 import { createPortal } from "react-dom";
@@ -213,7 +214,7 @@ export default function Calendar() {
   const isNailSalon = (selectedStore as any)?.category === "Nail Salon";
 
   // Category color map: categoryId → { bg, border }
-  const { data: serviceCategories = [] } = useServiceCategories();
+  const { data: serviceCategories = EMPTY_ARRAY } = useServiceCategories();
   const categoryColorMap = useMemo(() => {
     const map = new Map<number, { bg: string; border: string }>();
     for (const cat of serviceCategories as any[]) {
@@ -612,7 +613,7 @@ export default function Calendar() {
   // walk-in booking flow instead of the normal appointment editor. Only
   // fetched while that sheet is open, refreshed while it stays open so new
   // walk-ins appear without staff needing to close and reopen it.
-  const { data: pendingWalkinCheckins = [] } = useQuery<{ id: number; clientId: number | null; clientName: string | null; phone: string | null; createdAt: string; appointmentId: number | null }[]>({
+  const { data: pendingWalkinCheckins = EMPTY_ARRAY } = useQuery<{ id: number; clientId: number | null; clientName: string | null; phone: string | null; createdAt: string; appointmentId: number | null }[]>({
     queryKey: ["/api/kiosk/walkins/today"],
     enabled: !!selectedStore?.id,
     refetchInterval: 10_000,
@@ -630,7 +631,7 @@ export default function Calendar() {
     pendingWalkins.length;
   const { data: staffList, isLoading: staffLoading } = useStaffList();
   const { data: allStaffAvailability } = useAllStaffAvailability(selectedStore?.id);
-  const { data: calendarResources = [] } = useQuery<{ id: number; type: string; name: string; isActive: boolean }[]>({
+  const { data: calendarResources = EMPTY_ARRAY } = useQuery<{ id: number; type: string; name: string; isActive: boolean }[]>({
     queryKey: ["/api/resources"],
     queryFn: async () => {
       const res = await fetch("/api/resources", { credentials: "include" });
@@ -6692,7 +6693,7 @@ export function CheckoutPOSPanel({
     ? linkedCustomer.loyaltyPoints
     : Number((appointment as any).customer?.loyaltyPoints ?? 0);
   const effectiveCustomerId = linkedCustomer?.id ?? Number((appointment as any).customerId) ?? 0;
-  const { data: loyaltyRewards = [] } = useQuery<
+  const { data: loyaltyRewards = EMPTY_ARRAY } = useQuery<
     { id: number; name: string; pointsCost: number; dollarValue: number; isActive: boolean }[]
   >({
     queryKey: ["/api/loyalty/rewards"],
@@ -9765,7 +9766,7 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
   const clientId = foundClient?.id;
   const storeId = selectedStore?.id;
 
-  const { data: allAppointments = [] } = useQuery<any[]>({
+  const { data: allAppointments = EMPTY_ARRAY } = useQuery<any[]>({
     queryKey: [`/api/appointments`, clientId, storeId, "client-profile-sheet"],
     queryFn: async () => {
       const res = await fetch(`/api/appointments?customerId=${clientId}&storeId=${storeId}`, { credentials: "include" });

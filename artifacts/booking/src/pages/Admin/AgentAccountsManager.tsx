@@ -8,6 +8,7 @@
  * that's where the generated login and a freshly generated strong password
  * are sent.
  */
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -240,7 +241,7 @@ export default function AgentAccountsManager() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [credentials, setCredentials] = useState<CredentialsResult | null>(null);
 
-  const { data: agents = [], isLoading } = useQuery<AgentAccount[]>({
+  const { data: agents = EMPTY_ARRAY, isLoading } = useQuery<AgentAccount[]>({
     queryKey: ["/api/admin/agents"],
     queryFn: () => apiFetch("/api/admin/agents"),
   });

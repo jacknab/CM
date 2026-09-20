@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -163,7 +164,7 @@ export default function GiftCards() {
     notes: "",
   });
 
-  const { data: cards = [], isLoading } = useQuery<GiftCard[]>({
+  const { data: cards = EMPTY_ARRAY, isLoading } = useQuery<GiftCard[]>({
     queryKey: ["/api/gift-cards"],
     enabled: !!selectedStore,
   });

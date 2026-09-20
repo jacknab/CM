@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -83,9 +84,9 @@ export default function Reports() {
   const [range, setRange] = useState<Range>("30d");
   const [selectedStaffId, setSelectedStaffId] = useState<number | null>(null);
 
-  const { data: allAppointments = [] } = useAppointments();
-  const { data: staffList = [] } = useStaffList();
-  const { data: customers = [] } = useQuery<any[]>({
+  const { data: allAppointments = EMPTY_ARRAY } = useAppointments();
+  const { data: staffList = EMPTY_ARRAY } = useStaffList();
+  const { data: customers = EMPTY_ARRAY } = useQuery<any[]>({
     queryKey: ["/api/customers", selectedStore?.id],
     queryFn: async () => {
       const res = await fetch(`/api/customers?storeId=${selectedStore!.id}`, { credentials: "include" });
@@ -95,7 +96,7 @@ export default function Reports() {
     },
     enabled: !!selectedStore,
   });
-  const { data: services = [] } = useQuery<any[]>({
+  const { data: services = EMPTY_ARRAY } = useQuery<any[]>({
     queryKey: ["/api/services", selectedStore?.id],
     queryFn: async () => {
       const res = await fetch(`/api/services?storeId=${selectedStore!.id}`, { credentials: "include" });

@@ -8,6 +8,7 @@
  * RIGHT  — Configuration panel: enabled toggle + limit value for selected feature.
  */
 
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -109,7 +110,7 @@ export default function PlanFeaturesBuilder() {
     },
   });
 
-  const { data: allFeatures = [], isLoading: loadingFeatures } = useQuery<Feature[]>({
+  const { data: allFeatures = EMPTY_ARRAY, isLoading: loadingFeatures } = useQuery<Feature[]>({
     queryKey: ["/api/plans/features"],
     queryFn: async () => {
       const res = await fetch("/api/plans/features", { credentials: "include" });
@@ -118,7 +119,7 @@ export default function PlanFeaturesBuilder() {
     },
   });
 
-  const { data: planFeaturesList = [], isLoading: loadingPlanFeatures } = useQuery<PlanFeatureRow[]>({
+  const { data: planFeaturesList = EMPTY_ARRAY, isLoading: loadingPlanFeatures } = useQuery<PlanFeatureRow[]>({
     queryKey: ["/api/plans", planIdNum, "features"],
     queryFn: async () => {
       const res = await fetch(`/api/plans/${planIdNum}/features`, { credentials: "include" });

@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useEffect, useRef } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useSelectedStore } from "@/hooks/use-store";
@@ -390,7 +391,7 @@ export default function SmsInbox() {
     retry: false,
   });
 
-  const { data: conversations = [], isLoading: convsLoading } = useQuery<Conversation[]>({
+  const { data: conversations = EMPTY_ARRAY, isLoading: convsLoading } = useQuery<Conversation[]>({
     queryKey: ["/api/sms-inbox/conversations", storeId, view],
     queryFn: () =>
       fetch(`/api/sms-inbox/conversations?storeId=${storeId}&view=${view}`, { credentials: "include" })
@@ -399,7 +400,7 @@ export default function SmsInbox() {
     refetchInterval: 60_000, // Fallback only — WS handles real-time updates
   });
 
-  const { data: messages = [], isLoading: msgsLoading } = useQuery<Message[]>({
+  const { data: messages = EMPTY_ARRAY, isLoading: msgsLoading } = useQuery<Message[]>({
     queryKey: ["/api/sms-inbox/messages", storeId, selectedPhone],
     queryFn: () =>
       fetch(`/api/sms-inbox/messages?storeId=${storeId}&phone=${encodeURIComponent(selectedPhone!)}`, {

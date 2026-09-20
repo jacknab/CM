@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -264,7 +265,7 @@ export default function StaffWorkingHours() {
     return addDays(base, weekOffset * 7);
   }, [weekOffset]);
 
-  const { data: staffList = [], isLoading: staffLoading } = useQuery<StaffMember[]>({
+  const { data: staffList = EMPTY_ARRAY, isLoading: staffLoading } = useQuery<StaffMember[]>({
     queryKey: ["/api/staff", selectedStore?.id],
     queryFn: async () => {
       const res = await fetch("/api/staff", { credentials: "include" });
@@ -274,7 +275,7 @@ export default function StaffWorkingHours() {
     enabled: !!selectedStore?.id,
   });
 
-  const { data: allRules = [], isLoading: rulesLoading } = useQuery<AvailabilityRule[]>({
+  const { data: allRules = EMPTY_ARRAY, isLoading: rulesLoading } = useQuery<AvailabilityRule[]>({
     queryKey: ["/api/store-staff-availability", selectedStore?.id],
     queryFn: async () => {
       const res = await fetch(`/api/store-staff-availability?storeId=${selectedStore!.id}`, { credentials: "include" });
@@ -284,7 +285,7 @@ export default function StaffWorkingHours() {
     enabled: !!selectedStore?.id,
   });
 
-  const { data: bizHoursList = [] } = useQuery<BizHours[]>({
+  const { data: bizHoursList = EMPTY_ARRAY } = useQuery<BizHours[]>({
     queryKey: ["/api/business-hours", selectedStore?.id],
     queryFn: async () => {
       const res = await fetch(`/api/business-hours?storeId=${selectedStore!.id}`, { credentials: "include" });

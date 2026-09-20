@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ChevronDown, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
@@ -103,7 +104,7 @@ function MobileBanList() {
   const [phone, setPhone] = useState("");
   const [reason, setReason] = useState("");
 
-  const { data: entries = [], isLoading } = useQuery<BanEntry[]>({
+  const { data: entries = EMPTY_ARRAY, isLoading } = useQuery<BanEntry[]>({
     queryKey: ["/api/booking-ban-list"],
     queryFn: async () => {
       const response = await fetch("/api/booking-ban-list", { credentials: "include" });

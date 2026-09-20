@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -385,7 +386,7 @@ export default function CreditsTopup() {
   const successAmount = searchParams.get("amount");
 
   const { selectedStore } = useSelectedStore();
-  const { data: stores = [] } = useStores();
+  const { data: stores = EMPTY_ARRAY } = useStores();
   const salonId = selectedStore?.id ?? stores?.[0]?.id ?? null;
 
   const { data: balance, isLoading: balanceLoading, refetch, isFetching } = useQuery<BalanceData>({

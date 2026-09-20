@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -117,7 +118,7 @@ export function CashDrawerPanel({ embedded = false, onClose, onOpenDrawer }: Cas
     enabled: !!selectedStore,
   });
 
-  const { data: discrepancies = [] } = useQuery<any[]>({
+  const { data: discrepancies = EMPTY_ARRAY } = useQuery<any[]>({
     queryKey: [`/api/cash-drawer/discrepancies?storeId=${selectedStore?.id}`],
     enabled: !!selectedStore && isManager,
   });
@@ -150,7 +151,7 @@ export function CashDrawerPanel({ embedded = false, onClose, onOpenDrawer }: Cas
     }
   }, [location.search, openSession]);
 
-  const { data: sessions = [] } = useQuery<CashDrawerSessionWithActions[]>({
+  const { data: sessions = EMPTY_ARRAY } = useQuery<CashDrawerSessionWithActions[]>({
     queryKey: [`/api/cash-drawer/sessions?storeId=${selectedStore?.id}`],
     enabled: !!selectedStore,
   });

@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -33,7 +34,7 @@ export default function AddStaffWizard() {
   const [phone, setPhone] = useState("");
 
   // step 2 — categories all checked by default
-  const { data: categories = [] } = useQuery<Category[]>({
+  const { data: categories = EMPTY_ARRAY } = useQuery<Category[]>({
     queryKey: ["/api/service-categories", selectedStore?.id],
     queryFn: async () => {
       const res = await fetch("/api/service-categories", { credentials: "include" });
@@ -42,7 +43,7 @@ export default function AddStaffWizard() {
     },
     enabled: !!selectedStore?.id,
   });
-  const { data: services = [] } = useQuery<Service[]>({
+  const { data: services = EMPTY_ARRAY } = useQuery<Service[]>({
     queryKey: ["/api/services", selectedStore?.id],
     queryFn: async () => {
       const res = await fetch("/api/services", { credentials: "include" });

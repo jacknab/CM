@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -131,7 +132,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
   const [returningPhone, setReturningPhone] = useState("");
   const [preselectedStaffName, setPreselectedStaffName] = useState<string | null>(null);
 
-  const { data: publicStaff = [] } = useQuery<any[]>({
+  const { data: publicStaff = EMPTY_ARRAY } = useQuery<any[]>({
     queryKey: ["/api/public/store", slug, "staff"],
     queryFn: async () => {
       const res = await fetch(`/api/public/store/${slug}/staff`);

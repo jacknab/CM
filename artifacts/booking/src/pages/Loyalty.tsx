@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,12 +44,12 @@ export default function Loyalty() {
   const [adjustNote, setAdjustNote] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: customers = [] } = useQuery<Customer[]>({
+  const { data: customers = EMPTY_ARRAY } = useQuery<Customer[]>({
     queryKey: ["/api/customers"],
     enabled: !!selectedStore,
   });
 
-  const { data: transactions = [] } = useQuery<LoyaltyTransaction[]>({
+  const { data: transactions = EMPTY_ARRAY } = useQuery<LoyaltyTransaction[]>({
     queryKey: ["/api/loyalty/transactions"],
     enabled: !!selectedStore,
   });
@@ -106,7 +107,7 @@ export default function Loyalty() {
 
   // ── Rewards catalogue ──────────────────────────────────────────────────
   type Reward = { id: number; name: string; pointsCost: number; dollarValue: number; isActive: boolean; sortOrder: number };
-  const { data: rewards = [] } = useQuery<Reward[]>({
+  const { data: rewards = EMPTY_ARRAY } = useQuery<Reward[]>({
     queryKey: ["/api/loyalty/rewards"],
     enabled: !!selectedStore,
   });

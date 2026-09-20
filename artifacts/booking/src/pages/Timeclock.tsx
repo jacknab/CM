@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -111,9 +112,9 @@ export default function Timeclock() {
 
   const { start: startDate, end: endDate } = dateRangeForPreset(preset, customStart, customEnd);
 
-  const { data: staffList = [] } = useStaffList();
+  const { data: staffList = EMPTY_ARRAY } = useStaffList();
 
-  const { data: records = [], isLoading } = useQuery<TimeclockRecord[]>({
+  const { data: records = EMPTY_ARRAY, isLoading } = useQuery<TimeclockRecord[]>({
     queryKey: ["timeclock-records", storeId, startDate, endDate],
     queryFn: async () => {
       const res = await fetch(`/api/timeclock/records?storeId=${storeId}&startDate=${startDate}&endDate=${endDate}`);

@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { formatPhoneInput } from "@/lib/utils";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -56,17 +57,17 @@ export default function Waitlist() {
     notes: "",
   });
 
-  const { data: entries = [], isLoading } = useQuery<WaitlistEntry[]>({
+  const { data: entries = EMPTY_ARRAY, isLoading } = useQuery<WaitlistEntry[]>({
     queryKey: ["/api/waitlist"],
     enabled: !!selectedStore,
   });
 
-  const { data: services = [] } = useQuery<any[]>({
+  const { data: services = EMPTY_ARRAY } = useQuery<any[]>({
     queryKey: ["/api/services"],
     enabled: !!selectedStore,
   });
 
-  const { data: staffList = [] } = useQuery<any[]>({
+  const { data: staffList = EMPTY_ARRAY } = useQuery<any[]>({
     queryKey: ["/api/staff"],
     enabled: !!selectedStore,
   });

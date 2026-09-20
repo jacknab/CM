@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -222,8 +223,8 @@ export default function SalonEarningsReport() {
   const { selectedStore } = useSelectedStore();
   const timezone = selectedStore?.timezone || "UTC";
 
-  const { data: staffList = [] } = useStaffList();
-  const { data: appointments = [] } = useAppointments();
+  const { data: staffList = EMPTY_ARRAY } = useStaffList();
+  const { data: appointments = EMPTY_ARRAY } = useAppointments();
 
   const [viewMode, setViewMode]   = useState<ViewMode>("month");
   const [periodIdx, setPeriodIdx] = useState(0);

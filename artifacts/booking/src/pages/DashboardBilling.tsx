@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, Link } from "react-router-dom";
@@ -238,7 +239,7 @@ export default function DashboardBilling() {
     enabled: !!salonId,
   });
 
-  const { data: publicPlans = [] } = useQuery<{ id: number; code: string; name: string }[]>({
+  const { data: publicPlans = EMPTY_ARRAY } = useQuery<{ id: number; code: string; name: string }[]>({
     queryKey: ["public-plans-db"],
     queryFn: () => apiFetch("/api/plans/public-plans"),
   });

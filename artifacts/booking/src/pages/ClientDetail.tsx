@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, Link } from "react-router-dom";
@@ -95,7 +96,7 @@ export default function ClientDetail() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: bookings = [], isLoading: bookingsLoading } = useQuery<any[]>({
+  const { data: bookings = EMPTY_ARRAY, isLoading: bookingsLoading } = useQuery<any[]>({
     queryKey: ["/api/clients", clientId, "appointments", storeId],
     queryFn: async () => {
       const res = await fetch(`/api/clients/${clientId}/appointments?storeId=${storeId}`, { credentials: "include" });

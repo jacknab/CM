@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useCallback } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useLanguage } from "@/hooks/use-language";
@@ -283,7 +284,7 @@ export default function Customers() {
     limit: isComputedFilter ? COMPUTED_LIMIT : LIMIT,
   });
 
-  const { data: tags = [] } = useClientTags();
+  const { data: tags = EMPTY_ARRAY } = useClientTags();
 
   const rawClients = data?.clients ?? [];
   const clients = isComputedFilter

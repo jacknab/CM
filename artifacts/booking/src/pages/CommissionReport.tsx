@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useMemo, Fragment } from "react";
 import { format, startOfDay, endOfDay, startOfMonth, isWithinInterval } from "date-fns";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -35,8 +36,8 @@ export default function CommissionReport() {
   const { selectedStore } = useSelectedStore();
   const timezone = selectedStore?.timezone || "UTC";
 
-  const { data: staffList = [] } = useStaffList();
-  const { data: appointments = [] } = useAppointments();
+  const { data: staffList = EMPTY_ARRAY } = useStaffList();
+  const { data: appointments = EMPTY_ARRAY } = useAppointments();
 
   const today = new Date();
   const [startDate, setStartDate] = useState(format(startOfMonth(today), "yyyy-MM-dd"));

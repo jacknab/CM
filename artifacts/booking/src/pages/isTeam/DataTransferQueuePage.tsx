@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -45,7 +46,7 @@ export default function TeamDataTransferQueuePage() {
   const [showReject, setShowReject] = useState(false);
   const [reviewNotes, setReviewNotes] = useState("");
 
-  const { data: jobs = [], isLoading } = useQuery<TransferJob[]>({
+  const { data: jobs = EMPTY_ARRAY, isLoading } = useQuery<TransferJob[]>({
     queryKey: ["support-dt-queue"],
     queryFn: () => req("/support/queue"),
     refetchInterval: 15000,

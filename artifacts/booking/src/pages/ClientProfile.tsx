@@ -1,4 +1,5 @@
 
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -73,7 +74,7 @@ export default function ClientProfile() {
     enabled: !!clientId && !!storeId,
   });
 
-  const { data: clientReviews = [] } = useQuery<Review[]>({
+  const { data: clientReviews = EMPTY_ARRAY } = useQuery<Review[]>({
     queryKey: ["/api/reviews", storeId, "client", clientId],
     queryFn: async () => {
       const res = await fetch(`/api/reviews?storeId=${storeId}`, { credentials: "include" });

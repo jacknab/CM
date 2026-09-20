@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -448,7 +449,7 @@ function ServiceDetailPanel({ svc, onClose }: { svc: any; onClose: () => void })
 // ─── SERVICE HEALTH GRID ──────────────────────────────────────────────────────
 function ServiceHealthGrid() {
   const [selected, setSelected] = useState<any | null>(null);
-  const { data = [], isLoading } = useQuery<any[]>({
+  const { data = EMPTY_ARRAY, isLoading } = useQuery<any[]>({
     queryKey: ["service-health"],
     queryFn: () => apiFetch("/service-health"),
     refetchInterval: 10_000,

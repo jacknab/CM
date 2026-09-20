@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,7 +53,7 @@ function fmtPrice(p: string | number) {
 // ── Main component ─────────────────────────────────────────────────────────────
 export function ServicesList() {
   const { data: services, isLoading } = useServices();
-  const { data: categories = [] } = useServiceCategories();
+  const { data: categories = EMPTY_ARRAY } = useServiceCategories();
   const { mutate: updateService } = useUpdateService();
   const { mutate: deleteService } = useDeleteService();
   const { mutate: deleteAllServices, isPending: isDeletingAll } = useDeleteAllServices();

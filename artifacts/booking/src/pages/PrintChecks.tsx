@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useRef, useCallback, lazy, Suspense, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -916,7 +917,7 @@ function BatchPrintTab({ settings }: { settings: PrintSettings }) {
   });
 
   // ── Pending checks ─────────────────────────────────────────────────────────
-  const { data: allChecks = [], isLoading: checksLoading } = useQuery<ContractorCheck[]>({
+  const { data: allChecks = EMPTY_ARRAY, isLoading: checksLoading } = useQuery<ContractorCheck[]>({
     queryKey: ["/api/contractor-payouts/checks", selectedStore?.id],
     queryFn: async () => {
       const res = await fetch(`/api/contractor-payouts/checks?storeId=${selectedStore!.id}`, { credentials: "include" });
@@ -929,7 +930,7 @@ function BatchPrintTab({ settings }: { settings: PrintSettings }) {
   const pendingChecks = allChecks.filter(c => c.printStatus === "queued" && c.voidStatus === "active");
 
   // ── Prior batches ──────────────────────────────────────────────────────────
-  const { data: batches = [] } = useQuery<PrintBatch[]>({
+  const { data: batches = EMPTY_ARRAY } = useQuery<PrintBatch[]>({
     queryKey: ["/api/contractor-payouts/print-batches", selectedStore?.id],
     queryFn: async () => {
       const res = await fetch(`/api/contractor-payouts/print-batches?storeId=${selectedStore!.id}`, { credentials: "include" });
@@ -1717,7 +1718,7 @@ function PayrollChecksTab({ settings }: { settings: PrintSettings }) {
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
 
-  const { data: runs = [], isLoading: runsLoading } = useQuery<PayrollRun[]>({
+  const { data: runs = EMPTY_ARRAY, isLoading: runsLoading } = useQuery<PayrollRun[]>({
     queryKey: ["/api/payroll-runs", storeId],
     queryFn: async () => {
       if (!storeId) return [];
@@ -2079,7 +2080,7 @@ function ContractorChecksTab({ settings }: { settings: PrintSettings }) {
   const [printTarget, setPrintTarget] = useState<ContractorCheck | null>(null);
   const [voidTarget, setVoidTarget] = useState<ContractorCheck | null>(null);
 
-  const { data: checks = [], isLoading } = useQuery<ContractorCheck[]>({
+  const { data: checks = EMPTY_ARRAY, isLoading } = useQuery<ContractorCheck[]>({
     queryKey: ["/api/contractor-payouts/checks", selectedStore?.id],
     queryFn: async () => {
       const res = await fetch(`/api/contractor-payouts/checks?storeId=${selectedStore!.id}`, { credentials: "include" });

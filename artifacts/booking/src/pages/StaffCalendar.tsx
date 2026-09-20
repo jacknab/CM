@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { StaffPortalNav } from "@/components/StaffPortalNav";
@@ -928,8 +929,8 @@ export default function StaffCalendar() {
   }, [searchParams]);
 
   // ── Data ───────────────────────────────────────────────────────────────────
-  const { data: appointments = [] }  = useAppointments();
-  const { data: staffList = [] }     = useStaffList();
+  const { data: appointments = EMPTY_ARRAY }  = useAppointments();
+  const { data: staffList = EMPTY_ARRAY }     = useStaffList();
   // calSettings fetched early so weekFrom/weekTo can respect startOfWeek
   const { data: calSettings }        = useCalendarSettings();
   const { data: allStaffAvailability } = useAllStaffAvailability(selectedStore?.id);
@@ -953,7 +954,7 @@ export default function StaffCalendar() {
     return formatInTz(addDays(subDays(currentDate, diff), 6), timezone, "yyyy-MM-dd");
   }, [currentDate, timezone, calSettings]);
 
-  const { data: weekAppointments = [] } = useQuery<any[]>({
+  const { data: weekAppointments = EMPTY_ARRAY } = useQuery<any[]>({
     queryKey: ["/api/appointments", "week-agenda", weekFrom, weekTo, staffId, selectedStore?.id],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -969,7 +970,7 @@ export default function StaffCalendar() {
     staleTime: 30_000,
   });
 
-  const { data: businessHoursData = [] } = useQuery<any[]>({
+  const { data: businessHoursData = EMPTY_ARRAY } = useQuery<any[]>({
     queryKey: ["/api/business-hours", selectedStore?.id],
     queryFn: async () => {
       if (!selectedStore?.id) return [];

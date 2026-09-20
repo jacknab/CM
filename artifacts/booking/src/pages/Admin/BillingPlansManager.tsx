@@ -3,6 +3,7 @@
  * Uses the new /api/plans endpoint backed by the subscription_plans table.
  * Each plan links to the 3-panel PlanFeaturesBuilder for feature configuration.
  */
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -408,7 +409,7 @@ export function BillingPlansManager() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [togglingId, setTogglingId] = useState<number | null>(null);
 
-  const { data: plans = [], isLoading } = useQuery<Plan[]>({
+  const { data: plans = EMPTY_ARRAY, isLoading } = useQuery<Plan[]>({
     queryKey: ["/api/plans"],
     queryFn: () => apiFetch("/api/plans"),
   });

@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useEffect, useMemo, useState } from "react";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter,
@@ -28,7 +29,7 @@ interface Props {
 export function DealForm({ open, onOpenChange, deal }: Props) {
   const { pick } = useLanguage();
   const { toast } = useToast();
-  const { data: pkgs = [] } = usePackages();
+  const { data: pkgs = EMPTY_ARRAY } = usePackages();
   const { mutate: createDeal, isPending: creating } = useCreateDeal();
   const { mutate: updateDeal, isPending: updating } = useUpdateDeal();
 

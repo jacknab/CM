@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Edit3, Plus, X, Tag, Users } from "lucide-react";
@@ -60,7 +61,7 @@ function TagsSection({ accountId }: { accountId: number }) {
   const [newTag, setNewTag] = useState("");
   const [newColor, setNewColor] = useState("indigo");
 
-  const { data: tags = [] } = useQuery<TagType[]>({
+  const { data: tags = EMPTY_ARRAY } = useQuery<TagType[]>({
     queryKey: ["support-tags", accountId],
     queryFn: () => supportApi.accounts.tags(accountId),
     staleTime: 30_000,
@@ -104,7 +105,7 @@ function TagsSection({ accountId }: { accountId: number }) {
 }
 
 function AccountOwnersSection({ accountId }: { accountId: number }) {
-  const { data: owners = [] } = useQuery<Owner[]>({
+  const { data: owners = EMPTY_ARRAY } = useQuery<Owner[]>({
     queryKey: ["support-owners", accountId],
     queryFn: () => supportApi.accounts.owners(accountId),
     staleTime: 60_000,
@@ -136,7 +137,7 @@ function InlineNotesSection({ accountId }: { accountId: number }) {
   const qc = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [content, setContent] = useState("");
-  const { data: notes = [] } = useQuery<any[]>({ queryKey: ["support-notes", accountId], queryFn: () => supportApi.accounts.notes(accountId), staleTime: 30_000 });
+  const { data: notes = EMPTY_ARRAY } = useQuery<any[]>({ queryKey: ["support-notes", accountId], queryFn: () => supportApi.accounts.notes(accountId), staleTime: 30_000 });
   const addNote = useMutation({ mutationFn: (c: string) => supportApi.accounts.addNote(accountId, c), onSuccess: () => { setContent(""); setAdding(false); qc.invalidateQueries({ queryKey: ["support-notes", accountId] }); } });
 
   return (

@@ -5,6 +5,7 @@
  * choice is the TURN queue, checkout is the calendar's own checkout sheet. This
  * file only owns the screen state and wires the pieces together.
  */
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -268,7 +269,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     }
   }, [pendingCheckout, openDrawerSession, openCheckout]);
 
-  const { data: siblings = [] } = useQuery<AppointmentWithDetails[]>({
+  const { data: siblings = EMPTY_ARRAY } = useQuery<AppointmentWithDetails[]>({
     queryKey: ["/api/appointments", storeId, "nail-checkout-siblings"],
     queryFn: async () => {
       const res = await fetch(`/api/appointments?storeId=${storeId}`, { credentials: "include" });

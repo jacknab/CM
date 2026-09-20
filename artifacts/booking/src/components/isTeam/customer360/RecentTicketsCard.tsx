@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -14,7 +15,7 @@ export default function RecentTicketsCard({ accountId, showCreate }: { accountId
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ subject: "", description: "", priority: "normal" });
 
-  const { data: tickets = [], isLoading } = useQuery<TicketType[]>({
+  const { data: tickets = EMPTY_ARRAY, isLoading } = useQuery<TicketType[]>({
     queryKey: ["support-tickets", accountId],
     queryFn: () => supportApi.accounts.tickets(accountId),
     staleTime: 30_000,

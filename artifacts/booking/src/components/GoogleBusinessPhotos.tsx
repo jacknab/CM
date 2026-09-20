@@ -6,6 +6,7 @@
  *  2. Get pushed to their Google Business Profile
  */
 
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -146,7 +147,7 @@ export function GoogleBusinessPhotos({ storeId }: { storeId: number }) {
   const [uploading, setUploading] = useState(false);
 
   // ── Fetch gallery photos ───────────────────────────────────────────────────
-  const { data: photos = [], isLoading } = useQuery<GalleryPhoto[]>({
+  const { data: photos = EMPTY_ARRAY, isLoading } = useQuery<GalleryPhoto[]>({
     queryKey: ["gallery-photos", storeId],
     queryFn: async () => {
       const res = await fetch(`/api/google-business/gallery-photos/${storeId}`, { credentials: "include" });
@@ -157,7 +158,7 @@ export function GoogleBusinessPhotos({ storeId }: { storeId: number }) {
 
   // ── Fetch GBP queue to get upload statuses ────────────────────────────────
   const queueIds = photos.map((p) => p.gbpQueueId).filter(Boolean) as number[];
-  const { data: queueItems = [] } = useQuery<GbpQueueItem[]>({
+  const { data: queueItems = EMPTY_ARRAY } = useQuery<GbpQueueItem[]>({
     queryKey: ["gbp-queue-gallery", storeId],
     queryFn: async () => {
       const res = await fetch(

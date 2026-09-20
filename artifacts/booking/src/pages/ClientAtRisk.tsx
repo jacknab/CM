@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,7 +47,7 @@ export default function ClientAtRisk() {
   const [daysSince, setDaysSince] = useState(60);
   const [smsSending, setSmsSending] = useState<number | null>(null);
 
-  const { data: clients = [], isLoading } = useQuery<AtRiskClient[]>({
+  const { data: clients = EMPTY_ARRAY, isLoading } = useQuery<AtRiskClient[]>({
     queryKey: ["/api/clients/at-risk", selectedStore?.id, daysSince],
     queryFn: async () => {
       const res = await fetch(`/api/clients/at-risk?daysSince=${daysSince}`, { credentials: "include" });

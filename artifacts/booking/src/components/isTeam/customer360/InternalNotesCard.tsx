@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { StickyNote, Plus, Send } from "lucide-react";
@@ -9,7 +10,7 @@ export default function InternalNotesCard({ accountId, full }: { accountId: numb
   const [content, setContent] = useState("");
   const [adding, setAdding] = useState(false);
 
-  const { data: notes = [], isLoading } = useQuery<Note[]>({
+  const { data: notes = EMPTY_ARRAY, isLoading } = useQuery<Note[]>({
     queryKey: ["support-notes", accountId],
     queryFn: () => supportApi.accounts.notes(accountId),
     staleTime: 30_000,

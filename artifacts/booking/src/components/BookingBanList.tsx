@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +25,7 @@ export function BookingBanList() {
   const [phone, setPhone] = useState("");
   const [reason, setReason] = useState("");
 
-  const { data: entries = [], isLoading } = useQuery<BanEntry[]>({
+  const { data: entries = EMPTY_ARRAY, isLoading } = useQuery<BanEntry[]>({
     queryKey: ["/api/booking-ban-list"],
     queryFn: async () => {
       const res = await fetch("/api/booking-ban-list", { credentials: "include" });

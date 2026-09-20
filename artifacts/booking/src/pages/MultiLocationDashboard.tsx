@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -53,7 +54,7 @@ export default function MultiLocationDashboard() {
   const locationMetric = subscriptionUsage?.metrics.find((m) => m.id === "locations");
   const planLocationLimit = locationMetric?.limit ?? null;
 
-  const { data: stores = [], isLoading: storesLoading } = useQuery<any[]>({
+  const { data: stores = EMPTY_ARRAY, isLoading: storesLoading } = useQuery<any[]>({
     queryKey: ["/api/stores"],
     queryFn: async () => {
       const res = await fetch("/api/stores");
@@ -62,7 +63,7 @@ export default function MultiLocationDashboard() {
     },
   });
 
-  const { data: summaries = [], isLoading: summaryLoading } = useQuery<LocationSummary[]>({
+  const { data: summaries = EMPTY_ARRAY, isLoading: summaryLoading } = useQuery<LocationSummary[]>({
     queryKey: ["/api/multi-location/summary"],
     queryFn: async () => {
       const res = await fetch("/api/multi-location/summary");

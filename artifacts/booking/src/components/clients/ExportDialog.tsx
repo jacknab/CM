@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,7 @@ const FORMAT_OPTIONS = [
 
 export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   const { selectedStore } = useSelectedStore();
-  const { data: tags = [] } = useClientTags();
+  const { data: tags = EMPTY_ARRAY } = useClientTags();
   const { toast } = useToast();
 
   const [format, setFormat] = useState("csv");

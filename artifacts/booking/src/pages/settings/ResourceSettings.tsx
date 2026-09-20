@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ export default function ResourceSettings() {
   const [newType, setNewType]       = useState("station");
   const [newName, setNewName]       = useState("");
 
-  const { data: resources = [], isLoading } = useQuery<Resource[]>({
+  const { data: resources = EMPTY_ARRAY, isLoading } = useQuery<Resource[]>({
     queryKey: ["/api/resources"],
     queryFn: async () => {
       const res = await fetch("/api/resources", { credentials: "include" });

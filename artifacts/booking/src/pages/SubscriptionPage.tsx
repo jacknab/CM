@@ -7,6 +7,7 @@
  *  3. Available Plans grid — plan cards with feature list + Subscribe button
  */
 
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
@@ -290,7 +291,7 @@ export default function SubscriptionPage() {
     }
   }, []);
 
-  const { data: plans = [], isLoading: plansLoading } = useQuery<PublicPlan[]>({
+  const { data: plans = EMPTY_ARRAY, isLoading: plansLoading } = useQuery<PublicPlan[]>({
     queryKey: ["public-plans"],
     queryFn: fetchPublicPlans,
   });
@@ -305,7 +306,7 @@ export default function SubscriptionPage() {
     queryFn: fetchUsage,
   });
 
-  const { data: invoices = [], isLoading: invoicesLoading } = useQuery<StoreInvoice[]>({
+  const { data: invoices = EMPTY_ARRAY, isLoading: invoicesLoading } = useQuery<StoreInvoice[]>({
     queryKey: ["subscription-invoices"],
     queryFn: fetchInvoices,
   });

@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter,
@@ -32,9 +33,9 @@ interface Props {
 export function PackageForm({ open, onOpenChange, packageId }: Props) {
   const { pick } = useLanguage();
   const { toast } = useToast();
-  const { data: services = [] } = useServices();
-  const { data: addons = [] } = useAddons();
-  const { data: pkgs = [] } = usePackages();
+  const { data: services = EMPTY_ARRAY } = useServices();
+  const { data: addons = EMPTY_ARRAY } = useAddons();
+  const { data: pkgs = EMPTY_ARRAY } = usePackages();
   const { mutate: createPackage, isPending: creating } = useCreatePackage();
   const { mutate: updatePackage, isPending: updating } = useUpdatePackage();
 

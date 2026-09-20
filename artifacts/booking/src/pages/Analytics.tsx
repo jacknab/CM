@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useMemo } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useLanguage } from "@/hooks/use-language";
@@ -719,7 +720,7 @@ export default function Analytics() {
 
   // ── Appointment data ──────────────────────────────────────────────────────
   const { data: appointments } = useAppointments();
-  const { data: staffList = [] } = useStaffList();
+  const { data: staffList = EMPTY_ARRAY } = useStaffList();
   const [selectedApt, setSelectedApt] = useState<any | null>(null);
 
   // ── Greeting ──────────────────────────────────────────────────────────────

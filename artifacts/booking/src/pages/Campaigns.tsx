@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useSelectedStore } from "@/hooks/use-store";
@@ -355,7 +356,7 @@ export default function Campaigns() {
     setForm(BLANK_FORM);
   }
 
-  const { data: campaigns = [], isLoading } = useQuery<Campaign[]>({
+  const { data: campaigns = EMPTY_ARRAY, isLoading } = useQuery<Campaign[]>({
     queryKey: ["/api/campaigns", selectedStore?.id],
     queryFn: async () => {
       if (!selectedStore?.id) return [];

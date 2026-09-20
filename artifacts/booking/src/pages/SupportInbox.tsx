@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSelectedStore } from "@/hooks/use-store";
@@ -410,7 +411,7 @@ export default function SupportInbox() {
     loadFailed:   pick({ en: "Failed to load", vi: "Không thể tải", es: "Error al cargar", fr: "Échec du chargement" }),
   };
 
-  const { data: tickets = [], isLoading } = useQuery<Ticket[]>({
+  const { data: tickets = EMPTY_ARRAY, isLoading } = useQuery<Ticket[]>({
     queryKey: ["/api/my/tickets"],
     queryFn: async () => {
       const res = await fetch("/api/my/tickets", { credentials: "include" });

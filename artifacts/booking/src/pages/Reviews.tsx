@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSelectedStore } from "@/hooks/use-store";
@@ -143,7 +144,7 @@ export default function Reviews() {
     }
   }
 
-  const { data: reviewsData = [] } = useQuery<Review[]>({
+  const { data: reviewsData = EMPTY_ARRAY } = useQuery<Review[]>({
     queryKey: ["/api/reviews", storeId],
     queryFn: async () => {
       const res = await fetch(`/api/reviews?storeId=${storeId}`, { credentials: "include" });

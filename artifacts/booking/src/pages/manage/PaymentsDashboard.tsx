@@ -1,3 +1,4 @@
+import { EMPTY_ARRAY } from "@/lib/empty";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSelectedStore } from "@/hooks/use-store";
@@ -120,7 +121,7 @@ function ComingSoon({ icon: Icon, title, body }: { icon: any; title: string; bod
 
 export function PaymentsDashboard() {
   const { selectedStore } = useSelectedStore();
-  const { data: staff = [] } = useStaffList();
+  const { data: staff = EMPTY_ARRAY } = useStaffList();
   const [period, setPeriod] = useState<Period>("month");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
