@@ -1,19 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StripeTerminalProvider, useStripeTerminal } from '@stripe/stripe-terminal-react-native';
 import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { apiCaller, subscribeToSessionReady } from '@/lib/terminalBridge';
 import { terminalDiag } from '@/lib/terminalDiag';
 import { Colors } from '@/constants/colors';
-
-// Keep native splash (plain black) visible until React is ready
-SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
@@ -108,8 +104,6 @@ function TerminalInitializer() {
 }
 
 export default function RootLayout() {
-  const [splashVisible, setSplashVisible] = useState(true);
-
   // We delay mounting StripeTerminalProvider (and therefore calling
   // initialize()) until the WebView session is confirmed ready.
   //
@@ -125,12 +119,6 @@ export default function RootLayout() {
   const [sessionReady, setSessionReady] = useState(false);
 
   const isFirstTokenCall = useRef(true);
-
-  useEffect(() => {
-    SplashScreen.hideAsync();
-    const timer = setTimeout(() => setSplashVisible(false), 3000);
-    return () => clearTimeout(timer);
-  }, []);
 
   // Subscribe to the session-ready signal fired by index.tsx once the WebView
   // navigates past the login page.
@@ -242,17 +230,6 @@ export default function RootLayout() {
             )}
           </QueryClientProvider>
         </SafeAreaProvider>
-
-        {/* Full-screen custom splash overlay */}
-        {splashVisible && (
-          <View style={styles.splash}>
-            <Image
-              source={require('../assets/splash-screen.png')}
-              style={styles.splashImage}
-              resizeMode="contain"
-            />
-          </View>
-        )}
       </GestureHandlerRootView>
     </ErrorBoundary>
   );
@@ -260,14 +237,4 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
-  splash: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#000000',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  splashImage: {
-    width: '100%',
-    height: '100%',
-  },
 });
