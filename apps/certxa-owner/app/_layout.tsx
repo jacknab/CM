@@ -26,12 +26,10 @@ const queryClient = new QueryClient();
 // "First initialize the Stripe Terminal SDK before performing any action"
 // until initialize() has been explicitly called and resolved.
 //
-// Retry logic: when sessionReady flips, the Provider swap unmounts and
-// remounts the portal screen, so its WebView reloads.  initialize() fires
-// while the WebView is still loading, tokenProvider times out, and the SDK
-// reports "Couldn't fetch connection token."  We retry up to MAX_ATTEMPTS
-// times on transient failures (timeout / bridge not ready) with a short delay
-// so the WebView has time to finish loading.
+// Retry logic: initialize() can fire while the WebView is still finishing its
+// first load, so tokenProvider may time out and the SDK reports "Couldn't fetch
+// connection token."  We retry up to MAX_ATTEMPTS times on transient failures
+// (timeout / bridge not ready) with a short delay.
 const INIT_MAX_ATTEMPTS = 4;
 const INIT_RETRY_DELAY_MS = 3_000;
 
@@ -219,15 +217,16 @@ export default function RootLayout() {
         <SafeAreaProvider>
           <QueryClientProvider client={queryClient}>
             <StatusBar hidden />
-            {sessionReady ? (
-              <StripeTerminalProvider logLevel="verbose" tokenProvider={tokenProvider}>
-                {/* Calls initialize() once on mount — required for the native SDK */}
-                <TerminalInitializer />
+            {/* The provider is always mounted so the screen tree (and its WebView) keeps a stable
+                position — swapping it in after login remounted the WebView and reloaded the app.
+                It only registers listeners; nothing talks to Stripe until initialize() runs. */}
+            <StripeTerminalProvider logLevel="verbose" tokenProvider={tokenProvider}>
+              <>
+                {/* Calls initialize() once, and only after login — required for the native SDK */}
+                {sessionReady && <TerminalInitializer />}
                 {screenStack}
-              </StripeTerminalProvider>
-            ) : (
-              screenStack
-            )}
+              </>
+            </StripeTerminalProvider>
           </QueryClientProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>
