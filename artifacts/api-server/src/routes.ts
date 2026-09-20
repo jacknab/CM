@@ -22394,9 +22394,23 @@ or
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(404).json({ message: "Store not found" });
       const id = parseInt(String(req.params.id), 10);
-      await db.delete(registers).where(and(eq(registers.id, id), eq(registers.storeId, storeId)));
-      // Free up its claim too, so the (now-invalid) id can't linger as "in use".
-      await db.delete(registerClaims).where(and(eq(registerClaims.registerId, id), eq(registerClaims.storeId, storeId)));
+      const all = await db.select().from(registers).where(eq(registers.storeId, storeId));
+      const target = all.find((r) => r.id === id);
+      if (!target) return res.status(204).end();
+      const others = all.filter((r) => r.id !== id).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id);
+      if (target.isDefault && others.length === 0) {
+        return res.status(400).json({ message: "This is your only station — add another before removing it." });
+      }
+      await db.transaction(async (tx) => {
+        await tx.delete(registers).where(and(eq(registers.id, id), eq(registers.storeId, storeId)));
+        // The default station owns the bare /frontdesk/:slug URL, so removing it hands that role to the next station.
+        if (target.isDefault) {
+          const next = others.find((r) => r.isActive) ?? others[0];
+          await tx.update(registers).set({ isDefault: true }).where(eq(registers.id, next.id));
+        }
+        // Free up its claim too, so the (now-invalid) id can't linger as "in use".
+        await tx.delete(registerClaims).where(and(eq(registerClaims.registerId, id), eq(registerClaims.storeId, storeId)));
+      });
       return res.status(204).end();
     } catch (err) {
       console.error("[DELETE /api/registers/:id]", err);

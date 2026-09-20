@@ -69,7 +69,7 @@ function StationRow({
             </span>
           )}
         </div>
-        {!isDefault && onDelete && (
+        {onDelete && (
           <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
             onClick={onDelete} disabled={deletePending} title="Remove register">
             <Trash2 className="w-4 h-4" />
@@ -176,7 +176,11 @@ export default function Registers() {
   };
 
   const handleDelete = (register: Register) => {
-    if (!window.confirm(`Remove "${register.name}"? Its paired tablet will need a new URL from this page.`)) return;
+    const next = registerList.filter((r) => r.id !== register.id).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id)[0];
+    const msg = register.isDefault && next
+      ? `Remove "${register.name}"? The bare /frontdesk/${bookingSlug} link will become ${next.name}, so the tablet using it will pair with ${next.name}. Tablets paired to ${register.name} on /calendar will be asked to pick a station again.`
+      : `Remove "${register.name}"? Its paired tablet will need a new URL from this page.`;
+    if (!window.confirm(msg)) return;
     deleteRegister.mutate(register.id, {
       onError: () => toast({ title: "Failed to delete register", variant: "destructive" }),
     });
@@ -243,7 +247,7 @@ export default function Registers() {
                   ? `${window.location.origin}/frontdesk/${bookingSlug}`
                   : `${window.location.origin}/frontdesk/${bookingSlug}/${r.id}`}
                 isDefault={r.isDefault}
-                onDelete={() => handleDelete(r)}
+                onDelete={r.isDefault && registerList.length < 2 ? undefined : () => handleDelete(r)}
                 deletePending={deleteRegister.isPending}
                 claim={claimByRegisterId.get(r.id) ?? null}
                 onRelease={() => releaseClaim.mutate(r.id)}
