@@ -27,17 +27,25 @@ import {
   deauthorizeAccount,
   removePaymentAccount,
   getPaymentAccount,
+  upsertPaymentAccount,
   getConnectedAccountBalance,
   createTerminalConnectionToken,
   createTerminalPaymentIntent,
   captureTerminalPaymentIntent,
   cancelTerminalPaymentIntent,
+  retrieveTerminalPaymentIntent,
   isConnectConfigured,
 } from "../lib/stripeConnect";
+import {
+  parseTerminalContext,
+  terminalContextMetadata,
+  computeTerminalRecord,
+} from "../lib/terminalPaymentMath";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import { awardLoyaltyForCompletion } from "../lib/loyaltyAward";
 import { db, pool } from "../db";
-import { contractors, appointments, contractorInstantTransfers, storePaymentAccounts, clients, services } from "@shared/schema";
+import { contractors, appointments, contractorInstantTransfers, storePaymentAccounts, clients, services, locations } from "@shared/schema";
+import { users } from "@shared/models/auth";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { logActivityEvent } from "../lib/activityFeed";
 import { getStripe, isStripeConfigured } from "../lib/stripe";
@@ -106,7 +114,7 @@ router.get("/stripe/callback", async (req: Request, res: Response) => {
   const { code, state, error } = req.query as Record<string, string>;
 
   const baseUrl = getReturnBaseUrl(req);
-  const settingsUrl = `${baseUrl}/manage/payment-settings`;
+  const settingsUrl = `${baseUrl}/payments/payouts`;
 
   if (error) {
     console.warn("[stripeConnect/callback] OAuth error:", error);
@@ -150,6 +158,12 @@ router.get("/stripe/status", async (req: Request, res: Response) => {
     if (!account || account.status === "disconnected") {
       return res.json({
         connected: false,
+        // A pre-existing 'standard' row (even disconnected) means this store
+        // must (re)connect via OAuth — there's no embedded path for a
+        // Standard account. No row at all, or a disconnected 'express' row,
+        // means the embedded onboarding flow applies. null = never had any
+        // account, same UI treatment as 'express' (see PayoutAccountSettings).
+        accountType: account?.accountType ?? null,
         // Return publishable key even when not connected — needed to initialise
         // the embedded Connect provider before the account is linked.
         publishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? null,
@@ -160,6 +174,7 @@ router.get("/stripe/status", async (req: Request, res: Response) => {
       connected:         true,
       providerAccountId: account.providerAccountId,
       status:            account.status,
+      accountType:       account.accountType,
       chargesEnabled:    account.chargesEnabled,
       payoutsEnabled:    account.payoutsEnabled,
       detailsSubmitted:  account.detailsSubmitted,
@@ -198,15 +213,97 @@ router.post("/stripe/account-session", async (req: Request, res: Response) => {
     if (!storeId) return res.status(400).json({ error: "No store found" });
 
     const account = await getPaymentAccount(storeId);
-    if (!account || account.status === "disconnected") {
+    const stripe = getStripe();
+
+    let connectedAccountId: string;
+    if (account && account.status !== "disconnected") {
+      // Already connected (Standard or Express) — use as-is.
+      connectedAccountId = account.providerAccountId;
+    } else if (account && account.accountType === "standard") {
+      // A Standard account exists but is disconnected — that's an OAuth
+      // re-authorization, not something embedded onboarding can do (Standard
+      // accounts aren't platform-created). Frontend falls back to the OAuth
+      // button when it sees accountType:"standard" on GET /stripe/status.
       return res.status(400).json({
         error: "No connected Stripe account. Complete the Connect flow first.",
       });
+    } else {
+      // No account at all, or a disconnected 'express' row — create (or
+      // this store's first-ever) a platform-owned Express account so the
+      // embedded onboarding component below has something to onboard.
+      // Mirrors the working contractor pattern at routes.ts (stripe-connect-session).
+      const [store] = await db.select().from(locations).where(eq(locations.id, storeId)).limit(1);
+      // The store's own contact email is often never filled in — fall back
+      // to the owner's real Certxa login email so Stripe's account-holder
+      // authentication step has a real email to work with instead of asking
+      // the owner to type one in from scratch.
+      let owner: { email: string | null; firstName: string | null; lastName: string | null; phone: string | null } | undefined;
+      if (store?.userId) {
+        [owner] = await db
+          .select({ email: users.email, firstName: users.firstName, lastName: users.lastName, phone: users.phone })
+          .from(users)
+          .where(eq(users.id, store.userId))
+          .limit(1);
+      }
+      const ownerEmail = owner?.email ?? undefined;
+
+      // Prefill every field we already collected at Certxa signup/onboarding
+      // so Stripe's embedded onboarding form skips asking for it again —
+      // Stripe explicitly excludes any prefilled field from what it asks
+      // the connected account to fill in. Deliberately NOT prefilling the
+      // individual's own home address (individual.address) — we only have
+      // the business location on file, and that can legitimately differ
+      // from where the owner actually lives, which would risk a KYC mismatch.
+      const newAccount = await stripe.accounts.create({
+        type: "express",
+        email: store?.email ?? ownerEmail,
+        business_type: "individual",
+        individual: {
+          first_name: owner?.firstName ?? undefined,
+          last_name: owner?.lastName ?? undefined,
+          email: store?.email ?? ownerEmail,
+          phone: owner?.phone ?? undefined,
+        },
+        business_profile: {
+          name: store?.name ?? undefined,
+          support_email: store?.email ?? ownerEmail,
+          support_phone: store?.phone ?? undefined,
+          support_address: store?.address
+            ? {
+                line1: store.address,
+                city: store.city ?? undefined,
+                state: store.state ?? undefined,
+                postal_code: store.postcode ?? undefined,
+                country: "US",
+              }
+            : undefined,
+          // Real business website if they gave one; otherwise every store
+          // already has its own Certxa booking page, which is a genuine,
+          // real, working URL for the business rather than leaving this
+          // required field blank.
+          url: store?.website || (store?.bookingSlug ? `https://certxa.com/book/${store.bookingSlug}` : undefined),
+          // Every Certxa business is a personal-care service business —
+          // this is Stripe's standard merchant category code for that
+          // (Barber & Beauty Shops), removing business_profile.mcc from
+          // what onboarding would otherwise always ask for.
+          mcc: "7230",
+        },
+        metadata: { storeId: String(storeId), source: "certxa_store_onboarding" },
+      });
+      await upsertPaymentAccount(storeId, newAccount.id, {
+        accountType: "express",
+        chargesEnabled: newAccount.charges_enabled ?? false,
+        payoutsEnabled: newAccount.payouts_enabled ?? false,
+        detailsSubmitted: newAccount.details_submitted ?? false,
+        displayName: store?.name ?? null,
+        email: store?.email ?? null,
+      });
+      connectedAccountId = newAccount.id;
+      console.log(`[stripeConnect/account-session] Created new Express account ${newAccount.id} for storeId=${storeId}`);
     }
 
-    const stripe = getStripe();
     const session = await stripe.accountSessions.create({
-      account: account.providerAccountId,
+      account: connectedAccountId,
       components: {
         account_onboarding: { enabled: true },
         account_management: { enabled: true },
@@ -227,13 +324,25 @@ router.post("/stripe/account-session", async (req: Request, res: Response) => {
             edit_payout_schedule: true,
           } as any,
         },
-        balances: { enabled: true } as any,
+        balances: {
+          enabled: true,
+          // Stripe requires every payout-related feature key here to match
+          // the `payouts` component's value exactly, or accountSessions.create
+          // throws "The `features[X]` property specified by `payouts` and
+          // `balances` must be the same." — found by reproducing the call
+          // directly against a real account after a live 500.
+          features: {
+            instant_payouts:      true,
+            standard_payouts:     true,
+            edit_payout_schedule: true,
+          } as any,
+        },
       },
     });
 
     console.log(
       `[stripeConnect/account-session] Created session for storeId=${storeId} ` +
-      `account=${account.providerAccountId}`
+      `account=${connectedAccountId}`
     );
 
     return res.json({ clientSecret: session.client_secret });
@@ -566,7 +675,7 @@ router.post("/stripe/disconnect", async (req: Request, res: Response) => {
       return res.json({ success: true, message: "No active connection to disconnect" });
     }
 
-    await deauthorizeAccount(account.providerAccountId);
+    await deauthorizeAccount(account.providerAccountId, account.accountType);
     await removePaymentAccount(storeId);
 
     console.log(`[stripeConnect] Disconnected account ${account.providerAccountId} from storeId=${storeId}`);
@@ -687,6 +796,82 @@ router.get("/stripe/instant-transfer-failures", async (req: Request, res: Respon
   }
 });
 
+// ─── Terminal Location (one per store, on the store's connected account) ─────
+// A Terminal Location's address is used for card-network / regulatory reporting,
+// so it must be the store's real address. If the store had no address when the
+// location was first created a placeholder is used; it is corrected here as soon
+// as the owner fills the real address in.
+
+type StoreAddressRow = { name: string; address: string | null; city: string | null; state: string | null; postcode: string | null };
+
+function terminalAddressFromStore(store: StoreAddressRow) {
+  const line1 = store.address?.trim() ?? "";
+  const city = store.city?.trim() ?? "";
+  const state = store.state?.trim() ?? "";
+  const postal = store.postcode?.trim() ?? "";
+  return {
+    isReal: !!(line1 && city && state && postal),
+    address: {
+      line1:       line1  || "123 Main St",
+      city:        city   || "Unknown",
+      state:       state  || "CA",
+      postal_code: postal || "00000",
+      country:     "US",
+    },
+  };
+}
+
+async function getOrCreateTerminalLocation(storeId: number, providerAccountId: string): Promise<string> {
+  const stripe = getStripe();
+  const { data: existing } = await stripe.terminal.locations.list(
+    { limit: 100 },
+    { stripeAccount: providerAccountId }
+  );
+  const found = existing.find(l => l.metadata?.certxa_store_id === String(storeId));
+
+  const storeRow = await pool.query<StoreAddressRow>(
+    `SELECT name, address, city, state, postcode FROM locations WHERE id = $1 LIMIT 1`,
+    [storeId]
+  );
+  const store = storeRow.rows[0];
+  if (!store) throw Object.assign(new Error("Store not found"), { status: 404 });
+  const { isReal, address } = terminalAddressFromStore(store);
+
+  if (found) {
+    if (isReal) {
+      const a = found.address;
+      const differs = !a || a.line1 !== address.line1 || a.city !== address.city ||
+        a.state !== address.state || a.postal_code !== address.postal_code;
+      if (differs) {
+        try {
+          await stripe.terminal.locations.update(
+            found.id,
+            { address, display_name: `${store.name} — POS` },
+            { stripeAccount: providerAccountId }
+          );
+          console.log(`[terminal/location] Updated address for store ${storeId} (${found.id})`);
+        } catch (e: any) {
+          console.warn("[terminal/location] address update failed:", e?.message);
+        }
+      }
+    }
+    return found.id;
+  }
+
+  if (!isReal) {
+    console.warn(`[terminal/location] store ${storeId} has no complete address — creating location with a placeholder address`);
+  }
+  const location = await stripe.terminal.locations.create(
+    {
+      display_name: `${store.name} — POS`,
+      address,
+      metadata: { certxa_store_id: String(storeId) },
+    },
+    { stripeAccount: providerAccountId }
+  );
+  return location.id;
+}
+
 // ─── GET /api/payments/terminal/location ─────────────────────────────────────
 // Returns a Stripe Terminal location ID for this store, creating one if needed.
 // Used by the native Android POS app when connecting a Bluetooth or Tap-to-Pay reader.
@@ -701,42 +886,11 @@ router.get("/terminal/location", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Store has no connected Stripe account" });
     }
 
-    const stripe = getStripe();
-
-    // Look for an existing location tagged with this storeId
-    const { data: existing } = await stripe.terminal.locations.list(
-      { limit: 100 },
-      { stripeAccount: account.providerAccountId }
-    );
-    const found = existing.find(l => l.metadata?.certxa_store_id === String(storeId));
-    if (found) return res.json({ locationId: found.id });
-
-    // Fetch store info for the address
-    const storeRow = await pool.query<{ name: string; address: string | null; city: string | null; state: string | null; postcode: string | null }>(
-      `SELECT name, address, city, state, postcode FROM locations WHERE id = $1 LIMIT 1`,
-      [storeId]
-    );
-    const store = storeRow.rows[0];
-    if (!store) return res.status(404).json({ error: "Store not found" });
-
-    const location = await stripe.terminal.locations.create(
-      {
-        display_name: `${store.name} — POS`,
-        address: {
-          line1:       store.address   || "123 Main St",
-          city:        store.city      || "Unknown",
-          state:       store.state     || "CA",
-          postal_code: store.postcode  || "00000",
-          country:     "US",
-        },
-        metadata: { certxa_store_id: String(storeId) },
-      },
-      { stripeAccount: account.providerAccountId }
-    );
-    return res.json({ locationId: location.id });
+    const locationId = await getOrCreateTerminalLocation(storeId, account.providerAccountId);
+    return res.json({ locationId });
   } catch (err: any) {
     console.error("[terminal/location]", err?.message);
-    return res.status(500).json({ error: err?.message ?? "Failed to get terminal location" });
+    return res.status(err?.status ?? 500).json({ error: err?.message ?? "Failed to get terminal location" });
   }
 });
 
@@ -767,11 +921,17 @@ router.post("/terminal/create-payment-intent", async (req: Request, res: Respons
     const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(400).json({ error: "No store found" });
 
-    const { amountCents, currency = "usd", appointmentId, clientName } = req.body;
+    const { amountCents, currency = "usd", appointmentId, clientName, method } = req.body;
 
     if (!amountCents || isNaN(Number(amountCents)) || Number(amountCents) <= 0) {
       return res.status(400).json({ error: "amountCents must be a positive number" });
     }
+
+    // Ticket context from the checkout sheet (tip, discount, amount already tendered
+    // by other methods). Stored on the PaymentIntent so the capture step can record
+    // the whole ticket — not just this card charge.
+    const ctx = parseTerminalContext(req.body);
+    if (!ctx.ok) return res.status(400).json({ error: ctx.error });
 
     const account = await getPaymentAccount(storeId);
     if (!account || account.status === "disconnected") {
@@ -781,12 +941,30 @@ router.post("/terminal/create-payment-intent", async (req: Request, res: Respons
       return res.status(400).json({ error: "Stripe account not yet enabled for charges" });
     }
 
+    // The appointment this payment will complete must belong to THIS store.
+    let apptId: number | null = null;
+    if (appointmentId) {
+      apptId = Number(appointmentId);
+      if (!Number.isInteger(apptId) || apptId <= 0) {
+        return res.status(400).json({ error: "appointmentId is invalid" });
+      }
+      const owned = await pool.query(
+        `SELECT 1 FROM appointments WHERE id = $1 AND store_id = $2 LIMIT 1`,
+        [apptId, storeId]
+      );
+      if (owned.rowCount === 0) {
+        return res.status(404).json({ error: "Appointment not found for this store" });
+      }
+    }
+
     const metadata: Record<string, string> = {
       store_id: String(storeId),
       source:   "certxa_pos",
+      ...terminalContextMetadata(ctx.ctx),
     };
-    if (appointmentId) metadata.appointment_id = String(appointmentId);
-    if (clientName)    metadata.client_name    = String(clientName);
+    if (apptId)     metadata.appointment_id = String(apptId);
+    if (clientName) metadata.client_name    = String(clientName).slice(0, 200);
+    if (method === "m2" || method === "tap_to_pay" || method === "card") metadata.method = method;
 
     const pi = await createTerminalPaymentIntent(
       account.providerAccountId,
@@ -794,7 +972,6 @@ router.post("/terminal/create-payment-intent", async (req: Request, res: Respons
       currency,
       metadata
     );
-
     return res.json({
       clientSecret:      pi.client_secret,
       paymentIntentId:   pi.id,
@@ -986,7 +1163,113 @@ async function recordCommissionReserve(
   }
 }
 
+// ─── Record a captured Terminal payment ──────────────────────────────────────
+// Shared by the capture route and the Connect webhook (payment_intent.succeeded),
+// so a payment is recorded even if the app's capture response is lost. Safe to
+// call any number of times: the appointment update only wins once (atomic
+// "not yet completed" guard), and the payout helpers have their own guards.
+
+export async function finalizeCapturedTerminalPayment(
+  storeId: number,
+  pi: { id: string; amount: number; currency: string; metadata?: Record<string, string> | null },
+  method: string,
+): Promise<{ recorded: boolean }> {
+  let recorded = false;
+  const metaApptId = pi.metadata?.appointment_id;
+  const apptId = metaApptId ? parseInt(metaApptId, 10) : NaN;
+
+  if (!isNaN(apptId)) {
+    const rec = computeTerminalRecord(pi.amount, pi.metadata);
+    try {
+      // Freeze service price + commission rate on first completion.
+      const snap = await snapshotCompletionFields(apptId);
+      const [completedApt] = await db.update(appointments).set({
+        status:        "completed",
+        paymentMethod: method,
+        totalPaid:     rec.totalPaid,
+        ...(rec.tipAmount      !== undefined ? { tipAmount:      rec.tipAmount }      : {}),
+        ...(rec.discountAmount !== undefined ? { discountAmount: rec.discountAmount } : {}),
+        completedAt:   new Date(),
+        ...(snap.servicePrice   !== undefined ? { servicePrice:   snap.servicePrice }   : {}),
+        ...(snap.commissionRate !== undefined ? { commissionRate: snap.commissionRate } : {}),
+      }).where(and(
+        eq(appointments.id, apptId),
+        eq(appointments.storeId, storeId),
+        sql`${appointments.status} IS DISTINCT FROM 'completed'`,
+      )).returning();
+
+      if (!completedApt) {
+        console.log(`[terminal/capture] Appointment ${apptId} already completed (or not in store ${storeId}) — not re-recording`);
+      } else {
+        recorded = true;
+        console.log(`[terminal/capture] Appointment ${apptId} marked completed — ${rec.totalPaid} via ${method}`);
+        void recordCommissionAccrual(completedApt).catch(() => {});
+        void awardLoyaltyForCompletion({
+          storeId,
+          customerId: completedApt.customerId,
+          appointmentId: apptId,
+          totalPaid: parseFloat(rec.totalPaid),
+        }).catch(() => {});
+
+        // Activity feed — fire-and-forget; a logging failure must never block the payment.
+        void (async () => {
+          try {
+            let customerName = "A client";
+            let serviceName  = "service";
+            if (completedApt.customerId) {
+              const [c] = await db.select({ fullName: clients.fullName })
+                .from(clients).where(eq(clients.id, completedApt.customerId)).limit(1);
+              if (c?.fullName) customerName = c.fullName;
+            }
+            if (completedApt.serviceId) {
+              const [sv] = await db.select({ name: services.name })
+                .from(services).where(eq(services.id, completedApt.serviceId)).limit(1);
+              if (sv?.name) serviceName = sv.name;
+            }
+            const amountNum = parseFloat(rec.totalPaid);
+            await logActivityEvent({
+              storeId,
+              eventType: "service_completed",
+              message:   `${customerName} completed ${serviceName}`,
+              amount:    amountNum,
+            });
+            await logActivityEvent({
+              storeId,
+              eventType: "payment",
+              message:   `${amountNum.toFixed(2)} payment processed`,
+              amount:    amountNum,
+            });
+          } catch (logErr: any) {
+            console.error("[terminal/capture] Activity log error:", logErr?.message);
+          }
+        })();
+      }
+    } catch (dbErr: any) {
+      // Log but don't fail — the payment was captured in Stripe; the webhook and the
+      // checkout sheet's own finalize both re-attempt the recording.
+      console.error(`[terminal/capture] DB update failed for appointment ${apptId}:`, dbErr?.message);
+    }
+  }
+
+  // Instant contractor payout — fire-and-forget; guarded per PaymentIntent.
+  fireInstantContractorTransfer(storeId, pi).catch(err =>
+    console.error("[instant-transfer] Unhandled background error:", err?.message)
+  );
+
+  // Commission reserve for batch/ACH contractors — ON CONFLICT DO NOTHING.
+  if (!isNaN(apptId)) {
+    recordCommissionReserve(storeId, pi.id, apptId, pi.amount).catch(err =>
+      console.error("[commission-reserve] Unhandled background error:", err?.message)
+    );
+  }
+
+  return { recorded };
+}
+
 // ─── POST /api/payments/terminal/capture-payment-intent ──────────────────────
+// Idempotent: capturing a PaymentIntent that is already captured succeeds (the
+// app retries capture after a lost response), and a payment that belongs to
+// another store is refused.
 
 router.post("/terminal/capture-payment-intent", async (req: Request, res: Response) => {
   try {
@@ -994,123 +1277,28 @@ router.post("/terminal/capture-payment-intent", async (req: Request, res: Respon
     if (!storeId) return res.status(400).json({ error: "No store found" });
 
     const { paymentIntentId, method } = req.body;
-    if (!paymentIntentId) return res.status(400).json({ error: "paymentIntentId is required" });
+    if (!paymentIntentId || typeof paymentIntentId !== "string") {
+      return res.status(400).json({ error: "paymentIntentId is required" });
+    }
 
     const account = await getPaymentAccount(storeId);
     if (!account || account.status === "disconnected") {
       return res.status(400).json({ error: "Store has no connected Stripe account" });
     }
 
-    const pi = await captureTerminalPaymentIntent(account.providerAccountId, paymentIntentId);
-
-    // ── Record payment to appointment DB immediately on successful capture ──
-    // This is the authoritative recording path for Terminal (M2 / Tap to Pay)
-    // payments.  The client-side __certxaFinalizeAppointment call is a
-    // belt-and-suspenders update that may also run later — the second write is
-    // idempotent so double-recording is safe.
-    const metaApptId = pi.metadata?.appointment_id;
-    if (metaApptId) {
-      const apptId = parseInt(metaApptId, 10);
-      if (!isNaN(apptId)) {
-        const totalPaid = (pi.amount / 100).toFixed(2);
-        const paymentMethod = (method as string) || "card";
-        try {
-          // Freeze service price + commission rate on first completion (no-op
-          // if the follow-up client PATCH already recorded it).
-          const snap = await snapshotCompletionFields(apptId);
-          const [completedApt] = await db.update(appointments).set({
-            status:        "completed",
-            paymentMethod,
-            totalPaid,
-            completedAt:   new Date(),
-            ...(snap.servicePrice   !== undefined ? { servicePrice:   snap.servicePrice }   : {}),
-            ...(snap.commissionRate !== undefined ? { commissionRate: snap.commissionRate } : {}),
-          }).where(eq(appointments.id, apptId)).returning();
-          console.log(`[terminal/capture] Appointment ${apptId} marked completed — ${totalPaid} via ${paymentMethod}`);
-          if (completedApt) {
-            void recordCommissionAccrual(completedApt).catch(() => {});
-            // Terminal (card / Tap to Pay) checkouts complete the appointment
-            // here directly, bypassing the PATCH route's award logic — this
-            // used to mean loyalty points were never earned on card payments.
-            void awardLoyaltyForCompletion({
-              storeId,
-              customerId: completedApt.customerId,
-              appointmentId: apptId,
-              totalPaid: parseFloat(totalPaid),
-            }).catch(() => {});
-          }
-
-          // ── Log activity events immediately so the dashboard updates ──────────
-          // Fire-and-forget: a logging failure must never block the payment response.
-          void (async () => {
-            try {
-              // Fetch customer + service names for the activity message
-              const [apt] = await db
-                .select({
-                  customerId: appointments.customerId,
-                  serviceId:  appointments.serviceId,
-                })
-                .from(appointments)
-                .where(eq(appointments.id, apptId))
-                .limit(1);
-
-              let customerName = "A client";
-              let serviceName  = "service";
-
-              if (apt?.customerId) {
-                const [c] = await db.select({ fullName: clients.fullName })
-                  .from(clients).where(eq(clients.id, apt.customerId)).limit(1);
-                if (c?.fullName) customerName = c.fullName;
-              }
-              if (apt?.serviceId) {
-                const [s] = await db.select({ name: services.name })
-                  .from(services).where(eq(services.id, apt.serviceId)).limit(1);
-                if (s?.name) serviceName = s.name;
-              }
-
-              const amountNum = parseFloat(totalPaid);
-
-              // "A client completed Acrylic Full Set" — matches web POS event shape
-              await logActivityEvent({
-                storeId,
-                eventType: "service_completed",
-                message:   `${customerName} completed ${serviceName}`,
-                amount:    amountNum,
-              });
-
-              // "$80.25 payment processed" — shows up in Recent Activity amount column
-              await logActivityEvent({
-                storeId,
-                eventType: "payment",
-                message:   `${amountNum.toFixed(2)} payment processed`,
-                amount:    amountNum,
-              });
-            } catch (logErr: any) {
-              console.error("[terminal/capture] Activity log error:", logErr?.message);
-            }
-          })();
-        } catch (dbErr: any) {
-          // Log but don't fail the response — the payment was captured in Stripe.
-          // The client-side finalize will attempt the DB update as a fallback.
-          console.error(`[terminal/capture] DB update failed for appointment ${apptId}:`, dbErr?.message);
-        }
-      }
+    let pi = await retrieveTerminalPaymentIntent(account.providerAccountId, paymentIntentId);
+    if (pi.metadata?.store_id && pi.metadata.store_id !== String(storeId)) {
+      return res.status(403).json({ error: "Payment does not belong to this store" });
     }
 
-    // Instant contractor payout — fire-and-forget so it never delays the response
-    fireInstantContractorTransfer(storeId, pi).catch(err =>
-      console.error("[instant-transfer] Unhandled background error:", err?.message)
-    );
-
-    // Commission reserve — fire-and-forget: records a pending commission in
-    // contractor_commissions so the salon balance reflects the reservation.
-    // Only fires for batch/ACH contractors (instant-mode are paid immediately above).
-    const captureApptId = metaApptId ? parseInt(metaApptId, 10) : null;
-    if (captureApptId && !isNaN(captureApptId)) {
-      recordCommissionReserve(storeId, pi.id, captureApptId, pi.amount).catch(err =>
-        console.error("[commission-reserve] Unhandled background error:", err?.message)
-      );
+    if (pi.status === "requires_capture") {
+      pi = await captureTerminalPaymentIntent(account.providerAccountId, paymentIntentId);
+    } else if (pi.status !== "succeeded") {
+      return res.status(409).json({ error: `Payment is ${pi.status} and cannot be captured` });
     }
+
+    const paymentMethod = (typeof method === "string" && method) || pi.metadata?.method || "card";
+    await finalizeCapturedTerminalPayment(storeId, pi, paymentMethod);
 
     return res.json({
       success:          true,
@@ -1144,43 +1332,13 @@ router.post("/terminal/reader/register", async (req: Request, res: Response) => 
       return res.status(400).json({ error: "Store has no connected Stripe account" });
     }
 
-    // Reuse the same location-fetch logic as the GET /terminal/location route:
-    // look for an existing location tagged with this storeId, create one if missing.
     const stripe = getStripe();
-    const { data: existing } = await stripe.terminal.locations.list(
-      { limit: 100 },
-      { stripeAccount: account.providerAccountId }
-    );
-    let location = existing.find(l => l.metadata?.certxa_store_id === String(storeId));
-
-    if (!location) {
-      const storeRow = await pool.query<{ name: string; address: string | null; city: string | null; state: string | null; postcode: string | null }>(
-        `SELECT name, address, city, state, postcode FROM locations WHERE id = $1 LIMIT 1`,
-        [storeId]
-      );
-      const store = storeRow.rows[0];
-      if (!store) return res.status(404).json({ error: "Store not found" });
-
-      location = await stripe.terminal.locations.create(
-        {
-          display_name: `${store.name} — POS`,
-          address: {
-            line1:       store.address   || "123 Main St",
-            city:        store.city      || "Unknown",
-            state:       store.state     || "CA",
-            postal_code: store.postcode  || "00000",
-            country:     "US",
-          },
-          metadata: { certxa_store_id: String(storeId) },
-        },
-        { stripeAccount: account.providerAccountId }
-      );
-    }
+    const locationId = await getOrCreateTerminalLocation(storeId, account.providerAccountId);
 
     const reader = await stripe.terminal.readers.create(
       {
         registration_code: registrationCode,
-        location: location.id,
+        location: locationId,
         ...(label ? { label } : {}),
       },
       { stripeAccount: account.providerAccountId }

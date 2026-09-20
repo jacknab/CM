@@ -181,28 +181,5 @@ export async function rerunSegment(
   return freshResult;
 }
 
-// ── Bootstrap: ensure the DB table exists at startup ─────────────────────────
-export async function bootstrapHealthCheckTable(pool: Pool): Promise<void> {
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS account_health_checks (
-        id            SERIAL PRIMARY KEY,
-        account_id    INTEGER NOT NULL,
-        agent_id      INTEGER NOT NULL DEFAULT 1,
-        agent_name    TEXT    NOT NULL DEFAULT 'System',
-        run_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        segments_run  TEXT[]  NOT NULL DEFAULT '{}',
-        results       JSONB   NOT NULL DEFAULT '{}',
-        pass_count    INTEGER NOT NULL DEFAULT 0,
-        warn_count    INTEGER NOT NULL DEFAULT 0,
-        fail_count    INTEGER NOT NULL DEFAULT 0,
-        notes         TEXT
-      );
-      CREATE INDEX IF NOT EXISTS idx_ahc_account_run
-        ON account_health_checks (account_id, run_at DESC);
-    `);
-    console.log("[HealthCheck] Table ready");
-  } catch (err) {
-    console.warn("[HealthCheck] Table bootstrap warning:", err);
-  }
-}
+// account_health_checks is created by
+// migrations/0194_owner_phone_otps_and_health_checks_tables.sql.

@@ -9,7 +9,6 @@ import { ERROR_CODE_LOOKUP } from "../lib/apiErrorCodes";
 import {
   runHealthCheck,
   rerunSegment as rerunHealthSegment,
-  bootstrapHealthCheckTable,
   SEGMENT_IDS,
   type SegmentId,
 } from "../lib/healthCheck/index";
@@ -3804,10 +3803,8 @@ router.get("/api/support/error-codes", requireSupportAuth, (_req: Request, res: 
 // ACCOUNT HEALTH CHECK
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Bootstrap DB table at module load time (idempotent)
-bootstrapHealthCheckTable(pool).catch(err =>
-  console.warn("[HealthCheck] Bootstrap failed:", err),
-);
+// account_health_checks is created by migrations/0194_owner_phone_otps_and_health_checks_tables.sql
+// (previously bootstrapHealthCheckTable() ran an ad-hoc CREATE TABLE IF NOT EXISTS on every boot here).
 
 // POST /api/support/accounts/:id/health-check
 // Runs all segments (or a subset via ?segments=seg1,seg2) and persists the result.

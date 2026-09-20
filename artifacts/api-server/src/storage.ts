@@ -2,7 +2,7 @@ import {
   locations, services, serviceOptions, staff, appointments, products,
   clients, clientPhones, clientEmails, clientNotes,
   serviceCategories, addons, serviceAddons, appointmentAddons, staffServices, staffAvailability,
-  packages, packageItems,
+  packages, packageItems, deals, dealVouchers,
   calendarSettings, cashDrawerSessions, drawerActions, businessHours,
   businessDays, businessDayActions,
   smsSettings, smsLog, mailSettings,
@@ -15,6 +15,7 @@ import {
   type ServiceAddon, type InsertServiceAddon,
   type AppointmentAddon, type InsertAppointmentAddon,
   type Package, type InsertPackage, type PackageWithItems, type PackageItemDetail,
+  type Deal, type InsertDeal, type DealWithDetails, type DealVoucher,
   type Staff, type InsertStaff,
   type StaffService, type InsertStaffService,
   type StaffAvailability, type InsertStaffAvailability,
@@ -32,6 +33,8 @@ import {
   type MailSettings, type InsertMailSettings,
 } from "@shared/schema";
 import { users, type User, type UpsertUser } from "@shared/models/auth";
+import { getDealAvailability, dealDiscountPercent } from "./lib/dealAvailability";
+import { DEAL_COMMISSION_RATE } from "./lib/dealVoucherPayouts";
 import { db } from "./db";
 import { eq, and, gte, lte, inArray, desc, isNotNull, ne, isNull, sql } from "drizzle-orm";
 import { toE164US, displayPhone as formatDisplayPhone } from "./lib/phoneUtils";
@@ -96,6 +99,11 @@ export interface IStorage {
   updatePackage(id: number, pkg: Partial<InsertPackage>, items?: { itemType: "service" | "addon"; serviceId?: number | null; addonId?: number | null }[]): Promise<PackageWithItems | undefined>;
   deletePackage(id: number): Promise<void>;
   reorderPackages(storeId: number, orderedIds: number[]): Promise<void>;
+
+  getDeals(storeId: number): Promise<DealWithDetails[]>;
+  getDeal(id: number): Promise<DealWithDetails | undefined>;
+  createDeal(deal: InsertDeal): Promise<DealWithDetails>;
+  updateDeal(id: number, deal: Partial<InsertDeal>): Promise<DealWithDetails | undefined>;
 
   getAppointmentAddons(appointmentId: number): Promise<(AppointmentAddon & { addon: Addon })[]>;
   setAppointmentAddons(appointmentId: number, addonIds: number[]): Promise<void>;
@@ -513,6 +521,47 @@ export class DatabaseStorage implements IStorage {
     ));
   }
 
+  // ── Deals ─────────────────────────────────────────────────────────────────
+  private async _hydrateDeals(rows: Deal[]): Promise<DealWithDetails[]> {
+    if (rows.length === 0) return [];
+    const pkgIds = [...new Set(rows.map(d => d.packageId))];
+    const pkgRows = await db.select({ id: packages.id, name: packages.name, description: packages.description, imageUrl: packages.imageUrl })
+      .from(packages).where(inArray(packages.id, pkgIds));
+    const pkgMap = new Map(pkgRows.map(p => [p.id, p]));
+    return rows.map(d => ({
+      ...d,
+      package: pkgMap.get(d.packageId) ?? { id: d.packageId, name: "Deleted package", description: null, imageUrl: null },
+      availability: getDealAvailability(d),
+      discountPercent: dealDiscountPercent(d.dealPrice, d.listPrice),
+    }));
+  }
+
+  async getDeals(storeId: number): Promise<DealWithDetails[]> {
+    const rows = await db.select().from(deals)
+      .where(eq(deals.storeId, storeId))
+      .orderBy(desc(deals.createdAt));
+    return this._hydrateDeals(rows);
+  }
+
+  async getDeal(id: number): Promise<DealWithDetails | undefined> {
+    const [row] = await db.select().from(deals).where(eq(deals.id, id));
+    if (!row) return undefined;
+    const [hydrated] = await this._hydrateDeals([row]);
+    return hydrated;
+  }
+
+  async createDeal(deal: InsertDeal): Promise<DealWithDetails> {
+    const [row] = await db.insert(deals).values(deal).returning();
+    return (await this.getDeal(row.id))!;
+  }
+
+  async updateDeal(id: number, deal: Partial<InsertDeal>): Promise<DealWithDetails | undefined> {
+    if (Object.keys(deal).length) {
+      await db.update(deals).set({ ...deal, updatedAt: new Date() }).where(eq(deals.id, id));
+    }
+    return this.getDeal(id);
+  }
+
   // Appointment Addons
   async getAppointmentAddons(appointmentId: number): Promise<(AppointmentAddon & { addon: Addon })[]> {
     const result = await db.query.appointmentAddons.findMany({
@@ -575,7 +624,7 @@ export class DatabaseStorage implements IStorage {
 
       for (const table of deleteTables) {
         try {
-          await tx.execute(sql`DELETE FROM ${sql.identifier([table])} WHERE staff_id = ${id}`);
+          await tx.execute(sql`DELETE FROM ${sql.identifier(table)} WHERE staff_id = ${id}`);
         } catch {
           // Some tables may not exist in every environment or may reference a different column name.
         }
@@ -584,7 +633,7 @@ export class DatabaseStorage implements IStorage {
       const updateTables = ["users", "appointments", "kiosk_checkins", "reviews", "waitlist"];
       for (const table of updateTables) {
         try {
-          await tx.execute(sql`UPDATE ${sql.identifier([table])} SET staff_id = NULL WHERE staff_id = ${id}`);
+          await tx.execute(sql`UPDATE ${sql.identifier(table)} SET staff_id = NULL WHERE staff_id = ${id}`);
         } catch {
           // Some legacy tables store staff_id for audit/history and do not require a hard delete.
         }
@@ -844,6 +893,42 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Appointments
+  // appointments.voucherId deliberately has no Drizzle .references() (circular
+  // FK with deal_vouchers.appointmentId — see the schema comment), so it can't
+  // be pulled via `with: {...}` like the other relations. Batch-lookup the
+  // voucher separately and merge it onto each row that has one.
+  //
+  // Security: `voucherCode` is only ever exposed once the voucher is actually
+  // "redeemed" — the salon must never see a customer's redeemable code ahead
+  // of a real scan (see POST /api/qr/redeem-voucher), so a merely-linked but
+  // unredeemed voucher exposes only `voucherStatus`, never the code itself.
+  private async _hydrateVoucherCodes<T extends { voucherId?: number | null }>(rows: T[]): Promise<(T & { voucherCode?: string | null; voucherStatus?: string | null; voucherNetAmount?: number | null; voucherDealTitle?: string | null })[]> {
+    const voucherIds = [...new Set(rows.map(r => r.voucherId).filter((id): id is number => !!id))];
+    if (!voucherIds.length) return rows;
+    const voucherRows = await db
+      .select({ id: dealVouchers.id, code: dealVouchers.code, status: dealVouchers.status, dealPrice: deals.dealPrice, dealTitle: deals.title })
+      .from(dealVouchers)
+      .innerJoin(deals, eq(dealVouchers.dealId, deals.id))
+      .where(inArray(dealVouchers.id, voucherIds));
+    const voucherMap = new Map(voucherRows.map(v => [v.id, v]));
+    return rows.map(r => {
+      const voucher = r.voucherId ? voucherMap.get(r.voucherId) : undefined;
+      // The amount the salon actually nets from a redeemed voucher, after
+      // Certxa's platform commission — see payoutRedeemedVoucher. The
+      // checkout ticket uses this (not the full service price) as the real
+      // "paid" tender, with the difference recorded as a visible Discount
+      // line, so financial reports reconcile against actual bank deposits.
+      const netAmount = voucher ? Number(voucher.dealPrice) * (1 - DEAL_COMMISSION_RATE) : null;
+      return {
+        ...r,
+        voucherDealTitle: voucher?.dealTitle ?? null,
+        voucherCode: voucher?.status === "redeemed" ? voucher.code : null,
+        voucherStatus: voucher?.status ?? null,
+        voucherNetAmount: netAmount,
+      };
+    });
+  }
+
   async getAppointments(filters?: { from?: Date; to?: Date; staffId?: number; storeId?: number; customerId?: number }): Promise<AppointmentWithDetails[]> {
     const conditions = [];
     if (filters?.from) conditions.push(gte(appointments.date, filters.from));
@@ -865,8 +950,8 @@ export class DatabaseStorage implements IStorage {
       },
       orderBy: (appointments, { asc }) => [asc(appointments.date)],
     });
-    
-    return result as any;
+
+    return (await this._hydrateVoucherCodes(result as any)) as any;
   }
 
   async getAppointment(id: number): Promise<AppointmentWithDetails | undefined> {
@@ -882,7 +967,9 @@ export class DatabaseStorage implements IStorage {
         },
       },
     });
-    return result as any;
+    if (!result) return undefined;
+    const [hydrated] = await this._hydrateVoucherCodes([result as any]);
+    return hydrated as any;
   }
 
   async getAppointmentByManageToken(token: string): Promise<{ id: number } | undefined> {
@@ -895,8 +982,29 @@ export class DatabaseStorage implements IStorage {
     return row;
   }
 
+  /**
+   * Atomically assigns the next per-store sequential ticket number (the
+   * human-facing "Booking #"/"Ticket #", independent of the global
+   * appointments.id). A single UPDATE...RETURNING is race-safe under
+   * Postgres row-level locking — two concurrent bookings for the same
+   * store can never be handed the same number.
+   */
+  async getNextTicketNumber(storeId: number): Promise<number> {
+    const result = await db.execute(sql`
+      UPDATE locations SET next_ticket_number = next_ticket_number + 1
+      WHERE id = ${storeId} RETURNING next_ticket_number - 1 AS assigned
+    `) as any;
+    return Number(result?.rows?.[0]?.assigned);
+  }
+
   async createAppointment(insertAppointment: InsertAppointment): Promise<Appointment> {
-    const [appointment] = await db.insert(appointments).values(insertAppointment).returning();
+    // storeId is technically nullable on this table — fall back to no ticket
+    // number (display falls back to the real id) rather than risk a NaN in
+    // the rare case it's ever missing.
+    const ticketNumber = insertAppointment.storeId
+      ? await this.getNextTicketNumber(insertAppointment.storeId)
+      : null;
+    const [appointment] = await db.insert(appointments).values({ ...insertAppointment, ticketNumber }).returning();
     return appointment;
   }
 
@@ -966,6 +1074,27 @@ export class DatabaseStorage implements IStorage {
       // Fire-and-forget: never let accrual bookkeeping block completing a ticket.
       void recordCommissionAccrual(appointment).catch(() => {});
     }
+    // NOTE: a voucher is deliberately NEVER auto-redeemed by an appointment's
+    // status changing (this used to fire on status === "started" here, which
+    // meant a salon could redeem — and get paid for — a voucher just by
+    // clicking "Start Service" with no customer present). Redemption now only
+    // happens via POST /api/qr/redeem-voucher, which requires physically
+    // scanning the customer's code/QR at check-in. See that route + the
+    // dedicated storage.redeemVoucherAndStartAppointment() for the real flow.
+    //
+    // Cancelling (or no-showing) a voucher-backed appointment must release
+    // the voucher back to "pending_booking" — every cancellation path (staff
+    // PATCH, the customer's SMS self-cancel, the "manage my booking" web
+    // link) funnels through this one function, so this one check covers all
+    // of them. Never touches an already-redeemed voucher (the service
+    // already happened and was paid out) — only a still-"booked" one.
+    if (appointment && (updateData.status === "cancelled" || updateData.status === "no_show") && (appointment as any).voucherId) {
+      const voucherId = (appointment as any).voucherId as number;
+      void db.update(dealVouchers)
+        .set({ appointmentId: null, status: "pending_booking" })
+        .where(and(eq(dealVouchers.id, voucherId), eq(dealVouchers.status, "booked")))
+        .catch((err) => console.error("[deal-voucher] release-on-cancel failed for appointment", appointment.id, err));
+    }
     // Fire-and-forget: log this visit + refresh the client's AI profile note.
     // Guarded by wasAlready* so a repeat write of the same terminal status
     // (e.g. Terminal capture followed by a client-side follow-up PATCH) never
@@ -984,6 +1113,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteAppointment(id: number): Promise<void> {
+    // A voucher-backed appointment being deleted (never actually happened —
+    // e.g. a slot conflict rolled it back) must release its voucher claim
+    // back to "pending_booking" so the customer can rebook, and must be
+    // unlinked first or the FK from deal_vouchers.appointment_id blocks
+    // this delete outright.
+    await db.update(dealVouchers).set({ appointmentId: null, status: "pending_booking" }).where(eq(dealVouchers.appointmentId, id));
     await db.delete(appointmentAddons).where(eq(appointmentAddons.appointmentId, id));
     await db.delete(appointments).where(eq(appointments.id, id));
   }
@@ -1005,6 +1140,9 @@ export class DatabaseStorage implements IStorage {
    */
   async deleteAppointmentAndRelated(id: number): Promise<void> {
     await db.transaction(async (tx) => {
+      // Same voucher-release rule as deleteAppointment() — release the
+      // claim rather than leaving a dangling FK or a stuck "booked" voucher.
+      await tx.update(dealVouchers).set({ appointmentId: null, status: "pending_booking" }).where(eq(dealVouchers.appointmentId, id));
       await tx.delete(appointmentAddons).where(eq(appointmentAddons.appointmentId, id));
       await tx.delete(smsLog).where(eq(smsLog.appointmentId, id));
       await tx.delete(aiCallLog).where(eq(aiCallLog.appointmentId, id));
@@ -1015,6 +1153,41 @@ export class DatabaseStorage implements IStorage {
       await tx.delete(reviews).where(eq(reviews.appointmentId, id));
       await tx.delete(staffWorkPhotos).where(eq(staffWorkPhotos.appointmentId, id));
       await tx.delete(appointments).where(eq(appointments.id, id));
+    });
+  }
+
+  /**
+   * The ONLY place a deal voucher is marked "redeemed" and its appointment
+   * moved to "started" — called exclusively from POST /api/qr/redeem-voucher
+   * after a staff member physically scans the customer's code/QR. The
+   * `status = 'booked'` guard on the UPDATE makes this self-idempotent: a
+   * second concurrent/duplicate call for the same voucher updates 0 rows and
+   * returns null, rather than double-redeeming or double-starting.
+   *
+   * Does NOT call payoutRedeemedVoucher() — the caller (routes.ts) does that
+   * after this transaction commits, since it's a real Stripe network call
+   * that shouldn't hold the DB transaction open.
+   */
+  async redeemVoucherAndStartAppointment(
+    voucherId: number,
+    staffId: number | null
+  ): Promise<{ voucher: DealVoucher; appointment: Appointment } | null> {
+    return await db.transaction(async (tx) => {
+      const [voucher] = await tx
+        .update(dealVouchers)
+        .set({ status: "redeemed", redeemedAt: new Date(), redeemedByStaffId: staffId })
+        .where(and(eq(dealVouchers.id, voucherId), eq(dealVouchers.status, "booked")))
+        .returning();
+      if (!voucher || !voucher.appointmentId) return null;
+
+      const [appointment] = await tx
+        .update(appointments)
+        .set({ status: "started" })
+        .where(and(eq(appointments.id, voucher.appointmentId), inArray(appointments.status, ["pending", "confirmed"])))
+        .returning();
+      if (!appointment) return null;
+
+      return { voucher, appointment };
     });
   }
 

@@ -185,6 +185,11 @@ export function setupAuth(app: Express) {
     try {
       const { password, firstName, lastName, keepSignedIn } = req.body;
       const email = typeof req.body.email === "string" ? req.body.email.toLowerCase().trim() : req.body.email;
+      // The phone that was already OTP-verified in an earlier registration
+      // step (see owner-request-otp / owner-verify-otp) — passed through
+      // here so it's actually persisted instead of being discarded after
+      // verification succeeds.
+      const phone = typeof req.body.phone === "string" ? req.body.phone.trim() : undefined;
 
       if (!email || !password) {
         res.status(400).json({ message: "Email and password are required" });
@@ -210,6 +215,7 @@ export function setupAuth(app: Express) {
           password: hashedPassword,
           firstName: firstName || null,
           lastName: lastName || null,
+          phone: phone || null,
         })
         .returning();
 
@@ -708,20 +714,8 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // ── Owner phone-OTP table bootstrap ──────────────────────────────────────────
-  // Created idempotently on startup — no migration file required.
-  pool.query(`
-    CREATE TABLE IF NOT EXISTS owner_phone_otps (
-      id         SERIAL PRIMARY KEY,
-      phone      TEXT        NOT NULL,
-      email      TEXT        NOT NULL,
-      code       TEXT        NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL,
-      used_at    TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS owner_phone_otps_phone_idx ON owner_phone_otps (phone);
-  `).catch(err => console.error("[owner-otp] Table bootstrap error:", err));
+  // owner_phone_otps is created by migrations/0194_owner_phone_otps_and_health_checks_tables.sql
+  // (previously an ad-hoc CREATE TABLE IF NOT EXISTS run on every boot here).
 
   /**
    * GET /api/auth/check-availability

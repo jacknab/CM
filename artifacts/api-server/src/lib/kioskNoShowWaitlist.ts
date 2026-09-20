@@ -1,6 +1,7 @@
 import { pool, db } from "../db";
 import { appointments, locations } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { storage } from "../storage";
 
 interface NoShowApt {
   id: number;
@@ -62,9 +63,11 @@ export async function notifyKioskNoShowWaitlist(storeId: number, noShowApt: NoSh
       [phone, storeId]
     );
     const holdClientId: number | null = clientRows[0]?.id ?? null;
+    const ticketNumber = await storage.getNextTicketNumber(storeId);
 
     await db.insert(appointments).values({
       storeId,
+      ticketNumber,
       customerId: holdClientId,
       serviceId: null,
       date: aptDate,

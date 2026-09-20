@@ -111,6 +111,8 @@ import {
   storeNetworkTrust,
   cashDrawers,
   bookingBanList,
+  deals,
+  dealVouchers,
   posGrids,
   posGridSlots,
 } from "@shared/schema";
@@ -136,6 +138,8 @@ import { requireActiveTrial } from "./middleware/trial-middleware";
 import { isStripeConfigured, getStripe } from "./lib/stripe";
 import { setupNotificationServer, broadcastNotification, broadcastSyncEvent } from "./notifications";
 import { broadcastAppointmentStatus, registerSseClient } from "./lib/appointmentEvents";
+import { normalizePersonName } from "./lib/personName";
+import { payoutRedeemedVoucher } from "./lib/dealVoucherPayouts";
 import { awardLoyaltyForCompletion } from "./lib/loyaltyAward";
 import { setupAiReceptionistRoutes } from "./routes/aiReceptionist";
 import { setupSupportAgentRoutes } from "./routes/supportAgent";
@@ -1956,15 +1960,19 @@ export async function registerRoutes(
           address: locations.address, city: locations.city,
           state: locations.state, postcode: locations.postcode,
         }).from(locations).where(eq(locations.id, id)).limit(1);
-        const resolvedTz = await resolveTimezoneFromAddress({
+        const resolved = await resolveTimezoneFromAddress({
           address:  updates.address  ?? existing?.address,
           city:     updates.city     ?? existing?.city,
           state:    updates.state    ?? existing?.state,
           postcode: updates.postcode ?? existing?.postcode,
         });
-        if (resolvedTz) {
-          updates.timezone = resolvedTz;
-          console.log(`[admin-store-update] Auto-set timezone for store ${id} → ${resolvedTz}`);
+        if (resolved.timezone) {
+          updates.timezone = resolved.timezone;
+          console.log(`[admin-store-update] Auto-set timezone for store ${id} → ${resolved.timezone}`);
+        }
+        if (resolved.latitude != null && resolved.longitude != null) {
+          updates.storeLatitude = String(resolved.latitude);
+          updates.storeLongitude = String(resolved.longitude);
         }
       }
 
@@ -2113,15 +2121,19 @@ export async function registerRoutes(
 
       // Auto-resolve timezone whenever address fields change
       if (hasAddressChange(input as Record<string, unknown>)) {
-        const resolvedTz = await resolveTimezoneFromAddress({
+        const resolved = await resolveTimezoneFromAddress({
           address: (input as any).address ?? store.address,
           city:    (input as any).city    ?? store.city,
           state:   (input as any).state   ?? store.state,
           postcode:(input as any).postcode?? store.postcode,
         });
-        if (resolvedTz) {
-          (input as any).timezone = resolvedTz;
-          console.log(`[store-update] Auto-set timezone for store ${id} → ${resolvedTz}`);
+        if (resolved.timezone) {
+          (input as any).timezone = resolved.timezone;
+          console.log(`[store-update] Auto-set timezone for store ${id} → ${resolved.timezone}`);
+        }
+        if (resolved.latitude != null && resolved.longitude != null) {
+          (input as any).storeLatitude = String(resolved.latitude);
+          (input as any).storeLongitude = String(resolved.longitude);
         }
       }
 
@@ -3439,6 +3451,69 @@ export async function registerRoutes(
       const { orderedIds } = api.packages.reorder.input.parse({ ...req.body, storeId });
       await storage.reorderPackages(storeId, orderedIds);
       return res.json({ success: true });
+    } catch (error) {
+      return res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  // ── Deals (marketplace vouchers, built on top of Catalog Packages) ────────
+
+  app.get(api.deals.list.path, isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(403).json({ message: "No store context" });
+    return res.json(await storage.getDeals(storeId));
+  });
+
+  app.get(api.deals.get.path, isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(403).json({ message: "No store context" });
+    const deal = await storage.getDeal(Number(req.params.id));
+    if (!deal) return res.status(404).json({ message: "Deal not found" });
+    if (deal.storeId !== storeId) return res.status(403).json({ message: "Forbidden" });
+    return res.json(deal);
+  });
+
+  app.post(api.deals.create.path, isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      const input = api.deals.create.input.parse({
+        ...req.body,
+        startsAt: req.body.startsAt ? new Date(req.body.startsAt) : req.body.startsAt,
+        endsAt: req.body.endsAt ? new Date(req.body.endsAt) : req.body.endsAt,
+      });
+      const pkg = await storage.getPackage(input.packageId);
+      if (!pkg || pkg.storeId !== storeId) return res.status(400).json({ message: "Package not found" });
+      if (!input.title?.trim()) return res.status(400).json({ message: "Title is required" });
+      if (input.capacity < 1) return res.status(400).json({ message: "Capacity must be at least 1" });
+      if (new Date(input.startsAt) >= new Date(input.endsAt)) return res.status(400).json({ message: "End date must be after start date" });
+      if (Number(input.dealPrice) <= 0 || Number(input.dealPrice) > pkg.price) return res.status(400).json({ message: "Deal price must be more than $0 and less than the package price" });
+      // listPrice is snapshotted from the package's current effective price —
+      // later package price edits never retroactively change a live deal.
+      const deal = await storage.createDeal({ ...input, storeId, listPrice: String(pkg.price) } as any);
+      return res.status(201).json(deal);
+    } catch (error) {
+      return res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  app.patch(api.deals.update.path, isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      const existing = await storage.getDeal(Number(req.params.id));
+      if (!existing) return res.status(404).json({ message: "Deal not found" });
+      if (existing.storeId !== storeId) return res.status(403).json({ message: "Forbidden" });
+      const input = api.deals.update.input.parse({
+        ...req.body,
+        ...(req.body.startsAt ? { startsAt: new Date(req.body.startsAt) } : {}),
+        ...(req.body.endsAt ? { endsAt: new Date(req.body.endsAt) } : {}),
+      });
+      delete (input as any).storeId;
+      delete (input as any).packageId; // a deal's underlying package is fixed at creation
+      delete (input as any).listPrice; // never client-settable — snapshotted at creation
+      const deal = await storage.updateDeal(Number(req.params.id), input);
+      return res.json(deal);
     } catch (error) {
       return res.status(400).json({ message: "Invalid input" });
     }
@@ -5770,9 +5845,10 @@ If you have any questions, please contact your administrator.
           } else {
             // Appointment was already completed by the Terminal capture endpoint.
             // Only run queue rotation if a staff member is assigned — it is
-            // idempotent and needed to keep the turn queue accurate.
+            // idempotent and needed to keep the turn queue accurate. The amount
+            // the capture recorded is authoritative when the request omits one.
             if (appointment.staffId && appointment.storeId) {
-              const paidAmount = input.totalPaid ? parseFloat(String(input.totalPaid)) : 0;
+              const paidAmount = input.totalPaid ? parseFloat(String(input.totalPaid)) : Number(appointment.totalPaid ?? 0);
               const tipAmt = input.tipAmount
                 ? parseFloat(String(input.tipAmount))
                 : (appointment.tipAmount ? parseFloat(String(appointment.tipAmount)) : 0);
@@ -7113,7 +7189,11 @@ If you have any questions, please contact your administrator.
       console.log("Onboarding: Creating store...");
       const store = await storage.createStore({
         name: businessName,
-        email: email || null,
+        // The onboarding wizard never asks for a separate business email —
+        // default to the owner's own account email rather than leaving this
+        // permanently null. The owner can still set a distinct business
+        // email later via Business Settings if they want one.
+        email: email || currentUser?.email || null,
         timezone: timezone,
         address: address || null,
         city: city || null,
@@ -7469,7 +7549,33 @@ If you have any questions, please contact your administrator.
       const googleRating = googleReviewCount >= 3
         ? Math.round(Number(ratingRows[0]?.avg ?? 0) * 10) / 10
         : null;
-      return res.json({ ...publicStore, businessHours: hours, showPrices, googleRating, googleReviewCount });
+
+      // Fallback for salons with no Google Business Profile connected (the
+      // common case) — same >=3 minimum before showing a rating, so a single
+      // review doesn't look authoritative. Unified displayRating/Count/Source
+      // fields let the booking-page themes render one rating regardless of
+      // which engine it came from, instead of each reimplementing the choice.
+      let displayRating = googleRating;
+      let displayReviewCount = googleReviewCount;
+      let reviewSource: "google" | "native" | null = googleRating != null ? "google" : null;
+      if (!reviewSource) {
+        const nativeRows = await db
+          .select({ avg: sql<number>`AVG(${reviews.rating})`, cnt: sql<number>`COUNT(*)` })
+          .from(reviews)
+          .where(and(eq(reviews.storeId, store.id), eq(reviews.isPublic, true)));
+        const nativeCount = Number(nativeRows[0]?.cnt ?? 0);
+        if (nativeCount >= 3) {
+          reviewSource = "native";
+          displayRating = Math.round(Number(nativeRows[0]?.avg ?? 0) * 10) / 10;
+          displayReviewCount = nativeCount;
+        }
+      }
+
+      return res.json({
+        ...publicStore, businessHours: hours, showPrices,
+        googleRating, googleReviewCount,
+        displayRating, displayReviewCount, reviewSource,
+      });
     } catch (error) {
       return res.status(500).json({ message: "Internal server error" });
     }
@@ -7593,16 +7699,52 @@ If you have any questions, please contact your administrator.
         .orderBy(desc(googleReviews.reviewCreateTime))
         .limit(40);
 
+      if (reviewRows.length > 0) {
+        return res.json(
+          reviewRows.map((r) => ({
+            id: r.id,
+            customerName: r.customerName,
+            rating: r.rating,
+            reviewText: r.reviewText,
+            reviewImageUrls: r.reviewImageUrls,
+            reviewerPhotoUrl: r.reviewerPhotoUrl,
+            reviewMediaItems: r.reviewMediaItems,
+            reviewCreateTime: r.reviewCreateTime,
+          }))
+        );
+      }
+
+      // No synced Google reviews (no GBP connected, the common case) — fall
+      // back to Certxa's own native reviews, mapped into the exact same
+      // response shape so the frontend needs zero changes to consume either.
+      const nativeRows = await db
+        .select({
+          id: reviews.id,
+          customerName: reviews.customerName,
+          rating: reviews.rating,
+          comment: reviews.comment,
+          photoUrl: reviews.photoUrl,
+          serviceName: reviews.serviceName,
+          staffName: reviews.staffName,
+          createdAt: reviews.createdAt,
+        })
+        .from(reviews)
+        .where(and(eq(reviews.storeId, store.id), eq(reviews.isPublic, true), isNotNull(reviews.comment)))
+        .orderBy(desc(reviews.createdAt))
+        .limit(40);
+
       return res.json(
-        reviewRows.map((r) => ({
+        nativeRows.map((r) => ({
           id: r.id,
           customerName: r.customerName,
           rating: r.rating,
-          reviewText: r.reviewText,
-          reviewImageUrls: r.reviewImageUrls,
-          reviewerPhotoUrl: r.reviewerPhotoUrl,
-          reviewMediaItems: r.reviewMediaItems,
-          reviewCreateTime: r.reviewCreateTime,
+          reviewText: r.comment,
+          reviewImageUrls: r.photoUrl ? [r.photoUrl] : [],
+          reviewerPhotoUrl: null,
+          reviewMediaItems: null,
+          serviceName: r.serviceName,
+          staffName: r.staffName,
+          reviewCreateTime: r.createdAt,
         }))
       );
     } catch (error) {
@@ -7994,6 +8136,59 @@ If you have any questions, please contact your administrator.
     }
   });
 
+  // ── GET /api/public/vouchers/:token — resolve a voucher's booking link ────
+  // Powers the one-step "book with this voucher" page: the token identifies
+  // both the salon and the package, so the customer only picks a time.
+  app.get("/api/public/vouchers/:token", async (req, res) => {
+    try {
+      const token = String(req.params.token);
+      const [row] = await db
+        .select({ voucher: dealVouchers, deal: deals, store: locations })
+        .from(dealVouchers)
+        .innerJoin(deals, eq(dealVouchers.dealId, deals.id))
+        .innerJoin(locations, eq(deals.storeId, locations.id))
+        .where(eq(dealVouchers.bookingToken, token));
+      if (!row) return res.status(404).json({ message: "That link isn't valid." });
+      const { voucher, deal, store } = row;
+
+      if (voucher.status !== "pending_booking") {
+        return res.status(409).json({
+          message: voucher.status === "booked" || voucher.status === "redeemed"
+            ? "This voucher has already been used to book an appointment."
+            : "This voucher is no longer available.",
+        });
+      }
+      if (voucher.expiresAt < new Date()) {
+        return res.status(410).json({ message: "This voucher has expired." });
+      }
+      if (!store.bookingSlug) {
+        return res.status(503).json({ message: "This salon's online booking isn't set up yet — please call to book." });
+      }
+
+      let resolvedPackage: Awaited<ReturnType<typeof resolvePackageForBooking>>;
+      try {
+        resolvedPackage = await resolvePackageForBooking(deal.packageId, deal.storeId);
+      } catch {
+        return res.status(400).json({ message: "That package is no longer available. Please contact the salon." });
+      }
+
+      return res.json({
+        voucherCode: voucher.code,
+        dealTitle: deal.title,
+        dealPrice: Number(deal.dealPrice),
+        storeSlug: store.bookingSlug,
+        storeName: store.name,
+        packageId: deal.packageId,
+        serviceId: resolvedPackage.primaryServiceId,
+        durationMinutes: resolvedPackage.durationMinutes,
+        expiresAt: voucher.expiresAt,
+      });
+    } catch (err) {
+      console.error("[public/vouchers] lookup failed:", err);
+      return res.status(503).json({ message: "Something went wrong. Please try again." });
+    }
+  });
+
   app.post("/api/public/store/:slug/book", async (req, res) => {
     try {
       const store = await storage.getStoreBySlug(req.params.slug);
@@ -8029,6 +8224,9 @@ If you have any questions, please contact your administrator.
         depositCollected: z.number().optional(),
         remainingBalance: z.number().optional(),
         cancellationPolicyAccepted: z.boolean().optional(),
+        // Redeeming a purchased marketplace deal voucher — already fully
+        // paid, so this booking skips the store's normal deposit/card policy.
+        voucherCode: z.string().optional(),
       });
 
       const parsed = bookingSchema.parse(req.body);
@@ -8045,6 +8243,24 @@ If you have any questions, please contact your administrator.
         }
       } else if (!parsed.serviceId) {
         return res.status(400).json({ message: "serviceId or packageId is required" });
+      }
+
+      // Voucher validation — must belong to this store's deal, be for the
+      // exact package being booked, and still be unredeemed/unbooked.
+      let voucherRow: typeof dealVouchers.$inferSelect | null = null;
+      if (parsed.voucherCode) {
+        const code = parsed.voucherCode.trim().toUpperCase();
+        const [found] = await db
+          .select({ voucher: dealVouchers, deal: deals })
+          .from(dealVouchers)
+          .innerJoin(deals, eq(dealVouchers.dealId, deals.id))
+          .where(eq(dealVouchers.code, code));
+        if (!found) return res.status(400).json({ message: "That voucher code was not found." });
+        if (found.deal.storeId !== store.id) return res.status(400).json({ message: "That voucher isn't valid for this salon." });
+        if (!parsed.packageId || found.deal.packageId !== parsed.packageId) return res.status(400).json({ message: "That voucher is for a different service package." });
+        if (found.voucher.status !== "pending_booking") return res.status(400).json({ message: "That voucher has already been used or is no longer valid." });
+        if (found.voucher.expiresAt < new Date()) return res.status(400).json({ message: "That voucher has expired." });
+        voucherRow = found.voucher;
       }
 
       const input = {
@@ -8105,7 +8321,10 @@ If you have any questions, please contact your administrator.
           [store.id]
         ).then((r: any) => r.rows.length > 0).catch(() => false))
       );
-      const effectivePolicy = stripeConnected ? (storePolicy?.bookingPaymentPolicy ?? "none") : "none";
+      // A voucher-backed booking is already fully paid for — never demand a
+      // second deposit/card-on-file on top of it, regardless of the store's
+      // normal policy.
+      const effectivePolicy = voucherRow ? "none" : (stripeConnected ? (storePolicy?.bookingPaymentPolicy ?? "none") : "none");
 
       // Compute authoritative service total from DB prices (never from client).
       // For a package, the effective price (fixed override or component sum) is
@@ -8273,6 +8492,21 @@ If you have any questions, please contact your administrator.
         return res.status(409).json({ message: createResult.error.message });
       }
       const appointmentId = createResult.data.id;
+
+      if (voucherRow) {
+        // Claim the voucher atomically — WHERE status='pending_booking' guards
+        // against a race with another concurrent booking attempt using the
+        // same code (only one can win; the loser's appointment is rolled back).
+        const claimed = await db.update(dealVouchers)
+          .set({ appointmentId, status: "booked" })
+          .where(and(eq(dealVouchers.id, voucherRow.id), eq(dealVouchers.status, "pending_booking")))
+          .returning({ id: dealVouchers.id });
+        if (!claimed.length) {
+          await storage.deleteAppointment(appointmentId);
+          return res.status(409).json({ message: "That voucher was just used by someone else." });
+        }
+        await storage.updateAppointment(appointmentId, { voucherId: voucherRow.id } as any);
+      }
 
       void (async () => {
         const svc = await storage.getService(input.serviceId);
@@ -18519,6 +18753,9 @@ or
       }
 
       const createdIds: number[] = [];
+      // One shared ticket number for this whole sale — all line items below
+      // insert as separate appointment rows but represent one customer ticket.
+      const ticketNumber = await storage.getNextTicketNumber(storeId);
 
       for (const item of items) {
         // A package line resolves to its primary service + summed duration; the
@@ -18536,6 +18773,7 @@ or
 
         const [apt] = await db.insert(appointments).values({
           storeId,
+          ticketNumber,
           staffId:       itemStaffId,
           customerId:    clientId        ? Number(clientId)        : null,
           serviceId:     pkg ? pkg.primaryServiceId : (item.serviceId ? Number(item.serviceId) : null),
@@ -18567,6 +18805,64 @@ or
     } catch (err: any) {
       console.error("[POS record-sale]", err);
       return res.status(500).json({ message: err.message || "Failed to record sale" });
+    }
+  });
+
+  // ============================================================
+  // POS — Text (SMS) Receipt
+  // Chosen by the customer on the /frontdesk display; relayed to the POS, which calls this.
+  // "pos_receipt" is not a metered SMS type, so it is platform-funded (see sms.ts).
+  // ============================================================
+
+  app.post("/api/pos/sms-receipt", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(400).json({ message: "No store selected" });
+
+      const { phone, clientName, items, discountAmount, taxAmount, tipAmount, grandTotal, paymentMethod, last4, appointmentId, customerId } = req.body ?? {};
+      const digits = String(phone ?? "").replace(/\D/g, "").slice(-10);
+      if (digits.length !== 10) return res.status(400).json({ message: "A valid 10-digit phone number is required" });
+
+      const store = await storage.getStore(storeId);
+      const storeName = String(store?.name ?? "Your salon").slice(0, 60);
+      const money = (n: unknown) => `$${(Number(n) || 0).toFixed(2)}`;
+      const lines: string[] = Array.isArray(items)
+        ? items.slice(0, 15).map((i: any) => `${String(i?.label ?? "Item").slice(0, 40)}  ${money(i?.price)}`)
+        : [];
+      const firstName = String(clientName ?? "").trim().split(/\s+/)[0];
+      // "cash:20.00,m2" / "m2" → "Cash + Card"
+      const payLabel = Array.from(new Set(
+        String(paymentMethod ?? "").split(",")
+          .map((m) => m.trim().replace(/:.*$/, "").toLowerCase())
+          .filter(Boolean)
+          .map((m) => (m === "m2" || m === "tap" || m === "card" ? "Card" : m.charAt(0).toUpperCase() + m.slice(1))),
+      )).join(" + ");
+      const card = /^\d{4}$/.test(String(last4 ?? "")) ? ` ••••${last4}` : "";
+
+      const body = [
+        `${storeName} — receipt`,
+        ...lines,
+        Number(discountAmount) > 0 ? `Discount  -${money(discountAmount)}` : null,
+        Number(taxAmount) > 0 ? `Tax  ${money(taxAmount)}` : null,
+        Number(tipAmount) > 0 ? `Tip  ${money(tipAmount)}` : null,
+        `Total  ${money(grandTotal)}${payLabel ? ` (${payLabel}${card})` : ""}`,
+        firstName ? `Thank you, ${firstName}!` : "Thank you!",
+      ].filter(Boolean).join("\n");
+
+      // Only reference an appointment/customer that belongs to this store.
+      let apptId: number | undefined;
+      if (Number.isInteger(Number(appointmentId)) && Number(appointmentId) > 0) {
+        const owned = await pool.query(`SELECT 1 FROM appointments WHERE id = $1 AND store_id = $2 LIMIT 1`, [Number(appointmentId), storeId]);
+        if (owned.rowCount) apptId = Number(appointmentId);
+      }
+      const custId = Number.isInteger(Number(customerId)) && Number(customerId) > 0 ? Number(customerId) : undefined;
+
+      const result = await sendSms(storeId, digits, body, "pos_receipt", apptId, custId);
+      if (result.success) return res.json({ success: true, skipped: !!result.skipped });
+      return res.status(502).json({ message: result.error || "Could not send the text receipt" });
+    } catch (err: any) {
+      console.error("[POS sms-receipt]", err?.message);
+      return res.status(500).json({ message: "Failed to send text receipt" });
     }
   });
 
@@ -20164,7 +20460,9 @@ or
   });
 
   // POST /api/qr/lookup — staff portal QR scan: look up an appointment by token
-  // Supports: plain numeric ID, "BK:123", kiosk ticket URLs (/kiosk/:slug/ticket/:token)
+  // Supports: plain numeric ID, "BK:123", kiosk ticket URLs (/kiosk/:slug/ticket/:token),
+  // and a deal voucher's QR code (read-only discovery only — redemption itself
+  // is a separate, explicit POST /api/qr/redeem-voucher call).
   app.post("/api/qr/lookup", isAuthenticated, async (req: any, res: any) => {
     try {
       const { qrToken } = req.body ?? {};
@@ -20173,6 +20471,23 @@ or
       }
 
       const raw = qrToken.trim();
+
+      // ── 0. Deal voucher QR — tried first, since qrToken is an opaque unique
+      // string that won't collide with the appointment-ID formats below. ────
+      const [voucherRow] = await db
+        .select({ voucher: dealVouchers, deal: deals })
+        .from(dealVouchers)
+        .innerJoin(deals, eq(dealVouchers.dealId, deals.id))
+        .where(eq(dealVouchers.qrToken, raw));
+      if (voucherRow) {
+        return res.json({
+          found: true,
+          type: "voucher",
+          voucherId: voucherRow.voucher.id,
+          appointmentId: voucherRow.voucher.appointmentId,
+          dealTitle: voucherRow.deal.title,
+        });
+      }
 
       let appointmentId: number | null = null;
 
@@ -20229,6 +20544,7 @@ or
 
       return res.json({
         found: true,
+        type: "appointment",
         appointmentId: appointment.id,
         bookingCode: String(appointment.id),
         clientName,
@@ -20239,6 +20555,104 @@ or
     } catch (err: any) {
       console.error("[qr/lookup] error:", err?.message);
       return res.status(500).json({ error: "Lookup failed" });
+    }
+  });
+
+  // POST /api/qr/redeem-voucher — the ONLY way a deal voucher gets redeemed.
+  // Requires either physically scanning the customer's QR (`qrToken`) or
+  // staff manually typing the voucher's 7-digit random suffix (`manualCode`,
+  // scoped to the staff's own store — see generateVoucherCode in
+  // stripeWebhook.ts for why only the 7-digit segment is the real secret).
+  // A salon can never redeem (and get paid for) a voucher just by changing
+  // an appointment's status — see storage.redeemVoucherAndStartAppointment
+  // for why that path was removed. Every rejection below returns a distinct,
+  // human-readable message so the UI can show staff exactly why.
+  app.post("/api/qr/redeem-voucher", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const { qrToken, manualCode } = req.body ?? {};
+      const sessionStoreId = await resolveSessionStoreId(req);
+
+      let row: { voucher: typeof dealVouchers.$inferSelect; deal: typeof deals.$inferSelect } | undefined;
+
+      if (typeof qrToken === "string" && qrToken.trim()) {
+        [row] = await db
+          .select({ voucher: dealVouchers, deal: deals })
+          .from(dealVouchers)
+          .innerJoin(deals, eq(dealVouchers.dealId, deals.id))
+          .where(eq(dealVouchers.qrToken, qrToken.trim()));
+      } else if (typeof manualCode === "string" && /^\d{7}$/.test(manualCode.trim())) {
+        if (!sessionStoreId) {
+          return res.status(403).json({ error: "No store context" });
+        }
+        // Store-scoped on purpose: the 7-digit secret only needs to be
+        // unique among one store's own vouchers, so a code typed at Store A
+        // can never resolve to a voucher issued for Store B.
+        const matches = await db
+          .select({ voucher: dealVouchers, deal: deals })
+          .from(dealVouchers)
+          .innerJoin(deals, eq(dealVouchers.dealId, deals.id))
+          .where(and(eq(deals.storeId, sessionStoreId), like(dealVouchers.code, `%-${manualCode.trim()}`)))
+          .limit(2);
+        if (matches.length === 1) row = matches[0];
+        // matches.length === 0 or 2+ (ambiguous — treat as not-found rather
+        // than guessing) both fall through to the 404 below.
+      } else {
+        return res.status(400).json({ error: "qrToken or a 7-digit manualCode is required" });
+      }
+
+      if (!row) {
+        return res.status(404).json({ error: "Voucher not found" });
+      }
+      const { voucher, deal } = row;
+
+      if (!sessionStoreId || deal.storeId !== sessionStoreId) {
+        return res.status(403).json({ error: "This voucher is for a different salon location" });
+      }
+
+      if (voucher.status === "redeemed") {
+        const when = voucher.redeemedAt ? new Date(voucher.redeemedAt).toLocaleString("en-US") : "";
+        return res.status(409).json({ error: `This voucher was already redeemed${when ? ` (${when})` : ""}` });
+      }
+      if (voucher.status === "expired" || voucher.expiresAt < new Date()) {
+        return res.status(409).json({ error: "This voucher has expired" });
+      }
+      if (voucher.status === "refunded") {
+        return res.status(409).json({ error: "This voucher was refunded and can no longer be used" });
+      }
+      if (voucher.status === "pending_booking") {
+        return res.status(409).json({ error: "This voucher hasn't been booked to an appointment yet" });
+      }
+      if (voucher.status !== "booked") {
+        return res.status(409).json({ error: "This voucher can't be redeemed right now" });
+      }
+      if (!voucher.appointmentId) {
+        console.error("[qr/redeem-voucher] voucher", voucher.id, "is 'booked' but has no appointmentId");
+        return res.status(500).json({ error: "This voucher's booking is in an unexpected state — contact support" });
+      }
+
+      const linkedAppointment = await storage.getAppointment(voucher.appointmentId);
+      if (linkedAppointment && (linkedAppointment.status === "cancelled" || linkedAppointment.status === "no_show")) {
+        return res.status(409).json({ error: "The linked appointment was cancelled" });
+      }
+
+      const staffId = (req.session as any)?.staffId ? Number((req.session as any).staffId) : null;
+      const result = await storage.redeemVoucherAndStartAppointment(voucher.id, staffId);
+      if (!result) {
+        return res.status(409).json({ error: "This voucher was already redeemed" });
+      }
+
+      void payoutRedeemedVoucher(voucher.id).catch((err) => console.error("[qr/redeem-voucher] payout failed for voucher", voucher.id, err));
+      broadcastAppointmentStatus({ appointmentId: result.appointment.id, storeId: sessionStoreId, status: "started", source: "manual" });
+
+      return res.json({
+        ok: true,
+        appointmentId: result.appointment.id,
+        voucherStatus: "redeemed",
+        dealTitle: deal.title,
+      });
+    } catch (err: any) {
+      console.error("[qr/redeem-voucher] error:", err?.message);
+      return res.status(500).json({ error: "Redemption failed" });
     }
   });
 
@@ -20632,6 +21046,38 @@ or
   });
 
   // POST /api/public/kiosk/:slug/lookup — find client by 10-digit phone
+  // Records the "waiting" phone check-in marker (no appointment_id yet) that puts a
+  // client on staff's Arrived list. One open marker per client per 2 hours.
+  async function recordWalkInCheckinMarker(
+    storeId: number,
+    clientId: number,
+    clientName: string | null,
+    digits: string,
+  ): Promise<void> {
+    const { rows: recentCheckin } = await pool.query(
+      `SELECT id FROM kiosk_checkins
+       WHERE store_id = $1 AND client_id = $2 AND appointment_id IS NULL
+         AND created_at >= NOW() - INTERVAL '2 hours'
+       LIMIT 1`,
+      [storeId, clientId]
+    );
+    if (recentCheckin.length > 0) return;
+    const token = crypto.randomBytes(24).toString("hex");
+    await pool.query(
+      `INSERT INTO kiosk_checkins (store_id, client_id, phone, client_name, token, status)
+       VALUES ($1, $2, $3, $4, $5, 'waiting')`,
+      [storeId, clientId, digits, clientName, token]
+    );
+    void logActivityEvent({
+      storeId,
+      eventType: "check_in",
+      message: `${clientName || "A client"} checked in (walk-in)`,
+    });
+    try {
+      broadcastNotification({ type: "kiosk_checkin_created", storeId } as any);
+    } catch { /* the calendar also polls */ }
+  }
+
   app.post("/api/public/kiosk/:slug/lookup", async (req, res) => {
     try {
       const { slug } = req.params;
@@ -20762,26 +21208,7 @@ or
         // once the real appointment is created. No expires_at, so this is
         // excluded from the public queue/wait-estimate math (kiosk/availability),
         // which only counts real waitlist tickets.
-        const { rows: recentCheckin } = await pool.query(
-          `SELECT id FROM kiosk_checkins
-           WHERE store_id = $1 AND client_id = $2 AND appointment_id IS NULL
-             AND created_at >= NOW() - INTERVAL '2 hours'
-           LIMIT 1`,
-          [store.id, client.id]
-        );
-        if (recentCheckin.length === 0) {
-          const token = crypto.randomBytes(24).toString("hex");
-          await pool.query(
-            `INSERT INTO kiosk_checkins (store_id, client_id, phone, client_name, token, status)
-             VALUES ($1, $2, $3, $4, $5, 'waiting')`,
-            [store.id, client.id, digits, client.fullName ?? null, token]
-          );
-          void logActivityEvent({
-            storeId: store.id,
-            eventType: "check_in",
-            message: `${client.fullName || "A client"} checked in (walk-in)`,
-          });
-        }
+        await recordWalkInCheckinMarker(store.id, client.id, client.fullName ?? null, digits);
       }
 
       return res.json({
@@ -20832,7 +21259,7 @@ or
   app.post("/api/public/kiosk/:slug/rewards-signup", async (req, res) => {
     try {
       const { slug } = req.params;
-      const { phone, name, appointmentId } = req.body as { phone?: string; name?: string; appointmentId?: number | null };
+      const { phone, name, appointmentId, checkin } = req.body as { phone?: string; name?: string; appointmentId?: number | null; checkin?: boolean };
       const digits = String(phone ?? "").replace(/\D/g, "").slice(-10);
       if (digits.length !== 10) return res.status(400).json({ error: "Enter a 10-digit phone number" });
 
@@ -20844,11 +21271,12 @@ or
       if (!client) {
         // Never create a nameless placeholder client — it would attach to the
         // ticket as a blank "Walk-In" row and block a later real check-in.
-        if (!(name ?? "").trim()) {
+        const cleanName = normalizePersonName(name);
+        if (!cleanName) {
           return res.status(422).json({ error: "name_required", message: "Enter your name to continue" });
         }
         client = await storage.createCustomer({
-          name: (name ?? "").trim(),
+          name: cleanName,
           phone: digits,
           storeId: store.id,
         } as any);
@@ -20887,12 +21315,28 @@ or
         }
       }
 
+      // The front-desk check-in flow (no ticket open) sends checkin:true — a brand-new
+      // client who just typed their name must land on staff's Arrived list exactly
+      // like a returning client does in /lookup.
+      if (checkin === true && !apptId && client) {
+        try {
+          await recordWalkInCheckinMarker(
+            store.id,
+            client.id,
+            ((client as any).fullName ?? (client as any).name ?? normalizePersonName(name)) || null,
+            digits,
+          );
+        } catch (e: any) {
+          console.warn("[kiosk/rewards-signup] check-in marker failed:", e?.message);
+        }
+      }
+
       const result = {
         found: !isNew,
         isNew,
         clientId: client!.id,
         linkedAppointmentId,
-        name: (client as any)?.name ?? (name ?? "").trim() ?? "",
+        name: (client as any)?.name ?? normalizePersonName(name),
         loyaltyPoints: Number((client as any)?.loyaltyPoints ?? 0),
       };
 
@@ -20942,7 +21386,7 @@ or
         return res.status(400).json({ error: "Invalid service selection" });
       }
 
-      const nameToUse: string = clientName?.trim() || "Walk-in Guest";
+      const nameToUse: string = normalizePersonName(clientName) || "Walk-in Guest";
       const token = crypto.randomBytes(24).toString("hex");
       // `now` is a real UTC instant (correct regardless of the salon's local
       // timezone — Date objects are always timezone-agnostic internally).
@@ -21140,9 +21584,10 @@ or
       // which serializes concurrent writers for that technician and closes
       // the write-skew race a plain SELECT-then-INSERT would leave open.
       let appointmentId: number | null = null;
+      let ticketNumber: number | null = null;
       let rejection: { status: number; body: Record<string, unknown> } | null = null;
       try {
-        appointmentId = await db.transaction(async (tx) => {
+        const created = await db.transaction(async (tx) => {
           const dupeId = await checkDuplicateCheckin(tx);
           if (dupeId) {
             console.warn(`[kiosk/checkin] duplicate check-in caught at insert time for client ${safeClientId} at store ${store.id} — appointment ${dupeId} already active`);
@@ -21169,8 +21614,10 @@ or
             rejection = { status: 409, body: { error: createResult.error.message } };
             return null;
           }
-          return createResult.data.id;
+          return createResult.data;
         });
+        appointmentId = created?.id ?? null;
+        ticketNumber = created?.ticketNumber ?? null;
       } catch (apptErr: any) {
         console.warn("[kiosk/checkin] appt creation failed:", apptErr?.message);
         return res.status(500).json({ error: "Could not create check-in appointment" });
@@ -21215,6 +21662,7 @@ or
         success: true,
         token,
         appointmentId,
+        ticketNumber,
         clientName: nameToUse,
         services: selectedServices,
         addons: selectedAddons,
@@ -21423,9 +21871,10 @@ or
       const { token } = req.params;
       const { rows } = await pool.query(
         `SELECT kc.*, loc.name AS store_name, loc.address AS store_address,
-                loc.timezone AS store_timezone
+                loc.timezone AS store_timezone, apt.ticket_number AS appointment_ticket_number
          FROM kiosk_checkins kc
          JOIN locations loc ON loc.id = kc.store_id
+         LEFT JOIN appointments apt ON apt.id = kc.appointment_id
          WHERE kc.token = $1 AND kc.expires_at > NOW()
          LIMIT 1`,
         [token]
@@ -21439,6 +21888,7 @@ or
         services: row.services ?? [],
         status: row.status,
         appointmentId: row.appointment_id,
+        ticketNumber: row.appointment_ticket_number ?? null,
         staffName: row.assigned_staff_name ?? null,
         createdAt: row.created_at,
         storeName: row.store_name,
@@ -22003,6 +22453,47 @@ or
     } catch (err) {
       console.error("[POST /api/registers/claim]", err);
       return res.status(500).json({ message: "Failed to claim register" });
+    }
+  });
+
+  // Owner/staff-facing force-release: frees a specific station's claim
+  // regardless of which device holds it, immediately rather than waiting up
+  // to 15 minutes for staleness — used by the "Release" button in
+  // Settings → POS Stations for a station stuck showing "in use" (e.g. its
+  // tablet was replaced/retired without ever tapping the reset control).
+  app.post("/api/registers/:id/release", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const registerId = parseInt(String(req.params.id), 10);
+      if (!Number.isFinite(registerId)) return res.status(400).json({ message: "Invalid register id" });
+      await db.delete(registerClaims)
+        .where(and(eq(registerClaims.storeId, storeId), eq(registerClaims.registerId, registerId)));
+      return res.status(204).end();
+    } catch (err) {
+      console.error("[POST /api/registers/:id/release]", err);
+      return res.status(500).json({ message: "Failed to release station" });
+    }
+  });
+
+  // Lets a device give up whatever station(s) it currently holds immediately,
+  // instead of waiting up to 15 minutes for the claim to go stale — used by
+  // the "Reset register pairing" control on /calendar so a tablet that's
+  // being moved to a different station doesn't leave its old slot looking
+  // "in use" to the next device that tries to pick it. Only ever deletes
+  // claims matching the caller's OWN deviceId — never another device's.
+  app.post("/api/registers/unclaim", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const deviceId = String(req.body?.deviceId ?? "").trim();
+      if (!deviceId) return res.status(400).json({ message: "deviceId is required" });
+      await db.delete(registerClaims)
+        .where(and(eq(registerClaims.storeId, storeId), eq(registerClaims.deviceId, deviceId)));
+      return res.status(204).end();
+    } catch (err) {
+      console.error("[POST /api/registers/unclaim]", err);
+      return res.status(500).json({ message: "Failed to release register claim" });
     }
   });
 

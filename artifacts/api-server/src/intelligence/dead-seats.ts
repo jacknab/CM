@@ -19,6 +19,7 @@ export interface DeadSeatSlot {
 
 export interface DeadSeatReport {
   deadSlots: DeadSeatSlot[];
+  totalDeadSlotCount: number;
   totalLostRevenuePotential: number;
   worstDay: string | null;
   worstHour: string | null;
@@ -56,6 +57,7 @@ export async function computeDeadSeats(storeId: number): Promise<DeadSeatReport>
   if (appts.length === 0) {
     return {
       deadSlots: [],
+      totalDeadSlotCount: 0,
       totalLostRevenuePotential: 0,
       worstDay: null,
       worstHour: null,

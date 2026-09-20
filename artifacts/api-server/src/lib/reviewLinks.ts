@@ -8,7 +8,10 @@
  * instead, so an unhappy customer never lands on a public review site.
  */
 
-import { pool } from "../db";
+import { pool, db } from "../db";
+import { clientMarketingPreferences } from "@shared/schema";
+import { eq } from "drizzle-orm";
+import crypto from "crypto";
 
 /**
  * Only the token itself is a new concept — actual review content is stored
@@ -34,6 +37,12 @@ export async function ensureReviewTables(): Promise<void> {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_review_tokens_store_id ON review_tokens(store_id)`);
+  // email_sent_at is its own column (distinct from used_at, which only means
+  // "the visitor clicked/submitted") because SMS and email are independently
+  // toggled per store — one appointment's token can be emailed and texted
+  // separately, and each channel needs its own send-dedup signal so enabling
+  // both doesn't cause one channel's send to block the other.
+  await pool.query(`ALTER TABLE review_tokens ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMPTZ`);
 }
 
 /**
@@ -112,4 +121,73 @@ export async function getReviewToken(token: string): Promise<ReviewTokenRow | nu
 
 export async function markReviewTokenUsed(tokenId: number): Promise<void> {
   await pool.query(`UPDATE review_tokens SET used_at = NOW() WHERE id = $1`, [tokenId]);
+}
+
+export interface CreateReviewTokenInput {
+  storeId: number;
+  appointmentId: number;
+  customerId?: number | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
+}
+
+/**
+ * One token per appointment, shared by both the SMS and email review-request
+ * senders — whichever channel fires first creates it, the other reuses the
+ * same link. Safe to call from both without creating duplicate tokens for
+ * the same appointment.
+ */
+export async function createReviewToken(input: CreateReviewTokenInput): Promise<string> {
+  const existing = await pool.query(
+    `SELECT token FROM review_tokens WHERE appointment_id = $1 LIMIT 1`,
+    [input.appointmentId]
+  );
+  if (existing.rows[0]) return existing.rows[0].token as string;
+
+  const token = crypto.randomBytes(24).toString("hex");
+  const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14 days
+  await pool.query(
+    `INSERT INTO review_tokens (token, store_id, appointment_id, customer_id, customer_name, customer_phone, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      token,
+      input.storeId,
+      input.appointmentId,
+      input.customerId ?? null,
+      input.customerName ?? null,
+      input.customerPhone ?? null,
+      expiresAt,
+    ]
+  );
+  return token;
+}
+
+/** True once an email review-request has already been sent for this appointment. */
+export async function hasEmailedReviewRequest(appointmentId: number): Promise<boolean> {
+  const result = await pool.query(
+    `SELECT 1 FROM review_tokens WHERE appointment_id = $1 AND email_sent_at IS NOT NULL LIMIT 1`,
+    [appointmentId]
+  );
+  return result.rows.length > 0;
+}
+
+export async function markReviewTokenEmailed(appointmentId: number): Promise<void> {
+  await pool.query(
+    `UPDATE review_tokens SET email_sent_at = NOW() WHERE appointment_id = $1`,
+    [appointmentId]
+  );
+}
+
+/**
+ * True when this customer has opted out of review-request messages via
+ * client_marketing_preferences.review_requests (default true — most clients
+ * never touch this setting, so absence of a row means "not opted out").
+ */
+export async function hasOptedOutOfReviewRequests(clientId: number | null | undefined): Promise<boolean> {
+  if (!clientId) return false;
+  const [prefs] = await db
+    .select({ reviewRequests: clientMarketingPreferences.reviewRequests })
+    .from(clientMarketingPreferences)
+    .where(eq(clientMarketingPreferences.clientId, clientId));
+  return prefs?.reviewRequests === false;
 }

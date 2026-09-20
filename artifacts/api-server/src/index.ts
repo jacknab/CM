@@ -189,6 +189,7 @@ import { storage } from "./storage";
 import { seoPageMiddleware } from "./seo-pages";
 import salonDirectoryRouter, { salonSlugFallbackRouter } from "./routes/salonDirectory";
 import salonApiRouter from "./routes/salonApi";
+import marketplaceDealsApiRouter from "./routes/marketplaceDealsApi";
 import { SEO_CONFIG, injectSeoMetadata, isKnownAppFirstSegment, NOT_FOUND_HTML } from "./static";
 import { isRequestFromTrustedNetwork, resolveStoreIdBySlug } from "./lib/salonNetworkGuard";
 
@@ -761,6 +762,7 @@ app.get("/app", (req: Request, res: Response) => {
 // what makes the marketplace the actual homepage.
 app.use(salonDirectoryRouter);
 app.use(salonApiRouter);
+app.use(marketplaceDealsApiRouter);
 
 // --- PHP Site Proxy (certxa.com marketing pages, template catalog, assets) ---
 // Must run before auth setup so PHP pages (/about, /hair-salons, etc.) are

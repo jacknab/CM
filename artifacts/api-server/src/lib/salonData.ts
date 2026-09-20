@@ -16,6 +16,23 @@
 import { pool } from "../db";
 import { logger } from "./logger";
 
+// Both _enrichmentCache and _storeCache below cache forever, keyed by every
+// unique salon touched — with ~50k possible salons and heavy crawler/search
+// traffic hitting distinct pages, both grew unboundedly and were the real
+// driver behind certxa-api repeatedly climbing to its pm2 max_memory_restart
+// ceiling every 1-2 hours (see ecosystem.config.js's comment on that
+// setting). FIFO eviction once a cache exceeds maxSize — not true LRU, but
+// enough to put a firm ceiling on memory while still caching the hot set of
+// pages that make up the bulk of real traffic.
+function boundedSet<K, V>(map: Map<K, V>, key: K, value: V, maxSize: number): void {
+  map.set(key, value);
+  while (map.size > maxSize) {
+    const oldest = map.keys().next().value;
+    if (oldest === undefined) break;
+    map.delete(oldest);
+  }
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export interface SalonRecord {
@@ -35,6 +52,7 @@ export interface SalonRecord {
   w:  string; // website
   pi: string; // place_id
   ab: string; // AI-generated about text (nail_salons.about_text) — "" until backfilled
+  lm: string; // last_seen_at, as YYYY-MM-DD — real per-record sitemap <lastmod>, not a wholesale today's-date stamp
 }
 
 export interface LiveStoreData {
@@ -104,6 +122,18 @@ export function splitAddress(a: string): { street: string; city: string; state: 
   const country = ADDRESS_COUNTRY_NAMES[(parts[parts.length - 1] || "").toLowerCase()];
 
   if (!country) {
+    // Exactly "street, city" — a handful of scraped listings have no
+    // state/zip/country segment at all (e.g. "43801 Central Station Dr
+    // #140, Ashburn"). The general fallback below assumes the
+    // second-to-last part is the city, which only holds when something
+    // (state/zip or country) trails it; with only 2 parts the LAST one is
+    // the city, and treating the second-to-last as city instead grabs the
+    // street — which is exactly what produced an empty city/state and a
+    // malformed breadcrumb (city name = the street address) for these
+    // listings.
+    if (parts.length === 2) {
+      return { street: parts[0], city: parts[1], state: "", zip: "" };
+    }
     const city = parts.length >= 2 ? parts[parts.length - 2] : (parts[0] || "");
     const street = parts.length >= 3 ? parts.slice(0, parts.length - 2).join(", ") : "";
     return { street, city, state: "", zip: "" };
@@ -137,11 +167,12 @@ async function loadSalonDataFromDb(): Promise<void> {
     id: number; slug: string; name: string; phone: string | null; address: string | null;
     website: string | null; latitude: number; longitude: number;
     place_id: string; rating: number | null; review_count: number | null;
-    about_text: string | null;
+    about_text: string | null; last_seen_at: Date | null;
   }>(
-    `SELECT id, slug, name, phone, address, website, latitude, longitude, place_id, rating, review_count, about_text
+    `SELECT id, slug, name, phone, address, website, latitude, longitude, place_id, rating, review_count, about_text, last_seen_at
      FROM nail_salons WHERE slug IS NOT NULL`
   );
+  const todayIso = new Date().toISOString().slice(0, 10);
 
   const map = new Map<string, SalonRecord>();
   const list: SalonRecord[] = [];
@@ -165,6 +196,7 @@ async function loadSalonDataFromDb(): Promise<void> {
       w: website,
       pi: row.place_id,
       ab: row.about_text || "",
+      lm: row.last_seen_at ? row.last_seen_at.toISOString().slice(0, 10) : todayIso,
     };
     map.set(rec.s, rec);
     list.push(rec);
@@ -211,6 +243,21 @@ export function getSalonMap(): Map<string, SalonRecord> {
 export function getSalonList(): SalonRecord[] {
   if (!_salonList) throw _loadError ?? new Error("salon data not loaded — call ensureLoaded() first");
   return _salonList;
+}
+
+// Resolves a slug that no longer exists (e.g. one cleaned up by
+// scripts/regenerate-promo-slugs.ts) to that salon's current slug, so an
+// already-indexed old URL 301s instead of 404ing. Only consulted on a
+// getSalonMap() miss — not on the normal request path.
+export async function getSalonRedirectSlug(oldSlug: string): Promise<string | null> {
+  const res = await pool.query<{ salon_id: number }>(
+    `SELECT salon_id FROM nail_salon_slug_redirects WHERE old_slug = $1`,
+    [oldSlug]
+  );
+  const salonId = res.rows[0]?.salon_id;
+  if (!salonId) return null;
+  const salon = getSalonList().find((s) => s.id === salonId);
+  return salon?.s ?? null;
 }
 
 // Only *claimed* listings (a registered Certxa store whose phone matches) get
@@ -440,7 +487,7 @@ export async function findMatchingStore(slug: string, phone: string): Promise<Li
 
   const p10 = phone10(phone);
   if (!p10) {
-    _storeCache.set(slug, null);
+    boundedSet(_storeCache, slug, null, 5000);
     return null;
   }
 
@@ -456,7 +503,7 @@ export async function findMatchingStore(slug: string, phone: string): Promise<Li
     );
 
     if (locRes.rows.length === 0) {
-      _storeCache.set(slug, null);
+      boundedSet(_storeCache, slug, null, 5000);
       return null;
     }
 
@@ -493,12 +540,12 @@ export async function findMatchingStore(slug: string, phone: string): Promise<Li
       })),
     };
 
-    _storeCache.set(slug, live);
+    boundedSet(_storeCache, slug, live, 5000);
     logger.info({ slug, storeId: loc.id }, "[salonData] matched salon to Certxa store");
     return live;
   } catch (err) {
     logger.warn({ err, slug }, "[salonData] store lookup failed — treating as unclaimed");
-    _storeCache.set(slug, null);
+    boundedSet(_storeCache, slug, null, 5000);
     return null;
   }
 }
@@ -551,12 +598,12 @@ export async function findEnrichment(salonId: number): Promise<EnrichmentData> {
         .filter(r => r.review_text)
         .map(r => ({ author: r.author_display_name || "Anonymous", rating: r.rating, text: r.review_text })),
     };
-    _enrichmentCache.set(salonId, data);
+    boundedSet(_enrichmentCache, salonId, data, 5000);
     return data;
   } catch (err) {
     logger.warn({ err, salonId }, "[salonData] enrichment lookup failed — rendering without it");
     const empty: EnrichmentData = { attributes: null, hours: [], reviews: [] };
-    _enrichmentCache.set(salonId, empty);
+    boundedSet(_enrichmentCache, salonId, empty, 5000);
     return empty;
   }
 }

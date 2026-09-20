@@ -48,6 +48,7 @@ export interface PaymentAccount {
   provider: string;
   providerAccountId: string;
   status: string;
+  accountType: "standard" | "express" | string;
   chargesEnabled: boolean;
   payoutsEnabled: boolean;
   detailsSubmitted: boolean;
@@ -63,7 +64,7 @@ export interface PaymentAccount {
 
 export async function getPaymentAccount(storeId: number): Promise<PaymentAccount | null> {
   const { rows } = await pool.query(
-    `SELECT id, store_id, provider, provider_account_id, status,
+    `SELECT id, store_id, provider, provider_account_id, status, account_type,
             charges_enabled, payouts_enabled, details_submitted,
             display_name, email, country, currency,
             contractor_express_enabled, contractor_payout_mode,
@@ -81,6 +82,7 @@ export async function getPaymentAccount(storeId: number): Promise<PaymentAccount
     provider: r.provider,
     providerAccountId: r.provider_account_id,
     status: r.status,
+    accountType: r.account_type ?? "standard",
     chargesEnabled: r.charges_enabled,
     payoutsEnabled: r.payouts_enabled,
     detailsSubmitted: r.details_submitted,
@@ -107,20 +109,26 @@ export async function upsertPaymentAccount(
     country?: string | null;
     currency?: string | null;
     rawData?: object;
+    /** 'standard' (OAuth) | 'express' (platform-created). Omit when the
+     *  caller doesn't know the type (e.g. syncing fields from a Stripe
+     *  webhook) — the existing row's account_type is preserved on update,
+     *  and only defaults to 'standard' when inserting a brand-new row. */
+    accountType?: "standard" | "express";
   }
 ): Promise<void> {
   await pool.query(
     `INSERT INTO store_payment_accounts
-       (store_id, provider, provider_account_id, status,
+       (store_id, provider, provider_account_id, status, account_type,
         charges_enabled, payouts_enabled, details_submitted,
         display_name, email, country, currency, raw_data,
         created_at, updated_at)
-     VALUES ($1, 'stripe', $2, 'connected',
-             $3, $4, $5, $6, $7, $8, $9, $10,
+     VALUES ($1, 'stripe', $2, 'connected', COALESCE($3, 'standard'),
+             $4, $5, $6, $7, $8, $9, $10, $11,
              NOW(), NOW())
      ON CONFLICT (store_id) DO UPDATE SET
        provider_account_id = EXCLUDED.provider_account_id,
        status              = 'connected',
+       account_type        = COALESCE($3, store_payment_accounts.account_type),
        charges_enabled     = EXCLUDED.charges_enabled,
        payouts_enabled     = EXCLUDED.payouts_enabled,
        details_submitted   = EXCLUDED.details_submitted,
@@ -133,6 +141,7 @@ export async function upsertPaymentAccount(
     [
       storeId,
       accountId,
+      data.accountType ?? null,
       data.chargesEnabled,
       data.payoutsEnabled,
       data.detailsSubmitted,
@@ -225,8 +234,16 @@ export async function syncAccountFromStripe(
 /**
  * Revoke platform access to a connected account.
  * Does NOT delete historical transactions.
+ *
+ * Only meaningful for 'standard' (OAuth-connected) accounts — there's an
+ * actual OAuth grant to revoke. A platform-created 'express' account was
+ * never OAuth-authorized, so there's nothing to deauthorize on Stripe's side;
+ * disconnecting one is purely local (the caller just flips `status` via
+ * `removePaymentAccount`), mirroring how Standard disconnect already doesn't
+ * delete the Stripe-side account either — non-destructive either way.
  */
-export async function deauthorizeAccount(accountId: string): Promise<void> {
+export async function deauthorizeAccount(accountId: string, accountType: string = "standard"): Promise<void> {
+  if (accountType !== "standard") return;
   try {
     const clientId = process.env.STRIPE_CONNECT_CLIENT_ID;
     if (clientId) {
@@ -347,4 +364,16 @@ export async function cancelTerminalPaymentIntent(
     {},
     { stripeAccount: connectedAccountId }
   );
+}
+
+/**
+ * Fetch a Terminal PaymentIntent from the connected account (used to make
+ * capture idempotent: a retried capture must succeed if it already did).
+ */
+export async function retrieveTerminalPaymentIntent(
+  connectedAccountId: string,
+  paymentIntentId: string
+): Promise<Stripe.PaymentIntent> {
+  const stripe = getPlatformStripe();
+  return stripe.paymentIntents.retrieve(paymentIntentId, {}, { stripeAccount: connectedAccountId });
 }

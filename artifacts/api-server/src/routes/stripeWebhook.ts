@@ -39,9 +39,12 @@ function logBillingEvent(storeId: number, eventType: string, message: string, me
   ).catch((e: any) => console.error("[billingEvent]", eventType, e?.message));
 }
 import { eq, and, inArray } from "drizzle-orm";
-import { stripe } from "../lib/stripe";
+import crypto from "crypto";
+import { stripe, getReturnBaseUrl } from "../lib/stripe";
 import { sendSubscriptionCancellationEmail, sendSubscriptionEndedEmail } from "../lib/systemEmails";
 import { emitPlatformEmailEvent } from "../services/platform-email-engine";
+import { sendEmail } from "../mail";
+import { deals, dealVouchers, dealWalletTokens } from "@shared/schema";
 import type Stripe from "stripe";
 import { broadcastNotification } from "../notifications";
 
@@ -237,6 +240,19 @@ router.post(
 // ─── Event Handlers ───────────────────────────────────────────────────────────
 
 async function handleSubscriptionUpsert(sub: Stripe.Subscription) {
+  // The embedded subscribe flow creates the Stripe Subscription object before
+  // the owner has confirmed a PaymentIntent/SetupIntent (so Elements has a
+  // client secret to mount against). Until that confirmation lands, the sub
+  // sits in "incomplete" (or expires to "incomplete_expired" after 23h) —
+  // neither represents a real, paid-for plan, so skip persisting them
+  // entirely. This also avoids the cascade-cancel below wiping out a store's
+  // still-active prior subscription just because a checkout was started (but
+  // not finished) for a different plan.
+  if (sub.status === "incomplete" || sub.status === "incomplete_expired") {
+    console.log(`[webhook] Subscription ${sub.id} is ${sub.status} — no confirmed payment yet, skipping upsert`);
+    return;
+  }
+
   const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
   const storeId = await storeByCustomer(customerId);
   if (!storeId) {
@@ -532,9 +548,149 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   // For subscription checkouts, the subscription events handle everything
 }
 
+// The printed/emailed code is `{storeId}-{dealId}-{7 random digits}`, with
+// storeId/dealId zero-padded to a fixed 3 digits each — always exactly
+// XXX-XXX-XXXXXXX (13 digits, 2 dashes), never a variable length. A caller
+// reading this over the phone to the AI support agent needs a predictable
+// shape to read back correctly, and a fixed shape lets the lookup normalize
+// dropped/mistranscribed dashes (see lookup_voucher_by_code in
+// supportAgent.ts) — a code like "8-8-3200363" from before this change had
+// no such fixed shape to reconstruct from. 3 digits comfortably covers
+// storeId/dealId for a long time (both are still single digits today); an ID
+// that overflows 999 just makes that one code longer, it doesn't break
+// anything since the lookup is always an exact/reconstructed string match,
+// never a parse of the digit groups.
+//
+// The storeId/dealId prefix is just for support to identify a code at a
+// glance — those are public, guessable database IDs, so they carry no
+// security value. The last 7 digits are the actual redemption secret (what
+// staff type on the manual-entry keypad, scoped to their own store) —
+// generated via crypto.randomInt, NOT derived from any ID, so it can't be
+// computed/enumerated by anyone who understands the format. See
+// POST /api/qr/redeem-voucher's manualCode path.
+function generateVoucherCode(storeId: number, dealId: number): string {
+  const secret = crypto.randomInt(0, 10_000_000).toString().padStart(7, "0");
+  const storePart = String(storeId).padStart(3, "0");
+  const dealPart = String(dealId).padStart(3, "0");
+  return `${storePart}-${dealPart}-${secret}`;
+}
+
+// The QR payload is a fully separate, long opaque token — deliberately NOT
+// derived from or equal to the printed `code` (an earlier version of this
+// function set qrToken = code, meaning anyone who saw the printed code also
+// had the scannable QR value, and vice versa).
+function generateQrToken(): string {
+  return crypto.randomBytes(24).toString("base64url");
+}
+
+/**
+ * Fulfills a deal purchase: atomically claims capacity, issues one voucher
+ * per unit purchased, and emails the customer their codes + wallet link.
+ * Capacity is re-checked here (not just at checkout-time) because two
+ * concurrent purchases near the cap could otherwise both pass the earlier
+ * check — if this one loses the race, the customer already paid, so we
+ * refund rather than leave them charged with nothing to show for it.
+ *
+ * Triggered off payment_intent.succeeded (see handlePaymentIntentSucceeded)
+ * — the PaymentIntent is created directly against Certxa's platform account
+ * by the embedded Payment Element checkout on /deals/:id, never a Checkout
+ * Session, so this reads metadata straight off the PaymentIntent.
+ */
+async function handleDealPurchaseCompleted(paymentIntentId: string, meta: Stripe.Metadata) {
+  const dealId = Number(meta.dealId);
+  const customerEmail = meta.customerEmail;
+  const customerName = meta.customerName || null;
+  const customerPhone = meta.customerPhone || null;
+  const quantity = Math.min(Math.max(Number(meta.quantity) || 1, 1), 4);
+
+  if (!dealId || !customerEmail) {
+    console.error("[webhook/deal_purchase] Missing dealId/customerEmail in PaymentIntent metadata", paymentIntentId);
+    return;
+  }
+
+  const claim = await pool.query<{ id: number; title: string; ends_at: string; store_id: number; expiry_days: number }>(
+    `UPDATE deals
+       SET purchased_count = purchased_count + $1, updated_at = now()
+     WHERE id = $2 AND purchased_count + $1 <= capacity
+     RETURNING id, title, ends_at, store_id, expiry_days`,
+    [quantity, dealId],
+  );
+
+  if (!claim.rows.length) {
+    console.warn(`[webhook/deal_purchase] Deal ${dealId} sold out before fulfillment — refunding PaymentIntent ${paymentIntentId}`);
+    if (paymentIntentId) {
+      await stripe.refunds.create({ payment_intent: paymentIntentId, reason: "requested_by_customer" }).catch((e: any) =>
+        console.error("[webhook/deal_purchase] Refund failed:", e?.message));
+    }
+    await sendEmail(
+      0, customerEmail, "Your Certxa deal just sold out",
+      `<p>We're sorry — this deal sold out right as your payment went through. You have not been charged (any hold has been refunded).</p>`,
+      "We're sorry — this deal sold out right as your payment went through. You have not been charged.",
+    ).catch(() => {});
+    return;
+  }
+
+  const deal = claim.rows[0];
+  const [store] = await db.select({ name: locations.name }).from(locations).where(eq(locations.id, deal.store_id));
+
+  const base = getReturnBaseUrl();
+  // Each voucher expires N days after THIS purchase, not when the deal's
+  // sale listing closes — see migration 0190. purchasedAt is captured once
+  // here so every unit in a multi-quantity purchase gets an identical,
+  // consistent expiry rather than drifting across loop iterations.
+  const purchasedAt = new Date();
+  const expiresAt = new Date(purchasedAt.getTime() + deal.expiry_days * 86_400_000);
+  const issued: { code: string; bookingLink: string }[] = [];
+  for (let i = 0; i < quantity; i++) {
+    const code = generateVoucherCode(deal.store_id, deal.id);
+    const qrToken = generateQrToken();
+    const bookingToken = crypto.randomBytes(24).toString("base64url");
+    await db.insert(dealVouchers).values({
+      dealId: deal.id,
+      code,
+      qrToken,
+      bookingToken,
+      customerEmail,
+      customerName,
+      customerPhone,
+      stripePaymentIntentId: paymentIntentId,
+      purchasedAt,
+      expiresAt,
+    });
+    issued.push({ code, bookingLink: `${base}/redeem/${bookingToken}` });
+  }
+
+  const walletToken = crypto.randomBytes(24).toString("base64url");
+  await db.insert(dealWalletTokens).values({
+    token: walletToken,
+    email: customerEmail,
+    expiresAt: new Date(Date.now() + 30 * 86400000),
+  });
+
+  const walletLink = `${base}/wallet?token=${walletToken}`;
+  const codeList = issued.map(({ code, bookingLink }) =>
+    `<li><strong>${code}</strong> — <a href="${bookingLink}">Book your appointment</a></li>`,
+  ).join("");
+  await sendEmail(
+    deal.store_id,
+    customerEmail,
+    `Your voucher${quantity > 1 ? "s" : ""} for ${deal.title}`,
+    `<p>Thanks for your purchase! Here ${quantity > 1 ? "are your voucher codes" : "is your voucher code"} for <strong>${deal.title}</strong> at ${store?.name ?? "the salon"}:</p><ul>${codeList}</ul><p>Tap "Book your appointment" to pick a time — the service is already selected, you just choose when. Your voucher code is also shown at redemption; it's marked used the moment your appointment starts.</p><p><a href="${walletLink}">View your vouchers</a></p>`,
+    `Your voucher${quantity > 1 ? "s" : ""}:\n${issued.map(({ code, bookingLink }) => `${code} — book at: ${bookingLink}`).join("\n")}\nView your vouchers: ${walletLink}`,
+  ).catch((e) => console.error("[webhook/deal_purchase] Confirmation email failed:", e?.message));
+
+  console.log(`[webhook/deal_purchase] Deal ${deal.id} — ${quantity} voucher(s) issued to ${customerEmail}`);
+}
+
 async function handlePaymentIntentSucceeded(pi: Stripe.PaymentIntent) {
-  // Mark any matching pending wallet transaction as completed
   if (!pi.id) return;
+
+  if (pi.metadata?.type === "deal_purchase") {
+    await handleDealPurchaseCompleted(pi.id, pi.metadata);
+    return;
+  }
+
+  // Mark any matching pending wallet transaction as completed
   await db
     .update(walletTransactions)
     .set({ status: "completed", stripePaymentIntent: pi.id })

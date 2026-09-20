@@ -16,7 +16,7 @@ import {
   findMatchingStore, findEnrichment, deriveAddress, heroImage,
   formatHour12, DAY_NAMES, CERTXA_DOMAIN,
   getStateBySlug, getCityData, getStateIndex, toCitySlug,
-  STATE_NAMES, US_STATES, haversineMiles,
+  STATE_NAMES, US_STATES, haversineMiles, getSalonRedirectSlug,
   type SalonRecord,
 } from "../lib/salonData";
 import { requestIp, resolveVisitorCity } from "../lib/geoLookup";
@@ -179,9 +179,9 @@ router.get("/api/salons", async (req: Request, res: Response) => {
 });
 
 // ── GET /api/salons/featured ─────────────────────────────────────────────────
-// Optional ?citySlug=&stateSlug= (set from IP-detected city, see /api/geo)
-// scopes the pool to that city; falls back to the global pool when the city
-// has too few rated listings to make a meaningful "featured" list.
+// Optional browser coordinates take priority over the IP-derived city slugs.
+// The closest indexed salon identifies the visitor's local city, keeping the
+// precise coordinates out of the response while still producing a city list.
 
 router.get("/api/salons/featured", async (req: Request, res: Response) => {
   try {
@@ -191,8 +191,26 @@ router.get("/api/salons/featured", async (req: Request, res: Response) => {
 
     const citySlug = typeof req.query.citySlug === "string" ? req.query.citySlug : "";
     const stateSlug = typeof req.query.stateSlug === "string" ? req.query.stateSlug : "";
+    const userLat = typeof req.query.lat === "string" ? Number(req.query.lat) : NaN;
+    const userLng = typeof req.query.lng === "string" ? Number(req.query.lng) : NaN;
+    const hasUserCoords = Number.isFinite(userLat) && Number.isFinite(userLng);
     let pool_: SalonRecord[] | null = null;
-    if (citySlug && stateSlug) {
+    if (hasUserCoords) {
+      const closest = getSalonList().reduce<{ record: SalonRecord; miles: number } | null>((best, record) => {
+        const lat = record.la ? Number(record.la) : NaN;
+        const lng = record.lo ? Number(record.lo) : NaN;
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return best;
+        const miles = haversineMiles(userLat, userLng, lat, lng);
+        return !best || miles < best.miles ? { record, miles } : best;
+      }, null);
+      if (closest) {
+        const address = deriveAddress(closest.record);
+        const state = getStateIndex().find((item) => item.code === address.state || item.name === address.state);
+        const city = state ? getCityData(state.code, toCitySlug(address.city)) : undefined;
+        if (city && city.records.length >= 4) pool_ = city.records;
+      }
+    }
+    if (!pool_ && citySlug && stateSlug) {
       const state = getStateBySlug(stateSlug);
       const city = state ? getCityData(state.code, citySlug) : undefined;
       if (city && city.records.length >= 4) pool_ = city.records;
@@ -232,15 +250,60 @@ router.get("/api/salons/:slug", async (req: Request, res: Response) => {
     const slug = String(req.params.slug);
     const salon = getSalonMap().get(slug);
     if (!salon) {
-      res.status(404).json({ error: "Salon not found" });
+      // Slug may have been cleaned up by scripts/regenerate-promo-slugs.ts —
+      // check for a redirect before declaring a true 404, so an
+      // already-indexed old URL points SSR at the new slug instead of
+      // silently dying.
+      const redirectTo = await getSalonRedirectSlug(slug);
+      res.status(404).json(redirectTo ? { error: "Salon not found", redirectTo } : { error: "Salon not found" });
       return;
     }
 
     const live = salon.p ? await findMatchingStore(salon.s, salon.p) : null;
-    const enrichment = live ? { attributes: null, hours: [], reviews: [] } : await findEnrichment(salon.id);
+    // Scraped Google Places enrichment (hours/attributes/review text) is
+    // looked up by the salon's own scraper-DB id, independent of whether a
+    // matching live Certxa store was found — claim status and scrape
+    // coverage are unrelated, so a claimed store can still have real scraped
+    // review text. (attributes are still only rendered for unclaimed
+    // listings below — a live store's own hours/data take priority there.)
+    const enrichment = await findEnrichment(salon.id);
     const addr = deriveAddress(salon);
     const claimedSet = new Set(live ? [salon.s] : []);
     const base = toApiSalon(salon, claimedSet);
+
+    // Fallback rating/reviews for a claimed store with no scraped Google
+    // rating (the common case for a new Certxa customer) — Certxa's own
+    // native reviews, same >=3-review minimum used elsewhere before a rating
+    // is considered real enough to display.
+    let rating = base.rating;
+    let reviewCount = base.reviewCount;
+    let reviewList: Array<{ author: string; rating: number | null; text: string | null; serviceName?: string | null; staffName?: string | null }> = enrichment.reviews;
+    if (live && base.rating === 0) {
+      const nativeAgg = await pool.query<{ avg: string | null; cnt: string }>(
+        `SELECT AVG(rating)::text AS avg, COUNT(*)::text AS cnt FROM reviews WHERE store_id = $1 AND is_public = true`,
+        [live.storeId]
+      );
+      const nativeCount = Number(nativeAgg.rows[0]?.cnt ?? 0);
+      if (nativeCount >= 3) {
+        rating = Math.round(Number(nativeAgg.rows[0]?.avg ?? 0) * 10) / 10;
+        reviewCount = nativeCount;
+      }
+      if (!reviewList.length) {
+        const nativeReviews = await pool.query<{ customer_name: string | null; rating: number; comment: string | null; service_name: string | null; staff_name: string | null }>(
+          `SELECT customer_name, rating, comment, service_name, staff_name FROM reviews
+           WHERE store_id = $1 AND is_public = true AND comment IS NOT NULL
+           ORDER BY created_at DESC LIMIT 10`,
+          [live.storeId]
+        );
+        reviewList = nativeReviews.rows.map((r) => ({
+          author: r.customer_name || "Certxa customer",
+          rating: r.rating,
+          text: r.comment,
+          serviceName: r.service_name,
+          staffName: r.staff_name,
+        }));
+      }
+    }
 
     const hours = live?.hours.length
       ? live.hours.map((h) => ({ day: DAY_NAMES[h.day], open: h.closed ? "Closed" : formatHour12(h.open), close: h.closed ? "" : formatHour12(h.close) }))
@@ -282,6 +345,8 @@ router.get("/api/salons/:slug", async (req: Request, res: Response) => {
     res.json({
       ...base,
       name: live?.name || base.name,
+      rating,
+      reviewCount,
       address: salon.a,
       phone: salon.p,
       website: salon.w || undefined,
@@ -294,6 +359,7 @@ router.get("/api/salons/:slug", async (req: Request, res: Response) => {
       city: addr.city,
       state: addr.state,
       nearby,
+      reviews: reviewList,
     });
   } catch (err) {
     logger.error({ err }, "[salonApi] salon profile failed");

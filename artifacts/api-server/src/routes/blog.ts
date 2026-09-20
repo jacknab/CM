@@ -22,6 +22,7 @@ import { Router, Request, Response } from "express";
 import fs from "fs/promises";
 import path from "path";
 import { pool } from "../db.js";
+import { pingIndexNow } from "../lib/indexNow.js";
 
 export const blogRouter = Router();
 
@@ -312,6 +313,7 @@ blogRouter.post("/api/admin/blog/posts/:id/publish", async (req: Request, res: R
     if (!result.rows[0]) return res.status(404).json({ error: "Post not found" });
     const post = result.rows[0];
     await writePostStub(post.slug, post.title);
+    void pingIndexNow(`https://certxa.com/blog/${post.slug}`);
     res.json(post);
   } catch (err) {
     console.error("[blog] publish error:", err);

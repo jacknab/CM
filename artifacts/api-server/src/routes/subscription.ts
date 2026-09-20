@@ -3,17 +3,48 @@
  *
  * Mounted at /api/subscription (with isAuthenticated applied in routes.ts)
  *
- * GET  /api/subscription/usage      — current period usage for 4 countable limits
- * POST /api/subscription/subscribe  — subscribe own store to a plan
- *                                     → Stripe Checkout when configured + plan has a price
- *                                     → direct DB write fallback (free plans or Stripe not configured)
+ * GET  /api/subscription/usage           — current period usage for 4 countable limits
+ * POST /api/subscription/subscribe       — subscribe own store to a plan
+ *                                          → embedded Stripe Elements (Payment/Setup) when configured + plan has a price
+ *                                          → direct DB write fallback (free plans or Stripe not configured)
+ * POST /api/subscription/finalize-setup  — completes a trial subscribe after the owner
+ *                                          confirms a SetupIntent client-side (see below)
+ *
+ * ── Embedded checkout, not hosted Checkout ─────────────────────────────────
+ * Paid plans used to redirect to a Stripe-hosted Checkout Session. They now
+ * mount a Stripe Payment Element right on this page, branded to match Certxa,
+ * mirroring the pattern used for marketplace deal checkout.
+ *
+ * /subscribe never creates the Subscription directly — it only creates a
+ * SetupIntent scoped to the store's Stripe customer (usage: "off_session") to
+ * collect and verify a card. This is deliberate even when a trial applies and
+ * nothing is due today: creating the Subscription up front, before a card is
+ * confirmed, would let Stripe put it straight into "trialing" — which our
+ * webhook maps to an unlocked account — without ever collecting a card. It
+ * also sidesteps relying on an invoice-linked PaymentIntent being available
+ * synchronously at Subscription-creation time, which isn't guaranteed.
+ *
+ * /finalize-setup does the actual work, *after* the client confirms that
+ * SetupIntent: verifies it succeeded (re-fetched from Stripe, not trusted
+ * from the client beyond its id), attaches the resulting card as the
+ * customer's default payment method, then creates the Subscription with
+ * payment_behavior "error_if_incomplete" — trial_period_days if a trial
+ * applies (nothing charged, starts "trialing" immediately), otherwise Stripe
+ * attempts the first charge against the now-verified card synchronously and
+ * throws a clean, catchable error if it's declined, rather than leaving a
+ * dangling "incomplete" subscription.
+ *
+ * Either way, fulfillment (writing storeSubscriptions, unlocking the
+ * account) happens off the customer.subscription.created webhook — never off
+ * the client's report of success — same principle as deal checkout's
+ * payment_intent.succeeded-driven fulfillment.
  */
 
 import { Router } from "express";
 import { db } from "../db";
 import { storeSubscriptions, subscriptionPlans, staff, locations, storeInvoices } from "@shared/schema";
 import { eq, and, count, inArray, sql, desc } from "drizzle-orm";
-import { isStripeConfigured, getReturnBaseUrl, stripe } from "../lib/stripe";
+import { isStripeConfigured, stripe } from "../lib/stripe";
 import { TrialService } from "../services/trial-service";
 import { resolveFeature, resolveStorePlan } from "../lib/featureAccess";
 import { sendSubscriptionReactivatedEmail } from "../lib/systemEmails";
@@ -39,6 +70,36 @@ async function getOwnedStoreId(req: any): Promise<number | null> {
     .where(eq(locations.userId, userId))
     .limit(1);
   return loc?.id ?? null;
+}
+
+// Carry over any remaining trial days so the card isn't charged until the
+// trial actually expires. If no trial exists yet, grant the full default
+// trial on first-ever checkout. Shared by /subscribe (to size the SetupIntent
+// request) and /finalize-setup (to size the actual Subscription) so both
+// stay in lockstep.
+async function computeTrialPeriodDays(req: any, storeId: number): Promise<number | undefined> {
+  const [existingTrial] = await db
+    .select({ currentPeriodEnd: storeSubscriptions.currentPeriodEnd, status: storeSubscriptions.status })
+    .from(storeSubscriptions)
+    .where(
+      and(
+        eq(storeSubscriptions.storeId, storeId),
+        inArray(storeSubscriptions.status, ["trialing"])
+      )
+    )
+    .orderBy(sql`${storeSubscriptions.id} DESC`)
+    .limit(1);
+
+  if (existingTrial?.currentPeriodEnd) {
+    const msLeft = new Date(existingTrial.currentPeriodEnd as any).getTime() - Date.now();
+    const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
+    return daysLeft > 0 ? daysLeft : undefined;
+  }
+
+  // First-ever checkout — check if the user's account is still in trial
+  const userId: string | null = req.session?.userId ?? req.auth?.userId ?? null;
+  if (userId) return TrialService.getFreeTrialDays();
+  return undefined;
 }
 
 // ─── GET /api/subscription/usage ─────────────────────────────────────────────
@@ -206,57 +267,35 @@ router.post("/subscribe", async (req: any, res) => {
         customerId = customer.id;
       }
 
-      // ── Carry over any remaining trial days ────────────────────────────────
-      // If the store already has a trialing subscription, pass the remaining
-      // days to Stripe so the card isn't charged until the trial expires.
-      // If no trial exists yet, grant the full 30-day trial on first checkout.
-      let trialPeriodDays: number | undefined;
-      const [existingTrial] = await db
-        .select({ currentPeriodEnd: storeSubscriptions.currentPeriodEnd, status: storeSubscriptions.status })
-        .from(storeSubscriptions)
-        .where(
-          and(
-            eq(storeSubscriptions.storeId, storeId),
-            inArray(storeSubscriptions.status, ["trialing"])
-          )
-        )
-        .orderBy(sql`${storeSubscriptions.id} DESC`)
-        .limit(1);
+      const trialPeriodDays = await computeTrialPeriodDays(req, storeId);
+      const publishableKey = process.env.STRIPE_PUBLISHABLE_KEY ?? null;
+      const metadata = {
+        storeId: String(storeId),
+        planCode: (plan as any).code ?? "",
+        planId: String(plan.id),
+        interval,
+      };
 
-      if (existingTrial?.currentPeriodEnd) {
-        const msLeft = new Date(existingTrial.currentPeriodEnd as any).getTime() - Date.now();
-        const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
-        if (daysLeft > 0) trialPeriodDays = daysLeft;
-      } else {
-        // First-ever checkout — check if the user's account is still in trial
-        const userId: string | null = req.session?.userId ?? req.auth?.userId ?? null;
-        if (userId) {
-          const defaultDays = await TrialService.getFreeTrialDays();
-          trialPeriodDays = defaultDays;
-        }
-      }
-
-      const base = getReturnBaseUrl();
-      const session = await stripe.checkout.sessions.create({
-        mode: "subscription",
+      // Collect + verify a card via a customer-scoped SetupIntent before any
+      // Subscription (and therefore any money or trial entitlement) exists —
+      // whether or not a trial applies. This sidesteps needing an
+      // invoice-linked PaymentIntent at all (whose availability at creation
+      // time is unreliable), and, for the trial case specifically, avoids
+      // Stripe putting a brand-new Subscription straight into "trialing"
+      // (unlocked, per the webhook) before a card has ever been confirmed.
+      // /finalize-setup creates the real Subscription once this succeeds.
+      const setupIntent = await stripe.setupIntents.create({
         customer: customerId,
-        line_items: [{ price: priceId, quantity: 1 }],
-        success_url: `${base}/billing?status=success&session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url:  `${base}/billing?status=cancelled`,
-        metadata: {
-          storeId: String(storeId),
-          planCode: (plan as any).code ?? "",
-          planId:   String(plan.id),
-        },
-        allow_promotion_codes: true,
-        // SaaS subscription = service; disable automatic tax (tax applies to physical products only)
-        automatic_tax: { enabled: false },
-        ...(trialPeriodDays && trialPeriodDays > 0
-          ? { subscription_data: { trial_period_days: trialPeriodDays } }
-          : {}),
+        payment_method_types: ["card"],
+        usage: "off_session",
+        metadata: { ...metadata, trialPeriodDays: String(trialPeriodDays ?? 0) },
       });
 
-      return res.json({ checkoutUrl: session.url });
+      return res.json({
+        requiresPayment: true,
+        clientSecret: setupIntent.client_secret,
+        publishableKey,
+      });
     }
     // ── End Stripe path ────────────────────────────────────────────────────
 
@@ -322,6 +361,114 @@ router.post("/subscribe", async (req: any, res) => {
   } catch (err) {
     console.error("[subscription/subscribe] error:", err);
     return res.status(500).json({ error: "Failed to subscribe" });
+  }
+});
+
+// ─── POST /api/subscription/finalize-setup ───────────────────────────────────
+//
+// Completes the trial branch of /subscribe: after the owner confirms the
+// SetupIntent client-side (stripe.confirmSetup), this creates the actual
+// Stripe Subscription using the card that was just verified. Re-fetches the
+// SetupIntent from Stripe itself rather than trusting anything the client
+// reports about it — the client only ever supplies its id.
+
+router.post("/finalize-setup", async (req: any, res) => {
+  try {
+    const storeId = await getOwnedStoreId(req);
+    if (!storeId) return res.status(400).json({ error: "No store found" });
+
+    const { setupIntentId } = req.body;
+    if (!setupIntentId || typeof setupIntentId !== "string") {
+      return res.status(400).json({ error: "setupIntentId is required" });
+    }
+
+    if (!isStripeConfigured()) {
+      return res.status(503).json({ error: "Payments are not configured" });
+    }
+
+    const [store] = await db
+      .select()
+      .from(locations)
+      .where(eq(locations.id, storeId))
+      .limit(1);
+    if (!store) return res.status(404).json({ error: "Store not found" });
+
+    const setupIntent = await stripe.setupIntents.retrieve(setupIntentId);
+    const setupCustomerId = typeof setupIntent.customer === "string" ? setupIntent.customer : setupIntent.customer?.id;
+
+    if (setupIntent.status !== "succeeded") {
+      return res.status(400).json({ error: "Card verification has not completed yet" });
+    }
+    if (!setupCustomerId || setupCustomerId !== store.stripeCustomerId) {
+      return res.status(403).json({ error: "This setup does not belong to your store" });
+    }
+    if (setupIntent.metadata?.storeId !== String(storeId)) {
+      return res.status(403).json({ error: "This setup does not belong to your store" });
+    }
+
+    const planId = Number(setupIntent.metadata?.planId);
+    const [plan] = await db
+      .select()
+      .from(subscriptionPlans)
+      .where(
+        and(
+          eq(subscriptionPlans.id, planId),
+          eq(subscriptionPlans.isActive, true),
+          eq(subscriptionPlans.isPublic, true)
+        )
+      )
+      .limit(1);
+    if (!plan) return res.status(404).json({ error: "Plan not found or not available" });
+
+    const interval = setupIntent.metadata?.interval === "year" ? "year" : "month";
+    const priceId = interval === "year" ? plan.stripePriceIdYearly : plan.stripePriceIdMonthly;
+    if (!priceId) {
+      return res.status(400).json({ error: "This plan has not been configured for Stripe checkout yet." });
+    }
+
+    const pmId = typeof setupIntent.payment_method === "string"
+      ? setupIntent.payment_method
+      : setupIntent.payment_method?.id;
+    if (!pmId) return res.status(400).json({ error: "No payment method was saved" });
+
+    await stripe.customers.update(store.stripeCustomerId!, {
+      invoice_settings: { default_payment_method: pmId },
+    });
+
+    const trialPeriodDays = Number(setupIntent.metadata?.trialPeriodDays) || undefined;
+
+    let subscription;
+    try {
+      subscription = await stripe.subscriptions.create({
+        customer: store.stripeCustomerId!,
+        items: [{ price: priceId }],
+        default_payment_method: pmId,
+        trial_period_days: trialPeriodDays,
+        // No trial → charge the just-verified card now; fail loudly (rather
+        // than leaving a dangling "incomplete" subscription) if it's declined.
+        payment_behavior: "error_if_incomplete",
+        automatic_tax: { enabled: false },
+        metadata: {
+          storeId: String(storeId),
+          planCode: (plan as any).code ?? "",
+          planId: String(plan.id),
+          interval,
+        },
+      });
+    } catch (err: any) {
+      if (err?.type === "StripeCardError" || err?.type === "StripeInvalidRequestError") {
+        return res.status(402).json({ error: err.message || "Your card was declined. Please try a different card." });
+      }
+      throw err;
+    }
+
+    // storeSubscriptions is written off the customer.subscription.created
+    // webhook, not here — same server-authoritative principle as deal
+    // checkout's webhook-driven fulfillment.
+    return res.json({ ok: true, subscriptionId: subscription.id, status: subscription.status });
+  } catch (err) {
+    console.error("[subscription/finalize-setup] error:", err);
+    return res.status(500).json({ error: "Failed to complete subscription" });
   }
 });
 

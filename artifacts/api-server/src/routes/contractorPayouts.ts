@@ -98,6 +98,7 @@ export async function createPayoutRunForPeriod(
           status:    appointments.status,
           totalPaid: appointments.totalPaid,
           tipAmount: appointments.tipAmount,
+          discountAmount: appointments.discountAmount,
           serviceId: appointments.serviceId,
         })
         .from(appointments)
@@ -165,8 +166,11 @@ export async function createPayoutRunForPeriod(
 
     let serviceRevenue = 0, productRevenue = 0, tips = 0;
     for (const a of myAppts) {
+      // Commission is based on the pre-discount service amount — a discount
+      // (manual, loyalty redemption, or a deal voucher's platform-fee net)
+      // must never reduce what a contractor earns on the service they performed.
       const svcPrice = a.totalPaid
-        ? Number(a.totalPaid) - Number(a.tipAmount ?? 0)
+        ? Number(a.totalPaid) + Number(a.discountAmount ?? 0) - Number(a.tipAmount ?? 0)
         : (servicePriceMap.get(a.serviceId!) ?? 0);
       serviceRevenue += svcPrice;
       productRevenue += addonRevMap.get(a.id) ?? 0;

@@ -158,6 +158,7 @@ async function computeLines(storeId: number, periodStart: string, periodEnd: str
       serviceId: appointments.serviceId,
       totalPaid: appointments.totalPaid,
       tipAmount: appointments.tipAmount,
+      discountAmount: appointments.discountAmount,
       servicePrice: appointments.servicePrice,
       status: appointments.status,
       date: appointments.date,
@@ -190,7 +191,9 @@ async function computeLines(storeId: number, periodStart: string, periodEnd: str
     const mine = appts.filter((a) => a.staffId === t.id);
     let serviceRevenue = 0, productRevenue = 0, tips = 0;
     for (const a of mine) {
-      const gross = a.totalPaid ? Number(a.totalPaid) - Number(a.tipAmount ?? 0) : (a.servicePrice != null ? Number(a.servicePrice) : svcPrice.get(a.serviceId!) ?? 0);
+      // Commission basis is pre-discount — any discount (manual, loyalty, or
+      // a deal voucher's platform-fee net) must not reduce staff commission.
+      const gross = a.totalPaid ? Number(a.totalPaid) + Number(a.discountAmount ?? 0) - Number(a.tipAmount ?? 0) : (a.servicePrice != null ? Number(a.servicePrice) : svcPrice.get(a.serviceId!) ?? 0);
       serviceRevenue += Math.max(0, gross);
       productRevenue += addonRev.get(a.id) ?? 0;
       tips += Number(a.tipAmount ?? 0);

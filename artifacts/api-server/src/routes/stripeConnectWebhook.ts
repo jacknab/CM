@@ -20,6 +20,12 @@
  *     is approved or restricted. Triggers a full re-sync to pick up the
  *     latest charges_enabled / payouts_enabled flags.
  *
+ *   payment_intent.succeeded
+ *     A POS card payment (M2 / Tap to Pay) was captured on a salon's account.
+ *     Records it on the appointment if the app's capture request never did
+ *     (lost response, app closed). Requires this endpoint to listen to events
+ *     on Connected accounts and to be subscribed to payment_intent.succeeded.
+ *
  * Requires:
  *   STRIPE_SECRET_KEY              — platform Stripe client
  *   STRIPE_CONNECT_WEBHOOK_SECRET  — signing secret from the Connect
@@ -31,7 +37,8 @@ import { db, pool } from "../db";
 import { webhookEvents, payoutRunItems } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { getStripe } from "../lib/stripe";
-import { syncAccountFromStripe } from "../lib/stripeConnect";
+import { syncAccountFromStripe, getPaymentAccount } from "../lib/stripeConnect";
+import { finalizeCapturedTerminalPayment } from "./stripeConnect";
 import { syncContractorAccountStatus, findContractorByStripeAccount } from "../lib/stripeContractorAccounts";
 import type Stripe from "stripe";
 
@@ -157,6 +164,25 @@ async function handleTransferProblem(event: Stripe.Event): Promise<void> {
   console.log(`[connect-webhook/${event.type}] payout_run_item ${item.id} → failed (${transfer.id})`);
 }
 
+async function handlePosPaymentSucceeded(event: Stripe.Event): Promise<void> {
+  const pi = event.data.object as Stripe.PaymentIntent;
+  if (pi.metadata?.source !== "certxa_pos") return; // not one of ours
+
+  const storeId = Number.parseInt(pi.metadata.store_id ?? "", 10);
+  if (!Number.isInteger(storeId) || !event.account) {
+    console.warn(`[connect-webhook/payment_intent.succeeded] ${pi.id} missing store/account — ignored`);
+    return;
+  }
+  // The event must come from the very account this store is connected to.
+  const account = await getPaymentAccount(storeId);
+  if (!account || account.providerAccountId !== event.account) {
+    console.warn(`[connect-webhook/payment_intent.succeeded] ${pi.id} account mismatch for store ${storeId} — ignored`);
+    return;
+  }
+  const { recorded } = await finalizeCapturedTerminalPayment(storeId, pi, pi.metadata.method || "card");
+  console.log(`[connect-webhook/payment_intent.succeeded] ${pi.id} store ${storeId} — ${recorded ? "recorded by webhook" : "already recorded"}`);
+}
+
 async function handleApplicationDeauthorized(event: Stripe.Event): Promise<void> {
   const connectedAccountId = event.account;
   if (!connectedAccountId) {
@@ -233,6 +259,10 @@ router.use(async (req: any, res: Response) => {
 
       case "transfer.reversed":
         await handleTransferProblem(event);
+        break;
+
+      case "payment_intent.succeeded":
+        await handlePosPaymentSucceeded(event);
         break;
 
       default:

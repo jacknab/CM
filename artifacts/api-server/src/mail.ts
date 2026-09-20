@@ -199,11 +199,34 @@ export async function sendReminderEmail(
 
 export async function sendReviewRequestEmail(
   appointment: AppointmentWithDetails
-): Promise<void> {
-  if (!appointment.customer?.email || !appointment.storeId) return;
+): Promise<{ sent: boolean; reason?: string }> {
+  if (!appointment.customer?.email || !appointment.storeId) return { sent: false, reason: "no store or customer email" };
 
   const settings = await storage.getMailSettings(appointment.storeId);
-  if (!settings?.reviewRequestEnabled) return;
+  if (!settings?.reviewRequestEnabled) return { sent: false, reason: "review requests are disabled in mail settings" };
+
+  const { createReviewToken, hasOptedOutOfReviewRequests, hasEmailedReviewRequest, markReviewTokenEmailed } =
+    await import("./lib/reviewLinks");
+
+  if (await hasOptedOutOfReviewRequests(appointment.customer?.id)) {
+    return { sent: false, reason: "customer opted out of review requests" };
+  }
+  if (await hasEmailedReviewRequest(appointment.id)) {
+    return { sent: false, reason: "already emailed for this appointment" };
+  }
+
+  // Same certxa.com/review/<token> link the SMS sender uses (shared,
+  // per-appointment token — see sms.ts's sendReviewRequest for why the
+  // destination is resolved at click time rather than known here).
+  const customerName = (appointment.customer as any)?.fullName || appointment.customer?.name || null;
+  const token = await createReviewToken({
+    storeId: appointment.storeId,
+    appointmentId: appointment.id,
+    customerId: appointment.customer?.id ?? null,
+    customerName,
+    customerPhone: null,
+  });
+  const reviewUrl = `${process.env.APP_URL ?? "https://certxa.com"}/review/${token}`;
 
   const template =
     settings.reviewTemplate ||
@@ -212,9 +235,9 @@ export async function sendReviewRequestEmail(
 <p><a href="{reviewUrl}">Leave us a review</a></p>`;
 
   const html = interpolateTemplate(template, {
-    customerName: (appointment.customer as any)?.fullName || appointment.customer?.name || "there",
+    customerName: customerName || "there",
     storeName: appointment.store?.name || "our salon",
-    reviewUrl: settings.googleReviewUrl || "#",
+    reviewUrl,
   });
 
   const plainText = interpolateTemplate(
@@ -222,9 +245,9 @@ export async function sendReviewRequestEmail(
       ? settings.reviewTemplate.replace(/<[^>]*>/g, "")
       : `Hi {customerName}, thank you for visiting {storeName}! We'd love your feedback. {reviewUrl}`,
     {
-      customerName: (appointment.customer as any)?.fullName || appointment.customer?.name || "there",
+      customerName: customerName || "there",
       storeName: appointment.store?.name || "our salon",
-      reviewUrl: settings.googleReviewUrl || "",
+      reviewUrl,
     }
   );
 
@@ -235,6 +258,8 @@ export async function sendReviewRequestEmail(
     html,
     plainText
   );
+  await markReviewTokenEmailed(appointment.id);
+  return { sent: true };
 }
 
 let emailReminderIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -292,8 +317,8 @@ async function processEmailReviewRequests(): Promise<void> {
   let sent = 0;
   for (const appt of completedAppointments) {
     try {
-      await sendReviewRequestEmail(appt);
-      sent++;
+      const result = await sendReviewRequestEmail(appt);
+      if (result.sent) sent++;
     } catch (err) {
       console.error(`[Email] Review request error for appointment ${appt.id}:`, err);
     }

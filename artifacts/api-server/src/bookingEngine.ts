@@ -313,7 +313,7 @@ export async function atomicCreateBooking(
    * releasing locks between separate transactions.
    */
   externalTx?: DbTx,
-): Promise<BookingEngineResult<{ id: number }>> {
+): Promise<BookingEngineResult<{ id: number; ticketNumber: number }>> {
   const tz      = input.timezone || "UTC";
   const newStart = input.startTime;
   const newEnd   = new Date(newStart.getTime() + input.durationMinutes * 60_000);
@@ -421,6 +421,7 @@ export async function atomicCreateBooking(
       }
     }
 
+    const ticketNumber = await storage.getNextTicketNumber(input.storeId);
     const [created] = await tx
       .insert(appointments)
       .values({
@@ -431,6 +432,7 @@ export async function atomicCreateBooking(
         duration:           input.durationMinutes,
         status:             (input.status ?? "pending") as any,
         storeId:            input.storeId,
+        ticketNumber,
         notes:              input.notes ?? null,
         cancellationReason: null,
         paymentMethod:      input.paymentMethod ?? null,
@@ -445,9 +447,9 @@ export async function atomicCreateBooking(
         packageId:          input.packageId ?? null,
         ...(input.paymentStatus ? { paymentStatus: input.paymentStatus } : {}),
       } as any)
-      .returning({ id: appointments.id });
+      .returning({ id: appointments.id, ticketNumber: appointments.ticketNumber });
 
-    return { ok: true as const, data: { id: created.id } };
+    return { ok: true as const, data: { id: created.id, ticketNumber: created.ticketNumber! } };
   };
 
   try {

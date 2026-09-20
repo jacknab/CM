@@ -134,7 +134,7 @@ router.get("/sitemap-salons.xml", sitemapRateLimit, async (_req: Request, res: R
 
     if (totalPages <= 1) {
       const entries = list.map(r =>
-        `  <url><loc>${xmlEsc(`${CERTXA_DOMAIN}/${r.s}`)}</loc><lastmod>${lastmod}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`
+        `  <url><loc>${xmlEsc(`${CERTXA_DOMAIN}/${r.s}`)}</loc><lastmod>${r.lm}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`
       ).join("\n");
       res.setHeader("Content-Type", "application/xml; charset=utf-8");
       res.setHeader("Cache-Control", "public, max-age=86400");
@@ -162,9 +162,8 @@ router.get("/sitemap-salons-:page.xml", sitemapRateLimit, async (req: Request, r
     const slice = list.slice(start, start + SITEMAP_PAGE_SIZE);
     if (slice.length === 0) { res.status(404).send("Not found"); return; }
 
-    const lastmod = new Date().toISOString().slice(0, 10);
     const entries = slice.map(r =>
-      `  <url><loc>${xmlEsc(`${CERTXA_DOMAIN}/${r.s}`)}</loc><lastmod>${lastmod}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`
+      `  <url><loc>${xmlEsc(`${CERTXA_DOMAIN}/${r.s}`)}</loc><lastmod>${r.lm}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`
     ).join("\n");
     res.setHeader("Content-Type", "application/xml; charset=utf-8");
     res.setHeader("Cache-Control", "public, max-age=86400");
@@ -213,6 +212,16 @@ router.get("/", (req: Request, res: Response) => serveSsrPage(req, res, { withGe
 // entry itself by whether the param contains "--".
 router.get("/listings/:param", (req: Request, res: Response) => serveSsrPage(req, res));
 
+// Deals browse + detail — real first-class content pages (not a
+// directory-scraped slug guess), so they're routed explicitly here rather
+// than relying on salonSlugFallbackRouter's single-segment /:slug guess,
+// which would never match the two-segment /deals/:id anyway.
+router.get("/deals", (req: Request, res: Response) => serveSsrPage(req, res));
+router.get("/deals/:id", (req: Request, res: Response) => serveSsrPage(req, res));
+
+// Guest "My vouchers" wallet — reached only via an emailed magic link.
+router.get("/wallet", (req: Request, res: Response) => serveSsrPage(req, res));
+
 export default router;
 
 // ── Flat individual listing page — mounted AFTER phpMiddleware in index.ts ─────
@@ -225,7 +234,8 @@ export const salonSlugFallbackRouter = Router();
 // keeps the fallback from doing pointless work on hot, common paths.
 const RESERVED_SLUGS = new Set([
   "api", "app", "auth", "admin", "manage", "assets", "uploads", "lib", "mp-assets",
-  "login", "signup", "logout", "favicon.ico", "robots.txt", "health",
+  "login", "signup", "logout", "favicon.ico", "robots.txt", "health", "deals", "wallet",
+  "redeem", "book",
 ]);
 
 salonSlugFallbackRouter.get("/:slug", async (req: Request, res: Response, next) => {

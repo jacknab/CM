@@ -46,23 +46,37 @@ interface SsrModule {
   render: (url: string, apiOrigin: string, publicOrigin: string, geo?: GeoCity | null) => Promise<SsrRenderResult>;
 }
 
+// A failed load is retried after this cooldown rather than cached forever —
+// a build/deploy can leave the bundle briefly missing on disk (emptyOutDir
+// wipes it before the new one lands), and a worker that raced that window
+// used to serve 503 on every request for the rest of its process lifetime
+// with zero recovery. A short cooldown lets it self-heal within seconds of
+// the build finishing, at the cost of at most one extra fs.existsSync per
+// cooldown window while broken — negligible next to the outage it replaces.
+const RETRY_COOLDOWN_MS = 10_000;
+
 let _ssrModule: SsrModule | null = null;
-let _ssrLoadAttempted = false;
+let _ssrLoadFailedAt: number | null = null;
 
 async function loadSsrModule(): Promise<SsrModule | null> {
-  if (_ssrModule || _ssrLoadAttempted) return _ssrModule;
-  _ssrLoadAttempted = true;
+  if (_ssrModule) return _ssrModule;
+  if (_ssrLoadFailedAt !== null && Date.now() - _ssrLoadFailedAt < RETRY_COOLDOWN_MS) return null;
   const entryPath = path.join(marketplacePackageDistDir(), "server", "entry-server.js");
   if (!fs.existsSync(entryPath)) {
     logger.warn({ entryPath }, "[marketplaceSsr] SSR bundle not found — run `pnpm --filter @workspace/marketplace run build:ssr`");
+    _ssrLoadFailedAt = Date.now();
     return null;
   }
   try {
-    _ssrModule = (await import(entryPath)) as SsrModule;
+    // Cache-bust the ESM import so a retry after a redeploy picks up the
+    // new file instead of a stale in-process module cache.
+    _ssrModule = (await import(`${entryPath}?t=${Date.now()}`)) as SsrModule;
+    _ssrLoadFailedAt = null;
     logger.info("[marketplaceSsr] SSR bundle loaded");
     return _ssrModule;
   } catch (err) {
     logger.error({ err }, "[marketplaceSsr] failed to load SSR bundle");
+    _ssrLoadFailedAt = Date.now();
     return null;
   }
 }
@@ -70,14 +84,41 @@ async function loadSsrModule(): Promise<SsrModule | null> {
 interface ClientAssets { js: string; css: string[] }
 
 let _clientAssets: ClientAssets | null = null;
-let _assetsLoadAttempted = false;
+let _assetsLoadFailedAt: number | null = null;
+let _clientAssetsManifestMtimeMs: number | null = null;
 
-function loadClientAssets(): ClientAssets | null {
-  if (_clientAssets || _assetsLoadAttempted) return _clientAssets;
-  _assetsLoadAttempted = true;
-  const manifestPath = path.join(apiServerDistDir(), "public", "mp-assets", ".vite", "manifest.json");
+function clientManifestPath(): string {
+  return path.join(apiServerDistDir(), "public", "mp-assets", ".vite", "manifest.json");
+}
+
+function assetsExistOnDisk(assets: ClientAssets): boolean {
+  const root = path.join(apiServerDistDir(), "public", "mp-assets");
+  const jsOk = fs.existsSync(path.join(root, assets.js));
+  const cssOk = assets.css.every((href) => fs.existsSync(path.join(root, href)));
+  return jsOk && cssOk;
+}
+
+function loadClientAssets(forceReload = false): ClientAssets | null {
+  const manifestPath = clientManifestPath();
+  let manifestMtimeMs: number | null = null;
+  if (fs.existsSync(manifestPath)) {
+    try {
+      manifestMtimeMs = fs.statSync(manifestPath).mtimeMs;
+    } catch {
+      manifestMtimeMs = null;
+    }
+  }
+
+  const manifestChanged =
+    manifestMtimeMs !== null
+    && _clientAssetsManifestMtimeMs !== null
+    && manifestMtimeMs !== _clientAssetsManifestMtimeMs;
+
+  if (!forceReload && _clientAssets && !manifestChanged && assetsExistOnDisk(_clientAssets)) return _clientAssets;
+  if (_assetsLoadFailedAt !== null && Date.now() - _assetsLoadFailedAt < RETRY_COOLDOWN_MS) return null;
   if (!fs.existsSync(manifestPath)) {
     logger.warn({ manifestPath }, "[marketplaceSsr] client asset manifest not found — run `pnpm --filter @workspace/marketplace run build`");
+    _assetsLoadFailedAt = Date.now();
     return null;
   }
   try {
@@ -85,12 +126,25 @@ function loadClientAssets(): ClientAssets | null {
     const entry = manifest["src/main.tsx"];
     if (!entry) {
       logger.warn({ manifestPath }, "[marketplaceSsr] manifest missing src/main.tsx entry");
+      _assetsLoadFailedAt = Date.now();
       return null;
     }
     _clientAssets = { js: entry.file, css: entry.css ?? [] };
+    _clientAssetsManifestMtimeMs = manifestMtimeMs;
+    if (!assetsExistOnDisk(_clientAssets)) {
+      logger.warn({
+        js: _clientAssets.js,
+        css: _clientAssets.css,
+      }, "[marketplaceSsr] manifest points to missing client assets; waiting for next retry");
+      _assetsLoadFailedAt = Date.now();
+      _clientAssets = null;
+      return null;
+    }
+    _assetsLoadFailedAt = null;
     return _clientAssets;
   } catch (err) {
     logger.error({ err }, "[marketplaceSsr] failed to parse client manifest");
+    _assetsLoadFailedAt = Date.now();
     return null;
   }
 }
@@ -123,13 +177,18 @@ export async function renderMarketplacePage(
   const assets = loadClientAssets();
   if (!ssr || !assets) return null;
 
+  // Self-heal when a deploy swaps hashed files while this worker still has
+  // in-memory asset names from a previous manifest.
+  const safeAssets = assetsExistOnDisk(assets) ? assets : loadClientAssets(true);
+  if (!safeAssets) return null;
+
   const result = await ssr.render(originalUrl, internalApiOrigin, "https://certxa.com", geo);
 
   if (result.redirectTo) {
     return { html: "", statusCode: result.statusCode || 302, redirectTo: result.redirectTo };
   }
 
-  const cssLinks = assets.css.map((href) => `<link rel="stylesheet" href="/mp-assets/${href}">`).join("\n");
+  const cssLinks = safeAssets.css.map((href) => `<link rel="stylesheet" href="/mp-assets/${href}">`).join("\n");
   const stateScript = `<script>window.__CERTXA_QUERY_STATE__ = ${escapeScript(JSON.stringify(result.dehydratedState))};</script>`;
 
   const html = `<!DOCTYPE html>
@@ -146,7 +205,7 @@ ${cssLinks}
 <body>
 <div id="root">${result.html}</div>
 ${stateScript}
-<script type="module" src="/mp-assets/${assets.js}"></script>
+<script type="module" src="/mp-assets/${safeAssets.js}"></script>
 </body>
 </html>`;
 

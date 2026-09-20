@@ -570,11 +570,10 @@ export async function sendReviewRequest(
   const settings = await storage.getSmsSettings(appointment.storeId);
   if (!settings?.reviewRequestEnabled) return { sent: false, reason: "review requests are disabled in SMS settings" };
 
-  // Only send if the store actually has a Google review URL to point at
-  // (manual SMS-settings URL → connected GBP link → discovered Place ID).
-  const { resolveExternalReviewUrl } = await import("./lib/reviewLinks");
-  const externalReviewUrl = await resolveExternalReviewUrl(appointment.storeId);
-  if (!externalReviewUrl) return { sent: false, reason: "no Google review URL configured for this store" };
+  const { createReviewToken, hasOptedOutOfReviewRequests } = await import("./lib/reviewLinks");
+  if (await hasOptedOutOfReviewRequests(appointment.customer?.id)) {
+    return { sent: false, reason: "customer opted out of review requests" };
+  }
 
   const existing = await storage.getSmsLogByAppointmentAndType(
     appointment.id,
@@ -582,29 +581,21 @@ export async function sendReviewRequest(
   );
   if (existing) return { sent: false, reason: "already sent for this appointment" };
 
-  // Send a per-customer certxa.com/review/<token> link. The token is only for
-  // attribution (which appointment/customer clicked) — GET /review/:token in
-  // routes/reviewGating.ts 302-redirects straight to the store's Google review
-  // page for everyone. No rating funnel / no gating (Google review policy).
-  const crypto = await import("crypto");
-  const { pool } = await import("./db");
-  const token = crypto.randomBytes(24).toString("hex");
-  const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14 days
+  // Send a per-customer certxa.com/review/<token> link — the destination is
+  // resolved at click time in routes/reviewGating.ts: a store with a real
+  // Google review destination (checked there via resolveExternalReviewUrl)
+  // redirects straight to Google for everyone, no rating funnel (Google
+  // review policy); a store without one falls through to Certxa's own
+  // native, direct-to-public review form. Either way this function doesn't
+  // need to know which — it always sends the same link.
   const customerName = (appointment.customer as any)?.fullName || appointment.customer?.name || null;
-
-  await pool.query(
-    `INSERT INTO review_tokens (token, store_id, appointment_id, customer_id, customer_name, customer_phone, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [
-      token,
-      appointment.storeId,
-      appointment.id,
-      appointment.customer?.id ?? null,
-      customerName,
-      customerPhone,
-      expiresAt,
-    ]
-  );
+  const token = await createReviewToken({
+    storeId: appointment.storeId,
+    appointmentId: appointment.id,
+    customerId: appointment.customer?.id ?? null,
+    customerName,
+    customerPhone,
+  });
 
   const reviewUrl = `${process.env.APP_URL ?? "https://certxa.com"}/review/${token}`;
 
