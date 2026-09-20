@@ -22,6 +22,9 @@ export type NotificationEvent =
   | { type: "queue_updated"; storeId: number }
   | { type: "job_status_updated"; storeId: number; jobId: number; status: string }
   | { type: "ai_call_updated"; storeId: number }
+  // A salon setting (business hours, staff hours, services, …) changed on some device —
+  // open /calendar screens refetch instead of showing the old values until a hard refresh.
+  | { type: "settings_changed"; storeId: number; scope?: string }
   // The kiosk_checkout_* family below all carry an optional registerId so a
   // checkout at one paired POS/tablet station doesn't broadcast to another
   // station's tablet. Omitted (or 0) = the store's default/only register —

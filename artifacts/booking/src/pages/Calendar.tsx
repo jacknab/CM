@@ -25,6 +25,7 @@ import { Card } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSettingsSync } from "@/hooks/use-settings-sync";
 import { AvailableTimeBanner } from "@/components/AvailableTimeBanner";
 import { useThermalPrinter } from "@/hooks/use-thermal-printer";
 import { buildCheckinTicket, buildCheckoutReceipt } from "@/lib/thermalPrinter";
@@ -707,6 +708,8 @@ export default function Calendar() {
     return () => broadcastToFrontdesk("kiosk_checkout_phone_cancel");
   }, [showClientLookup, broadcastToFrontdesk]);
 
+  const refreshAllData = useSettingsSync(!!selectedStore?.id);
+
   // Real-time appointment sync via WebSocket — works for ALL store types.
   // Instantly refreshes calendar when any booking is created, updated, or deleted
   // from any source: staff dashboard, online booking, AI receptionist, etc.
@@ -715,14 +718,21 @@ export default function Calendar() {
     let ws: WebSocket;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let destroyed = false;
+    let hasConnectedBefore = false;
 
     const connect = () => {
       if (destroyed) return;
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
       ws = new WebSocket(`${protocol}://${window.location.host}/ws/notifications?storeId=${selectedStore.id}&registerId=${activeRegisterId}`);
+      // A reconnect may have missed a settings change while offline — resync.
+      ws.onopen = () => {
+        if (hasConnectedBefore) refreshAllData();
+        hasConnectedBefore = true;
+      };
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          if (data.type === "settings_changed") refreshAllData();
           if (
             data.type === "booking_created" ||
             data.type === "booking_updated" ||
@@ -775,7 +785,7 @@ export default function Calendar() {
     // array, this connection opens on registerId 0 and never reconnects, so
     // it sits in the wrong bucket forever and never sees anything the paired
     // /frontdesk sends back (e.g. kiosk_checkout_phone_result).
-  }, [queryClient, selectedStore?.id, activeRegisterId]);
+  }, [queryClient, selectedStore?.id, activeRegisterId, refreshAllData]);
 
   // Real-time turn queue updates via WebSocket + window event (nail salons only).
   // Auto-reconnects on drop so the queue stays live even after network blips.

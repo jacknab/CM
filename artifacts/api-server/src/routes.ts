@@ -1517,6 +1517,42 @@ export async function registerRoutes(
   // Skips silently for public routes (no session → req.auth left undefined).
   app.use("/api", attachAuthContext);
 
+  // ── Live settings sync ─────────────────────────────────────────────────────
+  // Any successful write to a salon-settings endpoint tells every connected
+  // /calendar (websocket, store-wide) to refetch. The native app has no hard
+  // refresh, so without this a business-hours / staff-hours change only showed
+  // up after the cached data aged out or the app was restarted.
+  const SETTINGS_SYNC_PREFIXES = [
+    "/api/business-hours", "/api/calendar-settings",
+    "/api/staff", "/api/staff-availability", "/api/store-staff-availability", "/api/staff-services",
+    "/api/services", "/api/service-categories", "/api/service-addons", "/api/service-options", "/api/addons", "/api/packages",
+    "/api/resources", "/api/registers", "/api/cash-drawers",
+    "/api/stores", "/api/settings", "/api/pos-settings", "/api/kiosk-settings", "/api/booking-policies",
+    "/api/queue/settings", "/api/loyalty/config", "/api/team", "/api/turn",
+  ];
+  // Heartbeat-style writes that aren't settings changes.
+  const SETTINGS_SYNC_SKIP = ["/api/registers/claim", "/api/registers/unclaim", "/api/turn/eligibility", "/api/staff/me/pin"];
+  const settingsSyncTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  app.use("/api", (req, res, next) => {
+    if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return next();
+    const url = req.originalUrl.split("?")[0].replace(/\/+$/, "");
+    const matches = (p: string) => url === p || url.startsWith(p + "/");
+    if (!SETTINGS_SYNC_PREFIXES.some(matches) || SETTINGS_SYNC_SKIP.some(matches)) return next();
+    res.on("finish", () => {
+      if (res.statusCode >= 400) return;
+      resolveSessionStoreId(req).then((storeId) => {
+        if (!storeId) return;
+        // Coalesce bursts (e.g. one save that writes several rows) into one broadcast.
+        clearTimeout(settingsSyncTimers.get(storeId));
+        settingsSyncTimers.set(storeId, setTimeout(() => {
+          settingsSyncTimers.delete(storeId);
+          broadcastNotification({ type: "settings_changed", storeId, scope: url });
+        }, 400));
+      }).catch(() => {});
+    });
+    next();
+  });
+
   // ── Server-side account suspension enforcement ────────────────────────────
   // Blocks API calls from suspended or locked accounts at the server layer.
   // The frontend AccountStatusGate catches normal UI flows, but this ensures
