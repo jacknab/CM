@@ -247,7 +247,7 @@ export default function RootLayout() {
         {splashVisible && (
           <View style={styles.splash}>
             <Image
-              source={require('../assets/splash-logo.png')}
+              source={require('../assets/splash-screen.png')}
               style={styles.splashImage}
               resizeMode="contain"
             />
@@ -267,7 +267,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   splashImage: {
-    width: '85%',
-    height: '85%',
+    width: '100%',
+    height: '100%',
   },
 });

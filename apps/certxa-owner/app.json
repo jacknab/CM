@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Certxa",
-    "slug": "certxa",
+    "slug": "ucertxa",
     "version": "1.0.0",
     "orientation": "default",
     "sdkVersion": "54.0.0",
@@ -39,6 +39,7 @@
     "plugins": [
       "expo-router",
       "./plugins/withJitpack",
+      "./plugins/withUsbPrinter",
       "expo-secure-store",
       [
         "@stripe/stripe-terminal-react-native",
@@ -56,9 +57,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0A001F",
-          "image": "./assets/splash-logo.png",
-          "imageWidth": 400,
+          "backgroundColor": "#000000",
+          "image": "./assets/splash-blank.png",
+          "imageWidth": 200,
           "resizeMode": "contain"
         }
       ],
@@ -80,11 +81,11 @@
     },
     "extra": {
       "eas": {
-        "projectId": "d5eff1fa-1cd2-4d20-aff8-cf9136402811"
+        "projectId": "cb455e45-7ff7-431d-ab58-17ab3be4c1bd"
       },
       "router": {},
       "expo-navigation-bar": {}
     },
-    "owner": "certxa1s-team"
+    "owner": "ucertxas-team"
   }
 }

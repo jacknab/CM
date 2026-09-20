@@ -25,6 +25,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useReaderDiscovery } from '@/lib/useReaderDiscovery';
 import { useTerminalPayment } from '@/lib/useTerminalPayment';
+import type { PaymentContext } from '@/lib/useTerminalPayment';
 
 // ── Visual constants (matches POSModal) ────────────────────────────────────────
 const DOT_COLORS = ['#E8705A', '#E0923A', '#D44040', '#E8A040', '#6AB84A'];
@@ -41,12 +42,21 @@ export interface M2PayData {
   clientName:    string;
   /** "m2" (Bluetooth reader) or "tap" (this device's NFC). Defaults to "m2". */
   mode?:         'm2' | 'tap';
+  /** Tip / discount / cash already taken — recorded with the payment on the server. */
+  ctx?:          PaymentContext;
+}
+
+export interface M2CompleteExtra {
+  paymentIntentId?: string;
+  last4?:           string;
+  /** Full card details from the reader — kept in the app so the receipt printer can print the card block. */
+  cardDetails?:     unknown;
 }
 
 interface Props {
   visible:    boolean;
   data:       M2PayData | null;
-  onComplete: (appointmentId: number, method: string, amountDollars: number) => void;
+  onComplete: (appointmentId: number, method: string, amountDollars: number, extra?: M2CompleteExtra) => void;
   onError:    (message: string) => void;
   onCancel:   () => void;
 }
@@ -101,6 +111,10 @@ export function M2PaymentOverlay({ visible, data, onComplete, onError, onCancel 
     setErrorMsg('');
 
     try {
+      // Payments must not depend on the one-shot login-time SDK init having worked.
+      await payment.ensureInitialized();
+      if (cancelRef.current) return;
+
       const locationId = await payment.getLocationId();
       if (cancelRef.current) return;
 
@@ -110,12 +124,13 @@ export function M2PaymentOverlay({ visible, data, onComplete, onError, onCancel 
         {
           onDiscovering: () => { setPhase('discovering'); setStatusMsg(isTap ? 'Starting Tap to Pay…' : 'Scanning for M2 reader…'); },
           onConnecting:  () => { setPhase('connecting');  setStatusMsg(isTap ? 'Preparing Tap to Pay…' : 'Connecting to reader…'); },
+          onStatus:      (m) => setStatusMsg(m),
         },
       );
       if (cancelRef.current) return;
 
       const payMethod = isTap ? 'tap_to_pay' : 'm2';
-      const { cardDetails } = await payment.run(
+      const { cardDetails, paymentIntentId } = await payment.run(
         data.amountCents,
         data.appointmentId,
         data.clientName,
@@ -124,11 +139,16 @@ export function M2PaymentOverlay({ visible, data, onComplete, onError, onCancel 
           onPhase:  (p) => { setPhase(p as Phase); },
           onStatus: (s) => setStatusMsg(s),
         },
+        data.ctx,
       );
 
       if (cancelRef.current) return;
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onComplete(data.appointmentId, payMethod, data.amountCents / 100);
+      onComplete(data.appointmentId, payMethod, data.amountCents / 100, {
+        paymentIntentId,
+        last4: (cardDetails as any)?.last4,
+        cardDetails,
+      });
     } catch (err: any) {
       if (cancelRef.current) return;
       await discovery.cancelDiscovery();
@@ -158,8 +178,20 @@ export function M2PaymentOverlay({ visible, data, onComplete, onError, onCancel 
     busyRef.current   = false;
     await discovery.cancelDiscovery();
     await payment.cancel();
+    // If a card was already approved but not captured, capture it now (it may have gone
+    // through) or release the hold — never leave the customer's card on hold.
+    const left = await payment.abandonPending();
+    if (left.captured && data) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      onComplete(data.appointmentId, isTap ? 'tap_to_pay' : 'm2', data.amountCents / 100, {
+        paymentIntentId: left.paymentIntentId,
+        last4: (left.cardDetails as any)?.last4,
+        cardDetails: left.cardDetails,
+      });
+      return;
+    }
     onCancel();
-  }, [discovery, payment, onCancel]);
+  }, [discovery, payment, onCancel, onComplete, data, isTap]);
 
   // ── Try again ────────────────────────────────────────────────────────────────
   const handleRetry = useCallback(() => {
@@ -186,7 +218,9 @@ export function M2PaymentOverlay({ visible, data, onComplete, onError, onCancel 
               <View style={S.declinedIconWrap}>
                 <Ionicons name="close-circle" size={48} color="#FF4444" />
               </View>
-              <Text style={S.declinedTitle}>DECLINED</Text>
+              <Text style={S.declinedTitle}>
+                {/declin|insufficient|do not honou?r|expired card|lost card|stolen card|card not supported/i.test(errorMsg) ? 'DECLINED' : 'PAYMENT ISSUE'}
+              </Text>
               <Text style={S.declinedMsg}>{errorMsg}</Text>
 
               <TouchableOpacity style={S.tryAgainBtn} onPress={handleRetry} activeOpacity={0.85}>

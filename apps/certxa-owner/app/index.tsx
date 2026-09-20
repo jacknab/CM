@@ -31,7 +31,10 @@ import * as NavigationBar from 'expo-navigation-bar';
 import { Colors } from '@/constants/colors';
 import { apiCaller, notifySessionReady } from '@/lib/terminalBridge';
 import { POSModal, type POSData } from '@/components/POSModal';
-import { M2PaymentOverlay, type M2PayData } from '@/components/M2PaymentOverlay';
+import { viewportLockJs } from '@/lib/viewportLock';
+import { printReceipt, openCashDrawer, type ReceiptData } from '@/lib/printer';
+import { PrinterSetupModal } from '@/components/PrinterSetupModal';
+import { M2PaymentOverlay, type M2PayData, type M2CompleteExtra } from '@/components/M2PaymentOverlay';
 import { ReaderStatusModal } from '@/components/ReaderStatusModal';
 import { TapToPaySetupModal } from '@/components/TapToPaySetupModal';
 import { useStripeTerminal } from '@stripe/stripe-terminal-react-native';
@@ -45,6 +48,10 @@ const BRIDGE_JS = `
   if (window.__certxaBridgeInstalled) return;
   window.__certxaBridgeInstalled = true;
   window.CERTXA_NATIVE_APP = true;
+  // This build can print receipts on the thermal printer (PRINT_RECEIPT) — the web checkout checks this flag.
+  window.CERTXA_PRINT_BRIDGE = true;
+  // ...and can pop the cash drawer through the printer (OPEN_DRAWER).
+  window.CERTXA_DRAWER_BRIDGE = true;
 
   // Generic RPC: native calls endpoint via WebView session cookie.
   // Always resolves with the JSON body (even for non-2xx responses) so that
@@ -117,20 +124,6 @@ true;
 `;
 
 // Tablet: force desktop viewport width so the full portal renders correctly
-const TABLET_VIEWPORT_JS = `
-(function() {
-  var meta = document.querySelector('meta[name="viewport"]');
-  if (meta) {
-    meta.setAttribute('content', 'width=1280, initial-scale=1');
-  } else {
-    var m = document.createElement('meta');
-    m.name = 'viewport';
-    m.content = 'width=1280, initial-scale=1';
-    document.head.appendChild(m);
-  }
-})();
-true;
-`;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -163,6 +156,10 @@ export default function PortalScreen() {
   const [readerStatusVisible, setReaderStatusVisible] = useState(false);
   const [tapSetupVisible, setTapSetupVisible] = useState(false);
   const [m2PayVisible, setM2PayVisible]   = useState(false);
+  const [printerSetupVisible, setPrinterSetupVisible] = useState(false);
+  const [printerStoreName, setPrinterStoreName]       = useState('Receipt');
+  // Card details from the reader, by PaymentIntent id, so a receipt printed later can show the card block.
+  const cardDetailsByPi = useRef<Map<string, unknown>>(new Map());
   const [m2PayData, setM2PayData]         = useState<M2PayData | null>(null);
 
   // Read connected-reader state from the Terminal SDK — used only for the
@@ -251,12 +248,13 @@ export default function PortalScreen() {
         case 'M2_PAY': {
           // Web Calendar POS sheet requests M2 payment via device reader.
           // Show the M2PaymentOverlay which handles discovery + payment.
-          const { appointmentId, amountCents, clientName } = msg;
+          const { appointmentId, amountCents, clientName, tipCents, discountCents, priorTenderedCents } = msg;
           setM2PayData({
             appointmentId: appointmentId ?? 0,
             amountCents,
             clientName: clientName ?? 'Walk-in',
             mode: 'm2',
+            ctx: { tipCents, discountCents, priorTenderedCents },
           });
           setM2PayVisible(true);
           break;
@@ -264,14 +262,55 @@ export default function PortalScreen() {
         case 'TAP_TO_PAY': {
           // Web POS requests Tap to Pay on this device's NFC. Same overlay,
           // discovery method 'tapToPay' instead of Bluetooth.
-          const { appointmentId, amountCents, clientName } = msg;
+          const { appointmentId, amountCents, clientName, tipCents, discountCents, priorTenderedCents } = msg;
           setM2PayData({
             appointmentId: appointmentId ?? 0,
             amountCents,
             clientName: clientName ?? 'Walk-in',
             mode: 'tap',
+            ctx: { tipCents, discountCents, priorTenderedCents },
           });
           setM2PayVisible(true);
+          break;
+        }
+        case 'PRINT_RECEIPT': {
+          // Web checkout asks for a receipt on the USB / Bluetooth thermal printer. Always answer
+          // with certxa_native_print_result so the sheet knows whether it really printed.
+          const { requestId, receipt, paymentIntentId } = msg;
+          const reply = (ok: boolean, error?: string) => {
+            const detail = { requestId: requestId ?? null, ok, error: error ?? null };
+            webViewRef.current?.injectJavaScript(
+              `window.dispatchEvent(new CustomEvent('certxa_native_print_result', { detail: ${JSON.stringify(detail)} })); true;`
+            );
+          };
+          void (async () => {
+            try {
+              if (!receipt || !Array.isArray(receipt.items)) throw new Error('Nothing to print');
+              const card = paymentIntentId ? cardDetailsByPi.current.get(String(paymentIntentId)) : undefined;
+              const data: ReceiptData = { ...(receipt as ReceiptData), cardDetails: (card as any) ?? (receipt as any).cardDetails };
+              await printReceipt(data);
+              reply(true);
+            } catch (e: any) {
+              reply(false, e?.message ?? 'Could not print the receipt');
+            }
+          })();
+          break;
+        }
+        case 'OPEN_DRAWER': {
+          // Web checkout / cash drawer screen asks to pop the drawer. Always answer with the real result.
+          const { requestId } = msg;
+          const reply = (ok: boolean, error?: string) => {
+            const detail = { requestId: requestId ?? null, ok, error: error ?? null };
+            webViewRef.current?.injectJavaScript(
+              `window.dispatchEvent(new CustomEvent('certxa_native_drawer_result', { detail: ${JSON.stringify(detail)} })); true;`
+            );
+          };
+          void openCashDrawer().then(() => reply(true)).catch((e: any) => reply(false, e?.message ?? 'Could not open the cash drawer'));
+          break;
+        }
+        case 'SETUP_PRINTER': {
+          setPrinterStoreName(String(msg.storeName || 'Receipt'));
+          setPrinterSetupVisible(true);
           break;
         }
         case 'SETUP_TAP_TO_PAY': {
@@ -329,15 +368,25 @@ export default function PortalScreen() {
   }, []);
 
   // ── M2 bridge callbacks (M2PaymentOverlay → web) ──────────────────────────
-  const onM2Complete = useCallback((appointmentId: number, method: string, amountDollars: number) => {
+  const onM2Complete = useCallback((appointmentId: number, method: string, amountDollars: number, extra?: M2CompleteExtra) => {
     setM2PayVisible(false);
     setM2PayData(null);
-    // Dispatch payment_complete so Calendar.tsx can mark the appointment done
-    // and WalkInCheckoutPanel can apply the tender (appointmentId === 0 path).
+    // Dispatch payment_complete: the Checkout sheet adds it as a tender (and dedupes on
+    // paymentIntentId), WalkInCheckoutPanel applies the tender (appointmentId === 0 path).
+    if (extra?.paymentIntentId && extra.cardDetails) {
+      const m = cardDetailsByPi.current;
+      m.set(extra.paymentIntentId, extra.cardDetails);
+      if (m.size > 20) m.delete(m.keys().next().value as string);
+    }
+    const detail = {
+      appointmentId,
+      method,
+      amount: amountDollars,
+      paymentIntentId: extra?.paymentIntentId ?? null,
+      last4: extra?.last4 ?? null,
+    };
     webViewRef.current?.injectJavaScript(
-      `window.dispatchEvent(new CustomEvent('certxa_native_payment_complete', {
-        detail: { appointmentId: ${appointmentId}, method: ${JSON.stringify(method)}, amount: ${amountDollars} }
-      })); true;`
+      `window.dispatchEvent(new CustomEvent('certxa_native_payment_complete', { detail: ${JSON.stringify(detail)} })); true;`
     );
   }, []);
 
@@ -378,14 +427,13 @@ export default function PortalScreen() {
         source={{ uri: PORTAL_URL }}
         style={styles.webview}
         injectedJavaScript={BRIDGE_JS}
-        injectedJavaScriptBeforeContentLoaded={BRIDGE_JS}
+        injectedJavaScriptBeforeContentLoaded={BRIDGE_JS + viewportLockJs(width)}
         onNavigationStateChange={onNavigationStateChange}
         onLoadStart={() => { setLoading(true); setNavError(null); }}
         onLoad={() => {
           setLoading(false);
-          if (isTablet) {
-            webViewRef.current?.injectJavaScript(TABLET_VIEWPORT_JS);
-          }
+          // Re-assert the zoom/drift lock after every page load (all screen sizes).
+          webViewRef.current?.injectJavaScript(viewportLockJs(width));
         }}
         onError={(e) => {
           setLoading(false);
@@ -400,6 +448,11 @@ export default function PortalScreen() {
         mixedContentMode="compatibility"
         cacheEnabled={false}
         overScrollMode="never"
+        bounces={false}
+        scalesPageToFit={false}
+        setBuiltInZoomControls={false}
+        setDisplayZoomControls={false}
+        textZoom={100}
         androidLayerType="hardware"
         userAgent={isTablet
           ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -441,6 +494,13 @@ export default function PortalScreen() {
         onComplete={onM2Complete}
         onError={onM2Error}
         onCancel={onM2Cancel}
+      />
+
+      {/* Receipt printer setup — opened by SETUP_PRINTER from the web checkout */}
+      <PrinterSetupModal
+        visible={printerSetupVisible}
+        storeName={printerStoreName}
+        onClose={() => setPrinterSetupVisible(false)}
       />
 
       {/* Reader Status Modal */}

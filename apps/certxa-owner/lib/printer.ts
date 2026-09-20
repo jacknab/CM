@@ -19,6 +19,13 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { NativeModules } from 'react-native';
+import { pickUsbPrinter, type UsbDev } from './usbPrinterPick';
+import { drawerKickBase64 } from './drawerKick';
+import { buildReceiptText, divLine, type CardDetails, type ReceiptItem, type ReceiptData } from './receiptText';
+
+export { buildReceiptText };
+export type { CardDetails, ReceiptItem, ReceiptData };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -33,51 +40,9 @@ export interface PrinterDevice {
   productId?: string;
 }
 
-export interface CardDetails {
-  last4:          string;
-  brand:          string;          // 'visa' | 'mastercard' | 'amex' | 'discover' | …
-  funding?:       string;          // 'credit' | 'debit' | 'prepaid' | 'unknown'
-  approvalCode?:  string;          // auth/approval code from issuer
-  entryMethod?:   string;          // 'chip' | 'contactless' | 'swipe' | 'manual'
-  terminalId?:    string;
-  sequenceNumber?: string;
-  aid?:           string;          // EMV Application Identifier
-  arqc?:          string;          // EMV Application Request Cryptogram
-  pinVerified?:   boolean;
-  paymentIntentId?: string;
-}
-
-export interface ReceiptItem {
-  name:      string;
-  price:     number;
-  duration?: string;   // e.g. "75 min" — shown in grey below item name
-}
-
-export interface ReceiptData {
-  storeName:     string;
-  storeAddress?: string;
-  storePhone?:   string;
-  storeEmail?:   string;
-  receiptNumber: number;
-  date:          string;   // ISO or locale string
-  clientName?:   string;
-  items:         ReceiptItem[];
-  subtotal:      number;
-  tax:           number;
-  grandTotal:    number;
-  paymentMethod: string;
-  amountPaid?:   number;
-  changeDue?:    number;
-  cardDetails?:  CardDetails;
-}
-
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const STORAGE_KEY = '@certxa_saved_printer';
-/** Character width used for ESC/POS text formatting.
- *  32 works for 58 mm paper; 48 for 80 mm paper.
- *  The library auto-wraps, so 32 is the safe default. */
-const COL_W = 32;
 
 // ── Lazy native module loader ─────────────────────────────────────────────────
 
@@ -184,131 +149,75 @@ export async function enableBluetooth(): Promise<void> {
   // The library will throw an error if BT is off; the UI should surface that.
 }
 
-// ── Receipt text builder ──────────────────────────────────────────────────────
-
-/** Pad a two-column row to exactly COL_W characters. */
-function twoCol(left: string, right: string, width = COL_W): string {
-  const gap = width - left.length - right.length;
-  return left + ' '.repeat(Math.max(1, gap)) + right;
-}
-
-/** Horizontal divider line */
-function divLine(char = '-', width = COL_W): string {
-  return char.repeat(width);
-}
-
-/** Dollar amount formatter */
-function $$(n: number): string {
-  return `$${n.toFixed(2)}`;
-}
-
-/** Format card brand for display */
-function fmtBrand(brand: string): string {
-  const map: Record<string, string> = {
-    visa: 'Visa', mastercard: 'Mastercard', amex: 'American Express',
-    discover: 'Discover', jcb: 'JCB', diners: 'Diners Club',
-    unionpay: 'UnionPay',
-  };
-  return map[brand.toLowerCase()] ?? brand.toUpperCase();
-}
-
-/** Format entry method for display */
-function fmtEntry(method: string): string {
-  const map: Record<string, string> = {
-    chip: 'INSERT', contactless: 'TAP', swipe: 'SWIPE',
-    manual: 'MANUAL ENTRY', nfc: 'CONTACTLESS',
-  };
-  return map[method.toLowerCase()] ?? method.toUpperCase();
-}
-
-export function buildReceiptText(data: ReceiptData): string {
-  const lines: string[] = [];
-
-  // ── Store header ─────────────────────────────────────────────────────────────
-  lines.push(`[C]<b>${data.storeName}</b>`);
-  if (data.storeAddress) lines.push(`[C]${data.storeAddress}`);
-  if (data.storePhone)   lines.push(`[C]Tel: ${data.storePhone}`);
-  if (data.storeEmail)   lines.push(`[C]${data.storeEmail}`);
-  lines.push(`[C]${divLine()}`);
-
-  // ── Transaction info ─────────────────────────────────────────────────────────
-  let dateStr = data.date;
-  let timeStr = '';
-  try {
-    const d = new Date(data.date);
-    if (!isNaN(d.getTime())) {
-      dateStr = d.toLocaleDateString('en-US', {
-        month: 'numeric', day: 'numeric', year: 'numeric',
-      });
-      timeStr = d.toLocaleTimeString('en-US', {
-        hour: 'numeric', minute: '2-digit', second: '2-digit',
-      });
-    }
-  } catch {}
-
-  if (timeStr) {
-    lines.push(`[L]Date: ${dateStr}[R]Time: ${timeStr}`);
-  } else {
-    lines.push(`[L]Date: ${dateStr}`);
-  }
-  if (data.clientName) lines.push(`[L]Client: ${data.clientName}`);
-  lines.push(`[L]Txn: #${String(data.receiptNumber)}`);
-  lines.push(`[C]${divLine()}`);
-
-  // ── Line items ───────────────────────────────────────────────────────────────
-  lines.push(`[L]<b>ITEM</b>[R]<b>PRICE</b>`);
-  lines.push(`[C]${divLine()}`);
-  for (const item of data.items) {
-    lines.push(`[L]${item.name}[R]${$$(item.price)}`);
-    if (item.duration) lines.push(`[L]${item.duration}`);
-    lines.push(`[C]${divLine()}`);
-  }
-
-  // ── Subtotal / Total ─────────────────────────────────────────────────────────
-  lines.push(`[L]Subtotal[R]${$$(data.subtotal)}`);
-  if (data.tax > 0) {
-    lines.push(`[L]Tax[R]${$$(data.tax)}`);
-  }
-  lines.push(`[C]${divLine()}`);
-  lines.push(`[L]<b>TOTAL</b>[R]<b>${$$(data.grandTotal)}</b>`);
-  lines.push(`[C]${divLine()}`);
-
-  // ── Payment section ──────────────────────────────────────────────────────────
-  lines.push(`[L]Payment[R]${data.paymentMethod}`);
-  lines.push(`[L]Amount Paid[R]${$$(data.amountPaid ?? data.grandTotal)}`);
-  lines.push(`[L]Change[R]${$$(data.changeDue ?? 0)}`);
-  lines.push(`[C]${divLine()}`);
-
-  // ── Card details block (card payments only) ──────────────────────────────────
-  if (data.cardDetails) {
-    const c = data.cardDetails;
-    lines.push(`[L]ACCT: ****${c.last4}`);
-    lines.push(`[L]ACCT TYPE: ${(c.funding ?? 'CREDIT').toUpperCase()}`);
-    if (c.approvalCode) lines.push(`[L]APPROVAL: ${c.approvalCode.toUpperCase()}`);
-    lines.push(`[L]${fmtBrand(c.brand)}`);
-    if (c.terminalId)    lines.push(`[L]TERM#: ${c.terminalId}`);
-    if (c.sequenceNumber) lines.push(`[L]SEQ#: ${c.sequenceNumber}`);
-    if (c.aid)           lines.push(`[L]AID: ${c.aid}`);
-    if (c.arqc)          lines.push(`[L]ARQC ${c.arqc}`);
-    lines.push(`[L]ENTRY: ${fmtEntry(c.entryMethod ?? 'chip')}`);
-    if (c.pinVerified)   lines.push(`[L]PIN VERIFIED`);
-    lines.push(`[L]APPROVED`);
-    lines.push(`[C]${divLine()}`);
-    lines.push(`[C]CUSTOMER AGREES TO PAY THE ABOVE`);
-    lines.push(`[C]TOTAL AMOUNT ACCORDING TO THE CARD`);
-    lines.push(`[C]HOLDERS AGREEMENT`);
-    lines.push(`[C]${divLine()}`);
-  }
-
-  // ── Footer ───────────────────────────────────────────────────────────────────
-  lines.push(`[C]Thank you for visiting!`);
-  lines.push(`[C]We look forward to seeing you again.`);
-  lines.push(`\n\n\n`);
-
-  return lines.join('\n');
-}
-
 // ── Print helpers ─────────────────────────────────────────────────────────────
+
+/** ESC @ (initialise printer) — harmless; used to test that the USB link is open. */
+const ESC_INIT_B64 = 'G0A=';
+const USB_READY_TIMEOUT_MS = 30_000;
+
+async function listUsbDevices(): Promise<PrinterDevice[]> {
+  loadNative();
+  if (!_USB) return [];
+  await _USB.init();
+  const devices: any[] = (await _USB.getDeviceList()) ?? [];
+  return devices.map((d) => {
+    const vid = String(d.vendor_id ?? d.vendorId ?? '');
+    const pid = String(d.product_id ?? d.productId ?? '');
+    return { type: 'usb' as const, address: `${vid}/${pid}`, name: d.device_name ?? d.name ?? `USB Printer (${vid}:${pid})`, vendorId: vid, productId: pid };
+  });
+}
+
+/**
+ * The printer to use: the saved one; otherwise auto-detect the USB receipt printer plugged
+ * into the tablet (and remember it) so printing works with no setup screen.
+ */
+export async function resolvePrinter(): Promise<PrinterDevice> {
+  const saved = await getSavedPrinter();
+  if (saved?.type === 'bluetooth') return saved;
+
+  loadNative();
+  if (!_USB) throw new Error('USB printing is not available in this build of the app.');
+
+  const usb = await listUsbDevices();
+  const pick = pickUsbPrinter(usb as UsbDev[], saved);
+  if (pick.ok) {
+    const device = usb.find((d) => d.vendorId === pick.device.vendorId && d.productId === pick.device.productId)!;
+    if (pick.reason !== 'saved') await savePrinter(device).catch(() => {});
+    return device;
+  }
+  if (pick.reason === 'none') {
+    throw new Error('No printer found. Check the USB cable between the receipt printer and this tablet, and that the printer is on.');
+  }
+  throw new Error('More than one USB device is connected and the receipt printer could not be identified. Open Printer setup and choose it.');
+}
+
+/**
+ * Open the USB link. Android shows an "Allow Certxa to access the USB device?" prompt the
+ * first time; the library reports nothing about it, so keep testing the link until it is open.
+ */
+async function ensureUsbReady(device: PrinterDevice): Promise<void> {
+  loadNative();
+  if (!device.vendorId || !device.productId) throw new Error('USB printer missing vendor/product ID');
+  await _USB.init();
+  await _USB.connectPrinter(device.vendorId, device.productId); // requests USB permission if needed
+
+  const native = (NativeModules as any).RNUSBPrinter;
+  const deadline = Date.now() + USB_READY_TIMEOUT_MS;
+  let asked = false;
+  for (;;) {
+    const open = await new Promise<boolean>((resolve) => {
+      let failed = false;
+      try { native.printRawData(ESC_INIT_B64, () => { failed = true; }); } catch { failed = true; }
+      setTimeout(() => resolve(!failed), 200);
+    });
+    if (open) return;
+    if (Date.now() > deadline) {
+      throw new Error('The printer is not accessible. When Android asks to allow USB access for the printer, tap Allow — then try again.');
+    }
+    if (!asked) { asked = true; await _USB.connectPrinter(device.vendorId, device.productId).catch(() => {}); }
+    await new Promise<void>((r) => setTimeout(r, 700));
+  }
+}
 
 async function getActivePrinterModule(device: PrinterDevice): Promise<any> {
   loadNative();
@@ -317,35 +226,26 @@ async function getActivePrinterModule(device: PrinterDevice): Promise<any> {
     await _BLE.init();
     await _BLE.connectPrinter(device.address);
     return _BLE;
-  } else {
-    if (!_USB) throw new Error('USB printer module not available');
-    await _USB.init();
-    if (!device.vendorId || !device.productId) {
-      throw new Error('USB printer missing vendor/product ID');
-    }
-    await _USB.connectPrinter(device.vendorId, device.productId);
-    return _USB;
   }
+  if (!_USB) throw new Error('USB printer module not available');
+  await ensureUsbReady(device);
+  return _USB;
 }
 
 // ── Public print API ──────────────────────────────────────────────────────────
 
+/** Print a receipt on the receipt printer (auto-detected if none was set up). Throws with a
+ *  human-readable reason if it cannot. */
 export async function printReceipt(data: ReceiptData): Promise<void> {
-  const saved = await getSavedPrinter();
-  if (!saved) {
-    throw new Error('No printer configured. Set up a printer in Settings → Printer.');
-  }
-
-  const mod  = await getActivePrinterModule(saved);
+  const printer = await resolvePrinter();
+  const mod  = await getActivePrinterModule(printer);
   const text = buildReceiptText(data);
   await mod.printBill(text);
 }
 
 export async function printTestPage(storeName: string): Promise<void> {
-  const saved = await getSavedPrinter();
-  if (!saved) throw new Error('No printer configured.');
-
-  const mod = await getActivePrinterModule(saved);
+  const printer = await resolvePrinter();
+  const mod = await getActivePrinterModule(printer);
   const lines = [
     `[C]<b>${storeName}</b>`,
     `[C]--- PRINTER TEST ---`,
@@ -359,4 +259,36 @@ export async function printTestPage(storeName: string): Promise<void> {
     `\n\n\n`,
   ].join('\n');
   await mod.printBill(lines);
+}
+
+/**
+ * Open the cash drawer: send the ESC/POS drawer-kick pulse to the receipt printer (the drawer is
+ * plugged into the printer's RJ11 port). Throws with a human-readable reason if the printer
+ * cannot be reached, so the caller never reports an open drawer that did not open.
+ */
+export async function openCashDrawer(): Promise<void> {
+  const printer = await resolvePrinter();
+  let native: any;
+  if (printer.type === 'usb') {
+    await ensureUsbReady(printer);
+    native = (NativeModules as any).RNUSBPrinter;
+  } else {
+    loadNative();
+    if (!_BLE) throw new Error('Bluetooth printer module not available');
+    await _BLE.init();
+    await _BLE.connectPrinter(printer.address);
+    native = (NativeModules as any).RNBLEPrinter;
+  }
+  if (!native?.printRawData) throw new Error('This printer connection cannot send the drawer command.');
+
+  await new Promise<void>((resolve, reject) => {
+    let failure: string | null = null;
+    try {
+      native.printRawData(drawerKickBase64(), (e: unknown) => { failure = String(e ?? 'The printer did not accept the command'); });
+    } catch (e: any) {
+      failure = e?.message ?? 'The printer did not accept the command';
+    }
+    // The library calls back only on failure, and does so immediately.
+    setTimeout(() => (failure ? reject(new Error(failure)) : resolve()), 250);
+  });
 }

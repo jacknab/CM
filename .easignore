@@ -62,3 +62,12 @@ artifacts
 *.local
 coverage
 .nyc_output
+
+# ── Never upload local secrets / binaries / runtime data ─────────────────────
+*.apk
+.env
+.env.*
+!.env.example
+.ngrok3
+/logs
+/data

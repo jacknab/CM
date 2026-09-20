@@ -16,8 +16,10 @@
 import { useRef } from 'react';
 import { Platform, PermissionsAndroid } from 'react-native';
 import * as Location from 'expo-location';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useStripeTerminal } from '@stripe/stripe-terminal-react-native';
 import type { Reader } from '@stripe/stripe-terminal-react-native';
+import { updateProgressPrompt, UPDATE_STARTING_PROMPT } from './readerPrompts';
 
 const { PERMISSIONS, RESULTS, requestMultiple } = PermissionsAndroid;
 
@@ -27,11 +29,18 @@ const TAP_DISCOVERY_TIMEOUT_MS = 12_000;
 
 export type DiscoveryMethod = 'bluetoothScan' | 'tapToPay';
 
+/** Serial number of the M2 that last connected on this tablet — preferred on the next scan. */
+const LAST_READER_KEY = 'certxa_last_m2_serial';
+/** After the first reader appears, wait this long for others before picking one. */
+const SETTLE_MS = 2_000;
+
 export interface DiscoveryCallbacks {
   /** Called after permissions pass, just before scanning starts. */
   onDiscovering?: () => void;
   /** Called after the reader is found, just before connecting. */
   onConnecting?:  () => void;
+  /** Text to show while connecting (e.g. a required reader software update installing). */
+  onStatus?:      (msg: string) => void;
 }
 
 /**
@@ -42,15 +51,42 @@ export function useReaderDiscovery() {
   // Resolver is stored in a ref so the onUpdateDiscoveredReaders callback
   // can resolve the Promise without stale-closure issues.
   const firstReaderResolver = useRef<((r: Reader.Type) => void) | null>(null);
+  const savedSerial   = useRef<string | null>(null);
+  const settleTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestReaders = useRef<Reader.Type[]>([]);
+  const statusRef     = useRef<((msg: string) => void) | null>(null);
+
+  const serialOf = (r: Reader.Type) => String((r as any).serialNumber ?? '');
+  const pick = (list: Reader.Type[]): Reader.Type =>
+    (savedSerial.current ? list.find((r) => serialOf(r) === savedSerial.current) : undefined) ?? list[0];
 
   const { discoverReaders, connectReader, cancelDiscovering, disconnectReader, connectedReader } = useStripeTerminal({
     onUpdateDiscoveredReaders: (readers: Reader.Type[]) => {
-      if (readers.length > 0 && firstReaderResolver.current) {
-        firstReaderResolver.current(readers[0]);
+      latestReaders.current = readers;
+      const resolve = firstReaderResolver.current;
+      if (!resolve || readers.length === 0) return;
+
+      const done = (r: Reader.Type) => {
+        if (settleTimer.current) { clearTimeout(settleTimer.current); settleTimer.current = null; }
         firstReaderResolver.current = null;
+        resolve(r);
+      };
+      // Our own reader is in range → use it right away.
+      const preferred = savedSerial.current ? readers.find((r) => serialOf(r) === savedSerial.current) : undefined;
+      if (preferred) { done(preferred); return; }
+      // Otherwise give other readers a moment to show up, then take the best match.
+      if (!settleTimer.current) {
+        settleTimer.current = setTimeout(() => {
+          settleTimer.current = null;
+          if (firstReaderResolver.current && latestReaders.current.length > 0) done(pick(latestReaders.current));
+        }, SETTLE_MS);
       }
     },
-  });
+    // A brand-new M2 installs a required software update the first time it connects. It
+    // can take minutes and cannot be used until it finishes — show progress, don't just spin.
+    onDidStartInstallingUpdate: () => statusRef.current?.(UPDATE_STARTING_PROMPT),
+    onDidReportReaderSoftwareUpdateProgress: (progress: string) => statusRef.current?.(updateProgressPrompt(progress)),
+  } as any);
 
   // ── Permission helpers ────────────────────────────────────────────────────────
 
@@ -125,8 +161,8 @@ export function useReaderDiscovery() {
         firstReaderResolver.current = null;
         reject(new Error(
           method === 'tapToPay'
-            ? 'Tap to Pay is not available on this device.\n\nIt needs NFC enabled, a Google-certified device, and the Tap to Pay capability on the salon\'s Stripe account.'
-            : 'No M2 reader found. Make sure it is powered on and in range.',
+            ? 'Tap to Pay is not available on this device.\n\nIt needs Android 13 or newer, NFC turned on, a Google-certified device, Developer options and USB debugging turned OFF, and the Tap to Pay capability on the salon\'s Stripe account.'
+            : 'No M2 reader found.\n\nMake sure it is powered on, close to this tablet, and Bluetooth is turned on. Do NOT pair it in Android\'s Bluetooth settings — Certxa connects to it directly.',
         ));
       }, method === 'tapToPay' ? TAP_DISCOVERY_TIMEOUT_MS : DISCOVERY_TIMEOUT_MS);
 
@@ -183,6 +219,10 @@ export function useReaderDiscovery() {
 
     await requestTerminalPermissions(method);
 
+    statusRef.current = callbacks?.onStatus ?? null;
+    savedSerial.current = method === 'bluetoothScan' ? await AsyncStorage.getItem(LAST_READER_KEY).catch(() => null) : null;
+    latestReaders.current = [];
+
     callbacks?.onDiscovering?.();
     const reader = await discoverFirstReader(method);
     console.log('[Stripe] Reader found:', (reader as any).label ?? (reader as any).serialNumber ?? method);
@@ -196,8 +236,13 @@ export function useReaderDiscovery() {
       locationId,
       autoReconnectOnUnexpectedDisconnect: false,
     } as any);
+    statusRef.current = null;
     if (error || !conn) throw new Error(error?.message ?? 'Failed to connect to reader');
     console.log('[Stripe] Reader connected', method);
+    if (method === 'bluetoothScan') {
+      const serial = serialOf(conn as Reader.Type);
+      if (serial) AsyncStorage.setItem(LAST_READER_KEY, serial).catch(() => {});
+    }
   };
 
   /**
@@ -206,6 +251,7 @@ export function useReaderDiscovery() {
    */
   const cancelDiscovery = async (): Promise<void> => {
     firstReaderResolver.current = null;
+    if (settleTimer.current) { clearTimeout(settleTimer.current); settleTimer.current = null; }
     try { await cancelDiscovering(); } catch {}
   };
 

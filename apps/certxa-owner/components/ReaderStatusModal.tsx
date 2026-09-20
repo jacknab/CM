@@ -9,14 +9,12 @@
  * staff know nothing is paired.
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import {
   View, Text, Modal, TouchableOpacity, StyleSheet, Platform,
-  TextInput, Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useStripeTerminal } from '@stripe/stripe-terminal-react-native';
-import { apiCaller } from '@/lib/terminalBridge';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 const C = {
@@ -113,38 +111,6 @@ const row = StyleSheet.create({
 export function ReaderStatusModal({ visible, onClose }: ReaderStatusModalProps) {
   const { connectedReader, disconnectReader } = useStripeTerminal();
 
-  // ── Reader registration state ──────────────────────────────────────────────
-  const [regCode,       setRegCode]       = useState('');
-  const [regLabel,      setRegLabel]      = useState('');
-  const [registering,   setRegistering]   = useState(false);
-  const [regExpanded,   setRegExpanded]   = useState(false);
-
-  const handleRegister = useCallback(async () => {
-    const code = regCode.trim();
-    if (!code) {
-      Alert.alert('Code required', 'Enter the registration code printed on the reader.');
-      return;
-    }
-    setRegistering(true);
-    try {
-      const res = await apiCaller.call(
-        '/api/payments/terminal/reader/register',
-        'POST',
-        { registrationCode: code, label: regLabel.trim() || undefined }
-      );
-      if (res?.error) throw new Error(res.error);
-      Alert.alert(
-        'Reader registered',
-        `${res?.label || res?.serialNumber || 'M2 Reader'} is now linked to your store. Connect it from the payment screen.`,
-        [{ text: 'Done', onPress: () => { setRegCode(''); setRegLabel(''); setRegExpanded(false); } }]
-      );
-    } catch (err: any) {
-      Alert.alert('Registration failed', err?.message ?? 'Could not register reader. Check the code and try again.');
-    } finally {
-      setRegistering(false);
-    }
-  }, [regCode, regLabel]);
-
   // Cast to any — beta.31 type defs don't expose all fields
   const r = connectedReader as any;
 
@@ -215,54 +181,8 @@ export function ReaderStatusModal({ visible, onClose }: ReaderStatusModalProps) 
               <Ionicons name="bluetooth-outline" size={44} color={C.textMuted} />
               <Text style={s.emptyTitle}>No Reader Connected</Text>
               <Text style={s.emptyBody}>
-                Open a payment and tap{'\n'}M2 Reader to pair and connect.
+                Open a payment and tap{'\n'}M2 Reader to pair and connect.{'\n\n'}Don't pair the reader in Android's Bluetooth{'\n'}settings — Certxa connects to it directly.
               </Text>
-
-              {/* ── Register a new reader ── */}
-              <TouchableOpacity
-                style={s.regToggle}
-                onPress={() => setRegExpanded(e => !e)}
-                activeOpacity={0.7}
-              >
-                <Ionicons name={regExpanded ? 'chevron-up' : 'add-circle-outline'} size={16} color={C.textSub} />
-                <Text style={s.regToggleText}>Register a new reader</Text>
-              </TouchableOpacity>
-
-              {regExpanded && (
-                <View style={s.regForm}>
-                  <Text style={s.regHint}>
-                    Enter the code printed on the M2 reader or its packaging (valid ~24 h after unboxing).
-                  </Text>
-                  <TextInput
-                    style={s.regInput}
-                    placeholder="Registration code"
-                    placeholderTextColor={C.textMuted}
-                    value={regCode}
-                    onChangeText={setRegCode}
-                    autoCapitalize="characters"
-                    returnKeyType="next"
-                  />
-                  <TextInput
-                    style={s.regInput}
-                    placeholder="Label (optional, e.g. Front desk)"
-                    placeholderTextColor={C.textMuted}
-                    value={regLabel}
-                    onChangeText={setRegLabel}
-                    returnKeyType="done"
-                  />
-                  <TouchableOpacity
-                    style={[s.regBtn, registering && s.regBtnDisabled]}
-                    onPress={handleRegister}
-                    disabled={registering}
-                    activeOpacity={0.8}
-                  >
-                    {registering
-                      ? <ActivityIndicator size="small" color="#fff" />
-                      : <Text style={s.regBtnText}>Register Reader</Text>
-                    }
-                  </TouchableOpacity>
-                </View>
-              )}
             </View>
           ) : (
             <>
@@ -395,50 +315,4 @@ const s = StyleSheet.create({
   emptyTitle: { fontSize: 16, fontWeight: '700', color: C.text },
   emptyBody:  { fontSize: 13, color: C.textSub, textAlign: 'center', lineHeight: 20 },
 
-  // Register reader
-  regToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: C.bg,
-    borderWidth: 1,
-    borderColor: C.border,
-    marginTop: 4,
-  },
-  regToggleText: { fontSize: 13, color: C.textSub, fontWeight: '500' },
-  regForm: {
-    alignSelf: 'stretch',
-    gap: 8,
-    marginTop: 4,
-    paddingBottom: 8,
-  },
-  regHint: {
-    fontSize: 12,
-    color: C.textMuted,
-    lineHeight: 17,
-    textAlign: 'center',
-  },
-  regInput: {
-    backgroundColor: C.bg,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    fontSize: 14,
-    color: C.text,
-  },
-  regBtn: {
-    backgroundColor: '#2D6ADF',
-    borderRadius: 10,
-    paddingVertical: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  regBtnDisabled: { opacity: 0.5 },
-  regBtnText: { fontSize: 14, fontWeight: '600', color: '#fff' },
 });
