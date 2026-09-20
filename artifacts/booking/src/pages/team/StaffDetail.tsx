@@ -39,7 +39,10 @@ export default function StaffDetail() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ["/api/staff", selectedStore?.id] });
 
   const { data: staff, isLoading } = useQuery<Staff>({
-    queryKey: ["/api/staff", staffId],
+    // "detail" keeps this single-staff object from sharing a cache key with the staff
+    // LIST, whose key is ["/api/staff", storeId] — a store id equal to a staff id made
+    // /team read this object as an array ("a.filter is not a function").
+    queryKey: ["/api/staff", "detail", staffId],
     queryFn: async () => {
       const res = await fetch(`/api/staff/${staffId}`, { credentials: "include" });
       if (!res.ok) throw new Error("not found");
@@ -141,7 +144,7 @@ export default function StaffDetail() {
       await apiRequest("POST", `/api/staff/${staffId}/availability`, {
         rules: rules.map((r) => ({ dayOfWeek: r.dayOfWeek, startTime: r.startTime, endTime: r.endTime })),
       });
-      qc.invalidateQueries({ queryKey: ["/api/staff", staffId] });
+      qc.invalidateQueries({ queryKey: ["/api/staff", "detail", staffId] });
       qc.invalidateQueries({ queryKey: [`/api/staff/${staffId}/services`] });
       qc.invalidateQueries({ queryKey: [`/api/staff/${staffId}/availability`] });
       invalidate();
