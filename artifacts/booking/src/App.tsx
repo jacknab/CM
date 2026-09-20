@@ -27,6 +27,7 @@ import CatalogProducts from "@/pages/catalog/CatalogProducts";
 import NailServices from "@/pages/catalog/NailServices";
 import Customers from "@/pages/Customers";
 import Calendar from "@/pages/Calendar";
+import NailHome from "@/pages/nail/NailHome";
 import PosCheckout from "@/pages/PosCheckout";
 import Products from "@/pages/Products";
 import NewBooking from "@/pages/NewBooking";
@@ -172,6 +173,7 @@ const authenticatedPaths = [
   "/reviews",
   "/google-business",
   "/calendar",
+  "/nail",
   "/appointments",
   "/booking",
   "/client-lookup",
@@ -552,6 +554,7 @@ function AppRoutes() {
       <Route path="/staff/working-hours" element={<SoloGuard><StaffWorkingHours /></SoloGuard>} />
       <Route path="/customers" element={<OwnerOnlyRoute><Customers /></OwnerOnlyRoute>} />
       <Route path="/calendar" element={<Calendar />} />
+      <Route path="/nail" element={<NailHome />} />
       <Route path="/appointments" element={<Calendar />} />
       <Route path="/pos" element={<PosCheckout />} />
       <Route path="/booking/new" element={<NewBooking />} />

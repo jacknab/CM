@@ -52,6 +52,7 @@ export default function SeoManager() {
       location.pathname.startsWith("/onboarding") ||
       location.pathname.startsWith("/dashboard") ||
       location.pathname.startsWith("/calendar") ||
+      location.pathname.startsWith("/nail") ||
       location.pathname.startsWith("/customers") ||
       location.pathname.startsWith("/products") ||
       location.pathname.startsWith("/booking/"); // confirmation pages (/booking/:phone)

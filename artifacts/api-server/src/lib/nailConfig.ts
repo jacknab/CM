@@ -352,32 +352,23 @@ export type SetNailSelectionInput = {
 };
 
 /**
- * Snapshot the client's nail selection onto an appointment. Adjustments are
- * read from the service's own junction rows (not the vocab), so the price is
- * whatever the salon configured for THIS service. Recomputes the appointment
- * duration by the delta between the old and new selection.
+ * Resolve a nail selection against a service's own junction rows: names plus
+ * the price / duration adjustments the salon configured for THIS service.
+ * Shared by the snapshot writer below and the ticket flow's pre-flight (which
+ * needs the final duration before it can validate a slot).
  */
-export async function setAppointmentNailSelection(appointmentId: number, input: SetNailSelectionInput) {
-  const [appt] = await db
-    .select({ id: appointments.id, storeId: appointments.storeId, serviceId: appointments.serviceId, duration: appointments.duration })
-    .from(appointments)
-    .where(eq(appointments.id, appointmentId));
-  if (!appt || !appt.serviceId || !appt.storeId) return null;
-
-  const [svc] = await db.select({ price: services.price, duration: services.duration }).from(services).where(eq(services.id, appt.serviceId));
-  if (!svc) return null;
-
+export async function resolveNailSelection(serviceId: number, input: SetNailSelectionInput) {
   const sizeRow = input.nailSizeId
-    ? (await db.select().from(serviceNailSizes).where(and(eq(serviceNailSizes.serviceId, appt.serviceId), eq(serviceNailSizes.nailSizeId, input.nailSizeId))))[0]
+    ? (await db.select().from(serviceNailSizes).where(and(eq(serviceNailSizes.serviceId, serviceId), eq(serviceNailSizes.nailSizeId, input.nailSizeId))))[0]
     : undefined;
   const shapeRow = input.nailShapeId
-    ? (await db.select().from(serviceNailShapes).where(and(eq(serviceNailShapes.serviceId, appt.serviceId), eq(serviceNailShapes.nailShapeId, input.nailShapeId))))[0]
+    ? (await db.select().from(serviceNailShapes).where(and(eq(serviceNailShapes.serviceId, serviceId), eq(serviceNailShapes.nailShapeId, input.nailShapeId))))[0]
     : undefined;
   const appRow = input.nailArtApplicationId
-    ? (await db.select().from(serviceNailArtApplications).where(and(eq(serviceNailArtApplications.serviceId, appt.serviceId), eq(serviceNailArtApplications.nailArtApplicationId, input.nailArtApplicationId))))[0]
+    ? (await db.select().from(serviceNailArtApplications).where(and(eq(serviceNailArtApplications.serviceId, serviceId), eq(serviceNailArtApplications.nailArtApplicationId, input.nailArtApplicationId))))[0]
     : undefined;
   const effectRow = input.nailArtEffectId
-    ? (await db.select().from(serviceNailArtEffects).where(and(eq(serviceNailArtEffects.serviceId, appt.serviceId), eq(serviceNailArtEffects.nailArtEffectId, input.nailArtEffectId))))[0]
+    ? (await db.select().from(serviceNailArtEffects).where(and(eq(serviceNailArtEffects.serviceId, serviceId), eq(serviceNailArtEffects.nailArtEffectId, input.nailArtEffectId))))[0]
     : undefined;
 
   const sizeName = input.nailSizeId ? (await db.select({ n: nailSizes.name }).from(nailSizes).where(eq(nailSizes.id, input.nailSizeId)))[0]?.n : null;
@@ -395,9 +386,40 @@ export async function setAppointmentNailSelection(appointmentId: number, input: 
   const shapeDur = num(shapeRow?.durationAdjustment);
   const artDur = num(appRow?.durationAdjustment) + num(effectRow?.durationAdjustment);
 
+  return {
+    sizeName: sizeName ?? null,
+    shapeName: shapeName ?? null,
+    artApplicationName: appMeta?.n ?? null,
+    artEffectName: effectName ?? null,
+    isQuote,
+    lengthPrice, shapePrice, artPrice,
+    lengthDur, shapeDur, artDur,
+    priceAdjustment: lengthPrice + shapePrice + artPrice,
+    durationAdjustment: lengthDur + shapeDur + artDur,
+  };
+}
+
+/**
+ * Snapshot the client's nail selection onto an appointment. Adjustments are
+ * read from the service's own junction rows (not the vocab), so the price is
+ * whatever the salon configured for THIS service. Recomputes the appointment
+ * duration by the delta between the old and new selection.
+ */
+export async function setAppointmentNailSelection(appointmentId: number, input: SetNailSelectionInput) {
+  const [appt] = await db
+    .select({ id: appointments.id, storeId: appointments.storeId, serviceId: appointments.serviceId, duration: appointments.duration })
+    .from(appointments)
+    .where(eq(appointments.id, appointmentId));
+  if (!appt || !appt.serviceId || !appt.storeId) return null;
+
+  const [svc] = await db.select({ price: services.price, duration: services.duration }).from(services).where(eq(services.id, appt.serviceId));
+  if (!svc) return null;
+
+  const num = (v: unknown) => (v == null ? 0 : Number(v));
+  const sel = await resolveNailSelection(appt.serviceId, input);
   const base = num(svc.price);
-  const total = base + lengthPrice + shapePrice + artPrice;
-  const newNailDuration = lengthDur + shapeDur + artDur;
+  const total = base + sel.priceAdjustment;
+  const newNailDuration = sel.durationAdjustment;
 
   const prev = await getAppointmentNailSelection(appointmentId);
   const prevNailDuration = prev ? num(prev.lengthDurationAdjSnapshot) + num(prev.shapeDurationAdjSnapshot) + num(prev.artDurationAdjSnapshot) : 0;
@@ -407,20 +429,20 @@ export async function setAppointmentNailSelection(appointmentId: number, input: 
     storeId: appt.storeId,
     basePriceSnapshot: base.toFixed(2),
     nailSizeId: input.nailSizeId ?? null,
-    lengthNameSnapshot: sizeName ?? null,
-    lengthPriceAdjSnapshot: lengthPrice.toFixed(2),
-    lengthDurationAdjSnapshot: lengthDur,
+    lengthNameSnapshot: sel.sizeName,
+    lengthPriceAdjSnapshot: sel.lengthPrice.toFixed(2),
+    lengthDurationAdjSnapshot: sel.lengthDur,
     nailShapeId: input.nailShapeId ?? null,
-    shapeNameSnapshot: shapeName ?? null,
-    shapePriceAdjSnapshot: shapePrice.toFixed(2),
-    shapeDurationAdjSnapshot: shapeDur,
+    shapeNameSnapshot: sel.shapeName,
+    shapePriceAdjSnapshot: sel.shapePrice.toFixed(2),
+    shapeDurationAdjSnapshot: sel.shapeDur,
     nailArtApplicationId: input.nailArtApplicationId ?? null,
     nailArtEffectId: input.nailArtEffectId ?? null,
-    artApplicationNameSnapshot: appMeta?.n ?? null,
-    artEffectNameSnapshot: effectName ?? null,
-    artPriceAdjSnapshot: artPrice.toFixed(2),
-    artDurationAdjSnapshot: artDur,
-    artIsCustomQuote: isQuote,
+    artApplicationNameSnapshot: sel.artApplicationName,
+    artEffectNameSnapshot: sel.artEffectName,
+    artPriceAdjSnapshot: sel.artPrice.toFixed(2),
+    artDurationAdjSnapshot: sel.artDur,
+    artIsCustomQuote: sel.isQuote,
     totalPriceSnapshot: total.toFixed(2),
     updatedAt: new Date(),
   };

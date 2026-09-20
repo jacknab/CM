@@ -18,7 +18,7 @@ import { getDeviceId } from "@/lib/device-id";
 import { useActiveDrawerId } from "@/hooks/use-cash-drawers";
 import { formatInTz, formatStoreDate, getTimezoneAbbr, getNowInTimezone, storeLocalToUtc, isStoreLocalSlotInPast, isSameLocalDay, isSameStoreDay, isOnStoreDate, addStoreDays, toLocalDateStringInTz } from "@/lib/timezone";
 import { addMinutes, format } from "date-fns";
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CalendarPlus, Users, Globe, ArrowLeft, ArrowUp, X, Clock, Loader2, CreditCard, Banknote, Smartphone, DollarSign, Check, Receipt, Percent, Tag, Delete, Printer, XCircle, Settings, PersonStanding, LayoutDashboard, TrendingUp, CalendarDays, Scissors, ShoppingBag, UserCircle, Gift, ClipboardList, FileText, BarChart3, MessageSquare, Mail, Building2, MapPin, Star, ThumbsUp, ListOrdered, Search, AlertCircle, Lock, Unlock, Bell, ListFilter, MoreVertical, Plus, LayoutList, Zap, Send, HelpCircle, ChevronDown as ChevronDownIcon, Calendar as CalendarIcon, Phone, AlertTriangle, LogIn, QrCode, Layers, WifiOff, Utensils, CupSoda, Package, BadgePercent, Barcode, ScanSearch, Scale, Ticket, Wallet, Sparkles, RefreshCw, KeyRound } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CalendarPlus, Users, Globe, ArrowLeft, ArrowUp, X, Clock, Loader2, CreditCard, Banknote, Smartphone, DollarSign, Check, Receipt, Percent, Tag, Delete, Printer, XCircle, Settings, PersonStanding, LayoutDashboard, TrendingUp, CalendarDays, Scissors, ShoppingBag, UserCircle, Gift, ClipboardList, FileText, BarChart3, MessageSquare, Mail, Building2, MapPin, Star, ThumbsUp, ListOrdered, Search, AlertCircle, Lock, Unlock, Bell, ListFilter, MoreVertical, Plus, LayoutList, Zap, Send, HelpCircle, ChevronDown as ChevronDownIcon, Calendar as CalendarIcon, Phone, AlertTriangle, LogIn, QrCode, Layers, WifiOff, Utensils, CupSoda, Package, BadgePercent, Barcode, ScanSearch, Scale, Ticket, Wallet, Sparkles, RefreshCw, KeyRound, Hand } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
@@ -1803,6 +1803,15 @@ export default function Calendar() {
       icon: Clock,
       isActive: false,
       onClick: () => setShowTimeclockSheet(true),
+    }] : []),
+    // The simplified walk-in screen for nail-salon accounts (see pages/nail).
+    ...(isNailSalon ? [{
+      key: "nail-mode",
+      testId: "button-nail-mode",
+      label: "Nail POS",
+      icon: Hand,
+      isActive: false,
+      onClick: () => navigate("/nail"),
     }] : []),
   ];
 
@@ -6323,7 +6332,7 @@ interface GroupTicketShare {
   totalPaid: number;
   paymentMethod: string;
 }
-function CheckoutPOSPanel({
+export function CheckoutPOSPanel({
   appointment,
   timezone,
   onClose,
@@ -6332,6 +6341,7 @@ function CheckoutPOSPanel({
   siblingAppointments = [],
   onCustomerLinked,
   onThermalPrint,
+  initialExtraItems,
 }: {
   appointment: AppointmentWithDetails;
   timezone: string;
@@ -6342,6 +6352,8 @@ function CheckoutPOSPanel({
   onCustomerLinked?: (clientId: number, name: string, loyaltyPoints: number) => void;
   /** Connected thermal receipt printer, if any — prints without needing a tap. */
   onThermalPrint?: (bytes: Uint8Array) => Promise<void>;
+  /** Extra ticket lines to start the cart with (e.g. the nail salon screen's length / shape / art upcharges). */
+  initialExtraItems?: { name: string; price: number; kind?: string }[];
 }) {
   const { pick } = useLanguage();
   const tPOS = {
@@ -6555,6 +6567,16 @@ function CheckoutPOSPanel({
     setPosExtraItems((prev) => [...prev, { id: posExtraNextId.current++, name, price: Math.max(0, price), kind, ...meta }]);
   };
   const removePosExtraItem = (id: number) => setPosExtraItems((prev) => prev.filter((it) => it.id !== id));
+  // Seed the cart once per appointment (a ref guards React's double-invoked effects).
+  const seededExtrasFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (seededExtrasFor.current === appointment.id) return;
+    seededExtrasFor.current = appointment.id;
+    if (initialExtraItems?.length) {
+      initialExtraItems.forEach((it) => addPosExtraItem(it.name, it.price, it.kind ?? "extra"));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointment.id]);
 
   // ── Stripe Terminal M2 state ──────────────────────────────────────────────
   const [termStatus, setTermStatus] = useState<"idle"|"loading"|"discovering"|"connecting"|"ready"|"collecting"|"processing"|"error">("idle");
@@ -10553,7 +10575,7 @@ function ManagerPinSheet({ onClose, onSuccess }: { onClose: () => void; onSucces
   );
 }
 
-function ChooseClientPanel({
+export function ChooseClientPanel({
   onClose,
   onSelectClient,
   onWalkIn,

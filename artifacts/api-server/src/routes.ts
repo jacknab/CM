@@ -148,6 +148,7 @@ import onboardingRouter from "./routes/onboarding";
 import usageRouter from "./routes/usage";
 import { autoAssignTechnician } from "./services/appointment-assignment";
 import { autoAssignResource } from "./services/resource-assignment";
+import * as nailTickets from "./lib/nailTickets";
 import { getRequiredResourceType } from "@shared/resourceMatching";
 import { ACTIVE_APPOINTMENT_STATUSES, normalizeAppointmentStatus, appointmentStatusEnum } from "@shared/appointment-status";
 import { toE164US } from "./lib/phoneUtils";
@@ -5726,6 +5727,12 @@ If you have any questions, please contact your administrator.
       }
       const existingAppointment = await storage.getAppointment(appointmentId);
       if (!existingAppointment) return res.status(404).json({ message: "Appointment not found" });
+      // Checking a client in from the calendar stamps the arrival time, like the kiosk does —
+      // the nail-salon board lists "waiting" clients by it.
+      if (input.status === "confirmed" && existingAppointment.status !== "confirmed" &&
+          !(existingAppointment as any).checkedInAt && !(input as any).checkedInAt) {
+        (input as any).checkedInAt = new Date();
+      }
       // Remember pre-update status so we can guard against double side-effects
       // when the capture endpoint already marked the appointment completed and
       // the web client sends a follow-up PATCH (e.g. certxa_native_payment_complete).
@@ -17413,6 +17420,123 @@ or
     } catch (err: any) {
       console.error("[turn] Failed to assign walk-in:", err);
       return res.status(err.status || 500).json({ error: err.message || "Failed to assign walk-in" });
+    }
+  });
+
+  // ── Nail-salon staff screen (/nail) ─────────────────────────────────────────
+  // Walk-in tickets, the waiting / in-service board, technician changes. The
+  // rules themselves live in lib/nailTickets.ts; this wires in the TURN helpers
+  // that are private to this file.
+  const nailDeps: nailTickets.TicketDeps = {
+    getTurnEligibility: (storeId, serviceId) => getTurnEligibility(storeId, serviceId),
+    assignAppointmentViaTurn: (opts) => assignAppointmentViaTurn(opts),
+    getTurnPreferences,
+    saveTurnPreferences,
+    notify: (storeId, ev) => {
+      broadcastTurnEligibilityChanged(storeId);
+      if (ev.kind === "created") {
+        broadcastSyncEvent({ type: "booking_created", storeId, appointmentId: ev.appointmentId, source: "nail" });
+      } else {
+        broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId: ev.appointmentId });
+      }
+      if (ev.kind === "started") {
+        broadcastAppointmentStatus({ appointmentId: ev.appointmentId, storeId, status: "started", source: "manual" });
+      }
+      triggerDashboardBroadcast(storeId);
+    },
+  };
+
+  /** Session store for /api/nail/*, or null after replying 403 — nail-salon accounts only. */
+  const nailStoreId = async (req: any, res: any): Promise<number | null> => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) { res.status(403).json({ message: "No store context" }); return null; }
+    const store = await storage.getStore(storeId);
+    if (!nailTickets.isNailSalonCategory((store as any)?.category)) {
+      res.status(403).json({ message: "The nail salon screen is only available to nail salon accounts." });
+      return null;
+    }
+    return storeId;
+  };
+
+  const nailSelectionInput = z.object({
+    nailSizeId: z.number().int().nullable().optional(),
+    nailShapeId: z.number().int().nullable().optional(),
+    nailArtApplicationId: z.number().int().nullable().optional(),
+    nailArtEffectId: z.number().int().nullable().optional(),
+  });
+
+  app.get("/api/nail/board", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      return res.json(await nailTickets.getNailBoard(storeId));
+    } catch (err) {
+      console.error("[nail/board]", err);
+      return res.status(500).json({ message: "Failed to load the board" });
+    }
+  });
+
+  app.post("/api/nail/tickets", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const body = z.object({
+        clientId: z.number().int(),
+        serviceId: z.number().int(),
+        addonIds: z.array(z.number().int()).optional(),
+        nail: nailSelectionInput.nullable().optional(),
+        staffId: z.number().int().nullable().optional(),
+        notes: z.string().max(500).nullable().optional(),
+        checkinId: z.number().int().nullable().optional(),
+      }).safeParse(req.body);
+      if (!body.success) return res.status(400).json({ message: "Invalid ticket" });
+      const userId = (req.session as any)?.userId;
+      const result = await nailTickets.createNailTicket(nailDeps, {
+        ...body.data,
+        storeId,
+        bookedByUserId: Number.isFinite(Number(userId)) ? Number(userId) : null,
+      });
+      if (!result.ok) return res.status(result.status).json({ message: result.message, technicians: result.technicians });
+      return res.status(201).json(result.data);
+    } catch (err) {
+      console.error("[nail/tickets create]", err);
+      return res.status(500).json({ message: "Could not create the ticket" });
+    }
+  });
+
+  app.put("/api/nail/tickets/:id", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const body = z.object({
+        serviceId: z.number().int().optional(),
+        addonIds: z.array(z.number().int()),
+        nail: nailSelectionInput.nullable().optional(),
+      }).safeParse(req.body);
+      const appointmentId = Number(req.params.id);
+      if (!body.success || !Number.isFinite(appointmentId)) return res.status(400).json({ message: "Invalid ticket" });
+      const result = await nailTickets.updateNailTicketItems(nailDeps, { ...body.data, storeId, appointmentId });
+      if (!result.ok) return res.status(result.status).json({ message: result.message });
+      return res.json(result.data);
+    } catch (err) {
+      console.error("[nail/tickets update]", err);
+      return res.status(500).json({ message: "Could not update the ticket" });
+    }
+  });
+
+  app.post("/api/nail/tickets/:id/reassign", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const body = z.object({ staffId: z.number().int() }).safeParse(req.body);
+      const appointmentId = Number(req.params.id);
+      if (!body.success || !Number.isFinite(appointmentId)) return res.status(400).json({ message: "Invalid request" });
+      const result = await nailTickets.reassignNailTicket(nailDeps, { storeId, appointmentId, staffId: body.data.staffId });
+      if (!result.ok) return res.status(result.status).json({ message: result.message });
+      return res.json(result.data);
+    } catch (err) {
+      console.error("[nail/tickets reassign]", err);
+      return res.status(500).json({ message: "Could not reassign the ticket" });
     }
   });
 

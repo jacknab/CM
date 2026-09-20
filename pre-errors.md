@@ -6,6 +6,14 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-09-20 — `pnpm run typecheck` in `artifacts/api-server` runs out of memory and reports nothing
+
+**Found while:** typechecking the new nail-salon server code. `artifacts/api-server/package.json:13` (`"typecheck": "tsc -p tsconfig.json --noEmit"`) dies with a V8 "heap out of memory" (~2 GB default) on this box, so a plain `npx tsc --noEmit -p .` prints no `error TS` lines and looks clean even though it never finished. With `NODE_OPTIONS=--max-old-space-size=6144` it completes and reports the **65 existing errors** (test config, `intelligence/dead-seats.ts`, storage), none in recently changed files.
+**Why it matters:** anyone (or CI) relying on the script's silence gets a false "0 errors". **Suggested fix:** set `NODE_OPTIONS=--max-old-space-size=6144` in the script (or split the project with `references`/`skipLibCheck`), then triage the 65.
+**Why not fixed now:** unrelated to the nail-screen task; the box is RAM-starved (see memory note on certxa-api host tuning), so the right heap size is a deliberate call.
+
+---
+
 ## 2026-09-20 — Stripe M2 / Terminal card-payment path: audit findings (items 1-9 FIXED the same day; see status below)
 
 **STATUS (same day):** items 1-9 below were fixed — server (`routes/stripeConnect.ts` capture/create/location, `lib/terminalPaymentMath.ts`, Connect webhook `payment_intent.succeeded`), checkout sheet (`Calendar.tsx`), owner app (`lib/captureRecovery.ts`, `useTerminalPayment.ts`, `useReaderDiscovery.ts`, `M2PaymentOverlay.tsx`, `ReaderStatusModal.tsx`) — and also brought in line with Stripe's docs (re-use the same PaymentIntent after a decline/timeout, show reader prompts + update progress). **Still open:** (a) the Stripe dashboard's Connect webhook endpoint must be subscribed to `payment_intent.succeeded` for the reconciliation handler to fire; (b) refunds/disputes of POS payments are still not reflected on appointments; (c) the app bundles Terminal Android SDK 5.5.1 — `@stripe/stripe-terminal-react-native@0.0.1-beta.33` bundles 5.8.0, which fixes "mobile reader software updates timing out on slow networks" (relevant to a new M2's first connect), but upgrading needs a lockfile + SDK patch change and a device test; (d) a group-pay ticket paid by M2 is recorded on the primary appointment at capture and corrected to each ticket's share when staff complete it.
