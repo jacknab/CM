@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Clock } from "lucide-react";
 import { formatElapsed } from "./ticketDraft";
-import { BASE_H, GAP, computeTechRows } from "./techLayout";
+import { GAP, computeTechLayout } from "./techLayout";
 import type { BoardTicket, TechDayStats, TurnTech } from "./nailApi";
 
 type Status = "in-service" | "available" | "break" | "off";
@@ -63,13 +63,14 @@ export function TechCards({ techs, tickets, stats, loading }: { techs: TurnTech[
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const rows = computeTechRows(box.w, box.h);
+  const layout = computeTechLayout(cards.length, box.w, box.h);
 
   return (
     <section className="work-area" data-testid="nail-techs">
      <div className="tech-panel">
       <div className="tech-stage" ref={stageRef}>
-        <div className="tech-grid" data-scale={rows.scale.toFixed(2)} style={{ gap: GAP }}>
+        <div className="tech-grid" data-scale={layout.scale.toFixed(2)} data-cols={layout.cols} data-mode={layout.mode}
+          style={{ gap: GAP, gridTemplateRows: `repeat(${layout.rows}, ${layout.cardH * layout.scale}px)`, gridTemplateColumns: `repeat(${layout.cols}, ${layout.cardW * layout.scale}px)` }}>
           {cards.map(({ t, current, queue, status, nextUp, stats: st }, i) => {
             const color = t.color || "#454c56";
             const doneAt = current ? new Date(current.startedAt ?? current.date).getTime() + current.duration * 60_000 : null;
@@ -77,9 +78,9 @@ export function TechCards({ techs, tickets, stats, loading }: { techs: TurnTech[
             const done = st?.doneToday ?? 0;
             const inLine = status !== "off" && status !== "break" ? (t.turnPosition ?? i) + 1 : null;
             return (
-              <div key={t.id} className="tech-slot" style={{ height: BASE_H * rows.scale }}>
-                <div className={`tech-card tech-${status}`} data-testid={`nail-tech-card-${t.id}`} data-status={status}
-                  style={{ width: rows.designW, height: BASE_H, transform: `scale(${rows.scale})` }}>
+              <div key={t.id} className="tech-slot" style={{ height: layout.cardH * layout.scale }}>
+                <div className={`tech-card tech-${status} mode-${layout.mode}`} data-testid={`nail-tech-card-${t.id}`} data-status={status}
+                  style={{ width: layout.cardW, height: layout.cardH, transform: `scale(${layout.scale})` }}>
                   <div className="tech-card-head" style={{ borderLeftColor: color }}>
                     <span className="tech-avatar" style={{ borderColor: color }}>
                       {t.avatarUrl ? <img src={t.avatarUrl} alt="" /> : initials(t.name)}

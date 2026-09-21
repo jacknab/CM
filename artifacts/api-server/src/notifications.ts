@@ -43,6 +43,9 @@ export type NotificationEvent =
   | { type: "kiosk_checkout_payment_result"; storeId: number; registerId?: number; success: boolean; total?: number; last4?: string; error?: string; via?: "pos" | "client_confirm"; method?: "m2" | "tap" }
   | { type: "kiosk_checkout_complete"; storeId: number; registerId?: number }
   | { type: "kiosk_checkout_cancel"; storeId: number; registerId?: number }
+  // Staff opened / closed the POS Check-In sheet — puts /frontdesk on (or takes it off) the phone check-in screen.
+  | { type: "kiosk_checkout_checkin_launch"; storeId: number; registerId?: number }
+  | { type: "kiosk_checkout_checkin_cancel"; storeId: number; registerId?: number }
   | { type: "sms_inbound"; storeId: number; clientPhone: string; clientName: string | null; body: string; createdAt: string };
 
 export type SyncEvent =

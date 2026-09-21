@@ -25,6 +25,9 @@ export function useAppointmentSSE(storeId: number | undefined) {
           };
           if (data.storeId === storeId) {
             queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
+            // The nail POS board + tech cards ride the same status changes (a kiosk check-in, an auto no-show).
+            queryClient.invalidateQueries({ queryKey: ["/api/nail/board"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/turn/eligibility"] });
             if (data.source === "auto") {
               console.log(
                 `[sse] Auto no-show for appt ${data.appointmentId} → invalidating calendar`

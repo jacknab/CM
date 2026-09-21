@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Check, X } from "lucide-react";
-import { clientPhoneCacheDB } from "@/lib/client-phone-cache-db";
 import { isValidNanpNumber, isValidNanpPrefix } from "@/lib/phone-validation";
 import { fetchTurn, type TurnTech } from "./nailApi";
+import { NameEntry, createClient } from "./NameEntry";
+import { findClientId } from "./clientLookup";
 
 interface Props {
   storeId: number;
@@ -53,23 +54,7 @@ export function WalkInSheet({ storeId, frontdeskPhone, known, onClose, onClient 
     if (lookedUp.current === digits) return;
     lookedUp.current = digits;
     setBusy(true);
-    const found = async (): Promise<number | null> => {
-      if (!navigator.onLine) {
-        const m = await clientPhoneCacheDB.findByPhone10(storeId, digits).catch(() => null);
-        const id = m ? Number(m.id) : NaN;
-        return Number.isFinite(id) ? id : null;
-      }
-      try {
-        const res = await fetch(`/api/customers/search?phone=${encodeURIComponent(digits)}&storeId=${storeId}`, { credentials: "include" });
-        const c = await res.json().catch(() => null);
-        return c && c.id ? Number(c.id) : null;
-      } catch {
-        const m = await clientPhoneCacheDB.findByPhone10(storeId, digits).catch(() => null);
-        const id = m ? Number(m.id) : NaN;
-        return Number.isFinite(id) ? id : null;
-      }
-    };
-    const id = await found();
+    const id = await findClientId(storeId, digits);
     setBusy(false);
     if (id != null) onClient(id, staffId);
     else setStep("name");
@@ -112,13 +97,7 @@ export function WalkInSheet({ storeId, frontdeskPhone, known, onClose, onClient 
     if (!trimmed || phone.length !== 10 || busy) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/customers", {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmed, phone, storeId }),
-      });
-      const c = await res.json().catch(() => null);
-      if (!res.ok || !c?.id) throw new Error("save failed");
-      onClient(Number(c.id), staffId);
+      onClient(await createClient(storeId, trimmed, phone), staffId);
     } catch {
       setMessage("We could not save this client. Please try again.");
       setStep("error");
@@ -144,7 +123,7 @@ export function WalkInSheet({ storeId, frontdeskPhone, known, onClose, onClient 
           <button type="button" className="walkin-close" onClick={onClose} aria-label="Close walk-in sheet"><X size={18} /></button>
         </div>
 
-        <div className="walkin-body">
+        <div className={`walkin-body ${step === "name" ? "name-mode" : ""}`}>
           <div className="walkin-staff-panel">
             <div className="walkin-staff-label">SELECT TECHNICIAN</div>
             <div className="walkin-staff-list">
@@ -202,17 +181,7 @@ export function WalkInSheet({ storeId, frontdeskPhone, known, onClose, onClient 
               </div>
             )}
 
-            {step === "name" && (
-              <div className="walkin-name-step">
-                <p className="walkin-prompt">No client found for this number. Enter their name to create a new record.</p>
-                <div className="walkin-name-field">
-                  <label htmlFor="walkin-client-name">Client name</label>
-                  <input id="walkin-client-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter full name" data-testid="nail-walkin-name" />
-                </div>
-                <div className="walkin-keyboard-hint">Use the device keyboard to enter the name.</div>
-                <button type="button" className={`walkin-continue ${name.trim() ? "ready" : ""}`} disabled={!name.trim() || busy} onClick={saveNew} data-testid="nail-walkin-save">SAVE CLIENT</button>
-              </div>
-            )}
+            {step === "name" && <NameEntry phone={phone} name={name} onName={setName} busy={busy} onDone={saveNew} />}
 
             {step === "error" && (
               <div className="walkin-result walkin-result-error">

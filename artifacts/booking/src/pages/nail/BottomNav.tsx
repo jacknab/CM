@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, Bell, CalendarDays, Footprints, MoreHorizontal, ShoppingBag, UserCog, UserRound, Users } from "lucide-react";
+import { CalendarDays, Footprints, LogIn, MoreHorizontal, ShoppingBag, UserCog, UserRound, Users } from "lucide-react";
 
 export type NailTab = "techs" | "pos" | "board";
 
@@ -7,13 +7,14 @@ interface Props {
   tab: NailTab;
   onTab: (t: NailTab) => void;
   onWalkIn: () => void;
+  onCheckIn: () => void;
   onMore: () => void;
   waiting: number;
   inService: number;
   live: boolean;
 }
 
-export function BottomNav({ tab, onTab, onWalkIn, onMore, waiting, inService, live }: Props) {
+export function BottomNav({ tab, onTab, onWalkIn, onCheckIn, onMore, waiting, inService, live }: Props) {
   const navigate = useNavigate();
   const items: { label: string; icon: typeof ShoppingBag; active?: boolean; run: () => void; badges?: boolean }[] = [
     { label: "Techs", icon: UserCog, active: tab === "techs", run: () => onTab("techs") },
@@ -21,16 +22,15 @@ export function BottomNav({ tab, onTab, onWalkIn, onMore, waiting, inService, li
     { label: "Checked In", icon: Users, active: tab === "board", run: () => onTab("board"), badges: true },
     { label: "Calendar", icon: CalendarDays, run: () => navigate("/calendar") },
     { label: "Customers", icon: UserRound, run: () => navigate("/client-lookup") },
+    { label: "Check-In", icon: LogIn, run: onCheckIn },
     { label: "Walk-in", icon: Footprints, run: onWalkIn },
-    { label: "Reports", icon: ArrowUpRight, run: () => navigate("/reports") },
-    { label: "Messages", icon: Bell, run: () => navigate("/sms-inbox") },
     { label: "More", icon: MoreHorizontal, run: onMore },
   ];
   return (
     <nav className="bottom-nav" data-testid="nail-bottom-nav">
       {items.map(({ label, icon: Icon, active, run, badges }) => (
         <button key={label} type="button" onClick={run} className={active ? "active" : ""} data-testid={`nail-nav-${label.toLowerCase().replace(/\s+/g, "-")}`}>
-          <Icon size={21} />
+          <Icon size={28} />
           <span>{label}</span>
           {badges && waiting > 0 && <i className="nav-badge-waiting">{waiting}</i>}
           {badges && inService > 0 && <i className="nav-badge-service">{inService}</i>}

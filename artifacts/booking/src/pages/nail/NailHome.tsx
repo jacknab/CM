@@ -9,7 +9,7 @@ import { EMPTY_ARRAY } from "@/lib/empty";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Clock, CreditCard, Gift, KeyRound, Loader2, LockKeyhole, Printer, Search, Settings, ShoppingBag, CalendarPlus, Wallet } from "lucide-react";
+import { BarChart3, Bell, Clock, CreditCard, Gift, KeyRound, Loader2, LockKeyhole, Printer, Search, Settings, ShoppingBag, CalendarPlus, Wallet } from "lucide-react";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useAuth } from "@/hooks/use-auth";
 import { useServices } from "@/hooks/use-services";
@@ -37,6 +37,8 @@ import { useNailRealtime } from "./useNailRealtime";
 import { TicketPanel } from "./TicketPanel";
 import { CatalogPanel, Keypad, type CatalogGroup, type CatalogService } from "./CatalogPanel";
 import { WalkInSheet } from "./WalkInSheet";
+import { CheckInSheet } from "./CheckInSheet";
+import { useAppointmentSSE } from "@/hooks/use-appointment-sse";
 import { TechCards } from "./TechCards";
 import { CheckInPanel } from "./CheckInPanel";
 import "./nail.css";
@@ -74,6 +76,8 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   } = useActiveRegisterId(storeId);
   // Same duties the calendar screen has, so /kiosk and /frontdesk behave identically when this is the screen left open all day.
   useStoreNetworkReport(storeId);
+  // A kiosk / front-desk check-in or an auto no-show moves the board without a socket event — the calendar's SSE feed.
+  useAppointmentSSE(storeId);
   const printRef = useRef<((bytes: Uint8Array) => Promise<void>) | null>(null);
   printRef.current = thermalPrinter.isConnected ? thermalPrinter.print : null;
   const { drawerId, needsPicker: needsDrawerPicker, drawers, selectDrawer } = useActiveDrawerId(storeId);
@@ -97,6 +101,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   const [focusTicket, setFocusTicket] = useState<{ id: number } | null>(null);
   const [showMore, setShowMore] = useState(false);
   const [showBook, setShowBook] = useState(false);
+  const [showCheckIn, setShowCheckIn] = useState(false);
   const [sheet, setSheet] = useState<null | "voucher" | "timeclock" | "dayclose" | "clients" | "manager">(null);
   const [assigning, setAssigning] = useState<Assigning>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
@@ -430,6 +435,8 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
       { key: "dayclose", label: "Day Close", icon: LockKeyhole, run: () => setSheet("dayclose") },
     ] : []),
     { key: "manager", label: "Manager", icon: KeyRound, run: () => setSheet("manager") },
+    { key: "reports", label: "Reports", icon: BarChart3, run: () => navigate("/reports") },
+    { key: "messages", label: "Messages", icon: Bell, run: () => navigate("/sms-inbox") },
     ...(thermalPrinter.isAvailable ? [{
       key: "printer", icon: Printer, label: "Printer",
       sub: thermalPrinter.isConnected ? `${thermalPrinter.deviceName?.split(" ")[0] ?? "Printer"} · connected` : thermalPrinter.status === "connecting" ? "Connecting…" : thermalPrinter.status === "error" ? "Error · retry" : "Tap to connect",
@@ -441,6 +448,24 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     }] : []),
     { key: "settings", label: "Settings", icon: Settings, run: () => navigate("/settings") },
   ];
+
+  // ── Check-In sheet: put the /frontdesk tablet on its check-in screen while it's open ──
+  useEffect(() => {
+    if (!showCheckIn || !dualScreen) return;
+    const send = (type: string) => fetch("/api/kiosk/checkout-event", {
+      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, registerId }),
+    }).catch(() => {});
+    void send("kiosk_checkout_checkin_launch");
+    return () => { void send("kiosk_checkout_checkin_cancel"); };
+  }, [showCheckIn, dualScreen, registerId]);
+  // The customer checked themselves in on /frontdesk → the board gains a waiting entry: close the sheet.
+  const waitingNow = waitingCount;
+  const waitingWhenOpened = useRef(0);
+  useEffect(() => { if (showCheckIn) waitingWhenOpened.current = waitingNow; }, [showCheckIn]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (showCheckIn && waitingNow > waitingWhenOpened.current) { setShowCheckIn(false); say("Client checked in"); }
+  }, [waitingNow, showCheckIn, say]);
 
   // ── submit routing ────────────────────────────────────────────────────────
   const busy = create.isPending || update.isPending;
@@ -534,7 +559,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
           />
         )}
 
-      <BottomNav tab={tab} onTab={setTab} onWalkIn={startWalkIn} onMore={() => setShowMore(true)} waiting={waitingCount} inService={inServiceCount} live={live} />
+      <BottomNav tab={tab} onTab={setTab} onWalkIn={startWalkIn} onCheckIn={() => setShowCheckIn(true)} onMore={() => setShowMore(true)} waiting={waitingCount} inService={inServiceCount} live={live} />
       </main>
 
       {showWalkIn && (
@@ -548,6 +573,15 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
       )}
 
       {showMore && <MoreMenu tiles={moreTiles} onClose={() => setShowMore(false)} />}
+
+      {showCheckIn && (
+        <CheckInSheet
+          storeId={storeId}
+          frontdeskShowing={dualScreen}
+          onClose={() => setShowCheckIn(false)}
+          onDone={(line) => { setShowCheckIn(false); say(line); invalidateBoard(); }}
+        />
+      )}
 
       {showBook && (
         <ChooseClientPanel

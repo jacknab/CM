@@ -270,6 +270,8 @@ export default function FrontDeskDisplay() {
   const awaitModeRef = useRef<AwaitMode>("m2");
   const posCheckoutRef = useRef<PosCheckout>(null);
   const bookingPhoneModeRef = useRef(false);
+  // Set while the POS "Check-In" sheet has this screen showing the phone entry.
+  const staffCheckinRef = useRef(false);
 
   const t = translations[lang];
   const isNative = typeof window !== "undefined" && !!(window as any).CERTXA_NATIVE_APP;
@@ -465,6 +467,25 @@ export default function FrontDeskDisplay() {
             setBookingPhoneSent(false);
             setBookingClient(null);
             setScreen("phone");
+            break;
+          // Staff tapped Check-In on the salon POS: bring up the normal self check-in
+          // (phone → "You're checked in") so the client can do it themselves. Never
+          // interrupts a checkout that's in progress.
+          case "kiosk_checkout_checkin_launch":
+            if (posCheckoutRef.current !== null) break;
+            staffCheckinRef.current = true;
+            setPhone(""); setBookingPhoneMode(false); setBookingPhoneSent(false); setBookingClient(null);
+            setClientInfo(null); setTodayAppointment(null); setNewClientName(""); setError("");
+            setScreen("phone");
+            break;
+          // The POS sheet closed (staff checked the client in themselves, or backed out):
+          // drop back to the welcome screen unless the client is already past the phone step.
+          case "kiosk_checkout_checkin_cancel":
+            if (staffCheckinRef.current) {
+              staffCheckinRef.current = false;
+              if (posCheckoutRef.current === null) setScreen((cur) => (cur === "phone" ? "idle" : cur));
+              setPhone("");
+            }
             break;
           case "kiosk_checkout_phone_cancel":
             if (bookingPhoneModeRef.current) {

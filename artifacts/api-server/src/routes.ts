@@ -17499,6 +17499,54 @@ or
     }
   });
 
+  // POST /api/nail/checkin — staff check a client in from the salon POS (the same thing the /kiosk and /frontdesk
+  // phone check-in does): today's next appointment is checked in and handed to the next tech, or a walk-in with no
+  // appointment lands on the waiting list as a "checked in, no ticket yet" marker.
+  app.post("/api/nail/checkin", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const clientId = Number(req.body?.clientId);
+      if (!Number.isFinite(clientId)) return res.status(400).json({ message: "Choose a client" });
+      const [store] = await db.select().from(locations).where(eq(locations.id, storeId));
+      const [client] = await db.select().from(clients).where(and(eq(clients.id, clientId), eq(clients.storeId, storeId))).limit(1);
+      if (!store || !client) return res.status(404).json({ message: "Client not found" });
+      const person = { id: client.id, name: client.fullName, loyaltyPoints: (client as any).loyaltyPoints ?? 0 };
+
+      // Already here? Don't add a second waiting entry.
+      const tz = (store as any).timezone || "UTC";
+      const [here, marker] = await Promise.all([
+        pool.query(
+          `SELECT id FROM appointments
+            WHERE store_id = $1 AND customer_id = $2
+              AND (status = 'started' OR (status = 'confirmed' AND checked_in_at IS NOT NULL))
+              AND (date AT TIME ZONE $3)::date >= ((NOW() AT TIME ZONE $3)::date - 1)
+            LIMIT 1`,
+          [storeId, client.id, tz],
+        ),
+        pool.query(
+          `SELECT id FROM kiosk_checkins
+            WHERE store_id = $1 AND client_id = $2 AND appointment_id IS NULL
+              AND status IN ('waiting','called') AND created_at > NOW() - INTERVAL '2 hours'
+            LIMIT 1`,
+          [storeId, client.id],
+        ),
+      ]);
+      if (here.rows.length > 0 || marker.rows.length > 0) return res.json({ status: "already", client: person });
+
+      const { rows: phoneRows } = await pool.query(
+        `SELECT phone_number_e164 FROM client_phones WHERE client_id = $1 ORDER BY is_primary DESC, id LIMIT 1`,
+        [client.id],
+      );
+      const digits = String(phoneRows[0]?.phone_number_e164 ?? "").replace(/\D/g, "").slice(-10);
+      const todayAppointment = await performClientCheckin(store, client, digits);
+      return res.json({ status: todayAppointment ? "appointment" : "walkin", client: person, todayAppointment });
+    } catch (err) {
+      console.error("[nail/checkin]", err);
+      return res.status(500).json({ message: "Could not check the client in" });
+    }
+  });
+
   app.post("/api/nail/tickets", isAuthenticated, async (req, res) => {
     try {
       const storeId = await nailStoreId(req, res);
@@ -21268,6 +21316,96 @@ or
     } catch { /* the calendar also polls */ }
   }
 
+  // The check-in itself, shared by the kiosk / front-desk lookup (client typed their number) and the staff
+  // Check-In sheet (/api/nail/checkin): checks in today's next appointment (TURN hands it to the next tech unless
+  // the client asked for someone) or, with no appointment today, records the waiting walk-in marker.
+  // Returns the appointment that was checked in, or null when it was a walk-in.
+  async function performClientCheckin(store: any, client: any, digits: string) {
+    // ── Check for today's appointment for this client ────────────────────────
+    // Lower bound: scheduled time must be within the last 30 minutes or still
+    // upcoming — prevents latching onto stale appointments from earlier in the day.
+    // Upper bound: end of today in the salon's local timezone.
+    const storeTzLookup = (store as any).timezone ?? "UTC";
+    const localNow      = toZonedTime(new Date(), storeTzLookup);
+    const localEnd      = new Date(localNow);
+    localEnd.setHours(23, 59, 59, 999);
+    const todayEnd      = fromZonedTime(localEnd, storeTzLookup);
+
+    // Search appointments by phone — matches via client_phones E.164 last-10-digit comparison.
+    const { rows: apptRows } = await pool.query(`
+      SELECT a.id, a.date, a.status, a.service_id, a.client_requested_staff,
+             s.name  AS service_name,
+             st.name AS staff_name,
+             st.avatar_thumb_url AS staff_avatar_thumb
+      FROM appointments a
+      LEFT JOIN services  s  ON s.id  = a.service_id
+      LEFT JOIN staff     st ON st.id = a.staff_id
+      WHERE a.store_id = $1
+        AND a.date >= NOW() - INTERVAL '30 minutes'
+        AND a.date <= $2
+        AND a.status NOT IN ('cancelled', 'no_show', 'completed', 'confirmed', 'started')
+        AND a.customer_id IN (
+          SELECT cl.id FROM clients cl
+          JOIN client_phones cp ON cp.client_id = cl.id
+          WHERE RIGHT(REGEXP_REPLACE(cp.phone_number_e164, '[^0-9]', '', 'g'), 10) = $3
+            AND cl.store_id = $1
+        )
+      ORDER BY a.date ASC
+      LIMIT 1
+    `, [store.id, todayEnd.toISOString(), digits]);
+
+    let todayAppointment = null;
+    if (apptRows.length > 0) {
+      const appt = apptRows[0];
+      // Mark the appointment as checked in immediately
+      await pool.query(
+        `UPDATE appointments SET status = 'confirmed', checked_in_at = NOW() WHERE id = $1`,
+        [appt.id]
+      );
+      // On check-in the TURN system hands the booking to the next tech in
+      // line — unless the client requested this specific stylist.
+      if (!appt.client_requested_staff) {
+        try {
+          await assignAppointmentViaTurn({
+            storeId: store.id,
+            serviceId: appt.service_id ?? null,
+            appointmentId: appt.id,
+            writeStaffId: true,
+            source: "checkin",
+          });
+        } catch (turnErr: any) {
+          console.error("[kiosk/lookup] turn reassign failed:", turnErr?.message);
+        }
+      }
+      broadcastAppointmentStatus({ appointmentId: appt.id, storeId: store.id, status: "confirmed", source: "manual" });
+      void logActivityEvent({
+        storeId: store.id,
+        eventType: "check_in",
+        message: `${client.fullName || "A client"} checked in`,
+      });
+      todayAppointment = {
+        id:                  appt.id,
+        serviceName:         appt.service_name       ?? "Appointment",
+        staffName:           appt.staff_name         ?? null,
+        staffAvatarThumbUrl: appt.staff_avatar_thumb ?? null,
+        appointmentTime:     appt.date,
+      };
+    } else {
+      // No appointment today — record a walk-in check-in marker (no
+      // appointment_id yet) so this client shows up on staff's Quick List
+      // right away. Deliberately NOT a real appointments row: this
+      // phone-only step has no service-selection UI, so there's nothing
+      // bookable yet. Tapping the marker in the Quick List sends staff to
+      // /booking/new?clientId=X&walkIn=1&checkinId=<id> — the walk-in
+      // booking flow — which resolves this marker (sets appointment_id)
+      // once the real appointment is created. No expires_at, so this is
+      // excluded from the public queue/wait-estimate math (kiosk/availability),
+      // which only counts real waitlist tickets.
+      await recordWalkInCheckinMarker(store.id, client.id, client.fullName ?? null, digits);
+    }
+    return todayAppointment;
+  }
+
   app.post("/api/public/kiosk/:slug/lookup", async (req, res) => {
     try {
       const { slug } = req.params;
@@ -21318,88 +21456,7 @@ or
         });
       }
 
-      // ── Check for today's appointment for this client ────────────────────────
-      // Lower bound: scheduled time must be within the last 30 minutes or still
-      // upcoming — prevents latching onto stale appointments from earlier in the day.
-      // Upper bound: end of today in the salon's local timezone.
-      const storeTzLookup = (store as any).timezone ?? "UTC";
-      const localNow      = toZonedTime(new Date(), storeTzLookup);
-      const localEnd      = new Date(localNow);
-      localEnd.setHours(23, 59, 59, 999);
-      const todayEnd      = fromZonedTime(localEnd, storeTzLookup);
-
-      // Search appointments by phone — matches via client_phones E.164 last-10-digit comparison.
-      const { rows: apptRows } = await pool.query(`
-        SELECT a.id, a.date, a.status, a.service_id, a.client_requested_staff,
-               s.name  AS service_name,
-               st.name AS staff_name,
-               st.avatar_thumb_url AS staff_avatar_thumb
-        FROM appointments a
-        LEFT JOIN services  s  ON s.id  = a.service_id
-        LEFT JOIN staff     st ON st.id = a.staff_id
-        WHERE a.store_id = $1
-          AND a.date >= NOW() - INTERVAL '30 minutes'
-          AND a.date <= $2
-          AND a.status NOT IN ('cancelled', 'no_show', 'completed', 'confirmed', 'started')
-          AND a.customer_id IN (
-            SELECT cl.id FROM clients cl
-            JOIN client_phones cp ON cp.client_id = cl.id
-            WHERE RIGHT(REGEXP_REPLACE(cp.phone_number_e164, '[^0-9]', '', 'g'), 10) = $3
-              AND cl.store_id = $1
-          )
-        ORDER BY a.date ASC
-        LIMIT 1
-      `, [store.id, todayEnd.toISOString(), digits]);
-
-      let todayAppointment = null;
-      if (apptRows.length > 0) {
-        const appt = apptRows[0];
-        // Mark the appointment as checked in immediately
-        await pool.query(
-          `UPDATE appointments SET status = 'confirmed', checked_in_at = NOW() WHERE id = $1`,
-          [appt.id]
-        );
-        // On check-in the TURN system hands the booking to the next tech in
-        // line — unless the client requested this specific stylist.
-        if (!appt.client_requested_staff) {
-          try {
-            await assignAppointmentViaTurn({
-              storeId: store.id,
-              serviceId: appt.service_id ?? null,
-              appointmentId: appt.id,
-              writeStaffId: true,
-              source: "checkin",
-            });
-          } catch (turnErr: any) {
-            console.error("[kiosk/lookup] turn reassign failed:", turnErr?.message);
-          }
-        }
-        broadcastAppointmentStatus({ appointmentId: appt.id, storeId: store.id, status: "confirmed", source: "manual" });
-        void logActivityEvent({
-          storeId: store.id,
-          eventType: "check_in",
-          message: `${client.fullName || "A client"} checked in`,
-        });
-        todayAppointment = {
-          id:                  appt.id,
-          serviceName:         appt.service_name       ?? "Appointment",
-          staffName:           appt.staff_name         ?? null,
-          staffAvatarThumbUrl: appt.staff_avatar_thumb ?? null,
-          appointmentTime:     appt.date,
-        };
-      } else {
-        // No appointment today — record a walk-in check-in marker (no
-        // appointment_id yet) so this client shows up on staff's Quick List
-        // right away. Deliberately NOT a real appointments row: this
-        // phone-only step has no service-selection UI, so there's nothing
-        // bookable yet. Tapping the marker in the Quick List sends staff to
-        // /booking/new?clientId=X&walkIn=1&checkinId=<id> — the walk-in
-        // booking flow — which resolves this marker (sets appointment_id)
-        // once the real appointment is created. No expires_at, so this is
-        // excluded from the public queue/wait-estimate math (kiosk/availability),
-        // which only counts real waitlist tickets.
-        await recordWalkInCheckinMarker(store.id, client.id, client.fullName ?? null, digits);
-      }
+      const todayAppointment = await performClientCheckin(store, client, digits);
 
       return res.json({
         found: true,
