@@ -7492,6 +7492,8 @@ export function CheckoutPOSPanel({
     cursor: "pointer", fontSize: 12, fontWeight: 700, color: "#e5e5e7", lineHeight: 1.16,
     userSelect: "none", padding: "4px 3px", textAlign: "center", gap: 2, minHeight: 84,
   };
+  // Fixed-grid cells (82×72, like the numpad keys): compact type so two-line labels fit.
+  const KP_FN_UNIFORM: React.CSSProperties = { minHeight: 0, fontSize: 11, gap: 1, padding: "2px 2px", overflowWrap: "anywhere" };
   // Colour band per row, cycled.
   const KP_ROW_BANDS = ["#f4d000", "#e879b0", "#00c8ff", "#ff8bd4", "#b493ff", "#95d8ff"];
   const posCustomerName =
@@ -7547,12 +7549,13 @@ export function CheckoutPOSPanel({
         })),
     ];
   }, [storeAddons]);
-  const addonPages = useMemo<PosButton[][]>(() => {
-    const items = addonItems;
+  // Pages of the add-on list. `full` = cells a page can hold besides the "Back" cell (14 on the phone's 3×5 grid,
+  // 23 on the desktop 4×6 grid); a non-last page gives one of them to its "More" cell.
+  const paginateAddons = (items: PosButton[], full: number): PosButton[][] => {
     const chunks: PosButton[][] = [];
     for (let i = 0; i < items.length; ) {
       const remaining = items.length - i;
-      const take = remaining > 14 ? 13 : remaining;
+      const take = remaining > full ? full - 1 : remaining;
       chunks.push(items.slice(i, i + take));
       i += take;
     }
@@ -7572,7 +7575,13 @@ export function CheckoutPOSPanel({
       }
     });
     return pages;
-  }, [addonItems]);
+  };
+  const addonPages = useMemo(() => paginateAddons(addonItems, 14), [addonItems]);
+  const uniformFnGrid = !!posLayout.rows;
+  const addonPagesDesktop = useMemo(
+    () => paginateAddons(addonItems, Math.max(14, (posLayout.columns * (posLayout.rows ?? 0)) - 1)),
+    [addonItems, posLayout.columns, posLayout.rows],
+  );
 
   // Keypad value, in dollars (the phase-1 numpad stores cents: "2500" -> 25.00).
   const posKeypadDollars = () => (Number(cartKeypad) || 0) / 100;
@@ -7666,7 +7675,7 @@ export function CheckoutPOSPanel({
         setPosMenuStack((s) => s.slice(0, -1));
         return;
       case "addon-browser":
-        setPosMenuStack((s) => [...s, addonPages[0] ?? []]);
+        setPosMenuStack((s) => [...s, (uniformFnGrid && !isCompactPos ? addonPagesDesktop : addonPages)[0] ?? []]);
         if ((storeAddons ?? []).length === 0) showPosStatus(tSt.noAddons, "info");
         return;
       case "guided-ticket": {
@@ -8628,34 +8637,40 @@ export function CheckoutPOSPanel({
 
               {phase === "cart" ? (
               /* Function grid — data-driven from the business-type POS layout */
-              <div style={{ display: "grid", gridTemplateColumns: `repeat(${posLayout.columns}, 116px)`, gridAutoRows: "84px", columnGap: 8, rowGap: 8 }} data-testid="cart-fn-grid">
+              <div style={uniformFnGrid
+                ? { display: "grid", gridTemplateColumns: `repeat(${posLayout.columns}, 82px)`, gridAutoRows: "72px", columnGap: 6, rowGap: 8 }
+                : { display: "grid", gridTemplateColumns: `repeat(${posLayout.columns}, 116px)`, gridAutoRows: "84px", columnGap: 8, rowGap: 8 }} data-testid="cart-fn-grid">
                 {posMenuStack.length > 0 && (
                   <button
-                    style={{ ...KP_FN_BASE, boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04), inset 0 -4px 0 #6b7280" }}
+                    style={{ ...KP_FN_BASE, ...(uniformFnGrid ? KP_FN_UNIFORM : null), boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04), inset 0 -4px 0 #6b7280" }}
                     onClick={() => setPosMenuStack((s) => s.slice(0, -1))}
                     data-testid="cart-fn-back"
                   >
-                    <ArrowLeft style={{ width: 22, height: 22, strokeWidth: 1.75, marginBottom: 2 }} />
+                    <ArrowLeft style={{ width: uniformFnGrid ? 20 : 22, height: uniformFnGrid ? 20 : 22, strokeWidth: 1.75, marginBottom: 2 }} />
                     <span>{pick(POS_MISC_TX.back)}</span>
                   </button>
                 )}
-                {posButtons.map((b, i) => {
+                {/* A fixed grid is always drawn full (blank reserved cells for open slots) so it lines up with the keypad. */}
+                {(uniformFnGrid
+                  ? Array.from({ length: Math.max(0, posLayout.columns * (posLayout.rows ?? 0) - (posMenuStack.length > 0 ? 1 : 0)) }, (_, k) => posButtons[k] ?? null)
+                  : posButtons
+                ).map((b, i) => {
                   if (!b) {
-                    return <div key={`gap-${i}`} style={{ border: "1px solid #3a3a3c", borderRadius: 4, backgroundColor: "#242426" }} />;
+                    return <div key={`gap-${i}`} style={{ border: "1px solid #3a3a3c", borderRadius: 4, backgroundColor: "#242426" }} data-testid="cart-fn-empty" />;
                   }
                   const band = b.band ?? KP_ROW_BANDS[Math.floor((i + posMenuStack.length) / posLayout.columns) % KP_ROW_BANDS.length];
                   const Icon = resolvePosIcon(b.icon);
                   return (
                     <button
                       key={b.id}
-                      style={{ ...KP_FN_BASE, boxShadow: `inset 0 1px 0 rgba(255,255,255,0.04), inset 0 -4px 0 ${band}`, opacity: b.enabled === false ? 0.4 : 1 }}
+                      style={{ ...KP_FN_BASE, ...(uniformFnGrid ? KP_FN_UNIFORM : null), boxShadow: `inset 0 1px 0 rgba(255,255,255,0.04), inset 0 -4px 0 ${band}`, opacity: b.enabled === false ? 0.4 : 1 }}
                       onClick={() => b.enabled !== false && handlePosAction(b)}
                       disabled={b.enabled === false}
                       data-testid={`cart-fn-btn-${b.id}`}
                     >
                       {Icon
-                        ? <Icon style={{ width: 24, height: 24, strokeWidth: 1.5, marginBottom: 2 }} />
-                        : <span style={{ width: 24, height: 24, marginBottom: 2, display: "inline-block" }}>•</span>}
+                        ? <Icon style={uniformFnGrid ? { width: 22, height: 22, strokeWidth: 1.5 } : { width: 24, height: 24, strokeWidth: 1.5, marginBottom: 2 }} />
+                        : <span style={{ width: 22, height: 22, marginBottom: 2, display: "inline-block" }}>•</span>}
                       <span style={{ whiteSpace: "pre-line" }}>{posT(b.id, b.label)}</span>
                       {b.action.type === "submenu" && (
                         <span style={{ position: "absolute", top: 4, right: 6, fontSize: 10, color: "#8e8e93" }}>›</span>

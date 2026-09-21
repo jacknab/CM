@@ -78,6 +78,12 @@ export interface PosLayout {
   /** Grid column count for the function panel. */
   columns: number;
   /**
+   * When set, the desktop function panel is a fixed `columns × rows` grid of identical cells the same
+   * size as the numpad's keys, so its rows line up with the keypad beside it. Empty slots are drawn
+   * as blank reserved cells. Omit for the older free-flowing 116×84 tile grid.
+   */
+  rows?: number;
+  /**
    * Sales-tax rate for this business type, as a fraction (0.07 = 7%).
    * `0` hides the tax line entirely (e.g. nail salons — services aren't taxed).
    * Omit to fall back to the app-wide `TAX_RATE`.

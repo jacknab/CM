@@ -54,19 +54,16 @@ const reprintSubmenu: PosButton[] = [
 
 export const nailSalonPosLayout: PosLayout = {
   businessType: "Nail Salon",
-  columns: 3,
+  // 4 columns × 6 rows of identical cells, sized like the numpad's keys so the rows line up with the keypad.
+  columns: 4,
+  rows: 6,
   taxRate: 0, // nail-salon services aren't sales-taxed — hide the tax line
-  // 3 × 5 grid. Dropped buttons are left as `null` so the surviving buttons
-  // keep their original positions (empty cells are reserved for later use).
+  // Row-major. Empty (`null`) slots are reserved cells for later use.
   buttons: [
     // Row 1 — build the ticket
-    // nail.addon has no desktopTile — the desktop checkout's always-visible
-    // Popular Add-Ons row supersedes it there; it stays mobile-only.
     { id: "nail.addon",   label: "Add-Ons",  icon: "Sparkles",    mobile: true, action: { type: "addon-browser" } },
     { id: "nail.retail",  label: "Retail",   icon: "ShoppingBag", mobile: true, desktopTile: true, action: { type: "add-product" } },
     { id: "nail.removal", label: "Removal",  icon: "Undo2",       mobile: true, desktopTile: true, action: { type: "submenu", submenu: removalSubmenu } },
-
-    // Row 2
     {
       id: "nail.quickticket",
       label: "Quick\nTicket",
@@ -88,23 +85,14 @@ export const nailSalonPosLayout: PosLayout = {
         },
       },
     },
-    null, // Discount — moved to the keypad row
-    { id: "nail.loyalty",    label: "Loyalty",    icon: "Star",         desktopTile: true, action: { type: "loyalty-redeem" } },
 
-    // Row 3
-    null, // Tip Adjust — moved to the keypad row
-    null, // Split Pay — dropped
-    null,
+    // Row 2
+    { id: "nail.custom",   label: "Custom\nCharge", icon: "Calculator", mobile: true, desktopTile: true, action: { type: "add-custom-item" } },
+    { id: "nail.loyalty",  label: "Loyalty",        icon: "Star",       desktopTile: true, action: { type: "loyalty-redeem" } },
+    { id: "nail.grouppay", label: "Group\nPay",     icon: "Users",      desktopTile: true, action: { type: "link-tickets" } },
+    { id: "nail.giftcard", label: "Gift\nCard",     icon: "Gift",       desktopTile: true, action: { type: "submenu", submenu: giftCardSubmenu } },
 
-    // Row 4 — corrections — moved to the keypad row (see `keypadButtons` below)
-    null,
-    null,
-    null,
-
-    // Row 5
-    { id: "nail.custom",  label: "Custom\nCharge", icon: "Calculator", mobile: true, desktopTile: true, action: { type: "add-custom-item" } },
-    { id: "nail.grouppay", label: "Group\nPay",    icon: "Users",      desktopTile: true, action: { type: "link-tickets" } },
-    { id: "nail.giftcard", label: "Gift\nCard",    icon: "Gift",       desktopTile: true, action: { type: "submenu", submenu: giftCardSubmenu } },
+    // Rows 3–6 are open slots (the grid pads them out to 24 cells).
   ],
   // Beneath the numpad, replacing the quick-cash buttons.
   keypadButtons: [
