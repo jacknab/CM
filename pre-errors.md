@@ -12,6 +12,16 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+---
+
+## 2026-09-21 — Checkout sheet (`CheckoutPOSPanel`): visible buttons that do nothing / drop data
+
+**Found while:** reviewing the checkout sheet's function buttons on request (layout in `lib/pos/configs/nailSalon.ts`, dispatch in `pages/Calendar.tsx` `handlePosAction` ~7654-7785). Nothing was changed.
+1. **Gift Card (Sell / Redeem / Check Balance) and Reprint (Last / Select… / Gift Receipt) are stubs.** `handlePosAction` sends `gift-card`, `membership`, `reprint-receipt` to `showPosStatus(tSt.comingSoon(...))` — the cashier just sees "GIFT CARD — COMING SOON". They are still drawn as normal live buttons (Gift Card tile, Reprint in the keypad row), and Reprint is also in the mobile action list.
+2. **The "Employee" discount's reason is thrown away.** `nail.disc.employee` = `discount-preset { percent: 25, reason: "Employee" }`, but the `discount-preset` case only reads `percent`/`amount`; `payload.reason` is never used or saved, so nothing on the ticket/report says a 25% discount was an employee discount. (25% is also hard-coded in the layout file, not a setting.) Discounts of any size, including Comp (100%), need no manager PIN.
+3. **No Sale leaves no record.** `no-sale` → `kickDrawer()` → `openCashDrawerHardware()` (`lib/cashDrawer.ts`) only pulses the drawer; no server call, event or cash-drawer-session entry, so drawer-open-without-a-sale can't be audited at Day Close.
+**Why not fixed now:** review-only request; items 1-2 need product decisions (what gift cards / reprints should do, whether discounts need approval + a reason field), and item 3 touches the cash-drawer session model.
+
 ## 2026-09-20 — Stripe M2 / Terminal card-payment path: audit findings (items 1-9 FIXED the same day; see status below)
 
 **STATUS (same day):** items 1-9 below were fixed — server (`routes/stripeConnect.ts` capture/create/location, `lib/terminalPaymentMath.ts`, Connect webhook `payment_intent.succeeded`), checkout sheet (`Calendar.tsx`), owner app (`lib/captureRecovery.ts`, `useTerminalPayment.ts`, `useReaderDiscovery.ts`, `M2PaymentOverlay.tsx`, `ReaderStatusModal.tsx`) — and also brought in line with Stripe's docs (re-use the same PaymentIntent after a decline/timeout, show reader prompts + update progress). **Still open:** (a) the Stripe dashboard's Connect webhook endpoint must be subscribed to `payment_intent.succeeded` for the reconciliation handler to fire; (b) refunds/disputes of POS payments are still not reflected on appointments; (c) the app bundles Terminal Android SDK 5.5.1 — `@stripe/stripe-terminal-react-native@0.0.1-beta.33` bundles 5.8.0, which fixes "mobile reader software updates timing out on slow networks" (relevant to a new M2's first connect), but upgrading needs a lockfile + SDK patch change and a device test; (d) a group-pay ticket paid by M2 is recorded on the primary appointment at capture and corrected to each ticket's share when staff complete it.
