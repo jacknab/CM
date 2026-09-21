@@ -421,11 +421,6 @@
 .nail-app .drawer-picker .picker-taken { background: transparent; border-style: dashed; color: #8b94a0; }
 .nail-app .drawer-picker .picker-taken small { display: block; font-size: 11px; font-weight: 400; margin-top: 3px; color: #5d6571; }
 .nail-app .drawer-picker .picker-error { font-size: 13px; color: #ef5a5f; background: rgba(239,90,95,.08); border: 1px solid rgba(239,90,95,.3); padding: 10px 14px; margin: 0; }
-.nail-app .more-menu { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 301; background: #232830; border: 1px solid #3b424c; border-radius: 12px; width: 560px; max-width: 94vw; max-height: 88vh; overflow-y: auto; box-shadow: 0 32px 80px rgba(0,0,0,.6); animation: modal-in 0.25s ease; }
-.nail-app .more-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 18px 20px 22px; }
-.nail-app .more-tile { padding: 18px 6px; min-height: 92px; justify-content: center; text-align: center; }
-.nail-app .more-tile span { font-size: 10px; }
-.nail-app .more-tile small { font-size: 9px; color: #8b94a0; letter-spacing: .3px; }
 
 /* ===== On-screen keyboard (new client's name) ===== */
 .nail-app .name-entry { display: flex; flex-direction: column; gap: 16px; flex: 1; min-height: 0; }
@@ -472,3 +467,22 @@
 .nail-app .glance-tile strong { font-size: 24px; font-weight: 700; color: #eef3fb; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nail-app .glance-tile span { font-size: 11px; font-weight: 600; color: #8b94a0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nail-app .tech-panel .tech-stage { margin-top: 12px; }
+
+/* ===== More menu — big, easy to read and tap on a 10" tablet ===== */
+.nail-app .more-menu { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 301; background: #232830; border: 1px solid #3b424c; border-radius: 14px; width: min(96vw, 980px); height: min(94vh, 700px); display: flex; flex-direction: column; box-shadow: 0 32px 80px rgba(0,0,0,.6); animation: modal-in 0.25s ease; overflow: hidden; }
+.nail-app .more-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 22px; border-bottom: 1px solid #2f353d; flex-shrink: 0; }
+.nail-app .more-header h2 { font-size: 26px; font-weight: 700; color: #eef3fb; }
+.nail-app .more-close { width: 52px; height: 52px; border-radius: 10px; background: #2f353d; border: 1px solid #3b424c; color: #c8cdd3; display: grid; place-items: center; }
+.nail-app .more-close:active { background: #3b424c; }
+.nail-app .more-grid { flex: 1; min-height: 0; display: grid; gap: 12px; padding: 16px 18px 18px; }
+.nail-app .more-tile { min-height: 0; background: #2a2e36; border: 1px solid #3b424c; border-radius: 12px; color: #dfe3e8; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 8px 6px; font-family: inherit; }
+.nail-app .more-tile:active { background: #0d9bd1; border-color: #0d9bd1; color: #fff; }
+.nail-app .more-tile span { font-size: 17px; font-weight: 700; text-align: center; line-height: 1.15; }
+.nail-app .more-tile small { font-size: 13px; font-weight: 600; color: #8b94a0; }
+.nail-app .more-tile:active small { color: #e8f6fc; }
+.nail-app .more-confirm { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 28px; padding: 24px 40px; }
+.nail-app .more-confirm p { font-size: 20px; line-height: 1.5; color: #c8cdd3; text-align: center; margin: 0; }
+.nail-app .more-confirm-actions { display: flex; gap: 16px; }
+.nail-app .more-confirm-actions button { flex: 1; height: 72px; border-radius: 12px; font-size: 20px; font-weight: 700; font-family: inherit; }
+.nail-app .more-confirm-cancel { background: transparent; border: 1px solid #454c56 !important; color: #c8cdd3; }
+.nail-app .more-confirm-go { background: #0d9bd1; color: #fff; }

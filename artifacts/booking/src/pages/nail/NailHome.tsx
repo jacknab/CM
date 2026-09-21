@@ -9,7 +9,7 @@ import { EMPTY_ARRAY } from "@/lib/empty";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BarChart3, Bell, Clock, CreditCard, Gift, KeyRound, Loader2, LockKeyhole, Printer, Search, Settings, ShoppingBag, CalendarPlus, Wallet } from "lucide-react";
+import { BarChart3, Bell, Clock, CreditCard, RefreshCw, Gift, KeyRound, Loader2, LockKeyhole, Printer, Search, Settings, ShoppingBag, CalendarPlus, Wallet } from "lucide-react";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useAuth } from "@/hooks/use-auth";
 import { useServices } from "@/hooks/use-services";
@@ -24,6 +24,7 @@ import { OpenRegisterModal } from "@/components/cash/OpenRegisterModal";
 import { DayCloseModal } from "@/components/cash/DayCloseModal";
 import { useStoreNetworkReport } from "@/hooks/use-store-network-report";
 import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
+import { hardRefresh } from "@/lib/hard-refresh";
 import { buildCheckinTicket } from "@/lib/thermalPrinter";
 import { CheckoutPOSPanel, ChooseClientPanel, ClientLookupSheet, ManagerPinSheet, TimeClockSheet, VoucherRedeemSheet } from "@/pages/Calendar";
 import type { AppointmentWithDetails } from "@shared/schema";
@@ -447,6 +448,14 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
       run: () => { if (window.confirm(`This tablet is paired as ${currentRegisterName}. Reset if it's being moved to a different station — you'll be asked to pick again.`)) resetRegister(); },
     }] : []),
     { key: "settings", label: "Settings", icon: Settings, run: () => navigate("/settings") },
+    {
+      key: "refresh", label: "Hard Refresh", sub: "Fix a page that won't load", icon: RefreshCw, run: () => { void hardRefresh(); },
+      confirm: {
+        title: "Hard refresh?",
+        body: "This reloads the whole app from the server, like pressing Ctrl + Shift + R. Any ticket you're in the middle of building will be cleared. Your login and this tablet's station setup are kept.",
+        action: "REFRESH NOW",
+      },
+    },
   ];
 
   // ── Check-In sheet: put the /frontdesk tablet on its check-in screen while it's open ──
