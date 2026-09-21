@@ -7,12 +7,13 @@ interface Props {
   tab: NailTab;
   onTab: (t: NailTab) => void;
   onWalkIn: () => void;
+  onMore: () => void;
   waiting: number;
   inService: number;
   live: boolean;
 }
 
-export function BottomNav({ tab, onTab, onWalkIn, waiting, inService, live }: Props) {
+export function BottomNav({ tab, onTab, onWalkIn, onMore, waiting, inService, live }: Props) {
   const navigate = useNavigate();
   const items: { label: string; icon: typeof ShoppingBag; active?: boolean; run: () => void; badges?: boolean }[] = [
     { label: "Techs", icon: UserCog, active: tab === "techs", run: () => onTab("techs") },
@@ -23,7 +24,7 @@ export function BottomNav({ tab, onTab, onWalkIn, waiting, inService, live }: Pr
     { label: "Walk-in", icon: Footprints, run: onWalkIn },
     { label: "Reports", icon: ArrowUpRight, run: () => navigate("/reports") },
     { label: "Messages", icon: Bell, run: () => navigate("/sms-inbox") },
-    { label: "More", icon: MoreHorizontal, run: () => navigate("/settings") },
+    { label: "More", icon: MoreHorizontal, run: onMore },
   ];
   return (
     <nav className="bottom-nav" data-testid="nail-bottom-nav">

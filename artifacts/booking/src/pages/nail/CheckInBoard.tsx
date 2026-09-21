@@ -14,15 +14,16 @@ interface Props {
   onCancel: (t: BoardTicket) => void;
   onMarkerTicket: (m: BoardMarker) => void;
   onMarkerRemove: (m: BoardMarker) => void;
-  /** Open this ticket's card straight away (arrived from the Techs page). */
-  initialOpenId?: number | null;
+  /** Open this ticket's card straight away (Techs page tap, scanned ticket). A new object = open it again. */
+  focus?: { id: number } | null;
 }
 
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const NO_COLOR = "#454c56";
 
 export function CheckInBoard(p: Props) {
-  const [openId, setOpenId] = useState<number | null>(p.initialOpenId ?? null);
+  const [openId, setOpenId] = useState<number | null>(p.focus?.id ?? null);
+  useEffect(() => { if (p.focus) setOpenId(p.focus.id); }, [p.focus]);
   const [openMarker, setOpenMarker] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

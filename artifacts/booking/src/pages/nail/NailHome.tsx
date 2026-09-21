@@ -7,9 +7,9 @@
  */
 import { EMPTY_ARRAY } from "@/lib/empty";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Clock, CreditCard, Gift, KeyRound, Loader2, LockKeyhole, Printer, Search, Settings, ShoppingBag, CalendarPlus, Wallet } from "lucide-react";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useAuth } from "@/hooks/use-auth";
 import { useServices } from "@/hooks/use-services";
@@ -21,7 +21,11 @@ import { useSettingsSync } from "@/hooks/use-settings-sync";
 import { useThermalPrinter } from "@/hooks/use-thermal-printer";
 import { useToast } from "@/hooks/use-toast";
 import { OpenRegisterModal } from "@/components/cash/OpenRegisterModal";
-import { CheckoutPOSPanel } from "@/pages/Calendar";
+import { DayCloseModal } from "@/components/cash/DayCloseModal";
+import { useStoreNetworkReport } from "@/hooks/use-store-network-report";
+import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
+import { buildCheckinTicket } from "@/lib/thermalPrinter";
+import { CheckoutPOSPanel, ChooseClientPanel, ClientLookupSheet, ManagerPinSheet, TimeClockSheet, VoucherRedeemSheet } from "@/pages/Calendar";
 import type { AppointmentWithDetails } from "@shared/schema";
 import {
   ApiError, BOARD_KEY, cancelTicket, completeTicket, createTicket, fetchAppointment, fetchBoard, fetchClient,
@@ -39,6 +43,8 @@ import "./nail.css";
 import { AssignTechSheet } from "./AssignTechSheet";
 import { CheckInBoard } from "./CheckInBoard";
 import { BottomNav, type NailTab } from "./BottomNav";
+import { RegisterPicker } from "./RegisterPicker";
+import { MoreMenu, type MoreTile } from "./MoreMenu";
 
 type Assigning = { mode: "create" } | { mode: "reassign"; ticket: BoardTicket } | null;
 
@@ -61,7 +67,15 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   const { user } = useAuth();
   const features = useFeatureFlags();
   const thermalPrinter = useThermalPrinter();
-  const { registerId } = useActiveRegisterId(storeId);
+  const navigate = useNavigate();
+  const {
+    registerId, needsPicker: needsRegisterPicker, registers: registerOptions, takenRegisters, selectRegister,
+    isMultiStation, currentRegisterName, resetRegister,
+  } = useActiveRegisterId(storeId);
+  // Same duties the calendar screen has, so /kiosk and /frontdesk behave identically when this is the screen left open all day.
+  useStoreNetworkReport(storeId);
+  const printRef = useRef<((bytes: Uint8Array) => Promise<void>) | null>(null);
+  printRef.current = thermalPrinter.isConnected ? thermalPrinter.print : null;
   const { drawerId, needsPicker: needsDrawerPicker, drawers, selectDrawer } = useActiveDrawerId(storeId);
 
   // ── screen state ──────────────────────────────────────────────────────────
@@ -80,7 +94,10 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   const [showWalkIn, setShowWalkIn] = useState(false);
   // A kiosk check-in we already have a number for — the walk-in sheet skips the phone step for these.
   const [walkInKnown, setWalkInKnown] = useState<{ phone: string; name: string | null } | null>(null);
-  const [focusTicketId, setFocusTicketId] = useState<number | null>(null);
+  const [focusTicket, setFocusTicket] = useState<{ id: number } | null>(null);
+  const [showMore, setShowMore] = useState(false);
+  const [showBook, setShowBook] = useState(false);
+  const [sheet, setSheet] = useState<null | "voucher" | "timeclock" | "dayclose" | "clients" | "manager">(null);
   const [assigning, setAssigning] = useState<Assigning>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -99,7 +116,21 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
 
   // ── data ──────────────────────────────────────────────────────────────────
   const refreshAll = useSettingsSync(true);
-  const live = useNailRealtime({ storeId, registerId, refreshAll, onFrontdeskPhone: setFrontdeskPhone });
+  const live = useNailRealtime({
+    storeId, registerId, refreshAll, onFrontdeskPhone: setFrontdeskPhone,
+    // The kiosk's check-in ticket prints on the front-desk thermal printer, like on the calendar.
+    onPrintJob: (data) => {
+      if (data.jobType !== "checkin_ticket") return;
+      try {
+        const bytes = buildCheckinTicket({
+          storeName: data.storeName ?? "", clientName: data.clientName ?? "Guest", staffName: data.staffName,
+          services: data.services ?? [], appointmentId: data.appointmentId, ticketNumber: data.ticketNumber,
+          bookingCode: data.bookingCode ?? `BK:${data.appointmentId}`, timeStr: data.timeStr ?? "", dateStr: data.dateStr ?? "",
+        });
+        printRef.current?.(bytes).catch(() => {});
+      } catch { /* a bad ticket must never break the screen */ }
+    },
+  });
 
   const { data: board } = useQuery({
     queryKey: BOARD_KEY,
@@ -316,6 +347,60 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     onError: () => toast({ title: "Payment wasn't saved", description: "The sale didn't close. Check the ticket on the board.", variant: "destructive" }),
   });
 
+  // ── open a ticket by id (scanner, voucher) ───────────────────────────────
+  const openTicketById = useCallback(async (id: number) => {
+    await queryClient.invalidateQueries({ queryKey: BOARD_KEY });
+    const b = await queryClient.fetchQuery({ queryKey: BOARD_KEY, queryFn: fetchBoard });
+    if (b.tickets.some((t) => t.id === id)) { setFocusTicket({ id }); setTab("board"); }
+    else toast({ title: "That ticket isn't on today's board", description: "It may already be paid or cancelled.", variant: "destructive" });
+  }, [queryClient, toast]);
+
+  // ── QR / barcode scanner: a kiosk ticket or a deal voucher opens its ticket ──
+  const handleScan = useCallback(async (raw: string) => {
+    try {
+      const res = await fetch("/api/qr/lookup", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ qrToken: raw }),
+      });
+      const data = res.ok ? await res.json() : null;
+      if (!data?.found) { toast({ title: "Code not recognised", description: "That ticket or voucher isn't in the system.", variant: "destructive" }); return; }
+      if (data.type === "voucher") {
+        // Holding the code is the confirmation — redeem, then open the now-started ticket.
+        const r = await fetch("/api/qr/redeem-voucher", {
+          method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ qrToken: raw }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) { toast({ title: "Couldn't redeem the voucher", description: d.error ?? "Try again.", variant: "destructive" }); return; }
+        say(`Voucher redeemed${d.dealTitle ? ` · ${d.dealTitle}` : ""}`);
+        await openTicketById(d.appointmentId);
+        return;
+      }
+      await openTicketById(data.appointmentId);
+    } catch {
+      toast({ title: "Scan failed", description: "Couldn't reach the server. Try again.", variant: "destructive" });
+    }
+  }, [toast, say, openTicketById]);
+  useBarcodeScanner(handleScan);
+
+  // ── open-register prompts: on load during the morning window, and again at 1 AM store time ──
+  const dayKey = useCallback(() => new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date()), [timezone]);
+  const markPrompted = useCallback(() => { try { localStorage.setItem(`certxa_drawer_prompted_${storeId}_${dayKey()}`, "1"); } catch { /* private mode */ } }, [storeId, dayKey]);
+  useEffect(() => {
+    if (!posEnabled || openDrawerSession === undefined || openDrawerSession) return;
+    try { if (localStorage.getItem(`certxa_drawer_prompted_${storeId}_${dayKey()}`)) return; } catch { /* private mode */ }
+    const hour = parseInt(new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", hour12: false }).format(new Date()));
+    if (hour >= 5 && hour < 12) setShowOpenRegister(true);
+  }, [posEnabled, openDrawerSession, storeId, timezone, dayKey]);
+  useEffect(() => {
+    if (!posEnabled) return;
+    let firedFor = "";
+    const iv = setInterval(() => {
+      const hour = parseInt(new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", hour12: false }).format(new Date()));
+      const day = dayKey();
+      if (hour === 1 && firedFor !== day) { firedFor = day; setShowOpenRegister(true); }
+    }, 60_000);
+    return () => clearInterval(iv);
+  }, [posEnabled, timezone, dayKey]);
+
   // ── mirror the walk-in phone prompt to the paired /frontdesk tablet ───────
   const [dualScreen, setDualScreen] = useState(false);
   useEffect(() => {
@@ -323,14 +408,39 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
       .then((r) => r.json()).then((d) => setDualScreen(d?.dualScreenMode === true)).catch(() => {});
   }, [storeId]);
   useEffect(() => {
-    if (!showWalkIn || !dualScreen || walkInKnown) return;
+    if (!(showWalkIn || showBook) || !dualScreen || walkInKnown) return;
     const send = (type: string) => fetch("/api/kiosk/checkout-event", {
       method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type, registerId }),
     }).catch(() => {});
     void send("kiosk_checkout_phone_prompt");
     return () => { void send("kiosk_checkout_phone_cancel"); };
-  }, [showWalkIn, dualScreen, registerId, walkInKnown]);
+  }, [showWalkIn, showBook, dualScreen, registerId, walkInKnown]);
+
+  // ── the calendar's other tools, from the More menu ────────────────────────
+  const timeclockEnabled = features.timeclock !== false;
+  const moreTiles: MoreTile[] = [
+    { key: "book", label: "Book Appointment", icon: CalendarPlus, run: () => { setFrontdeskPhone(""); setShowBook(true); } },
+    { key: "clients", label: "Client Lookup", icon: Search, run: () => setSheet("clients") },
+    { key: "voucher", label: "Redeem Voucher", icon: Gift, run: () => setSheet("voucher") },
+    ...(timeclockEnabled ? [{ key: "timeclock", label: "In / Out", icon: Clock, run: () => setSheet("timeclock") }] : []),
+    ...(posEnabled ? [
+      { key: "register", label: "Cash Drawer", sub: openDrawerSession ? "Open" : "Closed", icon: Wallet, run: () => setShowOpenRegister(true) },
+      { key: "retail", label: "Retail Sale", icon: ShoppingBag, run: () => navigate("/pos") },
+      { key: "dayclose", label: "Day Close", icon: LockKeyhole, run: () => setSheet("dayclose") },
+    ] : []),
+    { key: "manager", label: "Manager", icon: KeyRound, run: () => setSheet("manager") },
+    ...(thermalPrinter.isAvailable ? [{
+      key: "printer", icon: Printer, label: "Printer",
+      sub: thermalPrinter.isConnected ? `${thermalPrinter.deviceName?.split(" ")[0] ?? "Printer"} · connected` : thermalPrinter.status === "connecting" ? "Connecting…" : thermalPrinter.status === "error" ? "Error · retry" : "Tap to connect",
+      run: () => { void (thermalPrinter.isConnected ? thermalPrinter.disconnect() : thermalPrinter.connect()); },
+    }] : []),
+    ...(isMultiStation && currentRegisterName ? [{
+      key: "station", icon: CreditCard, label: "Station", sub: currentRegisterName,
+      run: () => { if (window.confirm(`This tablet is paired as ${currentRegisterName}. Reset if it's being moved to a different station — you'll be asked to pick again.`)) resetRegister(); },
+    }] : []),
+    { key: "settings", label: "Settings", icon: Settings, run: () => navigate("/settings") },
+  ];
 
   // ── submit routing ────────────────────────────────────────────────────────
   const busy = create.isPending || update.isPending;
@@ -356,7 +466,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     setWalkInKnown({ phone: m.phone ?? "", name: m.clientName });
     setShowWalkIn(true);
   };
-  useEffect(() => { if (tab === "board") setFocusTicketId(null); }, [tab]);
+  useEffect(() => { if (tab === "board") setFocusTicket(null); }, [tab]);
 
   return (
     <div className="dark cx-cal nail-app h-app w-full" data-testid="nail-home">
@@ -405,7 +515,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
           </>
         ) : tab === "techs" ? (
           <>
-            <CheckInPanel tickets={tickets} markers={markers} onMarker={startFromMarker} onTicket={(t) => { setFocusTicketId(t.id); setTab("board"); }} />
+            <CheckInPanel tickets={tickets} markers={markers} onMarker={startFromMarker} onTicket={(t) => { setFocusTicket({ id: t.id }); setTab("board"); }} />
             <TechCards techs={techList} tickets={tickets} stats={board?.techStats ?? EMPTY_ARRAY} loading={techsLoading} />
           </>
         ) : (
@@ -419,12 +529,12 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
             onEdit={startEdit}
             onCancel={(t) => { if (window.confirm(`Cancel ${t.client.name}'s ticket?`)) act.mutate(() => cancelTicket(t.id)); }}
             onMarkerTicket={startFromMarker}
-            initialOpenId={focusTicketId}
+            focus={focusTicket}
             onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))}
           />
         )}
 
-      <BottomNav tab={tab} onTab={setTab} onWalkIn={startWalkIn} waiting={waitingCount} inService={inServiceCount} live={live} />
+      <BottomNav tab={tab} onTab={setTab} onWalkIn={startWalkIn} onMore={() => setShowMore(true)} waiting={waitingCount} inService={inServiceCount} live={live} />
       </main>
 
       {showWalkIn && (
@@ -436,6 +546,30 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
           onClient={(id, staffId) => { setFrontdeskPhone(""); setWalkInKnown(null); void pickClient(id, checkinId, staffId); }}
         />
       )}
+
+      {showMore && <MoreMenu tiles={moreTiles} onClose={() => setShowMore(false)} />}
+
+      {showBook && (
+        <ChooseClientPanel
+          walkInsEnabled={false}
+          phoneFromFrontdesk={frontdeskPhone}
+          onClose={() => { setShowBook(false); setFrontdeskPhone(""); }}
+          onSelectClient={(id) => { setShowBook(false); setFrontdeskPhone(""); navigate(`/booking/new?clientId=${id}`); }}
+          onWalkIn={() => setShowBook(false)}
+        />
+      )}
+      {sheet === "clients" && <ClientLookupSheet onClose={() => setSheet(null)} />}
+      {sheet === "voucher" && (
+        <VoucherRedeemSheet onClose={() => setSheet(null)} onRedeemed={(appointmentId) => { setSheet(null); void openTicketById(appointmentId); }} />
+      )}
+      {sheet === "timeclock" && <TimeClockSheet storeId={storeId} onClose={() => { setSheet(null); invalidateBoard(); }} />}
+      {sheet === "manager" && <ManagerPinSheet onClose={() => setSheet(null)} onSuccess={() => { setSheet(null); navigate("/salon-dashboard"); }} />}
+      {posEnabled && (
+        <DayCloseModal open={sheet === "dayclose"} onClose={() => setSheet(null)} storeId={storeId}
+          userName={(user as any)?.firstName || (user as any)?.email || "Staff"} drawerId={drawerId} />
+      )}
+
+      {needsRegisterPicker && <RegisterPicker registers={registerOptions} taken={takenRegisters} onSelect={selectRegister} />}
 
       {assigning && (
         <AssignTechSheet
@@ -472,7 +606,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
       {posEnabled && (
         <OpenRegisterModal
           open={showOpenRegister}
-          onClose={() => { setShowOpenRegister(false); setPendingCheckout(null); }}
+          onClose={() => { markPrompted(); setShowOpenRegister(false); setPendingCheckout(null); }}
           storeId={storeId}
           userName={(user as any)?.firstName || (user as any)?.email || "Staff"}
           drawerId={drawerId}

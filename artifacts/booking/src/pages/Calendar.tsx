@@ -15,7 +15,7 @@ import { useStaffList, useAllStaffAvailability } from "@/hooks/use-staff";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useCalendarSettings, DEFAULT_CALENDAR_SETTINGS } from "@/hooks/use-calendar-settings";
 import { useActiveRegisterId } from "@/hooks/use-registers";
-import { getDeviceId } from "@/lib/device-id";
+import { useStoreNetworkReport } from "@/hooks/use-store-network-report";
 import { useActiveDrawerId } from "@/hooks/use-cash-drawers";
 import { formatInTz, formatStoreDate, getTimezoneAbbr, getNowInTimezone, storeLocalToUtc, isStoreLocalSlotInPast, isSameLocalDay, isSameStoreDay, isOnStoreDate, addStoreDays, toLocalDateStringInTz } from "@/lib/timezone";
 import { addMinutes, format } from "date-fns";
@@ -365,27 +365,8 @@ export default function Calendar() {
     resetRegister();
   };
 
-  // Reports this terminal's IP so /kiosk and /frontdesk can optionally be
-  // restricted to the salon's own network (Kiosk Settings). Only the first
-  // device to ever report for a store becomes the trusted "anchor" — see
-  // lib/salonNetworkGuard.ts — so this is safe to fire from every /calendar
-  // session unconditionally; it's a no-op for any device that isn't the
-  // anchor. Fires once on load, then keeps the anchor's IP fresh for as long
-  // as /calendar stays open (which is normally all day).
-  useEffect(() => {
-    if (!selectedStore?.id) return;
-    const report = () => {
-      fetch("/api/store-network/report", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deviceId: getDeviceId() }),
-      }).catch(() => {});
-    };
-    report();
-    const iv = setInterval(report, 10 * 60_000);
-    return () => clearInterval(iv);
-  }, [selectedStore?.id]);
+  // Keeps this terminal's IP registered so /kiosk and /frontdesk can be limited to the salon's network.
+  useStoreNetworkReport(selectedStore?.id);
 
   const storeNow = getNowInTimezone(timezone);
   const [currentDate, setCurrentDate] = useState(storeNow);
@@ -5137,7 +5118,7 @@ function TurnPageModal({
   );
 }
 
-function TimeClockSheet({ storeId, onClose }: { storeId: number; onClose: () => void }) {
+export function TimeClockSheet({ storeId, onClose }: { storeId: number; onClose: () => void }) {
   const { pick } = useLanguage();
   const queryClient = useQueryClient();
   const { selectedStore: _tcStore } = useSelectedStore();
@@ -9764,7 +9745,7 @@ function ClientDepositsTab({ clientId, appointments }: { clientId: number; appoi
   );
 }
 
-function ClientLookupSheet({ onClose }: { onClose: () => void }) {
+export function ClientLookupSheet({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { selectedStore } = useSelectedStore();
@@ -10337,7 +10318,7 @@ function ClientLookupSheet({ onClose }: { onClose: () => void }) {
 // portion — see generateVoucherCode in stripeWebhook.ts); the lookup itself
 // is scoped server-side to the staff's own store, so a code typed here can
 // never resolve to a different store's voucher.
-function VoucherRedeemSheet({ onClose, onRedeemed }: { onClose: () => void; onRedeemed: (appointmentId: number) => void }) {
+export function VoucherRedeemSheet({ onClose, onRedeemed }: { onClose: () => void; onRedeemed: (appointmentId: number) => void }) {
   const [digits, setDigits] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -10478,7 +10459,7 @@ function VoucherRedeemSheet({ onClose, onRedeemed }: { onClose: () => void; onRe
 // per-staff `staff_pins` system used for timeclock).
 const DEFAULT_MANAGER_PIN = "2026";
 
-function ManagerPinSheet({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+export function ManagerPinSheet({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const [digits, setDigits] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Clock } from "lucide-react";
 import { formatElapsed } from "./ticketDraft";
-import { BASE_H, BASE_W, GAP, computeTechGrid } from "./techLayout";
+import { BASE_H, GAP, computeTechRows } from "./techLayout";
 import type { BoardTicket, TechDayStats, TurnTech } from "./nailApi";
 
 type Status = "in-service" | "available" | "break" | "off";
@@ -63,26 +63,13 @@ export function TechCards({ techs, tickets, stats, loading }: { techs: TurnTech[
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const grid = computeTechGrid(cards.length, box.w, box.h);
-
-  const count = (s: Status) => cards.filter((c) => c.status === s).length;
-  const summary = [
-    count("available") && `${count("available")} available`,
-    count("in-service") && `${count("in-service")} in service`,
-    count("break") && `${count("break")} on break`,
-    count("off") && `${count("off")} not clocked in`,
-  ].filter(Boolean).join("  ·  ");
+  const rows = computeTechRows(box.w, box.h);
 
   return (
     <section className="work-area" data-testid="nail-techs">
      <div className="tech-panel">
-      <div className="checkin-board-header">
-        <h1>Technicians</h1>
-        <p>{loading ? "Loading…" : summary || "No technicians yet"}</p>
-      </div>
       <div className="tech-stage" ref={stageRef}>
-        <div className="tech-grid" data-cols={grid.cols} data-scale={grid.scale.toFixed(2)}
-          style={{ gridTemplateColumns: `repeat(${grid.cols}, ${BASE_W * grid.scale}px)`, gap: GAP }}>
+        <div className="tech-grid" data-scale={rows.scale.toFixed(2)} style={{ gap: GAP }}>
           {cards.map(({ t, current, queue, status, nextUp, stats: st }, i) => {
             const color = t.color || "#454c56";
             const doneAt = current ? new Date(current.startedAt ?? current.date).getTime() + current.duration * 60_000 : null;
@@ -90,9 +77,9 @@ export function TechCards({ techs, tickets, stats, loading }: { techs: TurnTech[
             const done = st?.doneToday ?? 0;
             const inLine = status !== "off" && status !== "break" ? (t.turnPosition ?? i) + 1 : null;
             return (
-              <div key={t.id} className="tech-slot" style={{ width: BASE_W * grid.scale, height: BASE_H * grid.scale }}>
+              <div key={t.id} className="tech-slot" style={{ height: BASE_H * rows.scale }}>
                 <div className={`tech-card tech-${status}`} data-testid={`nail-tech-card-${t.id}`} data-status={status}
-                  style={{ width: BASE_W, height: BASE_H, transform: `scale(${grid.scale})` }}>
+                  style={{ width: rows.designW, height: BASE_H, transform: `scale(${rows.scale})` }}>
                   <div className="tech-card-head" style={{ borderLeftColor: color }}>
                     <span className="tech-avatar" style={{ borderColor: color }}>
                       {t.avatarUrl ? <img src={t.avatarUrl} alt="" /> : initials(t.name)}
@@ -105,6 +92,7 @@ export function TechCards({ techs, tickets, stats, loading }: { techs: TurnTech[
                   </div>
 
                   <div className="tech-card-body">
+                   <div className="tech-main">
                     {current ? (
                       <>
                         <div className="tech-now">
@@ -129,6 +117,8 @@ export function TechCards({ techs, tickets, stats, loading }: { techs: TurnTech[
                       <div className="tech-idle">With a client</div>
                     )}
 
+                   </div>
+                   <div className="tech-side">
                     {next && (
                       <div className="tech-queue">
                         <span>{queue.length === 1 ? "1 waiting" : `${queue.length} waiting`}</span>
@@ -139,6 +129,7 @@ export function TechCards({ techs, tickets, stats, loading }: { techs: TurnTech[
                     {status !== "off" && (
                       <div className="tech-done">{done === 0 ? "No clients yet today" : done === 1 ? "1 client today" : `${done} clients today`}</div>
                     )}
+                   </div>
                   </div>
                 </div>
               </div>

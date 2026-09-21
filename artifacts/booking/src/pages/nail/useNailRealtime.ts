@@ -14,6 +14,8 @@ export function useNailRealtime(opts: {
   refreshAll: () => void;
   /** Digits the customer typed on the paired /frontdesk tablet. */
   onFrontdeskPhone?: (digits: string) => void;
+  /** A print job the server pushed (the kiosk's check-in ticket) — print it if a printer is connected. */
+  onPrintJob?: (job: any) => void;
 }): boolean {
   const queryClient = useQueryClient();
   const [connected, setConnected] = useState(false);
@@ -59,6 +61,9 @@ export function useNailRealtime(opts: {
               break;
             case "settings_changed":
               cb.current.refreshAll();
+              break;
+            case "kiosk_print_job":
+              cb.current.onPrintJob?.(data);
               break;
             case "kiosk_checkout_phone_result":
               if (typeof data.phone === "string") {
