@@ -70,6 +70,9 @@ export interface TurnTech {
   paused?: boolean;
   /** Turns taken so far today. */
   turnCount?: number;
+  /** available | busy | break | off — and when the tech entered it (stored on the server; drives the live timer). */
+  availabilityState?: "available" | "busy" | "break" | "off";
+  stateSince?: string | null;
   turnPosition?: number;
   exclusionReasons?: string[];
   currentStatus?: "available" | "busy" | "on_break";

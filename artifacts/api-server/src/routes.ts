@@ -140,6 +140,7 @@ import { setupNotificationServer, broadcastNotification, broadcastSyncEvent } fr
 import { broadcastAppointmentStatus, registerSseClient } from "./lib/appointmentEvents";
 import { normalizePersonName } from "./lib/personName";
 import { checkQuickAreaCodes, readQuickAreaCodes } from "@shared/areaCodes";
+import { syncTechAvailability, techStateOf } from "./lib/techAvailability";
 import { payoutRedeemedVoucher } from "./lib/dealVoucherPayouts";
 import { awardLoyaltyForCompletion } from "./lib/loyaltyAward";
 import { setupAiReceptionistRoutes } from "./routes/aiReceptionist";
@@ -690,6 +691,12 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
         turnPosition: memberDequePos,
         turnCount: turnCountMap.get(member.id) ?? 0,
         currentStatus,
+        // Techs-page timer: when they entered their current state. Only trusted while the stored state still matches.
+        availabilityState: techStateOf({ clockedIn: isClockedIn, paused, currentStatus }),
+        stateSince:
+          (member as any).availabilitySince && (member as any).availabilityState === techStateOf({ clockedIn: isClockedIn, paused, currentStatus })
+            ? new Date((member as any).availabilitySince).toISOString()
+            : null,
         shortTurnProtected:
           shortTurnProtectedId !== null &&
           member.id === shortTurnProtectedId &&
@@ -877,7 +884,11 @@ async function handleTurnCheckout(storeId: number, staffId: number, totalPaid: n
 
 function broadcastTurnEligibilityChanged(storeId: number | null | undefined) {
   if (!storeId) return;
-  broadcastNotification({ type: "turn_eligibility_changed", storeId });
+  // Stamp each tech's state timer (free / with a client / break / off) BEFORE telling the screens, so the refetch they do
+  // on this message already sees the new "since" time. Never blocks or breaks the broadcast.
+  void syncTechAvailability(storeId, getTurnEligibility as any)
+    .catch((err) => console.error("[techAvailability] sync failed:", err?.message))
+    .finally(() => broadcastNotification({ type: "turn_eligibility_changed", storeId }));
 }
 
 /**

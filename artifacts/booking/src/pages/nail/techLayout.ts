@@ -14,7 +14,7 @@ export const GAP = 12;
 export const CARDS_PER_COLUMN = 3;
 const MAX_SCALE = 1.7;
 const DESIGN: Record<CardMode, { w: number; h: number }> = {
-  row: { w: 560, h: 150 },
+  row: { w: 720, h: 150 },
   stack: { w: 300, h: 200 },
 };
 

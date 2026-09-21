@@ -483,6 +483,9 @@ export const staff = pgTable("staff", {
   color: text("color").default("#3b82f6"),
   avatarUrl: text("avatar_url"),
   avatarThumbUrl: text("avatar_thumb_url"),
+  /** Techs-page timer: their current state ('available' | 'busy' | 'break' | 'off') and when they entered it. */
+  availabilityState: text("availability_state"),
+  availabilitySince: timestamp("availability_since", { withTimezone: true }),
   commissionEnabled: boolean("commission_enabled").default(false),
   commissionRate: decimal("commission_rate", { precision: 5, scale: 2 }).default("0"),
   productCommissionRate: decimal("product_commission_rate", { precision: 5, scale: 2 }).default("0"),

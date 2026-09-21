@@ -1,6 +1,4 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Clock } from "lucide-react";
-import { formatElapsed } from "./ticketDraft";
 import { GAP, computeTechLayout } from "./techLayout";
 import type { BoardTicket, SalonGlance, TechDayStats, TurnTech } from "./nailApi";
 
@@ -19,16 +17,25 @@ function statusOf(t: TurnTech, current: BoardTicket | undefined, assumedIn: bool
   return "available";
 }
 
-/** "Free for 12 min" — measured from their last finished client, or from clock-in if they haven't had one. */
-function freeFor(stats: TechDayStats | undefined, now: number): string {
-  const since = Math.max(
-    stats?.lastFinishedAt ? +new Date(stats.lastFinishedAt) : 0,
-    stats?.clockedInAt ? +new Date(stats.clockedInAt) : 0,
-  );
-  if (!since) return "Ready for a client";
-  const mins = Math.max(0, Math.floor((now - since) / 60_000));
-  if (mins < 1) return "Just became free";
-  return `Free for ${formatElapsed(new Date(since).toISOString(), now)}`;
+const TIMER_LABEL: Record<Exclude<Status, "off">, string> = { available: "FREE", "in-service": "IN CHAIR", break: "ON BREAK" };
+
+/**
+ * HH:MM:SS since a moment the SERVER recorded (so it is the same on every POS station and never restarts when a screen is
+ * left and reopened). Ticks once a second on this device — no traffic — against the server's clock.
+ */
+function LiveTimer({ since, offsetMs, testId }: { since: number | null; offsetMs: number; testId: string }) {
+  const [now, setNow] = useState(() => Date.now() + offsetMs);
+  useEffect(() => {
+    const tick = () => setNow(Date.now() + offsetMs);
+    tick();
+    const iv = setInterval(tick, 1000);
+    document.addEventListener("visibilitychange", tick); // a tablet that slept shows the right time the moment it wakes
+    return () => { clearInterval(iv); document.removeEventListener("visibilitychange", tick); };
+  }, [offsetMs]);
+  if (since == null) return <span className="tech-timer tech-timer-unknown" data-testid={testId}>--:--:--</span>;
+  const secs = Math.max(0, Math.floor((now - since) / 1000));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return <span className="tech-timer" data-testid={testId} data-seconds={secs}>{pad(Math.floor(secs / 3600))}:{pad(Math.floor((secs % 3600) / 60))}:{pad(secs % 60)}</span>;
 }
 
 const money = (n: number) => `$${n.toFixed(n % 1 === 0 ? 0 : 2)}`;
@@ -81,9 +88,21 @@ export function TechCards({ techs, tickets, stats, glance, waiting, loading, clo
         const mine = tickets.filter((x) => x.staff?.id === t.id);
         const current = mine.find((x) => x.status === "started");
         const queue = mine.filter((x) => x.status === "confirmed").sort((a, b) => +new Date(a.date) - +new Date(b.date));
-        return { t, current, queue, status: statusOf(t, current, assumedIn.includes(t.id)), nextUp: t.id === nextUpId, stats: stats.find((s) => s.staffId === t.id) };
+        const st = stats.find((s) => s.staffId === t.id);
+        const status = statusOf(t, current, assumedIn.includes(t.id));
+        const stateSince = t.stateSince ? +new Date(t.stateSince) : null;
+        // The server's stored time wins. Before it has one (first minute after a change, older data): the ticket's start,
+        // else the day's clock-in / last checkout, else — for a tech we just set in on this screen — right now.
+        const since =
+          status === "in-service" ? (current ? +new Date(current.startedAt ?? current.date) : stateSince)
+          : status === "off" ? null
+          : stateSince ?? (status === "available" && (st?.lastFinishedAt || st?.clockedInAt)
+              ? Math.max(st?.lastFinishedAt ? +new Date(st.lastFinishedAt) : 0, st?.clockedInAt ? +new Date(st.clockedInAt) : 0)
+              : assumedIn.includes(t.id) ? Date.now() + clockOffsetMs : null);
+        return { t, current, queue, status, nextUp: t.id === nextUpId, stats: st, since };
       })
       .sort((a, b) => Number(a.status === "off") - Number(b.status === "off"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [techs, tickets, stats, assumedIn]);
 
   // Fit the cards to the space: few techs → big cards, many → smaller, no scrolling until it stops being readable.
@@ -107,7 +126,7 @@ export function TechCards({ techs, tickets, stats, glance, waiting, loading, clo
       <div className="tech-stage" ref={stageRef}>
         <div className="tech-grid" data-scale={layout.scale.toFixed(2)} data-cols={layout.cols} data-mode={layout.mode}
           style={{ gap: GAP, gridTemplateRows: `repeat(${layout.rows}, ${layout.cardH * layout.scale}px)`, gridTemplateColumns: `repeat(${layout.cols}, ${layout.cardW * layout.scale}px)` }}>
-          {cards.map(({ t, current, queue, status, nextUp, stats: st }, i) => {
+          {cards.map(({ t, current, queue, status, nextUp, stats: st, since }, i) => {
             const color = t.color || "#454c56";
             const doneAt = current ? new Date(current.startedAt ?? current.date).getTime() + current.duration * 60_000 : null;
             const next = queue[0];
@@ -132,30 +151,20 @@ export function TechCards({ techs, tickets, stats, glance, waiting, loading, clo
 
                   <div className="tech-card-body">
                    <div className="tech-main">
-                    {current ? (
-                      <>
-                        <div className="tech-now">
-                          <strong>{current.client.name}</strong>
-                          <span>{current.service.name}{current.addons.length > 0 ? ` +${current.addons.length}` : ""}</span>
-                        </div>
-                        <div className="tech-meta">
-                          <Clock size={12} /> In chair {formatElapsed(current.startedAt ?? current.date, now)}
-                          {doneAt != null && <> · done ~{fmtTime(doneAt)}</>}
-                        </div>
-                      </>
-                    ) : status === "available" ? (
-                      <div className="tech-free">
-                        <strong>{freeFor(st, now)}</strong>
-                        {nextUp && <span className="tech-nextup">NEXT UP</span>}
+                    {status !== "off" ? (
+                      <div className="tech-clock" data-status={status}>
+                        <span className="tech-clock-label">{TIMER_LABEL[status]}{status === "available" && nextUp ? <b className="tech-nextup">NEXT UP</b> : null}</span>
+                        <LiveTimer since={since} offsetMs={clockOffsetMs} testId={`nail-tech-timer-${t.id}`} />
                       </div>
-                    ) : status === "break" ? (
-                      <div className="tech-idle">Skipped in the turn order until back</div>
-                    ) : status === "off" ? (
-                      <div className="tech-idle">Clock in to join the turn order</div>
                     ) : (
-                      <div className="tech-idle">With a client</div>
+                      <div className="tech-idle">Not clocked in — tap to set them in</div>
                     )}
-
+                    {current && (
+                      <div className="tech-now">
+                        <strong>{current.client.name}</strong>
+                        <span>{current.service.name}{current.addons.length > 0 ? ` +${current.addons.length}` : ""}{doneAt != null ? ` · done ~${fmtTime(doneAt)}` : ""}</span>
+                      </div>
+                    )}
                    </div>
                    <div className="tech-side">
                     {next && (
