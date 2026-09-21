@@ -27,6 +27,7 @@
  *   - Every rejection and every score component is logged for audit.
  */
 
+import { getBufferMinutes, clashesWithBuffer } from "../lib/appointmentBuffer";
 import { db } from "../db";
 import {
   staff,
@@ -153,6 +154,9 @@ export async function autoAssignTechnician(
   console.log(
     `${logPrefix} Request: date=${date.toISOString()} duration=${duration}min`
   );
+
+  // Calendar Settings → "Time between appointments" (hard conflict window below)
+  const bufferMin = await getBufferMinutes(storeId);
 
   // Pre-compute time boundary values once
   const appointmentEnd = new Date(date.getTime() + duration * 60_000);
@@ -303,11 +307,9 @@ export async function autoAssignTechnician(
     // A direct conflict exists when the proposed time window overlaps with any
     // existing appointment time window for this technician.
     // Overlap condition: newStart < existingEnd AND newEnd > existingStart
-    const hardConflict = memberApts.find((apt) => {
-      const aptStart = new Date(apt.date);
-      const aptEnd = new Date(aptStart.getTime() + apt.duration * 60_000);
-      return date < aptEnd && appointmentEnd > aptStart;
-    });
+    const hardConflict = memberApts.find((apt) =>
+      clashesWithBuffer(new Date(apt.date), apt.duration, date, appointmentEnd, bufferMin),
+    );
 
     if (hardConflict) {
       const conflictStart = new Date(hardConflict.date).toISOString();

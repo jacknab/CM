@@ -149,6 +149,7 @@ import usageRouter from "./routes/usage";
 import { autoAssignTechnician } from "./services/appointment-assignment";
 import { autoAssignResource } from "./services/resource-assignment";
 import * as nailTickets from "./lib/nailTickets";
+import { getBufferMinutes, normalizeBufferMinutes, clashesWithBuffer } from "./lib/appointmentBuffer";
 import { getRequiredResourceType } from "@shared/resourceMatching";
 import { ACTIVE_APPOINTMENT_STATUSES, normalizeAppointmentStatus, appointmentStatusEnum } from "@shared/appointment-status";
 import { toE164US } from "./lib/phoneUtils";
@@ -1621,6 +1622,9 @@ export async function registerRoutes(
         "/api/business-hours",
         // Walk-in queue & turn management
         "/api/turn",
+        // Catalog Packages & marketplace Deals — a suspended store can't manage or sell them
+        "/api/packages",
+        "/api/deals",
       ];
       const isSuspendedBlocked = SUSPENDED_BLOCKED_PREFIXES.some((p) => req.originalUrl.startsWith(p));
 
@@ -4841,6 +4845,7 @@ If you have any questions, please contact your administrator.
 
       const calSettings = await storage.getCalendarSettings(storeId);
       const slotInterval = calSettings?.timeSlotInterval || 15;
+      const bufferMs = normalizeBufferMinutes((calSettings as any)?.bufferMinutes) * 60_000;
 
       // Get actual business hours for the specific date
       const businessHours = await storage.getBusinessHours(storeId);
@@ -4921,7 +4926,7 @@ If you have any questions, please contact your administrator.
               if (apt.status === "no_show") continue;
               const aptStart = new Date(apt.date);
               const aptEnd = new Date(aptStart.getTime() + apt.duration * 60000);
-              if (slotStart < aptEnd && slotEnd > aptStart) {
+              if (slotStart.getTime() < aptEnd.getTime() + bufferMs && slotEnd.getTime() + bufferMs > aptStart.getTime()) {
                 hasConflict = true;
                 break;
               }
@@ -5505,15 +5510,15 @@ If you have any questions, please contact your administrator.
       if (input.staffId && input.storeId) {
         const appointmentEnd = new Date(input.date.getTime() + (input.duration || 30) * 60000);
         const existingApts = await storage.getAppointments({ storeId: input.storeId });
+        const bufferMin = await getBufferMinutes(input.storeId);
         const hasConflict = existingApts.some(apt => {
           if (apt.staffId !== input.staffId) return false;
           if (apt.status === "cancelled") return false;
           // Allow filling a no-show slot — the no-show appointment itself would
           // otherwise conflict with the replacement booking at the same time.
           if (isNoShowFill && apt.status === "no_show") return false;
-          const aptStart = new Date(apt.date);
-          const aptEnd = new Date(aptStart.getTime() + apt.duration * 60000);
-          return input.date < aptEnd && appointmentEnd > aptStart;
+          // Calendar Settings → "Time between appointments" is held after each booking.
+          return clashesWithBuffer(new Date(apt.date), apt.duration, input.date, appointmentEnd, bufferMin);
         });
         if (hasConflict) {
           return res.status(409).json({ message: "This staff member already has an appointment at that time" });
@@ -6203,9 +6208,19 @@ If you have any questions, please contact your administrator.
             timeSlotInterval: z.union([z.literal(5), z.literal(10), z.literal(15), z.literal(20), z.literal(30), z.literal(60)]).optional() as any,
             nonWorkingHoursDisplay: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional() as any,
             bookingWindowHours: z.coerce.number().int().min(0).max(720).optional() as any,
+            bufferMinutes: z.union([z.literal(0), z.literal(5), z.literal(10), z.literal(15)]).optional() as any,
          }) as any)
          .parse(req.body);
       const settings = await storage.upsertCalendarSettings(storeId, validatedInput);
+      // The buffer changes which times are open, so drop the precomputed slot / availability caches.
+      if ((validatedInput as any).bufferMinutes !== undefined || (validatedInput as any).timeSlotInterval !== undefined) {
+        try {
+          const { enqueueSlotRebuild, buildDateRange } = await import("./lib/slotQueue");
+          void enqueueSlotRebuild(storeId, buildDateRange(14), "schedule_updated");
+          const { invalidateAvailabilityForStore } = await import("./lib/availabilityCache");
+          void invalidateAvailabilityForStore(storeId);
+        } catch { /* caches are best-effort */ }
+      }
       return res.json(settings);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -7834,6 +7849,7 @@ If you have any questions, please contact your administrator.
       const businessStartHour = 9;
       const businessEndHour = 18;
       const slotInterval = calSettings?.timeSlotInterval || 15;
+      const bufferMs = normalizeBufferMinutes((calSettings as any)?.bufferMinutes) * 60_000;
 
       const hours = await storage.getBusinessHours(store.id);
       const dayStartLocal = fromZonedTime(new Date(`${date}T00:00:00`), tz);
@@ -7916,7 +7932,7 @@ If you have any questions, please contact your administrator.
               if (apt.status === "cancelled") continue;
               const aptStart = new Date(apt.date);
               const aptEnd = new Date(aptStart.getTime() + apt.duration * 60000);
-              if (slotStart < aptEnd && slotEnd > aptStart) {
+              if (slotStart.getTime() < aptEnd.getTime() + bufferMs && slotEnd.getTime() + bufferMs > aptStart.getTime()) {
                 hasConflict = true;
                 break;
               }
@@ -8013,6 +8029,7 @@ If you have any questions, please contact your administrator.
       const tz = store.timezone || "UTC";
       const calSettings = await storage.getCalendarSettings(store.id);
       const slotInterval = calSettings?.timeSlotInterval || 15;
+      const bufferMs = normalizeBufferMinutes((calSettings as any)?.bufferMinutes) * 60_000;
       const businessHours = await storage.getBusinessHours(store.id);
       const daysInMonth = new Date(year, month, 0).getDate();
 
@@ -8130,7 +8147,7 @@ If you have any questions, please contact your administrator.
                 if (apt.status === "cancelled") continue;
                 const aptStart = new Date(apt.date);
                 const aptEnd = new Date(aptStart.getTime() + apt.duration * 60000);
-                if (slotStart < aptEnd && slotEnd > aptStart) {
+                if (slotStart.getTime() < aptEnd.getTime() + bufferMs && slotEnd.getTime() + bufferMs > aptStart.getTime()) {
                   hasConflict = true;
                   break;
                 }

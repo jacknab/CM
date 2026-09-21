@@ -18,6 +18,7 @@ import { SLOT_QUEUE_NAME, type SlotJobData } from "../lib/slotQueue";
 import { storage } from "../storage";
 import { db } from "../db";
 import { locations } from "@shared/schema";
+import { normalizeBufferMinutes } from "../lib/appointmentBuffer";
 
 let _worker: Worker<SlotJobData> | null = null;
 
@@ -40,6 +41,8 @@ async function buildSlotsForDate(
   // live computation; 30 min precomputed grid is sufficient and keeps the cache
   // payload small).
   const slotInterval: number = calSettings?.timeSlotInterval ?? 30;
+  // Calendar Settings → "Time between appointments": a tech is not free to START until this long after a booking ends.
+  const bufferMs = normalizeBufferMinutes((calSettings as any)?.bufferMinutes) * 60_000;
 
   // Day-of-week check — use salon timezone, not server local time
   const dayOfWeek = parseInt(formatInTimeZone(new Date(`${date}T12:00:00`), tz, "i"), 10) % 7;
@@ -103,8 +106,8 @@ async function buildSlotsForDate(
         for (const apt of dayAppointments) {
           if (apt.staffId !== staffMember.id || apt.status === "cancelled") continue;
           const aptStart = new Date(apt.date);
-          const aptEnd   = new Date(aptStart.getTime() + apt.duration * 60_000);
-          // Slot start falls inside an existing appointment → blocked
+          const aptEnd   = new Date(aptStart.getTime() + apt.duration * 60_000 + bufferMs);
+          // Slot start falls inside an existing appointment (plus its buffer) → blocked
           if (slotStart >= aptStart && slotStart < aptEnd) {
             hasConflict = true;
             break;

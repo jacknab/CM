@@ -27,6 +27,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { getBufferMinutes, clashesWithBuffer } from "./lib/appointmentBuffer";
 import { db } from "./db";
 import { appointments } from "@shared/schema";
 import { and, eq, gte, lte, ne, sql } from "drizzle-orm";
@@ -202,13 +203,15 @@ export async function validateBookingSlot(
 
   const dayAppts = await storage.getAppointments(queryParams);
   const newEnd   = endTime;
+  // Calendar Settings → "Time between appointments": the technician is held this long after each booking.
+  const bufferMin = await getBufferMinutes(storeId);
 
   const conflict = dayAppts.find((a) => {
     if (a.id === excludeAppointmentId) return false;
     if (String(a.status ?? "").toLowerCase() === "cancelled") return false;
     if (!staffId && a.staffId !== null) return false;
     // RULE: appointment.duration (incl. addons) — never service.duration
-    return overlaps(new Date(a.date), (a.duration ?? 60) as number, startTime, newEnd);
+    return clashesWithBuffer(new Date(a.date), (a.duration ?? 60) as number, startTime, newEnd, bufferMin);
   });
 
   if (conflict) {
@@ -320,6 +323,8 @@ export async function atomicCreateBooking(
   const dateKey  = toSalonDateKey(newStart, tz);
   const { dayStart, dayEnd } = salonDayBoundaries(dateKey, tz);
 
+  const bufferMin = await getBufferMinutes(input.storeId);
+
   const run = async (tx: DbTx) => {
     // Serialize all writers for this (store, staff) pair. Without this, two
     // concurrent transactions under READ COMMITTED can both run the overlap
@@ -360,12 +365,7 @@ export async function atomicCreateBooking(
     const conflict = existing.find((a) => {
       if (String(a.status ?? "").toLowerCase() === "cancelled") return false;
       // RULE: appointment.duration (incl. addons) — never service.duration
-      return overlaps(
-        new Date(a.date as Date),
-        (a.duration ?? 60) as number,
-        newStart,
-        newEnd,
-      );
+      return clashesWithBuffer(new Date(a.date as Date), (a.duration ?? 60) as number, newStart, newEnd, bufferMin);
     });
 
     if (conflict) {
@@ -497,6 +497,7 @@ export async function atomicRescheduleBooking(
   const newEnd   = new Date(newStart.getTime() + input.durationMinutes * 60_000);
   const dateKey  = toSalonDateKey(newStart, tz);
   const { dayStart, dayEnd } = salonDayBoundaries(dateKey, tz);
+  const bufferMin = await getBufferMinutes(input.storeId);
 
   try {
     return await db.transaction(async (tx) => {
@@ -521,12 +522,7 @@ export async function atomicRescheduleBooking(
       const conflict = existing.find((a) => {
         if (String(a.status ?? "").toLowerCase() === "cancelled") return false;
         // RULE: appointment.duration (incl. addons) — never service.duration
-        return overlaps(
-          new Date(a.date as Date),
-          (a.duration ?? 60) as number,
-          newStart,
-          newEnd,
-        );
+        return clashesWithBuffer(new Date(a.date as Date), (a.duration ?? 60) as number, newStart, newEnd, bufferMin);
       });
 
       if (conflict) {

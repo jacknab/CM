@@ -8,6 +8,8 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+---
+
 ## 2026-09-20 — Stripe M2 / Terminal card-payment path: audit findings (items 1-9 FIXED the same day; see status below)
 
 **STATUS (same day):** items 1-9 below were fixed — server (`routes/stripeConnect.ts` capture/create/location, `lib/terminalPaymentMath.ts`, Connect webhook `payment_intent.succeeded`), checkout sheet (`Calendar.tsx`), owner app (`lib/captureRecovery.ts`, `useTerminalPayment.ts`, `useReaderDiscovery.ts`, `M2PaymentOverlay.tsx`, `ReaderStatusModal.tsx`) — and also brought in line with Stripe's docs (re-use the same PaymentIntent after a decline/timeout, show reader prompts + update progress). **Still open:** (a) the Stripe dashboard's Connect webhook endpoint must be subscribed to `payment_intent.succeeded` for the reconciliation handler to fire; (b) refunds/disputes of POS payments are still not reflected on appointments; (c) the app bundles Terminal Android SDK 5.5.1 — `@stripe/stripe-terminal-react-native@0.0.1-beta.33` bundles 5.8.0, which fixes "mobile reader software updates timing out on slow networks" (relevant to a new M2's first connect), but upgrading needs a lockfile + SDK patch change and a device test; (d) a group-pay ticket paid by M2 is recorded on the primary appointment at capture and corrected to each ticket's share when staff complete it.
@@ -23,25 +25,6 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 8. **Reader-registration UI/endpoint don't fit M2:** `ReaderStatusModal.tsx:120-146,234` + `stripeConnect.ts:1235` use a `registration_code` (for internet readers); Bluetooth M2 readers are attached via `connectReader({locationId})`, which the app already does. Confirm against Stripe docs, then remove or relabel.
 9. **Placeholder Terminal Location address** (`stripeConnect.ts:829` and `:1271`: "123 Main St / Unknown / CA / 00000") is created and cached forever if the store address is blank; it is never updated after the owner fixes the address.
 **Why not fixed now:** the task was to audit; items 1-3 touch payments/payroll data and need a decision plus an on-device test with a real M2 reader.
-
----
-
-## 2026-09-18 — `/checkin-kiosk`'s 3 "real screenshot" images are 404 in R2, no replacement exists
-
-**File:** `php/checkin-kiosk/default.php:983-1035` (SCREEN 3, 4, 6 of the interactive kiosk-flow demo)
-**Found while:** working through a real Semrush site audit's "broken internal images" finding.
-**Issue:** Three `<img>` tags point at `https://certxa.com/api/r2/site-assets/{uuid}.webp` object keys that no longer exist in R2 (confirmed 404 directly). These are meant to be real product screenshots (category selection, service selection, check-in confirmation) — checked `site_assets` in the DB for a `kiosk-*` replacement; only one exists (`kiosk-screen.png`) and it isn't referenced anywhere on this page, so there's no already-uploaded substitute to swap in.
-**What was done:** added `onerror="this.style.display='none';"` to all three `<img>` tags so real visitors see a clean gap instead of a broken-image icon. This does not fix the underlying gap.
-**Why not fixed further:** the actual fix is new screenshots of the real kiosk product flow, re-uploaded to R2 and re-linked here — that needs someone to actually capture them, not a code change.
-
----
-
-## 2026-09-16 — `bufferTime` (buffer between appointments) has no backing field anywhere
-
-**Files:** `artifacts/booking/src/hooks/use-onboarding-session.ts` (the `buffer_time` onboarding-chat step collects `a.bufferTime` but it is no longer sent anywhere as of this session's fix — see below); `artifacts/booking/src/pages/setup/BookingCalendarFlow.tsx:69,44-46` — a separate, non-chat setup-hub flow that independently PATCHes `bufferTime` to `/api/calendar-settings` the same broken way, and reads it back the same way on load.
-**Found while:** fixing the onboarding-chat "save calendar settings" step, which was POSTing to a path with no POST handler and sending field names (`slotInterval`, `bufferTime`, `allowOnlineBooking`, `maxAdvanceDays`) that don't match `/api/calendar-settings`'s real PUT schema (`timeSlotInterval`, `startOfWeek`, `nonWorkingHoursDisplay`, `allowBookingOutsideHours`, ...). Fixed in this session: `slotInterval`→`timeSlotInterval` via `PUT /api/calendar-settings`; `allowOnlineBooking`/`maxAdvanceDays` now correctly route to `PUT /api/booking-policies` as `onlineBookingMode`/`advanceBookingEnabled`/`advanceBookingMonths` (with boolean→enum and days→months conversion).
-**Issue:** `bufferTime` ("buffer time between appointments") has no matching column anywhere — grepped `shared/schema.ts` and all of `api-server/src` for "buffer" (case-insensitive); the only hits are unrelated (SMS travel-time buffer, hardcoded appointment-conflict constants, Node `Buffer`, audio/image buffers). This setting was never implemented in the schema, in either onboarding flow. It's now silently dropped from the onboarding-chat payload (rather than sent to a path that ignores it) but the underlying gap — no way to actually save a buffer-between-appointments setting — still exists, and `BookingCalendarFlow.tsx` still sends/reads it the old broken way.
-**Why not fixed now:** adding real backing for this (a new column + read/write wiring in two separate flows) is schema/feature work, not a wiring fix — needs a product decision on where it belongs (`calendarSettings` table vs. elsewhere) before implementing.
 
 ---
 
@@ -63,36 +46,13 @@ So Stripe would charge $14.95 for a plan the DB and billing UI advertise at $9, 
 
 ---
 
-## 2026-09-15 — Two divergent, independent commission calculations that can silently disagree
+## 2026-09-15 — Two different commission calculations that can show different amounts for the same ticket
 
-**Files:** `artifacts/api-server/src/lib/commissionAccrual.ts:33-73` (fires from `storage.ts`'s `updateAppointment` on every completion) vs. `artifacts/api-server/src/routes/contractorPayouts.ts:168-169`, `artifacts/api-server/src/routes/payrollRuns.ts:193`, `artifacts/booking/src/pages/CommissionReport.tsx:22-28`, `artifacts/booking/src/pages/SalonEarningsReport.tsx:300-317`
-**Found while:** confirming that a voucher-covered ticket still earns the technician full commission (it does — see below), which required understanding how commission is actually computed.
-**Issue:** There are two separate, independently-computed commission bases that never reconcile:
-1. `recordCommissionAccrual` writes a row to `contractor_commissions`/`staff_commission_accruals` using the appointment's frozen `servicePrice` (the catalog price, snapshotted once via `commissionSnapshot.ts`) × `commissionRate` — completely unaffected by any checkout-time discount or tender.
-2. Every place that actually *shows or pays* commission — real contractor payout runs, draft payroll lines, and both commission-facing report pages — ignores that accrual table entirely and recomputes independently from `(appointment.totalPaid − tipAmount) × commissionRate`.
-
-Because #2 is driven by `totalPaid` (the sum of checkout tenders), a manual POS discount already silently reduces what these real paths show as commissionable — while accrual path #1 would still show the full catalog-price commission for the same appointment. The two numbers can diverge for any discounted ticket, not just voucher ones.
-**Not fixed because:** unifying these (deciding which is authoritative, and whether the accrual table is meant to be replaced by or reconciled with the recompute-from-`totalPaid` paths) is an architectural call, not a drive-by fix — and it predates this session's voucher work entirely. Flagged here because it's directly relevant to a payroll-accuracy question raised this session; worth resolving deliberately rather than picking a winner unprompted.
-
----
-
-## 2026-09-15 — `AccountStatusGate.tsx` — Packages/Deals missing from the suspended-account allowlist
-
-**File:** `artifacts/booking/src/components/AccountStatusGate.tsx:36-46` — `SUSPENDED_ALLOWED_PATHS`
-**Found while:** adding the new `/catalog/deals` page (Groupon-style deals feature) and checking how it should behave under a suspended account, alongside the pre-existing `/catalog/packages`.
-**Issue:** When `accountStatus === "suspended"`, only `/catalog/categories`, `/catalog/services`, `/catalog/addons`, `/catalog/products` (plus clients/reports/account/billing) stay reachable — everything else, including `/catalog/packages`, shows the `SuspendedAccessScreen` instead. This gap already existed for Packages before this session; `/catalog/deals` was added to match the same (arguably incomplete) allowlist rather than unilaterally deciding it should be exempt.
-**Not fixed because:** whether a suspended (non-paying) store should still be able to view/edit Packages and Deals is a product policy call, not something to infer — could go either way (maybe intentionally locked down since packages/deals are marketing surface, not core service delivery like the always-allowed categories/services/addons/products). Flagging for whoever owns that policy to decide, then add both paths to `SUSPENDED_ALLOWED_PATHS` if they should be included.
-
----
-
-## 2026-09-15 — `SalonCard`'s "Open now" badge is never actually true
-
-**File:** `artifacts/marketplace/src/App.tsx` — `SalonCard` component, `{salon.isOpen ? 'Open now' : 'By appointment'}`
-**Found while:** adding a "Nearby salons" section to the salon profile page and checking whether `Salon.isOpen` (used by `SalonCard`'s status badge) is ever actually populated from real hours data before reusing the component.
-**Issue:** `isOpen?: boolean` is declared on the `Salon` type (both `lib/api.ts` and `salonApi.ts`) but no API response ever sets it — `toApiSalon()` never includes an `isOpen` field. So every `SalonCard` renders "By appointment" unconditionally, regardless of the salon's real hours or the current time. Not a false claim (it's a static fallback, not a fabricated "Open now"), but it's dead/misleading UI — the badge implies live status that doesn't exist.
-**Why not fixed now:** `SalonCard` wasn't part of the nearby-salons change (swapped to `FeaturedMarketplaceCard` instead, which has no such badge). Fixing it properly means computing real open/closed state from `salon.hours` + current time server-side or client-side, which is a small but distinct feature, not a one-line fix.
-
-**Update 2026-09-20:** re-checked — marketplace list rows (`SalonRecord`, ~47k scraped salons) carry no hours at all; hours only exist per salon in `salon_google_hours` (detail page). A real "Open now" on cards would need hours joined into the list payload. Cheapest honest options: (a) drop the `isOpen` badge and its ternaries (`App.tsx:244` and `:518`) and the two `isOpen?: boolean` type fields, or (b) add hours to the list query. Not done: it needs a marketplace rebuild/deploy and a product call on (a) vs (b).
+**Plain version:** the app works out "what did the technician earn on this ticket" in two separate places, using different starting amounts.
+- **A — the commission ledger** (`lib/commissionAccrual.ts`, written when a ticket is completed; feeds pending contractor commissions / the reserve model): technician's rate × the **service's catalog price only** (frozen at completion).
+- **B — payroll runs, contractor payout runs, the Commission report and the Salon Earnings report** (`routes/payrollRuns.ts:190-193`, `routes/contractorPayouts.ts:168`, `pages/CommissionReport.tsx`, `pages/SalonEarningsReport.tsx`): technician's rate × **what the client actually paid before discounts** (`totalPaid + discount − tip`), i.e. service + add-ons + extras (and nail-shape/length upcharges), then add-ons are ALSO run through the separate product-commission rate.
+**Example:** Cindy earns 50%. Client pays $65 Gel X + $10 Chrome add-on = $75. A says $32.50; B says $37.50 (plus a product-rate amount on the $10 add-on if she has one). Nail salons hit this most because upcharges and add-ons are common.
+**Not fixed because:** it is a rule decision, not a bug — should commission be on the service price only, or on everything paid (pre-discount)? And should add-ons be paid at the service rate, the product rate, or not at all? Once decided, make A and B call one shared function. (The old worry that a POS discount lowers commission in B is already fixed — B is pre-discount.)
 
 ---
 
@@ -109,3 +69,10 @@ Because #2 is driven by `totalPaid` (the sum of checkout tenders), a manual POS 
 - **`PayoutAccountSettings.tsx`** — confirmed the owner-level Express/OAuth flow is the intended design (only *contractors* moved to Custom accounts; see the stripe-connect-payouts skill).
 - **WebSocket `ERR_NAME_NOT_RESOLVED`** — not a code bug: nginx proxies `/ws` and a fresh HTTP/1.1 upgrade to `/ws/notifications` returns 101 today; it was the tester's environment.
 - **Owner-app WebView reload after login** — `StripeTerminalProvider` is now always mounted (only `TerminalInitializer` waits for login), so the screen tree/WebView is no longer remounted. **Needs an on-device check** (M2 connect + payment still work, no second `/app-login` load) — shipped in the next APK.
+
+## Resolved 2026-09-21
+
+- **Kiosk demo images** — the three dead `<img>` records (screens 3, 4, 6) are removed from `php/checkin-kiosk/default.php`; the demo now runs welcome → stylist → a CSS-drawn "You're checked in" confirmation (checked live in a browser).
+- **"Open now" badge** — removed from both marketplace cards and the dead `isOpen` fields deleted; marketplace client + SSR bundles rebuilt and live.
+- **`bufferTime`** — now a real setting: Calendar Settings → "Time between appointments" (None / 5 / 10 / 15 min), stored in `calendar_settings.buffer_minutes` (migration 0195, applied). Enforced in the booking engine, staff create route, reschedule, online/AI/staff availability lists, precomputed slots, auto-assign and the nail walk-in flow; both onboarding flows now save it (the setup-hub flow's save call and online-booking step were also broken and are fixed).
+- **Suspended accounts vs Packages/Deals** — the page gate already blocked them; the server now also refuses `/api/packages` and `/api/deals` for suspended/locked stores, and the public marketplace hides a suspended store's deals and refuses checkout.

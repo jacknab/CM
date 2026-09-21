@@ -18,6 +18,7 @@ import { atomicCreateBooking, validateBookingSlot } from "../bookingEngine";
 import { autoAssignResource } from "../services/resource-assignment";
 import { getRequiredResourceType } from "@shared/resourceMatching";
 import * as nailConfig from "./nailConfig";
+import { getBufferMinutes } from "./appointmentBuffer";
 
 // ── Pure helpers ────────────────────────────────────────────────────────────
 
@@ -123,7 +124,9 @@ async function unlockTechToFront(deps: TicketDeps, storeId: number, staffId: num
   });
 }
 
+/** The technician's bookings around now; each is held for the store's buffer after it ends. */
 async function busyBlocksFor(storeId: number, staffId: number, excludeAppointmentId?: number): Promise<BusyBlock[]> {
+  const buffer = await getBufferMinutes(storeId);
   const { rows } = await pool.query(
     `SELECT id, date, duration FROM appointments
       WHERE store_id = $1 AND staff_id = $2 AND status <> 'cancelled'
@@ -131,7 +134,7 @@ async function busyBlocksFor(storeId: number, staffId: number, excludeAppointmen
         ${excludeAppointmentId ? "AND id <> $3" : ""}`,
     excludeAppointmentId ? [storeId, staffId, excludeAppointmentId] : [storeId, staffId],
   );
-  return rows.map((r: any) => ({ date: r.date, duration: r.duration }));
+  return rows.map((r: any) => ({ date: r.date, duration: (r.duration ?? 60) + buffer }));
 }
 
 async function techCanDo(staffId: number, serviceId: number): Promise<boolean> {
@@ -256,8 +259,9 @@ export async function createNailTicket(deps: TicketDeps, input: CreateTicketInpu
 
   // ── When: right now if the tech is free, otherwise right after their current client ──
   const now = new Date();
+  const buffer = await getBufferMinutes(storeId);
   const busy = await busyBlocksFor(storeId, staffId);
-  const slot = nextFreeStart(busy, now, pricing.duration);
+  const slot = nextFreeStart(busy, now, pricing.duration + buffer);
   const immediate = slot.getTime() - now.getTime() < 60_000;
   const startTime = immediate ? now : slot;
 
@@ -409,7 +413,7 @@ export async function updateNailTicketItems(deps: TicketDeps, input: UpdateItems
   // A longer ticket must still fit before the technician's next appointment.
   if (appt.staffId) {
     const start = new Date(appt.date as any);
-    const end = start.getTime() + pricing.duration * 60_000;
+    const end = start.getTime() + (pricing.duration + (await getBufferMinutes(input.storeId))) * 60_000;
     const others = await busyBlocksFor(input.storeId, appt.staffId, appt.id);
     const clash = others.find((b) => {
       const s = new Date(b.date).getTime();
@@ -454,12 +458,13 @@ export async function reassignNailTicket(
   }
 
   const duration = appt.duration ?? 60;
+  const buffer = await getBufferMinutes(args.storeId);
   const others = await busyBlocksFor(args.storeId, member.id, appt.id);
   let startsAt = new Date(appt.date as any);
 
   if (appt.status === "started") {
     // Already in the chair — the new technician has to be free for the rest of it.
-    const end = startsAt.getTime() + duration * 60_000;
+    const end = startsAt.getTime() + (duration + buffer) * 60_000;
     const clash = others.find((b) => {
       const s = new Date(b.date).getTime();
       return s < end && s + (b.duration ?? 60) * 60_000 > startsAt.getTime();
@@ -467,7 +472,7 @@ export async function reassignNailTicket(
     if (clash) return fail(409, `${member.name} is busy right now.`);
   } else {
     // Still waiting — line up behind the new technician's current client.
-    startsAt = nextFreeStart(others, new Date(), duration);
+    startsAt = nextFreeStart(others, new Date(), duration + buffer);
     if (startsAt.getTime() - Date.now() < 60_000) startsAt = new Date();
   }
 

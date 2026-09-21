@@ -80,6 +80,7 @@ import { getRequiredResourceType } from "@shared/resourceMatching";
 import { scoreCallRisk, recordBlockedNumber } from "../services/spamProtection/callFilter";
 import { resolveTenantIdForRequest } from "../lib/tenantResolver";
 import { CallFileLogger, NullCallFileLogger, type ICallFileLogger } from "../lib/callFileLogger";
+import { getBufferMinutes, normalizeBufferMinutes, clashesWithBuffer } from "../lib/appointmentBuffer";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1322,6 +1323,7 @@ async function computeAvailabilitySlots(
     getCandidateStaffForService(salon.storeId, serviceId, specificStaffId),
   ]);
   const slotInterval = calSettings?.timeSlotInterval || 15;
+  const bufferMin = normalizeBufferMinutes((calSettings as any)?.bufferMinutes);
 
   if (!candidateStaff.length) return [];
 
@@ -1376,9 +1378,7 @@ async function computeAvailabilitySlots(
 
         for (const apt of dayAppointments) {
           if (apt.staffId !== staffMember.id || apt.status === "cancelled") continue;
-          const aptStart = new Date(apt.date);
-          const aptEnd = new Date(aptStart.getTime() + apt.duration * 60000);
-          if (slotStart < aptEnd && slotEnd > aptStart) {
+          if (clashesWithBuffer(new Date(apt.date), apt.duration, slotStart, slotEnd, bufferMin)) {
             hasConflict = true;
             break;
           }
@@ -2112,10 +2112,11 @@ async function handleGetWalkinAvailability(
     const dayStartLocal = fromZonedTime(new Date(`${todayStr}T00:00:00`), tz);
     const dayEndLocal   = fromZonedTime(new Date(`${todayStr}T23:59:59.999`), tz);
 
-    const [hours, todayAppointments, allStaff] = await Promise.all([
+    const [hours, todayAppointments, allStaff, walkinBufferMin] = await Promise.all([
       storage.getBusinessHours(salon.storeId),
       storage.getAppointments({ from: dayStartLocal, to: dayEndLocal, storeId: salon.storeId }),
       storage.getAllStaff(salon.storeId),
+      getBufferMinutes(salon.storeId),
     ]);
 
   const dayOfWeek = todayLocal.getDay();
@@ -2180,9 +2181,7 @@ async function handleGetWalkinAvailability(
         const hasConflict = todayAppointments.some((a) => {
           if (a.status === "cancelled") return false;
           if (a.staffId !== member.id) return false;
-          const aptStart = new Date(a.date);
-          const aptEnd = new Date(aptStart.getTime() + (a.duration ?? 60) * 60000);
-          return slotStart < aptEnd && slotEnd > aptStart;
+          return clashesWithBuffer(new Date(a.date), a.duration ?? 60, slotStart, slotEnd, walkinBufferMin);
         });
         if (!hasConflict) freeStaff++;
       }

@@ -657,10 +657,12 @@ export function useOnboardingSession(userId: string): OnboardingSessionHook {
       }
 
       // 3. Save calendar settings
-      if (a.slotInterval !== undefined) {
+      if (a.slotInterval !== undefined || a.bufferTime !== undefined) {
         try {
           await apiRequest("PUT", "/api/calendar-settings", {
-            timeSlotInterval: a.slotInterval ?? 30,
+            ...(a.slotInterval !== undefined ? { timeSlotInterval: a.slotInterval ?? 30 } : {}),
+            // Calendar Settings → "Time between appointments" (0 / 5 / 10 / 15).
+            ...(a.bufferTime !== undefined ? { bufferMinutes: [0, 5, 10, 15].includes(Number(a.bufferTime)) ? Number(a.bufferTime) : 0 } : {}),
           });
         } catch {
           // Non-fatal

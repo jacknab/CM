@@ -19,6 +19,12 @@ import { stripe, isStripeConfigured, getReturnBaseUrl } from "../lib/stripe";
 import { sendEmail } from "../mail";
 import { toE164US } from "../lib/phoneUtils";
 
+/** Suspended / locked / cancelled stores can't sell deals: hide them and refuse checkout. */
+function storeCanSellDeals(store: { accountStatus?: string | null }): boolean {
+  const status = String(store.accountStatus ?? "active").toLowerCase();
+  return status !== "suspended" && status !== "locked" && status !== "canceled" && status !== "cancelled";
+}
+
 const router = Router();
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -121,7 +127,7 @@ router.get("/api/marketplace/deals", async (req: Request, res: Response) => {
       .where(and(eq(deals.status, "active"), gt(deals.endsAt, now)))
       .orderBy(desc(deals.createdAt));
 
-    const available = rows.filter(({ deal }) => getDealAvailability(deal, now) === "active");
+    const available = rows.filter(({ deal, store }) => storeCanSellDeals(store) && getDealAvailability(deal, now) === "active");
     const filtered = available.filter(({ store }) => {
       if (city && (store.city || "").toLowerCase() !== city) return false;
       if (state && (store.state || "").toLowerCase() !== state) return false;
@@ -154,7 +160,7 @@ router.get("/api/marketplace/deals/:id", async (req: Request, res: Response) => 
     if (!row) { res.status(404).json({ error: "Deal not found" }); return; }
 
     const availability = getDealAvailability(row.deal);
-    if (availability === "archived") { res.status(404).json({ error: "Deal not found" }); return; }
+    if (availability === "archived" || !storeCanSellDeals(row.store)) { res.status(404).json({ error: "Deal not found" }); return; }
 
     const itemRows = await db.select().from(packageItems).where(eq(packageItems.packageId, row.pkg.id));
     const svcIds = itemRows.filter(i => i.serviceId).map(i => i.serviceId as number);
@@ -215,7 +221,7 @@ router.post("/api/marketplace/deals/:id/checkout", async (req: Request, res: Res
     if (!row) { res.status(404).json({ error: "Deal not found" }); return; }
 
     const availability = getDealAvailability(row.deal);
-    if (availability !== "active") { res.status(400).json({ error: "This deal is not currently available" }); return; }
+    if (availability !== "active" || !storeCanSellDeals(row.store)) { res.status(400).json({ error: "This deal is not currently available" }); return; }
     if (row.deal.purchasedCount + quantity > row.deal.capacity) {
       res.status(400).json({ error: "Not enough vouchers remaining for that quantity" });
       return;

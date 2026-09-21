@@ -650,6 +650,8 @@ export const calendarSettings = pgTable("calendar_settings", {
   // no anonymous/no-client walk-ins. Distinct from walkInsEnabled (whether
   // walk-ins are allowed at all).
   requireClientForWalkin: boolean("require_client_for_walkin").notNull().default(false),
+  // Minutes a technician is held after each appointment before they can take another (0/5/10/15).
+  bufferMinutes: integer("buffer_minutes").notNull().default(0),
   language: text("language").notNull().default("en"),
 });
 

@@ -23,6 +23,7 @@ import type { Store } from "@shared/schema";
 type CalendarSettingsForm = {
   startOfWeek: string;
   timeSlotInterval: number;
+  bufferMinutes: number;
   bookingWindowHours: number;
   nonWorkingHoursDisplay: number;
   allowBookingOutsideHours: boolean;
@@ -271,6 +272,9 @@ export default function CalendarSettings() {
 
     // Booking increments
     timeSlot:             pick({ en: "Booking increments",       vi: "Bước thời gian đặt lịch", es: "Intervalos de reserva",       fr: "Intervalles de réservation" }),
+    bufferTitle:          pick({ en: "Time between appointments", vi: "Thời gian nghỉ giữa các lịch hẹn", es: "Tiempo entre citas", fr: "Temps entre les rendez-vous" }),
+    bufferTip:            pick({ en: "How long a technician is held after each appointment before they can be booked again — time to clean up and reset. It applies to online booking, the calendar and walk-ins.", vi: "Thời gian kỹ thuật viên được giữ lại sau mỗi lịch hẹn trước khi nhận lịch tiếp theo — để dọn dẹp và chuẩn bị. Áp dụng cho đặt lịch trực tuyến, lịch và khách vãng lai.", es: "Cuánto tiempo se reserva a un técnico después de cada cita antes de poder asignarle otra: tiempo para limpiar y preparar. Se aplica a la reserva en línea, al calendario y a las visitas sin cita.", fr: "Le temps pendant lequel un technicien reste indisponible après chaque rendez-vous avant d'en prendre un autre : de quoi nettoyer et se préparer. S'applique à la réservation en ligne, à l'agenda et aux clients sans rendez-vous." }),
+    bufferNone:           pick({ en: "None", vi: "Không", es: "Ninguno", fr: "Aucun" }),
     timeSlotTip:          pick({ en: "Controls the time increments clients can book at and how your calendar time slots are divided.", vi: "Kiểm soát bước thời gian khách có thể đặt và cách chia khung giờ trên lịch.", es: "Controla los intervalos en los que los clientes pueden reservar y cómo se divide tu calendario.", fr: "Contrôle les intervalles auxquels les clients peuvent réserver et le découpage des créneaux de l'agenda." }),
 
     // Require card on file
@@ -374,6 +378,7 @@ export default function CalendarSettings() {
       reset({
         startOfWeek: VALID_WEEK_STARTS.includes(rawStart) ? rawStart : DEFAULT_CALENDAR_SETTINGS.startOfWeek,
         timeSlotInterval: settings.timeSlotInterval ?? DEFAULT_CALENDAR_SETTINGS.timeSlotInterval,
+        bufferMinutes: (settings as any).bufferMinutes ?? DEFAULT_CALENDAR_SETTINGS.bufferMinutes,
         bookingWindowHours: (settings as any).bookingWindowHours ?? DEFAULT_CALENDAR_SETTINGS.bookingWindowHours,
         nonWorkingHoursDisplay: settings.nonWorkingHoursDisplay ?? DEFAULT_CALENDAR_SETTINGS.nonWorkingHoursDisplay,
         allowBookingOutsideHours: settings.allowBookingOutsideHours ?? DEFAULT_CALENDAR_SETTINGS.allowBookingOutsideHours,
@@ -391,6 +396,7 @@ export default function CalendarSettings() {
     updateSettings.mutate({
       startOfWeek: data.startOfWeek,
       timeSlotInterval: data.timeSlotInterval,
+      bufferMinutes: data.bufferMinutes,
       bookingWindowHours: data.bookingWindowHours,
       nonWorkingHoursDisplay: data.nonWorkingHoursDisplay,
       allowBookingOutsideHours: data.allowBookingOutsideHours,
@@ -526,6 +532,37 @@ export default function CalendarSettings() {
                       <SelectItem value="20">20 {t.min}</SelectItem>
                       <SelectItem value="30">30 {t.min}</SelectItem>
                       <SelectItem value="60">60 {t.min}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </div>
+
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <Label className="flex items-center text-base font-medium">
+                  {t.bufferTitle}
+                  <InfoTooltip text={t.bufferTip} />
+                </Label>
+                <p className="text-sm text-muted-foreground mt-0.5">{t.bufferTip}</p>
+              </div>
+              <Controller
+                name="bufferMinutes"
+                control={control}
+                render={({ field }) => (
+                  <Select value={String(field.value ?? 0)} onValueChange={(v) => field.onChange(Number(v))}>
+                    <SelectTrigger
+                      className="w-auto min-w-[128px] shrink-0 gap-2 rounded-full"
+                      data-testid="select-buffer-minutes"
+                    >
+                      <Clock className="h-4 w-4 opacity-60" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">{t.bufferNone}</SelectItem>
+                      <SelectItem value="5">5 {t.min}</SelectItem>
+                      <SelectItem value="10">10 {t.min}</SelectItem>
+                      <SelectItem value="15">15 {t.min}</SelectItem>
                     </SelectContent>
                   </Select>
                 )}

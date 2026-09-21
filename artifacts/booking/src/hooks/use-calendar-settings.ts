@@ -50,6 +50,7 @@ export function useUpdateCalendarSettings() {
 export const DEFAULT_CALENDAR_SETTINGS = {
   startOfWeek: "monday" as string,
   timeSlotInterval: 15,
+  bufferMinutes: 0,
   bookingWindowHours: 0,
   nonWorkingHoursDisplay: 1,
   allowBookingOutsideHours: true,

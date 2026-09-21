@@ -40,8 +40,8 @@ export default function BookingCalendarFlow() {
       .then((r) => r.ok ? r.json() : null)
       .then((d) => {
         if (!d) return;
-        if (d.slotInterval) setSlotInterval(String(d.slotInterval));
-        if (d.bufferTime !== undefined) setBufferTime(String(d.bufferTime));
+        if (d.timeSlotInterval) setSlotInterval(String(d.timeSlotInterval));
+        if (d.bufferMinutes !== undefined) setBufferTime(String(d.bufferMinutes));
         if (d.allowOnlineBooking !== undefined) setOnlineBooking(d.allowOnlineBooking);
         if (d.maxAdvanceDays) setAdvanceDays(String(d.maxAdvanceDays));
       })
@@ -53,7 +53,7 @@ export default function BookingCalendarFlow() {
     setSaving(true);
     try {
       await fetch("/api/calendar-settings", {
-        method: "PATCH",
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify(fields),
@@ -66,12 +66,26 @@ export default function BookingCalendarFlow() {
   };
 
   const handleStep1Next = async () => {
-    await saveStep({ slotInterval: parseInt(slotInterval), bufferTime: parseInt(bufferTime) });
+    await saveStep({ timeSlotInterval: parseInt(slotInterval), bufferMinutes: parseInt(bufferTime) });
     setStep(1);
   };
 
   const handleStep2Next = async () => {
-    await saveStep({ allowOnlineBooking: onlineBooking, maxAdvanceDays: parseInt(advanceDays) });
+    // Online booking + advance window live on the store's booking policies, not the calendar settings.
+    try {
+      await fetch("/api/booking-policies", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          onlineBookingMode: onlineBooking ? "all" : "off",
+          advanceBookingEnabled: true,
+          advanceBookingMonths: Math.min(24, Math.max(1, Math.round((parseInt(advanceDays) || 30) / 30))),
+        }),
+      });
+    } catch {
+      toast({ variant: "destructive", title: "Error", description: "Could not save settings." });
+    }
     setStep(2);
   };
 
@@ -109,7 +123,7 @@ export default function BookingCalendarFlow() {
             <label className="block text-sm font-semibold text-slate-700 mb-1.5">Slot interval</label>
             <p className="text-xs text-slate-400 mb-2">How often appointment start times are offered (e.g. every 30 min = 9:00, 9:30, 10:00…)</p>
             <div className="grid grid-cols-4 gap-2">
-              {["15","30","45","60"].map((v) => (
+              {["15","20","30","60"].map((v) => (
                 <button key={v} onClick={() => setSlotInterval(v)} className={`py-3 rounded-xl border-2 text-sm font-semibold transition-all ${slotInterval === v ? "border-[#1A0333] bg-[#1A0333] text-white" : "border-slate-200 text-slate-600 hover:border-slate-300"}`}>
                   {v} min
                 </button>
