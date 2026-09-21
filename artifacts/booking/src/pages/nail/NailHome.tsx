@@ -389,7 +389,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
             </section>
           </>
         ) : tab === "techs" ? (
-          <TechCards techs={techList} tickets={tickets} loading={techsLoading} />
+          <TechCards techs={techList} tickets={tickets} stats={board?.techStats ?? EMPTY_ARRAY} loading={techsLoading} />
         ) : (
           <CheckInBoard
             tickets={tickets}

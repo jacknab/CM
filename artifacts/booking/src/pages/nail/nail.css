@@ -333,9 +333,12 @@
 .nail-app .assign-create-btn:disabled { cursor: not-allowed; }
 
 /* ===== Adaptions for the live Certxa build ===== */
-.nail-app .techs-tab { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 28px 32px; }
-.nail-app .tech-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; margin-top: 18px; align-content: start; }
-.nail-app .tech-card { background: #232830; border: 1px solid #3b424c; border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; min-height: 150px; }
+.nail-app .techs-tab { min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 28px 32px; }
+.nail-app .tech-stage { flex: 1; min-height: 0; overflow: auto; margin-top: 18px; display: flex; }
+.nail-app .tech-grid { display: grid; margin: auto; align-content: center; justify-content: center; }
+.nail-app .tech-slot { position: relative; }
+.nail-app .tech-slot > .tech-card { position: absolute; top: 0; left: 0; transform-origin: top left; }
+.nail-app .tech-card { background: #232830; border: 1px solid #3b424c; border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; box-sizing: border-box; }
 .nail-app .tech-card.tech-off { opacity: .55; }
 .nail-app .tech-card-head { display: flex; align-items: center; gap: 12px; padding: 14px 14px 12px 14px; border-left: 4px solid #454c56; border-bottom: 1px solid #2f353d; }
 .nail-app .tech-avatar { width: 40px; height: 40px; border-radius: 50%; border: 2px solid #454c56; display: grid; place-items: center; font-size: 13px; font-weight: 700; color: #c8cdd3; background: #2a2e36; overflow: hidden; flex-shrink: 0; }
@@ -348,14 +351,17 @@
 .nail-app .tech-pill[data-status="available"] { background: rgba(13,155,209,.12); color: #0d9bd1; border-color: rgba(13,155,209,.3); }
 .nail-app .tech-pill[data-status="break"] { background: rgba(240,168,48,.12); color: #f0a830; border-color: rgba(240,168,48,.3); }
 .nail-app .tech-pill[data-status="off"] { background: #2a2e36; color: #8b94a0; border-color: #3b424c; }
-.nail-app .tech-card-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; flex: 1; }
+.nail-app .tech-card-body { padding: 14px; display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
 .nail-app .tech-now { display: flex; flex-direction: column; gap: 3px; }
 .nail-app .tech-now strong { font-size: 16px; font-weight: 700; color: #eef3fb; }
 .nail-app .tech-now span { font-size: 13px; color: #a7afb9; }
 .nail-app .tech-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #8b94a0; }
 .nail-app .tech-idle { font-size: 13px; color: #8b94a0; }
-.nail-app .tech-idle b { color: #0d9bd1; font-weight: 700; letter-spacing: .4px; }
-.nail-app .tech-queue { margin-top: auto; padding-top: 10px; border-top: 1px solid #2f353d; display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.nail-app .tech-free { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.nail-app .tech-free strong { font-size: 17px; font-weight: 700; color: #eef3fb; }
+.nail-app .tech-nextup { font-size: 9px; font-weight: 700; letter-spacing: .6px; color: #fff; background: #0d9bd1; padding: 3px 8px; border-radius: 3px; flex-shrink: 0; }
+.nail-app .tech-done { margin-top: auto; font-size: 12px; color: #8b94a0; }
+.nail-app .tech-queue { padding-top: 8px; border-top: 1px solid #2f353d; display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
 .nail-app .tech-queue span { color: #f0a830; font-weight: 700; }
 .nail-app .tech-queue em { color: #8b94a0; font-style: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nail-app.h-app, .nail-app { position: relative; overflow: hidden; }

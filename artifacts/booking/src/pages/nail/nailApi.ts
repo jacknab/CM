@@ -36,9 +36,17 @@ export interface BoardMarker {
   createdAt: string;
 }
 
+export interface TechDayStats {
+  staffId: number;
+  doneToday: number;
+  lastFinishedAt: string | null;
+  clockedInAt: string | null;
+}
+
 export interface NailBoard {
   tickets: BoardTicket[];
   markers: BoardMarker[];
+  techStats: TechDayStats[];
 }
 
 export interface TurnTech {

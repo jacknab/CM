@@ -566,7 +566,18 @@ export interface BoardWaitingMarker {
   createdAt: string;
 }
 
-export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTicket[]; markers: BoardWaitingMarker[] }> {
+/** Per-technician numbers for the Techs tab. */
+export interface TechDayStats {
+  staffId: number;
+  /** Clients checked out today. */
+  doneToday: number;
+  /** When their last client today was finished (null = none yet). */
+  lastFinishedAt: string | null;
+  /** When they clocked in today (null = not clocked in). */
+  clockedInAt: string | null;
+}
+
+export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTicket[]; markers: BoardWaitingMarker[]; techStats: TechDayStats[] }> {
   const store = await storage.getStore(storeId);
   const tz = (store as any)?.timezone || "UTC";
 
@@ -648,5 +659,34 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
     id: m.id, clientId: m.client_id ?? null, clientName: m.client_name ?? null, phone: m.phone ?? null, createdAt: new Date(m.created_at).toISOString(),
   }));
 
-  return { tickets, markers };
+  // Who did how much today, and since when each technician has been free.
+  const doneRows = await pool.query(
+    `SELECT a.staff_id, COUNT(*)::int AS done,
+            MAX(COALESCE(a.completed_at, a.date + make_interval(mins => COALESCE(a.duration, 0)))) AS last_finished
+       FROM appointments a
+      WHERE a.store_id = $1 AND a.status = 'completed' AND a.staff_id IS NOT NULL
+        AND (a.date AT TIME ZONE $2)::date = (NOW() AT TIME ZONE $2)::date
+      GROUP BY a.staff_id`,
+    [storeId, tz],
+  );
+  const clockRows = await pool.query(
+    `SELECT staff_id, MAX(clock_in) AS clock_in FROM timeclock
+      WHERE store_id = $1 AND clock_out IS NULL AND work_date = to_char(NOW() AT TIME ZONE $2, 'YYYY-MM-DD')
+      GROUP BY staff_id`,
+    [storeId, tz],
+  );
+  const stats = new Map<number, TechDayStats>();
+  const entry = (id: number) => {
+    let e = stats.get(id);
+    if (!e) { e = { staffId: id, doneToday: 0, lastFinishedAt: null, clockedInAt: null }; stats.set(id, e); }
+    return e;
+  };
+  for (const r of doneRows.rows) {
+    const e = entry(r.staff_id);
+    e.doneToday = Number(r.done) || 0;
+    e.lastFinishedAt = r.last_finished ? new Date(r.last_finished).toISOString() : null;
+  }
+  for (const r of clockRows.rows) entry(r.staff_id).clockedInAt = r.clock_in ? new Date(r.clock_in).toISOString() : null;
+
+  return { tickets, markers, techStats: [...stats.values()] };
 }
