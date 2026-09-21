@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, Bell, CalendarDays, Footprints, MoreHorizontal, ShoppingBag, UserRound, Users } from "lucide-react";
+import { ArrowUpRight, Bell, CalendarDays, Footprints, MoreHorizontal, ShoppingBag, UserCog, UserRound, Users } from "lucide-react";
 
-export type NailTab = "pos" | "board";
+export type NailTab = "techs" | "pos" | "board";
 
 interface Props {
   tab: NailTab;
@@ -15,6 +15,7 @@ interface Props {
 export function BottomNav({ tab, onTab, onWalkIn, waiting, inService, live }: Props) {
   const navigate = useNavigate();
   const items: { label: string; icon: typeof ShoppingBag; active?: boolean; run: () => void; badges?: boolean }[] = [
+    { label: "Techs", icon: UserCog, active: tab === "techs", run: () => onTab("techs") },
     { label: "POS", icon: ShoppingBag, active: tab === "pos", run: () => onTab("pos") },
     { label: "Checked In", icon: Users, active: tab === "board", run: () => onTab("board"), badges: true },
     { label: "Calendar", icon: CalendarDays, run: () => navigate("/calendar") },

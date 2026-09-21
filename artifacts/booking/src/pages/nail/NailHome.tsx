@@ -337,7 +337,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     <div className="dark cx-cal nail-app h-app w-full" data-testid="nail-home">
       {notice && <div className="nail-notice" data-testid="nail-notice">{notice}</div>}
 
-      <main className={`pos-shell ${tab === "board" ? "checkin-page" : ""}`}>
+      <main className={`pos-shell ${tab !== "pos" ? "checkin-page" : ""}`}>
         {tab === "pos" ? (
           <>
             <TicketPanel
@@ -378,6 +378,8 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
               </div>
             </section>
           </>
+        ) : tab === "techs" ? (
+          <section className="techs-tab" data-testid="nail-techs" />
         ) : (
           <CheckInBoard
             tickets={tickets}
