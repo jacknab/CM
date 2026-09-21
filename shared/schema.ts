@@ -581,6 +581,10 @@ export const appointments = pgTable("appointments", {
   // consumers fall back to the live value when absent. See migration 0156.
   servicePrice:            decimal("service_price", { precision: 10, scale: 2 }),
   commissionRate:          decimal("commission_rate", { precision: 5, scale: 2 }),
+  // Frozen by the checkout when the ticket completes (migration 0196), before discount / tax / tip:
+  // service + add-on money (paid at the staff service rate) and retail product money (product rate).
+  serviceRevenue:          decimal("service_revenue", { precision: 10, scale: 2 }),
+  productRevenue:          decimal("product_revenue", { precision: 10, scale: 2 }),
   // Set when this appointment was booked as a Catalog Package (see packages).
   // serviceId still points at the package's primary service so existing
   // scheduling / calendar / commission code is unaffected.

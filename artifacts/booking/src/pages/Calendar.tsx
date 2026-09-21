@@ -1640,7 +1640,7 @@ export default function Calendar() {
 
   const handleFinalizePayment = (
     apt: AppointmentWithDetails,
-    paymentData: { paymentMethod: string; tip: number; discount: number; totalPaid: number; groupTickets?: { appointmentId: number; tip: number; discount: number; totalPaid: number; paymentMethod: string }[]; redemption?: { rewardId: number; customerId: number } },
+    paymentData: { paymentMethod: string; tip: number; discount: number; totalPaid: number; serviceRevenue: number; productRevenue: number; groupTickets?: { appointmentId: number; tip: number; discount: number; totalPaid: number; paymentMethod: string; serviceRevenue: number; productRevenue: number }[]; redemption?: { rewardId: number; customerId: number } },
   ) => {
     const close = () => { setSelectedAppointment(null); setShowCheckout(false); };
 
@@ -1672,6 +1672,8 @@ export default function Calendar() {
             tipAmount: String(g.tip),
             discountAmount: String(g.discount),
             totalPaid: String(g.totalPaid),
+            serviceRevenue: String(g.serviceRevenue),
+            productRevenue: String(g.productRevenue),
           } as any),
         ),
       ).then(close).catch(() => {
@@ -1688,6 +1690,8 @@ export default function Calendar() {
         tipAmount: String(paymentData.tip),
         discountAmount: String(paymentData.discount),
         totalPaid: String(paymentData.totalPaid),
+        serviceRevenue: String(paymentData.serviceRevenue),
+        productRevenue: String(paymentData.productRevenue),
       } as any,
       { onSuccess: close },
     );
@@ -6326,7 +6330,13 @@ type TenderLine = {
   note?: string;
 };
 
-interface GroupTicketShare {
+/** Service + add-on money and retail-product money on a ticket, before discount / tax / tip — the commission basis. */
+interface CommissionSplit {
+  serviceRevenue: number;
+  productRevenue: number;
+}
+
+interface GroupTicketShare extends CommissionSplit {
   appointmentId: number;
   tip: number;
   discount: number;
@@ -6347,7 +6357,7 @@ export function CheckoutPOSPanel({
   appointment: AppointmentWithDetails;
   timezone: string;
   onClose: () => void;
-  onFinalize: (data: { paymentMethod: string; tip: number; discount: number; totalPaid: number; groupTickets?: GroupTicketShare[]; redemption?: { rewardId: number; customerId: number } }) => void;
+  onFinalize: (data: { paymentMethod: string; tip: number; discount: number; totalPaid: number; serviceRevenue: number; productRevenue: number; groupTickets?: GroupTicketShare[]; redemption?: { rewardId: number; customerId: number } }) => void;
   isUpdating: boolean;
   siblingAppointments?: AppointmentWithDetails[];
   onCustomerLinked?: (clientId: number, name: string, loyaltyPoints: number) => void;
@@ -6712,6 +6722,9 @@ export function CheckoutPOSPanel({
 
   const ownServiceBase = servicePrice + addonTotal + posExtraTotal;
   const subtotal = ownServiceBase + linkedSubtotal;
+  // Commission basis: retail products vs everything else (service, add-ons, nail upcharges, custom charges).
+  const ownProductRevenue = posExtraItems.filter((it) => it.kind === "retail").reduce((sum, it) => sum + it.price, 0);
+  const ownServiceRevenue = ownServiceBase - ownProductRevenue;
 
   const discountNum = Number(discountValue) || 0;
   const manualDiscount = discountType === "percent" ? subtotal * (discountNum / 100) : discountNum;
@@ -7268,8 +7281,8 @@ export function CheckoutPOSPanel({
     if (linkedAppointments.length > 0) {
       // Split tip + discount across every ticket proportionally to its service value.
       const tickets = [
-        { id: appointment.id, base: ownServiceBase },
-        ...linkedAppointments.map((a) => ({ id: a.id, base: ticketSubtotal(a) })),
+        { id: appointment.id, base: ownServiceBase, split: { serviceRevenue: ownServiceRevenue, productRevenue: ownProductRevenue } },
+        ...linkedAppointments.map((a) => ({ id: a.id, base: ticketSubtotal(a), split: { serviceRevenue: ticketSubtotal(a), productRevenue: 0 } })),
       ];
       const totalBase = tickets.reduce((s, t) => s + t.base, 0) || 1;
       let tipLeft = r2(tip), discLeft = r2(discount), paidLeft = r2(totalTendered);
@@ -7280,7 +7293,7 @@ export function CheckoutPOSPanel({
         const dShare = last ? discLeft : r2(discount * share);
         const pShare = last ? paidLeft : r2(totalTendered * share);
         tipLeft = r2(tipLeft - tShare); discLeft = r2(discLeft - dShare); paidLeft = r2(paidLeft - pShare);
-        return { appointmentId: t.id, tip: tShare, discount: dShare, totalPaid: pShare, paymentMethod: methodsSummary };
+        return { appointmentId: t.id, tip: tShare, discount: dShare, totalPaid: pShare, paymentMethod: methodsSummary, ...t.split };
       });
     }
 
@@ -7289,6 +7302,8 @@ export function CheckoutPOSPanel({
       tip: r2(tip),
       discount: r2(discount),
       totalPaid: r2(totalTendered),
+      serviceRevenue: r2(ownServiceRevenue),
+      productRevenue: r2(ownProductRevenue),
       groupTickets,
       redemption: pendingRedemption
         ? { rewardId: pendingRedemption.rewardId, customerId: effectiveCustomerId }

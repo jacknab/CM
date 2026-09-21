@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Staff, AppointmentWithDetails } from "@shared/schema";
+import { commissionAmount, commissionBasis as basisFor } from "@shared/commissionBasis";
 
 type ViewMode = "day" | "week" | "month" | "year" | "pay_period" | "custom";
 type PeriodOption = { label: string; from: Date; to: Date };
@@ -309,14 +310,14 @@ export default function SalonEarningsReport() {
     // addonRev is already embedded in totalPaid — do NOT fall back to it when
     // totalPaid is 0, or appointments with unpaid add-ons would show a business
     // cut while revenue shows "—" (the bug visible in the per-staff table).
-    const discountAmount = Number((apt as any).discountAmount || 0);
     const commissionableRev = Math.max(0, totalPaid - tipAmount);
-    // Staff commission is computed on the PRE-discount amount — a discount
-    // (manual, loyalty, or a deal voucher's platform-fee net) is a cost the
-    // business absorbs, not something that reduces what staff earns.
-    const commissionBasis   = Math.max(0, totalPaid + discountAmount - tipAmount);
+    // Staff commission follows the one shared rule (@shared/commissionBasis): services AND add-ons at the
+    // service rate, retail products at the product rate, computed on the PRE-discount amount — a discount
+    // is a cost the business absorbs, not something that reduces what staff earns.
+    const basis             = basisFor(apt as any, { catalogPrice: Number(apt.service?.price || 0), addonTotal: addonRev });
     const rate              = member?.commissionEnabled ? Number(member.commissionRate || 0) : 0;
-    const commissionPaid    = commissionBasis * (rate / 100);
+    const productRate       = member?.commissionEnabled ? Number((member as any).productCommissionRate || 0) : 0;
+    const commissionPaid    = commissionAmount(basis, rate, productRate).total;
     // Business cut = revenue actually collected minus what staff earns on it
     // (computed on the higher pre-discount basis) — can go negative on a
     // heavily-discounted ticket, correctly reflecting the business eating

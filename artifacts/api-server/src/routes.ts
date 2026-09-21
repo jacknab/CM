@@ -150,6 +150,7 @@ import { autoAssignTechnician } from "./services/appointment-assignment";
 import { autoAssignResource } from "./services/resource-assignment";
 import * as nailTickets from "./lib/nailTickets";
 import { getBufferMinutes, normalizeBufferMinutes, clashesWithBuffer } from "./lib/appointmentBuffer";
+import { commissionBasis, commissionAmount as commissionAmountFor } from "@shared/commissionBasis";
 import { getRequiredResourceType } from "@shared/resourceMatching";
 import { ACTIVE_APPOINTMENT_STATUSES, normalizeAppointmentStatus, appointmentStatusEnum } from "@shared/appointment-status";
 import { toE164US } from "./lib/phoneUtils";
@@ -2948,7 +2949,10 @@ export async function registerRoutes(
           date:           appointments.date,
           totalPaid:      appointments.totalPaid,
           tipAmount:      appointments.tipAmount,
+          discountAmount: appointments.discountAmount,
           servicePrice:   appointments.servicePrice,
+          serviceRevenue: appointments.serviceRevenue,
+          productRevenue: appointments.productRevenue,
           commissionRate: appointments.commissionRate,
         })
         .from(appointments)
@@ -3006,30 +3010,28 @@ export async function registerRoutes(
         const memberRate  = Number(member.commissionRate || 0);
         let serviceRevenue  = 0;
         let addonRevenue    = 0;
+        let productRevenue  = 0;
         let commissionAmount = 0;
 
+        const memberProductRate = Number((member as any).productCommissionRate || 0);
         for (const appt of memberAppts) {
-          const paid   = Number(appt.totalPaid ?? 0);
-          const tip    = Number(appt.tipAmount ?? 0);
           const aAddon = addonRevenueMap.get(appt.id) || 0;
-          // Revenue basis = what the client actually paid (minus tip and
-          // add-ons). Only fall back to a price when the appointment was never
-          // checked out: the frozen snapshot first, then the live catalogue.
-          const aService = paid > 0
-            ? Math.max(0, paid - tip - aAddon)
-            : (appt.servicePrice != null
-                ? Number(appt.servicePrice)
-                : (servicePriceMap.get(appt.serviceId!) || 0));
+          // One rule for everyone (see @shared/commissionBasis): services + add-ons at the service rate,
+          // retail products at the product rate, all pre-discount / pre-tax / pre-tip.
+          const basis = commissionBasis(appt, { catalogPrice: servicePriceMap.get(appt.serviceId!) || 0, addonTotal: aAddon });
           // Rate frozen on the appointment at completion, else the member's
           // current rate (historical rows have no snapshot).
           const aRate = appt.commissionRate != null ? Number(appt.commissionRate) : memberRate;
 
-          serviceRevenue   += aService;
-          addonRevenue     += aAddon;
-          commissionAmount += (aService + aAddon) * (aRate / 100);
+          // Report the add-on part separately from the rest of the service-rate money.
+          const addonPart = Math.min(aAddon, basis.service);
+          serviceRevenue   += basis.service - addonPart;
+          addonRevenue     += addonPart;
+          productRevenue   += basis.product;
+          commissionAmount += commissionAmountFor(basis, aRate, memberProductRate).total;
         }
 
-        const totalRevenue = serviceRevenue + addonRevenue;
+        const totalRevenue = serviceRevenue + addonRevenue + productRevenue;
         totalCommission += commissionAmount;
 
         runItems.push({
@@ -5724,6 +5726,10 @@ If you have any questions, please contact your administrator.
       // completion by storage.updateAppointment) — never trust a client value.
       delete (input as any).servicePrice;
       delete (input as any).commissionRate;
+      // The checkout freezes the service / product split of the ticket (before discount, tax and tip).
+      for (const k of ["serviceRevenue", "productRevenue"] as const) {
+        if ((input as any)[k] != null) (input as any)[k] = Math.max(0, Number((input as any)[k]) || 0).toFixed(2);
+      }
       if (input.status === "started" && !input.startedAt) {
         input.startedAt = new Date();
       }
@@ -18909,6 +18915,8 @@ or
       if (!storeId) return;
 
       const { items, clientId, paymentMethod, totalPaid, tipAmount } = req.body;
+      // Part of the sale that was retail product money (commissioned at the product rate).
+      let productLeft = Math.max(0, Number(req.body?.productAmount) || 0);
 
       if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ message: "items array required" });
@@ -18965,7 +18973,10 @@ or
           // Commission reproducibility snapshot (this INSERT is a completion).
           servicePrice:   itemSubtotal.toFixed(2),
           commissionRate: itemStaffId != null ? (staffRateMap.get(itemStaffId) ?? null) : null,
+          serviceRevenue: (itemSubtotal - Math.min(productLeft, itemSubtotal)).toFixed(2),
+          productRevenue: Math.min(productLeft, itemSubtotal).toFixed(2),
         }).returning();
+        productLeft -= Math.min(productLeft, itemSubtotal);
 
         if (apt?.id) {
           createdIds.push(apt.id);

@@ -273,10 +273,12 @@ export default function PosCheckout() {
         return;
       }
       if (extraTotal > 0 && items.length > 0) items[0].serviceAmount += extraTotal;
+      // Retail products are commissioned at the product rate, so tell the server how much of the sale they were.
+      const productAmount = ticket.filter((l) => l.productId).reduce((s, l) => s + l.price, 0);
 
       const res = await fetch("/api/pos/record-sale", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items, clientId: customer?.id ?? null, paymentMethod, totalPaid: total.toFixed(2), tipAmount: "0" }),
+        body: JSON.stringify({ items, clientId: customer?.id ?? null, paymentMethod, totalPaid: total.toFixed(2), tipAmount: "0", productAmount }),
       });
       if (!res.ok) throw new Error("Failed to record sale");
       setCheckoutComplete(true);

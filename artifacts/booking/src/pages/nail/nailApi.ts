@@ -162,7 +162,9 @@ export interface FinalizeData {
   tip: number;
   discount: number;
   totalPaid: number;
-  groupTickets?: { appointmentId: number; tip: number; discount: number; totalPaid: number; paymentMethod: string }[];
+  serviceRevenue: number;
+  productRevenue: number;
+  groupTickets?: { appointmentId: number; tip: number; discount: number; totalPaid: number; paymentMethod: string; serviceRevenue: number; productRevenue: number }[];
   redemption?: { rewardId: number; customerId: number };
 }
 
@@ -175,7 +177,7 @@ export async function completeTicket(id: number, data: FinalizeData): Promise<vo
       body: JSON.stringify({ rewardId: data.redemption.rewardId, customerId: data.redemption.customerId, appointmentId: id }),
     }).catch(() => {});
   }
-  const patch = (apptId: number, d: { paymentMethod: string; tip: number; discount: number; totalPaid: number }) =>
+  const patch = (apptId: number, d: { paymentMethod: string; tip: number; discount: number; totalPaid: number; serviceRevenue: number; productRevenue: number }) =>
     call(`/api/appointments/${apptId}`, {
       method: "PATCH",
       body: JSON.stringify({
@@ -184,6 +186,8 @@ export async function completeTicket(id: number, data: FinalizeData): Promise<vo
         tipAmount: String(d.tip),
         discountAmount: String(d.discount),
         totalPaid: String(d.totalPaid),
+        serviceRevenue: String(d.serviceRevenue),
+        productRevenue: String(d.productRevenue),
       }),
     });
   if (data.groupTickets && data.groupTickets.length > 0) {

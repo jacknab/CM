@@ -1,4 +1,5 @@
- import { Router, type Request, type Response } from "express";
+ import { commissionBasis } from "@shared/commissionBasis";
+import { Router, type Request, type Response } from "express";
 import { db, pool } from "../db";
 import {
   contractors, contractorBankAccounts, payoutDeductionRules,
@@ -100,6 +101,9 @@ export async function createPayoutRunForPeriod(
           tipAmount: appointments.tipAmount,
           discountAmount: appointments.discountAmount,
           serviceId: appointments.serviceId,
+          servicePrice: appointments.servicePrice,
+          serviceRevenue: appointments.serviceRevenue,
+          productRevenue: appointments.productRevenue,
         })
         .from(appointments)
         .where(and(
@@ -166,14 +170,12 @@ export async function createPayoutRunForPeriod(
 
     let serviceRevenue = 0, productRevenue = 0, tips = 0;
     for (const a of myAppts) {
-      // Commission is based on the pre-discount service amount — a discount
-      // (manual, loyalty redemption, or a deal voucher's platform-fee net)
-      // must never reduce what a contractor earns on the service they performed.
-      const svcPrice = a.totalPaid
-        ? Number(a.totalPaid) + Number(a.discountAmount ?? 0) - Number(a.tipAmount ?? 0)
-        : (servicePriceMap.get(a.serviceId!) ?? 0);
-      serviceRevenue += svcPrice;
-      productRevenue += addonRevMap.get(a.id) ?? 0;
+      // One rule for everyone (see @shared/commissionBasis): services + add-ons at the service rate,
+      // retail products at the product rate, all pre-discount / pre-tax / pre-tip — a discount
+      // (manual, loyalty redemption, or a deal voucher's platform-fee net) never reduces a contractor's pay.
+      const basis = commissionBasis(a, { catalogPrice: servicePriceMap.get(a.serviceId!) ?? 0, addonTotal: addonRevMap.get(a.id) ?? 0 });
+      serviceRevenue += basis.service;
+      productRevenue += basis.product;
       tips           += Number(a.tipAmount ?? 0);
     }
 

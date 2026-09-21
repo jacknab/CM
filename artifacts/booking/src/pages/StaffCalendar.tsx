@@ -1,3 +1,4 @@
+import { commissionAmount, commissionBasis } from "@shared/commissionBasis";
 import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -157,17 +158,25 @@ function calcCommission(
   to: Date,
   timezone: string,
   rate: number,
+  productRate = 0,
 ) {
   const apts = appointments.filter((apt) => {
     if (apt.staffId !== staffId || apt.status !== "completed") return false;
     // Compare raw UTC timestamps — toStoreLocal (toZonedTime) is unreliable in date-fns-tz v3
     return isWithinInterval(new Date(apt.date), { start: from, end: to });
   });
-  const serviceRev = apts.reduce((s, a) => s + Number(a.service?.price || 0), 0);
-  const addonRev = apts.reduce((s, a) =>
-    s + (a.appointmentAddons?.reduce((x, aa) => x + Number(aa.addon?.price || 0), 0) ?? 0), 0);
-  const total = serviceRev + addonRev;
-  return { apts, serviceRev, addonRev, total, commission: total * (rate / 100) };
+  // The one shared commission rule: services + add-ons at the service rate, retail products at the
+  // product rate, before discount / tax / tip.
+  let service = 0, product = 0, addonRev = 0;
+  for (const a of apts) {
+    const addons = a.appointmentAddons?.reduce((x, aa) => x + Number(aa.addon?.price || 0), 0) ?? 0;
+    const basis = commissionBasis(a as any, { catalogPrice: Number(a.service?.price || 0), addonTotal: addons });
+    service += basis.service;
+    product += basis.product;
+    addonRev += addons;
+  }
+  const amount = commissionAmount({ service, product }, rate, productRate);
+  return { apts, serviceRev: service, addonRev, total: service + product, commission: amount.total };
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -1571,7 +1580,8 @@ function StaffCommissionsTab({
   const rate = Number(ownStaff.commissionRate || 0);
   const storeNowForPay = getNowInTimezone(timezone);
   const currentPeriod = getPayPeriod(payrollSettings, storeNowForPay, timezone);
-  const current = calcCommission(appointments, staffId, currentPeriod.from, currentPeriod.to, timezone, rate);
+  const productRate = Number((ownStaff as any).productCommissionRate || 0);
+  const current = calcCommission(appointments, staffId, currentPeriod.from, currentPeriod.to, timezone, rate, productRate);
 
   const pastPeriods = getPastPayPeriods(payrollSettings, 13, storeNowForPay, timezone).slice(1);
 
@@ -1660,7 +1670,7 @@ function StaffCommissionsTab({
         </p>
         <div className="bg-white dark:bg-[#0f172a] rounded-2xl overflow-hidden shadow-sm divide-y divide-slate-100 dark:divide-slate-800">
           {pastPeriods.map((period, idx) => {
-            const result = calcCommission(appointments, staffId, period.from, period.to, timezone, rate);
+            const result = calcCommission(appointments, staffId, period.from, period.to, timezone, rate, productRate);
             const isExpanded = expandedPeriod === idx;
             return (
               <div key={idx}>

@@ -14,6 +14,7 @@ import { toStoreLocal } from "@/lib/timezone";
 import { DollarSign, Percent, Scissors, Download, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Staff, AppointmentWithDetails } from "@shared/schema";
+import { commissionAmount, commissionBasis } from "@shared/commissionBasis";
 
 function fmt(n: number) {
   return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -22,13 +23,14 @@ function fmt(n: number) {
 function calcCommission(apt: AppointmentWithDetails, member: Staff | undefined) {
   const totalPaid = Number((apt as any).totalPaid || 0);
   const tipAmount = Number((apt as any).tipAmount || 0);
-  const discountAmount = Number((apt as any).discountAmount || 0);
-  // Commissionable revenue excludes tips (tips pass straight through to staff)
-  // but adds back any discount — a discount (manual, loyalty, or a deal
-  // voucher's platform-fee net) must not reduce staff commission.
-  const commissionableRev = Math.max(0, totalPaid + discountAmount - tipAmount);
+  // The one commission rule (shared with payroll + payouts): services AND add-ons at the service rate,
+  // retail products at the product rate, before discount / tax / tip — a discount never reduces staff pay.
+  const addonTotal = (apt.appointmentAddons ?? []).reduce((s, aa) => s + Number(aa.addon?.price || 0), 0);
+  const basis = commissionBasis(apt as any, { catalogPrice: Number(apt.service?.price || 0), addonTotal });
+  const commissionableRev = basis.service + basis.product;
   const rate = member?.commissionEnabled ? Number(member.commissionRate || 0) : 0;
-  const commissionEarned = commissionableRev * (rate / 100);
+  const productRate = member?.commissionEnabled ? Number((member as any).productCommissionRate || 0) : 0;
+  const commissionEarned = commissionAmount(basis, rate, productRate).total;
   return { totalPaid, tipAmount, commissionableRev, rate, commissionEarned };
 }
 

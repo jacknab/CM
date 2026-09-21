@@ -10,6 +10,8 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+---
+
 ## 2026-09-20 — Stripe M2 / Terminal card-payment path: audit findings (items 1-9 FIXED the same day; see status below)
 
 **STATUS (same day):** items 1-9 below were fixed — server (`routes/stripeConnect.ts` capture/create/location, `lib/terminalPaymentMath.ts`, Connect webhook `payment_intent.succeeded`), checkout sheet (`Calendar.tsx`), owner app (`lib/captureRecovery.ts`, `useTerminalPayment.ts`, `useReaderDiscovery.ts`, `M2PaymentOverlay.tsx`, `ReaderStatusModal.tsx`) — and also brought in line with Stripe's docs (re-use the same PaymentIntent after a decline/timeout, show reader prompts + update progress). **Still open:** (a) the Stripe dashboard's Connect webhook endpoint must be subscribed to `payment_intent.succeeded` for the reconciliation handler to fire; (b) refunds/disputes of POS payments are still not reflected on appointments; (c) the app bundles Terminal Android SDK 5.5.1 — `@stripe/stripe-terminal-react-native@0.0.1-beta.33` bundles 5.8.0, which fixes "mobile reader software updates timing out on slow networks" (relevant to a new M2's first connect), but upgrading needs a lockfile + SDK patch change and a device test; (d) a group-pay ticket paid by M2 is recorded on the primary appointment at capture and corrected to each ticket's share when staff complete it.
@@ -46,16 +48,6 @@ So Stripe would charge $14.95 for a plan the DB and billing UI advertise at $9, 
 
 ---
 
-## 2026-09-15 — Two different commission calculations that can show different amounts for the same ticket
-
-**Plain version:** the app works out "what did the technician earn on this ticket" in two separate places, using different starting amounts.
-- **A — the commission ledger** (`lib/commissionAccrual.ts`, written when a ticket is completed; feeds pending contractor commissions / the reserve model): technician's rate × the **service's catalog price only** (frozen at completion).
-- **B — payroll runs, contractor payout runs, the Commission report and the Salon Earnings report** (`routes/payrollRuns.ts:190-193`, `routes/contractorPayouts.ts:168`, `pages/CommissionReport.tsx`, `pages/SalonEarningsReport.tsx`): technician's rate × **what the client actually paid before discounts** (`totalPaid + discount − tip`), i.e. service + add-ons + extras (and nail-shape/length upcharges), then add-ons are ALSO run through the separate product-commission rate.
-**Example:** Cindy earns 50%. Client pays $65 Gel X + $10 Chrome add-on = $75. A says $32.50; B says $37.50 (plus a product-rate amount on the $10 add-on if she has one). Nail salons hit this most because upcharges and add-ons are common.
-**Not fixed because:** it is a rule decision, not a bug — should commission be on the service price only, or on everything paid (pre-discount)? And should add-ons be paid at the service rate, the product rate, or not at all? Once decided, make A and B call one shared function. (The old worry that a POS discount lowers commission in B is already fixed — B is pre-discount.)
-
----
-
 ## Resolved 2026-09-20 (kept as a one-line record; details are in git history)
 
 - **api-server `typecheck` OOM** — script now runs tsc with a 6 GB heap (`package.json`); it completes in ~1 min and reports **0 errors**.
@@ -70,9 +62,12 @@ So Stripe would charge $14.95 for a plan the DB and billing UI advertise at $9, 
 - **WebSocket `ERR_NAME_NOT_RESOLVED`** — not a code bug: nginx proxies `/ws` and a fresh HTTP/1.1 upgrade to `/ws/notifications` returns 101 today; it was the tester's environment.
 - **Owner-app WebView reload after login** — `StripeTerminalProvider` is now always mounted (only `TerminalInitializer` waits for login), so the screen tree/WebView is no longer remounted. **Needs an on-device check** (M2 connect + payment still work, no second `/app-login` load) — shipped in the next APK.
 
+---
+
 ## Resolved 2026-09-21
 
 - **Kiosk demo images** — the three dead `<img>` records (screens 3, 4, 6) are removed from `php/checkin-kiosk/default.php`; the demo now runs welcome → stylist → a CSS-drawn "You're checked in" confirmation (checked live in a browser).
 - **"Open now" badge** — removed from both marketplace cards and the dead `isOpen` fields deleted; marketplace client + SSR bundles rebuilt and live.
 - **`bufferTime`** — now a real setting: Calendar Settings → "Time between appointments" (None / 5 / 10 / 15 min), stored in `calendar_settings.buffer_minutes` (migration 0195, applied). Enforced in the booking engine, staff create route, reschedule, online/AI/staff availability lists, precomputed slots, auto-assign and the nail walk-in flow; both onboarding flows now save it (the setup-hub flow's save call and online-booking step were also broken and are fixed).
 - **Suspended accounts vs Packages/Deals** — the page gate already blocked them; the server now also refuses `/api/packages` and `/api/deals` for suspended/locked stores, and the public marketplace hides a suspended store's deals and refuses checkout.
+- **Commission rule (decided 2026-09-21: services + add-ons at the service rate; products only at the product rate)** — one shared function, `shared/commissionBasis.ts`, now drives the accrual ledger, payroll runs (new and legacy), contractor payout runs, the Commission report, the Salon Earnings report and the staff-portal earnings card. The checkout freezes the service/product split on each ticket (`appointments.service_revenue` / `product_revenue`, migration 0196; retail lines are the "retail" kind). Fixes along the way: add-ons were being paid twice in payroll (service rate inside the total *and* the product rate again) and were the only thing the "product rate" ever applied to; retail money was never recorded, so a product rate could not be honoured; the ledger now refreshes a still-pending amount when a ticket is completed a second time (card-reader capture completes first, the checkout sheet's split arrives second). Old tickets keep the legacy amount (everything paid, pre-discount, minus tip, at the service rate) — nothing was backfilled. `/pos` sales send retail money too. Not changed: sales tax is not in the new basis (it was inside the legacy one).

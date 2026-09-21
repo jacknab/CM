@@ -12,6 +12,7 @@
  * Legacy payout_* / contractor_* subsystem is untouched.
  */
 
+import { commissionBasis } from "@shared/commissionBasis";
 import { Router, type Request } from "express";
 import { db, pool } from "../db";
 import { isAuthenticated } from "../auth";
@@ -145,7 +146,7 @@ router.get("/runs", isAuthenticated, async (req, res) => {
 });
 
 // ── compute a draft run's line items from bookings ───────────────────────
-async function computeLines(storeId: number, periodStart: string, periodEnd: string) {
+export async function computeLines(storeId: number, periodStart: string, periodEnd: string) {
   const team = await db
     .select()
     .from(staff)
@@ -160,6 +161,8 @@ async function computeLines(storeId: number, periodStart: string, periodEnd: str
       tipAmount: appointments.tipAmount,
       discountAmount: appointments.discountAmount,
       servicePrice: appointments.servicePrice,
+      serviceRevenue: appointments.serviceRevenue,
+      productRevenue: appointments.productRevenue,
       status: appointments.status,
       date: appointments.date,
     })
@@ -189,13 +192,14 @@ async function computeLines(storeId: number, periodStart: string, periodEnd: str
 
   return team.map((t) => {
     const mine = appts.filter((a) => a.staffId === t.id);
-    let serviceRevenue = 0, productRevenue = 0, tips = 0;
+    let serviceRevenue = 0, productRevenue = 0, addonRevenue = 0, tips = 0;
     for (const a of mine) {
-      // Commission basis is pre-discount — any discount (manual, loyalty, or
-      // a deal voucher's platform-fee net) must not reduce staff commission.
-      const gross = a.totalPaid ? Number(a.totalPaid) + Number(a.discountAmount ?? 0) - Number(a.tipAmount ?? 0) : (a.servicePrice != null ? Number(a.servicePrice) : svcPrice.get(a.serviceId!) ?? 0);
-      serviceRevenue += Math.max(0, gross);
-      productRevenue += addonRev.get(a.id) ?? 0;
+      // One rule for everyone (see @shared/commissionBasis): services + add-ons at the service rate,
+      // retail products at the product rate, all pre-discount / pre-tax / pre-tip.
+      const basis = commissionBasis(a, { catalogPrice: svcPrice.get(a.serviceId!) ?? 0, addonTotal: addonRev.get(a.id) ?? 0 });
+      serviceRevenue += basis.service;
+      productRevenue += basis.product;
+      addonRevenue += addonRev.get(a.id) ?? 0;
       tips += Number(a.tipAmount ?? 0);
     }
     const svcRate = Number(t.commissionRate ?? 0) / 100;
@@ -210,7 +214,7 @@ async function computeLines(storeId: number, periodStart: string, periodEnd: str
       appointmentCount: mine.length,
       serviceRevenue: serviceRevenue.toFixed(2),
       productRevenue: productRevenue.toFixed(2),
-      addonRevenue: productRevenue.toFixed(2),
+      addonRevenue: addonRevenue.toFixed(2),
       totalRevenue: (serviceRevenue + productRevenue).toFixed(2),
       serviceCommission: serviceCommission.toFixed(2),
       productCommission: productCommission.toFixed(2),
