@@ -541,7 +541,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
         ) : tab === "techs" ? (
           <>
             <CheckInPanel tickets={tickets} markers={markers} onMarker={startFromMarker} onTicket={(t) => { setFocusTicket({ id: t.id }); setTab("board"); }} />
-            <TechCards techs={techList} tickets={tickets} stats={board?.techStats ?? EMPTY_ARRAY} loading={techsLoading} />
+            <TechCards techs={techList} tickets={tickets} stats={board?.techStats ?? EMPTY_ARRAY} glance={board?.glance} waiting={waitingCount} loading={techsLoading} />
           </>
         ) : (
           <CheckInBoard

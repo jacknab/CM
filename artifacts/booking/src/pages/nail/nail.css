@@ -463,3 +463,12 @@
 .nail-app .tech-card.mode-stack .tech-queue { align-items: flex-start; }
 .nail-app .tech-card.mode-stack .tech-now strong { font-size: 15px; }
 .nail-app .tech-card.mode-stack .tech-free strong { font-size: 16px; }
+
+/* ===== Salon at a glance (Techs page header) ===== */
+.nail-app .glance { flex-shrink: 0; padding-bottom: 12px; border-bottom: 1px solid #3b424c; }
+.nail-app .glance-title { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: #8b94a0; margin: 0 0 10px; }
+.nail-app .glance-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.nail-app .glance-tile { background: #232830; border: 1px solid #3b424c; border-radius: 6px; padding: 10px 12px 9px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.nail-app .glance-tile strong { font-size: 24px; font-weight: 700; color: #eef3fb; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .glance-tile span { font-size: 11px; font-weight: 600; color: #8b94a0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .tech-panel .tech-stage { margin-top: 12px; }

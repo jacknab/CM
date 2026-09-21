@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Clock } from "lucide-react";
 import { formatElapsed } from "./ticketDraft";
 import { GAP, computeTechLayout } from "./techLayout";
-import type { BoardTicket, TechDayStats, TurnTech } from "./nailApi";
+import type { BoardTicket, SalonGlance, TechDayStats, TurnTech } from "./nailApi";
 
 type Status = "in-service" | "available" | "break" | "off";
 
@@ -31,7 +31,35 @@ function freeFor(stats: TechDayStats | undefined, now: number): string {
   return `Free for ${formatElapsed(new Date(since).toISOString(), now)}`;
 }
 
-export function TechCards({ techs, tickets, stats, loading }: { techs: TurnTech[]; tickets: BoardTicket[]; stats: TechDayStats[]; loading: boolean }) {
+const money = (n: number) => `$${n.toFixed(n % 1 === 0 ? 0 : 2)}`;
+const minutes = (n: number) => (n < 60 ? `${n} min` : `${Math.floor(n / 60)} hr ${n % 60 ? `${n % 60} min` : ""}`.trim());
+
+/** "Salon at a glance" — today's numbers, right above the tech cards. */
+function Glance({ waiting, glance }: { waiting: number; glance: SalonGlance | undefined }) {
+  const tiles: { label: string; value: string }[] = [
+    { label: "Waiting", value: String(waiting) },
+    { label: "Avg Wait", value: glance?.avgWaitMin != null ? minutes(glance.avgWaitMin) : "—" },
+    { label: "Walk-ins", value: glance ? String(glance.walkIns) : "—" },
+    { label: "Appointments", value: glance ? String(glance.appointments) : "—" },
+    { label: "No-shows", value: glance ? String(glance.noShows) : "—" },
+    { label: "Avg Ticket", value: glance?.avgTicket != null ? money(glance.avgTicket) : "—" },
+  ];
+  return (
+    <div className="glance" data-testid="nail-glance">
+      <h2 className="glance-title">SALON AT A GLANCE</h2>
+      <div className="glance-row">
+        {tiles.map((t) => (
+          <div key={t.label} className="glance-tile" data-testid={`nail-glance-${t.label.toLowerCase().replace(/[^a-z]+/g, "-")}`}>
+            <strong>{t.value}</strong>
+            <span>{t.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function TechCards({ techs, tickets, stats, glance, waiting, loading }: { techs: TurnTech[]; tickets: BoardTicket[]; stats: TechDayStats[]; glance: SalonGlance | undefined; waiting: number; loading: boolean }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const iv = setInterval(() => setNow(Date.now()), 30_000);
@@ -68,6 +96,7 @@ export function TechCards({ techs, tickets, stats, loading }: { techs: TurnTech[
   return (
     <section className="work-area" data-testid="nail-techs">
      <div className="tech-panel">
+      <Glance waiting={waiting} glance={glance} />
       <div className="tech-stage" ref={stageRef}>
         <div className="tech-grid" data-scale={layout.scale.toFixed(2)} data-cols={layout.cols} data-mode={layout.mode}
           style={{ gap: GAP, gridTemplateRows: `repeat(${layout.rows}, ${layout.cardH * layout.scale}px)`, gridTemplateColumns: `repeat(${layout.cols}, ${layout.cardW * layout.scale}px)` }}>

@@ -43,10 +43,19 @@ export interface TechDayStats {
   clockedInAt: string | null;
 }
 
+export interface SalonGlance {
+  appointments: number;
+  walkIns: number;
+  noShows: number;
+  avgWaitMin: number | null;
+  avgTicket: number | null;
+}
+
 export interface NailBoard {
   tickets: BoardTicket[];
   markers: BoardMarker[];
   techStats: TechDayStats[];
+  glance?: SalonGlance;
 }
 
 export interface TurnTech {

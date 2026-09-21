@@ -577,7 +577,20 @@ export interface TechDayStats {
   clockedInAt: string | null;
 }
 
-export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTicket[]; markers: BoardWaitingMarker[]; techStats: TechDayStats[] }> {
+/** Today's numbers for the Techs page header ("Salon at a glance"). */
+export interface SalonGlance {
+  /** Pre-booked appointments today (not cancelled). */
+  appointments: number;
+  /** Clients who walked in today: tickets made at the desk + kiosk check-ins that never got a ticket. */
+  walkIns: number;
+  noShows: number;
+  /** Average minutes from check-in to the chair, over clients already started today. */
+  avgWaitMin: number | null;
+  /** Average sale before tip, over tickets checked out today. */
+  avgTicket: number | null;
+}
+
+export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTicket[]; markers: BoardWaitingMarker[]; techStats: TechDayStats[]; glance: SalonGlance }> {
   const store = await storage.getStore(storeId);
   const tz = (store as any)?.timezone || "UTC";
 
@@ -688,5 +701,39 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
   }
   for (const r of clockRows.rows) entry(r.staff_id).clockedInAt = r.clock_in ? new Date(r.clock_in).toISOString() : null;
 
-  return { tickets, markers, techStats: [...stats.values()] };
+  // Salon at a glance. "Walk-in" = a ticket made at the desk (nail ticket, or created within 15 min of its time /
+  // of the client checking in); everything booked earlier is an appointment.
+  const g = await pool.query(
+    `WITH t AS (
+       SELECT a.*,
+              (EXISTS (SELECT 1 FROM appointment_events e WHERE e.appointment_id = a.id AND e.event_type = 'created' AND e.metadata->>'source' = 'nail_ticket')
+               OR ABS(EXTRACT(EPOCH FROM (a.created_at - a.date))) < 900
+               OR (a.checked_in_at IS NOT NULL AND ABS(EXTRACT(EPOCH FROM (a.checked_in_at - a.created_at))) < 900)) AS walkin
+         FROM appointments a
+        WHERE a.store_id = $1 AND (a.date AT TIME ZONE $2)::date = (NOW() AT TIME ZONE $2)::date
+     )
+     SELECT COUNT(*) FILTER (WHERE status <> 'cancelled' AND NOT walkin)::int AS appointments,
+            COUNT(*) FILTER (WHERE status <> 'cancelled' AND walkin)::int AS walkins,
+            COUNT(*) FILTER (WHERE status IN ('no_show', 'no-show'))::int AS no_shows,
+            AVG(EXTRACT(EPOCH FROM (started_at - checked_in_at)) / 60)
+              FILTER (WHERE started_at IS NOT NULL AND checked_in_at IS NOT NULL AND started_at >= checked_in_at AND started_at - checked_in_at < interval '6 hours') AS avg_wait,
+            AVG(total_paid - COALESCE(tip_amount, 0)) FILTER (WHERE status = 'completed' AND total_paid IS NOT NULL) AS avg_ticket
+       FROM t`,
+    [storeId, tz],
+  );
+  const kioskOnly = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM kiosk_checkins
+      WHERE store_id = $1 AND appointment_id IS NULL AND (created_at AT TIME ZONE $2)::date = (NOW() AT TIME ZONE $2)::date`,
+    [storeId, tz],
+  );
+  const gr = g.rows[0] ?? {};
+  const glance: SalonGlance = {
+    appointments: Number(gr.appointments) || 0,
+    walkIns: (Number(gr.walkins) || 0) + (Number(kioskOnly.rows[0]?.n) || 0),
+    noShows: Number(gr.no_shows) || 0,
+    avgWaitMin: gr.avg_wait != null ? Math.round(Number(gr.avg_wait)) : null,
+    avgTicket: gr.avg_ticket != null ? Math.round(Number(gr.avg_ticket) * 100) / 100 : null,
+  };
+
+  return { tickets, markers, techStats: [...stats.values()], glance };
 }
