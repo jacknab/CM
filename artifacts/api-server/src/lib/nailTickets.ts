@@ -58,6 +58,24 @@ export interface TicketPricing {
   price: number;
 }
 
+export interface CustomLine { label: string; price: number }
+
+/** Keypad lines from the client: trimmed labels, 0 < price <= 9999.99 to the cent, at most 20. */
+export function sanitizeCustomLines(raw: unknown): CustomLine[] {
+  if (!Array.isArray(raw)) return [];
+  const out: CustomLine[] = [];
+  for (const r of raw) {
+    const price = Math.round(Number((r as any)?.price) * 100) / 100;
+    if (!Number.isFinite(price) || price <= 0 || price > 9999.99) continue;
+    const label = String((r as any)?.label ?? "").trim().slice(0, 60) || "Custom Amount";
+    out.push({ label, price });
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+
+const sumCustom = (lines: CustomLine[]) => Math.round(lines.reduce((s, l) => s + l.price, 0) * 100) / 100;
+
 /** Duration + price of a service with its add-ons and nail adjustments. */
 export function priceTicket(args: {
   serviceDuration: number;
@@ -65,12 +83,14 @@ export function priceTicket(args: {
   addons: { duration: number | null; price: number | string }[];
   nailPriceAdj?: number;
   nailDurationAdj?: number;
+  /** Keypad "Custom Amount" lines — money only, no time. */
+  customPrice?: number;
 }): TicketPricing {
   const addonDuration = args.addons.reduce((s, a) => s + (Number(a.duration) || 0), 0);
   const addonPrice = args.addons.reduce((s, a) => s + (Number(a.price) || 0), 0);
   return {
     duration: Math.max(1, Number(args.serviceDuration) + addonDuration + (args.nailDurationAdj ?? 0)),
-    price: Number(args.servicePrice) + addonPrice + (args.nailPriceAdj ?? 0),
+    price: Number(args.servicePrice) + addonPrice + (args.nailPriceAdj ?? 0) + (args.customPrice ?? 0),
   };
 }
 
@@ -175,6 +195,7 @@ export interface CreateTicketInput {
   serviceId: number;
   addonIds?: number[];
   nail?: NailInput | null;
+  customLines?: CustomLine[] | null;
   /** A specific technician chosen by staff; omit to take whoever TURN says is next. */
   staffId?: number | null;
   notes?: string | null;
@@ -223,12 +244,14 @@ export async function createNailTicket(deps: TicketDeps, input: CreateTicketInpu
     nailAdj = await nailConfig.resolveNailSelection(service.id, input.nail!);
   }
 
+  const customLines = sanitizeCustomLines(input.customLines);
   const pricing = priceTicket({
     serviceDuration: service.duration,
     servicePrice: Number(service.price),
     addons: addons as any,
     nailPriceAdj: nailAdj.priceAdjustment,
     nailDurationAdj: nailAdj.durationAdjustment,
+    customPrice: sumCustom(customLines),
   });
 
   // ── Technician ─────────────────────────────────────────────────────────────
@@ -299,6 +322,9 @@ export async function createNailTicket(deps: TicketDeps, input: CreateTicketInpu
 
   if (addonIds.length > 0) await storage.setAppointmentAddons(appointmentId, addonIds);
   if (hasNail(input.nail)) await nailConfig.setAppointmentNailSelection(appointmentId, input.nail!);
+  if (customLines.length > 0) {
+    await pool.query(`UPDATE appointments SET custom_lines = $1::jsonb WHERE id = $2`, [JSON.stringify(customLines), appointmentId]);
+  }
 
   // TURN bookkeeping — audit row, and the consideration lock when they were eligible.
   if (eligibleIds.has(staffId)) {
@@ -376,6 +402,7 @@ export interface UpdateItemsInput {
   serviceId?: number;
   addonIds: number[];
   nail?: NailInput | null;
+  customLines?: CustomLine[] | null;
 }
 
 export async function updateNailTicketItems(deps: TicketDeps, input: UpdateItemsInput): Promise<TicketResult<{ duration: number; price: number }>> {
@@ -402,12 +429,14 @@ export async function updateNailTicketItems(deps: TicketDeps, input: UpdateItems
     nailAdj = await nailConfig.resolveNailSelection(service.id, input.nail!);
   }
 
+  const customLines = sanitizeCustomLines(input.customLines);
   const pricing = priceTicket({
     serviceDuration: service.duration,
     servicePrice: Number(service.price),
     addons: addons as any,
     nailPriceAdj: nailAdj.priceAdjustment,
     nailDurationAdj: nailAdj.durationAdjustment,
+    customPrice: sumCustom(customLines),
   });
 
   // A longer ticket must still fit before the technician's next appointment.
@@ -430,6 +459,9 @@ export async function updateNailTicketItems(deps: TicketDeps, input: UpdateItems
   } as any);
   await storage.setAppointmentAddons(appt.id, addonIds);
   if (hasNail(input.nail)) await nailConfig.setAppointmentNailSelection(appt.id, input.nail!);
+  if (input.customLines !== undefined) {
+    await pool.query(`UPDATE appointments SET custom_lines = $1::jsonb WHERE id = $2`, [customLines.length > 0 ? JSON.stringify(customLines) : null, appt.id]);
+  }
 
   deps.notify(input.storeId, { appointmentId: appt.id, kind: "updated" });
   return { ok: true, data: { duration: pricing.duration, price: pricing.price } };
@@ -520,6 +552,8 @@ export interface BoardTicket {
     /** What the nail choices add to the bill, one line each — becomes checkout lines. */
     lines: { label: string; price: number }[];
   } | null;
+  /** Keypad "Custom Amount" lines, become extra lines at checkout. */
+  customLines: CustomLine[];
   staff: { id: number; name: string; color: string | null } | null;
   total: number;
 }
@@ -538,7 +572,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
 
   const { rows } = await pool.query(
     `SELECT a.id, a.ticket_number, a.status, a.date, a.duration, a.checked_in_at, a.started_at, a.staff_id,
-            a.customer_id, c.full_name AS client_name, COALESCE(c.loyalty_points, 0) AS loyalty_points,
+            a.customer_id, a.custom_lines, c.full_name AS client_name, COALESCE(c.loyalty_points, 0) AS loyalty_points,
             (SELECT COALESCE(p.display_phone, p.phone_number_e164) FROM client_phones p
                WHERE p.client_id = c.id ORDER BY p.is_primary DESC, p.id LIMIT 1) AS client_phone,
             a.service_id, s.name AS service_name, COALESCE(s.price, 0) AS service_price,
@@ -576,6 +610,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
       if (art) nailLines.push({ label: `Art: ${art}`, price: Number(r.art_adj) || 0 });
     }
     const nailAdj = nailLines.reduce((sum, l) => sum + l.price, 0);
+    const customLines = sanitizeCustomLines(r.custom_lines);
     return {
       id: r.id,
       ticketNumber: r.ticket_number ?? null,
@@ -594,8 +629,9 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
             priceAdjustment: nailAdj, lines: nailLines,
           }
         : null,
+      customLines,
       staff: r.staff_id ? { id: r.staff_id, name: r.staff_name, color: r.staff_color ?? null } : null,
-      total: (Number(r.service_price) || 0) + addons.reduce((s: number, a: any) => s + a.price, 0) + nailAdj,
+      total: (Number(r.service_price) || 0) + addons.reduce((s: number, a: any) => s + a.price, 0) + nailAdj + sumCustom(customLines),
     };
   });
 

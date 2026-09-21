@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { Clock, Phone, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Ban, CalendarDays, Clock, Hand, Phone, Play, Receipt, ShoppingBag, UserRound, X } from "lucide-react";
 import { formatDuration, formatElapsed } from "./ticketDraft";
 import type { BoardMarker, BoardTicket } from "./nailApi";
 
@@ -18,18 +17,7 @@ interface Props {
 }
 
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-
-function Column({ title, count, children, testId }: { title: string; count: number; children: React.ReactNode; testId: string }) {
-  return (
-    <div className="flex-1 min-w-0 flex flex-col min-h-0 border-r border-border last:border-r-0" data-testid={testId}>
-      <div className="flex items-center gap-2 px-4 h-12 border-b border-border shrink-0">
-        <h2 className="text-[12px] font-bold tracking-wider text-muted-foreground">{title.toUpperCase()}</h2>
-        <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-bold">{count}</span>
-      </div>
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">{children}</div>
-    </div>
-  );
-}
+const NO_COLOR = "#454c56";
 
 export function CheckInBoard(p: Props) {
   const [openId, setOpenId] = useState<number | null>(null);
@@ -42,107 +30,151 @@ export function CheckInBoard(p: Props) {
 
   const waiting = p.tickets.filter((t) => t.status === "confirmed");
   const inService = p.tickets.filter((t) => t.status === "started");
+  const waitingCount = waiting.length + p.markers.length;
   const open = p.tickets.find((t) => t.id === openId) ?? null;
   const marker = p.markers.find((m) => m.id === openMarker) ?? null;
 
   const card = (t: BoardTicket) => {
-    const since = t.status === "started" ? t.startedAt ?? t.date : t.checkedInAt ?? t.date;
-    const future = t.status === "confirmed" && new Date(t.date).getTime() - now > 60_000;
+    const inChair = t.status === "started";
+    const since = inChair ? t.startedAt ?? t.date : t.checkedInAt ?? t.date;
+    const future = !inChair && new Date(t.date).getTime() - now > 60_000;
     return (
-      <button key={t.id} type="button" onClick={() => setOpenId(t.id)} data-testid={`nail-card-${t.id}`}
-        className="w-full text-left rounded-lg border border-border bg-card hover:bg-secondary/60 transition-colors overflow-hidden"
-        style={{ borderLeft: `4px solid ${t.staff?.color || "hsl(var(--cx-surface-4))"}` }}>
-        <div className="px-3 py-2.5">
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-[14px] font-bold truncate">{t.client.name}</span>
-            <span className="text-[11px] font-semibold tabular-nums text-muted-foreground">#{t.ticketNumber ?? t.id}</span>
-          </div>
-          <div className="mt-0.5 text-[12px] text-muted-foreground truncate">
-            {t.service.name}{t.addons.length > 0 ? ` +${t.addons.length}` : ""} · {t.staff?.name ?? "Unassigned"}
-          </div>
-          <div className="mt-1.5 flex items-center justify-between text-[11px]">
-            <span className="text-muted-foreground">
-              {future ? `Next up ~${fmtTime(t.date)}` : `${t.status === "started" ? "In chair" : "Waiting"} ${formatElapsed(since, now)}`}
+      <div key={t.id} className={`checkin-card ${openId === t.id ? "checkin-card-active" : ""}`} onClick={() => setOpenId(t.id)} data-testid={`nail-card-${t.id}`}>
+        <div className="checkin-card-header" style={{ borderLeftColor: t.staff?.color || NO_COLOR }}>
+          <div className="checkin-client">
+            <div className="checkin-card-name-row">
+              <strong>{t.client.name}</strong>
+              <span className="checkin-ticket-num">#{t.ticketNumber ?? t.id}</span>
+            </div>
+            <span className="checkin-card-meta">
+              <Hand size={11} /> {t.service.name}{t.addons.length > 0 ? ` +${t.addons.length}` : ""}
+              {t.staff ? (<><UserRound size={11} /> {t.staff.name}</>) : <span className="checkin-unassigned">Unassigned</span>}
             </span>
-            <span className="font-bold tabular-nums">${t.total.toFixed(2)}</span>
+            <span>
+              <Clock size={11} /> {future ? `Next up ~${fmtTime(t.date)}` : `${inChair ? "In chair" : "Waiting"} ${formatElapsed(since, now)}`}
+            </span>
+          </div>
+          <div className="checkin-card-right">
+            <span className="checkin-card-total">${t.total.toFixed(2)}</span>
+            <div className="checkin-status-pill" data-in-service={inChair}>{inChair ? "IN SERVICE" : "WAITING"}</div>
           </div>
         </div>
-      </button>
+      </div>
     );
   };
 
-  const dock: { label: string; action: () => void; primary?: boolean; danger?: boolean }[] = open
+  const dock: { icon: typeof Play; label: string; action: () => void; primary?: boolean; danger?: boolean }[] = open
     ? open.status === "confirmed"
       ? [
-          { label: "START", action: () => p.onStart(open), primary: true },
-          { label: "REASSIGN", action: () => p.onReassign(open) },
-          { label: "TICKET", action: () => p.onEdit(open) },
-          { label: "CANCEL", action: () => p.onCancel(open), danger: true },
+          { icon: Play, label: "START", action: () => p.onStart(open), primary: true },
+          { icon: UserRound, label: "REASSIGN", action: () => p.onReassign(open) },
+          { icon: Receipt, label: "TICKET", action: () => p.onEdit(open) },
+          { icon: Ban, label: "CANCEL", action: () => p.onCancel(open), danger: true },
         ]
       : [
-          { label: "CHECKOUT", action: () => p.onCheckout(open), primary: true },
-          { label: "REASSIGN", action: () => p.onReassign(open) },
-          { label: "TICKET", action: () => p.onEdit(open) },
+          { icon: ShoppingBag, label: "CHECKOUT", action: () => p.onCheckout(open), primary: true },
+          { icon: UserRound, label: "REASSIGN", action: () => p.onReassign(open) },
+          { icon: Receipt, label: "TICKET", action: () => p.onEdit(open) },
         ]
     : [];
 
   return (
-    <section className="flex-1 min-h-0 flex flex-col" data-testid="nail-board">
-      <div className="px-5 py-3 border-b border-border shrink-0">
-        <h1 className="text-[17px] font-bold">Checked-in clients</h1>
-        <p className="text-[12px] text-muted-foreground">Tap a card to manage the client.</p>
+    <section className="checkin-board" data-testid="nail-board">
+      <div className="checkin-board-header">
+        <h1>Checked-In Clients</h1>
+        <p>Tap a card to expand — manage the client from the dock</p>
       </div>
-      <div className="flex-1 min-h-0 flex">
-        <Column title="Waiting" count={waiting.length + p.markers.length} testId="nail-col-waiting">
-          {p.markers.map((m) => (
-            <button key={`m${m.id}`} type="button" onClick={() => setOpenMarker(m.id)} data-testid={`nail-marker-${m.id}`}
-              className="w-full text-left rounded-lg border border-dashed border-border bg-card/50 hover:bg-secondary/60 px-3 py-2.5">
-              <div className="text-[14px] font-bold truncate">{m.clientName || "Guest"}</div>
-              <div className="text-[12px] text-muted-foreground">Checked in at the kiosk · no ticket yet</div>
-              <div className="mt-1 text-[11px] text-muted-foreground">Waiting {formatElapsed(m.createdAt, now)}</div>
-            </button>
-          ))}
-          {waiting.map(card)}
-          {waiting.length === 0 && p.markers.length === 0 && <p className="text-[13px] text-muted-foreground px-1 py-6 text-center">Nobody waiting.</p>}
-        </Column>
-        <Column title="In service" count={inService.length} testId="nail-col-service">
-          {inService.map(card)}
-          {inService.length === 0 && <p className="text-[13px] text-muted-foreground px-1 py-6 text-center">No clients in service.</p>}
-        </Column>
+      <div className={`checkin-columns ${waitingCount === 0 ? "checkin-columns-full" : ""}`}>
+        {waitingCount > 0 && (
+          <div className="checkin-column checkin-column-waiting" data-testid="nail-col-waiting">
+            <div className="checkin-column-header">
+              <h2>Waiting</h2>
+              <span className="checkin-count">{waitingCount}</span>
+            </div>
+            <div className="checkin-card-list">
+              {p.markers.map((m) => (
+                <div key={`m${m.id}`} className="checkin-card checkin-card-marker" onClick={() => setOpenMarker(m.id)} data-testid={`nail-marker-${m.id}`}>
+                  <div className="checkin-card-header" style={{ borderLeftColor: NO_COLOR }}>
+                    <div className="checkin-client">
+                      <div className="checkin-card-name-row"><strong>{m.clientName || "Guest"}</strong></div>
+                      <span>Checked in at the kiosk · no ticket yet</span>
+                      <span><Clock size={11} /> Waiting {formatElapsed(m.createdAt, now)}</span>
+                    </div>
+                    <div className="checkin-status-pill" data-in-service="false">NO TICKET</div>
+                  </div>
+                </div>
+              ))}
+              {waiting.map(card)}
+            </div>
+          </div>
+        )}
+        <div className="checkin-column checkin-column-service" data-testid="nail-col-service">
+          <div className="checkin-column-header">
+            <h2>In Service</h2>
+            <span className="checkin-count">{inService.length}</span>
+          </div>
+          <div className="checkin-card-list">
+            {inService.length === 0 ? (
+              <div className="checkin-empty">
+                <Hand size={32} />
+                <p>No clients in service</p>
+              </div>
+            ) : inService.map(card)}
+          </div>
+        </div>
       </div>
 
       {open && (
         <>
-          <div className="fixed inset-0 z-[110] bg-black/60" onClick={() => setOpenId(null)} />
-          <div className="fixed z-[120] left-1/2 top-[14vh] -translate-x-1/2 w-[min(94vw,520px)] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden" data-testid="nail-ticket-modal">
-            <div className="flex items-start justify-between px-5 pt-4 pb-3 border-b border-border" style={{ borderLeft: `4px solid ${open.staff?.color || "transparent"}` }}>
-              <div>
-                <div className="flex items-baseline gap-2">
-                  <h2 className="text-[18px] font-bold">{open.client.name}</h2>
-                  <span className="text-[12px] tabular-nums text-muted-foreground">#{open.ticketNumber ?? open.id}</span>
+          <div className="checkin-overlay" onClick={() => setOpenId(null)} />
+          <div className="checkin-modal-wrapper" onClick={() => setOpenId(null)}>
+            <div className="checkin-modal-card" onClick={(e) => e.stopPropagation()} data-testid="nail-ticket-modal">
+              <button type="button" className="checkin-modal-close" onClick={() => setOpenId(null)} aria-label="Close"><X size={16} /></button>
+              <div className="checkin-card-header checkin-card-header-lg" style={{ borderLeftColor: open.staff?.color || NO_COLOR }}>
+                <div className="checkin-client">
+                  <div className="checkin-card-name-row">
+                    <strong>{open.client.name}</strong>
+                    <span className="checkin-ticket-num">#{open.ticketNumber ?? open.id}</span>
+                  </div>
+                  <span><Phone size={13} /> {open.client.phone ?? "No phone"}</span>
                 </div>
-                {open.client.phone && <div className="mt-0.5 flex items-center gap-1.5 text-[12px] text-muted-foreground"><Phone className="w-3 h-3" />{open.client.phone}</div>}
+                <div className="checkin-status-pill" style={{ marginRight: 40 }} data-in-service={open.status === "started"}>
+                  {open.status === "started" ? "IN SERVICE" : "WAITING"}
+                </div>
               </div>
-              <span className={cn("rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wider", open.status === "started" ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground")}>
-                {open.status === "started" ? "IN SERVICE" : "WAITING"}
-              </span>
+              <div className="checkin-modal-body">
+                <div className="checkin-modal-detail">
+                  <Hand size={18} />
+                  <div><small>Service</small><strong>{open.service.name}</strong></div>
+                </div>
+                {(open.addons.length > 0 || (open.nail?.lines.length ?? 0) > 0 || open.customLines.length > 0) && (
+                  <div className="checkin-modal-lines">
+                    {open.addons.map((a) => <div key={`a${a.id}`}><span>+ {a.name}</span><span>${a.price.toFixed(2)}</span></div>)}
+                    {open.nail?.lines.map((l) => <div key={l.label}><span>+ {l.label}</span><span>${l.price.toFixed(2)}</span></div>)}
+                    {open.customLines.map((l, i) => <div key={`c${i}`}><span>+ {l.label}</span><span>${l.price.toFixed(2)}</span></div>)}
+                  </div>
+                )}
+                <div className="checkin-modal-detail">
+                  <UserRound size={18} />
+                  <div><small>Technician</small><strong>{open.staff?.name ?? "Not assigned"}</strong></div>
+                </div>
+                <div className="checkin-modal-detail">
+                  <Clock size={18} />
+                  <div><small>Duration</small><strong>{formatDuration(open.duration)}</strong></div>
+                </div>
+                <div className="checkin-modal-detail">
+                  <CalendarDays size={18} />
+                  <div><small>Total</small><strong>${open.total.toFixed(2)}</strong></div>
+                </div>
+              </div>
             </div>
-            <div className="px-5 py-3 space-y-2 text-[13px]">
-              <div className="flex justify-between"><span className="text-muted-foreground">Service</span><span className="font-semibold">{open.service.name}</span></div>
-              {open.addons.map((a) => <div key={a.id} className="flex justify-between text-[12px]"><span className="text-muted-foreground pl-3">+ {a.name}</span><span>${a.price.toFixed(2)}</span></div>)}
-              {open.nail?.lines.map((l) => <div key={l.label} className="flex justify-between text-[12px]"><span className="text-muted-foreground pl-3">+ {l.label}</span><span>${l.price.toFixed(2)}</span></div>)}
-              <div className="flex justify-between"><span className="text-muted-foreground">Technician</span><span className="font-semibold">{open.staff?.name ?? "Not assigned"}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3" />Duration</span><span>{formatDuration(open.duration)}</span></div>
-              <div className="flex justify-between pt-2 border-t border-border"><span className="font-semibold">Total</span><span className="font-bold tabular-nums">${open.total.toFixed(2)}</span></div>
-            </div>
-            <div className="grid grid-cols-4 gap-2 p-3 border-t border-border" onClick={(e) => e.stopPropagation()}>
+
+            <div className="checkin-dock" onClick={(e) => e.stopPropagation()}>
               {dock.map((b) => (
                 <button key={b.label} type="button" disabled={p.busy} onClick={() => { b.action(); setOpenId(null); }} data-testid={`nail-dock-${b.label.toLowerCase()}`}
-                  className={cn(
-                    "h-12 rounded-md text-[12px] font-bold tracking-wide border disabled:opacity-40",
-                    b.primary ? "bg-primary text-primary-foreground border-primary" : b.danger ? "border-destructive/50 text-destructive hover:bg-destructive/10" : "border-border hover:bg-secondary",
-                  )}>
-                  {b.label}
+                  className={`checkin-dock-btn ${b.primary ? "checkin-dock-primary" : ""} ${b.danger ? "checkin-dock-danger" : ""}`}>
+                  <b.icon size={22} />
+                  <span>{b.label}</span>
                 </button>
               ))}
             </div>
@@ -152,21 +184,20 @@ export function CheckInBoard(p: Props) {
 
       {marker && (
         <>
-          <div className="fixed inset-0 z-[110] bg-black/60" onClick={() => setOpenMarker(null)} />
-          <div className="fixed z-[120] left-1/2 top-[20vh] -translate-x-1/2 w-[min(94vw,420px)] rounded-2xl border border-border bg-card shadow-2xl p-5 space-y-3" data-testid="nail-marker-modal">
-            <div className="flex items-start justify-between">
+          <div className="assign-create-overlay" onClick={() => setOpenMarker(null)} />
+          <div className="assign-create-modal" data-testid="nail-marker-modal">
+            <div className="assign-create-header">
               <div>
-                <h2 className="text-[17px] font-bold">{marker.clientName || "Guest"}</h2>
-                {marker.phone && <div className="text-[12px] text-muted-foreground">{marker.phone}</div>}
+                <h2>{marker.clientName || "Guest"}</h2>
+                <p>{marker.phone ?? "Checked in at the kiosk"}</p>
               </div>
-              <button type="button" onClick={() => setOpenMarker(null)} aria-label="Close" className="p-1 text-muted-foreground"><X className="w-5 h-5" /></button>
+              <button type="button" className="assign-create-close" onClick={() => setOpenMarker(null)} aria-label="Close"><X size={16} /></button>
             </div>
-            <p className="text-[12px] text-muted-foreground">They checked in at the kiosk but don't have a ticket yet.</p>
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => { p.onMarkerRemove(marker); setOpenMarker(null); }}
-                className="h-12 rounded-md border border-destructive/50 text-destructive text-[12px] font-bold hover:bg-destructive/10">REMOVE</button>
-              <button type="button" onClick={() => { p.onMarkerTicket(marker); setOpenMarker(null); }} data-testid="nail-marker-create"
-                className="h-12 rounded-md bg-primary text-primary-foreground text-[12px] font-bold">CREATE TICKET</button>
+            <div className="assign-create-hint">They checked in at the kiosk but don't have a ticket yet.</div>
+            <div className="assign-create-footer">
+              <button type="button" className="assign-create-skip" onClick={() => { p.onMarkerRemove(marker); setOpenMarker(null); }}>REMOVE</button>
+              <button type="button" className="assign-create-btn assign-create-btn-ready" data-testid="nail-marker-create"
+                onClick={() => { p.onMarkerTicket(marker); setOpenMarker(null); }}>CREATE TICKET</button>
             </div>
           </div>
         </>

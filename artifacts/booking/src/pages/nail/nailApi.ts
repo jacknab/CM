@@ -23,6 +23,7 @@ export interface BoardTicket {
     priceAdjustment: number;
     lines: { label: string; price: number }[];
   } | null;
+  customLines: { label: string; price: number }[];
   staff: { id: number; name: string; color: string | null } | null;
   total: number;
 }
@@ -117,6 +118,7 @@ export interface TicketBody {
   serviceId: number;
   addonIds: number[];
   pick: NailPick;
+  customLines: { label: string; price: number }[];
 }
 
 export const createTicket = (body: TicketBody & { clientId: number; staffId?: number | null; checkinId?: number | null }) =>
@@ -127,6 +129,7 @@ export const createTicket = (body: TicketBody & { clientId: number; staffId?: nu
       serviceId: body.serviceId,
       addonIds: body.addonIds,
       nail: toNailBody(body.pick),
+      customLines: body.customLines,
       staffId: body.staffId ?? null,
       checkinId: body.checkinId ?? null,
     }),
@@ -135,7 +138,7 @@ export const createTicket = (body: TicketBody & { clientId: number; staffId?: nu
 export const updateTicket = (id: number, body: TicketBody) =>
   call<{ duration: number; price: number }>(`/api/nail/tickets/${id}`, {
     method: "PUT",
-    body: JSON.stringify({ serviceId: body.serviceId, addonIds: body.addonIds, nail: toNailBody(body.pick) }),
+    body: JSON.stringify({ serviceId: body.serviceId, addonIds: body.addonIds, nail: toNailBody(body.pick), customLines: body.customLines }),
   });
 
 export const reassignTicket = (id: number, staffId: number) =>

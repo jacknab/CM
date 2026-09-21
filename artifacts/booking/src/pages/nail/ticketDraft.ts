@@ -79,7 +79,7 @@ export function togglePick(pick: NailPick, group: NailGroup, id: number): NailPi
 
 export interface TicketLine {
   key: string;
-  kind: "service" | "addon" | "nail";
+  kind: "service" | "addon" | "nail" | "custom";
   label: string;
   duration: number;
   price: number;
@@ -87,6 +87,8 @@ export interface TicketLine {
   group?: NailGroup;
   /** Set on add-on lines. */
   addonId?: number;
+  /** Set on keypad "Custom Amount" lines — their id in the draft. */
+  customId?: number;
   note?: string;
 }
 
@@ -152,28 +154,45 @@ export interface DraftTotals {
   price: number;
 }
 
+/** A keypad "Custom Amount" line while the ticket is being built. */
+export interface DraftCustomLine {
+  id: number;
+  label: string;
+  price: number;
+}
+
 export function draftTotals(
   service: DraftService | null,
   addonIds: number[],
   addons: DraftAddon[],
   cfg: NailConfigView | null,
   pick: NailPick,
+  custom: DraftCustomLine[] = [],
 ): DraftTotals {
-  if (!service) return { lines: [], duration: 0, price: 0 };
-  const lines: TicketLine[] = [
-    { key: `svc-${service.id}`, kind: "service", label: service.name, duration: num(service.duration), price: num(service.price) },
-  ];
-  for (const id of addonIds) {
-    const a = addons.find((x) => x.id === id);
-    if (a) lines.push({ key: `addon-${a.id}`, kind: "addon", label: a.name, duration: num(a.duration), price: num(a.price), addonId: a.id });
+  const lines: TicketLine[] = [];
+  if (service) {
+    lines.push({ key: `svc-${service.id}`, kind: "service", label: service.name, duration: num(service.duration), price: num(service.price) });
+    for (const id of addonIds) {
+      const a = addons.find((x) => x.id === id);
+      if (a) lines.push({ key: `addon-${a.id}`, kind: "addon", label: a.name, duration: num(a.duration), price: num(a.price), addonId: a.id });
+    }
+    lines.push(...nailAdjustment(cfg, pick).lines);
   }
-  const nail = nailAdjustment(cfg, pick);
-  lines.push(...nail.lines);
+  for (const c of custom) {
+    lines.push({ key: `custom-${c.id}`, kind: "custom", label: c.label, duration: 0, price: c.price, customId: c.id });
+  }
   return {
     lines,
     duration: lines.reduce((s, l) => s + l.duration, 0),
     price: Math.round(lines.reduce((s, l) => s + l.price, 0) * 100) / 100,
   };
+}
+
+/** Keypad entry → dollars ("12", "12.5"); null when it isn't a positive amount. */
+export function parseKeypadAmount(display: string): number | null {
+  const n = Number(display);
+  if (!display || !Number.isFinite(n) || n <= 0 || n > 9999.99) return null;
+  return Math.round(n * 100) / 100;
 }
 
 /** Body for POST/PUT /api/nail/tickets — null when nothing nail-specific was chosen. */

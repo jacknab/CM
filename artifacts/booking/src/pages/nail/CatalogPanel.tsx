@@ -1,10 +1,116 @@
-import { Plus } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { formatDuration, type NailConfigView, type NailGroup, type NailOption, type NailPick } from "./ticketDraft";
+import { useState } from "react";
+import { Footprints, Gift, Hand, MoreHorizontal, Package, Plus, Sparkles, UserRound, WalletCards, Zap } from "lucide-react";
+import { formatDuration, parseKeypadAmount, type NailConfigView, type NailGroup, type NailOption, type NailPick } from "./ticketDraft";
 
 export interface CatalogService { id: number; name: string; duration: number; price: number | string }
 export interface CatalogAddon { id: number; name: string; price: number | string; duration: number | null }
 export interface CatalogGroup { key: string; name: string; services: CatalogService[] }
+
+const money = (v: number | string) => `$${Number(v).toFixed(2)}`;
+
+/** Category → icon, by what the name says (salons name their own categories). */
+function iconFor(name: string) {
+  const n = name.toLowerCase();
+  if (/kid|child/.test(n)) return UserRound;
+  if (/combo|package|deal/.test(n)) return Gift;
+  if (/pedi/.test(n)) return Zap;
+  if (/gel\s*x|builder|extension/.test(n)) return WalletCards;
+  if (/dip|wax|polish|repair|extra/.test(n)) return Package;
+  if (/mani|gel/.test(n)) return Hand;
+  if (/add/.test(n)) return Plus;
+  if (/acrylic|art|spa/.test(n)) return Sparkles;
+  return Package;
+}
+
+function ProductCard({ name, sub, price, onClick, compact, more, selected, locked, testId }: {
+  name: string; sub?: string; price?: string; onClick: () => void; compact?: boolean; more?: boolean; selected?: boolean; locked: boolean; testId?: string;
+}) {
+  return (
+    <button type="button" onClick={onClick} disabled={locked} data-testid={testId}
+      className={`product-card ${compact ? "compact" : ""} ${more ? "more-card" : ""} ${selected ? "selected" : ""} ${locked ? "product-card-locked" : ""}`}>
+      {more ? (
+        <>
+          <MoreHorizontal size={21} />
+          <strong>{name}</strong>
+        </>
+      ) : (
+        <>
+          <strong>{name}</strong>
+          <span className="card-line">
+            {sub ? <span>{sub}</span> : <span />}
+            {price ? <b>{price}</b> : compact ? <span className="add-circle"><Plus size={13} /></span> : null}
+          </span>
+        </>
+      )}
+    </button>
+  );
+}
+
+function NailGroupRow({ label, options, selected, group, onPick, locked }: { label: string; options: NailOption[]; selected: number | null; group: NailGroup; onPick: (g: NailGroup, id: number) => void; locked: boolean }) {
+  if (options.length === 0) return null;
+  return (
+    <div className="nail-option-group">
+      <span className="nail-option-label">{label}</span>
+      <div className="addon-grid">
+        {options.map((o) => (
+          <ProductCard key={o.id} compact locked={locked} selected={selected === o.id} onClick={() => onPick(group, o.id)} testId={`nail-opt-${group}-${o.id}`}
+            name={o.name} price={o.isQuote ? "Quote" : o.priceAdjustment > 0 ? `+${money(o.priceAdjustment)}` : undefined} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Keypad: rings up a custom dollar amount as a line on the ticket ─────── */
+
+const KEYS = ["7", "8", "9", "⌫", "4", "5", "6", "↶", "1", "2", "3", "X", "00", "0", "ENTER"];
+
+export function Keypad({ locked, onEnter }: { locked: boolean; onEnter: (amount: number, qty: number) => void }) {
+  const [display, setDisplay] = useState("");
+  const [qty, setQty] = useState(1);
+
+  const press = (key: string) => {
+    if (locked) return;
+    if (key === "⌫") { setDisplay((d) => d.slice(0, -1)); return; }
+    if (key === "↶") { setDisplay(""); setQty(1); return; }
+    if (key === "X") {
+      // "3 X" then the price = three of them.
+      const n = Number(display);
+      if (Number.isInteger(n) && n >= 1 && n <= 99) { setQty(n); setDisplay(""); }
+      return;
+    }
+    if (key === "ENTER") {
+      const amount = parseKeypadAmount(display);
+      if (amount != null) onEnter(amount, qty);
+      setDisplay(""); setQty(1);
+      return;
+    }
+    setDisplay((d) => (d + key).slice(0, 7));
+  };
+
+  return (
+    <div className={`keypad ${locked ? "keypad-locked" : ""}`} data-testid="nail-keypad">
+      <div className="calculator-display" data-testid="nail-keypad-display">
+        {qty > 1 && <span className="display-qty">{qty} ×</span>}
+        {display ? `$${display}` : ""}
+      </div>
+      <div className="key-grid">
+        {KEYS.map((key) => (
+          <button key={key} type="button" disabled={locked} onClick={() => press(key)} data-testid={`nail-key-${key}`}
+            className={key === "ENTER" ? "enter-key" : key === "↶" ? "undo-key" : key === "X" ? "qty-key" : ""}>
+            {key}
+            {key === "X" && <small>Qty</small>}
+          </button>
+        ))}
+      </div>
+      <div className="money-grid">
+        {[1, 5, 10, 20].map((m) => (
+          <button key={m} type="button" disabled={locked} onClick={() => setDisplay(String(m))}>${m}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 interface Props {
   locked: boolean;
@@ -24,110 +130,61 @@ interface Props {
   onPick: (group: NailGroup, id: number) => void;
 }
 
-const money = (v: number | string) => `$${Number(v).toFixed(2)}`;
-
-function Tile({ selected, onClick, children, testId }: { selected?: boolean; onClick: () => void; children: React.ReactNode; testId?: string }) {
-  return (
-    <button type="button" onClick={onClick} data-testid={testId}
-      className={cn(
-        "min-h-[64px] rounded-lg border px-3 py-2 text-left transition-colors flex flex-col justify-between gap-1",
-        selected ? "border-primary bg-primary/10" : "border-border bg-card hover:bg-secondary",
-      )}>
-      {children}
-    </button>
-  );
-}
-
-function NailGroupRow({ label, options, selected, group, onPick }: { label: string; options: NailOption[]; selected: number | null; group: NailGroup; onPick: Props["onPick"] }) {
-  if (options.length === 0) return null;
-  return (
-    <div>
-      <h3 className="text-[11px] font-semibold tracking-wider text-muted-foreground mb-2">{label}</h3>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-2">
-        {options.map((o) => (
-          <Tile key={o.id} selected={selected === o.id} onClick={() => onPick(group, o.id)} testId={`nail-opt-${group}-${o.id}`}>
-            <span className="text-[13px] font-semibold leading-tight">{o.name}</span>
-            <span className="text-[11px] text-muted-foreground">
-              {o.isQuote ? "Custom quote" : o.priceAdjustment > 0 ? `+${money(o.priceAdjustment)}` : "Included"}
-            </span>
-          </Tile>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export function CatalogPanel(p: Props) {
   const services = p.groups.find((g) => g.key === p.activeGroup)?.services ?? [];
   return (
-    <section className="relative flex-1 min-w-0 flex flex-col min-h-0" data-testid="nail-catalog">
-      <div className="flex gap-1 overflow-x-auto border-b border-border px-3 shrink-0">
-        {p.groups.map((g) => (
-          <button key={g.key} type="button" onClick={() => p.onGroup(g.key)} data-testid={`nail-cat-${g.key}`}
-            className={cn(
-              "px-4 h-12 shrink-0 text-[12px] font-bold tracking-wider border-b-2 transition-colors",
-              g.key === p.activeGroup ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
-            )}>
-            {g.name.toUpperCase()}
-          </button>
+    <div className={`catalog-panel ${p.locked ? "catalog-locked" : ""}`} data-testid="nail-catalog">
+      <div className="category-tabs">
+        {p.groups.map((g) => {
+          const Icon = iconFor(g.name);
+          return (
+            <button key={g.key} type="button" onClick={() => p.onGroup(g.key)} data-testid={`nail-cat-${g.key}`}
+              className={g.key === p.activeGroup ? "active" : ""}>
+              <Icon size={20} />
+              <span>{g.name}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="service-grid">
+        {services.map((s) => (
+          <ProductCard key={s.id} locked={p.locked} selected={p.serviceId === s.id} onClick={() => p.onService(s)} testId={`nail-service-${s.id}`}
+            name={s.name} sub={formatDuration(s.duration)} price={money(s.price)} />
         ))}
+        {services.length === 0 && <p className="empty-state-hint">No services in this category.</p>}
       </div>
 
-      <div className={cn("flex-1 overflow-y-auto p-4 space-y-6", p.locked && "opacity-30 pointer-events-none select-none")}>
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-2">
-          {services.map((s) => (
-            <Tile key={s.id} selected={p.serviceId === s.id} onClick={() => p.onService(s)} testId={`nail-service-${s.id}`}>
-              <span className="text-[14px] font-semibold leading-tight">{s.name}</span>
-              <span className="flex justify-between text-[11px] text-muted-foreground">
-                <span>{formatDuration(s.duration)}</span>
-                <span className="font-semibold text-foreground">{money(s.price)}</span>
-              </span>
-            </Tile>
-          ))}
-          {services.length === 0 && <p className="text-[13px] text-muted-foreground col-span-full">No services in this category.</p>}
-        </div>
-
-        {p.nail && (
-          <div className="space-y-4" data-testid="nail-options">
-            <NailGroupRow label="NAIL LENGTH" options={p.nail.sizes} selected={p.pick.size} group="size" onPick={p.onPick} />
-            <NailGroupRow label="NAIL SHAPE" options={p.nail.shapes} selected={p.pick.shape} group="shape" onPick={p.onPick} />
-            <NailGroupRow label="NAIL ART" options={p.nail.applications} selected={p.pick.application} group="application" onPick={p.onPick} />
-            <NailGroupRow label="ART EFFECT" options={p.nail.effects} selected={p.pick.effect} group="effect" onPick={p.onPick} />
-          </div>
-        )}
-
-        {p.addons.length > 0 && (
-          <div>
-            <h3 className="text-[11px] font-semibold tracking-wider text-muted-foreground mb-2">
-              {p.moreAddons ? "ALL ADD-ONS" : "POPULAR ADD-ONS"}
-            </h3>
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2">
-              {p.addons.map((a) => (
-                <Tile key={a.id} selected={p.addonIds.includes(a.id)} onClick={() => p.onToggleAddon(a.id)} testId={`nail-addon-${a.id}`}>
-                  <span className="text-[13px] font-semibold leading-tight">{a.name}</span>
-                  <span className="flex items-center justify-between text-[11px] text-muted-foreground">
-                    <span>{Number(a.price) > 0 ? `+${money(a.price)}` : "Free"}</span>
-                    <Plus className="w-3.5 h-3.5" />
-                  </span>
-                </Tile>
-              ))}
-              {p.hasMoreAddons && (
-                <button type="button" onClick={p.onToggleMore} data-testid="nail-addon-more"
-                  className="min-h-[64px] rounded-lg border border-dashed border-border text-[13px] font-semibold text-muted-foreground hover:bg-secondary">
-                  {p.moreAddons ? "Less" : "More"}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {p.locked && (
-        <div className="absolute inset-x-0 top-12 bottom-0 flex flex-col items-center justify-center gap-2 text-center text-muted-foreground pointer-events-none">
-          <p className="text-[14px] font-semibold text-foreground">Start a walk-in to begin a ticket</p>
-          <p className="text-[12px]">Tap Walk-in below and enter the client's phone number.</p>
+      {p.nail && (
+        <div className="nail-options" data-testid="nail-options">
+          <NailGroupRow label="NAIL LENGTH" options={p.nail.sizes} selected={p.pick.size} group="size" onPick={p.onPick} locked={p.locked} />
+          <NailGroupRow label="NAIL SHAPE" options={p.nail.shapes} selected={p.pick.shape} group="shape" onPick={p.onPick} locked={p.locked} />
+          <NailGroupRow label="NAIL ART" options={p.nail.applications} selected={p.pick.application} group="application" onPick={p.onPick} locked={p.locked} />
+          <NailGroupRow label="ART EFFECT" options={p.nail.effects} selected={p.pick.effect} group="effect" onPick={p.onPick} locked={p.locked} />
         </div>
       )}
-    </section>
+
+      {p.addons.length > 0 && (
+        <>
+          <h3 className="section-label">{p.moreAddons ? "ALL ADD-ONS" : "POPULAR ADD-ONS"}</h3>
+          <div className="addon-grid">
+            {p.addons.map((a) => (
+              <ProductCard key={a.id} compact locked={p.locked} selected={p.addonIds.includes(a.id)} onClick={() => p.onToggleAddon(a.id)} testId={`nail-addon-${a.id}`}
+                name={a.name} price={Number(a.price) > 0 ? `+${money(a.price)}` : undefined} />
+            ))}
+            {p.hasMoreAddons && (
+              <ProductCard compact more locked={p.locked} name={p.moreAddons ? "Less" : "More"} onClick={p.onToggleMore} testId="nail-addon-more" />
+            )}
+          </div>
+        </>
+      )}
+
+      {p.locked && (
+        <div className="catalog-locked-overlay">
+          <Footprints size={32} />
+          <p>Start a Walk-In ticket to begin ringing up services</p>
+        </div>
+      )}
+    </div>
   );
 }

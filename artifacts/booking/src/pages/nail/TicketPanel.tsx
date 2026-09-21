@@ -1,5 +1,4 @@
 import { Hand, X } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { formatDuration, type TicketLine } from "./ticketDraft";
 
 interface Props {
@@ -22,69 +21,64 @@ interface Props {
 
 export function TicketPanel({ client, badge, lines, duration, price, submitLabel, canSubmit, busy, missing, editing, onRemove, onClear, onSubmit }: Props) {
   return (
-    <section className="w-[340px] shrink-0 flex flex-col bg-card border-r border-border min-h-0" data-testid="nail-ticket-panel">
+    <section className="ticket-panel" data-testid="nail-ticket-panel">
       {client && (
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-background/40 shrink-0">
-          <div className="min-w-0">
-            <div className="text-[15px] font-bold truncate" data-testid="nail-ticket-client">{client.name}</div>
-            <div className="text-[11px] font-semibold text-primary tracking-wide">{client.loyaltyPoints} pts</div>
+        <div className="ticket-client-header">
+          <div className="ticket-client-main">
+            <div className="ticket-client-name" data-testid="nail-ticket-client">{client.name}</div>
+            <div className="ticket-client-points">{client.loyaltyPoints} pts</div>
           </div>
-          <div className="text-[13px] font-bold tabular-nums text-muted-foreground">{badge}</div>
+          <div className="ticket-client-num">{badge}</div>
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="ticket-items">
         {lines.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 px-6 py-14 text-center text-muted-foreground">
-            <Hand className="w-9 h-9 opacity-50" />
-            <p className="text-[13px] leading-relaxed max-w-[220px]">
-              {client ? "Pick a service to build the ticket" : "Start a walk-in to begin a ticket"}
-            </p>
+          <div className="empty-ticket">
+            <Hand size={36} />
+            <p>{client ? "Add services from the catalog to build the ticket" : "Start a Walk-In ticket to begin ringing up services"}</p>
           </div>
         ) : (
           lines.map((line) => (
-            <div key={line.key} className="flex items-center gap-2 px-4 py-3 border-b border-border" data-testid={`nail-line-${line.kind}`}>
-              <div className="min-w-0 flex-1">
-                <div className={cn("text-[13px] truncate", line.kind === "service" ? "font-bold" : "font-medium")}>{line.label}</div>
-                <div className="text-[11px] text-muted-foreground">
-                  {line.note ?? (line.duration > 0 ? formatDuration(line.duration) : "No added time")}
-                </div>
+            <div className="ticket-item" key={line.key} data-testid={`nail-line-${line.kind}`}>
+              <div className="item-copy">
+                <strong>{line.label}</strong>
+                <span className={line.note ? "note" : undefined}>
+                  {line.note ?? (line.duration > 0 ? formatDuration(line.duration) : "No duration")}
+                </span>
               </div>
-              <div className="text-[13px] font-bold tabular-nums">${line.price.toFixed(2)}</div>
-              {line.kind !== "service" && (
-                <button type="button" onClick={() => onRemove(line)} aria-label={`Remove ${line.label}`}
-                  className="p-1 text-muted-foreground hover:text-foreground">
-                  <X className="w-4 h-4" />
+              <div className="item-price">
+                <strong>${line.price.toFixed(2)}</strong>
+              </div>
+              {line.kind !== "service" ? (
+                <button type="button" className="remove-item" onClick={() => onRemove(line)} aria-label={`Remove ${line.label}`}>
+                  <X size={16} />
                 </button>
-              )}
+              ) : <span />}
             </div>
           ))
         )}
       </div>
 
-      <div className="shrink-0 border-t border-border bg-background/40 px-4 pt-3 pb-3 space-y-2">
+      <div className="ticket-total">
+        {lines.length > 0 && duration > 0 && (
+          <div className="time-estimate">
+            <span>EST. TIME</span>{" "}
+            <strong>{formatDuration(duration)}</strong>
+          </div>
+        )}
+        {missing.length > 0 && <div className="ticket-missing">Choose {missing.join(", ")} to continue.</div>}
         {lines.length > 0 && (
-          <>
-            <div className="flex justify-between text-[11px] font-semibold tracking-wide text-muted-foreground">
-              <span>EST. TIME</span>
-              <span className="text-primary text-[13px]">{formatDuration(duration)}</span>
-            </div>
-            <div className="flex justify-between items-baseline pt-2 border-t border-border">
-              <span className="text-[13px] font-semibold text-muted-foreground">TOTAL</span>
-              <span className="text-[20px] font-bold tabular-nums" data-testid="nail-ticket-total">${price.toFixed(2)}</span>
-            </div>
-          </>
+          <div className="grand-total">
+            <span>TOTAL</span>
+            <strong data-testid="nail-ticket-total">${price.toFixed(2)}</strong>
+          </div>
         )}
-        {missing.length > 0 && (
-          <div className="text-[11px] text-muted-foreground">Choose {missing.join(", ")} to continue.</div>
-        )}
-        <div className="flex gap-2 pt-1">
-          <button type="button" onClick={onClear} disabled={lines.length === 0 && !editing}
-            className="h-12 w-[72px] shrink-0 rounded-md border border-border text-[13px] font-semibold text-muted-foreground hover:bg-secondary disabled:opacity-40">
+        <div className="checkout-row">
+          <button type="button" className="checkout-clr" onClick={onClear} disabled={lines.length === 0 && !editing}>
             {editing ? "CANCEL" : "CLR"}
           </button>
-          <button type="button" onClick={onSubmit} disabled={!canSubmit || busy} data-testid="nail-submit-ticket"
-            className="h-12 flex-1 rounded-md bg-primary text-primary-foreground text-[14px] font-bold tracking-wide disabled:opacity-40">
+          <button type="button" className={`checkout ${!canSubmit || busy ? "disabled" : ""}`} onClick={onSubmit} disabled={!canSubmit || busy} data-testid="nail-submit-ticket">
             {busy ? "WORKING…" : submitLabel}
           </button>
         </div>

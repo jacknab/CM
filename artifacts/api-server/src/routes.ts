@@ -17508,6 +17508,7 @@ or
         serviceId: z.number().int(),
         addonIds: z.array(z.number().int()).optional(),
         nail: nailSelectionInput.nullable().optional(),
+        customLines: z.array(z.object({ label: z.string().max(60), price: z.number() })).max(20).optional(),
         staffId: z.number().int().nullable().optional(),
         notes: z.string().max(500).nullable().optional(),
         checkinId: z.number().int().nullable().optional(),
@@ -17535,6 +17536,7 @@ or
         serviceId: z.number().int().optional(),
         addonIds: z.array(z.number().int()),
         nail: nailSelectionInput.nullable().optional(),
+        customLines: z.array(z.object({ label: z.string().max(60), price: z.number() })).max(20).optional(),
       }).safeParse(req.body);
       const appointmentId = Number(req.params.id);
       if (!body.success || !Number.isFinite(appointmentId)) return res.status(400).json({ message: "Invalid ticket" });

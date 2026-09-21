@@ -585,6 +585,8 @@ export const appointments = pgTable("appointments", {
   // service + add-on money (paid at the staff service rate) and retail product money (product rate).
   serviceRevenue:          decimal("service_revenue", { precision: 10, scale: 2 }),
   productRevenue:          decimal("product_revenue", { precision: 10, scale: 2 }),
+  /** Nail POS keypad lines ("Custom Amount") on an open ticket: [{label, price}]. */
+  customLines:             jsonb("custom_lines"),
   // Set when this appointment was booked as a Catalog Package (see packages).
   // serviceId still points at the package's primary service so existing
   // scheduling / calendar / commission code is unaffected.

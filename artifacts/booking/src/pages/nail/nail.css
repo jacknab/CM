@@ -1,0 +1,369 @@
+/* Nail POS (/nail) — the salon's own dark design, ported from /apps/nailsalon-wrapper.
+   Every rule is scoped under .nail-app so nothing leaks into the rest of the app. */
+
+.nail-app { font-family: 'DM Sans', sans-serif; color: #e8eaed; background: #20242c; font-synthesis: none; }
+.nail-app button { cursor: pointer; }
+.nail-app button:disabled { cursor: not-allowed; }
+.nail-app h1, .nail-app h2, .nail-app h3 { margin: 0; font-family: inherit; letter-spacing: normal; }
+
+/* ===== Layout shell ===== */
+.nail-app .pos-shell { width: 100vw; height: 100vh; min-width: 960px; display: grid; grid-template-columns: 338px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) 72px; gap: 0 9px; background: #20242c; overflow: hidden; }
+.nail-app .ticket-panel, .nail-app .work-area { min-height: 0; margin-top: 6px; }
+
+/* ===== Ticket panel (left) ===== */
+.nail-app .ticket-panel { background: #2a2e36; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid #3b424c; }
+.nail-app .ticket-client-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 11px; background: #232830; border-bottom: 1px solid #3b424c; flex-shrink: 0; }
+.nail-app .ticket-client-main { display: flex; flex-direction: column; gap: 2px; }
+.nail-app .ticket-client-name { font-size: 15px; font-weight: 700; color: #eef3fb; line-height: 1.2; }
+.nail-app .ticket-client-points { font-size: 11px; font-weight: 600; color: #0d9bd1; letter-spacing: .3px; }
+.nail-app .ticket-client-num { font-size: 13px; font-weight: 700; color: #8b94a0; font-variant-numeric: tabular-nums; }
+.nail-app .ticket-items { flex: 1; overflow-y: auto; }
+.nail-app .ticket-items::-webkit-scrollbar { width: 5px; }
+.nail-app .ticket-items::-webkit-scrollbar-track { background: #2a2e36; }
+.nail-app .ticket-items::-webkit-scrollbar-thumb { background: #454c56; }
+.nail-app .empty-ticket { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 50px 20px; color: #5d6571; text-align: center; }
+.nail-app .empty-ticket p { font-size: 13px; max-width: 220px; line-height: 1.5; margin: 0; }
+.nail-app .empty-ticket svg { color: #3b424c; }
+.nail-app .ticket-item { height: 73px; padding: 12px 14px; display: grid; grid-template-columns: minmax(0,1fr) 64px 17px; align-items: center; gap: 8px; border-bottom: 1px solid #3b424c; }
+.nail-app .item-copy { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.nail-app .item-copy strong, .nail-app .item-price strong { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #e8eaed; }
+.nail-app .item-copy span { color: #a7afb9; font-size: 12px; }
+.nail-app .item-price { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.nail-app .item-price button { display: flex; gap: 4px; align-items: center; background: transparent; font-size: 11px; color: #9aa2ad; }
+.nail-app .tech-assign { position: relative; }
+.nail-app .tech-dropdown { position: absolute; bottom: 100%; right: 0; margin-bottom: 4px; background: #353a43; border: 1px solid #5a6270; z-index: 50; display: flex; flex-direction: column; box-shadow: 0 -4px 12px rgba(0,0,0,.4); }
+.nail-app .tech-dropdown button { display: flex; align-items: center; gap: 6px; padding: 9px 14px; font-size: 11px; color: #c8cdd3; white-space: nowrap; border-bottom: 1px solid #3b424c; }
+.nail-app .tech-dropdown button:hover { background: #3d444e; }
+.nail-app .tech-dropdown button.selected-tech { color: #0d9bd1; font-weight: 600; }
+.nail-app .tech-dropdown button:last-child { border-bottom: 0; }
+.nail-app .remove-item { color: #ef5a5f; background: transparent; }
+
+.nail-app .time-estimate { background: #2d343d; margin: 0 -14px 12px; padding: 10px 14px; border-top: 1px solid #3b424c; border-bottom: 1px solid #3b424c; }
+.nail-app .time-estimate span { color: #8b94a0; font-weight: 600; font-size: 11px; }
+.nail-app .time-estimate strong { color: #0d9bd1; font-size: 13px; }
+.nail-app .ticket-total { margin-top: auto; background: #232830; border-top: 1px solid #3b424c; padding: 16px 14px 10px; }
+.nail-app .ticket-total > div { display: flex; justify-content: space-between; margin: 0 0 11px; font-size: 12px; }
+.nail-app .ticket-total span { color: #9aa2ad; font-weight: 600; font-size: 11px; }
+.nail-app .ticket-total button { background: none; color: #0d9bd1; font-size: 12px; }
+.nail-app .ticket-total .grand-total { border-top: 1px solid #3b424c; padding-top: 14px; margin-top: 12px; margin-bottom: 16px; }
+.nail-app .grand-total span, .nail-app .grand-total strong { color: #f2f5f4; font-size: 16px; }
+.nail-app .ticket-total .checkout-row { display: flex; gap: 8px; }
+.nail-app .checkout { flex: 1; height: 51px; background: #0d9b6e !important; color: white !important; font-weight: 700; font-size: 14px !important; border-radius: 0; display: flex; justify-content: center; gap: 12px; align-items: center; }
+.nail-app .checkout-clr { width: 72px; height: 51px; background: #ef5a5f !important; color: white !important; font-weight: 700; font-size: 14px !important; border-radius: 0; display: flex; justify-content: center; align-items: center; border: none; cursor: pointer; flex-shrink: 0; }
+.nail-app .checkout-clr:hover { background: #d94f54 !important; }
+.nail-app .checkout-clr:disabled { background: #3b424c !important; cursor: default; opacity: 0.5; }
+.nail-app .checkout.disabled { background: #3b424c !important; cursor: default; opacity: 0.5; }
+.nail-app .checkout span { color: white; font-size: 14px; }
+
+/* ===== Work area (right) ===== */
+.nail-app .work-area { padding-right: 9px; display: flex; flex-direction: column; min-width: 0; }
+
+/* Sale area */
+.nail-app .sale-area { flex: 1; display: grid; grid-template-columns: 425px minmax(0, 1fr); gap: 9px; min-height: 0; }
+.nail-app .keypad, .nail-app .catalog-panel { background: #2a2e36; border-radius: 0; padding: 12px; min-height: 0; overflow: hidden; }
+
+/* Keypad */
+.nail-app .calculator-display { height: 59px; border: 1px solid #454c56; display: flex; align-items: center; justify-content: flex-end; padding: 0 18px; color: #e8eaed; font-size: 28px; font-weight: 700; background: #232830; overflow: hidden; white-space: nowrap; }
+.nail-app .key-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 11px; }
+.nail-app .key-grid button, .nail-app .money-grid button { min-height: 77px; background: #353a43; border: 1px solid #454c56; border-radius: 0; font-size: 24px; color: #e8eaed; }
+.nail-app .key-grid .undo-key { color: #f0a830; background: #3d3528; font-size: 34px; }
+.nail-app .key-grid .qty-key { color: #0d9b6e; font-size: 26px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+.nail-app .qty-key small { font-size: 11px; margin-top: 2px; }
+.nail-app .key-grid .enter-key { background: #0d9b6e; color: white; font-weight: 700; grid-column: span 2; font-size: 19px; border: 0; }
+.nail-app .money-grid { margin-top: 10px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.nail-app .money-grid button { min-height: 65px; font-size: 16px; color: #0d9bd1; font-weight: 700; }
+
+/* Catalog panel */
+.nail-app .catalog-panel { padding: 0 10px 7px; display: flex; flex-direction: column; position: relative; }
+.nail-app .category-tabs { height: 69px; display: grid; grid-template-columns: repeat(8, 1fr); border-bottom: 1px solid #3b424c; flex: 0 0 auto; }
+.nail-app .category-tabs button { position: relative; background: #2a2e36; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 7px; font-size: 9px; font-weight: 700; white-space: nowrap; color: #8b94a0; cursor: pointer; transition: color 0.12s; }
+.nail-app .category-tabs button:hover { color: #c8cdd3; }
+.nail-app .category-tabs button svg { color: #0d9bd1; }
+.nail-app .category-tabs button:nth-child(2) svg, .nail-app .category-tabs button:nth-child(3) svg, .nail-app .category-tabs button:nth-child(4) svg, .nail-app .category-tabs button:nth-child(5) svg, .nail-app .category-tabs button:nth-child(6) svg, .nail-app .category-tabs button:nth-child(7) svg, .nail-app .category-tabs button:nth-child(8) svg { color: #0d9bd1; }
+.nail-app .category-tabs .active { color: #f2f5f4; }
+.nail-app .category-tabs .active::after { content: ''; position: absolute; height: 3px; background: #0d9bd1; left: 9px; right: 9px; bottom: -1px; border-radius: 0; }
+.nail-app .service-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 11px 0 12px; }
+.nail-app .product-card { position: relative; min-width: 0; height: 81px; border: 1px solid #454c56; background: #353a43; border-radius: 0; padding: 12px 15px; text-align: left; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; color: #e8eaed; transition: background 0.12s, border-color 0.12s; overflow: hidden; }
+.nail-app .product-card:hover { background: #3d444e; border-color: #5a6270; }
+.nail-app .product-card:active { transform: scale(0.98); }
+.nail-app .product-card strong { font-size: 12px; line-height: 1.25; word-break: break-word; overflow-wrap: anywhere; width: 100%; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.nail-app .product-card span { color: #8b94a0; font-size: 10px; }
+.nail-app .product-card b { font-size: 12px; margin-top: auto; color: #0d9bd1; }
+.nail-app .product-card.selected { border: 2px solid #0d9bd1; padding: 11px 14px; }
+.nail-app .section-label { font-size: 10px; margin: 0; padding: 5px 0 8px; border-bottom: 1px solid #3b424c; color: #8b94a0; }
+.nail-app .addon-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; padding: 10px 0 9px; }
+.nail-app .product-card.compact { height: 70px; padding: 10px 9px; align-items: center; text-align: center; gap: 3px; }
+.nail-app .product-card.compact strong { font-size: 10px; line-height: 1.2; word-break: break-word; overflow-wrap: anywhere; }
+.nail-app .product-card.compact b { font-size: 11px; margin: 0; }
+.nail-app .product-card.compact:active { transform: scale(0.97); }
+.nail-app .add-circle { width: 18px; height: 18px; border: 1px solid #8b94a0; border-radius: 50%; display: grid; place-items: center; color: #c8cdd3 !important; margin-top: auto; }
+.nail-app .more-card { justify-content: center; }
+.nail-app .more-card svg { margin: 0 auto; color: #8b94a0; }
+
+/* Locked POS state (no ticket open) */
+.nail-app .product-card-locked { opacity: 0.4; cursor: not-allowed; }
+.nail-app .product-card-locked:hover { background: #353a43; border-color: #454c56; transform: none; }
+.nail-app .keypad-locked .key-grid button:disabled, .nail-app .keypad-locked .money-grid button:disabled { opacity: 0.3; cursor: not-allowed; }
+.nail-app .catalog-locked .category-tabs button { pointer-events: none; opacity: 0.5; }
+.nail-app .catalog-locked-overlay { position: absolute; inset: 0; background: rgba(32,36,44,.85); backdrop-filter: blur(2px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; z-index: 20; color: #5d6571; text-align: center; }
+.nail-app .catalog-locked-overlay svg { color: #3b424c; }
+.nail-app .catalog-locked-overlay p { font-size: 15px; max-width: 280px; line-height: 1.5; margin: 0; }
+
+/* Nail shape/size inset selection */
+.nail-app .nail-options { margin: 4px 0 8px; padding: 12px; background: #232830; border: 1px solid #3b424c; border-radius: 4px; display: flex; flex-direction: column; gap: 12px; }
+.nail-app .nail-option-group { display: flex; flex-direction: column; gap: 7px; }
+.nail-app .nail-option-label { font-size: 9px; font-weight: 700; letter-spacing: .5px; color: #8b94a0; }
+.nail-app .nail-option-group .addon-grid { padding: 0; }
+
+/* Bottom nav */
+.nail-app .bottom-nav { grid-column: 1 / -1; background: #1a1e25; display: grid; grid-template-columns: repeat(8, 86px) 1fr; align-items: stretch; padding-left: 14px; color: #eef3fb; }
+.nail-app .bottom-nav button { position: relative; background: transparent; display: flex; flex-direction: column; gap: 6px; justify-content: center; align-items: center; font-size: 11px; color: #8b94a0; }
+.nail-app .bottom-nav button.active { background: #0d9bd1; border-radius: 0; margin: 8px 0; color: #fff; }
+.nail-app .bottom-nav button i { position: absolute; right: 12px; top: 14px; width: 20px; height: 20px; border-radius: 50%; font-style: normal; display: grid; place-items: center; font-size: 11px; font-weight: 800; color: #fff; }
+.nail-app .nav-badge-waiting { right: auto; left: 12px; background: #facc15 !important; color: #1a1e25 !important; }
+.nail-app .nav-badge-service { background: #86efac !important; color: #1a1e25 !important; }
+.nail-app .connection { align-self: center; justify-self: end; margin-right: 30px; color: #0d9b6e; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.nail-app .connection span { width: 11px; height: 11px; border-radius: 50%; background: #0d9b6e; box-shadow: 0 0 0 4px rgba(13,155,110,.12); }
+
+@media (max-width: 1180px) {.nail-app .pos-shell { min-width: 860px; grid-template-columns: 285px minmax(0,1fr); }.nail-app .sale-area { grid-template-columns: 360px minmax(0, 1fr); } }
+
+/* Check-in board page */
+.nail-app .checkin-page { grid-template-columns: 1fr !important; }
+.nail-app .checkin-board { display: flex; flex-direction: column; padding: 28px 32px; overflow-y: auto; min-height: 0; }
+.nail-app .checkin-board-header h1 { font-size: 24px; font-weight: 700; color: #eef3fb; margin: 0; }
+.nail-app .checkin-board-header p { font-size: 13px; color: #8b94a0; margin: 4px 0 0; }
+.nail-app .checkin-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; flex: 1; min-height: 0; }
+.nail-app .checkin-columns-full { grid-template-columns: 1fr !important; }
+.nail-app .checkin-column { display: flex; flex-direction: column; gap: 8px; min-height: 0; border-radius: 10px; padding: 14px; }
+.nail-app .checkin-column-waiting { background: rgba(250, 204, 21, 0.10); border: 1px solid rgba(250, 204, 21, 0.20); }
+.nail-app .checkin-column-service { background: rgba(134, 239, 172, 0.10); border: 1px solid rgba(134, 239, 172, 0.20); }
+.nail-app .checkin-column-header { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; border-bottom: 2px solid #3b424c; }
+.nail-app .checkin-column-header h2 { font-size: 15px; font-weight: 700; color: #eef3fb; margin: 0; }
+.nail-app .checkin-count { background: #353a43; border: 1px solid #454c56; border-radius: 12px; padding: 2px 10px; font-size: 12px; font-weight: 700; color: #c8cdd3; }
+.nail-app .checkin-card-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; overflow-y: auto; flex: 1; padding-right: 4px; align-content: start; }
+.nail-app .checkin-card { background: #232830; border: 1px solid #3b424c; border-radius: 6px; overflow: hidden; transition: border-color 0.15s, transform 0.15s; }
+.nail-app .checkin-card:hover { border-color: #5a6270; transform: translateY(-1px); }
+.nail-app .checkin-card-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-left: 3px solid #454c56; gap: 8px; }
+.nail-app .checkin-client { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.nail-app .checkin-client strong { font-size: 13px; font-weight: 700; color: #eef3fb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .checkin-card-name-row { display: flex; align-items: center; gap: 8px; }
+.nail-app .checkin-ticket-num { font-size: 10px; font-weight: 700; color: #0d9bd1; background: rgba(13,155,209,.12); padding: 1px 6px; border-radius: 4px; letter-spacing: .3px; flex-shrink: 0; }
+.nail-app .checkin-client span { font-size: 10px; color: #8b94a0; display: flex; align-items: center; gap: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .checkin-card-meta { gap: 8px !important; }
+.nail-app .checkin-card-meta svg { flex-shrink: 0; }
+.nail-app .checkin-status-pill { font-size: 8px; font-weight: 700; letter-spacing: .5px; padding: 3px 8px; border-radius: 10px; flex-shrink: 0; }
+.nail-app .checkin-status-pill[data-in-service="true"] { background: rgba(13,155,110,.15); color: #0d9b6e; border: 1px solid rgba(13,155,110,.3); }
+.nail-app .checkin-status-pill[data-in-service="false"] { background: rgba(239,90,95,.12); color: #ef5a5f; border: 1px solid rgba(239,90,95,.3); }
+.nail-app .checkin-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 48px 20px; color: #8b94a0; text-align: center; grid-column: 1 / -1; }
+.nail-app .checkin-empty p { font-size: 13px; margin: 0; }
+.nail-app .checkin-card-list::-webkit-scrollbar { width: 6px; }
+.nail-app .checkin-card-list::-webkit-scrollbar-track { background: transparent; }
+.nail-app .checkin-card-list::-webkit-scrollbar-thumb { background: #3b424c; border-radius: 3px; }
+
+/* Card tap state */
+.nail-app .checkin-card { cursor: pointer; transition: border-color 0.15s, transform 0.15s, box-shadow 0.2s; }
+.nail-app .checkin-card:hover { border-color: #5a6270; transform: translateY(-1px); }
+.nail-app .checkin-card-active { border-color: #0d9bd1 !important; box-shadow: 0 0 0 2px rgba(13,155,209,.3); }
+
+/* Overlay for modal + keypad */
+.nail-app .checkin-overlay { position: fixed; inset: 0; background: rgba(10,12,16,.65); backdrop-filter: blur(4px); z-index: 100; animation: overlay-in 0.2s ease; }
+@keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* Expanded card modal + dock wrapper */
+.nail-app .checkin-modal-wrapper { position: fixed; inset: 0; z-index: 101; display: flex; align-items: center; justify-content: center; gap: 20px; animation: modal-in 0.25s ease; }
+@keyframes modal-in { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+
+/* Expanded card */
+.nail-app .checkin-modal-card { background: #232830; border: 1px solid #3b424c; border-radius: 12px; width: 520px; max-width: min(70vw, 620px); position: relative; box-shadow: 0 24px 60px rgba(0,0,0,.5); }
+.nail-app .checkin-modal-close { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; border-radius: 6px; background: #2f353d; border: 1px solid #3b424c; color: #8b94a0; display: grid; place-items: center; cursor: pointer; transition: all 0.15s; z-index: 1; }
+.nail-app .checkin-modal-close:hover { background: #3b424c; color: #eef3fb; }
+.nail-app .checkin-card-header-lg { padding: 20px 24px 16px; }
+.nail-app .checkin-card-header-lg .checkin-client strong { font-size: 20px; }
+.nail-app .checkin-card-header-lg .checkin-client span { font-size: 13px; }
+.nail-app .checkin-modal-body { padding: 20px 24px 24px; display: flex; flex-direction: column; gap: 18px; }
+.nail-app .checkin-modal-detail { display: flex; align-items: center; gap: 14px; }
+.nail-app .checkin-modal-detail svg { color: #8b94a0; flex-shrink: 0; }
+.nail-app .checkin-modal-detail > div { display: flex; flex-direction: column; gap: 2px; }
+.nail-app .checkin-modal-detail small { font-size: 10px; font-weight: 700; letter-spacing: .5px; color: #8b94a0; text-transform: uppercase; }
+.nail-app .checkin-modal-detail strong { font-size: 15px; font-weight: 600; color: #eef3fb; }
+
+/* Floating dock column */
+.nail-app .checkin-dock { display: grid; grid-template-columns: repeat(2, 72px); gap: 10px; }
+.nail-app .checkin-dock-btn { background: #232830; border: 1px solid #3b424c; border-radius: 8px; padding: 14px 6px; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; color: #c8cdd3; transition: all 0.15s; box-shadow: 0 8px 24px rgba(0,0,0,.3); }
+.nail-app .checkin-dock-btn:hover { background: #2f353d; border-color: #5a6270; color: #eef3fb; }
+.nail-app .checkin-dock-btn:active { transform: scale(0.95); }
+.nail-app .checkin-dock-btn span { font-size: 9px; font-weight: 700; letter-spacing: .5px; }
+.nail-app .checkin-dock-primary { background: #0d9bd1 !important; border-color: #0d9bd1 !important; color: #fff !important; }
+.nail-app .checkin-dock-primary:hover { background: #0b87b8 !important; border-color: #0b87b8 !important; color: #fff !important; }
+.nail-app .checkin-dock-danger { background: #ef5a5f !important; border-color: #ef5a5f !important; color: #fff !important; }
+.nail-app .checkin-dock-danger:hover { background: #d94f54 !important; border-color: #d94f54 !important; color: #fff !important; }
+
+/* Total keypad modal */
+.nail-app .total-keypad-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 102; background: #232830; border: 1px solid #3b424c; border-radius: 10px; width: 380px; max-width: 90vw; box-shadow: 0 24px 60px rgba(0,0,0,.6); animation: modal-in 0.25s ease; }
+.nail-app .total-keypad-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 14px; border-bottom: 1px solid #2f353d; }
+.nail-app .total-keypad-header h3 { font-size: 16px; font-weight: 700; color: #eef3fb; margin: 0; }
+.nail-app .total-keypad-header button { width: 30px; height: 30px; border-radius: 6px; background: #2f353d; border: 1px solid #3b424c; color: #8b94a0; display: grid; place-items: center; cursor: pointer; }
+.nail-app .total-keypad-header button:hover { color: #eef3fb; }
+.nail-app .total-keypad-client { padding: 10px 20px; font-size: 12px; color: #8b94a0; border-bottom: 1px solid #2f353d; }
+.nail-app .total-keypad-display { padding: 20px; font-size: 36px; font-weight: 700; color: #0d9bd1; text-align: right; font-variant-numeric: tabular-nums; }
+.nail-app .total-keypad-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: #2f353d; }
+.nail-app .total-keypad-grid button { background: #232830; border: none; padding: 18px 0; font-size: 20px; font-weight: 600; color: #eef3fb; cursor: pointer; transition: background 0.1s; font-family: inherit; }
+.nail-app .total-keypad-grid button:hover { background: #2f353d; }
+.nail-app .total-keypad-grid button:active { background: #0d9bd1; color: #fff; }
+.nail-app .total-back-key { color: #ef5a5f !important; }
+.nail-app .total-undo-key { color: #f59e0b !important; }
+.nail-app .checkin-card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.nail-app .checkin-card-total { font-size: 18px; font-weight: 800; color: #0d9bd1; font-variant-numeric: tabular-nums; }
+.nail-app .total-enter-key { background: #0d9bd1 !important; color: #fff !important; font-weight: 700; grid-column: span 2; }
+.nail-app .total-enter-key:hover { background: #0b87b8 !important; }
+.nail-app .total-keypad-money { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: #2f353d; }
+.nail-app .total-keypad-money button { background: #1a1e25; border: none; padding: 14px 0; font-size: 14px; font-weight: 600; color: #c8cdd3; cursor: pointer; transition: background 0.1s; font-family: inherit; }
+.nail-app .total-keypad-money button:hover { background: #232830; color: #eef3fb; }
+
+/* Unassigned indicator on cards */
+.nail-app .checkin-unassigned { color: #f59e0b; font-style: italic; font-size: 10px; }
+
+/* Assign technician picker modal */
+.nail-app .assign-picker-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 102; background: #232830; border: 1px solid #3b424c; border-radius: 10px; width: 420px; max-width: 90vw; box-shadow: 0 24px 60px rgba(0,0,0,.6); animation: modal-in 0.25s ease; }
+.nail-app .assign-picker-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 14px; border-bottom: 1px solid #2f353d; }
+.nail-app .assign-picker-header h3 { font-size: 16px; font-weight: 700; color: #eef3fb; margin: 0; }
+.nail-app .assign-picker-header button { width: 30px; height: 30px; border-radius: 6px; background: #2f353d; border: 1px solid #3b424c; color: #8b94a0; display: grid; place-items: center; cursor: pointer; }
+.nail-app .assign-picker-header button:hover { color: #eef3fb; }
+.nail-app .assign-picker-client { padding: 10px 20px; font-size: 12px; color: #8b94a0; border-bottom: 1px solid #2f353d; }
+.nail-app .assign-picker-list { display: flex; flex-direction: column; gap: 1px; background: #2f353d; }
+.nail-app .assign-picker-item { display: flex; align-items: center; gap: 12px; background: #232830; border: none; padding: 14px 20px; cursor: pointer; transition: background 0.1s; font-family: inherit; text-align: left; }
+.nail-app .assign-picker-item:hover { background: #2f353d; }
+.nail-app .assign-picker-item-active { background: rgba(13,155,209,.1); }
+.nail-app .assign-picker-item-active:hover { background: rgba(13,155,209,.15); }
+.nail-app .assign-picker-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.nail-app .assign-picker-name { font-size: 14px; font-weight: 600; color: #eef3fb; flex: 1; }
+.nail-app .assign-picker-role { font-size: 11px; color: #8b94a0; text-transform: capitalize; }
+.nail-app .assign-picker-empty { padding: 28px 20px; text-align: center; font-size: 13px; color: #8b94a0; }
+
+/* Walk-in phone sheet (slides in from the right) */
+.nail-app .walkin-overlay { position: fixed; inset: 0; background: rgba(10,12,16,.55); backdrop-filter: blur(3px); z-index: 200; animation: overlay-in 0.2s ease; }
+.nail-app .walkin-sheet { position: fixed; top: 0; right: 0; bottom: 0; width: 820px; max-width: 95vw; background: #20242c; border-left: 1px solid #3b424c; z-index: 201; display: flex; flex-direction: column; box-shadow: -12px 0 40px rgba(0,0,0,.4); animation: walkin-slide 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes walkin-slide { from { transform: translateX(100%); } to { transform: translateX(0); } }
+.nail-app .walkin-sheet-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid #2f353d; }
+.nail-app .walkin-title-row { display: flex; align-items: center; gap: 12px; }
+.nail-app .walkin-title-row h2 { font-size: 17px; font-weight: 700; color: #eef3fb; margin: 0; }
+.nail-app .walkin-back { background: #2f353d; border: 1px solid #3b424c; border-radius: 6px; width: 32px; height: 32px; color: #c8cdd3; font-size: 18px; cursor: pointer; display: grid; place-items: center; transition: all 0.15s; }
+.nail-app .walkin-back:hover { background: #3b424c; color: #eef3fb; }
+.nail-app .walkin-close { background: transparent; border: none; color: #8b94a0; cursor: pointer; padding: 4px; }
+.nail-app .walkin-close:hover { color: #eef3fb; }
+.nail-app .walkin-content { flex: 1; display: flex; flex-direction: column; padding: 24px 28px; gap: 20px; overflow-y: auto; }
+.nail-app .walkin-body { flex: 1; display: grid; grid-template-columns: 1fr 360px; overflow: hidden; }
+.nail-app .walkin-staff-panel { border-right: 1px solid #2f353d; display: flex; flex-direction: column; overflow: hidden; }
+.nail-app .walkin-staff-label { font-size: 11px; font-weight: 700; letter-spacing: .6px; color: #8b94a0; text-transform: uppercase; padding: 18px 20px 10px; }
+.nail-app .walkin-staff-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; background: #2f353d; }
+.nail-app .walkin-staff-card { display: flex; align-items: center; gap: 12px; background: #20242c; border: none; padding: 14px 20px; cursor: pointer; transition: background 0.12s; font-family: inherit; text-align: left; }
+.nail-app .walkin-staff-card:hover:not(:disabled) { background: #2a2f38; }
+.nail-app .walkin-staff-card:disabled { cursor: not-allowed; }
+.nail-app .walkin-staff-selected { background: rgba(13,155,209,.1) !important; }
+.nail-app .walkin-staff-busy { opacity: 0.45; }
+.nail-app .walkin-staff-dot { width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0; }
+.nail-app .walkin-staff-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.nail-app .walkin-staff-info strong { font-size: 14px; font-weight: 600; color: #eef3fb; }
+.nail-app .walkin-staff-info span { font-size: 11px; color: #8b94a0; text-transform: capitalize; }
+.nail-app .walkin-staff-check { color: #0d9bd1; flex-shrink: 0; }
+.nail-app .walkin-phone-panel { display: flex; flex-direction: column; padding: 20px; gap: 16px; overflow-y: auto; }
+.nail-app .walkin-no-staff-alert { background: rgba(239,90,95,.08); border: 1px solid rgba(239,90,95,.3); border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.nail-app .walkin-no-staff-alert > svg { color: #ef5a5f; flex-shrink: 0; }
+.nail-app .walkin-no-staff-alert > span { font-size: 13px; color: #c8cdd3; line-height: 1.5; }
+.nail-app .walkin-no-staff-actions { display: flex; gap: 8px; }
+.nail-app .walkin-alert-cancel { flex: 1; padding: 10px; border: 1px solid #3b424c; border-radius: 6px; background: transparent; color: #8b94a0; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.nail-app .walkin-alert-cancel:hover { color: #eef3fb; }
+.nail-app .walkin-alert-proceed { flex: 1; padding: 10px; border: none; border-radius: 6px; background: #ef5a5f; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.nail-app .walkin-alert-proceed:hover { background: #d94f54; }
+.nail-app .walkin-assigned-staff { font-size: 13px; color: #0d9bd1; margin: 0; }
+.nail-app .walkin-phone-display { display: flex; flex-direction: column; gap: 6px; padding: 18px 20px; background: #232830; border: 1px solid #3b424c; border-radius: 8px; }
+.nail-app .walkin-phone-display span { font-size: 11px; font-weight: 700; letter-spacing: .5px; color: #8b94a0; text-transform: uppercase; }
+.nail-app .walkin-phone-display strong { font-size: 28px; font-weight: 700; color: #eef3fb; font-variant-numeric: tabular-nums; min-height: 34px; }
+.nail-app .walkin-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.nail-app .walkin-keypad button { background: #232830; border: 1px solid #3b424c; border-radius: 8px; padding: 18px 0; font-size: 22px; font-weight: 600; color: #eef3fb; cursor: pointer; transition: all 0.12s; font-family: inherit; }
+.nail-app .walkin-keypad button:hover { background: #2f353d; border-color: #5a6270; }
+.nail-app .walkin-keypad button:active { transform: scale(0.94); background: #0d9bd1; border-color: #0d9bd1; color: #fff; }
+.nail-app .walkin-backspace { color: #ef5a5f !important; font-size: 20px !important; }
+.nail-app .walkin-backspace:hover { background: rgba(239,90,95,.1) !important; border-color: rgba(239,90,95,.3) !important; }
+.nail-app .walkin-keypad-blanks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.nail-app .walkin-keypad-blanks button { background: #232830; border: 1px solid #3b424c; border-radius: 8px; padding: 18px 0; font-size: 22px; font-weight: 600; color: #eef3fb; cursor: default; opacity: 0.35; }
+.nail-app .walkin-continue { margin-top: auto; padding: 16px; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; letter-spacing: .5px; cursor: pointer; transition: all 0.15s; font-family: inherit; background: #353a43; color: #8b94a0; }
+.nail-app .walkin-continue.ready { background: #0d9bd1; color: #fff; }
+.nail-app .walkin-continue.ready:hover { background: #0b87b8; }
+.nail-app .walkin-continue:disabled { cursor: not-allowed; }
+
+/* Walk-in name entry step */
+.nail-app .walkin-name-step { display: flex; flex-direction: column; gap: 20px; }
+.nail-app .walkin-prompt { font-size: 14px; color: #c8cdd3; line-height: 1.5; margin: 0; }
+.nail-app .walkin-name-field { display: flex; flex-direction: column; gap: 8px; }
+.nail-app .walkin-name-field label { font-size: 11px; font-weight: 700; letter-spacing: .5px; color: #8b94a0; text-transform: uppercase; }
+.nail-app .walkin-name-field input { background: #232830; border: 1px solid #3b424c; border-radius: 8px; padding: 14px 16px; font-size: 18px; font-weight: 600; color: #eef3fb; font-family: inherit; outline: none; transition: border-color 0.15s; }
+.nail-app .walkin-name-field input:focus { border-color: #0d9bd1; }
+.nail-app .walkin-name-field input::placeholder { color: #5a6270; font-weight: 400; }
+.nail-app .walkin-keyboard-hint { font-size: 12px; color: #8b94a0; text-align: center; }
+
+/* Walk-in result states */
+.nail-app .walkin-result { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; padding: 40px 20px; flex: 1; justify-content: center; }
+.nail-app .walkin-result strong { font-size: 16px; color: #eef3fb; line-height: 1.5; }
+.nail-app .walkin-result-success svg { color: #0d9b6e; }
+.nail-app .walkin-result-error svg { color: #ef5a5f; }
+
+/* Assign tech after ticket creation */
+.nail-app .assign-create-overlay { position: fixed; inset: 0; background: rgba(10,12,16,.7); backdrop-filter: blur(4px); z-index: 300; animation: overlay-in 0.2s ease; }
+.nail-app .assign-create-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 301; background: #232830; border: 1px solid #3b424c; border-radius: 12px; width: 480px; max-width: 94vw; box-shadow: 0 32px 80px rgba(0,0,0,.6); animation: modal-in 0.25s ease; display: flex; flex-direction: column; overflow: hidden; }
+.nail-app .assign-create-header { display: flex; align-items: flex-start; justify-content: space-between; padding: 22px 22px 16px; border-bottom: 1px solid #2f353d; gap: 12px; }
+.nail-app .assign-create-header h2 { font-size: 18px; font-weight: 700; color: #eef3fb; margin: 0 0 4px; }
+.nail-app .assign-create-header p { font-size: 13px; color: #8b94a0; margin: 0; }
+.nail-app .assign-create-close { width: 30px; height: 30px; border-radius: 6px; background: #2f353d; border: 1px solid #3b424c; color: #8b94a0; display: grid; place-items: center; cursor: pointer; flex-shrink: 0; transition: all 0.15s; }
+.nail-app .assign-create-close:hover { background: #3b424c; color: #eef3fb; }
+.nail-app .assign-create-notice { display: flex; align-items: center; gap: 10px; padding: 12px 22px; background: rgba(245,158,11,.07); border-bottom: 1px solid rgba(245,158,11,.2); font-size: 12px; color: #f59e0b; }
+.nail-app .assign-create-list { display: flex; flex-direction: column; gap: 1px; background: #2f353d; max-height: 360px; overflow-y: auto; }
+.nail-app .assign-create-item { display: flex; align-items: center; gap: 14px; background: #232830; border: none; padding: 15px 22px; cursor: pointer; font-family: inherit; text-align: left; transition: background 0.1s; }
+.nail-app .assign-create-item:hover { background: #2a2f38; }
+.nail-app .assign-create-item-sel { background: rgba(13,155,209,.1) !important; }
+.nail-app .assign-create-dot { width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0; }
+.nail-app .assign-create-name { font-size: 14px; font-weight: 600; color: #eef3fb; flex: 1; }
+.nail-app .assign-create-role { font-size: 11px; color: #8b94a0; text-transform: capitalize; }
+.nail-app .assign-create-footer { display: flex; align-items: center; gap: 12px; padding: 16px 22px; border-top: 1px solid #2f353d; }
+.nail-app .assign-create-skip { background: transparent; border: 1px solid #3b424c; border-radius: 8px; padding: 12px 18px; font-size: 13px; font-weight: 600; color: #8b94a0; cursor: pointer; font-family: inherit; transition: all 0.15s; white-space: nowrap; }
+.nail-app .assign-create-skip:hover { border-color: #5a6270; color: #c8cdd3; }
+.nail-app .assign-create-btn { flex: 1; padding: 14px; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; letter-spacing: .4px; cursor: pointer; font-family: inherit; background: #353a43; color: #5a6270; transition: all 0.15s; }
+.nail-app .assign-create-btn-ready { background: #0d9bd1; color: #fff; }
+.nail-app .assign-create-btn-ready:hover { background: #0b87b8; }
+.nail-app .assign-create-btn:disabled { cursor: not-allowed; }
+
+/* ===== Adaptions for the live Certxa build ===== */
+.nail-app.h-app, .nail-app { position: relative; overflow: hidden; }
+.nail-app .pos-shell { width: 100%; height: 100%; }
+.nail-app .category-tabs { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(92px, 1fr); overflow-x: auto; }
+.nail-app .category-tabs::-webkit-scrollbar { height: 0; }
+.nail-app .category-tabs button span { text-transform: uppercase; }
+.nail-app .catalog-panel { overflow-y: auto; }
+.nail-app .catalog-panel::-webkit-scrollbar { width: 5px; }
+.nail-app .catalog-panel::-webkit-scrollbar-thumb { background: #454c56; }
+.nail-app .product-card b { font-weight: 700; }
+.nail-app .product-card .card-line { display: flex; justify-content: space-between; width: 100%; margin-top: auto; align-items: baseline; }
+.nail-app .product-card .card-line b { margin: 0; }
+.nail-app .product-card.compact .card-line { justify-content: center; gap: 6px; margin-top: 0; }
+.nail-app .product-card.compact span { font-size: 10px; }
+.nail-app .empty-state-hint { font-size: 13px; color: #8b94a0; padding: 10px 2px; grid-column: 1 / -1; }
+.nail-app .ticket-missing { font-size: 11px; color: #f0a830; margin: -2px 0 10px; }
+.nail-app .ticket-item .item-copy span.note { color: #0d9bd1; }
+.nail-app .display-qty { color: #0d9b6e; font-size: 14px; margin-right: auto; font-weight: 700; }
+.nail-app .key-grid .enter-key:disabled { opacity: .4; }
+.nail-app .nail-notice { position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%); z-index: 400; background: #232830; border: 1px solid #454c56; padding: 10px 20px; font-size: 13px; font-weight: 600; color: #eef3fb; box-shadow: 0 12px 30px rgba(0,0,0,.45); border-radius: 4px; }
+.nail-app .checkin-card-marker { border-style: dashed; }
+.nail-app .checkin-modal-lines { font-size: 12px; color: #a7afb9; display: flex; flex-direction: column; gap: 4px; padding-left: 32px; margin-top: -8px; }
+.nail-app .checkin-modal-lines div { display: flex; justify-content: space-between; }
+.nail-app .checkin-dock-btn:disabled { opacity: .4; }
+.nail-app .checkin-column-header h2 { text-transform: none; }
+.nail-app .assign-create-status { font-size: 11px; color: #8b94a0; }
+.nail-app .assign-create-next { font-size: 10px; font-weight: 700; letter-spacing: .5px; color: #0d9bd1; }
+.nail-app .assign-create-error { margin: 0; padding: 10px 22px; font-size: 12px; color: #ef5a5f; background: rgba(239,90,95,.08); border-top: 1px solid rgba(239,90,95,.3); }
+.nail-app .assign-create-hint { padding: 12px 22px; font-size: 12px; color: #8b94a0; border-bottom: 1px solid #2f353d; }
+.nail-app .walkin-staff-hint { padding: 12px 20px; font-size: 12px; color: #8b94a0; }
+.nail-app .walkin-invalid { font-size: 12px; color: #ef5a5f; margin: 0; }
+.nail-app .drawer-picker { position: fixed; inset: 0; z-index: 500; display: flex; align-items: center; justify-content: center; background: rgba(10,12,16,.7); padding: 16px; }
+.nail-app .drawer-picker > div { background: #232830; border: 1px solid #3b424c; border-radius: 12px; padding: 24px; width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 10px; }
+.nail-app .drawer-picker h2 { font-size: 17px; font-weight: 700; color: #eef3fb; }
+.nail-app .drawer-picker button { text-align: left; background: #353a43; border: 1px solid #454c56; padding: 14px 16px; font-size: 14px; font-weight: 600; color: #e8eaed; }

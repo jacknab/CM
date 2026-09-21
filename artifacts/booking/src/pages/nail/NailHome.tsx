@@ -21,17 +21,19 @@ import { useSettingsSync } from "@/hooks/use-settings-sync";
 import { useThermalPrinter } from "@/hooks/use-thermal-printer";
 import { useToast } from "@/hooks/use-toast";
 import { OpenRegisterModal } from "@/components/cash/OpenRegisterModal";
-import { ChooseClientPanel, CheckoutPOSPanel } from "@/pages/Calendar";
+import { CheckoutPOSPanel } from "@/pages/Calendar";
 import type { AppointmentWithDetails } from "@shared/schema";
 import {
   ApiError, BOARD_KEY, cancelTicket, completeTicket, createTicket, fetchAppointment, fetchBoard, fetchClient,
   fetchNailConfig, reassignTicket, removeMarker, startTicket, updateTicket,
   type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData,
 } from "./nailApi";
-import { defaultPick, draftTotals, EMPTY_PICK, missingRequired, togglePick, type NailPick, type TicketLine } from "./ticketDraft";
+import { defaultPick, draftTotals, EMPTY_PICK, missingRequired, togglePick, type DraftCustomLine, type NailPick, type TicketLine } from "./ticketDraft";
 import { useNailRealtime } from "./useNailRealtime";
 import { TicketPanel } from "./TicketPanel";
-import { CatalogPanel, type CatalogGroup, type CatalogService } from "./CatalogPanel";
+import { CatalogPanel, Keypad, type CatalogGroup, type CatalogService } from "./CatalogPanel";
+import { WalkInSheet } from "./WalkInSheet";
+import "./nail.css";
 import { AssignTechSheet } from "./AssignTechSheet";
 import { CheckInBoard } from "./CheckInBoard";
 import { BottomNav, type NailTab } from "./BottomNav";
@@ -45,7 +47,7 @@ export default function NailHome() {
   // Technician (staff-portal) logins have no store of their own — this screen is for the front desk.
   if (!selectedStore && (user as any)?.staffId) return <Navigate to="/calendar" replace />;
   if (!selectedStore) {
-    return <div className="dark cx-cal h-app w-full flex items-center justify-center bg-background"><Loader2 className="w-7 h-7 animate-spin text-primary" /></div>;
+    return <div className="dark cx-cal nail-app h-app w-full flex items-center justify-center"><Loader2 className="w-7 h-7 animate-spin" style={{ color: "#8b94a0" }} /></div>;
   }
   if (!nailSalon) return <Navigate to="/calendar" replace />;
   return <NailScreen storeId={selectedStore.id} timezone={(selectedStore as any).timezone ?? "UTC"} />;
@@ -67,10 +69,13 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   const [service, setService] = useState<CatalogService | null>(null);
   const [addonIds, setAddonIds] = useState<number[]>([]);
   const [pick, setPick] = useState<NailPick>(EMPTY_PICK);
+  const [customs, setCustoms] = useState<DraftCustomLine[]>([]);
+  const customSeq = useRef(0);
+  const [preferredStaff, setPreferredStaff] = useState<number | null>(null);
   const [activeGroup, setActiveGroup] = useState("");
   const [moreAddons, setMoreAddons] = useState(false);
   const [editing, setEditing] = useState<BoardTicket | null>(null);
-  const [showChooseClient, setShowChooseClient] = useState(false);
+  const [showWalkIn, setShowWalkIn] = useState(false);
   const [assigning, setAssigning] = useState<Assigning>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -149,14 +154,14 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   }, [service, nailCfg, nailLoading]);
 
   const totals = useMemo(
-    () => draftTotals(service, addonIds, activeAddons, nailCfg, pick),
-    [service, addonIds, activeAddons, nailCfg, pick],
+    () => draftTotals(service, addonIds, activeAddons, nailCfg, pick, customs),
+    [service, addonIds, activeAddons, nailCfg, pick, customs],
   );
   const missing = missingRequired(nailCfg, pick);
 
   // ── ticket building ───────────────────────────────────────────────────────
   const resetDraft = useCallback(() => {
-    setClient(null); setCheckinId(null); setService(null); setAddonIds([]); setPick(EMPTY_PICK);
+    setClient(null); setCheckinId(null); setService(null); setAddonIds([]); setPick(EMPTY_PICK); setCustoms([]); setPreferredStaff(null);
     setEditing(null); pickSeededFor.current = null; setMoreAddons(false);
   }, []);
 
@@ -167,16 +172,26 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     if (editing === null) setPick(EMPTY_PICK);
   };
   const toggleAddon = (id: number) => setAddonIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  const addCustom = (amount: number, qty: number) => {
+    customSeq.current += 1;
+    setCustoms((cur) => [...cur, {
+      id: customSeq.current,
+      label: qty > 1 ? `Custom Amount ×${qty}` : "Custom Amount",
+      price: Math.round(amount * qty * 100) / 100,
+    }]);
+  };
   const removeLine = (line: TicketLine) => {
-    if (line.addonId != null) toggleAddon(line.addonId);
+    if (line.customId != null) setCustoms((cur) => cur.filter((c) => c.id !== line.customId));
+    else if (line.addonId != null) toggleAddon(line.addonId);
     else if (line.group) setPick((p) => ({ ...p, [line.group!]: null }));
   };
 
-  const pickClient = async (clientId: number, marker?: number | null) => {
-    setShowChooseClient(false);
+  const pickClient = async (clientId: number, marker?: number | null, staffId?: number | null) => {
+    setShowWalkIn(false);
     try {
       setClient(await fetchClient(clientId));
       setCheckinId(marker ?? null);
+      setPreferredStaff(staffId ?? null);
       setTab("pos");
     } catch (err: any) {
       toast({ title: "Couldn't load that client", description: err?.message, variant: "destructive" });
@@ -190,6 +205,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     setService(svc);
     pickSeededFor.current = svc.id;
     setAddonIds(t.addons.map((a) => a.id));
+    setCustoms(t.customLines.map((c) => ({ id: ++customSeq.current, label: c.label, price: c.price })));
     setPick({ size: t.nail?.sizeId ?? null, shape: t.nail?.shapeId ?? null, application: t.nail?.applicationId ?? null, effect: t.nail?.effectId ?? null });
     setEditing(t);
     setActiveGroup(groups.find((g) => g.services.some((s) => s.id === svc.id))?.key ?? activeGroup);
@@ -203,9 +219,10 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   };
 
   // ── mutations ─────────────────────────────────────────────────────────────
+  const customLines = useMemo(() => customs.map(({ label, price }) => ({ label, price })), [customs]);
   const create = useMutation({
     mutationFn: (staffId: number | null) =>
-      createTicket({ clientId: client!.id, serviceId: service!.id, addonIds, pick, staffId, checkinId }),
+      createTicket({ clientId: client!.id, serviceId: service!.id, addonIds, pick, customLines, staffId, checkinId }),
     onSuccess: (r) => {
       invalidateBoard();
       setAssigning(null);
@@ -217,7 +234,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   });
 
   const update = useMutation({
-    mutationFn: () => updateTicket(editing!.id, { serviceId: service!.id, addonIds, pick }),
+    mutationFn: () => updateTicket(editing!.id, { serviceId: service!.id, addonIds, pick, customLines }),
     onSuccess: () => { invalidateBoard(); say("Ticket updated"); resetDraft(); setTab("board"); },
     onError: (err: any) => toast({ title: "Couldn't update the ticket", description: err?.message, variant: "destructive" }),
   });
@@ -292,14 +309,14 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
       .then((r) => r.json()).then((d) => setDualScreen(d?.dualScreenMode === true)).catch(() => {});
   }, [storeId]);
   useEffect(() => {
-    if (!showChooseClient || !dualScreen) return;
+    if (!showWalkIn || !dualScreen) return;
     const send = (type: string) => fetch("/api/kiosk/checkout-event", {
       method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type, registerId }),
     }).catch(() => {});
     void send("kiosk_checkout_phone_prompt");
     return () => { void send("kiosk_checkout_phone_cancel"); };
-  }, [showChooseClient, dualScreen, registerId]);
+  }, [showWalkIn, dualScreen, registerId]);
 
   // ── submit routing ────────────────────────────────────────────────────────
   const busy = create.isPending || update.isPending;
@@ -314,17 +331,13 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     resetDraft();
   };
 
-  const startWalkIn = () => { setFrontdeskPhone(""); setEditing(null); setShowChooseClient(true); };
+  const startWalkIn = () => { setFrontdeskPhone(""); setEditing(null); setShowWalkIn(true); };
 
   return (
-    <div className="dark cx-cal h-app w-full flex flex-col bg-background text-foreground overflow-hidden" data-testid="nail-home">
-      {notice && (
-        <div className="absolute z-[130] left-1/2 -translate-x-1/2 top-4 rounded-full border border-border bg-card px-5 py-2 text-[13px] font-semibold shadow-lg" data-testid="nail-notice">
-          {notice}
-        </div>
-      )}
+    <div className="dark cx-cal nail-app h-app w-full" data-testid="nail-home">
+      {notice && <div className="nail-notice" data-testid="nail-notice">{notice}</div>}
 
-      <div className="flex-1 min-h-0 flex">
+      <main className={`pos-shell ${tab === "board" ? "checkin-page" : ""}`}>
         {tab === "pos" ? (
           <>
             <TicketPanel
@@ -342,23 +355,28 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
               onClear={clearDraft}
               onSubmit={submit}
             />
-            <CatalogPanel
-              locked={!client}
-              groups={groups}
-              activeGroup={activeGroup}
-              onGroup={setActiveGroup}
-              serviceId={service?.id ?? null}
-              onService={chooseService}
-              addons={shownAddons}
-              moreAddons={moreAddons}
-              onToggleMore={() => setMoreAddons((v) => !v)}
-              hasMoreAddons={moreAddons || activeAddons.length > Math.min(6, suggestedAddons.length)}
-              addonIds={addonIds}
-              onToggleAddon={toggleAddon}
-              nail={service ? nailCfg : null}
-              pick={pick}
-              onPick={(group, id) => setPick((p) => togglePick(p, group, id))}
-            />
+            <section className="work-area">
+              <div className="sale-area">
+                <Keypad locked={!client} onEnter={addCustom} />
+                <CatalogPanel
+                  locked={!client}
+                  groups={groups}
+                  activeGroup={activeGroup}
+                  onGroup={setActiveGroup}
+                  serviceId={service?.id ?? null}
+                  onService={chooseService}
+                  addons={shownAddons}
+                  moreAddons={moreAddons}
+                  onToggleMore={() => setMoreAddons((v) => !v)}
+                  hasMoreAddons={moreAddons || activeAddons.length > Math.min(6, suggestedAddons.length)}
+                  addonIds={addonIds}
+                  onToggleAddon={toggleAddon}
+                  nail={service ? nailCfg : null}
+                  pick={pick}
+                  onPick={(group, id) => setPick((p) => togglePick(p, group, id))}
+                />
+              </div>
+            </section>
           </>
         ) : (
           <CheckInBoard
@@ -375,23 +393,22 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
               else {
                 setCheckinId(m.id);
                 setFrontdeskPhone((m.phone ?? "").replace(/\D/g, "").slice(-10));
-                setShowChooseClient(true);
+                setShowWalkIn(true);
               }
             }}
             onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))}
           />
         )}
-      </div>
 
       <BottomNav tab={tab} onTab={setTab} onWalkIn={startWalkIn} waiting={waitingCount} inService={inServiceCount} live={live} />
+      </main>
 
-      {showChooseClient && (
-        <ChooseClientPanel
-          walkInsEnabled={false}
-          phoneFromFrontdesk={frontdeskPhone}
-          onClose={() => { setShowChooseClient(false); setFrontdeskPhone(""); }}
-          onSelectClient={(id) => { setFrontdeskPhone(""); void pickClient(id, checkinId); }}
-          onWalkIn={() => setShowChooseClient(false)}
+      {showWalkIn && (
+        <WalkInSheet
+          storeId={storeId}
+          frontdeskPhone={frontdeskPhone}
+          onClose={() => { setShowWalkIn(false); setFrontdeskPhone(""); }}
+          onClient={(id, staffId) => { setFrontdeskPhone(""); void pickClient(id, checkinId, staffId); }}
         />
       )}
 
@@ -402,6 +419,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
           clientName={assigning.mode === "create" ? client?.name ?? "" : assigning.ticket.client.name}
           mode={assigning.mode}
           excludeStaffId={assigning.mode === "reassign" ? assigning.ticket.staff?.id ?? null : null}
+          initialStaffId={assigning.mode === "create" ? preferredStaff : null}
           busy={create.isPending || reassign.isPending}
           error={assignError}
           onClose={() => { setAssigning(null); setAssignError(null); }}
@@ -422,7 +440,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
           onClose={() => setCheckout(null)}
           onFinalize={(data) => finalize.mutate(data)}
           onThermalPrint={thermalPrinter.isConnected ? thermalPrinter.print : undefined}
-          initialExtraItems={checkout.ticket.nail?.lines.map((l) => ({ name: l.label, price: l.price }))}
+          initialExtraItems={[...(checkout.ticket.nail?.lines ?? []), ...checkout.ticket.customLines].map((l) => ({ name: l.label, price: l.price }))}
         />
       )}
 
@@ -437,12 +455,11 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
       )}
 
       {needsDrawerPicker && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 space-y-3">
-            <h2 className="text-[17px] font-semibold">Which cash drawer is this?</h2>
+        <div className="drawer-picker">
+          <div>
+            <h2>Which cash drawer is this?</h2>
             {drawers.map((d) => (
-              <button key={d.id} type="button" onClick={() => selectDrawer(d.id)}
-                className="w-full text-left rounded-xl border border-border px-4 py-3 font-medium hover:bg-secondary">{d.name}</button>
+              <button key={d.id} type="button" onClick={() => selectDrawer(d.id)}>{d.name}</button>
             ))}
           </div>
         </div>
