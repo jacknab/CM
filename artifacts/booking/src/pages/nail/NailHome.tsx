@@ -105,6 +105,8 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   const [showMore, setShowMore] = useState(false);
   const [showBook, setShowBook] = useState(false);
   const [showCheckIn, setShowCheckIn] = useState(false);
+  // "PAY NOW": create the ticket, then open it for payment in this tab.
+  const payAfterCreate = useRef(false);
   // Techs page: a clocked-out tech's card was tapped → offer to set them In. `assumedIn` shows them In & Available at once,
   // until the server's answer (also pushed to every other station) arrives.
   const [clockInFor, setClockInFor] = useState<TurnTech | null>(null);
@@ -303,6 +305,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
       invalidateBoard();
       setAssigning(null);
       setAssignError(null);
+      if (payAfterCreate.current) { payAfterCreate.current = false; void openTicketForCheckout(r.appointmentId); }
       say(`Ticket #${r.ticketNumber} · ${r.staffName} · ${r.waiting ? `waiting, starts about ${new Date(r.startsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "in service"}`);
       resetDraft();
     },
@@ -339,10 +342,21 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     try {
       const appointment = (await fetchAppointment(t.id)) as AppointmentWithDetails;
       setCheckout({ ticket: t, appointment });
+      setTab("pos");
     } catch (err: any) {
       toast({ title: "Couldn't open checkout", description: err?.message, variant: "destructive" });
     }
   }, [toast]);
+
+  // A ticket that was just made: fetch it fresh from the board, then pay it here.
+  const openTicketForCheckout = async (id: number) => {
+    try {
+      const b = await queryClient.fetchQuery({ queryKey: BOARD_KEY, queryFn: fetchBoard, staleTime: 0 });
+      const t = b.tickets.find((x) => x.id === id);
+      if (t) requestCheckout(t);
+      else toast({ title: "Ticket created", description: "Open it from Checked In to take payment.", variant: "destructive" });
+    } catch { toast({ title: "Ticket created", description: "Open it from Checked In to take payment.", variant: "destructive" }); }
+  };
 
   const requestCheckout = (t: BoardTicket) => {
     if (posEnabled && !openDrawerSession && navigator.onLine) {
@@ -374,7 +388,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
 
   const finalize = useMutation({
     mutationFn: (data: FinalizeData) => completeTicket(checkout!.ticket.id, data),
-    onSuccess: () => { invalidateBoard(); setCheckout(null); say("Checked out"); },
+    onSuccess: () => { invalidateBoard(); setCheckout(null); setTab("board"); say("Checked out"); },
     onError: () => toast({ title: "Payment wasn't saved", description: "The sale didn't close. Check the ticket on the board.", variant: "destructive" }),
   });
 
@@ -525,6 +539,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     if (editing) update.mutate();
     else { setAssignError(null); setAssigning({ mode: "create" }); }
   };
+  const payNow = () => { if (!canSubmit || editing) return; payAfterCreate.current = true; setAssignError(null); setAssigning({ mode: "create" }); };
   const clearDraft = () => {
     if (editing) setTab("board");
     resetDraft();
@@ -548,7 +563,25 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
       {notice && <div className="nail-notice" data-testid="nail-notice">{notice}</div>}
 
       <main className={`pos-shell ${tab === "board" ? "checkin-page" : ""} ${tab === "techs" ? "techs-page" : ""}`}>
-        {tab === "pos" ? (
+        {/* Checkout happens IN the POS tab: the same checkout screen the calendar uses (keypad, function grid, tip, discount,
+            group pay, loyalty, cash / card / M2 / Tap to Pay, receipts, customer screen). It stays mounted while staff peek at
+            another tab, so a half-paid ticket isn't lost. */}
+        {checkout && (
+          <section className={`checkout-embed ${tab === "pos" ? "" : "checkout-embed-hidden"}`} data-testid="nail-checkout-embed">
+            <CheckoutPOSPanel
+              embedded
+              appointment={checkout.appointment}
+              timezone={timezone}
+              siblingAppointments={siblings}
+              isUpdating={finalize.isPending}
+              onClose={() => { setCheckout(null); setTab("board"); }}
+              onFinalize={(data) => finalize.mutate(data)}
+              onThermalPrint={thermalPrinter.isConnected ? thermalPrinter.print : undefined}
+              initialExtraItems={[...(checkout.ticket.nail?.lines ?? []), ...checkout.ticket.customLines].map((l) => ({ name: l.label, price: l.price }))}
+            />
+          </section>
+        )}
+        {checkout && tab === "pos" ? null : tab === "pos" ? (
           <>
             <TicketPanel
               client={client}
@@ -564,6 +597,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
               onRemove={removeLine}
               onClear={clearDraft}
               onSubmit={submit}
+              onPayNow={editing ? undefined : payNow}
             />
             <section className="work-area">
               <div className="sale-area">
@@ -669,25 +703,12 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
           initialStaffId={assigning.mode === "create" ? preferredStaff : null}
           busy={create.isPending || reassign.isPending}
           error={assignError}
-          onClose={() => { setAssigning(null); setAssignError(null); }}
+          onClose={() => { setAssigning(null); setAssignError(null); payAfterCreate.current = false; }}
           onConfirm={(staffId) => {
             setAssignError(null);
             if (assigning.mode === "create") create.mutate(staffId);
             else if (staffId != null) reassign.mutate({ id: assigning.ticket.id, staffId });
           }}
-        />
-      )}
-
-      {checkout && (
-        <CheckoutPOSPanel
-          appointment={checkout.appointment}
-          timezone={timezone}
-          siblingAppointments={siblings}
-          isUpdating={finalize.isPending}
-          onClose={() => setCheckout(null)}
-          onFinalize={(data) => finalize.mutate(data)}
-          onThermalPrint={thermalPrinter.isConnected ? thermalPrinter.print : undefined}
-          initialExtraItems={[...(checkout.ticket.nail?.lines ?? []), ...checkout.ticket.customLines].map((l) => ({ name: l.label, price: l.price }))}
         />
       )}
 

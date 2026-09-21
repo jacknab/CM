@@ -6334,6 +6334,7 @@ export function CheckoutPOSPanel({
   onCustomerLinked,
   onThermalPrint,
   initialExtraItems,
+  embedded = false,
 }: {
   appointment: AppointmentWithDetails;
   timezone: string;
@@ -6346,6 +6347,8 @@ export function CheckoutPOSPanel({
   onThermalPrint?: (bytes: Uint8Array) => Promise<void>;
   /** Extra ticket lines to start the cart with (e.g. the nail salon screen's length / shape / art upcharges). */
   initialExtraItems?: { name: string; price: number; kind?: string }[];
+  /** Draw inside its parent (which must be `position: relative`) instead of as a full-screen popup — the Nail POS's POS tab. */
+  embedded?: boolean;
 }) {
   const { pick } = useLanguage();
   const tPOS = {
@@ -8167,14 +8170,17 @@ export function CheckoutPOSPanel({
     const payKpVal = posKeypadDollars();
     const payPaidInFull = tenders.length > 0 && totalTendered >= grandTotal;
     return (
-      <div className="fixed inset-0 z-50" data-testid="checkout-pos-panel">
-        <button
-          type="button"
-          aria-label="Close checkout"
-          className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]"
-          onClick={onClose}
-        />
-        <div className="pos-cart-sheet absolute left-0 top-0 h-full w-full sm:w-[420px] lg:w-[1192px] max-w-[100vw] flex overflow-x-auto shadow-[8px_0_24px_rgba(0,0,0,0.12)]">
+      <div className={embedded ? "absolute inset-0 z-10" : "fixed inset-0 z-50"} data-testid="checkout-pos-panel" data-embedded={embedded ? "true" : undefined}>
+        {!embedded && (
+          <button
+            type="button"
+            aria-label="Close checkout"
+            className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]"
+            onClick={onClose}
+          />
+        )}
+        <div className={`pos-cart-sheet absolute left-0 top-0 h-full w-full sm:w-[420px] ${embedded ? "lg:w-full" : "lg:w-[1192px] shadow-[8px_0_24px_rgba(0,0,0,0.12)]"} max-w-[100vw] flex overflow-x-auto`}
+          style={embedded ? { backgroundColor: "#1c1c1e" } : undefined}>
         {/* ── Panel 1 — Cart (dark) ── */}
         <div className="w-full sm:w-[420px] flex-shrink-0 flex flex-col overflow-hidden" style={{ backgroundColor: "#1c1c1e" }}>
         <div className="relative p-4 flex items-center justify-between gap-2" style={{ borderBottom: "1px solid #3a3a3c", backgroundColor: "#2c2c2e" }}>

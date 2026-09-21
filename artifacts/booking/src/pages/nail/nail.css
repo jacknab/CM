@@ -546,3 +546,10 @@
 .nail-app .tech-card.mode-stack .tech-timer { font-size: 34px; }
 .nail-app .tech-now { margin-top: 2px; }
 @media (max-width: 1040px) { .nail-app .glance-tile { padding: 9px 9px 8px; } .nail-app .glance-tile strong { font-size: 20px; } }
+
+/* ===== Checkout inside the POS tab ===== */
+.nail-app .checkout-embed { grid-column: 1 / -1; position: relative; min-height: 0; margin-top: 6px; background: #1c1c1e; overflow: hidden; }
+.nail-app .checkout-embed-hidden { display: none; }
+
+.nail-app .checkout-row .checkout-paynow { background: #0d9bd1 !important; font-size: 12px !important; flex: 0 0 96px; }
+.nail-app .checkout-row .checkout-paynow.disabled { background: #3b424c !important; }
