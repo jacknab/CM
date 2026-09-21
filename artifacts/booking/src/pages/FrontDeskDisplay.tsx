@@ -482,6 +482,9 @@ export default function FrontDeskDisplay() {
           // drop back to the welcome screen unless the client is already past the phone step.
           case "kiosk_checkout_checkin_cancel":
             if (staffCheckinRef.current) {
+              // Tell the POS the client isn't typing any more (its page is closing) before letting go of the launch flag.
+              sendWs("kiosk_checkin_typing", { typing: false, digits: 0 });
+              typingSentRef.current = false;
               staffCheckinRef.current = false;
               if (posCheckoutRef.current === null) setScreen((cur) => (cur === "phone" ? "idle" : cur));
               setPhone("");
@@ -740,6 +743,18 @@ export default function FrontDeskDisplay() {
       else doLookup(next);
     }
   };
+
+  // While the salon POS's Check-In page is open (it launched this screen), tell it when the client is mid-way through
+  // typing their number — the POS shows a small "CLIENT ENTERING PHONE" card over its own keypad. Only the digit COUNT is sent.
+  // `typing` is true from the first digit until the client finishes (10 digits), clears it, or leaves the phone screen.
+  const typingSentRef = useRef(false);
+  useEffect(() => {
+    if (!staffCheckinRef.current) { typingSentRef.current = false; return; }
+    const typing = screen === "phone" && !bookingPhoneMode && phone.length > 0 && phone.length < 10;
+    if (typing === typingSentRef.current && !typing) return;
+    typingSentRef.current = typing;
+    sendWs("kiosk_checkin_typing", { typing, digits: phone.length });
+  }, [phone, screen, bookingPhoneMode, sendWs]);
 
   // ── Rewards sign-up (walk-in checkout, right panel of the cart mirror) ────
   const submitRewards = useCallback(async (digits: string) => {

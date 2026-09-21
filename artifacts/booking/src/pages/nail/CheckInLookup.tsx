@@ -38,10 +38,12 @@ const formatPhone = (d: string): string => {
   return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
 };
 
-export function CheckInLookup({ storeId, frontdeskShowing, onClose, onDone }: {
+export function CheckInLookup({ storeId, frontdeskShowing, clientEnteringPhone = false, onClose, onDone }: {
   storeId: number;
   /** The /frontdesk tablet is on its check-in screen right now. */
   frontdeskShowing: boolean;
+  /** The client is typing their number on the customer-facing screen right now. */
+  clientEnteringPhone?: boolean;
   onClose: () => void;
   /** Checked in: the message for the notice bar. */
   onDone: (message: string) => void;
@@ -156,7 +158,32 @@ export function CheckInLookup({ storeId, frontdeskShowing, onClose, onDone }: {
             </div>
             {invalid && <p className="text-sm text-red-500 mb-2">That number isn't valid — check the area code and try again.</p>}
 
-            <div className="space-y-[1.2vh]">
+            <div className="relative">
+              {/* Frosted-glass card over the keypad while the client is typing on the customer-facing screen. It only signals —
+                  it never takes taps — so staff can still key the number themselves. */}
+              <div
+                className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none"
+                role="status" aria-live="polite" aria-hidden={!clientEnteringPhone}
+                data-testid="nail-client-entering-phone" data-active={clientEnteringPhone ? "true" : "false"}
+                style={{ opacity: clientEnteringPhone ? 1 : 0, transition: "opacity 220ms ease" }}
+              >
+                <div
+                  className="flex items-center justify-center text-center"
+                  style={{
+                    width: "clamp(150px, 24vh, 230px)", aspectRatio: "1 / 1", borderRadius: 26, padding: 18,
+                    background: "linear-gradient(145deg, rgba(56, 189, 208, 0.20), rgba(20, 30, 44, 0.66))",
+                    WebkitBackdropFilter: "blur(16px) saturate(150%)", backdropFilter: "blur(16px) saturate(150%)",
+                    border: "1px solid rgba(255, 255, 255, 0.16)",
+                    boxShadow: "0 18px 48px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.10)",
+                    transform: clientEnteringPhone ? "scale(1)" : "scale(0.96)", transition: "transform 220ms ease",
+                  }}
+                >
+                  <span className="font-semibold uppercase" style={{ fontSize: "clamp(13px, 2.1vh, 17px)", letterSpacing: "0.2em", lineHeight: 1.5, color: "rgba(244, 248, 252, 0.94)" }}>
+                    CLIENT ENTERING PHONE
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-[1.2vh]">
               {NUM_ROWS.map((row, ri) => (
                 <div key={ri} className="flex justify-center gap-2">
                   {row.map((d, di) => d ? (
@@ -170,6 +197,7 @@ export function CheckInLookup({ storeId, frontdeskShowing, onClose, onDone }: {
                 <button onClick={() => { setPhone((p) => p.slice(0, -1)); setInvalid(false); }} className={cn(NUM_KEY, "flex items-center justify-center")} aria-label="Delete last digit" data-testid="nail-checkin-backspace">
                   <Delete className="w-7 h-7" />
                 </button>
+              </div>
               </div>
             </div>
           </>

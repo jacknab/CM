@@ -104,6 +104,18 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   const [showMore, setShowMore] = useState(false);
   const [showBook, setShowBook] = useState(false);
   const [showCheckIn, setShowCheckIn] = useState(false);
+  // The client is typing their number on /frontdesk right now (drives the overlay on the Check-In page). Self-clears if the
+  // "stopped typing" message is ever lost, so a stale overlay can't stay up.
+  const [clientTyping, setClientTyping] = useState(false);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onFrontdeskTyping = useCallback((typing: boolean) => {
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+    setClientTyping(typing);
+    if (typing) typingTimer.current = setTimeout(() => setClientTyping(false), 20_000);
+  }, []);
+  useEffect(() => () => { if (typingTimer.current) clearTimeout(typingTimer.current); }, []);
+  // Every time the Check-In page opens or closes, start from "not typing" — never inherit a stale overlay.
+  useEffect(() => { onFrontdeskTyping(false); }, [showCheckIn, onFrontdeskTyping]);
   const [sheet, setSheet] = useState<null | "voucher" | "timeclock" | "dayclose" | "clients" | "manager">(null);
   const [assigning, setAssigning] = useState<Assigning>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
@@ -124,7 +136,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   // ── data ──────────────────────────────────────────────────────────────────
   const refreshAll = useSettingsSync(true);
   const live = useNailRealtime({
-    storeId, registerId, refreshAll, onFrontdeskPhone: setFrontdeskPhone,
+    storeId, registerId, refreshAll, onFrontdeskPhone: setFrontdeskPhone, onFrontdeskTyping,
     // The kiosk's check-in ticket prints on the front-desk thermal printer, like on the calendar.
     onPrintJob: (data) => {
       if (data.jobType !== "checkin_ticket") return;
@@ -594,6 +606,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
         <CheckInLookup
           storeId={storeId}
           frontdeskShowing={dualScreen}
+          clientEnteringPhone={clientTyping}
           onClose={() => setShowCheckIn(false)}
           onDone={(line) => { setShowCheckIn(false); say(line); invalidateBoard(); }}
         />
