@@ -486,3 +486,25 @@
 .nail-app .more-confirm-actions button { flex: 1; height: 72px; border-radius: 12px; font-size: 20px; font-weight: 700; font-family: inherit; }
 .nail-app .more-confirm-cancel { background: transparent; border: 1px solid #454c56 !important; color: #c8cdd3; }
 .nail-app .more-confirm-go { background: #0d9bd1; color: #fff; }
+
+/* ===== New-client name entry: a FULL-SCREEN sheet with big keys (10" tablet) ===== */
+.nail-app .walkin-sheet.name-full { width: 100vw; max-width: 100vw; border-left: 0; animation: none; }
+.nail-app .name-full .walkin-sheet-header { padding: 14px 24px; }
+.nail-app .name-full .walkin-title-row h2 { font-size: 26px; }
+.nail-app .name-full .walkin-back { width: 56px; height: 56px; font-size: 26px; border-radius: 10px; }
+.nail-app .name-full .walkin-close { padding: 12px; }
+.nail-app .name-full .walkin-close svg { width: 30px; height: 30px; }
+.nail-app .name-full .walkin-body { display: flex; flex-direction: column; min-height: 0; }
+.nail-app .name-full .walkin-phone-panel { flex: 1; min-height: 0; padding: 14px 24px 20px; gap: 0; overflow: hidden; }
+.nail-app .name-full .name-entry { gap: 14px; }
+.nail-app .name-full .name-entry-display { padding: 0; }
+.nail-app .name-full .name-entry-display strong { font-size: 54px; min-height: 66px; }
+.nail-app .name-full .name-entry-display span { font-size: 16px; margin-top: 2px; }
+.nail-app .name-full .osk { flex: 1; min-height: 0; margin-top: 0; gap: 10px; }
+.nail-app .name-full .osk-row { flex: 1; min-height: 0; gap: 8px; }
+.nail-app .name-full .osk-indent { padding: 0 5%; }
+.nail-app .name-full .osk-row button { height: auto; min-height: 0; font-size: 32px; border-radius: 12px; }
+.nail-app .name-full .osk-row .osk-wide { flex: 0 0 13%; }
+.nail-app .name-full .osk-row .osk-side { flex: 0 0 15%; font-size: 22px; }
+.nail-app .name-full .osk-row .osk-space { font-size: 22px; }
+.nail-app .name-full .walkin-continue { height: 84px; flex-shrink: 0; font-size: 24px; border-radius: 12px; margin-top: 0; }

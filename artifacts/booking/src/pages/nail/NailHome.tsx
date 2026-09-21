@@ -39,7 +39,7 @@ import { useNailRealtime } from "./useNailRealtime";
 import { TicketPanel } from "./TicketPanel";
 import { CatalogPanel, Keypad, type CatalogGroup, type CatalogService } from "./CatalogPanel";
 import { WalkInSheet } from "./WalkInSheet";
-import { CheckInSheet } from "./CheckInSheet";
+import { CheckInLookup } from "./CheckInLookup";
 import { useAppointmentSSE } from "@/hooks/use-appointment-sse";
 import { TechCards } from "./TechCards";
 import { CheckInPanel } from "./CheckInPanel";
@@ -587,7 +587,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
       {showMore && <MoreMenu tiles={moreTiles} onClose={() => setShowMore(false)} />}
 
       {showCheckIn && (
-        <CheckInSheet
+        <CheckInLookup
           storeId={storeId}
           frontdeskShowing={dualScreen}
           onClose={() => setShowCheckIn(false)}

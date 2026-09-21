@@ -114,7 +114,7 @@ export function WalkInSheet({ storeId, frontdeskPhone, known, onClose, onClient 
   return (
     <>
       <div className="walkin-overlay" onClick={onClose} />
-      <aside className="walkin-sheet" aria-label="Walk-in client lookup" data-testid="nail-walkin">
+      <aside className={`walkin-sheet ${step === "name" ? "name-full" : ""}`} aria-label="Walk-in client lookup" data-testid="nail-walkin">
         <div className="walkin-sheet-header">
           <div className="walkin-title-row">
             <button type="button" className="walkin-back" onClick={back} aria-label="Go back">←</button>
