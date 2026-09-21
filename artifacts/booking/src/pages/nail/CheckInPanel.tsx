@@ -44,18 +44,9 @@ export function CheckInPanel({ tickets, markers, onTicket, onMarker }: {
   }, [tickets, markers]);
 
   const scroll = (dy: number) => listRef.current?.scrollBy({ top: dy, behavior: "smooth" });
-  const today = new Date().toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 
   return (
-    <section className="ticket-panel arrived-panel" data-testid="nail-arrived">
-      <div className="ticket-client-header">
-        <div className="ticket-client-main">
-          <div className="ticket-client-name">Checked In</div>
-          <div className="ticket-client-points">{today} · waiting</div>
-        </div>
-        <div className="ticket-client-num" data-testid="nail-arrived-count">{rows.length}</div>
-      </div>
-
+    <section className="ticket-panel arrived-panel" data-testid="nail-arrived" data-count={rows.length}>
       <button type="button" className="arrived-scroll" onClick={() => scroll(-240)} aria-label="Scroll up"><ChevronUp size={18} /></button>
       <div className="arrived-list" ref={listRef}>
         {rows.length === 0 ? (
