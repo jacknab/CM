@@ -1,5 +1,6 @@
 import { EventEmitter } from "events";
 import type { Response } from "express";
+import { broadcastSyncEvent } from "../notifications";
 
 export type AppointmentStatusEvent = {
   appointmentId: number;
@@ -28,6 +29,12 @@ export function registerSseClient(storeId: number, res: Response): () => void {
 }
 
 export function broadcastAppointmentStatus(event: AppointmentStatusEvent): void {
+  // The SSE list below only reaches clients on THIS worker. Also send the status change over the WebSocket bus (Redis relay
+  // across PM2 workers) so every POS station in the salon — the nail POS board included — hears about a kiosk check-in,
+  // an auto-start or an auto no-show no matter which worker took the request.
+  try {
+    broadcastSyncEvent({ type: "booking_updated", storeId: event.storeId, appointmentId: event.appointmentId, changes: ["status"] });
+  } catch { /* the SSE push below still goes out */ }
   const clients = storeClients.get(event.storeId);
   if (!clients || clients.size === 0) return;
 

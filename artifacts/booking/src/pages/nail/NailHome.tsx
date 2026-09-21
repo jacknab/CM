@@ -146,6 +146,9 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     refetchOnWindowFocus: true,
   });
   const tickets = board?.tickets ?? [];
+  // Elapsed times ("waiting 12 min", "free for 25 min") are measured against the SERVER clock so two POS stations agree.
+  const [clockOffsetMs, setClockOffsetMs] = useState(0);
+  useEffect(() => { if (board?.now) setClockOffsetMs(Date.parse(board.now) - Date.now()); }, [board]);
   const markers = board?.markers ?? [];
   const waitingCount = tickets.filter((t) => t.status === "confirmed").length + markers.length;
   const inServiceCount = tickets.filter((t) => t.status === "started").length;
@@ -552,8 +555,8 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
           </>
         ) : tab === "techs" ? (
           <>
-            <CheckInPanel tickets={tickets} markers={markers} onMarker={startFromMarker} onTicket={(t) => { setFocusTicket({ id: t.id }); setTab("board"); }} />
-            <TechCards techs={techList} tickets={tickets} stats={board?.techStats ?? EMPTY_ARRAY} glance={board?.glance} waiting={waitingCount} loading={techsLoading} />
+            <CheckInPanel clockOffsetMs={clockOffsetMs} tickets={tickets} markers={markers} onMarker={startFromMarker} onTicket={(t) => { setFocusTicket({ id: t.id }); setTab("board"); }} />
+            <TechCards techs={techList} tickets={tickets} stats={board?.techStats ?? EMPTY_ARRAY} glance={board?.glance} waiting={waitingCount} loading={techsLoading} clockOffsetMs={clockOffsetMs} />
           </>
         ) : (
           <CheckInBoard
@@ -567,6 +570,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
             onCancel={(t) => { if (window.confirm(`Cancel ${t.client.name}'s ticket?`)) act.mutate(() => cancelTicket(t.id)); }}
             onMarkerTicket={startFromMarker}
             focus={focusTicket}
+            clockOffsetMs={clockOffsetMs}
             onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))}
           />
         )}

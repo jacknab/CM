@@ -56,6 +56,11 @@ export function useNailRealtime(opts: {
             case "booking_deleted":
             case "turn_eligibility_changed":
             case "kiosk_checkin_created":
+            // Online bookings, cancellations and payments made anywhere move the glance numbers too.
+            case "new_booking":
+            case "appointment_cancelled":
+            case "appointment_rescheduled":
+            case "payment_received":
               invalidateTickets();
               queryClient.invalidateQueries({ queryKey: ["/api/kiosk/walkins/today"] });
               break;

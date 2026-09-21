@@ -59,10 +59,11 @@ function Glance({ waiting, glance }: { waiting: number; glance: SalonGlance | un
   );
 }
 
-export function TechCards({ techs, tickets, stats, glance, waiting, loading }: { techs: TurnTech[]; tickets: BoardTicket[]; stats: TechDayStats[]; glance: SalonGlance | undefined; waiting: number; loading: boolean }) {
-  const [now, setNow] = useState(() => Date.now());
+export function TechCards({ techs, tickets, stats, glance, waiting, loading, clockOffsetMs = 0 }: { techs: TurnTech[]; tickets: BoardTicket[]; stats: TechDayStats[]; glance: SalonGlance | undefined; waiting: number; loading: boolean; clockOffsetMs?: number }) {
+  const [tick, setTick] = useState(() => Date.now());
+  const now = tick + clockOffsetMs; // server time, so every POS station shows the same numbers
   useEffect(() => {
-    const iv = setInterval(() => setNow(Date.now()), 30_000);
+    const iv = setInterval(() => setTick(Date.now()), 30_000);
     return () => clearInterval(iv);
   }, []);
 

@@ -16,6 +16,8 @@ interface Props {
   onMarkerRemove: (m: BoardMarker) => void;
   /** Open this ticket's card straight away (Techs page tap, scanned ticket). A new object = open it again. */
   focus?: { id: number } | null;
+  /** Server clock minus this device's clock, so waits read the same on every POS station. */
+  clockOffsetMs?: number;
 }
 
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -25,9 +27,10 @@ export function CheckInBoard(p: Props) {
   const [openId, setOpenId] = useState<number | null>(p.focus?.id ?? null);
   useEffect(() => { if (p.focus) setOpenId(p.focus.id); }, [p.focus]);
   const [openMarker, setOpenMarker] = useState<number | null>(null);
-  const [now, setNow] = useState(() => Date.now());
+  const [tick, setTick] = useState(() => Date.now());
+  const now = tick + (p.clockOffsetMs ?? 0);
   useEffect(() => {
-    const iv = setInterval(() => setNow(Date.now()), 30_000);
+    const iv = setInterval(() => setTick(Date.now()), 30_000);
     return () => clearInterval(iv);
   }, []);
 

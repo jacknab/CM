@@ -366,6 +366,13 @@ export async function createNailTicket(deps: TicketDeps, input: CreateTicketInpu
         [appointmentId, staffId, staffName, immediate ? "serving" : "waiting", storeId, client.id],
       );
     }
+    // A client who checked in at the kiosk has been waiting since THEN, not since the ticket was made.
+    await pool.query(
+      `UPDATE appointments a SET checked_in_at = k.created_at
+         FROM kiosk_checkins k
+        WHERE a.id = $1 AND k.appointment_id = $1 AND k.created_at < a.checked_in_at`,
+      [appointmentId],
+    );
   } catch (err: any) {
     console.error("[nail-ticket] kiosk marker link failed:", err?.message);
   }
@@ -584,13 +591,16 @@ export interface SalonGlance {
   /** Clients who walked in today: tickets made at the desk + kiosk check-ins that never got a ticket. */
   walkIns: number;
   noShows: number;
-  /** Average minutes from check-in to the chair, over clients already started today. */
+  /**
+   * Average minutes clients waited today: for everyone already started, check-in → chair (or, when no check-in was
+   * stamped, how late they started); for everyone still waiting, the wait so far. 0 when nobody has waited.
+   */
   avgWaitMin: number | null;
   /** Average sale before tip, over tickets checked out today. */
   avgTicket: number | null;
 }
 
-export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTicket[]; markers: BoardWaitingMarker[]; techStats: TechDayStats[]; glance: SalonGlance }> {
+export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTicket[]; markers: BoardWaitingMarker[]; techStats: TechDayStats[]; glance: SalonGlance; now: string }> {
   const store = await storage.getStore(storeId);
   const tz = (store as any)?.timezone || "UTC";
 
@@ -715,8 +725,9 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
      SELECT COUNT(*) FILTER (WHERE status <> 'cancelled' AND NOT walkin)::int AS appointments,
             COUNT(*) FILTER (WHERE status <> 'cancelled' AND walkin)::int AS walkins,
             COUNT(*) FILTER (WHERE status IN ('no_show', 'no-show'))::int AS no_shows,
-            AVG(EXTRACT(EPOCH FROM (started_at - checked_in_at)) / 60)
-              FILTER (WHERE started_at IS NOT NULL AND checked_in_at IS NOT NULL AND started_at >= checked_in_at AND started_at - checked_in_at < interval '6 hours') AS avg_wait,
+            COALESCE(SUM(GREATEST(0, EXTRACT(EPOCH FROM (started_at - COALESCE(checked_in_at, date))) / 60))
+              FILTER (WHERE started_at IS NOT NULL AND started_at - COALESCE(checked_in_at, date) < interval '6 hours'), 0) AS wait_sum,
+            COUNT(*) FILTER (WHERE started_at IS NOT NULL AND started_at - COALESCE(checked_in_at, date) < interval '6 hours')::int AS wait_n,
             AVG(total_paid - COALESCE(tip_amount, 0)) FILTER (WHERE status = 'completed' AND total_paid IS NOT NULL) AS avg_ticket
        FROM t`,
     [storeId, tz],
@@ -727,13 +738,22 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
     [storeId, tz],
   );
   const gr = g.rows[0] ?? {};
+  // Everyone still waiting counts with the wait they've had so far.
+  const nowMs = Date.now();
+  const waitingSinceMs = [
+    ...tickets.filter((t) => t.status === "confirmed").map((t) => +new Date(t.checkedInAt ?? t.date)),
+    ...markers.map((m) => +new Date(m.createdAt)),
+  ].map((since) => Math.max(0, (nowMs - since) / 60_000)).filter((m) => m < 360);
+  const waitN = (Number(gr.wait_n) || 0) + waitingSinceMs.length;
+  const waitSum = (Number(gr.wait_sum) || 0) + waitingSinceMs.reduce((a, b) => a + b, 0);
   const glance: SalonGlance = {
     appointments: Number(gr.appointments) || 0,
     walkIns: (Number(gr.walkins) || 0) + (Number(kioskOnly.rows[0]?.n) || 0),
     noShows: Number(gr.no_shows) || 0,
-    avgWaitMin: gr.avg_wait != null ? Math.round(Number(gr.avg_wait)) : null,
+    avgWaitMin: waitN > 0 ? Math.round(waitSum / waitN) : 0,
     avgTicket: gr.avg_ticket != null ? Math.round(Number(gr.avg_ticket) * 100) / 100 : null,
   };
 
-  return { tickets, markers, techStats: [...stats.values()], glance };
+  // `now` lets every POS station measure "waiting 12 min" against the SERVER clock, so two tablets with different clocks agree.
+  return { tickets, markers, techStats: [...stats.values()], glance, now: new Date(nowMs).toISOString() };
 }

@@ -56,6 +56,8 @@ export interface NailBoard {
   markers: BoardMarker[];
   techStats: TechDayStats[];
   glance?: SalonGlance;
+  /** The server's clock when this was built — every station measures elapsed times against it. */
+  now?: string;
 }
 
 export interface TurnTech {

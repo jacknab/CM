@@ -10,7 +10,8 @@ const firstName = (n: string | null | undefined) => (n ?? "").trim().split(/\s+/
 type Row = { key: string; since: string; name: string; sub: string; at: string; color: string; testId: string; open: () => void };
 
 /** Thin "who has checked in" list for the Techs tab — the calendar's Arrived list, narrower. */
-export function CheckInPanel({ tickets, markers, onTicket, onMarker }: {
+export function CheckInPanel({ tickets, markers, onTicket, onMarker, clockOffsetMs = 0 }: {
+  clockOffsetMs?: number;
   tickets: BoardTicket[];
   markers: BoardMarker[];
   /** Client with a ticket: open it. */
@@ -18,9 +19,10 @@ export function CheckInPanel({ tickets, markers, onTicket, onMarker }: {
   /** Walk-in with no ticket yet: start their ticket. */
   onMarker: (m: BoardMarker) => void;
 }) {
-  const [now, setNow] = useState(() => Date.now());
+  const [tick, setTick] = useState(() => Date.now());
+  const now = tick + clockOffsetMs; // server time, so every POS station shows the same waits
   useEffect(() => {
-    const iv = setInterval(() => setNow(Date.now()), 30_000);
+    const iv = setInterval(() => setTick(Date.now()), 30_000);
     return () => clearInterval(iv);
   }, []);
   const listRef = useRef<HTMLDivElement>(null);

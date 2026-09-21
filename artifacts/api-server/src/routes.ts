@@ -22321,6 +22321,7 @@ or
         `UPDATE kiosk_checkins SET status = $1 WHERE id = $2 AND store_id = $3`,
         [status, req.params.id, storeId]
       );
+      try { broadcastNotification({ type: "kiosk_checkin_created", storeId } as any); } catch { /* polling covers it */ }
       return res.json({ success: true });
     } catch (err) {
       console.error("[kiosk/board/status]", err);
@@ -22357,6 +22358,8 @@ or
         `DELETE FROM kiosk_checkins WHERE id = $1 AND store_id = $2`,
         [req.params.id, storeId]
       );
+      // Every POS station's waiting list drops this client (same event the list already refreshes on).
+      try { broadcastNotification({ type: "kiosk_checkin_created", storeId } as any); } catch { /* polling covers it */ }
       return res.json({ success: true });
     } catch (err) {
       console.error("[kiosk/board/delete]", err);
