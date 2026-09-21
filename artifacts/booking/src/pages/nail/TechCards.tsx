@@ -74,7 +74,8 @@ export function TechCards({ techs, tickets, stats, loading }: { techs: TurnTech[
   ].filter(Boolean).join("  ·  ");
 
   return (
-    <section className="techs-tab" data-testid="nail-techs">
+    <section className="work-area" data-testid="nail-techs">
+     <div className="tech-panel">
       <div className="checkin-board-header">
         <h1>Technicians</h1>
         <p>{loading ? "Loading…" : summary || "No technicians yet"}</p>
@@ -146,6 +147,7 @@ export function TechCards({ techs, tickets, stats, loading }: { techs: TurnTech[
           {!loading && cards.length === 0 && <div className="checkin-empty"><p>No technicians yet. Add staff in Settings.</p></div>}
         </div>
       </div>
+     </div>
     </section>
   );
 }

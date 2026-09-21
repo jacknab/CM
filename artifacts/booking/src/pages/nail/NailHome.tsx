@@ -34,6 +34,7 @@ import { TicketPanel } from "./TicketPanel";
 import { CatalogPanel, Keypad, type CatalogGroup, type CatalogService } from "./CatalogPanel";
 import { WalkInSheet } from "./WalkInSheet";
 import { TechCards } from "./TechCards";
+import { CheckInPanel } from "./CheckInPanel";
 import "./nail.css";
 import { AssignTechSheet } from "./AssignTechSheet";
 import { CheckInBoard } from "./CheckInBoard";
@@ -347,7 +348,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     <div className="dark cx-cal nail-app h-app w-full" data-testid="nail-home">
       {notice && <div className="nail-notice" data-testid="nail-notice">{notice}</div>}
 
-      <main className={`pos-shell ${tab !== "pos" ? "checkin-page" : ""}`}>
+      <main className={`pos-shell ${tab === "board" ? "checkin-page" : ""} ${tab === "techs" ? "techs-page" : ""}`}>
         {tab === "pos" ? (
           <>
             <TicketPanel
@@ -389,7 +390,10 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
             </section>
           </>
         ) : tab === "techs" ? (
-          <TechCards techs={techList} tickets={tickets} stats={board?.techStats ?? EMPTY_ARRAY} loading={techsLoading} />
+          <>
+            <CheckInPanel tickets={tickets} markers={markers} />
+            <TechCards techs={techList} tickets={tickets} stats={board?.techStats ?? EMPTY_ARRAY} loading={techsLoading} />
+          </>
         ) : (
           <CheckInBoard
             tickets={tickets}

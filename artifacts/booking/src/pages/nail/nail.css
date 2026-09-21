@@ -333,8 +333,21 @@
 .nail-app .assign-create-btn:disabled { cursor: not-allowed; }
 
 /* ===== Adaptions for the live Certxa build ===== */
-.nail-app .techs-tab { min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 28px 32px; }
-.nail-app .tech-stage { flex: 1; min-height: 0; overflow: auto; margin-top: 18px; display: flex; }
+.nail-app .techs-page { grid-template-columns: 290px minmax(0, 1fr); }
+@media (max-width: 1180px) { .nail-app .techs-page { grid-template-columns: 250px minmax(0, 1fr); } }
+.nail-app .tech-panel { background: #2a2e36; flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 18px 20px 20px; overflow: hidden; }
+.nail-app .tech-panel .checkin-board-header h1 { font-size: 20px; }
+.nail-app .arrived-panel { min-height: 0; }
+.nail-app .arrived-list { flex: 1; min-height: 0; overflow-y: auto; }
+.nail-app .arrived-list::-webkit-scrollbar { width: 0; }
+.nail-app .arrived-scroll { flex-shrink: 0; height: 40px; display: flex; align-items: center; justify-content: center; background: #232830; color: #8b94a0; border-top: 1px solid #3b424c; border-bottom: 1px solid #3b424c; }
+.nail-app .arrived-scroll:active { background: #2f353d; color: #eef3fb; }
+.nail-app .arrived-row { display: flex; align-items: center; gap: 10px; padding: 11px 12px 11px 14px; border-bottom: 1px solid #3b424c; border-left: 4px solid #454c56; }
+.nail-app .arrived-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.nail-app .arrived-copy strong { font-size: 14px; font-weight: 700; color: #eef3fb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .arrived-copy span { font-size: 11px; color: #8b94a0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .arrived-timer { flex-shrink: 0; font-size: 10px; font-weight: 700; color: #facc15; background: rgba(250,204,21,.10); border: 1px solid rgba(250,204,21,.25); padding: 3px 8px; border-radius: 10px; white-space: nowrap; }
+.nail-app .tech-stage { flex: 1; min-height: 0; overflow: auto; margin-top: 14px; display: flex; }
 .nail-app .tech-grid { display: grid; margin: auto; align-content: center; justify-content: center; }
 .nail-app .tech-slot { position: relative; }
 .nail-app .tech-slot > .tech-card { position: absolute; top: 0; left: 0; transform-origin: top left; }
