@@ -25,6 +25,7 @@ import { DayCloseModal } from "@/components/cash/DayCloseModal";
 import { useStoreNetworkReport } from "@/hooks/use-store-network-report";
 import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
 import { hardRefresh } from "@/lib/hard-refresh";
+import { useNetworkStatus } from "@/hooks/use-network-status";
 import { buildCheckinTicket } from "@/lib/thermalPrinter";
 import { CheckoutPOSPanel, ChooseClientPanel, ClientLookupSheet, ManagerPinSheet, TimeClockSheet, VoucherRedeemSheet } from "@/pages/Calendar";
 import type { AppointmentWithDetails } from "@shared/schema";
@@ -425,6 +426,8 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
 
   // ── the calendar's other tools, from the More menu ────────────────────────
   const timeclockEnabled = features.timeclock !== false;
+  // Offline mode runs from cached files — wiping them there would break it, so no Hard Refresh while offline.
+  const offline = useNetworkStatus() === "offline";
   const moreTiles: MoreTile[] = [
     { key: "book", label: "Book Appointment", icon: CalendarPlus, run: () => { setFrontdeskPhone(""); setShowBook(true); } },
     { key: "clients", label: "Client Lookup", icon: Search, run: () => setSheet("clients") },
@@ -448,14 +451,14 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
       run: () => { if (window.confirm(`This tablet is paired as ${currentRegisterName}. Reset if it's being moved to a different station — you'll be asked to pick again.`)) resetRegister(); },
     }] : []),
     { key: "settings", label: "Settings", icon: Settings, run: () => navigate("/settings") },
-    {
+    ...(offline ? [] : [{
       key: "refresh", label: "Hard Refresh", sub: "Fix a page that won't load", icon: RefreshCw, run: () => { void hardRefresh(); },
       confirm: {
         title: "Hard refresh?",
         body: "This reloads the whole app from the server, like pressing Ctrl + Shift + R. Any ticket you're in the middle of building will be cleared. Your login and this tablet's station setup are kept.",
         action: "REFRESH NOW",
       },
-    },
+    }]),
   ];
 
   // ── Check-In sheet: put the /frontdesk tablet on its check-in screen while it's open ──

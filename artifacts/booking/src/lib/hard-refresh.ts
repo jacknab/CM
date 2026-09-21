@@ -2,9 +2,12 @@
  * The in-app equivalent of Ctrl + Shift + R. A web page can't press keys for the browser, so this does
  * what the shortcut does: throw away the service worker and every cached copy of the app, then load
  * the page fresh from the server (the changing `_hr` value makes the browser skip its HTTP cache too).
- * Nothing the user saved on this device (station pairing, drawer, login) is touched.
+ * Nothing the user saved on this device (station pairing, drawer, login, offline data) is touched.
+ * Does nothing while offline, and the button is hidden then.
  */
 export async function hardRefresh(): Promise<void> {
+  // Offline mode runs from the cached copy of the app — never wipe it without a connection to fetch the new one.
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return;
   try {
     const regs = (await navigator.serviceWorker?.getRegistrations?.()) ?? [];
     await Promise.all(regs.map((r) => r.unregister()));

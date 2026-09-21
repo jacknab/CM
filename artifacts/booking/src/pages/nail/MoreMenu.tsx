@@ -14,7 +14,9 @@ export interface MoreTile {
 
 /** Everything the calendar's menu has that isn't a footer button. Big tiles, sized to tap on a 10" tablet. */
 export function MoreMenu({ tiles, onClose }: { tiles: MoreTile[]; onClose: () => void }) {
-  const [asking, setAsking] = useState<MoreTile | null>(null);
+  const [askingTile, setAsking] = useState<MoreTile | null>(null);
+  // A tile that disappears while its question is open (Hard Refresh when the connection drops) closes the question too.
+  const asking = askingTile && tiles.some((t) => t.key === askingTile.key) ? askingTile : null;
   // 4 across for a normal set of tiles, 5 once there are many — the tiles share the popup's height, so nothing scrolls.
   const cols = tiles.length > 12 ? 5 : 4;
   const rows = Math.ceil(tiles.length / cols);
