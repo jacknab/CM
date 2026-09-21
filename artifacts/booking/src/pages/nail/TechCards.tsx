@@ -12,8 +12,8 @@ const fmtTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "num
 const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
 
 /** What the front desk needs to know about each technician, right now. */
-function statusOf(t: TurnTech, current: BoardTicket | undefined): Status {
-  if (t.clockedIn === false) return "off";
+function statusOf(t: TurnTech, current: BoardTicket | undefined, assumedIn: boolean): Status {
+  if (t.clockedIn === false && !assumedIn) return "off";
   if (t.paused || t.currentStatus === "on_break") return "break";
   if (current || t.currentStatus === "busy") return "in-service";
   return "available";
@@ -59,7 +59,13 @@ function Glance({ waiting, glance }: { waiting: number; glance: SalonGlance | un
   );
 }
 
-export function TechCards({ techs, tickets, stats, glance, waiting, loading, clockOffsetMs = 0 }: { techs: TurnTech[]; tickets: BoardTicket[]; stats: TechDayStats[]; glance: SalonGlance | undefined; waiting: number; loading: boolean; clockOffsetMs?: number }) {
+export function TechCards({ techs, tickets, stats, glance, waiting, loading, clockOffsetMs = 0, assumedIn = [], onClockedOutTap }: {
+  techs: TurnTech[]; tickets: BoardTicket[]; stats: TechDayStats[]; glance: SalonGlance | undefined; waiting: number; loading: boolean; clockOffsetMs?: number;
+  /** Techs just clocked in from this screen — shown as In & Available at once, before the server's answer comes back. */
+  assumedIn?: number[];
+  /** A clocked-out tech's card was tapped. */
+  onClockedOutTap?: (tech: TurnTech) => void;
+}) {
   const [tick, setTick] = useState(() => Date.now());
   const now = tick + clockOffsetMs; // server time, so every POS station shows the same numbers
   useEffect(() => {
@@ -75,10 +81,10 @@ export function TechCards({ techs, tickets, stats, glance, waiting, loading, clo
         const mine = tickets.filter((x) => x.staff?.id === t.id);
         const current = mine.find((x) => x.status === "started");
         const queue = mine.filter((x) => x.status === "confirmed").sort((a, b) => +new Date(a.date) - +new Date(b.date));
-        return { t, current, queue, status: statusOf(t, current), nextUp: t.id === nextUpId, stats: stats.find((s) => s.staffId === t.id) };
+        return { t, current, queue, status: statusOf(t, current, assumedIn.includes(t.id)), nextUp: t.id === nextUpId, stats: stats.find((s) => s.staffId === t.id) };
       })
       .sort((a, b) => Number(a.status === "off") - Number(b.status === "off"));
-  }, [techs, tickets, stats]);
+  }, [techs, tickets, stats, assumedIn]);
 
   // Fit the cards to the space: few techs → big cards, many → smaller, no scrolling until it stops being readable.
   const stageRef = useRef<HTMLDivElement>(null);
@@ -106,10 +112,12 @@ export function TechCards({ techs, tickets, stats, glance, waiting, loading, clo
             const doneAt = current ? new Date(current.startedAt ?? current.date).getTime() + current.duration * 60_000 : null;
             const next = queue[0];
             const done = st?.doneToday ?? 0;
-            const inLine = status !== "off" && status !== "break" ? (t.turnPosition ?? i) + 1 : null;
+            const inLine = status !== "off" && status !== "break" && (t.turnPosition ?? i) < 900 ? (t.turnPosition ?? i) + 1 : null;
             return (
               <div key={t.id} className="tech-slot" style={{ height: layout.cardH * layout.scale }}>
-                <div className={`tech-card tech-${status} mode-${layout.mode}`} data-testid={`nail-tech-card-${t.id}`} data-status={status}
+                <div className={`tech-card tech-${status} mode-${layout.mode} ${status === "off" && onClockedOutTap ? "tech-tappable" : ""}`} data-testid={`nail-tech-card-${t.id}`} data-status={status}
+                  role={status === "off" && onClockedOutTap ? "button" : undefined}
+                  onClick={status === "off" && onClockedOutTap ? () => onClockedOutTap(t) : undefined}
                   style={{ width: layout.cardW, height: layout.cardH, transform: `scale(${layout.scale})` }}>
                   <div className="tech-card-head" style={{ borderLeftColor: color }}>
                     <span className="tech-avatar" style={{ borderColor: color }}>

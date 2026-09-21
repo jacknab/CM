@@ -202,6 +202,8 @@ export const locations = pgTable("locations", {
   taxAddonsTaxable: boolean("tax_addons_taxable").notNull().default(false),
   taxProductsTaxable: boolean("tax_products_taxable").notNull().default(true),
   taxGiftCardsTaxable: boolean("tax_gift_cards_taxable").notNull().default(false),
+  /** Nail POS "Quick Area Codes": exactly three strings chosen by the salon ("" = unconfigured). NULL = never set. */
+  quickAreaCodes: jsonb("quick_area_codes"),
   stripeCustomerId: text("stripe_customer_id"),
   registerTargetFloat: decimal("register_target_float", { precision: 10, scale: 2 }),
   autoRefillEnabled:   boolean("auto_refill_enabled").notNull().default(false),

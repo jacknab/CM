@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 import { isValidNanpPrefix } from "@/lib/phone-validation";
 import { createClient } from "./NameEntry";
 import { findClientId } from "./clientLookup";
+import { QuickAreaCodes } from "./QuickAreaCodes";
+import { useQuickAreaCodes } from "./useQuickAreaCodes";
 
 /**
  * Front-desk Check-In — the Customers page (`/client-lookup`, full-screen phone pad → "Add Client Name" on-screen keyboard)
@@ -25,7 +27,7 @@ const KEY_ROWS = [
   ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
   ["Z", "X", "C", "V", "B", "N", "M"],
 ];
-const NUM_ROWS = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["", "0", ""]];
+const NUM_ROWS = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]];
 
 // Touch targets scale with the screen height so nothing is cut off on a 10" tablet.
 const NUM_KEY = "w-[clamp(84px,9vw,124px)] h-[clamp(52px,9.5vh,84px)] rounded-lg border bg-card text-[clamp(24px,4vh,36px)] font-semibold hover-elevate active-elevate-2";
@@ -38,7 +40,7 @@ const formatPhone = (d: string): string => {
   return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
 };
 
-export function CheckInLookup({ storeId, frontdeskShowing, clientEnteringPhone = false, onClose, onDone }: {
+export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, onDone }: {
   storeId: number;
   /** The /frontdesk tablet is on its check-in screen right now. */
   frontdeskShowing: boolean;
@@ -57,6 +59,7 @@ export function CheckInLookup({ storeId, frontdeskShowing, clientEnteringPhone =
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<CheckInResult | null>(null);
   const ran = useRef("");
+  const quickCodes = useQuickAreaCodes(storeId);
   const offline = typeof navigator !== "undefined" && !navigator.onLine;
 
   const checkIn = async (clientId: number) => {
@@ -96,6 +99,21 @@ export function CheckInLookup({ storeId, frontdeskShowing, clientEnteringPhone =
     setInvalid(false);
     setPhone(next);
     if (next.length === 10) void run(next);
+  };
+
+  // Same as pressing each digit in turn (same checks, same 10-digit limit, lookup starts only when the number is complete).
+  const appendDigits = (digits: string) => {
+    if (step !== "phone") return;
+    let next = phone;
+    for (const d of digits) {
+      if (next.length >= 10) break;
+      const cand = next + d;
+      if (!isValidNanpPrefix(cand)) { setPhone(""); setInvalid(true); return; }
+      next = cand;
+    }
+    setInvalid(false);
+    setPhone(next);
+    if (next.length === 10 && next !== phone) void run(next);
   };
 
   const saveNew = useCallback(async () => {
@@ -147,12 +165,6 @@ export function CheckInLookup({ storeId, frontdeskShowing, clientEnteringPhone =
       <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4">
         {step === "phone" && (
           <>
-            <h1 className="text-[clamp(26px,4.5vh,38px)] font-bold mb-1">Client Check-In</h1>
-            <p className="text-sm text-muted-foreground mb-3 text-center max-w-[560px]" data-testid={frontdeskShowing ? "nail-checkin-hint" : undefined}>
-              {frontdeskShowing
-                ? "The check-in screen is showing on the customer's tablet — they can type their own number there, or enter it here for them."
-                : "Enter the client's phone number to check them in"}
-            </p>
             <div className="text-[clamp(30px,6vh,48px)] font-mono tracking-wider mb-[2.5vh] min-h-[48px] flex items-center" data-testid="nail-checkin-phone">
               {phone.length > 0 ? formatPhone(phone) : <span className="text-muted-foreground/40">(___) ___-____</span>}
             </div>
@@ -186,19 +198,20 @@ export function CheckInLookup({ storeId, frontdeskShowing, clientEnteringPhone =
               <div className="space-y-[1.2vh]">
               {NUM_ROWS.map((row, ri) => (
                 <div key={ri} className="flex justify-center gap-2">
-                  {row.map((d, di) => d ? (
+                  {row.map((d) => (
                     <button key={d} onClick={() => digit(d)} className={NUM_KEY} data-testid={`nail-checkin-key-${d}`}>{d}</button>
-                  ) : <div key={`e${di}`} className="w-[clamp(84px,9vw,124px)]" />)}
+                  ))}
                 </div>
               ))}
               <div className="flex justify-center gap-2">
                 <button onClick={() => { setPhone(""); setInvalid(false); }} className={cn(NUM_KEY, "text-[clamp(16px,2.6vh,22px)] text-destructive")} data-testid="nail-checkin-clear">Clear</button>
-                <div className="w-[clamp(84px,9vw,124px)]" />
+                <button onClick={() => digit("0")} className={NUM_KEY} data-testid="nail-checkin-key-0">0</button>
                 <button onClick={() => { setPhone((p) => p.slice(0, -1)); setInvalid(false); }} className={cn(NUM_KEY, "flex items-center justify-center")} aria-label="Delete last digit" data-testid="nail-checkin-backspace">
                   <Delete className="w-7 h-7" />
                 </button>
               </div>
               </div>
+              <QuickAreaCodes codes={quickCodes} onPick={appendDigits} variant="page" />
             </div>
           </>
         )}

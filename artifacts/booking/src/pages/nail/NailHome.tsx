@@ -31,8 +31,8 @@ import { CheckoutPOSPanel, ChooseClientPanel, ClientLookupSheet, ManagerPinSheet
 import type { AppointmentWithDetails } from "@shared/schema";
 import {
   ApiError, BOARD_KEY, cancelTicket, completeTicket, createTicket, fetchAppointment, fetchBoard, fetchClient,
-  fetchNailConfig, fetchTurn, reassignTicket, removeMarker, startTicket, updateTicket,
-  type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData,
+  clockInTech, fetchNailConfig, fetchTurn, reassignTicket, removeMarker, startTicket, updateTicket,
+  type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData, type TurnTech,
 } from "./nailApi";
 import { defaultPick, draftTotals, EMPTY_PICK, missingRequired, togglePick, type DraftCustomLine, type NailPick, type TicketLine } from "./ticketDraft";
 import { useNailRealtime } from "./useNailRealtime";
@@ -40,6 +40,7 @@ import { TicketPanel } from "./TicketPanel";
 import { CatalogPanel, Keypad, type CatalogGroup, type CatalogService } from "./CatalogPanel";
 import { WalkInSheet } from "./WalkInSheet";
 import { CheckInLookup } from "./CheckInLookup";
+import { TechClockInSheet } from "./TechClockInSheet";
 import { useAppointmentSSE } from "@/hooks/use-appointment-sse";
 import { TechCards } from "./TechCards";
 import { CheckInPanel } from "./CheckInPanel";
@@ -104,6 +105,10 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   const [showMore, setShowMore] = useState(false);
   const [showBook, setShowBook] = useState(false);
   const [showCheckIn, setShowCheckIn] = useState(false);
+  // Techs page: a clocked-out tech's card was tapped → offer to set them In. `assumedIn` shows them In & Available at once,
+  // until the server's answer (also pushed to every other station) arrives.
+  const [clockInFor, setClockInFor] = useState<TurnTech | null>(null);
+  const [assumedIn, setAssumedIn] = useState<number[]>([]);
   // The client is typing their number on /frontdesk right now (drives the overlay on the Check-In page). Self-clears if the
   // "stopped typing" message is ever lost, so a stale overlay can't stay up.
   const [clientTyping, setClientTyping] = useState(false);
@@ -173,6 +178,10 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     refetchInterval: 30_000,
   });
   const techList = techFeed?.technicians ?? EMPTY_ARRAY;
+  // Once the server itself says they're in, stop assuming.
+  useEffect(() => {
+    setAssumedIn((cur) => { const next = cur.filter((id) => techList.find((t) => t.id === id)?.clockedIn === false); return next.length === cur.length ? cur : next; });
+  }, [techList]);
 
   const { data: services } = useServices();
   const { data: categories } = useServiceCategories();
@@ -494,6 +503,20 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     if (showCheckIn && waitingNow > waitingWhenOpened.current) { setShowCheckIn(false); say("Client checked in"); }
   }, [waitingNow, showCheckIn, say]);
 
+  const setTechIn = async (tech: TurnTech) => {
+    setClockInFor(null);
+    setAssumedIn((cur) => (cur.includes(tech.id) ? cur : [...cur, tech.id]));
+    try {
+      await clockInTech(storeId, tech.id);
+      say(`${tech.name} is in`);
+    } catch (err: any) {
+      setAssumedIn((cur) => cur.filter((id) => id !== tech.id));
+      toast({ title: `Couldn't set ${tech.name.split(" ")[0]} in`, description: err?.message, variant: "destructive" });
+    } finally {
+      invalidateBoard();
+    }
+  };
+
   // ── submit routing ────────────────────────────────────────────────────────
   const busy = create.isPending || update.isPending;
   const canSubmit = !!client && !!service && missing.length === 0;
@@ -568,7 +591,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
         ) : tab === "techs" ? (
           <>
             <CheckInPanel clockOffsetMs={clockOffsetMs} tickets={tickets} markers={markers} onMarker={startFromMarker} onTicket={(t) => { setFocusTicket({ id: t.id }); setTab("board"); }} />
-            <TechCards techs={techList} tickets={tickets} stats={board?.techStats ?? EMPTY_ARRAY} glance={board?.glance} waiting={waitingCount} loading={techsLoading} clockOffsetMs={clockOffsetMs} />
+            <TechCards techs={techList} tickets={tickets} stats={board?.techStats ?? EMPTY_ARRAY} glance={board?.glance} waiting={waitingCount} loading={techsLoading} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} onClockedOutTap={setClockInFor} />
           </>
         ) : (
           <CheckInBoard
@@ -599,6 +622,8 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
           onClient={(id, staffId) => { setFrontdeskPhone(""); setWalkInKnown(null); void pickClient(id, checkinId, staffId); }}
         />
       )}
+
+      {clockInFor && <TechClockInSheet tech={clockInFor} busy={false} onSetIn={() => void setTechIn(clockInFor)} onClose={() => setClockInFor(null)} />}
 
       {showMore && <MoreMenu tiles={moreTiles} onClose={() => setShowMore(false)} />}
 

@@ -139,6 +139,7 @@ import { isStripeConfigured, getStripe } from "./lib/stripe";
 import { setupNotificationServer, broadcastNotification, broadcastSyncEvent } from "./notifications";
 import { broadcastAppointmentStatus, registerSseClient } from "./lib/appointmentEvents";
 import { normalizePersonName } from "./lib/personName";
+import { checkQuickAreaCodes, readQuickAreaCodes } from "@shared/areaCodes";
 import { payoutRedeemedVoucher } from "./lib/dealVoucherPayouts";
 import { awardLoyaltyForCompletion } from "./lib/loyaltyAward";
 import { setupAiReceptionistRoutes } from "./routes/aiReceptionist";
@@ -2497,8 +2498,10 @@ export async function registerRoutes(
         taxAddonsTaxable: locations.taxAddonsTaxable,
         taxProductsTaxable: locations.taxProductsTaxable,
         taxGiftCardsTaxable: locations.taxGiftCardsTaxable,
+        quickAreaCodes: locations.quickAreaCodes,
       }).from(locations).where(eq(locations.id, storeId));
       return res.json({
+        quickAreaCodes: readQuickAreaCodes(row?.quickAreaCodes),
         salesTaxRate: row?.salesTaxRate ?? "0.0000",
         taxServicesTaxable: row?.taxServicesTaxable ?? false,
         taxAddonsTaxable: row?.taxAddonsTaxable ?? false,
@@ -2508,6 +2511,22 @@ export async function registerRoutes(
     } catch (err) {
       console.error("[pos-settings] GET:", err);
       return res.status(500).json({ error: "Failed to load POS settings" });
+    }
+  });
+
+  // PUT /api/pos-settings/:storeId/quick-area-codes — the salon's three Nail POS quick area-code buttons.
+  // Its own route on purpose: the PATCH below rewrites the tax rate, so it must never be used for this.
+  app.put("/api/pos-settings/:storeId/quick-area-codes", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ error: "No store context" });
+      const check = checkQuickAreaCodes(req.body?.codes);
+      if (!check.ok) return res.status(400).json({ error: check.error, index: check.index });
+      await db.update(locations).set({ quickAreaCodes: check.codes }).where(eq(locations.id, storeId));
+      return res.json({ quickAreaCodes: check.codes });
+    } catch (err) {
+      console.error("[pos-settings] quick-area-codes PUT:", err);
+      return res.status(500).json({ error: "Failed to save quick area codes" });
     }
   });
 
@@ -17527,7 +17546,7 @@ or
         pool.query(
           `SELECT id FROM kiosk_checkins
             WHERE store_id = $1 AND client_id = $2 AND appointment_id IS NULL
-              AND status IN ('waiting','called') AND created_at > NOW() - INTERVAL '2 hours'
+              AND status IN ('waiting','called') AND created_at > NOW() - INTERVAL '${nailTickets.CHECKIN_MARKER_HOURS} hours'
             LIMIT 1`,
           [storeId, client.id],
         ),
@@ -17539,7 +17558,7 @@ or
         [client.id],
       );
       const digits = String(phoneRows[0]?.phone_number_e164 ?? "").replace(/\D/g, "").slice(-10);
-      const todayAppointment = await performClientCheckin(store, client, digits);
+      const todayAppointment = await performClientCheckin(store, client, digits, "staff");
       return res.json({ status: todayAppointment ? "appointment" : "walkin", client: person, todayAppointment });
     } catch (err) {
       console.error("[nail/checkin]", err);
@@ -21295,7 +21314,8 @@ or
     const { rows: recentCheckin } = await pool.query(
       `SELECT id FROM kiosk_checkins
        WHERE store_id = $1 AND client_id = $2 AND appointment_id IS NULL
-         AND created_at >= NOW() - INTERVAL '2 hours'
+         AND status IN ('waiting', 'called')
+         AND created_at >= NOW() - INTERVAL '${nailTickets.CHECKIN_MARKER_HOURS} hours'
        LIMIT 1`,
       [storeId, clientId]
     );
@@ -21320,7 +21340,7 @@ or
   // Check-In sheet (/api/nail/checkin): checks in today's next appointment (TURN hands it to the next tech unless
   // the client asked for someone) or, with no appointment today, records the waiting walk-in marker.
   // Returns the appointment that was checked in, or null when it was a walk-in.
-  async function performClientCheckin(store: any, client: any, digits: string) {
+  async function performClientCheckin(store: any, client: any, digits: string, source: "kiosk" | "staff" = "kiosk") {
     // ── Check for today's appointment for this client ────────────────────────
     // Lower bound: scheduled time must be within the last 30 minutes or still
     // upcoming — prevents latching onto stale appointments from earlier in the day.
@@ -21378,6 +21398,11 @@ or
         }
       }
       broadcastAppointmentStatus({ appointmentId: appt.id, storeId: store.id, status: "confirmed", source: "manual" });
+      // A durable record of the check-in itself (the appointment row only keeps its latest state).
+      void pool.query(
+        `INSERT INTO appointment_events (store_id, appointment_id, event_type, actor_user_id, metadata) VALUES ($1,$2,'checked_in',NULL,$3)`,
+        [store.id, appt.id, JSON.stringify({ source, clientId: client.id })],
+      ).catch(() => {});
       void logActivityEvent({
         storeId: store.id,
         eventType: "check_in",
@@ -22194,12 +22219,9 @@ or
       const [storeRow] = await db.select({ timezone: locations.timezone }).from(locations).where(eq(locations.id, storeId));
       const storeTz = storeRow?.timezone ?? "UTC";
 
-      // Auto-expire "waiting" check-ins that are more than 1 hour old
-      await pool.query(
-        `UPDATE kiosk_checkins SET status = 'expired'
-         WHERE store_id = $1 AND status = 'waiting' AND created_at < NOW() - INTERVAL '1 hour'`,
-        [storeId]
-      );
+      // NOTE: this GET never changes anything. It used to mark every "waiting" check-in older than an hour as
+      // 'expired' — so a client who checked in simply vanished from every POS's waiting list an hour later. Check-ins now
+      // stay until someone resolves them; genuinely abandoned ones are expired by the background job (routes/sync-jobs.ts).
 
       const { rows } = await pool.query(`
         SELECT kc.id, kc.token, kc.client_id, kc.client_name, kc.phone, kc.services,

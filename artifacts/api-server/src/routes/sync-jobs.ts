@@ -2,6 +2,8 @@ import { db } from "../db";
 import { appointments, waitlist } from "@shared/schema";
 import { eq, and, lt, ne, isNotNull } from "drizzle-orm";
 import { logAuditEntry } from "../lib/sync-audit";
+import { pool } from "../db";
+import { CHECKIN_MARKER_HOURS } from "../lib/nailTickets";
 import { broadcastSyncEvent } from "../notifications";
 
 const JOB_INTERVAL_MS = 5 * 60 * 1000;
@@ -15,13 +17,16 @@ function hasTimeOverlap(
   return aStart < bEnd && bStart < aEnd;
 }
 
-async function reconcileStore(storeId: number): Promise<void> {
+export async function reconcileStore(storeId: number): Promise<void> {
   const ACTIVE_STATUSES = ["pending", "started", "checked_in"];
   // Statuses that mean "the client is physically here / being served right
   // now" — these must never be silently auto-cancelled by this background
   // job. A walk-in that just checked in at the kiosk is definitionally real,
   // even if it happens to overlap with a stale/duplicate pending booking.
   const PRESENT_STATUSES = new Set(["checked_in", "started"]);
+  // The app records a check-in as status "confirmed" + a checked_in_at time (there is no "checked_in" status in practice),
+  // so anyone with a check-in time is present too — a checked-in client must never be cancelled as somebody's "duplicate".
+  const isPresent = (a: { status: string | null; checkedInAt: Date | null }) => PRESENT_STATUSES.has(String(a.status)) || a.checkedInAt != null;
   const activeApts = await db
     .select({
       id: appointments.id,
@@ -30,6 +35,7 @@ async function reconcileStore(storeId: number): Promise<void> {
       date: appointments.date,
       duration: appointments.duration,
       status: appointments.status,
+      checkedInAt: appointments.checkedInAt,
     })
     .from(appointments)
     .where(
@@ -58,8 +64,8 @@ async function reconcileStore(storeId: number): Promise<void> {
       );
       if (!overlap) continue;
 
-      const aPresent = PRESENT_STATUSES.has(String(a.status));
-      const bPresent = PRESENT_STATUSES.has(String(b.status));
+      const aPresent = isPresent(a);
+      const bPresent = isPresent(b);
 
       // If both sides are "present" (checked in / in progress), this isn't a
       // simple duplicate we can safely auto-resolve — leave it for staff and
@@ -104,6 +110,16 @@ async function reconcileStore(storeId: number): Promise<void> {
       );
     }
   }
+
+  // Abandoned "checked in, no ticket yet" kiosk check-ins (nobody ever made them a ticket): expired only after
+  // CHECKIN_MARKER_HOURS, by this job — never by a page load, and never after a short timer.
+  const expired = await pool.query(
+    `UPDATE kiosk_checkins SET status = 'expired'
+      WHERE store_id = $1 AND appointment_id IS NULL AND status IN ('waiting', 'called')
+        AND created_at < NOW() - INTERVAL '${CHECKIN_MARKER_HOURS} hours'`,
+    [storeId],
+  );
+  if (expired.rowCount) console.log(`[sync-jobs] store=${storeId} expired ${expired.rowCount} abandoned check-in(s) older than ${CHECKIN_MARKER_HOURS}h`);
 
   const STALE_CUTOFF = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const staleWalkins = await db

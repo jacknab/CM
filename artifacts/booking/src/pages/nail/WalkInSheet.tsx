@@ -5,6 +5,8 @@ import { isValidNanpNumber, isValidNanpPrefix } from "@/lib/phone-validation";
 import { fetchTurn, type TurnTech } from "./nailApi";
 import { NameEntry, createClient } from "./NameEntry";
 import { findClientId } from "./clientLookup";
+import { QuickAreaCodes } from "./QuickAreaCodes";
+import { useQuickAreaCodes } from "./useQuickAreaCodes";
 
 interface Props {
   storeId: number;
@@ -40,6 +42,7 @@ export function WalkInSheet({ storeId, frontdeskPhone, known, onClose, onClient 
   const [noStaffAlert, setNoStaffAlert] = useState(false);
   const [staffId, setStaffId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const quickCodes = useQuickAreaCodes(storeId);
   const lookedUp = useRef<string>("");
 
   const { data: turn } = useQuery({
@@ -78,6 +81,21 @@ export function WalkInSheet({ storeId, frontdeskPhone, known, onClose, onClient 
     setInvalid(false);
     setPhone(next);
     if (next.length === 10) ready(next);
+  };
+
+  // Same as pressing each digit in turn (same checks, same 10-digit limit; the lookup starts only when the number is complete).
+  const appendDigits = (digits: string) => {
+    if (busy) return;
+    let next = phone;
+    for (const d of digits) {
+      if (next.length >= 10) break;
+      const cand = next + d;
+      if (!isValidNanpPrefix(cand)) { setPhone(""); setInvalid(true); return; }
+      next = cand;
+    }
+    setInvalid(false);
+    setPhone(next);
+    if (next.length === 10 && next !== phone) ready(next);
   };
 
   // The /frontdesk tablet pushed the digits the client typed.
@@ -172,6 +190,7 @@ export function WalkInSheet({ storeId, frontdeskPhone, known, onClose, onClient 
                   <button type="button" onClick={() => digit("0")} data-testid="nail-walkin-key-0">0</button>
                   <button type="button" className="walkin-backspace" onClick={() => { setPhone((p) => p.slice(0, -1)); setInvalid(false); }} aria-label="Delete last digit">⌫</button>
                 </div>
+                <QuickAreaCodes codes={quickCodes} onPick={appendDigits} variant="sheet" />
               </>
             )}
 

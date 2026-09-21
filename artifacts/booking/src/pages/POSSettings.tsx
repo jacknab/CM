@@ -10,7 +10,8 @@ import { useSelectedStore } from "@/hooks/use-store";
 import { useToast } from "@/hooks/use-toast";
 import { useInSettingsShell } from "@/lib/settings-shell-context";
 import { api } from "@shared/routes";
-import { ShoppingCart, Percent, Package, Lock, Monitor } from "lucide-react";
+import { ShoppingCart, Percent, Package, Lock, Monitor, Phone } from "lucide-react";
+import { checkQuickAreaCodes } from "@shared/areaCodes";
 
 // ── Tax category toggle ───────────────────────────────────────────────────────
 
@@ -80,6 +81,11 @@ export default function POSSettings() {
   const [dualScreenSaving, setDualScreenSaving] = useState(false);
   const [kioskSettingsRaw, setKioskSettingsRaw] = useState<Record<string, unknown>>({});
 
+  // Nail POS "Quick Area Codes": three area codes the salon picks for the phone keypads (strings; blank = button unused).
+  const [areaCodes, setAreaCodes] = useState<string[]>(["", "", ""]);
+  const [areaCodesSaving, setAreaCodesSaving] = useState(false);
+  const [areaCodeError, setAreaCodeError] = useState<{ index: number; message: string } | null>(null);
+
   useEffect(() => {
     fetch("/api/kiosk-settings", { credentials: "include" })
       .then(r => r.json())
@@ -118,6 +124,7 @@ export default function POSSettings() {
         // the field for a 0% rate, which made a successful save of 0 look like
         // it hadn't persisted at all.
         setTaxRate(rate === 0 ? "0" : rate.toFixed(3).replace(/\.?0+$/, ""));
+        if (Array.isArray(d.quickAreaCodes)) setAreaCodes([0, 1, 2].map((i) => (typeof d.quickAreaCodes[i] === "string" ? d.quickAreaCodes[i] : "")));
         setTaxRules({
           services:  d.taxServicesTaxable  ?? false,
           addons:    d.taxAddonsTaxable    ?? false,
@@ -128,6 +135,32 @@ export default function POSSettings() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [selectedStore?.id]);
+
+  async function handleSaveAreaCodes() {
+    if (!selectedStore?.id) return;
+    const check = checkQuickAreaCodes(areaCodes);
+    if (!check.ok) { setAreaCodeError({ index: check.index, message: check.error }); return; }
+    setAreaCodeError(null);
+    setAreaCodesSaving(true);
+    try {
+      const r = await fetch(`/api/pos-settings/${selectedStore.id}/quick-area-codes`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codes: check.codes }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) { setAreaCodeError({ index: Number(body.index ?? -1), message: body.error || "Save failed" }); return; }
+      setAreaCodes(check.codes);
+      // The Nail POS keypads read this same setting — refresh them right away.
+      await queryClient.invalidateQueries({ queryKey: ["/api/pos-settings", selectedStore.id, "quick-area-codes"] });
+      toast({ title: "Quick area codes saved" });
+    } catch {
+      toast({ title: "Save failed", variant: "destructive" });
+    } finally {
+      setAreaCodesSaving(false);
+    }
+  }
 
   function setRule(key: keyof TaxRules, val: boolean) {
     setTaxRules(prev => ({ ...prev, [key]: val }));
@@ -294,6 +327,53 @@ export default function POSSettings() {
         >
           {saving ? "Saving…" : "Save Settings"}
         </Button>
+
+        {/* Quick Area Codes ──────────────────────────────────────────────── */}
+        <Card data-testid="card-quick-area-codes">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Phone className="w-4 h-4 text-teal-600" />
+              Quick Area Codes
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Pick up to three area codes. On the Nail POS phone keypads, staff can tap one instead of typing its first three digits,
+              then finish the number. Leave a button blank to skip it.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="space-y-1.5">
+                  <Label htmlFor={`quick-area-${i + 1}`}>Button {i + 1}</Label>
+                  <Input
+                    id={`quick-area-${i + 1}`}
+                    data-testid={`input-quick-area-${i + 1}`}
+                    inputMode="numeric"
+                    maxLength={3}
+                    placeholder="___"
+                    value={areaCodes[i]}
+                    disabled={loading}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/\D/g, "").slice(0, 3);
+                      setAreaCodes((prev) => prev.map((c, k) => (k === i ? v : c)));
+                      if (areaCodeError) setAreaCodeError(null);
+                    }}
+                    className={`text-lg font-mono tracking-widest ${areaCodeError?.index === i ? "border-red-500" : ""}`}
+                  />
+                </div>
+              ))}
+            </div>
+            {areaCodeError && <p className="text-sm text-red-600" data-testid="text-quick-area-error">{areaCodeError.message}</p>}
+            <Button
+              onClick={handleSaveAreaCodes}
+              disabled={areaCodesSaving || loading}
+              className="bg-teal-600 hover:bg-teal-700 text-white"
+              data-testid="button-save-quick-area-codes"
+            >
+              {areaCodesSaving ? "Saving…" : "Save"}
+            </Button>
+          </CardContent>
+        </Card>
 
         {/* Dual Screen POS ───────────────────────────────────────────────── */}
         <Card>

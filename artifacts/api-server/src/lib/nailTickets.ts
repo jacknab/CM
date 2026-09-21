@@ -20,6 +20,21 @@ import { getRequiredResourceType } from "@shared/resourceMatching";
 import * as nailConfig from "./nailConfig";
 import { getBufferMinutes } from "./appointmentBuffer";
 
+/**
+ * A check-in is a record that STAYS until someone resolves it (ticket made, client removed, checked out) — nothing here
+ * ever expires it on a short timer. A "waiting, no ticket yet" kiosk check-in older than this is treated as abandoned
+ * (a background job marks it expired; see routes/sync-jobs.ts) and stops showing.
+ */
+export const CHECKIN_MARKER_HOURS = 18;
+
+/**
+ * The salon's BUSINESS day, for the "Salon at a glance" numbers: it starts at 4 AM store time, not at midnight, so a late
+ * night doesn't zero the numbers at 12:00. SQL for "the business day this moment / this column belongs to" ($2 = store timezone).
+ */
+export const BUSINESS_DAY_ROLLOVER_HOURS = 4;
+const bizDayOf = (col: string) => `((${col} AT TIME ZONE $2) - INTERVAL '${BUSINESS_DAY_ROLLOVER_HOURS} hours')::date`;
+const BIZ_TODAY = `((NOW() AT TIME ZONE $2) - INTERVAL '${BUSINESS_DAY_ROLLOVER_HOURS} hours')::date`;
+
 // ── Pure helpers ────────────────────────────────────────────────────────────
 
 export type BusyBlock = { date: Date | string; duration: number | null };
@@ -629,7 +644,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
        ) ad ON true
       WHERE a.store_id = $1
         AND (a.status = 'started' OR (a.status = 'confirmed' AND a.checked_in_at IS NOT NULL))
-        AND (a.date AT TIME ZONE $2)::date >= ((NOW() AT TIME ZONE $2)::date - 1)
+        AND ${bizDayOf("a.date")} >= (${BIZ_TODAY} - 1)
       ORDER BY COALESCE(a.checked_in_at, a.date) ASC`,
     [storeId, tz],
   );
@@ -673,10 +688,9 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
   const markerRows = await pool.query(
     `SELECT id, client_id, client_name, phone, created_at FROM kiosk_checkins
       WHERE store_id = $1 AND appointment_id IS NULL AND status IN ('waiting','called')
-        AND (created_at AT TIME ZONE $2)::date = (NOW() AT TIME ZONE $2)::date
-        AND created_at > NOW() - INTERVAL '1 hour'
+        AND created_at > NOW() - INTERVAL '${CHECKIN_MARKER_HOURS} hours'
       ORDER BY created_at ASC`,
-    [storeId, tz],
+    [storeId],
   );
   const markers: BoardWaitingMarker[] = markerRows.rows.map((m: any) => ({
     id: m.id, clientId: m.client_id ?? null, clientName: m.client_name ?? null, phone: m.phone ?? null, createdAt: new Date(m.created_at).toISOString(),
@@ -688,7 +702,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
             MAX(COALESCE(a.completed_at, a.date + make_interval(mins => COALESCE(a.duration, 0)))) AS last_finished
        FROM appointments a
       WHERE a.store_id = $1 AND a.status = 'completed' AND a.staff_id IS NOT NULL
-        AND (a.date AT TIME ZONE $2)::date = (NOW() AT TIME ZONE $2)::date
+        AND ${bizDayOf("a.date")} = ${BIZ_TODAY}
       GROUP BY a.staff_id`,
     [storeId, tz],
   );
@@ -720,7 +734,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
                OR ABS(EXTRACT(EPOCH FROM (a.created_at - a.date))) < 900
                OR (a.checked_in_at IS NOT NULL AND ABS(EXTRACT(EPOCH FROM (a.checked_in_at - a.created_at))) < 900)) AS walkin
          FROM appointments a
-        WHERE a.store_id = $1 AND (a.date AT TIME ZONE $2)::date = (NOW() AT TIME ZONE $2)::date
+        WHERE a.store_id = $1 AND ${bizDayOf("a.date")} = ${BIZ_TODAY}
      )
      SELECT COUNT(*) FILTER (WHERE status <> 'cancelled' AND NOT walkin)::int AS appointments,
             COUNT(*) FILTER (WHERE status <> 'cancelled' AND walkin)::int AS walkins,
@@ -734,7 +748,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
   );
   const kioskOnly = await pool.query(
     `SELECT COUNT(*)::int AS n FROM kiosk_checkins
-      WHERE store_id = $1 AND appointment_id IS NULL AND (created_at AT TIME ZONE $2)::date = (NOW() AT TIME ZONE $2)::date`,
+      WHERE store_id = $1 AND appointment_id IS NULL AND ${bizDayOf("created_at")} = ${BIZ_TODAY}`,
     [storeId, tz],
   );
   const gr = g.rows[0] ?? {};

@@ -178,6 +178,18 @@ export const cancelTicket = (id: number) =>
     body: JSON.stringify({ status: "cancelled", cancellationReason: "Cancelled at check-in", calendarHidden: true }),
   });
 
+/** Front-desk override: put a technician on the clock and into the turn order (the server tells every station). */
+export async function clockInTech(storeId: number, staffId: number): Promise<void> {
+  const res = await fetch("/api/timeclock/clock-in", {
+    method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, staffId }),
+  });
+  // 409 = already clocked in (someone got there first) — that is the state we wanted.
+  if (!res.ok && res.status !== 409) {
+    const data = await res.json().catch(() => null);
+    throw new ApiError(data?.error || data?.message || "Couldn't clock them in", res.status, data);
+  }
+}
+
 export const removeMarker = (id: number) => call(`/api/kiosk/board/${id}`, { method: "DELETE" });
 
 export const fetchAppointment = (id: number) => call<any>(`/api/appointments/${id}`);
