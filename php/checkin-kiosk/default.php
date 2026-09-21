@@ -773,7 +773,6 @@ require __DIR__ . '/../includes/nav.php';
 .ks-visit-note { font-size:7px;color:#6b6580; }
 
 /* Service Type */
-#ks3 { background:#f5f3ff; }
 .ks-header { padding:7px 8px 6px;background:#fff;border-bottom:1px solid #e9e3f5;flex-shrink:0; }
 .ks-header-label { font-size:6px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#e84891;margin-bottom:1px; }
 .ks-header-h { font-size:11px;font-weight:900;color:#18111a;line-height:1.2; }
@@ -792,7 +791,6 @@ require __DIR__ . '/../includes/nav.php';
 .ks-primary-btn.dim { background:#d1d5db;box-shadow:none; }
 
 /* Services */
-#ks4 { background:#f5f3ff; }
 .ks-svc-grid { flex:1;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:5px 7px;align-content:start;overflow:hidden; }
 .ks-svc-card { border-radius:8px;background:#fff;border:1.5px solid #e9e3f5;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 1px 4px rgba(80,0,120,.06);transition:border-color .3s,box-shadow .3s; }
 .ks-svc-card.sel { border-color:#e84891;box-shadow:0 0 0 2px rgba(232,72,145,.18),0 2px 8px rgba(80,0,120,.1); }
@@ -839,59 +837,7 @@ require __DIR__ . '/../includes/nav.php';
 .ks-cdown-ring svg { width:30px;height:30px; }
 .ks-cdown-num { font-size:7px;color:#a89ec0; }
 
-/* ── Real screenshot screens ── */
-.ks-real-shot {
-  width:100%; height:100%;
-  object-fit:cover; object-position:top left;
-  display:block;
-}
-
-/* Category screenshot should stay contained inside kiosk frame (not full-bleed) */
-#ks3 {
-  background:#f5f3ff;
-  align-items:center;
-  justify-content:center;
-}
-#ks3 .ks-real-shot {
-  width:100%;
-  height:100%;
-  object-fit:contain;
-  object-position:top center;
-  border-radius:0;
-}
-
-/* Match screen 3 sizing behavior for screens 4 and 6 */
-#ks4,
-#ks6 {
-  background:#f5f3ff;
-  align-items:center;
-  justify-content:center;
-}
-#ks4 .ks-real-shot,
-#ks6 .ks-real-shot {
-  width:100%;
-  height:100%;
-  object-fit:contain;
-  object-position:top center;
-  border-radius:0;
-}
-
-/* Tap ring overlay on screenshot screens */
-.ks-tap-ring {
-  position:absolute; pointer-events:none; z-index:10;
-  width:28px; height:28px; border-radius:50%;
-  border:2.5px solid #e84891;
-  background:rgba(232,72,145,.18);
-  transform:translate(-50%,-50%) scale(0);
-  animation:ks-ring-pop .5s ease forwards;
-}
-@keyframes ks-ring-pop {
-  0%  { transform:translate(-50%,-50%) scale(0); opacity:1; }
-  60% { transform:translate(-50%,-50%) scale(1.4); opacity:.8; }
-  100%{ transform:translate(-50%,-50%) scale(1); opacity:0; }
-}
-
-/* Countdown overlay on confirmation screenshot */
+/* Countdown overlay on the confirmation screen */
 .ks-confirm-cdown {
   position:absolute; bottom:18px; left:50%; transform:translateX(-50%);
   background:rgba(255,255,255,.92); border-radius:50%;
@@ -979,23 +925,6 @@ require __DIR__ . '/../includes/nav.php';
     <div style="font-size:7px;color:#a89ec0;margin-top:2px;animation:ks-ping-anim 1.2s ease-in-out infinite;">Loading your options…</div>
   </div>
 
-  <!-- ── SCREEN 3: Service Type (real screenshot) ────────── -->
-  <!-- TODO: this screenshot's R2 object is gone (404, confirmed via a real
-       Semrush site audit) — no replacement exists in site_assets. Needs a
-       fresh screenshot re-uploaded; onerror hides the broken-image icon in
-       the meantime rather than showing it to real visitors. -->
-  <div class="ksim" id="ks3">
-    <img src="https://certxa.com/api/r2/site-assets/b50e8bfb-421c-49ef-b8fc-58a606271055.webp" class="ks-real-shot" alt="Kiosk category selection" onerror="this.style.display='none';">
-    <div id="ks3-tap-ring" class="ks-tap-ring" style="display:none;"></div>
-  </div>
-
-  <!-- ── SCREEN 4: Services (real screenshot) ─────────────── -->
-  <!-- TODO: same as SCREEN 3 — R2 object gone, needs a fresh screenshot. -->
-  <div class="ksim" id="ks4">
-    <img src="https://certxa.com/api/r2/site-assets/3f1e87d3-9924-47ec-899e-85c935a98d52.webp" class="ks-real-shot" alt="Kiosk service selection" onerror="this.style.display='none';">
-    <div id="ks4-tap-ring" class="ks-tap-ring" style="display:none;"></div>
-  </div>
-
   <!-- ── SCREEN 5: Stylist ──────────────────── -->
   <div class="ksim" id="ks5">
     <div class="ks-stylist-header">
@@ -1032,10 +961,17 @@ require __DIR__ . '/../includes/nav.php';
     </div>
   </div>
 
-  <!-- ── SCREEN 6: Confirmation (real screenshot) ─────────── -->
-  <!-- TODO: same as SCREEN 3/4 — R2 object gone, needs a fresh screenshot. -->
+  <!-- ── SCREEN 6: Confirmation ─────────── -->
   <div class="ksim" id="ks6">
-    <img src="https://certxa.com/api/r2/site-assets/6b11fd91-5713-4dc9-a516-cac64de3bc32.webp" class="ks-real-shot" alt="Kiosk check-in confirmation" onerror="this.style.display='none';">
+    <div class="ks-ticket-card">
+      <div class="ks-tick-icon"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div>
+      <div class="ks-tick-title">You're checked in!</div>
+      <div class="ks-tick-rows">
+        <div class="ks-tick-row"><span class="ks-tick-label">Stylist</span><span class="ks-tick-val">Sophie</span></div>
+        <div class="ks-tick-row"><span class="ks-tick-label">Ticket</span><span class="ks-tick-val">#12</span></div>
+      </div>
+      <div class="ks-wait-pill">You're next</div>
+    </div>
     <div class="ks-confirm-cdown" id="ks-confirm-cdown">
       <svg viewBox="0 0 40 40" width="40" height="40">
         <circle cx="20" cy="20" r="16" fill="none" stroke="rgba(232,72,145,.2)" stroke-width="3"/>
@@ -1073,17 +1009,6 @@ require __DIR__ . '/../includes/nav.php';
   function reset(){
     var pd=document.getElementById('ksim-phone-display');
     if(pd) pd.textContent='•••  •••  ••••';
-    var h=document.getElementById('ks3-hand'),chk3=document.getElementById('ks3-chk'),b3=document.getElementById('ks3-btn');
-    if(h) h.classList.remove('sel');
-    if(chk3) chk3.style.display='none';
-    if(b3) b3.classList.add('dim');
-    var g=document.getElementById('ks4-gel'),chk4=document.getElementById('ks4-chk'),
-        chip=document.getElementById('ks4-chip'),tot=document.getElementById('ks4-total'),b4=document.getElementById('ks4-btn');
-    if(g) g.classList.remove('sel');
-    if(chk4) chk4.style.display='none';
-    if(chip) chip.style.display='none';
-    if(tot) tot.style.display='none';
-    if(b4) b4.classList.add('dim');
     var so=document.getElementById('ks5-sophie'),chk5=document.getElementById('ks5-chk'),b5=document.getElementById('ks5-btn');
     if(so) so.classList.remove('sel');
     if(chk5) chk5.style.display='none';
@@ -1099,7 +1024,7 @@ require __DIR__ . '/../includes/nav.php';
   function at(ms,fn){ timers.push(setTimeout(fn,ms)); }
   function clearAll(){ timers.forEach(clearTimeout); timers=[]; }
 
-  var TOTAL=23500;
+  var TOTAL=16000;
   var cdownInterval=null;
 
   // ── Cursor helpers ───────────────────────────────────
@@ -1180,20 +1105,11 @@ require __DIR__ . '/../includes/nav.php';
       if(w){ w.style.animation='none'; void w.offsetWidth; w.style.animation=''; }
     });
 
-    // ── Service Type (9.0s) — real screenshot, auto-advance ──
-    at(9000, function(){ show('ks3'); curHide(); });
-
-    // auto-advance to service selection at 13.0s
-    at(13000, function(){ show('ks4'); });
-
-    // ── Services (13.0s) — real screenshot, auto-advance ──
-    // auto-advance to stylist at 16.5s
-    at(16500, function(){ show('ks5'); });
-
-    // ── Stylist (16.5s) ──
+    // ── Stylist (9.0s) ──
+    at(9000, function(){ show('ks5'); curHide(); });
     // glide to Sophie, tap + select
-    at(17400, function(){ glide(document.getElementById('ks5-sophie')); });
-    at(17800, function(){
+    at(9900, function(){ glide(document.getElementById('ks5-sophie')); });
+    at(10300, function(){
       var so=document.getElementById('ks5-sophie'),chk=document.getElementById('ks5-chk'),b=document.getElementById('ks5-btn');
       tapEl(so);
       if(so) so.classList.add('sel');
@@ -1201,9 +1117,9 @@ require __DIR__ . '/../includes/nav.php';
       if(b) b.classList.remove('dim');
     });
 
-    // glide to Check In button, tap → confirmation screenshot
-    at(19100, function(){ glide(document.getElementById('ks5-btn')); });
-    at(19500, function(){
+    // glide to Check In button, tap → confirmation
+    at(11600, function(){ glide(document.getElementById('ks5-btn')); });
+    at(12000, function(){
       tapEl(document.getElementById('ks5-btn'));
       show('ks6');
       // show countdown ring overlay
@@ -1218,9 +1134,9 @@ require __DIR__ . '/../includes/nav.php';
         if(txt) txt.textContent=secs;
         if(arc) arc.setAttribute('stroke-dashoffset',circ*(1-secs/30));
         if(secs<=0){ clearInterval(cdownInterval); cdownInterval=null; }
-      },(TOTAL-19500)/30);
+      },(TOTAL-12000)/30);
     });
-    at(19750, curHide);
+    at(12250, curHide);
 
     // ── Loop ──
     at(TOTAL, run);

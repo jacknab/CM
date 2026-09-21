@@ -41,7 +41,6 @@ export interface Salon {
   imageUrl: string;
   tags: string[];
   distance: string;
-  isOpen?: boolean;
   featured?: boolean;
   description: string;
   latitude?: number;
