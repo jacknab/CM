@@ -48,6 +48,9 @@ export interface TurnTech {
   avatarUrl?: string | null;
   eligible: boolean;
   clockedIn?: boolean;
+  paused?: boolean;
+  /** Turns taken so far today. */
+  turnCount?: number;
   turnPosition?: number;
   exclusionReasons?: string[];
   currentStatus?: "available" | "busy" | "on_break";

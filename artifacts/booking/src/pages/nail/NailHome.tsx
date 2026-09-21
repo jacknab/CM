@@ -25,7 +25,7 @@ import { CheckoutPOSPanel } from "@/pages/Calendar";
 import type { AppointmentWithDetails } from "@shared/schema";
 import {
   ApiError, BOARD_KEY, cancelTicket, completeTicket, createTicket, fetchAppointment, fetchBoard, fetchClient,
-  fetchNailConfig, reassignTicket, removeMarker, startTicket, updateTicket,
+  fetchNailConfig, fetchTurn, reassignTicket, removeMarker, startTicket, updateTicket,
   type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData,
 } from "./nailApi";
 import { defaultPick, draftTotals, EMPTY_PICK, missingRequired, togglePick, type DraftCustomLine, type NailPick, type TicketLine } from "./ticketDraft";
@@ -33,6 +33,7 @@ import { useNailRealtime } from "./useNailRealtime";
 import { TicketPanel } from "./TicketPanel";
 import { CatalogPanel, Keypad, type CatalogGroup, type CatalogService } from "./CatalogPanel";
 import { WalkInSheet } from "./WalkInSheet";
+import { TechCards } from "./TechCards";
 import "./nail.css";
 import { AssignTechSheet } from "./AssignTechSheet";
 import { CheckInBoard } from "./CheckInBoard";
@@ -106,6 +107,15 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   const markers = board?.markers ?? [];
   const waitingCount = tickets.filter((t) => t.status === "confirmed").length + markers.length;
   const inServiceCount = tickets.filter((t) => t.status === "started").length;
+
+  // Technician status for the Techs tab — same TURN feed as the assign popup, kept live by the socket.
+  const { data: techFeed, isLoading: techsLoading } = useQuery({
+    queryKey: ["/api/turn/eligibility", storeId, "nail-techs"],
+    queryFn: () => fetchTurn(storeId, null),
+    enabled: tab === "techs",
+    refetchInterval: 30_000,
+  });
+  const techList = techFeed?.technicians ?? EMPTY_ARRAY;
 
   const { data: services } = useServices();
   const { data: categories } = useServiceCategories();
@@ -379,7 +389,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
             </section>
           </>
         ) : tab === "techs" ? (
-          <section className="techs-tab" data-testid="nail-techs" />
+          <TechCards techs={techList} tickets={tickets} loading={techsLoading} />
         ) : (
           <CheckInBoard
             tickets={tickets}
