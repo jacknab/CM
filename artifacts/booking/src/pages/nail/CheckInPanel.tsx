@@ -7,10 +7,17 @@ const NO_COLOR = "#454c56";
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const firstName = (n: string | null | undefined) => (n ?? "").trim().split(/\s+/)[0] || "Guest";
 
-type Row = { key: string; since: string; name: string; sub: string; at: string; color: string; testId: string };
+type Row = { key: string; since: string; name: string; sub: string; at: string; color: string; testId: string; open: () => void };
 
 /** Thin "who has checked in" list for the Techs tab — the calendar's Arrived list, narrower. */
-export function CheckInPanel({ tickets, markers }: { tickets: BoardTicket[]; markers: BoardMarker[] }) {
+export function CheckInPanel({ tickets, markers, onTicket, onMarker }: {
+  tickets: BoardTicket[];
+  markers: BoardMarker[];
+  /** Client with a ticket: open it. */
+  onTicket: (t: BoardTicket) => void;
+  /** Walk-in with no ticket yet: start their ticket. */
+  onMarker: (m: BoardMarker) => void;
+}) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const iv = setInterval(() => setNow(Date.now()), 30_000);
@@ -23,16 +30,17 @@ export function CheckInPanel({ tickets, markers }: { tickets: BoardTicket[]; mar
   const rows = useMemo<Row[]>(() => {
     const fromMarkers = markers.map<Row>((m) => ({
       key: `m${m.id}`, since: m.createdAt, name: firstName(m.clientName), color: NO_COLOR, testId: `nail-arrived-marker-${m.id}`,
-      sub: "Kiosk · no ticket yet", at: `@ ${fmtTime(m.createdAt)}`,
+      sub: "Walk-in · tap to start ticket", at: `@ ${fmtTime(m.createdAt)}`, open: () => onMarker(m),
     }));
     const fromTickets = tickets.filter((t) => t.status === "confirmed").map<Row>((t) => {
       const since = t.checkedInAt ?? t.date;
       return {
         key: `t${t.id}`, since, name: firstName(t.client.name), color: t.staff?.color || NO_COLOR, testId: `nail-arrived-${t.id}`,
-        sub: `${t.staff?.name ?? "Unassigned"} · ${t.service.name}`, at: `@ ${fmtTime(since)}`,
+        sub: `${t.staff?.name ?? "Unassigned"} · ${t.service.name}`, at: `@ ${fmtTime(since)}`, open: () => onTicket(t),
       };
     });
     return [...fromMarkers, ...fromTickets].sort((a, b) => +new Date(a.since) - +new Date(b.since));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tickets, markers]);
 
   const scroll = (dy: number) => listRef.current?.scrollBy({ top: dy, behavior: "smooth" });
@@ -53,14 +61,14 @@ export function CheckInPanel({ tickets, markers }: { tickets: BoardTicket[]; mar
         {rows.length === 0 ? (
           <div className="empty-ticket"><p>No clients have checked in yet today</p></div>
         ) : rows.map((r) => (
-          <div key={r.key} className="arrived-row" style={{ borderLeftColor: r.color }} data-testid={r.testId}>
+          <button type="button" key={r.key} className="arrived-row" style={{ borderLeftColor: r.color }} data-testid={r.testId} onClick={r.open}>
             <div className="arrived-copy">
               <strong>{r.name}</strong>
               <span>{r.sub}</span>
               <span>{r.at}</span>
             </div>
             <span className="arrived-timer">{formatElapsed(r.since, now)}</span>
-          </div>
+          </button>
         ))}
       </div>
       <button type="button" className="arrived-scroll" onClick={() => scroll(240)} aria-label="Scroll down"><ChevronDown size={18} /></button>

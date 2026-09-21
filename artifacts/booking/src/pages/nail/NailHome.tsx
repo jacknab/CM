@@ -78,6 +78,9 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   const [moreAddons, setMoreAddons] = useState(false);
   const [editing, setEditing] = useState<BoardTicket | null>(null);
   const [showWalkIn, setShowWalkIn] = useState(false);
+  // A kiosk check-in we already have a number for — the walk-in sheet skips the phone step for these.
+  const [walkInKnown, setWalkInKnown] = useState<{ phone: string; name: string | null } | null>(null);
+  const [focusTicketId, setFocusTicketId] = useState<number | null>(null);
   const [assigning, setAssigning] = useState<Assigning>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -320,14 +323,14 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
       .then((r) => r.json()).then((d) => setDualScreen(d?.dualScreenMode === true)).catch(() => {});
   }, [storeId]);
   useEffect(() => {
-    if (!showWalkIn || !dualScreen) return;
+    if (!showWalkIn || !dualScreen || walkInKnown) return;
     const send = (type: string) => fetch("/api/kiosk/checkout-event", {
       method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type, registerId }),
     }).catch(() => {});
     void send("kiosk_checkout_phone_prompt");
     return () => { void send("kiosk_checkout_phone_cancel"); };
-  }, [showWalkIn, dualScreen, registerId]);
+  }, [showWalkIn, dualScreen, registerId, walkInKnown]);
 
   // ── submit routing ────────────────────────────────────────────────────────
   const busy = create.isPending || update.isPending;
@@ -342,7 +345,18 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     resetDraft();
   };
 
-  const startWalkIn = () => { setFrontdeskPhone(""); setEditing(null); setShowWalkIn(true); };
+  const startWalkIn = () => { setFrontdeskPhone(""); setWalkInKnown(null); setEditing(null); setShowWalkIn(true); };
+
+  // A kiosk check-in with no ticket yet → the walk-in process without asking for their phone again.
+  const startFromMarker = (m: BoardMarker) => {
+    setTab("pos");
+    if (m.clientId) { void pickClient(m.clientId, m.id); return; }
+    setCheckinId(m.id);
+    setFrontdeskPhone("");
+    setWalkInKnown({ phone: m.phone ?? "", name: m.clientName });
+    setShowWalkIn(true);
+  };
+  useEffect(() => { if (tab === "board") setFocusTicketId(null); }, [tab]);
 
   return (
     <div className="dark cx-cal nail-app h-app w-full" data-testid="nail-home">
@@ -391,7 +405,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
           </>
         ) : tab === "techs" ? (
           <>
-            <CheckInPanel tickets={tickets} markers={markers} />
+            <CheckInPanel tickets={tickets} markers={markers} onMarker={startFromMarker} onTicket={(t) => { setFocusTicketId(t.id); setTab("board"); }} />
             <TechCards techs={techList} tickets={tickets} stats={board?.techStats ?? EMPTY_ARRAY} loading={techsLoading} />
           </>
         ) : (
@@ -404,14 +418,8 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
             onReassign={(t) => { setAssignError(null); setAssigning({ mode: "reassign", ticket: t }); }}
             onEdit={startEdit}
             onCancel={(t) => { if (window.confirm(`Cancel ${t.client.name}'s ticket?`)) act.mutate(() => cancelTicket(t.id)); }}
-            onMarkerTicket={(m: BoardMarker) => {
-              if (m.clientId) void pickClient(m.clientId, m.id);
-              else {
-                setCheckinId(m.id);
-                setFrontdeskPhone((m.phone ?? "").replace(/\D/g, "").slice(-10));
-                setShowWalkIn(true);
-              }
-            }}
+            onMarkerTicket={startFromMarker}
+            initialOpenId={focusTicketId}
             onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))}
           />
         )}
@@ -423,8 +431,9 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
         <WalkInSheet
           storeId={storeId}
           frontdeskPhone={frontdeskPhone}
-          onClose={() => { setShowWalkIn(false); setFrontdeskPhone(""); }}
-          onClient={(id, staffId) => { setFrontdeskPhone(""); void pickClient(id, checkinId, staffId); }}
+          known={walkInKnown}
+          onClose={() => { setShowWalkIn(false); setFrontdeskPhone(""); setWalkInKnown(null); }}
+          onClient={(id, staffId) => { setFrontdeskPhone(""); setWalkInKnown(null); void pickClient(id, checkinId, staffId); }}
         />
       )}
 

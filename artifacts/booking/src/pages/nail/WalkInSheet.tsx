@@ -9,13 +9,15 @@ interface Props {
   storeId: number;
   /** Digits the customer typed on the paired /frontdesk tablet. */
   frontdeskPhone: string;
+  /** A kiosk check-in that already gave us their number (and maybe name): skip the phone step entirely. */
+  known?: { phone: string; name: string | null } | null;
   onClose: () => void;
   /** Client found or created; `staffId` = technician picked on the left, if any. */
   onClient: (clientId: number, staffId: number | null) => void;
 }
 
 const DIGITS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
-type Step = "phone" | "name" | "error";
+type Step = "phone" | "finding" | "name" | "error";
 
 const fmtPhone = (p: string) => p.replace(/(\d{3})(\d{3})(\d{0,4})/, (_, a, b, c) => `${a}-${b}${c ? `-${c}` : ""}`);
 
@@ -26,10 +28,12 @@ const statusOf = (t: TurnTech) =>
     : t.clockedIn === false ? "Not clocked in"
     : "Unavailable";
 
-export function WalkInSheet({ storeId, frontdeskPhone, onClose, onClient }: Props) {
-  const [phone, setPhone] = useState("");
-  const [name, setName] = useState("");
-  const [step, setStep] = useState<Step>("phone");
+export function WalkInSheet({ storeId, frontdeskPhone, known, onClose, onClient }: Props) {
+  const knownDigits = (known?.phone ?? "").replace(/\D/g, "").slice(-10);
+  const skipPhone = knownDigits.length === 10;
+  const [phone, setPhone] = useState(skipPhone ? knownDigits : "");
+  const [name, setName] = useState(skipPhone ? (known?.name ?? "").trim() : "");
+  const [step, setStep] = useState<Step>(skipPhone ? "finding" : "phone");
   const [message, setMessage] = useState("");
   const [invalid, setInvalid] = useState(false);
   const [noStaffAlert, setNoStaffAlert] = useState(false);
@@ -70,6 +74,12 @@ export function WalkInSheet({ storeId, frontdeskPhone, onClose, onClient }: Prop
     if (id != null) onClient(id, staffId);
     else setStep("name");
   };
+
+  // Checked in at the kiosk with a number on file: find them silently — no phone entry, no "nobody free" prompt.
+  useEffect(() => {
+    if (skipPhone) void lookup(knownDigits);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const ready = (digits: string) => {
     if (!hasAvailable && techs.length > 0) { setNoStaffAlert(true); return; }
@@ -184,6 +194,12 @@ export function WalkInSheet({ storeId, frontdeskPhone, onClose, onClient }: Prop
                   <button type="button" className="walkin-backspace" onClick={() => { setPhone((p) => p.slice(0, -1)); setInvalid(false); }} aria-label="Delete last digit">⌫</button>
                 </div>
               </>
+            )}
+
+            {step === "finding" && (
+              <div className="walkin-result" data-testid="nail-walkin-finding">
+                <strong>Finding {known?.name?.trim() || "client"}…</strong>
+              </div>
             )}
 
             {step === "name" && (

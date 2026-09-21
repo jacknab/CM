@@ -342,7 +342,7 @@
 .nail-app .arrived-list::-webkit-scrollbar { width: 0; }
 .nail-app .arrived-scroll { flex-shrink: 0; height: 40px; display: flex; align-items: center; justify-content: center; background: #232830; color: #8b94a0; border-top: 1px solid #3b424c; border-bottom: 1px solid #3b424c; }
 .nail-app .arrived-scroll:active { background: #2f353d; color: #eef3fb; }
-.nail-app .arrived-row { display: flex; align-items: center; gap: 10px; padding: 11px 12px 11px 14px; border-bottom: 1px solid #3b424c; border-left: 4px solid #454c56; }
+.nail-app .arrived-row { width: 100%; text-align: left; display: flex; align-items: center; gap: 10px; padding: 11px 12px 11px 14px; border-bottom: 1px solid #3b424c; border-left: 4px solid #454c56; }
 .nail-app .arrived-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
 .nail-app .arrived-copy strong { font-size: 14px; font-weight: 700; color: #eef3fb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nail-app .arrived-copy span { font-size: 11px; color: #8b94a0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -411,3 +411,5 @@
 .nail-app .drawer-picker > div { background: #232830; border: 1px solid #3b424c; border-radius: 12px; padding: 24px; width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 10px; }
 .nail-app .drawer-picker h2 { font-size: 17px; font-weight: 700; color: #eef3fb; }
 .nail-app .drawer-picker button { text-align: left; background: #353a43; border: 1px solid #454c56; padding: 14px 16px; font-size: 14px; font-weight: 600; color: #e8eaed; }
+
+.nail-app .arrived-row:active { background: #2f353d; }

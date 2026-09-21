@@ -75,7 +75,7 @@ export function TicketPanel({ client, badge, lines, duration, price, submitLabel
           </div>
         )}
         <div className="checkout-row">
-          <button type="button" className="checkout-clr" onClick={onClear} disabled={lines.length === 0 && !editing}>
+          <button type="button" className="checkout-clr" onClick={onClear} disabled={lines.length === 0 && !editing && !client}>
             {editing ? "CANCEL" : "CLR"}
           </button>
           <button type="button" className={`checkout ${!canSubmit || busy ? "disabled" : ""}`} onClick={onSubmit} disabled={!canSubmit || busy} data-testid="nail-submit-ticket">
