@@ -624,23 +624,20 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
           </>
         ) : tab === "techs" ? (
           <>
-            <CheckInPanel clockOffsetMs={clockOffsetMs} tickets={tickets} markers={markers} onMarker={startFromMarker} onTicket={(t) => { setFocusTicket({ id: t.id }); setTab("board"); }} />
-            <TechCards techs={techList} tickets={tickets} stats={board?.techStats ?? EMPTY_ARRAY} glance={board?.glance} waiting={waitingCount} loading={techsLoading} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} onClockedOutTap={setClockInFor} />
+            <CheckInPanel clockOffsetMs={clockOffsetMs} tickets={tickets} markers={markers} onMarker={startFromMarker} onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))} onTicket={(t) => { setFocusTicket({ id: t.id }); setTab("board"); }} />
+            <TechCards techs={techList} tickets={tickets} markers={markers} stats={board?.techStats ?? EMPTY_ARRAY} glance={board?.glance} waiting={waitingCount} loading={techsLoading} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} onClockedOutTap={setClockInFor} />
           </>
         ) : (
           <CheckInBoard
             tickets={tickets}
-            markers={markers}
             busy={act.isPending}
             onStart={(t) => act.mutate(() => startTicket(t.id))}
             onCheckout={requestCheckout}
             onReassign={(t) => { setAssignError(null); setAssigning({ mode: "reassign", ticket: t }); }}
             onEdit={startEdit}
             onCancel={(t) => { if (window.confirm(`Cancel ${t.client.name}'s ticket?`)) act.mutate(() => cancelTicket(t.id)); }}
-            onMarkerTicket={startFromMarker}
             focus={focusTicket}
             clockOffsetMs={clockOffsetMs}
-            onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))}
           />
         )}
 

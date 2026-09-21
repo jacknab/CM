@@ -47,7 +47,6 @@ export interface SalonGlance {
   appointments: number;
   walkIns: number;
   noShows: number;
-  avgWaitMin: number | null;
   avgTicket: number | null;
 }
 

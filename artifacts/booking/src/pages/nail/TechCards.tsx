@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { GAP, computeTechLayout } from "./techLayout";
-import type { BoardTicket, SalonGlance, TechDayStats, TurnTech } from "./nailApi";
+import { DEFAULT_SERVICE_MIN, estimateWait, formatWait, type WaitTech } from "@shared/waitEstimate";
+import type { BoardMarker, BoardTicket, SalonGlance, TechDayStats, TurnTech } from "./nailApi";
 
 type Status = "in-service" | "available" | "break" | "off";
 
@@ -39,13 +40,12 @@ function LiveTimer({ since, offsetMs, testId }: { since: number | null; offsetMs
 }
 
 const money = (n: number) => `$${n.toFixed(n % 1 === 0 ? 0 : 2)}`;
-const minutes = (n: number) => (n < 60 ? `${n} min` : `${Math.floor(n / 60)} hr ${n % 60 ? `${n % 60} min` : ""}`.trim());
 
 /** "Salon at a glance" — today's numbers, right above the tech cards. */
-function Glance({ waiting, glance }: { waiting: number; glance: SalonGlance | undefined }) {
+function Glance({ waiting, waitLabel, glance }: { waiting: number; waitLabel: string; glance: SalonGlance | undefined }) {
   const tiles: { label: string; value: string }[] = [
     { label: "Waiting", value: String(waiting) },
-    { label: "Avg Wait", value: glance?.avgWaitMin != null ? minutes(glance.avgWaitMin) : "—" },
+    { label: "Avg Wait", value: waitLabel },
     { label: "Walk-ins", value: glance ? String(glance.walkIns) : "—" },
     { label: "Appointments", value: glance ? String(glance.appointments) : "—" },
     { label: "No-shows", value: glance ? String(glance.noShows) : "—" },
@@ -66,8 +66,8 @@ function Glance({ waiting, glance }: { waiting: number; glance: SalonGlance | un
   );
 }
 
-export function TechCards({ techs, tickets, stats, glance, waiting, loading, clockOffsetMs = 0, assumedIn = [], onClockedOutTap }: {
-  techs: TurnTech[]; tickets: BoardTicket[]; stats: TechDayStats[]; glance: SalonGlance | undefined; waiting: number; loading: boolean; clockOffsetMs?: number;
+export function TechCards({ techs, tickets, markers = [], stats, glance, waiting, loading, clockOffsetMs = 0, assumedIn = [], onClockedOutTap }: {
+  techs: TurnTech[]; tickets: BoardTicket[]; markers?: BoardMarker[]; stats: TechDayStats[]; glance: SalonGlance | undefined; waiting: number; loading: boolean; clockOffsetMs?: number;
   /** Techs just clocked in from this screen — shown as In & Available at once, before the server's answer comes back. */
   assumedIn?: number[];
   /** A clocked-out tech's card was tapped. */
@@ -117,12 +117,37 @@ export function TechCards({ techs, tickets, stats, glance, waiting, loading, clo
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+  // "Avg Wait": what a client checking in right now would wait. Worked out here, from the board + turn data this screen already has
+  // (nothing is asked of the server, nothing runs on a timer beyond this screen letting the minutes tick down) — see shared/waitEstimate.ts.
+  const waitLabel = useMemo(() => {
+    const started = tickets.filter((t) => t.status === "started");
+    const waitingTickets = tickets.filter((t) => t.status === "confirmed");
+    const known = [...started, ...waitingTickets].map((t) => t.duration).filter((d) => d > 0);
+    const defaultServiceMin = known.length ? Math.round(known.reduce((a, b) => a + b, 0) / known.length) : DEFAULT_SERVICE_MIN;
+    const waitTechs: WaitTech[] = techs.map((t) => {
+      const current = started.find((x) => x.staff?.id === t.id);
+      const isIn = t.clockedIn !== false || assumedIn.includes(t.id);
+      return {
+        id: t.id,
+        clockedIn: isIn,
+        paused: !!t.paused || t.currentStatus === "on_break",
+        busy: !!current || t.currentStatus === "busy",
+        remainingMin: current ? (+new Date(current.startedAt ?? current.date) + current.duration * 60_000 - now) / 60_000 : null,
+      };
+    });
+    const line = [
+      ...waitingTickets.map((t) => ({ durationMin: t.duration, staffId: t.staff?.id ?? null, at: +new Date(t.checkedInAt ?? t.date) })),
+      ...markers.map((m) => ({ durationMin: null, staffId: null, at: +new Date(m.createdAt) })),
+    ].sort((a, b) => a.at - b.at); // first come, first served
+    return formatWait(estimateWait({ techs: waitTechs, waiting: line, defaultServiceMin }));
+  }, [techs, tickets, markers, assumedIn, now]);
+
   const layout = computeTechLayout(cards.length, box.w, box.h);
 
   return (
     <section className="work-area" data-testid="nail-techs">
      <div className="tech-panel">
-      <Glance waiting={waiting} glance={glance} />
+      <Glance waiting={waiting} waitLabel={waitLabel} glance={glance} />
       <div className="tech-stage" ref={stageRef}>
         <div className="tech-grid" data-scale={layout.scale.toFixed(2)} data-cols={layout.cols} data-mode={layout.mode}
           style={{ gap: GAP, gridTemplateRows: `repeat(${layout.rows}, ${layout.cardH * layout.scale}px)`, gridTemplateColumns: `repeat(${layout.cols}, ${layout.cardW * layout.scale}px)` }}>

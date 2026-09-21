@@ -19,7 +19,7 @@ export function BottomNav({ tab, onTab, onWalkIn, onCheckIn, onMore, waiting, in
   const items: { label: string; icon: typeof ShoppingBag; active?: boolean; run: () => void; badges?: boolean }[] = [
     { label: "Techs", icon: UserCog, active: tab === "techs", run: () => onTab("techs") },
     { label: "POS", icon: ShoppingBag, active: tab === "pos", run: () => onTab("pos") },
-    { label: "Checked In", icon: Users, active: tab === "board", run: () => onTab("board"), badges: true },
+    { label: "In Service", icon: Users, active: tab === "board", run: () => onTab("board"), badges: true },
     { label: "Calendar", icon: CalendarDays, run: () => navigate("/calendar") },
     { label: "Customers", icon: UserRound, run: () => navigate("/client-lookup") },
     { label: "Check-In", icon: LogIn, run: onCheckIn },
@@ -32,7 +32,6 @@ export function BottomNav({ tab, onTab, onWalkIn, onCheckIn, onMore, waiting, in
         <button key={label} type="button" onClick={run} className={active ? "active" : ""} data-testid={`nail-nav-${label.toLowerCase().replace(/\s+/g, "-")}`}>
           <Icon size={28} />
           <span>{label}</span>
-          {badges && waiting > 0 && <i className="nav-badge-waiting">{waiting}</i>}
           {badges && inService > 0 && <i className="nav-badge-service">{inService}</i>}
         </button>
       ))}

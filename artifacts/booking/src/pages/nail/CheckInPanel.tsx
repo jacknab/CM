@@ -7,10 +7,10 @@ const NO_COLOR = "#454c56";
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const firstName = (n: string | null | undefined) => (n ?? "").trim().split(/\s+/)[0] || "Guest";
 
-type Row = { key: string; since: string; name: string; sub: string; at: string; color: string; testId: string; open: () => void };
+type Row = { key: string; since: string; name: string; sub: string; at: string; color: string; testId: string; open: () => void; remove?: () => void };
 
 /** Thin "who has checked in" list for the Techs tab — the calendar's Arrived list, narrower. */
-export function CheckInPanel({ tickets, markers, onTicket, onMarker, clockOffsetMs = 0 }: {
+export function CheckInPanel({ tickets, markers, onTicket, onMarker, onMarkerRemove, clockOffsetMs = 0 }: {
   clockOffsetMs?: number;
   tickets: BoardTicket[];
   markers: BoardMarker[];
@@ -18,6 +18,8 @@ export function CheckInPanel({ tickets, markers, onTicket, onMarker, clockOffset
   onTicket: (t: BoardTicket) => void;
   /** Walk-in with no ticket yet: start their ticket. */
   onMarker: (m: BoardMarker) => void;
+  /** Take a walk-in off the list (checked in by mistake / left). */
+  onMarkerRemove?: (m: BoardMarker) => void;
 }) {
   const [tick, setTick] = useState(() => Date.now());
   const now = tick + clockOffsetMs; // server time, so every POS station shows the same waits
@@ -32,7 +34,7 @@ export function CheckInPanel({ tickets, markers, onTicket, onMarker, clockOffset
   const rows = useMemo<Row[]>(() => {
     const fromMarkers = markers.map<Row>((m) => ({
       key: `m${m.id}`, since: m.createdAt, name: firstName(m.clientName), color: NO_COLOR, testId: `nail-arrived-marker-${m.id}`,
-      sub: "Walk-in · tap to start ticket", at: `@ ${fmtTime(m.createdAt)}`, open: () => onMarker(m),
+      sub: "Walk-in · tap to start ticket", at: `@ ${fmtTime(m.createdAt)}`, open: () => onMarker(m), remove: onMarkerRemove ? () => onMarkerRemove(m) : undefined,
     }));
     const fromTickets = tickets.filter((t) => t.status === "confirmed").map<Row>((t) => {
       const since = t.checkedInAt ?? t.date;
@@ -54,7 +56,8 @@ export function CheckInPanel({ tickets, markers, onTicket, onMarker, clockOffset
         {rows.length === 0 ? (
           <div className="empty-ticket"><p>No clients have checked in yet today</p></div>
         ) : rows.map((r) => (
-          <button type="button" key={r.key} className="arrived-row" style={{ borderLeftColor: r.color }} data-testid={r.testId} onClick={r.open}>
+          <div key={r.key} className="arrived-row-wrap">
+          <button type="button" className="arrived-row" style={{ borderLeftColor: r.color }} data-testid={r.testId} onClick={r.open}>
             <div className="arrived-copy">
               <strong>{r.name}</strong>
               <span>{r.sub}</span>
@@ -62,6 +65,11 @@ export function CheckInPanel({ tickets, markers, onTicket, onMarker, clockOffset
             </div>
             <span className="arrived-timer">{formatElapsed(r.since, now)}</span>
           </button>
+          {r.remove && (
+            <button type="button" className="arrived-remove" aria-label={`Remove ${r.name} from the waiting list`} data-testid={`${r.testId}-remove`}
+              onClick={() => { if (window.confirm(`Take ${r.name} off the waiting list?`)) r.remove?.(); }}>×</button>
+          )}
+          </div>
         ))}
       </div>
       <button type="button" className="arrived-scroll" onClick={() => scroll(240)} aria-label="Scroll down"><ChevronDown size={18} /></button>

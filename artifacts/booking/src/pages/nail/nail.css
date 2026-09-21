@@ -553,3 +553,17 @@
 
 .nail-app .checkout-row .checkout-paynow { background: #0d9bd1 !important; font-size: 12px !important; flex: 0 0 96px; }
 .nail-app .checkout-row .checkout-paynow.disabled { background: #3b424c !important; }
+
+.nail-app .arrived-row-wrap { position: relative; }
+.nail-app .arrived-row-wrap .arrived-row { padding-right: 46px; }
+.nail-app .arrived-remove { position: absolute; top: 6px; right: 6px; width: 34px; height: 34px; border-radius: 8px; background: transparent; color: #8b94a0; font-size: 22px; line-height: 1; display: grid; place-items: center; }
+.nail-app .arrived-remove:active { background: #3b424c; color: #ef5a5f; }
+.nail-app .arrived-row-wrap .arrived-timer { margin-right: 4px; }
+/* In Service · Unpaid list: bigger, easier to read and tap on a 10" tablet */
+.nail-app .checkin-columns-full .checkin-card-header { padding: 14px 16px; }
+.nail-app .checkin-columns-full .checkin-client strong { font-size: 17px; }
+.nail-app .checkin-columns-full .checkin-client span { font-size: 13px; }
+.nail-app .checkin-columns-full .checkin-ticket-num { font-size: 12px; }
+.nail-app .checkin-columns-full .checkin-card-total { font-size: 24px; }
+.nail-app .checkin-columns-full .checkin-status-pill { font-size: 11px; padding: 4px 10px; }
+.nail-app .checkin-columns-full .checkin-card-list { gap: 10px; }
