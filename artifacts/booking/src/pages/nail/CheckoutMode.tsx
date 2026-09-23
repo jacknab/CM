@@ -350,6 +350,18 @@ export function CheckoutMode(p: Props) {
     });
   };
 
+  // The balance settling (a card/cash/gift tender covering the total) used to just re-enable the
+  // PAY/CHECKOUT button — the cashier had to tap it a second time before the receipt panel showed
+  // up, which looked like the app hadn't registered the payment. Auto-advance on the transition to
+  // settled instead. Guarded to fire once per real payment (tenders.length > 0, not a $0 ticket
+  // simply mounting already-"settled"), and not while a finalize is already in flight or done.
+  const wasSettled = useRef(totals.settled);
+  useEffect(() => {
+    if (totals.settled && !wasSettled.current && tenders.length > 0 && !p.paid && !p.finalizing) finish();
+    wasSettled.current = totals.settled;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totals.settled]);
+
   // ── receipt (shown once paid, in place of the payment buttons) ─────────────
   const [receiptBusy, setReceiptBusy] = useState<null | "print" | "text">(null);
   const printAfterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
