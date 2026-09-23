@@ -262,13 +262,29 @@ async function getActivePrinterModule(device: PrinterDevice): Promise<any> {
 
 // ── Public print API ──────────────────────────────────────────────────────────
 
+/**
+ * The receipt templates below are authored with the lowercase/bracket tags ([L]/[C]/[R]/<b>)
+ * that are more readable to write, but the installed printer library's formatter
+ * (EPToolkit.js) only recognizes uppercase angle-bracket tags (<L>/<C>/<R>/<B>) — anything
+ * else passes through as literal printed text. Convert right before handing text to the
+ * native module so every print call gets correctly formatted output.
+ */
+function toPrinterTags(text: string): string {
+  return text
+    .replace(/\[C\]/g, '<C>')
+    .replace(/\[L\]/g, '<L>')
+    .replace(/\[R\]/g, '<R>')
+    .replace(/<b>/g, '<B>')
+    .replace(/<\/b>/g, '</B>');
+}
+
 /** Print a receipt on the receipt printer (auto-detected if none was set up). Throws with a
  *  human-readable reason if it cannot. */
 export async function printReceipt(data: ReceiptData): Promise<void> {
   const printer = await resolvePrinter();
   const mod  = await getActivePrinterModule(printer);
   const text = buildReceiptText(data);
-  await mod.printBill(text);
+  await mod.printBill(toPrinterTags(text));
 }
 
 export async function printTestPage(storeName: string): Promise<void> {
@@ -286,7 +302,7 @@ export async function printTestPage(storeName: string): Promise<void> {
     `[C]<b>Print test OK</b>`,
     `\n\n\n`,
   ].join('\n');
-  await mod.printBill(lines);
+  await mod.printBill(toPrinterTags(lines));
 }
 
 /**
