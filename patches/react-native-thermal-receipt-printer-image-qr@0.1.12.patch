@@ -31,6 +31,51 @@ index 6ea5fa81e488daba98c9139b3f611768ecd94d3b..463bbcc59d1fa77dfe6167bd8c9c0bb4
      }
  
      @Override
+diff --git a/android/src/main/java/com/pinmi/react/printer/adapter/BLEPrinterAdapter.java b/android/src/main/java/com/pinmi/react/printer/adapter/BLEPrinterAdapter.java
+index 9d7796922914c2c99c27bf84b26cc42c36e9db6b..344e949b33f9192a2998493d7629958e1ae35e6e 100644
+--- a/android/src/main/java/com/pinmi/react/printer/adapter/BLEPrinterAdapter.java
++++ b/android/src/main/java/com/pinmi/react/printer/adapter/BLEPrinterAdapter.java
+@@ -197,14 +197,14 @@ public class BLEPrinterAdapter implements PrinterAdapter{
+         new Thread(new Runnable() {
+             @Override
+             public void run() {
+-                byte [] bytes = Base64.decode(rawData, Base64.DEFAULT);
++                // An uncaught exception on this thread kills the whole app.
+                 try{
++                    byte [] bytes = Base64.decode(rawData, Base64.DEFAULT);
+                     OutputStream printerOutputStream = socket.getOutputStream();
+                     printerOutputStream.write(bytes, 0, bytes.length);
+                     printerOutputStream.flush();
+-                }catch (IOException e){
+-                    Log.e(LOG_TAG, "failed to print data" + rawData);
+-                    e.printStackTrace();
++                }catch (Throwable t){
++                    Log.e(LOG_TAG, "failed to print data" + rawData, t);
+                 }
+ 
+             }
+diff --git a/android/src/main/java/com/pinmi/react/printer/adapter/NetPrinterAdapter.java b/android/src/main/java/com/pinmi/react/printer/adapter/NetPrinterAdapter.java
+index e811a33799db9d821145b6792b02cf2f7c4265ac..52912026dc43ddb279e2fb867105cbe56b746428 100644
+--- a/android/src/main/java/com/pinmi/react/printer/adapter/NetPrinterAdapter.java
++++ b/android/src/main/java/com/pinmi/react/printer/adapter/NetPrinterAdapter.java
+@@ -223,14 +223,14 @@ public class NetPrinterAdapter implements PrinterAdapter {
+         new Thread(new Runnable() {
+             @Override
+             public void run() {
++                // An uncaught exception on this thread kills the whole app.
+                 try {
+                     byte[] bytes = Base64.decode(rawData, Base64.DEFAULT);
+                     OutputStream printerOutputStream = socket.getOutputStream();
+                     printerOutputStream.write(bytes, 0, bytes.length);
+                     printerOutputStream.flush();
+-                } catch (IOException e) {
+-                    Log.e(LOG_TAG, "failed to print data" + rawData);
+-                    e.printStackTrace();
++                } catch (Throwable t) {
++                    Log.e(LOG_TAG, "failed to print data" + rawData, t);
+                 }
+             }
+         }).start();
 diff --git a/android/src/main/java/com/pinmi/react/printer/adapter/USBPrinterAdapter.java b/android/src/main/java/com/pinmi/react/printer/adapter/USBPrinterAdapter.java
 index f5089b27c0172d01beb851e6d0dc2307a214947d..c35c58dd76bac78f2d71e690b864bbe80aa5f6ae 100644
 --- a/android/src/main/java/com/pinmi/react/printer/adapter/USBPrinterAdapter.java
