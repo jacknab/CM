@@ -6840,7 +6840,10 @@ export function CheckoutPOSPanel({
   // when the app reports it printed; on failure it shows why (the sheet stays open to retry).
   // Only builds of the app that announce CERTXA_PRINT_BRIDGE can print; older ones keep the old behavior.
   const canNativePrint = () => typeof window !== "undefined" && !!(window as any).CERTXA_NATIVE_APP && !!(window as any).CERTXA_PRINT_BRIDGE;
-  const nativePrintReceipt = (): Promise<boolean> => new Promise((resolve) => {
+  // `copy` picks which physical copy: 'salon' (signature copy, auto-printed right after a card
+  // charge settles), 'customer' (the Print Receipt button once the salon copy already went out
+  // for a card sale), or 'both' (cash — no signature needed, nothing held back).
+  const nativePrintReceipt = (copy: 'salon' | 'customer' | 'both'): Promise<boolean> => new Promise((resolve) => {
     const requestId = `pr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     let finished = false;
     const finish = (ok: boolean, error?: string) => {
@@ -6861,10 +6864,12 @@ export function CheckoutPOSPanel({
     (window as any).ReactNativeWebView?.postMessage(JSON.stringify({
       type: "PRINT_RECEIPT",
       requestId,
+      copy,
       paymentIntentId: paymentNotice?.paymentIntentId ?? null,
       receipt: buildNativeReceiptPayload({
         storeName: st?.name || "Salon",
-        storeAddress: [st?.address, st?.city, st?.state, st?.zipCode].filter(Boolean).join(", "),
+        storeAddress: st?.address || undefined,
+        storeCityStateZip: [st?.city, [st?.state, st?.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", ") || undefined,
         storePhone: st?.phone || "",
         ticketNumber: (appointment as any).ticketNumber ?? appointment.id,
         dateIso: new Date().toISOString(),
@@ -6877,23 +6882,34 @@ export function CheckoutPOSPanel({
     }));
   });
 
+  // A card charge needs the customer's signature on the salon copy, so it can't wait for a staff
+  // tap the way the rest of receipt printing does — print it the moment the sale settles. Fires
+  // once per ticket; cash never auto-prints (no signature needed), and the customer's own copy
+  // still waits for a Print action, which saves the second sheet whenever nobody asks for it.
+  const salonCopyAutoPrinted = useRef(false);
+  useEffect(() => {
+    if (canNativePrint() && paymentNotice && tenders.length > 0 && totalTendered >= grandTotal && !salonCopyAutoPrinted.current) {
+      salonCopyAutoPrinted.current = true;
+      showPosStatus("PRINTING SALON COPY FOR SIGNATURE…", "info");
+      void nativePrintReceipt("salon");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentNotice, totalTendered, grandTotal, tenders.length]);
+
   const sendSmsReceipt = async (phone: string): Promise<boolean> => {
     try {
-      const items = receiptItems();
-      const r = await fetch("/api/pos/sms-receipt", {
+      const r = await fetch("/api/pos/receipt-link", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          phone,
-          clientName: posCustomerName,
-          items,
-          discountAmount: discount,
-          taxAmount: tax,
-          tipAmount: tip,
-          grandTotal,
-          paymentMethod: tenders.map((t) => t.method).join(","),
-          last4: paymentNotice?.last4 ?? undefined,
           appointmentId: appointment.id,
-          customerId: (appointment as any).customerId ?? undefined,
+          phone,
+          snapshot: {
+            items: receiptItems(),
+            dateIso: new Date().toISOString(),
+            clientName: posCustomerName,
+            subtotal, discount, tip, total: grandTotal,
+            tenders: tenders.map((t) => ({ method: t.method, amount: t.amount })),
+          },
         }),
       });
       return r.ok;
@@ -6907,7 +6923,9 @@ export function CheckoutPOSPanel({
       setReceiptRequest("print");
       showPosStatus("PRINTING RECEIPT…", "info");
       broadcastToKiosk("kiosk_checkout_receipt_result", { choice: "print", ok: true });
-      void nativePrintReceipt().then((printed) => {
+      // A card sale already auto-printed the salon (signature) copy — this only owes the
+      // customer's own copy. Cash never auto-prints, so it still owes both.
+      void nativePrintReceipt(paymentNotice ? "customer" : "both").then((printed) => {
         if (printed) handleCompleteTransaction();
         else { receiptHandledRef.current = false; showPosStatus("COULD NOT PRINT — CHECK THE PRINTER, THEN TAP PRINT RECEIPT", "error"); }
       });
@@ -7453,7 +7471,8 @@ export function CheckoutPOSPanel({
       // If it fails the sheet stays open so staff can fix the printer and retry (or choose No Receipt).
       if (printingReceipt) return;
       setPrintingReceipt(true);
-      const printed = await nativePrintReceipt();
+      // Same split as the receipt-choice flow: card already got its salon copy auto-printed.
+      const printed = await nativePrintReceipt(paymentNotice ? "customer" : "both");
       setPrintingReceipt(false);
       if (printed) handleCompleteTransaction();
       return;

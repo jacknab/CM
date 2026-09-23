@@ -65,10 +65,23 @@ export default function NailHome() {
     return <div className="dark cx-cal nail-app h-app w-full flex items-center justify-center"><Loader2 className="w-7 h-7 animate-spin" style={{ color: "#8b94a0" }} /></div>;
   }
   if (!nailSalon) return <Navigate to="/calendar" replace />;
-  return <NailScreen storeId={selectedStore.id} storeName={(selectedStore as any).name ?? ""} timezone={(selectedStore as any).timezone ?? "UTC"} />;
+  const st = selectedStore as any;
+  const storeCityStateZip = [st.city, [st.state, st.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", ") || undefined;
+  return (
+    <NailScreen
+      storeId={selectedStore.id}
+      storeName={st.name ?? ""}
+      storeAddress={st.address || undefined}
+      storeCityStateZip={storeCityStateZip}
+      storePhone={st.phone || undefined}
+      timezone={st.timezone ?? "UTC"}
+    />
+  );
 }
 
-function NailScreen({ storeId, storeName, timezone }: { storeId: number; storeName: string; timezone: string }) {
+function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, storePhone, timezone }: {
+  storeId: number; storeName: string; storeAddress?: string; storeCityStateZip?: string; storePhone?: string; timezone: string;
+}) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -588,6 +601,9 @@ function NailScreen({ storeId, storeName, timezone }: { storeId: number; storeNa
               ticket={checkout}
               storeId={storeId}
               storeName={storeName}
+              storeAddress={storeAddress}
+              storeCityStateZip={storeCityStateZip}
+              storePhone={storePhone}
               timezone={timezone}
               registerId={registerId}
               dualScreen={dualScreen}

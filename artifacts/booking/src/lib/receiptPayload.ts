@@ -6,10 +6,12 @@
 export interface ReceiptPayloadInput {
   storeName: string;
   storeAddress?: string;
+  storeCityStateZip?: string;
   storePhone?: string;
   ticketNumber: number | string;
   dateIso: string;
   clientName?: string;
+  staffName?: string;
   items: { label: string; price: number }[];
   subtotal: number;
   discount: number;
@@ -34,10 +36,12 @@ export function buildNativeReceiptPayload(i: ReceiptPayloadInput) {
   return {
     storeName: i.storeName || "Receipt",
     storeAddress: i.storeAddress || undefined,
+    storeCityStateZip: i.storeCityStateZip || undefined,
     storePhone: i.storePhone || undefined,
     receiptNumber: Number.isFinite(numeric) ? numeric : 0,
     date: i.dateIso,
     clientName: i.clientName || undefined,
+    staffName: i.staffName || undefined,
     items: i.items.map((x) => ({ name: String(x.label).slice(0, 40), price: r2(x.price) })),
     subtotal: r2(i.subtotal),
     discount: r2(i.discount),

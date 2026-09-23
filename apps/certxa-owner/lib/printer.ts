@@ -22,7 +22,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeModules } from 'react-native';
 import { pickUsbPrinter, type UsbDev } from './usbPrinterPick';
 import { drawerKickBase64 } from './drawerKick';
-import { buildReceiptText, divLine, type CardDetails, type ReceiptItem, type ReceiptData } from './receiptText';
+import { buildReceiptText, divLine, twoCol, type CardDetails, type ReceiptItem, type ReceiptData } from './receiptText';
 
 export { buildReceiptText };
 export type { CardDetails, ReceiptItem, ReceiptData };
@@ -278,13 +278,33 @@ function toPrinterTags(text: string): string {
     .replace(/<\/b>/g, '</B>');
 }
 
-/** Print a receipt on the receipt printer (auto-detected if none was set up). Throws with a
- *  human-readable reason if it cannot. */
-export async function printReceipt(data: ReceiptData): Promise<void> {
+/** Print a single copy of the receipt (used for the REPRINT/duplicate-copy button — not the
+ *  two-copy sequence a successful payment triggers, see printReceiptCopies() below). Throws
+ *  with a human-readable reason if it cannot. */
+export async function printReceipt(data: ReceiptData, copy: 'salon' | 'customer' = 'customer'): Promise<void> {
   const printer = await resolvePrinter();
   const mod  = await getActivePrinterModule(printer);
-  const text = buildReceiptText(data);
+  const text = buildReceiptText(data, copy);
   await mod.printBill(toPrinterTags(text));
+}
+
+/**
+ * After a successful payment: print the SALON COPY (has the customer-signature line) first,
+ * then the CUSTOMER COPY — same completed transaction, same ReceiptData, no Stripe call, no new
+ * PaymentIntent. Connects to the printer once and reuses that connection for both copies.
+ *
+ * The native printRawData() bridge has no real completion callback (it only ever reports errors;
+ * a successful write is silent), so there is no reliable signal to await between the two prints
+ * without touching native printer code, which is out of scope here. A short settling gap is used
+ * instead, purely so the two jobs' writes don't land on the wire at the same time — not an
+ * attempt to fake a "waited for completion" guarantee that doesn't exist underneath this library.
+ */
+export async function printReceiptCopies(data: ReceiptData): Promise<void> {
+  const printer = await resolvePrinter();
+  const mod = await getActivePrinterModule(printer);
+  await mod.printBill(toPrinterTags(buildReceiptText(data, 'salon')));
+  await new Promise((r) => setTimeout(r, 400));
+  await mod.printBill(toPrinterTags(buildReceiptText(data, 'customer')));
 }
 
 export async function printTestPage(storeName: string): Promise<void> {
@@ -297,7 +317,7 @@ export async function printTestPage(storeName: string): Promise<void> {
     `[L]Left aligned`,
     `[R]Right aligned`,
     `[C]Centered`,
-    `[L]Item[R]$10.00`,
+    `[L]${twoCol('Item', '$10.00')}`,
     `[C]${divLine()}`,
     `[C]<b>Print test OK</b>`,
     `\n\n\n`,

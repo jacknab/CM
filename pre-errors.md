@@ -6,6 +6,14 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-09-23 — SMS-receipt snapshot builder reads `store.zipCode`, a field that doesn't exist (the column is `postcode`) — `artifacts/api-server/src/routes.ts:19285`
+
+**Found while:** Redesigning the printed thermal-receipt layout (a separate feature) and its store-address plumbing. Found the identical `zipCode` typo in `artifacts/booking/src/pages/Calendar.tsx`'s printed-receipt call site and fixed it there as part of that task, then noticed this second, unrelated occurrence.
+**Symptom:** `storeAddress: [(store as any)?.address, (store as any)?.city, (store as any)?.state, (store as any)?.zipCode].filter(Boolean).join(", ")` — `locations`/`Store` (`shared/schema.ts:198`) has a `postcode` column, not `zipCode`. `(store as any)?.zipCode` is always `undefined`, so the zip is silently dropped from the address stored in `appointments.receipt_snapshot`, used by the "text me a receipt" SMS flow.
+**Why not fixed now:** Out of scope — this endpoint builds the snapshot for the *texted/SMS* receipt, not the *printed* thermal receipt this task was about. One-line fix: `zipCode` → `postcode`.
+
+---
+
 ## 2026-09-23 — Central error handler logs via `console.error` instead of the pino logger — `artifacts/api-server/src/index.ts:~1681-1692`
 
 **Found while:** Rentals Phase-0 architecture audit (read-only investigation of the whole backend, no changes made). Not part of the audit's scope to fix.

@@ -35,7 +35,7 @@ import { apiCaller, notifySessionReady } from '@/lib/terminalBridge';
 import { useIdleSleep } from '@/lib/idleSleep';
 import { POSModal, type POSData } from '@/components/POSModal';
 import { viewportLockJs } from '@/lib/viewportLock';
-import { printReceipt, openCashDrawer, type ReceiptData } from '@/lib/printer';
+import { printReceipt, printReceiptCopies, openCashDrawer, type ReceiptData } from '@/lib/printer';
 import { PrinterSetupModal } from '@/components/PrinterSetupModal';
 import { M2PaymentOverlay, type M2PayData, type M2CompleteExtra } from '@/components/M2PaymentOverlay';
 import { ReaderStatusModal } from '@/components/ReaderStatusModal';
@@ -285,11 +285,11 @@ export default function PortalScreen() {
           break;
         case 'OPEN_POS': {
           const { appointmentId, clientName, serviceName, servicePrice, addons,
-                  subtotal, tax, grandTotal, storeName, storeAddress, storePhone } = msg;
+                  subtotal, tax, grandTotal, storeName, storeAddress, storeCityStateZip, storePhone } = msg;
           setPosData({
             appointmentId, clientName, serviceName, servicePrice,
             addons: addons ?? [], subtotal, tax, grandTotal,
-            storeName, storeAddress, storePhone,
+            storeName, storeAddress, storeCityStateZip, storePhone,
           });
           setPosVisible(true);
           break;
@@ -325,7 +325,11 @@ export default function PortalScreen() {
         case 'PRINT_RECEIPT': {
           // Web checkout asks for a receipt on the USB / Bluetooth thermal printer. Always answer
           // with certxa_native_print_result so the sheet knows whether it really printed.
-          const { requestId, receipt, paymentIntentId } = msg;
+          // `copy` picks which physical copy this request means — 'salon' (auto-printed right
+          // after a card charge, for the signature), 'customer' (the Print Receipt button, once
+          // the salon copy already went out), or 'both' (cash: no signature needed, nothing to
+          // hold back). Defaults to 'both' for any caller that doesn't specify it.
+          const { requestId, receipt, paymentIntentId, copy } = msg;
           const reply = (ok: boolean, error?: string) => {
             const detail = { requestId: requestId ?? null, ok, error: error ?? null };
             webViewRef.current?.injectJavaScript(
@@ -337,7 +341,9 @@ export default function PortalScreen() {
               if (!receipt || !Array.isArray(receipt.items)) throw new Error('Nothing to print');
               const card = paymentIntentId ? cardDetailsByPi.current.get(String(paymentIntentId)) : undefined;
               const data: ReceiptData = { ...(receipt as ReceiptData), cardDetails: (card as any) ?? (receipt as any).cardDetails };
-              await printReceipt(data);
+              if (copy === 'salon') await printReceipt(data, 'salon');
+              else if (copy === 'customer') await printReceipt(data, 'customer');
+              else await printReceiptCopies(data);
               reply(true);
             } catch (e: any) {
               reply(false, e?.message ?? 'Could not print the receipt');

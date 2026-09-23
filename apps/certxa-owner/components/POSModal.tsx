@@ -30,7 +30,7 @@ import { apiCaller } from '@/lib/terminalBridge';
 import { terminalDiag } from '@/lib/terminalDiag';
 import { useReaderDiscovery } from '@/lib/useReaderDiscovery';
 import { useTerminalPayment }  from '@/lib/useTerminalPayment';
-import { printReceipt, type ReceiptData, type CardDetails } from '@/lib/printer';
+import { printReceipt, printReceiptCopies, type ReceiptData, type CardDetails } from '@/lib/printer';
 import { PrinterSetupModal } from '@/components/PrinterSetupModal';
 
 // ─── Light-theme palette (matches reference design) ───────────────────────────
@@ -79,6 +79,7 @@ export interface POSData {
   grandTotal:    number;
   storeName?:    string;
   storeAddress?: string;
+  storeCityStateZip?: string;
   storePhone?:   string;
 }
 
@@ -458,11 +459,15 @@ export function POSModal({
     };
     setCompletionSnap(snap_);
 
-    // Auto-print silently to the saved printer — no dialog.
+    // Auto-print silently to the saved printer — no dialog. A card charge needs the customer's
+    // signature, so only the salon (signature) copy goes out now; the customer's own copy waits
+    // for the Print Receipt button, saving a sheet whenever nobody asks for it. Cash never needs
+    // a signature, so both copies print now as before.
     setPrintStatus('printing');
     const receiptData: ReceiptData = {
       storeName:     data.storeName ?? 'Certxa',
       storeAddress:  data.storeAddress,
+      storeCityStateZip: data.storeCityStateZip,
       storePhone:    data.storePhone,
       receiptNumber: apptId,
       date:          new Date().toISOString(),
@@ -476,7 +481,7 @@ export function POSModal({
       changeDue:     isCash ? change    : 0,
       cardDetails,
     };
-    printReceipt(receiptData)
+    (cardDetails ? printReceipt(receiptData, 'salon') : printReceiptCopies(receiptData))
       .then(() => setPrintStatus('done'))
       .catch(() => setPrintStatus('error'));
   }, [data, manualItems, effectiveTotals, cashTendered, numInput, successScale]);
@@ -495,12 +500,38 @@ export function POSModal({
       return;
     }
 
+    // 'none' just finalizes and goes to calendar. For 'print': a cash sale already auto-printed
+    // both copies in showSuccess, so this is only an acknowledgement — but a card sale only
+    // auto-printed the salon (signature) copy, so this is where the customer's own copy is owed.
+    if (action === 'print' && completionSnap.cardDetails && data) {
+      const isCash = completionSnap.method === 'cash' || completionSnap.method.startsWith('cash +');
+      setPrintStatus('printing');
+      printReceipt({
+        storeName:     data.storeName ?? 'Certxa',
+        storeAddress:  data.storeAddress,
+        storeCityStateZip: data.storeCityStateZip,
+        storePhone:    data.storePhone,
+        receiptNumber: completionSnap.apptId,
+        date:          new Date().toISOString(),
+        clientName:    data.clientName,
+        items:         completionSnap.itemsSnap,
+        subtotal:      completionSnap.subSnap,
+        tax:           completionSnap.taxSnap,
+        grandTotal:    completionSnap.totalSnap,
+        paymentMethod: completionSnap.method.toUpperCase(),
+        amountPaid:    isCash ? completionSnap.cashTendered : completionSnap.totalSnap,
+        changeDue:     isCash ? completionSnap.changeDue    : 0,
+        cardDetails:   completionSnap.cardDetails,
+      }, 'customer')
+        .then(() => setPrintStatus('done'))
+        .catch(() => setPrintStatus('error'));
+    }
+
     // Both 'none' and 'print' finalize the transaction and go to calendar.
-    // Auto-print already fired in showSuccess; 'print' just acknowledges it.
     onPaymentComplete(completionSnap.apptId, completionSnap.method, completionSnap.amount);
     reset();
     onNavigateToCalendar?.();
-  }, [completionSnap, onPaymentComplete, onNavigateToCalendar, reset, onClose]);
+  }, [completionSnap, data, onPaymentComplete, onNavigateToCalendar, reset, onClose]);
 
   /**
    * Cash tender handler — supports partial payments.
@@ -1535,6 +1566,7 @@ export function POSModal({
                     printReceipt({
                       storeName:     data.storeName ?? 'Certxa',
                       storeAddress:  data.storeAddress,
+                      storeCityStateZip: data.storeCityStateZip,
                       storePhone:    data.storePhone,
                       receiptNumber: completionSnap.apptId,
                       date:          new Date().toISOString(),

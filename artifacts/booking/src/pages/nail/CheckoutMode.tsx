@@ -22,6 +22,9 @@ interface Props {
   ticket: BoardTicket;
   storeId: number;
   storeName: string;
+  storeAddress?: string;
+  storeCityStateZip?: string;
+  storePhone?: string;
   timezone: string;
   registerId: number;
   /** A customer-facing /frontdesk tablet is paired. */
@@ -186,12 +189,15 @@ export function CheckoutMode(p: Props) {
     if (digits.length !== 10) { say("NO PHONE NUMBER FOR THIS CLIENT — RECEIPT NOT TEXTED", "error"); return reply(false); }
     say("TEXTING RECEIPT…", "info");
     try {
-      const r = await fetch("/api/pos/sms-receipt", {
+      const r = await fetch("/api/pos/receipt-link", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          phone: digits, clientName: ticket.client.name, items: cartItems(),
-          discountAmount: totals.discount, taxAmount: 0, tipAmount: totals.tip, grandTotal: totals.total,
-          paymentMethod: paymentMethodSummary(tenders), appointmentId: ticket.id, customerId: ticket.client.id ?? undefined,
+          appointmentId: ticket.id, phone: digits,
+          snapshot: {
+            items: cartItems(), dateIso: new Date().toISOString(), clientName: ticket.client.name,
+            subtotal: totals.subtotal, discount: totals.discount, tip: totals.tip, total: totals.total,
+            tenders: tenders.map((t) => ({ method: t.method, amount: t.amount })),
+          },
         }),
       });
       if (!r.ok) throw new Error(String(r.status));
@@ -375,7 +381,10 @@ export function CheckoutMode(p: Props) {
   // Print on the USB/Bluetooth thermal printer through the native Android app when it's running there (announced by
   // CERTXA_PRINT_BRIDGE — the app supports both connection types); otherwise fall back to a Bluetooth printer paired
   // directly with this browser tab (see More → Printer). Resolves true only once the receipt actually printed.
-  const nativePrintReceipt = (): Promise<boolean> => new Promise((resolve) => {
+  // `copy` picks which physical copy: 'salon' (signature copy, auto-printed right after a card
+  // charge settles), 'customer' (the Print Receipt button once the salon copy already went out
+  // for a card sale), or 'both' (cash — no signature needed, nothing held back).
+  const nativePrintReceipt = (copy: 'salon' | 'customer' | 'both'): Promise<boolean> => new Promise((resolve) => {
     const requestId = `pr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     let finished = false;
     const finishWait = (ok: boolean, error?: string) => {
@@ -395,12 +404,17 @@ export function CheckoutMode(p: Props) {
     (window as any).ReactNativeWebView?.postMessage(JSON.stringify({
       type: "PRINT_RECEIPT",
       requestId,
+      copy,
       paymentIntentId: lastCardPaymentIntentId.current,
       receipt: buildNativeReceiptPayload({
         storeName: p.storeName,
+        storeAddress: p.storeAddress,
+        storeCityStateZip: p.storeCityStateZip,
+        storePhone: p.storePhone,
         ticketNumber: ticket.ticketNumber ?? ticket.id,
         dateIso: new Date().toISOString(),
         clientName: ticket.client.name,
+        staffName: ticket.staff?.name,
         items: cartItems(),
         subtotal: totals.subtotal, discount: totals.discount, tax: 0, tip: totals.tip, grandTotal: totals.total,
         tenders: tenders.map((t) => ({ method: t.method, amount: t.amount })),
@@ -408,8 +422,8 @@ export function CheckoutMode(p: Props) {
       }),
     }));
   });
-  const printReceiptNow = async (): Promise<boolean> => {
-    if (canNativePrint) return nativePrintReceipt();
+  const printReceiptNow = async (copy: 'salon' | 'customer' | 'both'): Promise<boolean> => {
+    if (canNativePrint) return nativePrintReceipt(copy);
     if (p.thermalPrint) {
       try {
         const now = new Date();
@@ -431,12 +445,29 @@ export function CheckoutMode(p: Props) {
     if (receiptBusy) return;
     setReceiptBusy("print");
     say("PRINTING RECEIPT…", "info");
-    const ok = await printReceiptNow();
+    // A card sale already auto-printed the salon (signature) copy the moment it settled — this
+    // button only owes the customer their own copy. Cash never auto-prints, so it still owes both.
+    const copy = lastCardPaymentIntentId.current ? "customer" : "both";
+    const ok = await printReceiptNow(copy);
     setReceiptBusy(null);
     if (!ok) return;
     say("RECEIPT PRINTED", "success");
     printAfterTimer.current = setTimeout(() => p.onReceiptDone(), 5000);
   };
+  // A card charge needs the customer's signature on the salon copy, so it can't wait for a staff
+  // tap the way the rest of receipt printing does — print it the moment the sale settles. Fires
+  // once per ticket; cash never auto-prints (no signature needed), and the customer's own copy
+  // still waits for the Print Receipt button, which saves the second sheet of paper whenever
+  // nobody asks for it.
+  const salonCopyAutoPrinted = useRef(false);
+  useEffect(() => {
+    if (p.paid && lastCardPaymentIntentId.current && !salonCopyAutoPrinted.current && canNativePrint) {
+      salonCopyAutoPrinted.current = true;
+      say("PRINTING SALON COPY FOR SIGNATURE…", "info");
+      void nativePrintReceipt("salon");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.paid]);
   // Texts a LINK to a public web receipt (not the plain summary) — /api/pos/receipt-link stores exactly what's on
   // screen right now under this ticket's existing "manage my booking" token, so the link keeps showing these same
   // numbers, then sends it through the salon's Twilio number.
