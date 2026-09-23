@@ -67,6 +67,12 @@ function $$(n: number): string {
   return `$${n.toFixed(2)}`;
 }
 
+/** Truncate an item name so `[L]name[R]price` always leaves room for the price column. */
+function fitName(name: string, priceStr: string, width = COL_W): string {
+  const maxLen = Math.max(1, width - priceStr.length - 1);
+  return name.length > maxLen ? `${name.slice(0, maxLen - 1)}…` : name;
+}
+
 /** Format card brand for display */
 function fmtBrand(brand: string): string {
   const map: Record<string, string> = {
@@ -124,10 +130,11 @@ export function buildReceiptText(data: ReceiptData): string {
   lines.push(`[L]<b>ITEM</b>[R]<b>PRICE</b>`);
   lines.push(`[C]${divLine()}`);
   for (const item of data.items) {
-    lines.push(`[L]${item.name}[R]${$$(item.price)}`);
-    if (item.duration) lines.push(`[L]${item.duration}`);
-    lines.push(`[C]${divLine()}`);
+    const priceStr = $$(item.price);
+    lines.push(`[L]${fitName(item.name, priceStr)}[R]${priceStr}`);
+    if (item.duration) lines.push(`[L]  ${item.duration}`);
   }
+  lines.push(`[C]${divLine()}`);
 
   // ── Subtotal / Total ─────────────────────────────────────────────────────────
   lines.push(`[L]Subtotal[R]${$$(data.subtotal)}`);
@@ -147,7 +154,9 @@ export function buildReceiptText(data: ReceiptData): string {
   // ── Payment section ──────────────────────────────────────────────────────────
   lines.push(`[L]Payment[R]${data.paymentMethod}`);
   lines.push(`[L]Amount Paid[R]${$$(data.amountPaid ?? data.grandTotal)}`);
-  lines.push(`[L]Change[R]${$$(data.changeDue ?? 0)}`);
+  if ((data.changeDue ?? 0) > 0) {
+    lines.push(`[L]Change[R]${$$(data.changeDue as number)}`);
+  }
   lines.push(`[C]${divLine()}`);
 
   // ── Card details block (card payments only) ──────────────────────────────────
@@ -160,7 +169,7 @@ export function buildReceiptText(data: ReceiptData): string {
     if (c.terminalId)    lines.push(`[L]TERM#: ${c.terminalId}`);
     if (c.sequenceNumber) lines.push(`[L]SEQ#: ${c.sequenceNumber}`);
     if (c.aid)           lines.push(`[L]AID: ${c.aid}`);
-    if (c.arqc)          lines.push(`[L]ARQC ${c.arqc}`);
+    if (c.arqc)          lines.push(`[L]ARQC: ${c.arqc}`);
     lines.push(`[L]ENTRY: ${fmtEntry(c.entryMethod ?? 'chip')}`);
     if (c.pinVerified)   lines.push(`[L]PIN VERIFIED`);
     lines.push(`[L]APPROVED`);

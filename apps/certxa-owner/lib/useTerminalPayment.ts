@@ -123,28 +123,50 @@ export function useTerminalPayment() {
 
   /**
    * Extracts card details from the confirmed Stripe Terminal PaymentIntent.
-   * Uses safe optional-chaining + `as any` because the field shape varies
-   * slightly between Stripe Terminal SDK beta versions.
+   *
+   * Field paths verified directly against the installed
+   * @stripe/stripe-terminal-react-native@0.0.1-beta.31 SDK — its TS defs
+   * (types/index.d.ts: Charge, PaymentMethodDetails, CardPresentDetails,
+   * ReceiptDetails) and its Android bridge (Mappers.kt: mapFromCharge,
+   * mapFromPaymentMethod, mapFromCardPresentDetails, mapFromReceiptDetails).
+   * Card-present data lives under PaymentMethodDetails.cardPresentDetails,
+   * reachable two ways in this SDK: nested on the confirmed PaymentIntent's
+   * first Charge (charges[0].paymentMethodDetails) or on the top-level
+   * paymentMethod (PaymentMethod.Type also carries cardPresentDetails
+   * directly) — both are checked since either may be the one populated.
    */
   function extractCardDetails(confirmed: any, piId: string): CardDetails | undefined {
     try {
-      // The Terminal SDK exposes card details under paymentMethodDetails.cardDetails
-      // (card-present) or paymentMethodDetails.interacPresent for Interac.
-      const pm = confirmed?.paymentMethodDetails;
-      const cd = pm?.cardDetails ?? pm?.interacPresent ?? pm?.cardPresent;
+      const charge = confirmed?.charges?.[0];
+      const chargePmd = charge?.paymentMethodDetails;
+      const topPmd = confirmed?.paymentMethod;
+      const cd = chargePmd?.cardPresentDetails ?? chargePmd?.interacPresentDetails
+        ?? topPmd?.cardPresentDetails ?? topPmd?.interacPresentDetails;
       if (!cd) return undefined;
 
-      const emv = cd.emvData ?? cd.emvAuthData ?? {};
-
       return {
-        last4:           cd.last4 ?? '????',
-        brand:           cd.brand ?? cd.network ?? 'card',
-        funding:         cd.funding,
-        approvalCode:    emv.authorizationCode ?? emv.authorisationCode ?? cd.authorizationCode,
-        entryMethod:     cd.entryMethod,
-        aid:             emv.applicationIdentifier ?? emv.aid,
-        arqc:            emv.cryptogram ?? emv.arqc,
-        pinVerified:     cd.pinVerified ?? false,
+        last4:   cd.last4 ?? '????',
+        brand:   cd.brand ?? cd.network ?? 'card',
+        funding: cd.funding,
+        // receipt.authorizationCode is the canonical path (CardPresentDetails.receipt is
+        // ReceiptDetails.authorizationCode); charge.authorizationCode is the same value
+        // denormalized onto the Charge object by this SDK (Mappers.kt: mapFromCharge).
+        approvalCode: cd.receipt?.authorizationCode ?? charge?.authorizationCode,
+        // Raw SDK value (e.g. "contactlessEmv"/"contactEmv"), not the short "chip"/
+        // "contactless"/"swipe" keys receiptText.ts's fmtEntry() maps — an unmatched value
+        // falls through to its .toUpperCase() default. Not touching that mapping here.
+        entryMethod: cd.readMethod,
+        // applicationCryptogram (EMV tag 9F26, the ARQC) IS exposed by this SDK version.
+        arqc: cd.receipt?.applicationCryptogram,
+        // No AID/applicationIdentifier field exists on this SDK's CardPresentDetails or
+        // ReceiptDetails (only emvAuthData, a raw string blob, and dedicatedFileName, which
+        // is EMV-adjacent but not verified as equivalent) — left unset rather than guessed.
+        aid: undefined,
+        // No pinVerified (or other boolean) field exists on this SDK version.
+        // receipt.cvm (cardholder verification method) IS exposed, but as a string
+        // ("Online PIN", "Signature", "No CVM Required", …) — CardDetails only has a
+        // boolean slot, so left unset rather than inferred/approximated from cvm.
+        pinVerified: undefined,
         paymentIntentId: piId,
       };
     } catch {

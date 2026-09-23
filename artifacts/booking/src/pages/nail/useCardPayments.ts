@@ -18,7 +18,7 @@ export interface CardPaymentsOpts {
   send: (type: string, payload?: Record<string, unknown>) => void;
   /** The ticket's tip / discount / already-tendered cents, stored on the PaymentIntent by the native app. */
   context: () => { tipCents: number; discountCents: number; priorTenderedCents: number };
-  onPaid: (kind: CardKind, amount: number, last4?: string | null) => void;
+  onPaid: (kind: CardKind, amount: number, last4?: string | null, paymentIntentId?: string | null) => void;
   /** What is still owed once `paid` is taken, and what the sale will have taken in all — told to the customer's screen so a part-payment doesn't read "Payment successful". */
   settlementAfter: (paid: number) => { remaining: number; paidTotal: number };
   onFailed: (message: string) => void;
@@ -71,7 +71,7 @@ export function useCardPayments(o: CardPaymentsOpts) {
       if (amount <= 0) return;
       setNativeBusy(null);
       opts.current.send("kiosk_checkout_payment_result", { success: true, total: amount, last4: d.last4, appointmentId: opts.current.ticketId, ...opts.current.settlementAfter(amount) });
-      opts.current.onPaid(d.method === "tap_to_pay" ? "tap" : "m2", amount, d.last4 ? String(d.last4) : null);
+      opts.current.onPaid(d.method === "tap_to_pay" ? "tap" : "m2", amount, d.last4 ? String(d.last4) : null, d.paymentIntentId ? String(d.paymentIntentId) : null);
     };
     const failed = (e: Event) => {
       setNativeBusy(null);
@@ -176,7 +176,7 @@ export function useCardPayments(o: CardPaymentsOpts) {
       const last4 = processed.paymentIntent?.payment_method_details?.card_present?.last4 ?? null;
       setStatus("ready");
       o.send("kiosk_checkout_payment_result", { success: true, total: amount, last4: last4 ?? "????", appointmentId: o.ticketId, ...o.settlementAfter(amount) });
-      o.onPaid("m2", amount, last4);
+      o.onPaid("m2", amount, last4, paymentIntentId);
     } catch (err: any) {
       setStatus("ready");
       term.current?.cancelCollectPaymentMethod?.().catch(() => {});

@@ -143,12 +143,17 @@ export function CheckoutMode(p: Props) {
   };
 
   // ── real card charging (M2 reader · Tap to Pay) ───────────────────────────
+  // The PaymentIntent ID from the most recent successful card tender — threaded through to
+  // nativePrintReceipt() below so the native app can look up card details for the receipt
+  // (it keys that lookup by paymentIntentId; previously this was always sent as null).
+  const lastCardPaymentIntentId = useRef<string | null>(null);
   const cards = useCardPayments({
     ticketId: ticket.id, clientName: ticket.client.name, dualScreen: p.dualScreen, send,
     context: () => ({ tipCents: Math.round(totals.tip * 100), discountCents: Math.round(totals.discount * 100), priorTenderedCents: Math.round(totals.tendered * 100) }),
-    onPaid: (kind, paid, last4) => {
+    onPaid: (kind, paid, last4, paymentIntentId) => {
       setTenders((cur) => [...cur, { id: nextId.current++, method: kind, amount: paid }]);
       setCents("");
+      if (paymentIntentId) lastCardPaymentIntentId.current = paymentIntentId;
       say(`CARD APPROVED · ${money(paid)}${last4 ? ` · ····${last4}` : ""}`, "success");
     },
     onFailed: (message) => say(message.toUpperCase(), "error"),
@@ -390,7 +395,7 @@ export function CheckoutMode(p: Props) {
     (window as any).ReactNativeWebView?.postMessage(JSON.stringify({
       type: "PRINT_RECEIPT",
       requestId,
-      paymentIntentId: null,
+      paymentIntentId: lastCardPaymentIntentId.current,
       receipt: buildNativeReceiptPayload({
         storeName: p.storeName,
         ticketNumber: ticket.ticketNumber ?? ticket.id,
