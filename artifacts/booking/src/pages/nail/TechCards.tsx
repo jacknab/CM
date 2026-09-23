@@ -9,11 +9,19 @@ type Status = "in-service" | "available" | "break" | "off";
 
 const fmtTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
-/** What the front desk needs to know about each technician, right now. */
+/**
+ * What the front desk needs to know about each technician, right now.
+ *
+ * `t.currentStatus === "busy"` alone is NOT enough to call a tech "in service": the server also
+ * sets it for the Consideration Lock — a tech with a client checked in and waiting for them
+ * (status "confirmed"), who hasn't actually started that service yet. Without a real `current`
+ * ("started") ticket that showed up as a stuck, un-tappable "IN CHAIR" card with a running timer
+ * and no assigned ticket to open — the tech had a waiting client, not one in the chair.
+ */
 function statusOf(t: TurnTech, current: BoardTicket | undefined, assumedIn: boolean): Status {
   if (t.clockedIn === false && !assumedIn) return "off";
   if (t.paused || t.currentStatus === "on_break") return "break";
-  if (current || t.currentStatus === "busy") return "in-service";
+  if (current) return "in-service";
   return "available";
 }
 
