@@ -55,10 +55,77 @@ index 9d7796922914c2c99c27bf84b26cc42c36e9db6b..344e949b33f9192a2998493d7629958e
  
              }
 diff --git a/android/src/main/java/com/pinmi/react/printer/adapter/NetPrinterAdapter.java b/android/src/main/java/com/pinmi/react/printer/adapter/NetPrinterAdapter.java
-index e811a33799db9d821145b6792b02cf2f7c4265ac..52912026dc43ddb279e2fb867105cbe56b746428 100644
+index e811a33799db9d821145b6792b02cf2f7c4265ac..53641aa38a169a1a177777d67c8ac2ac089125be 100644
 --- a/android/src/main/java/com/pinmi/react/printer/adapter/NetPrinterAdapter.java
 +++ b/android/src/main/java/com/pinmi/react/printer/adapter/NetPrinterAdapter.java
-@@ -223,14 +223,14 @@ public class NetPrinterAdapter implements PrinterAdapter {
+@@ -166,9 +166,17 @@ public class NetPrinterAdapter implements PrinterAdapter {
+         return (ip & 0xFF) + "." + ((ip >> 8) & 0xFF) + "." + ((ip >> 16) & 0xFF) + "." + ((ip >> 24) & 0xFF);
+     }
+ 
++    // The unbounded 2-arg Socket(host, port) constructor used to block this thread indefinitely
++    // (up to the kernel's TCP SYN timeout, tens of seconds+) when the printer IP was unreachable,
++    // stalling every other native module call queued behind it. Bounded to match the connect
++    // timeout the JS side already assumes it has.
++    private static final int CONNECT_TIMEOUT_MS = 8000;
++
+     @Override
+     public void selectDevice(PrinterDeviceId printerDeviceId, Callback sucessCallback, Callback errorCallback) {
+         NetPrinterDeviceId netPrinterDeviceId = (NetPrinterDeviceId) printerDeviceId;
++        final String host = netPrinterDeviceId.getHost();
++        final int port = netPrinterDeviceId.getPort();
+ 
+         if (this.mSocket != null && !this.mSocket.isClosed()
+                 && mNetDevice.getPrinterDeviceId().equals(netPrinterDeviceId)) {
+@@ -177,21 +185,31 @@ public class NetPrinterAdapter implements PrinterAdapter {
+             return;
+         }
+ 
++        Log.i(LOG_TAG, "attempting connection, host: " + host + ", port: " + port + ", timeoutMs: " + CONNECT_TIMEOUT_MS);
++
++        Socket socket = new Socket();
+         try {
+-            Socket socket = new Socket(netPrinterDeviceId.getHost(), netPrinterDeviceId.getPort());
+-            if (socket.isConnected()) {
+-                closeConnectionIfExists();
+-                this.mSocket = socket;
+-                this.mNetDevice = new NetPrinterDevice(netPrinterDeviceId.getHost(), netPrinterDeviceId.getPort());
+-                sucessCallback.invoke(this.mNetDevice.toRNWritableMap());
+-            } else {
+-                errorCallback.invoke("unable to build connection with host: " + netPrinterDeviceId.getHost()
+-                        + ", port: " + netPrinterDeviceId.getPort());
+-                return;
+-            }
++            socket.connect(new InetSocketAddress(host, port), CONNECT_TIMEOUT_MS);
+         } catch (IOException e) {
+-            e.printStackTrace();
++            Log.e(LOG_TAG, "connection failed, host: " + host + ", port: " + port, e);
++            try {
++                socket.close();
++            } catch (IOException closeException) {
++                // ignore: socket never connected, nothing to clean up on the wire
++            }
+             errorCallback.invoke("failed to connect printer: " + e.getMessage());
++            return;
++        }
++
++        if (socket.isConnected()) {
++            closeConnectionIfExists();
++            this.mSocket = socket;
++            this.mNetDevice = new NetPrinterDevice(host, port);
++            Log.i(LOG_TAG, "connection successful, host: " + host + ", port: " + port);
++            sucessCallback.invoke(this.mNetDevice.toRNWritableMap());
++        } else {
++            Log.e(LOG_TAG, "connection failed (socket not connected), host: " + host + ", port: " + port);
++            errorCallback.invoke("unable to build connection with host: " + host + ", port: " + port);
+         }
+     }
+ 
+@@ -219,18 +237,19 @@ public class NetPrinterAdapter implements PrinterAdapter {
+         }
+         final String rawData = rawBase64Data;
+         final Socket socket = this.mSocket;
+-        Log.v(LOG_TAG, "start to print raw data " + rawBase64Data);
++        Log.i(LOG_TAG, "print start");
          new Thread(new Runnable() {
              @Override
              public void run() {
@@ -71,8 +138,9 @@ index e811a33799db9d821145b6792b02cf2f7c4265ac..52912026dc43ddb279e2fb867105cbe5
 -                } catch (IOException e) {
 -                    Log.e(LOG_TAG, "failed to print data" + rawData);
 -                    e.printStackTrace();
++                    Log.i(LOG_TAG, "print completed");
 +                } catch (Throwable t) {
-+                    Log.e(LOG_TAG, "failed to print data" + rawData, t);
++                    Log.e(LOG_TAG, "print failed", t);
                  }
              }
          }).start();

@@ -165,7 +165,7 @@ patchedDependencies:
     hash: 5ebf29b754b979bd6b75ec79cb9a4cebca2b9c2bb90f24fa2017d83b7c9952f5
     path: patches/@stripe__stripe-terminal-react-native@0.0.1-beta.31.patch
   react-native-thermal-receipt-printer-image-qr@0.1.12:
-    hash: b517f91b2b3f8ed015b52be4085a826e128b5310d8e5c370d0173c97e86b1954
+    hash: dbb8c5a5d7a3a55f55e5862588b004a76d17cec2db546fb07436ccfd4e4fd77c
     path: patches/react-native-thermal-receipt-printer-image-qr@0.1.12.patch
 
 importers:
@@ -261,7 +261,7 @@ importers:
         version: 4.16.0(react-native@0.81.5(@babel/core@7.29.0)(@react-native-community/cli@13.6.4)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       react-native-thermal-receipt-printer-image-qr:
         specifier: ^0.1.12
-        version: 0.1.12(patch_hash=b517f91b2b3f8ed015b52be4085a826e128b5310d8e5c370d0173c97e86b1954)
+        version: 0.1.12(patch_hash=dbb8c5a5d7a3a55f55e5862588b004a76d17cec2db546fb07436ccfd4e4fd77c)
       react-native-webview:
         specifier: 13.17.0
         version: 13.17.0(react-native@0.81.5(@babel/core@7.29.0)(@react-native-community/cli@13.6.4)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
@@ -24154,7 +24154,7 @@ snapshots:
       react-native: 0.76.9(@babel/core@7.29.0)(@react-native-community/cli@13.6.4)(@types/react@19.1.17)(react@19.1.0)
       warn-once: 0.1.1
 
-  react-native-thermal-receipt-printer-image-qr@0.1.12(patch_hash=b517f91b2b3f8ed015b52be4085a826e128b5310d8e5c370d0173c97e86b1954):
+  react-native-thermal-receipt-printer-image-qr@0.1.12(patch_hash=dbb8c5a5d7a3a55f55e5862588b004a76d17cec2db546fb07436ccfd4e4fd77c):
     dependencies:
       buffer: 5.7.1
       iconv-lite: 0.6.3
