@@ -176,7 +176,7 @@ export function buildReceiptText(data: ReceiptData, copy: ReceiptCopy): string {
     lines.push(`[L]${fmtEntry(c.entryMethod ?? 'chip')}`);
     if (c.approvalCode || c.paymentIntentId) lines.push('');
     if (c.approvalCode)     lines.push(`[L]Approval: ${c.approvalCode}`);
-    if (c.paymentIntentId)  lines.push(`[L]Transaction: ${c.paymentIntentId}`);
+    if (c.paymentIntentId)  lines.push(`[L]TRN: ${c.paymentIntentId}`);
     lines.push('');
   }
   lines.push(`[L]${twoCol('Subtotal:', $$(data.subtotal))}`);
