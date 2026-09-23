@@ -136,13 +136,11 @@ router.get("/audit", isAuthenticated, async (req, res) => {
 
 router.post("/queue", isAuthenticated, async (req, res) => {
   const {
-    storeId: bodyStoreId,
     actions,
     batch_id,
     sync_protocol_version,
     snapshot_version,
   }: {
-    storeId?: number;
     actions: SyncAction[];
     batch_id?: string;
     sync_protocol_version?: string;
@@ -169,7 +167,10 @@ router.post("/queue", isAuthenticated, async (req, res) => {
     .where(eq(locations.userId, userId))
     .limit(1);
   if (!userStore.length) return res.status(404).json({ message: "Store not found" });
-  const storeId = bodyStoreId ?? userStore[0].id;
+  // Never trust a client-supplied storeId here — this drives real writes
+  // (create/cancel appointments, check-in/out, edit clients) below, so it must
+  // always be the caller's own session-resolved store, not `bodyStoreId`.
+  const storeId = userStore[0].id;
   const effectiveBatchId = batch_id ?? `server_${Date.now()}`;
 
   const sorted = [...actions].sort(

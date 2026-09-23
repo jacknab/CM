@@ -138,11 +138,15 @@ $_base_schema = [
     'url'                     => SITE_URL,
     'description'             => 'Certxa is the all-in-one nail salon software built for nail technicians and studio owners. Features include 24/7 online booking, self-service walk-in check-in kiosk, multi-tech calendar management, client nail records with product notes, automated SMS and email reminders, a POS system, waitlist management, Autumn AI receptionist, Google Reviews integration, and a branded website builder.',
     'softwareVersion'         => '2.0',
-    // Real, verifiable rating from https://www.capterra.ca/software/1237764/Certxa-Booking-Software
-    // (1 review, 5.0/5, as of Sep 2026) — genuinely thin, but real. Update
-    // ratingCount as more reviews come in on Capterra/G2/Product Hunt; never
-    // bump this without a real source to point to.
-    'aggregateRating'         => ['@type' => 'AggregateRating', 'ratingValue' => 5.0, 'ratingCount' => 1, 'bestRating' => 5, 'worstRating' => 1],
+    // aggregateRating removed 2026-09-22 (see GEO-AUDIT-REPORT.md): the
+    // underlying rating is real (1 review, 5.0/5 on Capterra, as of Sep
+    // 2026) but a single-review "5.0" published identically on every page
+    // of the site reads as a self-serving, unverifiable rating — exactly
+    // the pattern Google's structured-data guidelines flag, risking rich-
+    // result suppression for the whole domain, not just this node. Re-add
+    // once there's a real sample size (aim for 5+ reviews across
+    // Capterra/G2/Product Hunt) with a source link.
+
     // `billingIncrement` is not a valid Offer property (it belongs on
     // UnitPriceSpecification, and expects a Number, not an ISO-8601 duration
     // string) — every Offer below now expresses monthly billing correctly via

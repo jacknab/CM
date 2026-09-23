@@ -5,6 +5,8 @@ import { useCreateCustomer } from "@/hooks/use-customers";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowLeft, X, Delete } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isValidNanpPrefix } from "@/lib/phone-validation";
+import { useShake } from "@/hooks/use-shake";
 import { useToast } from "@/hooks/use-toast";
 import { localClientsDB } from "@/lib/local-clients-db";
 import { useSnapshot } from "@/hooks/use-snapshot";
@@ -36,6 +38,8 @@ export default function ClientLookup() {
   const [isSearching, setIsSearching] = useState(false);
   const [searchDone, setSearchDone] = useState(false);
   const [shiftActive, setShiftActive] = useState(true);
+  // A digit that can't be part of a real US number (bad area / exchange code) is refused with a shake — what's typed stays.
+  const { shakeClass, shake, onShakeEnd } = useShake();
 
   const formatPhone = (digits: string): string => {
     if (digits.length <= 3) return `(${digits}`;
@@ -45,10 +49,11 @@ export default function ClientLookup() {
 
   const handleNumPad = useCallback((digit: string) => {
     if (phoneDigits.length < 10) {
-      setPhoneDigits(prev => prev + digit);
+      if (!isValidNanpPrefix(phoneDigits + digit)) { shake(); return; }
+      setPhoneDigits(phoneDigits + digit);
       setSearchDone(false);
     }
-  }, [phoneDigits.length]);
+  }, [phoneDigits, shake]);
 
   const handleNumBackspace = useCallback(() => {
     setPhoneDigits(prev => prev.slice(0, -1));
@@ -361,7 +366,7 @@ export default function ClientLookup() {
         </Button>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center px-4">
+      <div className={cn("flex-1 flex flex-col items-center justify-center px-4", shakeClass)} onAnimationEnd={onShakeEnd}>
         <h1 className="text-3xl font-bold text-foreground mb-2" data-testid="text-client-lookup-heading">
           {isBookingContext ? "New Booking" : "Client Lookup"}
         </h1>

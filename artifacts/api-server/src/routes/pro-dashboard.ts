@@ -186,6 +186,8 @@ router.put("/orders/:id", async (req, res) => {
 router.delete("/orders/:id", async (req, res) => {
   try {
     const storeId = await sid(req);
+    const [owned] = await db.select({ id: serviceOrders.id }).from(serviceOrders).where(and(eq(serviceOrders.id, Number(req.params.id)), eq(serviceOrders.storeId, storeId)));
+    if (!owned) return res.status(404).json({ error: "Not found" });
     await db.delete(orderNotes).where(eq(orderNotes.orderId, Number(req.params.id)));
     await db.delete(serviceOrders).where(and(eq(serviceOrders.id, Number(req.params.id)), eq(serviceOrders.storeId, storeId)));
     res.json({ success: true });
@@ -195,6 +197,8 @@ router.delete("/orders/:id", async (req, res) => {
 router.post("/orders/:id/notes", async (req, res) => {
   try {
     const storeId = await sid(req);
+    const [owned] = await db.select({ id: serviceOrders.id }).from(serviceOrders).where(and(eq(serviceOrders.id, Number(req.params.id)), eq(serviceOrders.storeId, storeId)));
+    if (!owned) return res.status(404).json({ error: "Not found" });
     const { note, authorName } = req.body;
     const [n] = await db.insert(orderNotes).values({ orderId: Number(req.params.id), storeId, note, authorName }).returning();
     res.status(201).json(n);

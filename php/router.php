@@ -200,12 +200,14 @@ if ($uri === '/') {
     exit;
 }
 
-// certxa.com/ is now the consumer salon-marketplace homepage (a separate
-// Node/React app, routed before this PHP layer ever runs) — it is NOT the
-// same content as overview/default.php any more, so /overview must render
-// its own real page rather than redirect into the marketplace. The generic
-// slug → directory/default.php routing further below already does this
-// correctly; only the stray .php-extension cleanup redirect is needed here.
+// certxa.com/ went BACK to serving overview/default.php on 2026-09-22 (see
+// index.ts and index.php) — the consumer salon-marketplace no longer has a
+// homepage route at all, only /listings/* and flat salon-slug pages. So "/"
+// and "/overview" are the same content again; only the stray .php-extension
+// cleanup redirect below is needed for /overview.php. If this ever changes
+// again, update llms.txt / llms-full.txt's Marketplace section to match —
+// that file has now been wrong about the root URL in three consecutive GEO
+// audits, in two different directions (see GEO-AUDIT-REPORT.md).
 if ($uri === '/overview.php') {
     header('Location: /overview', true, 301);
     exit;

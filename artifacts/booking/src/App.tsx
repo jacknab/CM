@@ -96,6 +96,7 @@ import VoucherBookingPage from "@/pages/VoucherBookingPage";
 import BookingWidgetPage from "@/pages/BookingWidgetPage";
 import BookingConfirmation from "@/pages/public-booking/BookingConfirmation";
 import ManageBooking from "@/pages/public-booking/ManageBooking";
+import PublicReceipt from "@/pages/public-booking/PublicReceipt";
 import CompleteBooking from "@/pages/public-payment/CompleteBooking";
 import StaffCalendar from "@/pages/StaffCalendar";
 import StaffProfile from "@/pages/StaffProfile";
@@ -463,6 +464,7 @@ function AppRoutes() {
       <Route path="/redeem/:token" element={<VoucherBookingPage />} />
       <Route path="/booking/:confirmationNumber" element={<BookingConfirmation />} />
       <Route path="/b/:token" element={<ManageBooking />} />
+      <Route path="/receipt/:token" element={<PublicReceipt />} />
       <Route path="/review/:id" element={<ReviewEntry />} />
       <Route path="/complete-booking/:token" element={<CompleteBooking />} />
 

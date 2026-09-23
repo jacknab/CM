@@ -3,21 +3,17 @@
  * Stored per store as an array of exactly three strings ("" = button left unconfigured). Strings, never numbers.
  */
 
+import { isAssignedUsAreaCode } from "./usPhone";
+
 export const QUICK_AREA_CODE_COUNT = 3;
 
-// Toll-free and premium/special ranges: valid-looking, but never a client's home area code.
-const NON_GEOGRAPHIC = new Set(["500", "600", "700", "800", "833", "844", "855", "866", "877", "888", "900"]);
-
 /**
- * A plausible US geographic area code: NXX (N = 2-9), not an N11 service code, not the reserved 37X / 96X blocks, and
- * not a toll-free / premium range. (Canada and the Caribbean share the same numbering plan and can't be told apart from
- * the digits alone, so they pass — the salon is the one choosing.)
+ * A currently assigned US geographic area code (shared/usAreaCodes.ts, generated from Google's libphonenumber data). Toll-free,
+ * premium, personal-number, N11, reserved (37X / 96X), fictitious and unassigned codes — and Canadian / Caribbean-nation codes —
+ * are all refused. The same rule the phone keypads use for the first three digits.
  */
 export function isValidUsAreaCode(code: string): boolean {
-  if (!/^[2-9]\d{2}$/.test(code)) return false;
-  if (code[1] === "1" && code[2] === "1") return false; // N11 (211, 311, … 911)
-  if (code.startsWith("37") || code.startsWith("96")) return false; // reserved for future use
-  return !NON_GEOGRAPHIC.has(code);
+  return /^\d{3}$/.test(code) && isAssignedUsAreaCode(code);
 }
 
 /** Clean up a saved / submitted list: always exactly three strings, junk becomes "" (unconfigured). */

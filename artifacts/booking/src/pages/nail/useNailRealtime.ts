@@ -18,6 +18,8 @@ export function useNailRealtime(opts: {
   onPrintJob?: (job: any) => void;
   /** The client is (or has stopped) typing their number on the paired /frontdesk tablet's check-in screen. */
   onFrontdeskTyping?: (typing: boolean) => void;
+  /** Customer-screen checkout events (tip picked, card result) for the checkout open on this station. */
+  onCheckoutEvent?: (msg: { type: string; [k: string]: unknown }) => void;
 }): boolean {
   const queryClient = useQueryClient();
   const [connected, setConnected] = useState(false);
@@ -74,6 +76,11 @@ export function useNailRealtime(opts: {
               break;
             case "kiosk_print_job":
               cb.current.onPrintJob?.(data);
+              break;
+            case "kiosk_checkout_tip_selected":
+            case "kiosk_checkout_payment_result":
+            case "kiosk_checkout_receipt_choice":
+              cb.current.onCheckoutEvent?.(data);
               break;
             case "kiosk_checkout_phone_result":
               if (typeof data.phone === "string") {

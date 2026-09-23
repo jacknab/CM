@@ -73,10 +73,6 @@ export function defaultPick(cfg: NailConfigView | null): NailPick {
 const optionsFor = (cfg: NailConfigView, group: NailGroup) =>
   group === "size" ? cfg.sizes : group === "shape" ? cfg.shapes : group === "application" ? cfg.applications : cfg.effects;
 
-export function togglePick(pick: NailPick, group: NailGroup, id: number): NailPick {
-  return { ...pick, [group]: pick[group] === id ? null : id };
-}
-
 export interface TicketLine {
   key: string;
   kind: "service" | "addon" | "nail" | "custom";
@@ -123,16 +119,6 @@ export function nailAdjustment(cfg: NailConfigView | null, pick: NailPick): Nail
     });
   });
   return out;
-}
-
-/** Required groups the staff still has to choose (empty = ready). */
-export function missingRequired(cfg: NailConfigView | null, pick: NailPick): string[] {
-  if (!cfg) return [];
-  const miss: string[] = [];
-  if (cfg.lengthRequired && cfg.sizes.length > 0 && pick.size == null) miss.push("length");
-  if (cfg.shapeRequired && cfg.shapes.length > 0 && pick.shape == null) miss.push("shape");
-  if (cfg.artRequired && (cfg.applications.length > 0 || cfg.effects.length > 0) && pick.application == null && pick.effect == null) miss.push("art");
-  return miss;
 }
 
 export interface DraftService {

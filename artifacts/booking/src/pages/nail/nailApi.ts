@@ -192,6 +192,18 @@ export async function clockInTech(storeId: number, staffId: number): Promise<voi
   }
 }
 
+/** Front-desk override: take a technician off the clock and out of the turn order (the server tells every station). */
+export async function clockOutTech(storeId: number, staffId: number): Promise<void> {
+  const res = await fetch("/api/timeclock/clock-out", {
+    method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, staffId }),
+  });
+  // 404 = no open clock-in (someone already clocked them out) — that is the state we wanted.
+  if (!res.ok && res.status !== 404) {
+    const data = await res.json().catch(() => null);
+    throw new ApiError(data?.error || data?.message || "Couldn't clock them out", res.status, data);
+  }
+}
+
 export const removeMarker = (id: number) => call(`/api/kiosk/board/${id}`, { method: "DELETE" });
 
 export const fetchAppointment = (id: number) => call<any>(`/api/appointments/${id}`);
@@ -205,16 +217,38 @@ export interface FinalizeData {
   productRevenue: number;
   groupTickets?: { appointmentId: number; tip: number; discount: number; totalPaid: number; paymentMethod: string; serviceRevenue: number; productRevenue: number }[];
   redemption?: { rewardId: number; customerId: number };
+  /** Gift cards used as payment: each is charged (atomically, on the server) BEFORE the sale closes. */
+  giftCards?: { code: string; amount: number }[];
 }
+
+export interface GiftCardInfo { code: string; balance: number; issuedTo: string | null }
+/** Store-scoped check: the card must be this salon's, active, unexpired and have a balance. */
+export const lookupGiftCard = (code: string) =>
+  call<GiftCardInfo>("/api/nail/gift-cards/lookup", { method: "POST", body: JSON.stringify({ code }) });
+const redeemGiftCard = (code: string, amount: number, appointmentId: number) =>
+  call<{ redeemed: number; balance: number; alreadyRedeemed: boolean }>("/api/nail/gift-cards/redeem", {
+    method: "POST", body: JSON.stringify({ code, amount, appointmentId }),
+  });
 
 /** Same completion the calendar's checkout does: loyalty redemption, group pay shares, then "completed". */
 export async function completeTicket(id: number, data: FinalizeData): Promise<void> {
+  // Gift cards first, and unlike loyalty this must succeed: if a card can't cover its share the sale stays open. Re-running
+  // after a failure is safe — the server ignores a card it already redeemed for this ticket.
+  for (const g of data.giftCards ?? []) {
+    try { await redeemGiftCard(g.code, g.amount, id); }
+    catch (err: any) { throw new ApiError(`Gift card ${g.code}: ${err?.message ?? "could not be redeemed"}`, err?.status ?? 400, err?.data); }
+  }
   if (data.redemption?.rewardId && data.redemption.customerId) {
-    // Best effort — a points shortfall shouldn't stop the sale closing.
-    await call("/api/loyalty/redeem", {
-      method: "POST",
-      body: JSON.stringify({ rewardId: data.redemption.rewardId, customerId: data.redemption.customerId, appointmentId: id }),
-    }).catch(() => {});
+    // The reward's points must actually be taken before the sale closes — otherwise the discount would be given for free.
+    // The server redeems once per ticket, so re-running after a failure never charges the points twice.
+    try {
+      await call("/api/loyalty/redeem", {
+        method: "POST",
+        body: JSON.stringify({ rewardId: data.redemption.rewardId, customerId: data.redemption.customerId, appointmentId: id }),
+      });
+    } catch (err: any) {
+      throw new ApiError(`Loyalty reward: ${err?.message ?? "could not be redeemed"}`, err?.status ?? 400, err?.data);
+    }
   }
   const patch = (apptId: number, d: { paymentMethod: string; tip: number; discount: number; totalPaid: number; serviceRevenue: number; productRevenue: number }) =>
     call(`/api/appointments/${apptId}`, {

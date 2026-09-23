@@ -12,7 +12,6 @@ interface Props {
   canSubmit: boolean;
   busy: boolean;
   /** What still blocks the ticket ("length", "shape"…). */
-  missing: string[];
   editing: boolean;
   onRemove: (line: TicketLine) => void;
   onClear: () => void;
@@ -21,7 +20,7 @@ interface Props {
   onPayNow?: () => void;
 }
 
-export function TicketPanel({ client, badge, lines, duration, price, submitLabel, canSubmit, busy, missing, editing, onRemove, onClear, onSubmit, onPayNow }: Props) {
+export function TicketPanel({ client, badge, lines, duration, price, submitLabel, canSubmit, busy, editing, onRemove, onClear, onSubmit, onPayNow }: Props) {
   return (
     <section className="ticket-panel" data-testid="nail-ticket-panel">
       {client && (
@@ -69,7 +68,6 @@ export function TicketPanel({ client, badge, lines, duration, price, submitLabel
             <strong>{formatDuration(duration)}</strong>
           </div>
         )}
-        {missing.length > 0 && <div className="ticket-missing">Choose {missing.join(", ")} to continue.</div>}
         {lines.length > 0 && (
           <div className="grand-total">
             <span>TOTAL</span>

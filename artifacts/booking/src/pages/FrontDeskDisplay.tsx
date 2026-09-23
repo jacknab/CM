@@ -23,7 +23,12 @@
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
-import { KIOSK_LANGS, LangCode, translations } from "../lib/kioskTranslations";
+import { LangCode, translations } from "../lib/kioskTranslations";
+import { isValidNanpPrefix } from "../lib/phone-validation";
+import { useShake } from "../hooks/use-shake";
+import { RewardsPanel } from "./frontdesk/RewardsPanel";
+import { TipPanel } from "./frontdesk/TipPanel";
+import { TIP_OPTIONS, calcTipAmount } from "./frontdesk/tipOptions";
 
 type Screen =
   | "idle" | "phone" | "loading"
@@ -50,11 +55,23 @@ interface CartMirror {
   subtotal: number; discount: number; tip: number; tax: number; total: number;
   isWalkIn: boolean; customerName: string; appointmentId: number;
   loyaltyPoints?: number;
+  /** Points earned per $1 — sent by the POS so the rewards panel can remind the client. */
+  pointsPerDollar?: number;
+  /** Part-payments already taken on this sale, and what is still owed — only sent by POSes that take part-payments (the Nail POS). */
+  paid?: number;
+  balanceDue?: number;
+  /** Each part-payment taken so far, by name ("CASH", "GIFT CARD ·1234"…). */
+  payments?: { label: string; amount: number }[];
+  /** The client's number is on file at the POS (which never sends it here): a texted receipt can go without asking. */
+  hasPhone?: boolean;
+  phoneLast4?: string;
 }
+/** A payment that leaves a balance is not "Payment successful": the POS says how much is still owed after it. */
+const stillOwed = (msg: any) => msg?.remaining != null && Number(msg.remaining) > 0.005;
 
 interface ClientInfo  { id: number; name: string; loyaltyPoints: number; totalVisits: number; }
 interface StoreConfig { name: string; phone: string; address: string; }
-interface KioskConfig { kioskEnabled: boolean; welcomeHeadline: string | null; welcomeSubText: string | null; loyaltyPromoText: string | null; timezone: string | null; }
+interface KioskConfig { kioskEnabled: boolean; welcomeHeadline: string | null; welcomeSubText: string | null; loyaltyPromoText: string | null; timezone: string | null; loyaltyEnabled?: boolean; loyaltyPointsPerDollar?: number | null; }
 interface TodayAppointment { id: number; serviceName: string; staffName: string | null; staffAvatarThumbUrl: string | null; appointmentTime: string; }
 
 const QWERTY: string[][] = [
@@ -76,14 +93,6 @@ const TEXT      = "#18111a";
 const MUTED     = "#6b6580";
 const SUBTLE    = "#a89ec0";
 const NO_SELECT: React.CSSProperties = { WebkitUserSelect: "none", userSelect: "none" };
-
-const POS_TIPS = [
-  { label: "No Tip", pct: 0 },
-  { label: "15%", pct: 15 },
-  { label: "18%", pct: 18 },
-  { label: "20%", pct: 20 },
-  { label: "25%", pct: 25 },
-];
 
 function fmtPhone(p: string) {
   if (p.length <= 3) return p;
@@ -215,12 +224,15 @@ export default function FrontDeskDisplay() {
   const [storeConfig, setStoreConfig] = useState<StoreConfig | null>(null);
   const [kioskConfig, setKioskConfig] = useState<KioskConfig | null>(null);
   const [phone, setPhone]             = useState("");
+  // A digit that can't start a real US number is refused with a shake — the digits already typed stay put.
+  const { shakeClass, shake, onShakeEnd } = useShake();
   const [clientInfo, setClientInfo]   = useState<ClientInfo | null>(null);
   const [newClientName, setNewClientName] = useState("");
   const [todayAppointment, setTodayAppointment] = useState<TodayAppointment | null>(null);
   const [error, setError]             = useState("");
   const [countdown, setCountdown]     = useState(30);
-  const [lang, setLang]               = useState<LangCode>("en");
+  // No language picker on this screen any more — it always shows English.
+  const [lang]                        = useState<LangCode>("en");
 
   // Loyalty rewards the salon offers (shown to a checked-in client during checkout)
   const [rewards, setRewards] = useState<{ id: number; name: string; pointsCost: number; dollarValue: number }[]>([]);
@@ -268,7 +280,12 @@ export default function FrontDeskDisplay() {
   // customer-driven confirm from a POS-initiated collection.
   const payTriggerRef = useRef<"pos" | "client_confirm">("pos");
   const awaitModeRef = useRef<AwaitMode>("m2");
+  const awaitRemainingRef = useRef(0);
+  const awaitPaidTotalRef = useRef<number | null>(null);
   const posCheckoutRef = useRef<PosCheckout>(null);
+  // The ticket this screen is currently checking out (0 = none). Read inside the WS handler below,
+  // which is set up once and would otherwise see a stale posApptId from whenever the effect last ran.
+  const posApptIdRef = useRef(0);
   const bookingPhoneModeRef = useRef(false);
   // Set while the POS "Check-In" sheet has this screen showing the phone entry.
   const staffCheckinRef = useRef(false);
@@ -292,6 +309,8 @@ export default function FrontDeskDisplay() {
       welcomeHeadline: d.welcomeHeadline ?? null,
       welcomeSubText: d.welcomeSubText ?? null,
       loyaltyPromoText: d.loyaltyPromoText ?? null,
+      loyaltyEnabled: d.loyalty?.enabled !== false,
+      loyaltyPointsPerDollar: Number(d.loyalty?.pointsPerDollar) > 0 ? Number(d.loyalty.pointsPerDollar) : null,
       timezone: d.timezone ?? null,
     });
     if (initial) setScreen(d.kioskEnabled === false ? "closed" : "idle");
@@ -307,13 +326,35 @@ export default function FrontDeskDisplay() {
       .catch(() => { setError("Failed to connect."); setScreen("error"); });
   }, [slug, configUrl, applyConfig]);
 
+  // The salon's rewards. One failed request (a deploy, a network blip) used to leave "No rewards available" until the tablet was
+  // reloaded, so: retry a few times with a growing pause, and refresh whenever a checkout opens (which also picks up newly added rewards).
+  const rewardsLoadedRef = useRef(false);
+  const loadRewards = useCallback(async (): Promise<boolean> => {
+    if (!slug) return false;
+    try {
+      const r = await fetch(`/api/public/kiosk/${slug}/rewards`);
+      if (!r.ok) return false;
+      const d = await r.json();
+      if (!Array.isArray(d)) return false;
+      setRewards(d);
+      rewardsLoadedRef.current = true;
+      return true;
+    } catch { return false; }
+  }, [slug]);
+  const loadRewardsRef = useRef(loadRewards);
+  loadRewardsRef.current = loadRewards;
   useEffect(() => {
     if (!slug) return;
-    fetch(`/api/public/kiosk/${slug}/rewards`)
-      .then(r => r.json())
-      .then(d => { if (Array.isArray(d)) setRewards(d); })
-      .catch(() => {});
-  }, [slug]);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    const run = async () => {
+      const ok = await loadRewards();
+      if (!ok && !cancelled && attempt < 6) { attempt += 1; timer = setTimeout(run, 3000 * attempt); }
+    };
+    void run();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [slug, loadRewards]);
 
   useEffect(() => {
     if (!slug || screen !== "idle") return;
@@ -366,6 +407,7 @@ export default function FrontDeskDisplay() {
   }, [clearPosOverlay]);
 
   useEffect(() => { posCheckoutRef.current = posCheckout; }, [posCheckout]);
+  useEffect(() => { posApptIdRef.current = posApptId; }, [posApptId]);
   useEffect(() => { bookingPhoneModeRef.current = bookingPhoneMode; }, [bookingPhoneMode]);
 
   useEffect(() => {
@@ -387,14 +429,25 @@ export default function FrontDeskDisplay() {
             else if (s === "active") window.location.reload();
             break;
           }
-          case "kiosk_checkout_start":
+          case "kiosk_checkout_start": {
+            // A second, unrelated ticket starting checkout on the same register (e.g. another tech's
+            // station sharing this one customer screen) must not steal the display from a sale already
+            // in progress here — otherwise the customer sees another client's name and total mid-checkout.
+            const startApptId = Number(msg.appointmentId) || 0;
+            if (posApptIdRef.current !== 0 && startApptId !== 0 && startApptId !== posApptIdRef.current) break;
             setPosTotal(Number(msg.total) || 0);
             setPosTipPct(null); setPayError("");
             setPosCheckout("cart");
-            if (msg.appointmentId != null) setPosApptId(Number(msg.appointmentId) || 0);
+            if (msg.appointmentId != null) setPosApptId(startApptId);
             if (posResetRef.current) clearTimeout(posResetRef.current);
             break;
-          case "kiosk_checkout_cart":
+          }
+          case "kiosk_checkout_cart": {
+            // Same guard as kiosk_checkout_start above — a cart mirror from a different ticket must not
+            // overwrite what's on screen for the ticket already being checked out here.
+            const cartApptId = Number(msg.appointmentId) || 0;
+            if (posApptIdRef.current !== 0 && cartApptId !== 0 && cartApptId !== posApptIdRef.current) break;
+            if (posCheckoutRef.current === null || !rewardsLoadedRef.current) void loadRewardsRef.current();
             setCart({
               items: Array.isArray(msg.items) ? msg.items : [],
               subtotal: Number(msg.subtotal) || 0,
@@ -406,6 +459,12 @@ export default function FrontDeskDisplay() {
               customerName: String(msg.customerName || ""),
               appointmentId: Number(msg.appointmentId) || 0,
               loyaltyPoints: msg.loyaltyPoints != null ? Number(msg.loyaltyPoints) : undefined,
+              pointsPerDollar: Number(msg.pointsPerDollar) > 0 ? Number(msg.pointsPerDollar) : undefined,
+              paid: msg.paid != null ? Number(msg.paid) || 0 : undefined,
+              balanceDue: msg.balanceDue != null ? Number(msg.balanceDue) || 0 : undefined,
+              payments: Array.isArray(msg.payments) ? msg.payments.map((x: any) => ({ label: String(x?.label ?? "Payment"), amount: Number(x?.amount) || 0 })) : undefined,
+              hasPhone: msg.hasPhone === true,
+              phoneLast4: typeof msg.phoneLast4 === "string" && /^\d{4}$/.test(msg.phoneLast4) ? msg.phoneLast4 : undefined,
             });
             if (Number(msg.appointmentId)) setPosApptId(Number(msg.appointmentId));
             setPosTotal(Number(msg.total) || 0);
@@ -413,19 +472,29 @@ export default function FrontDeskDisplay() {
             setPosCheckout(prev => (prev === "tip" || prev === "await_payment" || prev === "thankyou") ? prev : "cart");
             if (posResetRef.current) clearTimeout(posResetRef.current);
             break;
+          }
           case "kiosk_checkout_customer_linked":
             if (msg.name) {
               setRwStatus("done");
               setRwResult({ name: String(msg.name), loyaltyPoints: Number(msg.loyaltyPoints) || 0, isNew: !!msg.isNew });
             }
             break;
-          case "kiosk_checkout_tip_request":
+          case "kiosk_checkout_tip_request": {
+            // Same cross-talk guard as kiosk_checkout_start/cart above — a tip request from a
+            // different ticket than the one already active on this screen must not steal it.
+            const tipApptId = Number(msg.appointmentId) || 0;
+            if (posApptIdRef.current !== 0 && tipApptId !== 0 && tipApptId !== posApptIdRef.current) break;
             setPosTotal(Number(msg.total) || 0);
             setPosTipPct(null);
             setCardMethod(msg.cardMethod === "m2" ? "m2" : msg.cardMethod === "tap" ? "tap" : readLocalCardMethod());
             setPosCheckout("tip");
             break;
+          }
           case "kiosk_checkout_await_payment": {
+            // Same cross-talk guard — a stray await-payment from an unrelated ticket must not
+            // put this screen into a card-collection state for the wrong sale.
+            const awaitPromptApptId = Number(msg.appointmentId) || 0;
+            if (posApptIdRef.current !== 0 && awaitPromptApptId !== 0 && awaitPromptApptId !== posApptIdRef.current) break;
             const mode: AwaitMode = msg.mode === "tap" ? "tap" : "m2";
             setPosTotal(Number(msg.total) || 0);
             setAwaitMode(mode);
@@ -433,19 +502,33 @@ export default function FrontDeskDisplay() {
             payTriggerRef.current = "pos";
             setAwaitApptId(msg.appointmentId != null ? Number(msg.appointmentId) : null);
             setPayError("");
+            awaitRemainingRef.current = msg.remaining != null ? Number(msg.remaining) || 0 : 0; // what will still be owed once this tap is taken
+            awaitPaidTotalRef.current = msg.paidTotal != null ? Number(msg.paidTotal) || 0 : null; // what the whole sale will have taken
             tapArmedRef.current = false;
             setPosCheckout("await_payment");
             break;
           }
-          case "kiosk_checkout_payment_result":
-            if (msg.success) {
-              if (msg.total != null) setPosTotal(Number(msg.total) || 0);
+          case "kiosk_checkout_payment_result": {
+            // Same cross-talk guard — a stray result from an unrelated ticket must not flip this
+            // screen to "paid"/"declined" for a sale that isn't the one on screen.
+            const resultApptId = Number(msg.appointmentId) || 0;
+            if (posApptIdRef.current !== 0 && resultApptId !== 0 && resultApptId !== posApptIdRef.current) break;
+            if (msg.success && stillOwed(msg)) {
+              // A part-payment (cash, gift card, part of it on a card): back to the order, which now shows what is paid and what is left.
+              tapArmedRef.current = false;
+              setPayError("");
+              setPosCheckout("cart");
+            } else if (msg.success) {
+              // Paid in full: "Amount paid" is what the whole sale took in — not just the last payment.
+              const all = msg.paidTotal != null ? msg.paidTotal : msg.total;
+              if (all != null) setPosTotal(Number(all) || 0);
               enterThankYou();
             } else {
               setPayError(String(msg.error || "Payment was declined. Please try another card."));
               setPosCheckout("await_payment");
             }
             break;
+          }
           case "kiosk_checkout_receipt_result":
             // The POS reports whether the receipt the customer asked for went through.
             if (msg.choice === "text") {
@@ -545,8 +628,10 @@ export default function FrontDeskDisplay() {
     const onDone = (e: Event) => {
       const d = (e as CustomEvent).detail ?? {};
       const total = d.amount != null ? Number(d.amount) : posTotal;
-      sendWs("kiosk_checkout_payment_result", { success: true, total, last4: d.last4, via: payTriggerRef.current, method: awaitModeRef.current });
-      setPosTotal(total);
+      const remaining = awaitRemainingRef.current;
+      sendWs("kiosk_checkout_payment_result", { success: true, total, last4: d.last4, via: payTriggerRef.current, method: awaitModeRef.current, ...(remaining > 0.005 ? { remaining } : {}) });
+      if (remaining > 0.005) { tapArmedRef.current = false; setPosCheckout("cart"); return; } // a part-payment: the sale isn't over
+      setPosTotal(awaitPaidTotalRef.current ?? total);
       enterThankYou();
     };
     const onFail = (e: Event) => {
@@ -737,6 +822,8 @@ export default function FrontDeskDisplay() {
   const handleDigit = (d: string) => {
     if (phone.length >= 10) return;
     const next = phone + d;
+    // Not a possible US number (bad area code / exchange): shake, refuse just this digit, keep what's typed.
+    if (!isValidNanpPrefix(next)) { shake(); kick(); return; }
     setPhone(next); kick();
     if (next.length === 10) {
       if (bookingPhoneMode) submitBookingPhone(next);
@@ -788,7 +875,7 @@ export default function FrontDeskDisplay() {
   //  POS overlay — renders over everything
   // ═══════════════════════════════════════════════════════════════════════
   if (posCheckout !== null) {
-    const calcTip = (pct: number) => Math.round(posTotal * pct) / 100;
+    const calcTip = (pct: number) => calcTipAmount(posTotal, pct);
     const tipAmt = posTipPct !== null ? calcTip(posTipPct) : 0;
     const grandWithTip = posTotal + tipAmt;
 
@@ -812,19 +899,33 @@ export default function FrontDeskDisplay() {
       const checkedInHere = screen === "appointment_confirmed" || screen === "checked_in_generic";
       const cartLinked = hasRealClient;
       const clientFirstName = hasRealClient ? rawClientName.split(" ")[0] : "";
+      // Nothing to redeem right now (no rewards set up, or the client's balance doesn't reach even the cheapest one) —
+      // the rewards panel would just be an empty/blocked screen, so offer a tip instead.
+      const canRedeemAny = rewards.some((r) => (clientPoints ?? 0) >= r.pointsCost);
       return (
         <div style={{ position: "fixed", inset: 0, display: "flex", background: BG, zIndex: 9999, overflow: "hidden", ...NO_SELECT }}>
           {/* ── Left: live order ── */}
-          <div style={{ flex: "1 1 56%", display: "flex", flexDirection: "column", background: SURFACE, borderRight: `1.5px solid ${BORDER}` }}>
+          <div style={{ flex: "0 0 40%", minWidth: 400, maxWidth: 560, display: "flex", flexDirection: "column", background: SURFACE, borderRight: `1.5px solid ${BORDER}` }}>
             <div style={{ padding: "22px 40px", borderBottom: `1.5px solid ${BORDER}`, background: PRIMARY_S, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20 }}>
               <div style={{ minWidth: 0 }}>
-                <p style={{ fontSize: 12, fontWeight: 800, color: PRIMARY, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>Client</p>
-                <h1 style={{ fontSize: 28, fontWeight: 900, color: TEXT, margin: "3px 0 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{clientName}</h1>
+                {cartLinked ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }} data-testid="fd-cart-greeting">
+                    <span style={{ fontSize: 38, lineHeight: 1, flexShrink: 0 }}>{checkedInHere ? "✅" : "👋"}</span>
+                    <h1 style={{ fontSize: 28, fontWeight: 900, color: TEXT, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {checkedInHere ? "You're checked in" : "Hi"}{clientFirstName ? `, ${clientFirstName}` : ""}!
+                    </h1>
+                  </div>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 12, fontWeight: 800, color: PRIMARY, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>Client</p>
+                    <h1 style={{ fontSize: 28, fontWeight: 900, color: TEXT, margin: "3px 0 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{clientName}</h1>
+                  </>
+                )}
               </div>
               {clientPoints != null && (
                 <div style={{ textAlign: "right", flexShrink: 0 }}>
                   <p style={{ fontSize: 11, fontWeight: 800, color: PRIMARY, letterSpacing: "0.1em", textTransform: "uppercase", margin: 0 }}>Points</p>
-                  <p style={{ fontSize: 30, fontWeight: 900, color: TEXT, margin: "2px 0 0", fontVariantNumeric: "tabular-nums" }}>{clientPoints}</p>
+                  <p style={{ fontSize: 30, fontWeight: 900, color: TEXT, margin: "2px 0 0", fontVariantNumeric: "tabular-nums" }}>{clientPoints.toLocaleString()}</p>
                 </div>
               )}
             </div>
@@ -851,56 +952,47 @@ export default function FrontDeskDisplay() {
                 <span style={{ fontSize: 22, fontWeight: 900, color: TEXT }}>Total</span>
                 <span style={{ fontSize: 34, fontWeight: 900, color: PRIMARY, fontVariantNumeric: "tabular-nums" }}>${totalNow.toFixed(2)}</span>
               </div>
+              {c && (c.paid ?? 0) > 0 && (
+                <div data-testid="fd-cart-paid" style={{ marginTop: 6 }}>
+                  {(c.payments && c.payments.length > 0)
+                    ? c.payments.map((x, i) => {
+                        const t = x.label.toLowerCase();
+                        return <Row key={i} label={t.charAt(0).toUpperCase() + t.slice(1)} value={-x.amount} color="#16a34a" />;
+                      })
+                    : <Row label="Paid so far" value={-(c.paid ?? 0)} color="#16a34a" />}
+                  {(c.balanceDue ?? 0) > 0.005 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", paddingTop: 6 }}>
+                      <span style={{ fontSize: 20, fontWeight: 900, color: TEXT }}>Balance due</span>
+                      <span data-testid="fd-cart-balance" style={{ fontSize: 30, fontWeight: 900, color: TEXT, fontVariantNumeric: "tabular-nums" }}>${(c.balanceDue ?? 0).toFixed(2)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
           {/* ── Right: front-desk check-in (or rewards sign-up for walk-ins) ── */}
-          <div style={{ flex: "1 1 44%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, padding: "40px 44px", background: `linear-gradient(160deg, ${PRIMARY} 0%, #7c3aed 100%)`, color: "#fff", textAlign: "center" }}>
+          <div style={{ flex: "1 1 0", minWidth: 0, position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, padding: "40px 44px", background: `linear-gradient(160deg, ${PRIMARY} 0%, #7c3aed 100%)`, color: "#fff", textAlign: "center" }}>
             {cartLinked ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 14, width: "100%", maxWidth: 400 }}>
-                <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 44, lineHeight: 1 }}>{checkedInHere ? "✅" : "👋"}</div>
-                  <p style={{ fontSize: 22, fontWeight: 900, margin: "6px 0 0" }}>
-                    {checkedInHere ? "You're checked in" : "Hi"}{clientFirstName ? `, ${clientFirstName}` : ""}!
-                  </p>
-                </div>
-                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: "0 2px" }}>
-                  <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.85)" }}>Your rewards</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.85)" }}>{(clientPoints ?? 0).toLocaleString()} pts</span>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: "50vh", overflowY: "auto" }}>
-                  {rewards.length === 0 ? (
-                    <p style={{ fontSize: 14, color: "rgba(255,255,255,0.75)", textAlign: "center", margin: "12px 0" }}>
-                      No rewards available right now.
-                    </p>
-                  ) : rewards.map(rw => {
-                    const bal = clientPoints ?? 0;
-                    const isThis = redeemedRewardId === rw.id;
-                    const canRedeem = bal >= rw.pointsCost && redeemedRewardId == null;
-                    return (
-                      <div key={rw.id} style={{ display: "flex", alignItems: "center", gap: 12, background: "rgba(255,255,255,0.14)", borderRadius: 14, padding: "12px 14px" }}>
-                        <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-                          <p style={{ fontSize: 15, fontWeight: 800, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rw.name}</p>
-                          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", margin: "2px 0 0" }}>
-                            {rw.pointsCost.toLocaleString()} pts · ${rw.dollarValue.toFixed(2)} off
-                          </p>
-                        </div>
-                        <button
-                          onPointerDown={e => { e.preventDefault(); if (canRedeem) redeemReward(rw); }}
-                          disabled={!canRedeem}
-                          style={{
-                            flexShrink: 0, border: "none", borderRadius: 11, padding: "9px 16px", fontSize: 13, fontWeight: 900,
-                            cursor: canRedeem ? "pointer" : "default",
-                            background: isThis ? "rgba(255,255,255,0.25)" : canRedeem ? "#fff" : "rgba(255,255,255,0.12)",
-                            color: isThis ? "#fff" : canRedeem ? PRIMARY_D : "rgba(255,255,255,0.4)",
-                          }}>
-                          {isThis ? "Redeemed ✓" : "Redeem"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              canRedeemAny ? (
+                <RewardsPanel
+                  storeName={storeConfig?.name ?? ""}
+                  pointsPerDollar={kioskConfig?.loyaltyEnabled === false ? null : (c?.pointsPerDollar ?? kioskConfig?.loyaltyPointsPerDollar ?? null)}
+                  points={clientPoints ?? 0}
+                  rewards={rewards}
+                  redeemedRewardId={redeemedRewardId}
+                  onRedeem={redeemReward}
+                  accentDark={PRIMARY_D}
+                />
+              ) : (
+                <TipPanel
+                  storeName={storeConfig?.name ?? ""}
+                  saleTotal={totalNow}
+                  currentTipAmount={c?.tip ?? 0}
+                  onSelectTip={(pct, amount) => sendWs("kiosk_checkout_tip_selected", { tipAmount: amount, tipPercent: pct })}
+                  accentDark={PRIMARY_D}
+                />
+              )
             ) : screen === "loading" ? (
               <>
                 <div style={{ fontSize: 60, lineHeight: 1 }}>⏳</div>
@@ -956,7 +1048,7 @@ export default function FrontDeskDisplay() {
                 </div>
               </div>
             ) : (
-              <>
+              <div className={shakeClass} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 20 }} onAnimationEnd={onShakeEnd} data-testid="fd-phone-shake">
                 <div style={{ fontSize: 56, lineHeight: 1 }}>👋</div>
                 <p style={{ fontSize: 27, fontWeight: 900, margin: 0, lineHeight: 1.2 }}>Check in</p>
                 <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", margin: 0, maxWidth: 300, lineHeight: 1.5 }}>
@@ -989,7 +1081,7 @@ export default function FrontDeskDisplay() {
                 <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", margin: 0, maxWidth: 300 }}>
                   Your number is only used to match today’s appointment.
                 </p>
-              </>
+              </div>
             )}
           </div>
         </div>
@@ -1006,7 +1098,7 @@ export default function FrontDeskDisplay() {
               Sale total: <strong style={{ color: TEXT }}>${posTotal.toFixed(2)}</strong>
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 28 }}>
-              {POS_TIPS.map(tp => {
+              {TIP_OPTIONS.map(tp => {
                 const amt = calcTip(tp.pct);
                 const active = posTipPct === tp.pct;
                 return (
@@ -1102,6 +1194,22 @@ export default function FrontDeskDisplay() {
       sendWs("kiosk_checkout_receipt_choice", { choice, appointmentId: posApptId });
       finishReceipt(choice === "print" ? "Your receipt will be printed at the counter — thank you!" : "No receipt — have a great day!", 6_000);
     };
+    // Same US-number rule as the check-in keypad: an impossible digit shakes and is refused; what's typed stays.
+    const receiptDigit = (d: string) => {
+      if (receiptPhone.length >= 10) return;
+      if (!isValidNanpPrefix(receiptPhone + d)) { shake(); return; }
+      setReceiptPhone(receiptPhone + d); setReceiptError("");
+    };
+    // We already have this client's number (the POS says so): text the receipt to it without asking. If that fails, the keypad is the fallback.
+    const textToNumberOnFile = () => {
+      sendWs("kiosk_checkout_receipt_choice", { choice: "text", appointmentId: posApptId });
+      setReceiptStep("sending"); setReceiptError("");
+      if (receiptTimerRef.current) clearTimeout(receiptTimerRef.current);
+      receiptTimerRef.current = setTimeout(() => {
+        setReceiptStep("text"); setReceiptPhone("");
+        setReceiptError("We couldn't text your number on file. Type a number below, or choose No Receipt.");
+      }, 12_000);
+    };
     const sendTextReceipt = () => {
       if (receiptPhone.length !== 10) return;
       sendWs("kiosk_checkout_receipt_choice", { choice: "text", phone: receiptPhone, appointmentId: posApptId });
@@ -1132,8 +1240,8 @@ export default function FrontDeskDisplay() {
             <p style={{ fontSize: 24, fontWeight: 700, color: TEXT, margin: "10px 0 0" }}>Would you like a receipt?</p>
             <div style={{ display: "flex", gap: 20 }}>
               <button data-testid="fd-receipt-print" onPointerDown={e => { e.preventDefault(); chooseReceipt("print"); }} style={bigBtn}>Print Receipt</button>
-              <button data-testid="fd-receipt-text" onPointerDown={e => { e.preventDefault(); setReceiptError(""); setReceiptPhone(""); setReceiptStep("text"); }} style={bigBtn}>Text Receipt</button>
-              <button data-testid="fd-receipt-none" onPointerDown={e => { e.preventDefault(); chooseReceipt("none"); }} style={{ ...bigBtn, background: "transparent", boxShadow: "none", color: MUTED }}>No Receipt</button>
+              <button data-testid="fd-receipt-text" onPointerDown={e => { e.preventDefault(); if (cart?.hasPhone) { textToNumberOnFile(); return; } setReceiptError(""); setReceiptPhone(""); setReceiptStep("text"); }} style={bigBtn}>Text Receipt</button>
+              <button data-testid="fd-receipt-none" onPointerDown={e => { e.preventDefault(); chooseReceipt("none"); }} style={bigBtn}>No Receipt</button>
             </div>
           </>
         )}
@@ -1141,18 +1249,18 @@ export default function FrontDeskDisplay() {
         {receiptStep === "text" && (
           <>
             <p style={{ fontSize: 22, fontWeight: 700, color: TEXT, margin: "4px 0 0" }}>Enter your mobile number</p>
-            <div style={{ background: SURFACE, border: `2px solid ${receiptPhone.length === 10 ? PRIMARY : BORDER}`, borderRadius: 16, padding: "10px 28px", minWidth: 320, textAlign: "center", boxShadow: SHADOW }}>
+            <div className={shakeClass} onAnimationEnd={onShakeEnd} style={{ background: SURFACE, border: `2px solid ${receiptPhone.length === 10 ? PRIMARY : BORDER}`, borderRadius: 16, padding: "10px 28px", minWidth: 320, textAlign: "center", boxShadow: SHADOW }}>
               <span data-testid="fd-receipt-phone" style={{ fontSize: 32, fontFamily: "ui-monospace, monospace", letterSpacing: "0.06em", color: receiptPhone ? TEXT : BORDER }}>
                 {receiptPhone ? fmtPhone(receiptPhone) : "(•••) •••-••••"}
               </span>
             </div>
             {receiptError && <p style={{ fontSize: 16, color: "#dc2626", margin: 0, maxWidth: 480, textAlign: "center" }}>{receiptError}</p>}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 96px)", gap: 8 }} onPointerDown={e => e.stopPropagation()}>
+            <div className={shakeClass} onAnimationEnd={onShakeEnd} style={{ display: "grid", gridTemplateColumns: "repeat(3, 96px)", gap: 8 }} onPointerDown={e => e.stopPropagation()}>
               {["1","2","3","4","5","6","7","8","9"].map(d => (
-                <button key={d} onPointerDown={e => { e.preventDefault(); setReceiptPhone(p => (p.length < 10 ? p + d : p)); setReceiptError(""); }} style={keyBtn}>{d}</button>
+                <button key={d} onPointerDown={e => { e.preventDefault(); receiptDigit(d); }} style={keyBtn}>{d}</button>
               ))}
               <button onPointerDown={e => { e.preventDefault(); setReceiptPhone(p => p.slice(0, -1)); }} style={{ ...keyBtn, fontSize: 24, color: MUTED }}>⌫</button>
-              <button onPointerDown={e => { e.preventDefault(); setReceiptPhone(p => (p.length < 10 ? p + "0" : p)); setReceiptError(""); }} style={keyBtn}>0</button>
+              <button onPointerDown={e => { e.preventDefault(); receiptDigit("0"); }} style={keyBtn}>0</button>
               <button data-testid="fd-receipt-send" onPointerDown={e => { e.preventDefault(); sendTextReceipt(); }} disabled={receiptPhone.length !== 10}
                 style={{ ...keyBtn, background: receiptPhone.length === 10 ? PRIMARY : SURFACE, color: receiptPhone.length === 10 ? "#fff" : BORDER, fontSize: 20 }}>Send</button>
             </div>
@@ -1162,7 +1270,7 @@ export default function FrontDeskDisplay() {
         )}
 
         {receiptStep === "sending" && (
-          <p data-testid="fd-receipt-sending" style={{ fontSize: 24, fontWeight: 700, color: MUTED, margin: "14px 0 0" }}>Sending your receipt…</p>
+          <p data-testid="fd-receipt-sending" style={{ fontSize: 24, fontWeight: 700, color: MUTED, margin: "14px 0 0" }}>{cart?.hasPhone && cart.phoneLast4 ? `Texting your receipt to the number ending in ${cart.phoneLast4}…` : "Sending your receipt…"}</p>
         )}
 
         {receiptStep === "done" && (
@@ -1237,17 +1345,6 @@ export default function FrontDeskDisplay() {
           <span className="text-base tracking-widest uppercase" style={{ color: SUBTLE }}>{t.kioskReady}</span>
         </div>
       </div>
-      <div className="absolute bottom-6 left-0 right-0 flex items-center justify-center gap-3 flex-wrap px-8 z-20"
-        onPointerDown={e => e.stopPropagation()}>
-        {KIOSK_LANGS.map(({ code, label }) => (
-          <button key={code}
-            onPointerDown={e => { e.stopPropagation(); setLang(code); }}
-            className="px-5 py-2.5 rounded-full text-base font-semibold transition-all duration-150 active:scale-95"
-            style={{ background: lang === code ? PRIMARY : SURFACE, color: lang === code ? "#fff" : MUTED, border: `1.5px solid ${lang === code ? PRIMARY : BORDER}`, boxShadow: SHADOW, cursor: "pointer" }}>
-            {label}
-          </button>
-        ))}
-      </div>
     </div>
   );
 
@@ -1289,7 +1386,7 @@ export default function FrontDeskDisplay() {
           </div>
         )}
       </div>
-      <div className="flex-1 flex flex-col items-center justify-center gap-5 px-8">
+      <div className={`flex-1 flex flex-col items-center justify-center gap-5 px-8 ${shakeClass}`} onAnimationEnd={onShakeEnd} data-testid="fd-phone-shake">
         {bookingPhoneSent ? (
           <div className="flex flex-col items-center gap-6 text-center">
             <div className="w-28 h-28 rounded-full flex items-center justify-center shadow-xl" style={{ background: `linear-gradient(135deg, ${PRIMARY}, #a78bfa)` }}>

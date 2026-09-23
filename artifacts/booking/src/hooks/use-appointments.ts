@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
 import type { InsertAppointment } from "@shared/schema";
 import { useSelectedStore } from "@/hooks/use-store";
-import { storeLocalToUtc } from "@/lib/timezone";
+import { storeLocalToUtc, getNowInTimezone } from "@/lib/timezone";
 import { appointmentsCacheDB, type LocalBooking } from "@/lib/appointments-cache-db";
 import { actionQueueDB } from "@/lib/action-queue-db";
 import { useSnapshot } from "@/hooks/use-snapshot";
@@ -20,7 +20,11 @@ type AppointmentFilters = {
   staffId?: number;
 };
 
-function todayDateStr(): string {
+function todayDateStr(timezone?: string): string {
+  if (timezone) {
+    const now = getNowInTimezone(timezone);
+    return now.toISOString().slice(0, 10);
+  }
   return new Date().toISOString().slice(0, 10);
 }
 
@@ -60,9 +64,10 @@ function localBookingToAppointment(b: LocalBooking): any {
 export function useAppointments(filters?: AppointmentFilters) {
   const { selectedStore } = useSelectedStore();
   const storeId = selectedStore?.id;
+  const storeTimezone = selectedStore?.timezone || "UTC";
 
-  const fromDate = filters?.from ?? todayDateStr();
-  const toDate = filters?.to ?? todayDateStr();
+  const fromDate = filters?.from ?? todayDateStr(storeTimezone);
+  const toDate = filters?.to ?? todayDateStr(storeTimezone);
 
   const queryKey = [api.appointments.list.path, storeId, filters];
   return useQuery({

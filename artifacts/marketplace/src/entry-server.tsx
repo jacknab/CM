@@ -383,10 +383,16 @@ export async function render(url: string, apiOrigin: string, publicOrigin: strin
       try {
         const salon: SalonProfile = await getSalonBySlug(slug);
         queryClient.setQueryData(getGetSalonBySlugQueryKey(slug), salon);
+        // Only a claimed listing (a real, paying Certxa customer — bookingUrl
+        // is only ever set from a live store's bookingSlug, see salonApi.ts)
+        // is indexable. An unclaimed listing is boilerplate, AI-summarized
+        // third-party data Certxa doesn't represent; indexing ~50k of those
+        // was a real Google structured-data policy risk and a plausible
+        // driver of a sitewide quality discount (see GEO-AUDIT-REPORT.md).
+        // This mirrors getClaimedSalonList()'s own gating in salonData.ts —
+        // keep both in sync.
+        const isVerified = !!salon.bookingUrl;
         const ratingStr = salon.rating > 0 ? ` Rated ${salon.rating}/5 from ${salon.reviewCount} reviews.` : '';
-        // Every real salon record is indexable now — sitemap and page-level
-        // robots directives both cover the full dataset, not just listings
-        // claimed by a paying Certxa customer (see GEO-AUDIT-REPORT.md).
         // Title uses city/state, not the full street address — the address
         // was pushing many titles past Semrush's/Google's ~60-char length
         // guidance (a real "title too long" finding on ~26 salon pages).
@@ -398,7 +404,7 @@ export async function render(url: string, apiOrigin: string, publicOrigin: strin
           cityState ? `${salon.name} | Nail Salon in ${cityState}` : `${salon.name} | Nail Salon`,
           `${salon.name} is a nail salon located at ${salon.address}.${ratingStr}`,
           canonical,
-          'index, follow, max-image-preview:large, max-snippet:-1',
+          isVerified ? 'index, follow, max-image-preview:large, max-snippet:-1' : 'noindex, follow',
         );
         const stateName = STATE_NAMES[salon.state] || salon.state;
         const openingHours = (salon.hours || [])
@@ -432,7 +438,11 @@ export async function render(url: string, apiOrigin: string, publicOrigin: strin
             ? { geo: { '@type': 'GeoCoordinates', latitude: salon.latitude, longitude: salon.longitude } }
             : {}),
           ...(openingHours.length ? { openingHoursSpecification: openingHours } : {}),
-          ...(salon.rating > 0 && salon.reviewCount > 0
+          // Also gated on isVerified: asserting a third party's review count
+          // on a page for a business that hasn't claimed its listing (and
+          // has no visible Review content on the page backing the number)
+          // is what unclaimed pages were flagged for — see isVerified above.
+          ...(isVerified && salon.rating > 0 && salon.reviewCount > 0
             ? { aggregateRating: { '@type': 'AggregateRating', ratingValue: salon.rating, reviewCount: salon.reviewCount } }
             : {}),
           ...(salon.services?.length

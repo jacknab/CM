@@ -20,17 +20,9 @@ define('PAGE_SCHEMA', json_encode([
       ['@type'=>'Question','name'=>'How does the kiosk help get more Google reviews?','acceptedAnswer'=>['@type'=>'Answer','text'=>'After a client\'s service is complete, Certxa automatically sends them an SMS asking about their experience. Happy clients are guided directly to your Google review page with one tap — making it effortless to collect 5-star reviews without any awkward in-person asks.']],
     ],
   ],
-  [
-    '@type'       => 'HowTo',
-    'name'        => 'How the Certxa nail salon check-in kiosk works',
-    'description' => 'How a walk-in client checks themselves in on the Certxa kiosk tablet, in four steps.',
-    'step' => [
-      ['@type'=>'HowToStep','position'=>1,'name'=>'Tap the kiosk','text'=>'The client walks up to the iPad or Android tablet on your counter and taps to start. No staff needed — the screen guides them.','url'=>'https://certxa.com/checkin-kiosk#how-it-works'],
-      ['@type'=>'HowToStep','position'=>2,'name'=>'Enter phone number','text'=>'They type their number on the on-screen numpad. Returning clients are recognised and welcomed back by name.','url'=>'https://certxa.com/checkin-kiosk#how-it-works'],
-      ['@type'=>'HowToStep','position'=>3,'name'=>'Pick a service','text'=>'They select from your live service menu and optionally choose a preferred nail technician — or tap "any available".','url'=>'https://certxa.com/checkin-kiosk#how-it-works'],
-      ['@type'=>'HowToStep','position'=>4,'name'=>'Ticket prints automatically','text'=>'A check-in ticket fires to your front desk printer instantly and the client is added to your live waitlist. The next available staff member picks it up.','url'=>'https://certxa.com/checkin-kiosk#how-it-works'],
-    ],
-  ],
+  // HowTo removed 2026-09-22 — Google discontinued HowTo rich results in
+  // Sep 2023; it was pure page weight with no search benefit (see
+  // GEO-AUDIT-REPORT.md).
   // Canonical SoftwareApplication (@id #software) is injected site-wide by includes/header.php.
 ]));
 require __DIR__ . '/../includes/header.php';

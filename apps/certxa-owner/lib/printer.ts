@@ -1,8 +1,8 @@
 /**
  * printer.ts — Thermal receipt printer integration
  *
- * Supports Bluetooth (BLE) and USB thermal printers on Android via
- * react-native-thermal-receipt-printer-image-qr.
+ * Supports Bluetooth (BLE), USB, and network (Ethernet/WiFi, raw ESC/POS over TCP port 9100)
+ * thermal printers on Android via react-native-thermal-receipt-printer-image-qr.
  *
  * Receipt layout matches the Certxa receipt template:
  *   • Store header (name / address / phone / email)
@@ -30,15 +30,19 @@ export type { CardDetails, ReceiptItem, ReceiptData };
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface PrinterDevice {
-  type:    'bluetooth' | 'usb';
-  /** Bluetooth MAC address or USB "vendorId/productId" composite key */
+  type:    'bluetooth' | 'usb' | 'net';
+  /** Bluetooth MAC address, USB "vendorId/productId" composite key, or the printer's IP address for 'net' */
   address: string;
   name:    string;
   /** Raw vendor_id for USB devices */
   vendorId?:  string;
   /** Raw product_id for USB devices */
   productId?: string;
+  /** TCP port for 'net' devices — every ESC/POS network printer listens on 9100 unless reconfigured. */
+  port?: number;
 }
+
+const DEFAULT_NET_PORT = 9100;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -48,6 +52,7 @@ const STORAGE_KEY = '@certxa_saved_printer';
 
 let _BLE: any = null;
 let _USB: any = null;
+let _NET: any = null;
 let _nativeLoaded = false;
 
 function loadNative() {
@@ -58,6 +63,7 @@ function loadNative() {
     const mod = require('react-native-thermal-receipt-printer-image-qr');
     _BLE = mod.BLEPrinter;
     _USB = mod.USBPrinter;
+    _NET = mod.NetPrinter;
   } catch {
     // Native module not linked (Expo Go / simulator) — all ops are no-ops.
     console.warn('[Printer] Native thermal printer module not available.');
@@ -81,6 +87,13 @@ export async function savePrinter(device: PrinterDevice): Promise<void> {
 
 export async function clearSavedPrinter(): Promise<void> {
   await AsyncStorage.removeItem(STORAGE_KEY);
+}
+
+/** Loose IPv4 check (each octet 0-255) — enough to catch typos before we try to open a socket to it. */
+export function isValidIPv4(ip: string): boolean {
+  const parts = ip.trim().split('.');
+  if (parts.length !== 4) return false;
+  return parts.every((p) => /^\d{1,3}$/.test(p) && Number(p) <= 255);
 }
 
 // ── Scanner ───────────────────────────────────────────────────────────────────
@@ -173,7 +186,7 @@ async function listUsbDevices(): Promise<PrinterDevice[]> {
  */
 export async function resolvePrinter(): Promise<PrinterDevice> {
   const saved = await getSavedPrinter();
-  if (saved?.type === 'bluetooth') return saved;
+  if (saved?.type === 'bluetooth' || saved?.type === 'net') return saved;
 
   loadNative();
   if (!_USB) throw new Error('USB printing is not available in this build of the app.');
@@ -199,7 +212,14 @@ async function ensureUsbReady(device: PrinterDevice): Promise<void> {
   loadNative();
   if (!device.vendorId || !device.productId) throw new Error('USB printer missing vendor/product ID');
   await _USB.init();
-  await _USB.connectPrinter(device.vendorId, device.productId); // requests USB permission if needed
+  // The native module's connectPrinter(vendorId, productId, ...) declares both as Java `Integer` — the JS wrapper does
+  // no conversion, so passing the strings PrinterDevice stores them as (needed for AsyncStorage + display) crashes the
+  // app: the old RN bridge throws trying to marshal a JS string into a native Integer argument. Convert at the call
+  // boundary only; every other use of vendorId/productId (persistence, matching, display) keeps them as strings.
+  const vid = Number(device.vendorId);
+  const pid = Number(device.productId);
+  if (!Number.isFinite(vid) || !Number.isFinite(pid)) throw new Error('USB printer has an invalid vendor/product ID');
+  await _USB.connectPrinter(vid, pid); // requests USB permission if needed
 
   const native = (NativeModules as any).RNUSBPrinter;
   const deadline = Date.now() + USB_READY_TIMEOUT_MS;
@@ -214,7 +234,7 @@ async function ensureUsbReady(device: PrinterDevice): Promise<void> {
     if (Date.now() > deadline) {
       throw new Error('The printer is not accessible. When Android asks to allow USB access for the printer, tap Allow — then try again.');
     }
-    if (!asked) { asked = true; await _USB.connectPrinter(device.vendorId, device.productId).catch(() => {}); }
+    if (!asked) { asked = true; await _USB.connectPrinter(vid, pid).catch(() => {}); }
     await new Promise<void>((r) => setTimeout(r, 700));
   }
 }
@@ -226,6 +246,14 @@ async function getActivePrinterModule(device: PrinterDevice): Promise<any> {
     await _BLE.init();
     await _BLE.connectPrinter(device.address);
     return _BLE;
+  }
+  if (device.type === 'net') {
+    if (!_NET) throw new Error('Network printer module not available');
+    await _NET.init();
+    // host and port must reach the native bridge as their real types (a string port here would hit the
+    // same JS-string-into-Java-Integer bridge crash fixed for USB above).
+    await _NET.connectPrinter(device.address, Number(device.port) || DEFAULT_NET_PORT, 8000);
+    return _NET;
   }
   if (!_USB) throw new Error('USB printer module not available');
   await ensureUsbReady(device);
@@ -272,6 +300,12 @@ export async function openCashDrawer(): Promise<void> {
   if (printer.type === 'usb') {
     await ensureUsbReady(printer);
     native = (NativeModules as any).RNUSBPrinter;
+  } else if (printer.type === 'net') {
+    loadNative();
+    if (!_NET) throw new Error('Network printer module not available');
+    await _NET.init();
+    await _NET.connectPrinter(printer.address, Number(printer.port) || DEFAULT_NET_PORT, 8000);
+    native = (NativeModules as any).RNNetPrinter;
   } else {
     loadNative();
     if (!_BLE) throw new Error('Bluetooth printer module not available');

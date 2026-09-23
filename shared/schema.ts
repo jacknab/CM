@@ -570,6 +570,10 @@ export const appointments = pgTable("appointments", {
   // Short random token for the client-facing "manage my booking" link sent in
   // confirmation/reminder SMS (certxa.com/b/<token>). Never the numeric id.
   manageToken: text("manage_token"),
+  // What the client's web receipt (certxa.com/receipt/<manage_token> — reuses the token above) shows — a snapshot
+  // taken when "Text Receipt" is sent (Nail POS checkout), so the link keeps showing the same numbers no matter what
+  // happens to the row afterward. Null until a receipt has actually been texted for this appointment.
+  receiptSnapshot: jsonb("receipt_snapshot"),
   // ── Payment tracking (set at booking time) ────────────────────────────────
   paymentPolicy:           text("payment_policy").notNull().default("none"),
   depositCollected:        decimal("deposit_collected", { precision: 10, scale: 2 }),

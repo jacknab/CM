@@ -1,5 +1,5 @@
 /**
- * PrinterSetupModal.tsx — Bluetooth / USB thermal printer setup
+ * PrinterSetupModal.tsx — Bluetooth / USB / Network thermal printer setup
  *
  * Lets the user scan for nearby printers, connect to one, test-print,
  * and save the preference so the POS can print receipts automatically.
@@ -7,17 +7,18 @@
  * Tab layout:
  *   BLUETOOTH  — paired & nearby BLE printers
  *   USB        — USB-connected printers (OTG cable)
+ *   NETWORK    — Ethernet/WiFi printers, reached by IP over raw ESC/POS (port 9100)
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
 import {
-  View, Text, Modal, TouchableOpacity, FlatList,
+  View, Text, Modal, TouchableOpacity, FlatList, TextInput,
   StyleSheet, ActivityIndicator, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   scanForPrinters, getSavedPrinter, savePrinter, clearSavedPrinter,
-  printTestPage, type PrinterDevice,
+  printTestPage, isValidIPv4, type PrinterDevice,
 } from '@/lib/printer';
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -37,7 +38,7 @@ const C = {
 };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type Tab     = 'bluetooth' | 'usb';
+type Tab     = 'bluetooth' | 'usb' | 'network';
 type ScanPhase = 'idle' | 'scanning' | 'connecting' | 'testing' | 'done' | 'error';
 
 interface Props {
@@ -55,11 +56,15 @@ export function PrinterSetupModal({ visible, storeName, onClose }: Props) {
   const [bleDevices, setBleDevices] = useState<PrinterDevice[]>([]);
   const [usbDevices, setUsbDevices] = useState<PrinterDevice[]>([]);
   const [saved, setSaved]           = useState<PrinterDevice | null>(null);
+  const [netIp, setNetIp]           = useState('');
 
   // Load saved printer on open
   useEffect(() => {
     if (!visible) return;
-    getSavedPrinter().then(setSaved).catch(() => {});
+    getSavedPrinter().then((d) => {
+      setSaved(d);
+      if (d?.type === 'net') setNetIp(d.address);
+    }).catch(() => {});
   }, [visible]);
 
   const currentDevices = tab === 'bluetooth' ? bleDevices : usbDevices;
@@ -92,6 +97,17 @@ export function PrinterSetupModal({ visible, storeName, onClose }: Props) {
       setErrorMsg(e?.message ?? 'Failed to save printer');
     }
   }, []);
+
+  // ── Connect & save a network printer by IP ───────────────────────────────────
+  const handleConnectNet = useCallback(async () => {
+    const ip = netIp.trim();
+    if (!isValidIPv4(ip)) {
+      setPhase('error');
+      setErrorMsg('Enter a valid IP address, e.g. 192.168.0.128');
+      return;
+    }
+    await handleConnect({ type: 'net', address: ip, port: 9100, name: `Network Printer (${ip})` });
+  }, [netIp, handleConnect]);
 
   // ── Test print ───────────────────────────────────────────────────────────────
   const handleTestPrint = useCallback(async () => {
@@ -148,7 +164,7 @@ export function PrinterSetupModal({ visible, storeName, onClose }: Props) {
             <View style={S.savedBanner}>
               <View style={S.savedLeft}>
                 <Ionicons
-                  name={saved.type === 'bluetooth' ? 'bluetooth' : 'hardware-chip-outline'}
+                  name={saved.type === 'bluetooth' ? 'bluetooth' : saved.type === 'net' ? 'wifi-outline' : 'hardware-chip-outline'}
                   size={16} color={C.green}
                 />
                 <View>
@@ -176,7 +192,7 @@ export function PrinterSetupModal({ visible, storeName, onClose }: Props) {
 
           {/* Tab bar */}
           <View style={S.tabs}>
-            {(['bluetooth', 'usb'] as Tab[]).map((t) => (
+            {(['bluetooth', 'usb', 'network'] as Tab[]).map((t) => (
               <TouchableOpacity
                 key={t}
                 style={[S.tab, tab === t && S.tabActive]}
@@ -184,38 +200,40 @@ export function PrinterSetupModal({ visible, storeName, onClose }: Props) {
                 disabled={isBusy}
               >
                 <Ionicons
-                  name={t === 'bluetooth' ? 'bluetooth-outline' : 'hardware-chip-outline'}
+                  name={t === 'bluetooth' ? 'bluetooth-outline' : t === 'network' ? 'wifi-outline' : 'hardware-chip-outline'}
                   size={15}
                   color={tab === t ? C.blue : C.textSub}
                 />
                 <Text style={[S.tabTxt, tab === t && S.tabTxtActive]}>
-                  {t === 'bluetooth' ? 'BLUETOOTH' : 'USB'}
+                  {t === 'bluetooth' ? 'BLUETOOTH' : t === 'network' ? 'NETWORK' : 'USB'}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          {/* Scan button */}
-          <TouchableOpacity
-            style={[S.scanBtn, isBusy && S.scanBtnDim]}
-            onPress={handleScan}
-            disabled={isBusy}
-            activeOpacity={0.85}
-          >
-            {phase === 'scanning' ? (
-              <>
-                <ActivityIndicator size="small" color={C.white} />
-                <Text style={S.scanBtnTxt}>Scanning…</Text>
-              </>
-            ) : (
-              <>
-                <Ionicons name="search-outline" size={16} color={C.white} />
-                <Text style={S.scanBtnTxt}>
-                  {tab === 'bluetooth' ? 'Scan for Bluetooth Printers' : 'Find USB Printers'}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
+          {/* Scan button (Bluetooth / USB only — Network is entered by IP below) */}
+          {tab !== 'network' && (
+            <TouchableOpacity
+              style={[S.scanBtn, isBusy && S.scanBtnDim]}
+              onPress={handleScan}
+              disabled={isBusy}
+              activeOpacity={0.85}
+            >
+              {phase === 'scanning' ? (
+                <>
+                  <ActivityIndicator size="small" color={C.white} />
+                  <Text style={S.scanBtnTxt}>Scanning…</Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="search-outline" size={16} color={C.white} />
+                  <Text style={S.scanBtnTxt}>
+                    {tab === 'bluetooth' ? 'Scan for Bluetooth Printers' : 'Find USB Printers'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
 
           {/* Status / error */}
           {phase === 'error' && (
@@ -237,8 +255,36 @@ export function PrinterSetupModal({ visible, storeName, onClose }: Props) {
             </View>
           )}
 
-          {/* Device list */}
-          {currentDevices.length === 0 && phase === 'idle' ? (
+          {/* Network tab: manual IP entry — LAN printers aren't reliably discoverable, so this is the primary path */}
+          {tab === 'network' ? (
+            <View style={S.netForm}>
+              <Text style={S.netLabel}>Printer IP address</Text>
+              <TextInput
+                style={S.netInput}
+                value={netIp}
+                onChangeText={setNetIp}
+                placeholder="192.168.0.128"
+                placeholderTextColor={C.textMute}
+                keyboardType="numbers-and-punctuation"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!isBusy}
+              />
+              <TouchableOpacity
+                style={[S.scanBtn, { marginTop: 12 }, isBusy && S.scanBtnDim]}
+                onPress={handleConnectNet}
+                disabled={isBusy}
+                activeOpacity={0.85}
+              >
+                {phase === 'connecting' ? (
+                  <ActivityIndicator size="small" color={C.white} />
+                ) : (
+                  <Ionicons name="wifi-outline" size={16} color={C.white} />
+                )}
+                <Text style={S.scanBtnTxt}>Connect & Save</Text>
+              </TouchableOpacity>
+            </View>
+          ) : currentDevices.length === 0 && phase === 'idle' ? (
             <View style={S.emptyState}>
               <Ionicons
                 name={tab === 'bluetooth' ? 'bluetooth-outline' : 'hardware-chip-outline'}
@@ -296,6 +342,8 @@ export function PrinterSetupModal({ visible, storeName, onClose }: Props) {
           <Text style={S.tip}>
             {tab === 'bluetooth'
               ? '💡 Pair the printer in Android Bluetooth settings first, then scan here.'
+              : tab === 'network'
+              ? '💡 Find the IP on the printer\'s self-test/status page, and make sure it\'s on the same WiFi network as this tablet.'
               : '💡 Use a USB OTG adapter to connect USB thermal printers.'}
           </Text>
 
@@ -374,6 +422,14 @@ const S = StyleSheet.create({
   successTxt: { fontSize: 13, color: C.green, fontWeight: '600' },
   infoBox:    { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 20, marginTop: 10, backgroundColor: '#EFF6FF', padding: 10, borderRadius: 8 },
   infoTxt:    { fontSize: 13, color: C.blue },
+
+  // Network tab
+  netForm:  { paddingHorizontal: 20, paddingTop: 16 },
+  netLabel: { fontSize: 12, fontWeight: '700', color: C.textSub, marginBottom: 6, letterSpacing: 0.3 },
+  netInput: {
+    backgroundColor: C.card, borderWidth: 1, borderColor: C.border, borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, color: C.text,
+  },
 
   // Device list
   list: { maxHeight: 280, marginTop: 10, paddingHorizontal: 20 },

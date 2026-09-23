@@ -365,7 +365,7 @@ require 'includes/nav.php';
           <div class="fv-client-shell">
             <div class="fvc-profile">
               <div class="fvc-av" style="background:linear-gradient(135deg,#a78bfa,#7c3aed)">EC</div>
-              <div class="fvc-info"><div class="fvc-name">Emma Clarke</div><div class="fvc-meta">Client since Mar 2024 · 24 visits</div></div>
+              <div class="fvc-info"><div class="fvc-name">Emma Clarke</div><div class="fvc-meta">Client since Apr 2026 · 24 visits</div></div>
               <div class="fvc-badge">VIP</div>
             </div>
             <div class="fvc-stats">

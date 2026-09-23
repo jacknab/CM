@@ -26,9 +26,13 @@ const router = Router();
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function storeId(req: Request): number | null {
-  const id = parseInt((req.query.storeId ?? req.body?.storeId ?? "") as string);
-  return isNaN(id) ? null : id;
+// Was: parsed req.query.storeId/req.body.storeId directly with no ownership check — any
+// authenticated user could read/write another store's payout ledger, checks, audit log,
+// financial reports, and contractor bank/W9 records by passing ?storeId=<victim store>.
+// Now delegates to resolveSessionStoreId, which only accepts a client-supplied hint after
+// verifying it's actually owned by the caller's session (see lib/sessionStore.ts).
+async function storeId(req: Request): Promise<number | null> {
+  return resolveSessionStoreId(req);
 }
 
 async function audit(
@@ -536,7 +540,7 @@ router.get("/contractors/by-staff/:staffId", isAuthenticated, async (req: Reques
 // MUST be registered before /contractors/:id so Express doesn't treat the
 // literal path segment "onboarding-token-statuses" as a numeric :id parameter.
 router.get("/contractors/onboarding-token-statuses", isAuthenticated, async (req: Request, res: Response): Promise<void> => {
-  const sId = storeId(req);
+  const sId = await storeId(req);
   if (!sId) { res.status(400).json({ error: "storeId required" }); return; }
 
   try {
@@ -873,7 +877,8 @@ router.delete("/contractors/:id", isAuthenticated, async (req: Request, res: Res
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   try {
     const [existing] = await db.select().from(contractors).where(eq(contractors.id, id));
-    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    const sessionStoreId = await resolveSessionStoreId(req);
+    if (!existing || !sessionStoreId || existing.storeId !== sessionStoreId) { res.status(404).json({ error: "Not found" }); return; }
     await db.update(contractors).set({ isActive: false, updatedAt: new Date() }).where(eq(contractors.id, id));
     await audit(existing.storeId, "contractor_deactivated", "contractor", id, req);
     res.json({ success: true });
@@ -1076,6 +1081,9 @@ router.get("/contractors/:id/bank-accounts", isAuthenticated, async (req: Reques
   const contractorId = parseInt(String(req.params.id), 10);
   if (isNaN(contractorId)) { res.status(400).json({ error: "Invalid id" }); return; }
   try {
+    const [contractor] = await db.select({ storeId: contractors.storeId }).from(contractors).where(eq(contractors.id, contractorId));
+    const sessionStoreId = await resolveSessionStoreId(req);
+    if (!contractor || !sessionStoreId || contractor.storeId !== sessionStoreId) { res.status(404).json({ error: "Contractor not found" }); return; }
     const rows = await db.select().from(contractorBankAccounts).where(eq(contractorBankAccounts.contractorId, contractorId));
     res.json(rows);
   } catch (err) {
@@ -1287,7 +1295,7 @@ router.delete("/deduction-rules/:id", isAuthenticated, async (req: Request, res:
 
 // GET /api/contractor-payouts/runs?storeId=X
 router.get("/runs", isAuthenticated, async (req: Request, res: Response): Promise<void> => {
-  const sId = storeId(req);
+  const sId = await storeId(req);
   if (!sId) { res.status(400).json({ error: "storeId required" }); return; }
   try {
     const runs = await db
@@ -1306,7 +1314,10 @@ router.get("/runs/:id", isAuthenticated, async (req: Request, res: Response): Pr
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   try {
     const [run] = await db.select().from(payoutRuns).where(eq(payoutRuns.id, id));
-    if (!run) { res.status(404).json({ error: "Payout run not found" }); return; }
+    const sessionStoreId = await resolveSessionStoreId(req);
+    if (!run || !sessionStoreId || run.storeId !== sessionStoreId) {
+      res.status(404).json({ error: "Payout run not found" }); return;
+    }
 
     const items = await db
       .select({
@@ -1398,6 +1409,10 @@ router.post("/runs/:id/cancel", isAuthenticated, async (req: Request, res: Respo
   try {
     const [run] = await db.select().from(payoutRuns).where(eq(payoutRuns.id, id));
     if (!run) { res.status(404).json({ error: "Not found" }); return; }
+    const sessionStoreId = await resolveSessionStoreId(req);
+    if (!sessionStoreId || run.storeId !== sessionStoreId) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
     if (run.status === "completed") {
       res.status(400).json({ error: "Cannot cancel a completed run" }); return;
     }
@@ -1434,7 +1449,7 @@ router.put("/runs/:id/items/:itemId", isAuthenticated, async (req: Request, res:
 
 // GET /api/contractor-payouts/checks?storeId=X
 router.get("/checks", isAuthenticated, async (req: Request, res: Response): Promise<void> => {
-  const sId = storeId(req);
+  const sId = await storeId(req);
   if (!sId) { res.status(400).json({ error: "storeId required" }); return; }
   try {
     const rows = await db
@@ -1474,7 +1489,8 @@ router.post("/checks/:id/mark-printed", isAuthenticated, async (req: Request, re
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   try {
     const [chk] = await db.select().from(payoutChecks).where(eq(payoutChecks.id, id));
-    if (!chk) { res.status(404).json({ error: "Check not found" }); return; }
+    const sessionStoreId = await resolveSessionStoreId(req);
+    if (!chk || !sessionStoreId || chk.storeId !== sessionStoreId) { res.status(404).json({ error: "Check not found" }); return; }
     await db.update(payoutChecks)
       .set({ printStatus: "printed", printedAt: new Date() })
       .where(eq(payoutChecks.id, id));
@@ -1491,7 +1507,8 @@ router.post("/checks/:id/void", isAuthenticated, async (req: Request, res: Respo
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   try {
     const [chk] = await db.select().from(payoutChecks).where(eq(payoutChecks.id, id));
-    if (!chk) { res.status(404).json({ error: "Check not found" }); return; }
+    const sessionStoreId = await resolveSessionStoreId(req);
+    if (!chk || !sessionStoreId || chk.storeId !== sessionStoreId) { res.status(404).json({ error: "Check not found" }); return; }
     if (chk.voidStatus === "voided") { res.status(400).json({ error: "Check already voided" }); return; }
     await db.update(payoutChecks)
       .set({ voidStatus: "voided", voidedAt: new Date() })
@@ -1508,6 +1525,9 @@ router.post("/checks/:id/mark-cleared", isAuthenticated, async (req: Request, re
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   try {
+    const [chk] = await db.select({ storeId: payoutChecks.storeId }).from(payoutChecks).where(eq(payoutChecks.id, id));
+    const sessionStoreId = await resolveSessionStoreId(req);
+    if (!chk || !sessionStoreId || chk.storeId !== sessionStoreId) { res.status(404).json({ error: "Check not found" }); return; }
     await db.update(payoutChecks)
       .set({ clearedStatus: "cleared", clearedAt: new Date() })
       .where(eq(payoutChecks.id, id));
@@ -1609,6 +1629,9 @@ router.get("/w9/:contractorId", isAuthenticated, async (req: Request, res: Respo
   const contractorId = parseInt(String(req.params.contractorId), 10);
   if (isNaN(contractorId)) { res.status(400).json({ error: "Invalid contractorId" }); return; }
   try {
+    const [contractor] = await db.select({ storeId: contractors.storeId }).from(contractors).where(eq(contractors.id, contractorId));
+    const sessionStoreId = await resolveSessionStoreId(req);
+    if (!contractor || !sessionStoreId || contractor.storeId !== sessionStoreId) { res.status(404).json({ error: "Contractor not found" }); return; }
     const rows = await db.select().from(payoutW9Records)
       .where(eq(payoutW9Records.contractorId, contractorId))
       .orderBy(desc(payoutW9Records.year));
@@ -1807,7 +1830,7 @@ router.get("/onboarding/status", isAuthenticated, async (req: Request, res: Resp
 
 // GET /api/contractor-payouts/overview?storeId=X
 router.get("/overview", isAuthenticated, async (req: Request, res: Response): Promise<void> => {
-  const sId = storeId(req);
+  const sId = await storeId(req);
   if (!sId) { res.status(400).json({ error: "storeId required" }); return; }
   try {
     const now = new Date();
@@ -1876,7 +1899,7 @@ router.get("/overview", isAuthenticated, async (req: Request, res: Response): Pr
 // payable status, and roll-up alerts. Schedule config is fetched separately
 // via the existing GET /payroll-schedule (unchanged).
 router.get("/hub-summary", isAuthenticated, async (req: Request, res: Response): Promise<void> => {
-  const sId = storeId(req);
+  const sId = await storeId(req);
   if (!sId) { res.status(400).json({ error: "storeId required" }); return; }
   try {
     const [contractorRows, pendingByContractor, staffRows, pendingByStaff] = await Promise.all([
@@ -1957,7 +1980,7 @@ router.get("/hub-summary", isAuthenticated, async (req: Request, res: Response):
 
 // GET /api/contractor-payouts/ledger?storeId=X&contractorId=X&type=earning|deduction|payout&limit=200&offset=0
 router.get("/ledger", isAuthenticated, async (req: Request, res: Response): Promise<void> => {
-  const sId = storeId(req);
+  const sId = await storeId(req);
   if (!sId) { res.status(400).json({ error: "storeId required" }); return; }
   try {
     const contractorIdFilter = req.query.contractorId ? parseInt(req.query.contractorId as string) : null;
@@ -2124,7 +2147,7 @@ router.get("/ledger", isAuthenticated, async (req: Request, res: Response): Prom
 
 // POST /api/contractor-payouts/ledger/adjustment
 router.post("/ledger/adjustment", isAuthenticated, async (req: Request, res: Response): Promise<void> => {
-  const sId = storeId(req);
+  const sId = await storeId(req);
   if (!sId) { res.status(400).json({ error: "storeId required" }); return; }
   try {
     const { contractorId, amount, category, description, date } = req.body;
@@ -2157,7 +2180,7 @@ router.post("/ledger/adjustment", isAuthenticated, async (req: Request, res: Res
 // Returns all adjustments for a specific contractor so owners (and future
 // staff portal) can see every credit/charge applied to their account.
 router.get("/contractors/:id/adjustments", isAuthenticated, async (req: Request, res: Response): Promise<void> => {
-  const sId = storeId(req);
+  const sId = await storeId(req);
   if (!sId) { res.status(400).json({ error: "storeId required" }); return; }
   const contractorId = parseInt(String(req.params.id));
   if (isNaN(contractorId)) { res.status(400).json({ error: "Invalid contractor id" }); return; }
@@ -2181,7 +2204,7 @@ router.get("/contractors/:id/adjustments", isAuthenticated, async (req: Request,
 
 // GET /api/contractor-payouts/audit-logs?storeId=X
 router.get("/audit-logs", isAuthenticated, async (req: Request, res: Response): Promise<void> => {
-  const sId = storeId(req);
+  const sId = await storeId(req);
   if (!sId) { res.status(400).json({ error: "storeId required" }); return; }
   try {
     const limit = parseInt((req.query.limit as string) ?? "50");
@@ -2199,7 +2222,7 @@ router.get("/audit-logs", isAuthenticated, async (req: Request, res: Response): 
 
 // GET /api/contractor-payouts/reports?storeId=X&year=2026
 router.get("/reports", isAuthenticated, async (req: Request, res: Response): Promise<void> => {
-  const sId = storeId(req);
+  const sId = await storeId(req);
   if (!sId) { res.status(400).json({ error: "storeId required" }); return; }
   const year = parseInt((req.query.year as string) ?? String(new Date().getFullYear()));
 

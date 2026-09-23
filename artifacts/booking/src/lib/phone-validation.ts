@@ -1,24 +1,15 @@
 /**
- * Structural validation for North American Numbering Plan (NANP) numbers:
- * NXX-NXX-XXXX, where each N is 2-9 and neither the area code nor the
- * exchange code may be an "N11" pattern (211/411/511/611/711/811/911 are
- * reserved service codes, not assignable area/exchange codes).
+ * Phone-number rules for every on-screen phone keypad (check-in, walk-in, client lookup, kiosk, front-desk display).
+ * The rules live in shared/usPhone.ts — exactly 10 digits, a currently assigned US geographic area code (no toll-free, reserved
+ * or special-use codes), an exchange that starts 2–9 and isn't reserved / fictitious / one repeated digit.
  *
- * `isValidNanpPrefix` is safe to call after every keystroke on a digit-by-
- * digit keypad — it validates whatever has been typed so far (1-10 digits)
- * against the positions that are already determined, so a bad digit is
- * caught the instant it makes the number structurally impossible rather
- * than waiting for all 10 digits.
+ * `isValidNanpPrefix` is safe to call after every keystroke — it says whether what has been typed so far can still become a real
+ * number, so a keypad can refuse just the digit that makes it impossible. `isValidNanpNumber` is the check for a complete number.
+ * (The names are from when this only checked the numbering-plan shape; they are kept so every keypad keeps working.)
  */
-export function isValidNanpPrefix(digits: string): boolean {
-  if (!/^\d{0,10}$/.test(digits)) return false;
-  if (digits.length >= 1 && !/[2-9]/.test(digits[0])) return false; // area code N
-  if (digits.length >= 3 && digits[1] === "1" && digits[2] === "1") return false; // area code N11
-  if (digits.length >= 4 && !/[2-9]/.test(digits[3])) return false; // exchange code N
-  if (digits.length >= 6 && digits[4] === "1" && digits[5] === "1") return false; // exchange N11
-  return true;
-}
+import { isValidUsPhone, isValidUsPhonePrefix, usPhoneProblem } from "@shared/usPhone";
 
-export function isValidNanpNumber(digits: string): boolean {
-  return digits.length === 10 && isValidNanpPrefix(digits);
-}
+export const isValidNanpPrefix = isValidUsPhonePrefix;
+export const isValidNanpNumber = isValidUsPhone;
+/** Why a complete number was refused, in words (null when it is fine). */
+export const phoneProblem = usPhoneProblem;

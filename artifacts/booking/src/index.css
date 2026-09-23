@@ -437,6 +437,15 @@
     @apply border-border;
   }
 
+  html {
+    /* Some mobile browsers (notably Android Chrome) auto-boost font size in
+       narrow text columns ("font boosting"), independent of the viewport-lock
+       scale below — this can distort fixed-px layouts (e.g. the /nail POS
+       screen) that never expected their text to grow. Opt out everywhere. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-family: var(--font-body);
@@ -626,3 +635,9 @@ html.native-app body {
 html.native-app {
   overflow-x: hidden;
 }
+
+/* Rejected-key shake (see hooks/use-shake.ts): a and b are identical so each new rejection restarts the animation. */
+@keyframes cx-shake-a { 0%, 100% { transform: translateX(0); } 15% { transform: translateX(-14px); } 30% { transform: translateX(12px); } 45% { transform: translateX(-9px); } 60% { transform: translateX(7px); } 75% { transform: translateX(-4px); } 90% { transform: translateX(2px); } }
+@keyframes cx-shake-b { 0%, 100% { transform: translateX(0); } 15% { transform: translateX(-14px); } 30% { transform: translateX(12px); } 45% { transform: translateX(-9px); } 60% { transform: translateX(7px); } 75% { transform: translateX(-4px); } 90% { transform: translateX(2px); } }
+.cx-shake-a { animation: cx-shake-a 0.45s ease-in-out; }
+.cx-shake-b { animation: cx-shake-b 0.45s ease-in-out; }

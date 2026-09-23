@@ -4,6 +4,8 @@ import { crews, serviceOrders, orderNotes, crewLocations } from "../../shared/sc
 import { eq, and, asc, desc, isNotNull, sql } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { isAuthenticated } from "../auth";
+import { resolveSessionStoreId } from "../lib/sessionStore";
 
 const router = Router();
 const JWT_SECRET = process.env.CREW_JWT_SECRET ?? "certxa-crew-jwt-2025";
@@ -91,16 +93,23 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// ─── SET PIN (dashboard only — no crew auth required, uses store session) ─────
+// ─── SET PIN (dashboard only — uses the owner/staff store session) ────────────
+// Was previously reachable with no auth at all despite the comment's claim —
+// crewId/storeId/phone/pin came straight from the body, letting anyone who
+// could guess a crewId+storeId pair set that crew member's login PIN and then
+// obtain a crew JWT via /login. Now requires a real session and verifies the
+// target crew belongs to the caller's own store.
 
-router.post("/set-pin", async (req, res) => {
+router.post("/set-pin", isAuthenticated, async (req, res) => {
   try {
-    const { crewId, storeId, phone, pin } = req.body;
-    if (!crewId || !storeId || !pin) return res.status(400).json({ error: "crewId, storeId, pin required" });
+    const { crewId, phone, pin } = req.body;
+    if (!crewId || !pin) return res.status(400).json({ error: "crewId, pin required" });
     if (String(pin).length < 4 || String(pin).length > 8) return res.status(400).json({ error: "PIN must be 4–8 digits" });
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(403).json({ error: "Forbidden" });
 
     const pinHash = await bcrypt.hash(String(pin), 10);
-    const [updated] = await db.update(crews).set({ phone: phone ?? null, pinHash }).where(and(eq(crews.id, Number(crewId)), eq(crews.storeId, Number(storeId)))).returning();
+    const [updated] = await db.update(crews).set({ phone: phone ?? null, pinHash }).where(and(eq(crews.id, Number(crewId)), eq(crews.storeId, storeId))).returning();
     if (!updated) return res.status(404).json({ error: "Crew not found" });
     res.json({ success: true, crew: { id: updated.id, name: updated.name, phone: updated.phone, hasPinSet: !!updated.pinHash } });
   } catch (err) {

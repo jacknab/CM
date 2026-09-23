@@ -7,7 +7,7 @@ import {
   Sparkles, ShoppingBag, Gift, Crown, BadgePercent, Award, Coins,
   SplitSquareHorizontal, Calculator, Undo2, Ban, DoorOpen, Printer, Search,
   Users, Star, Percent, CreditCard, ListOrdered, Layers, Tag, Wallet,
-  ScanSearch, Ticket, ReceiptText, HandCoins, Repeat2, ChevronRight, ChevronLeft,
+  ScanSearch, Ticket, ReceiptText, HandCoins, Repeat2, ChevronRight, ChevronLeft, Zap,
   type LucideIcon,
 } from "lucide-react";
 
@@ -15,7 +15,7 @@ export const POS_ICONS: Record<string, LucideIcon> = {
   Sparkles, ShoppingBag, Gift, Crown, BadgePercent, Award, Coins,
   SplitSquareHorizontal, Calculator, Undo2, Ban, DoorOpen, Printer, Search,
   Users, Star, Percent, CreditCard, ListOrdered, Layers, Tag, Wallet,
-  ScanSearch, Ticket, ReceiptText, HandCoins, Repeat2, ChevronRight, ChevronLeft,
+  ScanSearch, Ticket, ReceiptText, HandCoins, Repeat2, ChevronRight, ChevronLeft, Zap,
 };
 
 /** Resolve an icon name; returns undefined for unknown names (renderer draws a fallback). */

@@ -28,8 +28,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import * as NavigationBar from 'expo-navigation-bar';
+import * as Brightness from 'expo-brightness';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { Colors } from '@/constants/colors';
 import { apiCaller, notifySessionReady } from '@/lib/terminalBridge';
+import { useIdleSleep } from '@/lib/idleSleep';
 import { POSModal, type POSData } from '@/components/POSModal';
 import { viewportLockJs } from '@/lib/viewportLock';
 import { printReceipt, openCashDrawer, type ReceiptData } from '@/lib/printer';
@@ -119,6 +122,23 @@ const BRIDGE_JS = `
     document.addEventListener('touchcancel', _clearExit, { passive: true });
   })();
 
+  // ── Idle-sleep activity ping ──────────────────────────────────────────────
+  // A native View's onTouchStart does not reliably fire for touches that begin inside this
+  // WebView (Android's WebView consumes them for its own scroll/zoom handling), so activity
+  // inside the page has to be reported explicitly. Throttled — the native side only needs to
+  // know "still active", not every tap.
+  (function() {
+    var _lastPing = 0;
+    function _ping() {
+      var now = Date.now();
+      if (now - _lastPing < 5000) return;
+      _lastPing = now;
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'CERTXA_ACTIVITY' }));
+    }
+    document.addEventListener('touchstart', _ping, { capture: true, passive: true });
+    document.addEventListener('pointerdown', _ping, { capture: true, passive: true });
+  })();
+
 })();
 true;
 `;
@@ -165,6 +185,32 @@ export default function PortalScreen() {
   // Read connected-reader state from the Terminal SDK — used only for the
   // floating status badge; all discovery/payment logic stays in POSModal.
   const { connectedReader } = useStripeTerminal();
+
+  // ── Battery-saving idle sleep ──────────────────────────────────────────────
+  // These POS tablets are deliberately kept from ever really sleeping (below) — most tablets
+  // have no reliable hardware tap-to-wake, and a real OS sleep would risk a PIN-lock screen
+  // mid-shift. Instead the app dims itself after IDLE_SLEEP_MS idle; see lib/idleSleep.ts.
+  const { asleep, recordActivity, wake } = useIdleSleep();
+  const savedBrightness = useRef<number | null>(null);
+  useEffect(() => {
+    activateKeepAwakeAsync().catch(() => {});
+    return () => { deactivateKeepAwake(); };
+  }, []);
+  useEffect(() => {
+    if (asleep) {
+      // Read the current level BEFORE dimming (not concurrently) so a slow read can never
+      // race the write and capture 0 as the "original" brightness to restore later.
+      (async () => {
+        try {
+          savedBrightness.current = await Brightness.getBrightnessAsync();
+          await Brightness.setBrightnessAsync(0);
+        } catch {}
+      })();
+    } else if (savedBrightness.current !== null) {
+      Brightness.setBrightnessAsync(savedBrightness.current).catch(() => {});
+      savedBrightness.current = null;
+    }
+  }, [asleep]);
 
   // ── Kiosk mode: hide Android nav bar + status bar, re-hide on swipe ──────────
   useEffect(() => {
@@ -234,6 +280,9 @@ export default function PortalScreen() {
       const msg = JSON.parse(event.nativeEvent.data);
 
       switch (msg.type) {
+        case 'CERTXA_ACTIVITY':
+          recordActivity();
+          break;
         case 'OPEN_POS': {
           const { appointmentId, clientName, serviceName, servicePrice, addons,
                   subtotal, tax, grandTotal, storeName, storeAddress, storePhone } = msg;
@@ -352,7 +401,7 @@ export default function PortalScreen() {
           break;
       }
     } catch {}
-  }, []);
+  }, [recordActivity]);
 
   // ── After POS payment, dispatch the CustomEvent the web app listens for ────
   // Calendar.tsx listens for 'certxa_native_payment_complete' and calls
@@ -418,7 +467,11 @@ export default function PortalScreen() {
   }, []);
 
   return (
-    <View style={[styles.root, { paddingTop: Platform.OS === 'android' ? insets.top : 0 }]}>
+    <View
+      style={[styles.root, { paddingTop: Platform.OS === 'android' ? insets.top : 0 }]}
+      onTouchStart={recordActivity}
+      onTouchMove={recordActivity}
+    >
       {/* Kiosk mode: hide status bar entirely */}
       <StatusBar hidden />
       {/* WebView — always mounted, even when POS modal is showing */}
@@ -558,6 +611,13 @@ export default function PortalScreen() {
         activeOpacity={1}
       />
 
+      {/* Idle-sleep overlay — battery saving. Topmost so it covers every other overlay too;
+          any touch wakes it (see useIdleSleep). Opaque regardless of the brightness dim, so a
+          wake tap never also lands on whatever button happened to be underneath. */}
+      {asleep && (
+        <View style={styles.sleepOverlay} onTouchStart={wake} />
+      )}
+
     </View>
   );
 }
@@ -567,6 +627,7 @@ export default function PortalScreen() {
 const styles = StyleSheet.create({
   root:           { flex: 1, backgroundColor: Colors.background },
   devTrigger:     { position: 'absolute', top: 0, left: 0, width: 44, height: 44 },
+  sleepOverlay:   { ...StyleSheet.absoluteFillObject, backgroundColor: '#000', zIndex: 999, elevation: 999 },
   webview:        { flex: 1, backgroundColor: Colors.background },
   loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' },
   errorOverlay:   { ...StyleSheet.absoluteFillObject, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },

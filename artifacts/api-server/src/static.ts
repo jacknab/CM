@@ -93,6 +93,23 @@ export function injectSeoMetadata(template: string, seo: PageSeo): string {
   return html;
 }
 
+/** Force `noindex, nofollow` on the raw SPA shell. Every route that falls
+ * through to the final catch-all below is an authenticated in-app page
+ * (dashboard, calendar, staff tools, nail POS, etc. — see
+ * KNOWN_APP_PREFIXES); real public pages are always handled earlier by PHP,
+ * SSR, or SEO_CONFIG and never reach this point. The shell's static
+ * index.html otherwise ships a hardcoded "index, follow" meant for the
+ * marketing site, so every one of these ~80 app routes (not just the couple
+ * spot-checked in a GEO audit) was being served as crawlable — see
+ * GEO-AUDIT-REPORT.md. */
+export function injectNoindex(template: string): string {
+  const tag = '<meta name="robots" content="noindex, nofollow" />';
+  const pattern = /<meta\s+name=["']robots["'][^>]*>/i;
+  return pattern.test(template)
+    ? template.replace(pattern, tag)
+    : template.replace("</head>", `  ${tag}\n  </head>`);
+}
+
 // Static geo landing pages: served at clean URLs matching their canonical tags
 const GEO_PAGES: Array<{ route: string; file: string }> = [
   { route: "/dallas-tx-booking", file: "dallas-tx-booking.html" },
@@ -124,7 +141,7 @@ export const KNOWN_APP_PREFIXES = new Set([
   "marketplace-ads",
   "multi-location", "nail", "onboarding", "online-booking", "overview", "payments", "payouts",
   "payroll", "payroll-settings", "pos", "pos-settings", "print-checks", "products", "q",
-  "redeem", "register-reports", "reports", "reset-password", "review", "reviews",
+  "receipt", "redeem", "register-reports", "reports", "reset-password", "review", "reviews",
   "salon-dashboard", "salon-earnings", "services", "settings", "setup",
   "sms-activity", "sms-inbox", "sms-settings", "spa", "staff", "staff-1099",
   "staff-auth", "staff-calendar", "staff-dashboard", "staff-financial-hub",
@@ -345,6 +362,15 @@ ${urlEntries}
     }
 
     res.setHeader("Cache-Control", "public, max-age=0, must-revalidate");
+    if (indexTemplate) {
+      res
+        .status(200)
+        .set({ "Content-Type": "text/html; charset=utf-8" })
+        .send(injectNoindex(indexTemplate));
+      return;
+    }
+    // indexTemplate failed to load at startup (see the fs.existsSync check
+    // above) — fall back to the raw file rather than 500ing every app route.
     res.sendFile(indexHtmlPath, (err) => {
       if (err) {
         console.error("[static] Failed to serve index.html:", err);

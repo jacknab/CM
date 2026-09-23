@@ -1,12 +1,11 @@
 import { useNavigate } from "react-router-dom";
-import { CalendarDays, Footprints, LogIn, MoreHorizontal, ShoppingBag, UserCog, UserRound, Users } from "lucide-react";
+import { CalendarDays, LogIn, MoreHorizontal, UserCog, UserRound, type LucideIcon } from "lucide-react";
 
 export type NailTab = "techs" | "pos" | "board";
 
 interface Props {
   tab: NailTab;
   onTab: (t: NailTab) => void;
-  onWalkIn: () => void;
   onCheckIn: () => void;
   onMore: () => void;
   waiting: number;
@@ -14,16 +13,14 @@ interface Props {
   live: boolean;
 }
 
-export function BottomNav({ tab, onTab, onWalkIn, onCheckIn, onMore, waiting, inService, live }: Props) {
+// POS and In Service have no footer button — those tabs are still opened from inside the app (ticket taps, check-in, checkout).
+export function BottomNav({ tab, onTab, onCheckIn, onMore, waiting, inService, live }: Props) {
   const navigate = useNavigate();
-  const items: { label: string; icon: typeof ShoppingBag; active?: boolean; run: () => void; badges?: boolean }[] = [
+  const items: { label: string; icon: LucideIcon; active?: boolean; run: () => void; badges?: boolean }[] = [
     { label: "Techs", icon: UserCog, active: tab === "techs", run: () => onTab("techs") },
-    { label: "POS", icon: ShoppingBag, active: tab === "pos", run: () => onTab("pos") },
-    { label: "In Service", icon: Users, active: tab === "board", run: () => onTab("board"), badges: true },
     { label: "Calendar", icon: CalendarDays, run: () => navigate("/calendar") },
     { label: "Customers", icon: UserRound, run: () => navigate("/client-lookup") },
     { label: "Check-In", icon: LogIn, run: onCheckIn },
-    { label: "Walk-in", icon: Footprints, run: onWalkIn },
     { label: "More", icon: MoreHorizontal, run: onMore },
   ];
   return (

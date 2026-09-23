@@ -32,7 +32,7 @@ export function AppLayout({ children, fullHeight = false }: { children: ReactNod
 
         <main className={fullHeight ? "flex-1 overflow-hidden flex flex-col" : "flex-1 overflow-y-auto"}>
           {fullHeight ? (
-            <div className="flex-1 overflow-hidden flex flex-col">
+            <div className="flex-1 overflow-y-auto flex flex-col">
               {children}
             </div>
           ) : (

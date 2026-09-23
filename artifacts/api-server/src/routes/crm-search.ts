@@ -2,8 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { isAuthenticated } from "../auth";
-import { locations } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { resolveSessionStoreId } from "../lib/sessionStore";
 
 const router = Router();
 
@@ -13,33 +12,15 @@ const SIMILARITY_THRESHOLD = 0.1;
 
 router.get("/", isAuthenticated, async (req: Request, res: Response): Promise<void> => {
   const q = (req.query.q as string | undefined)?.trim() ?? "";
-  const rawStoreId = req.query.store_id as string | undefined;
 
   if (!q || q.length < MIN_QUERY_LENGTH) {
     res.json({ results: [], query: q, totalCount: 0 });
     return;
   }
 
-  if (!rawStoreId) {
+  const storeId = await resolveSessionStoreId(req);
+  if (!storeId) {
     res.status(400).json({ message: "store_id is required" });
-    return;
-  }
-
-  const storeId = parseInt(rawStoreId, 10);
-  if (isNaN(storeId)) {
-    res.status(400).json({ message: "Invalid store_id" });
-    return;
-  }
-
-  const userId = (req.session as any)?.userId;
-  const [store] = await db
-    .select({ id: locations.id })
-    .from(locations)
-    .where(eq(locations.id, storeId))
-    .limit(1);
-
-  if (!store) {
-    res.status(404).json({ message: "Store not found" });
     return;
   }
 

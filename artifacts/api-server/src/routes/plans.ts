@@ -34,6 +34,7 @@ import { users } from "@shared/models/auth";
 import { eq, and, asc, inArray, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { resolveFeature, resolveStorePlan } from "../lib/featureAccess";
+import { resolveSessionStoreId } from "../lib/sessionStore";
 
 const router = Router();
 
@@ -50,21 +51,12 @@ async function isAdmin(req: any): Promise<boolean> {
   }
 }
 
-function storeIdFromReq(req: any): number | null {
-  const raw =
-    req.query.storeId ||
-    req.body?.storeId ||
-    req.session?.storeId;
-  const n = Number(raw);
-  return n > 0 ? n : null;
-}
-
 // ─── Store-scoped: feature access summary ────────────────────────────────────
 
 // GET /api/plans/my-features?storeId=X
 // Returns the full feature access map for the store's active plan.
 router.get("/my-features", async (req: any, res) => {
-  const storeId = storeIdFromReq(req);
+  const storeId = await resolveSessionStoreId(req);
   if (!storeId) return res.status(400).json({ error: "storeId is required" });
 
   try {
@@ -117,7 +109,7 @@ router.get("/my-features", async (req: any, res) => {
 // GET /api/plans/my-plan?storeId=X
 // Returns the active plan + subscription metadata (status, currentPeriodEnd, stripeSubscriptionId).
 router.get("/my-plan", async (req: any, res) => {
-  const storeId = storeIdFromReq(req);
+  const storeId = await resolveSessionStoreId(req);
   if (!storeId) return res.status(400).json({ error: "storeId is required" });
 
   try {

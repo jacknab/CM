@@ -51,17 +51,9 @@ define('PAGE_SCHEMA', json_encode([
       ],
     ],
   ],
-  [
-    '@type'       => 'HowTo',
-    'name'        => 'How to set up online booking for your nail salon',
-    'description' => 'Get your Certxa online booking page live in three steps.',
-    'totalTime'   => 'PT10M',
-    'step' => [
-      ['@type'=>'HowToStep','position'=>1,'name'=>'Add your services','text'=>'List your services with names, durations, and prices. Organise them into categories so clients can find what they need instantly.','url'=>'https://certxa.com/online-booking#setup'],
-      ['@type'=>'HowToStep','position'=>2,'name'=>'Set your availability','text'=>'Tell Certxa your working hours and any blocked dates. Only your available slots are shown to clients.','url'=>'https://certxa.com/online-booking#setup'],
-      ['@type'=>'HowToStep','position'=>3,'name'=>'Share your booking link','text'=>'Copy your unique booking link and share it everywhere — your website, socials, email signature, wherever your clients find you.','url'=>'https://certxa.com/online-booking#setup'],
-    ],
-  ],
+  // HowTo removed 2026-09-22 — Google discontinued HowTo rich results in
+  // Sep 2023; it was pure page weight with no search benefit (see
+  // GEO-AUDIT-REPORT.md).
 ]));
 require 'includes/header.php';
 require 'includes/nav.php';

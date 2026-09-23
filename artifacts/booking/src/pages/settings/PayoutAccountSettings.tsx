@@ -187,7 +187,7 @@ export default function PayoutAccountSettings() {
   if (isLoading) {
     return (
       <AppLayout>
-        <div className="p-6 max-w-2xl mx-auto space-y-4">
+        <div className="p-6 max-w-2xl mx-auto space-y-4 overflow-y-auto">
           <div className="h-7 w-56 bg-gray-100 rounded-xl animate-pulse" />
           <div className="h-48 bg-gray-100 rounded-2xl animate-pulse" />
         </div>
@@ -197,7 +197,7 @@ export default function PayoutAccountSettings() {
 
   return (
     <AppLayout>
-      <div className="p-6 max-w-2xl mx-auto space-y-5">
+      <div className="p-6 max-w-2xl mx-auto space-y-5 overflow-y-auto">
 
         {/* ── Header ──────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between">

@@ -6,10 +6,10 @@ import { useAppointments } from "@/hooks/use-appointments";
 import { useAuth } from "@/hooks/use-auth";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useStaffList } from "@/hooks/use-staff";
-import { formatInTz, toStoreLocal, getNowInTimezone } from "@/lib/timezone";
+import { formatInTz, toStoreLocal, getNowInTimezone, getBusinessDayNowInTimezone, getHourInTz, getDayOfWeekInTz } from "@/lib/timezone";
 import {
   isSameDay, subDays, startOfMonth, endOfMonth, isWithinInterval,
-  format, addMinutes, startOfDay, endOfDay, eachDayOfInterval, getDay, getHours,
+  format, addMinutes, startOfDay, endOfDay, eachDayOfInterval,
 } from "date-fns";
 import { NotificationBell } from "@/components/NotificationBell";
 import {
@@ -735,13 +735,14 @@ export default function Analytics() {
   })();
 
   // ── Today stats ───────────────────────────────────────────────────────────
+  const businessDayNow = getBusinessDayNowInTimezone(timezone);
   const todayAppointments = useMemo(() =>
-    (appointments || []).filter((apt: any) => isSameDay(toStoreLocal(apt.date, timezone), storeNow)),
-    [appointments, timezone, storeNow]);
+    (appointments || []).filter((apt: any) => isSameDay(toStoreLocal(apt.date, timezone), businessDayNow)),
+    [appointments, timezone]);
 
   const yesterdayAppointments = useMemo(() =>
-    (appointments || []).filter((apt: any) => isSameDay(toStoreLocal(apt.date, timezone), subDays(storeNow, 1))),
-    [appointments, timezone, storeNow]);
+    (appointments || []).filter((apt: any) => isSameDay(toStoreLocal(apt.date, timezone), subDays(businessDayNow, 1))),
+    [appointments, timezone]);
 
   const monthStart = startOfMonth(storeNow);
   const monthEnd = endOfMonth(storeNow);
@@ -770,10 +771,10 @@ export default function Analytics() {
   const staffCount = (staffList as any[]).length || 1;
   const fillRate = Math.min(100, Math.round((todayCount / (staffCount * 8)) * 100));
 
-  const last7Days = Array.from({ length: 7 }, (_, i) => subDays(storeNow, 6 - i));
+  const last7Days = Array.from({ length: 7 }, (_, i) => subDays(businessDayNow, 6 - i));
   const chartData7 = last7Days.map((day) => {
     const dayAppts = (appointments || []).filter((apt: any) => isSameDay(toStoreLocal(apt.date, timezone), day));
-    return { day: format(day, "EEE"), revenue: getRevenue(dayAppts), isToday: isSameDay(day, storeNow) };
+    return { day: format(day, "EEE"), revenue: getRevenue(dayAppts), isToday: isSameDay(day, businessDayNow) };
   });
 
   const sortedToday = useMemo(() =>
@@ -785,7 +786,7 @@ export default function Analytics() {
   // ── Analytics range ───────────────────────────────────────────────────────
   const [range, setRange] = useState<AnalyticsRange>("30d");
   const days = range === "7d" ? 7 : range === "30d" ? 30 : 90;
-  const rangeStart = startOfDay(subDays(storeNow, days - 1));
+  const rangeStart = startOfDay(subDays(businessDayNow, days - 1));
 
   const rangeAppointments = useMemo(() =>
     (appointments as AppointmentWithDetails[] || []).filter(a => new Date(a.date) >= rangeStart && a.status === "completed"),
@@ -818,7 +819,7 @@ export default function Analytics() {
     ? ((rangeAppointments.length - prevAppointments.length) / prevAppointments.length) * 100 : 0;
 
   const revenueByDay = useMemo(() => {
-    const interval = eachDayOfInterval({ start: rangeStart, end: storeNow });
+    const interval = eachDayOfInterval({ start: rangeStart, end: businessDayNow });
     return interval.map(day => {
       const dayAppts = rangeAppointments.filter(a => {
         const d = new Date(a.date);
@@ -830,7 +831,7 @@ export default function Analytics() {
         bookings: dayAppts.length,
       };
     });
-  }, [rangeAppointments, rangeStart, storeNow, days]);
+  }, [rangeAppointments, rangeStart, businessDayNow, days]);
 
   const topServices = useMemo(() => {
     const map: Record<string, { name: string; count: number; revenue: number }> = {};
@@ -857,22 +858,22 @@ export default function Analytics() {
   const bookingsByDow = useMemo(() => {
     const dowNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const counts = Array(7).fill(0);
-    rangeAppointments.forEach(a => { counts[getDay(new Date(a.date))]++; });
+    rangeAppointments.forEach(a => { counts[getDayOfWeekInTz(a.date, timezone)]++; });
     return dowNames.map((name, i) => ({ name, bookings: counts[i] }));
-  }, [rangeAppointments]);
+  }, [rangeAppointments, timezone]);
 
   const bookingsByHour = useMemo(() => {
     const counts: Record<number, number> = {};
     for (let h = 6; h <= 20; h++) counts[h] = 0;
     rangeAppointments.forEach(a => {
-      const h = getHours(new Date(a.date));
+      const h = getHourInTz(a.date, timezone);
       if (h >= 6 && h <= 20) counts[h]++;
     });
     return Object.entries(counts).map(([h, count]) => ({
       hour: `${parseInt(h) % 12 || 12}${parseInt(h) < 12 ? "am" : "pm"}`,
       bookings: count,
     }));
-  }, [rangeAppointments]);
+  }, [rangeAppointments, timezone]);
 
   const returningVsNew = useMemo(() => {
     const visitCount: Record<number, number> = {};

@@ -2,59 +2,77 @@
  * Techs tab layout — EVERYTHING is on screen at once, nothing scrolls (staff can't scroll this page).
  *
  * The unit is a column of up to three cards, top to bottom in turn order:
- *   1–3 techs  → one column (cards grow to fill it, capped so a lone tech isn't silly-big)
+ *   1–3 techs  → one column (cards stretch to fill it)
  *   4–6 techs  → two columns, 7–9 → three, 10–12 → four; each column filled before the next.
  *   More than 12 → whatever grid gives the biggest cards.
- * Cards are drawn at a design size and scaled to fit their cell. Wide cells use a "row" card
- * (tech on the left, details on the right); narrow cells use a "stack" card (tech on top).
+ * Every card is drawn at one design size and scaled to fit its cell; its width follows the cell, so a wide single column just
+ * gets a wider card. Two designs: the roomy one (CARD_W × CARD_H) while it can be drawn at a readable size, and — once a
+ * crowded screen would shrink it below MIN_READABLE_SCALE — a compact one (COMPACT_W × COMPACT_H, styled by `.tt-compact`)
+ * whose text is drawn at about real size, so 12 techs are still easy to read.
  */
-export type CardMode = "row" | "stack";
-
-export const GAP = 12;
+export const GAP = 14;
 export const CARDS_PER_COLUMN = 3;
-const MAX_SCALE = 1.7;
-const DESIGN: Record<CardMode, { w: number; h: number }> = {
-  row: { w: 720, h: 150 },
-  stack: { w: 300, h: 200 },
-};
+export const CARD_W = 620;
+export const CARD_H = 240;
+export const COMPACT_W = 250;
+export const COMPACT_H = 132;
+const MAX_SCALE = 1.5;
+/** Below this the roomy card's text is too small to read at a glance. */
+export const MIN_READABLE_SCALE = 0.75;
 
 export interface TechLayout {
   cols: number;
   rows: number;
-  mode: CardMode;
   scale: number;
   /** Card size before scaling. */
   cardW: number;
   cardH: number;
+  /** The compact card design (dense screens). */
+  compact: boolean;
 }
 
-function layoutFor(count: number, cols: number, rows: number, width: number, height: number): TechLayout {
+interface Design { w: number; h: number; compact: boolean; lean?: boolean }
+const ROOMY: Design = { w: CARD_W, h: CARD_H, compact: false };
+const COMPACT: Design = { w: COMPACT_W, h: COMPACT_H, compact: true };
+// The Clocked In page's lean card (name + timer, nothing under it or beside it) is shorter, so it gets its own design sizes.
+const ROOMY_LEAN: Design = { w: 490, h: 184, compact: false, lean: true };
+const COMPACT_LEAN: Design = { w: 250, h: 96, compact: true, lean: true };
+
+function layoutFor(cols: number, rows: number, width: number, height: number, d: Design): TechLayout {
   const cellW = (width - GAP * (cols - 1)) / cols;
   const cellH = (height - GAP * (rows - 1)) / rows;
-  const fit = (mode: CardMode) => Math.min(cellW / DESIGN[mode].w, cellH / DESIGN[mode].h);
-  // A single wide column always gets the wide "row" card; narrower cells take whichever design scales larger.
-  const mode: CardMode = cols === 1 || fit("row") >= fit("stack") ? "row" : "stack";
-  const uncapped = fit(mode);
+  const uncapped = Math.min(cellW / d.w, cellH / d.h);
   const scale = Math.min(MAX_SCALE, uncapped);
-  const d = DESIGN[mode];
   return {
-    cols, rows, mode, scale,
+    cols, rows, scale, compact: d.compact,
     cardW: cellW / scale,
-    // Height-limited → the design height exactly; width-limited → use the spare height; capped → don't stretch.
-    cardH: uncapped > MAX_SCALE ? d.h : Math.min(Math.max(d.h, cellH / scale), d.h * 1.5),
+    // Height-limited → exactly the design height; width-limited → use the spare height (up to 1.25×); capped → don't stretch.
+    cardH: uncapped > MAX_SCALE ? d.h : Math.min(Math.max(d.h, cellH / scale), d.h * 1.25),
   };
 }
 
-export function computeTechLayout(count: number, width: number, height: number): TechLayout {
+/**
+ * The best grid for this many cards in one design. Up to 12 techs use the standard columns of three; the compact and lean designs (and
+ * anything over 12) may pick another grid when that draws clearly bigger cards (e.g. 3 columns × 4 rows on a narrow tablet).
+ */
+function bestFor(count: number, width: number, height: number, d: Design): TechLayout {
   const cols = Math.max(1, Math.ceil(count / CARDS_PER_COLUMN));
   const rows = Math.max(1, Math.min(count, CARDS_PER_COLUMN));
-  if (width <= 0 || height <= 0) return { cols, rows, mode: "row", scale: 1, cardW: DESIGN.row.w, cardH: DESIGN.row.h };
-  // Up to 12 techs: columns of three. A bigger team is rare — then use whatever grid makes the cards largest.
-  if (count <= 4 * CARDS_PER_COLUMN) return layoutFor(count, cols, rows, width, height);
-  let best = layoutFor(count, cols, rows, width, height);
+  let best = layoutFor(cols, rows, width, height, d);
+  if (count <= 4 * CARDS_PER_COLUMN && !d.compact && !d.lean) return best;
+  const margin = count <= 4 * CARDS_PER_COLUMN ? 1.05 : 1 + 1e-6;
   for (let c = 2; c <= count; c++) {
-    const cand = layoutFor(count, c, Math.ceil(count / c), width, height);
-    if (cand.scale > best.scale + 1e-6) best = cand;
+    const cand = layoutFor(c, Math.ceil(count / c), width, height, d);
+    if (cand.scale > best.scale * margin) best = cand;
   }
   return best;
+}
+
+export function computeTechLayout(count: number, width: number, height: number, lean = false): TechLayout {
+  const cols = Math.max(1, Math.ceil(count / CARDS_PER_COLUMN));
+  const rows = Math.max(1, Math.min(count, CARDS_PER_COLUMN));
+  if (width <= 0 || height <= 0) return { cols, rows, scale: 1, cardW: CARD_W, cardH: CARD_H, compact: false };
+  const roomy = bestFor(count, width, height, lean ? ROOMY_LEAN : ROOMY);
+  if (roomy.scale >= MIN_READABLE_SCALE) return roomy;
+  return bestFor(count, width, height, lean ? COMPACT_LEAN : COMPACT);
 }

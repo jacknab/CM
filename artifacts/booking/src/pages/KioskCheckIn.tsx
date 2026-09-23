@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { QRCodeCanvas } from "qrcode.react";
 import { KIOSK_LANGS, LangCode, translations } from "../lib/kioskTranslations";
+import { isValidNanpPrefix } from "../lib/phone-validation";
+import { useShake } from "../hooks/use-shake";
 
 type Screen =
   | "idle" | "phone" | "loading" | "welcome"
@@ -229,6 +231,7 @@ export default function KioskCheckIn() {
   const [allServices, setAllServices]     = useState<ServiceItem[]>([]);
   const [allStaff, setAllStaff]           = useState<StaffItem[]>([]);
   const [phone, setPhone]                 = useState("");
+  const { shakeClass, shake, onShakeEnd } = useShake();
   const [clientInfo, setClientInfo]       = useState<ClientInfo | null>(null);
   const [newClientName, setNewClientName] = useState("");
   const [selectedServices, setSel]        = useState<ServiceItem[]>([]);
@@ -486,7 +489,10 @@ export default function KioskCheckIn() {
 
   const handleDigit = (d: string) => {
     if (phone.length >= 10) return;
-    const next = phone + d; setPhone(next); kick();
+    const next = phone + d;
+    // Not a possible US number (bad area code / exchange): shake, refuse just this digit, keep what's typed.
+    if (!isValidNanpPrefix(next)) { shake(); kick(); return; }
+    setPhone(next); kick();
     if (next.length === 10) doLookup(next);
   };
 
@@ -965,7 +971,7 @@ export default function KioskCheckIn() {
       </div>
 
       {/* Right panel — numpad */}
-      <div className="flex-1 flex flex-col items-center justify-center gap-5 px-8">
+      <div className={`flex-1 flex flex-col items-center justify-center gap-5 px-8 ${shakeClass}`} onAnimationEnd={onShakeEnd}>
         <div className="text-center mb-1">
           <p className="text-2xl font-bold" style={{ color: TEXT }}>{t.enterPhone}</p>
           <p className="text-base mt-1" style={{ color: SUBTLE }}>{t.infoNeverShared}</p>

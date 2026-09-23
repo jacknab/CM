@@ -192,6 +192,7 @@ import salonApiRouter from "./routes/salonApi";
 import marketplaceDealsApiRouter from "./routes/marketplaceDealsApi";
 import { SEO_CONFIG, injectSeoMetadata, isKnownAppFirstSegment, NOT_FOUND_HTML } from "./static";
 import { isRequestFromTrustedNetwork, resolveStoreIdBySlug } from "./lib/salonNetworkGuard";
+import { logBodySuffix, shouldSkipBodyLog } from "./lib/logRedaction";
 
 const app = express();
 app.disable("x-powered-by"); // don't advertise the framework
@@ -626,9 +627,15 @@ app.get("/blog/sitemap.xml", (_req: Request, _res: Response, next: NextFunction)
 app.get("/app", (req: Request, res: Response) => {
   const ua = req.headers["user-agent"] || "";
   const isAndroid = /android/i.test(ua);
-  const APK_URL =
-    process.env.OWNER_APK_URL ||
-    "https://expo.dev/artifacts/eas/SJzOZ7YVLQtGOPsRojrwnMtTiwpNcTlDRwnB2_FdPAo.apk";
+  // Set in /etc/certxa.env — EAS build artifact links expire, so this must be updated
+  // (and the process restarted with `pm2 restart certxa-api --update-env`) after every
+  // new owner-app build. No hardcoded fallback: a stale literal here is how this broke last time.
+  const APK_URL = process.env.OWNER_APK_URL;
+
+  if (!APK_URL) {
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    return res.status(503).send("Owner app download is temporarily unavailable. Please try again shortly.");
+  }
 
   if (isAndroid) {
     return res.redirect(302, APK_URL);
@@ -755,11 +762,11 @@ app.get("/app", (req: Request, res: Response) => {
 </html>`);
 });
 
-// --- Salon marketplace: homepage ("/"), /listings/*, sitemaps, legacy redirects ---
-// Must be BEFORE phpMiddleware so "/" and these Node-rendered pages are
-// never accidentally proxied to the PHP built-in server. isPhpRoute()
-// hardcodes "/" as a PHP route, so this router intercepting it first is
-// what makes the marketplace the actual homepage.
+// --- Salon marketplace: /listings/*, /deals, /wallet, sitemaps, legacy redirects ---
+// Certxa.com's homepage ("/") went back to PHP on 2026-09-22 — salonDirectoryRouter no longer
+// registers a "/" handler, so isPhpRoute()'s hardcoded "/" falls through to phpMiddleware below.
+// Still mounted before phpMiddleware so the marketplace's other Node-rendered pages aren't
+// accidentally proxied to PHP.
 app.use(salonDirectoryRouter);
 app.use(salonApiRouter);
 app.use(marketplaceDealsApiRouter);
@@ -792,25 +799,26 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
+// Response bodies logged on /api/payments/* and /api/auth/* would put live Stripe secrets (connection tokens, client
+// secrets) and login/session data on disk in plain text (pm2 logs aren't rotated by this app) — those are skipped
+// entirely; everything else is redacted key-by-key (see lib/logRedaction.ts) so a field like "phone" or "clientSecret"
+// never reaches the log, however deep it's nested.
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
+  const skipBody = shouldSkipBodyLog(path);
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
 
   const originalResJson = res.json;
   res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
+    if (!skipBody) capturedJsonResponse = bodyJson;
     return originalResJson.apply(res, [bodyJson, ...args]);
   };
 
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-      log(logLine);
+      log(`${req.method} ${path} ${res.statusCode} in ${duration}ms${logBodySuffix(path, capturedJsonResponse)}`);
     }
   });
 

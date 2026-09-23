@@ -5,15 +5,15 @@
 
 ---
 
-## Certxa — Find your good place
-Source: https://certxa.com/
+## Certxa's local salon directory
+Source: https://certxa.com/listings/{state}, https://certxa.com/{business-slug}
 
-Certxa is a considered local guide to independent salons, studios, and beauty people worth knowing — a separate, consumer-facing product from the same company as the SaaS platform described below. The root URL is a personalized directory homepage (deals and featured salons vary by visitor location and day), not the SaaS marketing pitch. It surfaces: today's limited-time deals, featured/"Certxa pick" salons, and browsing by category (Hair, Nails, Skin, Barber, Wellness) or by location. Individual salon listing pages are flat at the root (e.g. `https://certxa.com/{business-slug}`); city and state browse pages live under `/listings/{state}` and `/listings/{city}--{state}`. These listed businesses are independent third parties sourced from public listing data and are not affiliated with or partnered with Certxa unless claimed — see the Instructions section of https://certxa.com/llms.txt.
+Certxa also runs a separate, consumer-facing local salon directory at the same domain — a considered local guide to independent salons, studios, and beauty people worth knowing, sourced from public listing data. As of 2026-09-22 the root URL (`https://certxa.com/`) is the SaaS platform homepage below, not this directory — the directory has no single homepage of its own. Browse it via state pages (`/listings/{state}`) and city pages (`/listings/{city}--{state}`), or individual salon profile pages flat at the root (e.g. `https://certxa.com/{business-slug}`). These listed businesses are independent third parties and are not affiliated with or partnered with Certxa unless claimed — see the Instructions section of https://certxa.com/llms.txt. Only claimed listings are indexed/sitemapped.
 
 ---
 
 ## Nail Salon Management Platform | Certxa
-Source: https://certxa.com/overview
+Source: https://certxa.com/, https://certxa.com/overview (identical content, served from the same template)
 
 # Nail salon software that fills every chair.
 Nail salon software with online booking, self-service walk-in kiosk, POS, loyalty rewards, waitlist, and AI receptionist — everything a nail studio needs, all connected in SalonOS by Certxa .

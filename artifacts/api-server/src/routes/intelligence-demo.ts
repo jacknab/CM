@@ -14,6 +14,7 @@ import { users } from "../../shared/schema";
 import { runDemoEngines } from "../intelligence/demo-runner";
 import { runIntelligenceForStore } from "../intelligence/orchestrator";
 import { seedTesterStore } from "../intelligence/tester-seeder";
+import { resolveSessionStoreId } from "../lib/sessionStore";
 
 // ── Helper: load the authenticated user from the session ──────────────────────
 async function getSessionUser(req: any) {
@@ -189,6 +190,10 @@ router.get("/status", async (req: any, res) => {
   if (!storeId || isNaN(storeId)) {
     return res.status(400).json({ error: "storeId is required" });
   }
+  const ownedStoreId = await resolveSessionStoreId(req);
+  if (!ownedStoreId || ownedStoreId !== storeId) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
 
   const state = demoState.get(storeId);
 
@@ -262,6 +267,10 @@ router.get("/launch", async (req: any, res) => {
   const storeId = parseInt(req.query.storeId as string);
   if (!storeId || isNaN(storeId)) {
     return res.status(400).json({ error: "storeId is required" });
+  }
+  const ownedStoreId = await resolveSessionStoreId(req);
+  if (!ownedStoreId || ownedStoreId !== storeId) {
+    return res.status(403).json({ error: "Forbidden" });
   }
 
   const current = demoState.get(storeId);

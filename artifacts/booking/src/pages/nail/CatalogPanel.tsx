@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Footprints, Gift, Hand, MoreHorizontal, Package, Plus, Sparkles, UserRound, WalletCards, Zap } from "lucide-react";
-import { formatDuration, parseKeypadAmount, type NailConfigView, type NailGroup, type NailOption, type NailPick } from "./ticketDraft";
+import { QUICK_TICKET_STEPS } from "@shared/nailCheckout";
+import { formatDuration, parseKeypadAmount } from "./ticketDraft";
 
 export interface CatalogService { id: number; name: string; duration: number; price: number | string }
 export interface CatalogAddon { id: number; name: string; price: number | string; duration: number | null }
@@ -46,34 +47,25 @@ function ProductCard({ name, sub, price, onClick, compact, more, selected, locke
   );
 }
 
-function NailGroupRow({ label, options, selected, group, onPick, locked }: { label: string; options: NailOption[]; selected: number | null; group: NailGroup; onPick: (g: NailGroup, id: number) => void; locked: boolean }) {
-  if (options.length === 0) return null;
-  return (
-    <div className="nail-option-group">
-      <span className="nail-option-label">{label}</span>
-      <div className="addon-grid">
-        {options.map((o) => (
-          <ProductCard key={o.id} compact locked={locked} selected={selected === o.id} onClick={() => onPick(group, o.id)} testId={`nail-opt-${group}-${o.id}`}
-            name={o.name} price={o.isQuote ? "Quote" : o.priceAdjustment > 0 ? `+${money(o.priceAdjustment)}` : undefined} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 /* ── Keypad: rings up a custom dollar amount as a line on the ticket ─────── */
 
 const KEYS = ["7", "8", "9", "⌫", "4", "5", "6", "↶", "1", "2", "3", "X", "00", "0", "ENTER"];
 
-export function Keypad({ locked, onEnter }: { locked: boolean; onEnter: (amount: number, qty: number) => void }) {
+/**
+ * `onEnter(amount, qty, label?)` — a label only comes with Quick Ticket, which walks through the steps (Removal, Nail Length, Nail Shape, Nail Art,
+ * Design, Extra): ENTER adds the typed amount under that step's name (or skips the step when nothing is typed), and ↶ leaves Quick Ticket.
+ */
+export function Keypad({ locked, onEnter, onGiftCard }: { locked: boolean; onEnter: (amount: number, qty: number, label?: string) => void; onGiftCard?: () => void }) {
   const [display, setDisplay] = useState("");
   const [qty, setQty] = useState(1);
+  const [guided, setGuided] = useState<number | null>(null);
 
   const press = (key: string) => {
     if (locked) return;
     if (key === "⌫") { setDisplay((d) => d.slice(0, -1)); return; }
-    if (key === "↶") { setDisplay(""); setQty(1); return; }
+    if (key === "↶") { setDisplay(""); setQty(1); setGuided(null); return; }
     if (key === "X") {
+      if (guided !== null) return; // Quick Ticket adds one of each step
       // "3 X" then the price = three of them.
       const n = Number(display);
       if (Number.isInteger(n) && n >= 1 && n <= 99) { setQty(n); setDisplay(""); }
@@ -81,6 +73,12 @@ export function Keypad({ locked, onEnter }: { locked: boolean; onEnter: (amount:
     }
     if (key === "ENTER") {
       const amount = parseKeypadAmount(display);
+      if (guided !== null) {
+        if (amount != null) onEnter(amount, 1, QUICK_TICKET_STEPS[guided].label);
+        setDisplay("");
+        setGuided(guided + 1 >= QUICK_TICKET_STEPS.length ? null : guided + 1);
+        return;
+      }
       if (amount != null) onEnter(amount, qty);
       setDisplay(""); setQty(1);
       return;
@@ -91,6 +89,7 @@ export function Keypad({ locked, onEnter }: { locked: boolean; onEnter: (amount:
   return (
     <div className={`keypad ${locked ? "keypad-locked" : ""}`} data-testid="nail-keypad">
       <div className="calculator-display" data-testid="nail-keypad-display">
+        {guided !== null && <span className="display-prompt" data-testid="nail-quick-prompt">{QUICK_TICKET_STEPS[guided].prompt} · {guided + 1}/{QUICK_TICKET_STEPS.length}</span>}
         {qty > 1 && <span className="display-qty">{qty} ×</span>}
         {display ? `$${display}` : ""}
       </div>
@@ -104,7 +103,13 @@ export function Keypad({ locked, onEnter }: { locked: boolean; onEnter: (amount:
         ))}
       </div>
       <div className="money-grid">
-        {[1, 5, 10, 20].map((m) => (
+        <button type="button" disabled={locked} className="fn-btn" onClick={() => { setDisplay(""); setQty(1); setGuided((g) => (g === null ? 0 : null)); }} data-testid="nail-quick-ticket">
+          <Zap size={20} /><span>{guided !== null ? "Exit Quick" : "Quick Ticket"}</span>
+        </button>
+        <button type="button" disabled={locked || !onGiftCard} className="fn-btn" onClick={onGiftCard} data-testid="nail-gift-card">
+          <Gift size={20} /><span>Gift Card</span>
+        </button>
+        {[10, 20].map((m) => (
           <button key={m} type="button" disabled={locked} onClick={() => setDisplay(String(m))}>${m}</button>
         ))}
       </div>
@@ -125,9 +130,6 @@ interface Props {
   hasMoreAddons: boolean;
   addonIds: number[];
   onToggleAddon: (id: number) => void;
-  nail: NailConfigView | null;
-  pick: NailPick;
-  onPick: (group: NailGroup, id: number) => void;
 }
 
 export function CatalogPanel(p: Props) {
@@ -154,15 +156,6 @@ export function CatalogPanel(p: Props) {
         ))}
         {services.length === 0 && <p className="empty-state-hint">No services in this category.</p>}
       </div>
-
-      {p.nail && (
-        <div className="nail-options" data-testid="nail-options">
-          <NailGroupRow label="NAIL LENGTH" options={p.nail.sizes} selected={p.pick.size} group="size" onPick={p.onPick} locked={p.locked} />
-          <NailGroupRow label="NAIL SHAPE" options={p.nail.shapes} selected={p.pick.shape} group="shape" onPick={p.onPick} locked={p.locked} />
-          <NailGroupRow label="NAIL ART" options={p.nail.applications} selected={p.pick.application} group="application" onPick={p.onPick} locked={p.locked} />
-          <NailGroupRow label="ART EFFECT" options={p.nail.effects} selected={p.pick.effect} group="effect" onPick={p.onPick} locked={p.locked} />
-        </div>
-      )}
 
       {p.addons.length > 0 && (
         <>

@@ -1,13 +1,13 @@
 /**
  * Stub for react-native-ping.
  *
- * react-native-thermal-receipt-printer-image-qr imports this module only for
- * its WiFi/network printer discovery path (net-connect.js). Certxa uses
- * Bluetooth and USB printers exclusively, so this code path is never executed.
- *
- * We stub the module here so Metro can bundle without the native module being
- * present, rather than adding a native dependency we will never call.
+ * react-native-thermal-receipt-printer-image-qr's net-connect.js calls Ping.start(ip, {timeout}) as a
+ * pre-flight reachability check before opening the real ESC/POS TCP socket (RNNetPrinterModule.connectPrinter).
+ * We don't want the native ICMP-ping dependency just for that pre-check — connectPrinter() immediately after
+ * does its own real socket connect and reports its own error if the printer isn't reachable, so resolving
+ * here unconditionally (skipping the ping) is safe: it just means a dead host fails at the socket-connect
+ * step instead of one step earlier.
  */
 export default {
-  ping: () => Promise.reject(new Error('WiFi printing is not supported')),
+  start: () => Promise.resolve(0),
 };

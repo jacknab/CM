@@ -36,7 +36,7 @@ import { logger } from "../lib/logger";
 import { renderMarketplacePage } from "../lib/marketplaceSsr";
 import { requestIp, resolveVisitorCity } from "../lib/geoLookup";
 import {
-  ensureLoaded, getSalonList, getStateIndex,
+  ensureLoaded, getClaimedSalonList, getStateIndex,
   CERTXA_DOMAIN, SITEMAP_PAGE_SIZE,
 } from "../lib/salonData";
 
@@ -125,10 +125,16 @@ const router = Router();
 
 // ── Sitemap routes ─────────────────────────────────────────────────────────────
 
+// Only claimed listings are indexable (see the isVerified gate in
+// artifacts/marketplace/src/entry-server.tsx) — keep this sitemap in sync
+// with that page-level robots directive. Restored 2026-09-22 after commit
+// 2acebbf5 (2026-09-15) switched this to the full getSalonList(), which
+// re-indexed the entire unclaimed ~47-55k record directory; see
+// GEO-AUDIT-REPORT.md.
 router.get("/sitemap-salons.xml", sitemapRateLimit, async (_req: Request, res: Response) => {
   try {
     await ensureLoaded();
-    const list = getSalonList();
+    const list = await getClaimedSalonList();
     const lastmod = new Date().toISOString().slice(0, 10);
     const totalPages = Math.max(1, Math.ceil(list.length / SITEMAP_PAGE_SIZE));
 
@@ -155,7 +161,7 @@ router.get("/sitemap-salons.xml", sitemapRateLimit, async (_req: Request, res: R
 router.get("/sitemap-salons-:page.xml", sitemapRateLimit, async (req: Request, res: Response) => {
   try {
     await ensureLoaded();
-    const list = getSalonList();
+    const list = await getClaimedSalonList();
     const page = parseInt(String(req.params.page), 10);
     if (isNaN(page) || page < 1) { res.status(404).send("Not found"); return; }
     const start = (page - 1) * SITEMAP_PAGE_SIZE;
@@ -176,8 +182,8 @@ router.get("/sitemap-salons-:page.xml", sitemapRateLimit, async (req: Request, r
 // State and city hub pages (e.g. /listings/arizona, /listings/tucson--arizona)
 // are real aggregator pages, each listing many real businesses — this
 // sitemap covers only the hub pages themselves; individual salon URLs are
-// covered by /sitemap-salons.xml instead (all real records, not just
-// claimed listings — see GEO-AUDIT-REPORT.md).
+// covered by /sitemap-salons.xml instead (claimed listings only, as of
+// 2026-09-22 — see GEO-AUDIT-REPORT.md).
 router.get("/sitemap-listings.xml", sitemapRateLimit, async (_req: Request, res: Response) => {
   try {
     await ensureLoaded();
@@ -202,10 +208,10 @@ router.get("/sitemap-listings.xml", sitemapRateLimit, async (_req: Request, res:
 
 // ── Page routes (real React SSR) ─────────────────────────────────────────────
 
-// Homepage — isPhpRoute() hardcodes "/" as a PHP route, but this router is
-// mounted before phpMiddleware, so Express matches this exact "/" handler
-// first and the marketplace becomes the actual certxa.com homepage.
-router.get("/", (req: Request, res: Response) => serveSsrPage(req, res, { withGeo: true }));
+// Homepage reverted to PHP (php/index.php -> php/overview/default.php) on 2026-09-22 — certxa.com/
+// goes back to the marketing site. isPhpRoute() hardcodes "/" as a PHP route; not registering a "/"
+// handler here is what lets it fall through to phpMiddleware. The rest of the marketplace (listings,
+// deals, wallet, /api/marketplace/*) is untouched and still live at its own paths.
 
 // State + city hub pages, Vagaro-style: /listings/california (state) and
 // /listings/los-angeles--california (city) — disambiguated inside the SSR

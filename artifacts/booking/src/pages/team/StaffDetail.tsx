@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,12 +9,13 @@ import { useToast } from "@/hooks/use-toast";
 import { useSelectedStore } from "@/hooks/use-store";
 import { apiRequest } from "@/lib/queryClient";
 import { WeeklyScheduleEditor, scheduleHasError, type DayRule } from "@/components/team/WeeklyScheduleEditor";
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { Camera, ChevronLeft, Loader2 } from "lucide-react";
 
 interface Staff {
   id: number; name: string; email: string | null; phone: string | null;
   role: string | null; status: string | null;
   commissionRate: string | null; productCommissionRate: string | null;
+  avatarUrl: string | null; avatarThumbUrl: string | null; color: string | null;
 }
 interface Category { id: number; name: string }
 interface Service { id: number; name: string; categoryId: number | null }
@@ -80,6 +81,23 @@ export default function StaffDetail() {
   const [checkedCats, setCheckedCats] = useState<Set<number>>(new Set());
   const [rules, setRules] = useState<DayRule[]>([]);
   const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const uploadAvatar = useMutation({
+    mutationFn: async (file: File) => {
+      const fd = new FormData();
+      fd.append("avatar", file);
+      const res = await fetch(`/api/staff/${staffId}/avatar`, { method: "POST", credentials: "include", body: fd });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message ?? "Upload failed"); }
+      return res.json() as Promise<{ avatarUrl: string; avatarThumbUrl?: string }>;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/staff", "detail", staffId] });
+      invalidate();
+      toast({ title: "Photo updated" });
+    },
+    onError: (err: any) => toast({ title: err.message ?? "Photo upload failed", variant: "destructive" }),
+  });
 
   useEffect(() => {
     if (!staff) return;
@@ -181,6 +199,46 @@ export default function StaffDetail() {
         {/* Profile */}
         <section className="rounded-xl border border-border bg-card p-5 md:p-6 space-y-4">
           <h2 className="text-lg font-semibold tracking-tight">Profile</h2>
+
+          <div className="flex items-center gap-4">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadAvatar.mutate(f); e.target.value = ""; }}
+            />
+            <button
+              type="button"
+              onClick={() => !uploadAvatar.isPending && fileRef.current?.click()}
+              disabled={uploadAvatar.isPending}
+              className="group relative shrink-0 rounded-full"
+              aria-label="Change photo"
+            >
+              <div
+                className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full text-xl font-semibold text-white"
+                style={{ backgroundColor: staff.color ?? "#3b82f6" }}
+              >
+                {staff.avatarThumbUrl || staff.avatarUrl
+                  ? <img src={staff.avatarThumbUrl ?? staff.avatarUrl ?? ""} alt={staff.name} className="h-full w-full object-cover" />
+                  : (staff.name?.[0] ?? "?").toUpperCase()}
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/25 opacity-0 transition-opacity group-hover:opacity-100">
+                {uploadAvatar.isPending
+                  ? <Loader2 className="h-4 w-4 animate-spin text-white" />
+                  : <Camera className="h-4 w-4 text-white" />}
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => !uploadAvatar.isPending && fileRef.current?.click()}
+              disabled={uploadAvatar.isPending}
+              className="text-sm font-medium text-primary hover:underline disabled:opacity-50"
+            >
+              {uploadAvatar.isPending ? "Uploading…" : "Change photo"}
+            </button>
+          </div>
+
           <div className="space-y-1.5">
             <label className="text-[15px] font-medium">Name</label>
             <Input value={name} onChange={(e) => setName(e.target.value)} className="text-[15px]" />

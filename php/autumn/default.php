@@ -28,17 +28,9 @@ define('PAGE_SCHEMA', json_encode([
       ['@type'=>'Question','name'=>'Does Autumn work for multi-location businesses?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. Autumn can be enabled independently per location, each with its own credit balance and configuration — ideal for salon groups and franchise owners.']],
     ],
   ],
-  [
-    '@type'       => 'HowTo',
-    'name'        => 'How to set up the Autumn AI receptionist',
-    'description' => 'Enable Autumn to answer your salon\'s phone calls and book appointments, in three steps.',
-    'totalTime'   => 'PT5M',
-    'step' => [
-      ['@type'=>'HowToStep','position'=>1,'name'=>'Load your account balance','text'=>'Head to the Autumn section in your Certxa dashboard and add credit to your account. You choose how much to load.','url'=>'https://certxa.com/autumn#setup'],
-      ['@type'=>'HowToStep','position'=>2,'name'=>'Activate Autumn','text'=>'Enable Autumn with one click. She reads your services, staff, and calendar automatically — no manual setup.','url'=>'https://certxa.com/autumn#setup'],
-      ['@type'=>'HowToStep','position'=>3,'name'=>'Forward your calls','text'=>'Point your salon phone to Autumn\'s number. She starts answering immediately. Your balance covers every minute she\'s on a call.','url'=>'https://certxa.com/autumn#setup'],
-    ],
-  ],
+  // HowTo removed 2026-09-22 — Google discontinued HowTo rich results in
+  // Sep 2023; it was pure page weight with no search benefit (see
+  // GEO-AUDIT-REPORT.md).
 ]));
 require __DIR__ . '/../includes/header.php';
 require __DIR__ . '/../includes/nav.php';

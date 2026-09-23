@@ -16,6 +16,7 @@ import {
   sendDataTransferRejectedEmail,
 } from "../lib/systemEmails";
 import { broadcastNotification } from "../notifications";
+import { resolveSessionStoreId } from "../lib/sessionStore";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024 } });
@@ -104,7 +105,8 @@ router.post("/upload", isAuthenticated, uploadFields, async (req: Request, res: 
 
 router.post("/start", isAuthenticated, uploadFields, async (req: Request, res: Response) => {
   try {
-    const { storeId, platform = "csv", mode = "self_service", mappings: mappingsRaw } = req.body;
+    const { platform = "csv", mode = "self_service", mappings: mappingsRaw } = req.body;
+    const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(400).json({ error: "storeId required" });
 
     const files = req.files as Record<string, Express.Multer.File[]>;
@@ -160,13 +162,13 @@ router.post("/start", isAuthenticated, uploadFields, async (req: Request, res: R
 
 router.get("/jobs", isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const { storeId } = req.query;
+    const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(400).json({ error: "storeId required" });
     const result = await pool.query(
       `SELECT id, mode, status, source_platform, files_json, imported_counts_json,
               errors_json, reject_reason, created_at, completed_at
        FROM data_transfer_jobs WHERE store_id = $1 ORDER BY created_at DESC LIMIT 20`,
-      [Number(storeId)]
+      [storeId]
     );
     return res.json(result.rows);
   } catch (err: any) {
@@ -179,11 +181,12 @@ router.get("/jobs", isAuthenticated, async (req: Request, res: Response) => {
 
 router.get("/jobs/:id", isAuthenticated, async (req: Request, res: Response) => {
   try {
+    const storeId = await resolveSessionStoreId(req);
     const result = await pool.query(
       `SELECT * FROM data_transfer_jobs WHERE id = $1`,
       [Number(req.params.id)]
     );
-    if (!result.rows[0]) return res.status(404).json({ error: "Job not found" });
+    if (!result.rows[0] || result.rows[0].store_id !== storeId) return res.status(404).json({ error: "Job not found" });
     return res.json(result.rows[0]);
   } catch (err: any) {
     return res.status(500).json({ error: "Failed to fetch job" });
@@ -196,12 +199,13 @@ router.post("/jobs/:id/execute", isAuthenticated, async (req: Request, res: Resp
   const jobId = Number(req.params.id);
   let _execStoreId = 0;
   try {
+    const callerStoreId = await resolveSessionStoreId(req);
     const jobResult = await pool.query(
       `SELECT * FROM data_transfer_jobs WHERE id = $1`,
       [jobId]
     );
     const job = jobResult.rows[0];
-    if (!job) return res.status(404).json({ error: "Job not found" });
+    if (!job || job.store_id !== callerStoreId) return res.status(404).json({ error: "Job not found" });
     if (job.mode !== "self_service") {
       return res.status(400).json({ error: "Only self-service jobs can be executed directly" });
     }
@@ -313,12 +317,13 @@ router.post("/jobs/:id/execute", isAuthenticated, async (req: Request, res: Resp
 router.post("/jobs/:id/rollback", isAuthenticated, async (req: Request, res: Response) => {
   const jobId = Number(req.params.id);
   try {
+    const callerStoreId = await resolveSessionStoreId(req);
     const jobResult = await pool.query(
       `SELECT * FROM data_transfer_jobs WHERE id = $1`,
       [jobId]
     );
     const job = jobResult.rows[0];
-    if (!job) return res.status(404).json({ error: "Job not found" });
+    if (!job || job.store_id !== callerStoreId) return res.status(404).json({ error: "Job not found" });
     if (job.status !== "completed") {
       return res.status(400).json({ error: "Only completed jobs can be rolled back" });
     }

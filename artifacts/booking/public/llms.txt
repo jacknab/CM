@@ -50,7 +50,7 @@
 
 ## Marketplace
 
-- [Certxa Marketplace](https://certxa.com/): The root URL is Certxa's consumer-facing local salon directory ("a considered local guide to independent salons, studios, and beauty people worth knowing"), not the SaaS platform overview above — a separate, consumer-facing product from the same company. Individual salon listing pages are flat at the root (e.g. `https://certxa.com/{business-slug}`); city and state browse pages live under `/listings/{state}` and `/listings/{city}--{state}`.
+- The root URL (`https://certxa.com/`) is the SaaS platform homepage (see "Product" above), not the salon directory. Certxa also runs a separate, consumer-facing local salon directory at the same domain — a distinct product from the same company, sourced from public listing data. It has no single directory homepage of its own: browse it via [state pages](https://certxa.com/listings/) (`/listings/{state}`) and [city pages](https://certxa.com/listings/) (`/listings/{city}--{state}`), or individual salon profile pages flat at the root (e.g. `https://certxa.com/{business-slug}`). Only listings claimed by a real, paying Certxa customer are indexed; unclaimed listings are `noindex` and excluded from the sitemap.
 
 ## Key Facts
 

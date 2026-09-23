@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Ban, CalendarDays, Clock, Hand, Phone, Play, Receipt, ShoppingBag, UserRound, X } from "lucide-react";
-import { formatDuration, formatElapsed } from "./ticketDraft";
+import { Clock, Hand, UserRound } from "lucide-react";
+import { formatElapsed } from "./ticketDraft";
+import { TicketPopup } from "./TicketPopup";
 import type { BoardTicket } from "./nailApi";
 
 interface Props {
@@ -11,22 +12,18 @@ interface Props {
   onReassign: (t: BoardTicket) => void;
   onEdit: (t: BoardTicket) => void;
   onCancel: (t: BoardTicket) => void;
-  /** Open this ticket's card straight away (Techs page tap, scanned ticket). A new object = open it again. */
-  focus?: { id: number } | null;
   /** Server clock minus this device's clock, so times read the same on every POS station. */
   clockOffsetMs?: number;
 }
 
 const NO_COLOR = "#454c56";
-const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 /**
  * The tickets that are IN SERVICE and not paid yet — the front desk's list of who to check out. (Clients who are still
  * waiting live on the Techs page's Checked In list; this tab is only for tickets already in the chair.)
  */
 export function CheckInBoard(p: Props) {
-  const [openId, setOpenId] = useState<number | null>(p.focus?.id ?? null);
-  useEffect(() => { if (p.focus) setOpenId(p.focus.id); }, [p.focus]);
+  const [openId, setOpenId] = useState<number | null>(null);
   const [tick, setTick] = useState(() => Date.now());
   const now = tick + (p.clockOffsetMs ?? 0);
   useEffect(() => {
@@ -66,21 +63,6 @@ export function CheckInBoard(p: Props) {
     );
   };
 
-  const dock: { icon: typeof Play; label: string; action: () => void; primary?: boolean; danger?: boolean }[] = open
-    ? open.status === "confirmed"
-      ? [
-          { icon: Play, label: "START", action: () => p.onStart(open), primary: true },
-          { icon: UserRound, label: "REASSIGN", action: () => p.onReassign(open) },
-          { icon: Receipt, label: "TICKET", action: () => p.onEdit(open) },
-          { icon: Ban, label: "CANCEL", action: () => p.onCancel(open), danger: true },
-        ]
-      : [
-          { icon: ShoppingBag, label: "CHECKOUT", action: () => p.onCheckout(open), primary: true },
-          { icon: UserRound, label: "REASSIGN", action: () => p.onReassign(open) },
-          { icon: Receipt, label: "TICKET", action: () => p.onEdit(open) },
-        ]
-    : [];
-
   return (
     <section className="checkin-board" data-testid="nail-board">
       <div className="checkin-board-header">
@@ -105,61 +87,8 @@ export function CheckInBoard(p: Props) {
       </div>
 
       {open && (
-        <>
-          <div className="checkin-overlay" onClick={() => setOpenId(null)} />
-          <div className="checkin-modal-wrapper" onClick={() => setOpenId(null)}>
-            <div className="checkin-modal-card" onClick={(e) => e.stopPropagation()} data-testid="nail-ticket-modal">
-              <button type="button" className="checkin-modal-close" onClick={() => setOpenId(null)} aria-label="Close"><X size={16} /></button>
-              <div className="checkin-card-header checkin-card-header-lg" style={{ borderLeftColor: open.staff?.color || NO_COLOR }}>
-                <div className="checkin-client">
-                  <div className="checkin-card-name-row">
-                    <strong>{open.client.name}</strong>
-                    <span className="checkin-ticket-num">#{open.ticketNumber ?? open.id}</span>
-                  </div>
-                  <span><Phone size={13} /> {open.client.phone ?? "No phone"}</span>
-                </div>
-                <div className="checkin-status-pill" style={{ marginRight: 40 }} data-in-service={open.status === "started"}>
-                  {open.status === "started" ? "IN SERVICE · UNPAID" : "WAITING"}
-                </div>
-              </div>
-              <div className="checkin-modal-body">
-                <div className="checkin-modal-detail">
-                  <Hand size={18} />
-                  <div><small>Service</small><strong>{open.service.name}</strong></div>
-                </div>
-                {(open.addons.length > 0 || (open.nail?.lines.length ?? 0) > 0 || open.customLines.length > 0) && (
-                  <div className="checkin-modal-lines">
-                    {open.addons.map((a) => <div key={`a${a.id}`}><span>+ {a.name}</span><span>${a.price.toFixed(2)}</span></div>)}
-                    {open.nail?.lines.map((l) => <div key={l.label}><span>+ {l.label}</span><span>${l.price.toFixed(2)}</span></div>)}
-                    {open.customLines.map((l, i) => <div key={`c${i}`}><span>+ {l.label}</span><span>${l.price.toFixed(2)}</span></div>)}
-                  </div>
-                )}
-                <div className="checkin-modal-detail">
-                  <UserRound size={18} />
-                  <div><small>Technician</small><strong>{open.staff?.name ?? "Not assigned"}</strong></div>
-                </div>
-                <div className="checkin-modal-detail">
-                  <Clock size={18} />
-                  <div><small>{open.status === "started" ? "In chair since" : "Duration"}</small><strong>{open.status === "started" ? `${fmtTime(open.startedAt ?? open.date)} · ${formatElapsed(open.startedAt ?? open.date, now)}` : formatDuration(open.duration)}</strong></div>
-                </div>
-                <div className="checkin-modal-detail">
-                  <CalendarDays size={18} />
-                  <div><small>Total to collect</small><strong>${open.total.toFixed(2)}</strong></div>
-                </div>
-              </div>
-            </div>
-
-            <div className="checkin-dock" onClick={(e) => e.stopPropagation()}>
-              {dock.map((b) => (
-                <button key={b.label} type="button" disabled={p.busy} onClick={() => { b.action(); setOpenId(null); }} data-testid={`nail-dock-${b.label.toLowerCase()}`}
-                  className={`checkin-dock-btn ${b.primary ? "checkin-dock-primary" : ""} ${b.danger ? "checkin-dock-danger" : ""}`}>
-                  <b.icon size={22} />
-                  <span>{b.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </>
+        <TicketPopup ticket={open} busy={p.busy} clockOffsetMs={p.clockOffsetMs} onClose={() => setOpenId(null)}
+          onStart={p.onStart} onCheckout={p.onCheckout} onReassign={p.onReassign} onEdit={p.onEdit} onCancel={p.onCancel} />
       )}
     </section>
   );

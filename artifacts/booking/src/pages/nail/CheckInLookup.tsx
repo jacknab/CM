@@ -3,6 +3,7 @@ import { ArrowLeft, CheckCircle2, Delete, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { isValidNanpPrefix } from "@/lib/phone-validation";
+import { useShake } from "@/hooks/use-shake";
 import { createClient } from "./NameEntry";
 import { findClientId } from "./clientLookup";
 import { QuickAreaCodes } from "./QuickAreaCodes";
@@ -54,7 +55,8 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [shift, setShift] = useState(true);
-  const [invalid, setInvalid] = useState(false);
+  // A digit that can't start a real US number is refused with a shake — the digits already typed stay put.
+  const { shakeClass, shake: rejectDigit, onShakeEnd } = useShake();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<CheckInResult | null>(null);
@@ -95,8 +97,7 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
   const digit = (d: string) => {
     if (phone.length >= 10 || step !== "phone") return;
     const next = phone + d;
-    if (!isValidNanpPrefix(next)) { setPhone(""); setInvalid(true); return; }
-    setInvalid(false);
+    if (!isValidNanpPrefix(next)) { rejectDigit(); return; }
     setPhone(next);
     if (next.length === 10) void run(next);
   };
@@ -108,10 +109,9 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
     for (const d of digits) {
       if (next.length >= 10) break;
       const cand = next + d;
-      if (!isValidNanpPrefix(cand)) { setPhone(""); setInvalid(true); return; }
+      if (!isValidNanpPrefix(cand)) { if (next !== phone) setPhone(next); rejectDigit(); return; } // keep the digits before the bad one
       next = cand;
     }
-    setInvalid(false);
     setPhone(next);
     if (next.length === 10 && next !== phone) void run(next);
   };
@@ -162,13 +162,12 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
         </Button>
       </div>
 
-      <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4">
+      <div className={cn("flex-1 min-h-0 flex flex-col items-center justify-center px-4", shakeClass)} onAnimationEnd={onShakeEnd} data-testid="nail-checkin-shake">
         {step === "phone" && (
           <>
             <div className="text-[clamp(30px,6vh,48px)] font-mono tracking-wider mb-[2.5vh] min-h-[48px] flex items-center" data-testid="nail-checkin-phone">
               {phone.length > 0 ? formatPhone(phone) : <span className="text-muted-foreground/40">(___) ___-____</span>}
             </div>
-            {invalid && <p className="text-sm text-red-500 mb-2">That number isn't valid — check the area code and try again.</p>}
 
             <div className="relative">
               {/* Frosted-glass card over the keypad while the client is typing on the customer-facing screen. It only signals —
@@ -204,9 +203,9 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
                 </div>
               ))}
               <div className="flex justify-center gap-2">
-                <button onClick={() => { setPhone(""); setInvalid(false); }} className={cn(NUM_KEY, "text-[clamp(16px,2.6vh,22px)] text-destructive")} data-testid="nail-checkin-clear">Clear</button>
+                <button onClick={() => setPhone("")} className={cn(NUM_KEY, "text-[clamp(16px,2.6vh,22px)] text-destructive")} data-testid="nail-checkin-clear">Clear</button>
                 <button onClick={() => digit("0")} className={NUM_KEY} data-testid="nail-checkin-key-0">0</button>
-                <button onClick={() => { setPhone((p) => p.slice(0, -1)); setInvalid(false); }} className={cn(NUM_KEY, "flex items-center justify-center")} aria-label="Delete last digit" data-testid="nail-checkin-backspace">
+                <button onClick={() => setPhone((p) => p.slice(0, -1))} className={cn(NUM_KEY, "flex items-center justify-center")} aria-label="Delete last digit" data-testid="nail-checkin-backspace">
                   <Delete className="w-7 h-7" />
                 </button>
               </div>

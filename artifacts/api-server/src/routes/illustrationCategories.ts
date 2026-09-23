@@ -18,6 +18,7 @@ import { eq, sql, asc } from "drizzle-orm";
 import { memoryUpload, uploadToR2, deleteFromR2, extractR2KeyFromUrl } from "../lib/r2";
 import sharp from "sharp";
 import { findIllustrationSlug, type Industry } from "../lib/illustrationMatcher";
+import { resolveSessionStoreId } from "../lib/sessionStore";
 
 /**
  * Fallback: find a category slug by matching the service name against actual
@@ -74,7 +75,7 @@ router.get("/", async (req, res) => {
 // NOTE: must be declared BEFORE /:id so "usage" is not swallowed as an id param
 router.get("/usage", async (req: any, res) => {
   try {
-    const storeId = Number(req.query.storeId);
+    const storeId = await resolveSessionStoreId(req);
     const rows = await db.execute(sql`
       SELECT ic.id, ic.slug, COUNT(s.id)::int AS usage_count
       FROM service_illustration_categories ic
@@ -93,7 +94,8 @@ router.get("/usage", async (req: any, res) => {
 // ─── Bulk auto-assign for an entire store ─────────────────────────────────────
 // NOTE: must be before /:id routes
 router.post("/bulk-auto-assign", async (req: any, res) => {
-  const { storeId, industry, overwrite } = req.body;
+  const { industry, overwrite } = req.body;
+  const storeId = await resolveSessionStoreId(req);
   if (!storeId) return res.status(400).json({ error: "storeId is required" });
   try {
     const ind = (industry || "NAIL_SALON") as Industry;

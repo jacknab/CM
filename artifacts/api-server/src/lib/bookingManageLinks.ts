@@ -19,9 +19,15 @@ export function generateManageCode(): string {
 }
 
 /** Public base URL for the SPA (mirrors lapsed-client-scheduler.ts). */
+const appBaseUrl = () => (process.env.APP_URL || "https://certxa.com").replace(/\/$/, "");
+
 export function buildManageUrl(token: string): string {
-  const base = (process.env.APP_URL || "https://certxa.com").replace(/\/$/, "");
-  return `${base}/b/${token}`;
+  return `${appBaseUrl()}/b/${token}`;
+}
+
+/** The same per-appointment token, addressed to the read-only web receipt page instead of "manage my booking". */
+export function buildReceiptUrl(token: string): string {
+  return `${appBaseUrl()}/receipt/${token}`;
 }
 
 /**

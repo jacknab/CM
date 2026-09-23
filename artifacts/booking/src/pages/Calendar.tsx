@@ -40,6 +40,7 @@ import { POS_BUTTON_TX, POS_GUIDED_TX, POS_MISC_TX } from "@/lib/pos/labels";
 import type { AppointmentWithDetails } from "@shared/schema";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
+import { useShake } from "@/hooks/use-shake";
 import { CashDrawerPanel } from "@/pages/CashDrawer";
 import { MobileCalendarView } from "@/components/MobileCalendarView";
 import { useSnapshot } from "@/hooks/use-snapshot";
@@ -6334,7 +6335,6 @@ export function CheckoutPOSPanel({
   onCustomerLinked,
   onThermalPrint,
   initialExtraItems,
-  embedded = false,
 }: {
   appointment: AppointmentWithDetails;
   timezone: string;
@@ -6347,8 +6347,6 @@ export function CheckoutPOSPanel({
   onThermalPrint?: (bytes: Uint8Array) => Promise<void>;
   /** Extra ticket lines to start the cart with (e.g. the nail salon screen's length / shape / art upcharges). */
   initialExtraItems?: { name: string; price: number; kind?: string }[];
-  /** Draw inside its parent (which must be `position: relative`) instead of as a full-screen popup — the Nail POS's POS tab. */
-  embedded?: boolean;
 }) {
   const { pick } = useLanguage();
   const tPOS = {
@@ -6498,7 +6496,7 @@ export function CheckoutPOSPanel({
   const tipAutoRequestedRef = useRef(false);
   const requestClientTipScreen = () => {
     setWaitingForTip(true);
-    broadcastToKiosk("kiosk_checkout_tip_request", { total: Math.round(preTotal * 100) / 100, cardMethod });
+    broadcastToKiosk("kiosk_checkout_tip_request", { total: Math.round(preTotal * 100) / 100, cardMethod, appointmentId: appointment.id });
   };
   const [phase, setPhase] = useState<"cart" | "payment">("cart");
   const [tipMode, setTipMode] = useState<"preset" | "custom">("preset");
@@ -6818,7 +6816,7 @@ export function CheckoutPOSPanel({
     setTenders((prev) => [...prev, { id: (prev[prev.length - 1]?.id ?? 0) + 1, method: d?.method === "tap_to_pay" ? "tap" : "m2", amount }]);
     showPosStatus(tSt.paymentApproved, "success");
     setPaymentNotice({ amount, last4: d?.last4 ? String(d.last4) : null, label: d?.method === "tap_to_pay" ? "Tap to Pay" : "Card", paymentIntentId: d?.paymentIntentId ? String(d.paymentIntentId) : null });
-    broadcastToKiosk("kiosk_checkout_payment_result", { success: true, total: amount, last4: d?.last4 });
+    broadcastToKiosk("kiosk_checkout_payment_result", { success: true, total: amount, last4: d?.last4, appointmentId: appointment.id });
   };
 
   // ── Customer's receipt choice from the /frontdesk "Payment successful" screen ──
@@ -7246,13 +7244,13 @@ export function CheckoutPOSPanel({
       const charged = balanceDue;
       setTenders(prev => [...prev, { id: nextTenderId, method: "m2", amount: charged }]);
       setNextTenderId(prev => prev + 1);
-      broadcastToKiosk("kiosk_checkout_payment_result", { success: true, total: charged, last4 });
+      broadcastToKiosk("kiosk_checkout_payment_result", { success: true, total: charged, last4, appointmentId: appointment.id });
     } catch (err: any) {
       setTermStatus("ready");
       setTermError(err.message ?? "Payment failed");
       if (termRef.current) termRef.current.cancelCollectPaymentMethod().catch(() => {});
       toast({ title: tSt.cardFailed, description: err.message, variant: "destructive" });
-      broadcastToKiosk("kiosk_checkout_payment_result", { success: false, error: err?.message });
+      broadcastToKiosk("kiosk_checkout_payment_result", { success: false, error: err?.message, appointmentId: appointment.id });
     }
   };
 
@@ -8170,17 +8168,14 @@ export function CheckoutPOSPanel({
     const payKpVal = posKeypadDollars();
     const payPaidInFull = tenders.length > 0 && totalTendered >= grandTotal;
     return (
-      <div className={embedded ? "absolute inset-0 z-10" : "fixed inset-0 z-50"} data-testid="checkout-pos-panel" data-embedded={embedded ? "true" : undefined}>
-        {!embedded && (
-          <button
-            type="button"
-            aria-label="Close checkout"
-            className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]"
-            onClick={onClose}
-          />
-        )}
-        <div className={`pos-cart-sheet absolute left-0 top-0 h-full w-full sm:w-[420px] ${embedded ? "lg:w-full" : "lg:w-[1192px] shadow-[8px_0_24px_rgba(0,0,0,0.12)]"} max-w-[100vw] flex overflow-x-auto`}
-          style={embedded ? { backgroundColor: "#1c1c1e" } : undefined}>
+      <div className="fixed inset-0 z-50" data-testid="checkout-pos-panel">
+        <button
+          type="button"
+          aria-label="Close checkout"
+          className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]"
+          onClick={onClose}
+        />
+        <div className="pos-cart-sheet absolute left-0 top-0 h-full w-full sm:w-[420px] lg:w-[1192px] max-w-[100vw] flex overflow-x-auto shadow-[8px_0_24px_rgba(0,0,0,0.12)]">
         {/* ── Panel 1 — Cart (dark) ── */}
         <div className="w-full sm:w-[420px] flex-shrink-0 flex flex-col overflow-hidden" style={{ backgroundColor: "#1c1c1e" }}>
         <div className="relative p-4 flex items-center justify-between gap-2" style={{ borderBottom: "1px solid #3a3a3c", backgroundColor: "#2c2c2e" }}>
@@ -9246,7 +9241,7 @@ function WalkInCheckoutPanel({ onClose, onThermalPrint }: { onClose: () => void;
       toast({ title: tSt.paymentApproved, description: tSt.paymentApprovedDesc(brand, last4, chargeAmount.toFixed(2)) });
       setWiTermStatus("ready");
       handleApplyTender("m2", chargeAmount);
-      broadcastToKiosk("kiosk_checkout_payment_result", { success: true, total: chargeAmount, last4 });
+      broadcastToKiosk("kiosk_checkout_payment_result", { success: true, total: chargeAmount, last4, appointmentId: 0 });
     } catch (err: any) {
       setWiTermStatus("ready");
       setWiTermError(err.message ?? "Payment failed");
@@ -9480,7 +9475,7 @@ function WalkInCheckoutPanel({ onClose, onThermalPrint }: { onClose: () => void;
                     // tip request here would compute new tip presets off a
                     // total that already includes a prior tip.
                     const baseAmount = Math.max(0, Math.round((grandTotal - tipReceived) * 100) / 100);
-                    broadcastToKiosk("kiosk_checkout_tip_request", { total: baseAmount });
+                    broadcastToKiosk("kiosk_checkout_tip_request", { total: baseAmount, appointmentId: 0 });
                   }}
                   disabled={waitingForTip}
                 >
@@ -9775,7 +9770,10 @@ export function ClientLookupSheet({ onClose }: { onClose: () => void }) {
   const [isSearching, setIsSearching] = useState(false);
   const [searchDone, setSearchDone] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  // `invalidNumber` is only for a complete number pushed from the /frontdesk tablet that isn't a real US number; a digit typed on this
+  // keypad that can't be part of one is refused with a shake instead, and what's already typed stays.
   const [invalidNumber, setInvalidNumber] = useState(false);
+  const { shakeClass, shake, onShakeEnd } = useShake();
   const [foundClient, setFoundClient] = useState<any>(null);
   const [activeSection, setActiveSection] = useState("overview");
   const [viewAppointment, setViewAppointment] = useState<any>(null);
@@ -9846,20 +9844,18 @@ export function ClientLookupSheet({ onClose }: { onClose: () => void }) {
   const handleDigit = useCallback((digit: string) => {
     if (phoneDigits.length < 10) {
       const next = phoneDigits + digit;
-      setSearchDone(false);
-      setNotFound(false);
       if (!isValidNanpPrefix(next)) {
-        // The number just became structurally impossible (e.g. an area code
-        // or exchange code starting with 0/1, or a reserved N11 pattern) —
-        // wipe it immediately rather than let staff keep typing a dead end.
-        setPhoneDigits("");
-        setInvalidNumber(true);
+        // The number would become structurally impossible (an area or exchange code starting with 0/1, or a reserved
+        // N11 pattern): shake and refuse just this digit — what's already typed stays.
+        shake();
         return;
       }
+      setSearchDone(false);
+      setNotFound(false);
       setInvalidNumber(false);
       setPhoneDigits(next);
     }
-  }, [phoneDigits]);
+  }, [phoneDigits, shake]);
 
   const handleBackspace = useCallback(() => {
     setPhoneDigits(prev => prev.slice(0, -1));
@@ -10272,7 +10268,7 @@ export function ClientLookupSheet({ onClose }: { onClose: () => void }) {
           style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 72px)" }}
         >
           {/* Phone number display */}
-          <div className="w-full rounded-2xl bg-white border border-gray-200 shadow-sm py-6 px-4 mb-5 text-center">
+          <div className={`w-full rounded-2xl bg-white border border-gray-200 shadow-sm py-6 px-4 mb-5 text-center ${shakeClass}`} onAnimationEnd={onShakeEnd}>
             {phoneDigits.length > 0 ? (
               <p className="text-4xl font-bold tracking-widest text-primary">
                 {formatPhone(phoneDigits)}
@@ -10292,7 +10288,7 @@ export function ClientLookupSheet({ onClose }: { onClose: () => void }) {
           </div>
 
           {/* Numpad */}
-          <div className="flex-1 flex flex-col gap-2 justify-end">
+          <div className={`flex-1 flex flex-col gap-2 justify-end ${shakeClass}`} onAnimationEnd={onShakeEnd}>
             {numKeys.map((row, ri) => (
               <div key={ri} className="grid grid-cols-3 gap-2">
                 {row.map((key) => {
@@ -10624,7 +10620,10 @@ export function ChooseClientPanel({
   const [phoneDigits, setPhoneDigits] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [searchDone, setSearchDone] = useState(false);
+  // `invalidNumber` is only for a complete number pushed from the /frontdesk tablet that isn't a real US number; a digit typed on this
+  // keypad that can't be part of one is refused with a shake instead, and what's already typed stays.
   const [invalidNumber, setInvalidNumber] = useState(false);
+  const { shakeClass, shake, onShakeEnd } = useShake();
   const [showNameEntry, setShowNameEntry] = useState(false);
   const [clientName, setClientName] = useState("");
   const [shiftActive, setShiftActive] = useState(true);
@@ -10649,19 +10648,17 @@ export function ChooseClientPanel({
   const handleDigit = useCallback((digit: string) => {
     if (phoneDigits.length < 10) {
       const next = phoneDigits + digit;
-      setSearchDone(false);
       if (!isValidNanpPrefix(next)) {
-        // The number just became structurally impossible (e.g. an area code
-        // or exchange code starting with 0/1, or a reserved N11 pattern) —
-        // wipe it immediately rather than let staff keep typing a dead end.
-        setPhoneDigits("");
-        setInvalidNumber(true);
+        // The number would become structurally impossible (an area or exchange code starting with 0/1, or a reserved
+        // N11 pattern): shake and refuse just this digit — what's already typed stays.
+        shake();
         return;
       }
+      setSearchDone(false);
       setInvalidNumber(false);
       setPhoneDigits(next);
     }
-  }, [phoneDigits]);
+  }, [phoneDigits, shake]);
 
   const handleBackspace = useCallback(() => {
     setPhoneDigits(prev => prev.slice(0, -1));
@@ -10964,7 +10961,7 @@ export function ChooseClientPanel({
           style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 72px)" }}
         >
           {/* Phone number display */}
-          <div className="w-full rounded-2xl bg-white border border-gray-200 shadow-sm py-6 px-4 mb-5 text-center">
+          <div className={`w-full rounded-2xl bg-white border border-gray-200 shadow-sm py-6 px-4 mb-5 text-center ${shakeClass}`} onAnimationEnd={onShakeEnd}>
             {phoneDigits.length > 0 ? (
               <p className="text-4xl font-bold tracking-widest text-primary" data-testid="text-phone-display">
                 {formatPhone(phoneDigits)}
@@ -10988,7 +10985,7 @@ export function ChooseClientPanel({
           </div>
 
           {/* Numpad — flex-1 rows fill remaining height equally */}
-          <div className="flex-1 flex flex-col gap-3 min-h-0">
+          <div className={`flex-1 flex flex-col gap-3 min-h-0 ${shakeClass}`} onAnimationEnd={onShakeEnd}>
             {numKeys.map((row, ri) => (
               <div key={ri} className="flex gap-3 flex-1">
                 {row.map((key) => {

@@ -110,13 +110,9 @@
 .nail-app .catalog-locked-overlay p { font-size: 15px; max-width: 280px; line-height: 1.5; margin: 0; }
 
 /* Nail shape/size inset selection */
-.nail-app .nail-options { margin: 4px 0 8px; padding: 12px; background: #232830; border: 1px solid #3b424c; border-radius: 4px; display: flex; flex-direction: column; gap: 12px; }
-.nail-app .nail-option-group { display: flex; flex-direction: column; gap: 7px; }
-.nail-app .nail-option-label { font-size: 9px; font-weight: 700; letter-spacing: .5px; color: #8b94a0; }
-.nail-app .nail-option-group .addon-grid { padding: 0; }
 
 /* Bottom nav */
-.nail-app .bottom-nav { grid-column: 1 / -1; background: #1a1e25; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)) 132px; align-items: stretch; padding-left: 10px; color: #eef3fb; }
+.nail-app .bottom-nav { grid-column: 1 / -1; background: #1a1e25; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)) 132px; align-items: stretch; padding-left: 10px; color: #eef3fb; }
 .nail-app .bottom-nav button { position: relative; background: transparent; display: flex; flex-direction: column; gap: 8px; justify-content: center; align-items: center; font-size: 14px; font-weight: 600; color: #8b94a0; }
 .nail-app .bottom-nav button.active { background: #0d9bd1; border-radius: 6px; margin: 8px 3px; color: #fff; }
 .nail-app .bottom-nav button i { position: absolute; right: 14px; top: 10px; min-width: 24px; height: 24px; border-radius: 12px; font-style: normal; display: grid; place-items: center; font-size: 13px; font-weight: 800; color: #fff; padding: 0 6px; }
@@ -335,8 +331,6 @@
 /* ===== Adaptions for the live Certxa build ===== */
 .nail-app .techs-page { grid-template-columns: 290px minmax(0, 1fr); }
 @media (max-width: 1180px) { .nail-app .techs-page { grid-template-columns: 250px minmax(0, 1fr); } }
-.nail-app .tech-panel { background: #2a2e36; flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 14px 16px; overflow: hidden; }
-.nail-app .tech-panel .checkin-board-header h1 { font-size: 20px; }
 .nail-app .arrived-panel { min-height: 0; }
 .nail-app .arrived-list { flex: 1; min-height: 0; overflow-y: auto; }
 .nail-app .arrived-list::-webkit-scrollbar { width: 0; }
@@ -350,35 +344,11 @@
 .nail-app .tech-stage { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .nail-app .tech-grid { display: grid; grid-auto-flow: column; align-content: start; justify-content: start; }
 .nail-app .tech-slot { position: relative; }
-.nail-app .tech-slot > .tech-card { position: absolute; top: 0; left: 0; transform-origin: top left; }
-.nail-app .tech-card { background: #232830; border: 1px solid #3b424c; border-radius: 6px; overflow: hidden; display: flex; flex-direction: row; box-sizing: border-box; }
-.nail-app .tech-card.tech-off { opacity: .55; }
-.nail-app .tech-card-head { display: flex; align-items: center; gap: 12px; padding: 0 16px 0 14px; width: 300px; flex-shrink: 0; border-left: 4px solid #454c56; border-right: 1px solid #2f353d; }
-.nail-app .tech-avatar { width: 40px; height: 40px; border-radius: 50%; border: 2px solid #454c56; display: grid; place-items: center; font-size: 13px; font-weight: 700; color: #c8cdd3; background: #2a2e36; overflow: hidden; flex-shrink: 0; }
-.nail-app .tech-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.nail-app .tech-card-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-.nail-app .tech-card-name strong { font-size: 15px; font-weight: 700; color: #eef3fb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.nail-app .tech-card-name span { font-size: 12px; color: #8b94a0; }
 .nail-app .tech-pill { font-size: 10px; font-weight: 700; letter-spacing: .5px; padding: 4px 9px; border-radius: 10px; flex-shrink: 0; border: 1px solid; white-space: nowrap; }
 .nail-app .tech-pill[data-status="in-service"] { background: rgba(13,155,110,.15); color: #0d9b6e; border-color: rgba(13,155,110,.3); }
 .nail-app .tech-pill[data-status="available"] { background: rgba(13,155,209,.12); color: #0d9bd1; border-color: rgba(13,155,209,.3); }
 .nail-app .tech-pill[data-status="break"] { background: rgba(240,168,48,.12); color: #f0a830; border-color: rgba(240,168,48,.3); }
 .nail-app .tech-pill[data-status="off"] { background: #2a2e36; color: #8b94a0; border-color: #3b424c; }
-.nail-app .tech-card-body { padding: 12px 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; flex: 1; min-width: 0; }
-.nail-app .tech-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.nail-app .tech-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; text-align: right; min-width: 0; }
-.nail-app .tech-now { display: flex; flex-direction: column; gap: 3px; }
-.nail-app .tech-now strong { font-size: 16px; font-weight: 700; color: #eef3fb; }
-.nail-app .tech-now span { font-size: 13px; color: #a7afb9; }
-.nail-app .tech-meta { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #8b94a0; }
-.nail-app .tech-idle { font-size: 14px; color: #8b94a0; }
-.nail-app .tech-free { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.nail-app .tech-free strong { font-size: 17px; font-weight: 700; color: #eef3fb; }
-.nail-app .tech-nextup { font-size: 9px; font-weight: 700; letter-spacing: .6px; color: #fff; background: #0d9bd1; padding: 3px 8px; border-radius: 3px; flex-shrink: 0; }
-.nail-app .tech-done { font-size: 13px; color: #8b94a0; }
-.nail-app .tech-queue { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 13px; }
-.nail-app .tech-queue span { color: #f0a830; font-weight: 700; }
-.nail-app .tech-queue em { color: #8b94a0; font-style: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nail-app.h-app, .nail-app { position: relative; overflow: hidden; }
 .nail-app .pos-shell { width: 100%; height: 100%; }
 .nail-app .category-tabs { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(92px, 1fr); overflow-x: auto; }
@@ -393,8 +363,10 @@
 .nail-app .product-card.compact .card-line { justify-content: center; gap: 6px; margin-top: 0; }
 .nail-app .product-card.compact span { font-size: 10px; }
 .nail-app .empty-state-hint { font-size: 13px; color: #8b94a0; padding: 10px 2px; grid-column: 1 / -1; }
-.nail-app .ticket-missing { font-size: 11px; color: #f0a830; margin: -2px 0 10px; }
 .nail-app .ticket-item .item-copy span.note { color: #0d9bd1; }
+.nail-app .display-prompt { color: #f0a830; font-size: 13px; margin-right: auto; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.nail-app .money-grid button.fn-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #e8eaed; font-size: 12px; font-weight: 700; }
+.nail-app .money-grid button.fn-btn svg { color: #c4cad3; }
 .nail-app .display-qty { color: #0d9b6e; font-size: 14px; margin-right: auto; font-weight: 700; }
 .nail-app .key-grid .enter-key:disabled { opacity: .4; }
 .nail-app .nail-notice { position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%); z-index: 400; background: #232830; border: 1px solid #454c56; padding: 10px 20px; font-size: 13px; font-weight: 600; color: #eef3fb; box-shadow: 0 12px 30px rgba(0,0,0,.45); border-radius: 4px; }
@@ -447,26 +419,10 @@
 .nail-app .checkin-done strong { font-size: 20px; color: #eef3fb; }
 .nail-app .checkin-done span { font-size: 13px; color: #8b94a0; }
 .nail-app .walkin-sheet.checkin-sheet { width: 600px; }
-
 /* stack card: tech on top, details underneath (used when the columns are narrow) */
-.nail-app .tech-card.mode-stack { flex-direction: column; }
-.nail-app .tech-card.mode-stack .tech-card-head { width: auto; padding: 12px 14px 10px 12px; border-right: 0; border-bottom: 1px solid #2f353d; }
-.nail-app .tech-card.mode-stack .tech-avatar { width: 36px; height: 36px; font-size: 12px; }
-.nail-app .tech-card.mode-stack .tech-card-name strong { font-size: 14px; }
-.nail-app .tech-card.mode-stack .tech-card-body { grid-template-columns: 1fr; align-content: center; gap: 8px; padding: 10px 14px; }
-.nail-app .tech-card.mode-stack .tech-side { align-items: flex-start; text-align: left; flex-direction: row; justify-content: space-between; width: 100%; gap: 10px; }
-.nail-app .tech-card.mode-stack .tech-queue { align-items: flex-start; }
-.nail-app .tech-card.mode-stack .tech-now strong { font-size: 15px; }
-.nail-app .tech-card.mode-stack .tech-free strong { font-size: 16px; }
 
 /* ===== Salon at a glance (Techs page header) ===== */
-.nail-app .glance { flex-shrink: 0; padding-bottom: 12px; border-bottom: 1px solid #3b424c; }
-.nail-app .glance-title { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: #8b94a0; margin: 0 0 10px; }
-.nail-app .glance-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
-.nail-app .glance-tile { background: #232830; border: 1px solid #3b424c; border-radius: 6px; padding: 10px 12px 9px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.nail-app .glance-tile strong { font-size: 24px; font-weight: 700; color: #eef3fb; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.nail-app .glance-tile span { font-size: 11px; font-weight: 600; color: #8b94a0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.nail-app .tech-panel .tech-stage { margin-top: 12px; }
+
 
 /* ===== More menu — big, easy to read and tap on a 10" tablet ===== */
 .nail-app .more-menu { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 301; background: #232830; border: 1px solid #3b424c; border-radius: 14px; width: min(96vw, 980px); height: min(94vh, 700px); display: flex; flex-direction: column; box-shadow: 0 32px 80px rgba(0,0,0,.6); animation: modal-in 0.25s ease; overflow: hidden; }
@@ -515,10 +471,8 @@
 .nail-app .walkin-quick { padding: 18px 0; border-radius: 8px; font-size: 22px; font-weight: 700; font-family: inherit; color: #0d9bd1; background: rgba(13,155,209,.10); border: 1px solid rgba(13,155,209,.35); transition: background .12s, color .12s, transform .12s; }
 .nail-app .walkin-quick:active { background: #0d9bd1; color: #fff; transform: scale(.96); }
 .nail-app .walkin-quick-blank { background: transparent; border: 1px dashed #3b424c; opacity: .5; }
-
 /* ===== Techs page: tap a clocked-out card → "Set In / Available" ===== */
-.nail-app .tech-card.tech-tappable { cursor: pointer; opacity: .8; }
-.nail-app .tech-card.tech-tappable:active { border-color: #0d9bd1; }
+
 .nail-app .tech-popup { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 302; width: min(94vw, 620px); background: #232830; border: 1px solid #3b424c; border-radius: 16px; padding: 30px 30px 24px; box-shadow: 0 32px 80px rgba(0,0,0,.6); animation: modal-in 0.22s ease; display: flex; flex-direction: column; gap: 20px; }
 .nail-app .tech-popup-close { position: absolute; top: 10px; right: 10px; width: 52px; height: 52px; border-radius: 10px; background: transparent; color: #8b94a0; display: grid; place-items: center; }
 .nail-app .tech-popup-close:active { background: #2f353d; color: #eef3fb; }
@@ -530,26 +484,15 @@
 .nail-app .tech-popup-name span { font-size: 14px; color: #8b94a0; }
 .nail-app .tech-popup .tech-pill { font-size: 12px; padding: 6px 12px; }
 .nail-app .tech-popup-go { height: 92px; border-radius: 14px; background: #0d9b6e; color: #fff; font-size: 26px; font-weight: 800; letter-spacing: .06em; display: flex; align-items: center; justify-content: center; gap: 14px; font-family: inherit; }
+.nail-app .tech-popup-out { background: #ef5a5f; }
+.nail-app .tech-popup-out:active { background: #d94f54; }
 .nail-app .tech-popup-go:active { background: #0b8a61; transform: scale(.985); }
 .nail-app .tech-popup-go:disabled { opacity: .5; }
 .nail-app .tech-popup-note { text-align: center; font-size: 13px; color: #8b94a0; margin: 0; }
-
 /* ===== Tech cards: live status timer ===== */
-.nail-app .tech-clock { display: flex; flex-direction: column; gap: 2px; }
-.nail-app .tech-clock-label { display: flex; align-items: center; gap: 10px; font-size: 11px; font-weight: 700; letter-spacing: .2em; color: #8b94a0; }
-.nail-app .tech-clock .tech-nextup { letter-spacing: .12em; }
-.nail-app .tech-timer { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; font-size: 42px; font-weight: 600; line-height: 1.05; letter-spacing: .02em; color: #eef3fb; }
-.nail-app .tech-timer-unknown { color: #5d6571; }
-.nail-app .tech-clock[data-status="available"] .tech-timer { color: #0d9bd1; }
-.nail-app .tech-clock[data-status="in-service"] .tech-timer { color: #0d9b6e; }
-.nail-app .tech-clock[data-status="break"] .tech-timer { color: #f0a830; }
-.nail-app .tech-card.mode-stack .tech-timer { font-size: 34px; }
-.nail-app .tech-now { margin-top: 2px; }
-@media (max-width: 1040px) { .nail-app .glance-tile { padding: 9px 9px 8px; } .nail-app .glance-tile strong { font-size: 20px; } }
+
 
 /* ===== Checkout inside the POS tab ===== */
-.nail-app .checkout-embed { grid-column: 1 / -1; position: relative; min-height: 0; margin-top: 6px; background: #1c1c1e; overflow: hidden; }
-.nail-app .checkout-embed-hidden { display: none; }
 
 .nail-app .checkout-row .checkout-paynow { background: #0d9bd1 !important; font-size: 12px !important; flex: 0 0 96px; }
 .nail-app .checkout-row .checkout-paynow.disabled { background: #3b424c !important; }
@@ -567,3 +510,165 @@
 .nail-app .checkin-columns-full .checkin-card-total { font-size: 24px; }
 .nail-app .checkin-columns-full .checkin-status-pill { font-size: 11px; padding: 4px 10px; }
 .nail-app .checkin-columns-full .checkin-card-list { gap: 10px; }
+
+
+/* ===== Techs tab — light "Salon at a glance" design (dark version: artifacts/booking/backups/techs-tab-2026-09-21) ===== */
+.nail-app .tt-panel { background: linear-gradient(180deg, #f7fafd 0%, #eef3f9 100%); flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px 14px 12px; overflow: hidden; color: #0f1f3d; }
+/* Slim "Salon at a glance" strip — a thin title line, then short chips (value over label) — so the tech cards get the room. */
+.nail-app .tt-glance { flex-shrink: 0; }
+.nail-app .tt-glance-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.nail-app .tt-tile { border-radius: 10px; padding: 12px 10px; display: flex; flex-direction: row; align-items: center; gap: 8px; min-width: 0; border: 1px solid rgba(15, 31, 61, .06); box-shadow: 0 2px 8px rgba(30, 60, 110, .06); }
+.nail-app .tt-tile svg { flex-shrink: 0; }
+.nail-app .tt-tile > div { display: flex; flex-direction: column; min-width: 0; }
+.nail-app .tt-tile strong { font-size: 20px; font-weight: 800; line-height: 1.05; color: #0b1a36; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .tt-tile[data-long="true"] strong { font-size: 17px; }
+.nail-app .tt-tile span { font-size: 11px; font-weight: 500; line-height: 1.15; color: #3f4f6a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .tt-tile-blue { background: linear-gradient(145deg, #eaf3ff, #dfeafa); } .nail-app .tt-tile-blue svg { color: #1f6fe0; }
+.nail-app .tt-tile-green { background: linear-gradient(145deg, #e8f8ef, #dcf3e7); } .nail-app .tt-tile-green svg { color: #0ea56a; }
+.nail-app .tt-tile-purple { background: linear-gradient(145deg, #f0eafd, #e6def9); } .nail-app .tt-tile-purple svg { color: #7a44d1; }
+.nail-app .tt-tile-orange { background: linear-gradient(145deg, #fff0e4, #fbe6d6); } .nail-app .tt-tile-orange svg { color: #ee7d2a; }
+.nail-app .tt-tile-slate { background: linear-gradient(145deg, #eef2f8, #e3e9f2); } .nail-app .tt-tile-slate svg { color: #6b7a92; }
+.nail-app .tt-tile-mint { background: linear-gradient(145deg, #e9f8f0, #ddf3e8); } .nail-app .tt-tile-mint svg { color: #12a86b; }
+
+.nail-app .tt-panel .tech-stage { flex: 1; min-height: 0; min-width: 0; overflow: hidden; margin-top: 10px; }
+
+.nail-app .tt-card { position: absolute; top: 0; left: 0; transform-origin: top left; box-sizing: border-box; background: #fff; border: 1px solid #e3eaf3; border-radius: 16px; box-shadow: 0 8px 22px rgba(30, 60, 110, .09); padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 12px; }
+.nail-app .tt-card.tt-off { opacity: .72; }
+.nail-app .tt-tappable { cursor: pointer; }
+.nail-app .tt-tappable:active { box-shadow: 0 0 0 3px #b8d2f5; }
+.nail-app .tt-top { display: flex; gap: 18px; flex: 1; min-height: 0; }
+.nail-app .tt-avatar { width: 104px; height: 104px; border-radius: 50%; background: #dfe4ec; overflow: hidden; flex-shrink: 0; align-self: center; box-shadow: inset 0 0 0 1px rgba(15,31,61,.05); }
+.nail-app .tt-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.nail-app .tt-silhouette { width: 100%; height: 100%; display: block; }
+.nail-app .tt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.nail-app .tt-namerow { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.nail-app .tt-name { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.nail-app .tt-name strong { font-size: 27px; font-weight: 700; color: #0b1a36; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .tt-name span { font-size: 17px; color: #5b6b84; display: flex; align-items: center; gap: 10px; }
+.nail-app .tt-nextup { font-style: normal; font-size: 11px; font-weight: 800; letter-spacing: .1em; color: #fff; background: #1f6fe0; padding: 3px 8px; border-radius: 6px; }
+.nail-app .tt-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; letter-spacing: .02em; padding: 7px 16px; border-radius: 999px; white-space: nowrap; flex-shrink: 0; }
+.nail-app .tt-pill i { width: 11px; height: 11px; border-radius: 50%; background: currentColor; }
+.nail-app .tt-pill[data-status="available"] { background: #e3f7ec; color: #0c8a55; }
+.nail-app .tt-pill[data-status="in-service"] { background: #e2effd; color: #1667d8; }
+.nail-app .tt-pill[data-status="break"] { background: #fdf0d9; color: #b7791f; }
+.nail-app .tt-pill[data-status="off"] { background: #e9edf3; color: #6b7a92; }
+.nail-app .tt-clockrow { display: flex; align-items: stretch; gap: 0; flex: 1; min-height: 0; }
+.nail-app .tt-clockbox { display: flex; align-items: center; gap: 14px; padding: 8px 20px 8px 16px; border-radius: 12px; flex: 0 0 auto; min-width: 250px; }
+.nail-app .tt-clockbox > div { display: flex; flex-direction: column; }
+.nail-app .tt-clockbox[data-status="available"] { background: #e6f0fc; color: #1266d8; }
+.nail-app .tt-clockbox[data-status="in-service"] { background: #dff5e8; color: #0d9a5b; }
+.nail-app .tt-clockbox[data-status="break"] { background: #fdf0d9; color: #b7791f; }
+.nail-app .tt-clockbox[data-status="off"] { background: #edf0f5; color: #6b7a92; }
+.nail-app .tt-clocklabel { font-size: 13px; font-weight: 700; letter-spacing: .06em; opacity: .85; }
+.nail-app .tt-timer { font-size: 36px; font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+.nail-app .tt-timer-unknown { opacity: .5; }
+.nail-app .tt-tapnote { font-size: 15px; font-weight: 600; color: #6b7a92; margin-top: 2px; }
+.nail-app .tt-clientstoday { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 17px; color: #4d5d77; border-left: 1px solid #dfe6ef; margin: 6px 0 6px 14px; padding-left: 10px; text-align: center; line-height: 1.25; }
+.nail-app .tt-bottom { display: grid; grid-template-columns: 1fr 1fr; background: #f1f5fa; border-radius: 12px; padding: 8px 14px; flex-shrink: 0; }
+.nail-app .tt-cell { display: flex; align-items: center; gap: 12px; min-width: 0; color: #3c4a63; }
+.nail-app .tt-cell + .tt-cell { border-left: 1px solid #dbe3ee; padding-left: 16px; }
+.nail-app .tt-cell > div { display: flex; flex-direction: column; min-width: 0; }
+.nail-app .tt-cell small { font-size: 13px; color: #6b7a92; }
+.nail-app .tt-cell b { font-size: 16px; font-weight: 500; color: #16264a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .tt-timer-sm { font-variant-numeric: tabular-nums; font-weight: 500; }
+.nail-app .tt-clockrow { min-height: 70px; }
+
+/* narrow tablets: the chips lose their icon so the label still fits */
+@media (max-width: 1100px) { .nail-app .tt-tile svg { display: none; } .nail-app .tt-tile { padding: 12px 8px; } .nail-app .tt-glance-row { gap: 6px; } }
+
+/* ===== POS tab: checkout mode ===== */
+.nail-app .row-x { background: transparent; color: #ef5a5f; font-size: 16px; padding: 0 2px; margin-left: 4px; vertical-align: middle; }
+.nail-app .ticket-total .balance-row { border-top: 1px dashed #454c56; padding-top: 10px; margin-top: 2px; }
+.nail-app .ticket-total .balance-row strong { color: #0d9b6e; font-size: 16px; }
+.nail-app .pos-status { height: 46px; flex: 0 0 auto; margin-bottom: 8px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; letter-spacing: .06em; line-height: 1.25; text-transform: uppercase; color: #8b94a0; background: #232830; border: 1px solid #3b424c; padding: 4px 10px; text-align: center; overflow: hidden; }
+.nail-app .pos-status span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+/* Checkout keypad: the key rows share whatever height is left, so a taller status box never pushes the bottom row off a 10" screen. */
+.nail-app .pay-keypad { display: flex; flex-direction: column; }
+.nail-app .pay-keypad .key-grid { flex: 1; min-height: 0; grid-template-rows: repeat(4, minmax(0, 1fr)); }
+.nail-app .pay-keypad .key-grid button { min-height: 0; }
+.nail-app .pay-keypad .money-grid { flex: 0 0 auto; }
+.nail-app .pos-status-success { color: #34d399; } .nail-app .pos-status-error { color: #fbbf24; } .nail-app .pos-status-guided { color: #f4d000; }
+.nail-app .pay-fn-row button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #e8eaed; font-size: 12px; font-weight: 700; background: #353a43; }
+.nail-app .pay-fn-row button svg { color: #c4cad3; }
+.nail-app .pay-fn-row button:active { background: #3d444e; }
+.nail-app .pay-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 16px 4px; }
+.nail-app .pay-methods { display: flex; flex-direction: column; gap: 12px; margin: auto 0; }
+.nail-app .pay-methods button { width: 100%; height: 72px; font-size: 18px; font-weight: 800; letter-spacing: .06em; color: #fff; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 12px; }
+.nail-app .pay-cash { background: #0d9b6e; } .nail-app .pay-card { background: #0d9bd1; }
+.nail-app .pay-methods .pay-gift { background: #353a43; border: 1px solid #454c56; }
+.nail-app .pay-methods button:disabled { opacity: .6; }
+.nail-app .spin { animation: nail-spin 1s linear infinite; }
+@keyframes nail-spin { to { transform: rotate(360deg); } }
+.nail-app .pay-methods button:active { transform: scale(.98); filter: brightness(.92); }
+/* Print/Text/No Receipt — shown once the ticket is paid in full, in place of the payment buttons above: same design
+   (same colors, same vertical stack), just narrower — nothing left to tender, so the row doesn't need the full width. */
+.nail-app .receipt-methods { display: flex; flex-direction: column; gap: 12px; margin: auto auto; width: 100%; max-width: 300px; align-self: center; }
+.nail-app .receipt-methods button { width: 100%; height: 64px; font-size: 15px; font-weight: 800; letter-spacing: .05em; color: #fff; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 10px; }
+.nail-app .receipt-print { background: #0d9b6e; } .nail-app .receipt-text { background: #0d9bd1; }
+.nail-app .receipt-methods .receipt-none { background: #353a43; border: 1px solid #454c56; }
+.nail-app .receipt-methods button:disabled { opacity: .6; }
+.nail-app .receipt-methods button:active { transform: scale(.98); filter: brightness(.92); }
+.nail-app .pay-hint { font-size: 12px; color: #8b94a0; line-height: 1.5; margin: 0; }
+.nail-app .fn-wrap { flex: 1; min-height: 0; padding: 12px 0 4px; }
+.nail-app .fn-grid { height: 100%; display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.nail-app .fn-cell { position: relative; min-height: 0; background: #353a43; border: 1px solid #454c56; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #e8eaed; font-size: 11px; font-weight: 700; line-height: 1.15; text-align: center; padding: 4px; }
+.nail-app .fn-cell:active { background: #3d444e; }
+.nail-app .fn-cell em { position: absolute; top: 3px; right: 6px; font-style: normal; color: #8b94a0; font-size: 12px; }
+.nail-app .fn-empty { background: #262a31; box-shadow: none; border-color: #3b424c; cursor: default; }
+
+/* Gear (card-reader choice) in the checkout ticket header, and the gift-card entry popup */
+.nail-app .ticket-client-side { display: flex; align-items: center; gap: 10px; }
+.nail-app .pos-gear { background: transparent; color: #8b94a0; padding: 6px; display: flex; align-items: center; justify-content: center; }
+.nail-app .pos-gear:active { color: #e8eaed; }
+.nail-app .gift-entry { display: flex; flex-direction: column; gap: 12px; padding: 16px 22px; }
+.nail-app .gift-input { height: 56px; background: #232830; border: 1px solid #454c56; color: #e8eaed; font-size: 22px; font-weight: 700; letter-spacing: .08em; padding: 0 16px; text-transform: uppercase; }
+.nail-app .gift-input:focus { outline: none; border-color: #0d9bd1; }
+.nail-app .gift-error { color: #fbbf24; font-size: 13px; font-weight: 700; }
+.nail-app .gift-result { display: flex; justify-content: space-between; align-items: center; background: #232830; border: 1px solid #3b424c; padding: 14px 16px; font-size: 13px; color: #9aa2ad; }
+.nail-app .gift-result strong { color: #34d399; font-size: 18px; font-variant-numeric: tabular-nums; }
+
+/* ===== Techs tab: compact card — used when 4+ techs would shrink the roomy card below a readable size (techLayout.ts) ===== */
+.nail-app .tt-compact .tt-card { padding: 6px 9px; gap: 5px; border-radius: 10px; box-shadow: 0 3px 10px rgba(30, 60, 110, .08); }
+.nail-app .tt-compact .tt-top { gap: 8px; }
+.nail-app .tt-compact .tt-avatar { width: 36px; height: 36px; align-self: flex-start; }
+.nail-app .tt-compact .tt-main { gap: 4px; }
+.nail-app .tt-compact .tt-namerow { gap: 6px; align-items: center; }
+.nail-app .tt-compact .tt-name strong { font-size: 14px; line-height: 1.15; }
+.nail-app .tt-compact .tt-name span { font-size: 10.5px; gap: 5px; line-height: 1.2; }
+.nail-app .tt-compact .tt-nextup { font-size: 8px; padding: 1px 5px; border-radius: 4px; }
+.nail-app .tt-compact .tt-pill { font-size: 9px; padding: 3px 8px; gap: 5px; letter-spacing: .03em; }
+.nail-app .tt-compact .tt-pill i { width: 6px; height: 6px; }
+.nail-app .tt-pill-short { display: none; }
+.nail-app .tt-compact .tt-pill-full { display: none; }
+.nail-app .tt-compact .tt-pill-short { display: inline; }
+.nail-app .tt-compact .tt-clockrow { min-height: 0; }
+.nail-app .tt-compact .tt-clockbox { min-width: 0; padding: 3px 8px; gap: 6px; border-radius: 8px; }
+.nail-app .tt-compact .tt-clockbox svg { width: 18px; height: 18px; }
+.nail-app .tt-compact .tt-clocklabel { font-size: 9.5px; }
+.nail-app .tt-compact .tt-timer { font-size: 19px; }
+.nail-app .tt-compact .tt-tapnote { font-size: 9.5px; margin-top: 0; }
+.nail-app .tt-compact .tt-clientstoday { font-size: 10.5px; gap: 4px; margin: 3px 0 3px 6px; padding-left: 6px; line-height: 1.15; }
+.nail-app .tt-compact .tt-clientstoday svg { width: 13px; height: 13px; }
+.nail-app .tt-compact .tt-bottom { padding: 3px 8px; border-radius: 7px; }
+.nail-app .tt-compact .tt-cell { gap: 5px; }
+.nail-app .tt-compact .tt-cell + .tt-cell { padding-left: 8px; }
+.nail-app .tt-compact .tt-cell > svg { display: none; }
+.nail-app .tt-compact .tt-cell small { font-size: 9.5px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .tt-compact .tt-cell b { font-size: 11px; line-height: 1.2; }
+
+/* Techs tab: three swipeable pages (clocked out · clocked in · in service) with a slim tab strip on top */
+.nail-app .tt-tabs { display: flex; gap: 6px; margin-top: 10px; flex-shrink: 0; }
+.nail-app .tt-tabs button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; height: 34px; border-radius: 9px; background: #e4ebf5; color: #3c4a63; font-size: 13px; font-weight: 700; letter-spacing: .04em; border: 1px solid transparent; }
+.nail-app .tt-tabs button em { font-style: normal; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: grid; place-items: center; font-size: 11px; font-weight: 800; background: rgba(15, 31, 61, .08); color: #3c4a63; }
+.nail-app .tt-tabs button.active { background: #fff; color: #1f6fe0; border-color: #c9d9f2; box-shadow: 0 2px 8px rgba(30, 60, 110, .10); }
+.nail-app .tt-tabs button.active em { background: #1f6fe0; color: #fff; }
+.nail-app .tt-panel .tt-pager { position: relative; margin-top: 8px; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.nail-app .tt-track { display: flex; width: 300%; height: 100%; will-change: transform; }
+.nail-app .tt-page { width: 33.3333%; flex: 0 0 33.3333%; height: 100%; min-width: 0; overflow: hidden; }
+.nail-app .tt-page .checkin-empty { height: 100%; display: flex; align-items: center; justify-content: center; color: #6b7a92; font-size: 16px; font-weight: 600; }
+.nail-app .tt-page .checkin-empty p { margin: 0; }
+
+/* Clocked In page: the NEXT badge sits to the left of the FREE timer box */
+.nail-app .tt-nextup-side { align-self: center; flex-shrink: 0; margin-right: 12px; font-size: 15px; letter-spacing: .12em; padding: 6px 14px; border-radius: 8px; }
+.nail-app .tt-compact .tt-nextup-side { margin-right: 7px; font-size: 9.5px; letter-spacing: .1em; padding: 3px 7px; border-radius: 5px; }
+.nail-app .tt-lean .tt-clockrow { flex: 0 0 auto; }

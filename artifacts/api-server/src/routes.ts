@@ -25,6 +25,7 @@ import { atomicCreateBooking, validateBookingSlot } from "./bookingEngine";
 import { resolvePackageForBooking } from "./lib/packageResolver";
 import { recordCommissionAccrual } from "./lib/commissionAccrual";
 import { sendBookingConfirmation, startReminderScheduler, sendSms } from "./sms";
+import { getOrCreateManageToken, buildReceiptUrl } from "./lib/bookingManageLinks";
 import { startQueueSmsScheduler } from "./queue-sms-scheduler";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
@@ -142,7 +143,7 @@ import { normalizePersonName } from "./lib/personName";
 import { checkQuickAreaCodes, readQuickAreaCodes } from "@shared/areaCodes";
 import { syncTechAvailability, techStateOf } from "./lib/techAvailability";
 import { payoutRedeemedVoucher } from "./lib/dealVoucherPayouts";
-import { awardLoyaltyForCompletion } from "./lib/loyaltyAward";
+import { applyLoyaltyDelta, awardLoyaltyForCompletion, redeemLoyaltyReward } from "./lib/loyaltyAward";
 import { setupAiReceptionistRoutes } from "./routes/aiReceptionist";
 import { setupSupportAgentRoutes } from "./routes/supportAgent";
 import validateRouter from "./routes/validate";
@@ -151,6 +152,7 @@ import usageRouter from "./routes/usage";
 import { autoAssignTechnician } from "./services/appointment-assignment";
 import { autoAssignResource } from "./services/resource-assignment";
 import * as nailTickets from "./lib/nailTickets";
+import * as nailGiftCards from "./lib/nailGiftCards";
 import { getBufferMinutes, normalizeBufferMinutes, clashesWithBuffer } from "./lib/appointmentBuffer";
 import { commissionBasis, commissionAmount as commissionAmountFor } from "@shared/commissionBasis";
 import { getRequiredResourceType } from "@shared/resourceMatching";
@@ -1730,8 +1732,14 @@ export async function registerRoutes(
     }
   });
 
-  app.get(api.stores.get.path, async (req, res) => {
-    const store = await storage.getStore(Number(req.params.id));
+  app.get(api.stores.get.path, isAuthenticated, async (req, res) => {
+    const storeId = Number(req.params.id);
+    if (!Number.isFinite(storeId)) return res.status(400).json({ message: "Invalid store id" });
+    const userId = (req.session as any)?.userId;
+    const staffId = (req.session as any)?.staffId;
+    const access = await assertStoreAccess(userId, staffId, storeId);
+    if (!access) return res.status(403).json({ message: "Forbidden" });
+    const store = await storage.getStore(storeId);
     if (!store) return res.status(404).json({ message: "Store not found" });
     return res.json(store);
   });
@@ -1792,8 +1800,9 @@ export async function registerRoutes(
   // GET store analytics for admin
   app.get("/api/admin/stores/:storeNumber/analytics", async (req, res) => {
     try {
+      if (!(await requireAdmin(req, res))) return;
       const { storeNumber } = req.params;
-      
+
       // GET appointments for this store
       const appointmentsData = await db.select({
         id: appointments.id,
@@ -1856,8 +1865,9 @@ export async function registerRoutes(
   // GET staff for admin store
   app.get("/api/admin/stores/:storeNumber/staff", async (req, res) => {
     try {
+      if (!(await requireAdmin(req, res))) return;
       const { storeNumber } = req.params;
-      
+
       const staffData = await db.select({
         id: staff.id,
         name: staff.name,
@@ -1879,8 +1889,9 @@ export async function registerRoutes(
   // GET calendar settings for admin store
   app.get("/api/admin/stores/:storeNumber/calendar-settings", async (req, res) => {
     try {
+      if (!(await requireAdmin(req, res))) return;
       const { storeNumber } = req.params;
-      
+
       const calendarSettingsData = await db.select({
         id: calendarSettings.id,
         startOfWeek: calendarSettings.startOfWeek,
@@ -1906,8 +1917,9 @@ export async function registerRoutes(
   // GET SMS settings for admin store
   app.get("/api/admin/stores/:storeNumber/sms-settings", async (req, res) => {
     try {
+      if (!(await requireAdmin(req, res))) return;
       const { storeNumber } = req.params;
-      
+
       const smsSettingsData = await db.select({
         id: smsSettings.id,
         bookingConfirmationEnabled: smsSettings.bookingConfirmationEnabled,
@@ -1929,8 +1941,9 @@ export async function registerRoutes(
   // GET email settings for admin store
   app.get("/api/admin/stores/:storeNumber/email-settings", async (req, res) => {
     try {
+      if (!(await requireAdmin(req, res))) return;
       const { storeNumber } = req.params;
-      
+
       const emailSettingsData = await db.select({
         id: mailSettings.id,
         bookingConfirmationEnabled: mailSettings.bookingConfirmationEnabled,
@@ -1952,8 +1965,9 @@ export async function registerRoutes(
   // GET services for admin store
   app.get("/api/admin/stores/:storeNumber/services", async (req, res) => {
     try {
+      if (!(await requireAdmin(req, res))) return;
       const { storeNumber } = req.params;
-      
+
       const servicesData = await db.select({
         id: services.id,
         name: services.name,
@@ -1974,8 +1988,9 @@ export async function registerRoutes(
   // GET service categories for admin store
   app.get("/api/admin/stores/:storeNumber/service-categories", async (req, res) => {
     try {
+      if (!(await requireAdmin(req, res))) return;
       const { storeNumber } = req.params;
-      
+
       const categoriesData = await db.select({
         id: serviceCategories.id,
         name: serviceCategories.name,
@@ -1994,6 +2009,7 @@ export async function registerRoutes(
   // PATCH single store by ID for admin (update core fields)
   app.patch("/api/admin/stores/:storeNumber", async (req, res) => {
     try {
+      if (!(await requireAdmin(req, res))) return;
       const id = parseInt(req.params.storeNumber);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid store ID" });
 
@@ -2042,8 +2058,9 @@ export async function registerRoutes(
   // GET single store by ID for admin
   app.get("/api/admin/stores/:storeNumber", async (req, res) => {
     try {
+      if (!(await requireAdmin(req, res))) return;
       const { storeNumber } = req.params;
-      
+
       // Get store by ID
       const store = await db.select({
         id: locations.id,
@@ -2938,8 +2955,9 @@ export async function registerRoutes(
     try {
       const runId = parseInt(req.params.runId as string);
       if (!runId) return res.status(400).json({ error: "runId required" });
+      const storeId = await resolveSessionStoreId(req);
       const [run] = await db.select().from(payrollRuns).where(eq(payrollRuns.id, runId));
-      if (!run) return res.status(404).json({ error: "Payroll run not found" });
+      if (!run || run.storeId !== storeId) return res.status(404).json({ error: "Payroll run not found" });
       const items = await db.select().from(payrollRunItems).where(eq(payrollRunItems.payrollRunId, runId));
       return res.json({ ...run, items });
     } catch (err) {
@@ -2951,7 +2969,8 @@ export async function registerRoutes(
   // POST /api/payroll-runs — create a new payroll run (calculates commissions server-side)
   app.post("/api/payroll-runs", isAuthenticated, async (req, res) => {
     try {
-      const { storeId, periodStart, periodEnd, notes } = req.body;
+      const { periodStart, periodEnd, notes } = req.body;
+      const storeId = await resolveSessionStoreId(req);
       if (!storeId || !periodStart || !periodEnd) {
         return res.status(400).json({ error: "storeId, periodStart, periodEnd required" });
       }
@@ -3125,8 +3144,9 @@ export async function registerRoutes(
     try {
       const runId = parseInt(req.params.runId as string);
       if (!runId) return res.status(400).json({ error: "runId required" });
+      const storeId = await resolveSessionStoreId(req);
       const [run] = await db.select().from(payrollRuns).where(eq(payrollRuns.id, runId));
-      if (!run) return res.status(404).json({ error: "Payroll run not found" });
+      if (!run || run.storeId !== storeId) return res.status(404).json({ error: "Payroll run not found" });
       if (run.status === "finalized") return res.status(400).json({ error: "Already finalized" });
 
       await db.update(payrollRuns)
@@ -3291,8 +3311,9 @@ export async function registerRoutes(
     try {
       const runId = parseInt(req.params.runId as string);
       if (!runId) return res.status(400).json({ error: "runId required" });
+      const storeId = await resolveSessionStoreId(req);
       const [run] = await db.select().from(payrollRuns).where(eq(payrollRuns.id, runId));
-      if (!run) return res.status(404).json({ error: "Payroll run not found" });
+      if (!run || run.storeId !== storeId) return res.status(404).json({ error: "Payroll run not found" });
       if (run.status === "finalized") return res.status(400).json({ error: "Cannot delete a finalized run" });
       await db.delete(payrollRuns).where(eq(payrollRuns.id, runId));
       return res.json({ success: true });
@@ -4125,18 +4146,30 @@ export async function registerRoutes(
   });
 
   app.get("/api/appointments/:id/nail-selection", isAuthenticated, async (req, res) => {
-    return res.json(await nailConfig.getAppointmentNailSelection(Number(req.params.id)));
+    const storeId = await resolveSessionStoreId(req);
+    const appointmentId = Number(req.params.id);
+    const appt = await storage.getAppointment(appointmentId);
+    if (!appt || appt.storeId !== storeId) return res.status(404).json({ message: "Appointment not found" });
+    return res.json(await nailConfig.getAppointmentNailSelection(appointmentId));
   });
 
   app.put("/api/appointments/:id/nail-selection", isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
+    const appointmentId = Number(req.params.id);
+    const appt = await storage.getAppointment(appointmentId);
+    if (!appt || appt.storeId !== storeId) return res.status(404).json({ message: "Appointment not found" });
     const body = nailSelectionBody.safeParse(req.body);
     if (!body.success) return res.status(400).json({ message: "Invalid input" });
-    const row = await nailConfig.setAppointmentNailSelection(Number(req.params.id), body.data);
+    const row = await nailConfig.setAppointmentNailSelection(appointmentId, body.data);
     return row ? res.json(row) : res.status(404).json({ message: "Appointment or service not found" });
   });
 
   app.delete("/api/appointments/:id/nail-selection", isAuthenticated, async (req, res) => {
-    await nailConfig.clearAppointmentNailSelection(Number(req.params.id));
+    const storeId = await resolveSessionStoreId(req);
+    const appointmentId = Number(req.params.id);
+    const appt = await storage.getAppointment(appointmentId);
+    if (!appt || appt.storeId !== storeId) return res.status(404).json({ message: "Appointment not found" });
+    await nailConfig.clearAppointmentNailSelection(appointmentId);
     return res.status(204).end();
   });
 
@@ -4239,13 +4272,17 @@ export async function registerRoutes(
 
   // === APPOINTMENT ADDONS ===
   app.get(api.appointmentAddons.forAppointment.path, isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
     const appointmentId = Number(req.params.id);
+    const appointment = await storage.getAppointment(appointmentId);
+    if (!appointment || appointment.storeId !== storeId) return res.status(404).json({ message: "Appointment not found" });
     const result = await storage.getAppointmentAddons(appointmentId);
     return res.json(result.map(aa => aa.addon));
   });
 
   app.post(api.appointmentAddons.set.path, isAuthenticated, async (req, res) => {
     try {
+      const storeId = await resolveSessionStoreId(req);
       const appointmentId = Number(req.params.id);
       const { addonIds, force } = z.object({
         addonIds: z.array(z.number()),
@@ -4253,7 +4290,7 @@ export async function registerRoutes(
       }).parse(req.body);
 
       const appointment = await storage.getAppointment(appointmentId);
-      if (!appointment) return res.status(404).json({ message: "Appointment not found" });
+      if (!appointment || appointment.storeId !== storeId) return res.status(404).json({ message: "Appointment not found" });
 
       const isActive = (ACTIVE_APPOINTMENT_STATUSES as readonly string[]).includes(appointment.status ?? "");
 
@@ -4582,6 +4619,13 @@ export async function registerRoutes(
         staffId = Number(req.params.id);
       }
       if (isNaN(staffId)) return res.status(400).json({ message: "Invalid staff id" });
+      if (req.params.id !== "me") {
+        const callerStoreId = await resolveSessionStoreId(req);
+        const targetStaff = await storage.getStaffMember(staffId);
+        if (!targetStaff || targetStaff.storeId !== callerStoreId) {
+          return res.status(404).json({ message: "Staff not found" });
+        }
+      }
       const { avatarUrl, thumbUrl } = await uploadAvatarToR2(req.file.buffer, req.file.originalname, req.file.mimetype);
       const member = await storage.updateStaff(staffId, { avatarUrl, avatarThumbUrl: thumbUrl } as any);
       if (!member) return res.status(404).json({ message: "Staff not found" });
@@ -4627,9 +4671,13 @@ export async function registerRoutes(
   app.post("/api/staff/:id/enable-calendar-access", isAuthenticated, async (req, res) => {
     try {
       const staffId = Number(req.params.id);
+      const callerStoreId = await resolveSessionStoreId(req);
       const staff = await storage.getStaffMember(staffId);
 
-      if (!staff || !staff.email) {
+      if (!staff || staff.storeId !== callerStoreId) {
+        return res.status(404).json({ message: "Staff member not found" });
+      }
+      if (!staff.email) {
         return res.status(400).json({ message: "Staff member not found or has no email address." });
       }
 
@@ -4742,14 +4790,20 @@ If you have any questions, please contact your administrator.
   });
 
   app.get(api.staffServices.forService.path, isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
     const serviceId = Number(req.params.id);
+    const svc = await storage.getService(serviceId);
+    if (!svc || svc.storeId !== storeId) return res.status(404).json({ message: "Service not found" });
     const capableStaff = await storage.getStaffForService(serviceId);
     return res.json(capableStaff);
   });
 
   app.post(api.staffServices.set.path, isAuthenticated, async (req, res) => {
     try {
+      const storeId = await resolveSessionStoreId(req);
       const staffId = Number(req.params.id);
+      const staffRow = await storage.getStaffMember(staffId);
+      if (!staffRow || staffRow.storeId !== storeId) return res.status(404).json({ message: "Staff member not found" });
       const { serviceIds } = z.object({ serviceIds: z.array(z.number()) }).parse(req.body);
       await storage.setStaffServices(staffId, serviceIds);
       return res.json({ success: true });
@@ -4760,14 +4814,22 @@ If you have any questions, please contact your administrator.
 
   // === STAFF AVAILABILITY ===
   app.get(api.staffAvailability.get.path, isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
     const staffId = Number(req.params.id);
+    const staffRow = await storage.getStaffMember(staffId);
+    if (!staffRow || staffRow.storeId !== storeId) return res.status(404).json({ message: "Staff member not found" });
     const rules = await storage.getStaffAvailability(staffId);
     return res.json(rules);
   });
 
   app.post(api.staffAvailability.set.path, isAuthenticated, async (req, res) => {
     try {
+      const callerStoreId = await resolveSessionStoreId(req);
       const staffId = Number(req.params.id);
+      const staffRowForSet = await storage.getStaffMember(staffId);
+      if (!staffRowForSet || staffRowForSet.storeId !== callerStoreId) {
+        return res.status(404).json({ message: "Staff member not found" });
+      }
       const { rules } = z.object({
         rules: z.array(z.object({
           dayOfWeek: z.number(),
@@ -4813,7 +4875,7 @@ If you have any questions, please contact your administrator.
 
   // GET /api/store-staff-availability?storeId=X  — all availability rules for every staff in a store (one round trip)
   app.get("/api/store-staff-availability", isAuthenticated, async (req, res) => {
-    const storeId = Number(req.query.storeId);
+    const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(400).json({ message: "storeId required" });
     const storeStaff = await db.select({ id: staff.id }).from(staff).where(eq(staff.storeId, storeId));
     if (!storeStaff.length) return res.json([]);
@@ -4823,7 +4885,16 @@ If you have any questions, please contact your administrator.
   });
 
   app.delete(api.staffAvailability.deleteRule.path, isAuthenticated, async (req, res) => {
-    await storage.deleteStaffAvailabilityRule(Number(req.params.id));
+    const callerStoreId = await resolveSessionStoreId(req);
+    const ruleId = Number(req.params.id);
+    const [rule] = await db
+      .select({ staffId: staffAvailability.staffId, storeId: staff.storeId })
+      .from(staffAvailability)
+      .innerJoin(staff, eq(staffAvailability.staffId, staff.id))
+      .where(eq(staffAvailability.id, ruleId))
+      .limit(1);
+    if (!rule || rule.storeId !== callerStoreId) return res.status(404).json({ message: "Rule not found" });
+    await storage.deleteStaffAvailabilityRule(ruleId);
     // Rebuild slot cache — removing a staff availability rule changes their working days.
     try {
       const { enqueueSlotRebuild, buildDateRange } = await import("./lib/slotQueue");
@@ -5238,8 +5309,8 @@ If you have any questions, please contact your administrator.
   // ─────────────────────────────────────────────────────────────────────────
 
   app.get("/api/appointments/sse", isAuthenticated, async (req, res) => {
-    const storeId = Number(req.query.storeId);
-    if (!storeId || isNaN(storeId)) {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) {
       return res.status(400).json({ message: "storeId required" });
     }
 
@@ -6512,6 +6583,10 @@ If you have any questions, please contact your administrator.
   app.post(api.cashDrawer.create.path, isAuthenticated, async (req, res) => {
     try {
       const input = api.cashDrawer.create.input.parse(req.body);
+      const callerStoreId = await resolveSessionStoreId(req);
+      if (!callerStoreId || input.storeId !== callerStoreId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
       const drawerId = input.drawerId ?? null;
 
       const existing = await storage.getOpenCashDrawerSession(input.storeId, drawerId);
@@ -11219,6 +11294,12 @@ or
       return res.status(400).json({ message: "storeId query param is required" });
     }
 
+    // Enforce tenancy: user can only connect GBP for stores they own.
+    const ownedStoreForConnect = await storage.getStore(storeId);
+    if (!ownedStoreForConnect || ownedStoreForConnect.userId !== userId) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
     try {
       const csrf         = crypto.randomBytes(16).toString("hex");
       const statePayload = Buffer.from(JSON.stringify({ csrf, storeId })).toString("base64url");
@@ -11276,6 +11357,12 @@ or
     const storeId = req.query.storeId ? Number(req.query.storeId) : null;
     if (!storeId) {
       return res.status(400).json({ message: "storeId query param is required" });
+    }
+
+    // Enforce tenancy: user can only connect GBP for stores they own.
+    const ownedStoreForAuthUrl = await storage.getStore(storeId);
+    if (!ownedStoreForAuthUrl || ownedStoreForAuthUrl.userId !== userId) {
+      return res.status(403).json({ message: "Forbidden" });
     }
 
     try {
@@ -11656,6 +11743,12 @@ or
 
     const { storeId } = req.body;
     if (!storeId) return res.status(400).json({ message: "storeId is required" });
+
+    // Enforce tenancy: user can only retry GBP account fetch for stores they own.
+    const ownedStoreForRetry = await storage.getStore(Number(storeId));
+    if (!ownedStoreForRetry || ownedStoreForRetry.userId !== userId) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
 
     console.log(`[GBP] retry-fetch-accounts — storeId=${storeId}`);
 
@@ -16105,6 +16198,9 @@ or
     try {
       const staffId = parseRouteId(req.params.id);
       if (!staffId || isNaN(staffId)) return res.status(400).json({ message: "Invalid staff id" });
+      const callerStoreId = await resolveSessionStoreId(req);
+      const staffRow = await storage.getStaffMember(staffId);
+      if (!staffRow || staffRow.storeId !== callerStoreId) return res.status(404).json({ message: "Staff not found" });
       const rows = await storage.getStaffServices(staffId);
       return res.json({ serviceIds: rows.map((r) => r.serviceId) });
     } catch (err) {
@@ -16139,8 +16235,9 @@ or
     try {
       const staffId = parseRouteId(req.params.id);
       if (!staffId || isNaN(staffId)) return res.status(400).json({ message: "Invalid staff id" });
+      const callerStoreId = await resolveSessionStoreId(req);
       const member = await storage.getStaffMember(staffId);
-      if (!member) return res.status(404).json({ message: "Staff not found" });
+      if (!member || member.storeId !== callerStoreId) return res.status(404).json({ message: "Staff not found" });
       return res.json({
         mailingAddress1: (member as any).mailingAddress1 ?? "",
         mailingAddress2: (member as any).mailingAddress2 ?? "",
@@ -16693,9 +16790,10 @@ or
   app.get("/api/staff/:id/calendar-access-status", isAuthenticated, async (req, res) => {
     try {
       const staffId = Number(req.params.id);
+      const callerStoreId = await resolveSessionStoreId(req);
       const staff = await storage.getStaffMember(staffId);
 
-      if (!staff) {
+      if (!staff || staff.storeId !== callerStoreId) {
         return res.status(404).json({ message: "Staff member not found" });
       }
 
@@ -16726,8 +16824,12 @@ or
   app.post("/api/staff/:id/disable-calendar-access", isAuthenticated, async (req, res) => {
     try {
       const staffId = Number(req.params.id);
+      const callerStoreId = await resolveSessionStoreId(req);
       const staff = await storage.getStaffMember(staffId);
-      if (!staff || !staff.email) {
+      if (!staff || staff.storeId !== callerStoreId) {
+        return res.status(404).json({ message: "Staff member not found" });
+      }
+      if (!staff.email) {
         return res.status(400).json({ message: "Staff member not found or has no email address." });
       }
       const user = await storage.findUserByEmail(staff.email);
@@ -17281,6 +17383,9 @@ or
   app.put("/api/waitlist/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
+      const callerStoreId = await resolveSessionStoreId(req);
+      const [existing] = await db.select().from(waitlist).where(eq(waitlist.id, id)).limit(1);
+      if (!existing || existing.storeId !== callerStoreId) return res.status(404).json({ message: "Waitlist entry not found" });
       const updates: any = {};
       if (req.body.status !== undefined) {
         updates.status = req.body.status;
@@ -17293,8 +17398,6 @@ or
       }
       if (req.body.notifiedAt !== undefined) updates.notifiedAt = new Date(req.body.notifiedAt);
       if (req.body.staffId !== undefined) {
-        const [existing] = await db.select().from(waitlist).where(eq(waitlist.id, id)).limit(1);
-        if (!existing) return res.status(404).json({ message: "Waitlist entry not found" });
         const nextStaffId = req.body.staffId ? Number(req.body.staffId) : null;
         const nextServiceId = req.body.serviceId !== undefined ? Number(req.body.serviceId) : existing.serviceId;
         await assertTurnEligibleForWalkIn(existing.storeId, nextStaffId, nextServiceId);
@@ -17313,9 +17416,11 @@ or
   app.delete("/api/waitlist/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
+      const callerStoreId = await resolveSessionStoreId(req);
       const [existing] = await db.select({ storeId: waitlist.storeId }).from(waitlist).where(eq(waitlist.id, id)).limit(1);
+      if (!existing || existing.storeId !== callerStoreId) return res.status(404).json({ message: "Waitlist entry not found" });
       await db.delete(waitlist).where(eq(waitlist.id, id));
-      if (existing?.storeId) broadcastNotification({ type: "queue_updated", storeId: existing.storeId });
+      broadcastNotification({ type: "queue_updated", storeId: existing.storeId });
       return res.json({ success: true });
     } catch (err) {
       console.error(err);
@@ -17643,6 +17748,35 @@ or
     }
   });
 
+  // ── gift cards as a checkout payment (store-scoped + atomic; see lib/nailGiftCards.ts) ──
+  app.post("/api/nail/gift-cards/lookup", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const r = await nailGiftCards.lookupGiftCard(storeId, req.body?.code);
+      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      return res.json(r.card);
+    } catch (err) {
+      console.error("[nail/gift-cards lookup]", err);
+      return res.status(500).json({ message: "Could not check the gift card" });
+    }
+  });
+
+  app.post("/api/nail/gift-cards/redeem", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const appointmentId = Number(req.body?.appointmentId);
+      if (!Number.isInteger(appointmentId)) return res.status(400).json({ message: "Invalid request" });
+      const r = await nailGiftCards.redeemGiftCard({ storeId, code: req.body?.code, amount: req.body?.amount, appointmentId });
+      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      return res.json({ code: r.code, redeemed: r.redeemed, balance: r.balance, alreadyRedeemed: r.alreadyRedeemed });
+    } catch (err) {
+      console.error("[nail/gift-cards redeem]", err);
+      return res.status(500).json({ message: "Could not redeem the gift card" });
+    }
+  });
+
   // POST /api/turn/log-override — called when front desk clicks a specific tech's calendar slot
   // instead of using the Walk-In button (i.e. bypassing the Turn queue deliberately).
   app.post("/api/turn/log-override", isAuthenticated, async (req, res) => {
@@ -17774,7 +17908,7 @@ or
   // GET /api/timeclock/pins?storeId=X — list PIN status for all staff in a store
   app.get("/api/timeclock/pins", isAuthenticated, async (req, res) => {
     try {
-      const storeId = req.query.storeId ? Number(req.query.storeId) : null;
+      const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(400).json({ error: "storeId required" });
       const rows = await db
         .select({ staffId: staffPins.staffId })
@@ -17791,7 +17925,7 @@ or
   app.get("/api/timeclock/pin/:staffId", isAuthenticated, async (req, res) => {
     try {
       const staffId = parseInt(req.params.staffId as string);
-      const storeId = req.query.storeId ? Number(req.query.storeId) : null;
+      const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(400).json({ error: "storeId required" });
       const [record] = await db
         .select({ pin: staffPins.pin })
@@ -18265,9 +18399,14 @@ or
     }
   });
 
-  app.get("/api/gift-cards/check/:code", async (req, res) => {
+  // Owner's Gift Cards console (GiftCards.tsx "Check / Redeem" card): a phone order or manual balance check, no
+  // appointment involved. Store-scoped and, for redeem, atomic (see lib/nailGiftCards.ts — the Nail POS checkout uses the
+  // same functions with an appointmentId; this manual flow passes null).
+  app.get("/api/gift-cards/check/:code", isAuthenticated, async (req: any, res) => {
     try {
-      const [card] = await db.select().from(giftCards).where(eq(giftCards.code, req.params.code));
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(400).json({ message: "No store selected" });
+      const [card] = await db.select().from(giftCards).where(and(eq(giftCards.code, nailGiftCards.normalizeGiftCode(req.params.code)), eq(giftCards.storeId, storeId)));
       if (!card) return res.status(404).json({ message: "Gift card not found" });
       return res.json(card);
     } catch (err) {
@@ -18276,32 +18415,14 @@ or
     }
   });
 
-  app.post("/api/gift-cards/redeem", isAuthenticated, async (req, res) => {
+  app.post("/api/gift-cards/redeem", isAuthenticated, async (req: any, res) => {
     try {
-      const { code, amount } = req.body;
-      const [card] = await db.select().from(giftCards).where(eq(giftCards.code, code));
-      if (!card) return res.status(404).json({ message: "Gift card not found" });
-      if (!card.isActive) return res.status(400).json({ message: "Gift card is not active" });
-
-      const remaining = parseFloat(card.remainingBalance);
-      const redeem = parseFloat(amount);
-      if (redeem > remaining) return res.status(400).json({ message: "Insufficient balance" });
-
-      const newBalance = (remaining - redeem).toFixed(2);
-      const [updated] = await db.update(giftCards)
-        .set({ remainingBalance: newBalance, isActive: parseFloat(newBalance) > 0 })
-        .where(eq(giftCards.id, card.id))
-        .returning();
-
-      await db.insert(giftCardTransactions).values({
-        giftCardId: card.id,
-        storeId: card.storeId,
-        amount: redeem.toString(),
-        type: "redemption",
-        balanceAfter: newBalance,
-      });
-
-      return res.json(updated);
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(400).json({ message: "No store selected" });
+      const { code, amount } = req.body ?? {};
+      const r = await nailGiftCards.redeemGiftCard({ storeId, code, amount, appointmentId: null });
+      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      return res.json({ code: r.code, redeemed: r.redeemed, remainingBalance: r.balance.toFixed(2), isActive: r.balance > 0 });
     } catch (err) {
       console.error(err);
       return res.status(500).json({ message: "Failed to redeem gift card" });
@@ -18311,7 +18432,19 @@ or
   app.put("/api/gift-cards/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
-      const [updated] = await db.update(giftCards).set(req.body).where(eq(giftCards.id, id)).returning();
+      const storeId = await resolveSessionStoreId(req);
+      const [existing] = await db.select({ storeId: giftCards.storeId }).from(giftCards).where(eq(giftCards.id, id)).limit(1);
+      if (!existing || existing.storeId !== storeId) return res.status(404).json({ message: "Gift card not found" });
+      // Whitelist: balance/originalAmount/storeId/code must never be settable here —
+      // balance changes go through the ledgered redeem flow (giftCardTransactions) so
+      // the ledger and the card stay consistent; see routes/salonApi.ts's redeemGiftCard.
+      const allowedFields = ["issuedToName", "issuedToEmail", "isActive", "expiresAt", "notes"] as const;
+      const updates: Record<string, any> = {};
+      for (const field of allowedFields) {
+        if (req.body[field] !== undefined) updates[field] = req.body[field];
+      }
+      if (Object.keys(updates).length === 0) return res.status(400).json({ message: "No valid fields to update" });
+      const [updated] = await db.update(giftCards).set(updates).where(eq(giftCards.id, id)).returning();
       return res.json(updated);
     } catch (err) {
       console.error(err);
@@ -18607,6 +18740,9 @@ or
   app.put("/api/staff/:id/pay-rate", isAuthenticated, async (req, res) => {
     try {
       const staffId = parseInt(req.params.id as string);
+      const callerStoreId = await resolveSessionStoreId(req);
+      const [existingStaff] = await db.select({ storeId: staff.storeId }).from(staff).where(eq(staff.id, staffId)).limit(1);
+      if (!existingStaff || existingStaff.storeId !== callerStoreId) return res.status(404).json({ message: "Staff not found" });
       const { commissionEnabled, commissionRate, commissionStructureId } = req.body;
       const updates: Record<string, any> = {};
       if (commissionEnabled !== undefined) updates.commissionEnabled = Boolean(commissionEnabled);
@@ -18680,6 +18816,9 @@ or
   app.put("/api/intake-forms/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
+      const storeId = await resolveSessionStoreId(req);
+      const [existingForm] = await db.select({ storeId: intakeForms.storeId }).from(intakeForms).where(eq(intakeForms.id, id)).limit(1);
+      if (!existingForm || existingForm.storeId !== storeId) return res.status(404).json({ message: "Intake form not found" });
       const { name, description, requireBeforeBooking, isActive, fields } = req.body;
       const updates: any = {};
       if (name !== undefined) updates.name = name;
@@ -18711,6 +18850,9 @@ or
   app.delete("/api/intake-forms/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
+      const storeId = await resolveSessionStoreId(req);
+      const [existingForm] = await db.select({ storeId: intakeForms.storeId }).from(intakeForms).where(eq(intakeForms.id, id)).limit(1);
+      if (!existingForm || existingForm.storeId !== storeId) return res.status(404).json({ message: "Intake form not found" });
       await db.delete(intakeFormFields).where(eq(intakeFormFields.formId, id));
       await db.delete(intakeForms).where(eq(intakeForms.id, id));
       return res.json({ success: true });
@@ -18789,20 +18931,24 @@ or
     }
   });
 
-  app.post("/api/loyalty/adjust", isAuthenticated, async (req, res) => {
+  app.post("/api/loyalty/adjust", isAuthenticated, async (req: any, res) => {
     try {
-      const { customerId, storeId, type, points, description } = req.body;
+      // Always the signed-in user's own store: the client must belong to it, so a client (or store) named in the body can't reach another salon.
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(400).json({ message: "No store selected" });
+      const { customerId, type, points, description } = req.body ?? {};
+      const cid = Number(customerId);
+      const pts = Number(points);
+      if (!Number.isInteger(cid) || cid <= 0) return res.status(400).json({ message: "customerId is required" });
+      if (!Number.isInteger(pts) || pts === 0 || Math.abs(pts) > 1_000_000) return res.status(400).json({ message: "points must be a whole number, not zero" });
+      if (!["earn", "redeem", "bonus", "adjust"].includes(type)) return res.status(400).json({ message: "type must be earn, redeem, bonus or adjust" });
+      if ((type === "earn" || type === "bonus") && pts < 0) return res.status(400).json({ message: `${type} must add points` });
+      if (type === "redeem" && pts > 0) return res.status(400).json({ message: "redeem must take points away" });
+      const note = String(description ?? "").trim().slice(0, 300) || `Manual ${type} adjustment`;
 
-      const [txn] = await db.insert(loyaltyTransactions).values({
-        storeId: parseInt(storeId), customerId: parseInt(customerId),
-        type, points: parseInt(points), description,
-      }).returning();
-
-      const [clientRow] = await db.select({ loyaltyPoints: clients.loyaltyPoints }).from(clients).where(eq(clients.id, parseInt(customerId)));
-      const newPoints = Math.max(0, (clientRow?.loyaltyPoints || 0) + parseInt(points));
-      await db.update(clients).set({ loyaltyPoints: newPoints }).where(eq(clients.id, parseInt(customerId)));
-
-      return res.json(txn);
+      const r = await applyLoyaltyDelta({ storeId, customerId: cid, points: pts, type, description: note });
+      if (!r) return res.status(404).json({ message: "Client not found" });
+      return res.json({ id: r.transactionId, storeId, customerId: cid, type, points: r.applied, description: note, balance: r.balance });
     } catch (err) {
       console.error(err);
       return res.status(500).json({ message: "Failed to adjust loyalty points" });
@@ -18954,31 +19100,10 @@ or
       if (!Number.isFinite(customerId) || !Number.isFinite(rewardId)) {
         return res.status(400).json({ error: "customerId and rewardId are required" });
       }
-      const [reward] = await db.select().from(loyaltyRewards)
-        .where(and(eq(loyaltyRewards.id, rewardId), eq(loyaltyRewards.storeId, storeId)));
-      if (!reward) return res.status(404).json({ error: "Reward not found" });
-      const [client] = await db.select({ loyaltyPoints: clients.loyaltyPoints })
-        .from(clients).where(and(eq(clients.id, customerId), eq(clients.storeId, storeId)));
-      if (!client) return res.status(404).json({ error: "Customer not found" });
-      const balance = client.loyaltyPoints ?? 0;
-      if (balance < reward.pointsCost) {
-        return res.status(400).json({ error: "Not enough points", balance, pointsCost: reward.pointsCost });
-      }
-      const newBalance = balance - reward.pointsCost;
-      await db.update(clients).set({ loyaltyPoints: newBalance }).where(eq(clients.id, customerId));
-      await db.insert(loyaltyTransactions).values({
-        storeId, customerId, appointmentId,
-        type: "redeem",
-        points: -reward.pointsCost,
-        description: `Redeemed "${reward.name}" — $${Number(reward.dollarValue).toFixed(2)} off`,
-      });
-      return res.json({
-        rewardId: reward.id,
-        name: reward.name,
-        pointsCost: reward.pointsCost,
-        dollarValue: Number(reward.dollarValue),
-        newBalance,
-      });
+      // Atomic, and once per ticket: asking again for the same reward on the same appointment returns the earlier redemption.
+      const r = await redeemLoyaltyReward({ storeId, customerId, rewardId, appointmentId });
+      if (!r.ok) return res.status(r.status).json({ error: r.message, ...(r.balance != null ? { balance: r.balance, pointsCost: r.pointsCost } : {}) });
+      return res.json({ rewardId: r.rewardId, name: r.name, pointsCost: r.pointsCost, dollarValue: r.dollarValue, newBalance: r.newBalance, alreadyRedeemed: r.alreadyRedeemed });
     } catch (err) {
       console.error("[loyalty/redeem]", err);
       return res.status(500).json({ error: "Failed to redeem reward" });
@@ -19131,6 +19256,71 @@ or
     } catch (err: any) {
       console.error("[POS sms-receipt]", err?.message);
       return res.status(500).json({ message: "Failed to send text receipt" });
+    }
+  });
+
+  // ── Nail POS "Text Receipt": a link to a public, read-only web receipt (certxa.com/receipt/<token>) ─────────────
+  // instead of the plain-text summary above. The token is the SAME per-appointment "manage my booking" token
+  // (getOrCreateManageToken) — no new token needed — but what the page shows is a snapshot taken right now (the
+  // client's own line items, exactly as charged), not reconstructed from the row later.
+  app.post("/api/pos/receipt-link", isAuthenticated, async (req: any, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(400).json({ message: "No store selected" });
+      const appointmentId = Number(req.body?.appointmentId);
+      const digits = String(req.body?.phone ?? "").replace(/\D/g, "").slice(-10);
+      const snap = req.body?.snapshot ?? {};
+      if (!Number.isInteger(appointmentId)) return res.status(400).json({ message: "appointmentId is required" });
+      if (digits.length !== 10) return res.status(400).json({ message: "A valid 10-digit phone number is required" });
+      if (!Array.isArray(snap.items)) return res.status(400).json({ message: "snapshot.items is required" });
+
+      const [apt] = await db.select({ id: appointments.id, customerId: appointments.customerId, ticketNumber: appointments.ticketNumber })
+        .from(appointments).where(and(eq(appointments.id, appointmentId), eq(appointments.storeId, storeId)));
+      if (!apt) return res.status(404).json({ message: "Ticket not found" });
+      const store = await storage.getStore(storeId);
+
+      const money = (n: unknown) => Math.round((Number(n) || 0) * 100) / 100;
+      const snapshot = {
+        storeName: String((store as any)?.name ?? "Your salon").slice(0, 60),
+        storeAddress: [(store as any)?.address, (store as any)?.city, (store as any)?.state, (store as any)?.zipCode].filter(Boolean).join(", ") || undefined,
+        storePhone: (store as any)?.phone || undefined,
+        ticketNumber: apt.ticketNumber ?? apt.id,
+        dateIso: typeof snap.dateIso === "string" ? snap.dateIso : new Date().toISOString(),
+        clientName: typeof snap.clientName === "string" ? snap.clientName.slice(0, 80) : undefined,
+        items: snap.items.slice(0, 40).map((i: any) => ({ label: String(i?.label ?? "Item").slice(0, 60), price: money(i?.price) })),
+        subtotal: money(snap.subtotal), discount: money(snap.discount), tip: money(snap.tip), total: money(snap.total),
+        tenders: Array.isArray(snap.tenders) ? snap.tenders.slice(0, 10).map((t: any) => ({ method: String(t?.method ?? "Payment").slice(0, 30), amount: money(t?.amount) })) : [],
+      };
+      await pool.query(`UPDATE appointments SET receipt_snapshot = $1 WHERE id = $2`, [JSON.stringify(snapshot), appointmentId]);
+
+      const token = await getOrCreateManageToken(appointmentId);
+      const url = buildReceiptUrl(token);
+      const firstName = (snapshot.clientName ?? "").trim().split(/\s+/)[0];
+      const body = `${snapshot.storeName}${firstName ? ` — thank you, ${firstName}!` : ""}\nYour receipt: ${url}`;
+
+      const custId = Number.isInteger(apt.customerId) && Number(apt.customerId) > 0 ? Number(apt.customerId) : undefined;
+      const result = await sendSms(storeId, digits, body, "pos_receipt_link", appointmentId, custId);
+      if (result.success) return res.json({ success: true, url, skipped: !!result.skipped });
+      return res.status(502).json({ message: result.error || "Could not send the text receipt" });
+    } catch (err: any) {
+      console.error("[POS receipt-link]", err?.message);
+      return res.status(500).json({ message: "Failed to send text receipt" });
+    }
+  });
+
+  // Public: the web receipt itself — the token is the only credential, same rule as /api/booking/manage/:token.
+  app.get("/api/public/receipt/:token", async (req, res) => {
+    try {
+      const token = (req.params.token || "").trim();
+      const row = token ? await storage.getAppointmentByManageToken(token) : undefined;
+      if (!row) return res.status(404).json({ message: "Receipt not found" });
+      const result = await pool.query(`SELECT receipt_snapshot FROM appointments WHERE id = $1`, [row.id]);
+      const snapshot = result.rows[0]?.receipt_snapshot;
+      if (!snapshot) return res.status(404).json({ message: "No receipt is available for this link" });
+      return res.json(snapshot);
+    } catch (err: any) {
+      console.error("[public receipt]", err?.message);
+      return res.status(500).json({ message: "Failed to load receipt" });
     }
   });
 
@@ -19312,6 +19502,9 @@ or
   app.put("/api/reviews/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
+      const storeId = await resolveSessionStoreId(req);
+      const [existingReview] = await db.select({ storeId: reviews.storeId }).from(reviews).where(eq(reviews.id, id)).limit(1);
+      if (!existingReview || existingReview.storeId !== storeId) return res.status(404).json({ message: "Review not found" });
       const { isPublic, isFeatured } = req.body;
       const update: Partial<typeof reviews.$inferInsert> = {};
       if (isPublic !== undefined) update.isPublic = isPublic;
@@ -19328,6 +19521,9 @@ or
   app.delete("/api/reviews/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
+      const storeId = await resolveSessionStoreId(req);
+      const [existingReview] = await db.select({ storeId: reviews.storeId }).from(reviews).where(eq(reviews.id, id)).limit(1);
+      if (!existingReview || existingReview.storeId !== storeId) return res.status(404).json({ message: "Review not found" });
       await db.delete(reviews).where(eq(reviews.id, id));
       return res.json({ success: true });
     } catch (err) {
@@ -19589,6 +19785,8 @@ or
         return res.status(400).json({ message: "Role must be 'manager' or 'staff'" });
       }
 
+      const callerStoreId = await resolveSessionStoreId(req);
+
       // Pseudo-IDs (staff:N) point to staff records without a login yet.
       // Auto-create a user account so the owner can assign a role directly.
       if ((targetId as string).startsWith("staff:")) {
@@ -19597,7 +19795,7 @@ or
           return res.status(400).json({ message: "Invalid staff id" });
         }
         const [staffRow] = await db.select().from(staff).where(eq(staff.id, staffId));
-        if (!staffRow) return res.status(404).json({ message: "Staff member not found" });
+        if (!staffRow || staffRow.storeId !== callerStoreId) return res.status(404).json({ message: "Staff member not found" });
         if (!staffRow.email) {
           return res.status(400).json({
             message: "This staff member needs an email on their profile before a role can be assigned.",
@@ -19647,6 +19845,12 @@ or
       if (target.role === "owner" || target.role === "admin") {
         return res.status(403).json({ message: "Cannot change an owner's role" });
       }
+      // Non-owner targets are always linked to a staff record (see the
+      // staff: auto-create branch above) — verify that staff row belongs to
+      // the caller's store before touching a global users.id.
+      if (!target.staffId) return res.status(404).json({ message: "User not found" });
+      const [targetStaff] = await db.select({ storeId: staff.storeId }).from(staff).where(eq(staff.id, target.staffId)).limit(1);
+      if (!targetStaff || targetStaff.storeId !== callerStoreId) return res.status(404).json({ message: "User not found" });
       const [updated] = await db.update(users).set({ role }).where(eq(users.id, resolvedId)).returning();
       return res.json(updated);
     } catch (err) {
@@ -20067,8 +20271,9 @@ or
         return res.status(400).json({ message: "status must be active, deactivated, or removed" });
       }
 
+      const callerStoreId = await resolveSessionStoreId(req);
       const [existing] = await db.select().from(staff).where(eq(staff.id, staffId)).limit(1);
-      if (!existing) return res.status(404).json({ message: "Staff member not found" });
+      if (!existing || existing.storeId !== callerStoreId) return res.status(404).json({ message: "Staff member not found" });
 
       if (status === "removed") {
         await storage.deleteStaff(staffId);
@@ -20128,12 +20333,16 @@ or
         if (typeof v === "boolean") cleaned[k] = v;
       }
 
+      const callerStoreId = await resolveSessionStoreId(req);
+
       // Staff-only pseudo-member targeted as "staff:<id>"
       if ((targetId as string).startsWith("staff:")) {
         const staffIdNum = Number((targetId as string).slice("staff:".length));
         if (!Number.isFinite(staffIdNum)) {
           return res.status(400).json({ message: "Invalid staff id" });
         }
+        const [staffToUpdate] = await db.select({ storeId: staff.storeId }).from(staff).where(eq(staff.id, staffIdNum)).limit(1);
+        if (!staffToUpdate || staffToUpdate.storeId !== callerStoreId) return res.status(404).json({ message: "Staff not found" });
         const [updated] = await db
           .update(staff)
           .set({ permissions: cleaned })
@@ -20148,6 +20357,9 @@ or
       if (target.role === "owner" || target.role === "admin") {
         return res.status(403).json({ message: "Cannot edit an owner's permissions" });
       }
+      if (!target.staffId) return res.status(404).json({ message: "User not found" });
+      const [targetStaffRow] = await db.select({ storeId: staff.storeId }).from(staff).where(eq(staff.id, target.staffId)).limit(1);
+      if (!targetStaffRow || targetStaffRow.storeId !== callerStoreId) return res.status(404).json({ message: "User not found" });
       const [updated] = await db
         .update(users)
         .set({ permissions: cleaned })
@@ -20784,8 +20996,9 @@ or
         return res.status(404).json({ error: "Booking not found" });
       }
 
+      const callerStoreId = await resolveSessionStoreId(req);
       const appointment = await storage.getAppointment(appointmentId);
-      if (!appointment) {
+      if (!appointment || appointment.storeId !== callerStoreId) {
         return res.status(404).json({ error: "Booking not found" });
       }
 
@@ -21276,6 +21489,11 @@ or
         welcomeHeadline: ks.welcomeHeadline ?? null,
         welcomeSubText: ks.welcomeSubText ?? null,
         loyaltyPromoText: ks.loyaltyPromoText ?? null,
+        // The points program, for the customer-facing screens ("earn N points for every $1").
+        loyalty: {
+          enabled: prefs.loyalty?.enabled !== false,
+          pointsPerDollar: Number(prefs.loyalty?.pointsPerDollar) > 0 ? Number(prefs.loyalty.pointsPerDollar) : 1,
+        },
         // Only images the owner explicitly set: the catalog category's own image
         // (Catalog → Categories) wins, with the legacy kiosk-settings upload as a
         // fallback. The fuzzy Service-Images-Library auto-match (autoCatImages) is
@@ -21517,6 +21735,10 @@ or
       const { slug } = req.params;
       const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
       if (!store) return res.status(404).json({ error: "Store not found" });
+      // The program switched off (Loyalty settings) → nothing to show on the customer screen.
+      const [rwSettings] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, store.id));
+      const rwPrefs = rwSettings?.preferences ? JSON.parse(rwSettings.preferences as string) : {};
+      if (rwPrefs.loyalty?.enabled === false) return res.json([]);
       const rows = await db
         .select({
           id: loyaltyRewards.id,

@@ -115,6 +115,20 @@ export function isSameStoreDay(a: Date, b: Date): boolean {
 }
 
 /**
+ * Return the current moment as a wall-clock Date in the salon's timezone, shifted
+ * by the business day rollover (4 hours) for POS-aligned daily statistics.
+ * This is used for "today's" calculations in the Nail POS board and related daily metrics.
+ * The returned Date has its UTC fields set to the salon's local wall-clock
+ * values so that getUTCFullYear/getUTCMonth/getUTCDate/getUTCHours all return
+ * the correct local values regardless of the browser's own timezone.
+ */
+export function getBusinessDayNowInTimezone(timezone: string): Date {
+  const now = getNowInTimezone(timezone);
+  const result = new Date(now.getTime() - 4 * 60 * 60 * 1000);
+  return result;
+}
+
+/**
  * Compare a UTC appointment instant with a salon wall-clock calendar date.
  * The second argument is the kind of Date returned by getNowInTimezone(),
  * not a UTC instant.

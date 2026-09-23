@@ -2,7 +2,7 @@
  * NailHome — /nail, the simplified staff screen for nail-salon accounts.
  *
  * Sits on top of the normal Certxa engine: tickets are appointments, technician
- * choice is the TURN queue, checkout is the calendar's own checkout sheet. This
+ * choice is the TURN queue, checkout is the POS tab itself (CheckoutMode). This
  * file only owns the screen state and wires the pieces together.
  */
 import { EMPTY_ARRAY } from "@/lib/empty";
@@ -27,26 +27,28 @@ import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
 import { hardRefresh } from "@/lib/hard-refresh";
 import { useNetworkStatus } from "@/hooks/use-network-status";
 import { buildCheckinTicket } from "@/lib/thermalPrinter";
-import { CheckoutPOSPanel, ChooseClientPanel, ClientLookupSheet, ManagerPinSheet, TimeClockSheet, VoucherRedeemSheet } from "@/pages/Calendar";
-import type { AppointmentWithDetails } from "@shared/schema";
+import { ChooseClientPanel, ClientLookupSheet, ManagerPinSheet, TimeClockSheet, VoucherRedeemSheet } from "@/pages/Calendar";
 import {
-  ApiError, BOARD_KEY, cancelTicket, completeTicket, createTicket, fetchAppointment, fetchBoard, fetchClient,
-  clockInTech, fetchNailConfig, fetchTurn, reassignTicket, removeMarker, startTicket, updateTicket,
+  ApiError, BOARD_KEY, cancelTicket, completeTicket, createTicket, fetchBoard, fetchClient,
+  clockInTech, clockOutTech, fetchNailConfig, fetchTurn, reassignTicket, removeMarker, startTicket, updateTicket,
   type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData, type TurnTech,
 } from "./nailApi";
-import { defaultPick, draftTotals, EMPTY_PICK, missingRequired, togglePick, type DraftCustomLine, type NailPick, type TicketLine } from "./ticketDraft";
+import { defaultPick, draftTotals, EMPTY_PICK, type DraftCustomLine, type NailPick, type TicketLine } from "./ticketDraft";
 import { useNailRealtime } from "./useNailRealtime";
 import { TicketPanel } from "./TicketPanel";
+import { CheckoutMode } from "./CheckoutMode";
 import { CatalogPanel, Keypad, type CatalogGroup, type CatalogService } from "./CatalogPanel";
-import { WalkInSheet } from "./WalkInSheet";
 import { CheckInLookup } from "./CheckInLookup";
 import { TechClockInSheet } from "./TechClockInSheet";
+import { TechClockOutSheet } from "./TechClockOutSheet";
+import { GiftCardSheet } from "./GiftCardSheet";
 import { useAppointmentSSE } from "@/hooks/use-appointment-sse";
 import { TechCards } from "./TechCards";
 import { CheckInPanel } from "./CheckInPanel";
 import "./nail.css";
 import { AssignTechSheet } from "./AssignTechSheet";
 import { CheckInBoard } from "./CheckInBoard";
+import { TicketPopup } from "./TicketPopup";
 import { BottomNav, type NailTab } from "./BottomNav";
 import { RegisterPicker } from "./RegisterPicker";
 import { MoreMenu, type MoreTile } from "./MoreMenu";
@@ -63,10 +65,10 @@ export default function NailHome() {
     return <div className="dark cx-cal nail-app h-app w-full flex items-center justify-center"><Loader2 className="w-7 h-7 animate-spin" style={{ color: "#8b94a0" }} /></div>;
   }
   if (!nailSalon) return <Navigate to="/calendar" replace />;
-  return <NailScreen storeId={selectedStore.id} timezone={(selectedStore as any).timezone ?? "UTC"} />;
+  return <NailScreen storeId={selectedStore.id} storeName={(selectedStore as any).name ?? ""} timezone={(selectedStore as any).timezone ?? "UTC"} />;
 }
 
-function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }) {
+function NailScreen({ storeId, storeName, timezone }: { storeId: number; storeName: string; timezone: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -86,7 +88,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   const { drawerId, needsPicker: needsDrawerPicker, drawers, selectDrawer } = useActiveDrawerId(storeId);
 
   // ── screen state ──────────────────────────────────────────────────────────
-  const [tab, setTab] = useState<NailTab>("pos");
+  const [tab, setTab] = useState<NailTab>("techs");
   const [client, setClient] = useState<ClientSummary | null>(null);
   const [checkinId, setCheckinId] = useState<number | null>(null);
   const [service, setService] = useState<CatalogService | null>(null);
@@ -98,11 +100,10 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   const [activeGroup, setActiveGroup] = useState("");
   const [moreAddons, setMoreAddons] = useState(false);
   const [editing, setEditing] = useState<BoardTicket | null>(null);
-  const [showWalkIn, setShowWalkIn] = useState(false);
-  // A kiosk check-in we already have a number for — the walk-in sheet skips the phone step for these.
-  const [walkInKnown, setWalkInKnown] = useState<{ phone: string; name: string | null } | null>(null);
-  const [focusTicket, setFocusTicket] = useState<{ id: number } | null>(null);
+  // The ticket whose card is open. It opens over whatever screen it was tapped on (Techs, mostly) and closes back to that same screen.
+  const [popupId, setPopupId] = useState<number | null>(null);
   const [showMore, setShowMore] = useState(false);
+  const [showGift, setShowGift] = useState(false);
   const [showBook, setShowBook] = useState(false);
   const [showCheckIn, setShowCheckIn] = useState(false);
   // "PAY NOW": create the ticket, then open it for payment in this tab.
@@ -110,6 +111,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   // Techs page: a clocked-out tech's card was tapped → offer to set them In. `assumedIn` shows them In & Available at once,
   // until the server's answer (also pushed to every other station) arrives.
   const [clockInFor, setClockInFor] = useState<TurnTech | null>(null);
+  const [clockOutFor, setClockOutFor] = useState<TurnTech | null>(null);
   const [assumedIn, setAssumedIn] = useState<number[]>([]);
   // The client is typing their number on /frontdesk right now (drives the overlay on the Check-In page). Self-clears if the
   // "stopped typing" message is ever lost, so a stale overlay can't stay up.
@@ -128,7 +130,12 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   const [assignError, setAssignError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [frontdeskPhone, setFrontdeskPhone] = useState("");
-  const [checkout, setCheckout] = useState<{ ticket: BoardTicket; appointment: AppointmentWithDetails } | null>(null);
+  // The ticket being paid in the POS tab (null = the POS tab is the ticket builder). A new customer-screen event arrives as a new object.
+  const [checkout, setCheckout] = useState<BoardTicket | null>(null);
+  const [checkoutEvent, setCheckoutEvent] = useState<{ type: string; [k: string]: unknown } | null>(null);
+  // True once the ticket is actually completed server-side — the checkout screen then shows Print/Text/No Receipt
+  // instead of the payment buttons, and stays open until one of those is picked (see finishCheckout below).
+  const [ticketPaid, setTicketPaid] = useState(false);
   const [pendingCheckout, setPendingCheckout] = useState<BoardTicket | null>(null);
   const [showOpenRegister, setShowOpenRegister] = useState(false);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -144,6 +151,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   const refreshAll = useSettingsSync(true);
   const live = useNailRealtime({
     storeId, registerId, refreshAll, onFrontdeskPhone: setFrontdeskPhone, onFrontdeskTyping,
+    onCheckoutEvent: (m) => setCheckoutEvent({ ...m }),
     // The kiosk's check-in ticket prints on the front-desk thermal printer, like on the calendar.
     onPrintJob: (data) => {
       if (data.jobType !== "checkin_ticket") return;
@@ -235,7 +243,6 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     () => draftTotals(service, addonIds, activeAddons, nailCfg, pick, customs),
     [service, addonIds, activeAddons, nailCfg, pick, customs],
   );
-  const missing = missingRequired(nailCfg, pick);
 
   // ── ticket building ───────────────────────────────────────────────────────
   const resetDraft = useCallback(() => {
@@ -250,11 +257,11 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     if (editing === null) setPick(EMPTY_PICK);
   };
   const toggleAddon = (id: number) => setAddonIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
-  const addCustom = (amount: number, qty: number) => {
+  const addCustom = (amount: number, qty: number, label?: string) => {
     customSeq.current += 1;
     setCustoms((cur) => [...cur, {
       id: customSeq.current,
-      label: qty > 1 ? `Custom Amount ×${qty}` : "Custom Amount",
+      label: label ?? (qty > 1 ? `Custom Amount ×${qty}` : "Custom Amount"),
       price: Math.round(amount * qty * 100) / 100,
     }]);
   };
@@ -265,7 +272,6 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   };
 
   const pickClient = async (clientId: number, marker?: number | null, staffId?: number | null) => {
-    setShowWalkIn(false);
     try {
       setClient(await fetchClient(clientId));
       setCheckinId(marker ?? null);
@@ -314,7 +320,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
 
   const update = useMutation({
     mutationFn: () => updateTicket(editing!.id, { serviceId: service!.id, addonIds, pick, customLines }),
-    onSuccess: () => { invalidateBoard(); say("Ticket updated"); resetDraft(); setTab("board"); },
+    onSuccess: () => { invalidateBoard(); say("Ticket updated"); resetDraft(); setTab("techs"); },
     onError: (err: any) => toast({ title: "Couldn't update the ticket", description: err?.message, variant: "destructive" }),
   });
 
@@ -338,15 +344,13 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     staleTime: 60_000,
   });
 
-  const openCheckout = useCallback(async (t: BoardTicket) => {
-    try {
-      const appointment = (await fetchAppointment(t.id)) as AppointmentWithDetails;
-      setCheckout({ ticket: t, appointment });
-      setTab("pos");
-    } catch (err: any) {
-      toast({ title: "Couldn't open checkout", description: err?.message, variant: "destructive" });
-    }
-  }, [toast]);
+  // Paying a ticket happens right here: the POS tab switches from the ticket builder to that ticket's checkout.
+  const openCheckout = useCallback((t: BoardTicket) => {
+    setCheckoutEvent(null);
+    setTicketPaid(false);
+    setCheckout(t);
+    setTab("pos");
+  }, []);
 
   // A ticket that was just made: fetch it fresh from the board, then pay it here.
   const openTicketForCheckout = async (id: number) => {
@@ -364,7 +368,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
       setShowOpenRegister(true);
       return;
     }
-    void openCheckout(t);
+    openCheckout(t);
   };
   // Carry on to checkout once the register has been opened.
   useEffect(() => {
@@ -372,31 +376,26 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
       const t = pendingCheckout;
       setPendingCheckout(null);
       setShowOpenRegister(false);
-      void openCheckout(t);
+      openCheckout(t);
     }
   }, [pendingCheckout, openDrawerSession, openCheckout]);
 
-  const { data: siblings = EMPTY_ARRAY } = useQuery<AppointmentWithDetails[]>({
-    queryKey: ["/api/appointments", storeId, "nail-checkout-siblings"],
-    queryFn: async () => {
-      const res = await fetch(`/api/appointments?storeId=${storeId}`, { credentials: "include" });
-      const raw = res.ok ? await res.json() : [];
-      return Array.isArray(raw) ? raw : [];
-    },
-    enabled: !!checkout,
+  const finalize = useMutation({
+    mutationFn: (data: FinalizeData) => completeTicket(checkout!.id, data),
+    // Completed — but stay on this ticket's checkout screen (Print/Text/No Receipt takes it from here) rather than
+    // jumping away immediately, so a receipt can still be sent for a sale that's already safely recorded.
+    onSuccess: () => { invalidateBoard(); setTicketPaid(true); say("Checked out"); },
+    onError: (err: any) => toast({ title: "Payment wasn't saved", description: err instanceof ApiError && err.message ? `${err.message} — the sale didn't close.` : "The sale didn't close. Check the ticket on the board.", variant: "destructive" }),
   });
 
-  const finalize = useMutation({
-    mutationFn: (data: FinalizeData) => completeTicket(checkout!.ticket.id, data),
-    onSuccess: () => { invalidateBoard(); setCheckout(null); setTab("board"); say("Checked out"); },
-    onError: () => toast({ title: "Payment wasn't saved", description: "The sale didn't close. Check the ticket on the board.", variant: "destructive" }),
-  });
+  // The receipt has been handled (printed / texted / declined) for an already-paid ticket — now leave the checkout screen.
+  const finishCheckout = useCallback(() => { setCheckout(null); setTicketPaid(false); setTab("techs"); }, []);
 
   // ── open a ticket by id (scanner, voucher) ───────────────────────────────
   const openTicketById = useCallback(async (id: number) => {
     await queryClient.invalidateQueries({ queryKey: BOARD_KEY });
     const b = await queryClient.fetchQuery({ queryKey: BOARD_KEY, queryFn: fetchBoard });
-    if (b.tickets.some((t) => t.id === id)) { setFocusTicket({ id }); setTab("board"); }
+    if (b.tickets.some((t) => t.id === id)) setPopupId(id);
     else toast({ title: "That ticket isn't on today's board", description: "It may already be paid or cancelled.", variant: "destructive" });
   }, [queryClient, toast]);
 
@@ -446,21 +445,21 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     return () => clearInterval(iv);
   }, [posEnabled, timezone, dayKey]);
 
-  // ── mirror the walk-in phone prompt to the paired /frontdesk tablet ───────
+  // ── mirror the Book Appointment phone prompt to the paired /frontdesk tablet ───────
   const [dualScreen, setDualScreen] = useState(false);
   useEffect(() => {
     fetch("/api/kiosk-settings", { credentials: "include" })
       .then((r) => r.json()).then((d) => setDualScreen(d?.dualScreenMode === true)).catch(() => {});
   }, [storeId]);
   useEffect(() => {
-    if (!(showWalkIn || showBook) || !dualScreen || walkInKnown) return;
+    if (!showBook || !dualScreen) return;
     const send = (type: string) => fetch("/api/kiosk/checkout-event", {
       method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type, registerId }),
     }).catch(() => {});
     void send("kiosk_checkout_phone_prompt");
     return () => { void send("kiosk_checkout_phone_cancel"); };
-  }, [showWalkIn, showBook, dualScreen, registerId, walkInKnown]);
+  }, [showBook, dualScreen, registerId]);
 
   // ── the calendar's other tools, from the More menu ────────────────────────
   const timeclockEnabled = features.timeclock !== false;
@@ -531,9 +530,22 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
     }
   };
 
+  const setTechOut = async (tech: TurnTech) => {
+    setClockOutFor(null);
+    setAssumedIn((cur) => cur.filter((id) => id !== tech.id)); // a tech we just set in on this screen must not stay "in" once they are out
+    try {
+      await clockOutTech(storeId, tech.id);
+      say(`${tech.name} is out`);
+    } catch (err: any) {
+      toast({ title: `Couldn't clock ${tech.name.split(" ")[0]} out`, description: err?.message, variant: "destructive" });
+    } finally {
+      invalidateBoard();
+    }
+  };
+
   // ── submit routing ────────────────────────────────────────────────────────
   const busy = create.isPending || update.isPending;
-  const canSubmit = !!client && !!service && missing.length === 0;
+  const canSubmit = !!client && !!service;
   const submit = () => {
     if (!canSubmit) return;
     if (editing) update.mutate();
@@ -541,45 +553,54 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
   };
   const payNow = () => { if (!canSubmit || editing) return; payAfterCreate.current = true; setAssignError(null); setAssigning({ mode: "create" }); };
   const clearDraft = () => {
-    if (editing) setTab("board");
+    if (editing) setTab("techs");
     resetDraft();
   };
 
-  const startWalkIn = () => { setFrontdeskPhone(""); setWalkInKnown(null); setEditing(null); setShowWalkIn(true); };
-
-  // A kiosk check-in with no ticket yet → the walk-in process without asking for their phone again.
+  // A kiosk check-in with no ticket yet → start their ticket. (One with no client on file used to open the walk-in sheet to find or
+  // create them by phone; that sheet is gone, so for now tapping it does nothing.)
   const startFromMarker = (m: BoardMarker) => {
+    if (!m.clientId) return;
     setTab("pos");
-    if (m.clientId) { void pickClient(m.clientId, m.id); return; }
-    setCheckinId(m.id);
-    setFrontdeskPhone("");
-    setWalkInKnown({ phone: m.phone ?? "", name: m.clientName });
-    setShowWalkIn(true);
+    void pickClient(m.clientId, m.id);
   };
-  useEffect(() => { if (tab === "board") setFocusTicket(null); }, [tab]);
+
+  const ticketActions = {
+    onStart: (t: BoardTicket) => act.mutate(() => startTicket(t.id)),
+    onCheckout: requestCheckout,
+    onReassign: (t: BoardTicket) => { setAssignError(null); setAssigning({ mode: "reassign", ticket: t }); },
+    onEdit: startEdit,
+    onCancel: (t: BoardTicket) => { if (window.confirm(`Cancel ${t.client.name}'s ticket?`)) act.mutate(() => cancelTicket(t.id)); },
+  };
+  const popupTicket = popupId != null ? tickets.find((t) => t.id === popupId) ?? null : null;
 
   return (
     <div className="dark cx-cal nail-app h-app w-full" data-testid="nail-home">
       {notice && <div className="nail-notice" data-testid="nail-notice">{notice}</div>}
 
       <main className={`pos-shell ${tab === "board" ? "checkin-page" : ""} ${tab === "techs" ? "techs-page" : ""}`}>
-        {/* Checkout happens IN the POS tab: the same checkout screen the calendar uses (keypad, function grid, tip, discount,
-            group pay, loyalty, cash / card / M2 / Tap to Pay, receipts, customer screen). It stays mounted while staff peek at
-            another tab, so a half-paid ticket isn't lost. */}
+        {/* Checkout: the POS tab's own screen (ticket · keypad · payment / functions). It stays mounted while staff peek at another
+            tab, so a half-paid ticket — or a card that has already been charged — is never lost. */}
         {checkout && (
-          <section className={`checkout-embed ${tab === "pos" ? "" : "checkout-embed-hidden"}`} data-testid="nail-checkout-embed">
-            <CheckoutPOSPanel
-              embedded
-              appointment={checkout.appointment}
+          <div style={{ display: tab === "pos" ? "contents" : "none" }}>
+            <CheckoutMode
+              key={checkout.id}
+              ticket={checkout}
+              storeId={storeId}
+              storeName={storeName}
               timezone={timezone}
-              siblingAppointments={siblings}
-              isUpdating={finalize.isPending}
-              onClose={() => { setCheckout(null); setTab("board"); }}
+              registerId={registerId}
+              dualScreen={dualScreen}
+              otherTickets={tickets.filter((t) => t.id !== checkout.id && t.status === "started")}
+              thermalPrint={thermalPrinter.isConnected ? thermalPrinter.print : undefined}
+              finalizing={finalize.isPending}
+              paid={ticketPaid}
+              socketEvent={checkoutEvent}
               onFinalize={(data) => finalize.mutate(data)}
-              onThermalPrint={thermalPrinter.isConnected ? thermalPrinter.print : undefined}
-              initialExtraItems={[...(checkout.ticket.nail?.lines ?? []), ...checkout.ticket.customLines].map((l) => ({ name: l.label, price: l.price }))}
+              onReceiptDone={finishCheckout}
+              onClose={() => { setCheckout(null); setTab("techs"); }}
             />
-          </section>
+          </div>
         )}
         {checkout && tab === "pos" ? null : tab === "pos" ? (
           <>
@@ -592,7 +613,6 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
               submitLabel={editing ? "UPDATE TICKET" : !client ? "START A WALK-IN FIRST" : !service ? "ADD A SERVICE FIRST" : "CREATE TICKET"}
               canSubmit={canSubmit}
               busy={busy}
-              missing={missing}
               editing={!!editing}
               onRemove={removeLine}
               onClear={clearDraft}
@@ -601,7 +621,7 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
             />
             <section className="work-area">
               <div className="sale-area">
-                <Keypad locked={!client} onEnter={addCustom} />
+                <Keypad locked={!client} onEnter={addCustom} onGiftCard={() => setShowGift(true)} />
                 <CatalogPanel
                   locked={!client}
                   groups={groups}
@@ -615,44 +635,27 @@ function NailScreen({ storeId, timezone }: { storeId: number; timezone: string }
                   hasMoreAddons={moreAddons || activeAddons.length > Math.min(6, suggestedAddons.length)}
                   addonIds={addonIds}
                   onToggleAddon={toggleAddon}
-                  nail={service ? nailCfg : null}
-                  pick={pick}
-                  onPick={(group, id) => setPick((p) => togglePick(p, group, id))}
                 />
               </div>
             </section>
           </>
         ) : tab === "techs" ? (
           <>
-            <CheckInPanel clockOffsetMs={clockOffsetMs} tickets={tickets} markers={markers} onMarker={startFromMarker} onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))} onTicket={(t) => { setFocusTicket({ id: t.id }); setTab("board"); }} />
-            <TechCards techs={techList} tickets={tickets} markers={markers} stats={board?.techStats ?? EMPTY_ARRAY} glance={board?.glance} waiting={waitingCount} loading={techsLoading} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} onClockedOutTap={setClockInFor} />
+            <CheckInPanel clockOffsetMs={clockOffsetMs} tickets={tickets} markers={markers} onMarker={startFromMarker} onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))} onTicket={(t) => setPopupId(t.id)} />
+            <TechCards techs={techList} tickets={tickets} markers={markers} stats={board?.techStats ?? EMPTY_ARRAY} glance={board?.glance} waiting={waitingCount} loading={techsLoading} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} onClockedOutTap={setClockInFor} onClockedInTap={setClockOutFor} onTicketTap={(t) => setPopupId(t.id)} />
           </>
         ) : (
-          <CheckInBoard
-            tickets={tickets}
-            busy={act.isPending}
-            onStart={(t) => act.mutate(() => startTicket(t.id))}
-            onCheckout={requestCheckout}
-            onReassign={(t) => { setAssignError(null); setAssigning({ mode: "reassign", ticket: t }); }}
-            onEdit={startEdit}
-            onCancel={(t) => { if (window.confirm(`Cancel ${t.client.name}'s ticket?`)) act.mutate(() => cancelTicket(t.id)); }}
-            focus={focusTicket}
-            clockOffsetMs={clockOffsetMs}
-          />
+          <CheckInBoard tickets={tickets} busy={act.isPending} {...ticketActions} clockOffsetMs={clockOffsetMs} />
         )}
 
-      <BottomNav tab={tab} onTab={setTab} onWalkIn={startWalkIn} onCheckIn={() => setShowCheckIn(true)} onMore={() => setShowMore(true)} waiting={waitingCount} inService={inServiceCount} live={live} />
+      <BottomNav tab={tab} onTab={setTab} onCheckIn={() => setShowCheckIn(true)} onMore={() => setShowMore(true)} waiting={waitingCount} inService={inServiceCount} live={live} />
       </main>
 
-      {showWalkIn && (
-        <WalkInSheet
-          storeId={storeId}
-          frontdeskPhone={frontdeskPhone}
-          known={walkInKnown}
-          onClose={() => { setShowWalkIn(false); setFrontdeskPhone(""); setWalkInKnown(null); }}
-          onClient={(id, staffId) => { setFrontdeskPhone(""); setWalkInKnown(null); void pickClient(id, checkinId, staffId); }}
-        />
-      )}
+      {showGift && <GiftCardSheet onClose={() => setShowGift(false)} onSay={say} />}
+
+      {popupTicket && <TicketPopup ticket={popupTicket} busy={act.isPending} {...ticketActions} clockOffsetMs={clockOffsetMs} onClose={() => setPopupId(null)} />}
+
+      {clockOutFor && <TechClockOutSheet tech={clockOutFor} busy={false} onClockOut={() => void setTechOut(clockOutFor)} onClose={() => setClockOutFor(null)} />}
 
       {clockInFor && <TechClockInSheet tech={clockInFor} busy={false} onSetIn={() => void setTechIn(clockInFor)} onClose={() => setClockInFor(null)} />}
 

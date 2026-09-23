@@ -1,6 +1,6 @@
 /**
  * ─────────────────────────────────────────────────────────────────────────────
- * AI Voice Booking Receptionist  ·  OpenAI Realtime API edition
+ * AI Voice Booking Receptionist  ·  OpenAI Live API (gpt-live-1) edition
  * ─────────────────────────────────────────────────────────────────────────────
  *
  * Features:
@@ -30,17 +30,33 @@
  *   ┌──────────────────────────────────────────────────────────────────────┐
  *   │  Audio Bridge (per call, fully isolated)                              │
  *   │                                                                      │
- *   │  1. Open OpenAI Realtime WebSocket                                   │
- *   │  2. Wait for BOTH: OpenAI ready + Twilio 'start' event               │
+ *   │  1. Open OpenAI Live WebSocket (wss://api.openai.com/v1/live/sessions)│
+ *   │  2. Wait for BOTH: OpenAI WS open + Twilio 'start' event              │
  *   │  3. Read caller phone from start.customParameters.from               │
  *   │  4. Look up upcoming appointments for that phone in this store      │
- *   │  5. Build session.update with caller context + appointment list      │
- *   │  6. Audio bridges in g711_ulaw — zero conversion                     │
+ *   │  5. Send session.start — short frontend `instructions` for Autumn's  │
+ *   │     voice/persona, plus `delegation.responses` (business rules +      │
+ *   │     booking tools) for a hosted Responses backend. Wait for           │
+ *   │     session.started, then session.instructions.append the greeting.  │
+ *   │  6. Audio bridges in g711_ulaw — zero conversion (session.audio.format│
+ *   │     = audio/pcmu @ 8kHz matches Twilio natively)                      │
  *   └──────────────────────────────────────────────────────────────────────┘
+ *
+ * Turn-taking is fully autonomous under Live — GPT-Live decides when to speak;
+ * this file no longer manually triggers or cancels voice responses. The one
+ * remaining app-driven flow is Responses-delegation tool calls: a nested
+ * response.event → response.output_item.done (function_call) is executed here,
+ * then answered with response.item.create (function_call_output) + response.create
+ * to continue the backend. See lib/silenceWatchdog.ts for the (now much smaller)
+ * dead-air guard, which nudges via session.instructions.append instead of the old
+ * response.create/response.cancel turn-lock machinery.
  *
  * Audio format (both directions): g711_ulaw (8 kHz µ-law — Twilio native)
  * Required secret: AI_INTEGRATIONS_OPENAI_API_KEY (or falls back to OPENAI_API_KEY
  *   — the standard variable provided by the Replit OpenAI integration)
+ * Optional: AI_RECEPTIONIST_BACKEND_MODEL (delegation.responses.model, defaults
+ *   to gpt-5.6-luna) — verify this is still the desired backend model before relying
+ *   on the default; it was current as of the Sep 2026 Live API docs.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -50,7 +66,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import twilio from "twilio";
 import { fromZonedTime, toZonedTime, formatInTimeZone } from "date-fns-tz";
 import { db, pool } from "../db";
-import { locations, services, storeSettings, aiCallLog, aiSilenceIncidents, callUsageRecords, staff as staffTable, appointments } from "@shared/schema";
+import { locations, services, serviceAddons, addons, storeSettings, aiCallLog, aiSilenceIncidents, callUsageRecords, staff as staffTable, appointments } from "@shared/schema";
 import { eq, desc, inArray, sql, count, gt, or, isNull, and } from "drizzle-orm";
 import { isAuthenticated, isAdminAuthenticated } from "../auth";
 import { storage } from "../storage";
@@ -84,40 +100,17 @@ import { getBufferMinutes, normalizeBufferMinutes, clashesWithBuffer } from "../
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const OPENAI_REALTIME_URL =
-  "wss://api.openai.com/v1/realtime?model=gpt-realtime-2";
+const OPENAI_LIVE_URL = "wss://api.openai.com/v1/live/sessions";
+
+// Backend model for Responses delegation (business logic + tool calls).
+// Verify this is still the desired/available model before relying on the default.
+const AI_RECEPTIONIST_BACKEND_MODEL =
+  process.env.AI_RECEPTIONIST_BACKEND_MODEL || "gpt-5.6-luna";
 
 const PREF_KEY = "aiReceptionistEnabled";
 const PREF_PHONE_KEY = "aiReceptionistPhone";
 
 const TWILIO_ULAW_FRAME_BYTES = 160; // 20ms @ 8kHz, 8-bit μ-law
-
-/**
- * Convert a single 16-bit linear PCM sample to 8-bit μ-law.
- * Implementation adapted from the standard G.711 μ-law companding algorithm.
- */
-function linear16ToMuLaw(sample: number): number {
-  const MU_LAW_MAX = 0x1fff;
-  const BIAS = 0x84;
-
-  let pcm = Math.max(-32768, Math.min(32767, sample));
-  let sign = 0;
-  if (pcm < 0) {
-    pcm = -pcm;
-    sign = 0x80;
-  }
-
-  pcm = pcm + BIAS;
-  if (pcm > MU_LAW_MAX) pcm = MU_LAW_MAX;
-
-  let exponent = 7;
-  for (let expMask = 0x4000; (pcm & expMask) === 0 && exponent > 0; exponent--, expMask >>= 1) {
-    // find segment
-  }
-  const mantissa = (pcm >> (exponent + 3)) & 0x0f;
-  const ulaw = ~(sign | (exponent << 4) | mantissa) & 0xff;
-  return ulaw;
-}
 
 /** Convert one 8-bit μ-law byte to 16-bit linear PCM sample. */
 function muLawToLinear16(muLawByte: number): number {
@@ -128,26 +121,6 @@ function muLawToLinear16(muLawByte: number): number {
   let sample = ((mantissa << 3) + 0x84) << exponent;
   sample -= 0x84;
   return sign ? -sample : sample;
-}
-
-/**
- * Convert Twilio μ-law 8k (base64) to PCM16 24k (base64) for OpenAI input.
- * Upsampling is 3x duplication (8k -> 24k), sufficient for speech input.
- */
-function twilioUlawBase64ToPcm16_24kBase64(base64Ulaw: string): string {
-  const ulaw = Buffer.from(base64Ulaw, "base64");
-  if (!ulaw.length) return "";
-
-  const pcm = Buffer.allocUnsafe(ulaw.length * 3 * 2);
-  let o = 0;
-  for (let i = 0; i < ulaw.length; i++) {
-    const s = muLawToLinear16(ulaw[i]);
-    // 8k -> 24k upsample by repeating each sample 3 times
-    pcm.writeInt16LE(s, o); o += 2;
-    pcm.writeInt16LE(s, o); o += 2;
-    pcm.writeInt16LE(s, o); o += 2;
-  }
-  return pcm.toString("base64");
 }
 
 /** Lightweight voice detection over Twilio μ-law payload. */
@@ -171,27 +144,6 @@ function hasVoiceInTwilioUlaw(base64Ulaw: string): boolean {
   // - average energy catches sustained speech
   // - peak catches short syllables/plosives at low gain
   return avgAbs > 650 || peakAbs > 2200;
-}
-
-/**
- * Convert OpenAI PCM16 (typically 24kHz) into Twilio μ-law (8kHz).
- * Downsampling is a simple 3:1 decimation, which is sufficient for phone-band speech.
- */
-function pcm16Base64ToTwilioUlawBase64(base64Pcm16: string): string {
-  const pcm = Buffer.from(base64Pcm16, "base64");
-  if (pcm.length < 2) return "";
-
-  const sampleCount = Math.floor(pcm.length / 2);
-  const outLen = Math.floor(sampleCount / 3); // 24k -> 8k decimation
-  const ulaw = Buffer.allocUnsafe(Math.max(outLen, 0));
-
-  let outIdx = 0;
-  for (let i = 0; i + 1 < pcm.length; i += 6) {
-    const sample = pcm.readInt16LE(i);
-    ulaw[outIdx++] = linear16ToMuLaw(sample);
-  }
-
-  return ulaw.subarray(0, outIdx).toString("base64");
 }
 
 /** Normalize a user-typed phone number to E.164 (very forgiving). */
@@ -222,11 +174,20 @@ function toTenDigit(raw: string): string | null {
 
 // ─── Salon context ────────────────────────────────────────────────────────────
 
+interface SalonAddon {
+  id: number;
+  name: string;
+  durationMinutes: number;
+  price: string;
+}
+
 interface SalonService {
   id: number;
   name: string;
   durationMinutes: number;
   price: string;
+  /** Add-ons the caller can be offered as an upsell for this specific service. */
+  addons: SalonAddon[];
 }
 
 interface SalonContext {
@@ -376,7 +337,7 @@ async function getSalonContext(storeId: number): Promise<SalonContext | null> {
     }
   } catch { /* optional */ }
 
-  const [storeServices, storeStaff] = await Promise.all([
+  const [storeServices, storeStaff, storeServiceAddons] = await Promise.all([
     db
       .select({ id: services.id, name: services.name, duration: services.duration, price: services.price })
       .from(services)
@@ -385,7 +346,33 @@ async function getSalonContext(storeId: number): Promise<SalonContext | null> {
       .select({ id: staffTable.id, name: staffTable.name })
       .from(staffTable)
       .where(eq(staffTable.storeId, storeId)),
+    // Real, bookable add-ons per service — used both to ground the AI's upsell
+    // offer in something that actually exists and to give it the addonId it
+    // needs to call add_appointment_addon after the caller accepts. Without
+    // this the AI was improvising upsell lines with no real addon behind them.
+    db
+      .select({
+        serviceId: serviceAddons.serviceId,
+        addonId:   addons.id,
+        name:      addons.name,
+        duration:  addons.duration,
+        price:     addons.price,
+      })
+      .from(serviceAddons)
+      .innerJoin(addons, eq(serviceAddons.addonId, addons.id))
+      .where(and(
+        eq(addons.storeId, storeId),
+        eq(addons.isActive, true),
+        or(eq(addons.hiddenFromPublic, false), isNull(addons.hiddenFromPublic)),
+      )),
   ]);
+
+  const addonsByServiceId = new Map<number, SalonAddon[]>();
+  for (const row of storeServiceAddons) {
+    const list = addonsByServiceId.get(row.serviceId) ?? [];
+    list.push({ id: row.addonId, name: row.name, durationMinutes: row.duration, price: String(row.price ?? "0.00") });
+    addonsByServiceId.set(row.serviceId, list);
+  }
 
   return {
     storeId,
@@ -398,6 +385,7 @@ async function getSalonContext(storeId: number): Promise<SalonContext | null> {
       name: s.name,
       durationMinutes: s.duration,
       price: String(s.price ?? "0.00"),
+      addons: addonsByServiceId.get(s.id) ?? [],
     })),
     staffMembers: storeStaff.map((s) => ({ id: s.id, name: s.name })),
     parkingOptions: (store.parkingOptions as string[] | null) ?? [],
@@ -458,7 +446,7 @@ function buildOpenAiSessionConfig(
   crmProfile: CallerCrmProfile | null,
   existingAppointments: CallerAppointment[],
   availabilitySnapshot: string | null = null,
-): object {
+): { sessionStart: object; greetingInstruction: string } {
   const hasKnownCallerPhone = Boolean(callerPhone);
   const callerName = crmProfile?.firstName ?? null;
   const hasKnownCallerName = Boolean(callerName && callerName.trim());
@@ -466,7 +454,14 @@ function buildOpenAiSessionConfig(
   const isVip = crmProfile?.status === "vip";
   const serviceList = salon.services.length
     ? salon.services
-        .map((s) => `• ${s.name} — ${s.durationMinutes} min, $${s.price}  [serviceId: ${s.id}]`)
+        .map((s) => {
+          const base = `• ${s.name} — ${s.durationMinutes} min, $${s.price}  [serviceId: ${s.id}]`;
+          if (!s.addons.length) return base;
+          const addonList = s.addons
+            .map((a) => `${a.name} (+$${a.price}, +${a.durationMinutes} min) [addonId: ${a.id}]`)
+            .join("; ");
+          return `${base}\n  Available add-ons: ${addonList}`;
+        })
         .join("\n")
     : "• Please ask the caller to check the website for available services.";
 
@@ -565,6 +560,12 @@ function buildOpenAiSessionConfig(
       `auto-fill this service ID — do NOT ask what service they want.`
     : "";
 
+  // The literal sentence Autumn must speak first. Computed once and reused both
+  // inside the backend business-logic prompt and in the frontend's post-startup
+  // session.instructions.append greeting nudge (GPT-Live speaks autonomously —
+  // it does not speak first on its own, so the app must explicitly ask it to).
+  const greetingLine = buildTimeOfDayGreeting(salon.timezone, salon.businessName, "open_ended");
+
   const instructions = `# Role and Objective
 You are Autumn, a friendly, professional AI phone receptionist for ${salon.businessName}.
 You help callers manage their appointments — book new ones, cancel existing ones, reschedule, or confirm details.
@@ -588,9 +589,9 @@ English is the default response language.
 
 Introduce yourself as Autumn near the start of the call.
 ${isReturningCaller
-  ? `Your FIRST spoken response must be: "${buildTimeOfDayGreeting(salon.timezone, salon.businessName, "open_ended")}"` +
+  ? `Your FIRST spoken response must be: "${greetingLine}"` +
     (isVip ? ` (VIP caller — warm, premium tone throughout the call.)` : "")
-  : `Your FIRST spoken response in a new call must be exactly: "${buildTimeOfDayGreeting(salon.timezone, salon.businessName, "open_ended")}"`}
+  : `Your FIRST spoken response in a new call must be exactly: "${greetingLine}"`}
 The greeting is open-ended — the caller will state their intent directly. Do NOT ask "are you calling to book?". Let them speak.
 ${hasKnownCallerName
   ? `Caller name on file is ${callerName}. Address them by name naturally when appropriate. Do NOT ask for name again — it is already known.`
@@ -719,10 +720,11 @@ ${availabilitySnapshot ? `\n${availabilitySnapshot}\n` : ""}
   If they say no: "Perfect — have a great day."
 
   UPSELL — ONLY AFTER create_booking SUCCEEDS (never before):
-  Say one optional upsell line (e.g. "Would you like to add a deep conditioning treatment? It only takes about 20 minutes.")
+  Offer ONLY a real add-on listed under the booked service in the services list above (e.g. "Would you like to add [add-on name] for $[price]? It only takes about [duration] extra minutes."). Never invent an add-on that isn't listed — if the booked service has no add-ons listed, skip the upsell entirely and go straight to the closing question.
   Keep it brief. If declined, say "No problem!" and move directly to the closing line.
   Do not speak both branches in one turn. Wait for the caller response first.
   Never repeat the upsell.
+  If the caller ACCEPTS: call add_appointment_addon with the appointmentId from the booking you just created and the addonId of the add-on you offered — BEFORE telling the caller it's been added. Only say "Great, I've added that" if the tool call succeeds. If it fails, say "I'm sorry, I wasn't able to add that, but your [service] booking is still confirmed" and move on — never claim an add-on was added unless the tool call actually succeeded.
 
 ▶ SERVICE CONFUSION (vague terms → one-layer clarification only):
   Triggers: "nails done", "full set", "acrylics", "something for my nails", "get my nails done"
@@ -847,7 +849,7 @@ Realtime-2 operating style (latency + clarity):
 
 FAILURE RECOVERY: If technical difficulty occurs, briefly acknowledge and continue with a clear next step. Do not go silent.`;
 
-  const realtimeTools = [
+  const bookingTools = [
     {
       type: "function",
       name: "create_booking",
@@ -891,6 +893,19 @@ FAILURE RECOVERY: If technical difficulty occurs, briefly acknowledge and contin
           newDateTime:   { type: "string", description: "ISO 8601 new datetime" },
         },
         required: ["appointmentId", "newDateTime"],
+      },
+    },
+    {
+      type: "function",
+      name: "add_appointment_addon",
+      description: "Attach an add-on the caller accepted (upsell) to the appointment you just booked. Call this immediately after the caller says yes to an add-on offer, before verbally confirming it. Only use a real addonId from the services list — never invent one.",
+      parameters: {
+        type: "object",
+        properties: {
+          appointmentId: { type: "integer", description: "The appointment ID returned by create_booking earlier this call." },
+          addonId:       { type: "integer", description: "The addonId of the add-on the caller accepted, from the services list." },
+        },
+        required: ["appointmentId", "addonId"],
       },
     },
     {
@@ -993,22 +1008,42 @@ FAILURE RECOVERY: If technical difficulty occurs, briefly acknowledge and contin
     },
   ];
 
+  // Short frontend prompt for the Live voice model itself — persona, tone, and
+  // when to lean on the backend. All the actual business rules/tools live in
+  // delegation.responses.instructions below (reusing the pre-migration prompt
+  // verbatim, per OpenAI's own migration guidance to start from your existing
+  // backend prompt rather than rewriting it).
+  const frontendInstructions = `You are Autumn, a warm, calm, professional AI phone receptionist for ${salon.businessName}.
+Speak naturally at an unhurried pace — one or two short sentences per turn, like a helpful front-desk professional. Do not sound rushed or overly cheerful.
+English is the default language — only switch if the caller explicitly asks or gives a full request in another language.
+You do not know this salon's bookings, availability, pricing, or policies yourself — delegate every scheduling, booking, cancellation, reschedule, availability, pricing, or salon-specific question to your backend, and answer using only what it returns.
+While the backend is working, briefly acknowledge you're checking (e.g. "Let me check that for you") and continue naturally the moment its result arrives — never go silent.
+Never invent or guess an appointment time, price, ID, or add-on. Never say a booking, cancellation, reschedule, or add-on succeeded unless the backend result confirms it.
+Never say you'll transfer the call or that someone will call the caller back.`;
+
   return {
-    type: "session.update",
-    session: {
-      type: "realtime",
-      model: "gpt-realtime-2",
-      instructions,
-      tools: realtimeTools,
-      // NOTE: `input_audio_transcription` is intentionally omitted.
-      // The current gpt-realtime-2 session schema rejects
-      // `session.input_audio_transcription` as an unknown parameter, which
-      // causes `session.update` to fail and leads to silent calls.
-      // NOTE: turn_detection is NOT sent here — gpt-realtime-2 rejects it as an
-      // unknown parameter and causes session.update to fail entirely (which means
-      // the system prompt is never applied). The API uses server_vad by default.
-      // The manual VAD code has been removed so double-responses no longer occur.
+    sessionStart: {
+      type: "session.start",
+      session: {
+        type: "live",
+        model: "gpt-live-1",
+        instructions: frontendInstructions,
+        audio: {
+          // Matches Twilio's native format — zero PCM conversion needed either direction.
+          format: { type: "audio/pcmu", rate: 8000 },
+        },
+        delegation: {
+          type: "responses",
+          responses: {
+            model: AI_RECEPTIONIST_BACKEND_MODEL,
+            instructions,
+            tools: bookingTools,
+            tool_choice: "auto",
+          },
+        },
+      },
     },
+    greetingInstruction: `Speak first, right now — do not wait for the caller. Say exactly: "${greetingLine}" Then stop and let the caller respond; do not ask "are you calling to book?".`,
   };
 }
 
@@ -1027,14 +1062,14 @@ FAILURE RECOVERY: If technical difficulty occurs, briefly acknowledge and contin
 //
 //   FORBIDDEN — never permitted inside any handler:
 //     • generating speech
-//     • calling response.create (or any OpenAI Realtime API method)
-//     • triggering or scheduling OpenAI responses
+//     • calling response.create or any other OpenAI Live protocol method
+//     • triggering or scheduling backend continuations
 //     • influencing conversation flow directly
 //
 //   OUTPUT — every handler MUST return a plain ToolResult object and nothing else.
 //     The orchestrator (WebSocket closure) owns all speech and OpenAI interactions.
-//     Handlers have no access to `openAiWs`, `generateSpeech`, or any session state
-//     by design — they are module-scope functions, not closure members.
+//     Handlers have no access to `openAiWs` or any session state by design —
+//     they are module-scope functions, not closure members.
 
 /** Canonical return type for every AI receptionist tool handler. */
 type ToolResult = { success: boolean; message: string; [key: string]: unknown };
@@ -1091,6 +1126,11 @@ function logAiToolEvent(event: string, payload: Record<string, unknown>): void {
 interface RescheduleArgs {
   appointmentId: number;
   newDateTime: string;
+}
+
+interface AddAddonArgs {
+  appointmentId: number;
+  addonId: number;
 }
 
 interface LookupAppointmentByNameOrDateArgs {
@@ -2885,6 +2925,100 @@ async function handleReschedule(
   return { success: true, message: `Appointment ${args.appointmentId} rescheduled to ${confirmedLocal} (salon time).` };
 }
 
+/**
+ * Attaches an accepted upsell add-on to the appointment just booked this call.
+ * This is the write path that was entirely missing before — the AI could only
+ * speak a confirmation ("great, I've noted the upgrade") with nothing behind
+ * it, so the addon never showed up on the appointment in the Calendar.
+ */
+async function handleAddAddon(
+  storeId: number,
+  rawArgs: string,
+  allowlist: AppointmentIdAllowlist,
+  salonTimezone: string = "UTC"
+): Promise<{ success: boolean; message: string }> {
+  let args: AddAddonArgs;
+  try {
+    args = JSON.parse(rawArgs);
+  } catch {
+    return { success: false, message: "Could not understand add-on arguments." };
+  }
+
+  if (!allowlist.has(args.appointmentId)) {
+    console.warn(
+      `[AI Receptionist] Refusing to add addon to appointment ${args.appointmentId} — not in caller's allowlist (store ${storeId})`
+    );
+    return {
+      success: false,
+      message: "That appointment ID is not one I can modify for this caller.",
+    };
+  }
+
+  // Defense-in-depth: re-verify storeId on the live record before mutating
+  const existing = await storage.getAppointment(args.appointmentId);
+  if (!existing || existing.storeId !== storeId) {
+    console.warn(
+      `[AI Receptionist] storeId mismatch on add-addon — appointment ${args.appointmentId} belongs to store ${existing?.storeId}, call is for ${storeId}`
+    );
+    return { success: false, message: "Appointment not found." };
+  }
+
+  const addon = await storage.getAddon(args.addonId);
+  if (!addon || addon.storeId !== storeId) {
+    return { success: false, message: "That add-on is not available at this salon." };
+  }
+
+  const baseDuration = (existing.duration ?? 60) as number;
+  const newTotalDuration = baseDuration + addon.duration;
+
+  // Re-validate the (unchanged) start time still fits business hours + no
+  // overlap once the appointment runs longer. allowSameDay=true because this
+  // appointment's date was already approved at creation — we're only
+  // re-checking the overlap/hours math for the extended duration here, not
+  // re-applying the "no same-day booking" policy.
+  const preCheck = await validateBookingSlot({
+    storeId,
+    timezone: salonTimezone,
+    startTime: new Date(existing.date),
+    durationMinutes: newTotalDuration,
+    staffId: existing.staffId ?? undefined,
+    excludeAppointmentId: args.appointmentId,
+    allowSameDay: true,
+  });
+  if (!preCheck.ok) {
+    logAiToolEvent("add_addon.conflict", {
+      appointmentId: args.appointmentId,
+      addonId: addon.id,
+      errorCode: preCheck.error.code,
+      storeId,
+    });
+    return {
+      success: false,
+      message: `Cannot add that add-on — it would no longer fit the schedule (${preCheck.error.message})`,
+    };
+  }
+
+  const currentAddons = await storage.getAppointmentAddons(args.appointmentId);
+  if (currentAddons.some((a) => a.addonId === addon.id)) {
+    return { success: true, message: `${addon.name} is already on appointment ${args.appointmentId}.` };
+  }
+
+  await storage.updateAppointment(args.appointmentId, { duration: newTotalDuration });
+  await storage.setAppointmentAddons(args.appointmentId, [...currentAddons.map((a) => a.addonId), addon.id]);
+
+  logAiToolEvent("add_addon.success", {
+    appointmentId: args.appointmentId,
+    addonId: addon.id,
+    addonName: addon.name,
+    storeId,
+  });
+  console.log(
+    `[AI Receptionist] ➕ ADDON added addonId=${addon.id} (${addon.name}) to appointment id=${args.appointmentId} (store ${storeId})`
+  );
+
+  return { success: true, message: `Added ${addon.name} to appointment ${args.appointmentId}.` };
+}
+
 // ─── Per-call bridge ──────────────────────────────────────────────────────────
 
 function createCallSession(twilioWs: WebSocket) {
@@ -2900,47 +3034,27 @@ function createCallSession(twilioWs: WebSocket) {
 
   let streamSid: string | null = null;
   let aiSpeaking = false;
-  let callerSpeaking = false;
+  // No idle-timeout "done" event exists for output audio under Live (see
+  // OutputAudioDeltaEvent docs — "track playback through your audio player's
+  // state instead"), so we flip aiSpeaking back off after a short gap with no
+  // new delta rather than waiting for a completion marker that doesn't exist.
+  let aiSpeakingIdleTimer: ReturnType<typeof setTimeout> | null = null;
+  const AI_SPEAKING_IDLE_MS = 700;
 
-  // ── Turn ownership tracking ────────────────────────────────────────────────
-  let userTurnCounter  = 0;
-  let currentTurnId    = "turn-0";
+  // A running, call-scoped sequence number for tool-call log correlation.
+  // Live has no discrete "user turn" concept exposed to the app (turn-taking
+  // is fully autonomous server-side), so this replaces the old turn-id scheme
+  // purely for readable logs — it has no bearing on gating/ownership.
+  let toolCallSeq = 0;
 
-  // ── HARD Turn Ownership Lock ───────────────────────────────────────────────
-  // ONE user input = EXACTLY ONE AI response stream. No exceptions.
-  //
-  // activeTurnId          — turn that currently owns a response slot
-  // activeResponseId      — OpenAI response.id streaming right now (audio filter)
-  // activeResponseInProgress — true while OpenAI is streaming audio for this turn
-  // activeTurnSource      — which subsystem claimed ownership (for logging)
-  // speechLockedUntil     — epoch ms; no new response.create before this time
-  //                         (extended by +1200ms on every outbound audio packet)
-  // isProcessingTool      — true while any tool IIFE is executing
-  //
-  // ALL response.create sends MUST go through generateSpeech().
-  // The lock resets on input_audio_buffer.committed (new user turn) and on
-  // response.done (response finished — next owner may claim).
-  let activeTurnId:             string | null = null;
-  let activeResponseId:         string | null = null;
-  let activeResponseInProgress: boolean       = false;
-  let activeTurnSource:         string        = "";
-  let speechLockedUntil = 0;            // epoch ms
-  let isProcessingTool  = false;        // true while any tool is running
-  let turnAttemptCount  = 0;            // total response.create attempts this turn
-  let turnRejectedCount = 0;            // attempts blocked by any guard this turn
-  const toolResultRecoveryAttempted = new Set<string>();
-
-  const SPEECH_COOLDOWN_MS     = 1200; // min gap after last audio packet
-  const MAX_RESPONSES_PER_MIN  = 8;
   const MAX_TOOL_CALLS_PER_MIN = 6;
-  let responsesThisMinute = 0;
   let toolCallsThisMinute = 0;
   let rateWindowStart     = Date.now();
 
   // §1 Per-call hard caps — independent of per-minute rate windows
-  const MAX_TURNS_PER_CALL      = 12; // AI response turns per call (cost ceiling)
-  const MAX_TOOL_CALLS_PER_CALL = 6;  // tool invocations per call (cost ceiling)
-  let responseTurnsThisCall     = 0;
+  const MAX_BACKEND_TURNS_PER_CALL = 12; // completed backend delegation rounds (cost ceiling)
+  const MAX_TOOL_CALLS_PER_CALL    = 6;  // tool invocations per call (cost ceiling)
+  let backendTurnsThisCall      = 0;
   let toolCallsThisCall         = 0;
   let gracefulTerminationStarted = false;
 
@@ -3003,159 +3117,27 @@ function createCallSession(twilioWs: WebSocket) {
 
   function _resetRateWindowIfNeeded(): void {
     if (Date.now() - rateWindowStart >= 60_000) {
-      responsesThisMinute = 0;
       toolCallsThisMinute = 0;
       rateWindowStart     = Date.now();
     }
   }
 
   /**
-   * THE SINGLE entry point for all AI speech generation.
-   *
-   * @param turnId  The current user turn (currentTurnId or capturedTurnId).
-   * @param source  Which subsystem is requesting (for logs + metrics).
-   *
-   * Guards (in order):
-   *   0. Time-based cooldown (speechLockedUntil)     → speech_locked_reason=cooldown
-   *   1. Caller is mid-utterance (callerSpeaking)    → vad_trigger_ignored=true
-   *   2. Tool is executing (isProcessingTool)        → tool_blocked_speech_attempt=true
-   *   3. Rate limit exceeded                         → speech_locked_reason=rate_limit
-   *   4. Active in-progress response for this turn   → response_collision_prevented
-   *
-   * Returns true if response.create was sent.
+   * Continue the Responses backend after delivering a function_call_output.
+   * Under Live, response.create no longer triggers the front-end voice model
+   * (that's fully autonomous) — it now means "continue the delegated backend
+   * response." There is no ownership/collision concept to arbitrate here: only
+   * this one call site sends it, immediately after a tool result is ready.
    */
-  function generateSpeech(turnId: string, source: string): boolean {
-    if (openAiWs.readyState !== WebSocket.OPEN) return false;
-    _resetRateWindowIfNeeded();
-    turnAttemptCount++;
-
-    // Guard 0: time-based cooldown after last audio packet
-    if (Date.now() < speechLockedUntil) {
-      turnRejectedCount++;
-      console.warn(
-        `[SpeechLock][${turnId}] BLOCKED — speech_locked_reason="cooldown" ` +
-        `remaining_ms=${speechLockedUntil - Date.now()} ` +
-        `response_blocked_by_lock=true blocked_source="${source}" ` +
-        `response_attempt_count=${turnAttemptCount}`
-      );
-      return false;
-    }
-
-    // Guard 1: caller is mid-utterance — VAD has not committed this audio yet
-    if (callerSpeaking) {
-      turnRejectedCount++;
-      console.warn(
-        `[SpeechLock][${turnId}] BLOCKED — speech_locked_reason="vad_speech_started" ` +
-        `vad_trigger_ignored=true response_blocked_by_lock=true ` +
-        `blocked_source="${source}" response_attempt_count=${turnAttemptCount} ` +
-        `suppressed_total=${turnRejectedCount}`
-      );
-      return false;
-    }
-
-    // Guard 2: tool is executing — speech must wait for tool_result path
-    if (isProcessingTool) {
-      turnRejectedCount++;
-      console.warn(
-        `[SpeechLock][${turnId}] BLOCKED — speech_locked_reason="tool_in_progress" ` +
-        `tool_blocked_speech_attempt=true response_blocked_by_lock=true ` +
-        `blocked_source="${source}" response_attempt_count=${turnAttemptCount}`
-      );
-      return false;
-    }
-
-    // Guard 3: per-minute rate limit (cost runaway protection)
-    if (responsesThisMinute >= MAX_RESPONSES_PER_MIN) {
-      turnRejectedCount++;
-      if (!sessionSafeMode) {
-        sessionSafeMode = true;
-        console.error(
-          `[SpeechLock][${turnId}] ⚠️  SAFE MODE ACTIVATED — rate limit exceeded. ` +
-          `All speech blocked; only callback logging allowed. ` +
-          `responses_this_minute=${responsesThisMinute} max=${MAX_RESPONSES_PER_MIN}`
-        );
-      }
-      console.warn(
-        `[SpeechLock][${turnId}] BLOCKED — speech_blocked_reason="rate_limit_safe_mode" ` +
-        `response_blocked_by_lock=true responses_this_minute=${responsesThisMinute} ` +
-        `max_per_min=${MAX_RESPONSES_PER_MIN} blocked_source="${source}"`
-      );
-      return false;
-    }
-    // Clear safe mode if a new rate window started (reset happened in _resetRateWindowIfNeeded)
-    if (sessionSafeMode && responsesThisMinute === 0) {
-      sessionSafeMode = false;
-      console.log(`[SpeechLock][${turnId}] Safe mode cleared — rate window reset`);
-    }
-
-    // Guard 4: turn already has an active response — prevent collision
-    if (activeResponseInProgress && activeTurnId === turnId) {
-      turnRejectedCount++;
-      console.warn(
-        `[SpeechLock][${turnId}] response_collision_prevented — ` +
-        `response_blocked_by_lock=true ` +
-        `response_source_allowed="${activeTurnSource}" blocked_source="${source}" ` +
-        `response_attempt_count=${turnAttemptCount} suppressed_total=${turnRejectedCount}`
-      );
-      watchdog.logSuppressedResponse(source, `turn already owned by "${activeTurnSource}"`);
-      return false;
-    }
-
-    // All guards passed — claim ownership and send
-    activeTurnId             = turnId;
-    activeResponseInProgress = true;
-    activeTurnSource         = source;
-    responsesThisMinute++;
-    console.log(
-      `[SpeechLock][${turnId}] GRANTED — ` +
-      `response_source_allowed="${source}" response_blocked_by_lock=false ` +
-      `response_attempt_count=${turnAttemptCount} ` +
-      `responses_this_minute=${responsesThisMinute}/${MAX_RESPONSES_PER_MIN}`
-    );
+  function continueBackend(): void {
+    if (openAiWs.readyState !== WebSocket.OPEN) return;
     openAiWs.send(JSON.stringify({ type: "response.create" }));
-    watchdog.onResponseCreateSent();
-    watchdog.onPrimaryResponseEmitted(source, turnId);
-    return true;
   }
 
-  /** Release the speech authority lock. Called on response.done + new user turn commit. */
-  function releaseTurnLock(reason: string): void {
-    if (activeTurnId !== null) {
-      console.log(
-        `[SpeechLock][${activeTurnId}] Lock released — reason="${reason}" ` +
-        `source="${activeTurnSource}" attempts=${turnAttemptCount} rejected=${turnRejectedCount}`
-      );
-    }
-    activeTurnId             = null;
-    activeResponseId         = null;
-    activeResponseInProgress = false;
-    activeTurnSource         = "";
-    turnAttemptCount  = 0;
-    turnRejectedCount = 0;
-  }
-
-  /**
-   * Cancel only when a response is actually active to avoid
-   * response_cancel_not_active races.
-   */
-  function cancelActiveResponse(reason: string): boolean {
-    if (openAiWs.readyState !== WebSocket.OPEN) return false;
-    if (!activeResponseInProgress) {
-      console.log(`[AI Receptionist] cancel skipped — no active response reason="${reason}"`);
-      return false;
-    }
-    console.log(
-      `[AI Receptionist] response.cancel sent — reason="${reason}" ` +
-      `turn=${activeTurnId ?? "(none)"} source=${activeTurnSource || "(unknown)"} responseId=${activeResponseId ?? "(none)"}`
-    );
-    openAiWs.send(JSON.stringify({ type: "response.cancel" }));
-    return true;
-  }
-
-  // Session-bootstrap coordination — wait for BOTH conditions before sending session.update.
-  // Salon context is now loaded from the Twilio `start` event's customParameters (not the URL),
+  // Session-bootstrap coordination — wait for BOTH conditions before sending session.start.
+  // Salon context is loaded from the Twilio `start` event's customParameters (not the URL),
   // since Twilio <Stream> URLs cannot contain query strings.
-  let openAiReady = false;
+  let openAiWsOpen = false;
   let startReceived = false;
   let startFrameHandled = false;
   let salon: SalonContext | null = null;
@@ -3183,11 +3165,13 @@ function createCallSession(twilioWs: WebSocket) {
   let openAiReconnectAttempted = false;
   let sessionUpdateTimeoutHandle:   ReturnType<typeof setTimeout> | null = null;
   let sessionMaxDurationHandle:     ReturnType<typeof setTimeout> | null = null;
-  let sessionSafeMode = false; // true when rate limits are exceeded — speech blocked, callback-only
   // §1/§9 — exposed here so per-call cap guards can call it from any OpenAI event handler
   let terminateGracefullyFn: ((reason: string, aiMessage: string) => void) | null = null;
+  // The greeting text to speak once session.started arrives (built alongside
+  // the rest of the session config, since it depends on caller/CRM context).
+  let pendingGreetingInstruction: string | null = null;
 
-  const openAiWs = new WebSocket(OPENAI_REALTIME_URL, {
+  const openAiWs = new WebSocket(OPENAI_LIVE_URL, {
     headers: {
       Authorization: `Bearer ${apiKey}`,
     },
@@ -3211,16 +3195,28 @@ function createCallSession(twilioWs: WebSocket) {
   let localVadDroppedFrames = 0;
   let localVadFailOpen = false;
 
-  // Whether we've received session.updated from OpenAI (confirms session config was accepted)
-  let sessionUpdated = false;
-  // If OpenAI VAD takes too long to auto-commit after speech_stopped, nudge commit.
-  const COMMIT_NUDGE_MS = Math.max(250, Number(process.env.AI_RECEPTIONIST_COMMIT_NUDGE_MS ?? 700) || 700);
-  let awaitingCommitAfterSpeechStop = false;
-  let commitNudgeTimer: ReturnType<typeof setTimeout> | null = null;
+  // Whether we've received session.started from OpenAI (confirms the session config
+  // was accepted and audio may now be forwarded).
+  let sessionStarted = false;
 
-  /** Once OpenAI is ready AND we have salon + caller info, look up appointments and configure the session. */
+  // Rolling per-direction transcript buffers. Live streams transcripts as bare
+  // deltas with no "done"/turn-boundary event, so we accumulate and flush
+  // heuristically: a buffer flushes to the call log the moment the OTHER
+  // direction starts producing deltas (i.e. the speaker has changed).
+  let pendingCallerTranscript = "";
+  let pendingAutumnTranscript = "";
+  function flushTranscript(role: "caller" | "autumn"): void {
+    const text = role === "caller" ? pendingCallerTranscript : pendingAutumnTranscript;
+    if (text.trim()) {
+      callTranscriptTurns.push({ role, text: text.trim(), ts: new Date().toISOString() });
+      callFileLogger.transcript(role, text.trim());
+    }
+    if (role === "caller") pendingCallerTranscript = ""; else pendingAutumnTranscript = "";
+  }
+
+  /** Once the OpenAI WS is open AND we have salon + caller info, look up appointments and start the session. */
   async function configureSessionIfReady() {
-    if (sessionConfigured || !openAiReady || !startReceived || !salon) return;
+    if (sessionConfigured || !openAiWsOpen || !startReceived || !salon) return;
     sessionConfigured = true;
 
     // S1-fix: Wrap DB lookups in try/catch + hard 3s timeout — a DB failure or hang must
@@ -3256,47 +3252,37 @@ function createCallSession(twilioWs: WebSocket) {
     }
 
     console.log(
-      `[AI Receptionist] ▶ Sending session.update — caller="${callerPhone ?? "(unknown)"}" ` +
+      `[AI Receptionist] ▶ Sending session.start — caller="${callerPhone ?? "(unknown)"}" ` +
       `crm_status="${crmProfile?.status ?? "unknown"}" visits=${crmProfile?.visitCount ?? 0} ` +
       `name="${crmProfile?.firstName ?? "(new caller)"}", ${upcoming.length} upcoming appointment(s)`
     );
 
     // DB-only mode: skip Redis snapshot preload for first-turn prompting.
-    const sessionConfig = buildOpenAiSessionConfig(salon, callerPhone, crmProfile, upcoming, null);
-    const sessionConfigJson = JSON.stringify(sessionConfig);
-    console.log(`[AI Receptionist] session.update payload (exact): ${sessionConfigJson}`);
-    openAiWs.send(sessionConfigJson);
-    console.log(`[AI Receptionist] session.update sent — waiting for session.updated confirmation`);
+    const { sessionStart, greetingInstruction } = buildOpenAiSessionConfig(salon, callerPhone, crmProfile, upcoming, null);
+    pendingGreetingInstruction = greetingInstruction;
+    const sessionStartJson = JSON.stringify(sessionStart);
+    console.log(`[AI Receptionist] session.start payload (exact): ${sessionStartJson}`);
+    openAiWs.send(sessionStartJson);
+    console.log(`[AI Receptionist] session.start sent — waiting for session.started confirmation`);
 
-    // Fix 3: If session.updated never arrives (OpenAI stall / dropped ack), force the greeting
-    // after 8 s so the caller is never left in silence waiting for OpenAI to acknowledge config.
+    // If session.started never arrives, the call is unserviceable — there is no
+    // way to force a greeting without a started session (unlike the old Realtime
+    // flow, response.create no longer drives the voice channel).
     sessionUpdateTimeoutHandle = setTimeout(() => {
-      if (!sessionUpdated && openAiWs.readyState === WebSocket.OPEN) {
-        console.warn("[AI Receptionist] ⚠️  session.updated timed out after 8s — forcing greeting");
-        sessionUpdated = true;
-        watchdog.onSessionReady();
-        generateSpeech(currentTurnId, "session_greeting_timeout");
+      if (!sessionStarted) {
+        console.error("[AI Receptionist] ⚠️  session.started timed out after 8s — closing call");
+        try { twilioWs.close(); } catch { /* ignore */ }
       }
     }, 8_000);
-
-    // session.updated fires asynchronously; we trigger response.create from that handler
-    // to guarantee the session is fully configured before the greeting fires.
   }
 
   openAiWs.on("open", () => {
-    console.log(`[AI Receptionist] ✅ OpenAI Realtime WebSocket OPEN — waiting for session.created before configuring`);
+    console.log(`[AI Receptionist] ✅ OpenAI Live WebSocket OPEN`);
     callHealthTracker.recordWsStatus(sessionCallSid ?? null, true);
-    // Do NOT set openAiReady here — wait for session.created from OpenAI
-    // to ensure the session object exists before we send session.update.
-
-    // Fix 2: Hard deadline — if session.created never arrives, the call is unserviceable.
-    // Without this guard, the caller hears silence indefinitely if OpenAI stalls on handshake.
-    setTimeout(() => {
-      if (!openAiReady) {
-        console.error("[AI Receptionist] ⚠️  OpenAI session.created timed out after 10s — closing call");
-        try { twilioWs.close(); } catch { /* ignore */ }
-      }
-    }, 10_000);
+    openAiWsOpen = true;
+    configureSessionIfReady().catch((err) =>
+      console.error("[AI Receptionist] Session config error (from ws open):", err)
+    );
   });
 
   openAiWs.on("message", (rawData: Buffer | string) => {
@@ -3306,121 +3292,47 @@ function createCallSession(twilioWs: WebSocket) {
     const type = msg.type as string;
 
     // ── Verbose event logging ────────────────────────────────────────────────
-    if (type === "session.created") {
+    if (type === "session.started") {
       const sess = msg.session as Record<string, unknown> | undefined;
-      console.log(`[AI Receptionist] ✅ session.created — id=${sess?.id ?? "?"} model=${sess?.model ?? "?"}`);
-      // NOW safe to configure — session object exists on OpenAI's side
-      openAiReady = true;
-      configureSessionIfReady().catch((err) =>
-        console.error("[AI Receptionist] Session config error (from session.created):", err)
-      );
-      return;
-    }
-
-    if (type === "session.updated") {
-      sessionUpdated = true;
-      const sess = msg.session as Record<string, unknown> | undefined;
-      console.log(
-        `[AI Receptionist] ✅ session.updated — model=${sess?.model ?? "?"} ` +
-        `turn_detection=${JSON.stringify((sess?.turn_detection as any)?.type ?? "none")} — audio forwarding ENABLED`
-      );
-      // Fix 3: Clear the forced-greeting timeout — we received real confirmation.
+      console.log(`[AI Receptionist] ✅ session.started — id=${sess?.id ?? "?"} model=${sess?.model ?? "?"} — audio forwarding ENABLED`);
+      sessionStarted = true;
       if (sessionUpdateTimeoutHandle) {
         clearTimeout(sessionUpdateTimeoutHandle);
         sessionUpdateTimeoutHandle = null;
       }
-      // NOW it's safe to trigger the greeting — session is fully configured
       watchdog.onSessionReady();
-      if (sessionConfigured) {
-        console.log(`[AI Receptionist] ▶ Sending response.create (greeting)`);
-        generateSpeech(currentTurnId, "session_greeting");
+      // GPT-Live does not speak first on its own — explicitly ask it to greet
+      // the caller now via an appended instruction (documented pattern for
+      // proactive greetings on inbound calls).
+      if (pendingGreetingInstruction) {
+        console.log(`[AI Receptionist] ▶ Sending session.instructions.append (greeting)`);
+        openAiWs.send(JSON.stringify({
+          type: "session.instructions.append",
+          delegation_id: null,
+          content: pendingGreetingInstruction,
+        }));
       }
       return;
     }
 
-    if (type === "input_audio_buffer.speech_started") {
-      callerSpeaking = true;
-      awaitingCommitAfterSpeechStop = false;
-      if (commitNudgeTimer) {
-        clearTimeout(commitNudgeTimer);
-        commitNudgeTimer = null;
-      }
-      console.log(`[AI Receptionist] 🎤 VAD: speech started`);
-      return;
-    }
+    // ── Transcript deltas: accumulate per direction; flush the OTHER buffer the
+    // moment a delta from the current speaker starts arriving (speaker changed).
+    if (type === "session.input_transcript.delta") {
+      if (pendingAutumnTranscript) flushTranscript("autumn");
+      pendingCallerTranscript += (msg.delta as string | undefined) ?? "";
 
-    if (type === "input_audio_buffer.speech_stopped") {
-      callerSpeaking = false;
-      awaitingCommitAfterSpeechStop = true;
-      if (commitNudgeTimer) clearTimeout(commitNudgeTimer);
-      commitNudgeTimer = setTimeout(() => {
-        if (!awaitingCommitAfterSpeechStop) return;
-        if (callerSpeaking) return;
-        if (!sessionUpdated) return;
-        if (openAiWs.readyState !== WebSocket.OPEN) return;
-        try {
-          console.warn(`[AI Receptionist] ⏱️ Commit nudge fired (${COMMIT_NUDGE_MS}ms) — sending input_audio_buffer.commit`);
-          openAiWs.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-        } catch {
-          // non-fatal
-        }
-      }, COMMIT_NUDGE_MS);
-      console.log(`[AI Receptionist] 🔇 VAD: speech stopped — buffer will be committed`);
-      return;
-    }
-
-    if (type === "input_audio_buffer.committed") {
-      awaitingCommitAfterSpeechStop = false;
-      if (commitNudgeTimer) {
-        clearTimeout(commitNudgeTimer);
-        commitNudgeTimer = null;
-      }
-      // New user utterance — advance the turn counter and release the turn lock
-      // so the incoming server_vad auto-response can claim ownership.
-      userTurnCounter++;
-      currentTurnId = `turn-${userTurnCounter}`;
-      releaseTurnLock("new_user_turn");
-      console.log(
-        `[AI Receptionist] ✅ input buffer committed — OpenAI processing speech ` +
-        `user_turn_id=${currentTurnId}`
-      );
-      watchdog.onUserSpeechCommit();
-      watchdog.onTurnStart(currentTurnId);
-      callHealthTracker.recordUserInput(sessionCallSid ?? null);
-      return;
-    }
-
-    // ── Intent parser: classify caller speech as soon as transcription lands ──
-    // Fires when the Realtime API sends back a transcription of the caller's audio.
-    // Zero-latency (regex only). Used for structured logging and analytics.
-    if (
-      type === "conversation.item.input_audio_transcription.completed" ||
-      type === "response.audio_transcript.done"
-    ) {
-      const transcript =
-        ((msg.transcript ?? (msg as any).delta) as string | undefined) ?? "";
-      if (transcript) {
-        // Collect transcript turns for call log storage
-        const role = type === "conversation.item.input_audio_transcription.completed" ? "caller" : "autumn";
-        if (transcript.trim()) {
-          callTranscriptTurns.push({ role, text: transcript.trim(), ts: new Date().toISOString() });
-          callFileLogger.transcript(role, transcript.trim());
-        }
-      }
-      if (transcript && salon) {
-        const parsed = parseIntent(transcript, salon.services);
+      if (salon) {
+        const parsed = parseIntent(pendingCallerTranscript, salon.services);
         const hint   = formatIntentHint(parsed);
         if (hint) {
-          console.log(
-            `[IntentParser] turn=${currentTurnId} store=${salon.storeId} ${hint} confidence=${parsed.confidence.toFixed(2)}`
-          );
+          console.log(`[IntentParser] store=${salon.storeId} ${hint} confidence=${parsed.confidence.toFixed(2)}`);
         }
 
         // ── Speculative pre-fetch ──────────────────────────────────────────────
         // If the caller says they want to book + names a service + a date, kick off
         // the availability DB query right now — before the AI even decides to call
-        // the tool. By the time search_available_slots fires (~1-3s later) the
-        // Promise is usually already resolved → near-instant tool response.
+        // the tool. By the time search_available_slots fires the Promise is usually
+        // already resolved → near-instant tool response.
         if (
           parsed.intent === "booking" &&
           parsed.serviceKeyword &&
@@ -3446,101 +3358,45 @@ function createCallSession(twilioWs: WebSocket) {
           }
         }
       }
-      // NOTE: do NOT return here — other handlers may also need this event
+      return;
     }
 
-    if (type === "response.created") {
-      const responseObj = msg.response as Record<string, unknown> | undefined;
-      const responseId  = (responseObj?.id as string | undefined) ?? "?";
-      // This fires for EVERY response OpenAI creates — both server_vad auto-responses
-      // AND our manually triggered generateSpeech() calls.
-      //
-      // 3 cases:
-      //   a) generateSpeech() already claimed the lock for this turn → echo-back, record responseId.
-      //   b) server_vad already owns the lock → duplicate, cancel immediately.
-      //   c) Lock is free → server_vad auto-created this before our code could claim it; adopt it.
-      let adoptedServerVad = false;
-      if (activeTurnId === currentTurnId && activeTurnSource !== "server_vad") {
-        // Case a: echo-back for a generateSpeech() call — just record the response ID.
-        activeResponseId = responseId;
-        console.log(
-          `[SpeechLock] ▶ response.created — id=${responseId} ` +
-          `turnId="${currentTurnId}" owner="${activeTurnSource}" (already locked)`
-        );
-      } else if (activeTurnId === currentTurnId && activeTurnSource === "server_vad") {
-        // Case b: duplicate server_vad response — cancel immediately.
-        console.warn(
-          `[SpeechLock][${currentTurnId}] response_collision_prevented — ` +
-          `DUPLICATE response.created id=${responseId} ` +
-          `turn already owned by server_vad — cancelling duplicate`
-        );
-        cancelActiveResponse("duplicate_response_created");
-        watchdog.logSuppressedResponse("duplicate_response_created", "turn already owned by server_vad");
-        return;
-      } else {
-        // Case c: lock is free — server_vad auto-created this. Adopt ownership.
-        activeTurnId             = currentTurnId;
-        activeResponseId         = responseId;
-        activeResponseInProgress = true;
-        activeTurnSource         = "server_vad";
-        adoptedServerVad         = true;
-        console.log(
-          `[SpeechLock][${currentTurnId}] response.created adopted by server_vad — ` +
-          `id=${responseId} response_source_allowed="server_vad"`
-        );
-      }
-      watchdog.onResponseCreated();
-      if (adoptedServerVad) {
-        watchdog.onPrimaryResponseEmitted("server_vad", currentTurnId);
-      }
+    if (type === "session.output_transcript.delta") {
+      if (pendingCallerTranscript) flushTranscript("caller");
+      pendingAutumnTranscript += (msg.delta as string | undefined) ?? "";
+      return;
+    }
+
+    if (type === "session.delegation.created") {
+      // Informational for Responses delegation — the actionable event is the
+      // nested response.output_item.done (function_call) inside response.event below.
       callHealthTracker.recordResponseStart(sessionCallSid ?? null);
       return;
     }
 
-    if (type === "response.audio.delta" || type === "response.output_audio.delta") {
+    if (type === "session.output_audio.delta") {
       aiSpeaking = true;
       watchdog.onAiAudioDelta();
       callHealthTracker.recordAiAudio(sessionCallSid ?? null);
 
-      // Extend the speech cooldown on every audio packet received — prevents any
-      // new response.create from firing for at least SPEECH_COOLDOWN_MS after the
-      // last audio packet (1200ms). This stops VAD re-trigger loops.
-      speechLockedUntil = Date.now() + SPEECH_COOLDOWN_MS;
+      // No completion marker exists for output audio under Live — flip aiSpeaking
+      // back off after a short gap with no new delta instead.
+      if (aiSpeakingIdleTimer) clearTimeout(aiSpeakingIdleTimer);
+      aiSpeakingIdleTimer = setTimeout(() => { aiSpeaking = false; }, AI_SPEAKING_IDLE_MS);
 
-      const delta = (msg.delta || msg.audio) as string | undefined;
+      const delta = msg.delta as string | undefined;
       if (delta) {
         outboundAudioCount++;
-        const payloadBytes = Buffer.byteLength(delta, "base64");
-
-        // Twilio audio flood prevention: drop stale audio packets from a response
-        // that is no longer the active one (e.g., after a response.cancel).
-        const packetResponseId = msg.response_id as string | undefined;
-        if (activeResponseId !== null && packetResponseId && packetResponseId !== activeResponseId) {
-          if (outboundAudioCount <= 3 || outboundAudioCount % 20 === 0) {
-            console.warn(
-              `[SpeechLock] audio_packet_dropped_stale — ` +
-              `packet_response_id="${packetResponseId}" active_response_id="${activeResponseId}" ` +
-              `packet_num=${outboundAudioCount}`
-            );
-          }
-          return; // drop stale packet — do NOT send to Twilio
-        }
-
-        // Realtime `type: realtime` sessions return PCM16 audio chunks.
-        // Twilio Media Streams expects μ-law 8k (g711_ulaw), so convert before sending.
-        const twilioPayload = pcm16Base64ToTwilioUlawBase64(delta);
-        const twilioPayloadBytes = Buffer.byteLength(twilioPayload, "base64");
-
+        // Session audio format is audio/pcmu @ 8kHz — identical to Twilio's native
+        // format, so the bytes pass straight through with zero conversion.
         if (outboundAudioCount === 1 || outboundAudioCount % 50 === 0) {
           console.log(
             `[AI Receptionist] Sending outbound audio packet #${outboundAudioCount} to Twilio` +
-            ` | openai_payload=${payloadBytes} bytes (pcm16)` +
-            ` | twilio_payload=${twilioPayloadBytes} bytes (g711_ulaw)` +
             ` | streamSid=${streamSid ?? "none"} | twilioWs=${twilioWs.readyState === WebSocket.OPEN ? "OPEN" : "CLOSED"}`
           );
         }
         if (streamSid && twilioWs.readyState === WebSocket.OPEN) {
-          const ulaw = Buffer.from(twilioPayload, "base64");
+          const ulaw = Buffer.from(delta, "base64");
           try {
             for (let i = 0; i < ulaw.length; i += TWILIO_ULAW_FRAME_BYTES) {
               const chunk = ulaw.subarray(i, i + TWILIO_ULAW_FRAME_BYTES).toString("base64");
@@ -3560,104 +3416,52 @@ function createCallSession(twilioWs: WebSocket) {
       return;
     }
 
-    if (type === "response.audio.done" || type === "response.output_audio.done") {
-      console.log(`[AI Receptionist] 🔊 response.audio.done — total outbound audio packets: ${outboundAudioCount}`);
-      aiSpeaking = false;
-      return;
-    }
+    // Backend (Responses delegation) events arrive wrapped here. Dispatch on the
+    // nested event's own type — see the Live migration guide: "Unwrap response.event,
+    // then access the inner response.output_item.done."
+    if (type === "response.event") {
+      const nested = msg.event as Record<string, unknown> | undefined;
+      const nestedType = nested?.type as string | undefined;
 
-    if (type === "response.done") {
-      const resp = msg.response as Record<string, unknown> | undefined;
-      const usage = resp?.usage as Record<string, unknown> | undefined;
-      const completedSource = activeTurnSource;
-      const completedTurnId = activeTurnId ?? currentTurnId;
-      console.log(`[AI Receptionist] ✅ response.done — status=${resp?.status ?? "?"} usage=${JSON.stringify(usage ?? {})}`);
-      if (usage && sessionCallSid) costMeter.recordTokens(sessionCallSid, usage);
-      aiSpeaking = false;
-      watchdog.onResponseDone();
-      callHealthTracker.recordResponseEnd(sessionCallSid ?? null);
-      // Release the turn lock so the next mandatory response (tool_result) can claim ownership.
-      // For normal VAD turns this is a no-op — the next user speech will call releaseTurnLock anyway.
-      releaseTurnLock("response_done");
-      // §1 Per-call turn cap — count only fully completed turns
-      const respStatus = (resp?.status as string | undefined) ?? "";
-      const outputTokens = Number((resp?.usage as any)?.output_tokens ?? 0);
-      const outputTextTokens = Number((resp?.usage as any)?.output_token_details?.text_tokens ?? 0);
-      const outputAudioTokens = Number((resp?.usage as any)?.output_token_details?.audio_tokens ?? 0);
-      const zeroOutput = outputTokens === 0 && outputTextTokens === 0 && outputAudioTokens === 0;
-
-      // Tool-result fallback: if the post-tool response hard-fails (or returns zero output),
-      // inject a recovery instruction and force one retry so callers never hit dead air.
-      if (
-        completedSource.startsWith("tool_result") &&
-        (respStatus === "failed" || (respStatus === "cancelled" && zeroOutput)) &&
-        !toolResultRecoveryAttempted.has(completedTurnId) &&
-        openAiWs.readyState === WebSocket.OPEN &&
-        !isProcessingTool &&
-        currentTurnId === completedTurnId
-      ) {
-        toolResultRecoveryAttempted.add(completedTurnId);
-        console.warn(
-          `[AI Receptionist][${completedTurnId}] Tool-result response ${respStatus} (zero_output=${zeroOutput}) — injecting forced recovery`
-        );
-        openAiWs.send(JSON.stringify({
-          type: "conversation.item.create",
-          item: {
-            type: "message",
-            role: "user",
-            content: [{
-              type: "input_text",
-              text: "SYSTEM: Your last reply failed to play. Briefly apologize, then continue immediately with the tool result in one short sentence. Do not call any additional tools unless absolutely required.",
-            }],
-          },
-        }));
-        speechLockedUntil = 0;
-        generateSpeech(completedTurnId, "tool_result_recovery");
-      }
-
-      if (respStatus === "completed") {
-        responseTurnsThisCall++;
-        if (responseTurnsThisCall >= MAX_TURNS_PER_CALL) {
+      if (nestedType === "response.completed") {
+        const resp = nested?.response as Record<string, unknown> | undefined;
+        const usage = resp?.usage as Record<string, unknown> | undefined;
+        if (usage && sessionCallSid) costMeter.recordTokens(sessionCallSid, usage);
+        callHealthTracker.recordResponseEnd(sessionCallSid ?? null);
+        // §1 Per-call backend-turn cap — cost ceiling independent of the old
+        // per-minute voice-response concept (Live's voice turns aren't app-triggered).
+        backendTurnsThisCall++;
+        if (backendTurnsThisCall >= MAX_BACKEND_TURNS_PER_CALL) {
           console.warn(
-            `[CostControl] §1 turn cap reached (${responseTurnsThisCall}/${MAX_TURNS_PER_CALL}) — ending call gracefully`
+            `[CostControl] §1 turn cap reached (${backendTurnsThisCall}/${MAX_BACKEND_TURNS_PER_CALL}) — ending call gracefully`
           );
           terminateGracefullyFn?.(
             "cost_limit_exceeded",
             "I'm sorry, I've reached the limit of what I can do in one call. Please try calling back and I'll be happy to help you from the start."
           );
         }
+        return;
       }
-      return;
-    }
 
-    if (type === "response.output_item.added") {
-      const item = msg.item as Record<string, unknown> | undefined;
-      console.log(`[AI Receptionist] response.output_item.added — type=${item?.type} role=${item?.role}`);
-      return;
-    }
+      if (nestedType === "response.failed") {
+        console.error(`[AI Receptionist] ❌ backend response.failed — ${JSON.stringify(nested?.response ?? {})}`);
+        watchdog.onFailure();
+        return;
+      }
 
-    if (type === "response.content_part.added") {
-      const part = msg.part as Record<string, unknown> | undefined;
-      console.log(`[AI Receptionist] response.content_part.added — type=${part?.type}`);
-      return;
-    }
+      if (nestedType !== "response.output_item.done") {
+        return; // other nested lifecycle events — nothing to do
+      }
 
-    if (type === "rate_limits.updated") {
-      // Noisy — skip
-      return;
-    }
+      const item = nested?.item as Record<string, unknown> | undefined;
+      if (item?.type !== "function_call") return;
 
-    if (type === "response.function_call_arguments.delta") {
-      // Streaming args — skip verbose logging
-      return;
-    }
-
-    if (type === "response.function_call_arguments.done") {
-      const name = msg.name as string;
-      const callId = msg.call_id as string;
-      const args = msg.arguments as string;
+      const name   = item.name as string;
+      const callId = item.call_id as string;
+      const args   = item.arguments as string;
       const toolStartTime = Date.now();
       const isVerbose = salon ? safetyGate.isFirstCallMode(salon.storeId) : false;
+      const capturedSeq = ++toolCallSeq;
 
       if (salon) {
         callEventBus.emit({
@@ -3672,22 +3476,6 @@ function createCallSession(twilioWs: WebSocket) {
       }
       try { callFileLogger.toolStart(name, JSON.parse(args || "{}")); } catch { callFileLogger.toolStart(name, args); }
 
-      // Run the tool with a hard 5-second timeout and feed the result back to OpenAI.
-      //
-      // L6 TURN OWNERSHIP — filler injection while the tool runs:
-      //   The watchdog's L1/L4 layers are suppressed during tool execution (toolInProgress=true),
-      //   so ONLY this L6 timer may inject a filler for the current turn.
-      //
-      //   Correct order (prevents double-response):
-      //   1. Cancel the current response.create that is waiting for tool output.
-      //   2. Inject the filler conversation item + new response.create (filler speaks).
-      //   3. When the tool completes, Fix-7 cancels the filler and delivers the real result.
-      //
-      //   If we skipped the cancel in step 1 and sent response.create while the original
-      //   was still "in flight" (pending function_call_output), OpenAI would have two
-      //   concurrent responses speaking simultaneously.
-      // Mark tool as in-progress — generateSpeech() blocks all new responses while this is true.
-      // This prevents VAD, watchdog, and fallback from generating speech during tool execution.
       // §1 Per-call tool cap — hard ceiling independent of time windows
       toolCallsThisCall++;
       if (toolCallsThisCall > MAX_TOOL_CALLS_PER_CALL) {
@@ -3695,80 +3483,33 @@ function createCallSession(twilioWs: WebSocket) {
           `[CostControl] §1 tool cap reached (${toolCallsThisCall}/${MAX_TOOL_CALLS_PER_CALL}) — ` +
           `skipping "${name}" and ending call gracefully`
         );
-        // Deliver synthetic output so OpenAI doesn't hang waiting for function_call_output
+        // Deliver synthetic output so the backend doesn't hang waiting for a result
         if (openAiWs.readyState === WebSocket.OPEN) {
           openAiWs.send(JSON.stringify({
-            type: "conversation.item.create",
+            type: "response.item.create",
             item: {
               type: "function_call_output",
               call_id: callId,
               output: JSON.stringify({ success: false, message: "Service temporarily unavailable — please try again." }),
             },
           }));
+          continueBackend();
         }
         terminateGracefullyFn?.("cost_limit_exceeded", "I'm sorry, I'm having some trouble completing that right now. Please try calling back in a few minutes and I'll be happy to help.");
         return;
       }
 
-      isProcessingTool = true;
       _resetRateWindowIfNeeded();
       toolCallsThisMinute++;
       if (toolCallsThisMinute > MAX_TOOL_CALLS_PER_MIN) {
         console.warn(
-          `[SpeechLock] tool_calls_per_min_exceeded — ` +
+          `[CostControl] tool_calls_per_min_exceeded — ` +
           `tool_calls_this_minute=${toolCallsThisMinute} max=${MAX_TOOL_CALLS_PER_MIN} ` +
           `tool="${name}"`
         );
       }
       watchdog.onToolStart();
       callHealthTracker.recordToolStart(sessionCallSid ?? null, name);
-      let fillerInjected = false;
-      const capturedTurnId = currentTurnId; // capture at tool-start time for logging
-      const fillerTimer = setTimeout(() => {
-        if (openAiWs.readyState !== WebSocket.OPEN) return;
-
-        fillerInjected = true;
-        const fillerPhrases = [
-          "One moment while I check that for you.",
-          "Let me just pull that up.",
-          "Checking availability now.",
-        ];
-        const phrase = fillerPhrases[Math.floor(Math.random() * fillerPhrases.length)];
-
-        console.log(
-          `[AI Receptionist][${capturedTurnId}] L6 — Tool "${name}" taking >1.5s — ` +
-          `cancelling pending response, injecting filler "${phrase}" ` +
-          `response_emitted=true response_source=L6_tool_filler`
-        );
-
-        // Step 1: Cancel the response that is waiting for our function_call_output.
-        // Release the lock so the filler can claim ownership immediately after.
-        cancelActiveResponse("L6_cancel_before_filler");
-        releaseTurnLock("L6_cancel_before_filler");
-
-        // Step 2: Brief delay so OpenAI processes the cancel before we create the filler.
-        setTimeout(() => {
-          if (openAiWs.readyState !== WebSocket.OPEN) return;
-          openAiWs.send(JSON.stringify({
-            type: "conversation.item.create",
-            item: {
-              type: "message",
-              role: "user",
-              content: [{ type: "input_text", text: `SYSTEM: Say this filler phrase immediately without any pause: "${phrase}"` }],
-            },
-          }));
-          generateSpeech(capturedTurnId, "L6_tool_filler");
-          callHealthTracker.recordFillerInjection(sessionCallSid ?? null, "L6_TOOL_WAIT");
-          if (salon) {
-            callEventBus.emit({
-              type: "filler_injected",
-              storeId: salon.storeId,
-              timestamp: new Date().toISOString(),
-              data: { layer: "L6_TOOL_WAIT", tool: name, phrase, turnId: capturedTurnId },
-            });
-          }
-        }, 120);
-      }, 600);
 
       (async () => {
         let result: { success: boolean; message: string };
@@ -3783,7 +3524,7 @@ function createCallSession(twilioWs: WebSocket) {
               const r = await handleNewBooking(salon.storeId, args, salon);
               if (r.success) {
                 callOutcome = "booked"; callNotes = r.message; shouldEndCall = true;
-                // Fix 5: Keep allowlist in sync — without this a same-call cancel fails because
+                // Keep allowlist in sync — without this a same-call cancel fails because
                 // the new appointment ID was never in the session-start allowlist.
                 const idMatch = r.message.match(/Appointment\s+(\d+)\s+confirmed/i);
                 if (idMatch) {
@@ -3799,6 +3540,10 @@ function createCallSession(twilioWs: WebSocket) {
             } else if (name === "reschedule_booking") {
               const r = await handleReschedule(salon.storeId, args, allowlist, salon.timezone);
               if (r.success) { callOutcome = "rescheduled"; callNotes = r.message; shouldEndCall = true; }
+              return r;
+            } else if (name === "add_appointment_addon") {
+              const r = await handleAddAddon(salon.storeId, args, allowlist, salon.timezone);
+              if (r.success) { callNotes = r.message; }
               return r;
             } else if (name === "search_available_slots") {
               // Check speculative pre-fetch first — may already be resolved (0ms wait)
@@ -3820,7 +3565,7 @@ function createCallSession(twilioWs: WebSocket) {
               const r = await handleGetCustomerAppointments(args, salon, callerPhone ?? undefined);
               if (r.success) {
                 callOutcome = "availability_checked"; callNotes = r.message;
-                // C1: Sync allowlist — fallback-looked-up appointments must be modifiable this call
+                // Sync allowlist — fallback-looked-up appointments must be modifiable this call
                 r.appointmentIds?.forEach((id) => allowlist.add(id));
               }
               return r;
@@ -3829,26 +3574,26 @@ function createCallSession(twilioWs: WebSocket) {
               if (r.success) { callOutcome = "availability_checked"; callNotes = r.message; }
               return r;
             } else if (name === "lookup_appointment_by_name_or_date") {
-              // Rule 2: Fallback identification when caller ID lookup returns nothing
+              // Fallback identification when caller ID lookup returns nothing
               const r = await handleLookupAppointmentByNameOrDate(args, salon);
               if (r.success) {
                 callOutcome = "availability_checked"; callNotes = r.message;
-                // C1: Sync allowlist — fallback-looked-up appointments must be modifiable this call
+                // Sync allowlist — fallback-looked-up appointments must be modifiable this call
                 r.appointmentIds?.forEach((id) => allowlist.add(id));
               }
               return r;
             } else if (name === "get_walkin_availability") {
-              // Rule 5: Walk-in optimization — analyze today's schedule for best windows
+              // Walk-in optimization — analyze today's schedule for best windows
               const r = await handleGetWalkinAvailability(salon);
               if (r.success) { callOutcome = "walkin_guidance"; callNotes = r.message; }
               return r;
             } else if (name === "request_callback") {
-              // Rule 8: Global fallback — save caller phone for manager follow-up
+              // Global fallback — save caller phone for manager follow-up
               const r = await handleRequestCallback(args, salon, callerPhone ?? null, callLogId);
               if (r.success) { callOutcome = "callback_required"; callNotes = r.message; }
               return r;
             } else if (name === "database_lookup") {
-              // Rule 9: DB fallback — last-resort direct database access
+              // DB fallback — last-resort direct database access
               const r = await handleDatabaseFallback(parsedToolArgs, salon, callerPhone ?? null);
               if (r.success) { callNotes = r.message; }
               return r;
@@ -3882,7 +3627,7 @@ function createCallSession(twilioWs: WebSocket) {
           }
           // CONTRACT ENFORCEMENT — every tool handler must return plain structured data.
           // This throws (caught below) if a handler violates the ToolResult contract,
-          // preventing any non-serialisable value from reaching OpenAI's function_call_output.
+          // preventing any non-serialisable value from reaching the function_call_output.
           assertToolResult(result, name);
           toolSuccess = result.success;
           callFileLogger.toolEnd(name, result, Date.now() - toolStartTime, toolSuccess);
@@ -3896,8 +3641,6 @@ function createCallSession(twilioWs: WebSocket) {
           };
           if (salon) safetyGate.recordToolCall(salon.storeId, Date.now() - toolStartTime, false);
           watchdog.onFailure();
-        } finally {
-          clearTimeout(fillerTimer);
         }
 
         const latencyMs = Date.now() - toolStartTime;
@@ -3935,96 +3678,31 @@ function createCallSession(twilioWs: WebSocket) {
         }
 
         watchdog.onToolEnd(toolSuccess);
-        // §9 Fail-safe mode — when 2+ consecutive failures hit, inject an ultra-short response hint
+        // §9 Fail-safe mode — when 2+ consecutive failures hit, nudge for brevity
         if (!toolSuccess && watchdog.isFailSafeMode() && openAiWs.readyState === WebSocket.OPEN) {
           console.warn(`[CostControl] §9 fail-safe mode active (${name} failed) — injecting brevity hint`);
           openAiWs.send(JSON.stringify({
-            type: "conversation.item.create",
-            item: {
-              type: "message",
-              role: "user",
-              content: [{ type: "input_text", text: "SYSTEM: Keep your next response to one short sentence only. Apologize briefly for the trouble and ask if there is something else you can help with. Do NOT promise anyone will call them back." }],
-            },
+            type: "session.instructions.append",
+            delegation_id: null,
+            content: "SYSTEM: Keep your next response to one short sentence only. Apologize briefly for the trouble and ask if there is something else you can help with. Do NOT promise anyone will call them back.",
           }));
         }
         callHealthTracker.recordToolEnd(sessionCallSid ?? null, name, toolSuccess);
 
-        // Fix 7 (Turn Ownership): If a filler was injected at the 1.5s mark (L6), that
-        // filler response is now the active speaking response. Cancel it before delivering
-        // the real tool result so only ONE response is speaking at a time.
-        //
-        // Note: If L6 fired, it already cancelled the *original* pending response before
-        // injecting the filler — so this cancel is specifically targeting the filler response.
-        if (fillerInjected) {
-          console.log(
-            `[AI Receptionist][${capturedTurnId}] Fix-7 — cancelling filler response before tool result ` +
-            `response_suppressed source=L6_tool_filler`
-          );
-          cancelActiveResponse("cancel_filler_before_tool_result");
-          // 300ms gives OpenAI time to emit response.done(cancelled) which calls
-          // releaseTurnLock — ensuring the lock is FREE before tool_result claims it.
-          await new Promise<void>((r) => setTimeout(r, 300));
-        }
-
-        // Mandatory tool-result handoff:
-        // If server_vad still owns this same turn, cancel/release before emitting
-        // tool_result so the continuation is not blocked and retried late.
-        if (
-          activeResponseInProgress &&
-          activeTurnId === capturedTurnId &&
-          activeTurnSource === "server_vad"
-        ) {
-          console.log(
-            `[AI Receptionist][${capturedTurnId}] Tool handoff — cancelling active server_vad response before tool_result`
-          );
-          cancelActiveResponse("tool_result_handoff_from_server_vad");
-          // Release quickly so tool_result can claim ownership for the same turn.
-          releaseTurnLock("tool_result_handoff_from_server_vad");
-          await new Promise<void>((r) => setTimeout(r, 120));
-        }
-
-        // Tool is done — clear the processing flag so generateSpeech() gates open.
-        isProcessingTool = false;
-
-        // Deliver the tool result — the ONE mandatory response continuation after
-        // function_call_output. No force flag: the lock must be free at this point
-        // because response.done (for the server_vad or filler response) always fires
-        // before we reach here and calls releaseTurnLock.
-        //
-        // A tool failure (401, timeout, error message) is HANDLED INSIDE THIS SINGLE
-        // RESPONSE — the error is embedded in `result.message` and the AI incorporates
-        // it into its reply. It does NOT spawn an additional response.create.
         console.log(
-          `[AI Receptionist][${capturedTurnId}] Tool "${name}" complete — delivering result ` +
-          `success=${toolSuccess} response_source=tool_result user_turn_id=${capturedTurnId}`
+          `[AI Receptionist][seq=${capturedSeq}] Tool "${name}" complete — delivering result ` +
+          `success=${toolSuccess}`
         );
         openAiWs.send(JSON.stringify({
-          type: "conversation.item.create",
+          type: "response.item.create",
           item: {
             type: "function_call_output",
             call_id: callId,
             output: JSON.stringify(result),
           },
         }));
-        // Tool-result continuation is mandatory. If the previous response just finished,
-        // a stale audio cooldown window can still be active and incorrectly block the
-        // immediate tool_result response (causing a long silence until watchdog recovery).
-        // Safe to clear here because we only do this after tool completion and after
-        // function_call_output is created for the same captured turn.
-        speechLockedUntil = 0;
-        const toolResultSpoken = generateSpeech(capturedTurnId, "tool_result");
-
-        // If speech was blocked for transient gating (for example VAD edge timing),
-        // do one short retry on the same turn so tool results don't get stranded.
-        if (!toolResultSpoken) {
-          setTimeout(() => {
-            if (openAiWs.readyState !== WebSocket.OPEN) return;
-            if (isProcessingTool) return;
-            if (currentTurnId !== capturedTurnId) return;
-            speechLockedUntil = 0;
-            generateSpeech(capturedTurnId, "tool_result_retry");
-          }, 700);
-        }
+        continueBackend();
+        watchdog.onToolResultDelivered();
 
         if (shouldEndCall) {
           // 20s gives the AI time to ask "Was there anything else?" and hear the caller's reply
@@ -4035,24 +3713,19 @@ function createCallSession(twilioWs: WebSocket) {
           }, 20_000);
         }
       })().catch((err) => {
-        // ── TOOL FATAL ERROR — NO NEW RESPONSE CREATED ──────────────────────
-        // A fatal error here means the async delivery IIFE threw (not the tool
-        // itself — inner tool errors are caught and flow through tool_result above).
-        // Creating a response.create here would produce a SECOND assistant turn
-        // on top of any response already in progress.
-        //
-        // Rule: tool failure NEVER spawns an additional response chain.
-        // Clear the tool lock so the watchdog can re-engage if silence results.
-        isProcessingTool = false;
         console.error(
-          `[AI Receptionist][${capturedTurnId}] Tool delivery fatal error — ` +
-          `isProcessingTool cleared, NO response.create emitted to prevent duplicate turn. ` +
-          `tool="${name}" error="${err.message}"`
+          `[AI Receptionist][seq=${capturedSeq}] Tool delivery fatal error — tool="${name}" error="${err.message}"`
         );
         watchdog.onToolEnd(false);
         callHealthTracker.recordToolEnd(sessionCallSid ?? null, name, false);
       });
 
+      return;
+    }
+
+    if (type === "session.closed") {
+      const usage = msg.usage as Record<string, unknown> | undefined;
+      console.log(`[AI Receptionist] session.closed — voice_seconds=${usage?.seconds ?? "?"}`);
       return;
     }
 
@@ -4075,7 +3748,7 @@ function createCallSession(twilioWs: WebSocket) {
 
   openAiWs.on("close", (code, reason) => {
     const reasonStr = reason.toString() || "(none)";
-    console.log(`[AI Receptionist] OpenAI WebSocket CLOSED — code=${code} reason=${reasonStr} sessionUpdated=${sessionUpdated} outboundAudioPackets=${outboundAudioCount}`);
+    console.log(`[AI Receptionist] OpenAI WebSocket CLOSED — code=${code} reason=${reasonStr} sessionStarted=${sessionStarted} outboundAudioPackets=${outboundAudioCount}`);
     callHealthTracker.recordWsStatus(sessionCallSid ?? null, false);
 
     // If shutdown was initiated by our own teardown path, this close is expected.
@@ -4212,9 +3885,11 @@ function createCallSession(twilioWs: WebSocket) {
         // ── Session guard + cost metering ──────────────────────────────────
         sessionCallSid = callSid ?? `call-${Date.now()}`;
 
-        // Graceful termination callback — injects AI farewell, then hangs up.
-        // This is an end-of-call forced override: we release the lock + clear all
-        // guards so generateSpeech() can proceed regardless of call state.
+        // Graceful termination callback — directs the front-end voice model to say
+        // a farewell right now, then hangs up. Under Live there's no response.create/
+        // conversation.item.create for the voice channel to force this through —
+        // session.instructions.append with delegation_id:null is the documented
+        // mechanism for corrective, immediate guidance to the autonomous voice model.
         const terminateGracefully = (reason: string, aiMessage: string): void => {
           if (gracefulTerminationStarted) {
             console.warn(
@@ -4225,18 +3900,14 @@ function createCallSession(twilioWs: WebSocket) {
           gracefulTerminationStarted = true;
           console.log(`[AI Receptionist] 🛑 Graceful termination — reason=${reason} store=${parsedStoreId}`);
           callOutcome = reason;
-          // Reset all speech guards so the farewell always gets through.
-          releaseTurnLock(`terminate_gracefully:${reason}`);
-          isProcessingTool = false;
-          speechLockedUntil = 0;
           try {
             if (openAiWs.readyState === WebSocket.OPEN) {
               openAiWs.send(JSON.stringify({
-                type: "conversation.item.create",
-                item: { type: "message", role: "user", content: [{ type: "input_text", text: `SYSTEM: ${aiMessage}` }] },
+                type: "session.instructions.append",
+                delegation_id: null,
+                content: `SYSTEM: Say exactly: "${aiMessage}" Then stop.`,
               }));
-              generateSpeech(currentTurnId, `terminate_gracefully:${reason}`);
-              // Give AI 10 seconds to respond before closing
+              // Give AI 10 seconds to speak the farewell before closing
               setTimeout(() => { try { twilioWs.close(); } catch { /* ignore */ } }, 10_000);
             } else {
               twilioWs.close();
@@ -4263,7 +3934,7 @@ function createCallSession(twilioWs: WebSocket) {
         sessionMaxDurationHandle = setTimeout(() => {
           sessionMaxDurationHandle = null;
           console.warn(
-            `[SpeechLock] ⚠️  Session max duration reached (${MAX_SESSION_MS / 60_000}min) — ` +
+            `[CostControl] ⚠️  Session max duration reached (${MAX_SESSION_MS / 60_000}min) — ` +
             `callSid=${sessionCallSid} store=${parsedStoreId} — triggering graceful termination`
           );
           terminateGracefully(
@@ -4281,14 +3952,6 @@ function createCallSession(twilioWs: WebSocket) {
           callLogId: null,
           send:      (msg) => {
             if (openAiWs.readyState !== WebSocket.OPEN) return;
-            // Intercept response.create from the watchdog and route it through
-            // the turn ownership lock. conversation.item.create and other
-            // messages pass through directly.
-            const m = msg as Record<string, unknown>;
-            if (m.type === "response.create") {
-              generateSpeech(currentTurnId, "watchdog");
-              return;
-            }
             openAiWs.send(JSON.stringify(msg));
           },
         });
@@ -4364,16 +4027,16 @@ function createCallSession(twilioWs: WebSocket) {
       const payload = media?.payload as string | undefined;
       if (track !== "inbound" || !payload) return;
 
-      // Drop early audio that arrives before the session is fully configured.
+      // Drop early audio that arrives before the session is fully started.
       // Without this, caller speech could reach OpenAI before our instructions/
       // tools/allowlist are loaded, causing inconsistent first-turn behavior.
-      // We wait for session.updated from OpenAI which confirms our session config
-      // was accepted — only then is it safe to forward audio.
-      if (!sessionUpdated) {
+      // We wait for session.started, which confirms our session config was
+      // accepted — only then is it safe to forward audio.
+      if (!sessionStarted) {
         // Log occasionally so we can see audio is arriving but session isn't ready
         inboundAudioCount++;
         if (inboundAudioCount === 1 || inboundAudioCount % 100 === 0) {
-          console.log(`[AI Receptionist] ⏳ Dropping inbound audio #${inboundAudioCount} — waiting for session.updated (sessionConfigured=${sessionConfigured})`);
+          console.log(`[AI Receptionist] ⏳ Dropping inbound audio #${inboundAudioCount} — waiting for session.started (sessionConfigured=${sessionConfigured})`);
         }
         return;
       }
@@ -4387,13 +4050,14 @@ function createCallSession(twilioWs: WebSocket) {
         sessionGuard.updateActivity(sessionCallSid);
       }
 
-      // Interruption — only cancel if OpenAI VAD has actually detected caller speech.
-      // Twilio sends a continuous inbound stream (including silence/background noise),
-      // so cancelling on any inbound media packet causes false interruptions.
-      if (aiSpeaking && callerSpeaking) {
+      // Interruption/barge-in — Live has no client-visible speech_started event to key
+      // off, so this uses the same local energy-based VAD as the (disabled) local-VAD
+      // gate below to decide whether the caller is actually talking over the AI. GPT-Live's
+      // own server-side VAD handles stopping generation; this only clears Twilio's already-
+      // buffered playback so the caller doesn't keep hearing stale audio.
+      if (aiSpeaking && hasVoiceInTwilioUlaw(payload)) {
         aiSpeaking = false;
-        console.log(`[AI Receptionist] 🛑 Interruption detected — cancelling AI response`);
-        cancelActiveResponse("caller_barge_in");
+        console.log(`[AI Receptionist] 🛑 Interruption detected — clearing Twilio playback buffer`);
         if (streamSid && twilioWs.readyState === WebSocket.OPEN) {
           twilioWs.send(JSON.stringify({ event: "clear", streamSid }));
         }
@@ -4401,8 +4065,9 @@ function createCallSession(twilioWs: WebSocket) {
 
       if (openAiWs.readyState === WebSocket.OPEN) {
         const forwardFrame = (framePayload: string) => {
-          const openAiAudio = twilioUlawBase64ToPcm16_24kBase64(framePayload);
-          openAiWs.send(JSON.stringify({ type: "input_audio_buffer.append", audio: openAiAudio }));
+          // Session audio format is audio/pcmu @ 8kHz — identical to Twilio's native
+          // format, so the raw payload passes straight through with zero conversion.
+          openAiWs.send(JSON.stringify({ type: "session.input_audio.append", audio: framePayload }));
           localVadSentFrames++;
         };
 
@@ -4593,25 +4258,18 @@ function createCallSession(twilioWs: WebSocket) {
     if (sessionClosed) return;
     sessionClosed = true;
 
-    awaitingCommitAfterSpeechStop = false;
-    if (commitNudgeTimer) {
-      clearTimeout(commitNudgeTimer);
-      commitNudgeTimer = null;
+    if (aiSpeakingIdleTimer) {
+      clearTimeout(aiSpeakingIdleTimer);
+      aiSpeakingIdleTimer = null;
     }
 
-    // ── Reset ALL speech authority state on session close ──────────────────
-    // Ensures no stale locks, tool fences, or audio cooldowns linger.
-    // (Rule 9: reset activeResponseId, isSpeaking, isProcessingTool on disconnect)
-    releaseTurnLock("session_closed");
-    isProcessingTool  = false;
-    speechLockedUntil = 0;
     // Clear the 12-minute hard-limit timer if it's still pending
     if (sessionMaxDurationHandle) {
       clearTimeout(sessionMaxDurationHandle);
       sessionMaxDurationHandle = null;
     }
 
-    // Clear session-update timeout so it doesn't fire after call teardown
+    // Clear session-start timeout so it doesn't fire after call teardown
     if (sessionUpdateTimeoutHandle) {
       clearTimeout(sessionUpdateTimeoutHandle);
       sessionUpdateTimeoutHandle = null;
@@ -4624,7 +4282,10 @@ function createCallSession(twilioWs: WebSocket) {
       console.error("[AI Receptionist] silenceWatchdog flush error:", err)
     );
 
-    if (openAiWs.readyState === WebSocket.OPEN || openAiWs.readyState === WebSocket.CONNECTING) {
+    if (openAiWs.readyState === WebSocket.OPEN) {
+      try { openAiWs.send(JSON.stringify({ type: "session.close" })); } catch { /* ignore */ }
+      openAiWs.close();
+    } else if (openAiWs.readyState === WebSocket.CONNECTING) {
       openAiWs.close();
     }
   }
@@ -5639,7 +5300,14 @@ interface VoiceSession {
     const hasKnownCallerName = Boolean(callerName && callerName.trim());
     const hasKnownCallerPhone = Boolean(callerPhone && callerPhone.trim());
     const serviceList = salon.services.length
-      ? salon.services.map((s) => `• ${s.name} — ${s.durationMinutes} min, $${s.price}  [serviceId: ${s.id}]`).join("\n")
+      ? salon.services.map((s) => {
+          const base = `• ${s.name} — ${s.durationMinutes} min, $${s.price}  [serviceId: ${s.id}]`;
+          if (!s.addons.length) return base;
+          const addonList = s.addons
+            .map((a) => `${a.name} (+$${a.price}, +${a.durationMinutes} min) [addonId: ${a.id}]`)
+            .join("; ");
+          return `${base}\n  Available add-ons: ${addonList}`;
+        }).join("\n")
       : "• (No services on file — ask the caller to visit the website)";
 
     let callerBlock: string;
@@ -5776,6 +5444,21 @@ When done, say a warm goodbye and end the call naturally.`;
             newDateTime:   { type: "string", description: "ISO 8601 new datetime" },
           },
           required: ["appointmentId", "newDateTime"],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "add_appointment_addon",
+        description: "Attach an add-on the caller accepted (upsell) to the appointment you just booked. Call this immediately after the caller says yes to an add-on offer, before verbally confirming it. Only use a real addonId from the services list — never invent one.",
+        parameters: {
+          type: "object",
+          properties: {
+            appointmentId: { type: "integer", description: "The appointment ID returned by create_booking earlier this call." },
+            addonId:       { type: "integer", description: "The addonId of the add-on the caller accepted, from the services list." },
+          },
+          required: ["appointmentId", "addonId"],
         },
       },
     },
@@ -6151,13 +5834,25 @@ When done, say a warm goodbye and end the call naturally.`;
 
       if (toolName === "create_booking") {
         result = await handleNewBooking(session.storeId, toolArgs, session.salon);
-        if (result.success) outcome = "booked";
+        if (result.success) {
+          outcome = "booked";
+          // Same fix as the primary Realtime path ("Fix 5") — without this, the
+          // newly created appointment ID is never in this call's allowlist, so
+          // cancel/reschedule/add_appointment_addon can never touch it this call.
+          const idMatch = result.message.match(/Appointment\s+(\d+)\s+confirmed/i);
+          if (idMatch) {
+            const newId = parseInt(idMatch[1], 10);
+            if (!isNaN(newId) && newId > 0) session.allowlist.add(newId);
+          }
+        }
       } else if (toolName === "cancel_booking") {
         result = await handleCancel(session.storeId, toolArgs, session.allowlist, session.callerPhone, session.salon.timezone);
         if (result.success) outcome = "cancelled";
       } else if (toolName === "reschedule_booking") {
         result = await handleReschedule(session.storeId, toolArgs, session.allowlist, session.salon.timezone);
         if (result.success) outcome = "rescheduled";
+      } else if (toolName === "add_appointment_addon") {
+        result = await handleAddAddon(session.storeId, toolArgs, session.allowlist, session.salon.timezone);
       } else if (toolName === "search_available_slots") {
         result = await handleGetAvailableSlots(toolArgs, session.salon);
         if (result.success) outcome = "availability_checked";

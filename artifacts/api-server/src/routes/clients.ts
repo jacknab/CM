@@ -1,6 +1,8 @@
 import { Router } from "express";
 import multer from "multer";
 import { db } from "../db";
+import { mergeLoyaltyTx } from "../lib/loyaltyAward";
+import { resolveSessionStoreId } from "../lib/sessionStore";
 import { isAuthenticated } from "../auth";
 import {
   clients,
@@ -68,7 +70,7 @@ function getUserId(req: any): string | undefined {
 
 router.get("/", isAuthenticated, async (req, res) => {
   try {
-    const storeId = Number(req.query.storeId);
+    const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(400).json({ message: "storeId required" });
 
     const { search, tag, status, page = "1", limit = "50", sort = "fullName", order = "asc" } = req.query as Record<string, string>;
@@ -186,7 +188,6 @@ router.get("/", isAuthenticated, async (req, res) => {
 router.post("/", isAuthenticated, async (req, res) => {
   try {
     const {
-      storeId,
       firstName = "",
       lastName = "",
       preferredName,
@@ -201,6 +202,7 @@ router.post("/", isAuthenticated, async (req, res) => {
       smsOptIn = true,
       emailMarketingOptIn = true,
     } = req.body;
+    const storeId = await resolveSessionStoreId(req);
 
     if (!storeId) return res.status(400).json({ message: "storeId required" });
     if (!firstName && !lastName && !email && !phone) {
@@ -331,7 +333,7 @@ router.post("/", isAuthenticated, async (req, res) => {
 
 router.get("/find-all-duplicates", isAuthenticated, async (req, res) => {
   try {
-    const storeId = Number(req.query.storeId);
+    const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(400).json({ message: "storeId required" });
 
     // Clients sharing the same phone number within the store
@@ -429,8 +431,9 @@ router.get("/find-all-duplicates", isAuthenticated, async (req, res) => {
 router.get("/:id", isAuthenticated, async (req, res) => {
   try {
     const clientId = Number(req.params.id);
+    const callerStoreId = await resolveSessionStoreId(req);
     const [client] = await db.select().from(clients).where(eq(clients.id, clientId));
-    if (!client) return res.status(404).json({ message: "Client not found" });
+    if (!client || client.storeId !== callerStoreId) return res.status(404).json({ message: "Client not found" });
 
     const [emails, phones, addresses, tagRels, notes, mktPrefs, customFieldValues, liveStats] = await Promise.all([
       db.select().from(clientEmails).where(eq(clientEmails.clientId, clientId)).orderBy(desc(clientEmails.isPrimary)),
@@ -493,6 +496,9 @@ router.get("/:id", isAuthenticated, async (req, res) => {
 router.patch("/:id", isAuthenticated, async (req, res) => {
   try {
     const clientId = Number(req.params.id);
+    const callerStoreId = await resolveSessionStoreId(req);
+    const [ownerCheck] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.id, clientId), eq(clients.storeId, callerStoreId ?? -1)));
+    if (!ownerCheck) return res.status(404).json({ message: "Client not found" });
     const { firstName, lastName, preferredName, dateOfBirth, allergies, gender, clientStatus, preferredStaffId, source, referralSource, avatarUrl } = req.body;
 
     const newFirst = firstName ?? undefined;
@@ -533,8 +539,9 @@ router.patch("/:id", isAuthenticated, async (req, res) => {
 router.delete("/:id", isAuthenticated, async (req, res) => {
   try {
     const clientId = Number(req.params.id);
+    const callerStoreId = await resolveSessionStoreId(req);
     const [client] = await db.select().from(clients).where(eq(clients.id, clientId));
-    if (!client) return res.status(404).json({ message: "Client not found" });
+    if (!client || client.storeId !== callerStoreId) return res.status(404).json({ message: "Client not found" });
 
     await db.update(clients).set({ archivedAt: new Date() }).where(eq(clients.id, clientId));
     await auditLog(client.storeId, "archived", { clientId, actorUserId: getUserId(req) });
@@ -550,7 +557,7 @@ router.delete("/:id", isAuthenticated, async (req, res) => {
 
 router.get("/tags/list", isAuthenticated, async (req, res) => {
   try {
-    const storeId = Number(req.query.storeId);
+    const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(400).json({ message: "storeId required" });
 
     const tags = await db
@@ -571,7 +578,8 @@ router.get("/tags/list", isAuthenticated, async (req, res) => {
 
 router.post("/tags", isAuthenticated, async (req, res) => {
   try {
-    const { storeId, tagName, tagColor = "#6366f1" } = req.body;
+    const { tagName, tagColor = "#6366f1" } = req.body;
+    const storeId = await resolveSessionStoreId(req);
     if (!storeId || !tagName) return res.status(400).json({ message: "storeId and tagName required" });
 
     const [tag] = await db
@@ -591,6 +599,11 @@ router.post("/:id/tags", isAuthenticated, async (req, res) => {
   try {
     const clientId = Number(req.params.id);
     const { tagId } = req.body;
+    const callerStoreId = await resolveSessionStoreId(req);
+    const [ownerCheck] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.id, clientId), eq(clients.storeId, callerStoreId ?? -1)));
+    if (!ownerCheck) return res.status(404).json({ message: "Client not found" });
+    const [tagCheck] = await db.select({ id: clientTags.id }).from(clientTags).where(and(eq(clientTags.id, tagId), eq(clientTags.storeId, callerStoreId ?? -1)));
+    if (!tagCheck) return res.status(404).json({ message: "Tag not found" });
     await db.insert(clientTagRelationships).values({ clientId, tagId }).onConflictDoNothing();
     return res.json({ message: "Tag added" });
   } catch (err) {
@@ -602,6 +615,9 @@ router.delete("/:id/tags/:tagId", isAuthenticated, async (req, res) => {
   try {
     const clientId = Number(req.params.id);
     const tagId = Number(req.params.tagId);
+    const callerStoreId = await resolveSessionStoreId(req);
+    const [ownerCheck] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.id, clientId), eq(clients.storeId, callerStoreId ?? -1)));
+    if (!ownerCheck) return res.status(404).json({ message: "Client not found" });
     await db.delete(clientTagRelationships).where(and(eq(clientTagRelationships.clientId, clientId), eq(clientTagRelationships.tagId, tagId)));
     return res.json({ message: "Tag removed" });
   } catch (err) {
@@ -614,6 +630,9 @@ router.delete("/:id/tags/:tagId", isAuthenticated, async (req, res) => {
 router.get("/:id/notes", isAuthenticated, async (req, res) => {
   try {
     const clientId = Number(req.params.id);
+    const storeId = await resolveSessionStoreId(req);
+    const [clientRow] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.id, clientId), eq(clients.storeId, storeId ?? -1)));
+    if (!clientRow) return res.status(404).json({ message: "Client not found" });
     const notes = await db.select().from(clientNotes).where(eq(clientNotes.clientId, clientId)).orderBy(desc(clientNotes.pinned), desc(clientNotes.createdAt));
     return res.json(notes);
   } catch (err) {
@@ -624,8 +643,11 @@ router.get("/:id/notes", isAuthenticated, async (req, res) => {
 router.post("/:id/notes", isAuthenticated, async (req, res) => {
   try {
     const clientId = Number(req.params.id);
-    const { storeId, noteType = "general", visibility = "internal", noteContent, pinned = false } = req.body;
+    const storeId = await resolveSessionStoreId(req);
+    const { noteType = "general", visibility = "internal", noteContent, pinned = false } = req.body;
     if (!storeId || !noteContent) return res.status(400).json({ message: "storeId and noteContent required" });
+    const [clientRow] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.id, clientId), eq(clients.storeId, storeId)));
+    if (!clientRow) return res.status(404).json({ message: "Client not found" });
 
     const [note] = await db
       .insert(clientNotes)
@@ -641,6 +663,9 @@ router.post("/:id/notes", isAuthenticated, async (req, res) => {
 router.patch("/:id/notes/:noteId", isAuthenticated, async (req, res) => {
   try {
     const noteId = Number(req.params.noteId);
+    const storeId = await resolveSessionStoreId(req);
+    const [existingNote] = await db.select({ storeId: clientNotes.storeId }).from(clientNotes).where(eq(clientNotes.id, noteId)).limit(1);
+    if (!existingNote || existingNote.storeId !== storeId) return res.status(404).json({ message: "Note not found" });
     const { noteContent, pinned, visibility } = req.body;
     const updates: any = { updatedAt: new Date() };
     if (noteContent !== undefined) updates.noteContent = noteContent;
@@ -657,6 +682,9 @@ router.patch("/:id/notes/:noteId", isAuthenticated, async (req, res) => {
 router.delete("/:id/notes/:noteId", isAuthenticated, async (req, res) => {
   try {
     const noteId = Number(req.params.noteId);
+    const storeId = await resolveSessionStoreId(req);
+    const [existingNote] = await db.select({ storeId: clientNotes.storeId }).from(clientNotes).where(eq(clientNotes.id, noteId)).limit(1);
+    if (!existingNote || existingNote.storeId !== storeId) return res.status(404).json({ message: "Note not found" });
     await db.delete(clientNotes).where(eq(clientNotes.id, noteId));
     return res.json({ message: "Note deleted" });
   } catch (err) {
@@ -672,6 +700,9 @@ router.delete("/:id/notes/:noteId", isAuthenticated, async (req, res) => {
 router.get("/:id/profile-note", isAuthenticated, async (req, res) => {
   try {
     const clientId = Number(req.params.id);
+    const storeId = await resolveSessionStoreId(req);
+    const [clientRow] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.id, clientId), eq(clients.storeId, storeId ?? -1)));
+    if (!clientRow) return res.status(404).json({ message: "Client not found" });
     const [note] = await db
       .select()
       .from(clientNotes)
@@ -685,8 +716,9 @@ router.get("/:id/profile-note", isAuthenticated, async (req, res) => {
 router.post("/:id/profile-note/regenerate", isAuthenticated, async (req, res) => {
   try {
     const clientId = Number(req.params.id);
+    const callerStoreId = await resolveSessionStoreId(req);
     const [client] = await db.select({ storeId: clients.storeId }).from(clients).where(eq(clients.id, clientId));
-    if (!client) return res.status(404).json({ message: "Client not found" });
+    if (!client || client.storeId !== callerStoreId) return res.status(404).json({ message: "Client not found" });
 
     const result = await regenerateAiProfileNote(clientId, client.storeId);
     if (!result) return res.status(503).json({ message: "Unable to generate a profile note yet (no completed visits, or AI is not configured)." });
@@ -701,6 +733,9 @@ router.post("/:id/profile-note/regenerate", isAuthenticated, async (req, res) =>
 router.post("/:id/phones", isAuthenticated, async (req, res) => {
   try {
     const clientId = Number(req.params.id);
+    const callerStoreId = await resolveSessionStoreId(req);
+    const [ownerCheck] = await db.select({ storeId: clients.storeId }).from(clients).where(eq(clients.id, clientId));
+    if (!ownerCheck || ownerCheck.storeId !== callerStoreId) return res.status(404).json({ message: "Client not found" });
     const { phoneNumber, phoneType: explicitPhoneType, smsOptIn = true, isPrimary = false } = req.body;
     if (!phoneNumber) return res.status(400).json({ message: "phoneNumber required" });
 
@@ -729,12 +764,11 @@ router.post("/:id/phones", isAuthenticated, async (req, res) => {
     }
 
     // Prevent adding a phone that already belongs to another client in the same store
-    const [thisClient] = await db.select({ storeId: clients.storeId }).from(clients).where(eq(clients.id, clientId));
-    if (thisClient?.storeId) {
+    {
       const [conflict] = await db
         .select({ id: clients.id })
         .from(clientPhones)
-        .innerJoin(clients, and(eq(clientPhones.clientId, clients.id), eq(clients.storeId, thisClient.storeId), isNull(clients.archivedAt)))
+        .innerJoin(clients, and(eq(clientPhones.clientId, clients.id), eq(clients.storeId, callerStoreId), isNull(clients.archivedAt)))
         .where(and(eq(clientPhones.phoneNumberE164, e164), sql`${clientPhones.clientId} != ${clientId}`))
         .limit(1);
       if (conflict) {
@@ -759,7 +793,7 @@ router.post("/:id/phones", isAuthenticated, async (req, res) => {
 // for the "Verify phone numbers" panel in Settings.
 router.get("/phone-types/summary", isAuthenticated, async (req, res) => {
   try {
-    const storeId = Number(req.query.storeId);
+    const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(400).json({ message: "storeId required" });
 
     const { getPhoneTypeSummaryForStore } = await import("../lib/phoneTypeBackfill");
@@ -777,7 +811,7 @@ router.get("/phone-types/summary", isAuthenticated, async (req, res) => {
 // (call again to continue past one batch).
 router.post("/phone-types/backfill", isAuthenticated, async (req, res) => {
   try {
-    const storeId = Number(req.body?.storeId ?? req.query.storeId);
+    const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(400).json({ message: "storeId required" });
 
     const { backfillPhoneTypesForStore } = await import("../lib/phoneTypeBackfill");
@@ -794,6 +828,9 @@ router.post("/phone-types/backfill", isAuthenticated, async (req, res) => {
 router.post("/:id/emails", isAuthenticated, async (req, res) => {
   try {
     const clientId = Number(req.params.id);
+    const callerStoreId = await resolveSessionStoreId(req);
+    const [ownerCheck] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.id, clientId), eq(clients.storeId, callerStoreId ?? -1)));
+    if (!ownerCheck) return res.status(404).json({ message: "Client not found" });
     const { emailAddress, isPrimary = false, marketingOptIn = true } = req.body;
     if (!emailAddress) return res.status(400).json({ message: "emailAddress required" });
 
@@ -812,6 +849,9 @@ router.post("/:id/emails", isAuthenticated, async (req, res) => {
 router.get("/:id/marketing-preferences", isAuthenticated, async (req, res) => {
   try {
     const clientId = Number(req.params.id);
+    const callerStoreId = await resolveSessionStoreId(req);
+    const [ownerCheck] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.id, clientId), eq(clients.storeId, callerStoreId ?? -1)));
+    if (!ownerCheck) return res.status(404).json({ message: "Client not found" });
     const [prefs] = await db.select().from(clientMarketingPreferences).where(eq(clientMarketingPreferences.clientId, clientId));
     return res.json(prefs ?? null);
   } catch (err) {
@@ -822,6 +862,9 @@ router.get("/:id/marketing-preferences", isAuthenticated, async (req, res) => {
 router.put("/:id/marketing-preferences", isAuthenticated, async (req, res) => {
   try {
     const clientId = Number(req.params.id);
+    const callerStoreId = await resolveSessionStoreId(req);
+    const [ownerCheck] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.id, clientId), eq(clients.storeId, callerStoreId ?? -1)));
+    if (!ownerCheck) return res.status(404).json({ message: "Client not found" });
     const { smsMarketingOptIn, emailMarketingOptIn, promotionalNotifications, appointmentReminders, reviewRequests } = req.body;
 
     const [prefs] = await db
@@ -843,7 +886,8 @@ router.put("/:id/marketing-preferences", isAuthenticated, async (req, res) => {
 
 router.post("/detect-duplicates", isAuthenticated, async (req, res) => {
   try {
-    const { storeId, email, phone, firstName, lastName } = req.body;
+    const { email, phone, firstName, lastName } = req.body;
+    const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(400).json({ message: "storeId required" });
 
     const dupes: any[] = [];
@@ -907,9 +951,13 @@ router.post("/detect-duplicates", isAuthenticated, async (req, res) => {
 
 router.post("/merge", isAuthenticated, async (req, res) => {
   try {
-    const { storeId, winnerId, loserIds } = req.body;
+    // The signed-in user's OWN store — never the body's storeId directly (that let any signed-in user merge, and
+    // irreversibly archive, another store's clients just by naming their ids). resolveSessionStoreId only accepts a
+    // client-supplied hint after checking the user actually owns that location.
+    const storeId = await resolveSessionStoreId(req);
+    const { winnerId, loserIds } = req.body;
     if (!storeId || !winnerId || !Array.isArray(loserIds) || loserIds.length === 0) {
-      return res.status(400).json({ message: "storeId, winnerId, and loserIds[] required" });
+      return res.status(400).json({ message: "winnerId and loserIds[] required" });
     }
 
     // Verify all clients belong to this store
@@ -930,12 +978,8 @@ router.post("/merge", isAuthenticated, async (req, res) => {
           WHERE customer_id = ${loserId} AND store_id = ${storeId}
         `);
 
-        // Accumulate loyalty points into winner before archiving
-        await tx.execute(sql`
-          UPDATE clients
-          SET loyalty_points = COALESCE(loyalty_points, 0) + COALESCE((SELECT loyalty_points FROM clients WHERE id = ${loserId}), 0)
-          WHERE id = ${winnerId}
-        `);
+        // Loyalty: history + balance move to the winner (see mergeLoyaltyTx — keeps balance == ledger on both sides).
+        await mergeLoyaltyTx(tx, storeId, winnerId, loserId);
 
         // Merge emails the winner doesn't already have
         await tx.execute(sql`
@@ -996,8 +1040,8 @@ router.post("/merge", isAuthenticated, async (req, res) => {
             WHERE customer_id = ${winnerId} AND store_id = ${storeId} AND status = 'completed'
           ), 0),
           total_spent_cents = COALESCE((
-            SELECT SUM(total_paid) FROM appointments
-            WHERE customer_id = ${winnerId} AND store_id = ${storeId} AND status IN ('completed', 'paid')
+            SELECT ROUND(SUM(CAST(total_paid AS DECIMAL(10,2))) * 100)::int FROM appointments
+            WHERE customer_id = ${winnerId} AND store_id = ${storeId} AND status = 'completed'
           ), 0),
           updated_at = NOW()
         WHERE id = ${winnerId}
@@ -1092,7 +1136,8 @@ async function buildClientRows(storeId: number, filter: any = {}) {
 
 router.post("/export", isAuthenticated, async (req, res) => {
   try {
-    const { storeId, format = "csv", filter = {} } = req.body;
+    const { format = "csv", filter = {} } = req.body;
+    const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(400).json({ message: "storeId required" });
     if (!["csv", "xlsx", "json"].includes(format)) return res.status(400).json({ message: "format must be csv, xlsx, or json" });
 
@@ -1218,11 +1263,11 @@ router.post("/import/execute", isAuthenticated, upload.single("file"), async (re
   try {
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
-    const { storeId, fieldMapping: fieldMappingRaw, duplicateStrategy = "skip" } = req.body;
-    if (!storeId) return res.status(400).json({ message: "storeId required" });
+    const { fieldMapping: fieldMappingRaw, duplicateStrategy = "skip" } = req.body;
+    const storeIdNum = await resolveSessionStoreId(req);
+    if (!storeIdNum) return res.status(400).json({ message: "storeId required" });
 
     const fieldMapping = typeof fieldMappingRaw === "string" ? JSON.parse(fieldMappingRaw) : fieldMappingRaw;
-    const storeIdNum = Number(storeId);
 
     let rows: any[] = [];
     if (req.file.originalname.endsWith(".xlsx") || req.file.originalname.endsWith(".xls")) {
@@ -1349,7 +1394,7 @@ router.post("/import/execute", isAuthenticated, upload.single("file"), async (re
 
 router.get("/audit-logs", isAuthenticated, async (req, res) => {
   try {
-    const storeId = Number(req.query.storeId);
+    const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(400).json({ message: "storeId required" });
 
     const logs = await db
@@ -1370,10 +1415,10 @@ router.get("/audit-logs", isAuthenticated, async (req, res) => {
 router.get("/:id/appointments", isAuthenticated, async (req, res) => {
   try {
     const clientId = Number(req.params.id);
-    const storeId = Number(req.query.storeId);
+    const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(400).json({ message: "storeId required" });
 
-    const [clientRow] = await db.select().from(clients).where(eq(clients.id, clientId));
+    const [clientRow] = await db.select().from(clients).where(and(eq(clients.id, clientId), eq(clients.storeId, storeId)));
     if (!clientRow) return res.status(404).json({ message: "Client not found" });
 
     const rows = await db

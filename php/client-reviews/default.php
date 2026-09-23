@@ -18,18 +18,9 @@ define('PAGE_SCHEMA', json_encode([
     'isPartOf'    => ['@id'=>'https://certxa.com/#website'],
     'about'       => ['@id'=>'https://certxa.com/#software'],
   ],
-  [
-    '@type'       => 'HowTo',
-    'name'        => 'How to get more 5-star Google reviews for your nail salon',
-    'description' => 'A repeatable process nail salons can use to steadily grow their Google review count and star rating.',
-    'step' => [
-      ['@type'=>'HowToStep','position'=>1,'name'=>'Claim and complete your Google Business Profile','text'=>'Verify your salon on Google, add your hours, services, photos, and booking link. Reviews only help if the profile they land on is complete and accurate.','url'=>'https://certxa.com/client-reviews#how-to'],
-      ['@type'=>'HowToStep','position'=>2,'name'=>'Ask every happy client, right after the appointment','text'=>'The best moment is within an hour of the service, while the result is fresh. Ask consistently — not just when you remember.','url'=>'https://certxa.com/client-reviews#how-to'],
-      ['@type'=>'HowToStep','position'=>3,'name'=>'Send the request by text with a direct link','text'=>'A text is opened far more often than an email. Link straight to your Google review form so it is one tap, not a search.','url'=>'https://certxa.com/client-reviews#how-to'],
-      ['@type'=>'HowToStep','position'=>4,'name'=>'Make the ask personal and specific','text'=>'Use the client\'s name and the service they had. A specific, human message gets a far higher response than a generic blast.','url'=>'https://certxa.com/client-reviews#how-to'],
-      ['@type'=>'HowToStep','position'=>5,'name'=>'Reply to every review, good or bad','text'=>'Responding shows future clients you care and keeps your Google Business Profile active. Thank 5-star reviewers; answer criticism calmly and offer to make it right.','url'=>'https://certxa.com/client-reviews#how-to'],
-    ],
-  ],
+  // HowTo removed 2026-09-22 — Google discontinued HowTo rich results in
+  // Sep 2023; it was pure page weight with no search benefit (see
+  // GEO-AUDIT-REPORT.md).
   [
     '@type'      => 'FAQPage',
     'mainEntity' => [
