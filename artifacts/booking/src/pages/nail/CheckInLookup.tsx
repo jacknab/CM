@@ -83,6 +83,11 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
   const run = async (digits: string) => {
     if (ran.current === digits) return;
     ran.current = digits;
+    if (offline) {
+      setMessage("You're offline — check-in needs a connection. Reconnect and try again.");
+      setStep("error");
+      return;
+    }
     setStep("finding");
     try {
       const id = await findClientId(storeId, digits);

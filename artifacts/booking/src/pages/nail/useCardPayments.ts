@@ -100,7 +100,18 @@ export function useCardPayments(o: CardPaymentsOpts) {
       // A tap the POS itself asked the tablet to collect (the M2 flow echoes this event too — its ref stays 0).
       const asked = tapAmount.current;
       tapAmount.current = 0; setAwaitingTap(false);
-      if (msg.success) o.onPaid("tap", Number(msg.total) || asked, msg.last4 ?? null);
+      if (msg.success) {
+        const total = Number(msg.total);
+        // This wire protocol carries no request id, so a stale response from a tap that was
+        // cancelled (then immediately followed by a new, different-amount request) can't be told
+        // apart from the current one by identity — but a mismatched amount is a clear tell it
+        // isn't the answer to what's actually being asked for right now.
+        if (Number.isFinite(total) && total > 0 && Math.abs(total - asked) > 0.005) {
+          o.onFailed("Got a payment result for a different amount than expected — please try the tap again.");
+          return;
+        }
+        o.onPaid("tap", total || asked, msg.last4 ?? null);
+      }
       else o.onFailed(msg.error ? String(msg.error) : "Card declined");
     }
   }, []);
@@ -149,11 +160,60 @@ export function useCardPayments(o: CardPaymentsOpts) {
     }
   };
 
+  // A card that was actually charged (processPayment succeeded) but whose capture call then
+  // failed — network blip, server error, session expiry. This must never look like an ordinary
+  // decline: retrying the normal way would create a brand-new PaymentIntent and charge the card
+  // again. While this is set, chargeM2 resumes/retries capturing THIS SAME intent instead.
+  const pendingCapture = useRef<{ paymentIntentId: string; amount: number } | null>(null);
+
+  const captureWithRetry = async (paymentIntentId: string, attempts = 3): Promise<void> => {
+    let lastErr: any;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const capture = await fetch("/api/payments/terminal/capture-payment-intent", {
+          method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paymentIntentId }),
+        });
+        if (!capture.ok) throw new Error((await capture.json()).error ?? "Capture failed");
+        return;
+      } catch (err) {
+        lastErr = err;
+        if (i < attempts - 1) await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+      }
+    }
+    throw lastErr;
+  };
+
   const chargeM2 = async (amount: number) => {
     const o = opts.current;
     const cents = Math.round(amount * 100);
     if (cents <= 0) return o.say("NOTHING DUE", "error");
     if (!term.current || !reader.current) return connectM2();
+
+    // Resume a prior charge whose capture failed — never create a new PaymentIntent while one is
+    // outstanding, or the customer could be charged twice for one sale. This does NOT check that
+    // `amount` matches the pending charge: the card was already charged for that pending amount
+    // regardless of what's being asked for now, so there is no safe way to "start fresh" — the
+    // only thing a mismatched amount here means is the ticket total changed while a charge was
+    // still unresolved, which must be sorted out (checked in Stripe / with support) before any
+    // new charge attempt, not silently bypassed by tapping CARD again with a different total.
+    if (pendingCapture.current) {
+      const { paymentIntentId, amount: pendingAmount } = pendingCapture.current;
+      setStatus("processing");
+      o.say("FINISHING THE PREVIOUS CHARGE — DO NOT CHARGE AGAIN…", "info");
+      try {
+        await captureWithRetry(paymentIntentId);
+        pendingCapture.current = null;
+        setStatus("ready");
+        o.send("kiosk_checkout_payment_result", { success: true, total: pendingAmount, appointmentId: o.ticketId, ...o.settlementAfter(pendingAmount) });
+        o.onPaid("m2", pendingAmount, null, paymentIntentId);
+      } catch (err: any) {
+        setStatus("ready");
+        o.onFailed(`Still couldn't confirm that charge (${err?.message ?? "capture failed"}). DO NOT charge the card again — check Stripe or contact support before retrying.`);
+      }
+      return;
+    }
+
     setStatus("collecting");
     o.send("kiosk_checkout_await_payment", { mode: "m2", total: amount, appointmentId: o.ticketId, ...o.settlementAfter(amount) });
     try {
@@ -168,12 +228,18 @@ export function useCardPayments(o: CardPaymentsOpts) {
       setStatus("processing");
       const processed = await term.current.processPayment(collect.paymentIntent);
       if (processed.error) throw new Error(processed.error.message);
-      const capture = await fetch("/api/payments/terminal/capture-payment-intent", {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentIntentId }),
-      });
-      if (!capture.ok) throw new Error((await capture.json()).error ?? "Capture failed");
+      // The card is charged from here on — a capture failure past this point must never be
+      // treated like an ordinary decline (see pendingCapture above).
       const last4 = processed.paymentIntent?.payment_method_details?.card_present?.last4 ?? null;
+      try {
+        await captureWithRetry(paymentIntentId);
+      } catch (captureErr: any) {
+        pendingCapture.current = { paymentIntentId, amount };
+        setStatus("ready");
+        o.send("kiosk_checkout_payment_result", { success: false, error: "Capture failed", appointmentId: o.ticketId });
+        o.onFailed(`Card was charged but we couldn't confirm it with the server (${captureErr?.message ?? "capture failed"}). DO NOT charge again — tap CARD once more to retry saving this same charge.`);
+        return;
+      }
       setStatus("ready");
       o.send("kiosk_checkout_payment_result", { success: true, total: amount, last4: last4 ?? "????", appointmentId: o.ticketId, ...o.settlementAfter(amount) });
       o.onPaid("m2", amount, last4, paymentIntentId);

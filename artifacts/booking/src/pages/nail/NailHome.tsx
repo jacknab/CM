@@ -45,6 +45,7 @@ import { GiftCardSheet } from "./GiftCardSheet";
 import { useAppointmentSSE } from "@/hooks/use-appointment-sse";
 import { TechCards } from "./TechCards";
 import { CheckInPanel } from "./CheckInPanel";
+import { QueueTab } from "./QueueTab";
 import "./nail.css";
 import { AssignTechSheet } from "./AssignTechSheet";
 import { CheckInBoard } from "./CheckInBoard";
@@ -101,7 +102,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const { drawerId, needsPicker: needsDrawerPicker, drawers, selectDrawer } = useActiveDrawerId(storeId);
 
   // ── screen state ──────────────────────────────────────────────────────────
-  const [tab, setTab] = useState<NailTab>("techs");
+  const [tab, setTab] = useState<NailTab>("queue");
   const [client, setClient] = useState<ClientSummary | null>(null);
   const [checkinId, setCheckinId] = useState<number | null>(null);
   const [service, setService] = useState<CatalogService | null>(null);
@@ -197,7 +198,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const { data: techFeed, isLoading: techsLoading } = useQuery({
     queryKey: ["/api/turn/eligibility", storeId, "nail-techs"],
     queryFn: () => fetchTurn(storeId, null),
-    enabled: tab === "techs",
+    enabled: tab === "techs" || tab === "queue",
     refetchInterval: 30_000,
   });
   const techList = techFeed?.technicians ?? EMPTY_ARRAY;
@@ -256,6 +257,17 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     () => draftTotals(service, addonIds, activeAddons, nailCfg, pick, customs),
     [service, addonIds, activeAddons, nailCfg, pick, customs],
   );
+  // A picked nail option (size/shape/art/effect) can vanish from the catalog mid-build if an admin
+  // disables it on another register — draftTotals then silently drops its price/duration. Warn once
+  // per occurrence rather than let the charge quietly come up short with no signal to staff.
+  const warnedDropped = useRef<string>("");
+  useEffect(() => {
+    if (totals.dropped.length === 0) { warnedDropped.current = ""; return; }
+    const key = totals.dropped.join(",");
+    if (warnedDropped.current === key) return;
+    warnedDropped.current = key;
+    toast({ title: "A picked option is no longer available", description: `${totals.dropped.join(", ")} was removed from the catalog — reselect it or the price won't include it.`, variant: "destructive" });
+  }, [totals.dropped, toast]);
 
   // ── ticket building ───────────────────────────────────────────────────────
   const resetDraft = useCallback(() => {
@@ -270,12 +282,13 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     if (editing === null) setPick(EMPTY_PICK);
   };
   const toggleAddon = (id: number) => setAddonIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
-  const addCustom = (amount: number, qty: number, label?: string) => {
+  const addCustom = (amount: number, qty: number, label?: string, isRetail?: boolean) => {
     customSeq.current += 1;
     setCustoms((cur) => [...cur, {
       id: customSeq.current,
       label: label ?? (qty > 1 ? `Custom Amount ×${qty}` : "Custom Amount"),
       price: Math.round(amount * qty * 100) / 100,
+      isRetail,
     }]);
   };
   const removeLine = (line: TicketLine) => {
@@ -302,7 +315,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     setService(svc);
     pickSeededFor.current = svc.id;
     setAddonIds(t.addons.map((a) => a.id));
-    setCustoms(t.customLines.map((c) => ({ id: ++customSeq.current, label: c.label, price: c.price })));
+    setCustoms(t.customLines.map((c) => ({ id: ++customSeq.current, label: c.label, price: c.price, isRetail: c.isRetail })));
     setPick({ size: t.nail?.sizeId ?? null, shape: t.nail?.shapeId ?? null, application: t.nail?.applicationId ?? null, effect: t.nail?.effectId ?? null });
     setEditing(t);
     setActiveGroup(groups.find((g) => g.services.some((s) => s.id === svc.id))?.key ?? activeGroup);
@@ -316,7 +329,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   };
 
   // ── mutations ─────────────────────────────────────────────────────────────
-  const customLines = useMemo(() => customs.map(({ label, price }) => ({ label, price })), [customs]);
+  const customLines = useMemo(() => customs.map(({ label, price, isRetail }) => ({ label, price, isRetail })), [customs]);
   const create = useMutation({
     mutationFn: (staffId: number | null) =>
       createTicket({ clientId: client!.id, serviceId: service!.id, addonIds, pick, customLines, staffId, checkinId }),
@@ -333,7 +346,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   const update = useMutation({
     mutationFn: () => updateTicket(editing!.id, { serviceId: service!.id, addonIds, pick, customLines }),
-    onSuccess: () => { invalidateBoard(); say("Ticket updated"); resetDraft(); setTab("techs"); },
+    onSuccess: () => { invalidateBoard(); say("Ticket updated"); resetDraft(); setTab("queue"); },
     onError: (err: any) => toast({ title: "Couldn't update the ticket", description: err?.message, variant: "destructive" }),
   });
 
@@ -402,7 +415,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   });
 
   // The receipt has been handled (printed / texted / declined) for an already-paid ticket — now leave the checkout screen.
-  const finishCheckout = useCallback(() => { setCheckout(null); setTicketPaid(false); setTab("techs"); }, []);
+  const finishCheckout = useCallback(() => { setCheckout(null); setTicketPaid(false); setTab("queue"); }, []);
 
   // ── open a ticket by id (scanner, voucher) ───────────────────────────────
   const openTicketById = useCallback(async (id: number) => {
@@ -566,14 +579,17 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   };
   const payNow = () => { if (!canSubmit || editing) return; payAfterCreate.current = true; setAssignError(null); setAssigning({ mode: "create" }); };
   const clearDraft = () => {
-    if (editing) setTab("techs");
+    if (editing) setTab("queue");
     resetDraft();
   };
 
   // A kiosk check-in with no ticket yet → start their ticket. (One with no client on file used to open the walk-in sheet to find or
-  // create them by phone; that sheet is gone, so for now tapping it does nothing.)
+  // create them by phone; that sheet is gone, so this can only tell staff to use Check-In manually instead of silently doing nothing.)
   const startFromMarker = (m: BoardMarker) => {
-    if (!m.clientId) return;
+    if (!m.clientId) {
+      toast({ title: "No client on file for this check-in", description: "Use Check-In to look them up or add them, then start their ticket from there." });
+      return;
+    }
     setTab("pos");
     void pickClient(m.clientId, m.id);
   };
@@ -591,7 +607,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     <div className="dark cx-cal nail-app h-app w-full" data-testid="nail-home">
       {notice && <div className="nail-notice" data-testid="nail-notice">{notice}</div>}
 
-      <main className={`pos-shell ${tab === "board" ? "checkin-page" : ""} ${tab === "techs" ? "techs-page" : ""}`}>
+      <main className={`pos-shell ${tab === "board" || tab === "queue" ? "checkin-page" : ""} ${tab === "techs" ? "techs-page" : ""}`}>
         {/* Checkout: the POS tab's own screen (ticket · keypad · payment / functions). It stays mounted while staff peek at another
             tab, so a half-paid ticket — or a card that has already been charged — is never lost. */}
         {checkout && (
@@ -614,7 +630,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
               socketEvent={checkoutEvent}
               onFinalize={(data) => finalize.mutate(data)}
               onReceiptDone={finishCheckout}
-              onClose={() => { setCheckout(null); setTab("techs"); }}
+              onClose={() => { setCheckout(null); setTab("queue"); }}
             />
           </div>
         )}
@@ -658,8 +674,10 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
         ) : tab === "techs" ? (
           <>
             <CheckInPanel clockOffsetMs={clockOffsetMs} tickets={tickets} markers={markers} onMarker={startFromMarker} onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))} onTicket={(t) => setPopupId(t.id)} />
-            <TechCards techs={techList} tickets={tickets} markers={markers} stats={board?.techStats ?? EMPTY_ARRAY} glance={board?.glance} waiting={waitingCount} loading={techsLoading} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} onClockedOutTap={setClockInFor} onClockedInTap={setClockOutFor} onTicketTap={(t) => setPopupId(t.id)} />
+            <TechCards techs={techList} tickets={tickets} markers={markers} stats={board?.techStats ?? EMPTY_ARRAY} glance={board?.glance} waiting={waitingCount} loading={techsLoading} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} onClockedOutTap={setClockInFor} onClockedInTap={setClockOutFor} />
           </>
+        ) : tab === "queue" ? (
+          <QueueTab techs={techList} tickets={tickets} markers={markers} glance={board?.glance} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} onMarker={startFromMarker} onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))} onTicket={(t) => setPopupId(t.id)} onTicketTap={(t) => setPopupId(t.id)} />
         ) : (
           <CheckInBoard tickets={tickets} busy={act.isPending} {...ticketActions} clockOffsetMs={clockOffsetMs} />
         )}

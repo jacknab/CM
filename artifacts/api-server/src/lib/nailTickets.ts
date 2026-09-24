@@ -73,7 +73,9 @@ export interface TicketPricing {
   price: number;
 }
 
-export interface CustomLine { label: string; price: number }
+/** `isRetail` marks a product sale rung up as a custom line — commissioned at the product rate,
+ *  not the service rate, when this ticket is later paid (alone or as a Group Pay member). */
+export interface CustomLine { label: string; price: number; isRetail?: boolean }
 
 /** Keypad lines from the client: trimmed labels, 0 < price <= 9999.99 to the cent, at most 20. */
 export function sanitizeCustomLines(raw: unknown): CustomLine[] {
@@ -83,7 +85,9 @@ export function sanitizeCustomLines(raw: unknown): CustomLine[] {
     const price = Math.round(Number((r as any)?.price) * 100) / 100;
     if (!Number.isFinite(price) || price <= 0 || price > 9999.99) continue;
     const label = String((r as any)?.label ?? "").trim().slice(0, 60) || "Custom Amount";
-    out.push({ label, price });
+    const line: CustomLine = { label, price };
+    if ((r as any)?.isRetail === true) line.isRetail = true;
+    out.push(line);
     if (out.length >= 20) break;
   }
   return out;

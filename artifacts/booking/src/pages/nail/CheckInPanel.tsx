@@ -7,7 +7,10 @@ const NO_COLOR = "#454c56";
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const firstName = (n: string | null | undefined) => (n ?? "").trim().split(/\s+/)[0] || "Guest";
 
-type Row = { key: string; since: string; name: string; sub: string; at: string; color: string; testId: string; open: () => void; remove?: () => void };
+/** What this row's chip should say — the one glanceable signal for "does this client already belong to a tech?"
+ *  Not derived from border color alone: a tech with no color configured must not look the same as "unassigned". */
+type RowChip = { label: string; kind: "walkin" | "assigned" | "unassigned" };
+type Row = { key: string; since: string; name: string; sub: string; at: string; color: string; chip: RowChip; testId: string; open: () => void; remove?: () => void };
 
 /** Thin "who has checked in" list for the Techs tab — the calendar's Arrived list, narrower. */
 export function CheckInPanel({ tickets, markers, onTicket, onMarker, onMarkerRemove, clockOffsetMs = 0 }: {
@@ -35,12 +38,17 @@ export function CheckInPanel({ tickets, markers, onTicket, onMarker, onMarkerRem
     const fromMarkers = markers.map<Row>((m) => ({
       key: `m${m.id}`, since: m.createdAt, name: firstName(m.clientName), color: NO_COLOR, testId: `nail-arrived-marker-${m.id}`,
       sub: "Walk-in · tap to start ticket", at: `@ ${fmtTime(m.createdAt)}`, open: () => onMarker(m), remove: onMarkerRemove ? () => onMarkerRemove(m) : undefined,
+      chip: { label: "WALK-IN", kind: "walkin" },
     }));
     const fromTickets = tickets.filter((t) => t.status === "confirmed").map<Row>((t) => {
       const since = t.checkedInAt ?? t.date;
       return {
         key: `t${t.id}`, since, name: firstName(t.client.name), color: t.staff?.color || NO_COLOR, testId: `nail-arrived-${t.id}`,
         sub: `${t.staff?.name ?? "Unassigned"} · ${t.service.name}`, at: `@ ${fmtTime(since)}`, open: () => onTicket(t),
+        // A tech with no color configured still needs to read as "assigned", not fall back to the
+        // same gray a true walk-in/unassigned row uses — the chip is the reliable signal, the
+        // border color is just a secondary accent.
+        chip: t.staff ? { label: `WITH ${firstName(t.staff.name).toUpperCase()}`, kind: "assigned" } : { label: "UNASSIGNED", kind: "unassigned" },
       };
     });
     return [...fromMarkers, ...fromTickets].sort((a, b) => +new Date(a.since) - +new Date(b.since));
@@ -59,7 +67,10 @@ export function CheckInPanel({ tickets, markers, onTicket, onMarker, onMarkerRem
           <div key={r.key} className="arrived-row-wrap">
           <button type="button" className="arrived-row" style={{ borderLeftColor: r.color }} data-testid={r.testId} onClick={r.open}>
             <div className="arrived-copy">
-              <strong>{r.name}</strong>
+              <div className="arrived-name-row">
+                <strong>{r.name}</strong>
+                <span className="arrived-chip" data-kind={r.chip.kind}>{r.chip.label}</span>
+              </div>
               <span>{r.sub}</span>
               <span>{r.at}</span>
             </div>

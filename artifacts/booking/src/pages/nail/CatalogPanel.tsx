@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Footprints, Gift, Hand, MoreHorizontal, Package, Plus, Sparkles, UserRound, WalletCards, Zap } from "lucide-react";
+import { Footprints, Gift, Hand, MoreHorizontal, Package, Plus, ShoppingBag, Sparkles, UserRound, WalletCards, Zap } from "lucide-react";
 import { QUICK_TICKET_STEPS } from "@shared/nailCheckout";
 import { formatDuration, parseKeypadAmount } from "./ticketDraft";
 
@@ -52,13 +52,17 @@ function ProductCard({ name, sub, price, onClick, compact, more, selected, locke
 const KEYS = ["7", "8", "9", "⌫", "4", "5", "6", "↶", "1", "2", "3", "X", "00", "0", "ENTER"];
 
 /**
- * `onEnter(amount, qty, label?)` — a label only comes with Quick Ticket, which walks through the steps (Removal, Nail Length, Nail Shape, Nail Art,
- * Design, Extra): ENTER adds the typed amount under that step's name (or skips the step when nothing is typed), and ↶ leaves Quick Ticket.
+ * `onEnter(amount, qty, label?, isRetail?)` — a label only comes with Quick Ticket, which walks through the steps (Removal,
+ * Nail Length, Nail Shape, Nail Art, Design, Extra): ENTER adds the typed amount under that step's name (or skips the step
+ * when nothing is typed), and ↶ leaves Quick Ticket. `isRetail` marks a Custom Amount as a product sale (commissioned at
+ * the product rate, not the service rate) instead of a service upcharge — toggle Retail on before ringing one up; it's the
+ * only way to mark a retail sale on a ticket that isn't the one currently open at Checkout (e.g. for a Group Pay member).
  */
-export function Keypad({ locked, onEnter, onGiftCard }: { locked: boolean; onEnter: (amount: number, qty: number, label?: string) => void; onGiftCard?: () => void }) {
+export function Keypad({ locked, onEnter, onGiftCard }: { locked: boolean; onEnter: (amount: number, qty: number, label?: string, isRetail?: boolean) => void; onGiftCard?: () => void }) {
   const [display, setDisplay] = useState("");
   const [qty, setQty] = useState(1);
   const [guided, setGuided] = useState<number | null>(null);
+  const [retail, setRetail] = useState(false);
 
   const press = (key: string) => {
     if (locked) return;
@@ -79,8 +83,12 @@ export function Keypad({ locked, onEnter, onGiftCard }: { locked: boolean; onEnt
         setGuided(guided + 1 >= QUICK_TICKET_STEPS.length ? null : guided + 1);
         return;
       }
-      if (amount != null) onEnter(amount, qty);
-      setDisplay(""); setQty(1);
+      if (amount != null) onEnter(amount, qty, retail ? "Retail Item" : undefined, retail);
+      // Auto-clear Retail after one charge — unlike Quick Ticket (which self-exits once its fixed
+      // step list ends), nothing here would ever remind staff it's still on, and leaving it stuck
+      // "on" silently mislabels the NEXT unrelated custom charge as retail too (wrong commission
+      // rate). Ringing up several retail items in a row just means tapping Retail again each time.
+      setDisplay(""); setQty(1); setRetail(false);
       return;
     }
     setDisplay((d) => (d + key).slice(0, 7));
@@ -90,6 +98,7 @@ export function Keypad({ locked, onEnter, onGiftCard }: { locked: boolean; onEnt
     <div className={`keypad ${locked ? "keypad-locked" : ""}`} data-testid="nail-keypad">
       <div className="calculator-display" data-testid="nail-keypad-display">
         {guided !== null && <span className="display-prompt" data-testid="nail-quick-prompt">{QUICK_TICKET_STEPS[guided].prompt} · {guided + 1}/{QUICK_TICKET_STEPS.length}</span>}
+        {guided === null && retail && <span className="display-prompt" data-testid="nail-retail-prompt">RETAIL ITEM</span>}
         {qty > 1 && <span className="display-qty">{qty} ×</span>}
         {display ? `$${display}` : ""}
       </div>
@@ -102,9 +111,13 @@ export function Keypad({ locked, onEnter, onGiftCard }: { locked: boolean; onEnt
           </button>
         ))}
       </div>
-      <div className="money-grid">
+      <div className="money-grid keypad-money-grid">
         <button type="button" disabled={locked} className="fn-btn" onClick={() => { setDisplay(""); setQty(1); setGuided((g) => (g === null ? 0 : null)); }} data-testid="nail-quick-ticket">
           <Zap size={20} /><span>{guided !== null ? "Exit Quick" : "Quick Ticket"}</span>
+        </button>
+        <button type="button" disabled={locked} className={`fn-btn ${retail ? "fn-btn-active" : ""}`}
+          onClick={() => setRetail((v) => !v)} data-testid="nail-retail-toggle" aria-pressed={retail}>
+          <ShoppingBag size={20} /><span>{retail ? "Retail ✓" : "Retail"}</span>
         </button>
         <button type="button" disabled={locked || !onGiftCard} className="fn-btn" onClick={onGiftCard} data-testid="nail-gift-card">
           <Gift size={20} /><span>Gift Card</span>

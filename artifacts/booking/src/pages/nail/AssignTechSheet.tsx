@@ -21,7 +21,10 @@ interface Props {
 
 function statusOf(t: TurnTech): string {
   if (t.eligible) return "Available";
-  if (t.currentStatus === "busy") return "With a client";
+  // currentStatus "busy" covers two different things: an actual started service, or a tech merely
+  // locked/assigned to a checked-in client who hasn't started yet (see TechCards.tsx's statusOf()
+  // for the same distinction on the Techs board). `inService` disambiguates which one this is.
+  if (t.currentStatus === "busy") return t.inService ? "With a client" : "Assigned — not started yet";
   if (t.currentStatus === "on_break") return "On break";
   if (t.clockedIn === false) return "Not clocked in";
   return t.exclusionReasons?.[0] ?? "Unavailable";

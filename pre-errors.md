@@ -6,6 +6,30 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-09-24 — Duration-based Group Pay tip split ignores checkout-time "Extras" duration — `shared/nailCheckout.ts` / `artifacts/booking/src/pages/nail/CheckoutMode.tsx:362-370`
+
+**Found while:** A full bug-audit pass over the nail POS wrapper (two parallel review agents), requested after building the Queue tab.
+**Symptom:** `GroupMember.duration` (used to split a shared tip by how much work each tech actually did) is set to `ticket.duration` / `t.duration` — the persisted appointment duration only. It does not add any time for extras rung up at checkout (Retail, Removal/Quick Ticket steps, Custom Charge — see `computeCheckout()`'s `extras: Extra[]`). Those same extras DO count toward the dollar-value `base` used to split discount/totalPaid, just not toward the duration used to split tip. Concrete case: a tech rings up a $15 "Gel Polish Removal" extra at checkout on a Group Pay ticket — real additional minutes of work — but gets zero extra tip-duration credit for it relative to the other linked ticket(s).
+**Why not fixed now:** Not a quick patch — the `Extra` interface (`shared/nailCheckout.ts`) has no `duration` field at all today, for any of its four kinds (`retail | custom | addon | guided`), and there's no obvious universal way to estimate one (a flat custom dollar charge has no inherent time attached). Fixing this properly needs a product decision on whether/how extras should carry an estimated duration, not just a data-plumbing change — didn't want to invent an arbitrary estimate unilaterally under a "fix everything" instruction. Flagging for the user to decide the policy before this gets touched.
+
+---
+
+## 2026-09-24 — Same "linked ticket loses retail commission" bug also exists in the general (non-nail) Calendar checkout — `artifacts/booking/src/pages/Calendar.tsx:7285`
+
+**Found while:** Fixing the identical bug in the nail POS's `CheckoutMode.tsx` (linked/group-pay tickets always reported `productRevenue: 0`, commissioning retail items at the service rate). Grepped for the same `splitGroup`/`productRevenue` pattern elsewhere and found Calendar.tsx has its own, separate implementation of the same group-pay commission split, with the identical hardcoded-zero bug: `...linkedAppointments.map((a) => ({ id: a.id, base: ticketSubtotal(a), split: { serviceRevenue: ticketSubtotal(a), productRevenue: 0 } }))`.
+**Symptom:** A linked appointment's retail items (if any) get commissioned entirely at the service rate when paid as part of a group, same failure mode as the nail POS bug.
+**Why not fixed now:** Out of scope — this session's audit and fix were specifically scoped to "the nail POS wrapper" (`artifacts/booking/src/pages/nail/`). Calendar.tsx is a much larger (9000+ line), structurally different, unaudited checkout system for non-nail-salon businesses; fixing this properly needs the same kind of investigation into its own extras/line-item data model (does it even have a way to tag a linked appointment's line items as retail vs service today?) that the nail POS fix required, which wasn't done here.
+
+---
+
+## 2026-09-24 — `GOOGLE_API_KEY` has a stray `export` glued onto its value, no separator — `/etc/certxa.env:74`
+
+**Found while:** Updating `OWNER_APK_URL` in `/etc/certxa.env` for the receipt-redesign APK build; a file-changed-on-disk notice (actually just my own `sed -i` rewrite touching the mtime) led me to look closely at the surrounding lines.
+**Symptom:** `GOOGLE_API_KEY=AIzaSyAxsoKU5AeSZsL9pWKItvb4Wd8cYxUDohwexport` — the real key value has `export` fused directly onto its end with no space or newline, immediately followed by an unrelated `EXPO_TOKEN=...` line on the next line. Looks like `export EXPO_TOKEN=...` was appended to the file at some point when it didn't end in a trailing newline, and the two lines fused. Confirmed via `/etc/certxa.env.bak-*` backups that this exact corruption has been present unchanged since at least an Aug 22, 2026 backup — over a month, not a recent event. `GOOGLE_MAPS_API_KEY` (a separate key) looks intact. Any feature that reads `GOOGLE_API_KEY` specifically has likely had a broken value this whole time.
+**Why not fixed now:** User explicitly asked to leave it alone (2026-09-24). Fix, if ever wanted: split into `GOOGLE_API_KEY=AIzaSyAxsoKU5AeSZsL9pWKItvb4Wd8cYxUDohw` and `EXPO_TOKEN=...` on their own lines.
+
+---
+
 ## 2026-09-23 — SMS-receipt snapshot builder reads `store.zipCode`, a field that doesn't exist (the column is `postcode`) — `artifacts/api-server/src/routes.ts:19285`
 
 **Found while:** Redesigning the printed thermal-receipt layout (a separate feature) and its store-address plumbing. Found the identical `zipCode` typo in `artifacts/booking/src/pages/Calendar.tsx`'s printed-receipt call site and fixed it there as part of that task, then noticed this second, unrelated occurrence.

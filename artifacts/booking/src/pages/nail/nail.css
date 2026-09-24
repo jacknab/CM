@@ -72,6 +72,10 @@
 .nail-app .key-grid .enter-key { background: #0d9b6e; color: white; font-weight: 700; grid-column: span 2; font-size: 19px; border: 0; }
 .nail-app .money-grid { margin-top: 10px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .nail-app .money-grid button { min-height: 65px; font-size: 16px; color: #0d9bd1; font-weight: 700; }
+/* The Keypad's own money-grid has a 5th button (Retail) the shared 4-column layout doesn't allow for. */
+.nail-app .keypad-money-grid { grid-template-columns: repeat(5, 1fr); }
+.nail-app .money-grid button.fn-btn-active { background: rgba(139,92,246,.22); border-color: #8b5cf6; color: #e8eaed; }
+.nail-app .money-grid button.fn-btn-active svg { color: #a78bfa; }
 
 /* Catalog panel */
 .nail-app .catalog-panel { padding: 0 10px 7px; display: flex; flex-direction: column; position: relative; }
@@ -340,6 +344,15 @@
 .nail-app .arrived-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
 .nail-app .arrived-copy strong { font-size: 14px; font-weight: 700; color: #eef3fb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nail-app .arrived-copy span { font-size: 11px; color: #8b94a0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .arrived-name-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.nail-app .arrived-name-row strong { min-width: 0; }
+/* The one glanceable signal for "does this client already belong to a tech, or are they still up for grabs" —
+   deliberately NOT relying on the row's left-border color alone, since a tech with no color configured would
+   otherwise be visually identical to an unassigned/walk-in row. */
+.nail-app .arrived-chip { flex-shrink: 0; font-size: 9px; font-weight: 700; letter-spacing: .04em; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+.nail-app .arrived-chip[data-kind="walkin"] { background: #2a3038; color: #8b94a0; }
+.nail-app .arrived-chip[data-kind="assigned"] { background: rgba(139,92,246,.16); color: #a78bfa; }
+.nail-app .arrived-chip[data-kind="unassigned"] { background: rgba(245,158,11,.16); color: #f59e0b; }
 .nail-app .arrived-timer { flex-shrink: 0; font-size: 10px; font-weight: 700; color: #facc15; background: rgba(250,204,21,.10); border: 1px solid rgba(250,204,21,.25); padding: 3px 8px; border-radius: 10px; white-space: nowrap; }
 .nail-app .tech-stage { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .nail-app .tech-grid { display: grid; grid-auto-flow: column; align-content: start; justify-content: start; }
@@ -529,6 +542,12 @@
 .nail-app .tt-tile-orange { background: linear-gradient(145deg, #fff0e4, #fbe6d6); } .nail-app .tt-tile-orange svg { color: #ee7d2a; }
 .nail-app .tt-tile-slate { background: linear-gradient(145deg, #eef2f8, #e3e9f2); } .nail-app .tt-tile-slate svg { color: #6b7a92; }
 .nail-app .tt-tile-mint { background: linear-gradient(145deg, #e9f8f0, #ddf3e8); } .nail-app .tt-tile-mint svg { color: #12a86b; }
+.nail-app .tt-tile-indigo { background: linear-gradient(145deg, #eceafd, #e0dcfa); } .nail-app .tt-tile-indigo svg { color: #5a4fd1; }
+.nail-app .tt-tile-teal { background: linear-gradient(145deg, #e3f7f6, #d5f0ee); } .nail-app .tt-tile-teal svg { color: #0f9c92; }
+
+/* Queue tab's glance strip — same tile look as the Techs tab's, but 8 tiles instead of 6 */
+.nail-app .q-glance-row { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 1300px) { .nail-app .q-glance-row { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
 .nail-app .tt-panel .tech-stage { flex: 1; min-height: 0; min-width: 0; overflow: hidden; margin-top: 10px; }
 
@@ -663,10 +682,61 @@
 .nail-app .tt-tabs button.active { background: #fff; color: #1f6fe0; border-color: #c9d9f2; box-shadow: 0 2px 8px rgba(30, 60, 110, .10); }
 .nail-app .tt-tabs button.active em { background: #1f6fe0; color: #fff; }
 .nail-app .tt-panel .tt-pager { position: relative; margin-top: 8px; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
-.nail-app .tt-track { display: flex; width: 300%; height: 100%; will-change: transform; }
-.nail-app .tt-page { width: 33.3333%; flex: 0 0 33.3333%; height: 100%; min-width: 0; overflow: hidden; }
+.nail-app .tt-track { display: flex; height: 100%; will-change: transform; } /* width set inline — page count varies (Techs tab: 2, Queue tab: 2) */
+.nail-app .tt-page { flex: 0 0 auto; height: 100%; min-width: 0; overflow: hidden; } /* width set inline, matching .tt-track's per-page share */
 .nail-app .tt-page .checkin-empty { height: 100%; display: flex; align-items: center; justify-content: center; color: #6b7a92; font-size: 16px; font-weight: 600; }
 .nail-app .tt-page .checkin-empty p { margin: 0; }
+
+/* Queue tab — header (light .tt-panel background, so dark text, unlike the dark-themed checkin-board-header) */
+.nail-app .q-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
+.nail-app .q-header h1 { font-size: 24px; font-weight: 700; color: #0f1f3d; margin: 0; }
+.nail-app .q-header p { font-size: 13px; color: #5b6b85; margin: 4px 0 0; }
+
+/* "Create Next Ticket" — jumps straight to the earliest checked-in client without a ticket yet, so a
+   busy front desk doesn't have to hunt through the grid for them. */
+.nail-app .q-next-btn { flex-shrink: 0; display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 18px; border-radius: 10px; border: none; background: #1f6fe0; color: #fff; font-size: 14px; font-weight: 800; letter-spacing: .02em; box-shadow: 0 4px 14px rgba(31, 111, 224, .28); }
+.nail-app .q-next-btn:active { transform: scale(.97); }
+.nail-app .q-next-btn:disabled { background: #d7e0ee; color: #96a3ba; box-shadow: none; }
+
+/* Queue tab — waiting client card (same footprint as .tt-card, simpler content, all cards look alike on purpose) */
+.nail-app .q-card { position: absolute; top: 0; left: 0; transform-origin: top left; box-sizing: border-box; background: #fff; border: 1px solid #e3eaf3; border-radius: 16px; box-shadow: 0 8px 22px rgba(30, 60, 110, .09); padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; overflow: hidden; } /* overflow:hidden is a safety net — a long client/tech name must clip, never spill into the card below it */
+.nail-app .q-card:active { transform: scale(.98); }
+.nail-app .q-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+.nail-app .q-name { font-size: 20px; font-weight: 800; color: #0f1f3d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.nail-app .q-sub { font-size: 12px; font-weight: 800; letter-spacing: .05em; color: #5b6b85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .q-sub[data-kind="walkin"] { color: #6b7a92; }
+.nail-app .q-sub[data-kind="assigned"] { color: #0c8a55; }
+.nail-app .q-sub[data-kind="unassigned"] { color: #b7791f; }
+.nail-app .q-service { font-size: 15px; font-weight: 600; color: #2c3c58; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .q-since { font-size: 12px; color: #8592a8; margin-top: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Spotlighted card ("Create Next Ticket" was tapped) — a different background is the whole point:
+   a quick at-a-glance signal that this card was manually pulled forward and still needs a ticket
+   created, not that it's the system's next-assignable ticket. Position in the grid never changes. */
+.nail-app .q-card-spotlight { background: #fff6e0; border-color: #f0cf7a; box-shadow: 0 8px 22px rgba(197, 145, 15, .18); }
+.nail-app .q-card-clear { position: absolute; top: 10px; right: 10px; width: 26px; height: 26px; border-radius: 50%; border: none; background: rgba(15, 31, 61, .08); color: #5b6b85; display: grid; place-items: center; }
+.nail-app .q-card-clear:active { background: rgba(15, 31, 61, .16); }
+
+/* Take a mistaken/left walk-in off the waiting list — top-left, so it never collides with the
+   spotlight-clear button (top-right) when a card happens to be both a walk-in and spotlighted. */
+.nail-app .q-card-remove { position: absolute; top: 10px; left: 10px; width: 24px; height: 24px; border-radius: 50%; border: none; background: transparent; color: #a2acbc; display: grid; place-items: center; }
+.nail-app .q-card-remove:active { background: rgba(239, 90, 95, .12); color: #ef5a5f; }
+.nail-app .tt-compact .q-card-remove { width: 18px; height: 18px; top: 6px; left: 6px; }
+.nail-app .q-card-has-remove .q-name { margin-left: 22px; } /* clears the remove button so it never overlaps the client's name */
+.nail-app .tt-compact .q-card-has-remove .q-name { margin-left: 16px; }
+.nail-app .q-spotlight-tag { font-size: 11px; font-weight: 800; letter-spacing: .04em; color: #97690a; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Compact density (many clients waiting at once) — same shrink pattern as .tt-compact .tt-card.
+   The spotlight tag is dropped here rather than shrunk further: the card's background color is
+   already the signal, and there is no room left for a 5th line at this density. */
+.nail-app .tt-compact .q-card { padding: 8px 10px; gap: 4px; border-radius: 10px; box-shadow: 0 3px 10px rgba(30, 60, 110, .08); }
+.nail-app .tt-compact .q-name { font-size: 14px; }
+.nail-app .tt-compact .q-sub { font-size: 9.5px; }
+.nail-app .tt-compact .q-service { font-size: 11px; }
+.nail-app .tt-compact .q-since { font-size: 9.5px; }
+.nail-app .tt-compact .q-card .tt-timer { font-size: 13px; }
+.nail-app .tt-compact .q-card-clear { width: 20px; height: 20px; top: 6px; right: 6px; }
+.nail-app .tt-compact .q-spotlight-tag { display: none; }
 
 /* Clocked In page: the NEXT badge sits to the left of the FREE timer box */
 .nail-app .tt-nextup-side { align-self: center; flex-shrink: 0; margin-right: 12px; font-size: 15px; letter-spacing: .12em; padding: 6px 14px; border-radius: 8px; }

@@ -35,7 +35,15 @@ export interface NailPick {
 
 export const EMPTY_PICK: NailPick = { size: null, shape: null, application: null, effect: null };
 
-const num = (v: unknown) => (v == null || v === "" ? 0 : Number(v) || 0);
+// Falls back to 0 for a null/malformed catalog value rather than crashing or showing "$NaN" — but a
+// non-numeric, non-empty value becomes an invisibly-free line item with no signal anywhere else, so
+// at least surface it here for whoever's debugging a short till.
+const num = (v: unknown) => {
+  if (v == null || v === "") return 0;
+  const n = Number(v);
+  if (!Number.isFinite(n)) { console.warn("[nail] catalog value is not a number, treating as 0:", v); return 0; }
+  return n;
+};
 
 /** GET /api/services/:id/nail-config → only the enabled options, or null when the service has none. */
 export function normalizeNailConfig(raw: any): NailConfigView | null {
@@ -92,18 +100,23 @@ export interface NailAdjustment {
   price: number;
   duration: number;
   lines: TicketLine[];
+  /** Groups whose picked option id no longer exists in `cfg` (e.g. an admin disabled/deleted it
+   *  while this ticket was mid-build) — that group's price/duration was silently dropped from the
+   *  totals above. The `pick` state itself is untouched, so the caller can warn staff instead of
+   *  the charge just quietly coming up short. */
+  dropped: NailGroup[];
 }
 
 const GROUP_LABEL: Record<NailGroup, string> = { size: "Length", shape: "Shape", application: "Art", effect: "Effect" };
 
 export function nailAdjustment(cfg: NailConfigView | null, pick: NailPick): NailAdjustment {
-  const out: NailAdjustment = { price: 0, duration: 0, lines: [] };
+  const out: NailAdjustment = { price: 0, duration: 0, lines: [], dropped: [] };
   if (!cfg) return out;
   (["size", "shape", "application", "effect"] as NailGroup[]).forEach((group) => {
     const id = pick[group];
     if (id == null) return;
     const opt = optionsFor(cfg, group).find((o) => o.id === id);
-    if (!opt) return;
+    if (!opt) { out.dropped.push(group); return; }
     // Quote-priced art (an application) is priced at checkout, so it adds no money here.
     const price = group === "application" && opt.isQuote ? 0 : opt.priceAdjustment;
     out.price += price;
@@ -138,6 +151,8 @@ export interface DraftTotals {
   lines: TicketLine[];
   duration: number;
   price: number;
+  /** See NailAdjustment.dropped — surfaced here so the ticket screen can warn staff. */
+  dropped: NailGroup[];
 }
 
 /** A keypad "Custom Amount" line while the ticket is being built. */
@@ -145,6 +160,9 @@ export interface DraftCustomLine {
   id: number;
   label: string;
   price: number;
+  /** A product sale rung up as a custom line (commissioned at the product rate, not service) — the
+   *  only way to mark retail on a ticket that isn't the one currently open at Checkout. */
+  isRetail?: boolean;
 }
 
 export function draftTotals(
@@ -156,13 +174,16 @@ export function draftTotals(
   custom: DraftCustomLine[] = [],
 ): DraftTotals {
   const lines: TicketLine[] = [];
+  let dropped: NailGroup[] = [];
   if (service) {
     lines.push({ key: `svc-${service.id}`, kind: "service", label: service.name, duration: num(service.duration), price: num(service.price) });
     for (const id of addonIds) {
       const a = addons.find((x) => x.id === id);
       if (a) lines.push({ key: `addon-${a.id}`, kind: "addon", label: a.name, duration: num(a.duration), price: num(a.price), addonId: a.id });
     }
-    lines.push(...nailAdjustment(cfg, pick).lines);
+    const nail = nailAdjustment(cfg, pick);
+    lines.push(...nail.lines);
+    dropped = nail.dropped;
   }
   for (const c of custom) {
     lines.push({ key: `custom-${c.id}`, kind: "custom", label: c.label, duration: 0, price: c.price, customId: c.id });
@@ -171,6 +192,7 @@ export function draftTotals(
     lines,
     duration: lines.reduce((s, l) => s + l.duration, 0),
     price: Math.round(lines.reduce((s, l) => s + l.price, 0) * 100) / 100,
+    dropped,
   };
 }
 
@@ -193,9 +215,12 @@ export function toNailBody(pick: NailPick) {
 }
 
 export function formatDuration(totalMinutes: number): string {
-  if (!totalMinutes) return "0 min";
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
+  // A negative nail-option duration adjustment could in principle exceed the base service
+  // duration; clamp rather than print something like "-1 hr -5 min" to staff.
+  const total = Math.max(0, totalMinutes || 0);
+  if (!total) return "0 min";
+  const hours = Math.floor(total / 60);
+  const minutes = total % 60;
   if (hours === 0) return `${minutes} min`;
   if (minutes === 0) return `${hours} hr`;
   return `${hours} hr ${minutes} min`;
@@ -203,7 +228,10 @@ export function formatDuration(totalMinutes: number): string {
 
 /** "5 min ago", "1 hr 5 min ago" — for the waiting / in-service timers. */
 export function formatElapsed(fromIso: string, now: number = Date.now()): string {
-  const minutes = Math.max(0, Math.floor((now - new Date(fromIso).getTime()) / 60000));
+  const parsed = new Date(fromIso).getTime();
+  // A malformed/missing timestamp must not render as the literal string "NaN hr NaN min" on a live POS screen.
+  if (Number.isNaN(parsed)) return "—";
+  const minutes = Math.max(0, Math.floor((now - parsed) / 60000));
   if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes} min`;
   const h = Math.floor(minutes / 60);

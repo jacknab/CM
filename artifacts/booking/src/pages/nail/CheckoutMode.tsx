@@ -97,10 +97,13 @@ export function CheckoutMode(p: Props) {
 
   const amount = centsToDollars(cents);
   const linked = useMemo(() => p.otherTickets.filter((t) => linkedIds.includes(t.id)), [p.otherTickets, linkedIds]);
+  // A Retail-marked custom line built into the ticket itself (see CatalogPanel's Keypad) is still
+  // part of ticket.total, but must be pulled out of service revenue for commission purposes.
+  const ticketRetailTotal = useMemo(() => ticket.customLines.filter((l) => l.isRetail).reduce((s, l) => s + l.price, 0), [ticket.customLines]);
   const totals = useMemo(() => computeCheckout({
-    ticketTotal: ticket.total, extras, linkedSubtotal: linked.reduce((s, t) => s + t.total, 0),
+    ticketTotal: ticket.total, ticketRetailTotal, extras, linkedSubtotal: linked.reduce((s, t) => s + t.total, 0),
     discount, rewardDollar: reward?.dollarValue ?? 0, tip, tenders,
-  }), [ticket.total, extras, linked, discount, reward, tip, tenders]);
+  }), [ticket.total, ticketRetailTotal, extras, linked, discount, reward, tip, tenders]);
 
   // ── customer-facing screen ────────────────────────────────────────────────
   const send = (type: string, payload: Record<string, unknown> = {}) => {
@@ -275,9 +278,16 @@ export function CheckoutMode(p: Props) {
   const rest = () => totals.balanceDue;
   /** What a tender takes: the keypad amount (a part-payment) or, with nothing typed, the whole balance. */
   const wanted = () => (amount > 0 ? amount : rest());
+  // Guards against a double-tap / touch-bounce registering the same cash amount twice — CASH has
+  // no busy state the way CARD does (disabled={cardBusy}), and takeCash runs synchronously with
+  // nothing to naturally prevent two rapid taps from each reading the same `wanted()` value.
+  const cashLock = useRef(false);
   const takeCash = () => {
+    if (cashLock.current) return;
     const value = wanted();
     if (value <= 0) return say(rest() <= 0 ? "NOTHING DUE" : "ENTER AN AMOUNT FIRST", "error");
+    cashLock.current = true;
+    setTimeout(() => { cashLock.current = false; }, 600);
     openDrawer(); // cash may be over-tendered — change comes back
     setTenders((cur) => [...cur, { id: nextId.current++, method: "cash", amount: value }]);
     setCents("");
@@ -338,7 +348,11 @@ export function CheckoutMode(p: Props) {
   const finish = () => {
     if (!totals.settled || p.finalizing) return;
     // Change is only ever handed back in cash — a gift card can't give any, so it would just lose the customer's money.
-    if (totals.changeDue > 0 && tenders.some((t) => t.method === "gift")) return say("GIFT CARD PAYMENT IS MORE THAN THE TOTAL — REMOVE OR REDUCE IT", "error");
+    // Only a problem when the GIFT CARD itself is what overpaid: a completely normal cash overpayment
+    // (e.g. gift $20 toward a $50 ticket, customer hands over $40 cash expecting $10 back) must not
+    // trip this — the cash tendered already covers the change, regardless of a gift card being used too.
+    const cashTendered = tenders.filter((t) => t.method === "cash").reduce((s, t) => s + t.amount, 0);
+    if (totals.changeDue > cashTendered && tenders.some((t) => t.method === "gift")) return say("GIFT CARD PAYMENT IS MORE THAN THE TOTAL — REMOVE OR REDUCE IT", "error");
     const methods = paymentMethodSummary(tenders);
     const giftByCard = new Map<string, number>();
     for (const t of tenders) if (t.method === "gift" && t.code) giftByCard.set(t.code, r2((giftByCard.get(t.code) ?? 0) + t.amount));
@@ -346,8 +360,14 @@ export function CheckoutMode(p: Props) {
     let groupTickets: FinalizeData["groupTickets"];
     if (linked.length > 0) {
       groupTickets = splitGroup(
-        [{ appointmentId: ticket.id, base: ownBase, serviceRevenue: totals.serviceRevenue, productRevenue: totals.productRevenue },
-          ...linked.map((t) => ({ appointmentId: t.id, base: t.total, serviceRevenue: t.total, productRevenue: 0 }))],
+        [{ appointmentId: ticket.id, base: ownBase, duration: ticket.duration, serviceRevenue: totals.serviceRevenue, productRevenue: totals.productRevenue },
+          // A linked ticket's own customLines can carry a Retail-marked line too (rung up on that
+          // ticket before it was ever pulled into this group) — split its base the same way,
+          // instead of always crediting the whole thing to service revenue.
+          ...linked.map((t) => {
+            const retail = r2(t.customLines.filter((l) => l.isRetail).reduce((s, l) => s + l.price, 0));
+            return { appointmentId: t.id, base: t.total, duration: t.duration, serviceRevenue: r2(t.total - retail), productRevenue: retail };
+          })],
         { tip: totals.tip, discount: totals.discount, totalPaid: totals.totalPaid }, methods);
     }
     send("kiosk_checkout_cancel");

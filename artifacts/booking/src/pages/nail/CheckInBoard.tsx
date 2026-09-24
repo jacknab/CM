@@ -35,7 +35,6 @@ export function CheckInBoard(p: Props) {
     .filter((t) => t.status === "started")
     .sort((a, b) => +new Date(a.startedAt ?? a.date) - +new Date(b.startedAt ?? b.date));
   const unpaidTotal = inService.reduce((s, t) => s + t.total, 0);
-  // A card can also be opened for a ticket that hasn't started yet (tapped on the Techs page's waiting list) — it gets START.
   const open = p.tickets.find((t) => t.id === openId) ?? null;
 
   const card = (t: BoardTicket) => {

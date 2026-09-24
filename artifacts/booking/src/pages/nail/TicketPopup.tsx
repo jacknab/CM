@@ -60,7 +60,7 @@ export function TicketPopup(p: Props) {
               <span><Phone size={13} /> {t.client.phone ?? "No phone"}</span>
             </div>
             <div className="checkin-status-pill" style={{ marginRight: 40 }} data-in-service={t.status === "started"}>
-              {t.status === "started" ? "IN SERVICE · UNPAID" : "WAITING"}
+              {t.status === "started" ? "IN SERVICE · UNPAID" : t.staff ? `WAITING · WITH ${t.staff.name.toUpperCase()}` : "WAITING · UNASSIGNED"}
             </div>
           </div>
           <div className="checkin-modal-body">

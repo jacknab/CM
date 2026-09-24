@@ -693,6 +693,11 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
         turnPosition: memberDequePos,
         turnCount: turnCountMap.get(member.id) ?? 0,
         currentStatus,
+        // Distinguishes the two things that both collapse into currentStatus "busy": an actual
+        // started service (busyStaffIds) vs. the Consideration Lock (a client checked in and
+        // assigned but not yet started — lockedStaffIdSet). Lets callers like the tech-assignment
+        // sheet say "with a client" only when that's literally true, instead of for both cases.
+        inService: busyStaffIds.has(member.id),
         // Techs-page timer: when they entered their current state. Only trusted while the stored state still matches.
         availabilityState: techStateOf({ clockedIn: isClockedIn, paused, currentStatus }),
         stateSince:

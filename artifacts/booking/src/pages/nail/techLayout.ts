@@ -19,6 +19,11 @@ export const COMPACT_H = 132;
 const MAX_SCALE = 1.5;
 /** Below this the roomy card's text is too small to read at a glance. */
 export const MIN_READABLE_SCALE = 0.75;
+/** Floor for `layoutFor`'s scale — without it, a transiently tiny (but positive) container size
+ *  during a swipe-page transition, or GAP*(cols-1) exceeding the container width, can produce a
+ *  negative scale (inverted/invisible cards for a frame). Deliberately below MIN_READABLE_SCALE:
+ *  this is a safety floor, not a "still readable" guarantee. */
+const MIN_SCALE = 0.05;
 
 export interface TechLayout {
   cols: number;
@@ -42,7 +47,7 @@ function layoutFor(cols: number, rows: number, width: number, height: number, d:
   const cellW = (width - GAP * (cols - 1)) / cols;
   const cellH = (height - GAP * (rows - 1)) / rows;
   const uncapped = Math.min(cellW / d.w, cellH / d.h);
-  const scale = Math.min(MAX_SCALE, uncapped);
+  const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, uncapped));
   return {
     cols, rows, scale, compact: d.compact,
     cardW: cellW / scale,
@@ -69,6 +74,9 @@ function bestFor(count: number, width: number, height: number, d: Design): TechL
 }
 
 export function computeTechLayout(count: number, width: number, height: number, lean = false): TechLayout {
+  // `count` isn't realistically NaN from any real caller (it's always techs.length), but Math.ceil/
+  // Math.max propagate NaN with no defensive fallback otherwise — matching the width/height guard below.
+  if (!Number.isFinite(count) || count < 0) count = 0;
   const cols = Math.max(1, Math.ceil(count / CARDS_PER_COLUMN));
   const rows = Math.max(1, Math.min(count, CARDS_PER_COLUMN));
   if (width <= 0 || height <= 0) return { cols, rows, scale: 1, cardW: CARD_W, cardH: CARD_H, compact: false };

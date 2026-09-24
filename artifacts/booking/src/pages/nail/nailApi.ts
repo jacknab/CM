@@ -23,7 +23,7 @@ export interface BoardTicket {
     priceAdjustment: number;
     lines: { label: string; price: number }[];
   } | null;
-  customLines: { label: string; price: number }[];
+  customLines: { label: string; price: number; isRetail?: boolean }[];
   staff: { id: number; name: string; color: string | null } | null;
   total: number;
 }
@@ -75,6 +75,9 @@ export interface TurnTech {
   turnPosition?: number;
   exclusionReasons?: string[];
   currentStatus?: "available" | "busy" | "on_break";
+  /** True only for an actual started service — distinct from currentStatus "busy", which also
+   *  covers a tech merely locked/assigned to a checked-in client who hasn't started yet. */
+  inService?: boolean;
 }
 
 export interface CreatedTicket {
@@ -142,7 +145,7 @@ export interface TicketBody {
   serviceId: number;
   addonIds: number[];
   pick: NailPick;
-  customLines: { label: string; price: number }[];
+  customLines: { label: string; price: number; isRetail?: boolean }[];
 }
 
 export const createTicket = (body: TicketBody & { clientId: number; staffId?: number | null; checkinId?: number | null }) =>
@@ -250,6 +253,13 @@ export async function completeTicket(id: number, data: FinalizeData): Promise<vo
       throw new ApiError(`Loyalty reward: ${err?.message ?? "could not be redeemed"}`, err?.status ?? 400, err?.data);
     }
   }
+  // Past this point, any gift card money or loyalty points above have ALREADY been taken from the
+  // customer — there is no reversal path anywhere in this app if the sale doesn't end up closing.
+  // Retrying completeTicket is safe (every step above is idempotent), but if the cashier doesn't
+  // retry — cancels the ticket, walks away — that money/points are simply gone with no completed
+  // sale. Say so explicitly on a PATCH failure instead of surfacing whatever generic error the
+  // PATCH itself produced, so staff know not to re-redeem and to retry THIS SAME ticket instead.
+  const tookMoney = (data.giftCards?.length ?? 0) > 0 || !!data.redemption?.rewardId;
   const patch = (apptId: number, d: { paymentMethod: string; tip: number; discount: number; totalPaid: number; serviceRevenue: number; productRevenue: number }) =>
     call(`/api/appointments/${apptId}`, {
       method: "PATCH",
@@ -264,8 +274,33 @@ export async function completeTicket(id: number, data: FinalizeData): Promise<vo
       }),
     });
   if (data.groupTickets && data.groupTickets.length > 0) {
-    await Promise.all(data.groupTickets.map((g) => patch(g.appointmentId, g)));
+    // Promise.all would let some tickets in the group commit as "completed" while others reject —
+    // the full group payment was already taken, but only the succeeded ones get marked paid, with
+    // no way to tell which from the caller's perspective. Report exactly which ids failed instead.
+    const results = await Promise.allSettled(data.groupTickets.map((g) => patch(g.appointmentId, g)));
+    const failed = results
+      .map((r, i) => ({ r, apptId: data.groupTickets![i].appointmentId }))
+      .filter((x): x is { r: PromiseRejectedResult; apptId: number } => x.r.status === "rejected");
+    if (failed.length > 0) {
+      const succeededIds = data.groupTickets.filter((g) => !failed.some((f) => f.apptId === g.appointmentId)).map((g) => g.appointmentId);
+      const firstErr: any = failed[0].r.reason;
+      const moneyNote = tookMoney ? " Gift card/loyalty redemption for the group already went through — do not redeem again." : "";
+      throw new ApiError(
+        `${succeededIds.length > 0 ? `Ticket #${succeededIds.join(", #")} saved, but ` : ""}ticket #${failed.map((f) => f.apptId).join(", #")} did NOT save (${firstErr?.message ?? "unknown error"}) even though the group payment was taken.${moneyNote} Retry this same group, or complete the failed ticket(s) manually.`,
+        firstErr?.status ?? 400, firstErr?.data,
+      );
+    }
     return;
   }
-  await patch(id, data);
+  try {
+    await patch(id, data);
+  } catch (err: any) {
+    if (tookMoney) {
+      throw new ApiError(
+        `The gift card/loyalty redemption above already went through, but saving the sale failed (${err?.message ?? "unknown error"}). Do NOT redeem again — retry this same ticket, or complete it manually.`,
+        err?.status ?? 400, err?.data,
+      );
+    }
+    throw err;
+  }
 }

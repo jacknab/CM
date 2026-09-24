@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
-import { CalendarDays, LogIn, MoreHorizontal, UserCog, UserRound, type LucideIcon } from "lucide-react";
+import { CalendarDays, LogIn, MoreHorizontal, Receipt, Users, UserCog, UserRound, type LucideIcon } from "lucide-react";
 
-export type NailTab = "techs" | "pos" | "board";
+export type NailTab = "queue" | "techs" | "pos" | "board";
 
 interface Props {
   tab: NailTab;
@@ -13,11 +13,13 @@ interface Props {
   live: boolean;
 }
 
-// POS and In Service have no footer button — those tabs are still opened from inside the app (ticket taps, check-in, checkout).
+// POS has no footer button — it's still opened from inside the app (ticket taps, check-in, checkout).
 export function BottomNav({ tab, onTab, onCheckIn, onMore, waiting, inService, live }: Props) {
   const navigate = useNavigate();
-  const items: { label: string; icon: LucideIcon; active?: boolean; run: () => void; badges?: boolean }[] = [
+  const items: { label: string; icon: LucideIcon; active?: boolean; run: () => void; badgeCount?: number }[] = [
+    { label: "Queue", icon: Users, active: tab === "queue", run: () => onTab("queue"), badgeCount: waiting },
     { label: "Techs", icon: UserCog, active: tab === "techs", run: () => onTab("techs") },
+    { label: "In Service", icon: Receipt, active: tab === "board", run: () => onTab("board"), badgeCount: inService },
     { label: "Calendar", icon: CalendarDays, run: () => navigate("/calendar") },
     { label: "Customers", icon: UserRound, run: () => navigate("/client-lookup") },
     { label: "Check-In", icon: LogIn, run: onCheckIn },
@@ -25,11 +27,11 @@ export function BottomNav({ tab, onTab, onCheckIn, onMore, waiting, inService, l
   ];
   return (
     <nav className="bottom-nav" data-testid="nail-bottom-nav">
-      {items.map(({ label, icon: Icon, active, run, badges }) => (
+      {items.map(({ label, icon: Icon, active, run, badgeCount }) => (
         <button key={label} type="button" onClick={run} className={active ? "active" : ""} data-testid={`nail-nav-${label.toLowerCase().replace(/\s+/g, "-")}`}>
           <Icon size={28} />
           <span>{label}</span>
-          {badges && inService > 0 && <i className="nav-badge-service">{inService}</i>}
+          {!!badgeCount && <i className="nav-badge-service">{badgeCount}</i>}
         </button>
       ))}
       <div className="connection" data-testid="nail-live" style={live ? undefined : { color: "#8b94a0" }}>
