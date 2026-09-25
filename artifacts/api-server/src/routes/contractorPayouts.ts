@@ -95,6 +95,28 @@ export async function createPayoutRunForPeriod(
   const periodStartDate = new Date(periodStart + "T00:00:00Z");
   const periodEndDate   = new Date(periodEnd   + "T23:59:59Z");
 
+  // `contractors.commissionRate`/`productCommissionRate` is a copy made once,
+  // the moment a contractor row is auto-created for a staff member (see the
+  // auto-sync above this function's caller) — it is never refreshed after that,
+  // so it silently goes stale the next time the tech's real rate is edited on
+  // `staff` (the only table the Commission page actually writes to). The
+  // fallback below (for tickets with no accrual coverage) uses the live staff
+  // rate instead, so `staff` stays the single source of truth for the rate
+  // itself; `contractors` is only for payout mechanics (bank/tax/method).
+  const staffRateMap = new Map<number, { commissionRate: number; productCommissionRate: number }>();
+  if (staffIds.length > 0) {
+    const staffRateRows = await db
+      .select({ id: staff.id, commissionRate: staff.commissionRate, productCommissionRate: staff.productCommissionRate })
+      .from(staff)
+      .where(inArray(staff.id, staffIds));
+    for (const s of staffRateRows) {
+      staffRateMap.set(s.id, {
+        commissionRate: Number(s.commissionRate ?? 0),
+        productCommissionRate: Number(s.productCommissionRate ?? 0),
+      });
+    }
+  }
+
   const apptRows = staffIds.length > 0
     ? await db
         .select({
@@ -200,8 +222,9 @@ export async function createPayoutRunForPeriod(
       ? apptRows.filter(a => a.staffId === c.staffId)
       : [];
 
-    const commRate = Number(c.commissionRate ?? 0) / 100;
-    const prodRate = Number(c.productCommissionRate ?? 0) / 100;
+    const staffRate = c.staffId ? staffRateMap.get(c.staffId) : undefined;
+    const commRate = (staffRate?.commissionRate ?? Number(c.commissionRate ?? 0)) / 100;
+    const prodRate = (staffRate?.productCommissionRate ?? Number(c.productCommissionRate ?? 0)) / 100;
 
     let serviceRevenue = 0, productRevenue = 0, tips = 0, accrualCommission = 0, fallbackCommission = 0;
     const sweptIds: number[] = [];
@@ -1981,18 +2004,23 @@ router.get("/hub-summary", isAuthenticated, async (req: Request, res: Response):
     const contractorStaffIds = new Set(contractorRows.map((c) => c.staffId).filter((x): x is number => x != null));
     const pendingContractorCents = new Map(pendingByContractor.map((r) => [r.contractorId, Number(r.total)]));
     const pendingStaffCents = new Map(pendingByStaff.map((r) => [r.staffId, Number(r.total)]));
+    const staffById = new Map(staffRows.map((s) => [s.id, s]));
 
     const contractorPeople = contractorRows.map((c) => {
       const status =
         c.bankVerified ? "ready" :
         c.onboardingStatus === "restricted" ? "restricted" :
         c.onboardingStatus === "in_progress" ? "in_progress" : "needs_bank";
+      // Rate comes from `staff` (the Commission page's only write target), not
+      // the one-time copy on `contractors`, which never gets refreshed after a
+      // contractor row is first auto-created — see createPayoutRunForPeriod.
+      const linkedStaff = c.staffId ? staffById.get(c.staffId) : undefined;
       return {
         type: "contractor" as const,
         id: c.id,
         staffId: c.staffId,
         name: `${c.firstName} ${c.lastName}`.trim() || c.name,
-        commissionRate: c.commissionRate,
+        commissionRate: linkedStaff?.commissionRate ?? c.commissionRate,
         accruedPending: (pendingContractorCents.get(c.id) ?? 0) / 100,
         payoutMethod: c.payoutMethod,
         status,
