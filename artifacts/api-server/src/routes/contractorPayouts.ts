@@ -164,6 +164,34 @@ export async function createPayoutRunForPeriod(
     adjByContractor.set(adj.contractorId, (adjByContractor.get(adj.contractorId) ?? 0) + Number(adj.amount));
   }
 
+  // Source of truth for the commission amount: the frozen per-ticket accrual
+  // written by lib/commissionAccrual.ts at completion time (migration 0160),
+  // not a fresh recompute against the contractor's CURRENT rate (which may have
+  // changed since the ticket completed). `payoutRunItemId IS NULL` excludes rows
+  // already swept into an earlier run, so the same ticket can never be paid twice.
+  // Appointments with no matching accrual row (legacy tickets from before this
+  // system existed, or the rare skip case in recordCommissionAccrual) still fall
+  // back to a live computation below — nothing is silently dropped.
+  const contractorIds = targetContractors.map(c => c.id);
+  const accrualRows = contractorIds.length > 0
+    ? await db
+        .select({ id: contractorCommissions.id, contractorId: contractorCommissions.contractorId, appointmentId: contractorCommissions.appointmentId, amount: contractorCommissions.amount })
+        .from(contractorCommissions)
+        .where(and(
+          eq(contractorCommissions.storeId, sId),
+          eq(contractorCommissions.status, "pending"),
+          sql`${contractorCommissions.payoutRunItemId} IS NULL`,
+          inArray(contractorCommissions.contractorId, contractorIds),
+          sql`${contractorCommissions.earnedDate} >= ${periodStart}`,
+          sql`${contractorCommissions.earnedDate} <= ${periodEnd}`,
+        ))
+    : [];
+  const accrualByAppt = new Map<number, { id: number; amount: number }>();
+  for (const r of accrualRows) {
+    if (r.appointmentId != null) accrualByAppt.set(r.appointmentId, { id: r.id, amount: r.amount });
+  }
+  const sweptAccrualIdsByContractor = new Map<number, number[]>();
+
   const itemValues: typeof payoutRunItems.$inferInsert[] = [];
   let totalGross = 0, totalDeductions = 0, totalNet = 0;
 
@@ -172,7 +200,11 @@ export async function createPayoutRunForPeriod(
       ? apptRows.filter(a => a.staffId === c.staffId)
       : [];
 
-    let serviceRevenue = 0, productRevenue = 0, tips = 0;
+    const commRate = Number(c.commissionRate ?? 0) / 100;
+    const prodRate = Number(c.productCommissionRate ?? 0) / 100;
+
+    let serviceRevenue = 0, productRevenue = 0, tips = 0, accrualCommission = 0, fallbackCommission = 0;
+    const sweptIds: number[] = [];
     for (const a of myAppts) {
       // One rule for everyone (see @shared/commissionBasis): services + add-ons at the service rate,
       // retail products at the product rate, all pre-discount / pre-tax / pre-tip — a discount
@@ -181,11 +213,18 @@ export async function createPayoutRunForPeriod(
       serviceRevenue += basis.service;
       productRevenue += basis.product;
       tips           += Number(a.tipAmount ?? 0);
-    }
 
-    const commRate    = Number(c.commissionRate ?? 0) / 100;
-    const prodRate    = Number(c.productCommissionRate ?? 0) / 100;
-    const grossAmount = serviceRevenue * commRate + productRevenue * prodRate;
+      const accrual = accrualByAppt.get(a.id);
+      if (accrual) {
+        accrualCommission += accrual.amount / 100;
+        sweptIds.push(accrual.id);
+      } else {
+        fallbackCommission += basis.service * commRate + basis.product * prodRate;
+      }
+    }
+    sweptAccrualIdsByContractor.set(c.id, sweptIds);
+
+    const grossAmount = accrualCommission + fallbackCommission;
 
     const applicable = deductionRules.filter(d =>
       d.appliesTo === "all" || (d.appliesTo === "specific" && d.contractorId === c.id)
@@ -257,6 +296,19 @@ export async function createPayoutRunForPeriod(
   const items = await db
     .select().from(payoutRunItems)
     .where(eq(payoutRunItems.payoutRunId, run.id));
+
+  // Link every accrual row swept into this run to the item that claimed it, so
+  // it can never be pulled into a second run (see the payoutRunItemId IS NULL
+  // filter above) and the hub's "still accruing" total stops counting it.
+  for (const item of items) {
+    const sweptIds = sweptAccrualIdsByContractor.get(item.contractorId);
+    if (sweptIds && sweptIds.length > 0) {
+      await db.update(contractorCommissions)
+        .set({ payoutRunItemId: item.id })
+        .where(inArray(contractorCommissions.id, sweptIds));
+    }
+  }
+
   return { run, items };
 }
 
@@ -1908,7 +1960,14 @@ router.get("/hub-summary", isAuthenticated, async (req: Request, res: Response):
         contractorId: contractorCommissions.contractorId,
         total: sql<string>`COALESCE(SUM(${contractorCommissions.amount}), 0)`,
       }).from(contractorCommissions)
-        .where(and(eq(contractorCommissions.storeId, sId), eq(contractorCommissions.status, "pending")))
+        // payoutRunItemId IS NULL excludes rows already swept into a (draft or
+        // later) payout run — otherwise this "still accruing" total double-counts
+        // money a run has already claimed but not yet paid out.
+        .where(and(
+          eq(contractorCommissions.storeId, sId),
+          eq(contractorCommissions.status, "pending"),
+          sql`${contractorCommissions.payoutRunItemId} IS NULL`,
+        ))
         .groupBy(contractorCommissions.contractorId),
       db.select().from(staff).where(and(eq(staff.storeId, sId), ne(staff.status, "removed"))),
       db.select({
