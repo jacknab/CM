@@ -1046,29 +1046,6 @@ require __DIR__ . '/../includes/nav.php';
   </div>
 </section>
 
-<!-- ══ 2. STATS BAR ════════════════════════════════════════════ -->
-<section class="au2-stats-bar">
-  <div class="au2-stats-grid">
-    <?php
-    $stats = [
-      ['📞','Calls Answered','2,847','this week'],
-      ['📅','Appointments Booked','1,203',''],
-      ['⚡','Avg Response Time','< 2 sec',''],
-      ['⭐','Client Satisfaction','98.4%',''],
-    ];
-    foreach ($stats as $i => [$icon,$lbl,$val,$sub]):
-    ?>
-    <div class="au2-stat-col fade-in" style="transition-delay:<?= $i * 0.08 ?>s">
-      <div class="au2-stat-col-icon"><?= $icon ?> <?= $lbl ?></div>
-      <div class="au2-stat-col-val">
-        <?= $val ?>
-        <?php if ($sub): ?><span class="au2-stat-col-sub"><?= $sub ?></span><?php endif; ?>
-      </div>
-    </div>
-    <?php endforeach; ?>
-  </div>
-</section>
-
 <!-- ══ 3. MEET AUTUMN ══════════════════════════════════════════ -->
 <section class="au2-section au2-section-cream">
   <div class="au2-container">
@@ -1099,63 +1076,6 @@ require __DIR__ . '/../includes/nav.php';
           </li>
           <?php endforeach; ?>
         </ul>
-      </div>
-
-      <!-- Right — call log card -->
-      <div class="fade-in" style="transition-delay:.2s">
-        <div class="au2-call-card">
-          <div class="au2-call-card-head">
-            <div style="display:flex;align-items:center;gap:12px;">
-              <div class="au2-call-card-avatar">A</div>
-              <div>
-                <div style="font-weight:700;font-size:.9rem;">Autumn — Call History</div>
-                <div style="font-size:.75rem;opacity:.7;">Your AI receptionist activity</div>
-              </div>
-            </div>
-            <div style="display:flex;align-items:center;gap:6px;background:rgba(16,185,129,.25);padding:4px 12px;border-radius:50px;font-size:.72rem;font-weight:700;color:#6ee7b7;">
-              <span style="width:6px;height:6px;border-radius:50%;background:#10B981;display:inline-block;"></span>
-              Active
-            </div>
-          </div>
-
-          <div class="au2-call-mini-stats">
-            <?php foreach ([['34','Calls Today'],['2m 18s','Avg Duration'],['21','Bookings']] as [$v,$l]): ?>
-            <div class="au2-call-mini-stat">
-              <div class="au2-call-mini-val"><?= $v ?></div>
-              <div class="au2-call-mini-lbl"><?= $l ?></div>
-            </div>
-            <?php endforeach; ?>
-          </div>
-
-          <?php
-          $calls = [
-            ['S','Sarah M.','(305) 555-0142','Booked',  '1m 54s','9:12 AM', 'rgba(16,185,129,.1)', '#059669'],
-            ['J','James T.','(786) 555-0388','Rescheduled','2m 31s','9:47 AM','rgba(59,130,246,.1)','#2563eb'],
-            ['E','Emma L.', '(954) 555-0271','Cancelled','0m 58s','10:03 AM','rgba(245,158,11,.1)', '#b45309'],
-            ['P','Priya K.','(305) 555-0519','Booked',  '3m 07s','10:22 AM','rgba(16,185,129,.1)', '#059669'],
-            ['M','Marcus W.','(786) 555-0934','Booked', '2m 45s','10:55 AM','rgba(16,185,129,.1)', '#059669'],
-          ];
-          foreach ($calls as $i => [$init,$name,$phone,$outcome,$dur,$time,$bg,$col]):
-          ?>
-          <div class="au2-call-row">
-            <div class="au2-call-row-avatar"><?= $init ?></div>
-            <div style="flex:1;min-width:0;">
-              <div style="font-weight:600;font-size:.82rem;color:#1c1917;"><?= $name ?></div>
-              <div style="font-size:.72rem;color:#9ca3af;"><?= $phone ?></div>
-            </div>
-            <span class="au2-outcome-badge" style="background:<?= $bg ?>;color:<?= $col ?>;"><?= $outcome ?></span>
-            <div style="text-align:right;flex-shrink:0;">
-              <div style="font-size:.78rem;font-weight:600;color:#374151;"><?= $dur ?></div>
-              <div style="font-size:.68rem;color:#9ca3af;"><?= $time ?></div>
-            </div>
-          </div>
-          <?php endforeach; ?>
-
-          <div class="au2-call-card-foot">
-            <span style="color:#10B981;">✓</span>
-            <span style="font-size:.75rem;font-weight:600;color:#6b7280;">Every call logged automatically — nothing slips through</span>
-          </div>
-        </div>
       </div>
 
     </div>

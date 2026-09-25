@@ -1152,26 +1152,6 @@ require __DIR__ . '/../includes/nav.php';
   </div>
 </section>
 
-<!-- ══ 2. STATS STRIP ════════════════════════════════════════ -->
-<div class="ck-stats-strip">
-  <div class="ck-container">
-    <div class="ck-stats-grid">
-      <?php foreach ([
-        ['💅', '2,400+', 'Salons using kiosk mode'],
-        ['⚡', '< 30s',  'Avg check-in time'],
-        ['📲', '98%',    'Clients prefer self check-in'],
-        ['⭐', '4× more', 'Google reviews collected'],
-      ] as [$icon, $val, $label]): ?>
-      <div class="ck-stat-col">
-        <div class="ck-stat-icon"><?= $icon ?></div>
-        <div class="ck-stat-val"><?= $val ?></div>
-        <div class="ck-stat-label"><?= $label ?></div>
-      </div>
-      <?php endforeach; ?>
-    </div>
-  </div>
-</div>
-
 <!-- ══ 3. HOW IT WORKS ═══════════════════════════════════════ -->
 <section id="how-it-works" class="ck-section ck-section-white">
   <div class="ck-container" style="max-width:1080px;">
