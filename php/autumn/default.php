@@ -878,7 +878,7 @@ require __DIR__ . '/../includes/nav.php';
 
       <div class="fade-in" style="transition-delay:.4s">
         <div class="au2-hero-metrics">
-          <?php foreach ([['< 2 sec','Answer time'],['100%','Answer rate'],['24 / 7','Always on']] as [$v,$l]): ?>
+          <?php foreach ([['< 2 sec','Answer time'],['24 / 7','Always on']] as [$v,$l]): ?>
           <div>
             <div class="au2-metric-val"><?= $v ?></div>
             <div class="au2-metric-lbl"><?= $l ?></div>
@@ -906,7 +906,7 @@ require __DIR__ . '/../includes/nav.php';
         </div>
 
         <div class="au2-stat-grid">
-          <?php foreach ([['47','Calls Today'],['<2s','Response'],['100%','Answer Rate']] as [$v,$l]): ?>
+          <?php foreach ([['<2s','Response']] as [$v,$l]): ?>
           <div class="au2-stat-tile">
             <div class="au2-stat-tile-val"><?= $v ?></div>
             <div class="au2-stat-tile-lbl"><?= $l ?></div>

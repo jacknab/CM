@@ -676,7 +676,6 @@ require __DIR__ . '/../includes/nav.php';
         <div class="ck-hero-metrics">
           <?php foreach ([
             ['< 30s',  'Check-in time'],
-            ['100%',   'Walk-ins captured'],
             ['24 / 7', 'Kiosk uptime'],
           ] as [$val, $label]): ?>
           <div>
