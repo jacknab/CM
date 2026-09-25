@@ -302,7 +302,7 @@ function defaultSeeds(): CampaignSeed[] {
       description: "One-off ask to active owners for a Capterra review — brand-authority push, not a lifecycle email.",
       category: "advocacy",
       triggerEvent: "manual_capterra_review_request",
-      audienceRule: { subscriptionStatuses: ["active"] },
+      audienceRule: { subscriptionStatuses: ["active", "trial"] },
       steps: [
         {
           delayMinutes: 0,
