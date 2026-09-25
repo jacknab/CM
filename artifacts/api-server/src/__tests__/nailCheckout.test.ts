@@ -49,7 +49,7 @@ describe("computeCheckout", () => {
 describe("splitGroup", () => {
   test("shares add back up exactly (last ticket takes the rounding)", () => {
     const shares = splitGroup(
-      [{ appointmentId: 1, base: 60, serviceRevenue: 60, productRevenue: 0 }, { appointmentId: 2, base: 30, serviceRevenue: 30, productRevenue: 0 }, { appointmentId: 3, base: 10, serviceRevenue: 10, productRevenue: 0 }],
+      [{ appointmentId: 1, base: 60, duration: 60, serviceRevenue: 60, productRevenue: 0 }, { appointmentId: 2, base: 30, duration: 30, serviceRevenue: 30, productRevenue: 0 }, { appointmentId: 3, base: 10, duration: 10, serviceRevenue: 10, productRevenue: 0 }],
       { tip: 10.01, discount: 7.77, totalPaid: 92.24 }, "cash:92.24");
     const sum = (k: "tip" | "discount" | "totalPaid") => Math.round(shares.reduce((s, x) => s + x[k], 0) * 100) / 100;
     expect(sum("tip")).toBe(10.01); expect(sum("discount")).toBe(7.77); expect(sum("totalPaid")).toBe(92.24);

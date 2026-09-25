@@ -19,6 +19,7 @@ if (fs.existsSync("/etc/certxa.env")) {
 import { getWssHealth } from "./lib/wsHealth";
 import { getLastDriftResult } from "./startup/checkSchemaDrift";
 import { IS_SCHEDULER_INSTANCE } from "./lib/clusterInfo";
+import { logger } from "./lib/logger";
 
 // ─── Startup environment validation ────────────────────────────────────────
 // Runs before anything else. Hard-exits if required vars are missing so
@@ -1688,7 +1689,7 @@ async function repairTwilioMessagingServiceInboundWebhook() {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    console.error("Internal Server Error:", err);
+    logger.error({ err }, "Internal Server Error");
 
     if (res.headersSent) {
       return next(err);

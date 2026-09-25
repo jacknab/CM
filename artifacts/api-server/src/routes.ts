@@ -19287,7 +19287,7 @@ or
       const money = (n: unknown) => Math.round((Number(n) || 0) * 100) / 100;
       const snapshot = {
         storeName: String((store as any)?.name ?? "Your salon").slice(0, 60),
-        storeAddress: [(store as any)?.address, (store as any)?.city, (store as any)?.state, (store as any)?.zipCode].filter(Boolean).join(", ") || undefined,
+        storeAddress: [(store as any)?.address, (store as any)?.city, (store as any)?.state, (store as any)?.postcode].filter(Boolean).join(", ") || undefined,
         storePhone: (store as any)?.phone || undefined,
         ticketNumber: apt.ticketNumber ?? apt.id,
         dateIso: typeof snap.dateIso === "string" ? snap.dateIso : new Date().toISOString(),
