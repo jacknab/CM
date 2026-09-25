@@ -294,6 +294,28 @@ function defaultSeeds(): CampaignSeed[] {
       ],
     },
     {
+      // Manual, one-off send only — triggerEvent is never emitted by
+      // emitPlatformEmailEvent(), so this can't auto-enroll anyone. Launch
+      // it explicitly from /admin/platform-emails once status is 'draft'.
+      campaignKey: "review-request-capterra-2026-09",
+      name: "Capterra review request",
+      description: "One-off ask to active owners for a Capterra review — brand-authority push, not a lifecycle email.",
+      category: "advocacy",
+      triggerEvent: "manual_capterra_review_request",
+      audienceRule: { subscriptionStatuses: ["active"] },
+      steps: [
+        {
+          delayMinutes: 0,
+          subject: "Quick favor? (30 seconds, really)",
+          previewText: "If Certxa has been working well for your salon, a Capterra review would mean a lot.",
+          htmlTemplate: `${paragraph("Hi {{firstName}},")}${paragraph("I'm Thanh, the founder of Certxa. If Certxa has been working well for your salon, would you mind leaving a quick review on Capterra? It genuinely helps other salon owners find us — and right now we could really use a few more honest voices next to ours.")}${button("Leave a 2-minute review", "https://www.capterra.ca/software/1237764/Certxa-Booking-Software")}${paragraph("Thank you for being one of our early salons — it means a lot.<br>Thanh, Founder, Certxa")}`,
+          textTemplate: "Hi {{firstName}}, I'm Thanh, the founder of Certxa. If Certxa has been working well for your salon, would you mind leaving a quick review on Capterra? {{ctaUrl}} Thank you for being one of our early salons. — Thanh",
+          ctaLabel: "Leave a 2-minute review",
+          ctaUrl: "https://www.capterra.ca/software/1237764/Certxa-Booking-Software",
+        },
+      ],
+    },
+    {
       campaignKey: "account-reactivated",
       name: "Account reactivated",
       description: "A warm confirmation after an account returns from suspension or expiration.",
