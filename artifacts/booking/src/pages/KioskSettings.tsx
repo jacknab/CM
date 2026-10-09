@@ -24,6 +24,7 @@ interface KioskSettingsData {
   showServicePrice: boolean;
   showServiceDuration: boolean;
   dualScreenMode: boolean;
+  smartCheckin: boolean;
 }
 
 const NAIL_GROUPS = [
@@ -184,6 +185,7 @@ export default function KioskSettings() {
     showServicePrice: true,
     showServiceDuration: true,
     dualScreenMode: false,
+    smartCheckin: true,
   });
 
   // Per-card upload state: { [key]: { loading, url, done } }
@@ -216,6 +218,7 @@ export default function KioskSettings() {
         showServicePrice: data.showServicePrice,
         showServiceDuration: data.showServiceDuration,
         dualScreenMode: data.dualScreenMode,
+        smartCheckin: data.smartCheckin !== false,
       });
       // Seed upload state with any already-saved images
       if (data.categoryImages) {
@@ -484,6 +487,26 @@ export default function KioskSettings() {
                 <Switch
                   checked={form.showServiceDuration}
                   onCheckedChange={v => setForm(f => ({ ...f, showServiceDuration: v }))}
+                />
+              </div>
+            </div>
+
+            {/* ── Smart Check-In ── */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="font-semibold text-slate-700">Smart Check-In</h2>
+                  <p className="text-sm text-slate-500 mt-0.5">
+                    Greets a returning client with a suggestion based on their completed visits — a fill a few
+                    weeks after a full set, their usual manicure or pedicure — and points out an add-on they have
+                    had before. The client can always choose something else, and nothing is added to the ticket
+                    unless they pick it.
+                  </p>
+                </div>
+                <Switch
+                  checked={form.smartCheckin}
+                  onCheckedChange={v => setForm(f => ({ ...f, smartCheckin: v }))}
+                  data-testid="kiosk-setting-smart-checkin"
                 />
               </div>
             </div>

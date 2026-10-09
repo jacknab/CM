@@ -96,13 +96,13 @@ require 'includes/nav.php';
         <thead>
           <tr>
             <th style="width:34%;"></th>
-            <th><div class="plan-header featured-col">Certxa</div><div class="plan-header-price" style="color:var(--plum-mid);">$9 – $49/mo ⭐</div></th>
+            <th><div class="plan-header featured-col">Certxa</div><div class="plan-header-price" style="color:var(--plum-mid);">Free – $49/mo ⭐</div></th>
             <th><div class="plan-header">Vagaro</div><div class="plan-header-price">From $24–$30/mo + add-ons</div></th>
           </tr>
         </thead>
         <tbody>
           <tr class="section-row"><td colspan="3">Pricing Model</td></tr>
-          <tr><td>Base price (1 staff)</td><td class="featured-col ct-text">Solo — $9/mo ($7 annual)</td><td class="ct-text">$24–$30/mo (1 bookable calendar)</td></tr>
+          <tr><td>Base price (1 staff)</td><td class="featured-col ct-text">Solo — free</td><td class="ct-text">$24–$30/mo (1 bookable calendar)</td></tr>
           <tr><td>Pricing structure</td><td class="featured-col ct-text">Flat monthly plans</td><td class="ct-text">Per-calendar (per staff member)</td></tr>
           <tr><td>Unlimited staff / calendars</td><td class="featured-col ct-check">✓ on Professional ($22/mo)</td><td class="ct-cross">– (each calendar adds to the bill)</td></tr>
           <tr><td>4-staff salon w/ website + text marketing</td><td class="featured-col ct-text">$22/mo flat</td><td class="ct-text">~$110/mo reported, before processing fees</td></tr>

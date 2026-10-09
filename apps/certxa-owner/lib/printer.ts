@@ -22,10 +22,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeModules } from 'react-native';
 import { pickUsbPrinter, type UsbDev } from './usbPrinterPick';
 import { drawerKickBase64 } from './drawerKick';
-import { buildReceiptText, divLine, twoCol, type CardDetails, type ReceiptItem, type ReceiptData } from './receiptText';
+import {
+  buildReceiptText, divLine, twoCol, buildCheckinTicketFooter,
+  type CardDetails, type ReceiptItem, type ReceiptData, type CheckinTicketData,
+} from './receiptText';
+import { buildZReportText, type ZReportPrintData } from './zReportText';
 
-export { buildReceiptText };
-export type { CardDetails, ReceiptItem, ReceiptData };
+export { buildReceiptText, buildZReportText };
+export type { CardDetails, ReceiptItem, ReceiptData, CheckinTicketData, ZReportPrintData };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -307,8 +311,41 @@ export async function printReceiptCopies(data: ReceiptData): Promise<void> {
   await mod.printBill(toPrinterTags(buildReceiptText(data, 'customer')));
 }
 
-export async function printTestPage(storeName: string): Promise<void> {
+/** Width both images (number bar + QR) are rendered/printed at — matched to the 58mm-paper column
+ *  width the rest of this file's templates assume (COL_W = 32 in receiptText.ts). */
+const CHECKIN_IMAGE_PRINT_WIDTH = 300;
+
+const stripDataUriPrefix = (b64: string) => b64.replace(/^data:image\/\w+;base64,/, '');
+
+/**
+ * Print the check-in ticket in this exact order: the black number-bar image, then the QR image,
+ * then the two text rows (name + ticket number, date/time). Both images are rendered client-side
+ * and handed in as base64 — see components/NumberBarCapture.tsx and components/QrCapture.tsx —
+ * since this printer library can only print bold/aligned text or raster images, nothing in
+ * between (no inverted/white-on-black text, no native QR command).
+ */
+export async function printCheckinTicket(data: CheckinTicketData, numberBarBase64: string, qrBase64: string): Promise<void> {
   const printer = await resolvePrinter();
+  const mod = await getActivePrinterModule(printer);
+  await mod.printImageBase64(stripDataUriPrefix(numberBarBase64), { imageWidth: CHECKIN_IMAGE_PRINT_WIDTH });
+  await mod.printImageBase64(stripDataUriPrefix(qrBase64), { imageWidth: CHECKIN_IMAGE_PRINT_WIDTH });
+  await mod.printBill(toPrinterTags(buildCheckinTicketFooter(data)));
+}
+
+/** Print the Day Close / Z Report — a single copy (it's a register document, not something
+ *  handed to a customer, so there's no salon/customer split like printReceiptCopies()). */
+export async function printZReport(data: ZReportPrintData): Promise<void> {
+  const printer = await resolvePrinter();
+  const mod = await getActivePrinterModule(printer);
+  await mod.printBill(toPrinterTags(buildZReportText(data)));
+}
+
+/** `device` lets a caller test-print against a printer that hasn't been saved yet (e.g. the
+ *  onboarding wizard's own test-print button, before the user has confirmed setup by tapping
+ *  Continue) — omit it to test-print the already-saved printer, as the Settings "Test Print"
+ *  button does. */
+export async function printTestPage(storeName: string, device?: PrinterDevice): Promise<void> {
+  const printer = device ?? await resolvePrinter();
   const mod = await getActivePrinterModule(printer);
   const lines = [
     `[C]<b>${storeName}</b>`,

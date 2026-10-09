@@ -6,10 +6,10 @@
  * file only owns the screen state and wires the pieces together.
  */
 import { EMPTY_ARRAY } from "@/lib/empty";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BarChart3, Bell, Clock, CreditCard, RefreshCw, Gift, KeyRound, Loader2, LockKeyhole, Printer, Search, Settings, ShoppingBag, CalendarPlus, Wallet } from "lucide-react";
+import { BarChart3, Bell, Clock, CreditCard, RefreshCw, Gift, KeyRound, LayoutGrid, Loader2, Lock, LockKeyhole, Printer, Search, Settings, ShoppingBag, CalendarPlus, Wallet } from "lucide-react";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useAuth } from "@/hooks/use-auth";
 import { useServices } from "@/hooks/use-services";
@@ -26,35 +26,52 @@ import { useStoreNetworkReport } from "@/hooks/use-store-network-report";
 import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
 import { hardRefresh } from "@/lib/hard-refresh";
 import { useNetworkStatus } from "@/hooks/use-network-status";
+import { syncEngine } from "@/lib/sync-engine";
+import { nailOffline, setNailOfflineStore, isLocalId } from "@/lib/nail-offline";
+import { nailAdjustment } from "./ticketDraft";
 import { buildCheckinTicket } from "@/lib/thermalPrinter";
-import { ChooseClientPanel, ClientLookupSheet, ManagerPinSheet, TimeClockSheet, VoucherRedeemSheet } from "@/pages/Calendar";
+import { ChooseClientPanel, ClientLookupSheet, ManagerPinSheet, TimeClockSheet, TurnPageModal, VoucherRedeemSheet } from "@/pages/Calendar";
+import { useStaffList } from "@/hooks/use-staff";
+import { getNowInTimezone } from "@/lib/timezone";
 import {
-  ApiError, BOARD_KEY, cancelTicket, completeTicket, createTicket, fetchBoard, fetchClient,
-  clockInTech, clockOutTech, fetchNailConfig, fetchTurn, reassignTicket, removeMarker, startTicket, updateTicket,
-  type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData, type TurnTech,
+  ApiError, boardKey, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchCalendarBoardBookings, fetchClient,
+  clockInTech, clockOutTech, fetchNailConfig, fetchPosGrid, fetchScreenSettings, fetchTurn, reassignTicket, savePosGrid, saveScreenSettings, removeMarker, resolveMarkerClient, startTicket, updateTicket,
+  type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData, type TechSignIn, type TurnEarned, type TurnTech,
 } from "./nailApi";
 import { defaultPick, draftTotals, EMPTY_PICK, type DraftCustomLine, type NailPick, type TicketLine } from "./ticketDraft";
 import { useNailRealtime } from "./useNailRealtime";
 import { TicketPanel } from "./TicketPanel";
-import { CheckoutMode } from "./CheckoutMode";
-import { CatalogPanel, Keypad, type CatalogGroup, type CatalogService } from "./CatalogPanel";
+import { CatalogPanel, Keypad, type CatalogGroup, type CatalogService, type CheckoutFn } from "./CatalogPanel";
+import { openCashDrawerHardware, recordNoSale } from "@/lib/cashDrawer";
+import { resumeOrSignIn } from "@/lib/resumeSignIn";
 import { CheckInLookup } from "./CheckInLookup";
 import { TechClockInSheet } from "./TechClockInSheet";
 import { TechClockOutSheet } from "./TechClockOutSheet";
 import { GiftCardSheet } from "./GiftCardSheet";
 import { useAppointmentSSE } from "@/hooks/use-appointment-sse";
 import { TechCards } from "./TechCards";
-import { CheckInPanel } from "./CheckInPanel";
-import { QueueTab } from "./QueueTab";
+import { QueueTab, type QueueView } from "./QueueTab";
 import "./nail.css";
 import { AssignTechSheet } from "./AssignTechSheet";
-import { CheckInBoard } from "./CheckInBoard";
 import { TicketPopup } from "./TicketPopup";
+import { ReceiptDialog } from "./ReceiptDialog";
+import { LookupByNumberDialog } from "./LookupByNumberDialog";
+import { TicketStatusDialog, type LookupTicketStatus } from "./TicketStatusDialog";
 import { BottomNav, type NailTab } from "./BottomNav";
+import { TechIdGate } from "./TechIdGate";
+import { OfflineQueueSheet } from "./OfflineQueueSheet";
+import { TurnEarnedPopup } from "./TurnEarnedPopup";
+import { GridEditor } from "./GridEditor";
 import { RegisterPicker } from "./RegisterPicker";
+import { PairCustomerScreenDialog, StationsFullBanner } from "@/components/pos/PairCustomerScreen";
 import { MoreMenu, type MoreTile } from "./MoreMenu";
+import { calendarBookingsForBoard, hasNewWaitingEntityForPhone, waitingEntityKeys } from "./boardView";
+import { printNativeCheckinTicket, slipServiceNames } from "@/lib/native-checkin-ticket";
+import type { SalesTaxSettings } from "@shared/nailCheckout";
 
-type Assigning = { mode: "create" } | { mode: "reassign"; ticket: BoardTicket } | null;
+const CheckoutMode = lazy(() => import("./CheckoutMode").then((module) => ({ default: module.CheckoutMode })));
+
+type Assigning = { mode: "assign" | "reassign"; ticket: BoardTicket } | null;
 
 export default function NailHome() {
   const { selectedStore } = useSelectedStore();
@@ -63,7 +80,7 @@ export default function NailHome() {
   // Technician (staff-portal) logins have no store of their own — this screen is for the front desk.
   if (!selectedStore && (user as any)?.staffId) return <Navigate to="/calendar" replace />;
   if (!selectedStore) {
-    return <div className="dark cx-cal nail-app h-app w-full flex items-center justify-center"><Loader2 className="w-7 h-7 animate-spin" style={{ color: "#8b94a0" }} /></div>;
+    return <main className="dark cx-cal nail-app h-app w-full flex items-center justify-center"><h1 className="sr-only">Nail salon front desk</h1><Loader2 className="w-7 h-7 animate-spin" style={{ color: "#8b94a0" }} /></main>;
   }
   if (!nailSalon) return <Navigate to="/calendar" replace />;
   const st = selectedStore as any;
@@ -76,12 +93,13 @@ export default function NailHome() {
       storeCityStateZip={storeCityStateZip}
       storePhone={st.phone || undefined}
       timezone={st.timezone ?? "UTC"}
+      salesTax={{ rate: Number(st.salesTaxRate ?? 0) || 0, services: st.taxServicesTaxable === true, products: st.taxProductsTaxable !== false }}
     />
   );
 }
 
-function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, storePhone, timezone }: {
-  storeId: number; storeName: string; storeAddress?: string; storeCityStateZip?: string; storePhone?: string; timezone: string;
+function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, storePhone, timezone, salesTax }: {
+  storeId: number; storeName: string; storeAddress?: string; storeCityStateZip?: string; storePhone?: string; timezone: string; salesTax: SalesTaxSettings;
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -91,8 +109,10 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const navigate = useNavigate();
   const {
     registerId, needsPicker: needsRegisterPicker, registers: registerOptions, takenRegisters, selectRegister,
-    isMultiStation, currentRegisterName, resetRegister,
+    isMultiStation, currentRegisterName, resetRegister, stationsFull,
   } = useActiveRegisterId(storeId);
+  // The Station tile pairs this tablet's customer screen (it used to reset the station).
+  const [pairScreenOpen, setPairScreenOpen] = useState(false);
   // Same duties the calendar screen has, so /kiosk and /frontdesk behave identically when this is the screen left open all day.
   useStoreNetworkReport(storeId);
   // A kiosk / front-desk check-in or an auto no-show moves the board without a socket event — the calendar's SSE feed.
@@ -103,6 +123,23 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   // ── screen state ──────────────────────────────────────────────────────────
   const [tab, setTab] = useState<NailTab>("queue");
+  // Who is at the POS right now. Nobody → the Tech ID keypad. For a technician it comes back after each saved ticket or
+  // checkout; for the front desk (reception / manager / owner) only after two idle minutes.
+  const [tech, setTech] = useState<TechSignIn["staff"] | null>(null);
+  // The full Turn page, opened from the top of the lock screen's turn queue.
+  const [showTurnPage, setShowTurnPage] = useState(false);
+  const { data: turnStaffList } = useStaffList();
+  const { data: turnAppointments } = useQuery({
+    queryKey: ["/api/appointments", "nail-turn-page", storeId],
+    queryFn: fetchCalendarBoardBookings,
+    enabled: showTurnPage,
+    refetchInterval: 30_000,
+  });
+  const techRef = useRef(tech);
+  techRef.current = tech;
+  // "Ticket #12 assigned to Mia" — shown for five seconds after a saved ticket goes to a free technician.
+  const [startedNotice, setStartedNotice] = useState<{ ticketNumber: number; staffName: string } | null>(null);
+  const [assignedNotice, setAssignedNotice] = useState<{ clientName: string | null; ticketNumber: number | null; staffName: string } | null>(null);
   const [client, setClient] = useState<ClientSummary | null>(null);
   const [checkinId, setCheckinId] = useState<number | null>(null);
   const [service, setService] = useState<CatalogService | null>(null);
@@ -110,18 +147,21 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const [pick, setPick] = useState<NailPick>(EMPTY_PICK);
   const [customs, setCustoms] = useState<DraftCustomLine[]>([]);
   const customSeq = useRef(0);
-  const [preferredStaff, setPreferredStaff] = useState<number | null>(null);
   const [activeGroup, setActiveGroup] = useState("");
   const [moreAddons, setMoreAddons] = useState(false);
   const [editing, setEditing] = useState<BoardTicket | null>(null);
   // The ticket whose card is open. It opens over whatever screen it was tapped on (Techs, mostly) and closes back to that same screen.
   const [popupId, setPopupId] = useState<number | null>(null);
-  const [showMore, setShowMore] = useState(false);
+  const [queueView, setQueueView] = useState<QueueView | null>(null);
+  // The More popup: its own tiles, or — behind the manager PIN — the Manager tab's.
+  const [showMore, setShowMore] = useState<false | "more" | "manager">(false);
   const [showGift, setShowGift] = useState(false);
   const [showBook, setShowBook] = useState(false);
   const [showCheckIn, setShowCheckIn] = useState(false);
   // "PAY NOW": create the ticket, then open it for payment in this tab.
   const payAfterCreate = useRef(false);
+  // A ticket someone tried to pay before it had a technician: once one is assigned, carry on to its checkout.
+  const payAfterAssign = useRef<number | null>(null);
   // Techs page: a clocked-out tech's card was tapped → offer to set them In. `assumedIn` shows them In & Available at once,
   // until the server's answer (also pushed to every other station) arrives.
   const [clockInFor, setClockInFor] = useState<TurnTech | null>(null);
@@ -146,11 +186,17 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const [frontdeskPhone, setFrontdeskPhone] = useState("");
   // The ticket being paid in the POS tab (null = the POS tab is the ticket builder). A new customer-screen event arrives as a new object.
   const [checkout, setCheckout] = useState<BoardTicket | null>(null);
+  // The ticket being paid as the board has it right now (for changing its service from the payment screen).
+  const liveCheckoutRef = useRef<BoardTicket | null>(null);
   const [checkoutEvent, setCheckoutEvent] = useState<{ type: string; [k: string]: unknown } | null>(null);
   // True once the ticket is actually completed server-side — the checkout screen then shows Print/Text/No Receipt
   // instead of the payment buttons, and stays open until one of those is picked (see finishCheckout below).
   const [ticketPaid, setTicketPaid] = useState(false);
   const [pendingCheckout, setPendingCheckout] = useState<BoardTicket | null>(null);
+  // What the walk-in ticket(s) just paid earned in the turn rotation: held while the receipt is being chosen,
+  // then shown (turnNotice) for a few seconds before the screen locks.
+  const turnsEarned = useRef<TurnEarned[]>([]);
+  const [turnNotice, setTurnNotice] = useState<TurnEarned[] | null>(null);
   const [showOpenRegister, setShowOpenRegister] = useState(false);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -162,50 +208,139 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current); }, []);
 
   // ── data ──────────────────────────────────────────────────────────────────
-  const refreshAll = useSettingsSync(true);
+  const refreshSettings = useSettingsSync(true);
+  // Another station changed a salon setting: the /nail ones (lock screen, key grid) are refreshed too.
+  const refreshAll = useCallback(() => {
+    refreshSettings();
+    queryClient.invalidateQueries({ queryKey: ["/api/nail/screen-settings"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/nail/pos-grid"] });
+  }, [refreshSettings, queryClient]);
   const live = useNailRealtime({
     storeId, registerId, refreshAll, onFrontdeskPhone: setFrontdeskPhone, onFrontdeskTyping,
     onCheckoutEvent: (m) => setCheckoutEvent({ ...m }),
-    // The kiosk's check-in ticket prints on the front-desk thermal printer, like on the calendar.
+    // A browser kiosk's check-in slip is relayed to every station. It prints here only when this station can print —
+    // the Android app's own (IP/USB) printer, or a Bluetooth printer connected in this browser — and wins the claim,
+    // so the slip comes out once however many stations are open.
     onPrintJob: (data) => {
       if (data.jobType !== "checkin_ticket") return;
-      try {
-        const bytes = buildCheckinTicket({
-          storeName: data.storeName ?? "", clientName: data.clientName ?? "Guest", staffName: data.staffName,
-          services: data.services ?? [], appointmentId: data.appointmentId, ticketNumber: data.ticketNumber,
-          bookingCode: data.bookingCode ?? `BK:${data.appointmentId}`, timeStr: data.timeStr ?? "", dateStr: data.dateStr ?? "",
-        });
-        printRef.current?.(bytes).catch(() => {});
-      } catch { /* a bad ticket must never break the screen */ }
+      const nativePrinter = !!(window as any).CERTXA_NATIVE_APP && !!(window as any).CERTXA_PRINT_BRIDGE;
+      if (!nativePrinter && !printRef.current) return;
+      const qrValue = String(data.bookingCode ?? `BK:${data.appointmentId}`);
+      void (async () => {
+        if (!(await claimKioskPrintJob(`ci:${data.appointmentId ?? qrValue}`))) return;
+        try {
+          if (nativePrinter && data.ticketNumber != null) {
+            await printNativeCheckinTicket({ clientName: data.clientName ?? "Guest", ticketNumber: Number(data.ticketNumber), qrValue, todayCount: data.todayCount, services: slipServiceNames(data.services) });
+            return;
+          }
+          const bytes = buildCheckinTicket({
+            storeName: data.storeName ?? "", clientName: data.clientName ?? "Guest", staffName: data.staffName,
+            services: data.services ?? [], appointmentId: data.appointmentId, ticketNumber: data.ticketNumber,
+            bookingCode: qrValue, timeStr: data.timeStr ?? "", dateStr: data.dateStr ?? "",
+          });
+          await printRef.current?.(bytes);
+        } catch { /* a bad ticket must never break the screen */ }
+      })();
     },
   });
 
-  const { data: board } = useQuery({
-    queryKey: BOARD_KEY,
+  // ── Offline (lib/nail-offline): what this device holds is filed under the salon it is signed in to. Anything
+  // saved on the device redraws the board at once, and the queue is sent as soon as the server answers again.
+  setNailOfflineStore(storeId);
+  const [queued, setQueued] = useState({ pending: 0, attention: 0, cash: { count: 0, amount: 0 } });
+  const [recovery, setRecovery] = useState({ signIn: false, storage: false });
+  useEffect(() => {
+    const refresh = () => {
+      void nailOffline.counts(storeId).then(setQueued).catch(() => {});
+      setRecovery({ signIn: syncEngine.needsSignIn(), storage: !!nailOffline.storageProblem() });
+      queryClient.invalidateQueries({ queryKey: boardKey(storeId) });
+    };
+    refresh();
+    // Can this tablet save at all? If not, say so before anyone relies on it.
+    void nailOffline.health().then(() => setRecovery({ signIn: syncEngine.needsSignIn(), storage: !!nailOffline.storageProblem() }));
+    void syncEngine.runSync(storeId);
+    const offQueue = syncEngine.onQueueChange(refresh);
+    const offLocal = nailOffline.onChange(refresh);
+    return () => { offQueue(); offLocal(); };
+  }, [storeId, queryClient]);
+
+  const { data: board, error: boardError } = useQuery({
+    queryKey: boardKey(storeId),
     queryFn: fetchBoard,
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
+    // Runs with no network too: the board then comes from this device (the default would just pause it).
+    networkMode: "always",
   });
+  // The board answering 401 means this device lost its sign-in to the salon's account. Nothing on this
+  // screen can work until that is back, so sign the device back in (or go to the sign-in page) right away.
+  useEffect(() => {
+    if (boardError instanceof ApiError && boardError.status === 401) void resumeOrSignIn("/nail");
+  }, [boardError]);
+  const needsCalendarFallback = tab === "queue" && !!board && !board.dayBookings?.length &&
+    (board.glance?.appointments ?? 0) > 0;
+  const { data: calendarBookings, isPending: calendarFallbackPending, isError: calendarFallbackError } = useQuery({
+    queryKey: ["/api/appointments", "nail-board-fallback", storeId],
+    queryFn: fetchCalendarBoardBookings,
+    enabled: needsCalendarFallback,
+    refetchInterval: 30_000,
+  });
+  const dayBookings = board?.dayBookings?.length ? board.dayBookings
+    : needsCalendarFallback && calendarBookings
+      ? calendarBookingsForBoard(calendarBookings, timezone, new Date(board?.now ?? Date.now()))
+      : EMPTY_ARRAY;
   const tickets = board?.tickets ?? [];
   // Elapsed times ("waiting 12 min", "free for 25 min") are measured against the SERVER clock so two POS stations agree.
   const [clockOffsetMs, setClockOffsetMs] = useState(0);
   useEffect(() => { if (board?.now) setClockOffsetMs(Date.parse(board.now) - Date.now()); }, [board]);
   const markers = board?.markers ?? [];
   const waitingCount = tickets.filter((t) => t.status === "confirmed").length + markers.length;
-  const inServiceCount = tickets.filter((t) => t.status === "started").length;
 
   // Technician status for the Techs tab — same TURN feed as the assign popup, kept live by the socket.
   const { data: techFeed, isLoading: techsLoading } = useQuery({
     queryKey: ["/api/turn/eligibility", storeId, "nail-techs"],
     queryFn: () => fetchTurn(storeId, null),
-    enabled: tab === "techs" || tab === "queue",
+    // Also while locked: the Tech ID screen shows the turn queue.
+    enabled: tab === "techs" || tab === "queue" || !tech,
     refetchInterval: 30_000,
+    networkMode: "always",
   });
   const techList = techFeed?.technicians ?? EMPTY_ARRAY;
   // Once the server itself says they're in, stop assuming.
   useEffect(() => {
     setAssumedIn((cur) => { const next = cur.filter((id) => techList.find((t) => t.id === id)?.clockedIn === false); return next.length === cur.length ? cur : next; });
   }, [techList]);
+
+  // Lock screen on / off for the whole salon (Manager tab). Off: no Tech ID keypad and no idle lock — the POS is
+  // simply open, as it was before sign-in existed. The last known answer is kept on this device so a salon that
+  // has it off doesn't see the keypad flash up while the page loads.
+  const lockKey = `certxa.nail.lockScreen.${storeId}`;
+  const screenKey = ["/api/nail/screen-settings", storeId];
+  const { data: screenSettings } = useQuery({
+    queryKey: screenKey, queryFn: fetchScreenSettings, refetchInterval: 60_000, staleTime: 15_000,
+    placeholderData: () => { try { return localStorage.getItem(lockKey) === "off" ? { lockScreen: false } : undefined; } catch { return undefined; } },
+  });
+  const lockEnabled = screenSettings?.lockScreen !== false;
+  useEffect(() => {
+    if (!screenSettings) return;
+    try { localStorage.setItem(lockKey, screenSettings.lockScreen ? "on" : "off"); } catch { /* private mode */ }
+  }, [screenSettings, lockKey]);
+  const saveLock = useMutation({
+    mutationFn: (lockScreen: boolean) => saveScreenSettings({ lockScreen }),
+    onSuccess: (r) => { queryClient.setQueryData(screenKey, r); if (!r.lockScreen) setTech(null); say(r.lockScreen ? "Lock screen is on" : "Lock screen is off — no sign-in needed"); },
+    onError: (err: any) => toast({ title: "Couldn't change the lock screen", description: err?.message, variant: "destructive" }),
+  });
+
+  // The key grid a manager arranged for the POS's right panel (null = filled automatically from the catalog).
+  const posGridKey = ["/api/nail/pos-grid", storeId];
+  const { data: posGrid } = useQuery({ queryKey: posGridKey, queryFn: fetchPosGrid, refetchInterval: 60_000, staleTime: 15_000 });
+  // The editor opens from the Manager tab, which is already behind the manager PIN.
+  const [gridEditor, setGridEditor] = useState<null | "open">(null);
+  const saveGrid = useMutation({
+    mutationFn: savePosGrid,
+    onSuccess: (r) => { queryClient.setQueryData(posGridKey, r); setGridEditor(null); say(r.config ? "Key grid saved" : "Key grid is automatic again"); },
+    onError: (err: any) => toast({ title: "Couldn't save the key grid", description: err?.message, variant: "destructive" }),
+  });
 
   const { data: services } = useServices();
   const { data: categories } = useServiceCategories();
@@ -271,9 +406,44 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   // ── ticket building ───────────────────────────────────────────────────────
   const resetDraft = useCallback(() => {
-    setClient(null); setCheckinId(null); setService(null); setAddonIds([]); setPick(EMPTY_PICK); setCustoms([]); setPreferredStaff(null);
+    setClient(null); setCheckinId(null); setService(null); setAddonIds([]); setPick(EMPTY_PICK); setCustoms([]);
     setEditing(null); pickSeededFor.current = null; setMoreAddons(false);
   }, []);
+
+  // Done at the POS: a technician hands it back to the keypad; the front desk carries on.
+  const lock = useCallback(() => {
+    setPopupId(null); resetDraft(); setTab("queue");
+    if (!techRef.current?.frontDesk) setTech(null);
+  }, [resetDraft]);
+  // Whoever is signed in: two minutes without a touch or a key brings the keypad back. (That is the only
+  // lock the front desk gets; a technician is also locked out after each thing they do.) Nothing on screen
+  // is reset, so whatever was open is still there after an ID is entered again.
+  const signedIn = tech != null;
+  // On the POS tab the wait is five minutes: a technician and their client talk through the ticket there,
+  // and the screen must not lock in the middle of it.
+  const idleLockMs = tab === "pos" ? 300_000 : 120_000;
+  useEffect(() => {
+    if (!signedIn) return;
+    let timer = setTimeout(() => setTech(null), idleLockMs);
+    const touched = () => { clearTimeout(timer); timer = setTimeout(() => setTech(null), idleLockMs); };
+    window.addEventListener("pointerdown", touched, true);
+    window.addEventListener("keydown", touched, true);
+    return () => { clearTimeout(timer); window.removeEventListener("pointerdown", touched, true); window.removeEventListener("keydown", touched, true); };
+  }, [signedIn, idleLockMs]);
+  // The assigned-ticket notice closes itself after five seconds, then the keypad comes back for the next
+  // technician — whoever saved the ticket, front desk included.
+  useEffect(() => {
+    if (!startedNotice) return;
+    const timer = setTimeout(() => { setStartedNotice(null); lock(); setTech(null); }, 5000);
+    return () => clearTimeout(timer);
+  }, [startedNotice, lock]);
+  // The "client assigned" notice after a Tech ID sign-in: five seconds over the queue, then the keypad
+  // comes back for the next technician.
+  useEffect(() => {
+    if (!assignedNotice) return;
+    const timer = setTimeout(() => { setAssignedNotice(null); lock(); setTech(null); }, 5000);
+    return () => clearTimeout(timer);
+  }, [assignedNotice, lock]);
 
   const chooseService = (svc: CatalogService) => {
     if (service?.id === svc.id) return;
@@ -297,11 +467,10 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     else if (line.group) setPick((p) => ({ ...p, [line.group!]: null }));
   };
 
-  const pickClient = async (clientId: number, marker?: number | null, staffId?: number | null) => {
+  const pickClient = async (clientId: number, marker?: number | null) => {
     try {
       setClient(await fetchClient(clientId));
       setCheckinId(marker ?? null);
-      setPreferredStaff(staffId ?? null);
       setTab("pos");
     } catch (err: any) {
       toast({ title: "Couldn't load that client", description: err?.message, variant: "destructive" });
@@ -323,40 +492,100 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   };
 
   const invalidateBoard = () => {
-    queryClient.invalidateQueries({ queryKey: BOARD_KEY });
+    queryClient.invalidateQueries({ queryKey: boardKey(storeId) });
     queryClient.invalidateQueries({ queryKey: ["/api/turn/eligibility"] });
     queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
   };
 
   // ── mutations ─────────────────────────────────────────────────────────────
   const customLines = useMemo(() => customs.map(({ label, price, isRetail }) => ({ label, price, isRetail })), [customs]);
+  // Saving a ticket hands it to TURN: the next technician in line who can do the service gets it. It waits with
+  // them until START is pressed. Nobody free → it waits, unassigned, and the next tech to finish a client picks it up.
+  const checkinStaffId = checkinId != null ? markers.find((m) => m.id === checkinId)?.staffId ?? null : null;
   const create = useMutation({
-    mutationFn: (staffId: number | null) =>
-      createTicket({ clientId: client!.id, serviceId: service!.id, addonIds, pick, customLines, staffId, checkinId }),
+    // With no network the ticket is saved on this device instead (the default would hold the save back).
+    networkMode: "always",
+    mutationFn: () => {
+      const nail = nailAdjustment(nailCfg, pick);
+      const held = checkinStaffId != null ? techList.find((t) => t.id === checkinStaffId) : undefined;
+      // A client the front desk check-in already handed to a technician stays with that technician;
+      // everyone else goes to the next technician in turn, as before.
+      return createTicket({ clientId: client!.id, serviceId: service!.id, addonIds, pick, customLines,
+        staffId: checkinStaffId, autoAssign: checkinStaffId == null, checkinId }, {
+        storeId,
+        client: { name: client!.name, phone: client!.phone },
+        service: { name: service!.name, price: Number(service!.price) || 0, duration: Number(service!.duration) || 0 },
+        addons: addonIds.map((id) => activeAddons.find((a) => a.id === id)).filter((a): a is NonNullable<typeof a> => !!a)
+          .map((a) => ({ id: a.id, name: a.name, price: Number(a.price) || 0, duration: Number(a.duration) || 0 })),
+        nailLines: nail.lines.map((l) => ({ label: l.label, price: l.price })),
+        nailPriceAdjustment: nail.lines.reduce((sum, l) => sum + l.price, 0),
+        staff: held ? { id: held.id, name: held.name, color: held.color ?? null } : null,
+        total: totals.price, duration: totals.duration,
+      });
+    },
     onSuccess: (r) => {
       invalidateBoard();
-      setAssigning(null);
-      setAssignError(null);
-      if (payAfterCreate.current) { payAfterCreate.current = false; void openTicketForCheckout(r.appointmentId); }
-      say(`Ticket #${r.ticketNumber} · ${r.staffName} · ${r.waiting ? `waiting, starts about ${new Date(r.startsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "in service"}`);
-      resetDraft();
+      // Saved on this device, not sent yet: it is on the board, and it is paid once the server has it.
+      if (r.offline) {
+        payAfterCreate.current = false;
+        resetDraft();
+        setTab("queue");
+        say("Ticket saved on this tablet · it will be sent when the connection is back");
+        return;
+      }
+      const shouldPay = payAfterCreate.current;
+      payAfterCreate.current = false;
+      if (shouldPay) void openTicketForCheckout(r.appointmentId);
+      else setTab("queue");
+      say(r.staffName
+        ? `Ticket #${r.ticketNumber} · ${r.staffName} · ${r.waiting ? `waiting, starts about ${new Date(r.startsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : r.status === "started" ? "in service" : "assigned"}`
+        : `Ticket #${r.ticketNumber} is waiting · no technician free yet`);
+      if (shouldPay) resetDraft();
+      // A free technician got it: say so for five seconds before the keypad returns.
+      else if (r.staffName && !r.waiting) { resetDraft(); setStartedNotice({ ticketNumber: r.ticketNumber, staffName: r.staffName }); }
+      else lock();
     },
-    onError: (err: any) => setAssignError(err instanceof ApiError ? err.message : "Couldn't create the ticket. Try again."),
+    onError: (err: any) => {
+      payAfterCreate.current = false;
+      const message = err instanceof ApiError ? err.message : "Couldn't create the ticket. Try again.";
+      toast({ title: "Couldn't save the ticket", description: message, variant: "destructive" });
+    },
   });
 
   const update = useMutation({
-    mutationFn: () => updateTicket(editing!.id, { serviceId: service!.id, addonIds, pick, customLines }),
-    onSuccess: () => { invalidateBoard(); say("Ticket updated"); resetDraft(); setTab("queue"); },
+    networkMode: "always",
+    mutationFn: () => {
+      const nail = nailAdjustment(nailCfg, pick);
+      return updateTicket(editing!.id, { serviceId: service!.id, addonIds, pick, customLines }, editing!, {
+        storeId,
+        service: { name: service!.name, price: Number(service!.price) || 0, duration: Number(service!.duration) || 0 },
+        addons: addonIds.map((id) => activeAddons.find((a) => a.id === id)).filter((a): a is NonNullable<typeof a> => !!a)
+          .map((a) => ({ id: a.id, name: a.name, price: Number(a.price) || 0, duration: Number(a.duration) || 0 })),
+        nailLines: nail.lines.map((l) => ({ label: l.label, price: l.price })),
+        nailPriceAdjustment: nail.lines.reduce((sum, l) => sum + l.price, 0),
+        total: totals.price, duration: totals.duration,
+      });
+    },
+    onSuccess: (r) => { invalidateBoard(); say(r.offline ? "Ticket updated on this tablet · it will be sent when the connection is back" : "Ticket updated"); resetDraft(); setTab("queue"); },
     onError: (err: any) => toast({ title: "Couldn't update the ticket", description: err?.message, variant: "destructive" }),
   });
 
   const reassign = useMutation({
-    mutationFn: (v: { id: number; staffId: number }) => reassignTicket(v.id, v.staffId),
-    onSuccess: (r) => { invalidateBoard(); setAssigning(null); setAssignError(null); say(`Moved to ${r.staffName}`); },
+    networkMode: "always",
+    mutationFn: (v: { id: number; staffId: number }) => {
+      const who = techList.find((t) => t.id === v.staffId);
+      const whose = tickets.find((t) => t.id === v.id)?.client.name;
+      return reassignTicket(v.id, v.staffId, who ? { name: who.name, color: who.color ?? null } : undefined, whose);
+    },
+    onSuccess: (r, v) => {
+      invalidateBoard(); setAssigning(null); setAssignError(null); say(`Moved to ${r.staffName}`);
+      if (payAfterAssign.current === v.id) { payAfterAssign.current = null; void openTicketForCheckout(v.id); }
+    },
     onError: (err: any) => setAssignError(err instanceof ApiError ? err.message : "Couldn't reassign. Try again."),
   });
 
   const act = useMutation({
+    networkMode: "always",
     mutationFn: (fn: () => Promise<unknown>) => fn(),
     onSuccess: invalidateBoard,
     onError: (err: any) => toast({ title: "That didn't go through", description: err?.message, variant: "destructive" }),
@@ -372,6 +601,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   // Paying a ticket happens right here: the POS tab switches from the ticket builder to that ticket's checkout.
   const openCheckout = useCallback((t: BoardTicket) => {
+    turnsEarned.current = [];
     setCheckoutEvent(null);
     setTicketPaid(false);
     setCheckout(t);
@@ -381,15 +611,25 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // A ticket that was just made: fetch it fresh from the board, then pay it here.
   const openTicketForCheckout = async (id: number) => {
     try {
-      const b = await queryClient.fetchQuery({ queryKey: BOARD_KEY, queryFn: fetchBoard, staleTime: 0 });
+      const b = await queryClient.fetchQuery({ queryKey: boardKey(storeId), queryFn: fetchBoard, staleTime: 0 });
       const t = b.tickets.find((x) => x.id === id);
       if (t) requestCheckout(t);
-      else toast({ title: "Ticket created", description: "Open it from Checked In to take payment.", variant: "destructive" });
-    } catch { toast({ title: "Ticket created", description: "Open it from Checked In to take payment.", variant: "destructive" }); }
+      else toast({ title: "Ticket created", description: "Open it from the Queue to take payment.", variant: "destructive" });
+    } catch { toast({ title: "Ticket created", description: "Open it from the Queue to take payment.", variant: "destructive" }); }
   };
 
   const requestCheckout = (t: BoardTicket) => {
-    if (posEnabled && !openDrawerSession && navigator.onLine) {
+    // Offline, a ticket can be closed in cash only (recorded on this tablet and sent later). Say so up front.
+    if (offline || isLocalId(t.id)) say("Offline: cash only. The sale is saved on this tablet and sent when the connection is back.");
+    // A ticket is never paid without its technician — that's who earns the commission and the TURN credit.
+    if (!t.staff) {
+      payAfterAssign.current = t.id;
+      setAssignError(null);
+      setAssigning({ mode: "assign", ticket: t });
+      say("Assign a technician first — checkout opens right after");
+      return;
+    }
+    if (posEnabled && !openDrawerSession && navigator.onLine && !offline && !isLocalId(t.id)) {
       setPendingCheckout(t);
       setShowOpenRegister(true);
       return;
@@ -407,25 +647,93 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   }, [pendingCheckout, openDrawerSession, openCheckout]);
 
   const finalize = useMutation({
-    mutationFn: (data: FinalizeData) => completeTicket(checkout!.id, data),
+    networkMode: "always",
+    mutationFn: (data: FinalizeData) => completeTicket(checkout!.id, data, { storeId, clientName: checkout!.client.name }),
     // Completed — but stay on this ticket's checkout screen (Print/Text/No Receipt takes it from here) rather than
     // jumping away immediately, so a receipt can still be sent for a sale that's already safely recorded.
-    onSuccess: () => { invalidateBoard(); setTicketPaid(true); say("Checked out"); },
-    onError: (err: any) => toast({ title: "Payment wasn't saved", description: err instanceof ApiError && err.message ? `${err.message} — the sale didn't close.` : "The sale didn't close. Check the ticket on the board.", variant: "destructive" }),
+    onSuccess: (r) => {
+      turnsEarned.current = r?.turns ?? []; invalidateBoard(); setTicketPaid(true);
+      // Not "checked out" yet as far as the server knows: say exactly what happened.
+      say(r?.offline ? "Cash recorded on this tablet · the sale will be sent when the connection is back" : "Checked out");
+    },
+    onError: (err: any) => {
+      // The server answered and refused this exact request (ticket changed, gift card short, …): nothing was saved, so
+      // forget it — the next PAY / CHECKOUT rebuilds it from what's on screen. A lost response (network, 5xx) is kept and
+      // retried unchanged, since the sale may already have closed.
+      if (err instanceof ApiError && err.status >= 400 && err.status < 500 && checkout) {
+        try { localStorage.removeItem(checkoutRequestKey(storeId, checkout.id)); } catch { /* private mode */ }
+      }
+      toast({ title: "Checkout could not be confirmed", description: err instanceof ApiError && err.message ? `${err.message} Check this ticket before charging again.` : "The response was lost or the sale could not close. Retry this checkout; do not collect payment twice.", variant: "destructive" });
+    },
   });
 
+  // Changing the service from the payment screen: the saved ticket is updated in place (its add-ons and custom
+  // lines stay; the new service starts on its own default nail options) and the checkout follows the board.
+  const changeCheckoutService = async (svc: CatalogService): Promise<boolean> => {
+    const t = liveCheckoutRef.current;
+    if (!t) return false;
+    try {
+      const cfg = await fetchNailConfig(svc.id).catch(() => null);
+      await updateTicket(t.id, { serviceId: svc.id, addonIds: t.addons.map((a) => a.id), pick: defaultPick(cfg), customLines: t.customLines }, t);
+      await queryClient.invalidateQueries({ queryKey: boardKey(storeId) });
+      return true;
+    } catch (err: any) {
+      toast({ title: "Couldn't change the service", description: err?.message, variant: "destructive" });
+      return false;
+    }
+  };
+
   // The receipt has been handled (printed / texted / declined) for an already-paid ticket — now leave the checkout screen.
-  const finishCheckout = useCallback(() => { setCheckout(null); setTicketPaid(false); setTab("queue"); }, []);
+  // A walk-in ticket first shows the technician what it was worth in the turn rotation, then the screen locks.
+  const finishCheckout = useCallback(() => {
+    setCheckout(null); setTicketPaid(false);
+    const turns = turnsEarned.current;
+    turnsEarned.current = [];
+    if (turns.length > 0) setTurnNotice(turns); else lock();
+  }, [lock]);
+  const closeTurnNotice = useCallback(() => { setTurnNotice(null); lock(); }, [lock]);
 
   // ── open a ticket by id (scanner, voucher) ───────────────────────────────
   const openTicketById = useCallback(async (id: number) => {
-    await queryClient.invalidateQueries({ queryKey: BOARD_KEY });
-    const b = await queryClient.fetchQuery({ queryKey: BOARD_KEY, queryFn: fetchBoard });
+    await queryClient.invalidateQueries({ queryKey: boardKey(storeId) });
+    const b = await queryClient.fetchQuery({ queryKey: boardKey(storeId), queryFn: fetchBoard });
     if (b.tickets.some((t) => t.id === id)) setPopupId(id);
     else toast({ title: "That ticket isn't on today's board", description: "It may already be paid or cancelled.", variant: "destructive" });
   }, [queryClient, toast]);
 
-  // ── QR / barcode scanner: a kiosk ticket or a deal voucher opens its ticket ──
+  // ── QR / barcode scanner, and its manual-entry fallback ─────────────────────
+  // Every scan (or typed ticket number) re-resolves live — the same physical check-in slip means
+  // something different depending on where that appointment/checkin is right now:
+  //   no ticket yet   → opens the client in the POS tab to create one (same as tapping their
+  //                     checked-in marker)
+  //   ticket exists   → opens the ticket popup (Checkout / Reassign / Ticket), same as today
+  //   paid            → opens the paid receipt, in-app, instead of erroring that the ticket
+  //                     is "no longer on today's board"
+  // applyLookupResult is shared by handleScan (QR/barcode) and lookupByNumber (the manual-entry
+  // fallback for a slip whose QR won't scan) so the two paths can never behave differently for
+  // the same underlying record.
+  const [receiptToken, setReceiptToken] = useState<string | null>(null);
+  // A ticket that resolved to a real appointment but isn't on today's live board — cancelled,
+  // no-show, pending, or completed with no receipt token to open instead. Nothing live to open
+  // for any of these; TicketStatusDialog shows the record's actual status rather than erroring
+  // as if the ticket number didn't exist.
+  const [lookupStatus, setLookupStatus] = useState<LookupTicketStatus | null>(null);
+  const applyLookupResult = useCallback(async (data: any) => {
+    if (data.type === "checkin") {
+      await pickClient(data.clientId, data.checkinId);
+      return;
+    }
+    if (data.isPaid && data.manageToken) { setReceiptToken(data.manageToken); return; }
+    if (data.status === "confirmed" || data.status === "started") {
+      await openTicketById(data.appointmentId);
+      return;
+    }
+    setLookupStatus({
+      appointmentId: data.appointmentId, ticketNumber: data.ticketNumber ?? null,
+      clientName: data.clientName, service: data.service, date: data.date, status: data.status, isPaid: data.isPaid,
+    });
+  }, [openTicketById, pickClient]);
+
   const handleScan = useCallback(async (raw: string) => {
     try {
       const res = await fetch("/api/qr/lookup", {
@@ -444,12 +752,29 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
         await openTicketById(d.appointmentId);
         return;
       }
-      await openTicketById(data.appointmentId);
+      await applyLookupResult(data);
     } catch {
       toast({ title: "Scan failed", description: "Couldn't reach the server. Try again.", variant: "destructive" });
     }
-  }, [toast, say, openTicketById]);
+  }, [toast, say, openTicketById, applyLookupResult]);
   useBarcodeScanner(handleScan);
+
+  // The "# 123" ticket-number fallback when a slip's QR won't scan — see LookupByNumberDialog.
+  const [showLookupByNumber, setShowLookupByNumber] = useState(false);
+  const lookupByNumber = useCallback(async (ticketNumber: number): Promise<boolean> => {
+    try {
+      const res = await fetch("/api/nail/lookup-by-number", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticketNumber }),
+      });
+      const data = res.ok ? await res.json() : null;
+      if (!data?.found) return false;
+      await applyLookupResult(data);
+      setShowLookupByNumber(false);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [applyLookupResult]);
 
   // ── open-register prompts: on load during the morning window, and again at 1 AM store time ──
   const dayKey = useCallback(() => new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date()), [timezone]);
@@ -491,6 +816,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const timeclockEnabled = features.timeclock !== false;
   // Offline mode runs from cached files — wiping them there would break it, so no Hard Refresh while offline.
   const offline = useNetworkStatus() === "offline";
+  const [showQueued, setShowQueued] = useState(false);
   const moreTiles: MoreTile[] = [
     { key: "book", label: "Book Appointment", icon: CalendarPlus, run: () => { setFrontdeskPhone(""); setShowBook(true); } },
     { key: "clients", label: "Client Lookup", icon: Search, run: () => setSheet("clients") },
@@ -499,21 +825,14 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     ...(posEnabled ? [
       { key: "register", label: "Cash Drawer", sub: openDrawerSession ? "Open" : "Closed", icon: Wallet, run: () => setShowOpenRegister(true) },
       { key: "retail", label: "Retail Sale", icon: ShoppingBag, run: () => navigate("/pos") },
-      { key: "dayclose", label: "Day Close", icon: LockKeyhole, run: () => setSheet("dayclose") },
     ] : []),
+    // Opens the Manager tab (managerTiles below) once the manager PIN is entered.
     { key: "manager", label: "Manager", icon: KeyRound, run: () => setSheet("manager") },
-    { key: "reports", label: "Reports", icon: BarChart3, run: () => navigate("/reports") },
     { key: "messages", label: "Messages", icon: Bell, run: () => navigate("/sms-inbox") },
-    ...(thermalPrinter.isAvailable ? [{
-      key: "printer", icon: Printer, label: "Printer",
-      sub: thermalPrinter.isConnected ? `${thermalPrinter.deviceName?.split(" ")[0] ?? "Printer"} · connected` : thermalPrinter.status === "connecting" ? "Connecting…" : thermalPrinter.status === "error" ? "Error · retry" : "Tap to connect",
-      run: () => { void (thermalPrinter.isConnected ? thermalPrinter.disconnect() : thermalPrinter.connect()); },
-    }] : []),
     ...(isMultiStation && currentRegisterName ? [{
       key: "station", icon: CreditCard, label: "Station", sub: currentRegisterName,
-      run: () => { if (window.confirm(`This tablet is paired as ${currentRegisterName}. Reset if it's being moved to a different station — you'll be asked to pick again.`)) resetRegister(); },
+      run: () => setPairScreenOpen(true),
     }] : []),
-    { key: "settings", label: "Settings", icon: Settings, run: () => navigate("/settings") },
     ...(offline ? [] : [{
       key: "refresh", label: "Hard Refresh", sub: "Fix a page that won't load", icon: RefreshCw, run: () => { void hardRefresh(); },
       confirm: {
@@ -522,6 +841,21 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
         action: "REFRESH NOW",
       },
     }]),
+  ];
+
+  // The Manager tab of the More popup — everything here is behind the manager PIN.
+  const managerTiles: MoreTile[] = [
+    { key: "settings", label: "Settings", icon: Settings, run: () => navigate("/settings") },
+    { key: "keygrid", label: "Key Grid", sub: "Arrange the POS keys", icon: LayoutGrid, run: () => setGridEditor("open") },
+    { key: "lockscreen", label: "Lock Screen", sub: saveLock.isPending ? "Saving…" : lockEnabled ? "On · Tech ID to use the POS" : "Off · no sign-in", icon: Lock, keepOpen: true,
+      run: () => { if (!saveLock.isPending) saveLock.mutate(!lockEnabled); } },
+    ...(thermalPrinter.isAvailable ? [{
+      key: "printer", icon: Printer, label: "Printer",
+      sub: thermalPrinter.isConnected ? `${thermalPrinter.deviceName?.split(" ")[0] ?? "Printer"} · connected` : thermalPrinter.status === "connecting" ? "Connecting…" : thermalPrinter.status === "error" ? "Error · retry" : "Tap to connect",
+      run: () => { void (thermalPrinter.isConnected ? thermalPrinter.disconnect() : thermalPrinter.connect()); },
+    }] : []),
+    ...(posEnabled ? [{ key: "dayclose", label: "Day Close", icon: LockKeyhole, run: () => setSheet("dayclose") }] : []),
+    { key: "reports", label: "Reports", icon: BarChart3, run: () => navigate("/reports") },
   ];
 
   // ── Check-In sheet: put the /frontdesk tablet on its check-in screen while it's open ──
@@ -534,13 +868,20 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     void send("kiosk_checkout_checkin_launch");
     return () => { void send("kiosk_checkout_checkin_cancel"); };
   }, [showCheckIn, dualScreen, registerId]);
-  // The customer checked themselves in on /frontdesk → the board gains a waiting entry: close the sheet.
-  const waitingNow = waitingCount;
-  const waitingWhenOpened = useRef(0);
-  useEffect(() => { if (showCheckIn) waitingWhenOpened.current = waitingNow; }, [showCheckIn]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The paired customer tablet checked someone in. Match the new board entity to the phone that
+  // tablet entered; a different station's check-in must not close this station's sheet.
+  const checkinBaseline = useRef<Set<string>>(new Set());
+  const openCheckIn = () => {
+    checkinBaseline.current = waitingEntityKeys(tickets, markers);
+    setFrontdeskPhone("");
+    setShowCheckIn(true);
+  };
   useEffect(() => {
-    if (showCheckIn && waitingNow > waitingWhenOpened.current) { setShowCheckIn(false); say("Client checked in"); }
-  }, [waitingNow, showCheckIn, say]);
+    if (showCheckIn && hasNewWaitingEntityForPhone(tickets, markers, checkinBaseline.current, frontdeskPhone)) {
+      setShowCheckIn(false);
+      say("Client checked in");
+    }
+  }, [tickets, markers, frontdeskPhone, showCheckIn, say]);
 
   const setTechIn = async (tech: TurnTech) => {
     setClockInFor(null);
@@ -553,6 +894,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       toast({ title: `Couldn't set ${tech.name.split(" ")[0]} in`, description: err?.message, variant: "destructive" });
     } finally {
       invalidateBoard();
+      queryClient.invalidateQueries({ queryKey: ["/api/turn/eligibility", storeId, "nail-techs"] });
     }
   };
 
@@ -566,6 +908,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       toast({ title: `Couldn't clock ${tech.name.split(" ")[0]} out`, description: err?.message, variant: "destructive" });
     } finally {
       invalidateBoard();
+      queryClient.invalidateQueries({ queryKey: ["/api/turn/eligibility", storeId, "nail-techs"] });
     }
   };
 
@@ -575,46 +918,126 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const submit = () => {
     if (!canSubmit) return;
     if (editing) update.mutate();
-    else { setAssignError(null); setAssigning({ mode: "create" }); }
+    else create.mutate();
   };
-  const payNow = () => { if (!canSubmit || editing) return; payAfterCreate.current = true; setAssignError(null); setAssigning({ mode: "create" }); };
+  // `fn`: the checkout function to open on (Group Pay / Tip Adjust / Discount); a plain PAY NOW opens on Payment.
+  const checkoutStart = useRef<CheckoutFn | null>(null);
+  const payNow = (fn: CheckoutFn | null = null) => {
+    if (!canSubmit || editing) return;
+    checkoutStart.current = fn;
+    payAfterCreate.current = true;
+    create.mutate();
+  };
+  // Group Pay / Tip Adjust / Discount under the keypad belong to paying: the ticket is saved and its checkout
+  // opens on that function, so building and paying feel like one screen.
+  const payNowWith = (fn: CheckoutFn) => {
+    if (busy) return;
+    if (editing) { say("Update the ticket first, then open it to pay"); return; }
+    if (!canSubmit) { say("Add a service first"); return; }
+    payNow(fn);
+  };
+  // Clearing drops the client too, and a ticket can only be built for a client — so go back to the queue.
   const clearDraft = () => {
-    if (editing) setTab("queue");
+    setTab("queue");
     resetDraft();
   };
 
-  // A kiosk check-in with no ticket yet → start their ticket. (One with no client on file used to open the walk-in sheet to find or
-  // create them by phone; that sheet is gone, so this can only tell staff to use Check-In manually instead of silently doing nothing.)
-  const startFromMarker = (m: BoardMarker) => {
-    if (!m.clientId) {
-      toast({ title: "No client on file for this check-in", description: "Use Check-In to look them up or add them, then start their ticket from there." });
-      return;
+  // A kiosk check-in with no ticket yet → start their ticket. One with no client on file is first matched to a
+  // client by the phone they typed, or saved as a new client from the name and number on the check-in.
+  const startFromMarker = async (m: BoardMarker) => {
+    let clientId = m.clientId;
+    if (!clientId) {
+      try { clientId = (await resolveMarkerClient(m.id)).clientId; invalidateBoard(); }
+      catch (err: any) {
+        toast({ title: "Couldn't open this check-in", description: err instanceof ApiError ? err.message : "Try again.", variant: "destructive" });
+        return;
+      }
     }
     setTab("pos");
-    void pickClient(m.clientId, m.id);
+    void pickClient(clientId, m.id);
   };
 
   const ticketActions = {
-    onStart: (t: BoardTicket) => act.mutate(() => startTicket(t.id)),
-    onCheckout: requestCheckout,
-    onReassign: (t: BoardTicket) => { setAssignError(null); setAssigning({ mode: "reassign", ticket: t }); },
+    // Defense in depth: even if another view invokes Start for an unassigned ticket,
+    // assignment is required first so the ticket cannot disappear into an invalid started state.
+    onStart: (t: BoardTicket) => {
+      if (!t.staff) {
+        setAssignError(null);
+        setAssigning({ mode: "assign", ticket: t });
+        return;
+      }
+      act.mutate(() => startTicket(t.id, t.client.name));
+    },
+    onCheckout: (t: BoardTicket) => { checkoutStart.current = null; requestCheckout(t); },
+    onReassign: (t: BoardTicket) => { setAssignError(null); setAssigning({ mode: t.staff ? "reassign" : "assign", ticket: t }); },
     onEdit: startEdit,
-    onCancel: (t: BoardTicket) => { if (window.confirm(`Cancel ${t.client.name}'s ticket?`)) act.mutate(() => cancelTicket(t.id)); },
+    onCancel: (t: BoardTicket) => { if (window.confirm(`Cancel ${t.client.name}'s ticket?`)) act.mutate(() => cancelTicket(t.id, t.client.name)); },
   };
+  // ── Tech ID sign-in ───────────────────────────────────────────────────────
+  // A technician with a client in the chair is shown that client's ticket; everyone else lands on the queue.
+  const onTechSignedIn = (who: TechSignIn) => {
+    setTech(who.staff);
+    // Signing in just gave them the next waiting client they can do: show the queue with a notice saying
+    // who, then lock again. Their next sign-in opens that client (activeMarker / activeTicketId below).
+    if (who.justAssigned) {
+      setPopupId(null); setQueueView(null); setTab("queue");
+      setAssignedNotice({ ...who.justAssigned, staffName: who.staff.name });
+      queryClient.invalidateQueries({ queryKey: boardKey(storeId) });
+      queryClient.invalidateQueries({ queryKey: ["/api/turn/eligibility"] });
+      return;
+    }
+    // Their client from the front desk check-in has no ticket yet: go straight to making it.
+    if (who.activeMarker?.clientId) { setTab("pos"); void pickClient(who.activeMarker.clientId, who.activeMarker.id); }
+    // Their client already has a ticket in service: show that ticket over the queue (checkout, reassign, ticket, cancel).
+    else if (who.activeTicketId != null) { setQueueView(null); setTab("queue"); void openTicketById(who.activeTicketId); }
+  };
+  // The lock screen's turn queue: clocked-in technicians in turn order — the free ones first, numbered
+  // (1 is next up), then those busy or on break.
+  const turnQueueForGate = useMemo(() => {
+    const clockedIn = techList.filter((t) => t.clockedIn !== false);
+    const statusOf = (t: TurnTech) => t.currentStatus ?? "available";
+    const free = clockedIn.filter((t) => statusOf(t) === "available");
+    const held = clockedIn.filter((t) => statusOf(t) !== "available");
+    return [
+      ...free.map((t, i) => ({ id: t.id, name: t.name, status: "available" as const, position: i + 1 })),
+      ...held.map((t) => ({ id: t.id, name: t.name, status: statusOf(t) as "busy" | "on_break", position: null })),
+    ];
+  }, [techList]);
+
   const popupTicket = popupId != null ? tickets.find((t) => t.id === popupId) ?? null : null;
+  // The ticket being paid, as the board has it now (another station may have edited it). Once it's paid it leaves
+  // the board, so the last copy is kept for the receipt screen.
+  const lastLiveCheckout = useRef<BoardTicket | null>(null);
+  const onBoard = checkout ? tickets.find((t) => t.id === checkout.id) ?? null : null;
+  if (onBoard) lastLiveCheckout.current = onBoard;
+  const liveCheckout = onBoard ?? (checkout && lastLiveCheckout.current?.id === checkout.id ? lastLiveCheckout.current : null);
+  liveCheckoutRef.current = liveCheckout ?? checkout;
 
   return (
     <div className="dark cx-cal nail-app h-app w-full" data-testid="nail-home">
+      <a className="nail-skip-link" href="#nail-main">Skip to main content</a>
+      <h1 className="sr-only">Nail salon front desk</h1>
       {notice && <div className="nail-notice" data-testid="nail-notice">{notice}</div>}
+      {(offline || queued.pending > 0 || queued.attention > 0 || recovery.signIn || recovery.storage) && (
+        <button type="button" className="nail-offline-pill" data-testid="nail-offline-pill" onClick={() => setShowQueued(true)}>
+          {recovery.storage ? "TABLET STORAGE PROBLEM" : recovery.signIn ? "SIGN IN NEEDED" : offline ? "OFFLINE" : "SENDING"}
+          {offline && board?.cachedAt && ` · AS OF ${new Date(board.cachedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`}
+          {queued.pending > 0 && ` · ${queued.pending} TO SEND`}
+          {queued.attention > 0 && ` · ${queued.attention} NEED ATTENTION`}
+          {queued.cash.count > 0 && ` · $${queued.cash.amount.toFixed(2)} CASH NOT SENT`}
+        </button>
+      )}
+      {showQueued && <OfflineQueueSheet storeId={storeId} offline={offline} onClose={() => setShowQueued(false)} />}
 
-      <main className={`pos-shell ${tab === "board" || tab === "queue" ? "checkin-page" : ""} ${tab === "techs" ? "techs-page" : ""}`}>
+      <main id="nail-main" className={`pos-shell ${tab === "queue" ? "checkin-page" : ""} ${tab === "techs" ? "techs-page" : ""}`}>
         {/* Checkout: the POS tab's own screen (ticket · keypad · payment / functions). It stays mounted while staff peek at another
             tab, so a half-paid ticket — or a card that has already been charged — is never lost. */}
         {checkout && (
           <div style={{ display: tab === "pos" ? "contents" : "none" }}>
-            <CheckoutMode
+            <Suspense fallback={<div className="nail-route-loading" role="status"><Loader2 className="animate-spin" /> Loading checkout…</div>}><CheckoutMode
               key={checkout.id}
-              ticket={checkout}
+              ticket={liveCheckout ?? checkout}
+              salesTax={salesTax}
               storeId={storeId}
               storeName={storeName}
               storeAddress={storeAddress}
@@ -623,15 +1046,20 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
               timezone={timezone}
               registerId={registerId}
               dualScreen={dualScreen}
-              otherTickets={tickets.filter((t) => t.id !== checkout.id && t.status === "started")}
+              otherTickets={tickets.filter((t) => t.id !== checkout.id && (t.status === "started" || !!t.staff))}
               thermalPrint={thermalPrinter.isConnected ? thermalPrinter.print : undefined}
               finalizing={finalize.isPending}
               paid={ticketPaid}
               socketEvent={checkoutEvent}
               onFinalize={(data) => finalize.mutate(data)}
               onReceiptDone={finishCheckout}
+              initialAction={checkoutStart.current}
+              active={tab === "pos" && (tech != null || !lockEnabled)}
+              groups={groups}
+              layout={posGrid?.config ?? null}
+              onChangeService={changeCheckoutService}
               onClose={() => { setCheckout(null); setTab("queue"); }}
-            />
+            /></Suspense>
           </div>
         )}
         {checkout && tab === "pos" ? null : tab === "pos" ? (
@@ -642,19 +1070,21 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
               lines={totals.lines}
               duration={totals.duration}
               price={totals.price}
-              submitLabel={editing ? "UPDATE TICKET" : !client ? "START A WALK-IN FIRST" : !service ? "ADD A SERVICE FIRST" : "CREATE TICKET"}
+               submitLabel={editing ? "UPDATE TICKET" : !client ? "CHOOSE A CLIENT FIRST" : !service ? "ADD A SERVICE FIRST" : "SAVE TICKET"}
               canSubmit={canSubmit}
               busy={busy}
               editing={!!editing}
               onRemove={removeLine}
               onClear={clearDraft}
               onSubmit={submit}
-              onPayNow={editing ? undefined : payNow}
+              onPayNow={editing ? undefined : () => payNow()}
             />
             <section className="work-area">
               <div className="sale-area">
-                <Keypad locked={!client} onEnter={addCustom} onGiftCard={() => setShowGift(true)} />
+                <Keypad locked={!client} onEnter={addCustom} onGiftCard={() => setShowGift(true)} onCheckoutFn={payNowWith} onNotice={say}
+                  onNoSale={() => { void openCashDrawerHardware({ onThermalPrint: thermalPrinter.isConnected ? thermalPrinter.print : undefined }); recordNoSale({ drawerId, performedBy: tech?.name }); say("Cash drawer opened"); }} />
                 <CatalogPanel
+                  layout={posGrid?.config ?? null}
                   locked={!client}
                   groups={groups}
                   activeGroup={activeGroup}
@@ -672,28 +1102,27 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
             </section>
           </>
         ) : tab === "techs" ? (
-          <>
-            <CheckInPanel clockOffsetMs={clockOffsetMs} tickets={tickets} markers={markers} onMarker={startFromMarker} onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))} onTicket={(t) => setPopupId(t.id)} />
-            <TechCards techs={techList} tickets={tickets} markers={markers} stats={board?.techStats ?? EMPTY_ARRAY} glance={board?.glance} waiting={waitingCount} loading={techsLoading} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} onClockedOutTap={setClockInFor} onClockedInTap={setClockOutFor} />
-          </>
-        ) : tab === "queue" ? (
-          <QueueTab techs={techList} tickets={tickets} markers={markers} glance={board?.glance} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} onMarker={startFromMarker} onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))} onTicket={(t) => setPopupId(t.id)} onTicketTap={(t) => setPopupId(t.id)} />
+          <TechCards techs={techList} tickets={tickets} markers={markers} glance={board?.glance} stats={board?.techStats ?? EMPTY_ARRAY} loading={techsLoading} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} onClockedOutTap={setClockInFor} onClockedInTap={setClockOutFor} onTicketTap={(t) => setPopupId(t.id)} onQueueView={(view) => { setQueueView(view); setTab("queue"); }} />
         ) : (
-          <CheckInBoard tickets={tickets} busy={act.isPending} {...ticketActions} clockOffsetMs={clockOffsetMs} />
+          <QueueTab techs={techList} tickets={tickets} markers={markers} dayBookings={dayBookings} glance={board?.glance} appointmentsLoading={needsCalendarFallback && calendarFallbackPending} appointmentsError={needsCalendarFallback && calendarFallbackError} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} initialView={queueView} onMarker={(m) => void startFromMarker(m)} onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))} onTicket={(t) => setPopupId(t.id)} onAssignTicket={(t) => { setAssignError(null); setAssigning({ mode: "assign", ticket: t }); }} onStartTicket={ticketActions.onStart} onTicketTap={(t) => setPopupId(t.id)} onTechs={() => setTab("techs")} />
         )}
 
-      <BottomNav tab={tab} onTab={setTab} onCheckIn={() => setShowCheckIn(true)} onMore={() => setShowMore(true)} waiting={waitingCount} inService={inServiceCount} live={live} />
+      <BottomNav tab={tab} onTab={(next) => { setQueueView(null); if (next === "queue" && tab === "queue") { setPopupId(null); setTech(null); } else setTab(next); }} onCheckIn={openCheckIn} onMore={() => setShowMore("more")} onLookupByNumber={() => setShowLookupByNumber(true)} waiting={waitingCount} live={live} />
       </main>
 
       {showGift && <GiftCardSheet onClose={() => setShowGift(false)} onSay={say} />}
 
       {popupTicket && <TicketPopup ticket={popupTicket} busy={act.isPending} {...ticketActions} clockOffsetMs={clockOffsetMs} onClose={() => setPopupId(null)} />}
+      {receiptToken && <ReceiptDialog token={receiptToken} onClose={() => setReceiptToken(null)} />}
+      {lookupStatus && <TicketStatusDialog ticket={lookupStatus} onClose={() => setLookupStatus(null)} />}
+      {showLookupByNumber && <LookupByNumberDialog onLookup={lookupByNumber} onClose={() => setShowLookupByNumber(false)} />}
 
       {clockOutFor && <TechClockOutSheet tech={clockOutFor} busy={false} onClockOut={() => void setTechOut(clockOutFor)} onClose={() => setClockOutFor(null)} />}
 
       {clockInFor && <TechClockInSheet tech={clockInFor} busy={false} onSetIn={() => void setTechIn(clockInFor)} onClose={() => setClockInFor(null)} />}
 
-      {showMore && <MoreMenu tiles={moreTiles} onClose={() => setShowMore(false)} />}
+      {showMore === "more" && <MoreMenu tiles={moreTiles} onClose={() => setShowMore(false)} />}
+      {showMore === "manager" && <MoreMenu title="Manager" tiles={managerTiles} onClose={() => setShowMore(false)} onBack={() => setShowMore("more")} />}
 
       {showCheckIn && (
         <CheckInLookup
@@ -702,6 +1131,24 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
           clientEnteringPhone={clientTyping}
           onClose={() => setShowCheckIn(false)}
           onDone={(line) => { setShowCheckIn(false); say(line); invalidateBoard(); }}
+          onPrintTicket={thermalPrinter.isConnected ? async (result) => {
+            const appointment = result.todayAppointment;
+            const qrValue = appointment ? `BK:${appointment.id}` : result.checkin ? `CI:${result.checkin.token}` : "";
+            const ticketNumber = appointment?.ticketNumber ?? result.checkin?.ticketNumber ?? undefined;
+            if (!qrValue || ticketNumber == null) throw new Error("Check-in response has no printable ticket number");
+            const checkedInAt = new Date();
+            await thermalPrinter.print(buildCheckinTicket({
+              storeName,
+              clientName: result.client.name,
+              staffName: appointment?.staffName ?? undefined,
+              services: appointment?.serviceName ? [{ name: appointment.serviceName }] : [],
+              appointmentId: appointment?.id,
+              ticketNumber,
+              bookingCode: qrValue,
+              timeStr: checkedInAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+              dateStr: checkedInAt.toLocaleDateString(),
+            }));
+          } : undefined}
         />
       )}
 
@@ -719,29 +1166,69 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
         <VoucherRedeemSheet onClose={() => setSheet(null)} onRedeemed={(appointmentId) => { setSheet(null); void openTicketById(appointmentId); }} />
       )}
       {sheet === "timeclock" && <TimeClockSheet storeId={storeId} onClose={() => { setSheet(null); invalidateBoard(); }} />}
-      {sheet === "manager" && <ManagerPinSheet onClose={() => setSheet(null)} onSuccess={() => { setSheet(null); navigate("/salon-dashboard"); }} />}
+      {gridEditor === "open" && (
+        <GridEditor groups={groups} config={posGrid?.config ?? null} saving={saveGrid.isPending} onSave={(config) => saveGrid.mutate(config)} onClose={() => setGridEditor(null)} />
+      )}
+      {sheet === "manager" && <ManagerPinSheet onClose={() => setSheet(null)} onSuccess={() => { setSheet(null); setShowMore("manager"); }} />}
       {posEnabled && (
         <DayCloseModal open={sheet === "dayclose"} onClose={() => setSheet(null)} storeId={storeId}
           userName={(user as any)?.firstName || (user as any)?.email || "Staff"} drawerId={drawerId} />
       )}
 
+      {startedNotice && (
+        <div className="fixed inset-0 z-[290] flex items-center justify-center px-6" style={{ background: "rgba(10,12,16,.72)" }} role="status" aria-live="polite" data-testid="nail-started-notice">
+          <div className="rounded-2xl px-10 py-9 text-center" style={{ background: "#232830", border: "1px solid #3b424c", boxShadow: "0 30px 70px rgba(0,0,0,.5)", maxWidth: 620 }}>
+            <p style={{ margin: 0, fontSize: 28, fontWeight: 700, lineHeight: 1.3, color: "#fff" }}>
+              Ticket #{startedNotice.ticketNumber} assigned to {startedNotice.staffName}
+            </p>
+          </div>
+        </div>
+      )}
+      {turnNotice && <TurnEarnedPopup turns={turnNotice} onDone={closeTurnNotice} />}
+      {assignedNotice && (
+        <div className="nl-assigned" role="status" aria-live="polite" data-testid="nail-assigned-notice">
+          <div className="nl-assigned-card">
+            <p className="nl-assigned-eyebrow">Your next client</p>
+            <div className="nl-assigned-client">
+              {assignedNotice.ticketNumber != null && <span className="nl-assigned-ticket">#{assignedNotice.ticketNumber}</span>}
+              <strong>{assignedNotice.clientName || "Client"}</strong>
+            </div>
+            <p className="nl-assigned-tech">Assigned to <b>{assignedNotice.staffName}</b></p>
+            <span className="nl-assigned-timer" aria-hidden />
+          </div>
+        </div>
+      )}
+      {lockEnabled && !tech && !showTurnPage && !needsRegisterPicker && !needsDrawerPicker && <TechIdGate storeName={storeName} timezone={timezone} turnQueue={turnQueueForGate} onOpenTurnPage={() => setShowTurnPage(true)} onSignedIn={onTechSignedIn} />}
+      {showTurnPage && (
+        <TurnPageModal
+          currentDate={getNowInTimezone(timezone)}
+          timezone={timezone}
+          appointments={(turnAppointments as any[] | undefined) ?? []}
+          staffList={(turnStaffList as any[] | undefined) ?? []}
+          turnEligibility={techFeed as any}
+          nextTechnician={((techFeed as any)?.eligibleTechnicians?.[0] ?? null) as any}
+          excludedCount={techList.filter((t) => !t.eligible).length}
+          storeId={storeId}
+          onClose={() => setShowTurnPage(false)}
+        />
+      )}
       {needsRegisterPicker && <RegisterPicker registers={registerOptions} taken={takenRegisters} onSelect={selectRegister} />}
+      <PairCustomerScreenDialog open={pairScreenOpen} stationName={currentRegisterName} onClose={() => setPairScreenOpen(false)} />
+      <StationsFullBanner show={stationsFull} />
 
       {assigning && (
         <AssignTechSheet
           storeId={storeId}
-          serviceId={assigning.mode === "create" ? service?.id ?? null : assigning.ticket.service.id}
-          clientName={assigning.mode === "create" ? client?.name ?? "" : assigning.ticket.client.name}
+          serviceId={assigning.ticket.service.id}
+          clientName={assigning.ticket.client.name}
           mode={assigning.mode}
           excludeStaffId={assigning.mode === "reassign" ? assigning.ticket.staff?.id ?? null : null}
-          initialStaffId={assigning.mode === "create" ? preferredStaff : null}
-          busy={create.isPending || reassign.isPending}
+          busy={reassign.isPending}
           error={assignError}
-          onClose={() => { setAssigning(null); setAssignError(null); payAfterCreate.current = false; }}
+          onClose={() => { setAssigning(null); setAssignError(null); payAfterAssign.current = null; }}
           onConfirm={(staffId) => {
             setAssignError(null);
-            if (assigning.mode === "create") create.mutate(staffId);
-            else if (staffId != null) reassign.mutate({ id: assigning.ticket.id, staffId });
+            if (staffId != null) reassign.mutate({ id: assigning.ticket.id, staffId });
           }}
         />
       )}

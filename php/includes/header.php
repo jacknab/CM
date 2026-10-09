@@ -155,11 +155,11 @@ $_base_schema = [
     'offers' => [
       '@type'      => 'AggregateOffer',
       'priceCurrency' => 'USD',
-      'lowPrice'   => 9,
+      'lowPrice'   => 0,
       'highPrice'  => 49,
       'offerCount' => 3,
       'offers' => [
-        ['@type' => 'Offer', 'name' => 'Solo Plan',         'price' => 9,  'priceCurrency' => 'USD', 'priceSpecification' => ['@type' => 'UnitPriceSpecification', 'price' => 9,  'priceCurrency' => 'USD', 'billingDuration' => ['@type' => 'QuantitativeValue', 'value' => 1, 'unitCode' => 'MON']], 'url' => SITE_URL . '/pricing'],
+        ['@type' => 'Offer', 'name' => 'Solo Plan',         'price' => 0,  'priceCurrency' => 'USD', 'priceSpecification' => ['@type' => 'UnitPriceSpecification', 'price' => 0,  'priceCurrency' => 'USD', 'billingDuration' => ['@type' => 'QuantitativeValue', 'value' => 1, 'unitCode' => 'MON']], 'url' => SITE_URL . '/pricing'],
         ['@type' => 'Offer', 'name' => 'Professional Plan', 'price' => 22, 'priceCurrency' => 'USD', 'priceSpecification' => ['@type' => 'UnitPriceSpecification', 'price' => 22, 'priceCurrency' => 'USD', 'billingDuration' => ['@type' => 'QuantitativeValue', 'value' => 1, 'unitCode' => 'MON']], 'url' => SITE_URL . '/pricing'],
         ['@type' => 'Offer', 'name' => 'Elite Plan',        'price' => 49, 'priceCurrency' => 'USD', 'priceSpecification' => ['@type' => 'UnitPriceSpecification', 'price' => 49, 'priceCurrency' => 'USD', 'billingDuration' => ['@type' => 'QuantitativeValue', 'value' => 1, 'unitCode' => 'MON']], 'url' => SITE_URL . '/pricing'],
       ],

@@ -10,16 +10,20 @@
  * optional GnuMICR OTF file may not be installed.  Install micr-e13b.otf in
  * public/fonts/ and re-enable Font.register() when ready for bank scanning.
  */
-import { Document, Page, View, Text, StyleSheet, Font } from "@react-pdf/renderer";
+import { Document, Page, View, Text, Image, StyleSheet, Font } from "@react-pdf/renderer";
+import type { PayrollYtd } from "@shared/payrollYtd";
 import type { ViewProps } from "@react-pdf/renderer";
 import { ZONES, PADDING } from "@/lib/checkLayout";
-import { MICR_FONT_FAMILY } from "@/lib/micrFont";
+import { MICR_FONT_FAMILY, MICR_CHAR } from "@/lib/micrFont";
 
 // MICR E-13B font embedded as base64 data URL so it loads reliably in every
 // PDF render context (web worker, SSR, etc.) without an HTTP fetch that could
 // fail behind the Replit proxy or a CDN timeout.
+// It's a byte-for-byte copy of public/fonts/micr-e13b.ttf (the file browser printing uses). A damaged
+// copy used to live here — its Windows cmap subtable read as format 41472, and react-pdf's fontkit threw
+// "Unknown version 41472" on every glyph — so re-embed from that file if it ever changes.
 const MICR_FONT_B64 =
-  "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";
+  "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";
 
 const MICR_FONT_SRC = `data:font/truetype;base64,${MICR_FONT_B64}`;
 
@@ -34,6 +38,9 @@ export type EarningsRow = {
   amount: number | string;
   sub?: string;
   indent?: boolean;
+  /** One of the salon's recurring deductions, listed by name on the earnings statement. */
+  deduction?: boolean;
+  ytd?: number | null;
 };
 
 export type DailyBreakdownEntry = {
@@ -52,7 +59,19 @@ export type CheckStoreInfo = {
   phone?: string | null;
 };
 
+/**
+ * The salon's authorized signature for the check face — the same image and owner-chosen placement the
+ * browser-printed check uses (CheckFace in PrintChecks.tsx). `aspect` is the image's width ÷ height.
+ */
+export type CheckPDFSignature = {
+  src: string;        // data: URL of the transparent signature PNG
+  aspect: number;
+  offsetPx: number;   // owner's nudge in CSS px, + = lower
+  scale: number;      // 0.7–1.3
+};
+
 export type CheckPDFProps = {
+  signature?: CheckPDFSignature | null;
   checkNumber: string;
   date: string;
   payee: string;
@@ -78,6 +97,7 @@ export type CheckPDFProps = {
   tipAmount?: number;
   appointmentCount?: number;
   totalRevenue?: number;
+  ytd?: PayrollYtd | null;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -139,10 +159,22 @@ function buildWrittenAmount(amount: number): string {
   return core.length >= 74 ? core + "*****" : core.padEnd(76, "*");
 }
 
+/** The account field of the MICR line. Exported so the browser check face prints the same thing. */
+export function micrAccountField(account: string): string {
+  // The account number goes in the MICR line exactly as entered (digits only, however many
+  // there are). It used to be right-padded with zeros and cut to 10 digits, which printed a
+  // different account number for anything that was not exactly 10 digits long. Shorter numbers are
+  // padded with blanks on the left instead, so the routing and check-number fields stay where they
+  // have always printed. A number longer than 10 digits makes the line longer.
+  const digits = account.replace(/\D/g, "");
+  // No account at all (a preview with no bank details yet) keeps the old row of zeros.
+  return digits.length ? digits.padStart(10, " ") : "0000000000";
+}
+
 function micrNormalize(routing: string, account: string, checkNum: string) {
   return {
     r: routing.replace(/\D/g, "").padEnd(9, "0").slice(0, 9),
-    a: account.replace(/\D/g, "").padEnd(10, "0").slice(0, 10),
+    a: micrAccountField(account),
     // 6-digit check number to match the displayed check number format exactly
     c: checkNum.replace(/\D/g, "").padStart(6, "0").slice(-6),
   };
@@ -200,7 +232,7 @@ const SS = StyleSheet.create({
     paddingBottom: S_PAD_B,
     paddingLeft: S_PAD_L,
     flex: 1,
-    backgroundColor: "#f8fafc",
+    backgroundColor: "#ffffff",
   },
   stubHeader: {
     flexDirection: "row",
@@ -277,12 +309,14 @@ function CheckFacePDF({
   checkNumber, date, payee, payeeStreet, payeeCityStateZip,
   amount, periodStart, store,
   routing, account, bankName, bankAddress, bankCity,
+  signature,
 }: Omit<CheckPDFProps, "earningsRows" | "stubCount" | "label" | "memo" | "periodEnd" | "bankPhone">) {
   const storeCity = [store.city, store.state, store.postcode].filter(Boolean).join(", ");
   const { r, a, c } = micrNormalize(routing, account, checkNumber);
   // ANSI X9.27 business check field order: Check# → Routing Transit → Account
-  // ⑈ (U+2448) = On-Us symbol   ⑆ (U+2446) = Transit symbol
-  const micrLine = `\u2446${r}\u2446  ${a}\u2448  \u2448${c}\u2448`;
+  // ⑈ On-Us / ⑆ Transit — emitted as the font's letter glyphs (see MICR_CHAR)
+  const T = MICR_CHAR.TRANSIT, U = MICR_CHAR.ONUS;
+  const micrLine = `${T}${r}${T}  ${a}${U}  ${U}${c}${U}`;
   const fractional = buildFractionalPDF(routing);
   const writtenAmt = buildWrittenAmount(amount);
   const numericAmt = `***${fmt$(amount)}`;
@@ -422,6 +456,23 @@ function CheckFacePDF({
         {payeeCityStateZip || " "}
       </Text>
 
+      {/* Authorized signature — same rule as the printed check: fitted inside a 2.2" × 0.56" box (× the
+          owner's scale), centred over the signature line, its bottom 0.09" below the line so the ink
+          dips through it like a pen. The line here spans 5.05"–8.05" at Y:2.50". */}
+      {signature ? (() => {
+        const boxW = 2.2 * signature.scale, boxH = 0.56 * signature.scale;
+        const aspect = signature.aspect > 0 ? signature.aspect : boxW / boxH;
+        let w = boxW, h = boxW / aspect;
+        if (h > boxH) { h = boxH; w = boxH * aspect; }
+        const bottom = 2.50 + TOP_OFFSET_IN + 0.09 + signature.offsetPx / 96;
+        return (
+          <Image
+            src={signature.src}
+            style={{ position: "absolute", left: pt(6.55 - w / 2), top: pt(bottom - h), width: pt(w), height: pt(h) }}
+          />
+        );
+      })() : null}
+
       {/* Signature line */}
       <View style={{ ...abs(5.05, 2.50), right: pt(0.45), borderBottomWidth: 1, borderBottomColor: "#374151" }} />
 
@@ -463,17 +514,17 @@ function CheckFacePDF({
 
 // ── Shared mini-helpers for the new three-column stub layout ──────────────────
 
-const CAP = { fontSize: 5.5, fontFamily: "Helvetica-Bold" as const, color: "#64748b", textTransform: "uppercase" as const, letterSpacing: 0.8 };
-const SECTION_LABEL = { fontSize: 5.5, fontFamily: "Helvetica-Bold" as const, color: "#475569", textTransform: "uppercase" as const, letterSpacing: 0.8, backgroundColor: "#f1f5f9", paddingHorizontal: 3, paddingVertical: 1.5, marginBottom: 2 };
-const ROW_LABEL = { fontSize: 7.5, color: "#475569", fontFamily: "Helvetica" as const, flex: 1 };
-const ROW_AMT   = { fontSize: 7.5, color: "#475569", fontFamily: "Courier" as const, width: 40, textAlign: "right" as const };
-const ROW_YTD   = { fontSize: 7.5, color: "#94a3b8", fontFamily: "Courier" as const, width: 30, textAlign: "right" as const };
-const BOLD_LABEL = { fontSize: 7.5, fontFamily: "Helvetica-Bold" as const, color: "#1e293b", flex: 1 };
-const BOLD_AMT   = { fontSize: 7.5, fontFamily: "Courier" as const, color: "#1e293b", width: 40, textAlign: "right" as const, fontWeight: "bold" as const };
+const CAP = { fontSize: 7, fontFamily: "Helvetica-Bold" as const, color: "#64748b", textTransform: "uppercase" as const, letterSpacing: 0.5 };
+const SECTION_LABEL = { fontSize: 7.5, fontFamily: "Helvetica-Bold" as const, color: "#475569", textTransform: "uppercase" as const, letterSpacing: 0.5, paddingHorizontal: 3, paddingVertical: 2, marginBottom: 3 };
+const ROW_LABEL = { fontSize: 9, color: "#475569", fontFamily: "Helvetica" as const, flex: 1 };
+const ROW_AMT   = { fontSize: 9, color: "#475569", fontFamily: "Courier" as const, width: 53, textAlign: "right" as const };
+const ROW_YTD   = { fontSize: 9, color: "#64748b", fontFamily: "Courier" as const, width: 65, textAlign: "right" as const };
+const BOLD_LABEL = { fontSize: 9, fontFamily: "Helvetica-Bold" as const, color: "#1e293b", flex: 1 };
+const BOLD_AMT   = { fontSize: 9, fontFamily: "Courier" as const, color: "#1e293b", width: 53, textAlign: "right" as const, fontWeight: "bold" as const };
 
 function PDFRow({ label, period, ytd, bold = false, topBorder = false }: { label: string; period: string; ytd: string; bold?: boolean; topBorder?: boolean }) {
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 1.5, borderTopWidth: topBorder ? 0.5 : 0, borderTopColor: "#cbd5e1", paddingTop: topBorder ? 2 : 0, marginTop: topBorder ? 1 : 0 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 3, borderTopWidth: topBorder ? 0.5 : 0, borderTopColor: "#cbd5e1", paddingTop: topBorder ? 3 : 0, marginTop: topBorder ? 2 : 0 }}>
       <Text style={bold ? BOLD_LABEL : ROW_LABEL}>{label}</Text>
       <Text style={bold ? BOLD_AMT : ROW_AMT}>{period}</Text>
       <Text style={ROW_YTD}>{ytd}</Text>
@@ -485,7 +536,7 @@ function CheckStubPDF({
   checkNumber, payee, amount, periodStart, periodEnd,
   earningsRows, label, store, zoneStyle, date,
   payeeStreet, payeeCityStateZip,
-  serviceCommission, tipAmount, appointmentCount, totalRevenue,
+  serviceCommission, tipAmount, appointmentCount, totalRevenue, ytd,
 }: {
   checkNumber: string; payee: string; amount: number;
   periodStart?: string | null; periodEnd?: string | null;
@@ -499,14 +550,23 @@ function CheckStubPDF({
   tipAmount?: number;
   appointmentCount?: number;
   totalRevenue?: number;
+  ytd?: PayrollYtd | null;
 }) {
   // Derive values — fall back to earningsRows when new props not provided
   const svcComm = serviceCommission
-    ?? (earningsRows.find(r => r.label === "Commission") ? Number(earningsRows.find(r => r.label === "Commission")!.amount) : 0);
+    ?? Number(earningsRows.find(r => r.label === "Service Commissions")?.amount ?? earningsRows.find(r => r.label === "Commission")?.amount ?? 0);
+  const productComm = Number(earningsRows.find(r => r.label === "Product Commissions")?.amount ?? 0);
   const tips = tipAmount
     ?? (earningsRows.find(r => r.label === "Tips") ? Number(earningsRows.find(r => r.label === "Tips")!.amount) : 0);
-  const grossEarnings  = svcComm + tips;
-  const totalDeductions = 0;
+  const otherEarnings = Number(earningsRows.find(r => r.label === "Other Earnings")?.amount ?? 0);
+  const boothRent = Math.abs(Number(earningsRows.find(r => r.label === "Booth Rent")?.amount ?? 0));
+  const otherDeductions = Math.abs(Number(earningsRows.find(r => r.label === "Other Deductions")?.amount ?? 0));
+  const grossEarnings  = svcComm + productComm + tips + otherEarnings;
+  // The salon's recurring deductions, one row each (name, this period, year to date).
+  const itemized = earningsRows.filter(r => r.deduction).map(r => ({ label: r.label, amount: Math.abs(Number(r.amount)), ytd: r.ytd }));
+  const otherYtd = earningsRows.find(r => r.label === "Other Deductions")?.ytd;
+  const totalDeductions = boothRent + itemized.reduce((s, r) => s + r.amount, 0) + otherDeductions;
+  const ytdAmount = (key: keyof PayrollYtd) => ytd ? fmt$(ytd[key]) : "—";
   const storeAddr = [store.address, [store.city, store.state, store.postcode].filter(Boolean).join(", ")].filter(Boolean).join(" · ");
   const avgTicket = (appointmentCount && appointmentCount > 0 && totalRevenue)
     ? Number(totalRevenue) / appointmentCount : null;
@@ -516,7 +576,7 @@ function CheckStubPDF({
       <View style={SS.stubBody}>
 
         {/* ── DETACH HERE bar ──────────────────────────────────────── */}
-        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 5, backgroundColor: "#f1f5f9", paddingVertical: 2, paddingHorizontal: 4 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 5, paddingVertical: 2, paddingHorizontal: 4 }}>
           <View style={{ flex: 1, borderTopWidth: 0.5, borderTopColor: "#94a3b8", borderStyle: "dashed" }} />
           <Text style={{ fontSize: 5.5, fontFamily: "Helvetica-Bold", color: "#64748b", textTransform: "uppercase", letterSpacing: 1.2, marginHorizontal: 6 }}>
             Detach and Retain for Your Records
@@ -525,25 +585,25 @@ function CheckStubPDF({
         </View>
 
         {/* ── Full-width header ─────────────────────────────────────── */}
-        <View style={{ flexDirection: "row", borderBottomWidth: 1.5, borderBottomColor: "#1e293b", paddingBottom: 5, marginBottom: 5 }}>
+        <View style={{ flexDirection: "row", borderBottomWidth: 1.5, borderBottomColor: "#1e293b", paddingBottom: 8, marginBottom: 8 }}>
           {/* Left: business */}
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 8.5, fontFamily: "Helvetica-Bold", color: "#0f172a", textTransform: "uppercase" }}>{store.name}</Text>
-            {storeAddr ? <Text style={{ fontSize: 6.5, color: "#64748b", marginTop: 1 }}>{storeAddr}</Text> : null}
+            <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold", color: "#0f172a", textTransform: "uppercase" }}>{store.name}</Text>
+            {storeAddr ? <Text style={{ fontSize: 8, color: "#64748b", marginTop: 2 }}>{storeAddr}</Text> : null}
           </View>
           {/* Center: title */}
           <View style={{ flex: 1, alignItems: "center" }}>
-            <Text style={{ fontSize: 8, fontFamily: "Helvetica-Bold", color: "#1e293b", textTransform: "uppercase", letterSpacing: 1 }}>Earnings Statement</Text>
-            <Text style={{ fontSize: 6.5, color: "#64748b", marginTop: 1 }}>{label}</Text>
-            {date ? <Text style={{ fontSize: 6.5, color: "#475569", marginTop: 1 }}>Pay Date: {fmtDate(date)}</Text> : null}
-            {(periodStart || periodEnd) ? <Text style={{ fontSize: 6.5, color: "#475569" }}>Period: {fmtShort(periodStart)} – {fmtShort(periodEnd)}</Text> : null}
-            <Text style={{ fontSize: 6.5, color: "#475569" }}>Check No: {checkNumber}</Text>
+            <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold", color: "#1e293b", textTransform: "uppercase", letterSpacing: 0.5 }}>Earnings Statement</Text>
+            <Text style={{ fontSize: 8, color: "#64748b", marginTop: 2 }}>{label}</Text>
+            {date ? <Text style={{ fontSize: 8, color: "#475569", marginTop: 2 }}>Pay Date: {fmtDate(date)}</Text> : null}
+            {(periodStart || periodEnd) ? <Text style={{ fontSize: 8, color: "#475569" }}>Period: {fmtShort(periodStart)} – {fmtShort(periodEnd)}</Text> : null}
+            <Text style={{ fontSize: 8, color: "#475569" }}>Check No: {checkNumber}</Text>
           </View>
           {/* Right: employee */}
           <View style={{ flex: 1, alignItems: "flex-end" }}>
-            <Text style={{ fontSize: 8.5, fontFamily: "Helvetica-Bold", color: "#0f172a" }}>{payee}</Text>
-            {payeeStreet ? <Text style={{ fontSize: 6.5, color: "#64748b", marginTop: 1 }}>{payeeStreet}</Text> : null}
-            {payeeCityStateZip ? <Text style={{ fontSize: 6.5, color: "#64748b" }}>{payeeCityStateZip}</Text> : null}
+            <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold", color: "#0f172a" }}>{payee}</Text>
+            {payeeStreet ? <Text style={{ fontSize: 8, color: "#64748b", marginTop: 2 }}>{payeeStreet}</Text> : null}
+            {payeeCityStateZip ? <Text style={{ fontSize: 8, color: "#64748b" }}>{payeeCityStateZip}</Text> : null}
           </View>
         </View>
 
@@ -555,21 +615,25 @@ function CheckStubPDF({
             {/* Column header row */}
             <View style={{ flexDirection: "row", marginBottom: 2 }}>
               <Text style={{ flex: 1 }} />
-              <Text style={{ ...CAP, width: 40, textAlign: "right" }}>This Period</Text>
-              <Text style={{ ...CAP, width: 30, textAlign: "right" }}>YTD</Text>
+              <Text style={{ ...CAP, width: 53, textAlign: "right" }}>This Period</Text>
+              <Text style={{ ...CAP, width: 65, textAlign: "right" }}>YTD</Text>
             </View>
             {/* EARNINGS */}
             <Text style={SECTION_LABEL}>Earnings</Text>
-            <PDFRow label="Service Commissions" period={fmt$(svcComm)} ytd="—" />
-            <PDFRow label="Product Commissions" period="—" ytd="—" />
-            <PDFRow label="Credit Card Tips" period={tips > 0 ? fmt$(tips) : "—"} ytd="—" />
-            <PDFRow label="Total Gross Earnings" period={fmt$(grossEarnings)} ytd="—" bold topBorder />
+            <PDFRow label="Service Commissions" period={fmt$(svcComm)} ytd={ytdAmount("serviceCommission")} />
+            <PDFRow label="Product Commissions" period={productComm > 0 ? fmt$(productComm) : "—"} ytd={ytdAmount("productCommission")} />
+            <PDFRow label="Credit Card Tips" period={tips > 0 ? fmt$(tips) : "—"} ytd={ytdAmount("tips")} />
+            <PDFRow label="Other Earnings" period={otherEarnings > 0 ? fmt$(otherEarnings) : "—"} ytd={ytdAmount("otherEarnings")} />
+            <PDFRow label="Total Gross Earnings" period={fmt$(grossEarnings)} ytd={ytdAmount("grossEarnings")} bold topBorder />
             {/* DEDUCTIONS */}
             <Text style={{ ...SECTION_LABEL, marginTop: 5 }}>Deductions</Text>
-            <PDFRow label="Booth Rent" period="—" ytd="—" />
-            <PDFRow label="Product Charges" period="—" ytd="—" />
-            <PDFRow label="Loan Repayment" period="—" ytd="—" />
-            <PDFRow label="Total Deductions" period={fmt$(totalDeductions)} ytd="—" bold topBorder />
+            {/* Booth rent is listed only when there is some: this period, or earlier this year. */}
+            {(boothRent > 0 || (ytd?.boothRent ?? 0) > 0) ? <PDFRow label="Booth Rent" period={boothRent > 0 ? fmt$(boothRent) : "—"} ytd={ytdAmount("boothRent")} /> : null}
+            {itemized.map((d) => <PDFRow key={d.label} label={d.label} period={d.amount > 0 ? fmt$(d.amount) : "—"} ytd={d.ytd != null ? fmt$(d.ytd) : "—"} />)}
+            {(itemized.length === 0 || otherDeductions > 0 || (otherYtd ?? 0) > 0) && (
+              <PDFRow label="Other Deductions" period={otherDeductions > 0 ? fmt$(otherDeductions) : "—"} ytd={otherYtd != null ? fmt$(otherYtd) : ytdAmount("otherDeductions")} />
+            )}
+            <PDFRow label="Total Deductions" period={fmt$(totalDeductions)} ytd={ytdAmount("totalDeductions")} bold topBorder />
           </View>
 
           {/* ═══ Vertical divider ══════════════════════════════════════ */}
@@ -581,17 +645,18 @@ function CheckStubPDF({
             <Text style={SECTION_LABEL}>Pay Summary</Text>
             <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 1.5 }}>
               <Text style={ROW_LABEL}>Gross Earnings</Text>
-              <Text style={{ fontSize: 7.5, color: "#475569", fontFamily: "Courier" }}>{fmt$(grossEarnings)}</Text>
+              <Text style={ROW_AMT}>{fmt$(grossEarnings)}</Text>
             </View>
             <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4, borderBottomWidth: 0.5, borderBottomColor: "#e2e8f0", paddingBottom: 4 }}>
               <Text style={ROW_LABEL}>Total Deductions</Text>
-              <Text style={{ fontSize: 7.5, color: "#475569", fontFamily: "Courier" }}>{fmt$(totalDeductions)}</Text>
+              <Text style={ROW_AMT}>{fmt$(totalDeductions)}</Text>
             </View>
             {/* NET PAY hero */}
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
               <Text style={{ fontSize: 7, fontFamily: "Helvetica-Bold", color: "#334155", textTransform: "uppercase", letterSpacing: 0.8 }}>Net Pay</Text>
-              <Text style={{ fontSize: 14, fontFamily: "Helvetica-Bold", color: "#0f172a" }}>{fmt$(amount)}</Text>
+              <Text style={{ fontSize: 16, fontFamily: "Helvetica-Bold", color: "#0f172a" }}>{fmt$(amount)}</Text>
             </View>
+            {ytd ? <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}><Text style={ROW_LABEL}>YTD Net Pay</Text><Text style={ROW_AMT}>{fmt$(ytd.netPay)}</Text></View> : null}
 
             {/* PERFORMANCE */}
             {(appointmentCount !== undefined || totalRevenue !== undefined) ? (
@@ -600,26 +665,26 @@ function CheckStubPDF({
                 {appointmentCount !== undefined ? (
                   <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 1.5 }}>
                     <Text style={ROW_LABEL}>Services Completed</Text>
-                    <Text style={{ fontSize: 7.5, fontFamily: "Helvetica-Bold", color: "#1e293b" }}>{appointmentCount}</Text>
+                    <Text style={{ fontSize: 9, fontFamily: "Helvetica-Bold", color: "#1e293b" }}>{appointmentCount}</Text>
                   </View>
                 ) : null}
                 {totalRevenue !== undefined ? (
                   <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 1.5 }}>
                     <Text style={ROW_LABEL}>Total Sales Generated</Text>
-                    <Text style={{ fontSize: 7.5, color: "#475569", fontFamily: "Courier" }}>{fmt$(totalRevenue)}</Text>
+                    <Text style={{ fontSize: 9, color: "#475569", fontFamily: "Courier" }}>{fmt$(totalRevenue)}</Text>
                   </View>
                 ) : null}
                 {avgTicket !== null ? (
                   <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 1.5 }}>
                     <Text style={ROW_LABEL}>Average Ticket</Text>
-                    <Text style={{ fontSize: 7.5, color: "#475569", fontFamily: "Courier" }}>{fmt$(avgTicket)}</Text>
+                    <Text style={{ fontSize: 9, color: "#475569", fontFamily: "Courier" }}>{fmt$(avgTicket)}</Text>
                   </View>
                 ) : null}
               </>
             ) : null}
 
             {/* Thank-you note */}
-            <Text style={{ fontSize: 6, color: "#94a3b8", fontStyle: "italic", marginTop: 6 }}>
+            <Text style={{ fontSize: 8, color: "#94a3b8", fontStyle: "italic", marginTop: 6 }}>
               Thank you for your continued service.
             </Text>
           </View>
@@ -637,7 +702,8 @@ export function CheckDocumentPDF({
   amount, memo, periodStart, periodEnd, store,
   routing, account, bankName, bankAddress, bankPhone,
   earningsRows, stubCount = "two", dailyBreakdown,
-  serviceCommission, tipAmount, appointmentCount, totalRevenue,
+  serviceCommission, tipAmount, appointmentCount, totalRevenue, ytd,
+  signature,
 }: CheckPDFProps) {
   return (
     <Document
@@ -655,6 +721,7 @@ export function CheckDocumentPDF({
           periodStart={periodStart} store={store}
           routing={routing} account={account}
           bankName={bankName} bankAddress={bankAddress}
+          signature={signature}
         />
 
         {/* ── Zone 2: Stub 1 (Employee copy) ─────────────────────── */}
@@ -665,6 +732,7 @@ export function CheckDocumentPDF({
           store={store} zoneStyle={SS.stub1Zone}
           date={date} payeeStreet={payeeStreet} payeeCityStateZip={payeeCityStateZip}
           serviceCommission={serviceCommission} tipAmount={tipAmount}
+          ytd={ytd}
           appointmentCount={appointmentCount} totalRevenue={totalRevenue}
         />
 
@@ -677,6 +745,7 @@ export function CheckDocumentPDF({
             store={store} zoneStyle={SS.stub2Zone}
             date={date} payeeStreet={payeeStreet} payeeCityStateZip={payeeCityStateZip}
             serviceCommission={serviceCommission} tipAmount={tipAmount}
+            ytd={ytd}
             appointmentCount={appointmentCount} totalRevenue={totalRevenue}
           />
         ) : (

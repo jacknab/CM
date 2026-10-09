@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import DemoCalendarBackground from "@/components/DemoCalendarBackground";
+import { getDefaultAuthenticatedRoute } from "@/lib/default-auth-route";
 
 const GROUP_CONFIG = {
   booking: {
@@ -417,7 +418,10 @@ export default function Auth() {
     return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
   };
 
-  // Register: 1 = details form, 2 = OTP verification, 3 = create password
+  // Temporarily skip the owner-signup OTP step while test accounts are being created.
+  // Set VITE_REQUIRE_OWNER_SIGNUP_OTP=true to restore the original signup flow.
+  const requireSignupOtp = import.meta.env.VITE_REQUIRE_OWNER_SIGNUP_OTP === "true";
+  // Register: 1 = details form, 2 = OTP verification (when enabled), 3 = create password
   const [registerStep, setRegisterStep] = useState<1 | 2 | 3>(1);
   const [otpCode, setOtpCode] = useState("");
   const [otpTimer, setOtpTimer] = useState(0);
@@ -450,7 +454,11 @@ export default function Auth() {
     return () => { if (document.head.contains(link)) document.head.removeChild(link); };
   }, []);
 
-  const postAuthRedirect = (onboardingCompleted: boolean) => {
+  const postAuthRedirect = async (onboardingCompleted: boolean, authenticatedUser = user) => {
+    // A new owner must finish setup before a marketing/billing redirect can run.
+    if (!onboardingCompleted && !authenticatedUser?.staffId) {
+      return navigate("/onboarding", { replace: true });
+    }
     if (redirectTo) {
       if (redirectTo.startsWith("/website-builder")) {
         window.location.href = redirectTo;
@@ -463,14 +471,15 @@ export default function Auth() {
     if (pendingPlan && onboardingCompleted) {
       return navigate(`/manage/billing?checkout=${pendingPlan}`, { replace: true });
     }
-    if (!onboardingCompleted) {
-      return navigate("/onboarding");
-    }
-    return navigate("/calendar", { replace: true });
+    return navigate(await getDefaultAuthenticatedRoute(authenticatedUser), { replace: true });
   };
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && user) {
+      if (!user.staffId && !user.onboardingCompleted) {
+        navigate("/onboarding", { replace: true });
+        return;
+      }
       if (redirectTo) {
         if (redirectTo.startsWith("/website-builder")) {
           window.location.href = redirectTo;
@@ -479,11 +488,7 @@ export default function Auth() {
         navigate(redirectTo, { replace: true });
         return;
       }
-      if (user && !user.onboardingCompleted) {
-        navigate("/onboarding");
-      } else {
-        navigate("/calendar", { replace: true });
-      }
+      void getDefaultAuthenticatedRoute(user).then((route) => navigate(route, { replace: true }));
     }
   }, [isAuthenticated, user, navigate, group, redirectTo]);
 
@@ -496,7 +501,7 @@ export default function Auth() {
       } else {
         result = await register({ email, password, firstName: firstName || undefined, lastName: lastName || undefined, keepSignedIn });
       }
-      postAuthRedirect(!!(result && result.onboardingCompleted));
+      await postAuthRedirect(!!(result && result.onboardingCompleted), result);
     } catch (error: any) {
       const message = error?.message || (mode === "login" ? "Login failed" : "Registration failed");
       let description = message;
@@ -539,10 +544,11 @@ export default function Auth() {
       const phoneDigits = phone.replace(/\D/g, "");
       if (!firstName.trim() || !lastName.trim() || phoneDigits.length !== 10 || !email.trim() || !email.includes("@")) return;
 
-      // Silently check if phone or email is already in use — no error shown, just don't proceed
+      // When OTP is off, check email only: the phone OTP history should not block
+      // creating separate test accounts for different business types.
       try {
         const availRes = await fetch(
-          `/api/auth/check-availability?phone=${encodeURIComponent(phone)}&email=${encodeURIComponent(email)}`
+          `/api/auth/check-availability?phone=${requireSignupOtp ? encodeURIComponent(phone) : ""}&email=${encodeURIComponent(email)}`
         );
         if (availRes.ok) {
           const availData = await availRes.json();
@@ -550,6 +556,12 @@ export default function Auth() {
         }
       } catch {
         // On network error, allow the flow to continue
+      }
+
+      if (!requireSignupOtp) {
+        setOtpSendError("");
+        setRegisterStep(3);
+        return;
       }
 
       setOtpSending(true);
@@ -664,7 +676,7 @@ export default function Auth() {
           phone:     phone     || undefined,
           keepSignedIn,
         });
-        postAuthRedirect(!!(result && result.onboardingCompleted));
+        await postAuthRedirect(!!(result && result.onboardingCompleted), result);
       } catch (error: any) {
         const message = error?.message || "Registration failed";
         let description = message;
@@ -690,7 +702,7 @@ export default function Auth() {
     };
 
     // ── Step 2: OTP verification ───────────────────────────────────────────
-    if (registerStep === 2) {
+    if (requireSignupOtp && registerStep === 2) {
       return (
         <div style={{
           position: "fixed", inset: 0,

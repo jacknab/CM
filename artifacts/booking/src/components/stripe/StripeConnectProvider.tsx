@@ -54,15 +54,15 @@ export function StripeConnectProvider({ publishableKey, children }: StripeConnec
           // technically mounted inline — not what we want here.
           overlays: "drawer",
           variables: {
-            colorPrimary:     "#7c3aed",   // Certxa violet
+            colorPrimary:     "#6d28d9",   // Certxa violet
             fontFamily:       "Outfit, Inter, system-ui, sans-serif",
-            borderRadius:     "8px",
+            borderRadius:     "10px",
             colorBackground:  "#ffffff",
-            colorText:        "#111827",
-            colorSecondaryText: "#6b7280",
-            colorBorder:      "#e5e7eb",
+            colorText:        "#111318",
+            colorSecondaryText: "#667085",
+            colorBorder:      "#e4e7ec",
             colorDanger:      "#dc2626",
-            fontSizeBase:     "16px",
+            fontSizeBase:     "14px",
             spacingUnit:      "4px",
           },
         },

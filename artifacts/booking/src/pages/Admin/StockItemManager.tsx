@@ -9,6 +9,10 @@ import {
   Trash2
 } from 'lucide-react';
 
+// The Kiosk permission column is hidden for now. Set to true to show it again. The permission
+// itself (locations.kiosk_permitted) is unchanged and still enforced.
+const SHOW_KIOSK_COLUMN = false;
+
 interface StoreAccount {
   id: number;
   name: string;
@@ -25,6 +29,8 @@ interface StoreAccount {
   commission_payout_frequency: string;
   subscription: string;
   accountStatus: string;
+  /** Platform-admin permission for the self check-in kiosk (locations.kiosk_permitted). */
+  kioskPermitted: boolean;
 }
 
 interface StockItemManagerProps {
@@ -80,6 +86,26 @@ export const StockItemManager: React.FC<StockItemManagerProps> = ({
     setItems(items.map(item => 
       item.id === id ? { ...item, [field]: value } : item
     ));
+  };
+
+  // Kiosk permission is saved straight away (it is not part of Edit mode). The Android app reads it
+  // live, so a change here takes effect the next time a tablet checks.
+  const handleKioskPermission = async (storeId: number, permitted: boolean) => {
+    const before = items;
+    setItems(items.map(item => item.id === storeId ? { ...item, kioskPermitted: permitted } : item));
+    try {
+      const res = await fetch(`/api/admin/stores/${storeId}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kioskPermitted: permitted }),
+      });
+      if (!res.ok) throw new Error('Failed to save');
+    } catch (error) {
+      console.error('Error saving kiosk permission:', error);
+      setItems(before);
+      alert('Could not save the kiosk permission. Please try again.');
+    }
   };
 
   const handleDeleteAccount = async (storeId: number) => {
@@ -167,6 +193,7 @@ export const StockItemManager: React.FC<StockItemManagerProps> = ({
               <th className="w-24 border-r border-gray-300 py-1 font-normal text-center">Category</th>
               <th className="w-32 border-r border-gray-300 py-1 font-normal text-center">Email</th>
               <th className="w-24 border-r border-gray-300 py-1 font-normal text-center">Account Status</th>
+              {SHOW_KIOSK_COLUMN && <th className="w-20 border-r border-gray-300 py-1 font-normal text-center">Kiosk</th>}
             </tr>
               {/* Filter Row */}
               <tr className="bg-white">
@@ -212,6 +239,7 @@ export const StockItemManager: React.FC<StockItemManagerProps> = ({
                     className="w-full border border-gray-200 px-1 outline-none focus:border-blue-500 text-center" 
                   />
                 </td>
+                <td className="border-r border-gray-300 px-1 py-0.5" />
               </tr>
             </thead>
 
@@ -319,6 +347,18 @@ export const StockItemManager: React.FC<StockItemManagerProps> = ({
                         </span>
                       )}
                     </td>
+
+                    {SHOW_KIOSK_COLUMN && <td className="w-20 border-r border-gray-200 px-2 py-1 text-center" onClick={(e) => e.stopPropagation()}>
+                      <label className="inline-flex items-center gap-1 cursor-pointer" title="Permit this account to use the self check-in kiosk">
+                        <input
+                          type="checkbox"
+                          checked={!!item.kioskPermitted}
+                          onChange={(e) => handleKioskPermission(item.id, e.target.checked)}
+                          data-testid={`kiosk-permitted-${item.id}`}
+                        />
+                        <span className="text-[10px] text-gray-600">{item.kioskPermitted ? 'On' : 'Off'}</span>
+                      </label>
+                    </td>}
                   </tr>
                 );
               })}

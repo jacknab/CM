@@ -97,7 +97,7 @@ require 'includes/nav.php';
     <div class="vs-hero-stats">
       <div class="vs-hero-stat"><div class="num">$0</div><div class="lbl">Setmore &amp; Square, free tier</div></div>
       <div class="vs-hero-stat"><div class="num">4</div><div class="lbl">Staff cap on Setmore's free plan</div></div>
-      <div class="vs-hero-stat"><div class="num">$9</div><div class="lbl">Certxa, once you outgrow free</div></div>
+      <div class="vs-hero-stat"><div class="num">$0</div><div class="lbl">Certxa Solo plan</div></div>
     </div>
   </div>
 </section>
@@ -125,7 +125,7 @@ require 'includes/nav.php';
           <tr><td>Fresha</td><td class="ct-cross">No — 7-day trial</td><td class="ct-text">n/a</td><td class="ct-text">Markets itself as commission-free, but runs on a paid monthly subscription</td></tr>
           <tr><td>Vagaro</td><td class="ct-cross">No — 30-day trial</td><td class="ct-text">n/a</td><td class="ct-text">From $23.99/mo (intro rate) after the trial ends</td></tr>
           <tr><td>Booksy</td><td class="ct-cross">No — 14-day trial</td><td class="ct-text">n/a</td><td class="ct-text">From $29.99/mo after the trial ends</td></tr>
-          <tr><td class="featured-col">Certxa</td><td class="featured-col ct-cross">No — <?= TRIAL_DAYS ?>-day trial</td><td class="featured-col ct-check">Unlimited</td><td class="featured-col ct-text">From $9/mo, but booking + POS + client management + kiosk included on every plan</td></tr>
+          <tr><td class="featured-col">Certxa</td><td class="featured-col ct-check">Yes — Solo plan</td><td class="featured-col ct-text">1 on Solo; unlimited from $22/mo</td><td class="featured-col ct-text">Team plans from $22/mo; booking + POS + client management + kiosk included on every plan</td></tr>
         </tbody>
       </table>
     </div>
@@ -185,7 +185,7 @@ require 'includes/nav.php';
     </div>
     <div class="bento" style="grid-template-columns:repeat(3,1fr);">
       <div class="bento-card">
-        <h3 class="bento-title">Unlimited staff, from $9/mo</h3>
+        <h3 class="bento-title">Unlimited staff, from $22/mo</h3>
         <p class="bento-text">No per-seat pricing and no staff cap on any Certxa plan — a meaningful difference from Setmore's 4-person free ceiling.</p>
       </div>
       <div class="bento-card">

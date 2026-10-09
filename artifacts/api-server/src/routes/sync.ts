@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { pgIdempotencyStore, STALE_MS } from "../lib/idempotency";
 import { db } from "../db";
 import { storage } from "../storage";
 import { isAuthenticated } from "../auth";
@@ -181,6 +182,8 @@ router.post("/queue", isAuthenticated, async (req, res) => {
   );
 
   const mappings: Record<string, number> = {};
+  // Keys reserved in the database for this batch and not yet answered (released again if the action fails).
+  const durableKeys = new Map<string, boolean>();
   const results: ActionResult[] = [];
   const conflicts: { actionId: string; type: string; detail: string }[] = [];
   let lastSuccessIndex = -1;
@@ -188,7 +191,17 @@ router.post("/queue", isAuthenticated, async (req, res) => {
   for (const action of sorted) {
     const orderIndex = action.order_index ?? action.sequence_index;
     try {
-      const cached = syncIdempotencyStore.get(action.idempotency_key);
+      // Memory first, then the database (lib/idempotency.ts): the map is forgotten on every restart, the table
+      // is not, so a batch replayed after a restart is still recognised action by action.
+      let cached = syncIdempotencyStore.get(action.idempotency_key);
+      let reserved = false;
+      if (!cached && action.idempotency_key) {
+        const r = await pgIdempotencyStore.reserve(storeId, action.idempotency_key, "sync.queue").catch(() => null);
+        if (r?.kind === "done") cached = { ts: Date.now(), realId: (r.body as any)?.realId ?? undefined };
+        else if (r?.kind === "in_progress" && r.ageMs < STALE_MS) throw new Error("This action is still being processed");
+        else if (r) reserved = true;
+      }
+      durableKeys.set(action.id, reserved);
       if (cached && Date.now() - cached.ts < SYNC_IDEMPOTENCY_TTL) {
         if (action.entity_temp_id && cached.realId) {
           mappings[action.entity_temp_id] = cached.realId;
@@ -263,6 +276,12 @@ router.post("/queue", isAuthenticated, async (req, res) => {
           ts: Date.now(),
           realId: result.realId,
         });
+        if (durableKeys.get(action.id)) {
+          durableKeys.delete(action.id);
+          // Only a finished action is remembered; one that errored is freed so it can be sent again.
+          if (result.status === "error") await pgIdempotencyStore.release(storeId, action.idempotency_key).catch(() => {});
+          else await pgIdempotencyStore.complete(storeId, action.idempotency_key, 200, { realId: result.realId ?? null }).catch(() => {});
+        }
 
         if (result.realId && action.entity_temp_id) {
           mappings[action.entity_temp_id] = result.realId;
@@ -288,8 +307,15 @@ router.post("/queue", isAuthenticated, async (req, res) => {
 
         results.push(result);
         if (result.status !== "error") lastSuccessIndex = orderIndex;
+      } else if (durableKeys.get(action.id)) {
+        durableKeys.delete(action.id);
+        await pgIdempotencyStore.release(storeId, action.idempotency_key).catch(() => {});
       }
     } catch (err) {
+      if (durableKeys.get(action.id)) {
+        durableKeys.delete(action.id);
+        await pgIdempotencyStore.release(storeId, action.idempotency_key).catch(() => {});
+      }
       console.error(`[sync] Action ${action.id} (${action.type}) failed:`, err);
       const r: ActionResult = {
         actionId: action.id,

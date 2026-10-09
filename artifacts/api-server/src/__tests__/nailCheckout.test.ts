@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { centsToDollars, computeCheckout, paymentMethodSummary, pushKeypadDigits, splitGroup, type CheckoutInput } from "@shared/nailCheckout";
+import { centsToDollars, computeCheckout, paymentMethodSummary, pushKeypadDigits, salesTaxCents, splitGroup, type CheckoutInput } from "@shared/nailCheckout";
 
 const base: CheckoutInput = { ticketTotal: 100, extras: [], linkedSubtotal: 0, discount: null, rewardDollar: 0, tip: 0, tenders: [] };
 
@@ -70,3 +70,41 @@ describe("keypad + summary helpers", () => {
     expect(paymentMethodSummary([{ id: 1, method: "cash", amount: 20 }, { id: 2, method: "card", amount: 15.5 }])).toBe("cash:20.00,card:15.50");
   });
 });
+
+describe("sales tax (POS settings)", () => {
+  const productsOnly = { rate: 0.0825, services: false, products: true };
+  test("no rate set → no tax, total unchanged", () => {
+    const t = computeCheckout({ ...base, extras: [{ id: 1, label: "Retail Item", price: 20, kind: "retail" }] });
+    expect(t).toMatchObject({ tax: 0, total: 120 });
+  });
+  test("products taxable: only the retail line is taxed", () => {
+    const t = computeCheckout({ ...base, extras: [{ id: 1, label: "Retail Item", price: 20, kind: "retail" }], salesTax: productsOnly });
+    expect(t.tax).toBe(1.65);
+    expect(t.total).toBe(121.65);
+  });
+  test("services not taxable → a service-only ticket has no tax", () => {
+    expect(computeCheckout({ ...base, salesTax: productsOnly }).tax).toBe(0);
+  });
+  test("discount comes off every line in proportion before tax", () => {
+    // $100 service + $20 retail, $12 off (10%): taxable retail is $18 after its share of the discount.
+    const t = computeCheckout({ ...base, extras: [{ id: 1, label: "Retail Item", price: 20, kind: "retail" }], discount: { type: "dollar", value: 12 }, salesTax: productsOnly });
+    expect(t.tax).toBe(1.49);
+    expect(t.total).toBe(r(120 - 12 + 1.49));
+  });
+  test("tip is never taxed", () => {
+    const t = computeCheckout({ ...base, extras: [{ id: 1, label: "Retail Item", price: 20, kind: "retail" }], tip: 10, salesTax: productsOnly });
+    expect(t.tax).toBe(1.65);
+    expect(t.total).toBe(131.65);
+  });
+  test("a group's retail lines are taxed too", () => {
+    const t = computeCheckout({ ...base, linkedSubtotal: 50, linkedRetailTotal: 10, salesTax: productsOnly });
+    expect(t.tax).toBe(0.83);
+  });
+  test("the server's recomputation (salesTaxCents) matches the register exactly", () => {
+    const t = computeCheckout({ ...base, extras: [{ id: 1, label: "Retail Item", price: 20, kind: "retail" }], discount: { type: "percent", value: 15 }, salesTax: productsOnly });
+    expect(salesTaxCents(t.serviceRevenue, t.productRevenue, t.discount, productsOnly)).toBe(Math.round(t.tax * 100));
+  });
+});
+
+const r = (n: number) => Math.round(n * 100) / 100;
+

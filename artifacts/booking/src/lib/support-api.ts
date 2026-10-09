@@ -21,8 +21,16 @@ export const supportApi = {
     logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
   },
   search: (q: string) => request<SearchResult[]>(`/search?q=${encodeURIComponent(q)}`),
+  signups: () => request<UnfinishedSignups>("/signups"),
+  feed: () => request<FeedPost[]>("/feed"),
+  chatAccounts: {
+    link: (chatId: string, accountId: number) =>
+      request<{ ok: boolean }>(`/chat-accounts/${chatId}/link`, { method: "POST", body: JSON.stringify({ accountId }) }),
+  },
   accounts: {
+    list:        (status: string) => request<SearchResult[]>(`/accounts?status=${encodeURIComponent(status)}`),
     overview:    (id: number) => request<AccountOverview>(`/accounts/${id}/overview`),
+    onboarding:  (id: number) => request<AccountOnboarding>(`/accounts/${id}/onboarding`),
     timeline:    (id: number, category = "all", search = "", offset = 0) =>
       request(`/accounts/${id}/timeline?category=${category}&search=${encodeURIComponent(search)}&offset=${offset}&limit=50`),
     notes:       (id: number) => request<Note[]>(`/accounts/${id}/notes`),
@@ -138,6 +146,59 @@ export interface SearchResult {
   priceCents: number;
   signupDate: string;
   trialEndsAt: string | null;
+}
+
+/** Where a signup is in the onboarding conversation (step ids from lib/onboarding-script.ts). */
+export interface SignupProgress {
+  flow: string | null;
+  currentStepId: string | null;
+  completedStepIds: string[];
+  progressPct: number | null;
+  startedAt: string | null;
+  lastActivityAt: string | null;
+  /** When the owner pressed Complete Setup. Null = not finished. */
+  completedAt: string | null;
+}
+
+export interface AccountOnboarding {
+  signup: SignupProgress & {
+    signedUpAt: string | null;
+    storeCreated: boolean;
+    /** False for accounts that signed up before steps were recorded, or used the classic setup. */
+    tracked: boolean;
+  };
+  essentials: { hoursSet: boolean; openDays: number; services: number; staff: number; websitePublished: boolean };
+  flows: { key: string; title: string; category: string; status: string; completedAt: string | null }[];
+}
+
+export interface UnfinishedSignup extends SignupProgress {
+  userId: string;
+  email: string;
+  name: string;
+  phone: string | null;
+  signedUpAt: string;
+  googleSignup: boolean;
+  subscriptionStatus: string | null;
+  trialEndsAt: string | null;
+  lastLoginAt: string | null;
+  storeId: number | null;
+  storeName: string | null;
+  tracked: boolean;
+}
+
+export interface UnfinishedSignups {
+  accounts: UnfinishedSignup[];
+  codeOnly: { email: string; phone: string | null; requestedAt: string; codeUsed: boolean }[];
+}
+
+/** A post on the support Home feed, written by a platform admin on /isadmin. */
+export interface FeedPost {
+  id: number;
+  title: string;
+  body: string;
+  authorName: string;
+  createdAt: string;
+  updatedAt: string | null;
 }
 
 export interface AccountOverview {

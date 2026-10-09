@@ -9,7 +9,8 @@
     "scheme": "certxa-owner",
     "icon": "./assets/icon.png",
     "platforms": [
-      "android"
+      "android",
+      "ios"
     ],
     "newArchEnabled": false,
     "androidStatusBar": {
@@ -33,13 +34,17 @@
         "android.permission.BLUETOOTH_ADMIN",
         "android.permission.BLUETOOTH_SCAN",
         "android.permission.BLUETOOTH_CONNECT",
-        "android.permission.USB_PERMISSION"
+        "android.permission.USB_PERMISSION",
+        "android.permission.ACCESS_WIFI_STATE",
+        "android.permission.CHANGE_WIFI_STATE",
+        "android.permission.NEARBY_WIFI_DEVICES"
       ]
     },
     "plugins": [
       "expo-router",
       "./plugins/withJitpack",
       "./plugins/withUsbPrinter",
+      "./plugins/withKioskMode",
       "expo-secure-store",
       [
         "@stripe/stripe-terminal-react-native",
@@ -80,12 +85,26 @@
       "typedRoutes": false
     },
     "extra": {
-      "eas": {
-        "projectId": "cb455e45-7ff7-431d-ab58-17ab3be4c1bd"
-      },
       "router": {},
-      "expo-navigation-bar": {}
+      "expo-navigation-bar": {},
+      "eas": {
+        "projectId": "01e6b026-b16a-488d-a32e-0046018b5437"
+      }
     },
-    "owner": "ucertxas-team"
+    "owner": "tobybens-team",
+    "updates": {
+      "enabled": false,
+      "checkAutomatically": "NEVER",
+      "fallbackToCacheTimeout": 0
+    },
+    "ios": {
+      "bundleIdentifier": "com.certxa.owner",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Certxa needs location access to discover nearby Bluetooth card readers.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Certxa needs location access to discover nearby Bluetooth card readers.",
+        "NSBluetoothAlwaysUsageDescription": "Certxa uses Bluetooth to connect to card readers and receipt printers.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
   }
 }

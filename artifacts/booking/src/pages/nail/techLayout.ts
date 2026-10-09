@@ -84,3 +84,23 @@ export function computeTechLayout(count: number, width: number, height: number, 
   if (roomy.scale >= MIN_READABLE_SCALE) return roomy;
   return bestFor(count, width, height, lean ? COMPACT_LEAN : COMPACT);
 }
+
+/** Below this even the compact design is too small to read — the point where a grid should split
+ *  across multiple swipeable pages instead of keep shrinking to fit everything on one screen. */
+export const MIN_PAGE_SCALE = 0.6;
+/** However many checked-in clients a busy salon has, don't pack more than this on one screen — past
+ *  a certain point more columns just means more scanning, not more legibility. */
+const MAX_PER_PAGE_CAP = 60;
+
+/**
+ * The most cards `computeTechLayout` can lay out into this box while staying at/above
+ * MIN_PAGE_SCALE. A screen with more items than this should paginate instead of shrink further.
+ * `Infinity` for a not-yet-measured (zero-size) box — nothing should paginate before it has a
+ * real size to measure against.
+ */
+export function maxCardsPerPage(width: number, height: number, lean = false): number {
+  if (width <= 0 || height <= 0) return Infinity;
+  let count = 1;
+  while (count < MAX_PER_PAGE_CAP && computeTechLayout(count + 1, width, height, lean).scale >= MIN_PAGE_SCALE) count++;
+  return count;
+}

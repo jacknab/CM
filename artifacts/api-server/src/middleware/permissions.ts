@@ -10,6 +10,7 @@ import {
   type Permission,
   type Role,
 } from "@shared/permissions";
+import { verifySoloToken } from "../lib/soloAuth";
 
 export interface AuthContext {
   userId?: string;
@@ -32,6 +33,23 @@ declare global {
  * existing /api auth gate handles 401s for unauthenticated requests.
  */
 export const attachAuthContext: RequestHandler = async (req, _res, next) => {
+  // certxa-solo native app: bridge its stateless Bearer JWT into the same
+  // req.session fields a cookie login would set, so every existing
+  // session-based check (isAuthenticated, resolveSessionStoreId,
+  // requireActiveTrial, ownStaffScope, etc.) works unchanged. The token is
+  // self-contained, so this session is never persisted — save() is a no-op.
+  if (!(req.session as any)?.userId && !(req.session as any)?.staffId) {
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith("Bearer ")) {
+      const payload = verifySoloToken(authHeader.slice(7));
+      if (payload) {
+        (req.session as any).userId = payload.userId;
+        if (payload.staffId) (req.session as any).staffId = payload.staffId;
+        (req.session as any).save = (cb?: (err?: unknown) => void) => cb?.(undefined);
+      }
+    }
+  }
+
   const sessionUserId = (req.session as any)?.userId as string | undefined;
   const sessionStaffId = (req.session as any)?.staffId as number | undefined;
 

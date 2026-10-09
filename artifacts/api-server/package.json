@@ -50,6 +50,7 @@
     "mailgun.js": "^12.0.4",
     "mailparser": "^3.9.11",
     "maxmind": "^5.0.7",
+    "mpg123-decoder": "1.0.3",
     "multer": "^2.1.1",
     "nanoid": "^5.1.5",
     "nodemailer": "^9.0.1",

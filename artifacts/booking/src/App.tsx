@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { resumeOrSignIn, UNAUTHORIZED_EVENT } from "@/lib/resumeSignIn";
 import { Loader2 } from "lucide-react";
 import { GlobalMobileHeader } from "@/components/GlobalMobileHeader";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
@@ -17,145 +18,159 @@ import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/hooks/use-theme";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { FeatureGuard } from "@/components/FeatureGuard";
-import Services from "@/pages/Services";
-import CatalogCategories from "@/pages/catalog/CatalogCategories";
-import CatalogServices from "@/pages/catalog/CatalogServices";
-import CatalogPackages from "@/pages/catalog/CatalogPackages";
-import CatalogDeals from "@/pages/catalog/CatalogDeals";
-import CatalogAddons from "@/pages/catalog/CatalogAddons";
-import CatalogProducts from "@/pages/catalog/CatalogProducts";
-import NailServices from "@/pages/catalog/NailServices";
-import Customers from "@/pages/Customers";
-import Calendar from "@/pages/Calendar";
-import NailHome from "@/pages/nail/NailHome";
-import PosCheckout from "@/pages/PosCheckout";
-import Products from "@/pages/Products";
-import NewBooking from "@/pages/NewBooking";
-import ClientLookup from "@/pages/ClientLookup";
-import POSInterface from "@/pages/POSInterface";
-import ClientProfile from "@/pages/ClientProfile";
-import ClientDetail from "@/pages/ClientDetail";
-import StaffWorkingHours from "@/pages/StaffWorkingHours";
-import CashDrawer from "@/pages/CashDrawer";
-import AddonsPage from "@/pages/Addons";
-import SalonEarningsReport from "@/pages/SalonEarningsReport";
-import CommissionReport from "@/pages/CommissionReport";
-import Analytics from "@/pages/Analytics";
-import OwnerDashboard from "@/pages/OwnerDashboard";
-import Reports from "@/pages/Reports";
-import ReportsHub from "@/pages/ReportsHub";
-import RegisterReports from "@/pages/RegisterReports";
-import Waitlist from "@/pages/Waitlist";
-import QueueDashboard from "@/pages/queue/QueueDashboard";
-import QueueSettings from "@/pages/queue/QueueSettings";
-import TurnSystem from "@/pages/TurnSystem";
-import PublicCheckIn from "@/pages/queue/PublicCheckIn";
-import QueueDisplay from "@/pages/queue/QueueDisplay";
-import KioskCheckIn from "@/pages/KioskCheckIn";
-import KioskTicket from "@/pages/KioskTicket";
-import FrontDeskDisplay from "@/pages/FrontDeskDisplay";
-import GiftCards from "@/pages/GiftCards";
-import IntakeForms from "@/pages/IntakeForms";
-import Loyalty from "@/pages/Loyalty";
-import Reviews from "@/pages/Reviews";
-import GoogleBusiness from "@/pages/GoogleBusiness";
-import ReviewEntry from "@/pages/ReviewEntry";
-import AiReceptionist from "@/pages/AiReceptionist";
-import AiReceptionistLive from "@/pages/AiReceptionistLive";
-import SmsInbox from "@/pages/SmsInbox";
-import SmsActivity from "@/pages/SmsActivity";
-import Campaigns from "@/pages/Campaigns";
-import MarketplaceAdsInfo from "@/pages/MarketplaceAdsInfo";
-import ClientAtRisk from "@/pages/ClientAtRisk";
-import ApiKeys from "@/pages/ApiKeys";
-import EliteApiDocs from "@/pages/EliteApiDocs";
-import EliteDetails from "@/pages/EliteDetails";
-import MultiLocationDashboard from "@/pages/MultiLocationDashboard";
 import { AdminDashboard } from "@/pages/Admin/AdminDashboard";
-import Auth from "@/pages/Auth";
-import AppLogin from "@/pages/AppLogin";
-import ForgotPassword from "@/pages/ForgotPassword";
-import ResetPassword from "@/pages/ResetPassword";
-import StaffAuth from "@/pages/StaffAuth";
-import StaffDashboard from "@/pages/StaffDashboard";
-import StaffOverview from "@/pages/StaffOverview";
-import Onboarding from "@/pages/Onboarding";
-import OnboardingChat from "@/pages/OnboardingChat";
-import SetupHub from "@/pages/SetupHub";
-import ServicesFlow from "@/pages/setup/ServicesFlow";
-import ServiceImportFlow from "@/pages/setup/ServiceImportFlow";
-import TeamFlow from "@/pages/setup/TeamFlow";
-import BookingCalendarFlow from "@/pages/setup/BookingCalendarFlow";
-import POSPaymentsFlow from "@/pages/setup/POSPaymentsFlow";
-import CommissionPayrollFlow from "@/pages/setup/CommissionPayrollFlow";
-import MarketingFlow from "@/pages/setup/MarketingFlow";
-import AIReceptionistFlow from "@/pages/setup/AIReceptionistFlow";
-import WebsiteSetupFlow from "@/pages/setup/WebsiteSetupFlow";
-import PublicBooking from "@/pages/PublicBooking";
-import VoucherBookingPage from "@/pages/VoucherBookingPage";
-import BookingWidgetPage from "@/pages/BookingWidgetPage";
-import BookingConfirmation from "@/pages/public-booking/BookingConfirmation";
-import ManageBooking from "@/pages/public-booking/ManageBooking";
-import PublicReceipt from "@/pages/public-booking/PublicReceipt";
-import CompleteBooking from "@/pages/public-payment/CompleteBooking";
-import StaffCalendar from "@/pages/StaffCalendar";
-import StaffProfile from "@/pages/StaffProfile";
-import StaffMenu from "@/pages/StaffMenu";
-import StaffLanguage from "@/pages/StaffLanguage";
-import Staff1099 from "@/pages/Staff1099";
-import StaffIncome from "@/pages/StaffIncome";
-import StaffPOS from "@/pages/StaffPOS";
-import StaffHistory from "@/pages/StaffHistory";
-import NotFound from "@/pages/not-found";
-import TeamLoginPage from "@/pages/isTeam/LoginPage";
-import TeamApp from "@/pages/isTeam/TeamApp";
 import BookingPresenceBeacon from "@/components/BookingPresenceBeacon";
 import DevicePresenceBeacon from "@/components/DevicePresenceBeacon";
-import ContactPage from "@/pages/ContactPage";
-import TeamPayroll from "@/pages/team/TeamPayroll";
-import StaffList from "@/pages/team/StaffList";
-import AddStaffWizard from "@/pages/team/AddStaffWizard";
-import StaffDetail from "@/pages/team/StaffDetail";
-import StaffCalendarColors from "@/pages/team/StaffCalendarColors";
-import ContractorOnboardingPortal from "@/pages/ContractorOnboardingPortal";
-import TeamCommissions from "@/pages/team/TeamCommissions";
-import StaffPaySummary from "@/pages/StaffPaySummary";
-import StaffPayoutsSetup from "@/pages/StaffPayoutsSetup";
-import StaffFinancialHub from "@/pages/StaffFinancialHub";
-import Timeclock from "@/pages/Timeclock";
-import PrintChecks from "@/pages/PrintChecks";
-import CheckLayoutEditor from "@/pages/CheckLayoutEditor";
-import SpaLandingPage from "@/pages/SpaLandingPage";
-import TattooStudioLandingPage from "@/pages/TattooStudioLandingPage";
-import AutumnLandingPage from "@/pages/AutumnLandingPage";
-import AcceptInvite from "@/pages/AcceptInvite";
-import ManageDashboard from "@/pages/manage/ManageDashboard";
-import MembersHome from "@/pages/manage/MembersHome";
-import AiReceptionistRouter from "@/pages/manage/AiReceptionistRouter";
-import AiReceptionistEnrollment from "@/pages/manage/AiReceptionistEnrollment";
-import AiReceptionistCallLogs from "@/pages/manage/AiReceptionistCallLogs";
-import CreditsTopup from "@/pages/manage/CreditsTopup";
-import CustomerSupportPage from "@/pages/manage/CustomerSupportPage";
-import FinancePosHub from "@/pages/manage/FinancePosHub";
-import StaffEarningsHub from "@/pages/manage/StaffEarningsHub";
-import PaymentSettings from "@/pages/manage/PaymentSettings";
-import SettingsShell from "@/pages/SettingsShell";
-import WalkInBoard from "@/pages/WalkInBoard";
-import BillingPage from "@/pages/manage/BillingPage";
-import DashboardBilling from "@/pages/DashboardBilling";
-import AccountOverview from "@/pages/AccountOverview";
-import Intelligence from "@/pages/Intelligence";
-import HelpCenter from "@/pages/HelpCenter";
-import SupportInbox from "@/pages/SupportInbox";
-import DataTransferPage from "@/pages/DataTransferPage";
-import ResourceSettings from "@/pages/settings/ResourceSettings";
-import TranslationsPage from "@/pages/TranslationsPage";
-import PaymentsPayouts from "@/pages/finance/PaymentsPayouts";
-import POSSettings from "@/pages/POSSettings";
 import { RequirePermission } from "@/components/RequirePermission";
 import { PERMISSIONS } from "@shared/permissions";
 import { AccountStatusGate } from "@/components/AccountStatusGate";
 import SeoManager from "@/components/SeoManager";
+
+const Services = lazy(() => import("@/pages/Services"));
+const CatalogCategories = lazy(() => import("@/pages/catalog/CatalogCategories"));
+const CatalogServices = lazy(() => import("@/pages/catalog/CatalogServices"));
+const CatalogPackages = lazy(() => import("@/pages/catalog/CatalogPackages"));
+const CatalogDeals = lazy(() => import("@/pages/catalog/CatalogDeals"));
+const CatalogAddons = lazy(() => import("@/pages/catalog/CatalogAddons"));
+const CatalogProducts = lazy(() => import("@/pages/catalog/CatalogProducts"));
+const NailServices = lazy(() => import("@/pages/catalog/NailServices"));
+const Customers = lazy(() => import("@/pages/Customers"));
+const Calendar = lazy(() => import("@/pages/Calendar"));
+const PosCheckout = lazy(() => import("@/pages/PosCheckout"));
+const Products = lazy(() => import("@/pages/Products"));
+const NewBooking = lazy(() => import("@/pages/NewBooking"));
+const ClientLookup = lazy(() => import("@/pages/ClientLookup"));
+const POSInterface = lazy(() => import("@/pages/POSInterface"));
+const ClientProfile = lazy(() => import("@/pages/ClientProfile"));
+const ClientDetail = lazy(() => import("@/pages/ClientDetail"));
+const StaffWorkingHours = lazy(() => import("@/pages/StaffWorkingHours"));
+const CashDrawer = lazy(() => import("@/pages/CashDrawer"));
+const AddonsPage = lazy(() => import("@/pages/Addons"));
+const SalonEarningsReport = lazy(() => import("@/pages/SalonEarningsReport"));
+const CommissionReport = lazy(() => import("@/pages/CommissionReport"));
+const Analytics = lazy(() => import("@/pages/Analytics"));
+const OwnerDashboard = lazy(() => import("@/pages/OwnerDashboard"));
+const Reports = lazy(() => import("@/pages/Reports"));
+const ReportsHub = lazy(() => import("@/pages/ReportsHub"));
+const RegisterReports = lazy(() => import("@/pages/RegisterReports"));
+const DayCloseReports = lazy(() => import("@/pages/DayCloseReports"));
+const Waitlist = lazy(() => import("@/pages/Waitlist"));
+const QueueDashboard = lazy(() => import("@/pages/queue/QueueDashboard"));
+const QueueSettings = lazy(() => import("@/pages/queue/QueueSettings"));
+const TurnSystem = lazy(() => import("@/pages/TurnSystem"));
+const PublicCheckIn = lazy(() => import("@/pages/queue/PublicCheckIn"));
+const QueueDisplay = lazy(() => import("@/pages/queue/QueueDisplay"));
+const KioskCheckIn = lazy(() => import("@/pages/KioskCheckIn"));
+const KioskSetup = lazy(() => import("@/pages/KioskSetup"));
+const KioskTicket = lazy(() => import("@/pages/KioskTicket"));
+const FrontDeskDisplay = lazy(() => import("@/pages/FrontDeskDisplay"));
+const FrontDeskSetup = lazy(() => import("@/pages/FrontDeskSetup"));
+const GiftCards = lazy(() => import("@/pages/GiftCards"));
+const IntakeForms = lazy(() => import("@/pages/IntakeForms"));
+const Loyalty = lazy(() => import("@/pages/Loyalty"));
+const Reviews = lazy(() => import("@/pages/Reviews"));
+const GoogleBusiness = lazy(() => import("@/pages/GoogleBusiness"));
+const ReviewEntry = lazy(() => import("@/pages/ReviewEntry"));
+const AiReceptionist = lazy(() => import("@/pages/AiReceptionist"));
+const AiReceptionistLive = lazy(() => import("@/pages/AiReceptionistLive"));
+const SmsInbox = lazy(() => import("@/pages/SmsInbox"));
+const SmsActivity = lazy(() => import("@/pages/SmsActivity"));
+const Campaigns = lazy(() => import("@/pages/Campaigns"));
+const MarketplaceAdsInfo = lazy(() => import("@/pages/MarketplaceAdsInfo"));
+const ClientAtRisk = lazy(() => import("@/pages/ClientAtRisk"));
+const ApiKeys = lazy(() => import("@/pages/ApiKeys"));
+const EliteApiDocs = lazy(() => import("@/pages/EliteApiDocs"));
+const EliteDetails = lazy(() => import("@/pages/EliteDetails"));
+const MultiLocationDashboard = lazy(() => import("@/pages/MultiLocationDashboard"));
+const Auth = lazy(() => import("@/pages/Auth"));
+const AppLogin = lazy(() => import("@/pages/AppLogin"));
+const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
+const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
+const StaffAuth = lazy(() => import("@/pages/StaffAuth"));
+const StaffDashboard = lazy(() => import("@/pages/StaffDashboard"));
+const StaffOverview = lazy(() => import("@/pages/StaffOverview"));
+const Onboarding = lazy(() => import("@/pages/Onboarding"));
+const OnboardingChat = lazy(() => import("@/pages/OnboardingChat"));
+const SetupHub = lazy(() => import("@/pages/SetupHub"));
+const ServicesFlow = lazy(() => import("@/pages/setup/ServicesFlow"));
+const ServiceImportFlow = lazy(() => import("@/pages/setup/ServiceImportFlow"));
+const TeamFlow = lazy(() => import("@/pages/setup/TeamFlow"));
+const BookingCalendarFlow = lazy(() => import("@/pages/setup/BookingCalendarFlow"));
+const POSPaymentsFlow = lazy(() => import("@/pages/setup/POSPaymentsFlow"));
+const CommissionPayrollFlow = lazy(() => import("@/pages/setup/CommissionPayrollFlow"));
+const MarketingFlow = lazy(() => import("@/pages/setup/MarketingFlow"));
+const AIReceptionistFlow = lazy(() => import("@/pages/setup/AIReceptionistFlow"));
+const WebsiteSetupFlow = lazy(() => import("@/pages/setup/WebsiteSetupFlow"));
+const PublicBooking = lazy(() => import("@/pages/PublicBooking"));
+const VoucherBookingPage = lazy(() => import("@/pages/VoucherBookingPage"));
+const BookingWidgetPage = lazy(() => import("@/pages/BookingWidgetPage"));
+const BookingConfirmation = lazy(() => import("@/pages/public-booking/BookingConfirmation"));
+const ManageBooking = lazy(() => import("@/pages/public-booking/ManageBooking"));
+const PublicReceipt = lazy(() => import("@/pages/public-booking/PublicReceipt"));
+const CompleteBooking = lazy(() => import("@/pages/public-payment/CompleteBooking"));
+const StaffCalendar = lazy(() => import("@/pages/StaffCalendar"));
+const StaffProfile = lazy(() => import("@/pages/StaffProfile"));
+const StaffMenu = lazy(() => import("@/pages/StaffMenu"));
+const StaffLanguage = lazy(() => import("@/pages/StaffLanguage"));
+const Staff1099 = lazy(() => import("@/pages/Staff1099"));
+const StaffIncome = lazy(() => import("@/pages/StaffIncome"));
+const StaffPOS = lazy(() => import("@/pages/StaffPOS"));
+const StaffHistory = lazy(() => import("@/pages/StaffHistory"));
+const NotFound = lazy(() => import("@/pages/not-found"));
+const TeamLoginPage = lazy(() => import("@/pages/isTeam/LoginPage"));
+const TeamApp = lazy(() => import("@/pages/isTeam/TeamApp"));
+const RentalsApp = lazy(() => import("@/pages/rentals/RentalsApp"));
+const RentalsMarketingHome = lazy(() => import("@/pages/rentalsMarketing/RentalsMarketingHome"));
+const RentalsFeaturesPage = lazy(() => import("@/pages/rentalsMarketing/RentalsFeaturesPage"));
+const RentalsHowItWorksPage = lazy(() => import("@/pages/rentalsMarketing/RentalsHowItWorksPage"));
+const RentalsPricingPage = lazy(() => import("@/pages/rentalsMarketing/RentalsPricingPage"));
+const RentalsResourcesPage = lazy(() => import("@/pages/rentalsMarketing/RentalsResourcesPage"));
+const RentalsFaqPage = lazy(() => import("@/pages/rentalsMarketing/RentalsFaqPage"));
+const RentalsAuthPage = lazy(() => import("@/pages/rentalsMarketing/RentalsAuthPage"));
+const ContactPage = lazy(() => import("@/pages/ContactPage"));
+const TeamPayroll = lazy(() => import("@/pages/team/TeamPayroll"));
+const StaffList = lazy(() => import("@/pages/team/StaffList"));
+const AddStaffWizard = lazy(() => import("@/pages/team/AddStaffWizard"));
+const StaffDetail = lazy(() => import("@/pages/team/StaffDetail"));
+const StaffCalendarColors = lazy(() => import("@/pages/team/StaffCalendarColors"));
+const ContractorOnboardingPortal = lazy(() => import("@/pages/ContractorOnboardingPortal"));
+const TeamCommissions = lazy(() => import("@/pages/team/TeamCommissions"));
+const StaffPaySummary = lazy(() => import("@/pages/StaffPaySummary"));
+const StaffPayoutsSetup = lazy(() => import("@/pages/StaffPayoutsSetup"));
+const StaffFinancialHub = lazy(() => import("@/pages/StaffFinancialHub"));
+const Timeclock = lazy(() => import("@/pages/Timeclock"));
+const PrintChecks = lazy(() => import("@/pages/PrintChecks"));
+const CheckLayoutEditor = lazy(() => import("@/pages/CheckLayoutEditor"));
+const SpaLandingPage = lazy(() => import("@/pages/SpaLandingPage"));
+const TattooStudioLandingPage = lazy(() => import("@/pages/TattooStudioLandingPage"));
+const AutumnLandingPage = lazy(() => import("@/pages/AutumnLandingPage"));
+const AcceptInvite = lazy(() => import("@/pages/AcceptInvite"));
+const ManageDashboard = lazy(() => import("@/pages/manage/ManageDashboard"));
+const MembersHome = lazy(() => import("@/pages/manage/MembersHome"));
+const AiReceptionistRouter = lazy(() => import("@/pages/manage/AiReceptionistRouter"));
+const AiReceptionistEnrollment = lazy(() => import("@/pages/manage/AiReceptionistEnrollment"));
+const AiReceptionistCallLogs = lazy(() => import("@/pages/manage/AiReceptionistCallLogs"));
+const CreditsTopup = lazy(() => import("@/pages/manage/CreditsTopup"));
+const CustomerSupportPage = lazy(() => import("@/pages/manage/CustomerSupportPage"));
+const FinancePosHub = lazy(() => import("@/pages/manage/FinancePosHub"));
+const StaffEarningsHub = lazy(() => import("@/pages/manage/StaffEarningsHub"));
+const PaymentSettings = lazy(() => import("@/pages/manage/PaymentSettings"));
+const SettingsShell = lazy(() => import("@/pages/SettingsShell"));
+const WalkInBoard = lazy(() => import("@/pages/WalkInBoard"));
+const BillingPage = lazy(() => import("@/pages/manage/BillingPage"));
+const DashboardBilling = lazy(() => import("@/pages/DashboardBilling"));
+const AccountOverview = lazy(() => import("@/pages/AccountOverview"));
+const Intelligence = lazy(() => import("@/pages/Intelligence"));
+const HelpCenter = lazy(() => import("@/pages/HelpCenter"));
+const SupportInbox = lazy(() => import("@/pages/SupportInbox"));
+const DataTransferPage = lazy(() => import("@/pages/DataTransferPage"));
+const ResourceSettings = lazy(() => import("@/pages/settings/ResourceSettings"));
+const TranslationsPage = lazy(() => import("@/pages/TranslationsPage"));
+const PaymentsPayouts = lazy(() => import("@/pages/finance/PaymentsPayouts"));
+const POSSettings = lazy(() => import("@/pages/POSSettings"));
+const NailHome = lazy(() => import("@/pages/nail/NailHome"));
+const BarberHome = lazy(() => import("@/pages/barber/BarberHome"));
+
 
 const authenticatedPaths = [
   "/onboarding",
@@ -175,6 +190,7 @@ const authenticatedPaths = [
   "/google-business",
   "/calendar",
   "/nail",
+  "/barber",
   "/appointments",
   "/booking",
   "/client-lookup",
@@ -296,7 +312,7 @@ function isLikelyTenantHost(hostname: string): boolean {
   if (parts.length < 3) return false;
 
   // Internal app subdomains should keep normal app behavior.
-  const reserved = new Set(["www", "app", "manage", "voice", "api"]);
+  const reserved = new Set(["www", "app", "manage", "voice", "api", "rentals"]);
   return !reserved.has(parts[0]);
 }
 
@@ -314,10 +330,28 @@ function TenantWebsiteNotFound() {
 }
 
 function RootRedirect() {
-  if (typeof window !== "undefined" && isLikelyTenantHost(window.location.hostname)) {
-    return <TenantWebsiteNotFound />;
+  if (typeof window !== "undefined") {
+    // rentals.certxa.com's root is the public marketing homepage (Phase 7) —
+    // signed-in users reach the actual dashboard via Sign In / Get Started,
+    // same as any other SaaS marketing site. This replaces the earlier
+    // straight-to-dashboard redirect from when only the app existed there.
+    if (window.location.hostname === "rentals.certxa.com") {
+      return <RentalsMarketingHome />;
+    }
+    if (isLikelyTenantHost(window.location.hostname)) {
+      return <TenantWebsiteNotFound />;
+    }
   }
   return <Navigate to="/auth" replace />;
+}
+
+/** Guards a route so it only ever renders on the Rentals marketing subdomain — defense in depth alongside PHP/allowlist precedence on the main domain. */
+function RentalsMarketingRoute({ children }: { children: React.ReactNode }) {
+  const allowedHosts = new Set(["rentals.certxa.com", "localhost", "127.0.0.1"]);
+  if (typeof window !== "undefined" && !allowedHosts.has(window.location.hostname)) {
+    return <NotFound />;
+  }
+  return <>{children}</>;
 }
 
 /**
@@ -408,6 +442,7 @@ function AppRoutes() {
   ) && !isPublicConfirmation;
 
   const routes = (
+    <Suspense fallback={<main className="h-screen w-full flex items-center justify-center" role="status"><Loader2 className="w-7 h-7 animate-spin" /><span className="sr-only">Loading page</span></main>}>
     <Routes>
       {/* Root → PHP marketing landing page (hard navigation bypasses React Router) */}
       <Route path="/" element={<RootRedirect />} />
@@ -474,11 +509,18 @@ function AppRoutes() {
 
       {/* Self check-in kiosk */}
       <Route path="/checkin-kiosk" element={<Navigate to="/kiosk-settings" replace />} />
+      {/* A device set up as "Kiosk" in the certxa-owner native app lands here with no slug yet —
+          redirects to its remembered /kiosk/:slug from localStorage, or asks for it once. */}
+      <Route path="/kiosk" element={<KioskSetup />} />
       <Route path="/kiosk/:slug" element={<KioskCheckIn />} />
       <Route path="/kiosk/:slug/ticket/:token" element={<KioskTicket />} />
 
       {/* Front-desk customer-facing display (POS tablet): lightweight check-in
           + tip screen + card-payment instruction screens. NOT a self-serve kiosk. */}
+      {/* A device set up as "Customer Facing Screen" in the certxa-owner native app lands here
+          with no slug yet — redirects to its remembered /frontdesk/:slug(/:registerId) from
+          localStorage, or asks for it once. */}
+      <Route path="/frontdesk" element={<FrontDeskSetup />} />
       <Route path="/frontdesk/:slug" element={<FrontDeskDisplay />} />
       <Route path="/frontdesk/:slug/:registerId" element={<FrontDeskDisplay />} />
 
@@ -499,6 +541,30 @@ function AppRoutes() {
 
       {/* Admin */}
       <Route path="/isadmin/*" element={<AdminDashboard />} />
+
+      {/* Certxa Rentals — separate product, own shell (see RentalsApp.tsx).
+          Not in authenticatedPaths: like isTeam/isadmin, it's self-contained
+          and doesn't use the Salon AppLayout/StoreProvider/MobileBottomNav. */}
+      <Route
+        path="/rentals/*"
+        element={
+          <RequirePermission permission={PERMISSIONS.RENTALS_VIEW} redirectTo="/overview">
+            <RentalsApp />
+          </RequirePermission>
+        }
+      />
+
+      {/* Certxa Rentals — public marketing site (rentals.certxa.com only).
+          Hostname-guarded: on certxa.com these paths are either already owned
+          by a PHP page (e.g. /pricing) or simply unreachable — PHP intercepts
+          first there. This guard is the actual safety net regardless. */}
+      <Route path="/features" element={<RentalsMarketingRoute><RentalsFeaturesPage /></RentalsMarketingRoute>} />
+      <Route path="/how-it-works" element={<RentalsMarketingRoute><RentalsHowItWorksPage /></RentalsMarketingRoute>} />
+      <Route path="/pricing" element={<RentalsMarketingRoute><RentalsPricingPage /></RentalsMarketingRoute>} />
+      <Route path="/resources" element={<RentalsMarketingRoute><RentalsResourcesPage /></RentalsMarketingRoute>} />
+      <Route path="/faq" element={<RentalsMarketingRoute><RentalsFaqPage /></RentalsMarketingRoute>} />
+      <Route path="/login" element={<RentalsMarketingRoute><RentalsAuthPage mode="login" /></RentalsMarketingRoute>} />
+      <Route path="/signup" element={<RentalsMarketingRoute><RentalsAuthPage mode="signup" /></RentalsMarketingRoute>} />
 
       {/* Onboarding — conversational flow is the signup default; ?mode=classic remains available for support */}
       <Route
@@ -556,7 +622,8 @@ function AppRoutes() {
       <Route path="/staff/working-hours" element={<SoloGuard><StaffWorkingHours /></SoloGuard>} />
       <Route path="/customers" element={<OwnerOnlyRoute><Customers /></OwnerOnlyRoute>} />
       <Route path="/calendar" element={<Calendar />} />
-      <Route path="/nail" element={<NailHome />} />
+      <Route path="/nail" element={<Suspense fallback={<main className="h-screen w-full flex items-center justify-center" role="status"><h1 className="sr-only">Nail salon front desk</h1><Loader2 className="w-7 h-7 animate-spin" /><span className="sr-only">Loading nail salon workspace</span></main>}><NailHome /></Suspense>} />
+      <Route path="/barber" element={<Suspense fallback={<main className="h-screen w-full flex items-center justify-center" role="status">Loading barber workspace…</main>}><BarberHome /></Suspense>} />
       <Route path="/appointments" element={<Calendar />} />
       <Route path="/pos" element={<PosCheckout />} />
       <Route path="/booking/new" element={<NewBooking />} />
@@ -574,6 +641,7 @@ function AppRoutes() {
       <Route path="/google-business" element={<OwnerOnlyRoute><GoogleBusiness /></OwnerOnlyRoute>} />
       <Route path="/reports" element={<ReportsHub />} />
       <Route path="/reports/dashboard" element={<Reports />} />
+      <Route path="/reports/day-close" element={<DayCloseReports />} />
       <Route path="/register-reports" element={<RegisterReports />} />
       <Route path="/commission-report" element={<CommissionReport />} />
       <Route path="/salon-earnings" element={<SalonEarningsReport />} />
@@ -640,6 +708,7 @@ function AppRoutes() {
 
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </Suspense>
   );
 
   if (isAuthenticatedRoute) {
@@ -647,6 +716,8 @@ function AppRoutes() {
       <StoreProvider>
         <StaffPortalGuard>
         <SnapshotProvider>
+          {/* A lost sign-in on any signed-in page: sign this device back in, or go to the sign-in page. */}
+          <SignedOutRecovery />
           {/* Reports this signed-in user to isTeam → Live Visitors → Booking App Users */}
           <BookingPresenceBeacon />
           {/* Global mobile sticky header — fixed top-0, visible on every authenticated page */}
@@ -665,6 +736,28 @@ function AppRoutes() {
   }
 
   return routes;
+}
+
+/**
+ * Mounted on every signed-in page. When a request comes back 401 (see lib/resumeSignIn.ts), or the app
+ * finds nobody signed in at all, this device has lost its sign-in to the account: sign it back in as a
+ * remembered device and reload, or go to the sign-in page and come back here afterwards.
+ */
+function SignedOutRecovery() {
+  const { user, isLoading } = useAuth();
+  const location = useLocation();
+  const here = location.pathname + location.search;
+  const hereRef = useRef(here);
+  hereRef.current = here;
+  useEffect(() => {
+    const onUnauthorized = () => { void resumeOrSignIn(hereRef.current); };
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+  }, []);
+  useEffect(() => {
+    if (!isLoading && !user && navigator.onLine) void resumeOrSignIn(hereRef.current);
+  }, [isLoading, user]);
+  return null;
 }
 
 function ManageBillingWrapper() {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { ArrowLeft, X } from "lucide-react";
 
 export interface MoreTile {
   key: string;
@@ -8,12 +8,18 @@ export interface MoreTile {
   sub?: string;
   icon: React.ComponentType<{ size?: number }>;
   run: () => void;
+  /** A switch (e.g. Lock Screen on / off): the popup stays open so the new state can be seen. */
+  keepOpen?: boolean;
   /** Ask first — for anything that would throw away what's on screen. */
   confirm?: { title: string; body: string; action: string };
 }
 
 /** Everything the calendar's menu has that isn't a footer button. Big tiles, sized to tap on a 10" tablet. */
-export function MoreMenu({ tiles, onClose }: { tiles: MoreTile[]; onClose: () => void }) {
+export function MoreMenu({ tiles, onClose, title = "More", onBack }: {
+  tiles: MoreTile[]; onClose: () => void;
+  /** The Manager tab uses the same popup with its own tiles: its name, and the way back to More. */
+  title?: string; onBack?: () => void;
+}) {
   const [askingTile, setAsking] = useState<MoreTile | null>(null);
   // A tile that disappears while its question is open (Hard Refresh when the connection drops) closes the question too.
   const asking = askingTile && tiles.some((t) => t.key === askingTile.key) ? askingTile : null;
@@ -24,9 +30,10 @@ export function MoreMenu({ tiles, onClose }: { tiles: MoreTile[]; onClose: () =>
   return (
     <>
       <div className="assign-create-overlay" onClick={onClose} />
-      <div className="more-menu" data-testid="nail-more-menu">
+      <div className="more-menu" data-testid="nail-more-menu" data-view={title.toLowerCase()}>
         <div className="more-header">
-          <h2>{asking ? asking.confirm!.title : "More"}</h2>
+          {onBack && !asking && <button type="button" className="more-close more-back" onClick={onBack} aria-label="Back to More" data-testid="nail-more-back"><ArrowLeft size={26} /></button>}
+          <h2>{asking ? asking.confirm!.title : title}</h2>
           <button type="button" className="more-close" onClick={onClose} aria-label="Close"><X size={26} /></button>
         </div>
 
@@ -42,7 +49,7 @@ export function MoreMenu({ tiles, onClose }: { tiles: MoreTile[]; onClose: () =>
           <div className="more-grid" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))` }}>
             {tiles.map((t) => (
               <button key={t.key} type="button" className="more-tile" data-testid={`nail-more-${t.key}`}
-                onClick={() => { if (t.confirm) setAsking(t); else { onClose(); t.run(); } }}>
+                onClick={() => { if (t.confirm) setAsking(t); else if (t.keepOpen) t.run(); else { onClose(); t.run(); } }}>
                 <t.icon size={36} />
                 <span>{t.label}</span>
                 {t.sub && <small>{t.sub}</small>}

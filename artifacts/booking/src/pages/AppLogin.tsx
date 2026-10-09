@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2, ArrowRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import DemoCalendarBackground from "@/components/DemoCalendarBackground";
+import { getDefaultAuthenticatedRoute } from "@/lib/default-auth-route";
 
 const PLUM     = "#3B0764";
 const PLUM_MID = "#5B21B6";
@@ -107,7 +108,7 @@ export default function AppLogin() {
     if (!user.onboardingCompleted) {
       navigate("/onboarding", { replace: true });
     } else {
-      navigate("/calendar", { replace: true });
+      void getDefaultAuthenticatedRoute(user).then((route) => navigate(route, { replace: true }));
     }
   }, [isAuthenticated, user, navigate, redirectTo]);
 

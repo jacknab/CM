@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useSelectedStore } from "@/hooks/use-store";
 import { getDeviceId } from "@/lib/device-id";
+import { getStationDeviceId } from "@/lib/stationDevice";
 import type { Register } from "@shared/schema";
 
 const LOCAL_REGISTER_KEY = "certxa_register_id";
@@ -134,134 +135,62 @@ export function useDeleteRegister() {
 }
 
 /**
- * Resolves which register this /calendar browser is acting as. The pre-
- * existing implicit/default station (registerId 0) is conceptually "POS #1"
- * — so as soon as a store has even ONE real register configured, there are
- * 2 possible stations and multi-station mode is active (a store with 0
- * registers configured never shows a picker, since there's only ever been
- * one station).
+ * Which checkout station (register) this POS tablet is.
  *
- * Stations already claimed by a DIFFERENT device (another terminal that has
- * picked it and is actively heartbeating) are listed in `takenRegisters`, not
- * `registers` — the picker only lets them be picked via an explicit takeover,
- * so two terminals can't silently pick "POS #1" and recreate the checkout
- * cross-talk bug. A claim also goes stale after ~15 minutes with no heartbeat
- * (see the api-server route); takeover covers a reinstalled app, whose new
- * deviceId would otherwise leave its old claim blocking the station.
+ * A tablet no longer picks its station: the server gives it a free one the first time and it keeps it
+ * (POST /api/registers/my-station, routes/stationPairing.ts — also the heartbeat that keeps it held).
+ * Staff used to pick from a list they could reset or "take over", and wrong picks sent checkouts to
+ * the wrong customer screen. The customer screen is paired to this tablet with a code instead
+ * (components/pos/PairCustomerScreen.tsx). A salon with one station gets registerId 0, as before.
+ *
+ * The return shape is the old one so the screens using it keep working: there is never a picker, and
+ * select/reset do nothing.
  */
 export function useActiveRegisterId(storeId: number | undefined) {
-  const queryClient = useQueryClient();
   const { data: registerList } = useRegisters(storeId);
-  // Mirrors localStorage in component state so picking a register (which
-  // writes to localStorage, an untracked side channel) actually triggers a
-  // re-render — reading getLocalRegisterId() alone wouldn't.
-  const [localId, setLocalId] = useState(getLocalRegisterId);
-  const [hasChoice, setHasChoice] = useState(hasLocalRegisterChoice);
-
   const activeRegisters = (registerList ?? []).filter((r) => r.isActive);
   const isMultiStation = activeRegisters.length > 0;
-  // Once a store has graduated to a real "POS #1" row (isDefault=true,
-  // created the first time it added a second station — see the create
-  // route), every station is a real row and the old synthetic id:0 entry is
-  // retired. Stores that haven't yet added anything beyond the original
-  // station still get the synthetic entry, matching pre-existing behavior.
-  const hasRealDefault = activeRegisters.some((r) => r.isDefault);
-  const allOptions: RegisterOption[] = isMultiStation
-    ? (hasRealDefault
-        ? activeRegisters.map((r) => ({ id: r.id, name: r.name }))
-        : [{ id: 0, name: "POS #1" }, ...activeRegisters.map((r) => ({ id: r.id, name: r.name }))])
-    : [];
+  const deviceId = getStationDeviceId();
 
-  const { data: claims } = useRegisterClaims(storeId, isMultiStation);
-  const deviceId = getDeviceId();
-  const claimedByOther = new Set(
-    (claims ?? []).filter((c) => c.deviceId !== deviceId).map((c) => c.registerId),
-  );
-  // What the picker should actually offer — this browser's own already-valid
-  // pick stays visible even if (edge case) it also shows as self-claimed.
-  const availableOptions = allOptions.filter((o) => !claimedByOther.has(o.id));
-  const takenOptions = allOptions.filter((o) => claimedByOther.has(o.id));
+  const { data: station } = useQuery<{ registerId: number | null; name: string | null; multiStation: boolean; allTaken?: boolean }>({
+    queryKey: ["/api/registers/my-station", storeId, deviceId, activeRegisters.map((r) => r.id).join(",")],
+    // Asked for a one-station salon too: the server remembers which tablet that station is on, so
+    // it stays POS #1 when a second station is added.
+    enabled: !!storeId,
+    queryFn: async () => {
+      // legacyDeviceId: the old fingerprint id, so a tablet that already held a station keeps it.
+      const res = await apiRequest("POST", "/api/registers/my-station", { deviceId, legacyDeviceId: getDeviceId() });
+      return res.json();
+    },
+    staleTime: 60_000,
+    refetchInterval: CLAIM_HEARTBEAT_MS,
+  });
 
-  // id:0 is only ever a valid pick in legacy/synthetic mode (no real default
-  // row yet) — once a real default row exists, a stale "0" from before that
-  // transition is no longer valid and forces a fresh pick using its real id.
-  const localIsValid = hasChoice && (activeRegisters.some((r) => r.id === localId) || (localId === 0 && !hasRealDefault));
-  const needsPicker = allOptions.length >= 2 && !localIsValid;
-  // Fall back to the real default register's id (not the legacy 0) once one
-  // exists — /api/public/kiosk/:slug/config resolves the bare /frontdesk/:slug
-  // URL to that same real id, so this side must match it or the two ends of
-  // the same physical station land in different WS buckets and every
-  // calendar<->frontdesk event (check-in prompts, checkout events, etc.)
-  // silently stops reaching its pair.
-  const defaultRegister = activeRegisters.find((r) => r.isDefault);
-  const registerId = localIsValid ? localId : (defaultRegister ? defaultRegister.id : 0);
+  // Nothing resolved yet, or every station is taken: 0, which no paired screen listens on once a
+  // salon has real stations, so this tablet's checkouts never reach another station's screen.
+  const registerId = isMultiStation ? (station?.registerId ?? 0) : 0;
 
-  // Keep this device's claim alive while it holds a valid pick in multi-
-  // station mode — /calendar is normally left open for hours, so this just
-  // heartbeats quietly in the background the whole time.
+  // Other code still reads the station from local storage (getLocalRegisterId) — keep it current.
   useEffect(() => {
-    if (!isMultiStation || !localIsValid || !storeId) return;
-    const beat = () => {
-      apiRequest("POST", "/api/registers/claim", { registerId: localId, deviceId }).catch(() => {});
-    };
-    beat();
-    const iv = setInterval(beat, CLAIM_HEARTBEAT_MS);
-    return () => clearInterval(iv);
-  }, [isMultiStation, localIsValid, localId, storeId, deviceId]);
+    if (isMultiStation && station?.registerId != null) setLocalRegisterId(station.registerId);
+  }, [isMultiStation, station?.registerId]);
 
-  const selectRegister = useCallback(async (id: number, opts?: { takeover?: boolean }): Promise<{ ok: boolean; error?: string }> => {
-    try {
-      const res = await apiRequest("POST", "/api/registers/claim", { registerId: id, deviceId, takeover: opts?.takeover === true });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        queryClient.invalidateQueries({ queryKey: [`/api/registers/claims?storeId=${storeId}`] });
-        return { ok: false, error: body.message || "This station is already in use on another device." };
-      }
-      setLocalRegisterId(id);
-      setLocalId(id);
-      setHasChoice(true);
-      return { ok: true };
-    } catch {
-      return { ok: false, error: "Couldn't reach the server — check your connection and try again." };
-    }
-  }, [deviceId, queryClient, storeId]);
-
-  // Forgets which station this device is paired to and immediately releases
-  // its server-side claim (rather than leaving it to expire after 15 min),
-  // so the picker re-appears and the freed station is instantly available to
-  // whichever device claims it next. For "tablet got physically moved to a
-  // different station" — the actual scenario this exists for — tap this
-  // BEFORE moving it; if the tablet already ended up moved with a stale
-  // pairing, this still fixes it, it just leaves the old slot occupied until
-  // the existing 15-minute staleness window passes on its own.
-  const resetRegister = useCallback(async () => {
-    clearLocalRegisterId();
-    setLocalId(0);
-    setHasChoice(false);
-    try {
-      await apiRequest("POST", "/api/registers/unclaim", { deviceId });
-    } catch {
-      // Best-effort — the local reset above is what actually re-triggers the
-      // picker; a failed unclaim just means the old slot frees up on its own
-      // after 15 minutes instead of immediately.
-    }
-    queryClient.invalidateQueries({ queryKey: [`/api/registers/claims?storeId=${storeId}`] });
-  }, [deviceId, queryClient, storeId]);
+  const selectRegister = useCallback(async (_id?: number, _opts?: { takeover?: boolean }): Promise<{ ok: boolean; error?: string }> => (
+    { ok: false, error: "Stations are assigned automatically." }
+  ), []);
+  const resetRegister = useCallback(async () => {}, []);
 
   return {
     registerId,
-    needsPicker,
-    // Only stations nobody else currently holds — this is what the picker renders.
-    registers: availableOptions,
-    // Stations another device holds — the picker offers these as an explicit
-    // "take over" so a reinstalled tablet isn't locked out for ~15 minutes.
-    takenRegisters: takenOptions,
+    needsPicker: false,
+    registers: [] as RegisterOption[],
+    takenRegisters: [] as RegisterOption[],
     selectRegister,
     isMultiStation,
-    // Display name for the station this device is explicitly paired to, e.g. "POS #2". Null when
-    // there's nothing to pair (fewer than 2 stations) or the pairing was just reset — otherwise the
-    // badge would keep showing the fallback default station and "Reset" would look like it did nothing.
-    currentRegisterName: allOptions.length >= 2 && localIsValid ? (allOptions.find((o) => o.id === registerId)?.name ?? null) : null,
+    // e.g. "POS #2" — shown on the station button, which now opens "Pair a customer screen".
+    currentRegisterName: isMultiStation && station?.multiStation ? (station?.name ?? null) : null,
     resetRegister,
+    /** Every station belongs to another tablet: this one is not linked to a customer screen. */
+    stationsFull: isMultiStation && station?.allTaken === true,
   };
 }

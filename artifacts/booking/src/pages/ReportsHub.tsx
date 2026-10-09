@@ -24,6 +24,7 @@ const CARDS: ReportCard[] = [
   { title: "Sales tax", description: "Includes information about sales tax history", icon: Percent, to: "/reports/dashboard?tab=tax" },
   { title: "Commission earnings", description: "Breakdown of earnings to support commission payouts", icon: FileText, to: "/commission-report" },
   { title: "Salon earnings", description: "Revenue and payout breakdown for the salon", icon: Star, to: "/salon-earnings" },
+  { title: "Day Close", description: "The Day Close report for any day you choose", icon: FileText, to: "/reports/day-close" },
   { title: "Register reports", description: "Cash drawer counts and register activity history", icon: FileText, to: "/register-reports" },
   { title: "Retail sales", description: "Includes information about retail sales history", icon: ShoppingCart, comingSoon: true },
   { title: "Packages activity", description: "Includes a detailed activity report tracking all credit actions", icon: Package, comingSoon: true },

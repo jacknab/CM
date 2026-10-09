@@ -353,6 +353,46 @@
   --cal-nonworking: hsl(var(--cx-nonworking));
 }
 
+/* ── Light calendar workspace ─────────────────────────────────────────
+   The Calendar page itself (header + grid) is `.cx-cal.cx-cal-light`: the
+   same token ramp turned light, with a red accent. Its sheets and POS
+   overlays keep their own `.dark.cx-cal` root, so they stay dark.        */
+.cx-cal.cx-cal-light {
+  --cx-bg:         0 0% 100%;
+  --cx-surface-1:  0 0% 100%;
+  --cx-surface-2:  210 25% 98%;
+  --cx-surface-3:  214 22% 95%;
+  --cx-surface-4:  214 20% 90%;
+  --cx-line:       214 20% 87%;
+  --cx-line-soft:  214 22% 93%;
+  --cx-nonworking: 210 25% 97.5%;
+  --cx-text:       222 32% 12%;
+  --cx-text-2:     220 14% 30%;
+  --cx-text-3:     220 10% 44%;
+  --cx-text-4:     220 10% 62%;
+  --cx-accent:     350 84% 58%;
+  --cx-accent-hi:  350 78% 48%;
+  --input: 214 20% 87%;
+  --primary-foreground: 0 0% 100%;
+  --ring: 350 84% 58%;
+  --sidebar-primary-foreground: 0 0% 100%;
+}
+/* fixed dark values in the remap below, restated for the light page (never for a dark overlay inside it) */
+.cx-cal-light :not(.dark *).bg-slate-300        { background-color: hsl(214 18% 80%) !important; }
+.cx-cal-light :not(.dark *).border-slate-700    { border-color: hsl(214 16% 70%) !important; }
+.cx-cal-light :not(.dark *).text-indigo-600,
+.cx-cal-light :not(.dark *).text-indigo-500     { color: hsl(222 32% 12%) !important; }
+.cx-cal-light :not(.dark *).bg-teal-600,
+.cx-cal-light :not(.dark *).hover\:bg-teal-600:hover { background-color: hsl(350 78% 50%) !important; }
+.cx-cal-light :not(.dark *).bg-rose-50          { background-color: hsl(351 90% 96%) !important; }
+.cx-cal-light :not(.dark *).bg-green-50         { background-color: hsl(138 76% 96%) !important; }
+.cx-cal-light :not(.dark *).bg-emerald-50       { background-color: hsl(152 80% 95%) !important; }
+.cx-cal-light :not(.dark *).bg-blue-50          { background-color: hsl(214 100% 96%) !important; }
+.cx-cal-light :not(.dark *).bg-amber-50         { background-color: hsl(48 100% 95%) !important; }
+.cx-cal-light :not(.dark *).text-emerald-700    { color: hsl(160 84% 24%) !important; }
+.cx-cal-light :not(.dark *).text-rose-600,
+.cx-cal-light :not(.dark *).text-rose-500       { color: hsl(347 77% 46%) !important; }
+
 /* ── surfaces: remap the page's hardcoded light utilities to the ramp ── */
 .cx-cal .bg-white            { background-color: hsl(var(--cx-surface-1)) !important; }
 .cx-cal .bg-white\/70        { background-color: hsl(var(--cx-surface-3) / 0.7) !important; }
@@ -641,3 +681,22 @@ html.native-app {
 @keyframes cx-shake-b { 0%, 100% { transform: translateX(0); } 15% { transform: translateX(-14px); } 30% { transform: translateX(12px); } 45% { transform: translateX(-9px); } 60% { transform: translateX(7px); } 75% { transform: translateX(-4px); } 90% { transform: translateX(2px); } }
 .cx-shake-a { animation: cx-shake-a 0.45s ease-in-out; }
 .cx-shake-b { animation: cx-shake-b 0.45s ease-in-out; }
+
+/* Kiosk, nail-salon look (pages/KioskCheckIn.tsx sets `kx-nail` on <html> while it is on).
+   Serif headings as in the salon's reference artwork, and no pictograms: `.kx-g` is the invisible marker left
+   where an emoji used to be, and any badge or disc that existed only to hold one is hidden with it. */
+html.kx-nail h1, html.kx-nail h2, html.kx-nail h3 { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-weight: 700 !important; letter-spacing: 0; }
+html.kx-nail .kx-g { display: none; }
+html.kx-nail *:has(> .kx-g:only-child) { display: none !important; }
+html.kx-nail .rounded-full:has(> span > .kx-g:only-child), html.kx-nail .rounded-xl:has(> span > .kx-g:only-child) { display: none !important; }
+
+/* Kiosk nail step: the "help me choose" button breathes gently so it is noticed without getting in the way,
+   and the guide's length sheet rises from the bottom. */
+@keyframes kx-help-ring { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--kx-ring, #b9785c) 45%, transparent); } 70%, 100% { box-shadow: 0 0 0 10px transparent; } }
+@keyframes kx-help-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+.kx-help { animation: kx-help-ring 2.4s ease-out infinite, kx-help-float 3.6s ease-in-out infinite; }
+@keyframes kx-sheet-rise { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes kx-sheet-fade { from { opacity: 0; } to { opacity: 1; } }
+.kx-sheet-rise { animation: kx-sheet-rise .28s cubic-bezier(.2,.8,.2,1); }
+.kx-sheet-fade { animation: kx-sheet-fade .2s ease-out; }
+@media (prefers-reduced-motion: reduce) { .kx-help, .kx-sheet-rise, .kx-sheet-fade { animation: none; } }

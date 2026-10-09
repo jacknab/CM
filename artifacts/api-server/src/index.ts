@@ -191,7 +191,7 @@ import { seoPageMiddleware } from "./seo-pages";
 import salonDirectoryRouter, { salonSlugFallbackRouter } from "./routes/salonDirectory";
 import salonApiRouter from "./routes/salonApi";
 import marketplaceDealsApiRouter from "./routes/marketplaceDealsApi";
-import { SEO_CONFIG, injectSeoMetadata, isKnownAppFirstSegment, NOT_FOUND_HTML } from "./static";
+import { SEO_CONFIG, injectSeoMetadata, injectNoindex, isKnownAppFirstSegment, isRentalsHost, NOT_FOUND_HTML } from "./static";
 import { isRequestFromTrustedNetwork, resolveStoreIdBySlug } from "./lib/salonNetworkGuard";
 import { logBodySuffix, shouldSkipBodyLog } from "./lib/logRedaction";
 
@@ -353,9 +353,11 @@ app.use((req, res, next) => {
   // In production, explicitly allow wss: connections back to the same host so
   // the dashboard WebSocket works without relying on 'self' covering wss:.
   // (Some browsers do not extend 'self' to cover the ws/wss schemes.)
+  // data: — react-pdf (check "Download PDF") fetches its yoga-layout WebAssembly from an inline data: URL.
+  // A data: URL carries its own bytes, so allowing it can't send anything off the page.
   const cspConnectSrc = process.env.NODE_ENV !== "production"
-    ? "connect-src 'self' https: ws: wss:;"
-    : `connect-src 'self' https: wss:${_appUrl ? ` ${_appUrl.replace(/^https?:/, "wss:")}` : ""};`;
+    ? "connect-src 'self' https: ws: wss: data:;"
+    : `connect-src 'self' https: wss: data:${_appUrl ? ` ${_appUrl.replace(/^https?:/, "wss:")}` : ""};`;
   // NOTE: script-src still allows 'unsafe-inline' + 'unsafe-eval'. Tightening
   // this (nonces for inline GTM/Stripe, dropping unsafe-eval) needs a
   // dedicated pass with full regression testing of the booking SPA + payment
@@ -454,6 +456,7 @@ const publicLimiter = rateLimit({
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/register", authLimiter);
 app.use("/api/auth/logout", authLimiter);
+app.use("/api/auth/resume", authLimiter);
 app.use("/api/auth/forgot-password", authLimiter);
 app.use("/api/auth/reset-password", authLimiter);
 app.use("/api/auth/staff-request-otp", authLimiter);
@@ -557,6 +560,7 @@ app.get("/api/health", async (_req, res) => {
   const healthy = dbStatus === "ok" && requiredPresent;
 
   res.status(healthy ? 200 : 503).json({
+    ok: healthy,
     status:          healthy ? "ok" : "degraded",
     timestamp:       new Date().toISOString(),
     uptime_seconds:  uptimeSeconds,
@@ -780,6 +784,23 @@ app.use(phpMiddleware);
 // --- Friendly redirects for common booking-app paths ---
 app.get("/login", (_req, res) => res.redirect(301, "/auth"));
 app.get("/signup", (_req, res) => res.redirect(301, "/auth"));
+
+// --- Retired industry landing pages ---
+// These were client-rendered pages of an earlier, multi-industry version of the site. The app no longer
+// has them, so the server sent their title and the app then showed "not found" — Search Console
+// (Oct 2026) reported every one as a "Soft 404". Beauty ones go to the page that covers them now (the
+// same as /barbershop-software and /hair-salon-software); the rest are services Certxa doesn't offer,
+// so they are gone for good (410), which Google drops faster than a 404.
+const RETIRED_TO_NAIL_PAGE = ["/nails", "/barbers", "/haircuts", "/hair-salons", "/estheticians"];
+const RETIRED_GONE = ["/tattoo", "/groomers", "/house-cleaning", "/handyman", "/ride-service", "/snow-removal", "/lawn-care",
+  "/tutoring", "/dog-walking", "/hvac", "/plumbing", "/electrical", "/carpet-cleaning", "/pressure-washing", "/window-cleaning"];
+app.get("/industries", (_req, res) => res.redirect(301, "/"));
+for (const path of RETIRED_TO_NAIL_PAGE) app.get(path, (_req, res) => res.redirect(301, "/nail-salon-software"));
+for (const path of RETIRED_GONE) {
+  app.get(path, (_req, res) => {
+    res.status(410).set({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=86400" }).send(NOT_FOUND_HTML);
+  });
+}
 
 // --- Salon marketplace: flat individual listing page ("/:slug") ---
 // Deliberately mounted AFTER phpMiddleware (and the two redirects above) so
@@ -1457,6 +1478,10 @@ async function repairTwilioMessagingServiceInboundWebhook() {
   const { startSubscriptionSyncScheduler } = await import("./services/subscription-sync");
   startSubscriptionSyncScheduler();
 
+  // In-house plan billing: charges cards on file every 31 days. SAAS_BILLING_MODE = off | dry_run | live.
+  const { startSaasBillingScheduler } = await import("./services/saas-billing");
+  startSaasBillingScheduler();
+
   // GBP Optimization Engine: daily sweep of all connected Google Business Profiles —
   // auto-syncs safe fields (hours, description, booking URL, services) and logs category recommendations.
   const { startGBPOptimizationScheduler } = await import("./services/gbpOptimizationWorker");
@@ -1564,6 +1589,7 @@ async function repairTwilioMessagingServiceInboundWebhook() {
       app.use((req: Request, res: Response, next: NextFunction) => {
         if (req.path.startsWith("/api/")) return next();
         if (!SSR_ROUTES.has(req.path)) return next();
+        if (isRentalsHost(req)) return next();
         if (!ssrRender || !indexTemplate) return next();
 
         try {
@@ -1587,7 +1613,7 @@ async function repairTwilioMessagingServiceInboundWebhook() {
         // Let missing /uploads/* fall through to a real 404 — never serve index.html
         // for image requests (broken <img> shows a blank icon, not a silent HTML response).
         if (req.path.startsWith("/uploads/")) return next();
-        const seo = SEO_CONFIG[req.path];
+        const seo = isRentalsHost(req) ? undefined : SEO_CONFIG[req.path];
         if (seo && indexTemplate) {
           res
             .status(200)
@@ -1651,6 +1677,13 @@ async function repairTwilioMessagingServiceInboundWebhook() {
         res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
         res.setHeader("Pragma", "no-cache");
         res.setHeader("Expires", "0");
+        // Everything that reaches here is an app screen (the POS, a salon's booking steps, settings…), not a
+        // page for search results: the public pages were all answered above. The shell's own robots tag says
+        // "index, follow" for the marketing site, which is how /book/<salon> ended up reported as a Soft 404.
+        if (indexTemplate) {
+          res.status(200).type("html").send(injectNoindex(indexTemplate));
+          return;
+        }
         res.sendFile(indexHtmlPath);
       });
     }

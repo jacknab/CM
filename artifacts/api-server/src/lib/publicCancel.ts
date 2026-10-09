@@ -11,6 +11,7 @@
  */
 
 import { storage } from "../storage";
+import { pushBookingEvent } from "./ownerPush";
 
 type CancelOutcome =
   | { ok: true; status: 200; body: Record<string, unknown> }
@@ -88,6 +89,8 @@ export async function cancelBookingWithPolicy(
         ? `Cancelled by customer (late-cancel fee $${cancellationFeeCharged.toFixed(2)} charged)`
         : "Cancelled by customer",
     });
+    // Tell the owner's phone (Certxa Pro app) that the client cancelled.
+    if (appointment.storeId) void pushBookingEvent(Number(appointment.storeId), Number(appointment.id), "cancelled_client");
   }
 
   const refreshed = await storage.getAppointment(appointment.id);

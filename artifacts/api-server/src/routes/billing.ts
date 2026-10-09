@@ -117,6 +117,27 @@ async function getActiveSubscription(storeId: number) {
   return sub ?? null;
 }
 
+/** A plan that costs nothing (Solo, for now): there is nothing for Stripe to charge, so there is no checkout. */
+const isFreePlan = (plan: { code: string; priceMonthly: number | null }) => plan.code !== "free_trial" && Number(plan.priceMonthly ?? 0) === 0;
+
+/**
+ * Put a store on a free plan. Any Stripe subscription it was paying for is cancelled first, so it is never
+ * billed again; then its subscription row becomes an active one on the free plan with no Stripe id.
+ */
+async function activateFreePlan(storeId: number, planId: number): Promise<void> {
+  const current = await getActiveSubscription(storeId);
+  if (current?.stripeSubscriptionId) {
+    await stripe.subscriptions.cancel(current.stripeSubscriptionId);
+  }
+  if (current) {
+    await db.update(storeSubscriptionsTable)
+      .set({ planId, status: "active", stripeSubscriptionId: null, canceledAt: null, cancelAtPeriodEnd: false, currentPeriodEnd: null, updatedAt: new Date() })
+      .where(eq(storeSubscriptionsTable.id, current.id));
+  } else {
+    await db.insert(storeSubscriptionsTable).values({ storeId, planId, status: "active" } as any);
+  }
+}
+
 const SMS_PACKAGES = [
   { id: "sms_10",  priceCents: 1000,  credits: 333,  label: "$10 — 333 SMS"   },
   { id: "sms_25",  priceCents: 2500,  credits: 833,  label: "$25 — 833 SMS"   },
@@ -515,10 +536,6 @@ router.post("/subscribe/:salonId", async (req: any, res) => {
   const store = await ownedStore(req, salonId);
   if (!store) return res.status(403).json({ error: "Forbidden" });
 
-  if (!isStripeConfigured()) {
-    return res.status(503).json({ error: "Stripe is not configured" });
-  }
-
   const { planCode, interval = "month" } = req.body;
   if (!planCode) return res.status(400).json({ error: "planCode is required" });
 
@@ -530,6 +547,16 @@ router.post("/subscribe/:salonId", async (req: any, res) => {
       .limit(1);
 
     if (!plan) return res.status(404).json({ error: "Plan not found" });
+
+    // A free plan starts at once: no card, no checkout.
+    if (isFreePlan(plan)) {
+      await activateFreePlan(salonId, plan.id);
+      return res.json({ url: `${getReturnBaseUrl()}/manage/billing?status=success`, free: true });
+    }
+
+    if (!isStripeConfigured()) {
+      return res.status(503).json({ error: "Stripe is not configured" });
+    }
 
     const priceId =
       interval === "year"
@@ -582,12 +609,6 @@ router.post("/change-plan/:salonId", async (req: any, res) => {
   if (!newPlanCode) return res.status(400).json({ error: "newPlanCode is required" });
 
   try {
-    const sub = await getActiveSubscription(salonId);
-    if (!sub?.stripeSubscriptionId) {
-      // No active subscription — redirect to checkout instead
-      return res.status(409).json({ error: "No active Stripe subscription. Use /subscribe to start one." });
-    }
-
     const [plan] = await db
       .select()
       .from(subscriptionPlans)
@@ -595,6 +616,18 @@ router.post("/change-plan/:salonId", async (req: any, res) => {
       .limit(1);
 
     if (!plan) return res.status(404).json({ error: "Plan not found" });
+
+    // Moving to a free plan ends the paid subscription rather than re-pricing it.
+    if (isFreePlan(plan)) {
+      await activateFreePlan(salonId, plan.id);
+      return res.json({ ok: true, free: true });
+    }
+
+    const sub = await getActiveSubscription(salonId);
+    if (!sub?.stripeSubscriptionId) {
+      // No active subscription — redirect to checkout instead
+      return res.status(409).json({ error: "No active Stripe subscription. Use /subscribe to start one." });
+    }
 
     const priceId =
       interval === "year"

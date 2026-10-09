@@ -7,6 +7,7 @@
 import { db } from "@workspace/db";
 import { serviceIllustrationCategories } from "@shared/schema";
 import { sql } from "drizzle-orm";
+import { KIOSK_ART_INDUSTRY, KIOSK_ART_SLOTS } from "@shared/kioskArt";
 
 const DEFAULT_CATEGORIES: Array<{
   name: string;
@@ -60,6 +61,9 @@ const DEFAULT_CATEGORIES: Array<{
   { name: "Waxing",               slug: "waxing",               description: "Hair removal waxing service",       industry: "SPA", sortOrder: 70 },
   { name: "Eyebrow Service",      slug: "eyebrow-service",      description: "Brow shaping, tinting, or lash",    industry: "SPA", sortOrder: 80 },
 ];
+
+// The nail-salon kiosk's artwork slots (shared/kioskArt.ts): empty until an admin uploads each picture.
+DEFAULT_CATEGORIES.push(...KIOSK_ART_SLOTS.map((s) => ({ ...s, industry: KIOSK_ART_INDUSTRY })));
 
 export async function seedIllustrationCategories(): Promise<void> {
   try {

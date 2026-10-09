@@ -40,7 +40,9 @@ export type ActivityEventType =
   | "payment_succeeded"
   | "payment_failed"
   | "sms_credits_purchased"
-  | "wallet_deposit";
+  | "wallet_deposit"
+  // Payroll checks
+  | "check_signature_changed";
 
 export interface LogActivityEventInput {
   storeId: number;

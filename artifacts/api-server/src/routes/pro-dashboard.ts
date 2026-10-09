@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { db } from "../db";
+import { mutateStorePreferences } from "../lib/storePreferences";
 import {
   crews, crewLocations, serviceOrders, orderNotes,
   proCustomers, proEstimates, proInvoices,
@@ -372,15 +373,7 @@ router.post("/features", async (req, res) => {
     const { features } = req.body;
     if (!Array.isArray(features)) return res.status(400).json({ error: "features must be an array" });
 
-    const [existing] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
-    if (existing) {
-      let prefs: any = {};
-      try { prefs = JSON.parse(existing.preferences); } catch {}
-      prefs.proFeatures = features;
-      await db.update(storeSettings).set({ preferences: JSON.stringify(prefs) }).where(eq(storeSettings.storeId, storeId));
-    } else if (storeId) {
-      await db.insert(storeSettings).values({ storeId, preferences: JSON.stringify({ proFeatures: features }) });
-    }
+    if (storeId) await mutateStorePreferences(storeId, (prefs) => ({ ...prefs, proFeatures: features }));
     res.json({ ok: true });
   } catch (err) { console.error(err); res.status(500).json({ error: "Failed" }); }
 });

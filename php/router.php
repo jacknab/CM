@@ -208,8 +208,11 @@ if ($uri === '/') {
 // again, update llms.txt / llms-full.txt's Marketplace section to match —
 // that file has now been wrong about the root URL in three consecutive GEO
 // audits, in two different directions (see GEO-AUDIT-REPORT.md).
-if ($uri === '/overview.php') {
-    header('Location: /overview', true, 301);
+// /overview is the home page under a second address. Search Console (Oct 2026) reported it as
+// "Duplicate, Google chose different canonical than user", so it now 301s to "/" (and the nav links
+// point at "/"), leaving one address for the page.
+if ($uri === '/overview' || $uri === '/overview/' || $uri === '/overview.php') {
+    header('Location: /', true, 301);
     exit;
 }
 

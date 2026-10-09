@@ -42,12 +42,12 @@ minimumReleaseAgeExclude:
   - stripe-replit-sync
   - expo
 
-neverBuiltDependencies:
-  - '@sentry/cli'
+onlyBuiltDependencies:
   - '@stripe/stripe-terminal-react-native'
-  - msgpackr-extract
-  - puppeteer
-  - sharp
+  - '@swc/core'
+  - esbuild
+  - msw
+  - unrs-resolver
 
 overrides:
   '@esbuild-kit/esm-loader': npm:tsx@^4.21.0

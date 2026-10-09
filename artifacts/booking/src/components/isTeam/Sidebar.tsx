@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useSupportAuth } from "@/hooks/use-support-auth";
 import { supportApi } from "@/lib/support-api";
+import { useChatConnection } from "./ChatConnection";
 import {
   Home, Users, Ticket, CreditCard, Monitor, ArrowRightLeft,
   ChevronDown, ChevronRight, LogOut, Activity,
@@ -19,7 +20,7 @@ type NavItem = {
 };
 
 const BASE_NAV: NavItem[] = [
-  { label: "Home", icon: <Home size={16} />, to: "/isTeam/accounts" },
+  { label: "Home", icon: <Home size={16} />, to: "/isTeam/home" },
   {
     label: "Accounts", icon: <Users size={16} />,
     children: [
@@ -27,6 +28,7 @@ const BASE_NAV: NavItem[] = [
       { label: "Active Accounts",  to: "/isTeam/accounts?status=Active" },
       { label: "Trials",           to: "/isTeam/accounts?status=Trial" },
       { label: "Suspended",        to: "/isTeam/accounts?status=Suspended" },
+      { label: "Unfinished Signups", to: "/isTeam/signups" },
     ],
   },
   {
@@ -34,7 +36,6 @@ const BASE_NAV: NavItem[] = [
     children: [
       { label: "Tickets",               to: "/isTeam/tickets" },
       { label: "Live Chat",             to: "/isTeam/live-chat", dot: "green" },
-      { label: "Website Visitors",      to: "/isTeam/visitors", dot: "green" },
     ],
   },
   { label: "Billing", icon: <CreditCard size={16} />, to: "/isTeam/billing-investigation" },
@@ -46,6 +47,10 @@ const DEFAULT_OPEN = new Set(["Accounts", "Support"]);
 
 function NavGroup({ item }: { item: NavItem }) {
   const [open, setOpen] = useState(DEFAULT_OPEN.has(item.label));
+  const location = useLocation();
+  // Links to the account lists differ only by their query string, which NavLink ignores.
+  const isCurrent = (to: string, navActive: boolean) =>
+    to.split("?")[0] === "/isTeam/accounts" ? location.pathname + location.search === to : navActive;
 
   if (item.to) {
     return (
@@ -82,7 +87,7 @@ function NavGroup({ item }: { item: NavItem }) {
               to={child.to}
               className={({ isActive }) =>
                 `flex items-center justify-between px-3 py-1.5 rounded-md text-xs transition ${
-                  isActive ? "text-indigo-400 bg-indigo-600/10" : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
+                  isCurrent(child.to, isActive) ? "text-indigo-400 bg-indigo-600/10" : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
                 }`
               }
             >
@@ -118,13 +123,18 @@ export default function TeamSidebar() {
     refetchInterval: 30_000,
   });
   const openCount = openTicketData?.total ?? 0;
+  // Chats waiting in the queue plus chats with a message the agent has not looked at.
+  const chat = useChatConnection();
+  const chatCount = chat.queueCount + chat.unread.size;
 
   const nav: NavItem[] = BASE_NAV.map(item => {
     if (item.label !== "Support" || !item.children) return item;
     return {
       ...item,
       children: item.children.map(child =>
-        child.label === "Tickets" ? { ...child, badge: openCount } : child
+        child.label === "Tickets" ? { ...child, badge: openCount }
+          : child.label === "Live Chat" ? { ...child, badge: chatCount }
+          : child
       ),
     };
   });

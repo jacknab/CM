@@ -419,7 +419,7 @@ export function PaperCalibrationTab({
             <p className="text-xs text-slate-400 mt-0.5">Where is the check section on your blank paper?</p>
           </div>
         </div>
-        <div className="p-5 grid grid-cols-3 gap-3">
+        <div className="p-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
           {LAYOUTS.map(l => (
             <button
               key={l.id}
@@ -591,7 +591,7 @@ export function PaperCalibrationTab({
           </div>
         </div>
         <div className="p-5 space-y-4">
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             <div>
               <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 mb-2">Vertical</p>
               <div className="flex items-center gap-2">

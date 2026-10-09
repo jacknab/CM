@@ -15,6 +15,7 @@
 
 import { useRef } from 'react';
 import { Platform, PermissionsAndroid } from 'react-native';
+import { prepareCardReader } from './appRestart';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useStripeTerminal } from '@stripe/stripe-terminal-react-native';
@@ -33,6 +34,35 @@ export type DiscoveryMethod = 'bluetoothScan' | 'tapToPay';
 const LAST_READER_KEY = 'certxa_last_m2_serial';
 /** After the first reader appears, wait this long for others before picking one. */
 const SETTLE_MS = 2_000;
+
+/** Terminal Android SDK 5.8.0 uses coarse location on API 31+ and fine on older devices. */
+export async function ensureTerminalLocationPermission(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+
+  const permission = (Platform.Version as number) >= 31
+    ? PERMISSIONS.ACCESS_COARSE_LOCATION
+    : PERMISSIONS.ACCESS_FINE_LOCATION;
+  if (!(await PermissionsAndroid.check(permission))) {
+    const result = await PermissionsAndroid.request(permission);
+    if (result !== RESULTS.GRANTED) {
+      throw new Error(
+        'Location permission is required to accept card payments.\n\n' +
+        'Go to Settings → Apps → Certxa → Permissions → Location and tap Allow, then try again.',
+      );
+    }
+  }
+
+  // The device-wide Location switch is independent of the app permission.
+  if (!(await Location.hasServicesEnabledAsync())) {
+    try { await Location.enableNetworkProviderAsync(); } catch {}
+    if (!(await Location.hasServicesEnabledAsync())) {
+      throw new Error(
+        'Location Services are turned off on this device.\n\n' +
+        'Go to Settings → Location and enable it, then try again.',
+      );
+    }
+  }
+}
 
 export interface DiscoveryCallbacks {
   /** Called after permissions pass, just before scanning starts. */
@@ -91,12 +121,11 @@ export function useReaderDiscovery() {
   // ── Permission helpers ────────────────────────────────────────────────────────
 
   /**
-   * Request ACCESS_FINE_LOCATION, BLUETOOTH_SCAN, and BLUETOOTH_CONNECT in a
-   * single PermissionsAndroid.requestMultiple() call, then verify the device's
-   * global Location Services switch is on.
+   * Verify the SDK's Android-version-specific location grant and the device's
+   * Location Services switch, then request BLE permissions for M2 if needed.
    *
-   * All three must be granted before discoverReaders() is called:
-   *  - ACCESS_FINE_LOCATION  — required by Stripe Terminal on all Android versions
+   * Required before discoverReaders() is called:
+   *  - ACCESS_COARSE_LOCATION on Android 12+, ACCESS_FINE_LOCATION before that
    *  - BLUETOOTH_SCAN        — required on Android 12+ (API 31+) to scan for BLE devices
    *  - BLUETOOTH_CONNECT     — required on Android 12+ (API 31+) to connect a reader
    *
@@ -110,42 +139,26 @@ export function useReaderDiscovery() {
     const version = Platform.Version as number;
     const needsBle = method === 'bluetoothScan';
 
-    // Build the list of permissions to request — location is always needed;
-    // BLE runtime permissions only exist on Android 12+ (API 31+) and are only
-    // relevant for the M2 Bluetooth reader (Tap to Pay uses the built-in NFC).
-    const perms: string[] = [PERMISSIONS.ACCESS_FINE_LOCATION];
+    // Kiosk-managed tablets: Bluetooth, Location and the permissions are switched on silently.
+    // Bluetooth takes a moment to come up if it was off.
+    if (prepareCardReader() && needsBle) await new Promise((r) => setTimeout(r, 2500));
+
+    await ensureTerminalLocationPermission();
+
+    // BLE permissions are relevant only for the M2 reader on Android 12+.
+    const perms: string[] = [];
     if (needsBle && version >= 31) {
       perms.push(PERMISSIONS.BLUETOOTH_SCAN, PERMISSIONS.BLUETOOTH_CONNECT);
     }
 
+    if (!perms.length) return;
     const results = await requestMultiple(perms as any);
     const granted = (p: string) => (results as any)[p] === RESULTS.GRANTED;
-
-    if (!granted(PERMISSIONS.ACCESS_FINE_LOCATION)) {
-      throw new Error(
-        'Location permission is required to accept card payments.\n\n' +
-        'Go to Settings → Apps → Certxa → Permissions → Location and tap Allow.',
-      );
-    }
     if (needsBle && version >= 31) {
       if (!granted(PERMISSIONS.BLUETOOTH_SCAN) || !granted(PERMISSIONS.BLUETOOTH_CONNECT)) {
         throw new Error(
           'Bluetooth permission is required to discover the M2 reader.\n\n' +
           'Go to Settings → Apps → Certxa → Permissions → Nearby Devices and tap Allow.',
-        );
-      }
-    }
-
-    // System-level Location Services switch — separate from the per-app permission.
-    // Attempt the OS "Enable Location?" prompt, then re-check.
-    const servicesOn = await Location.hasServicesEnabledAsync();
-    if (!servicesOn) {
-      try { await Location.enableNetworkProviderAsync(); } catch {}
-      const nowOn = await Location.hasServicesEnabledAsync();
-      if (!nowOn) {
-        throw new Error(
-          'Location Services are turned off on this device.\n\n' +
-          'Go to Settings → Location and enable it, then try again.',
         );
       }
     }
@@ -230,12 +243,17 @@ export function useReaderDiscovery() {
     try { await cancelDiscovering(); } catch {}
 
     callbacks?.onConnecting?.();
-    const { reader: conn, error } = await connectReader({
-      discoveryMethod: method,
-      reader,
-      locationId,
-      autoReconnectOnUnexpectedDisconnect: false,
-    } as any);
+    const { reader: conn, error } = await connectReader(method === 'tapToPay'
+      ? {
+          discoveryMethod: 'tapToPay', reader, locationId,
+          // Allow Stripe to present its terms on a device's first connection.
+          tosAcceptancePermitted: true,
+          autoReconnectOnUnexpectedDisconnect: false,
+        }
+      : {
+          discoveryMethod: 'bluetoothScan', reader, locationId,
+          autoReconnectOnUnexpectedDisconnect: false,
+        });
     statusRef.current = null;
     if (error || !conn) throw new Error(error?.message ?? 'Failed to connect to reader');
     console.log('[Stripe] Reader connected', method);

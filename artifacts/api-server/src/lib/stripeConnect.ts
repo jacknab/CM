@@ -312,7 +312,8 @@ export async function createTerminalPaymentIntent(
   connectedAccountId: string,
   amountCents: number,
   currency: string = "usd",
-  metadata: Record<string, string> = {}
+  metadata: Record<string, string> = {},
+  description?: string
 ): Promise<Stripe.PaymentIntent> {
   const stripe = getPlatformStripe();
 
@@ -329,6 +330,7 @@ export async function createTerminalPaymentIntent(
       capture_method:          "manual",
       application_fee_amount:  applicationFee,
       metadata,
+      ...(description ? { description } : {}),
     },
     { stripeAccount: connectedAccountId }
   );

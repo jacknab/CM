@@ -139,6 +139,28 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
   });
+
+  // Check PDF renderer for the Certxa Print Agent (src/routes/printAgent.ts loads it at runtime).
+  // It is the web app's own check document (booking/src/components/pdf/CheckDocumentPDF.tsx) bundled
+  // for Node, so a check printed on the salon's printer matches the one downloaded from Print Checks.
+  // Built into the booking folder, not dist/, because @react-pdf/renderer cannot be bundled and must
+  // resolve from booking/node_modules at runtime.
+  const bookingDir = path.resolve(artifactDir, "../booking");
+  await esbuild({
+    entryPoints: [path.resolve(bookingDir, "src/server/checkPdfServer.tsx")],
+    platform: "node",
+    target: "node20",
+    bundle: true,
+    format: "esm",
+    outfile: path.resolve(bookingDir, "dist-server/checkPdfServer.mjs"),
+    jsx: "automatic",
+    logLevel: "info",
+    alias: {
+      "@": path.resolve(bookingDir, "src"),
+      "@shared": path.resolve(artifactDir, "../../shared"),
+    },
+    external: ["@react-pdf/renderer", "react", "react/*"],
+  });
 }
 
 buildAll().catch((err) => {

@@ -771,6 +771,29 @@ export const api = {
         404: errorSchemas.notFound,
       },
     },
+    // The full Day Close / Z Report: financial summary, payment breakdown, cash
+    // reconciliation, service-category sales, technician commissions, tips, gift
+    // cards, loyalty and salon earnings — today plus year-to-date. Response shape
+    // is intentionally loose (z.any()) rather than hand-mirrored here: it's an
+    // internal reporting payload assembled by computeZReport(), not a public
+    // contract, and the two would only drift out of sync if duplicated.
+    zReportFull: {
+      method: 'GET' as const,
+      path: '/api/cash-drawer/sessions/:id/z-report-full' as const,
+      responses: {
+        200: z.any(),
+        403: z.object({ message: z.string() }),
+        404: errorSchemas.notFound,
+        // Mirrors close's UNPAID_TICKETS shape — the report can't be generated for the
+        // current, still-open day while any ticket is still "started".
+        409: z.object({
+          code: z.literal("UNPAID_TICKETS"),
+          message: z.string(),
+          unpaidCount: z.number(),
+          unpaidTickets: z.array(z.any()),
+        }),
+      },
+    },
   },
   businessDay: {
     today: {

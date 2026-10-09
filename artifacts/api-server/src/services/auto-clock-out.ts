@@ -12,6 +12,7 @@
  */
 
 import { db } from "../db";
+import { mutateStorePreferences } from "../lib/storePreferences";
 import { timeclock, businessHours, locations, storeSettings } from "@shared/schema";
 import { eq, and, isNull, inArray } from "drizzle-orm";
 
@@ -104,39 +105,22 @@ function buildCloseTimestamp(dateStr: string, closeTime: string, tz: string): Da
  * - shortTurnProtectedId cleared
  */
 async function resetTurnSystemForStore(storeId: number): Promise<void> {
-  const [existing] = await db
-    .select()
-    .from(storeSettings)
-    .where(eq(storeSettings.storeId, storeId));
-
-  if (!existing) return;
-
-  let prefs: Record<string, any> = {};
-  try {
-    prefs = JSON.parse(existing.preferences as string);
-  } catch {
-    prefs = {};
-  }
-
-  const currentTurn =
-    prefs.turnSystem && typeof prefs.turnSystem === "object"
-      ? prefs.turnSystem
-      : {};
-
-  const nextTurn = {
-    ...currentTurn,
-    clockedInStaffIds: [],
-    clockedOutStaffIds: [],
-    dequeOrder: [],
-    lockedStaffIds: [],
-    shortTurnProtectedId: null,
-  };
-
-  const preferences = JSON.stringify({ ...prefs, turnSystem: nextTurn });
-  await db
-    .update(storeSettings)
-    .set({ preferences, updatedAt: new Date() })
-    .where(eq(storeSettings.storeId, storeId));
+  // Against what is saved right now, and only for a salon that already has settings.
+  await mutateStorePreferences(storeId, (prefs) => {
+    const currentTurn = prefs.turnSystem && typeof prefs.turnSystem === "object" ? prefs.turnSystem : {};
+    return {
+      ...prefs,
+      turnSystem: {
+        ...currentTurn,
+        clockedInStaffIds: [],
+        clockedOutStaffIds: [],
+        dequeOrder: [],
+        lockedStaffIds: [],
+        shortTurnProtectedId: null,
+        shortTurnProtectedIds: [],
+      },
+    };
+  }, { createIfMissing: false });
 }
 
 // ─── Main check ───────────────────────────────────────────────────────────────

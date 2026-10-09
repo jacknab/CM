@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { BOARD_KEY } from "./nailApi";
+import { boardKey } from "./nailApi";
 
 /**
  * Live link to the server for the nail screen: same /ws/notifications socket the
@@ -36,7 +36,7 @@ export function useNailRealtime(opts: {
     let seenOpen = false;
 
     const invalidateTickets = () => {
-      queryClient.invalidateQueries({ queryKey: BOARD_KEY });
+      queryClient.invalidateQueries({ queryKey: boardKey(storeId) });
       queryClient.invalidateQueries({ queryKey: ["/api/turn/eligibility"] });
       queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
     };
@@ -78,6 +78,8 @@ export function useNailRealtime(opts: {
               cb.current.onPrintJob?.(data);
               break;
             case "kiosk_checkout_tip_selected":
+            case "kiosk_checkout_sync_request":
+            case "kiosk_checkout_redeem_reward":
             case "kiosk_checkout_payment_result":
             case "kiosk_checkout_receipt_choice":
               cb.current.onCheckoutEvent?.(data);

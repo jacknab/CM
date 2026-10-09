@@ -147,8 +147,8 @@ require 'includes/nav.php';
     <p style="color:var(--mid-grey);font-size:1rem;line-height:1.65;margin-bottom:40px;">Your monthly subscription covers all core platform features. Optional add-ons like the Autumn AI receptionist and SMS beyond your plan allowance are usage-based and billed separately.</p>
     <div style="display:inline-block;background:#fafafa;border:2px solid #f0f0f2;border-radius:20px;padding:36px 48px;text-align:center;">
       <div style="font-size:.8rem;font-weight:700;color:var(--mid-grey);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px;">Starting at</div>
-      <div style="font-size:3.2rem;font-weight:900;color:var(--charcoal);line-height:1;margin-bottom:4px;">$9<span style="font-size:1.2rem;color:var(--mid-grey);font-weight:500;">/mo</span></div>
-      <div style="font-size:.85rem;color:var(--mid-grey);margin-bottom:24px;">After your <?= TRIAL_DAYS ?>-day free trial</div>
+      <div style="font-size:3.2rem;font-weight:900;color:var(--charcoal);line-height:1;margin-bottom:4px;">$0<span style="font-size:1.2rem;color:var(--mid-grey);font-weight:500;">/mo</span></div>
+      <div style="font-size:.85rem;color:var(--mid-grey);margin-bottom:24px;">The Solo plan is free. No credit card needed.</div>
       <?php
       $includes = ['Online booking page','POS & card payments','Unlimited client profiles','Automated reminders','Loyalty program','Gift cards','Analytics dashboard','Google Reviews manager','Google Business Profile booking link','No contracts or setup fees'];
       foreach ($includes as $item): ?>
@@ -169,7 +169,7 @@ require 'includes/nav.php';
     <h2 class="section-title" style="color:#fff;">Stop running your business<br><em style="color:#F59E0B;">on sticky notes.</em></h2>
     <p style="color:rgba(255,255,255,.65);font-size:1rem;line-height:1.65;margin-bottom:36px;">Get the full Certxa platform free for <?= TRIAL_DAYS ?> days. Credit card required to subscribe — no charge until your trial ends.</p>
     <a href="/auth?mode=register" class="btn btn-gold btn-lg">Start Your Free Trial</a>
-    <div style="margin-top:16px;font-size:.82rem;color:rgba(255,255,255,.4);"><?= TRIAL_DAYS ?> days free · from $9/mo after · Cancel anytime</div>
+    <div style="margin-top:16px;font-size:.82rem;color:rgba(255,255,255,.4);">Solo plan is free · No credit card needed</div>
   </div>
 </section>
 

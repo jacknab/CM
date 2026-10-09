@@ -37,6 +37,17 @@ function openViaApp(): Promise<DrawerResult> {
   });
 }
 
+/**
+ * A "No Sale" (drawer opened with nothing rung up) is written on the open drawer session, so it can be
+ * seen and asked about later. Never blocks or fails the drawer opening.
+ */
+export function recordNoSale(o: { drawerId?: number | null; performedBy?: string | null } = {}): void {
+  void fetch("/api/cash-drawer/no-sale", {
+    method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ drawerId: o.drawerId ?? null, performedBy: o.performedBy ?? null }),
+  }).catch(() => { /* the drawer still opens */ });
+}
+
 export async function openCashDrawerHardware(
   opts: { onThermalPrint?: (bytes: Uint8Array) => Promise<void> } = {},
 ): Promise<DrawerResult> {

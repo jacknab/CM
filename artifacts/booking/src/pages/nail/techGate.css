@@ -1,0 +1,59 @@
+/* The Tech ID lock screen (TechIdGate.tsx) — a copy of the Barber ID screen (pages/barber/barberGate.css): a header with the salon and the clock, then the keypad and the waiting list side by side. */
+.ng-gate { position: fixed; inset: 0; z-index: 300; display: flex; flex-direction: column; overflow-y: auto; color: #f2f4f7;
+  font-family: 'DM Sans', system-ui, sans-serif; -webkit-user-select: none; user-select: none;
+  background: radial-gradient(1100px 620px at 18% -12%, rgba(77, 107, 143, .22), transparent 62%), linear-gradient(180deg, #11151c 0%, #0b0e13 100%); }
+
+.ng-gate-head { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: clamp(16px, 3vh, 30px) clamp(20px, 4vw, 56px);
+  border-bottom: 1px solid rgba(255, 255, 255, .07); }
+.ng-gate-shop { min-width: 0; }
+.ng-gate-shop strong { display: block; font-size: clamp(26px, 4.6vh, 42px); font-weight: 700; letter-spacing: -.01em; line-height: 1.1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ng-gate-clock { flex-shrink: 0; font-size: clamp(26px, 4.6vh, 42px); font-weight: 300; line-height: 1.1; font-variant-numeric: tabular-nums; color: #dfe4eb; }
+
+.ng-gate-body { flex: 1; display: flex; align-items: center; justify-content: center; padding: clamp(16px, 3vh, 36px) clamp(20px, 4vw, 56px); }
+/* the two cards share one height: the keypad's */
+.ng-gate-row { display: flex; align-items: stretch; justify-content: center; flex-wrap: wrap; gap: clamp(20px, 3vw, 40px); width: 100%; }
+.ng-gate-card { border-radius: 24px; border: 1px solid rgba(255, 255, 255, .08); background: rgba(255, 255, 255, .035);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, .38), inset 0 1px 0 rgba(255, 255, 255, .05); }
+.ng-gate-label { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: #8b94a3; }
+
+/* keypad */
+.ng-gate-pad { --k: clamp(52px, 9vh, 80px); display: flex; flex-direction: column; align-items: center; padding: clamp(20px, 3.4vh, 34px) clamp(24px, 3vw, 40px); }
+.ng-gate-slots { display: flex; gap: 12px; margin-top: clamp(12px, 2vh, 20px); }
+.ng-gate-slot { width: clamp(50px, 8vh, 68px); height: clamp(58px, 9.2vh, 78px); border-radius: 16px; display: grid; place-items: center;
+  font-size: clamp(32px, 5.6vh, 46px); font-weight: 600; font-variant-numeric: tabular-nums;
+  background: rgba(0, 0, 0, .32); border: 1.5px solid rgba(255, 255, 255, .10); transition: border-color .15s ease; }
+.ng-gate-slot[data-filled="true"] { border-color: rgba(255, 255, 255, .55); }
+.ng-gate-msg { min-height: 22px; margin: 10px 0 0; font-size: 14px; font-weight: 500; color: #f08a8a; }
+.ng-gate-keys { display: grid; grid-template-columns: repeat(3, var(--k)); gap: clamp(8px, 1.5vh, 14px); margin-top: 6px; }
+.ng-gate-key { width: var(--k); height: var(--k); border-radius: 50%; display: grid; place-items: center; cursor: pointer; color: inherit;
+  font: inherit; font-size: clamp(22px, 3.8vh, 32px); font-weight: 500; font-variant-numeric: tabular-nums;
+  background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .09); transition: background .1s ease, transform .08s ease; }
+.ng-gate-key:active { background: rgba(255, 255, 255, .18); transform: scale(.96); }
+.ng-gate-key:disabled { opacity: .35; cursor: default; }
+.ng-gate-key.ghost { background: transparent; border-color: transparent; color: #8b94a3; }
+.ng-gate-enter { width: 100%; height: clamp(48px, 7.6vh, 60px); margin-top: clamp(12px, 2.2vh, 20px); border: 0; border-radius: 16px; cursor: pointer;
+  font: inherit; font-size: 15px; font-weight: 700; letter-spacing: .2em; color: #0b0e13; background: #f2f4f7; transition: opacity .15s ease, transform .08s ease; }
+.ng-gate-enter:active { transform: scale(.985); }
+.ng-gate-enter:disabled { opacity: .28; cursor: default; }
+
+/* turn queue (where the barber screen has its waiting list) */
+/* Fixed height: the card is as tall as the keypad beside it (or 420px when stacked under it) and the list
+   scrolls inside it, so a long queue never stretches the lock screen. */
+.ng-gate-wait { width: min(460px, 100%); display: flex; flex-direction: column; box-sizing: border-box; height: clamp(420px, 76vh, 610px); max-height: 100%; min-height: 0; overflow: hidden; padding: clamp(20px, 3.4vh, 34px) clamp(22px, 2.6vw, 34px); }
+.ng-gate-turn-btn { flex-shrink: 0; width: 100%; height: clamp(46px, 7vh, 56px); border: 1px solid rgba(255, 255, 255, .14); border-radius: 14px; cursor: pointer;
+  font: inherit; font-size: 15px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; color: #f2f4f7; background: rgba(255, 255, 255, .07); }
+.ng-gate-turn-btn:active { background: rgba(255, 255, 255, .16); }
+.ng-gate-wait ol { list-style: none; margin: clamp(8px, 1.6vh, 16px) 0 0; padding: 0; flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+.ng-gate-wait ol::-webkit-scrollbar { display: none; }
+.ng-gate-wait li { display: flex; align-items: center; gap: 16px; padding: clamp(10px, 1.8vh, 15px) 0; border-top: 1px solid rgba(255, 255, 255, .07); }
+.ng-gate-wait li:first-child { border-top: 0; }
+.ng-gate-wait li span { flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-size: 20px; font-weight: 700;
+  font-variant-numeric: tabular-nums; color: #c9d0da; background: rgba(255, 255, 255, .08); }
+.ng-gate-wait li strong { flex: 1; min-width: 0; font-size: clamp(22px, 3.6vh, 28px); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ng-gate-wait li em { flex-shrink: 0; font-style: normal; font-size: clamp(15px, 2.3vh, 18px); font-weight: 600; color: #8b94a3; }
+.ng-gate-wait li[data-status="available"] em { color: #6fd3a0; }
+/* next up: the first free technician */
+.ng-gate-wait li[data-status="available"]:first-child span { color: #0b0e13; background: #f2f4f7; }
+.ng-gate-wait li:not([data-status="available"]) strong { color: #9aa3b0; }
+.ng-gate-empty { margin: auto 0; padding: 24px 0; text-align: center; font-size: 20px; color: #8b94a3; }

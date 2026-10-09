@@ -62,7 +62,7 @@ $page_canonical   = 'https://certxa.com' . strtok($_SERVER['REQUEST_URI'], '?');
             <div class="nav-links">
                 <a href="/salonos.php" class="nav-link">SalonOS</a>
                 <a href="/launchsite/" class="nav-link nav-link--active">Launchit</a>
-                <a href="/overview.php#how-it-works" class="nav-link">How It Works</a>
+                <a href="/#how-it-works" class="nav-link">How It Works</a>
                 <a href="/pricing.php" class="nav-link">Pricing</a>
             </div>
             <!-- nav-actions removed for desktop - links now only in mobile menu -->
@@ -73,7 +73,7 @@ $page_canonical   = 'https://certxa.com' . strtok($_SERVER['REQUEST_URI'], '?');
         <div class="mobile-menu" id="mobileMenu">
             <a href="/salonos.php" class="mobile-nav-link">SalonOS</a>
             <a href="/launchsite/" class="mobile-nav-link">Launchit</a>
-            <a href="/overview.php#how-it-works" class="mobile-nav-link">How It Works</a>
+            <a href="/#how-it-works" class="mobile-nav-link">How It Works</a>
             <a href="/pricing.php" class="mobile-nav-link">Pricing</a>
             <a href="/auth" class="mobile-nav-link">Log In</a>
             <a href="/auth" class="btn btn--primary" style="margin-top:1rem;display:inline-block;">Get Started</a>

@@ -985,9 +985,67 @@ export function setupAuth(app: Express) {
     }
   });
 
+  // ── Remembered devices ──────────────────────────────────────────────────────────────────────────
+  // A device that is signed in to a salon account gets a long-lived token in an httpOnly cookie (only its
+  // SHA-256 is stored, in device_logins). If the browser session is ever lost, the POS asks
+  // POST /api/auth/resume to sign that account back in on this device — no password, no guessing why
+  // every request is failing. Signing out removes the token, and so does a password reset.
+  const DEVICE_COOKIE = "certxa.device";
+  const DEVICE_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
+  const deviceCookieOptions = { httpOnly: true, secure: securePolicy, sameSite: sameSitePolicy, path: "/api/auth" } as const;
+  const hashDeviceToken = (token: string) => crypto.createHash("sha256").update(token).digest("hex");
+  const rememberDevice = async (req: Request, res: Response, userId: string): Promise<void> => {
+    try {
+      const token = crypto.randomBytes(32).toString("hex");
+      await pool.query(
+        `INSERT INTO device_logins (user_id, token_hash, user_agent) VALUES ($1, $2, $3)`,
+        [userId, hashDeviceToken(token), String(req.headers["user-agent"] ?? "").slice(0, 300)],
+      );
+      res.cookie(DEVICE_COOKIE, token, { ...deviceCookieOptions, maxAge: DEVICE_MAX_AGE_MS });
+    } catch (err) {
+      // Never stands in the way of the request it rides on.
+      console.error("[auth] could not remember this device:", (err as Error)?.message);
+    }
+  };
+
+  app.post("/api/auth/resume", async (req, res) => {
+    try {
+      // Already signed in (as the account, or as a staff member through the staff portal): nothing to restore.
+      // The caller's 401 was about something else, and it must not be bounced to a sign-in page.
+      if ((req.session as any)?.userId || (req.session as any)?.staffId) { res.json({ ok: true, resumed: false }); return; }
+      const token = typeof (req as any).cookies?.[DEVICE_COOKIE] === "string" ? (req as any).cookies[DEVICE_COOKIE] : "";
+      if (!/^[0-9a-f]{64}$/.test(token)) { res.status(401).json({ message: "Sign in again" }); return; }
+      const { rows } = await pool.query<{ id: number; user_id: string }>(
+        `SELECT d.id, d.user_id FROM device_logins d JOIN users u ON u.id = d.user_id
+          WHERE d.token_hash = $1 AND d.created_at > now() - interval '180 days'`,
+        [hashDeviceToken(token)],
+      );
+      const remembered = rows[0];
+      if (!remembered) {
+        res.clearCookie(DEVICE_COOKIE, deviceCookieOptions);
+        res.status(401).json({ message: "Sign in again" });
+        return;
+      }
+      (req.session as any).userId = remembered.user_id;
+      req.session.save(async (err) => {
+        if (err) { res.status(500).json({ message: "Could not sign back in" }); return; }
+        await pool.query(`UPDATE device_logins SET last_used_at = now() WHERE id = $1`, [remembered.id]).catch(() => {});
+        logAuthEvent(remembered.user_id, "login", req, { via: "remembered_device" });
+        res.json({ ok: true, resumed: true });
+      });
+    } catch (err) {
+      console.error("[auth/resume]", err);
+      res.status(500).json({ message: "Could not sign back in" });
+    }
+  });
+
   app.post("/api/auth/logout", (req, res) => {
     const logoutUserId: string | null = (req.session as any)?.userId ?? null;
     logAuthEvent(logoutUserId, "logout", req);
+    // Signing out means signed out: this device is forgotten too, so it can't sign itself back in.
+    const deviceToken = typeof (req as any).cookies?.[DEVICE_COOKIE] === "string" ? (req as any).cookies[DEVICE_COOKIE] : "";
+    if (deviceToken) void pool.query(`DELETE FROM device_logins WHERE token_hash = $1`, [hashDeviceToken(deviceToken)]).catch(() => {});
+    res.clearCookie(DEVICE_COOKIE, deviceCookieOptions);
     req.session.destroy((err) => {
       if (err) {
           res.status(500).json({ message: "Logout failed" });
@@ -1073,6 +1131,8 @@ export function setupAuth(app: Express) {
         const { password: _, ...safeUser } = user;
         const role = normalizeRole(user.role);
         const permissions = Array.from(computePermissions(role, user.permissions ?? null));
+        // A signed-in account on a device that isn't remembered yet: remember it (see "Remembered devices").
+        if (!(req as any).cookies?.[DEVICE_COOKIE]) await rememberDevice(req, res, userId);
         res.json({ ...safeUser, role, permissions });
         return;
       }
@@ -1196,6 +1256,8 @@ export function setupAuth(app: Express) {
 
       const hashed = await bcrypt.hash(password, 10);
       await db.update(users).set({ password: hashed }).where(eq(users.id, resetRecord.userId));
+      // A new password signs every remembered device out.
+      await pool.query(`DELETE FROM device_logins WHERE user_id = $1`, [resetRecord.userId]).catch(() => {});
       await db.update(passwordResetTokens).set({ usedAt: now }).where(eq(passwordResetTokens.id, resetRecord.id));
       logAuthEvent(resetRecord.userId, "password_reset", req);
       res.json({ message: "Password updated successfully. You can now log in." });

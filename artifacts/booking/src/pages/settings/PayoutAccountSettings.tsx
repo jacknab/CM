@@ -19,15 +19,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { useInSettingsShell } from "@/lib/settings-shell-context";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
-  CheckCircle2,
   CreditCard,
-  RefreshCw,
   Zap,
   ChevronRight,
   Building2,
@@ -37,11 +33,11 @@ import {
   Wallet,
 } from "lucide-react";
 import { StripeConnectProvider } from "@/components/stripe/StripeConnectProvider";
+import { CustomPayoutDashboard } from "@/components/stripe/CustomPayoutDashboard";
 import {
   ConnectAccountOnboarding,
   ConnectNotificationBanner,
   ConnectPayments,
-  ConnectPayouts,
 } from "@stripe/react-connect-js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -51,6 +47,7 @@ interface StripeStatus {
   status?: string;
   chargesEnabled?: boolean;
   payoutsEnabled?: boolean;
+  accountType?: string | null;
   detailsSubmitted?: boolean;
   displayName?: string | null;
   email?: string | null;
@@ -62,34 +59,23 @@ interface StripeStatus {
 
 type ManagementTab = "payments" | "payouts";
 
-// ─── Small helpers ────────────────────────────────────────────────────────────
-
-function StatusBadge({ ok, okLabel = "Active", badLabel = "Action required" }: {
-  ok: boolean; okLabel?: string; badLabel?: string;
-}) {
-  return ok ? (
-    <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-50 font-medium rounded-full px-3 py-0.5 text-xs">
-      {okLabel}
-    </Badge>
-  ) : (
-    <Badge className="bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-50 font-medium rounded-full px-3 py-0.5 text-xs">
-      {badLabel}
-    </Badge>
-  );
-}
-
 function StatusRow({ icon: Icon, label, ok, okLabel, badLabel }: {
   icon: React.ElementType; label: string; ok: boolean; okLabel?: string; badLabel?: string;
 }) {
   return (
-    <div className="flex items-center justify-between py-4 gap-4">
-      <div className="flex items-center gap-3 min-w-0">
-        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${ok ? "bg-emerald-50" : "bg-amber-50"}`}>
+    <div className="flex min-w-0 items-center justify-between gap-3 px-4 py-4 sm:px-5">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${ok ? "bg-emerald-50" : "bg-amber-50"}`}>
           <Icon className={`w-4.5 h-4.5 ${ok ? "text-emerald-600" : "text-amber-600"}`} style={{ width: 18, height: 18 }} />
         </div>
-        <p className="text-sm font-medium text-gray-800">{label}</p>
+        <div className="min-w-0">
+          <p className="truncate text-xs font-medium text-gray-500">{label}</p>
+          <p className={`mt-0.5 truncate text-sm font-semibold ${ok ? "text-gray-900" : "text-amber-800"}`}>
+            {ok ? okLabel : badLabel}
+          </p>
+        </div>
       </div>
-      <StatusBadge ok={ok} okLabel={okLabel} badLabel={badLabel} />
+      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${ok ? "bg-emerald-500" : "bg-amber-500"}`} aria-hidden="true" />
     </div>
   );
 }
@@ -101,18 +87,21 @@ function TabBtn({
 }: { active: boolean; onClick: () => void; icon: React.ElementType; label: string }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      style={{
-        display: "flex", alignItems: "center", gap: 6,
-        padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer",
-        fontSize: ".82rem", fontWeight: 600,
-        background: active ? "#7c3aed" : "transparent",
-        color: active ? "#fff" : "#6b7280",
-        transition: "background .15s, color .15s",
-      }}
+      aria-pressed={active}
+      className={`group relative flex min-h-11 flex-1 items-center justify-center gap-2 px-1 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-4 sm:flex-none ${
+        active
+          ? "text-violet-700"
+          : "text-gray-500 hover:text-gray-900"
+      }`}
     >
-      <Icon style={{ width: 14, height: 14 }} />
+      <Icon className={`h-4 w-4 transition-colors ${active ? "text-violet-600" : "text-gray-400 group-hover:text-gray-600"}`} />
       {label}
+      <span
+        className={`absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-violet-600 transition-all ${active ? "scale-x-100 opacity-100" : "scale-x-50 opacity-0"}`}
+        aria-hidden="true"
+      />
     </button>
   );
 }
@@ -123,7 +112,6 @@ export default function PayoutAccountSettings() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const inShell = useInSettingsShell();
   const [activeTab, setActiveTab] = useState<ManagementTab>("payments");
 
   // ── Data fetching ──────────────────────────────────────────────────────────
@@ -186,45 +174,34 @@ export default function PayoutAccountSettings() {
   // ── Loading skeleton ──────────────────────────────────────────────────────
   if (isLoading) {
     return (
-      <AppLayout>
-        <div className="p-6 max-w-2xl mx-auto space-y-4 overflow-y-auto">
-          <div className="h-7 w-56 bg-gray-100 rounded-xl animate-pulse" />
-          <div className="h-48 bg-gray-100 rounded-2xl animate-pulse" />
+      <AppLayout fullHeight>
+        <div className="mx-auto w-full max-w-[1180px] space-y-5 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          <div className="h-8 w-64 animate-pulse rounded-lg bg-gray-100" />
+          <div className="h-28 animate-pulse rounded-2xl bg-gray-100" />
+          <div className="h-96 animate-pulse rounded-2xl bg-gray-100" />
         </div>
       </AppLayout>
     );
   }
 
   return (
-    <AppLayout>
-      <div className="p-6 max-w-2xl mx-auto space-y-5 overflow-y-auto">
+    <AppLayout fullHeight>
+      <div className="mx-auto w-full max-w-[1180px] space-y-5 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
 
         {/* ── Header ──────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between">
-          {!inShell ? (
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                Payout Account &amp; Verification
-              </h1>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                Accept payments and receive payouts — all managed within Certxa.
-              </p>
+        <div>
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-violet-600">
+              <span className="h-px w-5 bg-violet-400" aria-hidden="true" />
+              Money movement
             </div>
-          ) : (
-            <span />
-          )}
-          {isConnected && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => syncMutation.mutate()}
-              disabled={syncMutation.isPending}
-              className="gap-1.5 text-gray-500 hover:text-gray-800 rounded-xl"
-            >
-              <RefreshCw className={`w-4 h-4 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-              Refresh
-            </Button>
-          )}
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-950 sm:text-[28px]">
+              Payments &amp; payouts
+            </h1>
+            <p className="mt-1 max-w-2xl text-sm text-gray-500">
+              Review customer payments, follow transfers to your bank, and keep your account ready to process sales.
+            </p>
+          </div>
         </div>
 
         {/* ── Embedded notification banner (always shown when connected) ─ */}
@@ -275,32 +252,21 @@ export default function PayoutAccountSettings() {
           </div>
         )}
 
-        {/* ── All good banner ───────────────────────────────────────────── */}
-        {allGood && (
-          <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-50 border border-emerald-200">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-            <div>
-              <p className="font-semibold text-emerald-800 text-sm">You're all set!</p>
-              <p className="text-emerald-700 text-sm mt-0.5">
-                Payment processing and payouts are fully enabled.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* ── Status rows (connected) ───────────────────────────────────── */}
-        {isConnected && (
-          <Card className="rounded-2xl border-gray-100 shadow-sm">
-            <CardHeader className="px-6 pt-5 pb-0">
-              <CardTitle className="text-base" style={{ fontFamily: "Outfit, sans-serif" }}>
-                Account Status
-              </CardTitle>
-              {status?.displayName && (
-                <p className="text-sm text-gray-500">{status.displayName}{status.email ? ` · ${status.email}` : ""}</p>
-              )}
+        {/* Show readiness details only while setup still needs attention. */}
+        {isConnected && !allGood && (
+          <Card className="overflow-hidden rounded-2xl border-gray-200 bg-white shadow-[0_1px_2px_rgba(17,24,39,0.03)]">
+            <CardHeader className="border-b border-gray-100 px-5 py-4 sm:px-6">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <CardTitle className="text-sm font-semibold text-gray-900" style={{ fontFamily: "Outfit, sans-serif" }}>
+                  Account readiness
+                </CardTitle>
+                {status?.displayName && (
+                  <p className="truncate text-xs text-gray-500">{status.displayName}{status.email ? ` · ${status.email}` : ""}</p>
+                )}
+              </div>
             </CardHeader>
-            <CardContent className="px-6 pb-5">
-              <div className="divide-y divide-gray-50">
+            <CardContent className="p-0">
+              <div className="grid divide-y divide-gray-100 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
                 <StatusRow icon={Building2}  label="Payment processing"   ok={charges}  okLabel="Active"     badLabel="Inactive" />
                 <StatusRow icon={ShieldCheck} label="Identity verification" ok={identity} okLabel="Verified"   badLabel="Info required" />
                 <StatusRow icon={Banknote}    label="Payout account"       ok={payouts}  okLabel="Connected"  badLabel="Not set up" />
@@ -344,29 +310,32 @@ export default function PayoutAccountSettings() {
         {/* ── Payments / Payouts dashboard (fully set up) ─────────────────── */}
         {isConnected && allGood && publishableKey && (
           <StripeConnectProvider publishableKey={publishableKey}>
-            <Card className="rounded-2xl border-gray-100 shadow-sm overflow-hidden">
-              <CardHeader className="px-6 pt-5 pb-0 border-b border-gray-100">
-                <div className="flex items-center justify-between pb-4">
-                  <CardTitle className="text-base" style={{ fontFamily: "Outfit, sans-serif" }}>
-                    Payment Dashboard
-                  </CardTitle>
-                  <div style={{ display: "flex", gap: 4, background: "#f9fafb", padding: 4, borderRadius: 10 }}>
+            <Card className="overflow-hidden rounded-2xl border-gray-200 bg-white shadow-[0_12px_35px_-24px_rgba(76,29,149,0.28)]">
+              <CardHeader className="border-b border-gray-100 bg-gradient-to-r from-violet-50/70 via-white to-white px-4 py-4 sm:px-6">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <CardTitle className="text-base font-semibold text-gray-950" style={{ fontFamily: "Outfit, sans-serif" }}>
+                      Activity
+                    </CardTitle>
+                  </div>
+                  <div className="flex w-full gap-6 border-b border-gray-200 sm:w-auto" role="group" aria-label="Payment activity view">
                     <TabBtn active={activeTab === "payments"} onClick={() => setActiveTab("payments")} icon={ArrowLeftRight}  label="Payments" />
                     <TabBtn active={activeTab === "payouts"}  onClick={() => setActiveTab("payouts")}  icon={Wallet}          label="Payouts"  />
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="p-0">
+              <CardContent className="min-h-[440px] p-0 sm:p-1">
                 {activeTab === "payments" && <ConnectPayments />}
-                {activeTab === "payouts"  && <ConnectPayouts />}
+                {activeTab === "payouts"  && <CustomPayoutDashboard accountType={status?.accountType ?? undefined} />}
               </CardContent>
             </Card>
           </StripeConnectProvider>
         )}
 
         {/* ── POS / Terminal link ───────────────────────────────────────── */}
-        <div
-          className="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+        <button
+          type="button"
+          className="flex w-full items-center justify-between rounded-xl border border-gray-200 bg-white p-4 text-left transition-colors hover:border-violet-200 hover:bg-violet-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
           onClick={() => navigate("/manage/payment-settings")}
         >
           <div className="flex items-center gap-3">
@@ -379,7 +348,7 @@ export default function PayoutAccountSettings() {
             </div>
           </div>
           <ChevronRight className="w-4 h-4 text-gray-400" />
-        </div>
+        </button>
 
       </div>
     </AppLayout>

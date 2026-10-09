@@ -1,10 +1,11 @@
 import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, X, Bell, MessageSquare } from "lucide-react";
+import { Search, X, MessageSquare } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supportApi, type SearchResult } from "@/lib/support-api";
 import { StatusBadge } from "./ui/StatusBadge";
+import { useChatConnection } from "./ChatConnection";
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
@@ -17,6 +18,8 @@ function useDebounce<T>(value: T, delay: number): T {
 
 export default function TeamTopBar() {
   const navigate = useNavigate();
+  const chat = useChatConnection();
+  const chatCount = chat.queueCount + chat.unread.size;
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const dq = useDebounce(query, 250);
@@ -95,11 +98,17 @@ export default function TeamTopBar() {
       </div>
 
       <div className="flex items-center gap-1">
-        <button className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition">
-          <Bell size={16} />
-        </button>
-        <button className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition">
+        <button
+          onClick={() => navigate("/isTeam/live-chat")}
+          title="Live chat"
+          className="relative p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+        >
           <MessageSquare size={16} />
+          {chatCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 bg-rose-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+              {chatCount > 99 ? "99+" : chatCount}
+            </span>
+          )}
         </button>
       </div>
     </header>

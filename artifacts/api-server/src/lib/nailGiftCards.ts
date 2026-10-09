@@ -96,7 +96,7 @@ export async function redeemGiftCard(a: { storeId: number; code: unknown; amount
     await tx.execute(sql`
       INSERT INTO gift_card_transactions (gift_card_id, store_id, appointment_id, amount, type, balance_after, notes)
       VALUES (${card.id}, ${a.storeId}, ${a.appointmentId}, ${amt}::numeric, 'redemption', ${balance.toFixed(2)}::numeric,
-              ${a.appointmentId != null ? "Nail POS checkout" : "Manual redemption"})`);
+              ${a.appointmentId != null ? "POS checkout" : "Manual redemption"})`);
     if (a.appointmentId != null) {
       // What Reports / Analytics / Dashboard subtract as "paid by gift card".
       await tx.execute(sql`

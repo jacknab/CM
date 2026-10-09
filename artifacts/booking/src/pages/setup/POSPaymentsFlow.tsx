@@ -66,12 +66,15 @@ export default function POSPaymentsFlow() {
   const saveTipSettings = async () => {
     setSaving(true);
     try {
-      await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ tipsEnabled, tipPresets }),
-      });
+      // (This used to PATCH /api/settings, which stored nothing.) With tips off there is nothing to save.
+      if (tipsEnabled && tipPresets.length > 0) {
+        await fetch("/api/tip-presets", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ presets: tipPresets }),
+        });
+      }
       setStep(3);
     } catch {
       toast({ variant: "destructive", title: "Error", description: "Could not save tip settings." });

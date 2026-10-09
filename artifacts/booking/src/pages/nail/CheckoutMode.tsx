@@ -1,22 +1,28 @@
 /**
- * The POS tab in CHECKOUT mode — the Nail POS's own screen (ticket panel · keypad · function/payment panel, in the wrapper
+ * The POS tab in CHECKOUT mode — the Nail POS's own screen (ticket panel · keypad · payment panel, in the wrapper
  * design), not the calendar's sheet. A ticket from In Service (or PAY NOW) is loaded here and paid with:
- *   keypad (cents) · Tip Adjust / Discount / No Sale / Reprint · function grid (Retail, Removal, Quick Ticket, Custom Charge,
- *   Loyalty, Group Pay, Gift Card) · Cash / Card tenders (split payments, change due) · the customer-facing /frontdesk screen.
+ *   keypad (cents) · Quick Ticket / Group Pay / Retail / Gift Card and Tip Adjust / Discount / No Sale / Reprint rows
+ *   (Discount and Gift Card swap their options into the payment panel) · Cash / Card tenders (split payments, change due)
+ *   · the customer-facing /frontdesk screen.
  * The maths lives in shared/nailCheckout.ts (unit-tested); this file is screen state + wiring.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Award, Ban, Banknote, BadgePercent, Calculator, Check, CreditCard, DoorOpen, Gift, HandCoins, Loader2, MessageSquare, Percent, Printer, Settings, ShoppingBag, Smartphone, Star, Undo2, Users, X, Zap } from "lucide-react";
+import { ArrowLeft, Ban, Banknote, BadgePercent, Calculator, Check, CreditCard, DoorOpen, Gift, Hand, HandCoins, Loader2, MessageSquare, Percent, Printer, Settings, ShoppingBag, Users, X, Zap } from "lucide-react";
 import {
-  centsToDollars, computeCheckout, paymentMethodSummary, pushKeypadDigits, QUICK_TICKET_STEPS, r2, REMOVAL_TYPES, splitGroup,
-  type DiscountInput, type Extra, type ExtraKind, type Tender,
+  centsToDollars, computeCheckout, paymentMethodSummary, pushKeypadDigits, QUICK_TICKET_STEPS, r2, splitGroup,
+  type DiscountInput, type Extra, type ExtraKind, type SalesTaxSettings, type Tender,
 } from "@shared/nailCheckout";
 import { buildCheckoutReceipt } from "@/lib/thermalPrinter";
 import { buildNativeReceiptPayload } from "@/lib/receiptPayload";
-import { openCashDrawerHardware } from "@/lib/cashDrawer";
-import { lookupGiftCard, type BoardTicket, type FinalizeData, type GiftCardInfo } from "./nailApi";
+import { openCashDrawerHardware, recordNoSale } from "@/lib/cashDrawer";
+import { checkoutRequestKey, lookupGiftCard, type BoardTicket, type FinalizeData, type GiftCardInfo } from "./nailApi";
 import { bridgeState, isNativeApp, useCardPayments } from "./useCardPayments";
+import { frontdeskReaderMethod, readNailCardMethod, type NailCardMethod } from "./cardMethod";
+import { verifyCardCharge } from "../frontdesk/verifyCardCharge";
+import { calcTipAmount } from "../frontdesk/tipOptions";
+import { useTipPresets } from "@/hooks/use-tip-presets";
+import { CatalogPanel, type CatalogGroup, type CatalogService } from "./CatalogPanel";
 
 interface Props {
   ticket: BoardTicket;
@@ -29,6 +35,8 @@ interface Props {
   registerId: number;
   /** A customer-facing /frontdesk tablet is paired. */
   dualScreen: boolean;
+  /** The store's sales-tax settings (Settings → Checkout & Tax). */
+  salesTax: SalesTaxSettings;
   /** Other open tickets (for Group Pay). */
   otherTickets: BoardTicket[];
   /** Connected Bluetooth receipt printer, if any. */
@@ -42,18 +50,36 @@ interface Props {
   /** The receipt has been handled (printed / texted / declined) — leave this ticket's checkout screen. */
   onReceiptDone: () => void;
   onClose: () => void;
+  /** The catalog, so the service on this ticket can be changed without leaving the payment screen. */
+  groups: CatalogGroup[];
+  /** The key grid the manager arranged (null = automatic). */
+  layout?: import("@shared/posGrid").PosGridConfig | null;
+  /** Put this service on the ticket in place of the one it has. Resolves true when the ticket was changed. */
+  onChangeService: (svc: CatalogService) => Promise<boolean>;
+  /** Staff are looking at this checkout right now (the POS tab is open and the screen isn't locked). When they
+   *  aren't, the customer's screen goes back to its welcome page; it shows the order again when they return. */
+  active?: boolean;
+  /** Opened from a function key on the ticket builder: start on that function. */
+  initialAction?: "group" | "tip" | "discount" | null;
 }
 
 type Tone = "info" | "success" | "error";
-type Popup = null | "tip" | "rewards" | "group" | "settings" | "gift";
-type CardMethod = "m2" | "tap";
-/** The Nail POS's own card-reader choice, one per device. It is NOT the calendar's key: that one defaults to Tap to Pay, and CARD here is the M2 button. */
+type Popup = null | "tip" | "group" | "settings" | "gift";
+/** The Nail POS's own reader choice, separate from the calendar's preference. */
 const CARD_METHOD_KEY = "certxa.nail.cardMethod";
 const tenderLabel = (t: Tender) => (t.method === "gift" ? `GIFT CARD${t.code ? ` ·${t.code.slice(-4)}` : ""}` : t.method === "tap" ? "TAP TO PAY" : t.method === "cash" ? "CASH" : "CARD");
 type Reward = { id: number; name: string; pointsCost: number; dollarValue: number; isActive?: boolean };
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 const KEYS = ["7", "8", "9", "⌫", "4", "5", "6", "CLEAR", "1", "2", "3", "ERC", "00", "0", "ENTER"];
+
+// ── The last receipt printed from this device, for Reprint ────────────────────
+type LastReceipt = { receipt: any | null; paymentIntentId: string | null; thermal: any | null };
+const LAST_RECEIPT_KEY = "certxa.nail.lastReceipt";
+function rememberReceipt(r: LastReceipt) { try { localStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(r)); } catch { /* storage unavailable */ } }
+function recallReceipt(): LastReceipt | null {
+  try { const raw = localStorage.getItem(LAST_RECEIPT_KEY); return raw ? (JSON.parse(raw) as LastReceipt) : null; } catch { return null; }
+}
 
 export function CheckoutMode(p: Props) {
   const { ticket } = p;
@@ -64,27 +90,59 @@ export function CheckoutMode(p: Props) {
   const [reward, setReward] = useState<Reward | null>(null);
   const [tip, setTip] = useState(0);
   const [tenders, setTenders] = useState<Tender[]>([]);
+  const cardRecoveryKey = `certxa.nail.captured.${p.storeId}.${ticket.id}`;
+  const checkoutKey = `certxa.nail.checkout.${p.storeId}.${ticket.id}`;
+  const requestKey = checkoutRequestKey(p.storeId, ticket.id);
+  const idempotencyKey = useRef<string>("");
+  if (!idempotencyKey.current) {
+    try {
+      idempotencyKey.current = localStorage.getItem(checkoutKey) || crypto.randomUUID();
+      localStorage.setItem(checkoutKey, idempotencyKey.current);
+    } catch { idempotencyKey.current = crypto.randomUUID(); }
+  }
+  useEffect(() => {
+    let alive = true;
+    const recover = (card: Tender) => {
+      if (!card.paymentIntentId || !["m2", "tap"].includes(card.method)) return;
+      void verifyCardCharge(card.paymentIntentId, ticket.id, card.amount).then((amount) => {
+        if (!alive) return;
+        setTenders((cur) => cur.some((t) => t.paymentIntentId === card.paymentIntentId) ? cur :
+          [...cur, { ...card, id: nextId.current++, amount }]);
+      }).catch(() => say("Saved card charge needs review. Check Stripe before charging again.", "error"));
+    };
+    const savedHere = new Set<string>();
+    try {
+      const stored = JSON.parse(localStorage.getItem(cardRecoveryKey) || "[]") as Tender[];
+      if (Array.isArray(stored)) for (const card of stored) { if (card.paymentIntentId) savedHere.add(card.paymentIntentId); recover(card); }
+    } catch { /* unreadable recovery data must not be treated as money */ }
+    // Server ledger also covers a payment captured just before the app died,
+    // when the native callback never reached localStorage. The ledger doesn't say which reader
+    // took it, so a charge this device didn't save is labelled with the reader CARD uses here.
+    let readerHere: "m2" | "tap" = "m2";
+    try { readerHere = readNailCardMethod(localStorage.getItem(CARD_METHOD_KEY)) === "frontdesk" ? frontdeskReaderMethod() : "m2"; } catch { /* private mode */ }
+    void fetch(`/api/nail/captured-card-payments/${ticket.id}`, { credentials: "include" })
+      .then((r) => r.ok ? r.json() : []).then((rows: { paymentIntentId: string; amountCents: number }[]) => {
+        if (alive && Array.isArray(rows)) for (const row of rows) {
+          if (savedHere.has(row.paymentIntentId)) continue;
+          recover({ id: 0, method: readerHere, amount: row.amountCents / 100, paymentIntentId: row.paymentIntentId });
+        }
+      }).catch(() => {});
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardRecoveryKey]);
   const [linkedIds, setLinkedIds] = useState<number[]>([]);
-  const [rightTab, setRightTab] = useState<"functions" | "payment">("payment");
-  const [menu, setMenu] = useState<"root" | "removal" | "gift" | "discount">("root");
+  // The right panel shows Payment; Discount and Gift Card swap in their option screen, and Back returns to Payment.
+  const [rightTab, setRightTab] = useState<"functions" | "payment" | "services">("payment");
+  const [changingService, setChangingService] = useState(false);
+  const [menu, setMenu] = useState<"gift" | "discount">("discount");
   const [popup, setPopup] = useState<Popup>(null);
   const [guided, setGuided] = useState<number | null>(null);
   // Which reader the CARD button uses — chosen with the gear, remembered on this device.
-  const [cardMethod, setCardMethod] = useState<CardMethod>(() => {
-    try { const v = localStorage.getItem(CARD_METHOD_KEY); return v === "m2" || v === "tap" ? v : "m2"; } catch { return "m2"; }
+  const [cardMethod, setCardMethod] = useState<NailCardMethod>(() => {
+    try { return readNailCardMethod(localStorage.getItem(CARD_METHOD_KEY)); } catch { return "m2"; }
   });
   const [gift, setGift] = useState<{ code: string; card: GiftCardInfo | null; error: string; busy: boolean; mode: "pay" | "balance" }>({ code: "", card: null, error: "", busy: false, mode: "pay" });
-  // One-time Tap to Pay enrolment on the native Android app (location permission + Stripe terms), reported back by the app.
   const native = isNativeApp();
-  const [tapSetup, setTapSetup] = useState<{ state: "idle" | "running" | "ready" | "error"; msg: string }>({ state: "idle", msg: "" });
-  useEffect(() => {
-    if (!native) return;
-    const onReady = () => setTapSetup({ state: "ready", msg: "Tap to Pay is ready on this device." });
-    const onErr = (e: Event) => setTapSetup({ state: "error", msg: String((e as CustomEvent).detail?.message || "Setup failed. Try again.") });
-    window.addEventListener("certxa_native_taptopay_ready", onReady);
-    window.addEventListener("certxa_native_taptopay_error", onErr);
-    return () => { window.removeEventListener("certxa_native_taptopay_ready", onReady); window.removeEventListener("certxa_native_taptopay_error", onErr); };
-  }, [native]);
   const [status, setStatus] = useState<{ text: string; tone: Tone } | null>(null);
   const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -100,12 +158,35 @@ export function CheckoutMode(p: Props) {
   // A Retail-marked custom line built into the ticket itself (see CatalogPanel's Keypad) is still
   // part of ticket.total, but must be pulled out of service revenue for commission purposes.
   const ticketRetailTotal = useMemo(() => ticket.customLines.filter((l) => l.isRetail).reduce((s, l) => s + l.price, 0), [ticket.customLines]);
+  const linkedRetailTotal = useMemo(() => r2(linked.reduce((s, t) => s + t.customLines.filter((l) => l.isRetail).reduce((n, l) => n + l.price, 0), 0)), [linked]);
   const totals = useMemo(() => computeCheckout({
-    ticketTotal: ticket.total, ticketRetailTotal, extras, linkedSubtotal: linked.reduce((s, t) => s + t.total, 0),
-    discount, rewardDollar: reward?.dollarValue ?? 0, tip, tenders,
-  }), [ticket.total, ticketRetailTotal, extras, linked, discount, reward, tip, tenders]);
+    ticketTotal: ticket.total, ticketRetailTotal, extras, linkedSubtotal: linked.reduce((s, t) => s + t.total, 0), linkedRetailTotal,
+    discount, rewardDollar: reward?.dollarValue ?? 0, tip, tenders, salesTax: p.salesTax,
+  }), [ticket.total, ticketRetailTotal, extras, linked, linkedRetailTotal, discount, reward, tip, tenders, p.salesTax]);
+  // The ticket is kept live from the board; if another station changes it mid-checkout, say so
+  // rather than let the total move without anyone noticing.
+  const seenTotal = useRef(ticket.total);
+  const ownChange = useRef(false);
+  useEffect(() => {
+    if (seenTotal.current === ticket.total) return;
+    seenTotal.current = ticket.total;
+    // A change made right here (the service was swapped on this screen) announces itself.
+    if (ownChange.current) { ownChange.current = false; return; }
+    if (!p.paid) say(`TICKET CHANGED ON ANOTHER STATION · NEW TICKET TOTAL ${money(ticket.total)}`, "info");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticket.total]);
+
+  // Opened from Group Pay / Tip Adjust / Discount on the ticket builder: carry straight on to that function.
+  useEffect(() => {
+    if (p.initialAction === "tip") setPopup("tip");
+    else if (p.initialAction === "discount") { setMenu("discount"); setRightTab("functions"); }
+    else if (p.initialAction === "group") { if (p.otherTickets.length === 0) say("NO OTHER ACTIVE TICKETS", "error"); else setPopup("group"); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── customer-facing screen ────────────────────────────────────────────────
+  // False while this checkout is out of sight (another tab, or the screen locked): nothing is mirrored then.
+  const shownToCustomer = useRef(true);
   const send = (type: string, payload: Record<string, unknown> = {}) => {
     if (!p.dualScreen) return;
     fetch("/api/kiosk/checkout-event", {
@@ -122,8 +203,9 @@ export function CheckoutMode(p: Props) {
   // Mirror the cart to the customer's screen whenever it changes.
   // The customer screen shows the client's points in the cart header — but only when the salon has the points system switched on.
   const { data: loyaltyCfg } = useQuery<{ enabled: boolean; pointsPerDollar?: number }>({ queryKey: ["/api/loyalty/config"], staleTime: 60_000 });
+  const tipPresets = useTipPresets();
   const showPoints = loyaltyCfg?.enabled === true && !!ticket.client.id;
-  const cartKey = JSON.stringify([ticket.id, extras.map((e) => [e.label, e.price]), linked.map((t) => t.id), discount, reward?.id, tip, showPoints ? ticket.client.loyaltyPoints : null, tenders.map((t) => [t.method, t.amount])]);
+  const cartKey = JSON.stringify([ticket.id, ticket.service.id, ticket.total, extras.map((e) => [e.label, e.price]), linked.map((t) => t.id), discount, reward?.id, tip, showPoints ? ticket.client.loyaltyPoints : null, tenders.map((t) => [t.method, t.amount])]);
   // The lines of the sale — shown on the customer's screen and on a texted receipt.
   const cartItems = () => [
     { label: ticket.service.name, price: ticket.service.price },
@@ -135,12 +217,13 @@ export function CheckoutMode(p: Props) {
   ];
   // The client's number on file. The customer's screen is only told THAT there is one (and its last 4) so it can skip asking — never the number itself.
   const phoneOnFile = (ticket.client.phone ?? "").replace(/\D/g, "").slice(-10);
-  useEffect(() => {
-    if (!p.dualScreen) return;
+  const mirrorCart = () => {
+    if (!p.dualScreen || !shownToCustomer.current) return;
     const items = cartItems();
-    send("kiosk_checkout_cart", { items, subtotal: totals.subtotal, discount: totals.discount, tip: totals.tip, tax: 0, total: totals.total, isWalkIn: false, customerName: ticket.client.name, loyaltyPoints: showPoints ? ticket.client.loyaltyPoints : undefined, pointsPerDollar: showPoints ? loyaltyCfg?.pointsPerDollar : undefined, appointmentId: ticket.id, paid: Math.min(totals.tendered, totals.total), balanceDue: totals.balanceDue, payments: tenders.map((t) => ({ label: tenderLabel(t), amount: t.amount })), hasPhone: phoneOnFile.length === 10, phoneLast4: phoneOnFile.length === 10 ? phoneOnFile.slice(-4) : undefined });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cartKey, p.dualScreen]);
+    send("kiosk_checkout_cart", { items, subtotal: totals.subtotal, discount: totals.discount, tip: totals.tip, tax: totals.tax, total: totals.total, isWalkIn: false, customerName: ticket.client.name, ticketNumber: ticket.ticketNumber ?? ticket.id, staffName: ticket.staff?.name, loyaltyPoints: showPoints ? ticket.client.loyaltyPoints : undefined, pointsPerDollar: showPoints ? loyaltyCfg?.pointsPerDollar : undefined, appointmentId: ticket.id, paid: Math.min(totals.tendered, totals.total), balanceDue: totals.balanceDue, payments: tenders.map((t) => ({ label: tenderLabel(t), amount: t.amount })), hasPhone: phoneOnFile.length === 10, phoneLast4: phoneOnFile.length === 10 ? phoneOnFile.slice(-4) : undefined });
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(mirrorCart, [cartKey, p.dualScreen]);
 
   // What the customer's screen needs to know about a payment of `paid`: what is still owed after it, and what the sale has taken in all.
   const settlementAfter = (paid: number) => {
@@ -148,21 +231,37 @@ export function CheckoutMode(p: Props) {
     return { remaining, paidTotal: r2(totals.total - remaining) };
   };
 
-  // ── real card charging (M2 reader · Tap to Pay) ───────────────────────────
+  // ── real card charging (local M2 or paired front-desk M2) ─────────────────
   // The PaymentIntent ID from the most recent successful card tender — threaded through to
   // nativePrintReceipt() below so the native app can look up card details for the receipt
   // (it keys that lookup by paymentIntentId; previously this was always sent as null).
   const lastCardPaymentIntentId = useRef<string | null>(null);
+  // Full card details (brand, entry method, approval code) from the most recent card tender — so
+  // the auto-saved receipt snapshot below can show the same "purchase details" the native app's
+  // own printed receipt does, from any device, not just the one that took the payment.
+  const lastCardDetails = useRef<unknown>(null);
   const cards = useCardPayments({
     ticketId: ticket.id, clientName: ticket.client.name, dualScreen: p.dualScreen, send,
     context: () => ({ tipCents: Math.round(totals.tip * 100), discountCents: Math.round(totals.discount * 100), priorTenderedCents: Math.round(totals.tendered * 100) }),
-    onPaid: (kind, paid, last4, paymentIntentId) => {
-      setTenders((cur) => [...cur, { id: nextId.current++, method: kind, amount: paid }]);
+    onPaid: (kind, paid, last4, paymentIntentId, cardDetails) => {
+      if (!paymentIntentId) { say("Card charge could not be identified. Check Stripe before taking another payment.", "error"); return; }
+      try {
+        const saved = JSON.parse(localStorage.getItem(cardRecoveryKey) || "[]") as Tender[];
+        if (!saved.some((t) => t.paymentIntentId === paymentIntentId)) localStorage.setItem(cardRecoveryKey,
+          JSON.stringify([...saved, { id: 0, method: kind, amount: paid, paymentIntentId }]));
+      } catch { say("Cannot save this card charge for recovery. Check Stripe before leaving checkout.", "error"); }
+      setTenders((cur) => cur.some((t) => t.paymentIntentId === paymentIntentId)
+        ? cur : [...cur, { id: nextId.current++, method: kind, amount: paid, paymentIntentId }]);
       setCents("");
       if (paymentIntentId) lastCardPaymentIntentId.current = paymentIntentId;
+      if (cardDetails) lastCardDetails.current = cardDetails;
       say(`CARD APPROVED · ${money(paid)}${last4 ? ` · ····${last4}` : ""}`, "success");
     },
     onFailed: (message) => say(message.toUpperCase(), "error"),
+    knownIntents: () => tenders.map((t) => t.paymentIntentId).filter((id): id is string => !!id),
+    // A front-desk charge found on the server when its tip message never arrived: the charge is
+    // the pre-tip amount plus the customer's tip, so the tip is whatever it came to above that.
+    onRemoteTip: (amt) => setTip(amt),
     settlementAfter,
     say,
   });
@@ -171,18 +270,60 @@ export function CheckoutMode(p: Props) {
   useEffect(() => {
     const m = p.socketEvent;
     if (!m) return;
+    // The customer's screen reconnected and is asking whether this checkout is still open: answer with the cart.
+    if (m.type === "kiosk_checkout_sync_request") {
+      mirrorCart();
+      // Still waiting on the customer: their screen lost the tip request when it dropped, so send it again.
+      if ((awaitingTip || cards.awaitingFrontdesk) && lastTipRequest.current) send("kiosk_checkout_tip_request", lastTipRequest.current);
+      return;
+    }
+    // The customer tapped "Yes, Redeem!" on a reward their screen offered: apply it to this ticket.
+    // The server re-checks the balance when the sale closes.
+    if (m.type === "kiosk_checkout_redeem_reward") {
+      if (m.appointmentId != null && Number(m.appointmentId) !== ticket.id) return;
+      const rewardId = Number(m.rewardId), pointsCost = Number(m.pointsCost), dollarValue = Number(m.dollarValue);
+      if (!Number.isSafeInteger(rewardId) || rewardId <= 0 || !(dollarValue > 0)) return;
+      if (!ticket.client.id) { say("ADD A CLIENT TO THE TICKET BEFORE REDEEMING A REWARD", "error"); return; }
+      if (ticket.client.loyaltyPoints < pointsCost) { say("NOT ENOUGH POINTS FOR THAT REWARD", "error"); return; }
+      setReward({ id: rewardId, name: String(m.name || "Reward"), pointsCost, dollarValue });
+      say(`REWARD REDEEMED · ${money(dollarValue)} OFF`, "success");
+      return;
+    }
     if (m.type === "kiosk_checkout_tip_selected") {
+      // A late message from another ticket's tip screen must not put its tip on this one.
+      if (m.appointmentId != null && Number(m.appointmentId) !== ticket.id) return;
       const amt = Math.max(0, Number(m.tipAmount) || 0);
       setTip(amt);
-      say(amt > 0 ? `TIP RECEIVED · ${money(amt)}` : "NO TIP SELECTED BY CLIENT", amt > 0 ? "success" : "info");
+      // `confirmed`: the customer pressed Continue / Skip (a pick alone only previews the tip here).
+      if (m.confirmed === true || !awaitingTip) say(amt > 0 ? `TIP RECEIVED · ${money(amt)}` : "NO TIP SELECTED BY CLIENT", amt > 0 ? "success" : "info");
+      if (m.confirmed === true && awaitingTip) {
+        const base = awaitingTip.base;
+        setAwaitingTip(null);
+        setChargeAfterTip(r2(base + amt));
+      }
     } else if (m.type === "kiosk_checkout_receipt_choice") {
-      // "No Receipt" on the customer's screen ends the sale here too — there's nothing left for staff to do.
-      // "Print" needs staff to actually run the counter's printer first, so it does NOT advance on its own.
-      if (m.choice === "none") p.onReceiptDone();
-      else void textReceipt(m);
+      // The customer picked a receipt on their screen. Text goes out right away (it's a link to the saved
+      // receipt). "Print" prints the customer copy on THIS station's receipt printer (the Android app's IP/USB
+      // printer, or a Bluetooth one connected here), and "No receipt" ends the sale — both only once the sale
+      // is actually saved, so a card that settles a moment before the server confirms isn't cut short.
+      // "printed" = the customer's screen already printed their copy on its own printer: nothing left to print here.
+      const choice = m.choice === "none" || m.choice === "printed" ? "none" : "print";
+      if (m.choice === "text") void textReceipt(m);
+      else if (p.paid) { if (choice === "none") p.onReceiptDone(); else void handlePrintReceipt(); }
+      else pendingReceiptChoice.current = choice;
     } else cards.onSocket(m);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.socketEvent]);
+
+  // A receipt choice that arrived before the sale was saved — carried out as soon as it is (see above).
+  const pendingReceiptChoice = useRef<null | "print" | "none">(null);
+  useEffect(() => {
+    if (!p.paid || !pendingReceiptChoice.current) return;
+    const choice = pendingReceiptChoice.current;
+    pendingReceiptChoice.current = null;
+    if (choice === "none") p.onReceiptDone(); else void handlePrintReceipt();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.paid]);
 
   // The customer chose "Text Receipt" on their screen: text it to the number they typed, or — when the screen didn't need to ask — the one on the ticket.
   const textReceipt = async (m: any) => {
@@ -198,8 +339,8 @@ export function CheckoutMode(p: Props) {
           appointmentId: ticket.id, phone: digits,
           snapshot: {
             items: cartItems(), dateIso: new Date().toISOString(), clientName: ticket.client.name,
-            subtotal: totals.subtotal, discount: totals.discount, tip: totals.tip, total: totals.total,
-            tenders: tenders.map((t) => ({ method: t.method, amount: t.amount })),
+            subtotal: totals.subtotal, discount: totals.discount, tax: totals.tax, tip: totals.tip, total: totals.total,
+            tenders: tenders.map((t) => ({ method: tenderLabel(t), amount: t.amount })),
           },
         }),
       });
@@ -242,37 +383,78 @@ export function CheckoutMode(p: Props) {
 
   // ── functions ─────────────────────────────────────────────────────────────
   const openDrawer = () => { void openCashDrawerHardware({ onThermalPrint: p.thermalPrint }); };
-  // Same three actions as the calendar checkout's Discount submenu: a preset % replaces the discount, Custom takes the dollar amount
-  // typed on the keypad, Comp is 100% off. Once a discount is applied the grid goes back to the main menu.
-  const discountPreset = (percent: number) => { setDiscount({ type: "percent", value: percent }); setMenu("root"); say(`${percent}% DISCOUNT APPLIED`, "success"); };
+  // A preset % replaces the discount; Custom takes the dollar amount typed on the keypad. There is no Comp (100% off)
+  // here. Once a discount is applied the grid goes back to the main menu.
+  const backToPayment = () => setRightTab("payment");
+  const discountPreset = (percent: number) => { setDiscount({ type: "percent", value: percent }); backToPayment(); say(`${percent}% DISCOUNT APPLIED`, "success"); };
   const discountCustom = () => {
     if (amount <= 0) return needAmount(); // nothing applied yet: stay here so the amount can be typed and Custom tapped again
-    setDiscount({ type: "dollar", value: amount }); setCents(""); setMenu("root");
+    setDiscount({ type: "dollar", value: amount }); setCents(""); backToPayment();
     say(`${money(amount)} DISCOUNT APPLIED`, "success");
   };
-  const discountComp = () => { setDiscount({ type: "percent", value: 100 }); setMenu("root"); say("TICKET COMPED — 100% OFF", "success"); };
   const applyTip = (dollars: number) => { setTip(dollars); setPopup(null); say(dollars > 0 ? `TIP SET · ${money(dollars)}` : "TIP CLEARED", "success"); };
-  const preTip = Math.max(0, totals.subtotal - totals.discount);
+  const preTip = r2(Math.max(0, totals.subtotal - totals.discount) + totals.tax);
+  // What tip percentages are worked out on: the services, before any discount and before tax — a discount
+  // is the salon's cost, not a reason for a smaller tip, and nobody tips on tax or on retail products.
+  const serviceBase = r2(totals.subtotal - totals.productRevenue - linkedRetailTotal);
+  const tipBase = serviceBase > 0 ? serviceBase : totals.subtotal;
 
   const runFn = (id: string) => {
     switch (id) {
       case "retail": if (amount <= 0) return needAmount(); addExtra("Retail Item", amount, "retail"); setCents(""); say(`RETAIL ADDED · ${money(amount)}`, "success"); return;
-      case "custom": if (amount <= 0) return needAmount(); addExtra("+Extra", amount, "custom"); setCents(""); say(`EXTRA ADDED · ${money(amount)}`, "success"); return;
-      case "removal": setMenu("removal"); return;
-      case "gift": setMenu("gift"); return;
+      case "gift": setMenu("gift"); setRightTab("functions"); return;
       case "quick": if (guided !== null) { setGuided(null); setCents(""); say("QUICK TICKET CANCELLED"); } else { setCents(""); setGuided(0); } return;
-      case "loyalty": if (!ticket.client.id) return say("ADD A CLIENT TO THE TICKET FIRST", "error"); setPopup("rewards"); return;
       case "group": if (p.otherTickets.length === 0) return say("NO OTHER ACTIVE TICKETS", "error"); setPopup("group"); return;
     }
   };
-  const runRemoval = (name: string) => { addExtra(name, amount, "addon"); setCents(""); say(`${name.toUpperCase()} ADDED · ${money(amount)}`, "success"); };
+  // The right panel can show the service grid while a ticket is being paid: picking a service puts it on the
+  // ticket in place of the one it has, the totals follow, and the panel goes back to Payment.
+  const changeService = async (svc: CatalogService) => {
+    if (changingService || p.paid || p.finalizing) return;
+    if (svc.id === ticket.service.id) { backToPayment(); return; }
+    setChangingService(true);
+    ownChange.current = true;
+    const changed = await p.onChangeService(svc);
+    setChangingService(false);
+    // Same price as before: nothing for the total watcher to swallow.
+    if (!changed || Number(svc.price) === ticket.service.price) ownChange.current = false;
+    if (changed) { backToPayment(); say(`SERVICE CHANGED · ${svc.name.toUpperCase()}`, "success"); }
+  };
   const comingSoon = (label: string) => say(`${label.toUpperCase()} — COMING SOON`);
 
   const tipButton = () => {
     if (amount > 0) { applyTip(amount); setCents(""); return; }
     setPopup("tip");
   };
-  const sendTipScreen = () => { setPopup(null); send("kiosk_checkout_tip_request", { total: preTip, cardMethod, appointmentId: ticket.id }); say("TIP SCREEN SENT TO CLIENT", "info"); };
+  // The last tip request sent to the customer's screen, kept so it can be sent again if that screen
+  // reconnects while this POS is still waiting on it.
+  const lastTipRequest = useRef<Record<string, unknown> | null>(null);
+  const requestTipScreen = () => {
+    const payload = { total: preTip, tipBase, cardMethod: cardMethod === "frontdesk" ? frontdeskReaderMethod() : cardMethod, appointmentId: ticket.id };
+    lastTipRequest.current = payload;
+    send("kiosk_checkout_tip_request", payload);
+  };
+  const sendTipScreen = () => { setPopup(null); requestTipScreen(); say("TIP SCREEN SENT TO CLIENT", "info"); };
+
+  // CARD on this device's reader, with a customer screen paired: the customer is asked for a tip first, and
+  // the reader starts when they press Continue or Skip. `base` is what the card owes before that tip.
+  const [awaitingTip, setAwaitingTip] = useState<{ base: number } | null>(null);
+  const [chargeAfterTip, setChargeAfterTip] = useState<number | null>(null);
+  useEffect(() => {
+    if (chargeAfterTip == null) return;
+    const amount = chargeAfterTip;
+    setChargeAfterTip(null);
+    // Runs after the tip is on the ticket, so the charge is recorded with it.
+    if (amount > 0) cards.m2(amount);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chargeAfterTip]);
+  const stopWaitingForTip = (chargeNow: boolean) => {
+    const waiting = awaitingTip;
+    if (!waiting) return;
+    setAwaitingTip(null);
+    send("kiosk_checkout_tip_cancel", { appointmentId: ticket.id });
+    if (chargeNow) setChargeAfterTip(Math.min(r2(waiting.base + tip), rest()));
+  };
 
   // ── tenders ───────────────────────────────────────────────────────────────
   const rest = () => totals.balanceDue;
@@ -294,30 +476,79 @@ export function CheckoutMode(p: Props) {
     send("kiosk_checkout_payment_result", { success: true, total: value, appointmentId: ticket.id, ...settlementAfter(value) });
   };
 
-  // CARD charges the card with whichever reader the gear picked (M2 reader or Tap to Pay); a card is charged exactly what is owed.
+  // The customer's tip screen, then the front desk's M2 reader (the customer's Skip / Continue starts it).
+  const sendToFrontdesk = (value: number) => {
+    if (!p.dualScreen) return say("PAIR A FRONT DESK SCREEN BEFORE USING ITS M2 READER", "error");
+    // The customer's tip selection changes the amount due. The frontdesk uses this
+    // snapshot (not a later cart broadcast) to compute the charge exactly once.
+    const payload = {
+      total: preTip, tipBase, cardMethod: frontdeskReaderMethod(), paymentOnConfirm: true, appointmentId: ticket.id,
+      // The front desk's M2 charge must be tagged as a nail checkout, like this device's own M2 charges:
+      // the server then records the card but leaves completing the ticket to this checkout (with tip,
+      // discount, gift card and group shares), instead of closing it at capture with the card total alone.
+      nailCheckout: true,
+      amountDueBeforeTip: Math.max(0, r2(value - tip)),
+      remainingAfterPayment: Math.max(0, r2(rest() - value)),
+      discountCents: Math.round(totals.discount * 100),
+      priorTenderedCents: Math.round(totals.tendered * 100),
+    };
+    lastTipRequest.current = payload;
+    cards.frontdesk(payload);
+  };
+  // CARD charges through the M2 on either this device or the paired front-desk device.
   const takeCard = () => {
-    if (cards.awaitingTap) return cards.tap(0); // a second press cancels the tap waiting on the customer's screen
     const value = Math.min(wanted(), rest());
     if (value <= 0) return say(rest() <= 0 ? "NOTHING DUE" : "ENTER AN AMOUNT FIRST", "error");
-    if (cardMethod === "m2") return cards.m2(value);
-    if (!cards.tapAvailable) return say("TAP TO PAY NEEDS THE APP OR A PAIRED CUSTOMER SCREEN — CHOOSE M2 READER WITH THE GEAR", "error");
-    cards.tap(value);
+    if (cardMethod === "frontdesk") return sendToFrontdesk(value);
+    // No tip on the ticket yet and the customer has a screen: ask them first, then charge here.
+    if (p.dualScreen && tip <= 0 && !awaitingTip) {
+      setAwaitingTip({ base: value });
+      requestTipScreen();
+      say("TIP SCREEN SENT TO CLIENT · THE READER STARTS WHEN THEY CHOOSE", "info");
+      return;
+    }
+    cards.m2(value);
   };
   const m2Busy = ["loading", "discovering", "connecting", "collecting", "processing"].includes(cards.status);
-  const cardBusy = m2Busy || cards.nativeBusy !== null;
-  const cardLabel = cards.awaitingTap ? "CANCEL TAP"
+  const cardBusy = m2Busy || cards.nativeBusy !== null || cards.awaitingFrontdesk || awaitingTip !== null;
+  // PAY / CHECKOUT: the customer's tip screen, whose Skip / Continue then starts the front desk M2 reader.
+  // Once the balance is settled it closes the sale, as before.
+  const payCheckout = () => {
+    if (totals.settled) return finish();
+    const value = Math.min(wanted(), rest());
+    if (value <= 0) return say("ENTER AN AMOUNT FIRST", "error");
+    // No customer screen paired: there is no front desk reader to send to, so charge the way CARD does.
+    if (!p.dualScreen && cardMethod !== "frontdesk") return void cards.m2(value);
+    sendToFrontdesk(value);
+  };
+  // The customer's screen follows what staff are looking at. Leaving the POS tab, or the screen locking, sends it
+  // back to its welcome page; coming back shows the order again. A card being taken keeps it where it is.
+  const shown = p.active !== false || cardBusy;
+  useEffect(() => {
+    if (shownToCustomer.current === shown) return;
+    shownToCustomer.current = shown;
+    if (shown) { send("kiosk_checkout_start", { total: totals.total, appointmentId: ticket.id }); mirrorCart(); }
+    else send("kiosk_checkout_cancel");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown]);
+  // The POS tab being closed or reloaded never runs the clean-up above: tell the customer's screen on the way out.
+  useEffect(() => {
+    if (!p.dualScreen) return;
+    const bye = () => {
+      try { navigator.sendBeacon("/api/kiosk/checkout-event", new Blob([JSON.stringify({ type: "kiosk_checkout_cancel", registerId: p.registerId })], { type: "application/json" })); } catch { /* best effort */ }
+    };
+    window.addEventListener("pagehide", bye);
+    return () => window.removeEventListener("pagehide", bye);
+  }, [p.dualScreen, p.registerId]);
+  const cardLabel = awaitingTip ? "WAITING FOR TIP…" : cards.awaitingFrontdesk ? "WAITING FOR FRONT DESK…"
     : cards.status === "loading" ? "LOADING…" : cards.status === "discovering" ? "SCANNING…" : cards.status === "connecting" ? "CONNECTING…"
     : cards.status === "collecting" ? "WAITING FOR CARD…" : cards.status === "processing" ? "PROCESSING…" : cards.nativeBusy ? "CHARGING…" : "CARD";
 
-  const chooseCardMethod = (m: CardMethod) => {
+  const chooseCardMethod = (m: NailCardMethod) => {
     setCardMethod(m);
     try { localStorage.setItem(CARD_METHOD_KEY, m); } catch { /* private mode: it just won't be remembered */ }
     setPopup(null);
-    say(m === "m2" ? "CARD WILL USE THE M2 READER" : "CARD WILL USE TAP TO PAY", "success");
-  };
-  const startTapToPaySetup = () => {
-    setTapSetup({ state: "running", msg: "Follow the prompts on this device…" });
-    (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "SETUP_TAP_TO_PAY" }));
+    say(m === "m2" ? "CARD WILL USE THE M2 READER ON THIS POS DEVICE" : "CARD WILL USE THE FRONT DESK M2 READER", "success");
   };
   const canNativePrint = native && !!(window as any).CERTXA_PRINT_BRIDGE;
 
@@ -370,15 +601,27 @@ export function CheckoutMode(p: Props) {
           })],
         { tip: totals.tip, discount: totals.discount, totalPaid: totals.totalPaid }, methods);
     }
-    send("kiosk_checkout_cancel");
+    // Don't close the customer's screen here: every tender already told it the sale is paid, and it now
+    // offers the customer Print / Text / No Receipt. Sending kiosk_checkout_cancel at this point reset it
+    // to its welcome screen before they could choose. The screen is closed when this checkout closes.
     // No receipt is printed/sent here any more — once this succeeds the payment buttons are replaced by
     // Print / Text / No Receipt (see the receipt panel below), so the choice is always explicit.
-    p.onFinalize({
-      paymentMethod: methods, tip: totals.tip, discount: totals.discount, totalPaid: totals.totalPaid,
+    const next: FinalizeData = {
+      idempotencyKey: idempotencyKey.current, tenders, extras: extras.map((e) => ({ label: e.label, price: e.price })),
+      paymentMethod: methods, tip: totals.tip, discount: totals.discount, tax: totals.tax, totalPaid: totals.totalPaid,
       serviceRevenue: totals.serviceRevenue, productRevenue: totals.productRevenue, groupTickets,
       redemption: reward && ticket.client.id ? { rewardId: reward.id, customerId: ticket.client.id } : undefined,
       giftCards: giftByCard.size ? [...giftByCard].map(([code, amount]) => ({ code, amount })) : undefined,
-    });
+    };
+    // If the response was lost after the server committed, the exact same
+    // request must be retried under the same key, not rebuilt from changed UI.
+    try {
+      // (A request the server actually refused is cleared by the caller, so the next attempt is rebuilt.)
+      const pending = localStorage.getItem(requestKey);
+      if (pending) { p.onFinalize(JSON.parse(pending) as FinalizeData); return; }
+      localStorage.setItem(requestKey, JSON.stringify(next));
+    } catch { /* server idempotency still protects this tab */ }
+    p.onFinalize(next);
   };
 
   // The balance settling (a card/cash/gift tender covering the total) used to just re-enable the
@@ -404,7 +647,7 @@ export function CheckoutMode(p: Props) {
   // `copy` picks which physical copy: 'salon' (signature copy, auto-printed right after a card
   // charge settles), 'customer' (the Print Receipt button once the salon copy already went out
   // for a card sale), or 'both' (cash — no signature needed, nothing held back).
-  const nativePrintReceipt = (copy: 'salon' | 'customer' | 'both'): Promise<boolean> => new Promise((resolve) => {
+  const nativePrintReceipt = (copy: 'salon' | 'customer' | 'both', reprint?: LastReceipt): Promise<boolean> => new Promise((resolve) => {
     const requestId = `pr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     let finished = false;
     const finishWait = (ok: boolean, error?: string) => {
@@ -412,7 +655,7 @@ export function CheckoutMode(p: Props) {
       finished = true;
       clearTimeout(timer);
       window.removeEventListener("certxa_native_print_result", onResult);
-      if (!ok) say((error || "The printer did not respond.").toUpperCase(), "error");
+      if (!ok) console.warn("[receipt print] failed:", error || "The printer did not respond.");
       resolve(ok);
     };
     const onResult = (e: Event) => {
@@ -421,46 +664,65 @@ export function CheckoutMode(p: Props) {
     };
     const timer = setTimeout(() => finishWait(false, "The printer did not respond. Check that it is on and connected."), 45_000);
     window.addEventListener("certxa_native_print_result", onResult);
-    (window as any).ReactNativeWebView?.postMessage(JSON.stringify({
-      type: "PRINT_RECEIPT",
-      requestId,
-      copy,
-      paymentIntentId: lastCardPaymentIntentId.current,
-      receipt: buildNativeReceiptPayload({
+    const receipt = reprint?.receipt ?? buildNativeReceiptPayload({
         storeName: p.storeName,
         storeAddress: p.storeAddress,
         storeCityStateZip: p.storeCityStateZip,
         storePhone: p.storePhone,
-        ticketNumber: ticket.ticketNumber ?? ticket.id,
+        // A ticket made offline has no number from the server yet; its place in this tablet's own list is printed instead.
+        ticketNumber: ticket.ticketNumber ?? Math.abs(ticket.id),
         dateIso: new Date().toISOString(),
         clientName: ticket.client.name,
         staffName: ticket.staff?.name,
         items: cartItems(),
-        subtotal: totals.subtotal, discount: totals.discount, tax: 0, tip: totals.tip, grandTotal: totals.total,
+        subtotal: totals.subtotal, discount: totals.discount, tax: totals.tax, tip: totals.tip, grandTotal: totals.total,
         tenders: tenders.map((t) => ({ method: t.method, amount: t.amount })),
         changeDue: totals.changeDue,
-      }),
-    }));
+      });
+    const paymentIntentId = reprint ? reprint.paymentIntentId : lastCardPaymentIntentId.current;
+    // Kept on this device so Reprint can print the same receipt again later.
+    if (!reprint) rememberReceipt({ receipt, paymentIntentId, thermal: null });
+    (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "PRINT_RECEIPT", requestId, copy, paymentIntentId, receipt }));
   });
   const printReceiptNow = async (copy: 'salon' | 'customer' | 'both'): Promise<boolean> => {
     if (canNativePrint) return nativePrintReceipt(copy);
     if (p.thermalPrint) {
       try {
         const now = new Date();
-        await p.thermalPrint(buildCheckoutReceipt({
+        const thermal = {
           storeName: p.storeName, clientName: ticket.client.name, tenders, grandTotal: totals.total, changeDue: totals.changeDue,
           transactionId: `A-${ticket.id}`,
           dateStr: now.toLocaleDateString("en-US", { timeZone: p.timezone }), timeStr: now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZone: p.timezone }),
-        }));
+        };
+        await p.thermalPrint(buildCheckoutReceipt(thermal));
+        rememberReceipt({ receipt: null, paymentIntentId: null, thermal });
         return true;
       } catch (err: any) {
-        say((err?.message || "THE PRINTER DID NOT RESPOND").toUpperCase(), "error");
+        console.warn("[receipt print] failed:", err?.message || "The printer did not respond.");
         return false;
       }
     }
-    say("NO RECEIPT PRINTER CONNECTED — CONNECT ONE IN MORE → PRINTER", "error");
+    console.warn("[receipt print] no receipt printer connected");
     return false;
   };
+  // Reprint: the last receipt printed from this device, again — the customer's copy.
+  const reprintLast = async () => {
+    if (receiptBusy) return;
+    const last = recallReceipt();
+    if (!last) return say("NO RECEIPT HAS BEEN PRINTED ON THIS DEVICE YET", "error");
+    setReceiptBusy("print");
+    say("REPRINTING THE LAST RECEIPT…", "info");
+    let ok = false;
+    try {
+      if (last.receipt && canNativePrint) ok = await nativePrintReceipt("customer", last);
+      else if (last.thermal && p.thermalPrint) { await p.thermalPrint(buildCheckoutReceipt(last.thermal)); ok = true; }
+    } catch (err: any) {
+      console.warn("[receipt reprint] failed:", err?.message);
+    }
+    setReceiptBusy(null);
+    say(ok ? "RECEIPT REPRINTED" : "RECEIPT DID NOT PRINT — CHECK THE PRINTER AND TRY AGAIN", ok ? "success" : "error");
+  };
+
   const handlePrintReceipt = async () => {
     if (receiptBusy) return;
     setReceiptBusy("print");
@@ -470,7 +732,7 @@ export function CheckoutMode(p: Props) {
     const copy = lastCardPaymentIntentId.current ? "customer" : "both";
     const ok = await printReceiptNow(copy);
     setReceiptBusy(null);
-    if (!ok) return;
+    if (!ok) return say("RECEIPT DID NOT PRINT — CHECK THE PRINTER AND TRY AGAIN", "error");
     say("RECEIPT PRINTED", "success");
     printAfterTimer.current = setTimeout(() => p.onReceiptDone(), 5000);
   };
@@ -488,6 +750,30 @@ export function CheckoutMode(p: Props) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.paid]);
+
+  // Silently save a digital receipt snapshot the moment the ticket is paid — not gated behind
+  // "Text Receipt" (which staff might never tap) — so re-scanning or "# Enter ID"-ing this ticket
+  // later always has a receipt to show, not just tickets someone happened to text. Fire-and-forget:
+  // never surfaces an error to staff, since this is invisible plumbing, not a checkout step.
+  const receiptSnapshotSaved = useRef(false);
+  useEffect(() => {
+    if (!p.paid || receiptSnapshotSaved.current) return;
+    try { localStorage.removeItem(cardRecoveryKey); localStorage.removeItem(checkoutKey); localStorage.removeItem(requestKey); } catch { /* private storage */ }
+    receiptSnapshotSaved.current = true;
+    fetch("/api/pos/receipt-snapshot", {
+      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        appointmentId: ticket.id,
+        snapshot: {
+          clientName: ticket.client.name, staffName: ticket.staff?.name, items: cartItems(), dateIso: new Date().toISOString(),
+          subtotal: totals.subtotal, discount: totals.discount, tax: totals.tax, tip: totals.tip, total: totals.total,
+          tenders: tenders.map((t) => ({ method: tenderLabel(t), amount: t.amount })),
+          cardDetails: lastCardDetails.current ?? undefined,
+        },
+      }),
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.paid]);
   // Texts a LINK to a public web receipt (not the plain summary) — /api/pos/receipt-link stores exactly what's on
   // screen right now under this ticket's existing "manage my booking" token, so the link keeps showing these same
   // numbers, then sends it through the salon's Twilio number.
@@ -503,7 +789,7 @@ export function CheckoutMode(p: Props) {
           appointmentId: ticket.id, phone: phoneOnFile,
           snapshot: {
             clientName: ticket.client.name, items: cartItems(), dateIso: new Date().toISOString(),
-            subtotal: totals.subtotal, discount: totals.discount, tip: totals.tip, total: totals.total,
+            subtotal: totals.subtotal, discount: totals.discount, tax: totals.tax, tip: totals.tip, total: totals.total,
             tenders: tenders.map((t) => ({ method: tenderLabel(t), amount: t.amount })),
           },
         }),
@@ -520,21 +806,10 @@ export function CheckoutMode(p: Props) {
   const handleNoReceipt = () => { if (!receiptBusy) p.onReceiptDone(); };
 
   // ── rewards ───────────────────────────────────────────────────────────────
-  const { data: rewards = [] } = useQuery<Reward[]>({ queryKey: ["/api/loyalty/rewards"], enabled: popup === "rewards" && !!p.storeId });
   const points = ticket.client.loyaltyPoints;
 
   // ── grid contents ─────────────────────────────────────────────────────────
   type Cell = { id: string; label: string; icon: typeof Gift; run: () => void; more?: boolean } | null;
-  const rootCells: Cell[] = [
-    { id: "retail", label: "Retail", icon: ShoppingBag, run: () => runFn("retail") },
-    { id: "removal", label: "Removal", icon: Undo2, run: () => runFn("removal"), more: true },
-    { id: "quick", label: guided !== null ? "Exit Quick Ticket" : "Quick Ticket", icon: Zap, run: () => runFn("quick") },
-    { id: "custom", label: "Custom Charge", icon: Calculator, run: () => runFn("custom") },
-    { id: "loyalty", label: "Loyalty", icon: Star, run: () => runFn("loyalty") },
-    { id: "group", label: "Group Pay", icon: Users, run: () => runFn("group") },
-    { id: "gift", label: "Gift Card", icon: Gift, run: () => runFn("gift"), more: true },
-  ];
-  const removalCells: Cell[] = REMOVAL_TYPES.map((n) => ({ id: n, label: n.replace(/ Removal$/, "\nRemoval"), icon: Undo2, run: () => runRemoval(n) }));
   const giftCells: Cell[] = [
     { id: "Sell Gift Card", label: "Sell Gift Card", icon: Gift, run: () => comingSoon("Sell Gift Card") },
     { id: "Redeem", label: "Redeem", icon: Gift, run: () => openGift("pay") },
@@ -546,10 +821,9 @@ export function CheckoutMode(p: Props) {
     { id: "disc-20", label: "20% Off", icon: Percent, run: () => discountPreset(20) },
     { id: "disc-employee", label: "Employee", icon: BadgePercent, run: () => discountPreset(25) },
     { id: "disc-custom", label: "Custom", icon: Calculator, run: discountCustom },
-    { id: "disc-comp", label: "Comp\n(100%)", icon: Award, run: discountComp },
   ];
-  const cells = menu === "root" ? rootCells : menu === "removal" ? removalCells : menu === "discount" ? discountCells : giftCells;
-  const gridCells: Cell[] = Array.from({ length: 24 - (menu === "root" ? 0 : 1) }, (_, i) => cells[i] ?? null);
+  const cells = menu === "discount" ? discountCells : giftCells;
+  const gridCells: Cell[] = Array.from({ length: 23 }, (_, i) => cells[i] ?? null);
 
   const guidedPrompt = guided !== null ? `${QUICK_TICKET_STEPS[guided].prompt.toUpperCase()} · STEP ${guided + 1}/${QUICK_TICKET_STEPS.length} — ENTER TO ADD / SKIP` : null;
 
@@ -599,12 +873,15 @@ export function CheckoutMode(p: Props) {
               </strong>
             </div>
           )}
+          {totals.tax > 0 && (
+            <div data-testid="nail-pay-tax-row"><span>TAX ({r2(p.salesTax.rate * 100)}%)</span><strong data-testid="nail-pay-tax">{money(totals.tax)}</strong></div>
+          )}
           {totals.tip > 0 && (
             <div><span>TIP</span><strong data-testid="nail-pay-tip">{money(totals.tip)} <button type="button" className="row-x" aria-label="Remove tip" onClick={() => setTip(0)}>×</button></strong></div>
           )}
           <div className="grand-total"><span>TOTAL</span><strong data-testid="nail-pay-total">{money(totals.total)}</strong></div>
           {tenders.map((t) => (
-            <div key={t.id} data-testid={`nail-pay-tender-${t.method}`}><span>{tenderLabel(t)}</span><strong>−{money(t.amount)} <button type="button" className="row-x" aria-label="Remove payment" onClick={() => setTenders((cur) => cur.filter((x) => x.id !== t.id))}>×</button></strong></div>
+            <div key={t.id} data-testid={`nail-pay-tender-${t.method}`}><span>{tenderLabel(t)}</span><strong>−{money(t.amount)} {t.method !== "m2" && t.method !== "tap" && <button type="button" className="row-x" aria-label="Remove payment" onClick={() => setTenders((cur) => cur.filter((x) => x.id !== t.id))}>×</button>}</strong></div>
           ))}
           {tenders.length > 0 && (
             <div className="balance-row" data-testid="nail-pay-balance">
@@ -614,7 +891,7 @@ export function CheckoutMode(p: Props) {
           )}
           <div className="checkout-row">
             <button type="button" className="checkout-clr" onClick={p.onClose} data-testid="nail-pay-back">BACK</button>
-            <button type="button" className={`checkout ${!totals.settled || p.finalizing || p.paid ? "disabled" : ""}`} disabled={!totals.settled || p.finalizing || p.paid} onClick={finish} data-testid="nail-pay-finish">
+            <button type="button" className={`checkout ${p.finalizing || p.paid || (!totals.settled && cardBusy) ? "disabled" : ""}`} disabled={p.finalizing || p.paid || (!totals.settled && cardBusy)} onClick={payCheckout} data-testid="nail-pay-finish">
               {p.paid ? "PAID ✓" : p.finalizing ? "SAVING…" : "PAY / CHECKOUT"}
             </button>
           </div>
@@ -635,22 +912,29 @@ export function CheckoutMode(p: Props) {
                 </button>
               ))}
             </div>
-            <div className="money-grid pay-fn-row">
+            <div className="money-grid pay-fn-row" data-testid="nail-pay-fn-row-top">
+              <button type="button" onClick={() => runFn("quick")} data-testid="nail-pay-fn-quick"><Zap size={20} /><span>{guided !== null ? "Exit Quick Ticket" : "Quick Ticket"}</span></button>
+              <button type="button" onClick={() => runFn("group")} data-testid="nail-pay-fn-group"><Users size={20} /><span>Group Pay</span></button>
+              <button type="button" onClick={() => runFn("retail")} data-testid="nail-pay-fn-retail"><ShoppingBag size={20} /><span>Retail</span></button>
+              <button type="button" onClick={() => runFn("gift")} data-testid="nail-pay-fn-gift"><Gift size={20} /><span>Gift Card</span></button>
+            </div>
+            <div className="money-grid pay-fn-row pay-fn-row-stacked">
               <button type="button" onClick={tipButton} data-testid="nail-pay-fn-tip"><HandCoins size={20} /><span>Tip Adjust</span></button>
-              <button type="button" onClick={() => { setRightTab("functions"); setMenu("discount"); }} data-testid="nail-pay-fn-discount"><Percent size={20} /><span>Discount</span></button>
-              <button type="button" onClick={() => { openDrawer(); say("CASH DRAWER OPENED"); }} data-testid="nail-pay-fn-nosale"><DoorOpen size={20} /><span>No Sale</span></button>
-              <button type="button" onClick={() => comingSoon("Reprint")} data-testid="nail-pay-fn-reprint"><Printer size={20} /><span>Reprint</span></button>
+              <button type="button" onClick={() => { setMenu("discount"); setRightTab("functions"); }} data-testid="nail-pay-fn-discount"><Percent size={20} /><span>Discount</span></button>
+              <button type="button" onClick={() => { openDrawer(); recordNoSale({ performedBy: ticket.staff?.name }); say("CASH DRAWER OPENED"); }} data-testid="nail-pay-fn-nosale"><DoorOpen size={20} /><span>No Sale</span></button>
+              <button type="button" onClick={() => void reprintLast()} data-testid="nail-pay-fn-reprint"><Printer size={20} /><span>Reprint</span></button>
             </div>
           </div>
 
           {/* ── functions / payment ──────────────────────────────────────── */}
+          {rightTab === "services" && !p.paid ? (
+            <CatalogPanel layout={p.layout} locked={changingService} groups={p.groups} activeGroup="" onGroup={() => {}} serviceId={ticket.service.id} onService={(svc) => void changeService(svc)}
+              addons={[]} moreAddons={false} onToggleMore={() => {}} hasMoreAddons={false} addonIds={[]} onToggleAddon={() => {}}
+              exit={{ label: "Payment", onClick: backToPayment }} />
+          ) : (
           <div className="catalog-panel" data-testid="nail-pay-right">
-            <div className="category-tabs" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
-              <button type="button" className={rightTab === "payment" ? "active" : ""} onClick={() => setRightTab("payment")} data-testid="nail-pay-tab-payment"><Banknote size={20} /><span>PAYMENT</span></button>
-              <button type="button" className={rightTab === "functions" ? "active" : ""} onClick={() => { setRightTab("functions"); setMenu("root"); }} data-testid="nail-pay-tab-functions"><Zap size={20} /><span>FUNCTIONS</span></button>
-            </div>
 
-            {rightTab === "payment" ? (
+            {rightTab !== "functions" ? (
               p.paid ? (
                 <div className="pay-panel" data-testid="nail-receipt-options">
                   <div className="receipt-methods">
@@ -671,19 +955,25 @@ export function CheckoutMode(p: Props) {
                 <div className="pay-methods">
                   <button type="button" className="pay-cash" onClick={takeCash} data-testid="nail-pay-cash"><Banknote size={26} /><span>CASH</span></button>
                   <button type="button" className="pay-card" disabled={cardBusy} onClick={takeCard} data-testid="nail-pay-card">
-                    {cardBusy || cards.awaitingTap ? <Loader2 size={26} className="spin" /> : <CreditCard size={26} />}<span>{cardLabel}</span>
+                    {cardBusy ? <Loader2 size={26} className="spin" /> : <CreditCard size={26} />}<span>{cardLabel}</span>
                   </button>
                   <button type="button" className="pay-gift" onClick={() => openGift("pay")} data-testid="nail-pay-gift"><Gift size={26} /><span>GIFT CARD</span></button>
+                  <button type="button" className="pay-gift" disabled={cardBusy || p.finalizing} onClick={() => setRightTab("services")} data-testid="nail-pay-services"><Hand size={26} /><span>SERVICES</span></button>
                 </div>
-                <p className="pay-hint">Type an amount on the keypad, then tap a method — or tap one with nothing typed to take the whole balance. CARD charges with {cardMethod === "m2" ? "the M2 reader" : "Tap to Pay"} (change it with the gear at the top of the ticket). Cash over the balance gives change.</p>
+                {(awaitingTip || cards.awaitingFrontdesk) && (
+                  <div className="pay-waiting" data-testid="nail-pay-waiting">
+                    <span>{awaitingTip ? "Waiting for the customer to choose a tip." : "Waiting for the customer at the front desk."}</span>
+                    {awaitingTip && <button type="button" onClick={() => stopWaitingForTip(true)} data-testid="nail-pay-charge-no-tip">Charge now</button>}
+                    <button type="button" onClick={() => { if (awaitingTip) stopWaitingForTip(false); else { cards.cancelFrontdesk(); say("STOPPED WAITING FOR THE FRONT DESK", "info"); } }} data-testid="nail-pay-stop-waiting">Cancel</button>
+                  </div>
+                )}
+                <p className="pay-hint">Type an amount on the keypad, then tap a method — or tap one with nothing typed to take the whole balance. CARD charges with {cardMethod === "m2" ? "the M2 reader connected to this POS device" : "the M2 reader connected to the front desk device after tip confirmation"} (change it with the gear at the top of the ticket). Cash over the balance gives change.</p>
               </div>
               )
             ) : (
               <div className="fn-wrap" data-testid="nail-pay-functions">
                 <div className="fn-grid">
-                  {menu !== "root" && (
-                    <button type="button" className="fn-cell fn-back" onClick={() => setMenu("root")} data-testid="nail-pay-fn-back"><ArrowLeft size={22} /><span>Back</span></button>
-                  )}
+                  <button type="button" className="fn-cell fn-back" onClick={backToPayment} data-testid="nail-pay-fn-back"><ArrowLeft size={22} /><span>Back</span></button>
                   {gridCells.map((c, i) => c ? (
                     <button key={c.id} type="button" className="fn-cell" onClick={c.run} data-testid={`nail-pay-fn-${c.id.toLowerCase().replace(/[^a-z]+/g, "-")}`}>
                       <c.icon size={22} />
@@ -695,6 +985,7 @@ export function CheckoutMode(p: Props) {
               </div>
             )}
           </div>
+          )}
         </div>
       </section>
 
@@ -705,8 +996,8 @@ export function CheckoutMode(p: Props) {
           <div className="assign-create-modal" data-testid={`nail-pay-popup-${popup}`}>
             <div className="assign-create-header">
               <div>
-                <h2>{popup === "tip" ? "Tip" : popup === "rewards" ? "Loyalty rewards" : popup === "settings" ? "POS settings" : popup === "gift" ? (gift.mode === "balance" ? "Gift card balance" : "Pay with gift card") : "Group pay"}</h2>
-                <p>{popup === "rewards" ? `${ticket.client.name} · ${points} pts` : popup === "group" ? "Pay these tickets together" : popup === "settings" ? "Saved to this device" : popup === "gift" ? "Type or scan the card code" : ticket.client.name}</p>
+                <h2>{popup === "tip" ? "Tip" : popup === "settings" ? "POS settings" : popup === "gift" ? (gift.mode === "balance" ? "Gift card balance" : "Pay with gift card") : "Group pay"}</h2>
+                <p>{popup === "group" ? "Pay these tickets together" : popup === "settings" ? "Saved to this device" : popup === "gift" ? "Type or scan the card code" : ticket.client.name}</p>
               </div>
               <button type="button" className="assign-create-close" onClick={() => setPopup(null)} aria-label="Close"><X size={16} /></button>
             </div>
@@ -714,28 +1005,13 @@ export function CheckoutMode(p: Props) {
               {popup === "tip" && (
                 <>
                   {p.dualScreen && <button type="button" className="assign-create-item" onClick={sendTipScreen} data-testid="nail-pay-tip-screen"><span className="assign-create-name">Send tip screen to the customer</span></button>}
-                  {[15, 20, 25].map((pct) => (
-                    <button key={pct} type="button" className="assign-create-item" onClick={() => applyTip(Math.round(preTip * pct) / 100)} data-testid={`nail-pay-tip-${pct}`}>
-                      <span className="assign-create-name">{pct}%</span><span className="assign-create-status">{money(Math.round(preTip * pct) / 100)}</span>
+                  {tipPresets.map((pct) => (
+                    <button key={pct} type="button" className="assign-create-item" onClick={() => applyTip(calcTipAmount(tipBase, pct))} data-testid={`nail-pay-tip-${pct}`}>
+                      <span className="assign-create-name">{pct}%</span><span className="assign-create-status">{money(calcTipAmount(tipBase, pct))}</span>
                     </button>
                   ))}
                   <button type="button" className="assign-create-item" onClick={() => applyTip(0)} data-testid="nail-pay-tip-none"><span className="assign-create-name">No tip</span></button>
                   <div className="assign-create-hint">Or type a dollar amount on the keypad and tap Tip Adjust.</div>
-                </>
-              )}
-              {popup === "rewards" && (
-                <>
-                  {rewards.filter((r) => r.isActive !== false).length === 0 && <div className="assign-picker-empty">No rewards set up yet.</div>}
-                  {rewards.filter((r) => r.isActive !== false).map((r) => {
-                    const can = points >= r.pointsCost;
-                    return (
-                      <button key={r.id} type="button" disabled={!can} className="assign-create-item" style={can ? undefined : { opacity: 0.45 }} data-testid={`nail-pay-reward-${r.id}`}
-                        onClick={() => { setReward(r); setPopup(null); say(`REWARD APPLIED · ${money(r.dollarValue)} OFF`, "success"); }}>
-                        <span className="assign-create-name">{r.name}</span><span className="assign-create-status">{r.pointsCost} pts · {money(r.dollarValue)} off{can ? "" : " — not enough points"}</span>
-                      </button>
-                    );
-                  })}
-                  {reward && <button type="button" className="assign-create-item" onClick={() => { setReward(null); setPopup(null); say("REWARD REMOVED"); }}><span className="assign-create-name">Remove reward</span></button>}
                 </>
               )}
               {popup === "settings" && (
@@ -744,7 +1020,7 @@ export function CheckoutMode(p: Props) {
                     const b = bridgeState();
                     return (
                       <div className="assign-create-hint" data-testid="nail-pay-bridge" data-bridge={b}>
-                        {b === "app" ? "Certxa Android app connected — the M2 reader and Tap to Pay run through the app."
+                        {b === "app" ? "Certxa Android app connected — the M2 reader runs through the app."
                           : b === "broken" ? "Certxa app detected, but its connection isn't ready. Close and reopen the app."
                           : "Web browser — the M2 reader only works in the Certxa Android app."}
                       </div>
@@ -752,20 +1028,13 @@ export function CheckoutMode(p: Props) {
                   })()}
                   <div className="assign-create-hint">Card payment method — what the CARD button uses. Also used when the customer confirms the tip on their screen.</div>
                   {([
-                    { key: "tap" as const, label: "Tap to Pay", icon: Smartphone, hint: "Phone / watch tap on the customer screen" },
-                    { key: "m2" as const, label: "M2 Reader", icon: CreditCard, hint: "Bluetooth chip / swipe reader" },
+                    { key: "m2" as const, label: "M2 Reader — POS Device", icon: CreditCard, hint: "Charge with the M2 reader paired to this POS device" },
+                    { key: "frontdesk" as const, label: "Front Desk M2 Reader", icon: CreditCard, hint: "CARD opens tips; Confirm charges with the M2 reader paired to the front desk device" },
                   ]).map((o) => (
                     <button key={o.key} type="button" className={`assign-create-item ${cardMethod === o.key ? "assign-create-item-sel" : ""}`} onClick={() => chooseCardMethod(o.key)} data-testid={`nail-pay-method-${o.key}`}>
                       <o.icon size={18} /><span className="assign-create-name">{o.label}</span><span className="assign-create-status">{o.hint}</span>{cardMethod === o.key && <Check size={18} />}
                     </button>
                   ))}
-                  {native && (
-                    <button type="button" className="assign-create-item" disabled={tapSetup.state === "running"} onClick={startTapToPaySetup} data-testid="nail-pay-setup-tap">
-                      {tapSetup.state === "running" ? <Loader2 size={18} className="spin" /> : tapSetup.state === "ready" ? <Check size={18} /> : <Smartphone size={18} />}
-                      <span className="assign-create-name">{tapSetup.state === "ready" ? "Tap to Pay — ready" : "Set up Tap to Pay"}</span>
-                      <span className="assign-create-status">{tapSetup.msg || "One-time: accept Stripe's terms + grant location."}</span>
-                    </button>
-                  )}
                   {canNativePrint && (
                     <button type="button" className="assign-create-item" data-testid="nail-pay-setup-printer"
                       onClick={() => { (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "SETUP_PRINTER", storeName: p.storeName || "Receipt" })); setPopup(null); }}>

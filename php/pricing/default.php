@@ -1,7 +1,7 @@
 <?php
 define('BRAND_NAME',    'Certxa');
 define('PAGE_TITLE',    'Salon Software Pricing | Certxa');
-define('PAGE_DESC',     'Simple, transparent nail salon software pricing. Certxa plans start at $9/month. No hidden fees, no contracts. Online booking, Stripe Connect payments, and client management included in every plan.');
+define('PAGE_DESC',     'Simple, transparent nail salon software pricing. The Solo plan is free; team plans start at $22/month. No hidden fees, no contracts. Online booking, Stripe Connect payments, and client management included in every plan.');
 define('PAGE_KEYWORDS', 'nail salon software pricing, nail salon booking software cost, nail salon software plans, nail salon management software price, how much does nail salon software cost, certxa pricing, nail salon software free trial, affordable nail salon software');
 define('PAGE_CANONICAL', 'https://certxa.com/pricing');
 define('PAGE_BREADCRUMBS', json_encode([
@@ -13,13 +13,13 @@ define('PAGE_SCHEMA', json_encode([
     '@type'       => 'WebPage',
     '@id'         => 'https://certxa.com/pricing',
     'name'        => 'Salon Software Pricing — Certxa',
-    'description' => 'Transparent pricing for Certxa salon management software. Plans from $9/month with a free ' . TRIAL_DAYS . '-day trial.',
+    'description' => 'Transparent pricing for Certxa salon management software. The Solo plan is free; team plans from $22/month with a free ' . TRIAL_DAYS . '-day trial.',
     'url'         => 'https://certxa.com/pricing',
     'isPartOf'    => ['@id'=>'https://certxa.com/#website'],
     'about'       => ['@id'=>'https://certxa.com/#software'],
   ],
   // The canonical SoftwareApplication entity (@id #software, with the real
-  // $9/$22/$49 AggregateOffer) is injected site-wide by includes/header.php —
+  // $0/$22/$49 AggregateOffer) is injected site-wide by includes/header.php —
   // 'about' above already points at it, so it isn't redefined here.
   [
     // Mirrors the visible accordion below word-for-word (question text and
@@ -357,14 +357,14 @@ require 'includes/nav.php';
         [
           'name'        => 'Solo',
           'tagline'     => 'Built for solo nail technicians, booth renters, and independent studios.',
-          'monthly'     => '9',
-          'annual'      => '7',
+          'monthly'     => '0',
+          'annual'      => '0',
           'old_monthly' => null,
-          'old_annual'  => '9',
+          'old_annual'  => null,
           'period'      => '/month',
-          'billing'     => 'Billed monthly — or $7/mo billed annually',
+          'billing'     => 'Free. No credit card needed.',
           'featured'    => false,
-          'cta_label'   => 'Start Free Trial',
+          'cta_label'   => 'Get Started Free',
           'cta_href'    => '/auth?mode=register&plan=solo',
           'cta_class'   => 'btn-secondary',
           'fee'         => null,
@@ -463,7 +463,9 @@ require 'includes/nav.php';
         </div>
 
         <a href="<?= $plan['cta_href'] ?? '#' ?>" class="btn <?= $plan['cta_class'] ?>"><?= $plan['cta_label'] ?></a>
+        <?php if ($plan['name'] !== 'Solo'): ?>
         <p class="plan-note">Credit card required to subscribe</p>
+        <?php endif; ?>
 
         <hr class="plan-divider">
 
@@ -516,7 +518,7 @@ require 'includes/nav.php';
         <thead>
           <tr>
             <th style="width:34%;"></th>
-            <th><div class="plan-header">Solo</div><div class="plan-header-price">From $7/mo</div></th>
+            <th><div class="plan-header">Solo</div><div class="plan-header-price">Free</div></th>
             <th><div class="plan-header featured-col">Professional</div><div class="plan-header-price" style="color:var(--plum-mid);">From $18/mo ⭐</div></th>
             <th><div class="plan-header">Elite</div><div class="plan-header-price">From $39/mo</div></th>
           </tr>
@@ -764,7 +766,7 @@ require 'includes/nav.php';
               <span class="p-est-vl" id="pe-plan-lbl">$22</span>
             </div>
             <div style="display:flex;justify-content:space-between;font-size:.68rem;color:var(--mid-grey);margin-top:6px;">
-              <span>Solo $9</span><span>Pro $22</span><span>Elite $49</span>
+              <span>Solo $0</span><span>Pro $22</span><span>Elite $49</span>
             </div>
           </div>
 
@@ -811,7 +813,7 @@ require 'includes/nav.php';
 
 <script>
 (function(){
-  var planPrices = [9, 22, 49];
+  var planPrices = [0, 22, 49];
   var planNames  = ['Solo','Professional','Elite'];
   var slPlan  = document.getElementById('pe-plan');
   var slTxns  = document.getElementById('pe-txns');
@@ -941,7 +943,7 @@ function setBilling(type) {
 
   // Update billing notes
   const notes = {
-    solo:         isAnnual ? 'Billed annually as $84/year — save $24' : 'Billed monthly, cancel any time',
+    solo:         'Free. No credit card needed.',
     professional: isAnnual ? 'Billed annually as $216/year — save $48' : 'Billed monthly, cancel any time',
     elite:        isAnnual ? 'Billed annually as $468/year — save $120' : 'Billed monthly, cancel any time',
   };

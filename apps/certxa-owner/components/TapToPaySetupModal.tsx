@@ -56,6 +56,7 @@ export function TapToPaySetupModal({ visible, onComplete, onError, onClose }: Pr
     try {
       setPhase('permission');
       setStatusMsg('Getting your salon’s payment location…');
+      await payment.ensureInitialized();
       const locationId = await payment.getLocationId();
 
       setPhase('connecting');

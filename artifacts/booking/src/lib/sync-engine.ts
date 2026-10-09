@@ -3,6 +3,8 @@ import { actionQueueDB, type ActionType, type SyncAction } from "./action-queue-
 import { appointmentsCacheDB } from "./appointments-cache-db";
 import { getDeviceId } from "./device-id";
 import { clientPhoneCacheDB } from "./client-phone-cache-db";
+import { nailOffline, browserTransport, nailOfflineStore } from "./nail-offline";
+import { reportUnauthorized } from "./resumeSignIn";
 
 export type SyncStatus = "online" | "offline" | "syncing";
 
@@ -83,6 +85,12 @@ async function throwIfConflict(res: Response, type: ActionType): Promise<void> {
 
 class SyncEngine {
   private status: SyncStatus = navigator.onLine ? "online" : "offline";
+  // Whether the Certxa server actually answers. `navigator.onLine` only says the tablet has a network
+  // interface up: on salon Wi-Fi with the internet down it stays true, which is why nothing used to be
+  // treated as offline (and nothing was queued) during a real outage.
+  private reachable = true;
+  private probeTimer: ReturnType<typeof setTimeout> | null = null;
+  private nailTimer: ReturnType<typeof setInterval> | null = null;
   private syncListeners: Set<SyncListener> = new Set();
   private queueListeners: Set<QueueListener> = new Set();
   private conflictListeners: Set<ConflictListener> = new Set();
@@ -92,8 +100,86 @@ class SyncEngine {
   private lastKnownStoreId: number | undefined;
 
   constructor() {
-    window.addEventListener("online", () => this.handleOnline());
+    window.addEventListener("online", () => { this.reachable = true; this.handleOnline(); });
     window.addEventListener("offline", () => this.handleOffline());
+    // Work saved on /nail while offline is counted and re-sent like the rest of the queue.
+    nailOffline.onChange(() => { this.notifyQueueChange(); this.reportSoon(); });
+    setInterval(() => void this.reportDeviceStatus(), 60_000);
+    this.nailTimer = setInterval(() => {
+      if (this.isOffline() || this.isSyncing) return;
+      void nailOffline.counts().then((c) => { if (c.pending > 0) void this.runSync(); }).catch(() => {});
+    }, 30_000);
+  }
+
+  /**
+   * Tell the server what this device still holds: changes to send, and cash taken offline that the server has
+   * not received. Day Close on any tablet reads it, so the day is not closed over another tablet's unsent cash.
+   * Only for a device that has used the /nail offline store (it has a salon), and only when reachable.
+   */
+  private reportTimer: ReturnType<typeof setTimeout> | null = null;
+  private reportSoon() {
+    if (this.reportTimer) clearTimeout(this.reportTimer);
+    this.reportTimer = setTimeout(() => void this.reportDeviceStatus(), 1_500);
+  }
+  async reportDeviceStatus(): Promise<void> {
+    const storeId = nailOfflineStore();
+    if (storeId == null || this.isOffline()) return;
+    try {
+      const c = await nailOffline.counts(storeId);
+      await fetch("/api/device-sync-status", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceId: getDeviceId(), pending: c.pending, attention: c.attention, cashCount: c.cash.count, cashAmount: c.cash.amount }),
+      });
+    } catch { /* told next time */ }
+  }
+
+  /** The server answered "not signed in" while work was waiting. Nothing is sent, and nothing is dropped, until `noteSignedIn`. */
+  private signInNeeded = false;
+  needsSignIn(): boolean { return this.signInNeeded; }
+  /** A request just succeeded with this device's sign-in: sending can resume. */
+  noteSignedIn() {
+    if (!this.signInNeeded) return;
+    this.signInNeeded = false;
+    this.notifyQueueChange();
+    this.scheduleSyncWithDelay(500);
+  }
+
+  /** True when the server cannot be reached — no network, or a network with no way out. */
+  isOffline(): boolean {
+    return !navigator.onLine || !this.reachable;
+  }
+
+  /** A request got no answer at all: treat the server as unreachable and keep checking until it is back. */
+  noteUnreachable() {
+    if (!this.reachable && this.probeTimer) return;
+    this.reachable = false;
+    this.setStatus("offline");
+    this.scheduleProbe(5_000);
+  }
+
+  private scheduleProbe(ms: number) {
+    if (this.probeTimer) clearTimeout(this.probeTimer);
+    this.probeTimer = setTimeout(() => void this.probe(), ms);
+  }
+
+  private async probe() {
+    this.probeTimer = null;
+    if (this.reachable) return;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 6_000);
+    try {
+      const res = await fetch(`/api/sync/heartbeat?t=${Date.now()}`, { cache: "no-store", signal: ctrl.signal });
+      if (res.ok) {
+        this.reachable = true;
+        this.handleOnline();
+        // Handlers registered by the app run their own sync; make sure one runs either way.
+        this.scheduleSyncWithDelay(800);
+        return;
+      }
+    } catch { /* still out */ } finally {
+      clearTimeout(timer);
+    }
+    this.scheduleProbe(10_000);
   }
 
   getStatus(): SyncStatus {
@@ -125,11 +211,12 @@ class SyncEngine {
   }
 
   async getPendingCount(): Promise<number> {
-    const [ops, actions] = await Promise.all([
+    const [ops, actions, nail] = await Promise.all([
       offlineDB.getAllPendingOps().catch(() => [] as PendingOp[]),
       actionQueueDB.getPending().catch(() => [] as SyncAction[]),
+      nailOffline.counts().catch(() => ({ pending: 0, attention: 0 })),
     ]);
-    return ops.length + actions.length;
+    return ops.length + actions.length + nail.pending + nail.attention;
   }
 
   /** Remove all queued actions for an entity that ended up in CONFLICT state and notify listeners. */
@@ -185,7 +272,7 @@ class SyncEngine {
   }
 
   async runSync(storeId?: number): Promise<void> {
-    if (this.isSyncing || !navigator.onLine) return;
+    if (this.isSyncing || this.isOffline() || this.signInNeeded) return;
     this.isSyncing = true;
     this.setStatus("syncing");
 
@@ -196,16 +283,17 @@ class SyncEngine {
       const ops = await offlineDB.getAllPendingOps();
 
       for (const op of ops) {
-        if (op.attempts >= MAX_ATTEMPTS) {
-          await offlineDB.deletePendingOp(op.id);
-          continue;
-        }
+        // An operation that keeps failing is skipped for this pass, never deleted: it stays on the device
+        // until it goes through or a person removes it.
+        if (op.attempts >= MAX_ATTEMPTS) continue;
 
         try {
           await this.executeOp(op);
           await offlineDB.deletePendingOp(op.id);
           this.notifyQueueChange();
-        } catch {
+        } catch (opErr) {
+          // No answer from the server is not a failed attempt: stop here and wait for the connection.
+          if (opErr instanceof TypeError) { this.noteUnreachable(); break; }
           await offlineDB.incrementOpAttempts(op.id);
           const delay =
             BACKOFF_BASE_MS * Math.pow(2, op.attempts) + Math.random() * 500;
@@ -217,6 +305,22 @@ class SyncEngine {
       // ── Phase 2: action queue (bookings, clients, loyalty, timeclock) ───
       await this.processActionQueue();
 
+      // ── Phase 3: clients, walk-ins and tickets made on /nail while offline (lib/nail-offline) ───
+      // Only the signed-in salon's changes are sent; with no salon known, nothing is.
+      const nailStore = nailOfflineStore();
+      const nail = nailStore != null ? await nailOffline.sync(browserTransport, nailStore)
+        : { synced: 0, stopped: null, pending: 0, attention: 0 } as Awaited<ReturnType<typeof nailOffline.sync>>;
+      if (nail.stopped === "unreachable") this.noteUnreachable();
+      // Signed out while work was queued: nothing is discarded. Ask for the sign-in ONCE, then stop trying
+      // until someone has signed in — an unauthorised request is not retried over and over.
+      if (nail.stopped === "sign-in") {
+        if (!this.signInNeeded) { this.signInNeeded = true; this.notifyQueueChange(); reportUnauthorized("/api/nail/tickets"); }
+      }
+      if (nail.stopped === "server") this.scheduleSyncWithDelay(20_000);
+      if (nail.synced > 0) { this.notifyQueueChange(); void nailOffline.prune().catch(() => {}); }
+      // Back in touch: say what is (or is no longer) waiting on this device.
+      void this.reportDeviceStatus();
+
       if (effectiveStoreId) {
         await this.fetchAndMergeServerState(effectiveStoreId);
       }
@@ -225,11 +329,12 @@ class SyncEngine {
         offlineDB.getAllPendingOps(),
         actionQueueDB.getPending(),
       ]);
-      this.setStatus(
-        remainingOps.length + remainingActions.length > 0 ? "syncing" : "online"
+      if (this.isOffline()) this.setStatus("offline");
+      else this.setStatus(
+        remainingOps.length + remainingActions.length + nail.pending > 0 ? "syncing" : "online"
       );
     } catch {
-      this.setStatus(navigator.onLine ? "online" : "offline");
+      this.setStatus(this.isOffline() ? "offline" : "online");
     } finally {
       this.isSyncing = false;
     }
@@ -333,6 +438,21 @@ class SyncEngine {
           });
           this.emitConflict(err.conflictKind, err.conflictDetail);
           this.notifyQueueChange();
+        } else if (err instanceof TypeError) {
+          // No answer from the server at all. That is being offline, not a failed attempt: the action
+          // keeps its place and its count, and the pass stops until the server is back. (Counting these
+          // used to push healthy actions to "manual review" after five tries during an outage.)
+          await actionQueueDB.setState(action.id, "PENDING");
+          this.noteUnreachable();
+          break;
+        } else if (err instanceof Error && /^Waiting for offline /.test(err.message)) {
+          // It depends on something queued ahead of it that has not gone through yet: wait, don't count.
+          await actionQueueDB.setState(action.id, "PENDING");
+        } else if (err instanceof Error && /: 401$/.test(err.message)) {
+          // Signed out. Keep everything and get the device signed back in.
+          await actionQueueDB.setState(action.id, "PENDING");
+          reportUnauthorized("/api/sync");
+          break;
         } else {
           // Transient failure — increment attempts and retry later
           await actionQueueDB.setState(action.id, "PENDING");

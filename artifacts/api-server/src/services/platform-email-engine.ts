@@ -370,7 +370,12 @@ async function getRecipient(userId: string): Promise<Recipient | null> {
   const result = await pool.query<Recipient>(
     `SELECT u.id AS "userId", u.email, u.first_name AS "firstName",
             COALESCE(l.name, 'your business') AS "businessName",
-            l.account_status AS "accountStatus", COALESCE(l.setup_complete, FALSE) AS "setupComplete",
+            l.account_status AS "accountStatus",
+            -- locations.setup_complete is never written. Finished = the store was created and the
+            -- onboarding conversation was not left part-way (signup_progress, see routes/signupProgress.ts).
+            (COALESCE(u.onboarding_completed, FALSE) AND NOT EXISTS (
+               SELECT 1 FROM signup_progress sp WHERE sp.user_id = u.id AND sp.completed_at IS NULL
+             )) AS "setupComplete",
             u.subscription_status AS "subscriptionStatus",
             u.trial_ends_at AS "trialEndsAt"
        FROM users u

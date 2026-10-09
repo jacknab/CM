@@ -27,17 +27,12 @@ export default function AccountLocked() {
     try {
       const salonId = statusData?.salonId;
       if (!salonId) return;
-      const res = await fetch("/api/billing/checkout", {
+      // (This used to call /api/billing/checkout, which does not exist, so the button did nothing.)
+      const res = await fetch(`/api/billing/subscribe/${salonId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          salonId,
-          planCode: "solo",
-          interval: "month",
-          successUrl: `${window.location.origin}/dashboard`,
-          cancelUrl: window.location.href,
-        }),
+        body: JSON.stringify({ planCode: "solo", interval: "month" }),
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;

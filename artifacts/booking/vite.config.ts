@@ -70,7 +70,11 @@ export default defineConfig({
   root: path.resolve(import.meta.dirname),
   build: {
     outDir: path.resolve(import.meta.dirname, "../../artifacts/api-server/dist/public"),
-    emptyOutDir: true,
+    // Never empty this folder. It is shared: the marketplace's client bundle lives in it (mp-assets), and
+    // emptying it took every salon directory page down twice (404 / 503 for weeks in Search Console).
+    // Old hashed files also have to stay for tablets still running the previous build; build-and-restart.sh
+    // prunes ones older than two weeks.
+    emptyOutDir: false,
     chunkSizeWarningLimit: 1500,
     rollupOptions: {
       onwarn(warning, warn) {
@@ -115,6 +119,22 @@ export default defineConfig({
           if (id.includes("node_modules/@react-pdf/") ||
               id.includes("node_modules/pdf-lib/")) {
             return "vendor-pdf";
+          }
+          if (id.includes("node_modules/@stripe/") || id.includes("node_modules/stripe/")) {
+            return "vendor-stripe";
+          }
+          if (id.includes("node_modules/framer-motion/")) {
+            return "vendor-motion";
+          }
+          if (id.includes("node_modules/react-markdown/") ||
+              id.includes("node_modules/remark-") ||
+              id.includes("node_modules/rehype-") ||
+              id.includes("node_modules/unified/") ||
+              id.includes("node_modules/micromark")) {
+            return "vendor-markdown";
+          }
+          if (id.includes("node_modules/drizzle-")) {
+            return "vendor-drizzle";
           }
         },
       },

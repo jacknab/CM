@@ -6,6 +6,7 @@ import { locations } from "@shared/schema";
 import { eq, and, gt, sql } from "drizzle-orm";
 import { toE164US } from "./lib/phoneUtils";
 import { getOrCreateManageToken, buildManageUrl } from "./lib/bookingManageLinks";
+import { replaceReservedCancelPrompt } from "./lib/smsCancellationIntent";
 import Twilio from "twilio";
 
 /** Append the {manageUrl} placeholder to a template that doesn't already use it. */
@@ -520,10 +521,10 @@ export async function sendAppointmentReminder(
   if (existing) return;
 
   const timezone = appointment.store?.timezone || "UTC";
-  const template = ensureManageUrlPlaceholder(
+  const template = ensureManageUrlPlaceholder(replaceReservedCancelPrompt(
     settings.reminderTemplate ||
-    "Hi {customerName}, reminder: your appt at {storeName} is on {appointmentDate} at {appointmentTime}. Reply CANCEL to cancel."
-  );
+    "Hi {customerName}, reminder: your appt at {storeName} is on {appointmentDate} at {appointmentTime}. If you can't make it, reply and tell us."
+  ));
 
   let manageUrl = "";
   try {

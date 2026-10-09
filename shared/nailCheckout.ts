@@ -2,7 +2,9 @@
  * The maths of paying a Nail POS ticket — the same rules the calendar's checkout sheet uses, in one pure place:
  *   subtotal = the ticket (+ anything added at checkout) (+ any tickets paid together)
  *   discount = a % or $ off, plus any redeemed loyalty reward, never more than the subtotal
- *   total    = subtotal − discount + tip            (nail salons charge no sales tax)
+ *   tax      = the store's sales-tax rate on its taxable lines (POS settings: services and/or products taxable),
+ *              after the discount is spread across all lines in proportion — 0 when no rate is set
+ *   total    = subtotal − discount + tax + tip
  *   paid     = what was handed over; change is what's given back on cash over-payment
  * Commission basis: retail products vs everything else (services, add-ons, upcharges, custom charges).
  */
@@ -15,8 +17,29 @@ export interface Extra { id: number; label: string; price: number; kind: ExtraKi
  * cash · m2 (Stripe M2 reader) · tap (Tap to Pay) — the calendar's own tender names — · gift (a gift card, `code` says which;
  * it is only charged when the sale closes) · card (recorded by hand for a payment taken elsewhere; the Nail POS no longer offers it).
  */
-export interface Tender { id: number; method: "cash" | "card" | "m2" | "tap" | "gift"; amount: number; code?: string }
+export interface Tender { id: number; method: "cash" | "card" | "m2" | "tap" | "gift"; amount: number; code?: string; paymentIntentId?: string }
 export type DiscountInput = { type: "percent" | "dollar"; value: number } | null;
+
+/** The store's POS tax settings (locations.sales_tax_rate / tax_services_taxable / tax_products_taxable). */
+export interface SalesTaxSettings { rate: number; services: boolean; products: boolean }
+export const NO_SALES_TAX: SalesTaxSettings = { rate: 0, services: false, products: false };
+
+/**
+ * Sales tax in cents, worked out in whole cents so the register and the server always agree on
+ * the same number. Service revenue covers services, add-ons, nail upcharges and custom charges;
+ * product revenue is retail. The discount comes off every line in proportion before tax.
+ */
+export function salesTaxCents(serviceRevenue: number, productRevenue: number, discount: number, tax: SalesTaxSettings): number {
+  const rate = Number(tax.rate);
+  if (!Number.isFinite(rate) || rate <= 0) return 0;
+  const svc = Math.max(0, Math.round(serviceRevenue * 100));
+  const prod = Math.max(0, Math.round(productRevenue * 100));
+  const subtotal = svc + prod;
+  if (subtotal <= 0) return 0;
+  const taxable = (tax.services ? svc : 0) + (tax.products ? prod : 0);
+  const afterDiscount = taxable * Math.max(0, subtotal - Math.round(discount * 100)) / subtotal;
+  return Math.round(afterDiscount * rate);
+}
 
 export interface CheckoutInput {
   /** The ticket itself: service + add-ons + nail options + custom-amount lines (already priced). */
@@ -28,6 +51,10 @@ export interface CheckoutInput {
   extras: Extra[];
   /** Other tickets being paid at the same time (group pay). */
   linkedSubtotal: number;
+  /** How much of `linkedSubtotal` is retail (their own Retail-marked custom lines). */
+  linkedRetailTotal?: number;
+  /** The store's sales-tax settings; omitted = no tax. */
+  salesTax?: SalesTaxSettings;
   discount: DiscountInput;
   /** Dollar value of a redeemed loyalty reward. */
   rewardDollar: number;
@@ -38,6 +65,8 @@ export interface CheckoutInput {
 export interface CheckoutTotals {
   subtotal: number;
   discount: number;
+  /** Sales tax on the whole sale (this ticket + any paid together). */
+  tax: number;
   tip: number;
   total: number;
   tendered: number;
@@ -62,14 +91,17 @@ export function computeCheckout(a: CheckoutInput): CheckoutTotals {
     : Math.max(0, a.discount.value);
   const discount = r2(Math.min(subtotal, manual + Math.max(0, a.rewardDollar)));
   const tip = r2(Math.max(0, a.tip));
-  const total = r2(Math.max(0, subtotal - discount) + tip);
-  const tendered = r2(a.tenders.reduce((s, t) => s + t.amount, 0));
-  const balance = r2(total - tendered);
   const productRevenue = r2(
     a.extras.filter((e) => e.kind === "retail").reduce((s, e) => s + e.price, 0) + Math.max(0, a.ticketRetailTotal ?? 0),
   );
+  // Tax covers the whole sale, so it uses the group-wide split of service vs retail.
+  const allProduct = r2(productRevenue + Math.max(0, a.linkedRetailTotal ?? 0));
+  const tax = salesTaxCents(r2(subtotal - allProduct), allProduct, discount, a.salesTax ?? NO_SALES_TAX) / 100;
+  const total = r2(Math.max(0, subtotal - discount) + tax + tip);
+  const tendered = r2(a.tenders.reduce((s, t) => s + t.amount, 0));
+  const balance = r2(total - tendered);
   return {
-    subtotal, discount, tip, total, tendered,
+    subtotal, discount, tax, tip, total, tendered,
     balanceDue: Math.max(0, balance),
     changeDue: balance < 0 ? r2(-balance) : 0,
     totalPaid: Math.min(tendered, total),

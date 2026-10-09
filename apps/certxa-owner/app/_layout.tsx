@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { Alert, Linking, Platform, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import { Stack } from 'expo-router';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { apiCaller, subscribeToSessionReady } from '@/lib/terminalBridge';
 import { terminalDiag } from '@/lib/terminalDiag';
+import { ensureTerminalLocationPermission } from '@/lib/useReaderDiscovery';
 import { Colors } from '@/constants/colors';
 
 const queryClient = new QueryClient();
@@ -117,6 +118,28 @@ export default function RootLayout() {
   const [sessionReady, setSessionReady] = useState(false);
 
   const isFirstTokenCall = useRef(true);
+
+  // Request the location runtime permission on first launch, not only after
+  // opening a reader. Stripe initialization still waits for login as before.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const checkLocation = async () => {
+      try {
+        await ensureTerminalLocationPermission();
+      } catch (err) {
+        Alert.alert(
+          'Location needed for card payments',
+          err instanceof Error ? err.message : 'Allow Certxa location access to accept payments.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Try again', onPress: () => { void checkLocation(); } },
+            { text: 'Open Settings', onPress: () => { void Linking.openSettings(); } },
+          ],
+        );
+      }
+    };
+    void checkLocation();
+  }, []);
 
   // Subscribe to the session-ready signal fired by index.tsx once the WebView
   // navigates past the login page.

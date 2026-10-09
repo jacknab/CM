@@ -247,6 +247,12 @@ function PostEditor({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    // An article that had a body is about to be saved without one: make sure that is meant.
+    const hasBody = (html?: string | null) => (html ?? "").replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim().length > 0;
+    if (!isNew && hasBody(post?.content) && !hasBody(form.content)
+        && !window.confirm("This article's content is empty. Saving will erase the existing article text. Save anyway?")) {
+      return;
+    }
     setSaving(true);
     try {
       const payload = { ...form, slug: form.slug || slugify(form.title) };

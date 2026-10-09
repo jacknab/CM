@@ -42,6 +42,23 @@ set the device to never sleep, and leave it. It re-fetches catalog/settings ever
 3. **(Tap to Pay only)** The tablet must be an NFC-capable Android running the
    Certxa native app. See "Tap to Pay" below.
 
+### CARD on the staff POS → front-desk Android Tap to Pay
+
+In the staff POS checkout settings, choose **Front Desk Tap to Pay** as the CARD
+method (available in both Calendar checkout and Nail POS). Both devices must be
+paired to the same register, and Dual Screen must be enabled. On CARD, the
+customer tablet opens **Add a Tip?**. The customer selects a tip and taps
+**Confirm & Pay**; only then does the tablet's React WebView send `TAP_TO_PAY`
+with the unpaid cart amount plus the selected tip to the owner Android app.
+The existing Stripe Terminal native overlay collects and captures the charge;
+the result returns to the staff POS as a card tender. No tender is recorded on
+Confirm alone. A browser-only tablet displays an error instead of attempting a
+charge. The tablet must be provisioned for Stripe Tap to Pay (NFC, Android 13+,
+supported Stripe account and accepted terms); this cannot run in Expo Go.
+On the owner Android app's **frontdesk** role, sign in with the salon's account
+when prompted; the app then opens the saved frontdesk setup using that session.
+The native Terminal connection-token/payment requests use that same cookie.
+
 ---
 
 ## What each screen is

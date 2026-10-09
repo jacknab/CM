@@ -14,7 +14,7 @@ import {
   useCallback,
   type KeyboardEvent,
 } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { Navigate, useSearchParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useOnboardingSession } from "@/hooks/use-onboarding-session";
 import {
@@ -816,6 +816,13 @@ function HoursManualInput({
     dayOfWeek: i, openTime:"09:00", closeTime:"18:00", isClosed: i === 0
   }));
 
+  // The rows shown are the hours that get saved: when nothing has been set yet, hand the
+  // starting rows up, so pressing Continue keeps what is on screen instead of saving none.
+  useEffect(() => {
+    if (hours.length !== 7) onHours(rows);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function update(idx: number, field: Partial<DayHoursAnswer>) {
     const next = rows.map((r,i) => i === idx ? {...r,...field} : r);
     onHours(next);
@@ -1077,7 +1084,7 @@ function ReviewCard({
       stepId: "hours",
       items: a.businessHours
         ? [["Schedule", summariseHours(a.businessHours as DayHours[])]]
-        : [["Schedule", "Default hours (Mon–Sat 9am–6pm)"]],
+        : [["Schedule", "Not set"]],
     },
     {
       title: "Services",
@@ -1140,11 +1147,17 @@ function ReviewCard({
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function OnboardingChat() {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
+  if (!user) return isLoading ? <div role="status">Loading your account…</div> : <Navigate to="/auth" replace />;
+  // Don't initialize a persisted "guest" session while /api/auth/user is loading.
+  return <OnboardingChatSession key={user.id} userId={user.id} />;
+}
+
+function OnboardingChatSession({ userId }: { userId: string }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const hook = useOnboardingSession(user?.id ?? "guest");
+  const hook = useOnboardingSession(userId);
   const {
     session, currentStep, progressPct, chatHistory,
     setAnswer, setAnswers, setCurrentMember, commitCurrentMember,
@@ -2195,8 +2208,6 @@ export default function OnboardingChat() {
 
   // Phase index for the phase dots
   const phaseIdx = PHASES.indexOf(currentPhase ?? "");
-
-  if (!user) return null;
 
   return (
     <div

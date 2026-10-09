@@ -145,33 +145,50 @@ export async function computeOfflineTurnEligibility(
     });
   }
 
-  // ── Turn counts: completed, threshold-qualifying tickets today ──
-  const turnValueThreshold = settings.turnValueThreshold ?? DEFAULT_TURN_SETTINGS_CLIENT.turnValueThreshold;
+  // ── Turn totals: what each technician's finished tickets earned today, by the salon's turn system ──
+  // Mirrors the server (api-server/src/lib/turnRules.ts). Offline there is no service/retail split on
+  // the snapshot, so the amount is total less tip.
+  // The server counts WALK-IN tickets only (advance bookings earn no turns). The offline snapshot does not
+  // say which tickets were walk-ins, so while offline a booking still counts here until the device is back online.
+  const turnValueThreshold = Number(settings.turnValueThreshold) > 0 ? Number(settings.turnValueThreshold) : DEFAULT_TURN_SETTINGS_CLIENT.turnValueThreshold;
+  const dollarMode = (settings as any).turnMode === "dollar";
+  const partialTurn = Number((settings as any).partialTurnValue);
+  const partialTurnValue = Number.isFinite(partialTurn) && partialTurn >= 0 && partialTurn <= 1 ? partialTurn : 0.5;
   const turnCountMap = new Map<number, number>();
   for (const apt of aptViews) {
     if (apt.staffId == null || apt.status !== "completed") continue;
     const paid = apt.totalPaid != null ? Number(apt.totalPaid) : NaN;
     const tip = apt.tipAmount != null ? Number(apt.tipAmount) : 0;
     if (!Number.isFinite(paid)) continue;
-    if (paid - tip < turnValueThreshold) continue;
-    turnCountMap.set(apt.staffId, (turnCountMap.get(apt.staffId) ?? 0) + 1);
+    const cents = Math.round((paid - tip) * 100);
+    const perTurn = Math.round(turnValueThreshold * 100);
+    if (cents <= 0) continue;
+    const earned = dollarMode ? (cents < perTurn ? partialTurnValue : Math.floor(cents / perTurn)) : (cents >= perTurn ? 1 : 0);
+    if (earned > 0) turnCountMap.set(apt.staffId, (turnCountMap.get(apt.staffId) ?? 0) + earned);
   }
 
-  // ── Deque: saved order, filtered to clocked-in-today, new clock-ins appended, sorted by turn count ──
+  // ── Line: saved order, filtered to clocked-in-today, new clock-ins appended, lowest total first ──
   const savedDeque: number[] = Array.isArray(settings.dequeOrder) ? settings.dequeOrder.map(Number).filter(Number.isFinite) : [];
   const filteredDeque = savedDeque.filter((id) => clockedInToday.has(id));
   const newlyClockedIn = [...clockedInToday]
     .filter((id) => !filteredDeque.includes(id))
     .sort((a, b) => (clockInOrder.get(a) ?? 999) - (clockInOrder.get(b) ?? 999));
   const merged = [...filteredDeque, ...newlyClockedIn];
-  const shortTurnPinnedId = typeof settings.shortTurnProtectedId === "number" ? settings.shortTurnProtectedId : null;
-  const syncedDeque = [...merged].sort((a, b) => {
-    if (shortTurnPinnedId !== null) {
-      if (a === shortTurnPinnedId) return -1;
-      if (b === shortTurnPinnedId) return 1;
-    }
-    return (turnCountMap.get(a) ?? 0) - (turnCountMap.get(b) ?? 0);
-  });
+  // Counted Turns holds its short-turn technicians at the front (there can be several); Dollar-Based Turns has no such hold.
+  const savedPins: number[] = Array.isArray((settings as any).shortTurnProtectedIds) ? (settings as any).shortTurnProtectedIds.map(Number).filter(Number.isFinite) : [];
+  const pins = dollarMode ? [] : [...new Set([...savedPins, ...(typeof settings.shortTurnProtectedId === "number" ? [settings.shortTurnProtectedId] : [])])];
+  const pinRank = new Map(pins.map((id, i) => [id, i]));
+  const syncedDeque = merged
+    .map((id, index) => ({ id, index }))
+    .sort((a, b) => {
+      const pa = pinRank.get(a.id), pb = pinRank.get(b.id);
+      if (pa != null || pb != null) {
+        if (pa != null && pb != null) return pa - pb;
+        return pa != null ? -1 : 1;
+      }
+      return (turnCountMap.get(a.id) ?? 0) - (turnCountMap.get(b.id) ?? 0) || a.index - b.index;
+    })
+    .map((x) => x.id);
   const dequePos = new Map<number, number>(syncedDeque.map((id, pos) => [id, pos]));
 
   // ── Busy right now: appointment status started today ──

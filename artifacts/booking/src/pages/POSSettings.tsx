@@ -12,6 +12,7 @@ import { useInSettingsShell } from "@/lib/settings-shell-context";
 import { api } from "@shared/routes";
 import { ShoppingCart, Percent, Package, Lock, Monitor, Phone } from "lucide-react";
 import { checkQuickAreaCodes } from "@shared/areaCodes";
+import { TipPresetsCard } from "@/components/pos/TipPresetsCard";
 
 // ── Tax category toggle ───────────────────────────────────────────────────────
 
@@ -410,6 +411,8 @@ export default function POSSettings() {
             )}
           </CardContent>
         </Card>
+
+        <TipPresetsCard />
       </div>
     </AppLayout>
   );

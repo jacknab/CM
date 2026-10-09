@@ -5,9 +5,14 @@ import { cn } from "@/lib/utils";
 import { isValidNanpPrefix } from "@/lib/phone-validation";
 import { useShake } from "@/hooks/use-shake";
 import { createClient } from "./NameEntry";
+import { syncEngine } from "@/lib/sync-engine";
+import { useNetworkStatus } from "@/hooks/use-network-status";
+import { nailOffline, isLocalId, newIdempotencyKey } from "@/lib/nail-offline";
+import { clientOnDevice } from "./nailApi";
 import { findClientId } from "./clientLookup";
 import { QuickAreaCodes } from "./QuickAreaCodes";
 import { useQuickAreaCodes } from "./useQuickAreaCodes";
+import { isNativeApp } from "./useCardPayments";
 
 /**
  * Front-desk Check-In — the Customers page (`/client-lookup`, full-screen phone pad → "Add Client Name" on-screen keyboard)
@@ -17,10 +22,17 @@ import { useQuickAreaCodes } from "./useQuickAreaCodes";
  */
 type Step = "phone" | "finding" | "name" | "done" | "error";
 
-interface CheckInResult {
+export interface CheckInResult {
   status: "appointment" | "walkin" | "already";
   client: { id: number; name: string; loyaltyPoints: number };
-  todayAppointment?: { serviceName?: string; staffName?: string | null } | null;
+  todayAppointment?: { id: number; ticketNumber: number | null; serviceName?: string; staffName?: string | null } | null;
+  /** Set only for a true walk-in (no booking matched) — the kiosk_checkins marker's own
+   *  id/token/ticketNumber, used to print a "CI:{token}" check-in QR (see printCheckinTicket
+   *  below). A matched booking already has its own appointment id + ticket number, so that case
+   *  prints "BK:{todayAppointment.id}" instead. */
+  checkin?: { id: number; token: string; ticketNumber: number } | null;
+  /** Purely the display number on the printed slip's black bar — today's check-in count. */
+  todayCount?: number;
 }
 
 const KEY_ROWS = [
@@ -41,7 +53,7 @@ const formatPhone = (d: string): string => {
   return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
 };
 
-export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, onDone }: {
+export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, onDone, onPrintTicket }: {
   storeId: number;
   /** The /frontdesk tablet is on its check-in screen right now. */
   frontdeskShowing: boolean;
@@ -50,6 +62,8 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
   onClose: () => void;
   /** Checked in: the message for the notice bar. */
   onDone: (message: string) => void;
+  /** Browser-connected thermal printer; native bridge remains the fallback. */
+  onPrintTicket?: (result: CheckInResult) => Promise<void>;
 }) {
   const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState("");
@@ -62,17 +76,92 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
   const [result, setResult] = useState<CheckInResult | null>(null);
   const ran = useRef("");
   const quickCodes = useQuickAreaCodes(storeId);
-  const offline = typeof navigator !== "undefined" && !navigator.onLine;
+  const offline = useNetworkStatus() === "offline";
+
+  // Fire the check-in ticket to the printer through the native bridge — doesn't block or delay
+  // the "Checked in" screen either way, but a genuine failure still gets surfaced (same
+  // certxa_native_print_result event CheckoutMode's receipt printing listens for), rather than
+  // failing silently and leaving staff to notice only when the client asks for their slip. Not
+  // printed again for someone who was "already" checked in (they'd already have a ticket from the
+  // first time). The QR code is "BK:{appointmentId}" when check-in matched an existing booking, or
+  // "CI:{checkinToken}" for a true walk-in (no appointment exists yet — see /api/qr/lookup on the
+  // server for how each resolves, and how that resolution moves forward once a ticket is created).
+  const printCheckinTicket = (r: CheckInResult) => {
+    const qrValue = r.todayAppointment ? `BK:${r.todayAppointment.id}` : r.checkin ? `CI:${r.checkin.token}` : null;
+    const ticketNumber = r.todayAppointment?.ticketNumber ?? r.checkin?.ticketNumber ?? null;
+    if (!qrValue || ticketNumber == null) {
+      console.warn("[check-in ticket print] skipped: check-in response has no QR value or ticket number", {
+        status: r.status,
+        hasQrValue: !!qrValue,
+        ticketNumber,
+      });
+      return;
+    }
+    if (onPrintTicket) {
+      void onPrintTicket(r).catch((error) => console.warn("[check-in ticket print] failed:", error));
+      return;
+    }
+    if (!isNativeApp() || !(window as any).ReactNativeWebView?.postMessage) return;
+    const requestId = `ci_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const onResult = (e: Event) => {
+      const d = (e as CustomEvent).detail ?? {};
+      if (d.requestId !== requestId) return;
+      window.removeEventListener("certxa_native_print_result", onResult);
+      if (!d.ok) console.warn("[check-in ticket print] failed:", d.error || "Check the printer.");
+    };
+    window.addEventListener("certxa_native_print_result", onResult);
+    setTimeout(() => window.removeEventListener("certxa_native_print_result", onResult), 45_000);
+    (window as any).ReactNativeWebView?.postMessage(JSON.stringify({
+      type: "PRINT_CHECKIN_TICKET",
+      requestId,
+      qrValue,
+      todayCount: r.todayCount ?? 0,
+      ticket: {
+        clientName: r.client.name,
+        ticketNumber,
+        date: new Date().toISOString(),
+        // A booked client's service goes on the slip for the tech (a walk-in hasn't chosen one yet).
+        services: r.todayAppointment?.serviceName ? [r.todayAppointment.serviceName] : [],
+      },
+    }));
+  };
+
+  // No server: the walk-in is saved on this device and queued; it shows in the waiting list from there.
+  const checkInOnDevice = async (clientId: number, key: string): Promise<CheckInResult> => {
+    const who = await clientOnDevice(clientId);
+    if (!who) throw new Error("This client isn't on this tablet yet, and the server can't be reached. Add them as a new client to check them in.");
+    const { already } = await nailOffline.checkIn(storeId, { id: clientId, name: who.name, phone: who.phone }, key);
+    return { status: already ? "already" : "walkin", client: { id: clientId, name: who.name, loyaltyPoints: 0 }, todayAppointment: null, checkin: null };
+  };
 
   const checkIn = async (clientId: number) => {
-    const res = await fetch("/api/nail/checkin", {
-      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId }),
-    });
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !data?.status) throw new Error(data?.message || "Could not check the client in");
-    const r = data as CheckInResult;
+    const key = newIdempotencyKey("walkin.create");
+    let r: CheckInResult;
+    let onDevice = false;
+    if (syncEngine.isOffline() || isLocalId(clientId)) {
+      r = await checkInOnDevice(clientId, key);
+      onDevice = true;
+    } else {
+      let res: Response;
+      try {
+        res = await fetch("/api/nail/checkin", {
+          method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-Idempotency-Key": key }, body: JSON.stringify({ clientId }),
+        });
+      } catch {
+        syncEngine.noteUnreachable();
+        res = null as unknown as Response;
+      }
+      if (!res) { r = await checkInOnDevice(clientId, key); onDevice = true; }
+      else {
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.status) throw new Error(data?.message || "Could not check the client in");
+        r = data as CheckInResult;
+      }
+    }
     setResult(r);
     setStep("done");
+    // A slip needs the ticket number the server gives out, so none is printed for a check-in saved offline.
+    if (r.status !== "already" && !onDevice) printCheckinTicket(r);
     const first = (r.client.name || "Client").trim().split(/\s+/)[0];
     const line = r.status === "already" ? `${first} is already checked in`
       : r.status === "appointment" ? `${first} checked in${r.todayAppointment?.staffName ? ` · ${r.todayAppointment.staffName}` : ""}`
@@ -83,11 +172,6 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
   const run = async (digits: string) => {
     if (ran.current === digits) return;
     ran.current = digits;
-    if (offline) {
-      setMessage("You're offline — check-in needs a connection. Reconnect and try again.");
-      setStep("error");
-      return;
-    }
     setStep("finding");
     try {
       const id = await findClientId(storeId, digits);
@@ -140,7 +224,12 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
     if (k === "BACKSPACE") { setName((v) => v.slice(0, -1)); return; }
     if (k === "SPACE") { setName((v) => v + " "); setShift(true); return; }
     if (k === "RETURN") { void saveNew(); return; }
-    setName((v) => v + (shift ? k.toUpperCase() : k.toLowerCase()));
+    // A person's first name character—and the first character after a space—must always start
+    // uppercase, even if Shift was manually turned off. Shift still controls all other letters.
+    setName((v) => {
+      const startsWord = v.length === 0 || /\s$/.test(v);
+      return v + (startsWord || shift ? k.toUpperCase() : k.toLowerCase());
+    });
     if (shift) setShift(false);
   };
 
@@ -158,9 +247,8 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
           </Button>
           <span className="text-lg font-semibold">{step === "name" ? "Enter Client Name" : "Check-In"}</span>
         </div>
-        {step === "name" && <span className="text-xl font-bold" data-testid="nail-name-display">{name}</span>}
         {offline && step !== "name" && (
-          <span className="text-xs text-amber-500 font-medium px-2 py-0.5 rounded-full border border-amber-500/40">Offline — check-in needs a connection</span>
+          <span className="text-xs text-amber-500 font-medium px-2 py-0.5 rounded-full border border-amber-500/40">Offline — saved on this tablet, sent when back online</span>
         )}
         <Button variant="ghost" size="icon" className="h-12 w-12" onClick={onClose} data-testid="nail-checkin-close" aria-label="Close">
           <X className="w-6 h-6" />
@@ -225,7 +313,17 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
         {step === "name" && (
           <>
             <h1 className="text-[clamp(26px,4.5vh,38px)] font-bold mb-1" data-testid="nail-name-entry">Add Client Name</h1>
-            <p className="text-sm text-muted-foreground mb-[2.5vh]">Creating new client for {formatPhone(phone)}</p>
+            <p className="text-sm text-muted-foreground mb-[1.4vh]">Creating new client for {formatPhone(phone)}</p>
+            <div
+              className={cn(
+                "w-full max-w-[760px] h-[clamp(54px,8vh,72px)] mb-[1.6vh] px-5 border rounded-xl bg-card flex items-center justify-center text-[clamp(22px,3.5vh,32px)] font-bold tracking-wide",
+                name ? "text-foreground border-primary/60" : "text-muted-foreground/40 border-border",
+              )}
+              role="textbox" aria-label="Client name" aria-readonly="true" aria-live="polite"
+              data-testid="nail-name-display"
+            >
+              {name || "Client name"}
+            </div>
             <div className="w-full max-w-[1100px] space-y-[1.2vh]">
               {KEY_ROWS.map((row, ri) => (
                 <div key={ri} className="flex justify-center gap-[0.6vw]" style={ri === 1 ? { padding: "0 5%" } : undefined}>

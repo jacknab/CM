@@ -102,6 +102,28 @@ function overlaps(
   return eStart < newEnd.getTime() && eEnd > newStart.getTime();
 }
 
+/**
+ * How many minutes an existing appointment really holds its technician / station. A cancelled or
+ * no-show booking holds none. A completed one holds only until it was checked out — a service that
+ * finished early frees the technician right then — and never longer than it was booked for.
+ * Everything else holds its full booked duration.
+ */
+export function occupiedMinutes(a: {
+  date: Date | string;
+  duration: number | null;
+  status: string | null;
+  completedAt?: Date | string | null;
+}): number {
+  const status = String(a.status ?? "").toLowerCase();
+  if (status === "cancelled" || status === "no_show" || status === "no-show") return 0;
+  const booked = Number(a.duration ?? 60);
+  if (status === "completed" && a.completedAt) {
+    const held = (new Date(a.completedAt).getTime() - new Date(a.date).getTime()) / 60_000;
+    if (Number.isFinite(held)) return Math.max(0, Math.min(booked, held));
+  }
+  return booked;
+}
+
 // ── validateBookingSlot ───────────────────────────────────────────────────────
 
 export interface ValidateSlotInput {
@@ -208,10 +230,11 @@ export async function validateBookingSlot(
 
   const conflict = dayAppts.find((a) => {
     if (a.id === excludeAppointmentId) return false;
-    if (String(a.status ?? "").toLowerCase() === "cancelled") return false;
+    const held = occupiedMinutes(a as any);
+    if (held === 0) return false;
     if (!staffId && a.staffId !== null) return false;
     // RULE: appointment.duration (incl. addons) — never service.duration
-    return clashesWithBuffer(new Date(a.date), (a.duration ?? 60) as number, startTime, newEnd, bufferMin);
+    return clashesWithBuffer(new Date(a.date), held, startTime, newEnd, bufferMin);
   });
 
   if (conflict) {
@@ -234,9 +257,10 @@ export async function validateBookingSlot(
   if (input.resourceId) {
     const resourceConflict = dayAppts.find((a) => {
       if (a.id === excludeAppointmentId) return false;
-      if (String(a.status ?? "").toLowerCase() === "cancelled") return false;
+      const held = occupiedMinutes(a as any);
+      if (held === 0) return false;
       if ((a as any).resourceId !== input.resourceId) return false;
-      return overlaps(new Date(a.date), (a.duration ?? 60) as number, startTime, newEnd);
+      return overlaps(new Date(a.date), held, startTime, newEnd);
     });
     if (resourceConflict) {
       const conflictDisplayTime = new Date(resourceConflict.date).toLocaleTimeString("en-US", {
@@ -266,7 +290,7 @@ export interface AtomicCreateInput {
   startTime: Date;
   /** ALWAYS the final computed duration including addons */
   durationMinutes: number;
-  staffId: number;
+  staffId: number | null;
   serviceId: number;
   /** Null for anonymous walk-ins with no client record (kiosk "guest" check-in) */
   customerId: number | null;
@@ -293,6 +317,14 @@ export interface AtomicCreateInput {
   /** Set when this booking is a Catalog Package. serviceId still holds the
    *  package's primary service; duration is already the package total. */
   packageId?: number | null;
+  /**
+   * Reuse an already-assigned ticket number instead of minting a fresh one — for a ticket created
+   * from a walk-in check-in marker (kiosk_checkins), which was already given its own ticket number
+   * at check-in time (see recordWalkInCheckinMarker in routes.ts) so the printed check-in slip has
+   * something to show. Without this, the visit would end up with two different numbers: one on the
+   * check-in slip, a different one on the actual ticket.
+   */
+  ticketNumberOverride?: number | null;
 }
 
 /**
@@ -334,9 +366,11 @@ export async function atomicCreateBooking(
     // at commit/rollback; the second transaction simply waits its turn and then
     // re-evaluates the (now up-to-date) conflict check below.
     // Serialize writers for this (store, staff) pair — prevents write-skew double-booking
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(${input.storeId}::int, ${input.staffId}::int)`
-    );
+    if (input.staffId != null) {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(${input.storeId}::int, ${input.staffId}::int)`
+      );
+    }
     // Also lock on resource to prevent two concurrent bookings from grabbing the same station/chair.
     // Use storeId+1_000_000 as namespace to avoid collisions with the staff lock space.
     if (input.resourceId) {
@@ -345,12 +379,13 @@ export async function atomicCreateBooking(
       );
     }
 
-    const existing = await tx
+    const existing = input.staffId == null ? [] : await tx
       .select({
         id:       appointments.id,
         date:     appointments.date,
         duration: appointments.duration,
         status:   appointments.status,
+        completedAt: appointments.completedAt,
       })
       .from(appointments)
       .where(
@@ -363,9 +398,10 @@ export async function atomicCreateBooking(
       );
 
     const conflict = existing.find((a) => {
-      if (String(a.status ?? "").toLowerCase() === "cancelled") return false;
+      const held = occupiedMinutes(a as any);
+      if (held === 0) return false;
       // RULE: appointment.duration (incl. addons) — never service.duration
-      return clashesWithBuffer(new Date(a.date as Date), (a.duration ?? 60) as number, newStart, newEnd, bufferMin);
+      return clashesWithBuffer(new Date(a.date as Date), held, newStart, newEnd, bufferMin);
     });
 
     if (conflict) {
@@ -392,6 +428,7 @@ export async function atomicCreateBooking(
           date:     appointments.date,
           duration: appointments.duration,
           status:   appointments.status,
+          completedAt: appointments.completedAt,
         })
         .from(appointments)
         .where(
@@ -403,8 +440,9 @@ export async function atomicCreateBooking(
           ),
         );
       const resourceConflict = resourceExisting.find((a) => {
-        if (String(a.status ?? "").toLowerCase() === "cancelled") return false;
-        return overlaps(new Date(a.date as Date), (a.duration ?? 60) as number, newStart, newEnd);
+        const held = occupiedMinutes(a as any);
+        if (held === 0) return false;
+        return overlaps(new Date(a.date as Date), held, newStart, newEnd);
       });
       if (resourceConflict) {
         const conflictDisplayTime = new Date(resourceConflict.date as Date).toLocaleTimeString("en-US", {
@@ -421,7 +459,7 @@ export async function atomicCreateBooking(
       }
     }
 
-    const ticketNumber = await storage.getNextTicketNumber(input.storeId);
+    const ticketNumber = input.ticketNumberOverride ?? await storage.getNextTicketNumber(input.storeId);
     const [created] = await tx
       .insert(appointments)
       .values({
@@ -515,14 +553,16 @@ export async function atomicRescheduleBooking(
           date:     appointments.date,
           duration: appointments.duration,
           status:   appointments.status,
+          completedAt: appointments.completedAt,
         })
         .from(appointments)
         .where(whereClause);
 
       const conflict = existing.find((a) => {
-        if (String(a.status ?? "").toLowerCase() === "cancelled") return false;
+        const held = occupiedMinutes(a as any);
+        if (held === 0) return false;
         // RULE: appointment.duration (incl. addons) — never service.duration
-        return clashesWithBuffer(new Date(a.date as Date), (a.duration ?? 60) as number, newStart, newEnd, bufferMin);
+        return clashesWithBuffer(new Date(a.date as Date), held, newStart, newEnd, bufferMin);
       });
 
       if (conflict) {

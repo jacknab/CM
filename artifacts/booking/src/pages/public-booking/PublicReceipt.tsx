@@ -13,6 +13,7 @@ interface ReceiptSnapshot {
   items: { label: string; price: number }[];
   subtotal: number;
   discount: number;
+  tax?: number;
   tip: number;
   total: number;
   tenders: { method: string; amount: number }[];
@@ -95,6 +96,7 @@ export default function PublicReceipt() {
           <div className="border-t mt-2 pt-3 space-y-1.5 text-sm">
             <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span className="tabular-nums">{money(r.subtotal)}</span></div>
             {r.discount > 0 && <div className="flex justify-between text-green-600"><span>Discount</span><span className="tabular-nums">-{money(r.discount)}</span></div>}
+            {(r.tax ?? 0) > 0 && <div className="flex justify-between text-muted-foreground"><span>Tax</span><span className="tabular-nums">{money(r.tax ?? 0)}</span></div>}
             {r.tip > 0 && <div className="flex justify-between text-muted-foreground"><span>Tip</span><span className="tabular-nums">{money(r.tip)}</span></div>}
             <div className="flex justify-between text-base font-bold pt-1.5 border-t"><span>Total</span><span className="tabular-nums">{money(r.total)}</span></div>
           </div>

@@ -41,7 +41,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { Server } from "http";
 import { pool } from "../db";
 import crypto from "crypto";
-import maxmind, { type CountryResponse, type CityResponse, type Reader } from "maxmind";
+import maxmind, { type CountryResponse, type CityResponse, type AsnResponse, type Reader } from "maxmind";
 import { requireSupportAuth } from "../lib/supportAuth";
 import { publishCrossProcess, subscribeCrossProcess, isCrossProcessBusAvailable } from "../lib/wsBroadcastBus";
 
@@ -247,6 +247,10 @@ const GEOIP_CITY_DB_PATH = process.env.GEOIP_CITY_DB || "/var/lib/GeoIP/GeoLite2
 const GEOIP_COUNTRY_DB_PATH = process.env.GEOIP_COUNTRY_DB || "/var/lib/GeoIP/country.mmdb";
 let cityReader: Reader<CityResponse> | null = null;
 let countryReader: Reader<CountryResponse> | null = null;
+// Who an IP belongs to (the internet provider / hosting company that owns the address block).
+// MaxMind GeoLite2-ASN.mmdb, refreshed by the same geoipupdate cron as the city DB.
+const GEOIP_ASN_DB_PATH = process.env.GEOIP_ASN_DB || "/var/lib/GeoIP/GeoLite2-ASN.mmdb";
+let asnReader: Reader<AsnResponse> | null = null;
 let geoReadersTried = false;
 async function initGeoReaders(): Promise<void> {
   if (geoReadersTried) return;
@@ -261,8 +265,56 @@ async function initGeoReaders(): Promise<void> {
   } catch (e) {
     console.warn("[live-chat] GeoIP country DB unavailable:", (e as Error).message);
   }
+  try {
+    asnReader = await maxmind.open<AsnResponse>(GEOIP_ASN_DB_PATH);
+  } catch (e) {
+    console.warn("[live-chat] GeoIP ASN DB unavailable:", (e as Error).message);
+  }
 }
 void initGeoReaders();
+
+/** The organisation an IP address is registered to, e.g. "T-Mobile USA, Inc." (and its AS number). */
+function lookupIpOwner(ip: string): { owner: string | null; asn: number | null } {
+  const none = { owner: null, asn: null };
+  if (!ip || !asnReader) return none;
+  const bare = ip.replace(/^::ffff:/, "");
+  if (!/^[0-9a-fA-F:.]+$/.test(bare)) return none;
+  try {
+    const r = asnReader.get(bare);
+    return { owner: r?.autonomous_system_organization ?? null, asn: r?.autonomous_system_number ?? null };
+  } catch {
+    return none;
+  }
+}
+
+/**
+ * What kind of device a browser says it is, from its User-Agent. Best-effort: an iPad in its
+ * default "desktop website" mode identifies itself as a Mac and so shows as Desktop.
+ */
+function describeDevice(ua: string): { device: "Desktop" | "Mobile" | "Tablet" | "Bot" | "Unknown"; os: string | null; browser: string | null } {
+  if (!ua) return { device: "Unknown", os: null, browser: null };
+  const os =
+    /Windows Phone/i.test(ua) ? "Windows Phone" :
+    /Windows/i.test(ua) ? "Windows" :
+    /iPhone|iPad|iPod/i.test(ua) ? "iOS" :
+    /Android/i.test(ua) ? "Android" :
+    /CrOS/i.test(ua) ? "ChromeOS" :
+    /Mac OS X|Macintosh/i.test(ua) ? "macOS" :
+    /Linux/i.test(ua) ? "Linux" : null;
+  const browser =
+    /Edg(e|A|iOS)?\//.test(ua) ? "Edge" :
+    /OPR\/|Opera/.test(ua) ? "Opera" :
+    /SamsungBrowser/.test(ua) ? "Samsung Internet" :
+    /Firefox\/|FxiOS/.test(ua) ? "Firefox" :
+    /Chrome\/|CriOS/.test(ua) ? "Chrome" :
+    /Safari\//.test(ua) ? "Safari" : null;
+  const device =
+    /bot|crawl|spider|slurp|headless|preview|monitor|curl|wget|python|scrapy/i.test(ua) ? "Bot" :
+    /iPad|Tablet|PlayBook|Silk/i.test(ua) || (/Android/i.test(ua) && !/Mobile/i.test(ua)) ? "Tablet" :
+    /Mobi|iPhone|iPod|Android|Windows Phone/i.test(ua) ? "Mobile" :
+    os ? "Desktop" : "Unknown";
+  return { device, os, browser };
+}
 
 interface GeoResult {
   code: string | null;    // ISO-3166 alpha-2
@@ -370,6 +422,8 @@ function visitorSnapshot() {
     .filter((v) => now - v.lastSeen < VISITOR_TTL_MS)
     .sort((a, b) => b.lastSeen - a.lastSeen)
     .map((v) => ({
+      ...lookupIpOwner(v.ip),          // owner, asn
+      ...describeDevice(v.ua),         // device, os, browser
       visitorId: v.visitorId,
       url: v.url,
       title: v.title,
@@ -906,55 +960,6 @@ liveChatRouter.get("/api/support/live-chat/:chatId/messages", requireSupportAuth
   } catch { return res.status(500).json({ error: "Failed" }); }
 });
 
-/** Account info — returns linked account/store info for a chat (agent only). */
-liveChatRouter.get("/api/support/live-chat/:chatId/account", requireSupportAuth, async (req, res) => {
-  const { chatId } = req.params;
-  try {
-    const chatRes = await pool.query<{ account_id: string | null }>(
-      `SELECT account_id FROM live_chats WHERE id=$1`, [chatId]
-    );
-    const accountId = chatRes.rows[0]?.account_id;
-    if (!accountId) return res.json({ account: null });
-
-    const storeRes = await pool.query<{
-      id: number; name: string; city: string | null; state: string | null;
-      email: string | null; phone: string | null; account_status: string | null;
-      plan_name: string | null; user_email: string | null;
-      user_first: string | null; user_last: string | null;
-    }>(
-      `SELECT l.id, l.name, l.city, l.state, l.email, l.phone, l.account_status,
-              sp.name AS plan_name,
-              u.email AS user_email, u.first_name AS user_first, u.last_name AS user_last
-       FROM locations l
-       LEFT JOIN store_subscriptions ss ON ss.store_id = l.id
-       LEFT JOIN subscriptions sp ON sp.id = ss.plan_id
-       LEFT JOIN users u ON u.id = l.user_id
-       WHERE l.id=$1 LIMIT 1`,
-      [Number(accountId)]
-    );
-    const s = storeRes.rows[0];
-    if (!s) return res.json({ account: null });
-
-    return res.json({
-      account: {
-        id:            s.id,
-        storeName:     s.name,
-        city:          s.city,
-        state:         s.state,
-        email:         s.email,
-        phone:         s.phone,
-        accountStatus: s.account_status,
-        planName:      s.plan_name,
-        ownerEmail:    s.user_email,
-        ownerName:     [s.user_first, s.user_last].filter(Boolean).join(" ") || null,
-      },
-    });
-  } catch (e: any) {
-    console.error("[live-chat] account fetch error:", e?.message);
-    return res.status(500).json({ error: "Failed" });
-  }
-});
-
 liveChatRouter.post("/api/support/live-chat/:chatId/assign", requireSupportAuth, async (req, res) => {
   const agentId   = req.session.supportAgentId!;
   const agentName = req.session.supportAgentName ?? "Agent";
@@ -1224,6 +1229,70 @@ liveChatRouter.patch("/api/support/live-chat/status", requireSupportAuth, (req, 
 });
 
 // ─── WebSocket server ─────────────────────────────────────────────────────────
+// ─── Agent presence: a chat is not left with an agent who has gone ────────────
+// An agent who closes the browser (or loses their connection) mid-chat used to leave the visitor
+// talking to nobody: the chat stayed assigned to them. The API runs as several workers that do not
+// share memory, so presence is kept in the database: each worker stamps the agents whose socket it
+// holds every 20 seconds, and any worker can see that an agent has not been stamped for a while.
+// A page reload or a server restart reconnects within seconds, well inside the limit.
+const PRESENCE_BEAT_MS = 20_000;
+const AGENT_GONE_SEC = 75;
+const SWEEP_MS = 30_000;
+
+function touchAgentPresence(agentIds: number[]) {
+  if (!agentIds.length) return;
+  pool.query(
+    `INSERT INTO live_chat_agent_presence (agent_id, last_seen_at)
+     SELECT unnest($1::int[]), now()
+     ON CONFLICT (agent_id) DO UPDATE SET last_seen_at = now()`,
+    [agentIds],
+  ).catch(() => {});
+}
+
+/** Puts chats whose agent has gone back in the queue, tells the visitor, and alerts the other agents. */
+async function requeueAbandonedChats() {
+  try {
+    // One UPDATE, so when several workers sweep at once each chat is re-queued by exactly one of them.
+    const r = await pool.query<{ id: string; department_id: number | null; visitor_name: string | null; subject: string | null }>(
+      `UPDATE live_chats c
+          SET status = 'queued', agent_id = NULL, accepted_at = NULL
+        WHERE c.status = 'active' AND c.agent_id IS NOT NULL
+          AND c.accepted_at < now() - ($1 || ' seconds')::interval
+          AND NOT EXISTS (
+            SELECT 1 FROM live_chat_agent_presence p
+             WHERE p.agent_id = c.agent_id AND p.last_seen_at > now() - ($1 || ' seconds')::interval
+          )
+        RETURNING c.id, c.department_id, c.visitor_name, c.subject`,
+      [String(AGENT_GONE_SEC)],
+    );
+    for (const chat of r.rows) {
+      await persistMessage(chat.id, "system", null, "system", "The agent was disconnected — chat returned to the queue");
+      // The visitor's chat window already knows "transferred": it shows the note and goes back to the waiting view.
+      sendToVisitor(chat.id, { type: "transferred", departmentName: "the next available agent" });
+      broadcastToAgents({ type: "chat_requeued", chatId: chat.id, departmentId: chat.department_id });
+      await broadcastToDeptAgents(chat.department_id, {
+        type: "new_chat", chatId: chat.id,
+        visitorName: chat.visitor_name || "Anonymous",
+        subject: chat.subject || null,
+        departmentId: chat.department_id,
+        routedBy: "requeue",
+      });
+    }
+    if (r.rows.length) {
+      console.log(`[live-chat] re-queued ${r.rows.length} chat(s) whose agent disconnected`);
+      await pushQueueUpdateToAgents();
+    }
+  } catch (err) {
+    console.error("[live-chat] requeue sweep failed:", (err as Error)?.message);
+  }
+}
+
+function startAgentPresence() {
+  setInterval(() => touchAgentPresence(Array.from(agentSockets.keys())), PRESENCE_BEAT_MS);
+  // After a restart every agent has to reconnect: wait before judging anyone gone.
+  setTimeout(() => { setInterval(requeueAbandonedChats, SWEEP_MS); }, 90_000);
+}
+
 export function setupLiveChatWS(httpServer: Server): void {
   const wss = new WebSocketServer({ noServer: true });
 
@@ -1350,6 +1419,7 @@ export function setupLiveChatWS(httpServer: Server): void {
       wsTokens.delete(token!);
       agentSockets.set(agentId, ws);
       agentStatus.set(agentId, "online");
+      touchAgentPresence([agentId]);
       sendJson(ws, { type: "authenticated", agentId, name, role: agRole, agentStatuses: getAgentStatusList() });
       broadcastToAgents({ type: "agent_online", agentId, name });
       attachAgentHandlers(ws, agentId, name, agRole);
@@ -1439,5 +1509,6 @@ export function setupLiveChatWS(httpServer: Server): void {
     });
   }
 
+  startAgentPresence();
   console.log("[LiveChat] WebSocket server ready at /ws/live-chat");
 }

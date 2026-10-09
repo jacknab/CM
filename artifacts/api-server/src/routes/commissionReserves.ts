@@ -19,6 +19,7 @@ import { db, pool } from "../db";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import { getPaymentAccount, getConnectedAccountBalance } from "../lib/stripeConnect";
 import { getStripe, isStripeConfigured } from "../lib/stripe";
+import { canCreateConnectedPayout, STANDARD_PAYOUT_MESSAGE } from "../lib/payoutControl";
 import { z } from "zod";
 
 const router = Router();
@@ -226,6 +227,9 @@ router.post("/salon/request-payout", async (req: Request, res: Response) => {
   if (!account.payoutsEnabled) {
     return res.status(400).json({ error: "Payouts are not yet enabled on your Stripe account" });
   }
+  if (!canCreateConnectedPayout(account.accountType)) {
+    return res.status(403).json({ code: "payouts_managed_by_stripe", error: STANDARD_PAYOUT_MESSAGE });
+  }
 
   if (!isStripeConfigured()) {
     return res.status(503).json({ error: "Stripe is not configured on this platform" });
@@ -291,6 +295,9 @@ router.post("/salon/request-payout", async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error("[commissionReserves/request-payout] Stripe error:", err?.message);
+    if (typeof err?.message === "string" && err.message.includes("platform controls for the account")) {
+      return res.status(403).json({ code: "payouts_managed_by_stripe", error: STANDARD_PAYOUT_MESSAGE });
+    }
     return res.status(400).json({ error: err?.message ?? "Stripe payout failed" });
   }
 });
@@ -328,6 +335,18 @@ router.post("/commissions/record", async (req: Request, res: Response) => {
     return res.status(404).json({ error: "Contractor not found" });
   }
 
+  // The appointment must belong to this store too. Commission rows are unique per appointment, so
+  // without this an owner could overwrite another store's row by naming its appointment id.
+  if (appointment_id) {
+    const { rows: apptRows } = await pool.query(
+      `SELECT id FROM appointments WHERE id = $1 AND store_id = $2 LIMIT 1`,
+      [appointment_id, storeId]
+    );
+    if (!apptRows.length) {
+      return res.status(404).json({ error: "Appointment not found" });
+    }
+  }
+
   // Determine next payout date (default: next Friday)
   const scheduledPayoutDate = nextFriday(new Date(earned_date));
 
@@ -337,16 +356,24 @@ router.post("/commissions/record", async (req: Request, res: Response) => {
          (store_id, contractor_id, appointment_id, service_id, amount, status,
           earned_date, scheduled_payout_date, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, NOW(), NOW())
-       ON CONFLICT (appointment_id, contractor_id) WHERE appointment_id IS NOT NULL
+       ON CONFLICT (appointment_id) WHERE appointment_id IS NOT NULL
        DO UPDATE SET
+         contractor_id        = EXCLUDED.contractor_id,
          amount               = EXCLUDED.amount,
          service_id           = EXCLUDED.service_id,
          scheduled_payout_date = EXCLUDED.scheduled_payout_date,
          updated_at           = NOW()
+       WHERE contractor_commissions.status = 'pending'
+         AND contractor_commissions.store_id = EXCLUDED.store_id
        RETURNING *`,
       [storeId, contractor_id, appointment_id ?? null, service_id ?? null,
        amount, earned_date, scheduledPayoutDate]
     );
+
+    // No row back = the appointment already has a commission that is no longer pending.
+    if (!rows.length) {
+      return res.status(409).json({ error: "The commission for this appointment has already been paid and cannot be changed." });
+    }
 
     return res.status(201).json({
       commission:          rows[0],

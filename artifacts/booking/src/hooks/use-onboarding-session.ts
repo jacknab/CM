@@ -18,6 +18,7 @@ import {
   type ServiceDraft,
   type DayHoursAnswer,
   slugify,
+  hasOpenDay,
 } from "@/lib/onboarding-script";
 import { apiRequest } from "@/lib/queryClient";
 import { useQueryClient } from "@tanstack/react-query";
@@ -194,20 +195,6 @@ function calcProgress(
   return Math.round((done / coreSteps.length) * 100);
 }
 
-// ── Default hours ─────────────────────────────────────────────────────────────
-
-function defaultHours(): DayHoursAnswer[] {
-  return [
-    { dayOfWeek: 0, openTime: "09:00", closeTime: "18:00", isClosed: true  },
-    { dayOfWeek: 1, openTime: "09:00", closeTime: "18:00", isClosed: false },
-    { dayOfWeek: 2, openTime: "09:00", closeTime: "18:00", isClosed: false },
-    { dayOfWeek: 3, openTime: "09:00", closeTime: "18:00", isClosed: false },
-    { dayOfWeek: 4, openTime: "09:00", closeTime: "18:00", isClosed: false },
-    { dayOfWeek: 5, openTime: "09:00", closeTime: "18:00", isClosed: false },
-    { dayOfWeek: 6, openTime: "09:00", closeTime: "17:00", isClosed: false },
-  ];
-}
-
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 export interface OnboardingSessionHook {
@@ -277,6 +264,28 @@ export function useOnboardingSession(userId: string): OnboardingSessionHook {
     },
     [userId]
   );
+
+  // ── Report progress to the server ─────────────────────────────────────────
+  // localStorage only helps this browser. The server copy is what lets the support team see
+  // whether a signup finished and which step it stopped at. Best effort: never blocks the owner.
+
+  const reportProgress = useCallback(
+    (s: OnboardingSession, completed = false) =>
+      apiRequest("PUT", "/api/onboarding/progress", {
+        flow: "chat",
+        currentStepId: s.currentStepId,
+        completedStepIds: s.completedStepIds,
+        progressPct: calcProgress(s.completedStepIds, s.answers),
+        completed,
+      }).catch(() => {}),
+    []
+  );
+
+  useEffect(() => {
+    const timer = setTimeout(() => { reportProgress(session); }, 800);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.currentStepId, session.completedStepIds.length]);
 
   // ── Build initial chat history on mount ───────────────────────────────────
 
@@ -555,10 +564,17 @@ export function useOnboardingSession(userId: string): OnboardingSessionHook {
   const prepareGoogle = useCallback(async (): Promise<number | null> => {
     if (session.createdStoreId) return session.createdStoreId;
     const a = session.answers;
+    // Business hours are required. A browser that was part-way through before that rule could
+    // arrive here without them: send it back to the hours step rather than create a store with none.
+    if (!hasOpenDay(a.businessHours)) {
+      setSubmitError("Please set your business hours to continue.");
+      goToStep("hours");
+      return null;
+    }
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      const hours = (a.businessHours ?? defaultHours()).map((h) => ({
+      const hours = (a.businessHours ?? []).map((h) => ({
         dayOfWeek: h.dayOfWeek, openTime: h.openTime, closeTime: h.closeTime, isClosed: h.isClosed,
       }));
       const res = await apiRequest("POST", "/api/onboarding", {
@@ -583,17 +599,23 @@ export function useOnboardingSession(userId: string): OnboardingSessionHook {
     } finally {
       setIsSubmitting(false);
     }
-  }, [session.answers, session.createdStoreId, queryClient, setSession]);
+  }, [session.answers, session.createdStoreId, queryClient, setSession, goToStep]);
 
   const submit = useCallback(async () => {
     const a = session.answers;
+
+    if (!hasOpenDay(a.businessHours)) {
+      setSubmitError("Please set your business hours to finish setup.");
+      goToStep("hours");
+      return;
+    }
 
     setIsSubmitting(true);
     setSubmitError(null);
 
     try {
       // 1. Create store
-      const hours = (a.businessHours ?? defaultHours()).map((h) => ({
+      const hours = (a.businessHours ?? []).map((h) => ({
         dayOfWeek: h.dayOfWeek,
         openTime: h.openTime,
         closeTime: h.closeTime,
@@ -712,6 +734,7 @@ export function useOnboardingSession(userId: string): OnboardingSessionHook {
       }
 
       // 6. Complete onboarding after the Google phase and remaining setup.
+      await reportProgress(session, true);
       localStorage.removeItem(storageKey(userId));
       await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       navigate("/");
@@ -722,7 +745,7 @@ export function useOnboardingSession(userId: string): OnboardingSessionHook {
     } finally {
       setIsSubmitting(false);
     }
-  }, [session, navigate, queryClient, setSession, userId]);
+  }, [session, navigate, queryClient, setSession, userId, goToStep, reportProgress]);
 
   // ── Derived state ─────────────────────────────────────────────────────────
 

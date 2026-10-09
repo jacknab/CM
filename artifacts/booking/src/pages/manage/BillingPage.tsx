@@ -17,11 +17,15 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
 // ─── Plans ────────────────────────────────────────────────────────────────────
+/** "Free" for a plan that costs nothing, otherwise "$22/mo". */
+const planPrice = (p?: { price: number } | null, per = "/mo") => (!p ? "" : p.price === 0 ? "Free" : `$${p.price}${per}`);
+
 const PLANS = [
   {
     code: "solo",
     name: "Solo",
-    price: 9,
+    // Free for now (decided 2026-10-09; to be revisited in about a year).
+    price: 0,
     tagline: "For independent stylists & booth renters",
     highlight: "1 calendar · 1 staff",
     features: ["1 calendar", "1 staff member", "Online booking page", "200 SMS/mo"],
@@ -238,7 +242,7 @@ export default function BillingPage({ salonId }: { salonId: number }) {
       setShowPlanConfirm(false);
       setSwitchingTo(null);
       const newPlan = PLANS.find(p => p.code === newPlanCode) ?? PLANS[0];
-      toast({ title: "Plan updated", description: `Switched to ${newPlan.name} — $${newPlan.price}/month.` });
+      toast({ title: "Plan updated", description: `Switched to ${newPlan.name} — ${planPrice(newPlan, "/month")}.` });
     },
     onError: (err: any) =>
       toast({ title: "Could not switch plan", description: err.message, variant: "destructive" }),
@@ -604,8 +608,8 @@ export default function BillingPage({ salonId }: { salonId: number }) {
                     <p className="text-zinc-500 text-xs mt-0.5">{plan.tagline}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <span className={`text-2xl font-bold ${isElite ? "text-amber-200" : "text-white"}`}>${plan.price}</span>
-                    <span className="text-zinc-500 text-xs">/mo</span>
+                    <span className={`text-2xl font-bold ${isElite ? "text-amber-200" : "text-white"}`}>{plan.price === 0 ? "Free" : `$${plan.price}`}</span>
+                    {plan.price !== 0 && <span className="text-zinc-500 text-xs">/mo</span>}
                   </div>
                 </div>
                 <ul className="space-y-1.5 mb-4">
@@ -650,7 +654,7 @@ export default function BillingPage({ salonId }: { salonId: number }) {
                           onClick={() => subscribeMutation.mutate(plan.code)}
                           disabled={subscribeMutation.isPending}>
                           {subscribeMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
-                          Subscribe — ${plan.price}/mo
+                          Subscribe — {planPrice(plan)}
                         </Button>
                       )
                     ) : (
@@ -685,7 +689,7 @@ export default function BillingPage({ salonId }: { salonId: number }) {
                     {subscribeMutation.isPending ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
                     ) : null}
-                    Subscribe — ${plan.price}/mo
+                    Subscribe — {planPrice(plan)}
                   </Button>
                 )}
                 {!isElite && !isCurrent && !stripeConfigured && (
@@ -701,7 +705,7 @@ export default function BillingPage({ salonId }: { salonId: number }) {
                     {selectPlanMutation.isPending && switchingTo === plan.code ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
                     ) : null}
-                    Select {plan.name} — ${plan.price}/mo
+                    Select {plan.name} — {planPrice(plan)}
                   </Button>
                 )}
                 {isCurrent && !isElite && (
@@ -730,18 +734,18 @@ export default function BillingPage({ salonId }: { salonId: number }) {
               <p className="text-zinc-400 text-sm mt-1">
                 You're switching to the{" "}
                 <strong className="text-white">{PLANS.find(p => p.code === switchingTo)?.name}</strong>{" "}
-                plan at ${PLANS.find(p => p.code === switchingTo)?.price}/month.
+                plan ({planPrice(PLANS.find(p => p.code === switchingTo), "/month")}).
               </p>
             </div>
             <div className="bg-zinc-800/50 rounded-xl p-4 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-zinc-400">Current plan</span>
-                <span className="text-white">{currentPlan ? `${currentPlan.name} — $${currentPlan.price}/mo` : "Free Trial"}</span>
+                <span className="text-white">{currentPlan ? `${currentPlan.name} — ${planPrice(currentPlan)}` : "Free Trial"}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-zinc-400">New plan</span>
                 <span className="text-white font-bold">
-                  {PLANS.find(p => p.code === switchingTo)?.name} — ${PLANS.find(p => p.code === switchingTo)?.price}/mo
+                  {PLANS.find(p => p.code === switchingTo)?.name} — {planPrice(PLANS.find(p => p.code === switchingTo))}
                 </span>
               </div>
             </div>
@@ -802,7 +806,7 @@ export default function BillingPage({ salonId }: { salonId: number }) {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-zinc-400 text-sm">Plan</span>
-              <span className="text-white text-sm font-semibold">{currentPlan ? <>{currentPlan.name} — <span className="text-violet-300">${currentPlan.price}/mo</span></> : <span className="text-violet-300">Free Trial</span>}</span>
+              <span className="text-white text-sm font-semibold">{currentPlan ? <>{currentPlan.name} — <span className="text-violet-300">{planPrice(currentPlan)}</span></> : <span className="text-violet-300">Free Trial</span>}</span>
             </div>
           </CardContent>
         </Card>
@@ -1082,12 +1086,12 @@ export default function BillingPage({ salonId }: { salonId: number }) {
                   <div className="bg-zinc-800/40 border border-zinc-700/40 rounded-xl p-4 space-y-2">
                     <p className="text-white font-semibold text-sm">Consider switching to a lower plan</p>
                     <p className="text-zinc-400 text-sm">
-                      The Solo plan is just $9/month — perfect for independent stylists and booth renters.
+                      The Solo plan is free — perfect for independent stylists and booth renters.
                     </p>
                     {currentPlan?.code !== "solo" && (
                       <Button size="sm" variant="outline" className="border-zinc-600/50 text-zinc-300 hover:bg-zinc-800 mt-1"
                         onClick={() => { setSwitchingTo("solo"); setShowPlanConfirm(true); setCancelStep("idle"); }}>
-                        Switch to Solo ($9/mo)
+                        Switch to Solo (free)
                       </Button>
                     )}
                   </div>

@@ -28,7 +28,7 @@ import { useStripeTerminal } from '@stripe/stripe-terminal-react-native';
 import { Colors } from '@/constants/colors';
 import { apiCaller } from '@/lib/terminalBridge';
 import { terminalDiag } from '@/lib/terminalDiag';
-import { useReaderDiscovery } from '@/lib/useReaderDiscovery';
+import { ensureTerminalLocationPermission, useReaderDiscovery } from '@/lib/useReaderDiscovery';
 import { useTerminalPayment }  from '@/lib/useTerminalPayment';
 import { printReceipt, printReceiptCopies, type ReceiptData, type CardDetails } from '@/lib/printer';
 import { PrinterSetupModal } from '@/components/PrinterSetupModal';
@@ -263,6 +263,8 @@ export function POSModal({
       if (abandoned) return;
 
       try {
+        await ensureTerminalLocationPermission();
+        if (abandoned) return;
         const res = await discoverReaders({ discoveryMethod: 'tapToPay', simulated: false });
         if (!abandoned) setTapToPaySupported(!res?.error);
       } catch (err: unknown) {
@@ -645,6 +647,7 @@ export function POSModal({
     try {
       setPhase('connecting'); setStatusMsg('Initialising Tap to Pay…');
       console.log('[Stripe] easyConnect() — tapToPay');
+      await ensureTerminalLocationPermission();
       const locationId = await payment.getLocationId();
       const { reader: conn, error: connErr } = await easyConnect({ discoveryMethod: 'tapToPay', locationId, simulated: false, tosAcceptancePermitted: true });
       if (connErr || !conn) throw new Error(connErr?.message ?? 'Tap to Pay not available on this device');

@@ -7,11 +7,9 @@ interface Props {
   storeId: number;
   serviceId: number | null;
   clientName: string;
-  mode: "create" | "reassign";
+  mode: "assign" | "reassign";
   /** Technician to leave out (the ticket's current one, when reassigning). */
   excludeStaffId?: number | null;
-  /** Technician picked on the walk-in sheet — starts selected. */
-  initialStaffId?: number | null;
   busy: boolean;
   error: string | null;
   /** `staffId` null = whoever TURN says is next. */
@@ -30,13 +28,13 @@ function statusOf(t: TurnTech): string {
   return t.exclusionReasons?.[0] ?? "Unavailable";
 }
 
-export function AssignTechSheet({ storeId, serviceId, clientName, mode, excludeStaffId, initialStaffId, busy, error, onConfirm, onClose }: Props) {
+export function AssignTechSheet({ storeId, serviceId, clientName, mode, excludeStaffId, busy, error, onConfirm, onClose }: Props) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["/api/turn/eligibility", storeId, "nail-assign", serviceId],
     queryFn: () => fetchTurn(storeId, serviceId),
     staleTime: 0,
   });
-  const [selected, setSelected] = useState<number | null>(initialStaffId ?? null);
+  const [selected, setSelected] = useState<number | null>(null);
 
   const techs = useMemo(() => {
     const all = (data?.technicians ?? []).filter((t) => t.id !== excludeStaffId);
@@ -45,21 +43,22 @@ export function AssignTechSheet({ storeId, serviceId, clientName, mode, excludeS
   const nextUp = techs.find((t) => t.eligible) ?? null;
   const chosen = techs.find((t) => t.id === selected) ?? null;
   const queueing = !!chosen && !chosen.eligible;
+  const assigning = mode !== "reassign";
 
   const confirmLabel = busy
     ? "WORKING…"
     : chosen
-      ? queueing ? `LINE UP BEHIND ${chosen.name.toUpperCase()}` : mode === "create" ? `ASSIGN ${chosen.name.toUpperCase()} & CHECK IN` : `MOVE TO ${chosen.name.toUpperCase()}`
-      : nextUp && mode === "create" ? `ASSIGN NEXT UP · ${nextUp.name.toUpperCase()}` : "CHOOSE A TECHNICIAN";
-  const canConfirm = !busy && (!!chosen || (mode === "create" && !!nextUp));
+      ? queueing ? `LINE UP BEHIND ${chosen.name.toUpperCase()}` : mode === "assign" ? `ASSIGN ${chosen.name.toUpperCase()}` : `MOVE TO ${chosen.name.toUpperCase()}`
+      : nextUp && assigning ? `ASSIGN NEXT UP · ${nextUp.name.toUpperCase()}` : "CHOOSE A TECHNICIAN";
+  const canConfirm = !busy && (!!chosen || (assigning && !!nextUp));
 
   return (
     <>
       <div className="assign-create-overlay" onClick={onClose} />
-      <div className="assign-create-modal" data-testid="nail-assign-sheet">
+      <div className="assign-create-modal" role="dialog" aria-modal="true" aria-labelledby="nail-assign-title" data-testid="nail-assign-sheet">
         <div className="assign-create-header">
           <div>
-            <h2>{mode === "create" ? "Assign Technician" : "Reassign Technician"}</h2>
+            <h2 id="nail-assign-title">{mode === "reassign" ? "Reassign Technician" : "Assign Technician"}</h2>
             <p>{clientName}</p>
           </div>
           <button type="button" className="assign-create-close" onClick={onClose} aria-label="Close"><X size={16} /></button>
@@ -80,7 +79,7 @@ export function AssignTechSheet({ storeId, serviceId, clientName, mode, excludeS
                 className={`assign-create-item ${isSel ? "assign-create-item-sel" : ""}`}>
                 <span className="assign-create-dot" style={{ background: t.color || "#454c56" }} />
                 <span className="assign-create-name">{t.name}</span>
-                {mode === "create" && nextUp?.id === t.id && <span className="assign-create-next">NEXT UP</span>}
+                {assigning && nextUp?.id === t.id && <span className="assign-create-next">NEXT UP</span>}
                 <span className="assign-create-status">{statusOf(t)}</span>
                 {isSel && <Check size={15} style={{ color: "#0d9bd1" }} />}
               </button>
@@ -90,7 +89,7 @@ export function AssignTechSheet({ storeId, serviceId, clientName, mode, excludeS
         {error && <p className="assign-create-error" data-testid="nail-assign-error">{error}</p>}
         <div className="assign-create-footer">
           <button type="button" className="assign-create-skip" onClick={onClose}>Cancel</button>
-          <button type="button" disabled={!canConfirm} onClick={() => onConfirm(chosen ? chosen.id : null)} data-testid="nail-assign-confirm"
+          <button type="button" disabled={!canConfirm} onClick={() => onConfirm(chosen?.id ?? nextUp?.id ?? null)} data-testid="nail-assign-confirm"
             className={`assign-create-btn ${canConfirm ? "assign-create-btn-ready" : ""}`}>
             {confirmLabel}
           </button>

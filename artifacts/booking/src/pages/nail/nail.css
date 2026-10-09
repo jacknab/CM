@@ -76,6 +76,13 @@
 .nail-app .keypad-money-grid { grid-template-columns: repeat(5, 1fr); }
 .nail-app .money-grid button.fn-btn-active { background: rgba(139,92,246,.22); border-color: #8b5cf6; color: #e8eaed; }
 .nail-app .money-grid button.fn-btn-active svg { color: #a78bfa; }
+/* Create-ticket keypad fills its full center column instead of leaving a dead block below the
+   function row. The checkout keypad has its own sizing rules further down this file. */
+.nail-app .ticket-keypad { display: flex; flex-direction: column; }
+.nail-app .ticket-keypad .calculator-display { flex: 0 0 59px; box-sizing: border-box; }
+.nail-app .ticket-keypad .key-grid { flex: 1; min-height: 0; grid-template-rows: repeat(4, minmax(0, 1fr)); }
+.nail-app .ticket-keypad .key-grid button { min-height: 0; }
+.nail-app .ticket-keypad .money-grid { flex: 0 0 auto; }
 
 /* Catalog panel */
 .nail-app .catalog-panel { padding: 0 10px 7px; display: flex; flex-direction: column; position: relative; }
@@ -90,7 +97,7 @@
 .nail-app .product-card { position: relative; min-width: 0; height: 81px; border: 1px solid #454c56; background: #353a43; border-radius: 0; padding: 12px 15px; text-align: left; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; color: #e8eaed; transition: background 0.12s, border-color 0.12s; overflow: hidden; }
 .nail-app .product-card:hover { background: #3d444e; border-color: #5a6270; }
 .nail-app .product-card:active { transform: scale(0.98); }
-.nail-app .product-card strong { font-size: 12px; line-height: 1.25; word-break: break-word; overflow-wrap: anywhere; width: 100%; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.nail-app .product-card strong { font-size: 12px; line-height: 1.25; word-break: break-word; overflow-wrap: anywhere; width: 100%; display: -webkit-box; line-clamp: 3; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .nail-app .product-card span { color: #8b94a0; font-size: 10px; }
 .nail-app .product-card b { font-size: 12px; margin-top: auto; color: #0d9bd1; }
 .nail-app .product-card.selected { border: 2px solid #0d9bd1; padding: 11px 14px; }
@@ -129,6 +136,8 @@
 
 /* Check-in board page */
 .nail-app .checkin-page { grid-template-columns: 1fr !important; }
+/* The Queue and Techs pages are light panels — the POS shell's 6px top gap would show its dark background as a black bar. */
+.nail-app .checkin-page .work-area, .nail-app .techs-page .work-area { margin-top: 0; }
 .nail-app .checkin-board { display: flex; flex-direction: column; padding: 28px 32px; overflow-y: auto; min-height: 0; }
 .nail-app .checkin-board-header h1 { font-size: 24px; font-weight: 700; color: #eef3fb; margin: 0; }
 .nail-app .checkin-board-header p { font-size: 13px; color: #8b94a0; margin: 4px 0 0; }
@@ -190,6 +199,7 @@
 /* Floating dock column */
 .nail-app .checkin-dock { display: grid; grid-template-columns: repeat(2, 72px); gap: 10px; }
 .nail-app .checkin-dock-btn { background: #232830; border: 1px solid #3b424c; border-radius: 8px; padding: 14px 6px; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; color: #c8cdd3; transition: all 0.15s; box-shadow: 0 8px 24px rgba(0,0,0,.3); }
+.nail-app .checkin-dock-btn:last-child:nth-child(odd) { grid-column: span 2; }
 .nail-app .checkin-dock-btn:hover { background: #2f353d; border-color: #5a6270; color: #eef3fb; }
 .nail-app .checkin-dock-btn:active { transform: scale(0.95); }
 .nail-app .checkin-dock-btn span { font-size: 9px; font-weight: 700; letter-spacing: .5px; }
@@ -333,8 +343,12 @@
 .nail-app .assign-create-btn:disabled { cursor: not-allowed; }
 
 /* ===== Adaptions for the live Certxa build ===== */
-.nail-app .techs-page { grid-template-columns: 290px minmax(0, 1fr); }
-@media (max-width: 1180px) { .nail-app .techs-page { grid-template-columns: 250px minmax(0, 1fr); } }
+/*
+ * TechCards is the complete Techs screen now. The old two-column layout left
+ * room for the retired arrived-client panel, which made the Techs tab render
+ * in only the first 290px of the viewport.
+ */
+.nail-app .techs-page { grid-template-columns: 1fr !important; }
 .nail-app .arrived-panel { min-height: 0; }
 .nail-app .arrived-list { flex: 1; min-height: 0; overflow-y: auto; }
 .nail-app .arrived-list::-webkit-scrollbar { width: 0; }
@@ -364,7 +378,9 @@
 .nail-app .tech-pill[data-status="off"] { background: #2a2e36; color: #8b94a0; border-color: #3b424c; }
 .nail-app.h-app, .nail-app { position: relative; overflow: hidden; }
 .nail-app .pos-shell { width: 100%; height: 100%; }
-.nail-app .category-tabs { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(92px, 1fr); overflow-x: auto; }
+/* 72px minimum so six categories fit a tablet-width catalog without a hidden sideways scroll (the scrollbar is invisible,
+   so a 6th tab past the edge looked like it didn't exist). More than that still scrolls. */
+.nail-app .category-tabs { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(72px, 1fr); overflow-x: auto; }
 .nail-app .category-tabs::-webkit-scrollbar { height: 0; }
 .nail-app .category-tabs button span { text-transform: uppercase; }
 .nail-app .catalog-panel { overflow-y: auto; }
@@ -373,6 +389,10 @@
 .nail-app .product-card b { font-weight: 700; }
 .nail-app .product-card .card-line { display: flex; justify-content: space-between; width: 100%; margin-top: auto; align-items: baseline; }
 .nail-app .product-card .card-line b { margin: 0; }
+/* Keep "1 hr 5 min" on one line and never squeeze the service name to make room for it. */
+.nail-app .product-card strong { flex-shrink: 0; }
+.nail-app .product-card .card-line { gap: 6px; }
+.nail-app .product-card .card-line > span { white-space: nowrap; }
 .nail-app .product-card.compact .card-line { justify-content: center; gap: 6px; margin-top: 0; }
 .nail-app .product-card.compact span { font-size: 10px; }
 .nail-app .empty-state-hint { font-size: 13px; color: #8b94a0; padding: 10px 2px; grid-column: 1 / -1; }
@@ -545,13 +565,45 @@
 .nail-app .tt-tile-indigo { background: linear-gradient(145deg, #eceafd, #e0dcfa); } .nail-app .tt-tile-indigo svg { color: #5a4fd1; }
 .nail-app .tt-tile-teal { background: linear-gradient(145deg, #e3f7f6, #d5f0ee); } .nail-app .tt-tile-teal svg { color: #0f9c92; }
 
-/* Queue tab's glance strip — same tile look as the Techs tab's, but 8 tiles instead of 6 */
-.nail-app .q-glance-row { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px; }
-@media (max-width: 1300px) { .nail-app .q-glance-row { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+/* Queue tab's glance strip — same tile look as the Techs tab's, but 8 tiles instead of 6.
+ * Always one row of 8 (never wraps to a second row) — narrower widths shrink the tiles
+ * (tighter padding, smaller numerals, icon dropped) rather than reflowing the grid. */
+.nail-app .q-glance-row { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px; }
+.nail-app .q-glance-row .tt-tile { min-height: 72px; padding: 14px 10px; gap: 10px; border: 0; border-bottom: 2px solid rgba(15, 31, 61, .16); border-radius: 0; box-shadow: none; }
+.nail-app .q-glance-row .tt-tile svg { width: 24px; height: 24px; }
+.nail-app .q-glance-row .tt-tile strong { font-size: 21px; font-weight: 800; line-height: 1.05; }
+.nail-app .q-glance-row .tt-tile[data-long="true"] strong { font-size: 18px; }
+.nail-app .q-glance-row .tt-tile span { font-size: 12px; font-weight: 700; line-height: 1.15; }
+/* Two stat tiles double as the Waiting / In Service page switch (replacing the old tt-tabs
+ * buttons removed from the Queue tab) — give them an obvious pressed/active look. */
+.nail-app .q-glance-row .tt-tile-clickable { cursor: pointer; border: 0; border-bottom: 2px solid rgba(15, 31, 61, .16); text-align: left; font: inherit; -webkit-tap-highlight-color: transparent; }
+.nail-app .q-glance-row .tt-tile-clickable:active { transform: scale(.97); }
+.nail-app .q-glance-row .tt-tile-clickable[data-active="true"] { border-bottom-color: #1f6fe0; box-shadow: inset 0 -2px 0 #1f6fe0; }
+@media (max-width: 1300px) { .nail-app .q-glance-row .tt-tile svg { display: block; width: 22px; height: 22px; } .nail-app .q-glance-row .tt-tile { min-height: 68px; padding: 12px 7px; gap: 8px; } .nail-app .q-glance-row { gap: 5px; } }
+@media (max-width: 1000px) { .nail-app .q-glance-row .tt-tile strong { font-size: 18px; } .nail-app .q-glance-row .tt-tile[data-long="true"] strong { font-size: 15px; } .nail-app .q-glance-row .tt-tile span { font-size: 10px; } }
 
 .nail-app .tt-panel .tech-stage { flex: 1; min-height: 0; min-width: 0; overflow: hidden; margin-top: 10px; }
+.nail-app [data-testid="nail-techs"] .tt-tabs { margin-top: 10px; }
+.nail-app .nail-skip-link { position: fixed; z-index: 10000; top: 8px; left: 8px; transform: translateY(-160%); padding: 10px 14px; border-radius: 8px; background: #fff; color: #0f1f3d; font-weight: 800; box-shadow: 0 4px 16px rgba(0,0,0,.25); }
+.nail-app .nail-skip-link:focus { transform: translateY(0); }
+.nail-app :is(button, [role="button"], input, select, a):focus-visible { outline: 3px solid #f59e0b; outline-offset: 3px; }
+.nail-app .nail-route-loading { min-height: 240px; display: flex; align-items: center; justify-content: center; gap: 10px; color: #dce7f5; font-weight: 700; }
 
 .nail-app .tt-card { position: absolute; top: 0; left: 0; transform-origin: top left; box-sizing: border-box; background: #fff; border: 1px solid #e3eaf3; border-radius: 16px; box-shadow: 0 8px 22px rgba(30, 60, 110, .09); padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 12px; }
+.nail-app .q-service-card { padding: 20px 22px 18px; gap: 16px; }
+.nail-app .q-service-card .tt-top { gap: 14px; }
+.nail-app .q-service-card .tt-main { gap: 14px; }
+.nail-app .q-service-card .tt-name strong { font-size: 31px; }
+.nail-app .q-service-card .tt-pill { font-size: 13px; padding: 6px 12px; gap: 6px; }
+.nail-app .q-service-card .tt-pill i { width: 8px; height: 8px; }
+.nail-app .q-service-card .tt-clockbox { min-width: 230px; padding: 8px 18px 8px 14px; gap: 12px; }
+.nail-app .q-service-card .tt-clockbox svg { width: 34px; height: 34px; }
+.nail-app .q-service-card .tt-timer { font-size: 30px; }
+.nail-app .q-service-card .tt-bottom { padding: 10px 16px; }
+.nail-app .q-service-card .tt-cell { gap: 14px; }
+.nail-app .q-service-card .tt-cell > svg { width: 28px; height: 28px; }
+.nail-app .q-service-card .tt-cell small { font-size: 14px; }
+.nail-app .q-service-card .tt-cell b { font-size: 18px; }
 .nail-app .tt-card.tt-off { opacity: .72; }
 .nail-app .tt-tappable { cursor: pointer; }
 .nail-app .tt-tappable:active { box-shadow: 0 0 0 3px #b8d2f5; }
@@ -600,7 +652,7 @@
 .nail-app .ticket-total .balance-row { border-top: 1px dashed #454c56; padding-top: 10px; margin-top: 2px; }
 .nail-app .ticket-total .balance-row strong { color: #0d9b6e; font-size: 16px; }
 .nail-app .pos-status { height: 46px; flex: 0 0 auto; margin-bottom: 8px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; letter-spacing: .06em; line-height: 1.25; text-transform: uppercase; color: #8b94a0; background: #232830; border: 1px solid #3b424c; padding: 4px 10px; text-align: center; overflow: hidden; }
-.nail-app .pos-status span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.nail-app .pos-status span { display: -webkit-box; line-clamp: 2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 /* Checkout keypad: the key rows share whatever height is left, so a taller status box never pushes the bottom row off a 10" screen. */
 .nail-app .pay-keypad { display: flex; flex-direction: column; }
 .nail-app .pay-keypad .key-grid { flex: 1; min-height: 0; grid-template-rows: repeat(4, minmax(0, 1fr)); }
@@ -609,6 +661,8 @@
 .nail-app .pos-status-success { color: #34d399; } .nail-app .pos-status-error { color: #fbbf24; } .nail-app .pos-status-guided { color: #f4d000; }
 .nail-app .pay-fn-row button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #e8eaed; font-size: 12px; font-weight: 700; background: #353a43; }
 .nail-app .pay-fn-row button svg { color: #c4cad3; }
+.nail-app .pay-keypad .pay-fn-row-stacked { margin-top: 6px; }
+.nail-app .pay-fn-row button:disabled { cursor: default; }
 .nail-app .pay-fn-row button:active { background: #3d444e; }
 .nail-app .pay-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 16px 4px; }
 .nail-app .pay-methods { display: flex; flex-direction: column; gap: 12px; margin: auto 0; }
@@ -677,6 +731,13 @@
 
 /* Techs tab: three swipeable pages (clocked out · clocked in · in service) with a slim tab strip on top */
 .nail-app .tt-tabs { display: flex; gap: 6px; margin-top: 10px; flex-shrink: 0; }
+
+/* Queue tab — "more waiting than fits on one screen" indicator: a dot per waiting page, plus a
+   swipe hint while there's another page past the current one. */
+.nail-app .q-page-dots { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-shrink: 0; }
+.nail-app .q-page-dots button { width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0; background: #c7d2e2; }
+.nail-app .q-page-dots button.active { width: 20px; border-radius: 4px; background: #1f6fe0; }
+.nail-app .q-page-dots-hint { font-size: 12px; font-weight: 700; color: #5b6b85; margin-left: 2px; }
 .nail-app .tt-tabs button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; height: 34px; border-radius: 9px; background: #e4ebf5; color: #3c4a63; font-size: 13px; font-weight: 700; letter-spacing: .04em; border: 1px solid transparent; }
 .nail-app .tt-tabs button em { font-style: normal; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: grid; place-items: center; font-size: 11px; font-weight: 800; background: rgba(15, 31, 61, .08); color: #3c4a63; }
 .nail-app .tt-tabs button.active { background: #fff; color: #1f6fe0; border-color: #c9d9f2; box-shadow: 0 2px 8px rgba(30, 60, 110, .10); }
@@ -689,56 +750,288 @@
 
 /* Queue tab — header (light .tt-panel background, so dark text, unlike the dark-themed checkin-board-header) */
 .nail-app .q-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
-.nail-app .q-header h1 { font-size: 24px; font-weight: 700; color: #0f1f3d; margin: 0; }
-.nail-app .q-header p { font-size: 13px; color: #5b6b85; margin: 4px 0 0; }
+.nail-app .q-header p { font-size: 13px; color: #5b6b85; margin: 0; }
 
 /* "Create Next Ticket" — jumps straight to the earliest checked-in client without a ticket yet, so a
    busy front desk doesn't have to hunt through the grid for them. */
 .nail-app .q-next-btn { flex-shrink: 0; display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 18px; border-radius: 10px; border: none; background: #1f6fe0; color: #fff; font-size: 14px; font-weight: 800; letter-spacing: .02em; box-shadow: 0 4px 14px rgba(31, 111, 224, .28); }
 .nail-app .q-next-btn:active { transform: scale(.97); }
 .nail-app .q-next-btn:disabled { background: #d7e0ee; color: #96a3ba; box-shadow: none; }
+/* "Enter ID" — the manual fallback next to it, deliberately less prominent than the primary action. */
+.nail-app .q-next-btn-ghost { background: #fff; color: #1f6fe0; border: 1px solid #c9d9f2; box-shadow: none; }
 
 /* Queue tab — waiting client card (same footprint as .tt-card, simpler content, all cards look alike on purpose) */
 .nail-app .q-card { position: absolute; top: 0; left: 0; transform-origin: top left; box-sizing: border-box; background: #fff; border: 1px solid #e3eaf3; border-radius: 16px; box-shadow: 0 8px 22px rgba(30, 60, 110, .09); padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; overflow: hidden; } /* overflow:hidden is a safety net — a long client/tech name must clip, never spill into the card below it */
 .nail-app .q-card:active { transform: scale(.98); }
-.nail-app .q-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
-.nail-app .q-name { font-size: 20px; font-weight: 800; color: #0f1f3d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.nail-app .q-sub { font-size: 12px; font-weight: 800; letter-spacing: .05em; color: #5b6b85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.nail-app .q-sub[data-kind="walkin"] { color: #6b7a92; }
-.nail-app .q-sub[data-kind="assigned"] { color: #0c8a55; }
-.nail-app .q-sub[data-kind="unassigned"] { color: #b7791f; }
+.nail-app .q-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; min-width: 0; }
+.nail-app .q-name-row { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.nail-app .q-name { font-size: 19px; font-weight: 800; color: #0f1f3d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* The number printed with the client's QR code. Its compact black ticket-stub shape replaces the
+   generic profile circle and makes the manual lookup key unmistakable at the card's top-left. */
+.nail-app .q-id-badge { align-self: flex-start; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; min-width: 42px; height: 27px; box-sizing: border-box; padding: 0 9px; border-radius: 3px; background: #050505; color: #fff; font-size: 13px; line-height: 1; font-weight: 900; letter-spacing: .03em; font-variant-numeric: tabular-nums; }
+.nail-app .q-sub { align-self: flex-start; font-size: 11px; font-weight: 800; letter-spacing: .05em; color: #5b6b85; background: #f1f4f9; border-radius: 6px; padding: 2px 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.nail-app .q-sub[data-kind="walkin"] { color: #5b6b85; background: #f1f4f9; }
+.nail-app .q-sub[data-kind="assigned"] { color: #0c8a55; background: #e7f6ee; }
+.nail-app .q-sub[data-kind="unassigned"] { color: #b7791f; background: #fbf1de; }
 .nail-app .q-service { font-size: 15px; font-weight: 600; color: #2c3c58; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.nail-app .q-since { font-size: 12px; color: #8592a8; margin-top: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .q-card-footer { margin-top: auto; display: grid; grid-template-columns: 1fr 1fr; min-height: 42px; background: #f1f5fa; border-radius: 9px; padding: 6px 10px; box-sizing: border-box; }
+.nail-app .q-footer-cell { min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.nail-app .q-footer-cell + .q-footer-cell { border-left: 1px solid #dbe3ee; padding-left: 10px; }
+.nail-app .q-footer-cell small { font-size: 8.5px; line-height: 1.1; font-weight: 800; letter-spacing: .06em; color: #78869c; }
+.nail-app .q-footer-cell b { margin-top: 2px; font-size: 12px; line-height: 1; color: #16264a; font-variant-numeric: tabular-nums; }
+.nail-app .q-footer-timer .tt-timer { font-size: 14px; line-height: 1; color: #1266d8; letter-spacing: 0; }
 
-/* Spotlighted card ("Create Next Ticket" was tapped) — a different background is the whole point:
-   a quick at-a-glance signal that this card was manually pulled forward and still needs a ticket
-   created, not that it's the system's next-assignable ticket. Position in the grid never changes. */
-.nail-app .q-card-spotlight { background: #fff6e0; border-color: #f0cf7a; box-shadow: 0 8px 22px rgba(197, 145, 15, .18); }
-.nail-app .q-card-clear { position: absolute; top: 10px; right: 10px; width: 26px; height: 26px; border-radius: 50%; border: none; background: rgba(15, 31, 61, .08); color: #5b6b85; display: grid; place-items: center; }
-.nail-app .q-card-clear:active { background: rgba(15, 31, 61, .16); }
-
-/* Take a mistaken/left walk-in off the waiting list — top-left, so it never collides with the
-   spotlight-clear button (top-right) when a card happens to be both a walk-in and spotlighted. */
-.nail-app .q-card-remove { position: absolute; top: 10px; left: 10px; width: 24px; height: 24px; border-radius: 50%; border: none; background: transparent; color: #a2acbc; display: grid; place-items: center; }
+/* Take a mistaken/left walk-in off the waiting list. */
+.nail-app .q-card-remove { position: absolute; z-index: 1; top: 10px; right: 10px; width: 24px; height: 24px; border-radius: 50%; border: none; background: transparent; color: #a2acbc; display: grid; place-items: center; }
 .nail-app .q-card-remove:active { background: rgba(239, 90, 95, .12); color: #ef5a5f; }
-.nail-app .tt-compact .q-card-remove { width: 18px; height: 18px; top: 6px; left: 6px; }
-.nail-app .q-card-has-remove .q-name { margin-left: 22px; } /* clears the remove button so it never overlaps the client's name */
-.nail-app .tt-compact .q-card-has-remove .q-name { margin-left: 16px; }
-.nail-app .q-spotlight-tag { font-size: 11px; font-weight: 800; letter-spacing: .04em; color: #97690a; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .tt-compact .q-card-remove { width: 18px; height: 18px; top: 6px; right: 6px; }
+.nail-app .q-card-has-remove .q-top { padding-right: 22px; }
+.nail-app .tt-compact .q-card-has-remove .q-top { padding-right: 16px; }
 
-/* Compact density (many clients waiting at once) — same shrink pattern as .tt-compact .tt-card.
-   The spotlight tag is dropped here rather than shrunk further: the card's background color is
-   already the signal, and there is no room left for a 5th line at this density. */
+/* Compact density (many clients waiting at once) — same shrink pattern as .tt-compact .tt-card. */
 .nail-app .tt-compact .q-card { padding: 8px 10px; gap: 4px; border-radius: 10px; box-shadow: 0 3px 10px rgba(30, 60, 110, .08); }
 .nail-app .tt-compact .q-name { font-size: 14px; }
-.nail-app .tt-compact .q-sub { font-size: 9.5px; }
+.nail-app .tt-compact .q-id-badge { min-width: 32px; height: 20px; padding: 0 6px; font-size: 9.5px; border-radius: 2px; }
+.nail-app .tt-compact .q-sub { font-size: 9.5px; padding: 1px 5px; }
 .nail-app .tt-compact .q-service { font-size: 11px; }
-.nail-app .tt-compact .q-since { font-size: 9.5px; }
-.nail-app .tt-compact .q-card .tt-timer { font-size: 13px; }
-.nail-app .tt-compact .q-card-clear { width: 20px; height: 20px; top: 6px; right: 6px; }
-.nail-app .tt-compact .q-spotlight-tag { display: none; }
+.nail-app .tt-compact .q-card-footer { min-height: 30px; padding: 3px 6px; border-radius: 6px; }
+.nail-app .tt-compact .q-footer-cell + .q-footer-cell { padding-left: 6px; }
+.nail-app .tt-compact .q-footer-cell small { font-size: 6.5px; }
+.nail-app .tt-compact .q-footer-cell b { font-size: 9px; margin-top: 1px; }
+.nail-app .tt-compact .q-footer-timer .tt-timer { font-size: 10px; }
+
+/* One client-card grammar across Waiting, In Service, Walk-ins, Appointments, No-shows and
+   Completed. It borrows the Tech card's strong state panel and split footer, but intentionally
+   omits a portrait; ticket number + client name remain the first thing staff scan. */
+.nail-app .q-unified-head { min-height: 28px; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.nail-app .q-unified-head .q-name-row, .nail-app .q-unified-head.q-booking-client { flex: 1; min-width: 0; }
+.nail-app .q-unified-head.q-booking-client strong { flex: 1; }
+.nail-app .q-unified-pill { margin-left: auto; flex: 0 0 auto; max-width: 42%; padding: 4px 9px; border-radius: 999px; background: #edf2f8; color: #78869c; font-size: 9px; font-style: normal; font-weight: 900; letter-spacing: .06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }
+.nail-app .q-unified-pill[data-kind="assigned"], .nail-app .q-unified-pill[data-kind="service"], .nail-app .q-unified-pill[data-kind="completed"] { background: #e7f6ee; color: #0c8a55; }
+.nail-app .q-unified-pill[data-kind="unassigned"], .nail-app .q-unified-pill[data-kind="walk-ins"] { background: #fbf1de; color: #a76814; }
+.nail-app .q-unified-pill[data-kind="no-shows"] { background: #fbe9ec; color: #c24156; }
+.nail-app .q-unified-main { flex: 1; min-height: 58px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(72px, .42fr); align-items: stretch; background: #eef3f9; border-radius: 11px; overflow: hidden; }
+.nail-app .q-unified-clock { min-width: 0; display: flex; align-items: center; gap: 9px; padding: 9px 12px; color: #1266d8; }
+.nail-app .q-unified-clock > div { min-width: 0; display: flex; flex-direction: column; }
+.nail-app .q-unified-clock small, .nail-app .q-unified-side small, .nail-app .q-unified-footer small { color: #8b99ad; font-size: 9px; font-weight: 800; line-height: 1.1; }
+.nail-app .q-unified-clock b, .nail-app .q-unified-clock .tt-timer { color: #1266d8; font-size: 18px; font-weight: 850; line-height: 1.2; white-space: nowrap; }
+.nail-app .q-unified-side { border-left: 2px solid #fff; display: flex; flex-direction: column; justify-content: center; padding: 8px 11px; min-width: 0; }
+.nail-app .q-unified-side b { margin-top: 3px; color: #53637d; font-size: 12px; white-space: nowrap; }
+.nail-app .q-unified-footer { min-height: 39px; display: grid; grid-template-columns: 1fr 1fr; background: #f1f5fa; border-radius: 9px; overflow: hidden; }
+.nail-app .q-unified-footer > div { min-width: 0; padding: 6px 10px; display: flex; flex-direction: column; justify-content: center; }
+.nail-app .q-unified-footer > div + div { border-left: 1px solid #dce5f0; }
+.nail-app .q-unified-footer b { margin-top: 2px; color: #2c3c58; font-size: 11px; font-weight: 750; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: none; }
+.nail-app .q-unified-card { gap: 8px; padding: 10px 12px; }
+.nail-app .q-unified-card .q-booking-client-top { min-height: 28px; }
+.nail-app .q-unified-card .q-unified-main { min-height: 48px; }
+.nail-app .q-unified-card .q-unified-footer { min-height: 32px; }
+.nail-app .q-unified-card .q-booking-client span { order: 0; }
+.nail-app .q-unified-card .q-booking-client strong { order: 1; }
+.nail-app .q-unified-card .q-unified-pill { order: 2; }
+
+/* ── Spotlight — whoever's up next, always visible on the left in a large Techs-tab-styled card,
+   separate from the smaller-card grid the rest of the queue scrolls/paginates through. */
+.nail-app .q-body { flex: 1; min-height: 0; display: flex; gap: 14px; margin-top: 10px; }
+.nail-app .q-rest { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.nail-app .q-rest .tech-stage { margin-top: 0; }
+.nail-app .q-spotlight-wrap { position: relative; flex-shrink: 0; width: 340px; display: flex; }
+/* .tt-card's base rule is position:absolute (every other usage pairs it with a sized .tech-slot
+   wrapper + matching inline width/height/transform via computeTechLayout) — this card instead
+   sizes normally to its 340px-wide flex parent, so it must cancel that back to a normal static
+   position, or its contents render unconstrained and scatter across the page. */
+.nail-app .q-spotlight-card { position: static; width: 100%; height: 100%; padding: 20px 20px 16px; gap: 16px; display: flex; flex-direction: column; }
+.nail-app .q-spotlight-card .q-id-badge-spotlight { min-width: 52px; height: 32px; padding: 0 11px; font-size: 15px; }
+.nail-app .q-spotlight-card .tt-name strong { font-size: 22px; }
+.nail-app .q-spotlight-card .tt-name span { font-size: 13px; }
+.nail-app .q-spotlight-card .tt-clockbox { min-width: 0; width: 100%; }
+.nail-app .q-spotlight-elapsed { font-size: 17px; font-weight: 800; line-height: 1.05; }
+.nail-app .q-spotlight-service { font-size: 15px; }
+.nail-app .q-spotlight-bottom { grid-template-columns: 1fr 1fr; padding: 9px 14px; }
+.nail-app .q-spotlight-meta-cell > div { width: 100%; }
+.nail-app .q-spotlight-meta-cell small { font-size: 10px; font-weight: 800; letter-spacing: .06em; }
+.nail-app .q-spotlight-meta-cell b { margin-top: 2px; font-size: 14px; font-weight: 700; }
+.nail-app .q-spotlight-timer-cell .tt-timer { font-size: 18px; line-height: 1; color: #1266d8; letter-spacing: 0; }
+.nail-app .q-spotlight-actions { margin-top: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.nail-app .q-spotlight-action, .nail-app .q-spotlight-skip { height: 52px; border-radius: 12px; font-size: 14px; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 7px; }
+.nail-app .q-spotlight-action { border: none; background: #1f6fe0; color: #fff; box-shadow: 0 4px 14px rgba(31, 111, 224, .28); }
+.nail-app .q-spotlight-skip { border: 1px solid #cbd7e8; background: #f5f8fc; color: #33445f; }
+.nail-app .q-spotlight-assign { border-color: #1f6fe0; background: #eaf3ff; color: #1266d8; }
+.nail-app .q-spotlight-action:active { transform: scale(.98); }
+.nail-app .q-spotlight-skip:active:not(:disabled) { transform: scale(.98); background: #eaf0f8; }
+.nail-app .q-spotlight-skip:disabled { opacity: .45; cursor: not-allowed; }
+
+.nail-app .assign-create-unassigned { margin: 0 18px 12px; min-height: 58px; border: 1px solid #cbd7e8; border-radius: 11px; background: #f5f8fc; color: #182a45; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: 9px 13px; text-align: left; }
+.nail-app .assign-create-unassigned strong { font-size: 14px; font-weight: 850; }
+.nail-app .assign-create-unassigned span { margin-top: 3px; color: #687891; font-size: 11px; font-weight: 650; }
+.nail-app .assign-create-unassigned:active:not(:disabled) { background: #eaf0f8; }
+.nail-app .assign-create-unassigned:disabled { opacity: .5; }
+
+/* Queue summary detail tabs — show real visit cards with silhouettes in unused slots. */
+.nail-app .q-body-detail { display: block; }
+.nail-app .q-detail-view { height: 100%; min-height: 0; display: flex; flex-direction: column; gap: 9px; }
+.nail-app .q-detail-tab { height: 34px; flex: 0 0 34px; border: 2px solid #111; border-radius: 10px; background: #fff; color: #1f6fe0; display: flex; align-items: center; justify-content: center; gap: 8px; box-sizing: border-box; font-size: 13px; font-weight: 800; letter-spacing: .03em; }
+.nail-app .q-detail-tab em { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; box-sizing: border-box; display: grid; place-items: center; background: #1f6fe0; color: #fff; font-size: 11px; font-style: normal; }
+.nail-app .q-detail-ghost-grid { position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 320px)); grid-template-rows: repeat(4, minmax(0, 145px)); align-content: start; justify-content: start; gap: 14px; }
+.nail-app .q-wait-grid, .nail-app .q-tech-grid { height: 100%; overflow-y: auto; grid-auto-rows: minmax(0, 145px); scrollbar-width: thin; }
+/* Cards need their full 145px (header, clock, Current Service / Next Up). When the screen is too short
+   for four rows (e.g. the Techs tab's Clocked In/Out bar on an 800px-tall tablet), scroll the grid a
+   little instead of squeezing rows and clipping each card's bottom line. */
+.nail-app .q-wait-grid, .nail-app .q-tech-grid { grid-template-rows: none; grid-auto-rows: 145px; }
+.nail-app .q-wait-rest { width: 100%; }
+.nail-app .q-wait-card { position: relative; cursor: pointer; }
+/* No service / no technician yet: a red blank line (the "___" text stays for screen readers, drawn as a solid bar so it reads clearly at card size). */
+.nail-app .q-unified-footer b.q-missing { display: block; width: 34px; height: 3px; margin: 8px 0 5px; border-radius: 2px; background: #dc2626; font-size: 0; }
+.nail-app .q-wait-card.q-up-next { border-color: #1f6fe0; box-shadow: inset 3px 0 0 #1f6fe0, 0 6px 16px rgba(30, 60, 110, .10); }
+.nail-app .q-up-next .q-unified-pill { background: #eaf3ff; color: #1266d8; }
+.nail-app .q-wait-card .q-booking-client-top { padding-right: 15px; }
+.nail-app .q-wait-card .q-card-remove { top: 5px; right: 5px; }
+.nail-app .q-wait-actions { padding: 3px 5px; display: flex; flex-direction: column; gap: 3px; }
+.nail-app .q-wait-actions button { flex: 1; min-height: 0; border: 1px solid #cbd7e8; border-radius: 5px; background: #fff; color: #1266d8; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.nail-app .q-wait-actions button:disabled { opacity: .45; }
+.nail-app .q-tech-card { cursor: default; }
+.nail-app .q-tech-card.tt-tappable { cursor: pointer; }
+.nail-app .q-tech-avatar { width: 24px; height: 24px; object-fit: cover; border-radius: 50%; flex-shrink: 0; }
+.nail-app .q-tech-next { flex-shrink: 0; color: #1266d8; font-size: 10px; font-style: normal; font-weight: 900; }
+.nail-app .q-tech-card .q-unified-pill[data-kind="available"] { background: #e7f6ee; color: #0c8a55; }
+.nail-app .q-tech-card .q-unified-pill[data-kind="assigned"] { background: #eaf3ff; color: #1266d8; }
+.nail-app .q-tech-card .q-unified-pill[data-kind="break"] { background: #fbf1de; color: #a76814; }
+.nail-app .q-tech-card .q-unified-pill[data-kind="off"] { background: #edf2f8; color: #53637d; }
+.nail-app .q-tech-card .q-unified-clock b { font-size: 14px; }
+.nail-app .q-detail-message { position: absolute; z-index: 1; top: 20px; left: 20px; max-width: calc(100% - 40px); padding: 12px 16px; background: #fff; border: 1px solid #e1e8f1; border-radius: 9px; color: #334565; box-shadow: 0 5px 14px rgba(30,60,110,.1); }
+.nail-app .q-detail-ghost-card { width: 100%; max-width: 320px; height: 100%; max-height: 145px; min-width: 0; min-height: 0; border: 1px solid #e1e8f1; border-radius: 13px; background: rgba(255,255,255,.44); box-shadow: 0 5px 14px rgba(30,60,110,.08); }
+.nail-app .q-booking-card { width: 100%; max-width: 320px; height: 100%; max-height: 145px; min-width: 0; min-height: 0; box-sizing: border-box; border: 1px solid #e1e8f1; border-radius: 13px; background: #fff; color: inherit; font: inherit; text-align: left; box-shadow: 0 6px 16px rgba(30,60,110,.10); padding: 12px 14px; display: flex; flex-direction: column; overflow: hidden; }
+.nail-app .q-booking-time { margin-top: 9px; display: flex; align-items: center; gap: 6px; color: #1266d8; }
+.nail-app .q-booking-time strong { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.nail-app .q-booking-time > span { margin-left: auto; font-size: 11px; font-weight: 700; color: #78869c; }
+.nail-app .q-booking-time > .tt-timer { font-size: 14px; color: #1266d8; }
+.nail-app .q-booking-client { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.nail-app .q-booking-client-top { min-height: 25px; }
+.nail-app .q-booking-client strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #0f1f3d; font-size: 17px; font-weight: 800; }
+.nail-app .q-booking-client span { flex-shrink: 0; color: #fff; background: #050505; border-radius: 3px; padding: 2px 7px; font-size: 10px; font-weight: 900; }
+.nail-app .q-booking-service { margin-top: 6px; min-width: 0; display: flex; align-items: center; gap: 6px; color: #1266d8; }
+.nail-app .q-booking-service svg { flex: 0 0 auto; }
+.nail-app .q-booking-service > div { min-width: 0; display: flex; flex-direction: column; }
+.nail-app .q-booking-service span { color: #78869c; font-size: 10px; font-weight: 800; line-height: 1; }
+.nail-app .q-booking-service strong { margin-top: 2px; color: #0f1f3d; font-size: 15px; font-weight: 900; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nail-app .q-booking-staff { margin-top: auto; padding-top: 7px; color: #6b7a92; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Ghost cards — nobody checked in yet, but the tab still shows where cards WILL go instead of
+   going blank: a soft shadowed outline in the same shapes/positions real cards use, spotlight
+   included, so the two-column layout never collapses to a single full-width empty message. */
+.nail-app .q-card-ghost { background: rgba(15, 31, 61, .025); border: 1px solid rgba(15, 31, 61, .07); box-shadow: 0 4px 14px rgba(30, 60, 110, .05); cursor: default; }
+.nail-app .q-ghost-grid { position: relative; }
+.nail-app .q-ghost-caption { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); margin: 0; font-size: 14px; font-weight: 600; color: #96a3ba; white-space: nowrap; pointer-events: none; }
 
 /* Clocked In page: the NEXT badge sits to the left of the FREE timer box */
 .nail-app .tt-nextup-side { align-self: center; flex-shrink: 0; margin-right: 12px; font-size: 15px; letter-spacing: .12em; padding: 6px 14px; border-radius: 8px; }
 .nail-app .tt-compact .tt-nextup-side { margin-right: 7px; font-size: 9.5px; letter-spacing: .1em; padding: 3px 7px; border-radius: 5px; }
-.nail-app .tt-lean .tt-clockrow { flex: 0 0 auto; }
+
+/* "Your next client" notice after a Tech ID sign-in: over the queue for five seconds. */
+.nl-assigned { position: fixed; inset: 0; z-index: 310; display: flex; align-items: center; justify-content: center; padding: 24px;
+  background: rgba(15, 23, 42, .55); backdrop-filter: blur(3px); animation: nl-assigned-fade .18s ease-out; }
+.nl-assigned-card { position: relative; overflow: hidden; width: min(560px, 100%); padding: 40px 44px 46px; border-radius: 24px; text-align: center;
+  background: #fff; color: #0f172a; box-shadow: 0 32px 80px rgba(15, 23, 42, .35); animation: nl-assigned-rise .22s ease-out; }
+.nl-assigned-eyebrow { margin: 0 0 18px; font-size: 13px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: #64748b; }
+.nl-assigned-client { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; }
+.nl-assigned-client strong { font-size: clamp(32px, 5vw, 44px); font-weight: 800; line-height: 1.1; letter-spacing: -.01em; }
+.nl-assigned-ticket { padding: 6px 12px; border-radius: 8px; background: #0f172a; color: #fff; font-size: 18px; font-weight: 700; }
+.nl-assigned-tech { margin: 22px 0 0; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 20px; color: #475569; }
+.nl-assigned-tech b { color: #0f172a; font-weight: 700; }
+.nl-assigned-timer { position: absolute; left: 0; bottom: 0; height: 5px; width: 100%; background: #0f172a; transform-origin: left; animation: nl-assigned-count 5s linear forwards; }
+@keyframes nl-assigned-count { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@keyframes nl-assigned-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes nl-assigned-rise { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+
+/* Turn earned — shown right after a walk-in ticket is closed (TurnEarnedPopup.tsx). */
+.nl-turn { position: fixed; inset: 0; z-index: 310; display: flex; align-items: center; justify-content: center; padding: 24px;
+  background: rgba(15, 23, 42, .55); backdrop-filter: blur(3px); animation: nl-assigned-fade .18s ease-out; cursor: pointer; }
+.nl-turn-card { position: relative; overflow: hidden; max-width: 100%; padding: 36px 44px 44px; border-radius: 24px; text-align: center;
+  background: #fff; color: #0f172a; box-shadow: 0 32px 80px rgba(15, 23, 42, .35); animation: nl-turn-pop .34s cubic-bezier(.2, 1.3, .4, 1); }
+.nl-turn-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 36px; }
+.nl-turn-item { width: 260px; max-width: 100%; }
+.nl-turn-eyebrow { margin: 0 0 16px; font-size: 13px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: #64748b; }
+.nl-turn-ring { position: relative; width: 190px; height: 190px; margin: 0 auto; }
+.nl-turn-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.nl-turn-ring circle { fill: none; stroke-width: 10; }
+.nl-turn-track { stroke: #e2e8f0; }
+.nl-turn-fill { stroke: #0f172a; stroke-linecap: round; stroke-dashoffset: var(--nl-turn-to); animation: nl-turn-sweep 1.1s .25s cubic-bezier(.3, .8, .3, 1) backwards; }
+.nl-turn-figure { position: absolute; inset: 0; display: grid; place-items: center; font-size: 76px; font-weight: 800; line-height: 1; letter-spacing: -.02em;
+  animation: nl-turn-figure .5s .55s cubic-bezier(.2, 1.4, .4, 1) backwards; }
+.nl-turn-title { display: block; margin-top: 20px; font-size: clamp(28px, 4.4vw, 38px); font-weight: 800; letter-spacing: .02em; line-height: 1.1;
+  animation: nl-turn-rise .4s .8s ease-out backwards; }
+.nl-turn-sub { margin: 10px 0 0; font-size: 17px; color: #475569; animation: nl-turn-rise .4s .9s ease-out backwards; }
+.nl-turn-note { margin: 8px 0 0; font-size: 15px; color: #64748b; animation: nl-turn-rise .4s 1s ease-out backwards; }
+.nl-turn-timer { position: absolute; left: 0; bottom: 0; height: 5px; width: 100%; background: #0f172a; transform-origin: left; animation: nl-assigned-count 5s linear forwards; }
+@keyframes nl-turn-pop { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: none; } }
+@keyframes nl-turn-sweep { from { stroke-dashoffset: var(--nl-turn-from); } to { stroke-dashoffset: var(--nl-turn-to); } }
+@keyframes nl-turn-figure { from { opacity: 0; transform: scale(.5); } to { opacity: 1; transform: none; } }
+@keyframes nl-turn-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .nl-turn-card, .nl-turn-fill, .nl-turn-figure, .nl-turn-title, .nl-turn-sub, .nl-turn-note { animation: none; } }
+
+/* POS key grid — the ticket builder's right panel (CatalogPanel.tsx): a fixed 3 × 6 grid of keys, modelled on the
+   register this screen mirrors. Categories on the main grid; a category key opens its services. */
+.nail-app .catalog-panel:has(.pos-grid) { padding: 10px; overflow: hidden; }
+.nail-app .pos-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.nail-app .pos-key { min-width: 0; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 6px 6px 9px;
+  border: 1px solid #454c56; border-radius: 5px; background: #343943; color: #eef3fb; cursor: pointer; text-align: center; font: inherit;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255, 255, 255, .06), inset 0 -4px 0 var(--pos-band, #454c56); transition: background .1s, transform .06s; }
+.nail-app .pos-key:hover:not(:disabled) { background: #3b414c; }
+.nail-app .pos-key:active:not(:disabled) { transform: scale(.97); background: #424956; }
+.nail-app .pos-key:disabled { cursor: default; }
+.nail-app .pos-key svg { flex-shrink: 0; color: #aeb6c2; }
+.nail-app .pos-key strong { max-width: 100%; font-size: clamp(13px, 1.3vw, 17px); font-weight: 700; line-height: 1.15; letter-spacing: .01em;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.nail-app .pos-key-service span { display: flex; align-items: baseline; justify-content: center; gap: 6px; max-width: 100%; white-space: nowrap; }
+.nail-app .pos-key-service b { font-size: clamp(14px, 1.35vw, 18px); font-weight: 700; color: #4cc3ee; }
+.nail-app .pos-key-service small { font-size: clamp(10px, .95vw, 13px); color: #8b94a0; }
+.nail-app .pos-key.selected { border-color: #0d9bd1; background: #1d3a48; box-shadow: 0 0 0 1px #0d9bd1, inset 0 -4px 0 #0d9bd1; }
+.nail-app .pos-key-nav { background: #2f343d; }
+.nail-app .pos-key-nav strong { text-transform: uppercase; letter-spacing: .08em; font-size: clamp(10px, .95vw, 12px); color: #c8cdd3; }
+.nail-app .pos-key-empty { background: #2e323a; border-color: #383e48; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03); cursor: default; }
+
+/* While the POS waits on the customer's screen (tip, or tip + front desk reader): a way to stop waiting. */
+.nail-app .pay-waiting { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid #454c56; background: #232830; font-size: 13px; color: #c8cdd3; }
+.nail-app .pay-waiting span { flex: 1 1 160px; }
+.nail-app .pay-waiting button { height: 38px; padding: 0 14px; border: 1px solid #5a6270; background: #353a43; color: #eef3fb; font-size: 12px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+
+/* Manager's key grid editor (GridEditor.tsx): grids · the 3 × 6 preview · the selected key's settings. */
+.nail-app .ge-overlay { position: fixed; inset: 0; z-index: 280; display: flex; flex-direction: column; background: #20242c; color: #eef3fb; }
+.nail-app .ge-head { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; background: #2a2e36; border-bottom: 1px solid #3b424c; }
+.nail-app .ge-head h2 { margin: 0; font-size: 20px; font-weight: 700; }
+.nail-app .ge-head p { margin: 3px 0 0; font-size: 13px; color: #8b94a0; }
+.nail-app .ge-head-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.nail-app .ge-head-actions button { height: 46px; padding: 0 18px; border: 1px solid #454c56; background: #353a43; color: #eef3fb; font-size: 13px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.nail-app .ge-head-actions .ge-save { background: #0d9b6e; border-color: #0d9b6e; color: #fff; min-width: 110px; }
+.nail-app .ge-head-actions button:disabled { opacity: .5; }
+.nail-app .ge-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 210px minmax(0, 1fr) 300px; gap: 10px; padding: 10px; }
+.nail-app .ge-grids, .nail-app .ge-form, .nail-app .ge-preview { background: #2a2e36; min-height: 0; overflow-y: auto; padding: 12px; }
+.nail-app .ge-preview { display: flex; overflow: hidden; }
+.nail-app .ge-grids { display: flex; flex-direction: column; gap: 6px; }
+.nail-app .ge-label { margin: 0 0 4px; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #8b94a0; }
+.nail-app .ge-grids > button { min-height: 46px; padding: 0 12px; text-align: left; border: 1px solid #454c56; background: #343943; color: #eef3fb; font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nail-app .ge-grids > button.active { border-color: #0d9bd1; background: #1d3a48; }
+.nail-app .ge-grids > .ge-add { display: flex; align-items: center; gap: 6px; background: transparent; border-style: dashed; color: #c8cdd3; }
+.nail-app .ge-grid-meta { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.nail-app .ge-overlay input, .nail-app .ge-overlay select { width: 100%; height: 44px; padding: 0 10px; border: 1px solid #454c56; background: #232830; color: #eef3fb; font-size: 15px; font-family: inherit; }
+.nail-app .ge-danger { display: flex; align-items: center; justify-content: center; gap: 6px; height: 42px; border: 1px solid #5a3a3d; background: transparent; color: #ef8a8e; font-size: 13px; font-weight: 700; }
+.nail-app .ge-form { display: flex; flex-direction: column; gap: 14px; }
+.nail-app .ge-form-head { display: flex; align-items: center; justify-content: space-between; }
+.nail-app .ge-form-head button { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid #454c56; background: #353a43; color: #c8cdd3; }
+.nail-app .ge-hint { margin: 0; font-size: 13px; line-height: 1.5; color: #8b94a0; }
+.nail-app .ge-types { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.nail-app .ge-types button { height: 44px; border: 1px solid #454c56; background: #343943; color: #eef3fb; font-size: 13px; font-weight: 700; }
+.nail-app .ge-types button.active { border-color: #0d9bd1; background: #1d3a48; }
+.nail-app .ge-types button:disabled { opacity: .35; }
+.nail-app .ge-field { display: flex; flex-direction: column; gap: 6px; }
+.nail-app .ge-field > span { font-size: 12px; font-weight: 700; color: #c8cdd3; }
+.nail-app .ge-swatches { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.nail-app .ge-swatches button { height: 40px; padding: 0 12px; border: 2px solid #454c56; background: #343943; color: #eef3fb; font-size: 12px; font-weight: 700; }
+.nail-app .ge-swatches .ge-swatch { width: 40px; padding: 0; }
+.nail-app .ge-swatches button.active { border-color: #fff; }
+
+/* More popup, Manager tab: a Back button before the title. */
+.nail-app .more-header .more-back { margin-right: 14px; }
+.nail-app .more-header .more-back + h2 { margin-right: auto; }
+
+/* Offline: a small pill, top right, while the server can't be reached or saved changes are still to be sent. */
+.nail-app .nail-offline-pill { position: fixed; top: 10px; right: 12px; z-index: 390; background: #3a2a10; border: 1px solid #b7791f; color: #fbd38d; padding: 6px 12px; font-size: 11px; font-weight: 700; letter-spacing: .06em; border-radius: 999px; cursor: pointer; }

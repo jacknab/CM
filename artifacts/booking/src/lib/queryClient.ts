@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { reportUnauthorized } from "./resumeSignIn";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -19,6 +20,7 @@ export async function apiRequest(
     credentials: "include",
   });
 
+  if (res.status === 401) reportUnauthorized(url);
   await throwIfResNotOk(res);
   return res;
 }
@@ -33,6 +35,8 @@ export const getQueryFn: <T>(options: {
       credentials: "include",
     });
 
+    // A 401 used to turn silently into "no data", leaving a signed-out screen looking merely empty.
+    if (res.status === 401) reportUnauthorized(queryKey.join("/") as string);
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;
     }

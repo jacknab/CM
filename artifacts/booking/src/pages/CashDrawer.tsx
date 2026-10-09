@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { openCashDrawerHardware } from "@/lib/cashDrawer";
 import { formatInTz } from "@/lib/timezone";
 import { BusinessDayGate } from "@/components/cash/BusinessDayOverlay";
+import { ZReportDialog } from "@/components/reports/ZReportPrint";
 import { useCashDrawers } from "@/hooks/use-cash-drawers";
 import type { CashDrawerSessionWithActions } from "@shared/schema";
 import {
@@ -108,6 +109,7 @@ export function CashDrawerPanel({ embedded = false, onClose, onOpenDrawer }: Cas
   const [actionAmount, setActionAmount] = useState("");
   const [actionReason, setActionReason] = useState("");
   const [viewingReportId, setViewingReportId] = useState<number | null>(null);
+  const [fullZReportSessionId, setFullZReportSessionId] = useState<number | null>(null);
   const [expandedHistory, setExpandedHistory] = useState<number | null>(null);
   const [showDepositSlip, setShowDepositSlip] = useState(false);
 
@@ -537,8 +539,19 @@ export function CashDrawerPanel({ embedded = false, onClose, onOpenDrawer }: Cas
         )}
 
         {viewingReportId && zReport && (
-          <ZReportView report={zReport} timezone={timezone} onClose={() => setViewingReportId(null)} />
+          <ZReportView
+            report={zReport}
+            timezone={timezone}
+            onClose={() => setViewingReportId(null)}
+            onPrintFull={isManager ? () => setFullZReportSessionId(viewingReportId) : undefined}
+          />
         )}
+
+        <ZReportDialog
+          open={fullZReportSessionId != null}
+          onClose={() => setFullZReportSessionId(null)}
+          sessionId={fullZReportSessionId}
+        />
 
         {isManager && discrepancies.length > 0 && (
           <Card className="border-destructive/40 bg-destructive/5" data-testid="discrepancies-card">
@@ -1185,10 +1198,15 @@ function ZReportView({
   report,
   timezone,
   onClose,
+  onPrintFull,
 }: {
   report: any;
   timezone: string;
   onClose: () => void;
+  /** Opens the full, 80mm-thermal-formatted Day Close / Z Report (financial summary, YTD,
+   *  technician commissions, salon earnings, etc.) — omitted entirely for staff, who can't
+   *  see financial totals in this panel to begin with (see isBlindCount / isManager above). */
+  onPrintFull?: () => void;
 }) {
   const session = report.session;
   const closingBal = Number(session.closingBalance) || 0;
@@ -1212,10 +1230,12 @@ function ZReportView({
             Z Report
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.print()} data-testid="button-print-zreport">
-              <Printer className="w-3.5 h-3.5" />
-              Print
-            </Button>
+            {onPrintFull && (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={onPrintFull} data-testid="button-open-full-zreport">
+                <Printer className="w-3.5 h-3.5" />
+                Full Z Report
+              </Button>
+            )}
             <Button size="icon" variant="ghost" onClick={onClose} data-testid="button-close-zreport">
               <X className="w-4 h-4" />
             </Button>

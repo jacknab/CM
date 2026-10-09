@@ -1,17 +1,18 @@
 /**
- * The tip choices offered on customer-facing screens: the full-screen "Add a Tip?" page (shown while collecting a card
- * payment) and the floating TipPanel (the cart screen's right panel, shown in place of RewardsPanel when the client
- * can't redeem anything). One shared list + calculation so both stay in sync.
+ * The preset tip choices on the /frontdesk full-screen tip page (shown while collecting a card payment). "No tip" is
+ * the page's separate Skip button, and any other amount goes through its Custom keypad.
  */
-export interface TipOption { label: string; pct: number }
+export interface TipOption { pct: number; note: string }
 
-export const TIP_OPTIONS: readonly TipOption[] = [
-  { label: "No Tip", pct: 0 },
-  { label: "15%", pct: 15 },
-  { label: "18%", pct: 18 },
-  { label: "20%", pct: 20 },
-  { label: "25%", pct: 25 },
-];
+const NOTES = ["OK service.", "Good service.", "Great service.", "Outstanding service!"];
+
+/** The tiles for a salon's own percentages (shared/tipPresets.ts). The notes run up to "Outstanding" at the top one. */
+export function tipOptionsFor(pcts: readonly number[]): TipOption[] {
+  return pcts.map((pct, i) => ({ pct, note: NOTES[NOTES.length - pcts.length + i] ?? "" }));
+}
+
+/** The defaults, for a salon that has not set its own. */
+export const TIP_OPTIONS: readonly TipOption[] = tipOptionsFor([15, 18, 20, 25]);
 
 /** Whole cents, rounded — `total` is the sale total the tip is calculated on. */
 export const calcTipAmount = (total: number, pct: number): number => Math.round(total * pct) / 100;

@@ -14,7 +14,8 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { serviceIllustrationCategories, services } from "@shared/schema";
-import { eq, sql, asc } from "drizzle-orm";
+import { eq, sql, asc, and, ne } from "drizzle-orm";
+import { KIOSK_ART_INDUSTRY } from "@shared/kioskArt";
 import { memoryUpload, uploadToR2, deleteFromR2, extractR2KeyFromUrl } from "../lib/r2";
 import sharp from "sharp";
 import { findIllustrationSlug, type Industry } from "../lib/illustrationMatcher";
@@ -100,7 +101,8 @@ router.post("/bulk-auto-assign", async (req: any, res) => {
   try {
     const ind = (industry || "NAIL_SALON") as Industry;
     const allServices = await db.select().from(services).where(eq(services.storeId, Number(storeId)));
-    const cats = await db.select().from(serviceIllustrationCategories).where(eq(serviceIllustrationCategories.isActive, true));
+    // Kiosk artwork slots ("Shape — Square", "Length — Long"…) are not service illustrations.
+    const cats = await db.select().from(serviceIllustrationCategories).where(and(eq(serviceIllustrationCategories.isActive, true), ne(serviceIllustrationCategories.industry, KIOSK_ART_INDUSTRY)));
     const catBySlug = Object.fromEntries(cats.map(c => [c.slug, c]));
 
     let assigned = 0;
@@ -134,7 +136,7 @@ router.post("/auto-assign/:serviceId", async (req: any, res) => {
 
     const industry = (req.body.industry || "NAIL_SALON") as Industry;
     const cats = await db.select().from(serviceIllustrationCategories)
-      .where(eq(serviceIllustrationCategories.isActive, true));
+      .where(and(eq(serviceIllustrationCategories.isActive, true), ne(serviceIllustrationCategories.industry, KIOSK_ART_INDUSTRY)));
 
     // 1) Try keyword rules, then fall back to name-based matching against DB categories
     const slug = findIllustrationSlug(svc.name, industry) ?? nameMatchSlug(svc.name, cats);
@@ -247,10 +249,14 @@ router.post("/:id/upload", memoryUpload({ maxSizeMb: 10 }).single("image"), asyn
       if (key) await deleteFromR2(key).catch(() => {});
     }
 
-    const resized = await sharp(req.file.buffer)
-      .resize(300, 200, { fit: "cover", position: "attention" })
-      .webp({ quality: 85 })
-      .toBuffer();
+    // Service illustrations are small landscape thumbnails. Kiosk artwork is shown large and must keep
+    // its own proportions and transparency, so it is only scaled down to fit, never cropped.
+    const resized = cat.industry === KIOSK_ART_INDUSTRY
+      ? await sharp(req.file.buffer).rotate().resize(1920, 1400, { fit: "inside", withoutEnlargement: true }).webp({ quality: 90 }).toBuffer()
+      : await sharp(req.file.buffer)
+          .resize(300, 200, { fit: "cover", position: "attention" })
+          .webp({ quality: 85 })
+          .toBuffer();
 
     const imageUrl = await uploadToR2(resized, "illustrations", `${cat.slug}.webp`, "image/webp");
 

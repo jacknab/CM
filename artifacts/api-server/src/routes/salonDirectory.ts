@@ -25,9 +25,10 @@
  *   /sitemap-listings.xml                — sitemap of state/city hub pages
  *   /:slug                               — individual salon page (fallback router)
  *
- * No redirects or references to the earlier /nail-salons and /salon/:slug
- * build of this feature are kept — this is a clean cutover, not a migration
- * of those URLs. Those old paths now 404 like any other unknown path.
+ * The earlier build of this feature lived at /nail-salons/... and /salon/:slug. Google still had
+ * thousands of those addresses (Search Console, Oct 2026: most of the site's "Not found (404)"),
+ * so they 301 to the current page: /salon/:slug → /:slug (also through a renamed slug), and
+ * /nail-salons/:state/:city → /listings/:city--:state. An old salon that no longer exists 404s.
  */
 
 import { Router } from "express";
@@ -36,7 +37,7 @@ import { logger } from "../lib/logger";
 import { renderMarketplacePage } from "../lib/marketplaceSsr";
 import { requestIp, resolveVisitorCity } from "../lib/geoLookup";
 import {
-  ensureLoaded, getClaimedSalonList, getStateIndex,
+  ensureLoaded, getCityData, getClaimedSalonList, getSalonMap, getSalonRedirectSlug, getStateBySlug, getStateIndex,
   CERTXA_DOMAIN, SITEMAP_PAGE_SIZE,
 } from "../lib/salonData";
 
@@ -224,6 +225,45 @@ router.get("/listings/:param", (req: Request, res: Response) => serveSsrPage(req
 // which would never match the two-segment /deals/:id anyway.
 router.get("/deals", (req: Request, res: Response) => serveSsrPage(req, res));
 router.get("/deals/:id", (req: Request, res: Response) => serveSsrPage(req, res));
+
+// ── The directory's earlier addresses → where those pages are now (301) ───────────
+router.get("/salon/:slug", async (req: Request, res: Response, next) => {
+  try {
+    await ensureLoaded();
+    const slug = String(req.params.slug);
+    if (getSalonMap().has(slug)) { res.redirect(301, `/${slug}`); return; }
+    const moved = await getSalonRedirectSlug(slug);
+    if (moved) { res.redirect(301, `/${moved}`); return; }
+  } catch (err) {
+    logger.warn({ err }, "[salonDirectory] old /salon/ address lookup failed");
+  }
+  next(); // no such salon any more: the normal 404
+});
+router.get("/nail-salons", (_req: Request, res: Response) => res.redirect(301, "/"));
+// Only to a page that exists: an old address whose state or city isn't in the directory stays a plain 404
+// (a redirect that lands on "not found" reads as a soft 404).
+router.get("/nail-salons/:state", async (req: Request, res: Response, next) => {
+  try {
+    await ensureLoaded();
+    const state = getStateBySlug(String(req.params.state));
+    if (state) { res.redirect(301, `/listings/${state.slug}`); return; }
+  } catch (err) {
+    logger.warn({ err }, "[salonDirectory] old /nail-salons/ address lookup failed");
+  }
+  next();
+});
+router.get("/nail-salons/:state/:city", async (req: Request, res: Response, next) => {
+  try {
+    await ensureLoaded();
+    const state = getStateBySlug(String(req.params.state));
+    const citySlug = String(req.params.city);
+    if (state && getCityData(state.code, citySlug)) { res.redirect(301, `/listings/${citySlug}--${state.slug}`); return; }
+    if (state) { res.redirect(301, `/listings/${state.slug}`); return; }
+  } catch (err) {
+    logger.warn({ err }, "[salonDirectory] old /nail-salons/ address lookup failed");
+  }
+  next();
+});
 
 // Guest "My vouchers" wallet — reached only via an emailed magic link.
 router.get("/wallet", (req: Request, res: Response) => serveSsrPage(req, res));

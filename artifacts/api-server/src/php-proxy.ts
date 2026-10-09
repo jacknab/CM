@@ -333,8 +333,8 @@ const phpProxy = createProxyMiddleware({
 
 // Combined middleware: waits for PHP readiness then proxies
 export async function phpMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
-  // manage.certxa.com is served entirely by Express/React — never send to PHP
-  if ((req as any).isManageSubdomain) return next();
+  // manage.certxa.com and rentals.certxa.com are served entirely by Express/React — never send to PHP
+  if ((req as any).isManageSubdomain || (req as any).isRentalsSubdomain) return next();
   if (!isPhpRoute(req.path)) return next();
 
   // For paths that could be served by either PHP or Vite, prefer local files

@@ -75,7 +75,7 @@ const SMS_DEFAULTS: SmsSettings = {
   confirmationTemplate:
     "Hi {customerName}, your appointment at {storeName} is confirmed for {appointmentDate} at {appointmentTime}. See you then!",
   reminderTemplate:
-    "Hi {customerName}, reminder: your appt at {storeName} is on {appointmentDate} at {appointmentTime}. Reply CANCEL to cancel.",
+    "Hi {customerName}, reminder: your appt at {storeName} is on {appointmentDate} at {appointmentTime}. If you can't make it, reply and tell us.",
   reviewTemplate:
     "Hi {customerName}, thank you for visiting {storeName}! We'd love your feedback. Leave us a review: {reviewUrl}",
   smsCancellationEnabled: true,
@@ -578,7 +578,7 @@ export default function ClientNotifications() {
             <Section
               icon={<XCircle className="h-[18px] w-[18px]" />}
               title="Cancellation replies"
-              description="Let clients reply CANCEL to a text reminder to cancel their next appointment."
+              description="Recognize clear cancellation requests in clients' text replies."
             >
               <ChannelToggle
                 icon={<MessageSquareReply className="h-4 w-4" />}
@@ -588,8 +588,9 @@ export default function ClientNotifications() {
               />
               {sms.smsCancellationEnabled && (
                 <p className="text-[12px] text-muted-foreground">
-                  When a client replies <span className="font-mono">CANCEL</span>, the system finds and
-                  cancels their nearest upcoming appointment, then sends a confirmation text.
+                  The system recognizes clear replies such as “I can’t make it” or “Please cancel my
+                  appointment,” cancels the nearest upcoming appointment, and sends a confirmation.
+                  Ambiguous or negated messages stay in the inbox for staff review.
                 </p>
               )}
             </Section>

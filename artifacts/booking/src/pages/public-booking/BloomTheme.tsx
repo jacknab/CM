@@ -78,6 +78,8 @@ interface GoogleReviewEntry {
   customerName?: string | null;
   rating?: number | null;
   reviewText?: string | null;
+  /** The business owner's reply — only Certxa's own reviews have one. */
+  ownerResponse?: string | null;
   reviewImageUrls?: string | null;
   reviewerPhotoUrl?: string | null;
   reviewMediaItems?: Array<Record<string, unknown>> | null;
@@ -1563,6 +1565,12 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
                 )}
                 {r.reviewText && (
                   <p className="mt-2 text-[13px] leading-5" style={{ color: C.ink700 }}>{r.reviewText}</p>
+                )}
+                {r.ownerResponse && (
+                  <div className="mt-3 border-l-2 pl-3" style={{ borderColor: C.ink500 }}>
+                    <p className="text-[11px] font-semibold" style={{ color: C.ink500 }}>Reply from {store.name}</p>
+                    <p className="mt-1 text-[13px] leading-5" style={{ color: C.ink700 }}>{r.ownerResponse}</p>
+                  </div>
                 )}
               </div>
             ))}

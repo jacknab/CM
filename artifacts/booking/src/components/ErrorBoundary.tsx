@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { isStaleChunkError, reloadForNewBuild } from "@/lib/staleBuild";
 
 interface Props {
   children: ReactNode;
@@ -17,6 +18,9 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // An old build's page file was removed by a deploy — reload onto the current build (once) rather
+    // than show this screen. If the reload is refused (just tried / offline) the screen shows as usual.
+    if (isStaleChunkError(error) && reloadForNewBuild()) return;
     this.setState({ error, errorInfo });
     // Also log to the browser console so it shows up in DevTools
     console.error("[ErrorBoundary] Caught error:", error);

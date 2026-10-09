@@ -20,7 +20,8 @@ const NO_COLOR = "#454c56";
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 /**
- * A ticket's card — details plus the action dock (Checkout / Reassign / Ticket, or Start / Reassign / Ticket / Cancel for one still waiting).
+ * A ticket's card — details plus the action dock. An unassigned waiting ticket must be
+ * assigned before it can be started; this keeps it visible in Checked In until a tech is chosen.
  * It opens over whatever screen the ticket was tapped on and closes back to that same screen.
  */
 export function TicketPopup(p: Props) {
@@ -32,10 +33,13 @@ export function TicketPopup(p: Props) {
     return () => clearInterval(iv);
   }, []);
 
-  const dock: { icon: typeof Play; label: string; action: () => void; primary?: boolean; danger?: boolean }[] = t.status === "confirmed"
+  const dock: { icon: typeof Play; label: string; action: () => void; primary?: boolean; danger?: boolean; disabled?: boolean }[] = t.status === "confirmed"
     ? [
-        { icon: Play, label: "START", action: () => p.onStart(t), primary: true },
-        { icon: UserRound, label: "REASSIGN", action: () => p.onReassign(t) },
+        t.staff
+          ? { icon: Play, label: "START", action: () => p.onStart(t), primary: true }
+          : { icon: UserRound, label: "ASSIGN", action: () => p.onReassign(t), primary: true },
+        ...(t.staff ? [{ icon: ShoppingBag, label: "CHECKOUT", action: () => p.onCheckout(t) }] : []),
+        { icon: UserRound, label: "REASSIGN", action: () => p.onReassign(t), disabled: !t.staff },
         { icon: Receipt, label: "TICKET", action: () => p.onEdit(t) },
         { icon: Ban, label: "CANCEL", action: () => p.onCancel(t), danger: true },
       ]
@@ -43,19 +47,20 @@ export function TicketPopup(p: Props) {
         { icon: ShoppingBag, label: "CHECKOUT", action: () => p.onCheckout(t), primary: true },
         { icon: UserRound, label: "REASSIGN", action: () => p.onReassign(t) },
         { icon: Receipt, label: "TICKET", action: () => p.onEdit(t) },
+        { icon: Ban, label: "CANCEL", action: () => p.onCancel(t), danger: true },
       ];
 
   return (
     <>
       <div className="checkin-overlay" onClick={() => p.onClose()} />
       <div className="checkin-modal-wrapper" onClick={() => p.onClose()}>
-        <div className="checkin-modal-card" onClick={(e) => e.stopPropagation()} data-testid="nail-ticket-modal">
+        <div className="checkin-modal-card" role="dialog" aria-modal="true" aria-labelledby="nail-ticket-title" onClick={(e) => e.stopPropagation()} data-testid="nail-ticket-modal">
           <button type="button" className="checkin-modal-close" onClick={() => p.onClose()} aria-label="Close"><X size={16} /></button>
           <div className="checkin-card-header checkin-card-header-lg" style={{ borderLeftColor: t.staff?.color || NO_COLOR }}>
             <div className="checkin-client">
               <div className="checkin-card-name-row">
-                <strong>{t.client.name}</strong>
-                <span className="checkin-ticket-num">#{t.ticketNumber ?? t.id}</span>
+                <strong id="nail-ticket-title">{t.client.name}</strong>
+                <span className="checkin-ticket-num">{t.offline ? "NOT SENT YET" : `#${t.ticketNumber ?? t.id}`}</span>
               </div>
               <span><Phone size={13} /> {t.client.phone ?? "No phone"}</span>
             </div>
@@ -92,7 +97,7 @@ export function TicketPopup(p: Props) {
 
         <div className="checkin-dock" onClick={(e) => e.stopPropagation()}>
           {dock.map((b) => (
-            <button key={b.label} type="button" disabled={p.busy} onClick={() => { b.action(); p.onClose(); }} data-testid={`nail-dock-${b.label.toLowerCase()}`}
+            <button key={b.label} type="button" disabled={p.busy || b.disabled} onClick={() => { b.action(); p.onClose(); }} data-testid={`nail-dock-${b.label.toLowerCase()}`}
               className={`checkin-dock-btn ${b.primary ? "checkin-dock-primary" : ""} ${b.danger ? "checkin-dock-danger" : ""}`}>
               <b.icon size={22} />
               <span>{b.label}</span>

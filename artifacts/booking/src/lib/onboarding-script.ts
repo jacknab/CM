@@ -189,6 +189,14 @@ function validateSlug(value: string): string | null {
   return null;
 }
 
+// ── Business hours validation ─────────────────────────────────────────────────
+
+/** True when at least one day of the week is open. */
+export function hasOpenDay(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  return value.some((d) => d && d.isClosed === false);
+}
+
 // ── The conversation script ───────────────────────────────────────────────────
 
 export const ONBOARDING_STEPS: StepDefinition[] = [
@@ -304,8 +312,12 @@ export const ONBOARDING_STEPS: StepDefinition[] = [
     phase: "Business",
     message: 'What are your business hours? You can type them naturally — like "Mon\u2013Sat 9am\u20136pm, closed Sunday" — or set them day by day.',
     inputType: "hours_natural",
-    skippable: true,
-    skipTo: "services_intro",
+    // Required, with no skip link: a salon with no hours cannot take bookings.
+    required: true,
+    validate: (v) =>
+      hasOpenDay(v)
+        ? null
+        : 'Please set your business hours: type them and press "Parse hours", or choose "Set day by day". At least one day must be open.',
     placeholder: 'e.g. Mon–Sat 9am–7pm, closed Sunday',
   },
 

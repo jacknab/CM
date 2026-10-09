@@ -1,0 +1,6 @@
+{
+  "name": "certxa-app-restart",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Nightly self-restart, crash relaunch and Home-app helpers for the Certxa Android app"
+}

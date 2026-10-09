@@ -12,19 +12,35 @@ import { apiRequest } from "@/lib/queryClient";
 type TurnSettings = {
   turnEnabled: boolean;
   autoAdvanceOnCheckout: boolean;
-  useClockInOrder: boolean;
-  allowManagerOverrides: boolean;
   turnValueThreshold: number;
   appointmentExclusionWindowMinutes: number;
+  /** Which pre-configured turn system the salon runs. */
+  turnMode: "dollar" | "classic";
+  /** Dollar-Based Turns: what a ticket under the dollars-per-turn amount earns. */
+  partialTurnValue: number;
 };
+
+/** The pre-configured turn systems a salon can choose from. */
+const TURN_SYSTEMS: { mode: TurnSettings["turnMode"]; title: string; description: string }[] = [
+  {
+    mode: "dollar",
+    title: "Dollar-Based Turns",
+    description: "Each ticket earns turns by its service amount. The technician with the lowest total today is next — nobody gets the next client just for finishing first.",
+  },
+  {
+    mode: "classic",
+    title: "Counted Turns",
+    description: "Each ticket at or over the turn value is one turn. A smaller ticket earns nothing and keeps the technician at the front of the line.",
+  },
+];
 
 const DEFAULT_SETTINGS: TurnSettings = {
   turnEnabled: true,
   autoAdvanceOnCheckout: true,
-  useClockInOrder: true,
-  allowManagerOverrides: true,
   turnValueThreshold: 25,
   appointmentExclusionWindowMinutes: 20,
+  turnMode: "classic",
+  partialTurnValue: 0.5,
 };
 
 export default function TurnSystem() {
@@ -50,9 +66,14 @@ export default function TurnSystem() {
         ...settingsQuery.data,
         turnValueThreshold: Number(settingsQuery.data.turnValueThreshold ?? 25),
         appointmentExclusionWindowMinutes: Number(settingsQuery.data.appointmentExclusionWindowMinutes ?? 20),
+        turnMode: settingsQuery.data.turnMode === "dollar" ? "dollar" : "classic",
+        partialTurnValue: Number(settingsQuery.data.partialTurnValue ?? 0.5),
       });
     }
   }, [settingsQuery.data]);
+
+  const turnValue = Number(settings.turnValueThreshold) > 0 ? Number(settings.turnValueThreshold) : 30;
+  const partialLabel = settings.partialTurnValue === 0.25 ? "¼" : settings.partialTurnValue === 0.75 ? "¾" : settings.partialTurnValue === 1 ? "1" : "½";
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -107,30 +128,48 @@ export default function TurnSystem() {
               onCheckedChange={(value) => update("turnEnabled", value)}
             />
             <TurnToggleRow
-              title="Auto-Advance on Checkout"
-              description="When a POS transaction at or above the turn value completes, automatically move the technician to the back of the queue."
+              title="Hand Waiting Clients to Free Technicians"
+              description="When a technician becomes free (a checkout, a clock-in, a break ending), automatically give them the longest-waiting client they are qualified for."
               checked={settings.autoAdvanceOnCheckout}
               onCheckedChange={(value) => update("autoAdvanceOnCheckout", value)}
-            />
-            <TurnToggleRow
-              title="Use Clock-in Order for Initial Queue"
-              description="When a technician clocks in, their starting position is based on clock-in time (earliest = first)."
-              checked={settings.useClockInOrder}
-              onCheckedChange={(value) => update("useClockInOrder", value)}
-            />
-            <TurnToggleRow
-              title="Allow Manager Overrides"
-              description="Managers can manually reorder the queue or assign a specific technician to a walk-in."
-              checked={settings.allowManagerOverrides}
-              onCheckedChange={(value) => update("allowManagerOverrides", value)}
               hideDivider
             />
+          </div>
+
+          <div className="mt-5">
+            <p className="mb-2 text-sm font-medium text-slate-700">Turn system</p>
+            <div className="grid gap-3 md:grid-cols-2" role="radiogroup" aria-label="Turn system">
+              {TURN_SYSTEMS.map((system) => {
+                const selected = settings.turnMode === system.mode;
+                return (
+                  <button
+                    key={system.mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => update("turnMode", system.mode)}
+                    data-testid={`turn-system-${system.mode}`}
+                    className={`rounded-xl border p-4 text-left transition-colors ${selected ? "border-teal-500 bg-teal-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}
+                  >
+                    <span className="block text-sm font-semibold text-slate-900">{system.title}</span>
+                    <span className="mt-1 block text-sm text-slate-600">{system.description}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {settings.turnMode === "dollar" && (
+              <p className="mt-3 text-sm text-slate-600" data-testid="turn-system-example">
+                With these rules: a ${Math.max(1, Math.round(turnValue * 0.67))} service earns {partialLabel} turn, a ${Math.round(turnValue * 1.5)} service earns 1 turn, and a ${Math.round(turnValue * 2.2)} service earns 2 turns. Tips, retail and tax never count.
+              </p>
+            )}
           </div>
 
           <div className="mt-3 grid gap-4 md:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                Turn Value Threshold ($) <span className="text-slate-500">- min POS total to count as a full turn</span>
+                {settings.turnMode === "dollar"
+                  ? <>Dollars per turn ($) <span className="text-slate-500">- each full amount of service is one turn</span></>
+                  : <>Turn Value Threshold ($) <span className="text-slate-500">- min service amount to count as a full turn</span></>}
               </label>
               <Input
                 type="number"
@@ -161,6 +200,24 @@ export default function TurnSystem() {
                 className="h-10 rounded-xl border-slate-200 bg-slate-50"
               />
             </div>
+            {settings.turnMode === "dollar" && (
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Turn for a smaller ticket <span className="text-slate-500">- what a service under that amount earns</span>
+                </label>
+                <select
+                  value={String(settings.partialTurnValue)}
+                  onChange={(event) => update("partialTurnValue", Number(event.target.value))}
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm"
+                  data-testid="turn-partial-value"
+                >
+                  <option value="0.25">¼ turn</option>
+                  <option value="0.5">½ turn</option>
+                  <option value="0.75">¾ turn</option>
+                  <option value="1">1 turn</option>
+                </select>
+              </div>
+            )}
           </div>
         </section>
       </div>

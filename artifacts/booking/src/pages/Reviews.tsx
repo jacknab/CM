@@ -11,9 +11,6 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Star,
-  Trash2,
-  Eye,
-  EyeOff,
   StarIcon,
   Search,
   Copy,
@@ -165,23 +162,13 @@ export default function Reviews() {
   });
 
   const toggleMutation = useMutation({
-    mutationFn: async ({ id, field, value }: { id: number; field: "isPublic" | "isFeatured"; value: boolean }) => {
+    // Reviews can be featured, but never hidden or deleted.
+    mutationFn: async ({ id, field, value }: { id: number; field: "isFeatured"; value: boolean }) => {
       const res = await apiRequest("PUT", `/api/reviews/${id}`, { [field]: value });
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/reviews", storeId] });
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      await apiRequest("DELETE", `/api/reviews/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/reviews", storeId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/reviews/stats", storeId] });
-      toast({ title: "Review deleted" });
     },
   });
 
@@ -604,23 +591,6 @@ export default function Reviews() {
                         onClick={() => toggleMutation.mutate({ id: review.id, field: "isFeatured", value: !review.isFeatured })}
                       >
                         <Star className={cn("h-4 w-4", review.isFeatured ? "fill-yellow-400 text-yellow-400" : "")} />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8"
-                        title={review.isPublic ? "Hide review" : "Show review"}
-                        onClick={() => toggleMutation.mutate({ id: review.id, field: "isPublic", value: !review.isPublic })}
-                      >
-                        {review.isPublic ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => deleteMutation.mutate(review.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>

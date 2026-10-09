@@ -96,13 +96,13 @@ require 'includes/nav.php';
         <thead>
           <tr>
             <th style="width:34%;"></th>
-            <th><div class="plan-header featured-col">Certxa</div><div class="plan-header-price" style="color:var(--plum-mid);">$9 – $49/mo ⭐</div></th>
+            <th><div class="plan-header featured-col">Certxa</div><div class="plan-header-price" style="color:var(--plum-mid);">Free – $49/mo ⭐</div></th>
             <th><div class="plan-header">Fresha</div><div class="plan-header-price">$14.95 – $19.95/mo + commission</div></th>
           </tr>
         </thead>
         <tbody>
           <tr class="section-row"><td colspan="3">Subscription</td></tr>
-          <tr><td>Entry plan</td><td class="featured-col ct-text">Solo — $9/mo ($7 annual)</td><td class="ct-text">Individual — $19.95/mo</td></tr>
+          <tr><td>Entry plan</td><td class="featured-col ct-text">Solo — free</td><td class="ct-text">Individual — $19.95/mo</td></tr>
           <tr><td>Team plan</td><td class="featured-col ct-text">Professional — $22/mo ($18 annual), unlimited staff</td><td class="ct-text">Team — $14.95/team member/mo</td></tr>
           <tr><td>Free-forever plan</td><td class="featured-col ct-text">Not applicable — <?= TRIAL_DAYS ?>-day free trial</td><td class="ct-text">Removed in early 2025</td></tr>
 

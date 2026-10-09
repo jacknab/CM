@@ -192,15 +192,28 @@ router.get("/api/support/auth/me", requireSupportAuth, async (req: Request, res:
   try {
     const result = await pool.query("SELECT id, email, first_name, last_name, role FROM support_agents WHERE id = $1", [req.session.supportAgentId]);
     const agent = result.rows[0];
-    if (!agent) { req.session.destroy(() => {}); return res.status(401).json({ error: "Agent not found" }); }
+    if (!agent) { endSupportLogin(req, () => {}); return res.status(401).json({ error: "Agent not found" }); }
     res.json({ id: agent.id, email: agent.email, firstName: agent.first_name, lastName: agent.last_name, role: agent.role, name: `${agent.first_name} ${agent.last_name}`.trim() });
   } catch (e) {
     res.status(500).json({ error: "Failed to fetch agent" });
   }
 });
 
+// Signing out of the support console must only end the support login. The same browser session can also
+// hold a salon login (an owner testing their POS in another tab): destroying the whole session signed
+// that salon out too, and its POS then failed every request with 401.
+function endSupportLogin(req: Request, done: () => void): void {
+  const session = req.session as any;
+  delete session.supportAgentId;
+  delete session.supportAgentRole;
+  delete session.supportAgentName;
+  // Nothing else in the session: no reason to keep an empty one.
+  if (!session.userId && !session.staffId) { req.session.destroy(() => done()); return; }
+  req.session.save(() => done());
+}
+
 router.post("/api/support/auth/logout", (req: Request, res: Response) => {
-  req.session.destroy(() => res.json({ ok: true }));
+  endSupportLogin(req, () => res.json({ ok: true }));
 });
 
 // ─── Account Search ───────────────────────────────────────────────────────────

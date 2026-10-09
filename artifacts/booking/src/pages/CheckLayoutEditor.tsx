@@ -167,7 +167,7 @@ const DEFAULT_ITEMS: CheckItem[] = [
   // ── MICR line — ANSI X9.27: centered in 0.625" band, ~0.25" above bottom ─
   {
     id: "micrLine", label: "MICR Line",
-    text: "\u2446122000496\u2446  \u24464964040110\u2446\u2447  0001\u2446",
+    text: "A122000496A  A4964040110AB  0001A",
     x: 1.00, y: 3.10, visible: true,
     fontName: "Courier New", fontSize: 12, fontStyle: "Regular", isMicr: true,
   },

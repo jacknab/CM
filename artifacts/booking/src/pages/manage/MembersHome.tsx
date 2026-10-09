@@ -46,6 +46,7 @@ type ConversationTurn = {
   response: string;
   highlights: Highlight[];
   actions: AssistantAction[];
+  showPrompt?: boolean;
 };
 
 const QUICK_PROMPTS: QuickPrompt[] = [
@@ -110,6 +111,7 @@ export default function MembersHome() {
   const [isReplying, setIsReplying] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const briefingAttemptedRef = useRef(false);
 
   const { data, isLoading, error } = useQuery<Overview>({
     queryKey: ["/api/manage/overview"],
@@ -128,7 +130,6 @@ export default function MembersHome() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [turns, isReplying]);
 
-  const firstName = data?.user?.firstName || user?.firstName || "there";
   const initials = (user?.firstName?.[0] || user?.email?.[0] || "U").toUpperCase();
 
   const greeting = useMemo(() => {
@@ -138,11 +139,11 @@ export default function MembersHome() {
     return "Good evening";
   }, []);
 
-  async function ask(prompt: string) {
+  async function ask(prompt: string, options: { automaticBriefing?: boolean } = {}) {
     const cleanPrompt = prompt.trim();
     if (!cleanPrompt || isReplying) return;
     setMessage("");
-    setPendingPrompt(cleanPrompt);
+    setPendingPrompt(options.automaticBriefing ? "" : cleanPrompt);
     setIsReplying(true);
 
     try {
@@ -156,10 +157,19 @@ export default function MembersHome() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: [...history, { role: "user", content: cleanPrompt }].slice(-8),
+          briefing: options.automaticBriefing === true,
         }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "The assistant is unavailable right now.");
+      if (!response.ok) {
+        console.error("[MembersHome/growth-assistant] request failed", {
+          status: response.status,
+          diagnosticId: payload.diagnosticId,
+          error: payload.error,
+        });
+        throw new Error(payload.error || "The assistant is unavailable right now.");
+      }
+      if (payload.skipped === true) return;
 
       setTurns(previous => [
         ...previous,
@@ -169,9 +179,15 @@ export default function MembersHome() {
           response: String(payload.reply || "I couldn't find a reliable answer in your salon data."),
           highlights: Array.isArray(payload.highlights) ? payload.highlights : [],
           actions: Array.isArray(payload.actions) ? payload.actions : [],
+          showPrompt: !options.automaticBriefing,
         },
       ]);
     } catch (error) {
+      if (options.automaticBriefing) {
+        // Keep the page welcoming and manual chat available if an automatic
+        // briefing cannot be generated; server diagnostics capture the cause.
+        return;
+      }
       setTurns(previous => [
         ...previous,
         {
@@ -187,6 +203,19 @@ export default function MembersHome() {
       setPendingPrompt("");
     }
   }
+
+  useEffect(() => {
+    if (authLoading || isLoading || !data || briefingAttemptedRef.current) return;
+    briefingAttemptedRef.current = true;
+    const ownerName = data.user?.firstName || user?.firstName || "there";
+    ask(
+      `${greeting}, ${ownerName}. Give me a concise overview of my business right now. Include revenue progress, client risk, schedule utilization, and the single most valuable action to take next.`,
+      { automaticBriefing: true },
+    );
+    // `ask` intentionally runs once per mounted visit; the server enforces the
+    // durable cross-device 12-hour window.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, isLoading, data, user?.firstName, greeting]);
 
   function submitMessage(event: FormEvent) {
     event.preventDefault();
@@ -227,12 +256,6 @@ export default function MembersHome() {
       </header>
 
       <section ref={scrollRef} aria-live="polite" className="flex-1 space-y-3 overflow-y-auto px-4 py-5">
-        <AiBubble>
-          <strong>{greeting}, {firstName} 👋</strong>
-          <br />
-          I analyze your bookings, revenue, services, and client trends. Ask me anything about how your salon is doing or where to grow next.
-        </AiBubble>
-
         {turns.length === 0 && (
           <div className="members-slide-in ml-11 grid grid-cols-2 gap-2 pt-1">
             {QUICK_PROMPTS.map(item => {
@@ -255,7 +278,7 @@ export default function MembersHome() {
 
         {turns.map((turn, index) => (
           <div key={turn.id} className="space-y-3">
-            <div className="flex justify-end"><UserBubble>{turn.prompt}</UserBubble></div>
+            {turn.showPrompt !== false && <div className="flex justify-end"><UserBubble>{turn.prompt}</UserBubble></div>}
             <AiBubble animate={index === turns.length - 1}>{turn.response}</AiBubble>
             {turn.highlights.length > 0 && (
               <div className="ml-11 grid grid-cols-2 gap-2">

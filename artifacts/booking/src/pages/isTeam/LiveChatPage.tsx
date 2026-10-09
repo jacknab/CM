@@ -6,6 +6,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { useChatConnection } from "@/components/isTeam/ChatConnection";
+import LinkChatAccountModal from "@/components/isTeam/LinkChatAccountModal";
+import { useDraft } from "@/hooks/use-draft";
 import {
   MessageCircle, Send, X, User, Clock, ChevronRight,
   UserCheck, ArrowRightLeft, Zap, Star, Plus, Trash2,
@@ -58,42 +61,6 @@ async function api<T = any>(path: string, opts?: RequestInit): Promise<T> {
   const r = await fetch(path, { credentials: "include", ...opts });
   if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `${r.status}`); }
   return r.json();
-}
-
-// ─── Sound helper (Web Audio API — no file needed) ────────────────────────────
-function playNotificationSound(type: "new_chat" | "new_message") {
-  try {
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type = "sine";
-    if (type === "new_chat") {
-      // Two-tone ascending ding
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.12);
-      gain.gain.setValueAtTime(0.25, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.4);
-    } else {
-      // Single soft ping
-      osc.frequency.setValueAtTime(660, ctx.currentTime);
-      gain.gain.setValueAtTime(0.15, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.25);
-    }
-  } catch {}
-}
-
-function requestBrowserNotification(title: string, body: string) {
-  if (Notification.permission === "granted") {
-    new Notification(title, { body, icon: "/favicon.ico" });
-  } else if (Notification.permission === "default") {
-    Notification.requestPermission();
-  }
 }
 
 // ─── Availability badge ───────────────────────────────────────────────────────
@@ -364,31 +331,31 @@ function SlashPicker({ query, canned, onPick, onDismiss }: {
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function LiveChatPage() {
   const qc = useQueryClient();
-  const wsRef    = useRef<WebSocket | null>(null);
+  const conn     = useChatConnection();
+  const wsRef    = conn.socketRef;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef= useRef<HTMLDivElement>(null);
   const typingDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
-  const [text,           setText]           = useState("");
-  const [wsReady,        setWsReady]        = useState(false);
-  const [unread,         setUnread]         = useState<Set<string>>(new Set());
+  // The open chat, unread marks, availability and sound setting live in the frame, so they are
+  // still here after a visit to another page. The reply box is a saved draft per chat for the same reason.
+  const { selectedChatId, setSelectedChatId, unread, soundEnabled, setSoundEnabled } = conn;
+  const [text, setText] = useDraft(selectedChatId ? `chat:${selectedChatId}` : null);
+  const wsReady     = conn.ready;
+  const myStatus    = conn.status;
+  const myAgentId   = conn.agentId;
+  const myAgentRole = conn.agentRole;
   const [visitorTyping,  setVisitorTyping]  = useState<Record<string, boolean>>({});
   const [localMsgs,      setLocalMsgs]      = useState<Record<string, ChatMessage[]>>({});
   const [showTransfer,   setShowTransfer]   = useState(false);
   const [rightTab,       setRightTab]       = useState<"info"|"canned"|"settings">("info");
   const [sideTab,        setSideTab]        = useState<"queue"|"active"|"history"|"visitors">("queue");
   const [noteMode,       setNoteMode]       = useState(false);
-  const [myStatus,       setMyStatus]       = useState<"online"|"away"|"busy">("online");
-  const [soundEnabled,   setSoundEnabled]   = useState(true);
   const [slashQuery,     setSlashQuery]     = useState<string | null>(null);
   const [slashWarning,   setSlashWarning]   = useState(false);
   const slashWarnTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const [myAgentId,      setMyAgentId]      = useState<number | null>(null);
-  const [myAgentRole,    setMyAgentRole]    = useState<string>("agent");
-  const [ticketToast,    setTicketToast]    = useState<{ ticketNumber: string; subject: string; senderName: string } | null>(null);
-  const ticketToastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [showLinkAccount, setShowLinkAccount] = useState(false);
   const navigate = useNavigate();
 
   // ── Queries ────────────────────────────────────────────────────────────────
@@ -421,9 +388,9 @@ export default function LiveChatPage() {
     queryFn:  () => selectedChatId ? api(`/api/support/live-chat/${selectedChatId}/messages`) : null,
     enabled:  !!selectedChatId,
   });
-  const { data: accountData } = useQuery({
+  const { data: accountData, refetch: refetchAccount } = useQuery({
     queryKey: ["lc-account", selectedChatId],
-    queryFn:  () => selectedChatId ? api(`/api/support/live-chat/${selectedChatId}/account`) : null,
+    queryFn:  () => selectedChatId ? api(`/api/support/chat-accounts/${selectedChatId}`) : null,
     enabled:  !!selectedChatId,
     staleTime: 60_000,
   });
@@ -442,6 +409,9 @@ export default function LiveChatPage() {
     planName: string | null; ownerEmail: string | null; ownerName: string | null;
   };
 
+  // "linked" = the chat carries the account. "email" = found by the email the visitor typed, unverified.
+  const accountMatchedBy = (accountData as any)?.matchedBy as string | null | undefined;
+
   // Merge server + local messages (optimistic updates)
   const serverMsgs = (msgData?.messages ?? []) as ChatMessage[];
   const allMsgs = selectedChatId
@@ -455,129 +425,71 @@ export default function LiveChatPage() {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [allMsgs, visitorTyping]);
 
-  // ── WebSocket ──────────────────────────────────────────────────────────────
-  const connect = useCallback(async () => {
-    try {
-      const { token } = await api("/api/support/live-chat/ws-token");
-      const ws = new WebSocket(wsUrl(`/ws/live-chat?role=agent&token=${token}`));
-      wsRef.current = ws;
+  // ── Live-chat socket ───────────────────────────────────────────────────────
+  // The connection belongs to the back-office frame (components/isTeam/ChatConnection), which also
+  // does the sounds, alerts, unread marks and list refreshes. This page listens only for what it
+  // puts on screen.
+  const selectedRef = useRef(selectedChatId);
+  selectedRef.current = selectedChatId;
 
-      ws.onopen  = () => setWsReady(true);
-      ws.onclose = () => {
-        setWsReady(false);
-        // After reconnect, reload messages for whichever chat was open so the
-        // agent doesn't miss anything that arrived while the socket was down.
-        setTimeout(() => {
-          connect();
-          refetchMsgs();
-        }, 5000);
-      };
+  useEffect(() => conn.subscribe((msg) => {
+    switch (msg.type) {
+      case "visitor_message":
+      case "visitor_message_broadcast": {
+        const cid = msg.chatId;
+        const newMsg: ChatMessage = {
+          id: crypto.randomUUID(), sender_type: "visitor",
+          sender_name: msg.visitorName ?? "Visitor",
+          content: msg.content, created_at: msg.timestamp ?? new Date().toISOString(),
+        };
+        setLocalMsgs(prev => ({ ...prev, [cid]: [...(prev[cid] ?? []), newMsg] }));
+        break;
+      }
+      case "agent_message_broadcast":
+        // Another agent sent a message to a chat we're watching
+        if (msg.chatId === selectedRef.current) refetchMsgs();
+        break;
+      case "note_broadcast": {
+        const cid = msg.chatId;
+        if (cid === selectedRef.current) {
+          const noteMsg: ChatMessage = {
+            id: crypto.randomUUID(), sender_type: "note",
+            sender_name: msg.agentName,
+            content: msg.content, created_at: msg.timestamp ?? new Date().toISOString(),
+          };
+          setLocalMsgs(prev => ({ ...prev, [cid]: [...(prev[cid] ?? []), noteMsg] }));
+        }
+        break;
+      }
+      case "visitor_typing":
+        setVisitorTyping(prev => ({ ...prev, [msg.chatId]: true }));
+        clearTimeout(typingTimers.current[msg.chatId]);
+        typingTimers.current[msg.chatId] = setTimeout(() =>
+          setVisitorTyping(prev => ({ ...prev, [msg.chatId]: false })), 4000);
+        break;
+      case "visitor_typing_stop":
+        setVisitorTyping(prev => ({ ...prev, [msg.chatId]: false }));
+        break;
+      case "message_sent": {
+        // Clear the optimistic copy for this chat before the server data arrives,
+        // so there's never a window where both coexist (prevents double-render).
+        const sentChatId = msg.chatId as string | undefined;
+        if (sentChatId) {
+          setLocalMsgs(prev => { const next = { ...prev }; delete next[sentChatId]; return next; });
+        }
+        refetchMsgs();
+        break;
+      }
+      case "note_saved":
+        setTimeout(() => refetchMsgs(), 200); break;
+    }
+  }), [conn.subscribe, refetchMsgs]);
 
-      ws.onmessage = (ev) => {
-        try {
-          const msg = JSON.parse(ev.data);
-          switch (msg.type) {
-            case "authenticated":
-              setMyAgentId(msg.agentId);
-              setMyAgentRole(msg.role ?? "agent");
-              break;
-            case "queue_update":
-              refetchQueue(); refetchStats(); break;
-            case "visitors":
-              qc.setQueryData(["lc-visitors"], { visitors: msg.visitors ?? [] });
-              break;
-            case "new_chat":
-              refetchQueue(); refetchStats();
-              if (soundEnabled) playNotificationSound("new_chat");
-              requestBrowserNotification("New chat in queue", msg.visitorName ?? "A visitor needs help");
-              break;
-            case "chat_assigned":
-              refetchQueue(); refetchActive(); refetchStats(); break;
-            case "chat_closed":
-            case "chat_transferred":
-            case "chat_requeued":
-              refetchQueue(); refetchActive(); refetchStats();
-              if (msg.chatId === selectedChatId) setSelectedChatId(null);
-              break;
-            case "visitor_message":
-            case "visitor_message_broadcast": {
-              const cid = msg.chatId;
-              const newMsg: ChatMessage = {
-                id: crypto.randomUUID(), sender_type: "visitor",
-                sender_name: msg.visitorName ?? "Visitor",
-                content: msg.content, created_at: msg.timestamp ?? new Date().toISOString(),
-              };
-              setLocalMsgs(prev => ({ ...prev, [cid]: [...(prev[cid] ?? []), newMsg] }));
-              if (cid !== selectedChatId) {
-                setUnread(prev => { const s = new Set(prev); s.add(cid); return s; });
-                if (soundEnabled) playNotificationSound("new_message");
-              }
-              break;
-            }
-            case "agent_message_broadcast": {
-              // Another agent sent a message to a chat we're watching
-              const cid = msg.chatId;
-              if (cid === selectedChatId) refetchMsgs();
-              break;
-            }
-            case "note_broadcast": {
-              const cid = msg.chatId;
-              if (cid === selectedChatId) {
-                const noteMsg: ChatMessage = {
-                  id: crypto.randomUUID(), sender_type: "note",
-                  sender_name: msg.agentName,
-                  content: msg.content, created_at: msg.timestamp ?? new Date().toISOString(),
-                };
-                setLocalMsgs(prev => ({ ...prev, [cid]: [...(prev[cid] ?? []), noteMsg] }));
-              }
-              break;
-            }
-            case "visitor_typing":
-              setVisitorTyping(prev => ({ ...prev, [msg.chatId]: true }));
-              clearTimeout(typingTimers.current[msg.chatId]);
-              typingTimers.current[msg.chatId] = setTimeout(() =>
-                setVisitorTyping(prev => ({ ...prev, [msg.chatId]: false })), 4000);
-              break;
-            case "visitor_typing_stop":
-              setVisitorTyping(prev => ({ ...prev, [msg.chatId]: false }));
-              break;
-            case "assign_ok":
-              refetchQueue(); refetchActive();
-              setSelectedChatId(msg.chatId);
-              break;
-            case "message_sent": {
-              // Clear the optimistic copy for this chat before the server data arrives,
-              // so there's never a window where both coexist (prevents double-render).
-              const sentChatId = msg.chatId as string | undefined;
-              if (sentChatId) {
-                setLocalMsgs(prev => { const next = { ...prev }; delete next[sentChatId]; return next; });
-              }
-              refetchMsgs();
-              break;
-            }
-            case "note_saved":
-              setTimeout(() => refetchMsgs(), 200); break;
-            case "new_ticket":
-              // Invalidate ticket list so sidebar badge + TicketsPage both update immediately
-              qc.invalidateQueries({ queryKey: ["support-tickets-list"] });
-              qc.invalidateQueries({ queryKey: ["support-open-ticket-count"] });
-              // Show in-app toast notification
-              clearTimeout(ticketToastTimer.current);
-              setTicketToast({ ticketNumber: msg.ticketNumber, subject: msg.subject, senderName: msg.senderName });
-              ticketToastTimer.current = setTimeout(() => setTicketToast(null), 8000);
-              // Browser notification if agent has granted permission
-              if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-                new Notification(`New ticket #${msg.ticketNumber}`, { body: `${msg.senderName}: ${msg.subject}`, icon: "/favicon.ico" });
-              }
-              if (soundEnabled) playNotificationSound("new_chat");
-              break;
-          }
-        } catch {}
-      };
-    } catch { setTimeout(connect, 5000); }
-  }, [selectedChatId, refetchQueue, refetchActive, refetchStats, refetchMsgs, soundEnabled]);
-
-  useEffect(() => { connect(); return () => wsRef.current?.close(); }, []);
+  // After a reconnect, reload the open chat so nothing that arrived while the socket was down is missed.
+  useEffect(() => {
+    if (wsReady && selectedRef.current) refetchMsgs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsReady]);
 
   // ── Typing detection ───────────────────────────────────────────────────────
   const handleInputChange = (val: string) => {
@@ -677,15 +589,14 @@ export default function LiveChatPage() {
 
   const selectChat = (chatId: string) => {
     setSelectedChatId(chatId);
-    setUnread(prev => { const s = new Set(prev); s.delete(chatId); return s; });
+    conn.markRead(chatId);
     setLocalMsgs(prev => { const next = { ...prev }; delete next[chatId]; return next; });
     setNoteMode(false);
     setSlashQuery(null);
   };
 
   const changeStatus = (status: "online" | "away" | "busy") => {
-    setMyStatus(status);
-    wsRef.current?.send(JSON.stringify({ type: "status_change", status }));
+    conn.changeStatus(status);
   };
 
   const currentChat = [...queue, ...active].find(c => c.id === selectedChatId)
@@ -698,29 +609,6 @@ export default function LiveChatPage() {
 
   return (
     <div className="flex flex-col h-full bg-slate-50 text-slate-800 overflow-hidden">
-      {/* New-ticket toast — appears top-right, auto-dismisses after 8s */}
-      {ticketToast && (
-        <div className="absolute top-4 right-4 z-50 w-80 bg-white border border-slate-200 rounded-xl shadow-2xl shadow-slate-900/30 overflow-hidden animate-in slide-in-from-top-2 duration-200">
-          <div className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600">
-            <Ticket className="w-3.5 h-3.5 text-white flex-shrink-0" />
-            <span className="text-white text-xs font-bold flex-1">New ticket #{ticketToast.ticketNumber}</span>
-            <button onClick={() => setTicketToast(null)} className="text-indigo-600 hover:text-white transition">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <div className="px-4 py-3">
-            <p className="text-sm font-semibold text-slate-800 leading-snug truncate">{ticketToast.subject}</p>
-            <p className="text-xs text-slate-400 mt-0.5">From: {ticketToast.senderName}</p>
-            <button
-              onClick={() => { setTicketToast(null); navigate("/isTeam/tickets"); }}
-              className="mt-2.5 w-full text-center text-xs text-indigo-600 font-semibold hover:text-indigo-800 transition"
-            >
-              View ticket →
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Stats bar */}
       <StatsBar stats={stats} />
 
@@ -1051,6 +939,11 @@ export default function LiveChatPage() {
                       <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
                         <BarChart2 className="w-3 h-3" /> Account
                       </h4>
+                      {accountMatchedBy === "email" && (
+                        <p className="text-[10px] text-amber-600 mb-1.5 leading-snug">
+                          Matched by the email the visitor typed. They were not signed in, so confirm who they are before sharing account details.
+                        </p>
+                      )}
                       <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
                         <div className="flex items-start gap-1.5">
                           <span className="text-[10px] text-slate-400 font-semibold w-12 flex-shrink-0 pt-0.5">Store</span>
@@ -1096,13 +989,19 @@ export default function LiveChatPage() {
                           </div>
                         )}
                         <div className="pt-1">
-                          <a href={`/admin/accounts/${chatAccount.id}`} target="_blank" rel="noopener noreferrer"
+                          <button onClick={() => navigate(`/isTeam/accounts/${chatAccount.id}`)}
                             className="text-[10px] text-indigo-600 hover:text-indigo-700 transition flex items-center gap-1">
                             <Globe className="w-2.5 h-2.5" /> View account →
-                          </a>
+                          </button>
                         </div>
                       </div>
                     </div>
+                  )}
+                  {(!chatAccount || accountMatchedBy === "email") && (
+                    <button onClick={() => setShowLinkAccount(true)}
+                      className="text-[11px] text-indigo-600 hover:text-indigo-700 font-semibold transition">
+                      {chatAccount ? "Link a different account" : "Link account"}
+                    </button>
                   )}
                   {(currentChat as any).page_url && (
                     <div>
@@ -1210,6 +1109,16 @@ export default function LiveChatPage() {
         <Radio className="w-3 h-3" />
         {wsReady ? "Connected" : "Reconnecting…"}
       </div>
+
+      {/* Link-account modal */}
+      {showLinkAccount && selectedChatId && (
+        <LinkChatAccountModal
+          chatId={selectedChatId}
+          initialQuery={currentChat?.visitor_email ?? ""}
+          onLinked={() => { setShowLinkAccount(false); refetchAccount(); }}
+          onClose={() => setShowLinkAccount(false)}
+        />
+      )}
 
       {/* Transfer modal */}
       {showTransfer && selectedChatId && (

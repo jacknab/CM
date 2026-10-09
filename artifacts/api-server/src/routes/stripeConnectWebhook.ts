@@ -166,7 +166,7 @@ async function handleTransferProblem(event: Stripe.Event): Promise<void> {
 
 async function handlePosPaymentSucceeded(event: Stripe.Event): Promise<void> {
   const pi = event.data.object as Stripe.PaymentIntent;
-  if (pi.metadata?.source !== "certxa_pos") return; // not one of ours
+  if (pi.metadata?.source !== "certxa_pos" && pi.metadata?.source !== "nail_checkout") return; // not one of ours
 
   const storeId = Number.parseInt(pi.metadata.store_id ?? "", 10);
   if (!Number.isInteger(storeId) || !event.account) {

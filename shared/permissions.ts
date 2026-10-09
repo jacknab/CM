@@ -71,6 +71,23 @@ export const PERMISSIONS = {
   STORE_DELETE: "store.delete",
   INTEGRATIONS_MANAGE: "integrations.manage",
   BILLING_MANAGE: "billing.manage",
+
+  // Certxa Rentals — separate product (facility owner managing rented
+  // spaces/professionals). RENTALS_VIEW gates the whole area/shell; Spaces
+  // is the first domain with real mutations, so it gets its own view/manage
+  // split. Add the same split for other domains (professionals, agreements,
+  // maintenance...) only once each one actually has a manage action.
+  RENTALS_VIEW: "rentals.view",
+  RENTALS_SPACES_VIEW: "rentals.spaces.view",
+  RENTALS_SPACES_MANAGE: "rentals.spaces.manage",
+  RENTALS_PROFESSIONALS_VIEW: "rentals.professionals.view",
+  RENTALS_PROFESSIONALS_MANAGE: "rentals.professionals.manage",
+  RENTALS_LEASES_VIEW: "rentals.leases.view",
+  RENTALS_LEASES_MANAGE: "rentals.leases.manage",
+  RENTALS_RENT_VIEW: "rentals.rent.view",
+  RENTALS_RENT_MANAGE: "rentals.rent.manage",
+  RENTALS_SETTINGS_VIEW: "rentals.settings.view",
+  RENTALS_SETTINGS_MANAGE: "rentals.settings.manage",
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

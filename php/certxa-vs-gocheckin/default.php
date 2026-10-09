@@ -98,13 +98,13 @@ require 'includes/nav.php';
         <thead>
           <tr>
             <th style="width:34%;"></th>
-            <th><div class="plan-header featured-col">Certxa</div><div class="plan-header-price" style="color:var(--plum-mid);">$9 – $49/mo ⭐</div></th>
+            <th><div class="plan-header featured-col">Certxa</div><div class="plan-header-price" style="color:var(--plum-mid);">Free – $49/mo ⭐</div></th>
             <th><div class="plan-header">GoCheckIn</div><div class="plan-header-price">$20 – $99/mo + $100 setup</div></th>
           </tr>
         </thead>
         <tbody>
           <tr class="section-row"><td colspan="3">Plans</td></tr>
-          <tr><td>Entry plan</td><td class="featured-col ct-text">Solo — $9/mo ($7 annual), 1 staff</td><td class="ct-text">Basic — $20/mo, up to 5 staff</td></tr>
+          <tr><td>Entry plan</td><td class="featured-col ct-text">Solo — free, 1 staff</td><td class="ct-text">Basic — $20/mo, up to 5 staff</td></tr>
           <tr><td>Mid plan</td><td class="featured-col ct-text">Professional — $22/mo ($18 annual), unlimited staff</td><td class="ct-text">Deluxe — $40/mo, up to 20 staff</td></tr>
           <tr><td>Unlimited staff</td><td class="featured-col ct-check">✓ from $22/mo</td><td class="ct-text">Premium plan only — $99/mo</td></tr>
           <tr><td>One-time setup fee</td><td class="featured-col ct-check">None</td><td class="ct-text">$100</td></tr>

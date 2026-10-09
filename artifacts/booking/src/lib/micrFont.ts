@@ -35,20 +35,22 @@ export function getMicrFontUrl(): string {
  */
 export const MICR_FALLBACK_CSS = "'Courier New', Courier, monospace";
 
-// ─── E-13B character constants (Unicode 1.1, block U+2440–U+244F) ─────────────
+// ─── E-13B character constants ────────────────────────────────────────────────
 /**
- * The 14 MICR E-13B characters.  All are in the "Optical Character Recognition"
- * Unicode block.  GnuMICR maps these code points to the correct E-13B glyphs.
+ * The 4 MICR E-13B control symbols.  The bundled font (public/fonts/micr-e13b.ttf)
+ * does NOT map the Unicode OCR block (U+2446–U+2449) — those code points render
+ * as .notdef.  It uses the common MICR-font letter convention instead, so the
+ * symbols must be emitted as these ASCII letters.
  */
 export const MICR_CHAR = {
-  /** ⑆ U+2446 — Transit / Routing-number delimiter (surrounds the ABA routing number) */
-  TRANSIT: "\u2446",
-  /** ⑇ U+2447 — Amount symbol (follows the on-us / account field) */
-  AMOUNT:  "\u2447",
-  /** ⑈ U+2448 — On-us symbol (account number delimiter) */
-  ONUS:    "\u2448",
-  /** ⑉ U+2449 — Dash (used inside account numbers that contain a hyphen) */
-  DASH:    "\u2449",
+  /** ⑆ Transit / Routing-number delimiter (surrounds the ABA routing number) — font glyph "A" */
+  TRANSIT: "A",
+  /** ⑇ Amount symbol — font glyph "B" */
+  AMOUNT:  "B",
+  /** ⑈ On-us symbol (account number delimiter) — font glyph "C" */
+  ONUS:    "C",
+  /** ⑉ Dash (used inside account numbers that contain a hyphen) — font glyph "D" */
+  DASH:    "D",
 } as const;
 
 // ─── MICR line encoder ─────────────────────────────────────────────────────────

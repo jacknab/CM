@@ -63,7 +63,10 @@ export function PrinterSetupModal({ visible, storeName, onClose }: Props) {
     if (!visible) return;
     getSavedPrinter().then((d) => {
       setSaved(d);
-      if (d?.type === 'net') setNetIp(d.address);
+      if (d?.type === 'net') {
+        setNetIp(d.address);
+        setTab('network');
+      }
     }).catch(() => {});
   }, [visible]);
 
@@ -205,7 +208,7 @@ export function PrinterSetupModal({ visible, storeName, onClose }: Props) {
                   color={tab === t ? C.blue : C.textSub}
                 />
                 <Text style={[S.tabTxt, tab === t && S.tabTxtActive]}>
-                  {t === 'bluetooth' ? 'BLUETOOTH' : t === 'network' ? 'NETWORK' : 'USB'}
+                  {t === 'bluetooth' ? 'Bluetooth' : t === 'network' ? 'Network / IP' : 'USB'}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -398,11 +401,11 @@ const S = StyleSheet.create({
   },
   tab: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, paddingVertical: 12,
+    minWidth: 0, gap: 5, paddingHorizontal: 4, paddingVertical: 12,
     borderBottomWidth: 2, borderBottomColor: 'transparent',
   },
   tabActive:    { borderBottomColor: C.blue },
-  tabTxt:       { fontSize: 12, fontWeight: '700', color: C.textSub, letterSpacing: 0.8 },
+  tabTxt:       { flexShrink: 1, fontSize: 12, fontWeight: '700', color: C.textSub, textAlign: 'center' },
   tabTxtActive: { color: C.blue },
 
   // Scan button

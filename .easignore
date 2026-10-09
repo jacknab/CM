@@ -14,8 +14,17 @@ apps/certxa-tap-to-pay
 apps/staff-mobile
 apps/support-backoffice
 
-# ── API server, website builder, other artifacts ──────────────────────────────
-artifacts
+# ── API server, website builder, other root artifacts ─────────────────────────
+# Leading slash prevents this rule from excluding nested Expo workspace folders
+# that happen to use Replit's conventional `artifacts/` directory name.
+/artifacts
+
+# Certxa Pro is an imported Expo workspace nested under an artifacts directory.
+# Keep this explicit exception after the broad rule above so EAS includes its
+# project root and package.json when a Certxa Pro build is launched.
+!certxa-pro-replit/artifacts/
+!certxa-pro-replit/artifacts/certxa-pro/
+!certxa-pro-replit/artifacts/certxa-pro/**
 
 # ── Shared/lib workspace packages (not needed for mobile build) ───────────────
 # Leading / anchors these to the archive root so they don't also strip

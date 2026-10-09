@@ -13,6 +13,8 @@ const INDUSTRIES = [
   { value: "HAIR_SALON", label: "Hair Salon" },
   { value: "BARBER_SHOP",label: "Barber Shop" },
   { value: "SPA",        label: "Spa" },
+  // Artwork for the nail-salon kiosk — one slot per picture it shows (shared/kioskArt.ts).
+  { value: "NAIL_KIOSK", label: "Nail Kiosk" },
 ];
 
 const INDUSTRY_COLORS: Record<string, string> = {
@@ -20,6 +22,7 @@ const INDUSTRY_COLORS: Record<string, string> = {
   HAIR_SALON:  "#f59e0b",
   BARBER_SHOP: "#3b82f6",
   SPA:         "#10b981",
+  NAIL_KIOSK:  "#b9785c",
 };
 
 // Pre-defined site image slots (kiosk marketing page screenshots)
@@ -575,6 +578,8 @@ function IllustrationCategoriesTab() {
                       <div className="flex-1">
                         <p className="text-sm font-semibold text-gray-900 leading-tight">{cat.name}</p>
                         <p className="text-xs text-gray-400 font-mono mt-0.5">{cat.slug}</p>
+                        {/* Kiosk artwork slots say what picture belongs in them. */}
+                        {cat.industry === "NAIL_KIOSK" && cat.description && <p className="text-xs text-gray-500 mt-1.5 leading-snug">{cat.description}</p>}
                       </div>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1 text-xs text-gray-400">

@@ -1,0 +1,39 @@
+{
+  "cli": {
+    "version": ">= 14.0.0",
+    "requireCommit": false,
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "pnpm": "10.26.1",
+      "ios": {
+        "simulator": false
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://certxa.com",
+        "EXPO_NO_CAPABILITY_SYNC": "1"
+      },
+      "channel": "preview"
+    },
+    "production": {
+      "distribution": "store",
+      "pnpm": "10.26.1",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://certxa.com",
+        "EXPO_NO_CAPABILITY_SYNC": "1"
+      },
+      "channel": "production"
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascApiKeyPath": "/etc/certxa-eas-AuthKey.p8",
+        "ascApiKeyId": "4AUA345PA2",
+        "ascApiKeyIssuerId": "a13ba69b-2999-4910-ab6a-7a19dcf97f19"
+      }
+    }
+  }
+}

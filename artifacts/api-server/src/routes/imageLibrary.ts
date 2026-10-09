@@ -76,6 +76,7 @@ const upload = memoryUpload({ maxSizeMb: 20 });
 
 router.post(
   "/image-library/upload",
+  isAuthenticated,
   upload.single("image"),
   async (req, res): Promise<void> => {
     try {
@@ -195,7 +196,7 @@ function extractImageUrls(html: string): string[] {
   );
 }
 
-router.post("/image-library/harvest", async (req, res): Promise<void> => {
+router.post("/image-library/harvest", isAuthenticated, async (req, res): Promise<void> => {
   // Respond immediately — harvest runs in background
   res.json({ message: "Harvest started" });
 

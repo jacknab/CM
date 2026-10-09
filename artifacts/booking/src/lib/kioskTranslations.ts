@@ -47,6 +47,20 @@ export interface KioskStrings {
   noThanks: string;
   maybeAnotherTime: string;
   startOver: string;
+  // Smart Check-In
+  lastVisitLine: (days: number, service: string) => string;
+  recAsk: (service: string) => string;
+  recUsual: (service: string) => string;
+  recChoice: string;
+  suggestedForYou: string;
+  hadBefore: string;
+  reviewTitle: string;
+  reviewSub: string;
+  estimatedTotal: string;
+  stillThere: string;
+  /** {n} = seconds left */
+  stillThereSub: string;
+  stillHere: string;
 
   // Fully booked
   fullyBookedNow: string;
@@ -70,6 +84,9 @@ export interface KioskStrings {
 
   // No thanks
   thanksForStoppingBy: (name: string) => string;
+  /** Under the phone keypad: consent to the texts the kiosk sends (called to the chair, missed you). */
+  smsConsent: (storeName: string) => string;
+  alreadyCheckedIn: string;
   hopeToSeeYouSoon: string;
   weSentYouText: string;
   checkMessages: string;
@@ -172,6 +189,18 @@ const en: KioskStrings = {
   noThanks: "No thanks",
   maybeAnotherTime: "Maybe another time",
   startOver: "← Start over",
+  lastVisitLine: (days, service) => days <= 0 ? `Your last visit was earlier today for ${service}.` : days === 1 ? `Your last visit was yesterday for ${service}.` : `Your last visit was ${days} days ago for ${service}.`,
+  recAsk: service => `Would you like ${service} today?`,
+  recUsual: service => `You usually have ${service}. Would you like it today?`,
+  recChoice: "Would you like a fill or a new set today?",
+  suggestedForYou: "Suggested for you",
+  hadBefore: "You've had this before",
+  reviewTitle: "Here's your visit",
+  reviewSub: "Please check everything is right.",
+  estimatedTotal: "Estimated total",
+  stillThere: "Are you still there?",
+  stillThereSub: "This screen will start over in {n} seconds.",
+  stillHere: "Yes, I'm still here",
   fullyBookedNow: "We're fully booked right now",
   fullyBookedBody: name => `Sorry${name !== "there" ? `, ${name}` : ""}! Our team is fully booked.`,
   fullyBookedSub: "We don't have an open slot in the next hour — but sometimes appointments don't show up.",
@@ -189,6 +218,8 @@ const en: KioskStrings = {
   waitlistStep3Body: "The first person to arrive gets the open slot.",
   newCheckin: "← New Check-in",
   thanksForStoppingBy: name => `Thanks for stopping by, ${name}!`,
+  smsConsent: store => `By entering your number you agree to receive text messages from ${store || "us"} about your visit. Message and data rates may apply. Reply STOP to opt out.`,
+  alreadyCheckedIn: "You're already checked in. We'll call you shortly.",
   hopeToSeeYouSoon: "We hope to see you again soon.",
   weSentYouText: "We've sent you a text!",
   checkMessages: "Check your messages for our online booking link to schedule for a later date.",
@@ -279,6 +310,18 @@ const es: KioskStrings = {
   noThanks: "No, gracias",
   maybeAnotherTime: "Quizás en otra ocasión",
   startOver: "← Volver al inicio",
+  lastVisitLine: (days, service) => days <= 0 ? `Su última visita fue hoy: ${service}.` : days === 1 ? `Su última visita fue ayer: ${service}.` : `Su última visita fue hace ${days} días: ${service}.`,
+  recAsk: service => `¿Le gustaría ${service} hoy?`,
+  recUsual: service => `Normalmente elige ${service}. ¿Lo desea hoy?`,
+  recChoice: "¿Desea un relleno o un juego nuevo hoy?",
+  suggestedForYou: "Sugerido para usted",
+  hadBefore: "Ya lo ha elegido antes",
+  reviewTitle: "Su visita",
+  reviewSub: "Por favor, compruebe que todo esté correcto.",
+  estimatedTotal: "Total estimado",
+  stillThere: "¿Sigue ahí?",
+  stillThereSub: "Esta pantalla se reiniciará en {n} segundos.",
+  stillHere: "Sí, sigo aquí",
   fullyBookedNow: "Estamos completamente ocupados",
   fullyBookedBody: name => `Lo sentimos${name !== "there" ? `, ${name}` : ""}! Nuestro equipo está completamente ocupado.`,
   fullyBookedSub: "No tenemos un espacio disponible en la próxima hora, pero a veces hay cancelaciones.",
@@ -296,6 +339,8 @@ const es: KioskStrings = {
   waitlistStep3Body: "La primera persona en llegar obtiene el espacio libre.",
   newCheckin: "← Nuevo Check-in",
   thanksForStoppingBy: name => `¡Gracias por visitarnos, ${name}!`,
+  smsConsent: store => `Al ingresar su número, acepta recibir mensajes de texto de ${store || "nosotros"} sobre su visita. Pueden aplicarse tarifas de mensajes y datos. Responda STOP para cancelar.`,
+  alreadyCheckedIn: "Ya está registrado. Le llamaremos en breve.",
   hopeToSeeYouSoon: "Esperamos verte pronto.",
   weSentYouText: "¡Te enviamos un mensaje!",
   checkMessages: "Revisa tus mensajes para el enlace de reservas en línea.",
@@ -386,6 +431,18 @@ const vi: KioskStrings = {
   noThanks: "Không, cảm ơn",
   maybeAnotherTime: "Lần sau vậy",
   startOver: "← Bắt đầu lại",
+  lastVisitLine: (days, service) => days <= 0 ? `Lần gần nhất bạn đến là hôm nay: ${service}.` : days === 1 ? `Lần gần nhất bạn đến là hôm qua: ${service}.` : `Lần gần nhất bạn đến là ${days} ngày trước: ${service}.`,
+  recAsk: service => `Hôm nay bạn có muốn làm ${service} không?`,
+  recUsual: service => `Bạn thường làm ${service}. Hôm nay bạn có muốn làm không?`,
+  recChoice: "Hôm nay bạn muốn dặm lại hay làm bộ mới?",
+  suggestedForYou: "Gợi ý cho bạn",
+  hadBefore: "Bạn đã từng chọn",
+  reviewTitle: "Dịch vụ hôm nay của bạn",
+  reviewSub: "Vui lòng kiểm tra lại thông tin.",
+  estimatedTotal: "Tổng ước tính",
+  stillThere: "Bạn vẫn còn ở đây chứ?",
+  stillThereSub: "Màn hình sẽ bắt đầu lại sau {n} giây.",
+  stillHere: "Vâng, tôi vẫn ở đây",
   fullyBookedNow: "Chúng tôi đã kín lịch",
   fullyBookedBody: name => `Xin lỗi${name !== "there" ? ` ${name}` : ""}! Nhân viên của chúng tôi đã kín lịch.`,
   fullyBookedSub: "Không có chỗ trống trong giờ tới — nhưng đôi khi có người hủy lịch.",
@@ -403,6 +460,8 @@ const vi: KioskStrings = {
   waitlistStep3Body: "Người đến đầu tiên sẽ có được chỗ trống.",
   newCheckin: "← Check-in Mới",
   thanksForStoppingBy: name => `Cảm ơn bạn đã ghé thăm, ${name}!`,
+  smsConsent: store => `Khi nhập số điện thoại, bạn đồng ý nhận tin nhắn từ ${store || "chúng tôi"} về lần ghé thăm của bạn. Có thể áp dụng phí tin nhắn và dữ liệu. Trả lời STOP để hủy.`,
+  alreadyCheckedIn: "Bạn đã check-in rồi. Chúng tôi sẽ gọi bạn ngay.",
   hopeToSeeYouSoon: "Hẹn gặp lại bạn sớm.",
   weSentYouText: "Chúng tôi đã gửi tin nhắn cho bạn!",
   checkMessages: "Kiểm tra tin nhắn để nhận liên kết đặt lịch trực tuyến.",
@@ -493,6 +552,18 @@ const zh: KioskStrings = {
   noThanks: "不用了，谢谢",
   maybeAnotherTime: "下次再来",
   startOver: "← 重新开始",
+  lastVisitLine: (days, service) => days <= 0 ? `您上次到店是今天：${service}。` : days === 1 ? `您上次到店是昨天：${service}。` : `您上次到店是 ${days} 天前：${service}。`,
+  recAsk: service => `今天想做${service}吗？`,
+  recUsual: service => `您通常选择${service}。今天也要吗？`,
+  recChoice: "今天想补甲还是做全新一套？",
+  suggestedForYou: "为您推荐",
+  hadBefore: "您以前选过",
+  reviewTitle: "您今天的服务",
+  reviewSub: "请确认以下信息无误。",
+  estimatedTotal: "预计总价",
+  stillThere: "您还在吗？",
+  stillThereSub: "此屏幕将在 {n} 秒后重新开始。",
+  stillHere: "是的，我还在",
   fullyBookedNow: "我们现在已约满",
   fullyBookedBody: name => `抱歉${name !== "there" ? `，${name}` : ""}！我们的员工已约满。`,
   fullyBookedSub: "未来一小时内没有空档 — 但有时会有取消预约的情况。",
@@ -510,6 +581,8 @@ const zh: KioskStrings = {
   waitlistStep3Body: "最先到达的顾客获得空档。",
   newCheckin: "← 新签到",
   thanksForStoppingBy: name => `感谢您的光临，${name}！`,
+  smsConsent: store => `输入您的号码即表示您同意接收${store || "我们"}发送的有关您此次到访的短信。可能产生短信和数据费用。回复 STOP 即可退订。`,
+  alreadyCheckedIn: "您已签到，我们很快会叫到您。",
   hopeToSeeYouSoon: "期待再次为您服务。",
   weSentYouText: "我们已向您发送短信！",
   checkMessages: "请查看短信获取在线预约链接。",
@@ -600,6 +673,18 @@ const ko: KioskStrings = {
   noThanks: "괜찮습니다",
   maybeAnotherTime: "다음에 다시 오겠습니다",
   startOver: "← 처음으로",
+  lastVisitLine: (days, service) => days <= 0 ? `마지막 방문은 오늘이었습니다: ${service}.` : days === 1 ? `마지막 방문은 어제였습니다: ${service}.` : `마지막 방문은 ${days}일 전이었습니다: ${service}.`,
+  recAsk: service => `오늘 ${service} 하시겠어요?`,
+  recUsual: service => `보통 ${service}을(를) 받으셨어요. 오늘도 하시겠어요?`,
+  recChoice: "오늘은 리필과 새 세트 중 어느 것을 원하세요?",
+  suggestedForYou: "추천 서비스",
+  hadBefore: "이전에 선택하신 항목",
+  reviewTitle: "오늘의 방문 내용",
+  reviewSub: "내용이 맞는지 확인해 주세요.",
+  estimatedTotal: "예상 합계",
+  stillThere: "아직 계신가요?",
+  stillThereSub: "{n}초 후 처음 화면으로 돌아갑니다.",
+  stillHere: "네, 여기 있어요",
   fullyBookedNow: "현재 예약이 꽉 찼습니다",
   fullyBookedBody: name => `죄송합니다${name !== "there" ? `, ${name}` : ""}! 모든 직원이 예약 중입니다.`,
   fullyBookedSub: "향후 1시간 내 빈 자리가 없지만, 취소가 생길 수도 있습니다.",
@@ -617,6 +702,8 @@ const ko: KioskStrings = {
   waitlistStep3Body: "먼저 도착하신 분이 빈 자리를 이용하실 수 있습니다.",
   newCheckin: "← 새 체크인",
   thanksForStoppingBy: name => `방문해 주셔서 감사합니다, ${name}!`,
+  smsConsent: store => `번호를 입력하시면 ${store || "저희"}에서 방문 관련 문자 메시지를 받는 데 동의하게 됩니다. 메시지 및 데이터 요금이 부과될 수 있습니다. 수신을 거부하려면 STOP을 회신하세요.`,
+  alreadyCheckedIn: "이미 체크인되었습니다. 곧 불러 드리겠습니다.",
   hopeToSeeYouSoon: "또 만나길 바랍니다.",
   weSentYouText: "문자를 보내드렸습니다!",
   checkMessages: "온라인 예약 링크는 문자 메시지를 확인해 주세요.",

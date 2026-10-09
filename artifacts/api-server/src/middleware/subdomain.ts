@@ -12,6 +12,7 @@ declare global {
     interface Request {
       store?: typeof locations.$inferSelect;
       launchsiteSlug?: string;
+      isRentalsSubdomain?: boolean;
     }
   }
 }
@@ -26,6 +27,7 @@ const RESERVED_SUBDOMAINS = new Set([
   'launchit', 'support', 'help', 'blog', 'shop', 'store',
   'test', 'demo', 'staging', 'dev', 'secure',
   'manage', // unified subscriber hub — handled by Express/React, not a user site
+  'rentals', // Certxa Rentals product — handled by Express/React, not a user site
 ]);
 
 // ── Jaro-Winkler similarity ──────────────────────────────────────────────────
@@ -320,6 +322,13 @@ export async function subdomainMiddleware(req: Request, res: Response, next: Nex
   // manage.certxa.com → unified subscriber hub served by the React SPA
   if (subdomain === 'manage' && !isCustomDomain) {
     (req as any).isManageSubdomain = true;
+    return next();
+  }
+
+  // rentals.certxa.com → Certxa Rentals product, served by the same React SPA
+  // (mirrors the manage.certxa.com pattern above — see php-proxy.ts's phpMiddleware).
+  if (subdomain === 'rentals' && !isCustomDomain) {
+    req.isRentalsSubdomain = true;
     return next();
   }
 

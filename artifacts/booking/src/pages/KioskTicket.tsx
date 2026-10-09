@@ -38,6 +38,12 @@ export default function KioskTicket() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [updating, setUpdating] = useState(false);
+  // The customer holds this same link (the QR on their slip). The status buttons are for staff, and
+  // the server only accepts them from a signed-in salon session.
+  const [isStaff, setIsStaff] = useState(false);
+  useEffect(() => {
+    fetch("/api/auth/user", { credentials: "include" }).then(r => setIsStaff(r.ok)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!token) return;
@@ -54,12 +60,13 @@ export default function KioskTicket() {
     if (!token) return;
     setUpdating(true);
     try {
-      await fetch(`/api/public/kiosk/ticket/${token}/status`, {
+      const r = await fetch(`/api/public/kiosk/ticket/${token}/status`, {
         method: "PUT",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
-      setTicket(prev => prev ? { ...prev, status } : prev);
+      if (r.ok) setTicket(prev => prev ? { ...prev, status } : prev);
     } finally {
       setUpdating(false);
     }
@@ -165,7 +172,7 @@ export default function KioskTicket() {
         )}
 
         {/* Staff action buttons */}
-        {ticket.status !== "completed" && (
+        {isStaff && ticket.status !== "completed" && (
           <div className="space-y-3 pt-2">
             {ticket.status === "waiting" && (
               <button

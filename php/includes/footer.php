@@ -6,7 +6,7 @@
     <div class="footer-grid">
 
       <div class="footer-brand">
-        <a href="/overview" class="footer-logo"><?= BRAND_NAME ?><span>.</span></a>
+        <a href="/" class="footer-logo"><?= BRAND_NAME ?><span>.</span></a>
         <p class="footer-tagline">The all-in-one platform built for nail salons — booking, POS, kiosk, waitlist, and AI receptionist in one system.</p>
         <p class="footer-tagline" style="margin-top:8px;opacity:.7;">Phoenix, AZ</p>
       </div>

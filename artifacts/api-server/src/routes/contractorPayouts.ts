@@ -1,6 +1,7 @@
  import { commissionBasis } from "@shared/commissionBasis";
 import { Router, type Request, type Response } from "express";
 import { db, pool } from "../db";
+import { writeStorePreferences } from "../lib/storePreferences";
 import {
   contractors, contractorBankAccounts, payoutDeductionRules,
   payoutRuns, payoutRunItems, payoutChecks, payoutW9Records, payoutAuditLogs, payoutAdjustments,
@@ -249,9 +250,10 @@ export async function createPayoutRunForPeriod(
 
     const grossAmount = accrualCommission + fallbackCommission;
 
-    const applicable = deductionRules.filter(d =>
+    // A "card fee on tips" rule belongs to Payroll (it is worked out per tipped card ticket there).
+    const applicable = deductionRules.filter(d => d.type !== "card_tips" && (
       d.appliesTo === "all" || (d.appliesTo === "specific" && d.contractorId === c.id)
-    );
+    ));
     const deductionsArr: Array<{ name: string; amount: string; type: string }> = [];
     let dedTotal = 0;
     for (const rule of applicable) {
@@ -2570,14 +2572,7 @@ router.put("/payroll-schedule", isAuthenticated, async (req: Request, res: Respo
         autoApproveDelayHours: Number(autoApproveDelayHours ?? 48),
       },
     };
-    const now = new Date();
-    if (row) {
-      await db.update(storeSettings)
-        .set({ preferences: JSON.stringify(updatedPrefs), updatedAt: now })
-        .where(eq(storeSettings.storeId, sId));
-    } else {
-      await db.insert(storeSettings).values({ storeId: sId, preferences: JSON.stringify(updatedPrefs) });
-    }
+    await writeStorePreferences(sId, prefs, updatedPrefs);
     res.json({ success: true, payrollSchedule: updatedPrefs.payrollSchedule });
   } catch (err) {
     console.error("[payouts] put payroll-schedule:", err);

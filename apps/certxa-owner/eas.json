@@ -8,13 +8,18 @@
     "preview": {
       "distribution": "internal",
       "pnpm": "10.26.1",
+      "autoIncrement": true,
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"
       },
+      "ios": {
+        "simulator": false
+      },
       "env": {
         "EXPO_PUBLIC_PORTAL_URL": "https://certxa.com/app-login"
-      }
+      },
+      "channel": "preview"
     },
     "staging": {
       "distribution": "internal",
@@ -24,7 +29,8 @@
       },
       "env": {
         "EXPO_PUBLIC_PORTAL_URL": "https://staging.certxa.com"
-      }
+      },
+      "channel": "staging"
     },
     "production": {
       "distribution": "store",
@@ -34,7 +40,8 @@
       },
       "env": {
         "EXPO_PUBLIC_PORTAL_URL": "https://certxa.com/app-login"
-      }
+      },
+      "channel": "production"
     }
   },
   "submit": {
@@ -42,6 +49,12 @@
       "android": {
         "serviceAccountKeyPath": "./google-service-account.json",
         "track": "internal"
+      },
+      "ios": {
+        "ascAppId": "6815638402",
+        "ascApiKeyPath": "/etc/certxa-eas-AuthKey.p8",
+        "ascApiKeyId": "4AUA345PA2",
+        "ascApiKeyIssuerId": "a13ba69b-2999-4910-ab6a-7a19dcf97f19"
       }
     }
   }

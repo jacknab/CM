@@ -49,6 +49,7 @@ import { users } from "@shared/models/auth";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { logActivityEvent } from "../lib/activityFeed";
 import { getStripe, isStripeConfigured } from "../lib/stripe";
+import { canCreateConnectedPayout, STANDARD_PAYOUT_MESSAGE } from "../lib/payoutControl";
 import { snapshotCompletionFields } from "../lib/commissionSnapshot";
 import { recordCommissionAccrual } from "../lib/commissionAccrual";
 
@@ -69,6 +70,24 @@ async function requireOwnerOrAdmin(req: Request, res: Response): Promise<number 
   const role = result.rows[0]?.role;
   if (role !== "owner" && role !== "admin") {
     res.status(403).json({ error: "Only store owners and admins can manage payment settings" });
+    return null;
+  }
+  return userId;
+}
+
+/** Moving money is intentionally stricter than viewing payment settings. */
+async function requireOwner(req: Request, res: Response): Promise<number | null> {
+  const userId = (req.session as any)?.userId;
+  if (!userId) {
+    res.status(401).json({ error: "Authentication required" });
+    return null;
+  }
+  const result = await pool.query<{ role: string }>(
+    `SELECT role FROM users WHERE id = $1 LIMIT 1`,
+    [userId],
+  );
+  if (result.rows[0]?.role !== "owner") {
+    res.status(403).json({ error: "Only the store owner can initiate a payout" });
     return null;
   }
   return userId;
@@ -188,6 +207,191 @@ router.get("/stripe/status", async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error("[stripeConnect/status]", err?.message);
     return res.status(500).json({ error: "Failed to fetch payment status" });
+  }
+});
+
+// ─── Custom payout dashboard API ─────────────────────────────────────────────
+
+function payoutJson(payout: any) {
+  return {
+    id: payout.id,
+    amount: payout.amount,
+    currency: payout.currency,
+    status: payout.status,
+    method: payout.method,
+    type: payout.type,
+    createdAt: new Date(payout.created * 1000).toISOString(),
+    arrivalDate: payout.arrival_date ? new Date(payout.arrival_date * 1000).toISOString() : null,
+    description: payout.description ?? null,
+    destination: typeof payout.destination === "string" ? payout.destination : payout.destination?.id ?? null,
+    failureCode: payout.failure_code ?? null,
+    failureMessage: payout.failure_message ?? null,
+    automatic: payout.automatic ?? false,
+    statementDescriptor: payout.statement_descriptor ?? null,
+  };
+}
+
+async function connectedPayoutAccount(req: Request, res: Response) {
+  const storeId = await resolveSessionStoreId(req);
+  if (!storeId) {
+    res.status(400).json({ error: "No store found" });
+    return null;
+  }
+  const account = await getPaymentAccount(storeId);
+  if (!account || account.status === "disconnected" || !account.payoutsEnabled) {
+    res.status(400).json({ error: "Payouts are not enabled for this store" });
+    return null;
+  }
+  return { storeId, account };
+}
+
+router.get("/stripe/payouts/summary", async (req: Request, res: Response) => {
+  if (!await requireOwnerOrAdmin(req, res)) return;
+  try {
+    const connected = await connectedPayoutAccount(req, res);
+    if (!connected) return;
+    const stripe = getStripe();
+    const options = { stripeAccount: connected.account.providerAccountId };
+    const [balance, pending] = await Promise.all([
+      stripe.balance.retrieve({}, options),
+      stripe.payouts.list({ limit: 1, status: "pending" }, options),
+    ]);
+    return res.json({
+      currency: connected.account.currency || balance.available[0]?.currency || "usd",
+      available: balance.available.map((item) => ({ amount: item.amount, currency: item.currency })),
+      pending: balance.pending.map((item) => ({ amount: item.amount, currency: item.currency })),
+      nextPayout: pending.data[0] ? payoutJson(pending.data[0]) : null,
+      livemode: balance.livemode,
+      canCreatePayout: canCreateConnectedPayout(connected.account.accountType),
+      accountType: connected.account.accountType,
+    });
+  } catch (err: any) {
+    console.error("[stripeConnect/payouts/summary]", err?.message);
+    return res.status(500).json({ error: err?.message ?? "Failed to load payout balance" });
+  }
+});
+
+router.get("/stripe/payouts", async (req: Request, res: Response) => {
+  if (!await requireOwnerOrAdmin(req, res)) return;
+  try {
+    const connected = await connectedPayoutAccount(req, res);
+    if (!connected) return;
+    const limit = Math.min(50, Math.max(5, Number(req.query.limit) || 10));
+    const cursor = typeof req.query.cursor === "string" && /^po_[A-Za-z0-9]+$/.test(req.query.cursor)
+      ? req.query.cursor
+      : undefined;
+    const status = typeof req.query.status === "string" && ["pending", "paid", "failed", "canceled", "in_transit"].includes(req.query.status)
+      ? req.query.status
+      : undefined;
+    const from = Number(req.query.from);
+    const to = Number(req.query.to);
+    const params: any = { limit: limit + 1 };
+    if (cursor) params.starting_after = cursor;
+    if (status) params.status = status;
+    if (Number.isFinite(from) || Number.isFinite(to)) {
+      params.created = {};
+      if (Number.isFinite(from)) params.created.gte = Math.floor(from);
+      if (Number.isFinite(to)) params.created.lte = Math.floor(to);
+    }
+    const list = await getStripe().payouts.list(params, { stripeAccount: connected.account.providerAccountId });
+    const hasMore = list.data.length > limit;
+    const page = list.data.slice(0, limit);
+    return res.json({
+      items: page.map(payoutJson),
+      hasMore,
+      nextCursor: hasMore ? page[page.length - 1]?.id ?? null : null,
+    });
+  } catch (err: any) {
+    console.error("[stripeConnect/payouts/list]", err?.message);
+    return res.status(500).json({ error: err?.message ?? "Failed to load payouts" });
+  }
+});
+
+router.get("/stripe/payouts/:payoutId", async (req: Request, res: Response) => {
+  if (!await requireOwnerOrAdmin(req, res)) return;
+  const payoutId = String(req.params.payoutId);
+  if (!/^po_[A-Za-z0-9]+$/.test(payoutId)) {
+    return res.status(400).json({ error: "Invalid payout ID" });
+  }
+  try {
+    const connected = await connectedPayoutAccount(req, res);
+    if (!connected) return;
+    const payout = await getStripe().payouts.retrieve(
+      payoutId,
+      {},
+      { stripeAccount: connected.account.providerAccountId },
+    );
+    return res.json(payoutJson(payout));
+  } catch (err: any) {
+    const status = err?.statusCode === 404 ? 404 : 500;
+    return res.status(status).json({ error: status === 404 ? "Payout not found" : (err?.message ?? "Failed to load payout") });
+  }
+});
+
+router.post("/stripe/payouts", async (req: Request, res: Response) => {
+  const userId = await requireOwner(req, res);
+  if (!userId) return;
+
+  // Session cookies are the authentication mechanism, so reject cross-origin writes.
+  const origin = req.get("origin");
+  if (origin) {
+    try {
+      if (new URL(origin).host !== req.get("host")) return res.status(403).json({ error: "Invalid request origin" });
+    } catch {
+      return res.status(403).json({ error: "Invalid request origin" });
+    }
+  }
+
+  const amount = Number(req.body?.amount);
+  const currency = String(req.body?.currency || "").toLowerCase();
+  const confirmation = req.body?.confirmation === true;
+  const requestKey = String(req.get("x-idempotency-key") || "");
+  if (!Number.isSafeInteger(amount) || amount < 1 || amount > 100_000_000) {
+    return res.status(400).json({ error: "Enter a valid payout amount" });
+  }
+  if (!/^[a-z]{3}$/.test(currency)) return res.status(400).json({ error: "Invalid currency" });
+  if (!confirmation) return res.status(400).json({ error: "Payout confirmation is required" });
+  if (!/^[A-Za-z0-9_-]{16,100}$/.test(requestKey)) {
+    return res.status(400).json({ error: "A valid idempotency key is required" });
+  }
+
+  try {
+    const connected = await connectedPayoutAccount(req, res);
+    if (!connected) return;
+    if (!canCreateConnectedPayout(connected.account.accountType)) {
+      return res.status(403).json({ code: "payouts_managed_by_stripe", error: STANDARD_PAYOUT_MESSAGE });
+    }
+    const accountCurrency = (connected.account.currency || currency).toLowerCase();
+    if (currency !== accountCurrency) return res.status(400).json({ error: `Payout currency must be ${accountCurrency.toUpperCase()}` });
+
+    const stripe = getStripe();
+    const options = { stripeAccount: connected.account.providerAccountId };
+    const balance = await stripe.balance.retrieve({}, options);
+    const available = balance.available.find((item) => item.currency === currency)?.amount ?? 0;
+    if (amount > available) return res.status(400).json({ error: "Payout amount exceeds the available balance" });
+
+    const payout = await stripe.payouts.create(
+      {
+        amount,
+        currency,
+        method: "standard",
+        description: "Manual payout from Certxa",
+        metadata: { certxa_store_id: String(connected.storeId), initiated_by_user_id: String(userId) },
+      },
+      {
+        ...options,
+        idempotencyKey: `certxa-payout-${connected.storeId}-${userId}-${requestKey}`,
+      },
+    );
+    console.info(`[stripeConnect/payouts/create] store=${connected.storeId} user=${userId} payout=${payout.id} amount=${amount} ${currency}`);
+    return res.status(201).json(payoutJson(payout));
+  } catch (err: any) {
+    console.error("[stripeConnect/payouts/create]", err?.message);
+    if (typeof err?.message === "string" && err.message.includes("platform controls for the account")) {
+      return res.status(403).json({ code: "payouts_managed_by_stripe", error: STANDARD_PAYOUT_MESSAGE });
+    }
+    const status = err?.type === "StripeInvalidRequestError" ? 400 : 500;
+    return res.status(status).json({ error: err?.message ?? "Failed to create payout" });
   }
 });
 
@@ -926,6 +1130,14 @@ router.post("/terminal/create-payment-intent", async (req: Request, res: Respons
     if (!amountCents || isNaN(Number(amountCents)) || Number(amountCents) <= 0) {
       return res.status(400).json({ error: "amountCents must be a positive number" });
     }
+    // Stripe rejects live USD PaymentIntents below 50 cents. Return a useful 400
+    // before calling Stripe rather than turning a bad client amount into a generic
+    // server failure. This also makes the amount visible in the (redacted) log.
+    const normalizedAmountCents = Math.round(Number(amountCents));
+    if (currency.toLowerCase() === "usd" && normalizedAmountCents < 50) {
+      console.warn(`[terminal/create-payment-intent] rejected sub-minimum amount: ${normalizedAmountCents} cents`);
+      return res.status(400).json({ error: "Card payments must be at least $0.50 USD" });
+    }
 
     // Ticket context from the checkout sheet (tip, discount, amount already tendered
     // by other methods). Stored on the PaymentIntent so the capture step can record
@@ -943,17 +1155,24 @@ router.post("/terminal/create-payment-intent", async (req: Request, res: Respons
 
     // The appointment this payment will complete must belong to THIS store.
     let apptId: number | null = null;
+    let ticket: { ticket_number: number | null; staff_name: string | null } | null = null;
     if (appointmentId) {
       apptId = Number(appointmentId);
       if (!Number.isInteger(apptId) || apptId <= 0) {
         return res.status(400).json({ error: "appointmentId is invalid" });
       }
       const owned = await pool.query(
-        `SELECT 1 FROM appointments WHERE id = $1 AND store_id = $2 LIMIT 1`,
+        `SELECT a.status, a.ticket_number, s.name AS staff_name
+           FROM appointments a LEFT JOIN staff s ON s.id = a.staff_id
+          WHERE a.id = $1 AND a.store_id = $2 LIMIT 1`,
         [apptId, storeId]
       );
       if (owned.rowCount === 0) {
         return res.status(404).json({ error: "Appointment not found for this store" });
+      }
+      ticket = owned.rows[0];
+      if (owned.rows[0].status === "cancelled") {
+        return res.status(409).json({ error: "Cancelled appointments cannot be checked out" });
       }
     }
 
@@ -962,15 +1181,30 @@ router.post("/terminal/create-payment-intent", async (req: Request, res: Respons
       source:   "certxa_pos",
       ...terminalContextMetadata(ctx.ctx),
     };
+    if (req.body.nailCheckout === true && apptId) {
+      const nail: any = (await pool.query(`SELECT l.category FROM appointments a JOIN locations l ON l.id = a.store_id
+        WHERE a.id = $1 AND a.store_id = $2 AND a.checked_in_at IS NOT NULL`, [apptId, storeId])).rows[0];
+      // Barbershops (/barber) settle through the same ticket checkout, so their card charges are held the same way.
+      if (/nail|barber/i.test(String(nail?.category ?? ""))) metadata.source = "nail_checkout";
+    }
     if (apptId)     metadata.appointment_id = String(apptId);
     if (clientName) metadata.client_name    = String(clientName).slice(0, 200);
     if (method === "m2" || method === "tap_to_pay" || method === "card") metadata.method = method;
+    if (ticket?.ticket_number != null) metadata.ticket_number = String(ticket.ticket_number);
+    if (ticket?.staff_name)            metadata.staff_name    = String(ticket.staff_name).slice(0, 200);
+
+    // Shown on the payment in the Stripe dashboard, so a charge can be matched to its ticket at a glance.
+    const description = apptId
+      ? [`Ticket #${ticket?.ticket_number ?? apptId}`, clientName ? String(clientName).slice(0, 100) : null,
+         ticket?.staff_name ? `Tech: ${ticket.staff_name}` : null].filter(Boolean).join(" · ")
+      : undefined;
 
     const pi = await createTerminalPaymentIntent(
       account.providerAccountId,
-      Number(amountCents),
+      normalizedAmountCents,
       currency,
-      metadata
+      metadata,
+      description
     );
     return res.json({
       clientSecret:      pi.client_secret,
@@ -1114,11 +1348,7 @@ async function recordCommissionReserve(
   amountCents: number,
 ): Promise<void> {
   try {
-    // Appointment → staffId
-    const [appt] = await db
-      .select({ staffId: appointments.staffId })
-      .from(appointments)
-      .where(eq(appointments.id, appointmentId));
+    const [appt] = await db.select().from(appointments).where(eq(appointments.id, appointmentId));
     if (!appt?.staffId) return;
 
     // staffId → contractor (scoped to this store)
@@ -1131,33 +1361,17 @@ async function recordCommissionReserve(
     // Skip instant contractors — their commission is transferred immediately at capture
     if (contractor.payoutMethod === "instant") return;
 
-    const commissionRate = parseFloat(String(contractor.commissionRate ?? "0"));
-    if (!commissionRate || commissionRate <= 0) return;
-
-    const commissionCents = Math.floor(amountCents * commissionRate / 100);
-    if (commissionCents <= 0) return;
-
-    // Next Friday as default payout date
-    const today = new Date();
-    const dow   = today.getDay();
-    const daysUntilFriday = (5 - dow + 7) % 7 || 7;
-    const scheduledDate = new Date(today.getTime() + daysUntilFriday * 86_400_000);
-    const scheduled = scheduledDate.toISOString().slice(0, 10);
-    const earned    = today.toISOString().slice(0, 10);
-
-    await pool.query(
-      `INSERT INTO contractor_commissions
-         (store_id, contractor_id, appointment_id, amount, status,
-          earned_date, scheduled_payout_date, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, 'pending', $5, $6, NOW(), NOW())
-       ON CONFLICT (appointment_id, contractor_id) WHERE appointment_id IS NOT NULL
-       DO NOTHING`,
-      [storeId, contractor.id, appointmentId, commissionCents, earned, scheduled]
-    );
-    console.log(
-      `[commission-reserve] Recorded $${(commissionCents / 100).toFixed(2)} ` +
-      `pending for contractor ${contractor.id} (appt ${appointmentId}), payout ${scheduled}`
-    );
+    // One rule for the amount: the ticket's own frozen service/product split and rates, in
+    // lib/commissionAccrual (one row per appointment; it refreshes a pending row and never touches
+    // a paid one, and does nothing until the ticket is completed).
+    //
+    // This step used to INSERT floor(captured amount × the contractor's current rate) — tax and tip
+    // included — with ON CONFLICT (appointment_id, contractor_id), which matches no index
+    // (cc_appointment_unique_idx is on appointment_id alone), so the statement always failed and
+    // never wrote a row. Every commission row has come from the accrual. Correcting only the
+    // conflict clause would have started writing that second, larger figure whenever the accrual
+    // had not run or had rightly recorded nothing, so the step now makes sure the accrual exists.
+    await recordCommissionAccrual(appt);
   } catch (err: any) {
     console.error("[commission-reserve] Error:", err?.message);
   }
@@ -1178,7 +1392,16 @@ export async function finalizeCapturedTerminalPayment(
   const metaApptId = pi.metadata?.appointment_id;
   const apptId = metaApptId ? parseInt(metaApptId, 10) : NaN;
 
-  if (!isNaN(apptId)) {
+  // Nail checkout must own completion after ALL tenders, gifts and group shares
+  // are known. Stripe capture/webhook records the card transfer, not the visit.
+  if (!isNaN(apptId) && pi.metadata?.source === "nail_checkout") {
+    await db.execute(sql`INSERT INTO nail_checkout_card_intents
+      (payment_intent_id, store_id, appointment_id, amount_cents, idempotency_key)
+      SELECT ${pi.id}, ${storeId}, ${apptId}, ${pi.amount}, 'pending'
+      WHERE EXISTS (SELECT 1 FROM appointments WHERE id = ${apptId} AND store_id = ${storeId})
+      ON CONFLICT (payment_intent_id) DO NOTHING`);
+  }
+  if (!isNaN(apptId) && pi.metadata?.source !== "nail_checkout") {
     const rec = computeTerminalRecord(pi.amount, pi.metadata);
     try {
       // Freeze service price + commission rate on first completion.
@@ -1195,7 +1418,7 @@ export async function finalizeCapturedTerminalPayment(
       }).where(and(
         eq(appointments.id, apptId),
         eq(appointments.storeId, storeId),
-        sql`${appointments.status} IS DISTINCT FROM 'completed'`,
+        sql`${appointments.status} NOT IN ('completed', 'cancelled')`,
       )).returning();
 
       if (!completedApt) {
@@ -1271,6 +1494,31 @@ export async function finalizeCapturedTerminalPayment(
 // app retries capture after a lost response), and a payment that belongs to
 // another store is refused.
 
+// A customer-facing screen sends its result over a register-scoped but public
+// WebSocket. The staff POS MUST check Stripe before treating that message as a
+// tender: WebSocket payloads alone are not evidence that a card was charged.
+router.get("/terminal/verify-payment-intent", async (req: Request, res: Response) => {
+  try {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(401).json({ error: "Sign in to verify the card payment" });
+    const paymentIntentId = req.query.paymentIntentId;
+    const appointmentId = Number(req.query.appointmentId);
+    if (typeof paymentIntentId !== "string" || !/^pi_[a-zA-Z0-9]+$/.test(paymentIntentId) || !Number.isSafeInteger(appointmentId) || appointmentId <= 0) {
+      return res.status(400).json({ error: "PaymentIntent and appointment are required" });
+    }
+    const account = await getPaymentAccount(storeId);
+    if (!account || account.status === "disconnected") return res.status(400).json({ error: "Store has no connected Stripe account" });
+    const pi = await retrieveTerminalPaymentIntent(account.providerAccountId, paymentIntentId);
+    if (pi.status !== "succeeded" || pi.metadata?.store_id !== String(storeId) || pi.metadata?.appointment_id !== String(appointmentId)) {
+      return res.status(409).json({ error: "No captured payment for this ticket" });
+    }
+    return res.json({ amountCents: pi.amount, paymentIntentId: pi.id });
+  } catch (err: any) {
+    console.error("[terminal/verify]", err?.message);
+    return res.status(502).json({ error: "Could not verify payment with Stripe" });
+  }
+});
+
 router.post("/terminal/capture-payment-intent", async (req: Request, res: Response) => {
   try {
     const storeId = await resolveSessionStoreId(req);
@@ -1289,6 +1537,16 @@ router.post("/terminal/capture-payment-intent", async (req: Request, res: Respon
     let pi = await retrieveTerminalPaymentIntent(account.providerAccountId, paymentIntentId);
     if (pi.metadata?.store_id && pi.metadata.store_id !== String(storeId)) {
       return res.status(403).json({ error: "Payment does not belong to this store" });
+    }
+    const appointmentId = Number(pi.metadata?.appointment_id);
+    if (Number.isInteger(appointmentId) && appointmentId > 0) {
+      const appointmentRow = await pool.query(
+        "SELECT status FROM appointments WHERE id = $1 AND store_id = $2 LIMIT 1",
+        [appointmentId, storeId],
+      );
+      if (appointmentRow.rows[0]?.status === "cancelled") {
+        return res.status(409).json({ error: "Cancelled appointments cannot be checked out" });
+      }
     }
 
     if (pi.status === "requires_capture") {

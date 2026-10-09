@@ -85,7 +85,7 @@ function $$(n: number): string {
 }
 
 /** Truncate an item name so a two-column row always leaves room for the price column. */
-function fitName(name: string, priceStr: string, width = COL_W): string {
+export function fitName(name: string, priceStr: string, width = COL_W): string {
   const maxLen = Math.max(1, width - priceStr.length - 1);
   return name.length > maxLen ? `${name.slice(0, maxLen - 1)}…` : name;
 }
@@ -211,6 +211,52 @@ export function buildReceiptText(data: ReceiptData, copy: ReceiptCopy): string {
   if (copy !== 'salon') {
     lines.push(`[C]Thank you for visiting!`);
     lines.push(`[C]We look forward to seeing you again.`);
+  }
+  lines.push(`\n\n\n`);
+
+  return lines.join('\n');
+}
+
+// ── Check-in ticket ─────────────────────────────────────────────────────────
+// The slip printed the moment a client checks in. Matches a specific visual design: a black
+// bar with today's check-in count in bold white (rendered as an image, like the QR below it —
+// see components/NumberBarCapture.tsx), the QR code (also an image — this printer library has no
+// native QR command, see lib/printer.ts), then the client's name and ticket number, then the
+// date/time. The QR stays scannable through the client's whole visit: no ticket yet → opens
+// check-in; once a ticket exists → opens it; once paid → opens the receipt. Same physical slip
+// throughout — see /api/qr/lookup and NailHome.tsx's handleScan for how each stage resolves.
+
+export interface CheckinTicketData {
+  clientName: string;
+  /** The same per-store number shown elsewhere in the POS as "#123" — reused here so the
+   *  printed slip doubles as a manual-lookup fallback when the QR itself won't scan. */
+  ticketNumber: number;
+  /** ISO or locale string. */
+  date: string;
+  /** What the client chose at check-in (services, then "+ add-on" lines) — so the slip can be handed to the tech. */
+  services?: string[];
+}
+
+/** The rows below the QR image: name + ticket number, date + time, then the chosen services. */
+export function buildCheckinTicketFooter(data: CheckinTicketData): string {
+  const lines: string[] = [];
+
+  let dateStr = data.date;
+  let timeStr = '';
+  try {
+    const d = new Date(data.date);
+    if (!isNaN(d.getTime())) {
+      dateStr = d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+      timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    }
+  } catch {}
+
+  lines.push(`[L]<b>${twoCol(data.clientName, `# ${data.ticketNumber}`)}</b>`);
+  lines.push(`[L]${twoCol(`DATE: ${dateStr}`, `TIME: ${timeStr}`)}`);
+  const services = (data.services ?? []).map((s) => String(s).trim()).filter(Boolean);
+  if (services.length) {
+    lines.push(`[C]${divLine()}`);
+    for (const name of services) lines.push(`[L]${name.slice(0, COL_W)}`);
   }
   lines.push(`\n\n\n`);
 

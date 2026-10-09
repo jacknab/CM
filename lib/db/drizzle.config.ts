@@ -23,6 +23,7 @@ export default defineConfig({
     path.join(__dirname, "../../shared/schema/api-keys.ts"),
     path.join(__dirname, "../../shared/schema/campaigns.ts"),
     path.join(__dirname, "../../shared/schema/payouts.ts"),
+    path.join(__dirname, "../../shared/schema/rentals.ts"),
     path.join(__dirname, "../../shared/schema/orphaned-tables.ts"),
   ],
   dialect: "postgresql",

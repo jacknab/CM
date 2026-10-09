@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { verifyCardCharge } from "../frontdesk/verifyCardCharge";
 
 /**
- * Real card charging for the Nail POS checkout — the same three routes the calendar's checkout sheet uses:
- *   • native Android app → the device bridge (M2_PAY / TAP_TO_PAY), which reports back with `certxa_native_*` window events
- *   • web + Stripe Terminal M2 reader → connect once, then create / collect / process / capture a PaymentIntent
- *   • web + paired /frontdesk tablet → "Tap to Pay": the customer's tablet collects the card, we hear the result over the socket
+ * Real card charging for the Nail POS checkout — the Stripe M2 reader only (Tap to Pay is deliberately not offered here):
+ *   • native Android app → the device bridge (M2_PAY), which reports back with `certxa_native_*` window events
+ *   • web + Stripe Terminal → connect once, then create / collect / process / capture a PaymentIntent
+ *   • paired /frontdesk tablet → the customer confirms the tip there and that device's M2 charges (see `frontdesk`)
  * A charge only becomes a tender through `onPaid`, i.e. after the money has actually moved.
+ * `CardKind` still includes "tap" so a charge the other device reports as Tap to Pay is recorded truthfully.
  */
 export type CardKind = "m2" | "tap";
 export type TermStatus = "idle" | "loading" | "discovering" | "connecting" | "ready" | "collecting" | "processing" | "error";
@@ -18,10 +20,14 @@ export interface CardPaymentsOpts {
   send: (type: string, payload?: Record<string, unknown>) => void;
   /** The ticket's tip / discount / already-tendered cents, stored on the PaymentIntent by the native app. */
   context: () => { tipCents: number; discountCents: number; priorTenderedCents: number };
-  onPaid: (kind: CardKind, amount: number, last4?: string | null, paymentIntentId?: string | null) => void;
+  onPaid: (kind: CardKind, amount: number, last4?: string | null, paymentIntentId?: string | null, cardDetails?: unknown) => void;
   /** What is still owed once `paid` is taken, and what the sale will have taken in all — told to the customer's screen so a part-payment doesn't read "Payment successful". */
   settlementAfter: (paid: number) => { remaining: number; paidTotal: number };
   onFailed: (message: string) => void;
+  /** Card charges already on this checkout, so a server-side lookup doesn't add one twice. */
+  knownIntents: () => string[];
+  /** The tip implied by a front-desk charge picked up from the server (charge − pre-tip amount). */
+  onRemoteTip: (amount: number) => void;
   say: (text: string, tone?: "info" | "success" | "error") => void;
 }
 
@@ -52,26 +58,38 @@ export function useCardPayments(o: CardPaymentsOpts) {
 
   const [status, setStatus] = useState<TermStatus>("idle");
   const [nativeBusy, setNativeBusy] = useState<CardKind | null>(null);
-  const [awaitingTap, setAwaitingTap] = useState(false);
-  const tapAmount = useRef(0);
+  const [awaitingFrontdesk, setAwaitingFrontdesk] = useState(false);
+  // After staff stop waiting on the front desk, keep checking the server for a while: the customer may
+  // already have tapped their card there, and that charge must still land on this ticket.
+  const [watchingRemote, setWatchingRemote] = useState(false);
+  const watchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (watchTimer.current) clearTimeout(watchTimer.current); }, []);
+  const frontdeskLock = useRef(false);
   const term = useRef<any>(null);
   const reader = useRef<any>(null);
   const seenIntents = useRef(new Set<string>());
+  const seenRemoteIntents = useRef(new Set<string>());
+  const verifyingRemoteIntents = useRef(new Set<string>());
 
   // Native bridge results (and failures) for THIS ticket.
   useEffect(() => {
     if (!native) return;
-    const done = (e: Event) => {
+    const done = async (e: Event) => {
       const d = (e as CustomEvent).detail ?? {};
       if (Number(d.appointmentId) !== opts.current.ticketId) return;
       d.handledBySheet = true; // tell any page-level handler this checkout owns the payment
       const key = d.paymentIntentId ? String(d.paymentIntentId) : "";
-      if (key) { if (seenIntents.current.has(key)) return; seenIntents.current.add(key); }
+      if (!key) { opts.current.onFailed("Card charge has no transaction ID. Check Stripe before retrying."); return; }
+      if (seenIntents.current.has(key)) return;
+      seenIntents.current.add(key);
       const amount = Number(d.amount) || 0;
       if (amount <= 0) return;
-      setNativeBusy(null);
-      opts.current.send("kiosk_checkout_payment_result", { success: true, total: amount, last4: d.last4, appointmentId: opts.current.ticketId, ...opts.current.settlementAfter(amount) });
-      opts.current.onPaid(d.method === "tap_to_pay" ? "tap" : "m2", amount, d.last4 ? String(d.last4) : null, d.paymentIntentId ? String(d.paymentIntentId) : null);
+      try {
+        const paid = await verifyCardCharge(key, opts.current.ticketId, amount);
+        opts.current.send("kiosk_checkout_payment_result", { success: true, total: paid, last4: d.last4, appointmentId: opts.current.ticketId, ...opts.current.settlementAfter(paid) });
+        opts.current.onPaid(d.method === "tap_to_pay" ? "tap" : "m2", paid, d.last4 ? String(d.last4) : null, key, d.cardDetails ?? undefined);
+      } catch (err: any) { seenIntents.current.delete(key); opts.current.onFailed(err?.message ?? "Card payment could not be verified"); }
+      finally { setNativeBusy(null); }
     };
     const failed = (e: Event) => {
       setNativeBusy(null);
@@ -88,46 +106,86 @@ export function useCardPayments(o: CardPaymentsOpts) {
     };
   }, [native]);
 
-  // The customer's tablet reported a card result (Tap to Pay collected on their screen).
-  const onSocket = useCallback((msg: any) => {
-    if (msg?.type !== "kiosk_checkout_payment_result") return;
+  // What the front desk was asked to charge before the customer's tip (cents), while waiting on it.
+  const frontdeskBaseCents = useRef<number | null>(null);
+
+  // Turn a charge the front-desk device made into a tender — once, and only after Stripe confirms it.
+  const acceptRemoteCharge = useCallback(async (intentId: string, total: number, method: CardKind, last4: string | null, cardDetails: unknown) => {
     const o = opts.current;
-    if (msg.via === "client_confirm") {
-      // The customer confirmed the tip on their screen and the native bridge ran there.
-      if (msg.success) { const paid = Number(msg.total) || 0; if (paid > 0) o.onPaid(msg.method === "m2" ? "m2" : "tap", paid, msg.last4 ?? null); }
-      else o.onFailed(msg.error ? String(msg.error) : "Card declined");
-    } else if (tapAmount.current > 0) {
-      // A tap the POS itself asked the tablet to collect (the M2 flow echoes this event too — its ref stays 0).
-      const asked = tapAmount.current;
-      tapAmount.current = 0; setAwaitingTap(false);
-      if (msg.success) {
-        const total = Number(msg.total);
-        // This wire protocol carries no request id, so a stale response from a tap that was
-        // cancelled (then immediately followed by a new, different-amount request) can't be told
-        // apart from the current one by identity — but a mismatched amount is a clear tell it
-        // isn't the answer to what's actually being asked for right now.
-        if (Number.isFinite(total) && total > 0 && Math.abs(total - asked) > 0.005) {
-          o.onFailed("Got a payment result for a different amount than expected — please try the tap again.");
-          return;
-        }
-        o.onPaid("tap", total || asked, msg.last4 ?? null);
-      }
-      else o.onFailed(msg.error ? String(msg.error) : "Card declined");
+    if (seenRemoteIntents.current.has(intentId) || verifyingRemoteIntents.current.has(intentId) || o.knownIntents().includes(intentId)) return;
+    verifyingRemoteIntents.current.add(intentId);
+    try {
+      const paid = await verifyCardCharge(intentId, o.ticketId, total);
+      if (opts.current.ticketId !== o.ticketId) return;
+      seenRemoteIntents.current.add(intentId);
+      const base = frontdeskBaseCents.current;
+      if (base != null && Math.round(paid * 100) >= base) o.onRemoteTip((Math.round(paid * 100) - base) / 100);
+      o.onPaid(method, paid, last4, intentId, cardDetails);
+    } catch (err: any) { o.onFailed(err?.message ?? "Card payment could not be verified"); }
+    finally {
+      verifyingRemoteIntents.current.delete(intentId);
+      frontdeskBaseCents.current = null;
+      frontdeskLock.current = false;
+      setAwaitingFrontdesk(false);
     }
   }, []);
 
-  const bridge = (type: "M2_PAY" | "TAP_TO_PAY", amount: number) => {
+  // The front-desk device reported the card result after the customer confirmed the tip there.
+  const onSocket = useCallback(async (msg: any) => {
+    if (msg?.type !== "kiosk_checkout_payment_result") return;
+    const o = opts.current;
+    if (msg.appointmentId != null && Number(msg.appointmentId) !== o.ticketId) return;
+    if (msg.via === "client_confirm") {
+      // The customer confirmed the tip on their screen and the native bridge ran there.
+      if (msg.success) {
+        const intentId = typeof msg.paymentIntentId === "string" ? msg.paymentIntentId : null;
+        if (!intentId) {
+          frontdeskLock.current = false;
+          setAwaitingFrontdesk(false);
+          o.onFailed("Missing transaction ID. Check Stripe before trying another charge.");
+          return;
+        }
+        await acceptRemoteCharge(intentId, Number(msg.total), msg.method === "tap" ? "tap" : "m2", msg.last4 ?? null, msg.cardDetails);
+      } else {
+        frontdeskBaseCents.current = null;
+        frontdeskLock.current = false;
+        setAwaitingFrontdesk(false);
+        o.onFailed(msg.error ? String(msg.error) : "Card declined");
+      }
+    }
+  }, [acceptRemoteCharge]);
+
+  // Safety net while the front desk is charging: the server records every captured charge against the
+  // ticket, so check it directly — a lost result message must never leave this screen waiting forever
+  // on a customer who has already paid.
+  useEffect(() => {
+    if (!awaitingFrontdesk && !watchingRemote) return;
+    let alive = true;
+    const check = async () => {
+      try {
+        const r = await fetch(`/api/nail/captured-card-payments/${opts.current.ticketId}`, { credentials: "include" });
+        if (!alive || !r.ok) return;
+        const rows = await r.json() as { paymentIntentId: string; amountCents: number }[];
+        if (!alive || !Array.isArray(rows)) return;
+        for (const row of rows) await acceptRemoteCharge(row.paymentIntentId, row.amountCents / 100, "m2", null, undefined);
+      } catch { /* try again on the next tick */ }
+    };
+    const iv = setInterval(check, 4_000);
+    return () => { alive = false; clearInterval(iv); };
+  }, [awaitingFrontdesk, watchingRemote, acceptRemoteCharge]);
+
+  const bridge = (type: "M2_PAY", amount: number) => {
     const o = opts.current;
     const cents = Math.round(amount * 100);
     if (cents <= 0) return o.say("NOTHING DUE", "error");
     if (nativeBusy) return;
     // Never mark the button busy for a message that cannot be delivered — it would stay on "CHARGING…" with no way out.
     if (bridgeState() !== "app") return o.onFailed("The Certxa app connection isn't ready. Close and reopen the app, then try again.");
-    setNativeBusy(type === "M2_PAY" ? "m2" : "tap");
+    setNativeBusy("m2");
     (window as any).ReactNativeWebView.postMessage(JSON.stringify({
-      type, appointmentId: o.ticketId, amountCents: cents, clientName: o.clientName, ...o.context(),
+      type, appointmentId: o.ticketId, amountCents: cents, clientName: o.clientName, nailCheckout: true, ...o.context(),
     }));
-    o.say(type === "M2_PAY" ? "M2 READER — INSERT / TAP CARD" : "TAP TO PAY — HOLD CARD OR PHONE TO THIS DEVICE", "info");
+    o.say("M2 READER — INSERT / TAP CARD", "info");
   };
 
   const connectM2 = async () => {
@@ -219,7 +277,8 @@ export function useCardPayments(o: CardPaymentsOpts) {
     try {
       const piRes = await fetch("/api/payments/terminal/create-payment-intent", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amountCents: cents, currency: "usd" }),
+        body: JSON.stringify({ amountCents: cents, currency: "usd", appointmentId: o.ticketId, nailCheckout: true,
+          clientName: o.clientName, method: "m2", ...o.context() }),
       });
       if (!piRes.ok) throw new Error((await piRes.json()).error ?? "Failed to create payment intent");
       const { clientSecret, paymentIntentId } = await piRes.json();
@@ -230,7 +289,8 @@ export function useCardPayments(o: CardPaymentsOpts) {
       if (processed.error) throw new Error(processed.error.message);
       // The card is charged from here on — a capture failure past this point must never be
       // treated like an ordinary decline (see pendingCapture above).
-      const last4 = processed.paymentIntent?.payment_method_details?.card_present?.last4 ?? null;
+      const cardPresent = processed.paymentIntent?.payment_method_details?.card_present;
+      const last4 = cardPresent?.last4 ?? null;
       try {
         await captureWithRetry(paymentIntentId);
       } catch (captureErr: any) {
@@ -242,7 +302,11 @@ export function useCardPayments(o: CardPaymentsOpts) {
       }
       setStatus("ready");
       o.send("kiosk_checkout_payment_result", { success: true, total: amount, last4: last4 ?? "????", appointmentId: o.ticketId, ...o.settlementAfter(amount) });
-      o.onPaid("m2", amount, last4, paymentIntentId);
+      o.onPaid("m2", amount, last4, paymentIntentId, cardPresent ? {
+        brand: cardPresent.brand, last4: cardPresent.last4,
+        entryMethod: cardPresent.read_method, paymentIntentId,
+        approvalCode: cardPresent.receipt?.authorization_code ?? cardPresent.receipt?.authorization_response_code ?? null,
+      } : undefined);
     } catch (err: any) {
       setStatus("ready");
       term.current?.cancelCollectPaymentMethod?.().catch(() => {});
@@ -251,28 +315,31 @@ export function useCardPayments(o: CardPaymentsOpts) {
     }
   };
 
-  /** Web + paired tablet: ask the customer's screen to collect the tap. A second press cancels. */
-  const tapOnCustomerScreen = (amount: number) => {
-    const o = opts.current;
-    if (awaitingTap) {
-      tapAmount.current = 0; setAwaitingTap(false);
-      o.send("kiosk_checkout_cancel"); o.say("TAP TO PAY CANCELLED", "info");
-      return;
-    }
-    if (amount <= 0) return o.say("NOTHING DUE", "error");
-    tapAmount.current = amount; setAwaitingTap(true);
-    o.send("kiosk_checkout_await_payment", { mode: "tap", total: amount, appointmentId: o.ticketId, ...o.settlementAfter(amount) });
-    o.say(`TAP TO PAY SENT TO CUSTOMER SCREEN · ${money(amount)}`, "info");
+  const frontdesk = (payload: Record<string, unknown>) => {
+    if (frontdeskLock.current) return;
+    frontdeskLock.current = true;
+    const base = Number(payload.amountDueBeforeTip);
+    frontdeskBaseCents.current = Number.isFinite(base) ? Math.round(base * 100) : null;
+    setAwaitingFrontdesk(true);
+    opts.current.send("kiosk_checkout_tip_request", payload);
+    opts.current.say("TIP AND CARD PAYMENT SENT TO FRONT DESK", "info");
+  };
+
+  /** Staff stop waiting on the front desk (customer walked off, screen never showed it): the POS is usable again. */
+  const cancelFrontdesk = () => {
+    if (!awaitingFrontdesk) return;
+    frontdeskLock.current = false;
+    setAwaitingFrontdesk(false);
+    setWatchingRemote(true);
+    if (watchTimer.current) clearTimeout(watchTimer.current);
+    watchTimer.current = setTimeout(() => setWatchingRemote(false), 120_000);
+    opts.current.send("kiosk_checkout_tip_cancel", { appointmentId: opts.current.ticketId });
   };
 
   return {
-    native, status, nativeBusy, awaitingTap, onSocket,
-    /** The M2 reader button. */
+    native, status, nativeBusy, awaitingFrontdesk, frontdesk, cancelFrontdesk, onSocket,
+    /** The CARD button: the M2 reader. */
     m2: (amount: number) => (native ? bridge("M2_PAY", amount) : void chargeM2(amount)),
-    /** The Tap to Pay button: on this device (native app) or on the customer's tablet (web + dual screen). */
-    tap: (amount: number) => (native ? bridge("TAP_TO_PAY", amount) : tapOnCustomerScreen(amount)),
-    /** Tap to Pay is offered in the native app, or on the web when a customer tablet is paired. */
-    tapAvailable: native || o.dualScreen,
-    busy: nativeBusy !== null || awaitingTap || status === "loading" || status === "discovering" || status === "connecting" || status === "collecting" || status === "processing",
+    busy: nativeBusy !== null || awaitingFrontdesk || status === "loading" || status === "discovering" || status === "connecting" || status === "collecting" || status === "processing",
   };
 }

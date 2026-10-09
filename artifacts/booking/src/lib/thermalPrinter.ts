@@ -126,9 +126,10 @@ export interface CheckinTicketData {
   clientName: string;
   staffName?: string;
   services: { name: string; duration?: number; price?: number }[];
-  appointmentId: number;
-  ticketNumber?: number | null; // per-store display number — printed text only, QR stays id-based
-  bookingCode: string; // e.g. "BK:123" — encoded in the QR
+  /** Absent for a CI check-in marker that does not have an appointment/ticket yet. */
+  appointmentId?: number;
+  ticketNumber?: number | null; // per-store display number — printed text only
+  bookingCode: string; // "CI:{token}" for a marker or "BK:{id}" for an appointment
   timeStr: string;     // e.g. "2:30 PM"
   dateStr: string;     // e.g. "Jun 18"
 }
@@ -169,11 +170,11 @@ export function buildCheckinTicket(d: CheckinTicketData): Uint8Array {
 
   p.divider(W)
    .center()
-   .text(`Booking #${String(d.ticketNumber ?? d.appointmentId).padStart(3, "0")}`).lf()
+   .text(`Ticket #${String(d.ticketNumber ?? d.appointmentId ?? "—").padStart(3, "0")}`).lf()
    .lf()
    .qr(d.bookingCode, 5)
    .lf()
-   .text("Scan at checkout").lf()
+   .text(d.bookingCode.toUpperCase().startsWith("CI:") ? "Scan to create ticket" : "Scan to open ticket").lf()
    .lf(4)
    .cut();
 

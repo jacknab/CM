@@ -2,7 +2,7 @@ import { Router } from "express";
 import { isAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import OpenAI from "openai";
-import { db } from "../db";
+import { db, pool } from "../db";
 import { appointments, staff, smsSettings, locations } from "@shared/schema";
 import { clients } from "@shared/schema/clients";
 import { clientEmails } from "../../shared/schema/clients";
@@ -1642,13 +1642,35 @@ export async function buildAssistantSnapshot(storeId: number) {
 }
 
 router.post("/growth-assistant", async (req, res) => {
+  const diagnosticId = `ga_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const startedAt = Date.now();
   const storeId = await requireStoreId(req, res);
-  if (!storeId) return;
+  if (!storeId) {
+    console.warn(`[growth-assistant:${diagnosticId}] rejected before store resolution`, {
+      statusCode: res.statusCode,
+      hasUserSession: Boolean((req.session as any)?.userId),
+      hasStaffSession: Boolean((req.session as any)?.staffId),
+    });
+    return;
+  }
+  console.info(`[growth-assistant:${diagnosticId}] request accepted`, {
+    storeId,
+    messageCount: Array.isArray(req.body?.messages) ? req.body.messages.length : 0,
+    integrationKeyConfigured: Boolean(process.env.AI_INTEGRATIONS_OPENAI_API_KEY),
+    standardKeyConfigured: Boolean(process.env.OPENAI_API_KEY),
+    customBaseUrlConfigured: Boolean(process.env.AI_INTEGRATIONS_OPENAI_BASE_URL),
+    model: process.env.MEMBERS_ASSISTANT_MODEL || "gpt-4o-mini",
+  });
   if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
+    console.warn(`[growth-assistant:${diagnosticId}] provider configuration missing`, {
+      expectedVariable: "AI_INTEGRATIONS_OPENAI_API_KEY",
+      standardKeyConfigured: Boolean(process.env.OPENAI_API_KEY),
+    });
     return res.status(503).json({ error: "The assistant isn't set up on this account yet." });
   }
 
   const raw = Array.isArray(req.body?.messages) ? req.body.messages : [];
+  const isAutomaticBriefing = req.body?.briefing === true;
   const messages = raw
     .filter((m: any) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
     .slice(-8)
@@ -1657,8 +1679,37 @@ router.post("/growth-assistant", async (req, res) => {
     return res.status(400).json({ error: "A question is required." });
   }
 
+  // Atomically claim the account's 12-hour briefing window. Doing this on the
+  // server makes the rule work across browsers/devices and prevents two tabs
+  // from launching duplicate AI requests.
+  let briefingClaimedAt: Date | null = null;
+  const briefingUserId = (req.session as any)?.userId as string | undefined;
+  if (isAutomaticBriefing) {
+    if (!briefingUserId) return res.json({ skipped: true });
+    const claim = await pool.query<{ last_manage_briefing_at: Date }>(
+      `UPDATE users
+          SET last_manage_briefing_at = NOW()
+        WHERE id = $1
+          AND (last_manage_briefing_at IS NULL OR last_manage_briefing_at < NOW() - INTERVAL '12 hours')
+      RETURNING last_manage_briefing_at`,
+      [briefingUserId],
+    );
+    briefingClaimedAt = claim.rows[0]?.last_manage_briefing_at ?? null;
+    if (!briefingClaimedAt) {
+      console.info(`[growth-assistant:${diagnosticId}] automatic briefing skipped`, { reason: "visited_within_12_hours" });
+      return res.json({ skipped: true });
+    }
+  }
+
   try {
+    const snapshotStartedAt = Date.now();
     const snapshot = await buildAssistantSnapshot(storeId);
+    console.info(`[growth-assistant:${diagnosticId}] snapshot built`, {
+      durationMs: Date.now() - snapshotStartedAt,
+      salon: snapshot.salon,
+      clientCount: snapshot.clients.total,
+      visitsThisMonth: snapshot.revenue.visitsThisMonthSoFar,
+    });
     const system = `You are Certxa's growth analyst for one salon owner, talking like a smart friend — plain words, no jargon.
 Answer ONLY from the salon data below. If the data can't answer the question, say so and say which number would help. Never invent figures, clients, or dates.
 Month-to-date revenue is a partial month — compare it fairly (say so) rather than calling it a drop.
@@ -1670,7 +1721,7 @@ SALON DATA (JSON):
 ${JSON.stringify(snapshot)}`;
 
     const completion = await getCoachingClient().chat.completions.create({
-      model: "gpt-4o-mini",
+      model: process.env.MEMBERS_ASSISTANT_MODEL || "gpt-4o-mini",
       messages: [{ role: "system", content: system }, ...messages],
       response_format: { type: "json_object" },
       max_tokens: 500,
@@ -1678,6 +1729,12 @@ ${JSON.stringify(snapshot)}`;
     });
     let parsed: any = {};
     try { parsed = JSON.parse(completion.choices[0]?.message?.content ?? "{}"); } catch { /* fall through to defaults */ }
+    console.info(`[growth-assistant:${diagnosticId}] provider response received`, {
+      durationMs: Date.now() - startedAt,
+      hasContent: Boolean(completion.choices[0]?.message?.content),
+      parsedReply: typeof parsed.reply === "string",
+      finishReason: completion.choices[0]?.finish_reason,
+    });
 
     const highlights = (Array.isArray(parsed.highlights) ? parsed.highlights : [])
       .filter((h: any) => h && typeof h.label === "string" && typeof h.value === "string")
@@ -1695,8 +1752,25 @@ ${JSON.stringify(snapshot)}`;
       actions,
     });
   } catch (err: any) {
-    console.error("[intelligence] growth-assistant error:", err?.message);
-    return res.status(500).json({ error: "The assistant is unavailable right now. Please try again shortly." });
+    if (briefingClaimedAt && briefingUserId) {
+      // A failed provider/database call should not suppress the next attempt.
+      await pool.query(
+        `UPDATE users
+            SET last_manage_briefing_at = NULL
+          WHERE id = $1 AND last_manage_briefing_at = $2`,
+        [briefingUserId, briefingClaimedAt],
+      ).catch(() => undefined);
+    }
+    console.error(`[growth-assistant:${diagnosticId}] failed`, {
+      durationMs: Date.now() - startedAt,
+      storeId,
+      name: err?.name,
+      type: err?.type,
+      code: err?.code,
+      status: err?.status ?? err?.statusCode,
+      message: err?.message,
+    });
+    return res.status(500).json({ error: "The assistant is unavailable right now. Please try again shortly.", diagnosticId });
   }
 });
 

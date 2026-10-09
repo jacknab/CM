@@ -1,0 +1,17 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!-- Lets a tablet make Certxa its device owner (one-time provisioning), which is what allows
+         Android's full kiosk lock (Lock Task mode) without a prompt on every launch. -->
+    <receiver
+      android:name="expo.modules.certxaapprestart.CertxaDeviceAdminReceiver"
+      android:description="@string/certxa_device_admin_description"
+      android:label="@string/certxa_device_admin_label"
+      android:permission="android.permission.BIND_DEVICE_ADMIN"
+      android:exported="true">
+      <meta-data android:name="android.app.device_admin" android:resource="@xml/certxa_device_admin" />
+      <intent-filter>
+        <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+      </intent-filter>
+    </receiver>
+  </application>
+</manifest>

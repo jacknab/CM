@@ -1,13 +1,35 @@
 import express, { type Express, type Request, type Response } from "express";
+import { getRedisClient } from "./lib/redis";
+import * as checkSignature from "./lib/checkSignature";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { triggerDashboardBroadcast } from "./routes/dashboardWS";
 import { logActivityEvent } from "./lib/activityFeed";
 import { triggerTranslation } from "./lib/translationService";
 import supportRouter from "./routes/support";
+import signupProgressRouter from "./routes/signupProgress";
+import kioskDeviceRouter from "./routes/kioskDevice";
+import stationPairingRouter from "./routes/stationPairing";
+import { kioskGate, claimMissedYouText, verifyKioskSelection, sessionCoversStore } from "./lib/kioskAccess";
+import supportAccountListRouter from "./routes/supportAccountList";
+import liveChatAccountRouter from "./routes/liveChatAccount";
+import supportFeedRouter from "./routes/supportFeed";
 import { resolveSessionStoreId } from "./lib/sessionStore";
 import { resolveTimezoneFromAddress, hasAddressChange } from "./lib/resolveTimezone";
 import { getOrCreateTodayBusinessDay, getPendingReconciliation, getLocalDateString, computeBusinessDayTotals } from "./lib/businessDay";
+import { computeZReport } from "./lib/zReport";
+import { KIOSK_ART_INDUSTRY } from "@shared/kioskArt";
+import { smartCheckinFor, recordOffers } from "./lib/smartCheckin";
+import { sanitizeTipPresets } from "@shared/tipPresets";
+import { idempotent, startIdempotencyCleanup } from "./lib/idempotency";
+import { cashShortageCents, dayCloseLockedUntil, denominationTotal, parseDrawerAmount } from "./lib/dayClose";
+import { allocateTenders } from "./lib/tenderAllocation";
+import { summarizeDeductionYtd, summarizePayrollYtd } from "@shared/payrollYtd";
+import { sanitizePosGridConfig } from "@shared/posGrid";
+import rateLimit from "express-rate-limit";
+import { getStoreOwnerContact } from "./lib/systemEmails";
+import { resolveActivationCode, ensureLocationActivationCode, ensureRegisterActivationCode } from "./lib/activationCodes";
+import { classifySmsCancellationIntent } from "./lib/smsCancellationIntent";
 import { getClientIp, reportCalendarNetwork, isRequestFromTrustedNetwork } from "./lib/salonNetworkGuard";
 import { api } from "@shared/routes";
 import { isAuthenticated } from "./auth";
@@ -21,6 +43,7 @@ import { eq, and, or, ne, desc, sql, count, gte, lte, asc, isNull, isNotNull, in
 import { sendEmail, sendBookingConfirmationEmail, sendReminderEmail, sendReviewRequestEmail, startEmailReminderScheduler } from "./mail";
 import { businessTemplates } from "./onboarding-data";
 import { fromZonedTime, toZonedTime, formatInTimeZone } from "date-fns-tz";
+import { pushBookingEvent } from "./lib/ownerPush";
 import { atomicCreateBooking, validateBookingSlot } from "./bookingEngine";
 import { resolvePackageForBooking } from "./lib/packageResolver";
 import { recordCommissionAccrual } from "./lib/commissionAccrual";
@@ -111,6 +134,8 @@ import {
   registerClaims,
   storeNetworkTrust,
   cashDrawers,
+  cashDrawerSessions,
+  drawerActions,
   bookingBanList,
   deals,
   dealVouchers,
@@ -119,7 +144,7 @@ import {
 } from "@shared/schema";
 import { buildRegionSlug, ALL_CITIES, BOOKING_BUSINESS_TYPES } from "./seo-cities";
 import { notifyKioskNoShowWaitlist } from "./lib/kioskNoShowWaitlist";
-import { seedFromPresetStore } from "./lib/presetSeed";
+import { seedFromBusinessTemplate } from "./lib/templateSeed";
 import { seedNailSalonCatalog } from "./lib/nailSalonSeed";
 import * as nailConfig from "./lib/nailConfig";
 import {
@@ -152,7 +177,11 @@ import usageRouter from "./routes/usage";
 import { autoAssignTechnician } from "./services/appointment-assignment";
 import { autoAssignResource } from "./services/resource-assignment";
 import * as nailTickets from "./lib/nailTickets";
+import { normalizeTurnRules, orderTurnLine, turnAmount, turnValue } from "./lib/turnRules";
+import { withTurnLock } from "./lib/turnLock";
+import { mutateStorePreferences, writeStorePreferences } from "./lib/storePreferences";
 import * as nailGiftCards from "./lib/nailGiftCards";
+import { settleNailCheckout, NailCheckoutError } from "./lib/nailCheckoutSettlement";
 import { getBufferMinutes, normalizeBufferMinutes, clashesWithBuffer } from "./lib/appointmentBuffer";
 import { commissionBasis, commissionAmount as commissionAmountFor } from "@shared/commissionBasis";
 import { getRequiredResourceType } from "@shared/resourceMatching";
@@ -340,7 +369,20 @@ const DEFAULT_TURN_SETTINGS = {
   dequeOrder: [] as number[],
   lockedStaffIds: [] as number[],
   shortTurnProtectedId: null as number | null,
+  /** Counted Turns: every technician currently held at the front after a short turn, oldest first. */
+  shortTurnProtectedIds: [] as number[],
+  /** Which pre-configured turn system the salon runs (lib/turnRules.ts). */
+  turnMode: "classic" as "classic" | "dollar",
+  /** Dollar-Based Turns: what a ticket under the dollars-per-turn amount earns. */
+  partialTurnValue: 0.5,
 };
+
+/** The short-turn holders, including a value saved before there could be more than one. */
+function shortTurnPins(settings: Record<string, any>): number[] {
+  const list = Array.isArray(settings.shortTurnProtectedIds) ? settings.shortTurnProtectedIds.map(Number).filter(Number.isFinite) : [];
+  const legacy = typeof settings.shortTurnProtectedId === "number" ? [settings.shortTurnProtectedId] : [];
+  return [...new Set<number>([...list, ...legacy])];
+}
 
 function safeParsePreferences(raw: string | null | undefined): Record<string, any> {
   if (!raw) return {};
@@ -389,33 +431,44 @@ async function getTurnPreferences(storeId: number) {
   };
 }
 
+/**
+ * Change the turn state in one step: the salon's settings row is locked, `change` sees what is saved
+ * right now and returns what to set (or null for nothing). Two turn changes at the same moment — a
+ * checkout and an assignment, two devices — therefore apply one after the other instead of the later
+ * save silently undoing the earlier one. Everything else in the settings row is carried over untouched.
+ */
+async function mutateTurnPreferences(
+  storeId: number,
+  change: (turn: typeof DEFAULT_TURN_SETTINGS & Record<string, any>) => Record<string, any> | null,
+) {
+  let result: (typeof DEFAULT_TURN_SETTINGS & Record<string, any>) | null = null;
+  await mutateStorePreferences(storeId, (currentPrefs) => {
+    const savedTurn = currentPrefs.turnSystem && typeof currentPrefs.turnSystem === "object" ? currentPrefs.turnSystem : {};
+    const currentTurn = { ...DEFAULT_TURN_SETTINGS, ...savedTurn };
+    const updates = change(currentTurn);
+    if (!updates) { result = currentTurn; return null; }
+    const nextTurn = {
+      ...currentTurn,
+      ...updates,
+      appointmentExclusionWindowMinutes: normalizeNumber(
+        updates.appointmentExclusionWindowMinutes ?? savedTurn.appointmentExclusionWindowMinutes,
+        DEFAULT_TURN_SETTINGS.appointmentExclusionWindowMinutes,
+        1
+      ),
+      turnValueThreshold: normalizeNumber(
+        updates.turnValueThreshold ?? savedTurn.turnValueThreshold,
+        DEFAULT_TURN_SETTINGS.turnValueThreshold
+      ),
+    };
+    result = nextTurn;
+    return { ...currentPrefs, turnSystem: nextTurn };
+  });
+  return result!;
+}
+
+/** Set turn fields outright. For a change that depends on what is saved (lists!), use mutateTurnPreferences. */
 async function saveTurnPreferences(storeId: number, updates: Record<string, any>) {
-  const [existing] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
-  const currentPrefs = safeParsePreferences(existing?.preferences as string | undefined);
-  const currentTurn = currentPrefs.turnSystem && typeof currentPrefs.turnSystem === "object"
-    ? currentPrefs.turnSystem
-    : {};
-  const nextTurn = {
-    ...DEFAULT_TURN_SETTINGS,
-    ...currentTurn,
-    ...updates,
-    appointmentExclusionWindowMinutes: normalizeNumber(
-      updates.appointmentExclusionWindowMinutes ?? currentTurn.appointmentExclusionWindowMinutes,
-      DEFAULT_TURN_SETTINGS.appointmentExclusionWindowMinutes,
-      1
-    ),
-    turnValueThreshold: normalizeNumber(
-      updates.turnValueThreshold ?? currentTurn.turnValueThreshold,
-      DEFAULT_TURN_SETTINGS.turnValueThreshold
-    ),
-  };
-  const preferences = JSON.stringify({ ...currentPrefs, turnSystem: nextTurn });
-  if (existing) {
-    await db.update(storeSettings).set({ preferences, updatedAt: new Date() }).where(eq(storeSettings.storeId, storeId));
-  } else {
-    await db.insert(storeSettings).values({ storeId, preferences });
-  }
-  return nextTurn;
+  return mutateTurnPreferences(storeId, () => updates);
 }
 
 async function assertOwnStore(userId: string | undefined, storeId: number) {
@@ -458,9 +511,14 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
   const [storeRow] = await db.select({ timezone: locations.timezone }).from(locations).where(eq(locations.id, storeId)).limit(1);
   const storeTz = (storeRow as any)?.timezone ?? "UTC";
   const localNow  = toZonedTime(now, storeTz);
-  const today = `${localNow.getFullYear()}-${String(localNow.getMonth() + 1).padStart(2, "0")}-${String(localNow.getDate()).padStart(2, "0")}`;
-  const todayStartUtc = fromZonedTime(new Date(`${today}T00:00:00`), storeTz);
-  const todayEndUtc   = fromZonedTime(new Date(`${today}T23:59:59.999`), storeTz);
+  const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const calendarToday = ymd(localNow);
+  // The turn day runs 4 AM to 4 AM, like the rest of the salon's business day: a salon open past
+  // midnight keeps its line and its turn totals until it has closed, not until the clock strikes twelve.
+  const today = ymd(new Date(localNow.getTime() - 4 * 60 * 60_000));
+  const todayStartUtc = fromZonedTime(new Date(`${today}T04:00:00`), storeTz);
+  const todayEndUtc   = new Date(todayStartUtc.getTime() + 24 * 60 * 60_000 - 1);
+  const rules = normalizeTurnRules(settings);
 
   const storeStaff = await db.select().from(staff).where(eq(staff.storeId, storeId)).orderBy(asc(staff.id));
   const serviceRows = serviceId
@@ -494,7 +552,8 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
     .from(timeclock)
     .where(and(
       eq(timeclock.storeId, storeId),
-      eq(timeclock.workDate, today)
+      // the turn day's own clock-ins, plus any made after midnight on the same night
+      inArray(timeclock.workDate, [...new Set([today, calendarToday])])
     ))
     .orderBy(asc(timeclock.clockIn));
 
@@ -511,32 +570,34 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
     }
   }
 
-  // === TURN COUNTS (computed first — needed for fairness sort below) ===
-  // Only threshold-qualifying completed turns count.
-  // In-progress appointments never count until checkout is finalised.
-  const turnCountRows = await db
+  // === TURN TOTALS (computed first — needed for the fairness order below) ===
+  // What each technician has earned today under the salon's turn rules (lib/turnRules.ts): every
+  // finished, paid WALK-IN ticket is worth turns by its SERVICE amount — tips, retail and tax earn
+  // nothing. Advance bookings earn no turns: the rotation shares out walk-ins only.
+  // Tickets still in progress never count until checkout is final.
+  const completedToday = await db
     .select({
       staffId: appointments.staffId,
-      cnt: sql<number>`cast(count(*) as int)`,
+      totalPaid: appointments.totalPaid,
+      tipAmount: appointments.tipAmount,
+      serviceRevenue: appointments.serviceRevenue,
+      productRevenue: appointments.productRevenue,
     })
     .from(appointments)
     .where(and(
       eq(appointments.storeId, storeId),
       gte(appointments.date, todayStartUtc),
       sql`${appointments.date} <= ${todayEndUtc}`,
-      sql`(
-        ${appointments.status} = 'completed'
-        AND ${appointments.totalPaid} IS NOT NULL
-        AND (CAST(${appointments.totalPaid} AS numeric) - COALESCE(CAST(${appointments.tipAmount} AS numeric), 0)) >= ${settings.turnValueThreshold}
-      )`
-    ))
-    .groupBy(appointments.staffId);
+      sql`${appointments.status} = 'completed'`,
+      isNotNull(appointments.staffId),
+      sql.raw(nailTickets.walkInSQL("appointments")),
+    ));
 
-  const turnCountMap = new Map<number, number>(
-    turnCountRows
-      .filter((r) => r.staffId !== null)
-      .map((r) => [r.staffId!, r.cnt])
-  );
+  const turnCountMap = new Map<number, number>();
+  for (const row of completedToday) {
+    const earned = turnValue(rules, turnAmount(row));
+    if (earned > 0) turnCountMap.set(row.staffId!, (turnCountMap.get(row.staffId!) ?? 0) + earned);
+  }
 
   // === DEQUE ORDER MANAGEMENT ===
   // The deque is the canonical queue order, persisted in store settings.
@@ -562,22 +623,20 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
 
   const merged = [...filteredDeque, ...newlyClockedIn];
 
-  // Short-turn-protected tech (if any) is always pinned to position 0.
-  // Everyone else is sorted by turn count ascending; ties preserve FIFO order.
-  const shortTurnPinnedId: number | null =
-    typeof settings.shortTurnProtectedId === "number" ? settings.shortTurnProtectedId : null;
+  // Lowest turn total first; technicians level on turns keep their first-come order. Counted Turns
+  // also holds its short-turn technicians at the very front (Dollar-Based Turns has no such hold —
+  // the partial turn is what a small ticket costs).
+  const shortTurnHeld = rules.mode === "classic" ? shortTurnPins(settings).filter((id) => clockedInToday.has(id)) : [];
+  const syncedDeque = orderTurnLine(merged, turnCountMap, shortTurnHeld);
 
-  const syncedDeque = [...merged].sort((a, b) => {
-    if (shortTurnPinnedId !== null) {
-      if (a === shortTurnPinnedId) return -1;
-      if (b === shortTurnPinnedId) return 1;
-    }
-    return (turnCountMap.get(a) ?? 0) - (turnCountMap.get(b) ?? 0);
-  });
-
-  // Persist the cleaned+sorted deque if anything changed (fire-and-forget)
+  // Persist the cleaned+sorted line if it changed — but only over the exact line this was worked
+  // out from, so a lock or a checkout saved in the meantime is never overwritten by this read.
   if (JSON.stringify(syncedDeque) !== JSON.stringify(savedDeque)) {
-    saveTurnPreferences(storeId, { dequeOrder: syncedDeque }).catch(() => {});
+    const basedOn = JSON.stringify(savedDeque);
+    mutateTurnPreferences(storeId, (turn) => {
+      const nowSaved = Array.isArray(turn.dequeOrder) ? (turn.dequeOrder as any[]).map(Number).filter(Number.isFinite) : [];
+      return JSON.stringify(nowSaved) === basedOn ? { dequeOrder: syncedDeque } : null;
+    }).catch(() => {});
   }
 
   // Position map: staffId → 0-based index in deque (0 = "next up")
@@ -621,19 +680,24 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
         isNotNull(appointments.staffId)
       ));
     const hasInProgress = new Set(inProgressRows.map((r) => r.staffId as number));
+    // A technician holding a front-desk check-in that has no ticket yet (assigned by category) is occupied too.
+    for (const id of await nailTickets.staffHoldingCheckins(storeId)) hasInProgress.add(id);
     const staleIds = rawLockedIds.filter((id) => !hasInProgress.has(id));
     if (staleIds.length > 0) {
       // Fire-and-forget: clear the stale lock flag in the DB.
-      // Deque ordering is already correct in this response via the turn-count sort.
       (async () => {
         try {
-          const freshPrefs = await getTurnPreferences(storeId);
-          const currentLocked: number[] = Array.isArray(freshPrefs.lockedStaffIds)
-            ? (freshPrefs.lockedStaffIds as any[]).map(Number).filter(Number.isFinite)
-            : [];
-          const newLocked = currentLocked.filter((id) => !staleIds.includes(id));
-          if (newLocked.length < currentLocked.length) {
-            await saveTurnPreferences(storeId, { lockedStaffIds: newLocked });
+          let released = false;
+          await mutateTurnPreferences(storeId, (turn) => {
+            const currentLocked: number[] = Array.isArray(turn.lockedStaffIds)
+              ? (turn.lockedStaffIds as any[]).map(Number).filter(Number.isFinite)
+              : [];
+            const newLocked = currentLocked.filter((id) => !staleIds.includes(id));
+            if (newLocked.length === currentLocked.length) return null;
+            released = true;
+            return { lockedStaffIds: newLocked };
+          });
+          if (released) {
             console.log(`[turn] Self-heal: Released stale consideration lock(s) for staff [${staleIds.join(", ")}]`);
             broadcastTurnEligibilityChanged(storeId);
           }
@@ -654,8 +718,7 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
       ? (settings.lockedStaffIds as any[]).map(Number).filter(Number.isFinite)
       : []
   );
-  const shortTurnProtectedId: number | null =
-    typeof settings.shortTurnProtectedId === "number" ? settings.shortTurnProtectedId : null;
+  const shortTurnHeldSet = new Set<number>(shortTurnHeld);
 
   const technicians = storeStaff
     .filter((member) => member.status !== "removed" && member.status !== "deactivated")
@@ -704,10 +767,7 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
           (member as any).availabilitySince && (member as any).availabilityState === techStateOf({ clockedIn: isClockedIn, paused, currentStatus })
             ? new Date((member as any).availabilitySince).toISOString()
             : null,
-        shortTurnProtected:
-          shortTurnProtectedId !== null &&
-          member.id === shortTurnProtectedId &&
-          memberDequePos === 0,
+        shortTurnProtected: shortTurnHeldSet.has(member.id),
       };
     })
     .sort((a, b) => Number(a.turnPosition) - Number(b.turnPosition) || Number(a.id) - Number(b.id));
@@ -720,6 +780,7 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
 
   return {
     settings,
+    turnRules: rules,
     generatedAt: now.toISOString(),
     serviceId: serviceId || null,
     technicians,
@@ -757,15 +818,22 @@ async function assignAppointmentViaTurn(opts: {
   offline?: boolean;
   /** Force writing appointments.staff_id to the picked tech (check-in path). */
   writeStaffId?: boolean;
+  /** Treat an exact-tech selection as a normal TURN consumption, not a manager override. */
+  consumeTurn?: boolean;
   source?: string;
 }): Promise<{ technician: any; eligibility: any; dequeAdvanced: boolean } | null> {
   const {
     storeId, serviceId = null, appointmentId = null,
     requestedStaffId = null, bookedByUserId = null, offline = false,
-    writeStaffId = false, source,
+    writeStaffId = false, consumeTurn = false, source,
   } = opts;
-
+  // Pick-and-lock is one protected step per salon: two walk-ins at the same instant can't both
+  // read the same leader.
+  return withTurnLock(storeId, async () => {
   const eligibility = await getTurnEligibility(storeId, serviceId);
+  // With the turn system switched off nobody is handed a client automatically; a technician
+  // chosen by name is still honoured.
+  if (eligibility.settings.turnEnabled === false && !requestedStaffId) return null;
   let selected = requestedStaffId
     ? eligibility.eligibleTechnicians.find((tech: any) => tech.id === requestedStaffId)
     : eligibility.eligibleTechnicians[0];
@@ -776,26 +844,25 @@ async function assignAppointmentViaTurn(opts: {
 
   // Consideration Lock — a specific-tech request keeps their position (bypass);
   // an offline_turn pick still locks, same as an unrequested online pick.
-  const isRequestBypass = !!requestedStaffId && source !== "offline_turn";
-  if (!isRequestBypass) {
-    const freshPrefs = await getTurnPreferences(storeId);
-    const deque: number[] = Array.isArray(freshPrefs.dequeOrder)
-      ? (freshPrefs.dequeOrder as any[]).map(Number)
+  const isRequestBypass = !!requestedStaffId && source !== "offline_turn" && !consumeTurn;
+  await mutateTurnPreferences(storeId, (turn) => {
+    const deque: number[] = Array.isArray(turn.dequeOrder) ? (turn.dequeOrder as any[]).map(Number) : [];
+    const lockedIds: number[] = Array.isArray(turn.lockedStaffIds)
+      ? (turn.lockedStaffIds as any[]).map(Number).filter(Number.isFinite)
       : [];
-    const lockedIds: number[] = Array.isArray(freshPrefs.lockedStaffIds)
-      ? (freshPrefs.lockedStaffIds as any[]).map(Number).filter(Number.isFinite)
-      : [];
-    const updates: Record<string, any> = {
-      dequeOrder: deque.filter((id) => id !== selected.id),
-      lockedStaffIds: [...new Set([...lockedIds, selected.id])],
-    };
-    if ((freshPrefs.shortTurnProtectedId as any) === selected.id) {
+    // Either way the technician is now held for this client, so they are not handed another one
+    // while it waits to start. A technician chosen by name keeps their place in the line (it was
+    // not their turn); one taken from the line leaves it until checkout.
+    const updates: Record<string, any> = { lockedStaffIds: [...new Set([...lockedIds, selected.id])] };
+    if (!isRequestBypass) {
+      updates.dequeOrder = deque.filter((id) => id !== selected.id);
+      updates.shortTurnProtectedIds = shortTurnPins(turn).filter((id) => id !== selected.id);
       updates.shortTurnProtectedId = null;
     }
-    await saveTurnPreferences(storeId, updates);
-    broadcastTurnEligibilityChanged(storeId);
-    console.log(`[turn] Consideration Lock: staff ${selected.id} removed from active queue (serving)`);
-  }
+    return updates;
+  });
+  broadcastTurnEligibilityChanged(storeId);
+  console.log(`[turn] Consideration Lock: staff ${selected.id} held (${isRequestBypass ? "requested, keeps their place" : "taken from the line"})`);
 
   const shouldWriteStaffId = appointmentId != null &&
     (writeStaffId || (offline && requestedStaffId !== selected.id));
@@ -826,76 +893,223 @@ async function assignAppointmentViaTurn(opts: {
   }).catch(() => {});
 
   return { technician: selected, eligibility, dequeAdvanced: !isRequestBypass };
+  });
 }
 
-// === TURN ROTATION: CHECKOUT EVALUATION GATE ===
-// Called when any appointment is marked completed with a payment amount.
-// Rotates ALL techs (not just walk-in-locked ones) so regular calendar
-// appointments also contribute to fair turn distribution.
-// Scenario A (< threshold): unshift tech to Index 0 — they keep their turn ("Short Turn Protection").
-// Scenario B (>= threshold): push tech to the back — standard rotation, turn counts.
-async function handleTurnCheckout(storeId: number, staffId: number, totalPaid: number, tipAmount: number = 0) {
+// === TURN ROTATION: CHECKOUT ===
+// Called when a ticket is completed. Releases the technician's hold and moves them in the line
+// according to the salon's turn system (lib/turnRules.ts):
+//   • Dollar-Based Turns — they go to the back of the standing order; the turns the ticket earned
+//     (worked out from its service amount in getTurnEligibility) decide where they really stand.
+//   • Counted Turns — a full turn goes to the back; a short turn is held at the front.
+//   • An unpaid ticket (completed with nothing collected, auto-completed) earns nothing and moves
+//     nobody: the technician simply gets their place back.
+//   • An advance booking is the same: only walk-ins earn turns.
+// The move happens once per ticket: a second report of the same checkout (card capture, then the
+// save) only makes sure the hold is released.
+async function handleTurnCheckout(
+  storeId: number,
+  staffId: number,
+  ticket: { appointmentId?: number | null; totalPaid?: number | null; tipAmount?: number | null },
+  matchWaitingClient = true,
+) {
   try {
-    const settings = await getTurnPreferences(storeId);
-
-    const lockedIds: number[] = Array.isArray(settings.lockedStaffIds)
-      ? (settings.lockedStaffIds as any[]).map(Number).filter(Number.isFinite)
-      : [];
-
-    const threshold = settings.turnValueThreshold ?? 30;
-    const deque: number[] = Array.isArray(settings.dequeOrder)
-      ? (settings.dequeOrder as any[]).map(Number).filter(Number.isFinite)
-      : [];
-
-    // Service amount excludes tip — tips don't count toward the turn threshold.
-    // A $5 tip on a $20 service should not push the ticket above the $30 minimum.
-    const serviceAmount = Math.max(0, totalPaid - tipAmount);
-
-    // Always release from consideration lock on any completed checkout.
-    // Also always rotate the deque so that regular (non-walk-in) appointments
-    // are counted toward fair turn distribution — prevents a tech from staying
-    // at position 0 indefinitely just because their appointments weren't
-    // booked through the Walk-In button.
-    const newLockedIds = lockedIds.filter((id) => id !== staffId);
-    // Remove tech from deque defensively before re-inserting at correct position
-    const baseDeque = deque.filter((id) => id !== staffId);
-
-    if (serviceAmount < threshold) {
-      // Short turn: inject at front (Index 0) — tech keeps their place
-      baseDeque.unshift(staffId);
-      await saveTurnPreferences(storeId, {
-        dequeOrder: baseDeque,
-        lockedStaffIds: newLockedIds,
-        shortTurnProtectedId: staffId,
-      });
-      console.log(`[turn] Short turn for staff ${staffId} (service $${serviceAmount} < $${threshold}, tip $${tipAmount}) — restored to Index 0`);
-    } else {
-      // Standard turn: send to back of queue
-      baseDeque.push(staffId);
-      const saveData: Record<string, any> = {
-        dequeOrder: baseDeque,
-        lockedStaffIds: newLockedIds,
-      };
-      if ((settings.shortTurnProtectedId as any) === staffId) {
-        saveData.shortTurnProtectedId = null;
+    const appointmentId = ticket.appointmentId != null && Number.isFinite(Number(ticket.appointmentId)) ? Number(ticket.appointmentId) : null;
+    // What the ticket itself recorded is the authority (service revenue is frozen there at checkout);
+    // the caller's figures only fill in for a ticket that has none yet.
+    let amountSource: { serviceRevenue?: unknown; productRevenue?: unknown; totalPaid?: unknown; tipAmount?: unknown } =
+      { totalPaid: ticket.totalPaid ?? 0, tipAmount: ticket.tipAmount ?? 0 };
+    let firstReport = true;
+    if (appointmentId != null) {
+      const claimed = await pool.query(
+        `UPDATE appointments SET turn_counted_at = now() WHERE id = $1 AND store_id = $2 AND turn_counted_at IS NULL RETURNING id`,
+        [appointmentId, storeId],
+      );
+      firstReport = (claimed.rowCount ?? 0) > 0;
+      const { rows } = await pool.query(
+        `SELECT service_revenue, product_revenue, total_paid, tip_amount FROM appointments WHERE id = $1 AND store_id = $2`,
+        [appointmentId, storeId],
+      );
+      const row = rows[0];
+      if (row) {
+        const recordedTotal = Number(row.total_paid);
+        amountSource = {
+          serviceRevenue: row.service_revenue,
+          productRevenue: row.product_revenue,
+          totalPaid: Number.isFinite(recordedTotal) && recordedTotal > 0 ? recordedTotal : ticket.totalPaid ?? 0,
+          tipAmount: row.tip_amount ?? ticket.tipAmount ?? 0,
+        };
       }
-      await saveTurnPreferences(storeId, saveData);
-      console.log(`[turn] Standard turn for staff ${staffId} (service $${serviceAmount} >= $${threshold}, tip $${tipAmount}) — sent to back`);
     }
+    // An advance booking is outside the rotation: it earns no turn and moves nobody. The technician's
+    // hold is released and they get back the place they had (handled as "nothing earned" below).
+    const isBooking = appointmentId != null && !(await nailTickets.walkInTicketIds(storeId, [appointmentId])).has(appointmentId);
+    const amount = isBooking ? 0 : turnAmount(amountSource);
 
-    broadcastTurnEligibilityChanged(storeId);
+    await mutateTurnPreferences(storeId, (turn) => {
+      const rules = normalizeTurnRules(turn);
+      const earned = turnValue(rules, amount);
+      const lockedIds: number[] = Array.isArray(turn.lockedStaffIds) ? (turn.lockedStaffIds as any[]).map(Number).filter(Number.isFinite) : [];
+      const deque: number[] = Array.isArray(turn.dequeOrder) ? (turn.dequeOrder as any[]).map(Number).filter(Number.isFinite) : [];
+      const pins = shortTurnPins(turn);
+      const updates: Record<string, any> = { lockedStaffIds: lockedIds.filter((id) => id !== staffId), shortTurnProtectedId: null };
+      if (!firstReport) return { ...updates, shortTurnProtectedIds: pins };
+      const rest = deque.filter((id) => id !== staffId);
+      if (amount <= 0) {
+        // Nothing was collected: no turn, no penalty — back to where they stood (the front, if they
+        // had been taken out of the line for this client).
+        updates.dequeOrder = deque.includes(staffId) ? deque : [staffId, ...rest];
+        updates.shortTurnProtectedIds = pins;
+        console.log(`[turn] ${isBooking ? "Booking" : "Unpaid completion"} for staff ${staffId} — hold released, place kept`);
+      } else if (rules.mode === "classic" && earned < 1) {
+        updates.dequeOrder = [staffId, ...rest];
+        updates.shortTurnProtectedIds = [...pins.filter((id) => id !== staffId), staffId];
+        console.log(`[turn] Short turn for staff ${staffId} (service $${amount} < $${rules.dollarsPerTurn}) — held at the front`);
+      } else {
+        updates.dequeOrder = [...rest, staffId];
+        updates.shortTurnProtectedIds = pins.filter((id) => id !== staffId);
+        console.log(`[turn] Staff ${staffId} earned ${earned} turn(s) on $${amount} of service (${rules.mode}) — to the back of the standing order`);
+      }
+      return updates;
+    });
+
+    // Tells every screen, and looks for a waiting client this (or any other free) technician can take.
+    broadcastTurnEligibilityChanged(storeId, { matchWaiting: matchWaitingClient });
   } catch (err) {
     console.error("[turn] handleTurnCheckout error:", err);
   }
 }
 
-function broadcastTurnEligibilityChanged(storeId: number | null | undefined) {
+// === WAITING CLIENTS → FREE TECHNICIANS ===
+// Whenever the line changes — a checkout, a clock-in, a break ending, a cancelled ticket freeing
+// someone — every free technician, in turn order, is offered the longest-waiting client they are
+// qualified for: first a waiting ticket (matched on its exact service), then a front-desk check-in
+// that has no ticket yet (matched on its category). Runs a moment after the change, once per salon
+// at a time, and only when the salon's turn system and automatic hand-over are switched on.
+const waitingMatchTimers = new Map<number, ReturnType<typeof setTimeout>>();
+function queueWaitingMatch(storeId: number) {
+  if (waitingMatchTimers.has(storeId)) return;
+  waitingMatchTimers.set(storeId, setTimeout(() => {
+    waitingMatchTimers.delete(storeId);
+    void matchWaitingClients(storeId).catch((err) => console.error("[turn] waiting-client match failed:", err?.message));
+  }, 400));
+}
+
+async function matchWaitingClients(storeId: number) {
+  const prefs = await getTurnPreferences(storeId);
+  if (prefs.turnEnabled === false || prefs.autoAdvanceOnCheckout === false) return;
+  const deps: nailTickets.TicketDeps = {
+    getTurnEligibility: (id, serviceId) => getTurnEligibility(id, serviceId),
+    assignAppointmentViaTurn: (opts) => assignAppointmentViaTurn(opts),
+    getTurnPreferences,
+    saveTurnPreferences,
+    mutateTurnPreferences,
+    logCategoryAssignment,
+    notify: (id, ev) => {
+      broadcastSyncEvent({ type: "booking_updated", storeId: id, appointmentId: ev.appointmentId });
+      if (ev.kind === "started") {
+        broadcastAppointmentStatus({ appointmentId: ev.appointmentId, storeId: id, status: "started", source: "manual" });
+      }
+      triggerDashboardBroadcast(id);
+    },
+  };
+  let matchedAny = false;
+  await withTurnLock(storeId, async () => {
+    const free = (await getTurnEligibility(storeId, null)).eligibleTechnicians;
+    for (const tech of free) {
+      const args = { storeId, staffId: Number(tech.id) };
+      const matched = (await nailTickets.matchWaitingNailTicketForTechnician(deps, args))
+        ?? (await nailTickets.matchWaitingCheckinForTechnician(deps, args));
+      if (matched) matchedAny = true;
+    }
+  });
+  // Screens only: this change must not queue another pass of itself.
+  if (matchedAny) broadcastTurnEligibilityChanged(storeId, { matchWaiting: false });
+}
+
+/** A front-desk check-in handed to a technician by category: the same audit row a ticket assignment writes. */
+async function logCategoryAssignment(entry: { storeId: number; staffId: number; recommendedStaffId: number | null }) {
+  try {
+    await db.insert(turnAssignmentLog).values({
+      storeId: entry.storeId,
+      appointmentId: null,
+      assignedStaffId: entry.staffId,
+      turnRecommendedStaffId: entry.recommendedStaffId,
+      isOverride: false,
+      bookedByUserId: null,
+      source: "frontdesk_category",
+    });
+  } catch (logErr) {
+    console.error("[turn] Failed to write category assignment log:", logErr);
+  }
+}
+
+function broadcastTurnEligibilityChanged(storeId: number | null | undefined, opts: { matchWaiting?: boolean } = {}) {
   if (!storeId) return;
+  if (opts.matchWaiting !== false) queueWaitingMatch(storeId);
   // Stamp each tech's state timer (free / with a client / break / off) BEFORE telling the screens, so the refetch they do
   // on this message already sees the new "since" time. Never blocks or breaks the broadcast.
   void syncTechAvailability(storeId, getTurnEligibility as any)
     .catch((err) => console.error("[techAvailability] sync failed:", err?.message))
     .finally(() => broadcastNotification({ type: "turn_eligibility_changed", storeId }));
+}
+
+/**
+ * Signing in with a Tech ID / Barber ID (/nail, /barber) means "I'm here and working": someone who is
+ * not clocked in is clocked in, and someone on break is put back to available. A technician who is
+ * busy with a client stays busy. Does nothing when they are already clocked in and not on break.
+ */
+async function clockInAndMakeAvailable(storeId: number, staffId: number): Promise<{ clockedIn: boolean; resumed: boolean }> {
+  const [tzRow] = await db.select({ timezone: locations.timezone }).from(locations).where(eq(locations.id, storeId)).limit(1);
+  const localNow = toZonedTime(new Date(), (tzRow as any)?.timezone ?? "UTC");
+  const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const calendarToday = ymd(localNow);
+  // Same days getTurnEligibility counts as "clocked in today": the 4 AM turn day plus tonight after midnight.
+  const turnDay = ymd(new Date(localNow.getTime() - 4 * 60 * 60_000));
+
+  // One statement, so two sign-ins at the same moment cannot open two records.
+  const opened = await pool.query(
+    `INSERT INTO timeclock (staff_id, store_id, work_date, clock_in)
+     SELECT $1, $2, $3, now()
+      WHERE NOT EXISTS (
+        SELECT 1 FROM timeclock
+         WHERE staff_id = $1 AND store_id = $2 AND clock_out IS NULL AND work_date IN ($3, $4))
+     RETURNING id`,
+    [staffId, storeId, calendarToday, turnDay],
+  );
+  const clockedIn = (opened.rowCount ?? 0) > 0;
+
+  let resumed = false;
+  await mutateTurnPreferences(storeId, (turn) => {
+    const ids = (v: unknown): number[] => (Array.isArray(v) ? v.map(Number) : []);
+    const paused = ids((turn as any).pausedStaffIds);
+    resumed = paused.includes(staffId);
+    if (!clockedIn && !resumed) return null;
+    const updates: Record<string, any> = {};
+    if (resumed) updates.pausedStaffIds = paused.filter((id) => id !== staffId);
+    if (clockedIn) {
+      const inIds = ids(turn.clockedInStaffIds);
+      updates.clockedInStaffIds = inIds.includes(staffId) ? inIds : [...inIds, staffId];
+      updates.clockedOutStaffIds = ids(turn.clockedOutStaffIds).filter((id) => id !== staffId);
+    }
+    return updates;
+  });
+
+  // Screens only: the sign-in route looks for a waiting client itself, straight away, so the answer
+  // it sends back already has that client.
+  if (clockedIn || resumed) broadcastTurnEligibilityChanged(storeId, { matchWaiting: false });
+  if (clockedIn) {
+    void db.select({ name: staff.name }).from(staff).where(eq(staff.id, staffId)).limit(1)
+      .then(([s]) => logActivityEvent({
+        storeId,
+        eventType: "staff_clocked_in",
+        message: s?.name ? `${s.name} clocked in` : "Staff member clocked in",
+        metadata: { staffId, staffName: s?.name ?? null, workDate: calendarToday },
+      }))
+      .catch(() => {});
+    triggerDashboardBroadcast(storeId);
+  }
+  return { clockedIn, resumed };
 }
 
 /**
@@ -1035,6 +1249,18 @@ export async function registerRoutes(
 ): Promise<Server> {
   // ─── Support Back Office Routes ─────────────────────────────────────────────
   app.use(supportRouter);
+  // Signup progress: the owner app reports onboarding steps, Support 360 reads them (routes/signupProgress.ts)
+  app.use(signupProgressRouter);
+  // Account lists behind the support sidebar's Accounts menu (routes/supportAccountList.ts)
+  app.use(supportAccountListRouter);
+  // Which customer account a live chat belongs to, and linking one by hand (routes/liveChatAccount.ts)
+  app.use(liveChatAccountRouter);
+  // Setting a kiosk / customer-screen browser up for a salon (routes/kioskDevice.ts)
+  app.use(kioskDeviceRouter);
+  // POS stations kept per tablet + customer screens paired by code (routes/stationPairing.ts)
+  app.use(stationPairingRouter);
+  // Support Home feed: admins write posts on /isadmin, support agents read them on /isTeam (routes/supportFeed.ts)
+  app.use(supportFeedRouter);
 
   setupNotificationServer(httpServer);
   setupSupportAgentRoutes(httpServer, app);
@@ -1458,12 +1684,19 @@ export async function registerRoutes(
     });
   });
 
+  // Resolve cookie sessions and bridge Certxa Solo bearer tokens before the
+  // global auth gate below. If this runs after that gate, every native request
+  // is rejected before its bearer token can populate req.session.
+  app.use("/api", attachAuthContext);
+
   app.use("/api", async (req, res, next) => {
     // Allow public routes
     if (req.path.startsWith("/auth/")) return next();
+    if (req.path === "/solo/login") return next(); // Native app credential exchange
     if (req.path.startsWith("/store/by-subdomain")) return next(); // Allow public access to subdomain store
     if (req.path.startsWith("/public/")) return next(); // Allow public routes
     if (req.path.startsWith("/contractor-payouts/public/")) return next(); // Contractor onboarding — public token-gated routes
+    if (req.path.startsWith("/print-agent/agent/")) return next(); // Certxa Print Agent on the salon PC — device token + signed requests (routes/printAgent.ts)
 
     // Admin routes — require a valid user session AND platform-admin role,
     // OR a valid ADMIN_DB_HEALTH_KEY bearer token (for monitoring / CI).
@@ -1534,10 +1767,6 @@ export async function registerRoutes(
     }
     next();
   });
-
-  // Resolve role + permissions for every authenticated /api request.
-  // Skips silently for public routes (no session → req.auth left undefined).
-  app.use("/api", attachAuthContext);
 
   // ── Live settings sync ─────────────────────────────────────────────────────
   // Any successful write to a salon-settings endpoint tells every connected
@@ -1773,6 +2002,7 @@ export async function registerRoutes(
         postcode: locations.postcode,
         commissionPayoutFrequency: locations.commissionPayoutFrequency,
         accountStatus: locations.accountStatus,
+        kioskPermitted: locations.kioskPermitted,
       }).from(locations).orderBy(locations.name);
       
       // Transform the data to match the expected interface
@@ -1793,6 +2023,7 @@ export async function registerRoutes(
         // Use account status from locations table
         subscription: 'Basic', // Default subscription for now
         accountStatus: store.accountStatus || 'Active',
+        kioskPermitted: store.kioskPermitted === 1,
       }));
       
       return res.json(transformedStores);
@@ -2022,6 +2253,13 @@ export async function registerRoutes(
       const updates: Record<string, any> = {};
       for (const field of allowedFields) {
         if (req.body[field] !== undefined) updates[field] = req.body[field];
+      }
+
+      // Kiosk permission (1 = this account may use the self check-in kiosk). Stored as 0/1.
+      if (req.body.kioskPermitted !== undefined) {
+        const v = req.body.kioskPermitted;
+        updates.kioskPermitted = v === true || v === 1 || v === "1" ? 1 : 0;
+        console.log(`[admin-store-update] kiosk permission for store ${id} → ${updates.kioskPermitted}`);
       }
 
       if (Object.keys(updates).length === 0) {
@@ -2880,12 +3118,7 @@ export async function registerRoutes(
       };
       const [existing] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
       const currentPrefs = safeParsePreferences(existing?.preferences as string | undefined);
-      const newPrefs = JSON.stringify({ ...currentPrefs, payroll });
-      if (existing) {
-        await db.update(storeSettings).set({ preferences: newPrefs, updatedAt: new Date() }).where(eq(storeSettings.storeId, storeId));
-      } else {
-        await db.insert(storeSettings).values({ storeId, preferences: newPrefs });
-      }
+      await writeStorePreferences(storeId, currentPrefs, { ...currentPrefs, payroll });
       // Sync commissionPayoutFrequency on locations
       const freqMap: Record<string, string> = { weekly: "weekly", biweekly: "biweekly", semimonthly: "semimonthly", monthly: "monthly" };
       await db.update(locations).set({ commissionPayoutFrequency: freqMap[frequency] ?? "monthly" }).where(eq(locations.id, storeId));
@@ -2922,9 +3155,8 @@ export async function registerRoutes(
         ? currentPrefs.payroll as Record<string, unknown>
         : {};
       const resetPayroll = { ...existingPayroll, isConfigured: false, configuredAt: null };
-      const newPrefs = JSON.stringify({ ...currentPrefs, payroll: resetPayroll });
       if (existingRow) {
-        await db.update(storeSettings).set({ preferences: newPrefs }).where(eq(storeSettings.storeId, storeId));
+        await writeStorePreferences(storeId, currentPrefs, { ...currentPrefs, payroll: resetPayroll }, { createIfMissing: false });
       }
 
       return res.json({ success: true, deleted: runs.length });
@@ -3172,18 +3404,142 @@ export async function registerRoutes(
   });
 
   // GET /api/payroll-runs/:runId/checks — enriched check data (tips + hours per staff)
+  // GET /api/check-signature — the salon's authorized signature image, drawn over the signature line on
+  // printed checks. The file lives OUTSIDE the web root (CHECK_SIGNATURE_DIR, default
+  // /var/lib/certxa/check-signatures/store-<id>.png), so it's never a public URL: it's sent only to a
+  // signed-in owner/manager web session for that same store — never to a technician (staff-portal)
+  // login or a native-app Bearer token — and never cached. No file for the store → 404 (plain line).
+  app.get("/api/check-signature", isAuthenticated, async (req: any, res) => {
+    try {
+      if (!req.session?.userId || req.session?.staffId || String(req.headers.authorization ?? "").startsWith("Bearer ")) {
+        return res.status(403).json({ error: "Unauthorized" });
+      }
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ error: "Unauthorized" });
+      let data: Buffer;
+      try { data = await fs.promises.readFile(checkSignature.signaturePath(storeId)); } catch { return res.status(404).json({ error: "No signature on file" }); }
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.send(data);
+    } catch (err) {
+      console.error("[check-signature]", err);
+      return res.status(500).json({ error: "Could not load the signature" });
+    }
+  });
+
+  // Changing the check signature is the salon OWNER's call only (managers can still print with it).
+  // Same session rules as the GET above; returns the store id, or null after replying 403.
+  const checkSignatureOwnerStore = async (req: any, res: any): Promise<number | null> => {
+    if (!req.session?.userId || req.session?.staffId || String(req.headers.authorization ?? "").startsWith("Bearer ")) {
+      res.status(403).json({ error: "Only the salon owner can change the check signature." }); return null;
+    }
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId || !(await assertOwnStore(req.session.userId, storeId))) {
+      res.status(403).json({ error: "Only the salon owner can change the check signature." }); return null;
+    }
+    return storeId;
+  };
+
+  // POST /api/check-signature/process — a phone photo of the signature on paper → the cleaned, transparent
+  // PNG (see lib/checkSignature.ts). Nothing is saved: the owner previews it and confirms with PUT.
+  app.post("/api/check-signature/process", isAuthenticated, (req: any, res, next) => {
+    memoryUpload({ maxSizeMb: 20 }).single("photo")(req, res, (err: any) => {
+      if (err) return res.status(400).json({ error: err.code === "LIMIT_FILE_SIZE" ? "That photo is too large (20 MB max)." : "Upload a photo of the signature." });
+      next();
+    });
+  }, async (req: any, res) => {
+    try {
+      const storeId = await checkSignatureOwnerStore(req, res);
+      if (!storeId) return;
+      if (!req.file?.buffer) return res.status(400).json({ error: "Upload a photo of the signature." });
+      const out = await checkSignature.processSignaturePhoto(req.file.buffer);
+      // Sent as the image itself (not JSON) so the request logger never writes signature data to the logs.
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.send(out.png);
+    } catch (err: any) {
+      if (err instanceof checkSignature.SignatureError) return res.status(err.status).json({ error: err.message });
+      console.error("[check-signature/process]", err);
+      return res.status(500).json({ error: "Could not process the photo" });
+    }
+  });
+
+  // PUT /api/check-signature — save the approved signature (the PNG /process returned) for this store.
+  app.put("/api/check-signature", isAuthenticated, async (req: any, res) => {
+    try {
+      const storeId = await checkSignatureOwnerStore(req, res);
+      if (!storeId) return;
+      const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(String(req.body?.image ?? ""));
+      if (!m) return res.status(400).json({ error: "Send the processed signature image." });
+      const png = await checkSignature.sanitizeSignaturePng(Buffer.from(m[1], "base64"));
+      await checkSignature.saveSignature(storeId, png);
+      void logActivityEvent({ storeId, eventType: "check_signature_changed", message: "Check signature updated" });
+      return res.json({ ok: true });
+    } catch (err: any) {
+      if (err instanceof checkSignature.SignatureError) return res.status(err.status).json({ error: err.message });
+      console.error("[check-signature save]", err);
+      return res.status(500).json({ error: "Could not save the signature" });
+    }
+  });
+
+  // GET/PUT /api/check-signature/placement — the owner's small nudge (±20px up/down) and size (70–130%)
+  // for the signature over the check line. Anyone who can print checks reads it; only the owner sets it.
+  app.get("/api/check-signature/placement", isAuthenticated, async (req: any, res) => {
+    try {
+      if (!req.session?.userId || req.session?.staffId || String(req.headers.authorization ?? "").startsWith("Bearer ")) {
+        return res.status(403).json({ error: "Unauthorized" });
+      }
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ error: "Unauthorized" });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.json(await checkSignature.readPlacement(storeId));
+    } catch (err) {
+      console.error("[check-signature/placement get]", err);
+      return res.status(500).json({ error: "Could not load the signature placement" });
+    }
+  });
+  app.put("/api/check-signature/placement", isAuthenticated, async (req: any, res) => {
+    try {
+      const storeId = await checkSignatureOwnerStore(req, res);
+      if (!storeId) return;
+      const saved = await checkSignature.savePlacement(storeId, req.body ?? {});
+      void logActivityEvent({ storeId, eventType: "check_signature_changed", message: "Check signature position/size adjusted" });
+      return res.json(saved);
+    } catch (err) {
+      console.error("[check-signature/placement put]", err);
+      return res.status(500).json({ error: "Could not save the signature placement" });
+    }
+  });
+
+  // DELETE /api/check-signature — back to a plain signature line.
+  app.delete("/api/check-signature", isAuthenticated, async (req: any, res) => {
+    try {
+      const storeId = await checkSignatureOwnerStore(req, res);
+      if (!storeId) return;
+      if (await checkSignature.deleteSignature(storeId)) {
+        void logActivityEvent({ storeId, eventType: "check_signature_changed", message: "Check signature removed" });
+      }
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[check-signature delete]", err);
+      return res.status(500).json({ error: "Could not remove the signature" });
+    }
+  });
+
   app.get("/api/payroll-runs/:runId/checks", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req.session as any)?.userId;
       const runId = parseInt(req.params.runId as string);
       if (!runId) return res.status(400).json({ error: "runId required" });
 
       const [run] = await db.select().from(payrollRuns).where(eq(payrollRuns.id, runId));
       if (!run) return res.status(404).json({ error: "Payroll run not found" });
 
-      // Verify ownership
-      const [store] = await db.select().from(locations).where(and(eq(locations.id, run.storeId), eq(locations.userId, userId))).limit(1);
-      if (!store) return res.status(403).json({ error: "Unauthorized" });
+      // Use the same validated store context as Team > Payroll. This preserves
+      // owner isolation while allowing an authorized store manager to print.
+      const sessionStoreId = await resolveSessionStoreId(req);
+      if (!sessionStoreId || run.storeId !== sessionStoreId) return res.status(403).json({ error: "Unauthorized" });
+      const [store] = await db.select().from(locations).where(eq(locations.id, run.storeId)).limit(1);
+      if (!store) return res.status(404).json({ error: "Store not found" });
 
       const items = await db.select().from(payrollRunItems).where(eq(payrollRunItems.payrollRunId, runId));
 
@@ -3192,6 +3548,38 @@ export async function registerRoutes(
       const periodEnd   = new Date(run.periodEnd   + "T23:59:59Z");
 
       const staffIds = items.map(i => i.staffId);
+      const ytdRows = staffIds.length ? await db.select({
+        runId: payrollRuns.id,
+        staffId: payrollRunItems.staffId,
+        status: payrollRuns.status,
+        payDate: payrollRuns.payDate,
+        approvedAt: payrollRuns.approvedAt,
+        finalizedAt: payrollRuns.finalizedAt,
+        periodEnd: payrollRuns.periodEnd,
+        serviceCommission: payrollRunItems.serviceCommission,
+        productCommission: payrollRunItems.productCommission,
+        commissionAmount: payrollRunItems.commissionAmount,
+        tips: payrollRunItems.tips,
+        otherEarnings: payrollRunItems.otherEarnings,
+        boothRent: payrollRunItems.boothRent,
+        otherDeductions: payrollRunItems.otherDeductions,
+        ruleDeductionsDetail: payrollRunItems.ruleDeductionsDetail,
+        netPay: payrollRunItems.netPay,
+      }).from(payrollRuns)
+        .innerJoin(payrollRunItems, eq(payrollRunItems.payrollRunId, payrollRuns.id))
+        .where(and(
+          eq(payrollRuns.storeId, run.storeId),
+          inArray(payrollRuns.status, ["approved", "finalized"]),
+          inArray(payrollRunItems.staffId, staffIds),
+        )) : [];
+      const ytdByStaff = summarizePayrollYtd(ytdRows, { runId: run.id, payDate: run.payDate, approvedAt: run.approvedAt, finalizedAt: run.finalizedAt, periodEnd: run.periodEnd });
+      // Each named recurring deduction's year-to-date, so the earnings statement can list them one by one.
+      const deductionYtdByStaff = summarizeDeductionYtd(ytdRows, { runId: run.id, payDate: run.payDate, approvedAt: run.approvedAt, finalizedAt: run.finalizedAt, periodEnd: run.periodEnd });
+      // Every deduction the salon has switched on gets its own line on the statement, even in a period it took nothing.
+      const activeDeductionRules = await db.select({ name: payoutDeductionRules.name, appliesTo: payoutDeductionRules.appliesTo, staffId: payoutDeductionRules.staffId })
+        .from(payoutDeductionRules)
+        .where(and(eq(payoutDeductionRules.storeId, run.storeId), eq(payoutDeductionRules.isActive, true)))
+        .orderBy(payoutDeductionRules.id);
       const tipsMap = new Map<number, number>();
       const hoursMap = new Map<number, number>();
 
@@ -3272,14 +3660,10 @@ export async function registerRoutes(
           cursor.setDate(cursor.getDate() + 1);
         }
 
-        const tipAmt = tipsMap.get(item.staffId) || 0;
-        // New Payroll page stores an explicit net_pay (commission + tips + additions
-        // − booth rent − deductions). Legacy runs leave it 0 → fall back to
-        // commission + tips.
-        const storedNet = Number((item as any).netPay ?? 0);
-        const totalPay = storedNet > 0
-          ? parseFloat(storedNet.toFixed(2))
-          : parseFloat((Number(item.commissionAmount) + tipAmt).toFixed(2));
+        // Payroll run items are the approved source of truth. Recomputing tips or
+        // treating a legitimate $0 net as "missing" made stubs disagree with review.
+        const tipAmt = Number((item as any).tips ?? 0);
+        const totalPay = parseFloat(Number((item as any).netPay ?? 0).toFixed(2));
         return {
           ...item,
           tipsAmount:   parseFloat(tipAmt.toFixed(2)),
@@ -3288,6 +3672,9 @@ export async function registerRoutes(
           otherEarnings:   parseFloat(Number((item as any).otherEarnings ?? 0).toFixed(2)),
           otherDeductions: parseFloat(Number((item as any).otherDeductions ?? 0).toFixed(2)),
           totalPay,
+          ytd: ytdByStaff.get(item.staffId) ?? null,
+          deductionYtd: deductionYtdByStaff.get(item.staffId) ?? {},
+          deductionNames: activeDeductionRules.filter((rule) => rule.appliesTo !== "specific" || rule.staffId === item.staffId).map((rule) => rule.name),
           dailyBreakdown,
         };
       });
@@ -3619,6 +4006,10 @@ export async function registerRoutes(
   });
 
   // === SERVICES ===
+  // Native JSON contract after authentication, trial and suspension gates, but
+  // before the older web endpoints. The router passes non-native calls through.
+  const { default: certxaProRouter } = await import("./routes/certxaPro.js");
+  app.use("/api", certxaProRouter);
   app.get(api.services.list.path, isAuthenticated, async (req, res) => {
     const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(403).json({ message: "No store context" });
@@ -4582,6 +4973,11 @@ export async function registerRoutes(
       // claimStaffColor is called inside storage.updateStaff — no inline logic needed here.
       const member = await storage.updateStaff(Number(req.params.id), input);
       if (!member) return res.status(404).json({ message: "Staff not found" });
+      // Becoming (or no longer being) a receptionist moves their POS ID between 1–89 and 90–99 straight away.
+      if (input.frontDesk !== undefined) {
+        await nailTickets.ensureBarberNumbers(sessionStoreId);
+        return res.json((await storage.getStaffMember(member.id)) ?? member);
+      }
       return res.json(member);
     } catch (error) {
       return res.status(400).json({ message: "Invalid input" });
@@ -5125,7 +5521,7 @@ If you have any questions, please contact your administrator.
     return res.json(customers);
   });
 
-  app.post(api.customers.create.path, requireActiveTrial, async (req, res) => {
+  app.post(api.customers.create.path, requireActiveTrial, idempotent("customer.create", (r) => resolveSessionStoreId(r)), async (req, res) => {
     try {
       const sessionStoreId = await resolveSessionStoreId(req);
       if (!sessionStoreId) {
@@ -5446,7 +5842,10 @@ If you have any questions, please contact your administrator.
         // Auto-Start: once a checked-in (confirmed) appointment with an assigned
         // tech reaches its start time, the service begins automatically.
         // A still-Booked (pending, never checked in) appointment does NOT start.
+        // Nail salons are left out: there a ticket waits with its technician until START is pressed.
+        const autoStartOnTime = !nailTickets.isNailSalonCategory((store as any)?.category);
         for (const apt of appointments) {
+          if (!autoStartOnTime) break;
           const aptDateS = new Date(apt.date);
           if (aptDateS < twentyFourHoursAgo) continue;
           if (apt.status === "confirmed" && apt.staffId && aptDateS <= now) {
@@ -5463,7 +5862,9 @@ If you have any questions, please contact your administrator.
           }
         }
 
-        if (calSettings?.autoCompleteAppointments) {
+        // Nail salons are left out here too: a ticket there stays open until it is paid at checkout, however
+        // long the client waited or the service ran, instead of closing unpaid when its planned time is up.
+        if (calSettings?.autoCompleteAppointments && autoStartOnTime) {
           for (const apt of appointments) {
             const aptDate2 = new Date(apt.date);
             if (aptDate2 < twentyFourHoursAgo) continue;
@@ -5483,7 +5884,7 @@ If you have any questions, please contact your administrator.
                   const tip = typeof apt.tipAmount === "string"
                     ? parseFloat(apt.tipAmount || "0")
                     : (apt.tipAmount ?? 0);
-                  handleTurnCheckout(filters.storeId!, apt.staffId, paid, tip).catch((err) => {
+                  handleTurnCheckout(filters.storeId!, apt.staffId, { appointmentId: apt.id, totalPaid: paid, tipAmount: tip }).catch((err) => {
                     console.error("[turn] Auto-complete checkout error:", err);
                   });
                   broadcastTurnEligibilityChanged(filters.storeId!);
@@ -5524,7 +5925,9 @@ If you have any questions, please contact your administrator.
     }
   });
 
-  app.post(api.appointments.create.path, isAuthenticated, async (req, res) => {
+  // Durable as well as in memory (lib/idempotency.ts): a booking replayed from a device's offline queue after
+  // a server restart gets the first answer back instead of being made twice.
+  app.post(api.appointments.create.path, isAuthenticated, idempotent("appointment.create", (r) => resolveSessionStoreId(r)), async (req, res) => {
     try {
       const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
       if (idempotencyKey) {
@@ -5844,6 +6247,18 @@ If you have any questions, please contact your administrator.
       }
       const existingAppointment = await storage.getAppointment(appointmentId);
       if (!existingAppointment) return res.status(404).json({ message: "Appointment not found" });
+      // A change decided on a device that had not seen the latest state (it was offline, or simply behind).
+      // `expectedStatus` is what that device last saw. If the appointment has moved on to something else —
+      // above all, if it has been checked out or cancelled meanwhile — the change is refused, never applied
+      // over it: a paid ticket is not reopened or cancelled by a stale tablet.
+      const expectedStatus = typeof req.body?.expectedStatus === "string" ? normalizeAppointmentStatus(req.body.expectedStatus) : null;
+      if (expectedStatus && input.status && existingAppointment.status !== expectedStatus && existingAppointment.status !== input.status) {
+        const now = existingAppointment.status === "completed" ? "has already been checked out" : existingAppointment.status === "cancelled" ? "was cancelled" : `is now ${existingAppointment.status}`;
+        return res.status(409).json({ code: "STATUS_CONFLICT", message: `This ticket ${now} on another device.`, currentStatus: existingAppointment.status });
+      }
+      if (existingAppointment.status === "cancelled" && input.status && input.status !== "cancelled") {
+        return res.status(409).json({ error: "Cancelled appointments cannot be restored or checked out" });
+      }
       // Checking a client in from the calendar stamps the arrival time, like the kiosk does —
       // the nail-salon board lists "waiting" clients by it.
       if (input.status === "confirmed" && existingAppointment.status !== "confirmed" &&
@@ -5859,6 +6274,18 @@ If you have any questions, please contact your administrator.
       const sessionStoreId = await resolveSessionStoreId(req);
       if (sessionStoreId && existingAppointment.storeId !== sessionStoreId) {
         return res.status(403).json({ message: "Access denied" });
+      }
+
+      // A checked-in client cannot enter service without a technician. The nail UI enforces this
+      // too, but the invariant belongs on the server so stale tabs, offline replay, or direct API
+      // calls cannot create a started ticket that disappears from both Waiting and a tech's chair.
+      if (
+        input.status === "started" &&
+        (existingAppointment as any).checkedInAt &&
+        input.staffId == null &&
+        existingAppointment.staffId == null
+      ) {
+        return res.status(409).json({ message: "Assign a technician before starting this ticket." });
       }
 
       // Preserve client-requested technician lock: if appointment was explicitly
@@ -6000,19 +6427,20 @@ If you have any questions, please contact your administrator.
               const tipAmt = input.tipAmount
                 ? parseFloat(String(input.tipAmount))
                 : (appointment.tipAmount ? parseFloat(String(appointment.tipAmount)) : 0);
-              await handleTurnCheckout(appointment.storeId, appointment.staffId, paidAmount, tipAmt);
+              await handleTurnCheckout(appointment.storeId, appointment.staffId, { appointmentId: appointment.id, totalPaid: paidAmount, tipAmount: tipAmt });
             }
           } else {
             // Appointment was already completed by the Terminal capture endpoint.
-            // Only run queue rotation if a staff member is assigned — it is
-            // idempotent and needed to keep the turn queue accurate. The amount
+            // Only run queue rotation if a staff member is assigned — it moves the
+            // technician once per ticket (appointments.turn_counted_at) and is needed
+            // to keep the turn queue accurate. The amount
             // the capture recorded is authoritative when the request omits one.
             if (appointment.staffId && appointment.storeId) {
               const paidAmount = input.totalPaid ? parseFloat(String(input.totalPaid)) : Number(appointment.totalPaid ?? 0);
               const tipAmt = input.tipAmount
                 ? parseFloat(String(input.tipAmount))
                 : (appointment.tipAmount ? parseFloat(String(appointment.tipAmount)) : 0);
-              await handleTurnCheckout(appointment.storeId, appointment.staffId, paidAmount, tipAmt);
+              await handleTurnCheckout(appointment.storeId, appointment.staffId, { appointmentId: appointment.id, totalPaid: paidAmount, tipAmount: tipAmt }, false);
             }
           }
         } else if (input.status === "cancelled") {
@@ -6399,12 +6827,7 @@ If you have any questions, please contact your administrator.
       const existingKs2 = currentPrefs.kioskSettings && typeof currentPrefs.kioskSettings === "object" ? currentPrefs.kioskSettings : {};
       const nextKs = kioskEnabled !== undefined ? { ...(existingKs2 as object), kioskEnabled: !!kioskEnabled } : existingKs2;
 
-      const preferences = JSON.stringify({ ...currentPrefs, features: nextFeatures, kioskSettings: nextKs });
-      if (existing) {
-        await db.update(storeSettings).set({ preferences, updatedAt: new Date() }).where(eq(storeSettings.storeId, storeId));
-      } else {
-        await db.insert(storeSettings).values({ storeId, preferences });
-      }
+      await writeStorePreferences(storeId, currentPrefs, { ...currentPrefs, features: nextFeatures, kioskSettings: nextKs });
 
       // Read back the final state (including pos from locations) and return it so the
       // frontend can update its cache directly without relying on a secondary GET fetch.
@@ -6473,12 +6896,7 @@ If you have any questions, please contact your administrator.
     if (Array.isArray(level1)) nextLevels.level1 = level1;
     if (Array.isArray(level2)) nextLevels.level2 = level2;
     if (Array.isArray(level3)) nextLevels.level3 = level3;
-    const preferences = JSON.stringify({ ...currentPrefs, permissionLevels: nextLevels });
-    if (existing) {
-      await db.update(storeSettings).set({ preferences, updatedAt: new Date() }).where(eq(storeSettings.storeId, storeId));
-    } else {
-      await db.insert(storeSettings).values({ storeId, preferences });
-    }
+    await writeStorePreferences(storeId, currentPrefs, { ...currentPrefs, permissionLevels: nextLevels });
     return res.json({ ok: true });
   });
 
@@ -6561,6 +6979,93 @@ If you have any questions, please contact your administrator.
   });
 
   // === CASH DRAWER ===
+  // Tickets still in progress (checked in / started, never checked out) — Day Close and the
+  // end-of-day report both refuse to run while any exist. Only those rows are loaded.
+  async function findUnpaidTickets(storeId: number) {
+    // Only tickets in service over the last two days. A ticket left "started" weeks ago is a forgotten
+    // record, not a client in a chair, and must not block every close from then on.
+    const since = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const rows = await db.query.appointments.findMany({
+      where: and(eq(appointments.storeId, storeId), eq(appointments.status, "started"),
+        gte(sql<Date>`COALESCE(${appointments.startedAt}, ${appointments.date})`, since)),
+      with: { customer: true, staff: true, service: true },
+    });
+    return rows.map((apt: any) => ({
+      id: apt.id,
+      customerName: apt.customer?.name ?? null,
+      staffName: apt.staff?.name ?? null,
+      serviceName: apt.service?.name ?? null,
+      startedAt: apt.startedAt ?? apt.date,
+    }));
+  }
+
+  // The most recent close of this drawer (each register has its own 12-hour Day Close lock).
+  async function lastDrawerCloseAt(storeId: number, drawerId: number | null): Promise<Date | undefined> {
+    const { rows } = await pool.query<{ closed_at: Date }>(
+      `SELECT closed_at FROM cash_drawer_sessions
+        WHERE store_id = $1 AND drawer_id IS NOT DISTINCT FROM $2 AND status = 'closed' AND closed_at IS NOT NULL
+        ORDER BY closed_at DESC LIMIT 1`,
+      [storeId, drawerId],
+    );
+    return rows[0]?.closed_at;
+  }
+
+  // ── What each POS tablet says about its own offline queue (migration 0236) ──
+  // A tablet tells the server how much it still has to send whenever it can reach it. Day Close uses that:
+  // it refuses while any OTHER tablet has said it holds unsent cash, and lists tablets that were in use
+  // today but have gone quiet (they may be offline, holding sales nobody else can see).
+  app.post("/api/device-sync-status", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      const body = z.object({
+        deviceId: z.string().min(6).max(100),
+        pending: z.number().int().min(0).max(100000), attention: z.number().int().min(0).max(100000),
+        cashCount: z.number().int().min(0).max(100000), cashAmount: z.number().min(0).max(10_000_000),
+      }).safeParse(req.body);
+      if (!body.success) return res.status(400).json({ message: "Invalid status" });
+      const d = body.data;
+      await pool.query(
+        `INSERT INTO device_sync_status (store_id, device_id, pending, attention, cash_count, cash_amount, last_seen_at)
+         VALUES ($1, $2, $3, $4, $5, $6, now())
+         ON CONFLICT (store_id, device_id) DO UPDATE SET pending = $3, attention = $4, cash_count = $5, cash_amount = $6, last_seen_at = now()`,
+        [storeId, d.deviceId, d.pending, d.attention, d.cashCount, d.cashAmount.toFixed(2)],
+      );
+      return res.json({ ok: true });
+    } catch (error) {
+      console.error("[device-sync-status]", error);
+      return res.status(500).json({ message: "Could not record the status" });
+    }
+  });
+
+  /** Other tablets of this salon: those known to hold unsent cash, and those used in the last 18 hours that have gone quiet. */
+  async function otherDevices(storeId: number, ownDeviceId: string | null) {
+    const { rows } = await pool.query(
+      `SELECT device_id, cash_count, cash_amount::float AS cash_amount, pending, attention, last_seen_at
+         FROM device_sync_status
+        WHERE store_id = $1 AND device_id IS DISTINCT FROM $2 AND last_seen_at > now() - interval '18 hours'`,
+      [storeId, ownDeviceId],
+    );
+    const short = (id: string) => id.slice(-4).toUpperCase();
+    return {
+      holdingCash: rows.filter((r: any) => Number(r.cash_count) > 0).map((r: any) => ({ device: short(r.device_id), count: Number(r.cash_count), amount: Number(r.cash_amount), lastSeenAt: r.last_seen_at })),
+      quiet: rows.filter((r: any) => Number(r.cash_count) === 0 && Date.now() - new Date(r.last_seen_at).getTime() > 10 * 60_000)
+        .map((r: any) => ({ device: short(r.device_id), lastSeenAt: r.last_seen_at })),
+    };
+  }
+
+  app.get("/api/cash-drawer/day-close-status", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      const drawerId = req.query.drawerId ? Number(req.query.drawerId) || null : null;
+      const devices = await otherDevices(storeId, typeof req.query.deviceId === "string" ? req.query.deviceId : null).catch(() => ({ holdingCash: [], quiet: [] }));
+      return res.json({ lockedUntil: dayCloseLockedUntil(await lastDrawerCloseAt(storeId, drawerId)), devices });
+    } catch (error) {
+      console.error("[day-close-status]", error);
+      return res.status(500).json({ message: "Could not load Day Close status" });
+    }
+  });
   app.get(api.cashDrawer.sessions.path, isAuthenticated, async (req, res) => {
     const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(403).json({ message: "No store context" });
@@ -6601,27 +7106,8 @@ If you have any questions, please contact your administrator.
 
       // If a denomination breakdown was provided, compute the opening balance from it
       // server-side so the staff cannot fudge the numeric total.
-      const denomValues: Record<string, number> = {
-        "100": 100, "50": 50, "20": 20, "10": 10, "5": 5, "2": 2, "1": 1,
-        "0.25": 0.25, "0.10": 0.10, "0.05": 0.05, "0.01": 0.01,
-      };
-      let computedOpening: string | null = null;
-      if (input.openingDenominationBreakdown) {
-        try {
-          const counts = JSON.parse(input.openingDenominationBreakdown) as Record<string, number>;
-          let total = 0;
-          for (const [k, c] of Object.entries(counts)) {
-            const v = denomValues[k];
-            if (v != null && typeof c === "number" && c > 0) {
-              total += Math.round(v * c * 100);
-            }
-          }
-          computedOpening = (total / 100).toFixed(2);
-        } catch {
-          computedOpening = null;
-        }
-      }
-      const openingBalance = computedOpening ?? input.openingBalance ?? "0.00";
+      const openingBalance = denominationTotal(input.openingDenominationBreakdown) ?? parseDrawerAmount(input.openingBalance ?? "0.00");
+      if (openingBalance == null) return res.status(400).json({ message: "Enter a valid opening cash amount." });
 
       // Compare against the most recent closed session for THIS drawer. If the prior
       // closing balance differs from this opening count, flag for manager review.
@@ -6693,119 +7179,160 @@ If you have any questions, please contact your administrator.
       if (session.storeId !== sessionStoreId) return res.status(403).json({ message: "Forbidden" });
       if (session.status === "closed") return res.status(400).json({ message: "Session already closed" });
 
-      const storeAppointments = session.storeId
-        ? await storage.getAppointments({ storeId: session.storeId })
-        : [];
-      const unpaidTickets = storeAppointments.filter((apt) => apt.status === "started");
+      const input = api.cashDrawer.close.input.parse(req.body);
+      // Another tablet has said it took cash offline that it has not sent yet: the totals are short by that
+      // much, so the day cannot be reported as reconciled until that tablet has synced.
+      const others = await otherDevices(sessionStoreId, typeof req.body?.deviceId === "string" ? req.body.deviceId : null).catch(() => ({ holdingCash: [] as any[], quiet: [] as any[] }));
+      if (others.holdingCash.length > 0) {
+        const total = (others.holdingCash as { amount: number }[]).reduce<number>((sum, d) => sum + d.amount, 0);
+        return res.status(409).json({
+          code: "UNSENT_OFFLINE_CASH",
+          message: `Another tablet (${others.holdingCash.map((d: any) => d.device).join(", ")}) took $${total.toFixed(2)} in cash while offline and has not sent it yet. Get that tablet back online and let it finish sending before closing the day.`,
+          devices: others.holdingCash,
+        });
+      }
+      // A tablet used today that has gone quiet may be offline and holding sales nobody can see. That cannot
+      // be known, only asked about: the day closes once the person closing says they have checked.
+      if (others.quiet.length > 0 && req.body?.acknowledgeQuietDevices !== true) {
+        return res.status(409).json({
+          code: "QUIET_DEVICES",
+          message: `Tablet ${others.quiet.map((d: any) => d.device).join(", ")} has not been in contact for a while and may be offline. If it took cash while offline, that cash is not in today's totals. Check that tablet, then confirm to close the day.`,
+          devices: others.quiet,
+        });
+      }
+      // The closing count is computed server-side from the denomination breakdown when one was sent.
+      const finalClosingBalance = denominationTotal(input.denominationBreakdown) ?? parseDrawerAmount(input.closingBalance);
+      if (finalClosingBalance == null) return res.status(400).json({ message: "Enter a valid cash amount." });
+      const sessionDrawerId = session.drawerId ?? null;
+
+      // Serialize every close for this store, including those coming from different POS
+      // stations/processes, so a session is never closed twice and a fresh auto-opened session
+      // can't slip past the 12-hour lock.
+      const closeLock = await pool.connect();
+      try {
+      await closeLock.query("SELECT pg_advisory_lock($1, $2)", [84201, sessionStoreId]);
+      if (input.autoOpenNext) {
+        const lockedUntil = dayCloseLockedUntil(await lastDrawerCloseAt(sessionStoreId, sessionDrawerId));
+        if (lockedUntil) return res.status(409).json({ code: "DAY_CLOSE_LOCKED", message: "Day Close can only run once every 12 hours.", lockedUntil });
+      }
+
+      // The session may have been closed (or had cash actions added) while this request waited
+      // for the store lock — work from its current state.
+      const current = await storage.getCashDrawerSession(id);
+      if (current?.status !== "open") return res.status(409).json({ message: "Session already closed" });
+
+      const unpaidTickets = await findUnpaidTickets(sessionStoreId);
       if (unpaidTickets.length > 0) {
         return res.status(409).json({
           code: "UNPAID_TICKETS",
           message: `Cannot close the day — ${unpaidTickets.length} booking ticket${unpaidTickets.length === 1 ? "" : "s"} still need${unpaidTickets.length === 1 ? "s" : ""} to be checked out.`,
           unpaidCount: unpaidTickets.length,
-          unpaidTickets: unpaidTickets.map((apt) => ({
-            id: apt.id,
-            customerName: apt.customer ? ((apt.customer as any).name ?? null) : null,
-            staffName: apt.staff?.name ?? null,
-            serviceName: apt.service?.name ?? null,
-            startedAt: apt.startedAt ?? apt.date,
-          })),
+          unpaidTickets,
         });
       }
 
-      const input = api.cashDrawer.close.input.parse(req.body);
+      // Reconcile on the server from the shift's actual payments and cash actions.
+      // Never trust a client-provided expected amount (or reveal it in the Day Close UI).
+      const store = input.autoOpenNext ? await storage.getStore(sessionStoreId) : null;
+      const shiftReport = input.autoOpenNext ? await computeZReport({
+        storeId: sessionStoreId,
+        timezone: store?.timezone || "UTC",
+        salonName: store?.name || "Certxa",
+        registerName: null,
+        session: current,
+      }) : null;
+      const shortageCents = shiftReport
+        ? cashShortageCents(shiftReport.cashDrawer.expectedCash, Number(finalClosingBalance))
+        : 0;
 
-      // Compute closing balance server-side from denomination breakdown if provided
-      const denomValues: Record<string, number> = {
-        "100": 100, "50": 50, "20": 20, "10": 10, "5": 5, "1": 1,
-        "0.25": 0.25, "0.10": 0.10, "0.05": 0.05, "0.01": 0.01,
-      };
-      let computedClosing: string | null = null;
-      if (input.denominationBreakdown) {
-        try {
-          const counts = JSON.parse(input.denominationBreakdown) as Record<string, number>;
-          let total = 0;
-          for (const [k, c] of Object.entries(counts)) {
-            const v = denomValues[k];
-            if (v != null && typeof c === "number" && c > 0) {
-              total += Math.round(v * c * 100);
-            }
-          }
-          computedClosing = (total / 100).toFixed(2);
-        } catch {
-          computedClosing = null;
-        }
-      }
-      const finalClosingBalance = computedClosing ?? input.closingBalance ?? "0.00";
+      // Per-drawer target float override, falling back to the store-wide default — unchanged
+      // behavior for stores with no drawers configured.
+      const drawer = input.autoOpenNext && sessionDrawerId
+        ? (await db.select().from(cashDrawers).where(eq(cashDrawers.id, sessionDrawerId)))[0]
+        : null;
+      const targetFloat = drawer?.targetFloat
+        ? Number(drawer.targetFloat)
+        : store && (store as any).registerTargetFloat
+          ? Number((store as any).registerTargetFloat)
+          : 0;
+      const closingBal = Number(finalClosingBalance);
+      // Sweep everything above the target float to the bank deposit, and reset the next session's
+      // opening balance down to the float. When no float is configured (targetFloat === 0), this
+      // deposits the full drawer and resets the next day to $0 — otherwise the full closing balance
+      // would roll forward as next day's opening balance and keep compounding night after night.
+      const bankDeposit = input.autoOpenNext ? Math.max(0, Math.round((closingBal - targetFloat) * 100) / 100) : 0;
+      const bankDepositAmount = bankDeposit.toFixed(2);
+      const nextOpening = Math.max(0, Math.round((closingBal - bankDeposit) * 100) / 100);
 
-      const updated = await storage.updateCashDrawerSession(id, {
-        closedAt: new Date(),
-        closingBalance: finalClosingBalance,
-        denominationBreakdown: input.denominationBreakdown || null,
-        reportedCardSales: input.reportedCardSales || null,
-        closedBy: input.closedBy || null,
-        status: "closed",
-        notes: input.notes || null,
-      });
-
-      await storage.createDrawerAction({
-        sessionId: id,
-        type: "close_drawer",
-        reason: input.notes || "Day Close",
-        performedBy: input.closedBy || null,
-        performedAt: new Date(),
-      });
-
-      // Auto-open next session when requested (Day Close flow)
-      let newSession = null;
-      let bankDepositAmount = "0.00";
-      if (input.autoOpenNext) {
-        const store = await storage.getStore(session.storeId);
-        const sessionDrawerId = (session as any).drawerId ?? null;
-        const drawer = sessionDrawerId
-          ? (await db.select().from(cashDrawers).where(eq(cashDrawers.id, sessionDrawerId)))[0]
-          : null;
-        // Per-drawer target float override, falling back to the store-wide
-        // default — unchanged behavior for stores with no drawers configured.
-        const targetFloat = drawer?.targetFloat
-          ? Number(drawer.targetFloat)
-          : store && (store as any).registerTargetFloat
-            ? Number((store as any).registerTargetFloat)
-            : 0;
-        const closingBal = Number(finalClosingBalance);
-        // Sweep everything above the target float to the bank deposit, and reset
-        // the next session's opening balance down to the float. When no float is
-        // configured (targetFloat === 0), this deposits the full drawer and resets
-        // the next day to $0 — previously the `targetFloat > 0` guard skipped this
-        // entirely for stores with no float set, so the full closing balance rolled
-        // forward as next day's opening balance and kept compounding night after
-        // night, which is why "expected cash" could balloon even on a day with zero
-        // cash sales.
-        const bankDeposit = Math.max(0, Math.round((closingBal - targetFloat) * 100) / 100);
-        bankDepositAmount = bankDeposit.toFixed(2);
-        const nextOpening = Math.max(0, Math.round((closingBal - bankDeposit) * 100) / 100);
-
-        newSession = await storage.createCashDrawerSession({
+      // Close + auto-open happen together or not at all, so a failure can't leave the register
+      // closed with no session to take the next sale.
+      const now = new Date();
+      const { updated, newSession } = await db.transaction(async (tx) => {
+        const [updated] = await tx.update(cashDrawerSessions).set({
+          closedAt: now,
+          closingBalance: finalClosingBalance,
+          denominationBreakdown: input.denominationBreakdown || null,
+          reportedCardSales: input.reportedCardSales || null,
+          closedBy: input.closedBy || null,
+          status: "closed",
+          notes: input.notes || null,
+        }).where(and(eq(cashDrawerSessions.id, id), eq(cashDrawerSessions.status, "open"))).returning();
+        if (!updated) return { updated: null, newSession: null };
+        await tx.insert(drawerActions).values({
+          sessionId: id,
+          type: "close_drawer",
+          reason: input.notes || "Day Close",
+          performedBy: input.closedBy || null,
+          performedAt: now,
+        });
+        if (!input.autoOpenNext) return { updated, newSession: null };
+        const [newSession] = await tx.insert(cashDrawerSessions).values({
           storeId: session.storeId,
           drawerId: sessionDrawerId,
-          openedAt: new Date(),
+          openedAt: now,
           openingBalance: nextOpening.toFixed(2),
           openedBy: input.closedBy || null,
           status: "open",
-        } as any);
-
-        await storage.createDrawerAction({
+        } as any).returning();
+        await tx.insert(drawerActions).values({
           sessionId: newSession.id,
           type: "open_drawer",
           reason: "Auto-opened by Day Close",
           performedBy: input.closedBy || null,
-          performedAt: new Date(),
+          performedAt: now,
         });
+        return { updated, newSession };
+      });
+      if (!updated) return res.status(409).json({ message: "Session already closed" });
+
+      if (shortageCents >= 200) {
+        try {
+          const owner = await getStoreOwnerContact(session.storeId);
+          if (!owner?.email) {
+            console.error("[day-close] Cash shortage alert not sent: store owner email missing", { storeId: session.storeId, sessionId: id });
+          } else {
+            const amount = (shortageCents / 100).toFixed(2);
+            const counted = Number(finalClosingBalance).toFixed(2);
+            const expected = shiftReport!.cashDrawer.expectedCash.toFixed(2);
+            const text = `A cash shortage of $${amount} was recorded at Day Close. Expected cash: $${expected}. Cash counted: $${counted}. Session #${id}. Closed by: ${input.closedBy || "Unknown"}.`;
+            const sent = await sendEmail(session.storeId, owner.email, "Day Close cash shortage alert", `<p>A cash shortage of <strong>$${amount}</strong> was recorded at Day Close.</p><p>Expected cash: $${expected}<br>Cash counted: $${counted}<br>Session #${id}</p>`, text);
+            if (!sent.success) console.error("[day-close] Cash shortage alert failed", { storeId: session.storeId, sessionId: id, error: sent.error });
+          }
+        } catch (error) {
+          // The drawer is already closed; never retry the close just because mail failed.
+          console.error("[day-close] Cash shortage alert failed", { storeId: session.storeId, sessionId: id, error });
+        }
       }
 
       return res.json({ ...updated, newSession, bankDepositAmount });
+      } finally {
+        try { await closeLock.query("SELECT pg_advisory_unlock($1, $2)", [84201, sessionStoreId]); }
+        finally { closeLock.release(); }
+      }
     } catch (error) {
-      console.error(error);
-      return res.status(400).json({ message: "Invalid input" });
+      if (error instanceof z.ZodError) return res.status(400).json({ message: "Invalid input" });
+      console.error("[day-close]", error);
+      return res.status(500).json({ message: "Could not close the drawer. Please try again." });
     }
   });
 
@@ -6819,11 +7346,17 @@ If you have any questions, please contact your administrator.
       if (session.storeId !== sessionStoreId) return res.status(403).json({ message: "Forbidden" });
 
       const input = api.cashDrawer.action.input.parse(req.body);
+      // Cash moved in or out has to land on a session that's still being counted, or it would
+      // silently rewrite an already-closed day's expected cash.
+      const isCashMove = input.type === "cash_in" || input.type === "cash_out";
+      if (isCashMove && session.status !== "open") return res.status(409).json({ message: "This drawer session is already closed." });
+      const amount = isCashMove ? parseDrawerAmount(input.amount) : null;
+      if (isCashMove && (amount == null || Number(amount) === 0)) return res.status(400).json({ message: "Enter a valid amount." });
 
       const action = await storage.createDrawerAction({
         sessionId,
         type: input.type,
-        amount: input.amount || null,
+        amount: isCashMove ? amount : input.amount || null,
         reason: input.reason || null,
         performedBy: input.performedBy || null,
         performedAt: new Date(),
@@ -6833,6 +7366,30 @@ If you have any questions, please contact your administrator.
     } catch (error) {
       console.error(error);
       return res.status(400).json({ message: "Invalid input" });
+    }
+  });
+
+  // "No Sale" opens the drawer with nothing rung up. It is written on the open drawer session so it shows
+  // in that session's activity and can be asked about at Day Close — it used to leave no trace at all.
+  app.post("/api/cash-drawer/no-sale", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      const drawerId = Number(req.body?.drawerId) > 0 ? Number(req.body.drawerId) : null;
+      const who = typeof req.body?.performedBy === "string" ? req.body.performedBy.trim().slice(0, 60) : "";
+      let session: { id: number } | undefined = await storage.getOpenCashDrawerSession(storeId, drawerId);
+      if (!session) {
+        // The screen didn't say which drawer (or that one is closed): any open drawer of this salon.
+        const { rows } = await pool.query(
+          `SELECT id FROM cash_drawer_sessions WHERE store_id = $1 AND status = 'open' ORDER BY opened_at DESC LIMIT 1`, [storeId]);
+        session = rows[0];
+      }
+      if (!session) return res.json({ recorded: false });
+      await storage.createDrawerAction({ sessionId: session.id, type: "no_sale", amount: null, reason: "Drawer opened, no sale", performedBy: who || null, performedAt: new Date() });
+      return res.status(201).json({ recorded: true });
+    } catch (error) {
+      console.error("[cash-drawer/no-sale]", error);
+      return res.status(500).json({ message: "Could not record the no-sale" });
     }
   });
 
@@ -6885,18 +7442,29 @@ If you have any questions, please contact your administrator.
       const from = new Date(session.openedAt);
       const to = session.closedAt ? new Date(session.closedAt) : new Date();
 
-      const allAppointments = await storage.getAppointments({
-        from,
-        to,
-        storeId: session.storeId,
-      });
-
-      const completedAppointments = allAppointments.filter(a => a.status === "completed" && a.totalPaid);
+      // A sale belongs to the shift in which it was checked out, not the time its
+      // appointment was scheduled. This also prevents the same ticket appearing in
+      // consecutive shift previews when the salon closes twice on one calendar day.
+      const completedAppointments = await db.select({
+        id: appointments.id,
+        date: sql<Date>`COALESCE(${appointments.completedAt}, ${appointments.date})`,
+        totalPaid: appointments.totalPaid,
+        tipAmount: appointments.tipAmount,
+        discountAmount: appointments.discountAmount,
+        paymentMethod: appointments.paymentMethod,
+      }).from(appointments).where(and(
+        eq(appointments.storeId, session.storeId),
+        eq(appointments.status, "completed"),
+        isNotNull(appointments.totalPaid),
+        gte(sql<Date>`COALESCE(${appointments.completedAt}, ${appointments.date})`, from),
+        lte(sql<Date>`COALESCE(${appointments.completedAt}, ${appointments.date})`, to),
+      ));
 
       let totalSales = 0;
       let totalTips = 0;
       let totalDiscounts = 0;
       const paymentBreakdown: Record<string, number> = {};
+      const tendersById = allocateTenders(completedAppointments.map((a) => ({ ...a, date: new Date(a.date) })));
 
       for (const apt of completedAppointments) {
         const paid = Number(apt.totalPaid) || 0;
@@ -6906,14 +7474,8 @@ If you have any questions, please contact your administrator.
         totalTips += tip;
         totalDiscounts += disc;
 
-        if (apt.paymentMethod) {
-          const parts = apt.paymentMethod.split(",");
-          for (const part of parts) {
-            const [method, amtStr] = part.split(":");
-            const amt = Number(amtStr) || paid;
-            const key = method.trim().toLowerCase();
-            paymentBreakdown[key] = (paymentBreakdown[key] || 0) + amt;
-          }
+        for (const [method, amt] of Object.entries(tendersById.get(apt.id) ?? { card: paid })) {
+          paymentBreakdown[method] = Math.round(((paymentBreakdown[method] || 0) + amt) * 100) / 100;
         }
       }
 
@@ -6942,6 +7504,61 @@ If you have any questions, please contact your administrator.
         cashOut: Math.round(cashOut * 100) / 100,
         expectedCash: Math.round(expectedCash * 100) / 100,
       });
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get(api.cashDrawer.zReportFull.path, isAuthenticated, async (req, res) => {
+    try {
+      const sessionStoreId = await resolveSessionStoreId(req);
+      if (!sessionStoreId) return res.status(403).json({ message: "No store context" });
+
+      const userId = (req.session as any)?.userId;
+      const [currentUser] = userId ? await db.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1) : [];
+      if (currentUser?.role !== "owner" && currentUser?.role !== "manager" && currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Only owners and managers can view the Z Report" });
+      }
+
+      const id = Number(req.params.id);
+      const session = await storage.getCashDrawerSession(id);
+      if (!session) return res.status(404).json({ message: "Session not found" });
+      if (session.storeId !== sessionStoreId) return res.status(403).json({ message: "Forbidden" });
+
+      // A CLOSED session's report is always safe to generate — the /close endpoint above
+      // already refuses to close while any ticket is still "started" (see UNPAID_TICKETS),
+      // so no session ever reaches closedAt with open tickets. But this same report can also
+      // be previewed for the CURRENT, still-open session (before the day is actually closed),
+      // and that path has no such guarantee — block it the same way /close does, so nobody can
+      // generate or print the end-of-day report while tickets are still open/unpaid.
+      if (!session.closedAt) {
+        const unpaidTickets = await findUnpaidTickets(session.storeId);
+        if (unpaidTickets.length > 0) {
+          return res.status(409).json({
+            code: "UNPAID_TICKETS",
+            message: `Cannot generate the Z Report — ${unpaidTickets.length} booking ticket${unpaidTickets.length === 1 ? "" : "s"} still need${unpaidTickets.length === 1 ? "s" : ""} to be checked out.`,
+            unpaidCount: unpaidTickets.length,
+            unpaidTickets,
+          });
+        }
+      }
+
+      const store = await storage.getStore(sessionStoreId);
+      const timezone = store?.timezone || "UTC";
+      const registerName = session.drawerId
+        ? (await db.select().from(cashDrawers).where(eq(cashDrawers.id, session.drawerId)))[0]?.name ?? null
+        : null;
+
+      const report = await computeZReport({
+        storeId: sessionStoreId,
+        timezone,
+        salonName: store?.name || "Certxa",
+        registerName,
+        session,
+      });
+
+      return res.json(report);
     } catch (error) {
       console.error(error);
       return res.status(500).json({ message: "Internal server error" });
@@ -7355,6 +7972,12 @@ If you have any questions, please contact your administrator.
         longitude,
       } = parsed.data;
 
+      // Business hours are required: a salon with none cannot take bookings, and the hours step
+      // has no skip. Refuse rather than create a store that support has to repair later.
+      if (!hoursData || !hoursData.some((h) => !h.isClosed)) {
+        return res.status(400).json({ message: "Please set your business hours. At least one day must be open." });
+      }
+
       console.log("Onboarding: Looking up template for business type:", businessType);
       // Fall back to empty template for types without predefined services.
       // Staff and availability are still created correctly from businessHours.
@@ -7433,13 +8056,13 @@ If you have any questions, please contact your administrator.
       //   • Nail Salon → build the full catalog from the static template
       //     (nailSalonCatalog.ts): categories, services, add-ons, add-on links,
       //     the four nail vocabularies, and per-service nail configuration.
-      //   • Everything else → copy categories, services, addons, and links from
-      //     the preset template store (storeId=2), which is maintained as the
-      //     source of truth for a fully ready-to-use account of that type.
+      //   • Everything else → build from that business type's own template
+      //     (onboarding-data.ts). Types without a template start empty; no
+      //     store is ever given another business type's catalogue.
       const allServiceIds: number[] =
         businessType === "Nail Salon"
           ? await seedNailSalonCatalog(store.id)
-          : await seedFromPresetStore(store.id);
+          : await seedFromBusinessTemplate(store.id, template);
 
       const staffMembers = staffData || [{ name: "Owner", color: "#f472b6" }];
       for (const s of staffMembers) {
@@ -7901,6 +8524,8 @@ If you have any questions, please contact your administrator.
           serviceName: reviews.serviceName,
           staffName: reviews.staffName,
           createdAt: reviews.createdAt,
+          ownerResponse: reviews.ownerResponse,
+          ownerResponseAt: reviews.ownerResponseAt,
         })
         .from(reviews)
         .where(and(eq(reviews.storeId, store.id), eq(reviews.isPublic, true), isNotNull(reviews.comment)))
@@ -7919,6 +8544,8 @@ If you have any questions, please contact your administrator.
           serviceName: r.serviceName,
           staffName: r.staffName,
           reviewCreateTime: r.createdAt,
+          ownerResponse: r.ownerResponse,
+          ownerResponseAt: r.ownerResponseAt,
         }))
       );
     } catch (error) {
@@ -8691,6 +9318,8 @@ If you have any questions, please contact your administrator.
           eventType: "new_booking",
           message: `${customer.name || "New client"} booked${svc ? ` ${svc.name}` : ""} online`,
         });
+        // Tell the owner's phone (Certxa Pro app).
+        void pushBookingEvent(store.id, appointmentId, "booked_online");
       })();
 
       // Save add-ons and extend appointment duration if any were selected
@@ -9196,7 +9825,8 @@ If you have any questions, please contact your administrator.
           createdAt: now.toISOString(),
         });
 
-        if (keyword === "CANCEL") {
+        const cancellationIntent = classifySmsCancellationIntent(bodyText);
+        if (cancellationIntent.shouldCancel) {
           try {
             const smsSettingsRow = await storage.getSmsSettings(resolvedStoreId);
             const cancellationEnabled = smsSettingsRow?.smsCancellationEnabled ?? true;
@@ -9301,7 +9931,7 @@ If you have any questions, please contact your administrator.
                     twilioSid: null,
                   });
 
-                  console.log(`[${provider}Webhook] CANCEL: appointment ${upcomingAppt.id} cancelled for client ${resolvedClientId} at store ${resolvedStoreId}`);
+                  console.log(`[${provider}Webhook] Cancellation intent (${cancellationIntent.confidence}): appointment ${upcomingAppt.id} cancelled for client ${resolvedClientId} at store ${resolvedStoreId}`);
                 }
               }
             }
@@ -17276,7 +17906,7 @@ or
     }
   });
 
-  app.post("/api/waitlist", isAuthenticated, async (req, res) => {
+  app.post("/api/waitlist", isAuthenticated, idempotent("waitlist.create", (r) => resolveSessionStoreId(r)), async (req, res) => {
     try {
       const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
       if (idempotencyKey) {
@@ -17459,10 +18089,11 @@ or
       const settings = await saveTurnPreferences(storeId, {
         turnEnabled: req.body.turnEnabled !== false,
         autoAdvanceOnCheckout: req.body.autoAdvanceOnCheckout !== false,
-        useClockInOrder: req.body.useClockInOrder !== false,
-        allowManagerOverrides: req.body.allowManagerOverrides !== false,
         turnValueThreshold: req.body.turnValueThreshold,
         appointmentExclusionWindowMinutes: req.body.appointmentExclusionWindowMinutes,
+        // the pre-configured turn system and its partial-turn value (lib/turnRules.ts)
+        turnMode: normalizeTurnRules({ turnMode: req.body.turnMode }).mode,
+        partialTurnValue: normalizeTurnRules({ partialTurnValue: req.body.partialTurnValue }).partialTurnValue,
       });
       broadcastTurnEligibilityChanged(storeId);
       return res.json(settings);
@@ -17531,7 +18162,7 @@ or
     }
   });
 
-  app.post("/api/turn/assign-walkin", isAuthenticated, async (req, res) => {
+  app.post("/api/turn/assign-walkin", isAuthenticated, idempotent("turn.assign-walkin", (r) => resolveSessionStoreId(r)), async (req, res) => {
     try {
       const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
       if (idempotencyKey) {
@@ -17595,6 +18226,8 @@ or
     assignAppointmentViaTurn: (opts) => assignAppointmentViaTurn(opts),
     getTurnPreferences,
     saveTurnPreferences,
+    mutateTurnPreferences,
+    logCategoryAssignment,
     notify: (storeId, ev) => {
       broadcastTurnEligibilityChanged(storeId);
       if (ev.kind === "created") {
@@ -17609,13 +18242,21 @@ or
     },
   };
 
-  /** Session store for /api/nail/*, or null after replying 403 — nail-salon accounts only. */
+  // Reuse the same ticket engine for walk-in barbershops without opening the
+  // nail endpoints to other store categories. originalUrl survives this rewrite
+  // and is checked in nailStoreId before any ticket read or mutation.
+  app.use((req, _res, next) => {
+    if (req.url.startsWith("/api/barber/")) req.url = req.url.replace(/^\/api\/barber\//, "/api/nail/");
+    next();
+  });
+
+  /** Session store for the nail/barber staff screens, with separate category gates. */
   const nailStoreId = async (req: any, res: any): Promise<number | null> => {
     const storeId = await resolveSessionStoreId(req);
     if (!storeId) { res.status(403).json({ message: "No store context" }); return null; }
     const store = await storage.getStore(storeId);
-    if (!nailTickets.isNailSalonCategory((store as any)?.category)) {
-      res.status(403).json({ message: "The nail salon screen is only available to nail salon accounts." });
+    if (!nailTickets.staffScreenAllowed(req.originalUrl, (store as any)?.category)) {
+      res.status(403).json({ message: "This staff screen is not available for this store." });
       return null;
     }
     return storeId;
@@ -17632,6 +18273,8 @@ or
     try {
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;
+      // Staff added since the last look get their Barber / Tech ID here, so the profile always shows one.
+      await nailTickets.ensureBarberNumbers(storeId);
       return res.json(await nailTickets.getNailBoard(storeId));
     } catch (err) {
       console.error("[nail/board]", err);
@@ -17639,10 +18282,32 @@ or
     }
   });
 
+  // A captured card may have succeeded while the register lost its callback.
+  // Only pending captures for this same-store ticket are offered for recovery.
+  app.get("/api/nail/captured-card-payments/:id", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const id = Number(req.params.id);
+      if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid ticket" });
+      const rows = await pool.query(`SELECT c.payment_intent_id AS "paymentIntentId", c.amount_cents AS "amountCents"
+        FROM nail_checkout_card_intents c JOIN appointments a ON a.id = c.appointment_id AND a.store_id = c.store_id
+        WHERE c.store_id = $1 AND c.appointment_id = $2 AND c.idempotency_key = 'pending'`, [storeId, id]);
+      return res.json(rows.rows);
+    } catch (err) {
+      console.error("[nail/captured-card-payments]", err);
+      return res.status(500).json({ message: "Could not recover card charges" });
+    }
+  });
+
   // POST /api/nail/checkin — staff check a client in from the salon POS (the same thing the /kiosk and /frontdesk
   // phone check-in does): today's next appointment is checked in and handed to the next tech, or a walk-in with no
   // appointment lands on the waiting list as a "checked in, no ticket yet" marker.
-  app.post("/api/nail/checkin", isAuthenticated, async (req, res) => {
+  // These three carry an X-Idempotency-Key when a device replays work it did offline (lib/idempotency.ts):
+  // the first answer is kept in the database and replayed, so a retry never makes a second client,
+  // check-in or ticket — including across a server restart.
+  startIdempotencyCleanup();
+  app.post("/api/nail/checkin", isAuthenticated, idempotent("nail.checkin", (r) => resolveSessionStoreId(r)), async (req, res) => {
     try {
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;
@@ -17655,39 +18320,40 @@ or
 
       // Already here? Don't add a second waiting entry.
       const tz = (store as any).timezone || "UTC";
-      const [here, marker] = await Promise.all([
-        pool.query(
-          `SELECT id FROM appointments
-            WHERE store_id = $1 AND customer_id = $2
-              AND (status = 'started' OR (status = 'confirmed' AND checked_in_at IS NOT NULL))
-              AND (date AT TIME ZONE $3)::date >= ((NOW() AT TIME ZONE $3)::date - 1)
-            LIMIT 1`,
-          [storeId, client.id, tz],
-        ),
-        pool.query(
-          `SELECT id FROM kiosk_checkins
-            WHERE store_id = $1 AND client_id = $2 AND appointment_id IS NULL
-              AND status IN ('waiting','called') AND created_at > NOW() - INTERVAL '${nailTickets.CHECKIN_MARKER_HOURS} hours'
-            LIMIT 1`,
-          [storeId, client.id],
-        ),
-      ]);
-      if (here.rows.length > 0 || marker.rows.length > 0) return res.json({ status: "already", client: person });
+      if (await isClientAlreadyCheckedIn(storeId, client.id, tz)) return res.json({ status: "already", client: person });
 
       const { rows: phoneRows } = await pool.query(
         `SELECT phone_number_e164 FROM client_phones WHERE client_id = $1 ORDER BY is_primary DESC, id LIMIT 1`,
         [client.id],
       );
       const digits = String(phoneRows[0]?.phone_number_e164 ?? "").replace(/\D/g, "").slice(-10);
-      const todayAppointment = await performClientCheckin(store, client, digits, "staff");
-      return res.json({ status: todayAppointment ? "appointment" : "walkin", client: person, todayAppointment });
+      // No appointment lookup for barbers: every staff check-in is a walk-in
+      // marker, even if the shared appointment table contains older bookings.
+      const barberCheckin = req.originalUrl?.startsWith("/api/barber/");
+      const { todayAppointment, checkin } = barberCheckin
+        ? { todayAppointment: null, checkin: await recordWalkInCheckinMarker(storeId, client.id, client.fullName, digits) }
+        : await performClientCheckin(store, client, digits, "staff");
+      // `checkin` is only set for a true walk-in (no booking matched) — the marker's token is
+      // what a "CI:{token}" check-in QR encodes; a matched appointment already has its own id,
+      // so the printed ticket there uses "BK:{todayAppointment.id}" instead (see NailHome.tsx).
+      const todayCount = await countTodayCheckins(storeId, tz);
+      return res.json({ status: todayAppointment ? "appointment" : "walkin", client: person, todayAppointment, checkin, todayCount });
     } catch (err) {
       console.error("[nail/checkin]", err);
       return res.status(500).json({ message: "Could not check the client in" });
     }
   });
 
-  app.post("/api/nail/tickets", isAuthenticated, async (req, res) => {
+  app.post("/api/nail/tickets", isAuthenticated, idempotent("nail.ticket.create", (r) => resolveSessionStoreId(r), undefined,
+    // The request died after the ticket was made: answer with that ticket rather than making another.
+    async (appointmentId, storeId) => {
+      const { rows } = await pool.query(
+        `SELECT a.id, a.ticket_number, a.staff_id, a.status, a.date, a.duration, s.name AS staff_name
+           FROM appointments a LEFT JOIN staff s ON s.id = a.staff_id WHERE a.id = $1 AND a.store_id = $2`, [appointmentId, storeId]);
+      const t = rows[0];
+      return t ? { status: 201, body: { appointmentId: t.id, ticketNumber: t.ticket_number, staffId: t.staff_id, staffName: t.staff_name,
+        status: t.status === "started" ? "started" : "confirmed", startsAt: new Date(t.date).toISOString(), duration: t.duration, price: 0, waiting: true } } : null;
+    }), async (req, res) => {
     try {
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;
@@ -17696,8 +18362,10 @@ or
         serviceId: z.number().int(),
         addonIds: z.array(z.number().int()).optional(),
         nail: nailSelectionInput.nullable().optional(),
-        customLines: z.array(z.object({ label: z.string().max(60), price: z.number() })).max(20).optional(),
+        customLines: z.array(z.object({ label: z.string().max(60), price: z.number(), isRetail: z.boolean().optional() })).max(20).optional(),
         staffId: z.number().int().nullable().optional(),
+        leaveUnassigned: z.boolean().optional(),
+        autoAssign: z.boolean().optional(),
         notes: z.string().max(500).nullable().optional(),
         checkinId: z.number().int().nullable().optional(),
       }).safeParse(req.body);
@@ -17706,6 +18374,9 @@ or
       const result = await nailTickets.createNailTicket(nailDeps, {
         ...body.data,
         storeId,
+        idempotencyKey: typeof req.get("x-idempotency-key") === "string" ? String(req.get("x-idempotency-key")).trim() : null,
+        // /nail never starts a ticket on its own; the barbershop screen still does.
+        startOnAssign: req.originalUrl?.startsWith("/api/barber/") === true,
         bookedByUserId: Number.isFinite(Number(userId)) ? Number(userId) : null,
       });
       if (!result.ok) return res.status(result.status).json({ message: result.message, technicians: result.technicians });
@@ -17724,7 +18395,9 @@ or
         serviceId: z.number().int().optional(),
         addonIds: z.array(z.number().int()),
         nail: nailSelectionInput.nullable().optional(),
-        customLines: z.array(z.object({ label: z.string().max(60), price: z.number() })).max(20).optional(),
+        customLines: z.array(z.object({ label: z.string().max(60), price: z.number(), isRetail: z.boolean().optional() })).max(20).optional(),
+        expected: z.object({ serviceId: z.number().int().nullable(), duration: z.number(), addonIds: z.array(z.number().int()),
+          nail: nailSelectionInput.nullable(), customLines: z.array(z.object({ label: z.string(), price: z.number(), isRetail: z.boolean().optional() })) }),
       }).safeParse(req.body);
       const appointmentId = Number(req.params.id);
       if (!body.success || !Number.isFinite(appointmentId)) return res.status(400).json({ message: "Invalid ticket" });
@@ -17741,15 +18414,226 @@ or
     try {
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;
-      const body = z.object({ staffId: z.number().int() }).safeParse(req.body);
+      const body = z.object({ staffId: z.number().int(), expectedStaffId: z.number().int().nullable().optional() }).safeParse(req.body);
       const appointmentId = Number(req.params.id);
       if (!body.success || !Number.isFinite(appointmentId)) return res.status(400).json({ message: "Invalid request" });
-      const result = await nailTickets.reassignNailTicket(nailDeps, { storeId, appointmentId, staffId: body.data.staffId });
+      const result = await nailTickets.reassignNailTicket(nailDeps, { storeId, appointmentId, staffId: body.data.staffId, expectedStaffId: body.data.expectedStaffId });
       if (!result.ok) return res.status(result.status).json({ message: result.message });
       return res.json(result.data);
     } catch (err) {
       console.error("[nail/tickets reassign]", err);
       return res.status(500).json({ message: "Could not reassign the ticket" });
+    }
+  });
+
+  // ── ID sign-in (both screens), and — barbershop only — taking a waiting client with no ticket yet ──
+  // Registered under /api/nail/ because of the rewrite above, but answer only the /api/barber/ door.
+  const barberOnly = (req: any, res: any): boolean => {
+    if (req.originalUrl?.startsWith("/api/barber/")) return true;
+    res.status(404).json({ message: "Not found" });
+    return false;
+  };
+
+  // The ID keypad is on both screens (Barber ID on /barber, Tech ID on /nail); nailStoreId keeps each to its own door.
+  app.post("/api/nail/identify", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      // /nail: a waiting ticket handed to this technician counts as theirs, so they can open it and press START.
+      const signInOpts = { includeWaiting: !req.originalUrl?.startsWith("/api/barber/") };
+      const result = await nailTickets.identifyBarber(storeId, Number(req.body?.barberId), signInOpts);
+      if (!result.ok) return res.status(result.status).json({ message: result.message });
+      // Technicians and barbers only: a receptionist's ID (90–99) is not on the time clock or in the turn line here.
+      if (!result.data.staff.frontDesk) {
+        try {
+          await clockInAndMakeAvailable(storeId, result.data.staff.id);
+          // Now that they are in the line, hand waiting clients to whoever is free, in turn order. If
+          // one comes to this technician, look them up again so the POS opens straight on that client.
+          if (!result.data.activeMarker && result.data.activeTicketId == null) {
+            await matchWaitingClients(storeId);
+            const again = await nailTickets.identifyBarber(storeId, result.data.staff.barberNumber, signInOpts);
+            if (again.ok) {
+              // A client came to them just now: the screen says so ("… assigned to …") instead of opening the POS.
+              let justAssigned: { clientName: string | null; ticketNumber: number | null } | null = null;
+              if (again.data.activeMarker) {
+                const m = (await pool.query(`SELECT ticket_number FROM kiosk_checkins WHERE id = $1 AND store_id = $2`, [again.data.activeMarker.id, storeId])).rows[0];
+                justAssigned = { clientName: again.data.activeMarker.clientName, ticketNumber: m?.ticket_number ?? null };
+              } else if (again.data.activeTicketId != null) {
+                const t = (await pool.query(
+                  `SELECT a.ticket_number, NULLIF(TRIM(CONCAT(c.first_name, ' ', c.last_name)), '') AS name
+                     FROM appointments a LEFT JOIN clients c ON c.id = a.customer_id WHERE a.id = $1 AND a.store_id = $2`,
+                  [again.data.activeTicketId, storeId],
+                )).rows[0];
+                justAssigned = { clientName: t?.name ?? null, ticketNumber: t?.ticket_number ?? null };
+              }
+              return res.json({ ...again.data, justAssigned });
+            }
+          }
+        } catch (err) {
+          // Never keeps someone out of the POS: they can still be clocked in by hand.
+          console.error("[barber/identify] clock-in on sign-in failed:", err);
+        }
+      }
+      return res.json(result.data);
+    } catch (err) {
+      console.error("[barber/identify]", err);
+      return res.status(500).json({ message: "Could not check that Barber ID" });
+    }
+  });
+
+  // ── /nail screen settings a manager sets for the whole salon. `lockScreen` off = no Tech ID keypad and no
+  //    idle lock: the POS is simply open, the way it was before sign-in existed. ──
+  // ── Tip presets: the percentages this salon offers at checkout (shared/tipPresets.ts) ──
+  app.get("/api/tip-presets", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
+      return res.json({ presets: sanitizeTipPresets(safeParsePreferences(row?.preferences as string | undefined).tipPresets) });
+    } catch (err) {
+      console.error("[tip-presets get]", err);
+      return res.status(500).json({ message: "Could not load the tip presets" });
+    }
+  });
+
+  app.put("/api/tip-presets", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      const raw = req.body?.presets;
+      if (!Array.isArray(raw) || raw.length === 0 || raw.some((v) => !Number.isInteger(Number(v)) || Number(v) < 1 || Number(v) > 100)) {
+        return res.status(400).json({ message: "Enter one to four whole percentages from 1 to 100." });
+      }
+      const presets = sanitizeTipPresets(raw);
+      await mutateStorePreferences(storeId, (current) => ({ ...current, tipPresets: presets }));
+      broadcastNotification({ type: "settings_changed", storeId, scope: "/api/tip-presets" } as any);
+      return res.json({ presets });
+    } catch (err) {
+      console.error("[tip-presets put]", err);
+      return res.status(500).json({ message: "Could not save the tip presets" });
+    }
+  });
+
+  app.get("/api/nail/screen-settings", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
+      const prefs = safeParsePreferences(row?.preferences as string | undefined);
+      return res.json({ lockScreen: prefs.nailScreen?.lockScreen !== false });
+    } catch (err) {
+      console.error("[nail/screen-settings get]", err);
+      return res.status(500).json({ message: "Could not load the screen settings" });
+    }
+  });
+
+  app.put("/api/nail/screen-settings", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      if (typeof req.body?.lockScreen !== "boolean") return res.status(400).json({ message: "lockScreen must be on or off" });
+      const lockScreen: boolean = req.body.lockScreen;
+      await mutateStorePreferences(storeId, (current) => ({ ...current, nailScreen: { ...(current.nailScreen ?? {}), lockScreen } }));
+      broadcastNotification({ type: "settings_changed", storeId, scope: "/api/nail/screen-settings" } as any);
+      return res.json({ lockScreen });
+    } catch (err) {
+      console.error("[nail/screen-settings put]", err);
+      return res.status(500).json({ message: "Could not save the screen settings" });
+    }
+  });
+
+  // ── The POS key grid a manager arranges (shared/posGrid.ts). Nothing saved = filled automatically from the catalog. ──
+  app.get("/api/nail/pos-grid", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
+      const prefs = safeParsePreferences(row?.preferences as string | undefined);
+      return res.json({ config: sanitizePosGridConfig(prefs.posGrid) });
+    } catch (err) {
+      console.error("[nail/pos-grid get]", err);
+      return res.status(500).json({ message: "Could not load the key grid" });
+    }
+  });
+
+  app.put("/api/nail/pos-grid", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      // `config: null` goes back to the automatic layout.
+      const wantsAutomatic = req.body?.config == null;
+      const config = wantsAutomatic ? null : sanitizePosGridConfig(req.body.config);
+      if (!wantsAutomatic && !config) return res.status(400).json({ message: "That key grid can't be saved" });
+      await mutateStorePreferences(storeId, (current) => {
+        const next = { ...current };
+        if (config) next.posGrid = config; else delete next.posGrid;
+        return next;
+      });
+      // Every POS station picks the new grid up.
+      broadcastNotification({ type: "settings_changed", storeId, scope: "/api/nail/pos-grid" } as any);
+      return res.json({ config });
+    } catch (err) {
+      console.error("[nail/pos-grid put]", err);
+      return res.status(500).json({ message: "Could not save the key grid" });
+    }
+  });
+
+  // A check-in that has no client record yet (the kiosk didn't recognise the number): find the client by the
+  // phone they typed, or save them as a new client from the name and number on the check-in, and put that
+  // client on the check-in so its ticket can be made.
+  app.post("/api/nail/markers/:id/client", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const markerId = Number(req.params.id);
+      if (!Number.isSafeInteger(markerId) || markerId <= 0) return res.status(400).json({ message: "Invalid request" });
+      const marker = (await pool.query(
+        `SELECT client_id, client_name, phone FROM kiosk_checkins
+          WHERE id = $1 AND store_id = $2 AND appointment_id IS NULL AND status IN ('waiting', 'called')`,
+        [markerId, storeId],
+      )).rows[0];
+      if (!marker) return res.status(404).json({ message: "This check-in is no longer waiting." });
+      if (marker.client_id != null) return res.json({ clientId: Number(marker.client_id) });
+      const phone = String(marker.phone ?? "");
+      const name = String(marker.client_name ?? "").trim();
+      let client = phone ? await storage.searchCustomerByPhone(phone, storeId) : undefined;
+      if (!client) {
+        if (!name) return res.status(409).json({ message: "This check-in has no name. Use Check-In to add the client." });
+        try {
+          client = await storage.createCustomer(insertCustomerSchema.parse({ name, phone: phone || null, storeId }));
+        } catch (err: any) {
+          if (err?.code !== "PHONE_DUPLICATE") throw err;
+          client = await storage.searchCustomerByPhone(phone, storeId);
+        }
+      }
+      if (!client) return res.status(409).json({ message: "Couldn't find or save this client. Use Check-In to add them." });
+      await pool.query(
+        `UPDATE kiosk_checkins SET client_id = $3 WHERE id = $1 AND store_id = $2 AND client_id IS NULL`,
+        [markerId, storeId, client.id],
+      );
+      broadcastNotification({ type: "kiosk_checkin_created", storeId } as any);
+      return res.json({ clientId: Number(client.id) });
+    } catch (err) {
+      console.error("[nail/markers client]", err);
+      return res.status(500).json({ message: "Could not open this check-in" });
+    }
+  });
+
+  app.post("/api/nail/markers/:id/assign", isAuthenticated, async (req, res) => {
+    try {
+      if (!barberOnly(req, res)) return;
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const body = z.object({ staffId: z.number().int().positive() }).safeParse(req.body);
+      const markerId = Number(req.params.id);
+      if (!body.success || !Number.isSafeInteger(markerId) || markerId <= 0) return res.status(400).json({ message: "Invalid request" });
+      const result = await nailTickets.assignMarkerToBarber({ storeId, markerId, staffId: body.data.staffId });
+      if (!result.ok) return res.status(result.status).json({ message: result.message });
+      broadcastTurnEligibilityChanged(storeId);
+      return res.json(result.data);
+    } catch (err) {
+      console.error("[barber/markers assign]", err);
+      return res.status(500).json({ message: "Could not assign this client" });
     }
   });
 
@@ -17771,20 +18655,90 @@ or
     try {
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;
-      const appointmentId = Number(req.body?.appointmentId);
-      if (!Number.isInteger(appointmentId)) return res.status(400).json({ message: "Invalid request" });
-      const r = await nailGiftCards.redeemGiftCard({ storeId, code: req.body?.code, amount: req.body?.amount, appointmentId });
-      if (!r.ok) return res.status(r.status).json({ message: r.message });
-      return res.json({ code: r.code, redeemed: r.redeemed, balance: r.balance, alreadyRedeemed: r.alreadyRedeemed });
+      return res.status(410).json({ message: "Gift cards are debited only by the secure checkout." });
     } catch (err) {
       console.error("[nail/gift-cards redeem]", err);
       return res.status(500).json({ message: "Could not redeem the gift card" });
     }
   });
 
+  const money = z.number().finite().nonnegative().max(100000);
+  const nailShare = z.object({ appointmentId: z.number().int().positive(), tip: money, discount: money,
+    totalPaid: money, serviceRevenue: money, productRevenue: money, paymentMethod: z.string().max(200) });
+  app.post("/api/nail/checkout", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const parsed = z.object({ appointmentId: z.number().int().positive(), idempotencyKey: z.string().min(16).max(100),
+        tip: money, discount: money, totalPaid: money, serviceRevenue: money, productRevenue: money, tax: money.optional(),
+        paymentMethod: z.string().max(200), groupTickets: z.array(nailShare).max(30).optional(),
+        extras: z.array(z.object({ label: z.string().min(1).max(100), price: money })).max(30).optional(),
+        redemption: z.object({ customerId: z.number().int().positive(), rewardId: z.number().int().positive() }).optional(),
+        tenders: z.array(z.object({ method: z.enum(["cash", "gift", "m2", "tap"]), amount: money,
+          code: z.string().optional(), paymentIntentId: z.string().optional() })).max(30),
+        // A cash sale taken on a tablet while it was offline says when the money was actually collected.
+        collectedAt: z.string().datetime().optional(),
+      }).safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid checkout" });
+      // Only cash can have been collected without the server, only in the past, and only recently.
+      let collectedAt: Date | null = null;
+      if (parsed.data.collectedAt && parsed.data.tenders.length > 0 && parsed.data.tenders.every((t) => t.method === "cash")) {
+        const at = new Date(parsed.data.collectedAt);
+        const age = Date.now() - at.getTime();
+        if (age >= -5 * 60_000 && age <= 7 * 24 * 60 * 60_000) collectedAt = age < 0 ? new Date() : at;
+      }
+      const taxStore: any = await storage.getStore(storeId);
+      const outcome = await settleNailCheckout({ storeId, ...parsed.data, collectedAt }, {
+        rate: Number(taxStore?.salesTaxRate ?? 0) || 0,
+        services: taxStore?.taxServicesTaxable === true,
+        products: taxStore?.taxProductsTaxable !== false,
+      });
+      for (const apt of outcome.newlyCompleted) {
+        const completed = await storage.getAppointment(Number(apt.id));
+        if (completed) await recordCommissionAccrual(completed);
+        if (apt.customer_id && Number(apt.total_paid) > 0) await awardLoyaltyForCompletion({
+          storeId, customerId: Number(apt.customer_id), appointmentId: Number(apt.id), totalPaid: Number(apt.total_paid),
+        });
+        if (apt.staff_id) await handleTurnCheckout(storeId, Number(apt.staff_id), { appointmentId: Number(apt.id), totalPaid: Number(apt.total_paid), tipAmount: Number(apt.tip_amount) || 0 });
+        broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId: Number(apt.id) });
+        triggerDashboardBroadcast(storeId);
+      }
+      // What each walk-in ticket just closed was worth in the turn rotation, for the screen to show the
+      // technician. Advance bookings are left out, and so is everything when the turn system is off.
+      let turns: { appointmentId: number; ticketNumber: number | null; staffName: string | null; mode: string; earned: number; serviceAmount: number }[] = [];
+      try {
+        const turnPrefs = await getTurnPreferences(storeId);
+        if (turnPrefs.turnEnabled !== false && outcome.newlyCompleted.length > 0) {
+          const rules = normalizeTurnRules(turnPrefs);
+          const walkIns = await nailTickets.walkInTicketIds(storeId, outcome.newlyCompleted.map((apt: any) => Number(apt.id)));
+          for (const apt of outcome.newlyCompleted) {
+            if (!apt.staff_id || !walkIns.has(Number(apt.id))) continue;
+            const done = await storage.getAppointment(Number(apt.id));
+            const serviceAmount = turnAmount({ serviceRevenue: (done as any)?.serviceRevenue, productRevenue: (done as any)?.productRevenue, totalPaid: apt.total_paid, tipAmount: apt.tip_amount });
+            if (serviceAmount <= 0) continue;
+            const member = await storage.getStaffMember(Number(apt.staff_id));
+            turns.push({
+              appointmentId: Number(apt.id), ticketNumber: (done as any)?.ticketNumber ?? null, staffName: member?.name ?? null,
+              mode: rules.mode, earned: turnValue(rules, serviceAmount), serviceAmount,
+            });
+          }
+        }
+      } catch (err) {
+        // Never fails a sale that has already been saved.
+        console.error("[nail/checkout] turn summary failed:", (err as any)?.message);
+        turns = [];
+      }
+      return res.json({ appointmentIds: outcome.appointmentIds, replay: outcome.replay, turns });
+    } catch (err: any) {
+      if (err instanceof NailCheckoutError) return res.status(err.status).json({ message: err.message });
+      console.error("[nail/checkout]", err);
+      return res.status(500).json({ message: "Checkout could not be saved. Check the ticket before charging again." });
+    }
+  });
+
   // POST /api/turn/log-override — called when front desk clicks a specific tech's calendar slot
   // instead of using the Walk-In button (i.e. bypassing the Turn queue deliberately).
-  app.post("/api/turn/log-override", isAuthenticated, async (req, res) => {
+  app.post("/api/turn/log-override", isAuthenticated, idempotent("turn.log-override", (r) => resolveSessionStoreId(r)), async (req, res) => {
     try {
       const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
       if (idempotencyKey) {
@@ -18328,11 +19282,7 @@ or
         ...(queueMaxSize !== undefined ? { queueMaxSize } : {}),
         ...(smsTravelBuffer !== undefined ? { smsTravelBuffer } : {}),
       };
-      if (existing) {
-        await db.update(storeSettings).set({ preferences: JSON.stringify(newPrefs) }).where(eq(storeSettings.storeId, storeId));
-      } else {
-        await db.insert(storeSettings).values({ storeId, preferences: JSON.stringify(newPrefs) });
-      }
+      await writeStorePreferences(storeId, currentPrefs, newPrefs);
       // Save store lat/lng directly on the locations table
       if (storeLatitude !== undefined || storeLongitude !== undefined) {
         const locationUpdates: any = {};
@@ -18420,7 +19370,7 @@ or
     }
   });
 
-  app.post("/api/gift-cards/redeem", isAuthenticated, async (req: any, res) => {
+  app.post("/api/gift-cards/redeem", requirePermission(PERMISSIONS.GIFT_CARDS_MANAGE), async (req: any, res) => {
     try {
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(400).json({ message: "No store selected" });
@@ -18993,12 +19943,7 @@ or
         ...currentPrefs,
         loyalty: { ...(currentPrefs.loyalty ?? {}), enabled: enabled !== false, pointsPerDollar: ppd },
       };
-      const newPrefs = JSON.stringify(nextPrefs);
-      if (existing) {
-        await db.update(storeSettings).set({ preferences: newPrefs, updatedAt: new Date() }).where(eq(storeSettings.storeId, storeId));
-      } else {
-        await db.insert(storeSettings).values({ storeId, preferences: newPrefs });
-      }
+      await writeStorePreferences(storeId, currentPrefs, nextPrefs);
       return res.json({ success: true, enabled: enabled !== false, pointsPerDollar: ppd });
     } catch (err) {
       console.error("[loyalty/config] PUT", err);
@@ -19268,6 +20213,42 @@ or
   // instead of the plain-text summary above. The token is the SAME per-appointment "manage my booking" token
   // (getOrCreateManageToken) — no new token needed — but what the page shows is a snapshot taken right now (the
   // client's own line items, exactly as charged), not reconstructed from the row later.
+  // Shared by /api/pos/receipt-link (texts it) and /api/pos/receipt-snapshot (silently saves it
+  // right at checkout, so a receipt exists even when nobody ever taps "Text Receipt" — see that
+  // route's own comment). Resolves the ticket, builds the sanitized snapshot, and persists it.
+  async function saveReceiptSnapshot(storeId: number, appointmentId: number, snap: any) {
+    const [apt] = await db.select({ id: appointments.id, customerId: appointments.customerId, ticketNumber: appointments.ticketNumber })
+      .from(appointments).where(and(eq(appointments.id, appointmentId), eq(appointments.storeId, storeId)));
+    if (!apt) return null;
+    const store = await storage.getStore(storeId);
+
+    const money = (n: unknown) => Math.round((Number(n) || 0) * 100) / 100;
+    const snapshot = {
+      storeName: String((store as any)?.name ?? "Your salon").slice(0, 60),
+      storeAddress: [(store as any)?.address, (store as any)?.city, (store as any)?.state, (store as any)?.postcode].filter(Boolean).join(", ") || undefined,
+      storePhone: (store as any)?.phone || undefined,
+      ticketNumber: apt.ticketNumber ?? apt.id,
+      dateIso: typeof snap.dateIso === "string" ? snap.dateIso : new Date().toISOString(),
+      clientName: typeof snap.clientName === "string" ? snap.clientName.slice(0, 80) : undefined,
+      staffName: typeof snap.staffName === "string" ? snap.staffName.slice(0, 80) : undefined,
+      items: snap.items.slice(0, 40).map((i: any) => ({ label: String(i?.label ?? "Item").slice(0, 60), price: money(i?.price) })),
+      subtotal: money(snap.subtotal), discount: money(snap.discount), tip: money(snap.tip), total: money(snap.total),
+      tenders: Array.isArray(snap.tenders) ? snap.tenders.slice(0, 10).map((t: any) => ({ method: String(t?.method ?? "Payment").slice(0, 30), amount: money(t?.amount) })) : [],
+      // Card brand/entry-method/approval code — only ever known at the moment of capture (the
+      // Stripe Terminal SDK result, native or web), never reconstructable later, so it's saved
+      // here or not at all. A named allowlist rather than trusting the client's object as-is.
+      cardDetails: snap.cardDetails && typeof snap.cardDetails === "object" ? {
+        brand: typeof snap.cardDetails.brand === "string" ? snap.cardDetails.brand.slice(0, 30) : undefined,
+        last4: typeof snap.cardDetails.last4 === "string" ? snap.cardDetails.last4.slice(0, 4) : undefined,
+        entryMethod: typeof snap.cardDetails.entryMethod === "string" ? snap.cardDetails.entryMethod.slice(0, 30) : undefined,
+        approvalCode: typeof snap.cardDetails.approvalCode === "string" ? snap.cardDetails.approvalCode.slice(0, 30) : undefined,
+        paymentIntentId: typeof snap.cardDetails.paymentIntentId === "string" ? snap.cardDetails.paymentIntentId.slice(0, 80) : undefined,
+      } : undefined,
+    };
+    await pool.query(`UPDATE appointments SET receipt_snapshot = $1 WHERE id = $2`, [JSON.stringify(snapshot), appointmentId]);
+    return { apt, snapshot };
+  }
+
   app.post("/api/pos/receipt-link", isAuthenticated, async (req: any, res) => {
     try {
       const storeId = await resolveSessionStoreId(req);
@@ -19279,24 +20260,9 @@ or
       if (digits.length !== 10) return res.status(400).json({ message: "A valid 10-digit phone number is required" });
       if (!Array.isArray(snap.items)) return res.status(400).json({ message: "snapshot.items is required" });
 
-      const [apt] = await db.select({ id: appointments.id, customerId: appointments.customerId, ticketNumber: appointments.ticketNumber })
-        .from(appointments).where(and(eq(appointments.id, appointmentId), eq(appointments.storeId, storeId)));
-      if (!apt) return res.status(404).json({ message: "Ticket not found" });
-      const store = await storage.getStore(storeId);
-
-      const money = (n: unknown) => Math.round((Number(n) || 0) * 100) / 100;
-      const snapshot = {
-        storeName: String((store as any)?.name ?? "Your salon").slice(0, 60),
-        storeAddress: [(store as any)?.address, (store as any)?.city, (store as any)?.state, (store as any)?.postcode].filter(Boolean).join(", ") || undefined,
-        storePhone: (store as any)?.phone || undefined,
-        ticketNumber: apt.ticketNumber ?? apt.id,
-        dateIso: typeof snap.dateIso === "string" ? snap.dateIso : new Date().toISOString(),
-        clientName: typeof snap.clientName === "string" ? snap.clientName.slice(0, 80) : undefined,
-        items: snap.items.slice(0, 40).map((i: any) => ({ label: String(i?.label ?? "Item").slice(0, 60), price: money(i?.price) })),
-        subtotal: money(snap.subtotal), discount: money(snap.discount), tip: money(snap.tip), total: money(snap.total),
-        tenders: Array.isArray(snap.tenders) ? snap.tenders.slice(0, 10).map((t: any) => ({ method: String(t?.method ?? "Payment").slice(0, 30), amount: money(t?.amount) })) : [],
-      };
-      await pool.query(`UPDATE appointments SET receipt_snapshot = $1 WHERE id = $2`, [JSON.stringify(snapshot), appointmentId]);
+      const saved = await saveReceiptSnapshot(storeId, appointmentId, snap);
+      if (!saved) return res.status(404).json({ message: "Ticket not found" });
+      const { apt, snapshot } = saved;
 
       const token = await getOrCreateManageToken(appointmentId);
       const url = buildReceiptUrl(token);
@@ -19310,6 +20276,30 @@ or
     } catch (err: any) {
       console.error("[POS receipt-link]", err?.message);
       return res.status(500).json({ message: "Failed to send text receipt" });
+    }
+  });
+
+  // Silently saves the same receipt snapshot as above, without texting anything — called right
+  // after a Nail POS ticket completes (see CheckoutMode.tsx) so a digital receipt is available
+  // for EVERY paid ticket looked up later (Enter ID / QR re-scan), not only ones where staff
+  // happened to tap "Text Receipt". Returns the same manageToken the receipt link/lookup use.
+  app.post("/api/pos/receipt-snapshot", isAuthenticated, async (req: any, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(400).json({ message: "No store selected" });
+      const appointmentId = Number(req.body?.appointmentId);
+      const snap = req.body?.snapshot ?? {};
+      if (!Number.isInteger(appointmentId)) return res.status(400).json({ message: "appointmentId is required" });
+      if (!Array.isArray(snap.items)) return res.status(400).json({ message: "snapshot.items is required" });
+
+      const saved = await saveReceiptSnapshot(storeId, appointmentId, snap);
+      if (!saved) return res.status(404).json({ message: "Ticket not found" });
+
+      const token = await getOrCreateManageToken(appointmentId);
+      return res.json({ success: true, manageToken: token });
+    } catch (err: any) {
+      console.error("[POS receipt-snapshot]", err?.message);
+      return res.status(500).json({ message: "Failed to save receipt" });
     }
   });
 
@@ -19503,7 +20493,7 @@ or
     }
   });
 
-  // Authenticated: update review (toggle public/featured)
+  // Authenticated: feature / unfeature a review. Hiding is refused (see below).
   app.put("/api/reviews/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
@@ -19512,7 +20502,8 @@ or
       if (!existingReview || existingReview.storeId !== storeId) return res.status(404).json({ message: "Review not found" });
       const { isPublic, isFeatured } = req.body;
       const update: Partial<typeof reviews.$inferInsert> = {};
-      if (isPublic !== undefined) update.isPublic = isPublic;
+      // A review can never be hidden by the business it is about. Featuring it is still allowed.
+      if (isPublic !== undefined) return res.status(403).json({ message: "Reviews cannot be hidden" });
       if (isFeatured !== undefined) update.isFeatured = isFeatured;
       const [row] = await db.update(reviews).set(update).where(eq(reviews.id, id)).returning();
       return res.json(row);
@@ -19522,19 +20513,34 @@ or
     }
   });
 
-  // Authenticated: delete review
-  app.delete("/api/reviews/:id", isAuthenticated, async (req, res) => {
+  // Authenticated: the owner's reply to a review. Only the reply is written — the rating and the
+  // client's comment cannot be changed through this route. An empty reply removes the reply.
+  app.post("/api/reviews/:id/response", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
       const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid review" });
+      if (typeof req.body?.response !== "string") return res.status(400).json({ message: "Write your reply first" });
+      const text = req.body.response.trim();
+      if (text.length > 1000) return res.status(400).json({ message: "Replies can be up to 1000 characters" });
       const [existingReview] = await db.select({ storeId: reviews.storeId }).from(reviews).where(eq(reviews.id, id)).limit(1);
       if (!existingReview || existingReview.storeId !== storeId) return res.status(404).json({ message: "Review not found" });
-      await db.delete(reviews).where(eq(reviews.id, id));
-      return res.json({ success: true });
+      const [row] = await db.update(reviews)
+        .set({ ownerResponse: text || null, ownerResponseAt: text ? new Date() : null })
+        .where(and(eq(reviews.id, id), eq(reviews.storeId, storeId)))
+        .returning();
+      return res.json(row);
     } catch (err) {
-      console.error(err);
-      return res.status(500).json({ message: "Failed to delete review" });
+      console.error("[reviews/response]", err);
+      return res.status(500).json({ message: "Failed to save your reply" });
     }
+  });
+
+  // Reviews can never be deleted by the business they are about. The route stays so an old
+  // client gets a clear answer instead of a 404. (Deleting a whole account still removes its reviews.)
+  app.delete("/api/reviews/:id", isAuthenticated, async (_req, res) => {
+    return res.status(403).json({ message: "Reviews cannot be deleted" });
   });
 
   // ── Pro Hub Lead Capture ────────────────────────────────────────────────────
@@ -20386,6 +21392,11 @@ or
   app.use("/api/crew", crewMobileRouter);
   if (IS_SCHEDULER_INSTANCE) startOvertimeDetector();
 
+  // ── Certxa Solo Mobile API (login only — every other endpoint the app uses
+  //    is the same isAuthenticated-gated API the web app calls) ─────────────────
+  const { default: soloMobileRouter } = await import("./routes/solo-mobile.js");
+  app.use("/api/solo", soloMobileRouter);
+
   // ── AI Chatbot API ───────────────────────────────────────────────────────────
   const { default: chatbotRouter } = await import("./chatbot.js");
   app.use("/api/chatbot", chatbotRouter);
@@ -20498,6 +21509,14 @@ or
   // ── Contractor Payouts & Direct Deposit ─────────────────────────────────────
   const { default: contractorPayoutsRouter } = await import("./routes/contractorPayouts.js");
   app.use("/api/contractor-payouts", requireNotSuspended, contractorPayoutsRouter);
+
+  // ── Certxa Print Agent (sends check PDFs to the salon's computer for printing) ──
+  const { default: printAgentRouter } = await import("./routes/printAgent.js");
+  app.use("/api/print-agent", printAgentRouter);
+
+  // ── Certxa Rentals (separate product — facility/space rental foundation) ────
+  const { default: rentalsRouter } = await import("./routes/rentals.js");
+  app.use("/api/rentals", requireNotSuspended, rentalsRouter);
 
   // ── Commission Reserves & Salon Balance Management ───────────────────────────
   // Prevents salon owners from withdrawing funds reserved for contractor payouts.
@@ -20948,6 +21967,54 @@ or
   // Supports: plain numeric ID, "BK:123", kiosk ticket URLs (/kiosk/:slug/ticket/:token),
   // and a deal voucher's QR code (read-only discovery only — redemption itself
   // is a separate, explicit POST /api/qr/redeem-voucher call).
+  // Given a resolved appointment id, build the same "what stage is this at" response used by both
+  // /api/qr/lookup (scanning) and /api/nail/lookup-by-number (the manual-entry fallback when a QR
+  // won't scan) — kept as one function so the two lookup paths can never quietly diverge in what
+  // they consider "paid" or what they hand back for each stage.
+  async function resolveAppointmentLookup(appointmentId: number, callerStoreId: number | null) {
+    const appointment = await storage.getAppointment(appointmentId);
+    if (!appointment || appointment.storeId !== callerStoreId) return null;
+
+    const customer = (appointment as any).customer;
+    const clientName = customer
+      ? [customer.firstName, customer.lastName].filter(Boolean).join(" ") ||
+        customer.fullName ||
+        "Guest"
+      : "Guest";
+
+    const service = (appointment as any).service;
+    const serviceName = service?.name ?? "Appointment";
+
+    const apptDate = appointment.date
+      ? new Date(appointment.date).toLocaleString("en-US", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      : "Unknown date";
+
+    const totalPaid = (appointment as any).totalPaid;
+    const isPaid = appointment.status === "completed" && totalPaid != null;
+
+    return {
+      found: true,
+      type: "appointment" as const,
+      appointmentId: appointment.id,
+      bookingCode: String(appointment.id),
+      ticketNumber: (appointment as any).ticketNumber ?? null,
+      clientName,
+      service: serviceName,
+      date: apptDate,
+      status: appointment.status ?? "pending",
+      isPaid,
+      // Only meaningful once paid — the same token PublicReceipt.tsx / the "text me a receipt"
+      // link already use, so a paid scan can open the identical read-only receipt view.
+      manageToken: isPaid ? (appointment as any).manageToken ?? null : null,
+    };
+  }
+
   app.post("/api/qr/lookup", isAuthenticated, async (req: any, res: any) => {
     try {
       const { qrToken } = req.body ?? {};
@@ -20976,25 +22043,50 @@ or
 
       let appointmentId: number | null = null;
 
-      // ── 1. Kiosk ticket URL: https://*/kiosk/*/ticket/{token} ───────────────
-      const kioskMatch = raw.match(/\/kiosk\/[^/]+\/ticket\/([^/?#]+)/i);
-      if (kioskMatch) {
-        const kioskToken = kioskMatch[1];
+      // ── 1. Check-in stage code: "CI:{kiosk_checkins.token}" — printed at check-in, before any
+      // ticket/appointment necessarily exists yet (see recordWalkInCheckinMarker). Scanning this
+      // while no ticket exists returns the check-in itself; once a ticket gets created, the same
+      // row's appointment_id is filled in (see nailTickets.ts) and this falls through to the
+      // normal appointment resolution below — same code, evolving meaning through its lifecycle.
+      const checkinMatch = raw.match(/^CI[:\-]?(.+)$/i);
+      if (checkinMatch) {
         const row = await pool.query(
-          `SELECT appointment_id FROM kiosk_checkins WHERE token = $1 LIMIT 1`,
-          [kioskToken]
+          `SELECT id, client_id, client_name, appointment_id FROM kiosk_checkins WHERE token = $1 LIMIT 1`,
+          [checkinMatch[1]]
         ).catch(() => null);
-        const aptId = row?.rows?.[0]?.appointment_id;
-        if (aptId) {
-          appointmentId = Number(aptId);
-        } else {
-          return res.status(404).json({ error: "Booking not found" });
+        const checkin = row?.rows?.[0];
+        if (!checkin) return res.status(404).json({ error: "Check-in not found" });
+        if (!checkin.appointment_id) {
+          return res.json({
+            found: true,
+            type: "checkin",
+            checkinId: checkin.id,
+            clientId: checkin.client_id,
+            clientName: checkin.client_name ?? "Guest",
+          });
         }
+        appointmentId = Number(checkin.appointment_id);
       } else {
-        // ── 2. Plain numeric ID or prefixed formats like "BK:123" / "APPT-123" ─
-        const numericStr = raw.replace(/^(BK|APPT|APT)[:\-]?/i, "");
-        const parsed = parseInt(numericStr, 10);
-        if (!isNaN(parsed) && parsed > 0) appointmentId = parsed;
+        // ── 2. Kiosk ticket URL: https://*/kiosk/*/ticket/{token} ───────────────
+        const kioskMatch = raw.match(/\/kiosk\/[^/]+\/ticket\/([^/?#]+)/i);
+        if (kioskMatch) {
+          const kioskToken = kioskMatch[1];
+          const row = await pool.query(
+            `SELECT appointment_id FROM kiosk_checkins WHERE token = $1 LIMIT 1`,
+            [kioskToken]
+          ).catch(() => null);
+          const aptId = row?.rows?.[0]?.appointment_id;
+          if (aptId) {
+            appointmentId = Number(aptId);
+          } else {
+            return res.status(404).json({ error: "Booking not found" });
+          }
+        } else {
+          // ── 3. Plain numeric ID or prefixed formats like "BK:123" / "APPT-123" ─
+          const numericStr = raw.replace(/^(BK|APPT|APT)[:\-]?/i, "");
+          const parsed = parseInt(numericStr, 10);
+          if (!isNaN(parsed) && parsed > 0) appointmentId = parsed;
+        }
       }
 
       if (!appointmentId) {
@@ -21002,44 +22094,57 @@ or
       }
 
       const callerStoreId = await resolveSessionStoreId(req);
-      const appointment = await storage.getAppointment(appointmentId);
-      if (!appointment || appointment.storeId !== callerStoreId) {
-        return res.status(404).json({ error: "Booking not found" });
-      }
-
-      // Build a friendly client name from related data
-      const customer = (appointment as any).customer;
-      const clientName = customer
-        ? [customer.firstName, customer.lastName].filter(Boolean).join(" ") ||
-          customer.fullName ||
-          "Guest"
-        : "Guest";
-
-      const service = (appointment as any).service;
-      const serviceName = service?.name ?? "Appointment";
-
-      const apptDate = appointment.date
-        ? new Date(appointment.date).toLocaleString("en-US", {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-            hour: "numeric",
-            minute: "2-digit",
-          })
-        : "Unknown date";
-
-      return res.json({
-        found: true,
-        type: "appointment",
-        appointmentId: appointment.id,
-        bookingCode: String(appointment.id),
-        clientName,
-        service: serviceName,
-        date: apptDate,
-        status: appointment.status ?? "pending",
-      });
+      const resolved = await resolveAppointmentLookup(appointmentId, callerStoreId);
+      if (!resolved) return res.status(404).json({ error: "Booking not found" });
+      return res.json(resolved);
     } catch (err: any) {
       console.error("[qr/lookup] error:", err?.message);
+      return res.status(500).json({ error: "Lookup failed" });
+    }
+  });
+
+  // POST /api/nail/lookup-by-number — the manual-entry fallback for when a check-in slip's QR
+  // won't scan (damaged print, scanner hiccup, etc.). Staff types the "# 123" ticket number
+  // printed on the slip instead — this resolves to the exact same "what stage is this at"
+  // response /api/qr/lookup would give for that same slip's QR code, so the caller (NailHome.tsx's
+  // handleScan) can treat a typed number and a real scan identically. Store-scoped: searches only
+  // within the caller's own store, so this per-store ticket-number space can never cross into
+  // another store's numbers.
+  app.post("/api/nail/lookup-by-number", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const ticketNumber = Number(req.body?.ticketNumber);
+      if (!Number.isFinite(ticketNumber) || ticketNumber <= 0) return res.status(400).json({ error: "Enter a valid ticket number" });
+
+      // A still-open walk-in marker (no ticket yet) is checked first — once it gets a ticket, its
+      // appointment_id is set and this falls through to the same appointment resolution below,
+      // same as the QR's "CI:" code does.
+      const { rows } = await pool.query(
+        `SELECT id, client_id, client_name, appointment_id FROM kiosk_checkins
+         WHERE store_id = $1 AND ticket_number = $2 ORDER BY created_at DESC LIMIT 1`,
+        [storeId, ticketNumber],
+      );
+      const checkin = rows[0];
+      if (checkin && !checkin.appointment_id) {
+        return res.json({ found: true, type: "checkin", checkinId: checkin.id, clientId: checkin.client_id, clientName: checkin.client_name ?? "Guest" });
+      }
+
+      let appointmentId: number | null = checkin?.appointment_id ? Number(checkin.appointment_id) : null;
+      if (!appointmentId) {
+        const { rows: apptRows } = await pool.query(
+          `SELECT id FROM appointments WHERE store_id = $1 AND ticket_number = $2 LIMIT 1`,
+          [storeId, ticketNumber],
+        );
+        appointmentId = apptRows[0]?.id ? Number(apptRows[0].id) : null;
+      }
+      if (!appointmentId) return res.status(404).json({ error: "No ticket found with that number" });
+
+      const resolved = await resolveAppointmentLookup(appointmentId, storeId);
+      if (!resolved) return res.status(404).json({ error: "No ticket found with that number" });
+      return res.json(resolved);
+    } catch (err: any) {
+      console.error("[nail/lookup-by-number] error:", err?.message);
       return res.status(500).json({ error: "Lookup failed" });
     }
   });
@@ -21257,6 +22362,47 @@ or
   });
 
   // GET /api/public/kiosk/:slug/config — store info + all services
+  // GET /api/kiosk-permission — may the signed-in account use the kiosk right now, and what is its
+  // slug? The Android app asks this (through the tablet's signed-in session) before it switches a
+  // tablet from the POS to the kiosk. Always answered live: never cache this on a device.
+  app.get("/api/kiosk-permission", async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(401).json({ message: "Unauthorized" });
+      const [store] = await db
+        .select({ slug: locations.bookingSlug, kioskPermitted: locations.kioskPermitted })
+        .from(locations).where(eq(locations.id, storeId)).limit(1);
+      if (!store) return res.status(404).json({ message: "Store not found" });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.json({ permitted: store.kioskPermitted === 1, slug: store.slug });
+    } catch (err) {
+      console.error("[GET /api/kiosk-permission]", err);
+      return res.status(500).json({ message: "Couldn't check kiosk permission" });
+    }
+  });
+
+  // Resolves a device's 12-digit pairing code to the store/register it identifies — used by the
+  // POS station picker, the /frontdesk setup screen, and the kiosk setup screen alike. The same
+  // code works for all three; which role the device becomes depends on which of those screens it
+  // was entered into, not on the code itself, so the SAME code entered on a POS tablet and on
+  // its paired Customer Facing Screen tablet is what pairs the two together.
+  // A 12-digit device code is all a tablet needs to act as a salon's kiosk, so guessing is slowed down:
+  // setting up a tablet takes one or two tries, never dozens.
+  const activateLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000, max: 40, standardHeaders: true, legacyHeaders: false,
+    message: { message: "Too many attempts. Wait a few minutes and try again." },
+  });
+  app.get("/api/public/activate/:code", activateLimiter, async (req, res) => {
+    try {
+      const resolved = await resolveActivationCode(String(req.params.code || ""));
+      if (!resolved) return res.status(404).json({ message: "That code wasn't found. Check the digits and try again." });
+      return res.json(resolved);
+    } catch (err) {
+      console.error("[GET /api/public/activate/:code]", err);
+      return res.status(500).json({ message: "Couldn't check that code — try again." });
+    }
+  });
+
   app.get("/api/public/kiosk/:slug/config", async (req, res) => {
     try {
       const { slug } = req.params;
@@ -21346,7 +22492,7 @@ or
 
       // Drop services that belong to a hidden category (matched by id or by
       // name), same rule the public booking catalogue uses.
-      const kioskCats = await db.select({ id: serviceCategories.id, name: serviceCategories.name, imageUrl: serviceCategories.imageUrl, hiddenFromPublic: serviceCategories.hiddenFromPublic })
+      const kioskCats = await db.select({ id: serviceCategories.id, name: serviceCategories.name, imageUrl: serviceCategories.imageUrl, hiddenFromPublic: serviceCategories.hiddenFromPublic, sortOrder: serviceCategories.sortOrder })
         .from(serviceCategories)
         .where(eq(serviceCategories.storeId, store.id));
       // The image the owner set on the catalog category itself (Catalog → Categories).
@@ -21436,7 +22582,10 @@ or
         FROM appointments
         WHERE store_id = $1
           AND status IN ('confirmed', 'started')
-          AND date >= NOW() - INTERVAL '4 hours'
+          -- In progress now (15 minutes of overrun allowed). It used to count anything confirmed in
+          -- the last 4 hours, so a tech whose ticket nobody closed stayed "busy" for hours.
+          AND date <= NOW()
+          AND date + ((COALESCE(duration, 0) + 15) * INTERVAL '1 minute') >= NOW()
           AND staff_id IS NOT NULL
       `, [store.id]);
       const busyStaffIds: number[] = busyNowRows.map((r: any) => r.staff_id);
@@ -21474,11 +22623,14 @@ or
       }
 
       return res.json({
+        // Platform-admin permission for the kiosk (locations.kiosk_permitted). Not the owner's on/off.
+        kioskPermitted: (store as any).kioskPermitted === 1,
         store: {
           id: store.id,
           name: store.name,
           phone: store.phone,
           address: store.address,
+          category: store.category,
         },
         services: resolvedServices.map(s => ({
           ...s,
@@ -21509,6 +22661,14 @@ or
         showServicePrice: ks.showServicePrice !== false,
         showServiceDuration: ks.showServiceDuration !== false,
         dualScreenMode: ks.dualScreenMode === true,
+        // The salon's tip percentages, for the customer's tip screen.
+        tipPresets: sanitizeTipPresets(prefs.tipPresets),
+        // /frontdesk asks a checked-in walk-in what they came in for and makes their ticket (nail salons).
+        serviceCheckin: nailTickets.isNailSalonCategory((store as any).category),
+        // The catalog's own categories (name, photo, order) for that screen's cards — client-visible ones only.
+        categories: kioskCats.filter((c) => !c.hiddenFromPublic)
+          .sort((a, b) => (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999) || a.id - b.id)
+          .map((c) => ({ id: c.id, name: c.name, imageUrl: c.imageUrl ?? null })),
         registerId: resolvedRegisterId,
         registerName: resolvedRegisterName,
       });
@@ -21529,7 +22689,13 @@ or
       if (!Number.isFinite(serviceId)) return res.status(400).json({ error: "Invalid service" });
       const svc = await storage.getService(serviceId);
       if (!svc || svc.storeId !== store.id) return res.status(404).json({ error: "Service not found" });
-      return res.json(await nailConfig.getPublicServiceNailConfig(serviceId));
+      // `art`: the kiosk artwork uploaded in the admin Illustration library (slug → picture), see shared/kioskArt.ts.
+      const [config, artRows] = await Promise.all([
+        nailConfig.getPublicServiceNailConfig(serviceId),
+        db.select({ slug: serviceIllustrationCategories.slug, imageUrl: serviceIllustrationCategories.imageUrl }).from(serviceIllustrationCategories)
+          .where(and(eq(serviceIllustrationCategories.industry, KIOSK_ART_INDUSTRY), eq(serviceIllustrationCategories.isActive, true), isNotNull(serviceIllustrationCategories.imageUrl))),
+      ]);
+      return res.json({ ...config, art: Object.fromEntries(artRows.map((r) => [r.slug, r.imageUrl])) });
     } catch (err) {
       console.error("[kiosk/nail-config]", err);
       return res.status(500).json({ error: "Failed to load nail options" });
@@ -21539,26 +22705,32 @@ or
   // POST /api/public/kiosk/:slug/lookup — find client by 10-digit phone
   // Records the "waiting" phone check-in marker (no appointment_id yet) that puts a
   // client on staff's Arrived list. One open marker per client per 2 hours.
+  // Returns the marker's id/token/ticketNumber — the token is what a "CI:{token}" check-in QR
+  // encodes (see /api/qr/lookup); ticketNumber is the short "#123" printed next to the client's
+  // name on the slip, a manual-lookup fallback for when the QR itself won't scan (same per-store
+  // counter appointments use — see storage.getNextTicketNumber — assigned here instead of waiting
+  // for a ticket to exist, and carried forward rather than re-minted once one is created).
   async function recordWalkInCheckinMarker(
     storeId: number,
     clientId: number,
     clientName: string | null,
     digits: string,
-  ): Promise<void> {
+  ): Promise<{ id: number; token: string; ticketNumber: number }> {
     const { rows: recentCheckin } = await pool.query(
-      `SELECT id FROM kiosk_checkins
+      `SELECT id, token, ticket_number FROM kiosk_checkins
        WHERE store_id = $1 AND client_id = $2 AND appointment_id IS NULL
          AND status IN ('waiting', 'called')
          AND created_at >= NOW() - INTERVAL '${nailTickets.CHECKIN_MARKER_HOURS} hours'
        LIMIT 1`,
       [storeId, clientId]
     );
-    if (recentCheckin.length > 0) return;
+    if (recentCheckin.length > 0) return { id: recentCheckin[0].id, token: recentCheckin[0].token, ticketNumber: recentCheckin[0].ticket_number };
     const token = crypto.randomBytes(24).toString("hex");
-    await pool.query(
-      `INSERT INTO kiosk_checkins (store_id, client_id, phone, client_name, token, status)
-       VALUES ($1, $2, $3, $4, $5, 'waiting')`,
-      [storeId, clientId, digits, clientName, token]
+    const ticketNumber = await storage.getNextTicketNumber(storeId);
+    const { rows: inserted } = await pool.query(
+      `INSERT INTO kiosk_checkins (store_id, client_id, phone, client_name, token, status, ticket_number)
+       VALUES ($1, $2, $3, $4, $5, 'waiting', $6) RETURNING id`,
+      [storeId, clientId, digits, clientName, token, ticketNumber]
     );
     void logActivityEvent({
       storeId,
@@ -21568,6 +22740,47 @@ or
     try {
       broadcastNotification({ type: "kiosk_checkin_created", storeId } as any);
     } catch { /* the calendar also polls */ }
+    return { id: inserted[0].id, token, ticketNumber };
+  }
+
+  // Already checked in? A checked-in / in-service appointment from today (or late yesterday), or an
+  // open walk-in marker. Shared by the staff Check-In sheet (/api/nail/checkin) and the kiosk /
+  // front-desk lookup so neither adds a second waiting entry or prints a second slip.
+  async function isClientAlreadyCheckedIn(storeId: number, clientId: number, tz: string): Promise<boolean> {
+    const [here, marker] = await Promise.all([
+      pool.query(
+        `SELECT id FROM appointments
+          WHERE store_id = $1 AND customer_id = $2
+            AND (status = 'started' OR (status = 'confirmed' AND checked_in_at IS NOT NULL))
+            AND (date AT TIME ZONE $3)::date >= ((NOW() AT TIME ZONE $3)::date - 1)
+          LIMIT 1`,
+        [storeId, clientId, tz],
+      ),
+      pool.query(
+        `SELECT id FROM kiosk_checkins
+          WHERE store_id = $1 AND client_id = $2 AND appointment_id IS NULL
+            AND status IN ('waiting','called') AND created_at > NOW() - INTERVAL '${nailTickets.CHECKIN_MARKER_HOURS} hours'
+          LIMIT 1`,
+        [storeId, clientId],
+      ),
+    ]);
+    return here.rows.length > 0 || marker.rows.length > 0;
+  }
+
+  // `todayCount` — purely the display number on a printed check-in slip's black bar ("you're the
+  // Nth check-in today"), not used for lookup. Same number on every device (POS Check-In sheet,
+  // kiosk, front-desk screen): today's checked-in appointments plus walk-in markers that don't
+  // have an appointment yet. A marker that already points at an appointment (a kiosk check-in, or a
+  // walk-in whose ticket was created) is left out so that visit isn't counted twice.
+  async function countTodayCheckins(storeId: number, tz: string): Promise<number> {
+    const { rows } = await pool.query(
+      `SELECT
+         (SELECT COUNT(*) FROM kiosk_checkins WHERE store_id = $1 AND appointment_id IS NULL AND (created_at AT TIME ZONE $2)::date = (NOW() AT TIME ZONE $2)::date)
+         + (SELECT COUNT(*) FROM appointments WHERE store_id = $1 AND checked_in_at IS NOT NULL AND (checked_in_at AT TIME ZONE $2)::date = (NOW() AT TIME ZONE $2)::date)
+         AS n`,
+      [storeId, tz],
+    );
+    return Number(rows[0]?.n ?? 0);
   }
 
   // The check-in itself, shared by the kiosk / front-desk lookup (client typed their number) and the staff
@@ -21587,7 +22800,7 @@ or
 
     // Search appointments by phone — matches via client_phones E.164 last-10-digit comparison.
     const { rows: apptRows } = await pool.query(`
-      SELECT a.id, a.date, a.status, a.service_id, a.client_requested_staff,
+      SELECT a.id, a.date, a.status, a.service_id, a.staff_id, a.client_requested_staff, a.ticket_number,
              s.name  AS service_name,
              st.name AS staff_name,
              st.avatar_thumb_url AS staff_avatar_thumb
@@ -21611,11 +22824,19 @@ or
     let todayAppointment = null;
     if (apptRows.length > 0) {
       const appt = apptRows[0];
-      // Mark the appointment as checked in immediately
-      await pool.query(
-        `UPDATE appointments SET status = 'confirmed', checked_in_at = NOW() WHERE id = $1`,
-        [appt.id]
+      // Every printed check-in slip needs a ticket number. Pre-booked appointments
+      // commonly have no number yet, and the web print bridge deliberately skips a
+      // request when it is null. Allocate it atomically with the check-in update.
+      const proposedTicketNumber = appt.ticket_number ?? await storage.getNextTicketNumber(store.id);
+      // Mark the appointment as checked in immediately.
+      const { rows: checkedInRows } = await pool.query(
+        `UPDATE appointments
+         SET status = 'confirmed', checked_in_at = NOW(), ticket_number = COALESCE(ticket_number, $2)
+         WHERE id = $1
+         RETURNING ticket_number`,
+        [appt.id, proposedTicketNumber]
       );
+      const ticketNumber = checkedInRows[0]?.ticket_number ?? proposedTicketNumber;
       // On check-in the TURN system hands the booking to the next tech in
       // line — unless the client requested this specific stylist.
       if (!appt.client_requested_staff) {
@@ -21629,6 +22850,18 @@ or
           });
         } catch (turnErr: any) {
           console.error("[kiosk/lookup] turn reassign failed:", turnErr?.message);
+        }
+      } else if (appt.staff_id) {
+        // The client asked for this technician and is now here: hold them, so the line does not
+        // hand them a walk-in while this client waits to start. They keep their place.
+        try {
+          await mutateTurnPreferences(store.id, (turn) => {
+            const lockedIds: number[] = Array.isArray(turn.lockedStaffIds) ? (turn.lockedStaffIds as any[]).map(Number).filter(Number.isFinite) : [];
+            return lockedIds.includes(Number(appt.staff_id)) ? null : { lockedStaffIds: [...lockedIds, Number(appt.staff_id)] };
+          });
+          broadcastTurnEligibilityChanged(store.id);
+        } catch (turnErr: any) {
+          console.error("[kiosk/lookup] holding the requested technician failed:", turnErr?.message);
         }
       }
       broadcastAppointmentStatus({ appointmentId: appt.id, storeId: store.id, status: "confirmed", source: "manual" });
@@ -21644,6 +22877,7 @@ or
       });
       todayAppointment = {
         id:                  appt.id,
+        ticketNumber,
         serviceName:         appt.service_name       ?? "Appointment",
         staffName:           appt.staff_name         ?? null,
         staffAvatarThumbUrl: appt.staff_avatar_thumb ?? null,
@@ -21660,9 +22894,10 @@ or
       // once the real appointment is created. No expires_at, so this is
       // excluded from the public queue/wait-estimate math (kiosk/availability),
       // which only counts real waitlist tickets.
-      await recordWalkInCheckinMarker(store.id, client.id, client.fullName ?? null, digits);
+      const marker = await recordWalkInCheckinMarker(store.id, client.id, client.fullName ?? null, digits);
+      return { todayAppointment, checkin: marker };
     }
-    return todayAppointment;
+    return { todayAppointment, checkin: null };
   }
 
   app.post("/api/public/kiosk/:slug/lookup", async (req, res) => {
@@ -21676,6 +22911,8 @@ or
 
       const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
       if (!store) return res.status(404).json({ error: "Store not found" });
+      // Reads a client by phone and checks them in: only from a device this salon set up (lib/kioskAccess.ts).
+      if (!(await kioskGate(req, res, store as any))) return;
 
       // Normalise to last 10 digits — matches both 10-digit input and E.164 stored values.
       const digits = String(phone).replace(/\D/g, "").slice(-10);
@@ -21715,7 +22952,37 @@ or
         });
       }
 
-      const todayAppointment = await performClientCheckin(store, client, digits);
+      // Already checked in (e.g. typed their number a second time) — don't add a second waiting
+      // entry, and tell the screen so it doesn't print a second slip.
+      const storeTz = (store as any).timezone || "UTC";
+      const alreadyCheckedIn = await isClientAlreadyCheckedIn(store.id, client.id, storeTz);
+      const { todayAppointment, checkin } = alreadyCheckedIn
+        ? { todayAppointment: null, checkin: null }
+        : await performClientCheckin(store, client, digits);
+      const todayCount = alreadyCheckedIn ? undefined : await countTodayCheckins(store.id, storeTz);
+      // Already here on a ticket (a booking checked in today, or a ticket in service): the kiosk stops and
+      // says so. An open marker alone means they typed their number and walked away — the kiosk carries on.
+      const alreadyOnTicket = alreadyCheckedIn && (await pool.query(
+        `SELECT 1 FROM appointments
+          WHERE store_id = $1 AND customer_id = $2
+            AND (status = 'started' OR (status = 'confirmed' AND checked_in_at IS NOT NULL))
+            AND (date AT TIME ZONE $3)::date >= ((NOW() AT TIME ZONE $3)::date - 1)
+          LIMIT 1`,
+        [store.id, client.id, storeTz],
+      )).rows.length > 0;
+
+      // Smart Check-In: for a walk-in the salon knows, what their history suggests for today (lib/smartCheckin.ts).
+      // Never blocks a check-in: any failure simply means no suggestion.
+      let smart: Awaited<ReturnType<typeof smartCheckinFor>> | null = null;
+      if (!todayAppointment && !alreadyOnTicket) {
+        try {
+          const [settingsRow] = await db.select({ preferences: storeSettings.preferences }).from(storeSettings).where(eq(storeSettings.storeId, store.id));
+          const ks = (settingsRow?.preferences ? JSON.parse(settingsRow.preferences as string) : {}).kioskSettings ?? {};
+          if (ks.smartCheckin !== false) smart = await smartCheckinFor(store.id, client.id, storeTz);
+        } catch (smartErr: any) {
+          console.error("[kiosk/lookup] smart check-in failed:", smartErr?.message);
+        }
+      }
 
       return res.json({
         found: true,
@@ -21726,6 +22993,11 @@ or
           totalVisits:   (client as any).totalVisits   ?? 0,
         },
         todayAppointment,
+        checkin,
+        alreadyCheckedIn,
+        alreadyOnTicket,
+        todayCount,
+        smart,
       });
     } catch (err) {
       console.error("[kiosk/lookup]", err);
@@ -21775,6 +23047,7 @@ or
 
       const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
       if (!store) return res.status(404).json({ error: "Store not found" });
+      if (!(await kioskGate(req, res, store as any))) return;
 
       let client = await storage.searchCustomerByPhone(digits, store.id);
       const isNew = !client;
@@ -21828,9 +23101,10 @@ or
       // The front-desk check-in flow (no ticket open) sends checkin:true — a brand-new
       // client who just typed their name must land on staff's Arrived list exactly
       // like a returning client does in /lookup.
+      let checkinMarker: { id: number; token: string; ticketNumber: number } | null = null;
       if (checkin === true && !apptId && client) {
         try {
-          await recordWalkInCheckinMarker(
+          checkinMarker = await recordWalkInCheckinMarker(
             store.id,
             client.id,
             ((client as any).fullName ?? (client as any).name ?? normalizePersonName(name)) || null,
@@ -21840,12 +23114,17 @@ or
           console.warn("[kiosk/rewards-signup] check-in marker failed:", e?.message);
         }
       }
+      const todayCount = checkinMarker
+        ? await countTodayCheckins(store.id, (store as any).timezone || "UTC").catch(() => undefined)
+        : undefined;
 
       const result = {
         found: !isNew,
         isNew,
         clientId: client!.id,
         linkedAppointmentId,
+        checkin: checkinMarker,
+        todayCount,
         name: (client as any)?.name ?? normalizePersonName(name),
         loyaltyPoints: Number((client as any)?.loyaltyPoints ?? 0),
       };
@@ -21877,23 +23156,45 @@ or
   app.post("/api/public/kiosk/:slug/checkin", async (req, res) => {
     try {
       const { slug } = req.params;
-      const { clientId, clientName, phone, services: selectedServices, addons: rawAddons, staffId: requestedStaffId,
+      const { clientId: requestedClientId, clientName, phone, services: rawSelectedServices, addons: rawAddons, staffId: requestedStaffId,
               nailSizeId: rawNailSizeId, nailShapeId: rawNailShapeId, nailArtEffectId: rawNailArtEffectId } = req.body;
       const toIdOrNull = (v: unknown) => (v != null && Number.isFinite(Number(v)) ? Number(v) : null);
       const nailSizeId = toIdOrNull(rawNailSizeId);
       const nailShapeId = toIdOrNull(rawNailShapeId);
       const nailArtEffectId = toIdOrNull(rawNailArtEffectId);
-      // Normalise add-ons: coerce null / non-array payloads to an empty array
-      const selectedAddons: any[] = Array.isArray(rawAddons) ? rawAddons : [];
-
       const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
       if (!store) return res.status(404).json({ error: "Store not found" });
+      if (!(await kioskGate(req, res, store as any, { kioskOnly: true }))) return;
 
-      if (!selectedServices?.length) return res.status(400).json({ error: "Select at least one service" });
+      // What is being booked comes from this salon's catalog: the browser only says which services,
+      // options and add-ons. Names, prices and durations are the catalog's (lib/kioskAccess.ts).
+      const rawServiceList: unknown[] = Array.isArray(rawSelectedServices) ? rawSelectedServices : [];
+      if (!rawServiceList.length) return res.status(400).json({ error: "Select at least one service" });
+      const verified = await verifyKioskSelection(store.id, rawServiceList, Array.isArray(rawAddons) ? rawAddons : []);
+      if (!verified.ok) return res.status(400).json({ error: verified.error });
+      const selectedServices: any[] = verified.services;
+      const selectedAddons: any[] = verified.addons;
+      const primaryServiceId = selectedServices[0].id;
 
-      const primaryServiceId = Number(selectedServices[0]?.id);
-      if (!Number.isFinite(primaryServiceId)) {
-        return res.status(400).json({ error: "Invalid service selection" });
+      // A new client arrives with no clientId, just the name and number they typed. Find them by that
+      // number (same rule as /rewards-signup), or create them, so the ticket carries their name and phone —
+      // otherwise the ticket is created with no client and shows as "Walk-in" to staff.
+      let clientId = requestedClientId;
+      // A client id from the browser counts only if it is this salon's client; otherwise resolve by phone.
+      if (clientId != null) {
+        const ownClient = Number.isInteger(Number(clientId))
+          ? await pool.query(`SELECT id FROM clients WHERE id = $1 AND store_id = $2`, [Number(clientId), store.id])
+          : { rows: [] as any[] };
+        if (!ownClient.rows.length) clientId = null;
+      }
+      if (clientId == null) {
+        const kioskDigits = String(phone ?? "").replace(/\D/g, "").slice(-10);
+        const cleanName = normalizePersonName(clientName);
+        if (kioskDigits.length === 10) {
+          const found = await storage.searchCustomerByPhone(kioskDigits, store.id);
+          if (found) clientId = found.id;
+          else if (cleanName) clientId = (await storage.createCustomer({ name: cleanName, phone: kioskDigits, storeId: store.id } as any)).id;
+        }
       }
 
       const nameToUse: string = normalizePersonName(clientName) || "Walk-in Guest";
@@ -21974,191 +23275,258 @@ or
         }
       }
 
-      // ── 1. Resolve assigned staff ────────────────────────────────────────────
-      // clientRequestedStaff is only true when a specific staff pick passes validation
-      let clientRequestedStaffBool = false;
-      let assignedStaffId: number | null = requestedStaffId ? Number(requestedStaffId) : null;
+      const storeTz = (store as any).timezone || "UTC";
+      let assignedStaffId: number | null = null;
       let assignedStaffName: string | null = null;
+      let appointmentId: number | null = null;
+      let ticketNumber: number | null = null;
 
-      if (assignedStaffId) {
-        // Client picked a specific stylist — validate store ownership and eligibility
-        const [sf] = await db.select({ name: staff.name }).from(staff).where(
-          and(
-            eq(staff.id, assignedStaffId),
-            eq(staff.storeId, store.id),
-            notInArray(staff.status, ["removed", "deactivated"])
-          )
-        );
-        if (sf) {
-          assignedStaffName = sf.name;
-          clientRequestedStaffBool = true;
-        } else {
-          // Cross-store or ineligible staff ID — treat as no-preference
-          console.warn(`[kiosk/checkin] staffId ${assignedStaffId} failed store/eligibility validation for store ${store.id} — falling through to auto-assign`);
-          assignedStaffId = null;
+      // ── A walk-in is a ticket, not an appointment ─────────────────────────────
+      // For every business with a staff screen of its own (/nail, /barber).
+      // Same path as a ticket made on the /nail screen (lib/nailTickets.ts): the client is standing in the
+      // salon, so it is never refused over business hours, a full chair plan or every technician being busy.
+      // TURN gives it to the next technician who can take it now; otherwise it waits, unassigned, and the next
+      // technician to finish picks it up. A technician the client asked for is queued behind their current client.
+      const isBarbershop = /barber/i.test(String((store as any).category ?? ""));
+      const asWalkInTicket = safeClientId !== null && (nailTickets.isNailSalonCategory((store as any).category) || isBarbershop);
+      if (asWalkInTicket) {
+        const wanted = Number.isInteger(Number(requestedStaffId)) && Number(requestedStaffId) > 0 ? Number(requestedStaffId) : null;
+        const ticketInput = {
+          storeId: store.id,
+          clientId: safeClientId!,
+          serviceId: primaryServiceId,
+          addonIds: selectedAddons.map((a: any) => Number(a.id)),
+          nail: nailSizeId || nailShapeId || nailArtEffectId ? { nailSizeId, nailShapeId, nailArtEffectId } : null,
+          // A barbershop's service starts with the hand-over, as on /barber; a nail salon's waits for START.
+          startOnAssign: isBarbershop,
+        };
+        let made = wanted
+          ? await nailTickets.createNailTicket(nailDeps, { ...ticketInput, staffId: wanted })
+          : await nailTickets.createNailTicket(nailDeps, { ...ticketInput, autoAssign: true });
+        // The technician they asked for can't take it (left, or doesn't do this service): the line decides instead.
+        if (!made.ok && wanted) made = await nailTickets.createNailTicket(nailDeps, { ...ticketInput, autoAssign: true });
+        if (!made.ok) {
+          console.warn(`[kiosk/checkin] walk-in ticket refused for store ${store.id}: ${made.message}`);
+          return res.status(made.status).json({ error: made.message });
         }
-      }
+        appointmentId = made.data.appointmentId;
+        ticketNumber = made.data.ticketNumber;
+        assignedStaffId = made.data.staffId;
+        assignedStaffName = made.data.staffName;
+        if (wanted && made.data.staffId === wanted) {
+          await db.update(appointments).set({ clientRequestedStaff: true } as any).where(eq(appointments.id, appointmentId));
+        }
+      } else {
+        // ── 1. Resolve assigned staff ────────────────────────────────────────────
+        // clientRequestedStaff is only true when a specific staff pick passes validation
+        let clientRequestedStaffBool = false;
+        assignedStaffId = requestedStaffId ? Number(requestedStaffId) : null;
 
-      if (!assignedStaffId) {
-        // No preference — use autoAssignTechnician (same engine as manual bookings)
-        try {
-          const result = await autoAssignTechnician({
+        if (assignedStaffId) {
+          // Client picked a specific stylist — validate store ownership and eligibility
+          const [sf] = await db.select({ name: staff.name }).from(staff).where(
+            and(
+              eq(staff.id, assignedStaffId),
+              eq(staff.storeId, store.id),
+              notInArray(staff.status, ["removed", "deactivated"])
+            )
+          );
+          if (sf) {
+            assignedStaffName = sf.name;
+            clientRequestedStaffBool = true;
+          } else {
+            // Cross-store or ineligible staff ID — treat as no-preference
+            console.warn(`[kiosk/checkin] staffId ${assignedStaffId} failed store/eligibility validation for store ${store.id} — falling through to auto-assign`);
+            assignedStaffId = null;
+          }
+        }
+
+        if (!assignedStaffId) {
+          // No preference — use autoAssignTechnician (same engine as manual bookings)
+          try {
+            const result = await autoAssignTechnician({
+              storeId: store.id,
+              serviceId: primaryServiceId,
+              date: now,
+              duration: totalDuration,
+            });
+            if (result.assigned && result.staffId) {
+              assignedStaffId = result.staffId;
+              assignedStaffName = result.staffName;
+            }
+          } catch (assignErr) {
+            console.warn("[kiosk/checkin] autoAssign error:", assignErr);
+          }
+          // If autoAssignTechnician finds no eligible staff, assignedStaffId stays null.
+          // Unlike a manual booking, a kiosk walk-in with no assigned staff has no
+          // calendar to validate against — the booking engine cannot confirm
+          // availability for "nobody", and creating the appointment anyway would
+          // reintroduce the exact double-booking risk this route is being fixed
+          // to prevent. So this is now a hard rejection rather than a silent
+          // unassigned appointment.
+        }
+
+        if (!assignedStaffId) {
+          console.warn(`[kiosk/checkin] no technician available for store ${store.id} — rejecting check-in`);
+          return res.status(409).json({
+            error: "No technician is available to check you in right now — please see the front desk.",
+          });
+        }
+
+        // ── 2. Create walk-in appointment through the booking engine ─────────────
+        // Every appointment-creation path in this codebase (public online booking,
+        // AI receptionist, admin) routes through bookingEngine.ts so business
+        // hours, same-day rules, and staff-conflict detection are enforced
+        // consistently. The kiosk route previously bypassed this entirely with a
+        // raw INSERT — no availability check, no conflict detection — which is
+        // how a walk-in could end up double-booked against an existing
+        // appointment for the same technician.
+
+        // === RESOURCE ASSIGNMENT (pedicure chairs / nail stations) ===
+        // Same rule as the other two booking paths: pedicure services need a
+        // pedicure chair, other nail services need a nail station.
+        let assignedResourceId: number | null = null;
+        const primaryServiceRecord = await storage.getService(primaryServiceId);
+        const requiredResourceType = getRequiredResourceType(primaryServiceRecord?.category, primaryServiceRecord?.name);
+        if (requiredResourceType) {
+          const resourceAssignment = await autoAssignResource({
             storeId: store.id,
-            serviceId: primaryServiceId,
+            resourceType: requiredResourceType,
             date: now,
             duration: totalDuration,
           });
-          if (result.assigned && result.staffId) {
-            assignedStaffId = result.staffId;
-            assignedStaffName = result.staffName;
+          if (!resourceAssignment.assigned || !resourceAssignment.resourceId) {
+            // Store hasn't configured any resources of this type — don't block
+            // the walk-in over it, only reject on a genuine full-capacity conflict.
+            if (!resourceAssignment.noResourcesConfigured) {
+              console.warn(`[kiosk/checkin] no ${requiredResourceType} available for store ${store.id} — rejecting check-in`);
+              return res.status(409).json({ error: resourceAssignment.reason });
+            }
+          } else {
+            assignedResourceId = resourceAssignment.resourceId;
           }
-        } catch (assignErr) {
-          console.warn("[kiosk/checkin] autoAssign error:", assignErr);
         }
-        // If autoAssignTechnician finds no eligible staff, assignedStaffId stays null.
-        // Unlike a manual booking, a kiosk walk-in with no assigned staff has no
-        // calendar to validate against — the booking engine cannot confirm
-        // availability for "nobody", and creating the appointment anyway would
-        // reintroduce the exact double-booking risk this route is being fixed
-        // to prevent. So this is now a hard rejection rather than a silent
-        // unassigned appointment.
-      }
 
-      if (!assignedStaffId) {
-        console.warn(`[kiosk/checkin] no technician available for store ${store.id} — rejecting check-in`);
-        return res.status(409).json({
-          error: "No technician is available to check you in right now — please see the front desk.",
-        });
-      }
-
-      // ── 2. Create walk-in appointment through the booking engine ─────────────
-      // Every appointment-creation path in this codebase (public online booking,
-      // AI receptionist, admin) routes through bookingEngine.ts so business
-      // hours, same-day rules, and staff-conflict detection are enforced
-      // consistently. The kiosk route previously bypassed this entirely with a
-      // raw INSERT — no availability check, no conflict detection — which is
-      // how a walk-in could end up double-booked against an existing
-      // appointment for the same technician.
-      const storeTz = (store as any).timezone || "UTC";
-
-      // === RESOURCE ASSIGNMENT (pedicure chairs / nail stations) ===
-      // Same rule as the other two booking paths: pedicure services need a
-      // pedicure chair, other nail services need a nail station.
-      let assignedResourceId: number | null = null;
-      const primaryServiceRecord = await storage.getService(primaryServiceId);
-      const requiredResourceType = getRequiredResourceType(primaryServiceRecord?.category, primaryServiceRecord?.name);
-      if (requiredResourceType) {
-        const resourceAssignment = await autoAssignResource({
+        const slotCheck = await validateBookingSlot({
           storeId: store.id,
-          resourceType: requiredResourceType,
-          date: now,
-          duration: totalDuration,
+          timezone: storeTz,
+          startTime: now,
+          durationMinutes: totalDuration,
+          staffId: assignedStaffId,
+          resourceId: assignedResourceId,
+          // Kiosk check-ins are inherently same-day/right-now walk-ins — the
+          // same-day and past-date guards exist for advance online booking, not
+          // for someone standing at the salon.
+          allowSameDay: true,
         });
-        if (!resourceAssignment.assigned || !resourceAssignment.resourceId) {
-          // Store hasn't configured any resources of this type — don't block
-          // the walk-in over it, only reject on a genuine full-capacity conflict.
-          if (!resourceAssignment.noResourcesConfigured) {
-            console.warn(`[kiosk/checkin] no ${requiredResourceType} available for store ${store.id} — rejecting check-in`);
-            return res.status(409).json({ error: resourceAssignment.reason });
-          }
-        } else {
-          assignedResourceId = resourceAssignment.resourceId;
+        if (!slotCheck.ok) {
+          console.warn(`[kiosk/checkin] slot validation failed for store ${store.id} staff ${assignedStaffId}: ${slotCheck.error.code} — ${slotCheck.error.message}`);
+          return res.status(409).json({ error: slotCheck.error.message });
         }
-      }
 
-      const slotCheck = await validateBookingSlot({
-        storeId: store.id,
-        timezone: storeTz,
-        startTime: now,
-        durationMinutes: totalDuration,
-        staffId: assignedStaffId,
-        resourceId: assignedResourceId,
-        // Kiosk check-ins are inherently same-day/right-now walk-ins — the
-        // same-day and past-date guards exist for advance online booking, not
-        // for someone standing at the salon.
-        allowSameDay: true,
-      });
-      if (!slotCheck.ok) {
-        console.warn(`[kiosk/checkin] slot validation failed for store ${store.id} staff ${assignedStaffId}: ${slotCheck.error.code} — ${slotCheck.error.message}`);
-        return res.status(409).json({ error: slotCheck.error.message });
-      }
-
-      // Re-verify no client-side duplicate slipped in while staff assignment /
-      // slot validation were running (those steps make their own DB
-      // round-trips, so time has passed since the first check above), then
-      // hand off to atomicCreateBooking for the authoritative staff-conflict
-      // check + INSERT — all inside ONE transaction, so the client-dedupe
-      // advisory lock stays held through the actual write instead of being
-      // released beforehand. atomicCreateBooking itself takes a second
-      // advisory lock scoped to (storeId, staffId) before its conflict check,
-      // which serializes concurrent writers for that technician and closes
-      // the write-skew race a plain SELECT-then-INSERT would leave open.
-      let appointmentId: number | null = null;
-      let ticketNumber: number | null = null;
-      let rejection: { status: number; body: Record<string, unknown> } | null = null;
-      try {
-        const created = await db.transaction(async (tx) => {
-          const dupeId = await checkDuplicateCheckin(tx);
-          if (dupeId) {
-            console.warn(`[kiosk/checkin] duplicate check-in caught at insert time for client ${safeClientId} at store ${store.id} — appointment ${dupeId} already active`);
-            rejection = { status: 409, body: { error: "You're already checked in", appointmentId: dupeId } };
-            return null;
-          }
-
-          const createResult = await atomicCreateBooking({
-            storeId: store.id,
-            timezone: storeTz,
-            startTime: now,
-            durationMinutes: totalDuration,
-            staffId: assignedStaffId!,
-            serviceId: primaryServiceId,
-            customerId: safeClientId,
-            status: "confirmed",
-            checkedInAt: now,
-            clientRequestedStaff: clientRequestedStaffBool,
-            resourceId: assignedResourceId,
-          }, tx);
-
-          if (!createResult.ok) {
-            console.warn(`[kiosk/checkin] atomicCreateBooking rejected for store ${store.id} staff ${assignedStaffId}: ${createResult.error.code} — ${createResult.error.message}`);
-            rejection = { status: 409, body: { error: createResult.error.message } };
-            return null;
-          }
-          return createResult.data;
-        });
-        appointmentId = created?.id ?? null;
-        ticketNumber = created?.ticketNumber ?? null;
-      } catch (apptErr: any) {
-        console.warn("[kiosk/checkin] appt creation failed:", apptErr?.message);
-        return res.status(500).json({ error: "Could not create check-in appointment" });
-      }
-      if (rejection) {
-        const r = rejection as { status: number; body: Record<string, unknown> };
-        return res.status(r.status).json(r.body);
-      }
-
-      // ── 2b. Snapshot the nail configuration (length / shape / effect) ───────
-      // Best-effort: a failure here must not undo a completed check-in.
-      // setAppointmentNailSelection also bumps appointments.duration by the
-      // length/shape/effect duration adjustments (same as the POS path).
-      if (appointmentId && (nailSizeId || nailShapeId || nailArtEffectId)) {
+        // Re-verify no client-side duplicate slipped in while staff assignment /
+        // slot validation were running (those steps make their own DB
+        // round-trips, so time has passed since the first check above), then
+        // hand off to atomicCreateBooking for the authoritative staff-conflict
+        // check + INSERT — all inside ONE transaction, so the client-dedupe
+        // advisory lock stays held through the actual write instead of being
+        // released beforehand. atomicCreateBooking itself takes a second
+        // advisory lock scoped to (storeId, staffId) before its conflict check,
+        // which serializes concurrent writers for that technician and closes
+        // the write-skew race a plain SELECT-then-INSERT would leave open.
+        let rejection: { status: number; body: Record<string, unknown> } | null = null;
         try {
-          await nailConfig.setAppointmentNailSelection(appointmentId, { nailSizeId, nailShapeId, nailArtEffectId });
-        } catch (nailErr: any) {
-          console.warn("[kiosk/checkin] nail-selection snapshot failed:", nailErr?.message);
+          const created = await db.transaction(async (tx) => {
+            const dupeId = await checkDuplicateCheckin(tx);
+            if (dupeId) {
+              console.warn(`[kiosk/checkin] duplicate check-in caught at insert time for client ${safeClientId} at store ${store.id} — appointment ${dupeId} already active`);
+              rejection = { status: 409, body: { error: "You're already checked in", appointmentId: dupeId } };
+              return null;
+            }
+
+            const createResult = await atomicCreateBooking({
+              storeId: store.id,
+              timezone: storeTz,
+              startTime: now,
+              durationMinutes: totalDuration,
+              staffId: assignedStaffId!,
+              serviceId: primaryServiceId,
+              customerId: safeClientId,
+              status: "confirmed",
+              checkedInAt: now,
+              clientRequestedStaff: clientRequestedStaffBool,
+              resourceId: assignedResourceId,
+            }, tx);
+
+            if (!createResult.ok) {
+              console.warn(`[kiosk/checkin] atomicCreateBooking rejected for store ${store.id} staff ${assignedStaffId}: ${createResult.error.code} — ${createResult.error.message}`);
+              rejection = { status: 409, body: { error: createResult.error.message } };
+              return null;
+            }
+            return createResult.data;
+          });
+          appointmentId = created?.id ?? null;
+          ticketNumber = created?.ticketNumber ?? null;
+        } catch (apptErr: any) {
+          console.warn("[kiosk/checkin] appt creation failed:", apptErr?.message);
+          return res.status(500).json({ error: "Could not create check-in appointment" });
+        }
+        if (rejection) {
+          const r = rejection as { status: number; body: Record<string, unknown> };
+          return res.status(r.status).json(r.body);
+        }
+
+        // ── 2b. Snapshot the nail configuration (length / shape / effect) ───────
+        // Best-effort: a failure here must not undo a completed check-in.
+        // setAppointmentNailSelection also bumps appointments.duration by the
+        // length/shape/effect duration adjustments (same as the POS path).
+        if (appointmentId && (nailSizeId || nailShapeId || nailArtEffectId)) {
+          try {
+            await nailConfig.setAppointmentNailSelection(appointmentId, { nailSizeId, nailShapeId, nailArtEffectId });
+          } catch (nailErr: any) {
+            console.warn("[kiosk/checkin] nail-selection snapshot failed:", nailErr?.message);
+          }
         }
       }
 
       // ── 3. Create kiosk check-in record ─────────────────────────────────────
+      // A returning client already got an open walk-in marker when they typed their number
+      // (/kiosk/:slug/lookup → recordWalkInCheckinMarker). Take that marker over for this visit
+      // instead of inserting a second row, or the client shows twice on staff's Quick List (and
+      // twice in countTodayCheckins). Same resolution rule as the staff walk-in ticket flow
+      // (lib/nailTickets.ts). No open marker (new client, or none recent) → insert as before.
       const e164KioskPhone = phone ? (toE164US(phone) ?? phone) : null;
-      await pool.query(
-        `INSERT INTO kiosk_checkins
-           (store_id, client_id, phone, client_name, services, add_ons, token, appointment_id, status, staff_id, assigned_staff_name)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, 'waiting', $9, $10)`,
-        [store.id, clientId ?? null, e164KioskPhone, nameToUse,
+      let checkinToken = token;
+      const { rows: resolvedMarker } = safeClientId === null ? { rows: [] as { token: string }[] } : await pool.query(
+        `UPDATE kiosk_checkins
+            SET appointment_id = $3, phone = COALESCE($4, phone), client_name = COALESCE($5, client_name),
+                services = $6::jsonb, add_ons = $7::jsonb, staff_id = $8, assigned_staff_name = $9,
+                ticket_number = COALESCE($10, ticket_number), status = 'waiting'
+          WHERE id = (
+            SELECT id FROM kiosk_checkins
+             WHERE store_id = $1 AND client_id = $2 AND (appointment_id IS NULL OR appointment_id = $3)
+               AND status IN ('waiting', 'called')
+               AND created_at >= NOW() - INTERVAL '${nailTickets.CHECKIN_MARKER_HOURS} hours'
+             ORDER BY (appointment_id IS NOT NULL) DESC, created_at DESC
+             LIMIT 1
+          )
+          RETURNING token`,
+        [store.id, safeClientId, appointmentId, e164KioskPhone, nameToUse || null,
           JSON.stringify(selectedServices), JSON.stringify(selectedAddons),
-          token, appointmentId, assignedStaffId, assignedStaffName]
+          assignedStaffId, assignedStaffName, ticketNumber]
       );
+      if (resolvedMarker.length > 0) {
+        checkinToken = resolvedMarker[0].token;
+      } else {
+        await pool.query(
+          `INSERT INTO kiosk_checkins
+             (store_id, client_id, phone, client_name, services, add_ons, token, appointment_id, status, staff_id, assigned_staff_name)
+           VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, 'waiting', $9, $10)`,
+          [store.id, clientId ?? null, e164KioskPhone, nameToUse,
+            JSON.stringify(selectedServices), JSON.stringify(selectedAddons),
+            token, appointmentId, assignedStaffId, assignedStaffName]
+        );
+      }
 
       void logActivityEvent({
         storeId: store.id,
@@ -22168,11 +23536,17 @@ or
           : `${nameToUse || "A walk-in"} checked in`,
       });
 
+      // Smart Check-In: what the kiosk suggested during this check-in, and whether it was taken.
+      void recordOffers(store.id, safeClientId, appointmentId, req.body?.offers).catch((e) => console.error("[kiosk/checkin] recording offers failed:", e?.message));
+
+      const todayCount = await countTodayCheckins(store.id, storeTz).catch(() => undefined);
+
       return res.json({
         success: true,
-        token,
+        token: checkinToken,
         appointmentId,
         ticketNumber,
+        todayCount,
         clientName: nameToUse,
         services: selectedServices,
         addons: selectedAddons,
@@ -22186,6 +23560,100 @@ or
   });
 
   // POST /api/public/kiosk/:slug/missed-you-sms — send booking link SMS after walk-in declines wait
+  // POST /api/public/kiosk/:slug/frontdesk-checkin — the /frontdesk screen's second step. The client has
+  // already checked in by phone (a waiting entry, see /lookup); here they say what KIND of service they
+  // came for (a catalog category). No ticket is made and no service is put on anything: the waiting entry
+  // keeps the category, and the next technician in TURN order who performs that category and is in and
+  // free is given the client (lib/nailTickets.ts). When nobody qualifies right now the client simply keeps
+  // waiting, and is handed to the first qualified technician who becomes free.
+  app.post("/api/public/kiosk/:slug/frontdesk-checkin", async (req, res) => {
+    try {
+      const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, req.params.slug));
+      if (!store) return res.status(404).json({ error: "Store not found" });
+      if (!(await kioskGate(req, res, store as any))) return;
+      if (!nailTickets.isNailSalonCategory((store as any).category)) return res.status(400).json({ error: "Service check-in is not available here." });
+      const body = z.object({
+        clientId: z.number().int().positive(),
+        categoryId: z.number().int().positive().nullable(),
+        categoryName: z.string().trim().min(1).max(120),
+      }).safeParse(req.body);
+      if (!body.success) return res.status(400).json({ error: "Choose what you came in for" });
+      const { clientId } = body.data;
+      const [client] = await db.select().from(clients).where(and(eq(clients.id, clientId), eq(clients.storeId, store.id))).limit(1);
+      if (!client) return res.status(404).json({ error: "Client not found" });
+
+      // The category is this salon's own, shown to clients, with at least one active service — never
+      // whatever the browser sent. Its name comes from the catalog.
+      let category: { id: number | null; name: string };
+      if (body.data.categoryId != null) {
+        const [cat] = await db.select({ id: serviceCategories.id, name: serviceCategories.name, hidden: serviceCategories.hiddenFromPublic })
+          .from(serviceCategories).where(and(eq(serviceCategories.id, body.data.categoryId), eq(serviceCategories.storeId, store.id))).limit(1);
+        if (!cat || cat.hidden) return res.status(404).json({ error: "That isn't offered right now. Please choose again." });
+        category = { id: cat.id, name: cat.name };
+      } else {
+        category = { id: null, name: body.data.categoryName };
+      }
+      const offered = await pool.query(
+        `SELECT 1 FROM services s
+          WHERE s.store_id = $1 AND s.is_active = true AND COALESCE(s.hidden_from_public, false) = false
+            AND (($2::int IS NOT NULL AND s.category_id = $2::int)
+              OR ($2::int IS NULL AND s.category_id IS NULL AND LOWER(TRIM(s.category)) = LOWER(TRIM($3))))
+          LIMIT 1`,
+        [store.id, category.id, category.name],
+      );
+      if (offered.rowCount === 0) return res.status(404).json({ error: "That isn't offered right now. Please choose again." });
+
+      const answer = (m: any) => ({
+        ok: true, ticketNumber: m.ticket_number ?? null, categoryName: m.requested_category ?? category.name,
+        staffName: m.status === "called" ? m.assigned_staff_name ?? null : null,
+        // assigned = a qualified technician is free and has them · waiting = nobody qualified is free yet
+        status: m.status === "called" && m.staff_id != null ? "assigned" : "waiting",
+      });
+      const findMarker = async () => (await pool.query(
+        `SELECT id, ticket_number, status, staff_id, assigned_staff_name, requested_category FROM kiosk_checkins
+          WHERE store_id = $1 AND client_id = $2 AND appointment_id IS NULL AND status IN ('waiting','called')
+            AND created_at > NOW() - INTERVAL '${nailTickets.CHECKIN_MARKER_HOURS} hours'
+          ORDER BY created_at DESC LIMIT 1`,
+        [store.id, client.id],
+      )).rows[0];
+
+      let marker = await findMarker();
+      if (!marker) {
+        // Already has a ticket today (staff made it meanwhile): nothing more to do, and never a second entry.
+        const { rows: open } = await pool.query(
+          `SELECT a.ticket_number, st.name AS staff_name FROM appointments a LEFT JOIN staff st ON st.id = a.staff_id
+            WHERE a.store_id = $1 AND a.customer_id = $2 AND a.status IN ('confirmed','started')
+              AND a.checked_in_at > NOW() - INTERVAL '${nailTickets.CHECKIN_MARKER_HOURS} hours'
+            ORDER BY a.checked_in_at DESC LIMIT 1`,
+          [store.id, client.id],
+        );
+        if (open[0]) return res.json({ ok: true, ticketNumber: open[0].ticket_number ?? null, categoryName: category.name, staffName: open[0].staff_name ?? null, status: open[0].staff_name ? "assigned" : "waiting" });
+        // No entry and no ticket (it expired, or staff took them off the list): check them in again.
+        const { rows: phoneRows } = await pool.query(
+          `SELECT phone_number_e164 FROM client_phones WHERE client_id = $1 ORDER BY is_primary DESC, id LIMIT 1`, [client.id]);
+        const digits = String(phoneRows[0]?.phone_number_e164 ?? "").replace(/\D/g, "").slice(-10);
+        await recordWalkInCheckinMarker(store.id, client.id, client.fullName, digits);
+        marker = await findMarker();
+        if (!marker) return res.status(500).json({ error: "Check-in failed" });
+      }
+      // A technician already has them (a second tap, or a retry after a lost answer): same answer again.
+      if (marker.status === "called" && marker.staff_id != null) return res.json(answer(marker));
+
+      await pool.query(
+        `UPDATE kiosk_checkins SET requested_category_id = $3, requested_category = $4
+          WHERE id = $1 AND store_id = $2 AND appointment_id IS NULL AND status = 'waiting'`,
+        [marker.id, store.id, category.id, category.name],
+      );
+      await nailTickets.assignCheckinByCategory(nailDeps, { storeId: store.id, markerId: Number(marker.id) });
+      broadcastTurnEligibilityChanged(store.id);
+      try { broadcastNotification({ type: "kiosk_checkin_created", storeId: store.id } as any); } catch { /* the board also polls */ }
+      return res.json(answer((await findMarker()) ?? marker));
+    } catch (err) {
+      console.error("[kiosk/frontdesk-checkin]", err);
+      return res.status(500).json({ error: "Check-in failed" });
+    }
+  });
+
   app.post("/api/public/kiosk/:slug/missed-you-sms", async (req, res) => {
     try {
       const { slug } = req.params;
@@ -22197,6 +23665,8 @@ or
 
       const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
       if (!store) return res.status(404).json({ error: "Store not found" });
+      if (!(await kioskGate(req, res, store as any, { kioskOnly: true }))) return;
+      if (!claimMissedYouText(store.id, e164MissedPhone)) return res.json({ success: true, skipped: true });
 
       const bookingLink = `https://certxa.com/book/${slug}`;
       const message = `We're sorry we missed you today! Here is our online booking link to schedule an appointment: ${bookingLink}`;
@@ -22223,6 +23693,7 @@ or
 
       const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
       if (!store) return res.status(404).json({ error: "Store not found" });
+      if (!(await kioskGate(req, res, store as any, { kioskOnly: true }))) return;
 
       const todayStr = new Date().toISOString().split("T")[0];
 
@@ -22243,7 +23714,12 @@ or
 
       // Resolve clientId from E.164 phone via client_phones table (canonical lookup)
       // client_phones has no store_id column — must join through clients table
-      let resolvedClientId: number | null = clientId ?? null;
+      // A client id from the browser counts only if it is this salon's client.
+      let resolvedClientId: number | null = null;
+      if (clientId != null && Number.isInteger(Number(clientId))) {
+        const ownClient = await pool.query(`SELECT id FROM clients WHERE id = $1 AND store_id = $2`, [Number(clientId), store.id]);
+        resolvedClientId = ownClient.rows[0]?.id ?? null;
+      }
       if (!resolvedClientId) {
         const { rows: cRows } = await pool.query(
           `SELECT cp.client_id AS id
@@ -22309,7 +23785,10 @@ or
         FROM appointments
         WHERE store_id = $1
           AND status IN ('confirmed', 'started')
-          AND date >= NOW() - INTERVAL '4 hours'
+          -- In progress now (15 minutes of overrun allowed). It used to count anything confirmed in
+          -- the last 4 hours, so a tech whose ticket nobody closed stayed "busy" for hours.
+          AND date <= NOW()
+          AND date + ((COALESCE(duration, 0) + 15) * INTERVAL '1 minute') >= NOW()
           AND staff_id IS NOT NULL
       `, [store.id]);
       const busyCount: number = Number(busyRows[0]?.count ?? 0);
@@ -22427,6 +23906,11 @@ or
          WHERE kc.token = $1 LIMIT 1`,
         [token]
       );
+      if (!checkinRows.length) return res.status(404).json({ error: "Ticket not found" });
+      // The customer has this same link (the QR on their slip). Only salon staff move a ticket along.
+      if (!(await sessionCoversStore(req, Number(checkinRows[0].store_id)))) {
+        return res.status(403).json({ error: "Only salon staff can change a ticket's status." });
+      }
       await pool.query(`UPDATE kiosk_checkins SET status = $1 WHERE token = $2`, [status, token]);
       // SMS fire-and-forget when client is called to chair and has a phone number
       if (status === "called" && checkinRows.length > 0 && checkinRows[0].phone) {
@@ -22708,13 +24192,12 @@ or
       const staffId = parseInt(req.params.staffId, 10);
       if (!staffId || isNaN(staffId)) return res.status(400).json({ error: "Invalid staffId" });
 
-      const prefs = await getTurnPreferences(storeId);
-      const paused: number[] = Array.isArray((prefs as any).pausedStaffIds)
-        ? (prefs as any).pausedStaffIds.map(Number)
-        : [];
-      const isPaused = paused.includes(staffId);
-      const newPaused = isPaused ? paused.filter((id) => id !== staffId) : [...paused, staffId];
-      await saveTurnPreferences(storeId, { pausedStaffIds: newPaused });
+      let isPaused = false;
+      await mutateTurnPreferences(storeId, (turn) => {
+        const paused: number[] = Array.isArray((turn as any).pausedStaffIds) ? (turn as any).pausedStaffIds.map(Number) : [];
+        isPaused = paused.includes(staffId);
+        return { pausedStaffIds: isPaused ? paused.filter((id) => id !== staffId) : [...paused, staffId] };
+      });
       broadcastTurnEligibilityChanged(storeId);
       return res.json({ success: true, paused: !isPaused });
     } catch (err) {
@@ -22749,6 +24232,7 @@ or
         showServicePrice: ks.showServicePrice !== false,
         showServiceDuration: ks.showServiceDuration !== false,
         dualScreenMode: ks.dualScreenMode === true,
+        smartCheckin: ks.smartCheckin !== false,
       });
     } catch (err) {
       console.error("[kiosk-settings] GET error:", err);
@@ -22762,7 +24246,7 @@ or
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(400).json({ error: "No store selected" });
 
-      const { kioskEnabled, welcomeHeadline, welcomeSubText, loyaltyPromoText, showServicePrice, showServiceDuration, dualScreenMode } = req.body;
+      const { kioskEnabled, welcomeHeadline, welcomeSubText, loyaltyPromoText, showServicePrice, showServiceDuration, dualScreenMode, smartCheckin } = req.body;
 
       const [existing] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
       const currentPrefs = existing?.preferences ? JSON.parse(existing.preferences as string) : {};
@@ -22778,19 +24262,45 @@ or
           showServicePrice: showServicePrice !== false,
           showServiceDuration: showServiceDuration !== false,
           dualScreenMode: dualScreenMode === true,
+          // Left as it was when a caller doesn't send it.
+          smartCheckin: smartCheckin === undefined ? existingKs.smartCheckin !== false : smartCheckin !== false,
         },
       };
-      const newPrefs = JSON.stringify(nextPrefs);
-      if (existing) {
-        await db.update(storeSettings).set({ preferences: newPrefs, updatedAt: new Date() }).where(eq(storeSettings.storeId, storeId));
-      } else {
-        await db.insert(storeSettings).values({ storeId, preferences: newPrefs });
-      }
+      await writeStorePreferences(storeId, currentPrefs, nextPrefs);
 
       return res.json({ success: true });
     } catch (err) {
       console.error("[kiosk-settings] PUT error:", err);
       return res.status(500).json({ error: "Failed to save kiosk settings" });
+    }
+  });
+
+  // POST /api/kiosk/print-claim — a self-service check-in slip relayed from a browser kiosk
+  // (kiosk_print_job) reaches EVERY staff station in the store. Each station with a printer asks
+  // here first; only the first one to claim a job prints it, so the slip comes out once. Redis
+  // makes the claim hold across PM2 workers; without Redis there's one process, so a map is enough.
+  const kioskPrintClaims = new Map<string, number>();
+  app.post("/api/kiosk/print-claim", isAuthenticated, async (req: any, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ error: "No store context" });
+      const jobId = String(req.body?.jobId ?? "");
+      if (!/^[A-Za-z0-9:._-]{1,100}$/.test(jobId)) return res.status(400).json({ error: "Invalid job" });
+      const key = `kioskprint:${storeId}:${jobId}`;
+      const redis = getRedisClient();
+      if (redis) {
+        try {
+          return res.json({ claimed: (await redis.set(key, "1", "EX", 600, "NX")) === "OK" });
+        } catch { /* Redis hiccup — fall through to this process's own map */ }
+      }
+      const now = Date.now();
+      for (const [k, at] of kioskPrintClaims) if (now - at > 600_000) kioskPrintClaims.delete(k);
+      if (kioskPrintClaims.has(key)) return res.json({ claimed: false });
+      kioskPrintClaims.set(key, now);
+      return res.json({ claimed: true });
+    } catch (err) {
+      console.error("[kiosk/print-claim]", err);
+      return res.status(500).json({ error: "Could not claim the print job" });
     }
   });
 
@@ -22804,6 +24314,11 @@ or
       if (!storeId) return res.status(400).json({ error: "No store selected" });
       const { type, registerId, ...payload } = req.body;
       if (!type) return res.status(400).json({ error: "type is required" });
+      // Only the POS ↔ customer-screen messages go through here. Anything else (a booking or payment
+      // notification, a settings change) would be broadcast to the whole salon as if the server had sent it.
+      if (typeof type !== "string" || !/^kiosk_(checkout|checkin)_[a-z_]{1,48}$/.test(type)) {
+        return res.status(400).json({ error: "Unknown event type" });
+      }
       broadcastNotification({ type, storeId, registerId: Number(registerId) || 0, ...payload } as any);
       return res.json({ ok: true });
     } catch (err) {
@@ -22825,10 +24340,29 @@ or
         .from(registers)
         .where(eq(registers.storeId, storeId))
         .orderBy(registers.sortOrder, registers.id);
-      return res.json(rows);
+      // Lazily fill in each row's device-pairing code the first time it's ever read.
+      const withCodes = await Promise.all(rows.map(async (r) => ({
+        ...r,
+        activationCode: r.activationCode ?? (await ensureRegisterActivationCode(r.id)),
+      })));
+      return res.json(withCodes);
     } catch (err) {
       console.error("[GET /api/registers]", err);
       return res.status(500).json({ message: "Failed to fetch registers" });
+    }
+  });
+
+  // The implicit default station's (registerId 0, "POS #1" before a store has any real register
+  // rows) pairing code — separate from the list above since it isn't a `registers` row.
+  app.get("/api/registers/default-code", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const activationCode = await ensureLocationActivationCode(storeId);
+      return res.json({ activationCode });
+    } catch (err) {
+      console.error("[GET /api/registers/default-code]", err);
+      return res.status(500).json({ message: "Failed to fetch activation code" });
     }
   });
 
@@ -22852,10 +24386,17 @@ or
       // leaving POS #1 as a hardcoded registerId-0 concept forever.
       if (existing.length === 0) {
         const created = await db.transaction(async (tx) => {
-          await tx.insert(registers).values({ storeId, name: "POS #1", isDefault: true, sortOrder: 0 });
+          const [posOne] = await tx.insert(registers)
+            .values({ storeId, name: "POS #1", isDefault: true, sortOrder: 0 })
+            .returning();
           const [posTwo] = await tx.insert(registers)
             .values({ storeId, name: "POS #2", sortOrder: 1 })
             .returning();
+          // The tablet and customer screen the salon already had (remembered under station 0, see
+          // routes/stationPairing.ts) stay together as POS #1 instead of both starting over.
+          await tx.update(registerClaims).set({ registerId: posOne.id })
+            .where(and(eq(registerClaims.storeId, storeId), eq(registerClaims.registerId, 0)));
+          await tx.execute(sql`UPDATE frontdesk_screens SET register_id = ${posOne.id} WHERE store_id = ${storeId} AND register_id = 0`);
           return posTwo;
         });
         return res.status(201).json(created);
@@ -22920,7 +24461,10 @@ or
         }
         // Free up its claim too, so the (now-invalid) id can't linger as "in use".
         await tx.delete(registerClaims).where(and(eq(registerClaims.registerId, id), eq(registerClaims.storeId, storeId)));
+        // And its customer screen, which goes back to setup instead of staying linked to a station that is gone.
+        await tx.execute(sql`DELETE FROM frontdesk_screens WHERE store_id = ${storeId} AND register_id = ${id}`);
       });
+      broadcastNotification({ type: "kiosk_checkout_pairing_changed", storeId, registerId: id });
       return res.status(204).end();
     } catch (err) {
       console.error("[DELETE /api/registers/:id]", err);
@@ -22931,7 +24475,9 @@ or
   // === REGISTER CLAIMS (which device currently "owns" each POS station) ────
   // A claim without a heartbeat in the last 15 minutes is stale and treated
   // as free — see migrations/0176_register_claims.sql.
-  const REGISTER_CLAIM_STALE_MS = 15 * 60 * 1000;
+  // Stations are now kept by their tablet (routes/stationPairing.ts), which holds one while it has
+  // been seen in the last 7 days — this matches it, so Settings shows the same "in use" picture.
+  const REGISTER_CLAIM_STALE_MS = 7 * 24 * 60 * 60 * 1000;
 
   app.get("/api/registers/claims", isAuthenticated, async (req, res) => {
     try {
@@ -23143,12 +24689,7 @@ or
           },
         },
       };
-      const newPrefs2 = JSON.stringify(nextPrefs2);
-      if (existing) {
-        await db.update(storeSettings).set({ preferences: newPrefs2, updatedAt: new Date() }).where(eq(storeSettings.storeId, storeId));
-      } else {
-        await db.insert(storeSettings).values({ storeId, preferences: newPrefs2 });
-      }
+      await writeStorePreferences(storeId, currentPrefs, nextPrefs2);
 
       return res.json({ success: true, url: imageUrl, categoryKey });
     } catch (err) {

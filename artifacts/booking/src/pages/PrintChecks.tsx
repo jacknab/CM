@@ -1,5 +1,6 @@
 import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useRef, useCallback, lazy, Suspense, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
@@ -32,16 +33,58 @@ import {
 } from "./PrintChecksCalibration";
 import { BIZ_CHECK_ZONES, MICR_ZONE, PAPER_PROFILES } from "@/lib/checkLayout";
 import { useMicrFont } from "@/hooks/use-micr-font";
+import { MICR_CHAR } from "@/lib/micrFont";
+import type { PayrollYtd } from "@shared/payrollYtd";
 
 // ─── PDF download — lazy-loaded so @react-pdf/renderer doesn't block first paint
 const CheckPDFDownload = lazy(() =>
   import("@/components/pdf/CheckPDFDownload").then(m => ({ default: m.CheckPDFDownload }))
 );
+// ─── Send to the salon's own printer (Certxa Print Agent) — same lazy chunk as the PDF download
+const CheckSendToPrinter = lazy(() =>
+  import("@/components/pdf/CheckPDFDownload").then(m => ({ default: m.CheckSendToPrinter }))
+);
+// ─── Check-printing computers (Certxa Print Agent): add / revoke — shown on the Settings tab
+const PrintAgentComputers = lazy(() =>
+  import("@/components/print-agent/PrintAgentComputers").then(m => ({ default: m.PrintAgentComputers }))
+);
+
+/**
+ * Shows fixed-size content — a true-to-size check sheet, 8.5in wide — shrunk to whatever width is
+ * available, so on a phone the whole check is visible instead of scrolling sideways. Never enlarges.
+ * Screen only: the printed check comes from the separate print area and is not affected.
+ */
+function ScaleToFit({ widthIn, children }: { widthIn: number; children: React.ReactNode }) {
+  const outer = useRef<HTMLDivElement>(null);
+  const inner = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<{ scale: number; height: number | null }>({ scale: 1, height: null });
+  useEffect(() => {
+    const measure = () => {
+      if (!outer.current || !inner.current) return;
+      const scale = Math.min(1, outer.current.clientWidth / (widthIn * 96));
+      const height = Math.round(inner.current.offsetHeight * scale);
+      setBox((prev) => (prev.scale === scale && prev.height === height ? prev : { scale, height }));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (outer.current) observer.observe(outer.current);
+    if (inner.current) observer.observe(inner.current);
+    return () => observer.disconnect();
+  }, [widthIn]);
+  return (
+    <div ref={outer} style={{ width: "100%", height: box.height ?? undefined, overflow: "hidden" }}>
+      <div ref={inner} style={{ width: `${widthIn}in`, transform: `scale(${box.scale})`, transformOrigin: "top left" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type PayrollRun = {
   id: number; storeId: number; periodStart: string; periodEnd: string;
+  payDate: string | null;
   status: string; totalCommission: string; contractorCount: number;
   notes: string | null; createdBy: string | null; createdAt: string; finalizedAt: string | null;
 };
@@ -51,9 +94,12 @@ type DailyBreakdownEntry = { date: string; commission: number; tips: number; cou
 type PayrollCheckItem = {
   id: number; staffId: number; staffName: string; commissionRate: string;
   appointmentCount: number; serviceRevenue: string; addonRevenue: string;
-  totalRevenue: string; commissionAmount: string; tipsAmount: number;
+  productRevenue: string; totalRevenue: string; commissionAmount: string;
+  serviceCommission: string; productCommission: string; tipsAmount: number;
+  otherEarnings: number; boothRent: number; otherDeductions: number;
   hoursWorked: number; totalPay: number; status: string; notes: string | null;
   dailyBreakdown?: DailyBreakdownEntry[];
+  ytd?: PayrollYtd | null;
 };
 
 type CheckData = {
@@ -145,6 +191,16 @@ function fmt$(n: string | number) {
   return `${Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+// Old runs may carry a next-day pay date (or none). A check must not be dated
+// before the agreed one-week payroll lag; keep later scheduled dates intact.
+function checkPayDate(run: PayrollRun): string {
+  const end = new Date(`${run.periodEnd}T00:00:00Z`);
+  end.setUTCDate(end.getUTCDate() + 7);
+  const earliest = end.toISOString().slice(0, 10);
+  const scheduled = run.payDate?.slice(0, 10);
+  return scheduled && scheduled > earliest ? scheduled : earliest;
+}
+
 const ONES = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
   "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
 const TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
@@ -196,7 +252,69 @@ function buildFractional(routing: string): string {
 // the Certxa Payroll Check Specification v1.0.
 // Check size: 8.5" × 3.667"  (standard business payroll check stock)
 
-function CheckFace({
+/**
+ * The salon's authorized signature (private, served only to this store's owner/manager — see
+ * GET /api/check-signature). null when none is on file, so the check keeps its plain line.
+ * Loaded once per page and kept in memory as a data: URL (the site's CSP allows data: images but not
+ * blob: ones), so printing never waits on the network.
+ */
+function useCheckSignature(): string | null {
+  const { data } = useQuery<string | null>({
+    queryKey: ["/api/check-signature"],
+    queryFn: async () => {
+      const res = await fetch("/api/check-signature", { credentials: "include", cache: "no-store" });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      if (!blob.type.startsWith("image/")) return null;
+      return await new Promise<string | null>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    },
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+  });
+  return data ?? null;
+}
+
+/** The owner's nudge (CSS px on the check, + = lower, ±20) and size (0.7–1.3×) — GET /api/check-signature/placement. */
+type SignaturePlacement = { offsetPx: number; scale: number };
+const DEFAULT_SIGNATURE_PLACEMENT: SignaturePlacement = { offsetPx: 0, scale: 1 };
+const SIGNATURE_LIMITS = { offsetPx: 20, offsetStep: 2, minScale: 0.7, maxScale: 1.3, scaleStep: 0.05 } as const;
+
+function useCheckSignaturePlacement(): SignaturePlacement {
+  const { data } = useQuery<SignaturePlacement>({
+    queryKey: ["/api/check-signature/placement"],
+    queryFn: async () => {
+      const res = await fetch("/api/check-signature/placement", { credentials: "include", cache: "no-store" });
+      if (!res.ok) return DEFAULT_SIGNATURE_PLACEMENT;
+      return res.json();
+    },
+    staleTime: Infinity,
+    retry: false,
+  });
+  return data ?? DEFAULT_SIGNATURE_PLACEMENT;
+}
+
+/**
+ * Where the signature sits, in check coordinates (inches from the check's top-left): centred on the
+ * signature line (5.20"–7.70", so centre 6.45"), 2.2" × 0.56" at 100%, its bottom 0.09" below the line
+ * (2.44") so the ink dips through it like a pen. Growing/shrinking keeps that centre and bottom fixed,
+ * so the signature stays on the line. `originX/Y` shift it for a preview that shows only part of the check.
+ */
+function signatureBox(p: SignaturePlacement, originX = 0, originY = 0): React.CSSProperties {
+  const w = 2.2 * p.scale, h = 0.56 * p.scale;
+  return {
+    position: "absolute", left: `${6.45 - w / 2 - originX}in`, width: `${w}in`, height: `${h}in`,
+    top: `calc(${2.53 - h - originY}in + ${p.offsetPx}px)`,
+    objectFit: "contain", objectPosition: "center bottom", pointerEvents: "none",
+  };
+}
+
+export function CheckFace({
   checkNumber, date, payee, payeeStreet, payeeCityStateZip,
   amount, memo, periodStart, periodEnd,
   store, routing, account, isPrint = false,
@@ -217,11 +335,22 @@ function CheckFace({
   const suppressBg   = isPreprinted && isPrint;
   const storeCity    = [store.city, store.state, store.postcode].filter(Boolean).join(", ");
   const micrRouting  = routing.replace(/\D/g, "").padEnd(9, "0").slice(0, 9);
-  const micrAccount  = account.replace(/\D/g, "").padEnd(10, "0").slice(0, 10);
+  // The account number goes in the MICR line exactly as entered (digits only, however many
+  // there are). It used to be right-padded with zeros and cut to 10 digits, which printed a
+  // different account number for anything that was not exactly 10 digits long. Shorter numbers are
+  // padded with blanks on the left instead, so the routing and check-number fields stay where they
+  // have always printed. A number longer than 10 digits makes the line longer.
+  // (Same rule as micrAccountField in components/pdf/CheckDocumentPDF.tsx, which is not imported
+  // here so this page does not pull in the PDF renderer. Non-breaking spaces, because ordinary
+  // ones collapse in HTML.)
+  const micrAccountDigits = account.replace(/\D/g, "");
+  const micrAccount  = micrAccountDigits.length ? micrAccountDigits.padStart(10, "\u00a0") : "0000000000";
   // 6-digit check number — matches displayed check number format exactly (ANSI X9.27)
   const micrCheck    = checkNumber.replace(/\D/g, "").padStart(6, "0").slice(-6);
   const fractional   = buildFractional(routing);
   const micrFont     = useMicrFont();
+  const signatureUrl = useCheckSignature();
+  const signaturePlacement = useCheckSignaturePlacement();
   const writtenAmt   = buildWrittenAmount(amount);
   // Dollar sign lives inside the protected amount string (***$206.93) — commercial standard
   const numericAmt   = `***${fmt$(amount)}`;
@@ -365,6 +494,12 @@ function CheckFace({
         <div style={{ minHeight: "1.2em", color: "#374151" }}>{payeeCityStateZip ?? "\u00A0"}</div>
       </div>
 
+      {/* Authorized signature — sits on the line (its ink dips just below it, like a pen signature), centred
+          over the line's 2.5" span. Only when the salon has one on file. */}
+      {signatureUrl && (
+        <img src={signatureUrl} alt="" aria-hidden="true" data-testid="check-signature" style={signatureBox(signaturePlacement)} />
+      )}
+
       {/* Signature line — extended 0.50" longer for commercial standard appearance */}
       <div style={{ position: "absolute", left: "5.20in", right: "0.80in", top: "2.44in", borderBottom: "1.5px solid #111827" }} />
 
@@ -393,7 +528,7 @@ function CheckFace({
           so physical inch coordinates map exactly to the spec.
           ANSI X9.27 business check field order:
             [Routing Transit] → [Account Number] → [Check Serial #]
-          ⑈ (U+2448) = On-Us symbol   ⑆ (U+2446) = Transit symbol
+          ⑈ On-Us / ⑆ Transit — emitted as the font's letter glyphs (see MICR_CHAR)
 
           ABA / ANSI X9.27 clear-band spec:
             • Bottom of MICR characters: 3/16" (0.1875") from check bottom edge
@@ -417,7 +552,7 @@ function CheckFace({
         letterSpacing: micrFont.isLoaded ? "0" : "0.1em",
         userSelect: "all",
       }}>
-        ⑆{micrRouting}⑆&nbsp;&nbsp;{micrAccount}⑈&nbsp;&nbsp;⑈{micrCheck}⑈
+        {MICR_CHAR.TRANSIT}{micrRouting}{MICR_CHAR.TRANSIT}&nbsp;&nbsp;{micrAccount}{MICR_CHAR.ONUS}&nbsp;&nbsp;{MICR_CHAR.ONUS}{micrCheck}{MICR_CHAR.ONUS}
       </div>
     </div>
   );
@@ -434,13 +569,13 @@ function StubTableRow({
   label, period, ytd, bold = false, topBorder = false,
 }: { label: string; period: string; ytd: string; bold?: boolean; topBorder?: boolean }) {
   const base = bold
-    ? "flex items-center text-[8px] font-bold text-slate-800"
-    : "flex items-center text-[8px] text-slate-600";
+    ? "statement-row flex items-center text-[8px] font-bold text-slate-800"
+    : "statement-row flex items-center text-[8px] text-slate-600";
   return (
     <div className={cn(base, topBorder && "border-t border-slate-300 pt-0.5 mt-0.5")}>
       <span className="flex-1 leading-tight">{label}</span>
       <span className="w-[52px] text-right font-mono tabular-nums">{period}</span>
-      <span className="w-[40px] text-right font-mono tabular-nums text-slate-400">{ytd}</span>
+      <span className="w-[65px] text-right font-mono tabular-nums text-slate-500">{ytd}</span>
     </div>
   );
 }
@@ -449,12 +584,12 @@ function CheckStub({
   checkNumber, payee, amount, periodStart, periodEnd,
   earningsRows, label, store, isPrint = false,
   // New: granular earnings data for the redesigned three-column stub
-  serviceCommission, tipAmount, appointmentCount, totalRevenue,
+  serviceCommission, tipAmount, appointmentCount, totalRevenue, ytd,
   payeeStreet, payeeCityStateZip, payDate,
 }: {
   checkNumber: string; payee: string; amount: number;
   periodStart?: string | null; periodEnd?: string | null;
-  earningsRows: Array<{ label: string; amount: number | string; sub?: string; indent?: boolean }>;
+  earningsRows: Array<{ label: string; amount: number | string; sub?: string; indent?: boolean; deduction?: boolean; ytd?: number | null }>;
   label: string; store: StoreInfo; isPrint?: boolean;
   dailyBreakdown?: DailyBreakdownEntry[];
   // Optional extras — passed from payroll tab for richer layout
@@ -462,18 +597,27 @@ function CheckStub({
   tipAmount?: number;
   appointmentCount?: number;
   totalRevenue?: number;
+  ytd?: PayrollYtd | null;
   payeeStreet?: string | null;
   payeeCityStateZip?: string | null;
   payDate?: string | null;
 }) {
   // Derive values — fall back to earningsRows when new props not provided
   const svcComm = serviceCommission
-    ?? (earningsRows.find(r => r.label === "Commission") ? Number(earningsRows.find(r => r.label === "Commission")!.amount) : 0);
+    ?? Number(earningsRows.find(r => r.label === "Service Commissions")?.amount ?? earningsRows.find(r => r.label === "Commission")?.amount ?? 0);
+  const productComm = Number(earningsRows.find(r => r.label === "Product Commissions")?.amount ?? 0);
   const tips = tipAmount
     ?? (earningsRows.find(r => r.label === "Tips") ? Number(earningsRows.find(r => r.label === "Tips")!.amount) : 0);
-  const grossEarnings = svcComm + tips;
-  const totalDeductions = 0; // deduction data not yet in API
+  const otherEarnings = Number(earningsRows.find(r => r.label === "Other Earnings")?.amount ?? 0);
+  const boothRent = Math.abs(Number(earningsRows.find(r => r.label === "Booth Rent")?.amount ?? 0));
+  const otherDeductions = Math.abs(Number(earningsRows.find(r => r.label === "Other Deductions")?.amount ?? 0));
+  const grossEarnings = svcComm + productComm + tips + otherEarnings;
+  // The salon's recurring deductions, one row each (name, this period, year to date).
+  const itemized = earningsRows.filter(r => r.deduction).map(r => ({ label: r.label, amount: Math.abs(Number(r.amount)), ytd: r.ytd }));
+  const otherYtd = earningsRows.find(r => r.label === "Other Deductions")?.ytd;
+  const totalDeductions = boothRent + itemized.reduce((s, r) => s + r.amount, 0) + otherDeductions;
   const netPay = amount;
+  const ytdAmount = (key: keyof PayrollYtd) => ytd ? fmt$(ytd[key]) : "—";
 
   const avgTicket = (appointmentCount && appointmentCount > 0 && totalRevenue)
     ? Number(totalRevenue) / appointmentCount
@@ -497,55 +641,59 @@ function CheckStub({
       )}
 
       {/* ── Full-width header ─────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-x-3 px-4 pt-2 pb-1.5 border-b-2 border-slate-800">
+      <div className="statement-header grid grid-cols-3 gap-x-3 px-4 pt-2 pb-1.5 border-b-2 border-slate-800">
         {/* Left: business */}
         <div className="flex flex-col gap-[2px]" style={{ marginLeft: "-12px" }}>
-          <div className="text-[9.5px] font-bold text-slate-900 uppercase leading-tight tracking-wide">{store.name}</div>
-          {storeAddr && <div className="text-[7.5px] text-slate-500 leading-tight">{storeAddr}</div>}
+          <div className="statement-name text-[9.5px] font-bold text-slate-900 uppercase leading-tight tracking-wide">{store.name}</div>
+          {storeAddr && <div className="statement-detail text-[7.5px] text-slate-500 leading-tight">{storeAddr}</div>}
         </div>
         {/* Center: title + metadata */}
         <div className="flex flex-col gap-[2px] text-center">
-          <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-800">Earnings Statement</div>
-          <div className="text-[7px] text-slate-500">{label}</div>
-          {payDate && <div className="text-[7.5px] text-slate-600">Pay Date: <span className="font-semibold">{fmtDate(payDate)}</span></div>}
+          <div className="statement-title text-[9px] font-bold uppercase tracking-[0.2em] text-slate-800">Earnings Statement</div>
+          <div className="statement-detail text-[7px] text-slate-500">{label}</div>
+          {payDate && <div className="statement-detail text-[7.5px] text-slate-600">Pay Date: <span className="font-semibold">{fmtDate(payDate)}</span></div>}
           {(periodStart || periodEnd) && (
-            <div className="text-[7.5px] text-slate-600">Period: <span className="font-semibold">{fmtShort(periodStart)} – {fmtShort(periodEnd)}</span></div>
+            <div className="statement-detail text-[7.5px] text-slate-600">Period: <span className="font-semibold">{fmtShort(periodStart)} – {fmtShort(periodEnd)}</span></div>
           )}
-          <div className="text-[7.5px] text-slate-600">Check No: <span className="font-mono font-semibold">{checkNumber}</span></div>
+          <div className="statement-detail text-[7.5px] text-slate-600">Check No: <span className="font-mono font-semibold">{checkNumber}</span></div>
         </div>
         {/* Right: employee */}
         <div className="flex flex-col gap-[2px] text-right">
-          <div className="text-[9.5px] font-bold text-slate-900 leading-tight">{payee}</div>
-          {payeeStreet && <div className="text-[7.5px] text-slate-500 leading-tight">{payeeStreet}</div>}
-          {payeeCityStateZip && <div className="text-[7.5px] text-slate-500 leading-tight">{payeeCityStateZip}</div>}
+          <div className="statement-name text-[9.5px] font-bold text-slate-900 leading-tight">{payee}</div>
+          {payeeStreet && <div className="statement-detail text-[7.5px] text-slate-500 leading-tight">{payeeStreet}</div>}
+          {payeeCityStateZip && <div className="statement-detail text-[7.5px] text-slate-500 leading-tight">{payeeCityStateZip}</div>}
         </div>
       </div>
 
       {/* ── Three-column body ─────────────────────────────────────── */}
-      <div className="grid px-4 pt-1.5 pb-2" style={{ gridTemplateColumns: "1fr 1px 0.72fr" }}>
+      <div className="statement-body grid px-4 pt-1.5 pb-2" style={{ gridTemplateColumns: "1fr 1px 0.72fr" }}>
 
         {/* ═══ Left: EARNINGS + DEDUCTIONS tables ════════════════════ */}
         <div className="pr-3">
           {/* Column headers */}
-          <div className="flex items-center text-[6.5px] uppercase tracking-wide font-bold text-slate-400 mb-0.5">
+          <div className="statement-section flex items-center text-[6.5px] uppercase tracking-wide font-bold text-slate-400 mb-0.5">
             <span className="flex-1" />
             <span className="w-[52px] text-right">This Period</span>
-            <span className="w-[40px] text-right">YTD</span>
+            <span className="w-[65px] text-right">YTD</span>
           </div>
 
           {/* EARNINGS section */}
-          <p className="text-[6.5px] uppercase tracking-wide font-bold text-slate-500 bg-slate-100 px-1 py-px mb-0.5">Earnings</p>
-          <StubTableRow label="Service Commissions" period={`${fmt$(svcComm)}`} ytd="—" />
-          <StubTableRow label="Product Commissions" period="—" ytd="—" />
-          <StubTableRow label="Credit Card Tips" period={tips > 0 ? `${fmt$(tips)}` : "—"} ytd="—" />
-          <StubTableRow label="Total Gross Earnings" period={`${fmt$(grossEarnings)}`} ytd="—" bold topBorder />
+          <p className="statement-section text-[6.5px] uppercase tracking-wide font-bold text-slate-500 px-1 py-px mb-0.5">Earnings</p>
+          <StubTableRow label="Service Commissions" period={`${fmt$(svcComm)}`} ytd={ytdAmount("serviceCommission")} />
+          <StubTableRow label="Product Commissions" period={productComm > 0 ? `${fmt$(productComm)}` : "—"} ytd={ytdAmount("productCommission")} />
+          <StubTableRow label="Credit Card Tips" period={tips > 0 ? `${fmt$(tips)}` : "—"} ytd={ytdAmount("tips")} />
+          <StubTableRow label="Other Earnings" period={otherEarnings > 0 ? `${fmt$(otherEarnings)}` : "—"} ytd={ytdAmount("otherEarnings")} />
+          <StubTableRow label="Total Gross Earnings" period={`${fmt$(grossEarnings)}`} ytd={ytdAmount("grossEarnings")} bold topBorder />
 
           {/* DEDUCTIONS section */}
-          <p className="text-[6.5px] uppercase tracking-wide font-bold text-slate-500 bg-slate-100 px-1 py-px mt-1.5 mb-0.5">Deductions</p>
-          <StubTableRow label="Booth Rent" period="—" ytd="—" />
-          <StubTableRow label="Product Charges" period="—" ytd="—" />
-          <StubTableRow label="Loan Repayment" period="—" ytd="—" />
-          <StubTableRow label="Total Deductions" period={`${fmt$(totalDeductions)}`} ytd="—" bold topBorder />
+          <p className="statement-section text-[6.5px] uppercase tracking-wide font-bold text-slate-500 px-1 py-px mt-1.5 mb-0.5">Deductions</p>
+          {/* Booth rent is listed only when there is some: this period, or earlier this year. */}
+          {(boothRent > 0 || (ytd?.boothRent ?? 0) > 0) && <StubTableRow label="Booth Rent" period={boothRent > 0 ? `${fmt$(boothRent)}` : "—"} ytd={ytdAmount("boothRent")} />}
+          {itemized.map((d) => <StubTableRow key={d.label} label={d.label} period={d.amount > 0 ? `${fmt$(d.amount)}` : "—"} ytd={d.ytd != null ? fmt$(d.ytd) : "—"} />)}
+          {(itemized.length === 0 || otherDeductions > 0 || (otherYtd ?? 0) > 0) && (
+            <StubTableRow label="Other Deductions" period={otherDeductions > 0 ? `${fmt$(otherDeductions)}` : "—"} ytd={otherYtd != null ? fmt$(otherYtd) : ytdAmount("otherDeductions")} />
+          )}
+          <StubTableRow label="Total Deductions" period={`${fmt$(totalDeductions)}`} ytd={ytdAmount("totalDeductions")} bold topBorder />
         </div>
 
         {/* ═══ Vertical divider ══════════════════════════════════════ */}
@@ -554,48 +702,49 @@ function CheckStub({
         {/* ═══ Right: PAY SUMMARY + PERFORMANCE ══════════════════════ */}
         <div className="pl-3">
           {/* PAY SUMMARY */}
-          <p className="text-[6.5px] uppercase tracking-wide font-bold text-slate-500 bg-slate-100 px-1 py-px mb-1">Pay Summary</p>
-          <div className="flex justify-between text-[8px] text-slate-600 mb-0.5">
+          <p className="statement-section text-[6.5px] uppercase tracking-wide font-bold text-slate-500 px-1 py-px mb-1">Pay Summary</p>
+          <div className="statement-row flex justify-between text-[8px] text-slate-600 mb-0.5">
             <span>Gross Earnings</span>
-            <span className="font-mono tabular-nums">${fmt$(grossEarnings)}</span>
+            <span className="font-mono tabular-nums">{fmt$(grossEarnings)}</span>
           </div>
-          <div className="flex justify-between text-[8px] text-slate-600 mb-1 border-b border-slate-200 pb-1">
+          <div className="statement-row flex justify-between text-[8px] text-slate-600 mb-1 border-b border-slate-200 pb-1">
             <span>Total Deductions</span>
-            <span className="font-mono tabular-nums">${fmt$(totalDeductions)}</span>
+            <span className="font-mono tabular-nums">{fmt$(totalDeductions)}</span>
           </div>
           {/* NET PAY — hero number */}
-          <div className="flex items-baseline justify-between mb-2">
+          <div className="statement-net flex items-baseline justify-between mb-2">
             <span className="text-[7.5px] uppercase tracking-widest font-bold text-slate-700">Net Pay</span>
-            <span className="text-[16px] font-bold text-slate-900 font-mono leading-none">${fmt$(netPay)}</span>
+            <span className="text-[16px] font-bold text-slate-900 font-mono leading-none">{fmt$(netPay)}</span>
           </div>
+          {ytd && <div className="statement-row flex justify-between text-[8px] text-slate-600 mb-2"><span>YTD Net Pay</span><span className="font-mono tabular-nums">{fmt$(ytd.netPay)}</span></div>}
 
           {/* PERFORMANCE SUMMARY */}
           {(appointmentCount !== undefined || totalRevenue !== undefined) && (
             <>
-              <p className="text-[6.5px] uppercase tracking-wide font-bold text-slate-500 bg-slate-100 px-1 py-px mb-1">Performance</p>
+              <p className="statement-section text-[6.5px] uppercase tracking-wide font-bold text-slate-500 px-1 py-px mb-1">Performance</p>
               {appointmentCount !== undefined && (
-                <div className="flex justify-between text-[8px] text-slate-600 mb-0.5">
+                <div className="statement-row flex justify-between text-[8px] text-slate-600 mb-0.5">
                   <span>Services Completed</span>
                   <span className="font-mono tabular-nums font-semibold">{appointmentCount}</span>
                 </div>
               )}
               {totalRevenue !== undefined && (
-                <div className="flex justify-between text-[8px] text-slate-600 mb-0.5">
+                <div className="statement-row flex justify-between text-[8px] text-slate-600 mb-0.5">
                   <span>Total Sales Generated</span>
-                  <span className="font-mono tabular-nums">${fmt$(totalRevenue)}</span>
+                  <span className="font-mono tabular-nums">{fmt$(totalRevenue)}</span>
                 </div>
               )}
               {avgTicket !== null && (
-                <div className="flex justify-between text-[8px] text-slate-600 mb-0.5">
+                <div className="statement-row flex justify-between text-[8px] text-slate-600 mb-0.5">
                   <span>Average Ticket</span>
-                  <span className="font-mono tabular-nums">${fmt$(avgTicket)}</span>
+                  <span className="font-mono tabular-nums">{fmt$(avgTicket)}</span>
                 </div>
               )}
             </>
           )}
 
           {/* Thank-you note */}
-          <p className="text-[6.5px] text-slate-400 italic mt-1.5 leading-tight">
+          <p className="statement-note text-[6.5px] text-slate-400 italic mt-1.5 leading-tight">
             Thank you for your continued service.
           </p>
         </div>
@@ -632,11 +781,12 @@ function PrintSheet({
   payeeStreet, payeeCityStateZip,
   paperType = "standard", dailyBreakdown,
   serviceCommission, tipAmount, appointmentCount, totalRevenue,
+  ytd,
 }: {
   checkNumber: string; date: string; payee: string; amount: number;
   memo?: string | null; periodStart?: string | null; periodEnd?: string | null;
   store: StoreInfo; routing: string; account: string;
-  earningsRows: Array<{ label: string; amount: number | string; sub?: string; indent?: boolean }>;
+  earningsRows: Array<{ label: string; amount: number | string; sub?: string; indent?: boolean; deduction?: boolean; ytd?: number | null }>;
   stubCount: "one" | "two";
   paperLayout: PaperLayout;
   bankName?: string; bankAddress?: string; bankCity?: string; bankPhone?: string;
@@ -647,6 +797,7 @@ function PrintSheet({
   tipAmount?: number;
   appointmentCount?: number;
   totalRevenue?: number;
+  ytd?: PayrollYtd | null;
 }) {
   const checkZone = (
     <div className="print-zone print-zone-check">
@@ -667,6 +818,7 @@ function PrintSheet({
         periodStart={periodStart} periodEnd={periodEnd}
         earningsRows={earningsRows} label="Employee Copy" store={store} isPrint
         serviceCommission={serviceCommission} tipAmount={tipAmount}
+        ytd={ytd}
         appointmentCount={appointmentCount} totalRevenue={totalRevenue}
         payeeStreet={payeeStreet} payeeCityStateZip={payeeCityStateZip}
         payDate={date}
@@ -680,6 +832,7 @@ function PrintSheet({
         periodStart={periodStart} periodEnd={periodEnd}
         earningsRows={earningsRows} label="Employer Copy" store={store} isPrint
         serviceCommission={serviceCommission} tipAmount={tipAmount}
+        ytd={ytd}
         appointmentCount={appointmentCount} totalRevenue={totalRevenue}
         payeeStreet={payeeStreet} payeeCityStateZip={payeeCityStateZip}
         payDate={date}
@@ -1330,12 +1483,12 @@ function BatchPrintTab({ settings }: { settings: PrintSettings }) {
 
       {/* ── Prior batch history ───────────────────────────────────────────── */}
       {batches.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-x-auto">
           <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
             <History className="w-4 h-4 text-slate-500" />
             <p className="text-xs font-bold text-slate-600 uppercase tracking-wide">Recent Print Batches</p>
           </div>
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="bg-slate-50/50 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
                 <th className="text-left px-5 py-3">Batch ID</th>
@@ -1463,6 +1616,207 @@ function SettingsSection({ title, children }: { title: string; children: React.R
   );
 }
 
+/**
+ * Check signature — the owner signs plain paper, photographs it (phone camera or a saved photo), and the
+ * server turns it into a clean transparent signature (POST /api/check-signature/process). They see the
+ * result sitting on a signature line, then save it (PUT) — or retake. Printed checks use it right away.
+ */
+/**
+ * Shrink a phone photo before it's uploaded: the server only works at 2000px anyway, and a full-size
+ * 12–48 MP phone photo is several MB — slow to send over a salon's phone signal (iPhone uploads were
+ * dropping before they finished). Drawn on white, so a transparent PNG or an iPhone HEIC photo leaves
+ * the device as an ordinary JPEG. If the browser can't decode it, the original file is sent as-is.
+ */
+async function shrinkPhotoForUpload(file: File): Promise<Blob> {
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const scale = Math.min(1, 2000 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close?.();
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    return blob ?? file;
+  } catch {
+    return file;
+  }
+}
+
+const blobToDataUrl = (blob: Blob) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => (typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("unreadable")));
+  reader.onerror = () => reject(reader.error ?? new Error("unreadable"));
+  reader.readAsDataURL(blob);
+});
+
+function CheckSignatureSection() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const current = useCheckSignature();
+  const savedPlacement = useCheckSignaturePlacement();
+  const [placement, setPlacement] = useState<SignaturePlacement>(savedPlacement);
+  useEffect(() => { setPlacement(savedPlacement); }, [savedPlacement]);
+  const placementChanged = placement.offsetPx !== savedPlacement.offsetPx || placement.scale !== savedPlacement.scale;
+  const nudge = (px: number) => setPlacement((p) => ({ ...p, offsetPx: Math.max(-SIGNATURE_LIMITS.offsetPx, Math.min(SIGNATURE_LIMITS.offsetPx, p.offsetPx + px)) }));
+  const resize = (step: number) => setPlacement((p) => ({ ...p, scale: Math.round(Math.max(SIGNATURE_LIMITS.minScale, Math.min(SIGNATURE_LIMITS.maxScale, p.scale + step)) * 20) / 20 }));
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [busy, setBusy] = useState<null | "process" | "save" | "remove" | "placement">(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const readError = async (res: Response, fallback: string) => {
+    const data = await res.json().catch(() => null);
+    return data?.error || data?.message || fallback;
+  };
+
+  const onPhoto = async (file: File | undefined) => {
+    if (!file) return;
+    setError(null); setPreview(null); setBusy("process");
+    try {
+      const body = new FormData();
+      body.append("photo", await shrinkPhotoForUpload(file), "signature.jpg");
+      const res = await fetch("/api/check-signature/process", { method: "POST", credentials: "include", body });
+      if (!res.ok) { setError(await readError(res, "Couldn't read the signature in that photo.")); return; }
+      // The server replies with the cleaned PNG itself; keep it as a data: URL (the CSP allows data:, not blob:).
+      setPreview(await blobToDataUrl(await res.blob()));
+    } catch {
+      setError("Couldn't upload the photo. Check the connection and try again.");
+    } finally {
+      setBusy(null);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const save = async () => {
+    if (!preview) return;
+    setBusy("save"); setError(null);
+    try {
+      const res = await fetch("/api/check-signature", {
+        method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: preview }),
+      });
+      if (!res.ok) { setError(await readError(res, "Couldn't save the signature.")); return; }
+      setPreview(null);
+      await qc.invalidateQueries({ queryKey: ["/api/check-signature"] });
+      toast({ title: "Signature saved", description: "It now prints on the signature line of your checks." });
+    } catch {
+      setError("Couldn't save the signature. Check the connection and try again.");
+    } finally { setBusy(null); }
+  };
+
+  const savePlacement = async () => {
+    setBusy("placement"); setError(null);
+    try {
+      const res = await fetch("/api/check-signature/placement", {
+        method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(placement),
+      });
+      if (!res.ok) { setError(await readError(res, "Couldn't save the position and size.")); return; }
+      qc.setQueryData(["/api/check-signature/placement"], await res.json());
+      toast({ title: "Position and size saved", description: "Your checks print the signature this way now." });
+    } catch {
+      setError("Couldn't save the position and size. Check the connection and try again.");
+    } finally { setBusy(null); }
+  };
+
+  const remove = async () => {
+    if (!window.confirm("Remove the signature? Checks will print with a blank signature line.")) return;
+    setBusy("remove"); setError(null);
+    try {
+      const res = await fetch("/api/check-signature", { method: "DELETE", credentials: "include" });
+      if (!res.ok) { setError(await readError(res, "Couldn't remove the signature.")); return; }
+      await qc.invalidateQueries({ queryKey: ["/api/check-signature"] });
+      await qc.invalidateQueries({ queryKey: ["/api/check-signature/placement"] });
+      toast({ title: "Signature removed" });
+    } catch {
+      setError("Couldn't remove the signature. Check the connection and try again.");
+    } finally { setBusy(null); }
+  };
+
+  const shown = preview ?? current;
+  return (
+    <SettingsSection title="Check Signature">
+      <p className="text-sm text-slate-600">
+        Sign your name in dark pen on plain white paper, then take a photo of it — straight on, in good light, with the signature filling most of the photo. We clean it up and print it on the signature line of your checks.
+      </p>
+
+      {/* The signature line exactly as it prints — the check's own geometry (the 3" × 1.05" around the line,
+          from 4.95" / 1.75" on the check), enlarged 1.5× so it's easy to see. */}
+      <div className="rounded-xl border border-slate-200 bg-white py-3 flex justify-center overflow-hidden" data-testid="check-signature-preview">
+        <div style={{ zoom: 1.5, position: "relative", width: "3in", height: "1.05in" }}>
+          {shown
+            ? <img src={shown} alt="Signature" style={signatureBox(placement, 4.95, 1.75)} data-testid="check-signature-preview-img" />
+            : <span className="absolute inset-x-0 text-center text-[8px] text-slate-400" style={{ top: "0.45in" }}>No signature — checks print a blank line</span>}
+          <div style={{ position: "absolute", left: "0.25in", width: "2.5in", top: "0.69in", borderBottom: "1.5px solid #111827" }} />
+          <div style={{ position: "absolute", left: "0.25in", width: "2.5in", top: "0.79in", fontSize: "6pt", color: "#374151", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+            Authorized Signature
+          </div>
+        </div>
+      </div>
+
+      {shown && (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2" data-testid="check-signature-adjust">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-slate-500 w-14">Position</span>
+            <Button variant="outline" size="sm" className="rounded-lg h-8 px-2.5" onClick={() => nudge(-SIGNATURE_LIMITS.offsetStep)}
+              disabled={placement.offsetPx <= -SIGNATURE_LIMITS.offsetPx} aria-label="Move signature up" data-testid="check-signature-up">▲ Up</Button>
+            <Button variant="outline" size="sm" className="rounded-lg h-8 px-2.5" onClick={() => nudge(SIGNATURE_LIMITS.offsetStep)}
+              disabled={placement.offsetPx >= SIGNATURE_LIMITS.offsetPx} aria-label="Move signature down" data-testid="check-signature-down">▼ Down</Button>
+            <span className="text-xs tabular-nums text-slate-500 w-16" data-testid="check-signature-offset">
+              {placement.offsetPx === 0 ? "centered" : `${Math.abs(placement.offsetPx)}px ${placement.offsetPx < 0 ? "up" : "down"}`}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-slate-500 w-14">Size</span>
+            <Button variant="outline" size="sm" className="rounded-lg h-8 w-8 p-0" onClick={() => resize(-SIGNATURE_LIMITS.scaleStep)}
+              disabled={placement.scale <= SIGNATURE_LIMITS.minScale} aria-label="Make signature smaller" data-testid="check-signature-smaller">−</Button>
+            <Button variant="outline" size="sm" className="rounded-lg h-8 w-8 p-0" onClick={() => resize(SIGNATURE_LIMITS.scaleStep)}
+              disabled={placement.scale >= SIGNATURE_LIMITS.maxScale} aria-label="Make signature bigger" data-testid="check-signature-bigger">+</Button>
+            <span className="text-xs tabular-nums text-slate-500 w-10" data-testid="check-signature-scale">{Math.round(placement.scale * 100)}%</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" className="rounded-lg h-8" onClick={() => void savePlacement()} disabled={!placementChanged || busy !== null} data-testid="check-signature-placement-save">
+              {busy === "placement" ? "Saving…" : "Save position & size"}
+            </Button>
+            <Button variant="ghost" size="sm" className="rounded-lg h-8" onClick={() => setPlacement(DEFAULT_SIGNATURE_PLACEMENT)}
+              disabled={busy !== null || (placement.offsetPx === 0 && placement.scale === 1)}>Reset</Button>
+          </div>
+        </div>
+      )}
+      {preview && <p className="text-xs font-semibold text-amber-700">Preview — not saved yet.</p>}
+      {error && <p className="text-sm text-red-600" data-testid="check-signature-error">{error}</p>}
+
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => void onPhoto(e.target.files?.[0])} data-testid="check-signature-file" />
+      <div className="flex flex-wrap gap-2">
+        {preview ? (
+          <>
+            <Button onClick={() => void save()} disabled={busy !== null} className="rounded-xl" data-testid="check-signature-save">
+              {busy === "save" ? "Saving…" : "Use this signature"}
+            </Button>
+            <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={busy !== null} className="rounded-xl">Retake</Button>
+            <Button variant="ghost" onClick={() => { setPreview(null); setError(null); }} disabled={busy !== null} className="rounded-xl">Cancel</Button>
+          </>
+        ) : (
+          <>
+            <Button onClick={() => fileRef.current?.click()} disabled={busy !== null} className="rounded-xl" data-testid="check-signature-upload">
+              {busy === "process" ? "Cleaning up photo…" : current ? "Replace with a new photo" : "Take or upload a photo"}
+            </Button>
+            {current && (
+              <Button variant="outline" onClick={() => void remove()} disabled={busy !== null} className="rounded-xl text-red-600" data-testid="check-signature-remove">
+                {busy === "remove" ? "Removing…" : "Remove signature"}
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+      <p className="text-xs text-slate-400">Only the salon owner can change the signature.</p>
+    </SettingsSection>
+  );
+}
+
 function SettingsPanel({
   settings, onChange,
 }: {
@@ -1498,6 +1852,8 @@ function SettingsPanel({
           </div>
         </div>
       </SettingsSection>
+
+      <CheckSignatureSection />
 
       {/* ── Draw Account ──────────────────────────────────────────────── */}
       <SettingsSection title="Draw Account Details">
@@ -1702,6 +2058,19 @@ function buildPrintCss(cal: CalibrationSettings, paperType: PrintSettings["paper
     width: 100% !important;
   }
   .check-stub  { border: none !important; min-height: 0 !important; }
+  .check-stub, .check-stub * { background-color: transparent !important; }
+  /* Keep the check face at bank-safe coordinates; enlarge only the statements. */
+  .check-stub .statement-header { padding-top: 0.12in; padding-bottom: 0.10in; }
+  .check-stub .statement-body { padding-top: 0.10in; }
+  .check-stub .statement-name { font-size: 12px; }
+  .check-stub .statement-title { font-size: 12px; }
+  .check-stub .statement-detail { font-size: 10px; line-height: 1.3; }
+  .check-stub .statement-section { font-size: 9px; line-height: 1.4; margin-bottom: 4px; }
+  .check-stub .statement-row { font-size: 11px; line-height: 1.35; min-height: 16px; }
+  .check-stub .statement-net { margin-top: 5px; margin-bottom: 10px; }
+  .check-stub .statement-net span:first-child { font-size: 10px; }
+  .check-stub .statement-net span:last-child { font-size: 18px; }
+  .check-stub .statement-note { font-size: 9px; }
   .print\\:hidden { display: none !important; }
 }
 `;
@@ -1709,14 +2078,19 @@ function buildPrintCss(cal: CalibrationSettings, paperType: PrintSettings["paper
 
 // ─── Payroll Checks tab ───────────────────────────────────────────────────────
 
-function PayrollChecksTab({ settings }: { settings: PrintSettings }) {
+function PayrollChecksTab({ settings, initialRunId }: { settings: PrintSettings; initialRunId?: number | null }) {
   const paperType = settings.paperType ?? "standard";
   const { selectedStore } = useSelectedStore();
   const storeId = selectedStore?.id;
   const printRef = useRef<HTMLDivElement>(null);
 
-  const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<number | null>(initialRunId ?? null);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
+
+  useEffect(() => {
+    setSelectedRunId(initialRunId ?? null);
+    setSelectedItemId(null);
+  }, [initialRunId, storeId]);
 
   const { data: runs = EMPTY_ARRAY, isLoading: runsLoading } = useQuery<PayrollRun[]>({
     queryKey: ["/api/payroll-runs", storeId],
@@ -1747,12 +2121,13 @@ function PayrollChecksTab({ settings }: { settings: PrintSettings }) {
   ).filter(i => Number((i as any).totalPay ?? 0) > 0); // never print a $0.00 paycheck
 
   function buildEarningsRows(item: PayrollCheckItem) {
-    const rows: Array<{ label: string; amount: number; sub?: string; indent?: boolean }> = [
+    const rows: Array<{ label: string; amount: number; sub?: string; indent?: boolean; deduction?: boolean; ytd?: number | null }> = [
       {
-        label: "Commission",
-        amount: Number(item.commissionAmount),
+        label: "Service Commissions",
+        amount: Number(item.serviceCommission ?? item.commissionAmount),
         sub: `${Number(item.commissionRate).toFixed(0)}% × ${fmt$(item.totalRevenue)} · ${item.appointmentCount} appt${item.appointmentCount !== 1 ? "s" : ""}`,
       },
+      { label: "Product Commissions", amount: Number(item.productCommission ?? 0) },
       { label: "Services Revenue", amount: Number(item.serviceRevenue), indent: true },
       { label: "Add-on Revenue",   amount: Number(item.addonRevenue),   indent: true },
     ];
@@ -1760,9 +2135,25 @@ function PayrollChecksTab({ settings }: { settings: PrintSettings }) {
     const oe = Number((item as any).otherEarnings ?? 0);
     const br = Number((item as any).boothRent ?? 0);
     const od = Number((item as any).otherDeductions ?? 0);
-    if (oe > 0) rows.push({ label: "Additions", amount: oe });
-    if (br > 0) rows.push({ label: "Booth rent", amount: -br });
-    if (od > 0) rows.push({ label: "Deductions", amount: -od });
+    if (oe > 0) rows.push({ label: "Other Earnings", amount: oe });
+    if (br > 0) rows.push({ label: "Booth Rent", amount: -br });
+    // Every deduction the salon has set up is listed by name with its total for the period: the ones switched
+    // on (even when they took nothing this period), then any others this statement or this year has money
+    // under. At most six rows, so the statement keeps its size; what the owner typed for this period, and
+    // anything past the sixth, stays under "Other Deductions".
+    const detail = (Array.isArray((item as any).ruleDeductionsDetail) ? (item as any).ruleDeductionsDetail : []) as { name: string; amount: number }[];
+    const ytdByName = ((item as any).deductionYtd ?? {}) as Record<string, number>;
+    const named = new Map<string, number>();
+    for (const name of ((item as any).deductionNames ?? []) as string[]) if (name) named.set(name, 0);
+    for (const d of detail) if (d?.name && Number(d.amount) > 0) named.set(d.name, (named.get(d.name) ?? 0) + Number(d.amount));
+    for (const [name, total] of Object.entries(ytdByName)) if (total > 0 && !named.has(name)) named.set(name, 0);
+    const shown = [...named].slice(0, 6);
+    for (const [name, amount] of shown) rows.push({ label: name, amount: -amount, deduction: true, ytd: ytdByName[name] ?? amount });
+    const otherThisPeriod = Math.max(0, od - shown.reduce((s, [, amount]) => s + amount, 0));
+    if (shown.length > 0) {
+      const otherYtd = Math.max(0, Number(item.ytd?.otherDeductions ?? od) - shown.reduce((s, [name, amount]) => s + (ytdByName[name] ?? amount), 0));
+      rows.push({ label: "Other Deductions", amount: -Math.round(otherThisPeriod * 100) / 100, ytd: Math.round(otherYtd * 100) / 100 });
+    } else if (od > 0) rows.push({ label: "Other Deductions", amount: -od });
     if (item.hoursWorked > 0) rows.push({ label: "Hours Worked", amount: 0, sub: `${item.hoursWorked.toFixed(1)} hrs` });
     return rows;
   }
@@ -1779,11 +2170,12 @@ function PayrollChecksTab({ settings }: { settings: PrintSettings }) {
   }
 
   const storeInfo: StoreInfo = checkData?.store ?? { name: selectedStore?.name ?? "" };
+  const runPayDate = checkData ? checkPayDate(checkData.run) : "";
 
   return (
-    <div className="flex gap-6">
-      {/* Left: run selector */}
-      <div className="w-64 shrink-0 space-y-2">
+    <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
+      {/* Run selector — full width on top on a phone, a side column on a wide screen */}
+      <div className="w-full shrink-0 space-y-2 lg:w-64">
         <h3 className="text-[11px] uppercase tracking-widest font-bold text-slate-400 px-1">Finalized Runs</h3>
         {runsLoading && <p className="text-sm text-slate-400 px-1">Loading…</p>}
         {!runsLoading && finalizedRuns.length === 0 && (
@@ -1820,75 +2212,13 @@ function PayrollChecksTab({ settings }: { settings: PrintSettings }) {
 
       {/* Right: check previews */}
       <div className="flex-1 min-w-0 space-y-4">
-        {!selectedRunId && (() => {
-          // Build synthetic 14-day daily breakdown for sample preview
-          const sampleAmounts = [125, 0, 87.50, 210, 155, 0, 72, 198, 0, 143, 220, 0, 88, 160];
-          const periodEndMs = Date.now();
-          const periodStartMs = periodEndMs - 13 * 864e5;
-          const sampleDaily: DailyBreakdownEntry[] = sampleAmounts.map((amt, i) => {
-            const d = new Date(periodStartMs + i * 864e5);
-            return {
-              date: d.toISOString().slice(0, 10),
-              commission: amt,
-              tips: 0,
-              count: amt > 0 ? 3 : 0,
-            };
-          });
-          const sampleStore = selectedStore
-            ? { name: selectedStore.name, address: (selectedStore as any).address, city: (selectedStore as any).city, state: (selectedStore as any).state, postcode: (selectedStore as any).postcode, phone: (selectedStore as any).phone }
-            : { name: "Acme Supplies Corp.", address: "475 Knapp Avenue", city: "Anytown", state: "USA", postcode: "10101" };
-          const sampleTotal = sampleAmounts.reduce((s, a) => s + a, 0);
-          return (
-            <div className="space-y-3">
-              <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-2.5 flex items-center gap-2.5">
-                <Banknote className="w-4 h-4 text-amber-500 shrink-0" />
-                <p className="text-xs text-amber-700 font-medium">Sample preview — select a finalized earnings run to print real checks</p>
-              </div>
-              {/* Check face — scaled to fit without horizontal scroll */}
-              <div style={{ overflow: "hidden" }}>
-                <div style={{ transform: "scale(0.8)", transformOrigin: "top left", width: "125%", height: "calc(3.667in * 0.8)" }}>
-                  <CheckFace
-                    checkNumber="000001"
-                    date={new Date().toISOString()}
-                    payee="Jane Lee Dow"
-                    payeeStreet="123 Main Street"
-                    payeeCityStateZip="Anytown, IN 12343"
-                    amount={sampleTotal}
-                    memo={null}
-                    periodStart={new Date(periodStartMs).toISOString()}
-                    periodEnd={new Date(periodEndMs).toISOString()}
-                    store={sampleStore}
-                    routing={settings.routingNumber || "122000496"}
-                    account={settings.accountNumber || "4964040110"}
-                    bankName={settings.bankName}
-                    bankAddress={settings.bankAddress}
-                    bankCity={settings.bankCity}
-                    bankPhone={settings.bankPhone}
-                    paperType={paperType}
-                  />
-                </div>
-              </div>
-              {/* Sample earnings stub — shows the redesigned three-column layout */}
-              <CheckStub
-                checkNumber="000001"
-                payee="Jane Lee Dow"
-                amount={sampleTotal}
-                periodStart={new Date(periodStartMs).toISOString()}
-                periodEnd={new Date(periodEndMs).toISOString()}
-                earningsRows={[]}
-                label="Employee Copy"
-                store={sampleStore}
-                serviceCommission={sampleTotal * 0.85}
-                tipAmount={sampleTotal * 0.15}
-                appointmentCount={18}
-                totalRevenue={sampleTotal * 2}
-                payeeStreet="123 Main Street"
-                payeeCityStateZip="Anytown, IN 12343"
-                payDate={new Date().toISOString()}
-              />
-            </div>
-          );
-        })()}
+        {!selectedRunId && (
+          <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-slate-100 bg-white px-4 py-12 text-center">
+            <Banknote className="h-8 w-8 text-slate-200" />
+            <p className="text-sm font-medium text-slate-600">Choose a finalized run to see its checks</p>
+            <p className="text-xs text-slate-400">Each person's check and earnings statement will appear here, ready to print.</p>
+          </div>
+        )}
 
         {selectedRunId && checksLoading && (
           <div className="flex flex-col items-center justify-center h-64 text-slate-400 gap-3 bg-white rounded-2xl border border-slate-100">
@@ -1923,12 +2253,12 @@ function PayrollChecksTab({ settings }: { settings: PrintSettings }) {
                   {item.staffName}
                 </button>
               ))}
-              <div className="ml-auto flex items-center gap-2">
+              <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
                 {visibleItems.length === 1 && (
                   <Suspense fallback={null}>
                     <CheckPDFDownload
                       checkNumber={String(settings.startingCheckNumber).padStart(6, "0")}
-                      date={checkData!.run.finalizedAt ?? checkData!.run.createdAt}
+                      date={runPayDate}
                       payee={visibleItems[0].staffName}
                       amount={visibleItems[0].totalPay}
                       periodStart={checkData!.run.periodStart}
@@ -1941,8 +2271,36 @@ function PayrollChecksTab({ settings }: { settings: PrintSettings }) {
                       bankCity={settings.bankCity}
                       bankPhone={settings.bankPhone}
                       earningsRows={buildEarningsRows(visibleItems[0])}
+                      ytd={visibleItems[0].ytd}
                       stubCount={settings.stubCount}
                       dailyBreakdown={visibleItems[0].dailyBreakdown}
+                      hideSend
+                    />
+                  </Suspense>
+                )}
+                {/* Prints the check(s) shown here on the salon's printer through the Certxa Print Agent. The bank
+                    details are NOT sent from this page — the server gets them from the salon computer for each
+                    check (routes/printAgent.ts) — so routing/account are left blank here. */}
+                {visibleItems.length > 0 && (
+                  <Suspense fallback={null}>
+                    <CheckSendToPrinter
+                      label={visibleItems.length > 1 ? `Send All ${visibleItems.length} to Printer` : "Send to Printer"}
+                      className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
+                      checks={visibleItems.map((item, idx) => ({
+                        checkNumber: String(settings.startingCheckNumber + idx).padStart(6, "0"),
+                        date: runPayDate,
+                        payee: item.staffName,
+                        amount: item.totalPay,
+                        periodStart: checkData!.run.periodStart,
+                        periodEnd: checkData!.run.periodEnd,
+                        store: storeInfo,
+                        routing: "",
+                        account: "",
+                        earningsRows: buildEarningsRows(item),
+                        ytd: item.ytd,
+                        stubCount: settings.stubCount,
+                        dailyBreakdown: item.dailyBreakdown,
+                      }))}
                     />
                   </Suspense>
                 )}
@@ -1962,7 +2320,7 @@ function PayrollChecksTab({ settings }: { settings: PrintSettings }) {
                   <PrintSheet
                     key={item.id}
                     checkNumber={String(settings.startingCheckNumber + idx).padStart(6, "0")}
-                    date={checkData.run.finalizedAt ?? checkData.run.createdAt}
+                    date={runPayDate}
                     payee={item.staffName}
                     amount={item.totalPay}
                     periodStart={checkData.run.periodStart}
@@ -1978,8 +2336,9 @@ function PayrollChecksTab({ settings }: { settings: PrintSettings }) {
                     bankCity={settings.bankCity}
                     bankPhone={settings.bankPhone}
                     paperType={paperType}
-                    serviceCommission={Number(item.commissionAmount)}
+                    serviceCommission={Number(item.serviceCommission ?? item.commissionAmount)}
                     tipAmount={item.tipsAmount}
+                    ytd={item.ytd}
                     appointmentCount={item.appointmentCount}
                     totalRevenue={Number(item.totalRevenue)}
                   />
@@ -1994,10 +2353,10 @@ function PayrollChecksTab({ settings }: { settings: PrintSettings }) {
                 const checkNum = String(settings.startingCheckNumber + idx).padStart(6, "0");
                 return (
                   <div key={item.id} className="relative group" style={{ position: "relative" }}>
-                    <div className="overflow-x-auto">
+                    <ScaleToFit widthIn={paperType === "preprinted" ? 8.26 : 8.5}>
                     <CheckFace
                       checkNumber={checkNum}
-                      date={checkData.run.finalizedAt ?? checkData.run.createdAt}
+                      date={runPayDate}
                       payee={item.staffName}
                       amount={item.totalPay}
                       periodStart={checkData.run.periodStart}
@@ -2011,7 +2370,6 @@ function PayrollChecksTab({ settings }: { settings: PrintSettings }) {
                       bankPhone={settings.bankPhone}
                       paperType={paperType}
                     />
-                    </div>
                     <CheckStub
                       checkNumber={checkNum}
                       payee={item.staffName}
@@ -2021,18 +2379,21 @@ function PayrollChecksTab({ settings }: { settings: PrintSettings }) {
                       earningsRows={buildEarningsRows(item)}
                       label="Employee Copy"
                       store={storeInfo}
-                      serviceCommission={Number(item.commissionAmount)}
+                      serviceCommission={Number(item.serviceCommission ?? item.commissionAmount)}
                       tipAmount={item.tipsAmount}
+                      ytd={item.ytd}
                       appointmentCount={item.appointmentCount}
                       totalRevenue={Number(item.totalRevenue)}
-                      payDate={checkData.run.finalizedAt ?? checkData.run.createdAt}
+                      payDate={runPayDate}
                     />
+                    </ScaleToFit>
+                    {/* Per-check actions: always visible (hover does not exist on a touch screen) */}
                     {visibleItems.length > 1 && (
-                      <div className="print:hidden absolute top-3 right-3 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="print:hidden mt-2 flex flex-wrap items-center justify-end gap-1.5">
                         <Suspense fallback={null}>
                           <CheckPDFDownload
                             checkNumber={checkNum}
-                            date={checkData!.run.finalizedAt ?? checkData!.run.createdAt}
+                            date={runPayDate}
                             payee={item.staffName}
                             amount={item.totalPay}
                             periodStart={checkData!.run.periodStart}
@@ -2045,6 +2406,7 @@ function PayrollChecksTab({ settings }: { settings: PrintSettings }) {
                             bankCity={settings.bankCity}
                             bankPhone={settings.bankPhone}
                             earningsRows={buildEarningsRows(item)}
+                            ytd={item.ytd}
                             stubCount={settings.stubCount}
                             dailyBreakdown={item.dailyBreakdown}
                           />
@@ -2188,7 +2550,7 @@ function ContractorChecksTab({ settings }: { settings: PrintSettings }) {
       )}
 
       {/* Stats row */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
         {[
           { label: "Total Issued", value: String(checks.filter(c => c.voidStatus === "active").length), icon: Printer, bg: "bg-slate-50", color: "text-slate-600" },
           { label: "Queued to Print", value: String(queued), icon: Clock, bg: "bg-amber-50", color: "text-amber-600" },
@@ -2205,7 +2567,7 @@ function ContractorChecksTab({ settings }: { settings: PrintSettings }) {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
@@ -2215,7 +2577,7 @@ function ContractorChecksTab({ settings }: { settings: PrintSettings }) {
           />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-48 rounded-xl border-slate-200">
+          <SelectTrigger className="w-full rounded-xl border-slate-200 sm:w-48">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="rounded-xl">
@@ -2229,8 +2591,8 @@ function ContractorChecksTab({ settings }: { settings: PrintSettings }) {
         </Select>
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      {/* Table — scrolls sideways inside its card on a narrow screen rather than squeezing 8 columns */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
         {isLoading ? (
           <div className="p-8 space-y-3">
             {[1, 2, 3].map(i => <div key={i} className="h-12 bg-slate-100 rounded-xl animate-pulse" />)}
@@ -2242,7 +2604,7 @@ function ContractorChecksTab({ settings }: { settings: PrintSettings }) {
             <p className="text-xs text-slate-400 mt-1">Checks are created when contractor payouts use the "Check" method</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="bg-slate-50/50 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
                 <th className="text-left px-6 py-3">Check #</th>
@@ -2522,6 +2884,11 @@ const DEFAULT_SETTINGS: PrintSettings = {
 };
 
 export default function PrintChecks() {
+  const [searchParams] = useSearchParams();
+  const requestedRunId = Number(searchParams.get("runId"));
+  const initialRunId = Number.isSafeInteger(requestedRunId) && requestedRunId > 0 ? requestedRunId : null;
+  const requestedTab = searchParams.get("tab");
+  const initialTab = ["payroll", "contractor", "batch", "setup", "settings"].includes(requestedTab ?? "") ? requestedTab! : "payroll";
   const [settings, setSettings] = useState<PrintSettings>(() => {
     try {
       const saved = localStorage.getItem("certxa-print-check-settings");
@@ -2549,7 +2916,7 @@ export default function PrintChecks() {
           {/* Header */}
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <h1 className="text-2xl font-bold text-slate-800">Print Checks</h1>
+              <h1 className="text-xl font-bold text-slate-800 sm:text-2xl">Print Checks</h1>
               <p className="text-slate-500 text-sm mt-0.5">
                 {(settings.paperType ?? "standard") === "preprinted"
                   ? "Pre-printed blue security paper — 8.26\" × 10.76\" · check on top"
@@ -2561,27 +2928,27 @@ export default function PrintChecks() {
           </div>
 
           {/* Tabs */}
-          <Tabs defaultValue="payroll">
-            <TabsList className="bg-slate-100 rounded-xl p-1 mb-6 flex-wrap h-auto gap-1">
-              <TabsTrigger value="payroll" className="rounded-lg gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+          <Tabs defaultValue={initialTab}>
+            <TabsList className="bg-slate-100 rounded-xl p-1 mb-4 flex h-auto w-full justify-start gap-1 overflow-x-auto sm:mb-6 sm:w-auto sm:flex-wrap">
+              <TabsTrigger value="payroll" className="shrink-0 whitespace-nowrap rounded-lg gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
                 <Banknote className="w-4 h-4" /> Earnings Checks
               </TabsTrigger>
-              <TabsTrigger value="contractor" className="rounded-lg gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+              <TabsTrigger value="contractor" className="shrink-0 whitespace-nowrap rounded-lg gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
                 <Zap className="w-4 h-4" /> Contractor Checks
               </TabsTrigger>
-              <TabsTrigger value="batch" className="rounded-lg gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+              <TabsTrigger value="batch" className="shrink-0 whitespace-nowrap rounded-lg gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
                 <Layers className="w-4 h-4" /> Print Payroll Batch
               </TabsTrigger>
-              <TabsTrigger value="setup" className="rounded-lg gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+              <TabsTrigger value="setup" className="shrink-0 whitespace-nowrap rounded-lg gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
                 <SlidersHorizontal className="w-4 h-4" /> Paper Setup
               </TabsTrigger>
-              <TabsTrigger value="settings" className="rounded-lg gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+              <TabsTrigger value="settings" className="shrink-0 whitespace-nowrap rounded-lg gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
                 <Settings className="w-4 h-4" /> Settings
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="payroll">
-              <PayrollChecksTab settings={settings} />
+              <PayrollChecksTab settings={settings} initialRunId={initialRunId} />
             </TabsContent>
             <TabsContent value="contractor">
               <ContractorChecksTab settings={settings} />
@@ -2597,7 +2964,12 @@ export default function PrintChecks() {
               />
             </TabsContent>
             <TabsContent value="settings">
-              <SettingsPanel settings={settings} onChange={updateSettings} />
+              <div className="space-y-6">
+                <Suspense fallback={null}>
+                  <PrintAgentComputers />
+                </Suspense>
+                <SettingsPanel settings={settings} onChange={updateSettings} />
+              </div>
             </TabsContent>
           </Tabs>
         </div>

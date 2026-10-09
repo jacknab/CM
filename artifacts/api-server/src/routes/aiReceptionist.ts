@@ -66,6 +66,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import twilio from "twilio";
 import { fromZonedTime, toZonedTime, formatInTimeZone } from "date-fns-tz";
 import { db, pool } from "../db";
+import { mutateStorePreferences } from "../lib/storePreferences";
 import { locations, services, serviceAddons, addons, storeSettings, aiCallLog, aiSilenceIncidents, callUsageRecords, staff as staffTable, appointments } from "@shared/schema";
 import { eq, desc, inArray, sql, count, gt, or, isNull, and } from "drizzle-orm";
 import { isAuthenticated, isAdminAuthenticated } from "../auth";
@@ -81,6 +82,7 @@ import {
 } from "../bookingEngine";
 import { callEventBus } from "../lib/callEventBus";
 import { logActivityEvent } from "../lib/activityFeed";
+import { pushBookingEvent } from "../lib/ownerPush";
 import { costMeter } from "../lib/costMeter";
 import { sessionGuard } from "../lib/sessionGuard";
 import { SilenceWatchdog } from "../lib/silenceWatchdog";
@@ -97,6 +99,19 @@ import { scoreCallRisk, recordBlockedNumber } from "../services/spamProtection/c
 import { resolveTenantIdForRequest } from "../lib/tenantResolver";
 import { CallFileLogger, NullCallFileLogger, type ICallFileLogger } from "../lib/callFileLogger";
 import { getBufferMinutes, normalizeBufferMinutes, clashesWithBuffer } from "../lib/appointmentBuffer";
+import {
+  createAutumnBackgroundAudioCursor,
+  mixTwilioOutboundFrame,
+  readAutumnBackgroundAudioConfig,
+  warmAutumnBackgroundAudio,
+  type AutumnBackgroundAudioCursor,
+} from "../lib/autumnBackgroundAudio";
+import {
+  buildAfterHoursGreeting,
+  isSalonAfterHours,
+  type ConfiguredBusinessHours,
+} from "../lib/afterHoursReceptionist";
+import { getSalonOperationsOverview, summarizeSalonOperations } from "../lib/salonOperationsOverview";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -106,6 +121,30 @@ const OPENAI_LIVE_URL = "wss://api.openai.com/v1/live/sessions";
 // Verify this is still the desired/available model before relying on the default.
 const AI_RECEPTIONIST_BACKEND_MODEL =
   process.env.AI_RECEPTIONIST_BACKEND_MODEL || "gpt-5.6-luna";
+
+// Name+voice personas — one is picked at random per call (both the name used
+// throughout the prompt and the Live voice come from the same entry, so they
+// stay paired). The voice can't change mid-call once audio starts, so this is
+// "one persona for the whole call," not a mid-call switch.
+const AI_RECEPTIONIST_PERSONAS: { name: string; voice: string }[] = [
+  { name: "Autumn",   voice: "gleam" },   // North American, natural
+  { name: "Marin",    voice: "marin" },   // North American, natural (OpenAI's top pick)
+  { name: "Willow",   voice: "willow" },  // Irish English, natural
+  { name: "Savannah", voice: "delta" },   // Southern U.S. English, generated
+];
+
+// Optional hard override for testing a single fixed voice — set this and every
+// call uses "Autumn" + that voice instead of picking a random persona.
+const AI_RECEPTIONIST_VOICE_OVERRIDE = process.env.AI_RECEPTIONIST_VOICE?.trim() || null;
+
+function pickReceptionistPersona(): { name: string; voice: string } {
+  if (AI_RECEPTIONIST_VOICE_OVERRIDE) return { name: "Autumn", voice: AI_RECEPTIONIST_VOICE_OVERRIDE };
+  return AI_RECEPTIONIST_PERSONAS[Math.floor(Math.random() * AI_RECEPTIONIST_PERSONAS.length)];
+}
+
+// Reuse the existing configured voice set: Autumn/gleam is the designated
+// after-hours answering-service voice, while daytime calls retain random selection.
+const AI_RECEPTIONIST_AFTER_HOURS_PERSONA = AI_RECEPTIONIST_PERSONAS[0];
 
 const PREF_KEY = "aiReceptionistEnabled";
 const PREF_PHONE_KEY = "aiReceptionistPhone";
@@ -140,10 +179,10 @@ function hasVoiceInTwilioUlaw(base64Ulaw: string): boolean {
     n++;
   }
   const avgAbs = n ? sumAbs / n : 0;
-  // Conservative but caller-friendly gate:
-  // - average energy catches sustained speech
-  // - peak catches short syllables/plosives at low gain
-  return avgAbs > 650 || peakAbs > 2200;
+  // Require sustained speech energy as well as a meaningful peak. The ambience bed can contain
+  // isolated clinks above the old peak-only threshold; handset echo then looked like barge-in and
+  // repeatedly cleared the AI greeting from Twilio before the caller could hear it.
+  return avgAbs > 650 && peakAbs > 2200;
 }
 
 /** Normalize a user-typed phone number to E.164 (very forgiving). */
@@ -168,8 +207,14 @@ function normalizePhone(raw: string): string | null {
  */
 function toTenDigit(raw: string): string | null {
   const digits = raw.replace(/\D/g, "");
-  if (digits.length >= 10) return digits.slice(-10); // slice(-10) strips +1 / country prefix
-  return null;
+  if (digits.length < 10) return null;
+  const tenDigit = digits.slice(-10); // slice(-10) strips +1 / country prefix
+  // Some carriers/VoIP trunks send an all-zero (or other all-same-digit) placeholder
+  // instead of "anonymous" for a blocked/unavailable caller ID. A real NANP number
+  // can't have all 10 digits identical (area codes can't start with 0 or 1), so treat
+  // this the same as no caller ID at all rather than a real, lookup-able number.
+  if (/^(\d)\1{9}$/.test(tenDigit)) return null;
+  return tenDigit;
 }
 
 // ─── Salon context ────────────────────────────────────────────────────────────
@@ -205,6 +250,10 @@ interface SalonContext {
   accessibilityFeatures: string[];
   /** Beverages offered (from onboarding) */
   beverageOptions: { complimentary?: string[]; paid?: string[] } | null;
+  /** Street address on file, if any (used for a location-qualified greeting variant) */
+  address: string | null;
+  /** Salon-local operating schedule used to select daytime vs after-hours behavior. */
+  businessHours: ConfiguredBusinessHours[];
 }
 
 /** A pre-loaded upcoming appointment for the caller, surfaced to the AI. */
@@ -312,6 +361,7 @@ async function getSalonContext(storeId: number): Promise<SalonContext | null> {
       timezone: locations.timezone,
       bookingSlug: locations.bookingSlug,
       phone: locations.phone,
+      address: locations.address,
       parkingOptions: locations.parkingOptions,
       accessibilityFeatures: locations.accessibilityFeatures,
       beverageOptions: locations.beverageOptions,
@@ -337,7 +387,7 @@ async function getSalonContext(storeId: number): Promise<SalonContext | null> {
     }
   } catch { /* optional */ }
 
-  const [storeServices, storeStaff, storeServiceAddons] = await Promise.all([
+  const [storeServices, storeStaff, storeServiceAddons, configuredBusinessHours] = await Promise.all([
     db
       .select({ id: services.id, name: services.name, duration: services.duration, price: services.price })
       .from(services)
@@ -365,6 +415,7 @@ async function getSalonContext(storeId: number): Promise<SalonContext | null> {
         eq(addons.isActive, true),
         or(eq(addons.hiddenFromPublic, false), isNull(addons.hiddenFromPublic)),
       )),
+    storage.getBusinessHours(storeId),
   ]);
 
   const addonsByServiceId = new Map<number, SalonAddon[]>();
@@ -380,6 +431,13 @@ async function getSalonContext(storeId: number): Promise<SalonContext | null> {
     timezone: store.timezone ?? "UTC",
     bookingSlug: store.bookingSlug ?? null,
     businessPhone: store.phone ?? null,
+    address: store.address ?? null,
+    businessHours: configuredBusinessHours.map((entry) => ({
+      dayOfWeek: entry.dayOfWeek,
+      openTime: entry.openTime,
+      closeTime: entry.closeTime,
+      isClosed: entry.isClosed,
+    })),
     services: storeServices.map((s) => ({
       id: s.id,
       name: s.name,
@@ -447,6 +505,13 @@ function buildOpenAiSessionConfig(
   existingAppointments: CallerAppointment[],
   availabilitySnapshot: string | null = null,
 ): { sessionStart: object; greetingInstruction: string } {
+  const afterHours = isSalonAfterHours(salon.businessHours, salon.timezone);
+  const persona = afterHours
+    ? (AI_RECEPTIONIST_VOICE_OVERRIDE
+        ? { name: "Autumn", voice: AI_RECEPTIONIST_VOICE_OVERRIDE }
+        : AI_RECEPTIONIST_AFTER_HOURS_PERSONA)
+    : pickReceptionistPersona();
+  const personaName = persona.name;
   const hasKnownCallerPhone = Boolean(callerPhone);
   const callerName = crmProfile?.firstName ?? null;
   const hasKnownCallerName = Boolean(callerName && callerName.trim());
@@ -481,6 +546,29 @@ function buildOpenAiSessionConfig(
     salon.parkingOptions.length ? `Parking: ${salon.parkingOptions.join(" · ")}.` : "",
     salon.accessibilityFeatures.length ? `Accessibility: ${salon.accessibilityFeatures.join(" · ")}.` : "",
     beverageLines.length ? `Beverages — ${beverageLines.join(". ")}.` : "",
+  ].filter(Boolean).join("\n");
+
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const to12Hour = (value: string): string => {
+    const m = /^(\d{1,2}):(\d{2})/.exec(String(value ?? "").trim());
+    if (!m) return String(value ?? "");
+    const h = Number(m[1]);
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12}${m[2] === "00" ? "" : `:${m[2]}`} ${h >= 12 ? "PM" : "AM"}`;
+  };
+  const hoursBlock = salon.businessHours.length
+    ? dayNames
+        .map((name, day) => {
+          const h = salon.businessHours.find((entry) => entry.dayOfWeek === day);
+          return `${name}: ${!h || h.isClosed ? "Closed" : `${to12Hour(h.openTime)} to ${to12Hour(h.closeTime)}`}`;
+        })
+        .join(" · ")
+    : "Hours are not listed.";
+  const salonFactsBlock = [
+    `Business: ${salon.businessName}.`,
+    salon.address ? `Address: ${salon.address}.` : "",
+    salon.businessPhone ? `Phone: ${salon.businessPhone}.` : "",
+    `Regular hours: ${hoursBlock}`,
   ].filter(Boolean).join("\n");
 
   const availabilityRule = availabilitySnapshot
@@ -518,12 +606,19 @@ function buildOpenAiSessionConfig(
     );
   })();
 
+  // The literal sentence Autumn must speak first — computed once (a randomly
+  // picked variant) and reused everywhere below so every reference in this
+  // prompt, and the actual spoken greeting nudge, agree on the same line.
+  const greetingLine = afterHours
+    ? buildAfterHoursGreeting(salon.businessName)
+    : buildTimeOfDayGreeting(salon.timezone, salon.businessName, personaName, "open_ended", salon.address);
+
   // ── Build the existing-appointment context block ──────────────────────────
   let existingBookingsBlock: string;
   if (!callerPhone) {
     existingBookingsBlock =
       `The caller's phone number is not available (caller ID blocked). ` +
-      `Greet with: "${buildTimeOfDayGreeting(salon.timezone, salon.businessName, "open_ended")}" ` +
+      `Greet with: "${greetingLine}" ` +
       `Then ask: "May I ask who I'm speaking with?" and collect a callback number before proceeding.`;
   } else if (existingAppointments.length === 0) {
     existingBookingsBlock =
@@ -560,19 +655,15 @@ function buildOpenAiSessionConfig(
       `auto-fill this service ID — do NOT ask what service they want.`
     : "";
 
-  // The literal sentence Autumn must speak first. Computed once and reused both
-  // inside the backend business-logic prompt and in the frontend's post-startup
-  // session.instructions.append greeting nudge (GPT-Live speaks autonomously —
-  // it does not speak first on its own, so the app must explicitly ask it to).
-  const greetingLine = buildTimeOfDayGreeting(salon.timezone, salon.businessName, "open_ended");
-
   const instructions = `# Role and Objective
-You are Autumn, a friendly, professional AI phone receptionist for ${salon.businessName}.
+You are ${personaName}, a friendly, professional AI phone receptionist for ${salon.businessName}.
 You help callers manage their appointments — book new ones, cancel existing ones, reschedule, or confirm details.
 
 # Personality and Tone
-Be warm, calm, efficient, and natural. Sound like a helpful front-desk professional.
+Be warm, calm, efficient, and natural. Sound like a knowledgeable employee working at the front desk, not an outside assistant or a search service.
 Keep responses concise and action-oriented.
+Answer ordinary questions confidently and directly from the salon facts, service menu, pricing, staff list, amenities, and hours included below.
+Never narrate information retrieval. Do not say "let me check," "let me see," "I'll check," "I'll look that up," "I'll pull that up," "one moment," "please hold," or similar progress filler. Call read-only tools silently, then answer with the result.
 
 # Language
 English is the default response language.
@@ -587,8 +678,10 @@ English is the default response language.
 - For tool decisions, multi-step booking flow, or recovery paths, reason briefly before acting.
 - If audio is unclear, do not reason or call tools — ask for clarification.
 
-Introduce yourself as Autumn near the start of the call.
-${isReturningCaller
+	Introduce yourself as ${personaName} near the start of the call.
+	${afterHours ? `AFTER-HOURS ROLE — The physical salon is currently closed. You are ${salon.businessName}'s answering service, not a receptionist physically at the salon. Keep helping with every remotely supported task, including booking appointments and answering questions about services, pricing, policies, and business information. If a request requires an open salon or an on-site staff member, explain that naturally without implying anyone is currently there. Never say "I'm the receptionist and the salon is closed."` : ""}
+	${!afterHours ? `LIVE SALON OPERATIONS — For questions about coming in now/today, walk-ins, current wait, how busy the salon is, immediate capacity, or whether a named staff member is working or available, call get_salon_operations_overview silently before answering. Use only its current values; never invent a wait or blindly invite someone in. Clocked-in means working, but verify availability and workload before suggesting the caller come in. Never mention Certxa, databases, tools, technical checks, or that you are checking. If walk-ins are disabled, do not offer one. If appointments are disabled, do not manufacture appointment availability.` : ""}
+	${isReturningCaller
   ? `Your FIRST spoken response must be: "${greetingLine}"` +
     (isVip ? ` (VIP caller — warm, premium tone throughout the call.)` : "")
   : `Your FIRST spoken response in a new call must be exactly: "${greetingLine}"`}
@@ -625,7 +718,11 @@ ${existingBookingsBlock}
 The available services at this salon are:
 ${serviceList}
 ${staffBlock ? `\n${staffBlock}` : ""}
+\nSALON FACTS — know these like an employee and answer directly without a lookup preamble:
+${salonFactsBlock}
 The salon's timezone is: ${salon.timezone}.
+Right now, at the salon, it is: ${formatInTimeZone(new Date(), salon.timezone || "UTC", "EEEE, MMMM d, yyyy 'at' h:mm a")} (${salon.timezone}).
+Always compute "today", "tomorrow", "this Friday", etc. relative to this exact date and time — never a different timezone, and never a guess.
 ${amenitiesBlock ? `\n${amenitiesBlock}` : ""}
 ${availabilitySnapshot ? `\n${availabilitySnapshot}\n` : ""}
 ═══ ABSOLUTE BOOKING RULES (ENFORCED — NO EXCEPTIONS) ═══
@@ -635,10 +732,9 @@ ${availabilitySnapshot ? `\n${availabilitySnapshot}\n` : ""}
 
 ▶ RULE — SAME-DAY BOOKINGS ARE NOT ALLOWED:
   If the caller requests an appointment for today (any time today), you MUST:
-  1. Immediately say: "We don't schedule same-day appointments, but we do welcome walk-ins today."
-  2. Call get_walkin_availability to check today's best walk-in windows.
-  3. Tell the caller the best times to walk in based on the tool result.
-  4. Ask if they would like to book for a future date instead.
+  1. Call get_walkin_availability silently. This tool checks whether every working technician is currently occupied by a booking or active ticket.
+  2. Only say walk-ins are available and offer times when the tool confirms capacity. If all technicians are busy, say so and offer to book a future date instead.
+  3. Ask if they would like to book for a future date instead.
   NEVER attempt to create_booking for today's date under any circumstance.
   IMPORTANT: Do NOT mention walk-ins for tomorrow or any future date.
   If the caller says "tomorrow", "next week", or any non-today date, proceed with normal booking flow only.
@@ -674,21 +770,16 @@ ${availabilitySnapshot ? `\n${availabilitySnapshot}\n` : ""}
   NEVER say "the manager will call you back", "someone will follow up", or anything implying a human will contact them — no such notification is sent.
   NEVER go silent. NEVER promise a callback.
 
-▶ RULE — PREAMBLES (USE INTENTIONALLY):
-  Use ONE short preamble only when it helps the caller understand work is in progress
-  (for example: longer lookup, multi-step reasoning, or possible visible delay).
-  Skip preambles for direct answers, quick confirmations, or unclear audio.
-  Keep preambles natural and concise, such as:
-  - "I'll check that now."
-  - "I'll pull that up for you."
-  - "I'll verify that before we make changes."
-  Avoid filler like "Let me think" or "Please wait while I process".
+▶ RULE — NO LOOKUP PREAMBLES OR PROGRESS NARRATION:
+  Perform tool calls silently. Do not announce that you are checking, looking, pulling up, verifying, searching, or processing anything.
+  Never use stalling phrases such as "let me check," "let me see," "I'll check," "I'll look that up," "I'll pull that up," "one moment," or "please hold."
+  For known general information, answer immediately like an employee who already knows the salon. For live results, call the tool silently and lead with the useful answer.
 
 ═══ HOW TO HANDLE EACH SCENARIO ═══
 
 ▶ NEW BOOKING — DECISION TABLE (follow exactly):
 
-  [Have SERVICE + DATE] → say "Let me check that for you" → check availability (use snapshot or call search_available_slots) → offer 2–3 slots (times only, NO staff names) → caller picks → confirm in 1 sentence → call create_booking. Done. ✓
+  [Have SERVICE + DATE] → check availability SILENTLY (use snapshot or call search_available_slots) → offer 2–3 slots (times only, NO staff names) → caller picks → confirm in 1 sentence → call create_booking. Done. ✓
   [Have SERVICE only]   → say "What day works best for you?" ← YOUR 1 ALLOWED QUESTION. After answer → go to row above.
   [Have DATE only]      → say "What service are we booking?" ← YOUR 1 ALLOWED QUESTION. After answer → go to row above.
   [Have NEITHER]        → say "What service and day were you thinking?" ← counts as the 1 question. After answer → row 1.
@@ -734,14 +825,14 @@ ${availabilitySnapshot ? `\n${availabilitySnapshot}\n` : ""}
   If they say something like "gel" or "acrylic" — that IS enough to match a service. Do not ask again.
 
 ▶ WALK-IN REQUEST (caller wants to come in today):
-  1. Immediately say: "We don't schedule same-day appointments, but we do welcome walk-ins."
-  2. Say: "Let me check the best times for you today." then call get_walkin_availability.
-  3. Present 2–3 best walk-in windows (times only, no staff).
+  1. Never promise or suggest that a walk-in can be accommodated before checking live salon capacity.
+  2. Call get_walkin_availability silently, without a lookup preamble.
+  3. If the tool says all working technicians are busy, do not suggest a walk-in; explain that the salon is currently at capacity and offer a future booking. Otherwise present 2–3 best walk-in windows (times only, no staff).
   4. Ask: "Would you also like to schedule something for a future date?"
 
 ▶ URGENT / EMERGENCY REQUESTS:
   Trigger words: "broken nail", "wedding", "emergency", "last minute", "urgent", "ASAP", "right now"
-  Response: "I understand — let me see what I can do for you." (then immediately check availability)
+  Response: "I understand — I can help with that." (then silently check availability)
   If today → call get_walkin_availability → "I may be able to fit you in at [slot] for a quick repair — would that work?"
   If a future date → call search_available_slots for the soonest available → offer 1–2 nearest slots.
   Keep tone calm and solution-focused throughout.
@@ -762,14 +853,13 @@ ${availabilitySnapshot ? `\n${availabilitySnapshot}\n` : ""}
   Keep this short and specific to TODAY.
 
 ▶ CALLER WANTS A REAL PERSON:
-  1. Acknowledge warmly and re-engage: "I completely understand! I'm Autumn and I'm here to take care of everything for you right now. What can I help you with today?"
+  1. Acknowledge warmly and re-engage: "I completely understand! I'm ${personaName} and I'm here to take care of everything for you right now. What can I help you with today?"
   2. If they still insist on a person: "I hear you — unfortunately I'm not able to transfer calls right now. But I can book, cancel, or reschedule any appointment for you in just a minute. Is there something along those lines I can help with?"
-  3. If they remain firm and have nothing for Autumn to do: close warmly — "Of course — no problem at all. You're welcome to try calling back during business hours or book online anytime. Have a great day!"
+  3. If they remain firm and have nothing for ${personaName} to do: close warmly — "Of course — no problem at all. You're welcome to try calling back during business hours or book online anytime. Have a great day!"
   NEVER say anyone will call them back. NEVER promise follow-up. No notification is sent to any staff.
 
 ▶ CANCEL an existing appointment:
-  BEFORE DOING ANYTHING — immediately say: "Let me pull up your appointment details." (NEVER go silent)
-  Step 1: Call get_customer_appointments using the caller's phone number to find all upcoming bookings.
+  Step 1: Call get_customer_appointments silently using the caller's phone number to find all upcoming bookings.
   Step 2: If no appointments found by phone, ask: "Can you please confirm the name on the appointment or the time it was scheduled?"
            Then call lookup_appointment_by_name_or_date with the name or date they provide.
            NEVER block the caller — always try the fallback before giving up.
@@ -781,8 +871,7 @@ ${availabilitySnapshot ? `\n${availabilitySnapshot}\n` : ""}
   FAILURE: If any step fails, try the fallback: call lookup_appointment_by_name_or_date with any name/date the caller has mentioned. If that also fails, say: "I'm sorry, I'm having trouble accessing that right now. Can I help you with anything else, or would you like to try calling back in a few minutes?" NEVER promise a callback or say anyone will follow up.
 
 ▶ RESCHEDULE an existing appointment:
-  BEFORE DOING ANYTHING — immediately say: "Let me check your appointment details." (NEVER go silent)
-  Step 1: Call get_customer_appointments using the caller's phone number.
+  Step 1: Call get_customer_appointments silently using the caller's phone number.
   Step 2: If no appointments found by phone, ask: "Can you confirm the name or time of the appointment?"
            Then call lookup_appointment_by_name_or_date. NEVER block the caller.
   Step 3: If multiple appointments, list them clearly and ask which one to move. NEVER guess.
@@ -808,6 +897,8 @@ ${availabilitySnapshot ? `\n${availabilitySnapshot}\n` : ""}
 ═══ TONE & STYLE (Realtime-2 tuned) ═══
 
 - Speak like a calm, warm human receptionist. Keep replies 1–2 short sentences unless giving options.
+- Speak as a member of the salon team. Say "we," "our services," and "our hours" naturally. Never describe yourself as an outside system or imply you need to research routine salon information.
+- Never narrate tool use or use lookup/stalling language. Give the answer, not the process.
 - MAXIMUM 1 QUESTION PER CALL — choose it wisely. Never ask multiple questions in one turn.
 - NEVER mention staff names in slot offers — say times only. Only use staff names if the caller asked for a specific person.
 - Do NOT list all services unless the caller asks. Offer 2–3 slots maximum (times only).
@@ -843,7 +934,7 @@ ${availabilitySnapshot ? `\n${availabilitySnapshot}\n` : ""}
 
 Realtime-2 operating style (latency + clarity):
 - Reasoning effort: keep LOW by default; respond immediately for direct answers and confirmations.
-- Preambles: one short preamble only when helpful; skip unnecessary filler.
+- Preambles: do not use lookup or progress preambles; tool calls are silent.
 - Tool completions: once a tool succeeds, summarize in one short sentence and move to next action.
 - Unclear audio: ask once for clarification instead of reasoning or calling tools.
 
@@ -862,7 +953,7 @@ FAILURE RECOVERY: If technical difficulty occurs, briefly acknowledge and contin
           serviceId:           { type: "integer", description: "Numeric service ID from the list" },
           staffId:             { type: "integer", description: "Optional specific staff ID when caller requests a technician." },
           staffName:           { type: "string", description: "Optional specific technician name when caller requests by name (e.g. 'Tom')." },
-          appointmentDateTime: { type: "string", description: "ISO 8601 datetime (e.g. 2025-06-15T14:00:00)" },
+          appointmentDateTime: { type: "string", description: "Local datetime at the salon, NO timezone offset or Z suffix (e.g. 2025-06-15T14:00:00 for 2pm) — always in 24-hour salon-local wall-clock time." },
           extraDurationMinutes: { type: "integer", description: "Optional extra minutes for add-ons (0 if none)." },
         },
         required: ["customerName", "customerPhone", "serviceId", "appointmentDateTime"],
@@ -890,7 +981,7 @@ FAILURE RECOVERY: If technical difficulty occurs, briefly acknowledge and contin
         type: "object",
         properties: {
           appointmentId: { type: "integer", description: "ID from the appointments list" },
-          newDateTime:   { type: "string", description: "ISO 8601 new datetime" },
+          newDateTime:   { type: "string", description: "New local datetime at the salon, NO timezone offset or Z suffix — always in 24-hour salon-local wall-clock time." },
         },
         required: ["appointmentId", "newDateTime"],
       },
@@ -1008,16 +1099,34 @@ FAILURE RECOVERY: If technical difficulty occurs, briefly acknowledge and contin
     },
   ];
 
+  // Live operational state is intentionally daytime-only. After hours retains
+  // the separate answering-service behavior and existing capabilities.
+  if (!afterHours) {
+    bookingTools.push({
+      type: "function",
+      name: "get_salon_operations_overview",
+      description: "Get the current read-only salon overview: local time, today's close, walk-in/appointment policy, clocked-in staff by name, staff availability, clients waiting/in service, and current wait estimate. Required before answering live walk-in, wait, busy/capacity, come-in-now/today, or staff-working/availability questions.",
+      parameters: { type: "object", properties: {}, required: [] },
+    } as any);
+  }
+
   // Short frontend prompt for the Live voice model itself — persona, tone, and
   // when to lean on the backend. All the actual business rules/tools live in
   // delegation.responses.instructions below (reusing the pre-migration prompt
   // verbatim, per OpenAI's own migration guidance to start from your existing
   // backend prompt rather than rewriting it).
-  const frontendInstructions = `You are Autumn, a warm, calm, professional AI phone receptionist for ${salon.businessName}.
-Speak naturally at an unhurried pace — one or two short sentences per turn, like a helpful front-desk professional. Do not sound rushed or overly cheerful.
+  const frontendInstructions = `You are ${personaName}, a warm, calm, professional AI phone ${afterHours ? "answering-service agent" : "receptionist"} for ${salon.businessName}.
+Speak naturally at an unhurried pace — one or two short sentences per turn, like a knowledgeable employee at the front desk. Use "we" and "our" naturally. Do not sound rushed, overly cheerful, or like an outside assistant.
+${afterHours ? `The physical salon is currently closed. Accurately present yourself as the salon's after-hours answering service, while continuing to help with appointments and all other supported remote customer-service tasks. Do not imply that you or another person is physically at the salon.` : ""}
 English is the default language — only switch if the caller explicitly asks or gives a full request in another language.
-You do not know this salon's bookings, availability, pricing, or policies yourself — delegate every scheduling, booking, cancellation, reschedule, availability, pricing, or salon-specific question to your backend, and answer using only what it returns.
-While the backend is working, briefly acknowledge you're checking (e.g. "Let me check that for you") and continue naturally the moment its result arrives — never go silent.
+SALON FACTS — your only source for hours, address, phone, services, prices, staff and amenities. Answer from these lines exactly. Never state an opening time, closing time, open day, price or any other fact that is not written here; if it is not here, say you don't have that information.
+${salonFactsBlock}
+Right now at the salon it is ${formatInTimeZone(new Date(), salon.timezone || "UTC", "EEEE, MMMM d 'at' h:mm a")}, and the salon is currently ${afterHours ? "CLOSED" : "OPEN"}.
+For "what time do you open / close" on a given day, read that day's line above. A day marked Closed is closed; every other day is open for the hours shown.
+Services and prices:
+${serviceList}
+${staffBlock ? `${staffBlock}\n` : ""}${amenitiesBlock ? `${amenitiesBlock}\n` : ""}Answer general questions directly and confidently from the facts above. Delegate only live availability, appointment records, and account-changing actions to the backend.
+Backend work is silent. Never say "let me check," "let me see," "I'll check," "I'll look that up," "I'll pull that up," "one moment," "please hold," or anything similar. Do not narrate tools, searches, systems, or waiting. When a result arrives, lead immediately with the answer.
 Never invent or guess an appointment time, price, ID, or add-on. Never say a booking, cancellation, reschedule, or add-on succeeded unless the backend result confirms it.
 Never say you'll transfer the call or that someone will call the caller back.`;
 
@@ -1025,12 +1134,16 @@ Never say you'll transfer the call or that someone will call the caller back.`;
     sessionStart: {
       type: "session.start",
       session: {
-        type: "live",
         model: "gpt-live-1",
         instructions: frontendInstructions,
         audio: {
           // Matches Twilio's native format — zero PCM conversion needed either direction.
+          // WebSocket sessions take a single `audio.format` for both directions.
           format: { type: "audio/pcmu", rate: 8000 },
+          // Voice lives under `audio.output`, not directly under `audio`.
+          output: {
+            voice: persona.voice,
+          },
         },
         delegation: {
           type: "responses",
@@ -1170,19 +1283,21 @@ function parseAppointmentDateTimeInSalonTimezone(raw: string, timezone: string):
   const value = String(raw ?? "").trim();
   if (!value) return null;
 
-  if (/[zZ]$|[+-]\d{2}:\d{2}$/.test(value)) {
-    const dt = new Date(value);
-    return isNaN(dt.getTime()) ? null : dt;
-  }
+  // The model's intent here is always "this wall-clock time at the salon" — never a
+  // different timezone. Models sometimes attach an incorrect (often double-applied,
+  // e.g. 1pm becoming "20:00-07:00" instead of "13:00-07:00") UTC offset, so any
+  // offset/Z suffix is stripped and the digits are always localized to the salon's
+  // own timezone rather than trusted literally as an absolute instant.
+  const stripped = value.replace(/(?:[zZ]|[+-]\d{2}:\d{2})$/, "");
 
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(value)) {
-    const normalized = value.length === 16 ? `${value}:00` : value;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(stripped)) {
+    const normalized = stripped.length === 16 ? `${stripped}:00` : stripped;
     const dt = fromZonedTime(new Date(normalized), timezone || "UTC");
     return isNaN(dt.getTime()) ? null : dt;
   }
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const dt = fromZonedTime(new Date(`${value}T00:00:00`), timezone || "UTC");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(stripped)) {
+    const dt = fromZonedTime(new Date(`${stripped}T00:00:00`), timezone || "UTC");
     return isNaN(dt.getTime()) ? null : dt;
   }
 
@@ -1201,17 +1316,37 @@ function toSalonLocalDateString(input: Date, timezone: string): string {
 function buildTimeOfDayGreeting(
   timezone: string,
   businessName: string,
+  personaName: string,
   style: "open_ended" | "booking" = "open_ended",
+  streetAddress?: string | null,
 ): string {
   const local = toZonedTime(new Date(), timezone || "UTC");
   const hour = local.getHours();
   const daypart = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
   if (style === "booking") {
-    return `${daypart}, thank you for calling ${businessName}, this is Autumn. Are you calling to book an appointment today?`;
+    return `${daypart}, thank you for calling ${businessName}, this is ${personaName}. Are you calling to book an appointment today?`;
   }
 
-  return `${daypart}, thank you for calling ${businessName}, this is Autumn. How can I help you today?`;
+  // Short, casual openers — no "thank you for calling"/daypart formality.
+  // Picked once per call, not literally rotated (no cross-call state to
+  // track, and every caller still gets a varied greeting).
+  const variants = [
+    `${businessName} — ${personaName} speaking.`,
+    `${businessName}, this is ${personaName}.`,
+  ];
+  // Greeting location is intentionally only the street name: no building number,
+  // suite/unit, city, state, or ZIP. "123 N Main St, Phoenix, AZ" becomes "N Main St".
+  const streetName = streetAddress
+    ?.split(",")[0]
+    ?.trim()
+    .replace(/^\d+[A-Za-z]?(?:\s*-\s*\d+[A-Za-z]?)?\s+/, "")
+    .replace(/\s+(?:suite|ste\.?|unit|#)\s*[A-Za-z0-9-]+.*$/i, "")
+    .trim();
+  if (streetName) {
+    variants.push(`${businessName} on ${streetName} — this is ${personaName}.`);
+  }
+  return variants[Math.floor(Math.random() * variants.length)];
 }
 
 function getAiReceptionistInternalKey(): string | null {
@@ -1794,6 +1929,10 @@ async function createBookingViaBookingRules(
     message: `AI Receptionist booked ${new Date(chosen.time).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit", timeZone: salon.timezone || "UTC" })}${bookedService ? ` for ${bookedService.name}` : ""}${requiresPayment ? " (awaiting payment link)" : ""}`,
   });
 
+  // Tell the owner's phone (Certxa Pro app). A booking still waiting for its deposit or card is
+  // hidden from the calendar until that is done, so it does not notify yet.
+  if (!requiresPayment) void pushBookingEvent(salon.storeId, Number(appointmentId), "booked_ai");
+
   if (requiresPayment) {
     // Hold created — no calendar/dashboard broadcast yet (it's hidden until
     // paid). Send the caller an SMS with a one-time link instead.
@@ -2152,11 +2291,17 @@ async function handleGetWalkinAvailability(
     const dayStartLocal = fromZonedTime(new Date(`${todayStr}T00:00:00`), tz);
     const dayEndLocal   = fromZonedTime(new Date(`${todayStr}T23:59:59.999`), tz);
 
-    const [hours, todayAppointments, allStaff, walkinBufferMin] = await Promise.all([
+    const [hours, todayAppointments, allStaff, walkinBufferMin, clockedInResult] = await Promise.all([
       storage.getBusinessHours(salon.storeId),
       storage.getAppointments({ from: dayStartLocal, to: dayEndLocal, storeId: salon.storeId }),
       storage.getAllStaff(salon.storeId),
       getBufferMinutes(salon.storeId),
+      pool.query(
+        `SELECT DISTINCT staff_id FROM timeclock
+          WHERE store_id = $1 AND clock_out IS NULL
+            AND work_date = to_char(NOW() AT TIME ZONE $2, 'YYYY-MM-DD')`,
+        [salon.storeId, tz],
+      ),
     ]);
 
   const dayOfWeek = todayLocal.getDay();
@@ -2186,7 +2331,15 @@ async function handleGetWalkinAvailability(
       ? dayHours.closeTime.split(":").map(Number)
       : [18, 0];
 
-    const activeStaffCount = allStaff.length || 1;
+    const clockedInIds = new Set<number>(clockedInResult.rows.map((r: any) => Number(r.staff_id)));
+    const activeTeam = allStaff.filter((member) => {
+      if (member.status === "removed" || member.status === "deactivated") return false;
+      // Timeclock is authoritative when this salon uses it. Otherwise preserve compatibility with
+      // salons that run the Techs board without timeclock and use its live availability state.
+      if (clockedInIds.size > 0) return clockedInIds.has(member.id);
+      return member.availabilityState !== "off";
+    });
+    const activeStaffCount = activeTeam.length;
   const closeTotalMinutes = closeHour * 60 + closeMin;
   const openTotalMinutes = openHour * 60 + openMin;
   const nowTotalMinutes = todayLocal.getHours() * 60 + todayLocal.getMinutes();
@@ -2199,6 +2352,34 @@ async function handleGetWalkinAvailability(
         "The salon is closed for the rest of today. I can help you book for tomorrow — what time works best for you?",
     };
   }
+
+    if (activeStaffCount === 0) {
+      return {
+        success: true,
+        message: "There are no technicians currently available for walk-ins. I can help you schedule an appointment for another day.",
+      };
+    }
+
+    // Live capacity gate: before suggesting any walk-in, determine whether every technician who is
+    // working right now is occupied by an active ticket or a booking that overlaps the current time.
+    const busyNowIds = new Set<number>();
+    for (const member of activeTeam) {
+      if (member.availabilityState === "busy") busyNowIds.add(member.id);
+    }
+    for (const appointment of todayAppointments) {
+      if (!appointment.staffId || ["cancelled", "completed", "no_show", "no-show"].includes(appointment.status ?? "")) continue;
+      const startsAt = new Date(appointment.startedAt ?? appointment.date);
+      const endsAt = new Date(startsAt.getTime() + (appointment.duration ?? 60) * 60_000);
+      if (appointment.status === "started" || (startsAt <= nowUtc && endsAt > nowUtc)) busyNowIds.add(appointment.staffId);
+    }
+    const allTechsBusyNow = activeTeam.every((member) => busyNowIds.has(member.id));
+
+    if (allTechsBusyNow) {
+      return {
+        success: true,
+        message: `The salon is currently at capacity — all ${activeStaffCount} working technician${activeStaffCount === 1 ? " is" : "s are"} busy with a booking or active ticket. Do not suggest coming in now. Offer to schedule the caller for a future date instead.`,
+      };
+    }
 
     // Build concrete 30-minute suggestions for the rest of today.
     const earliestCandidate = Math.max(openTotalMinutes, nowTotalMinutes + 15);
@@ -2217,7 +2398,7 @@ async function handleGetWalkinAvailability(
       if (slotStart < nowUtc) continue;
 
       let freeStaff = 0;
-      for (const member of allStaff) {
+      for (const member of activeTeam) {
         const hasConflict = todayAppointments.some((a) => {
           if (a.status === "cancelled") return false;
           if (a.staffId !== member.id) return false;
@@ -2241,11 +2422,6 @@ async function handleGetWalkinAvailability(
     }
 
     const best = concreteSlots.slice(0, 6);
-    const allBusy = best.every((w) => w.freeStaff < 1);
-
-    if (allBusy || activeStaffCount <= 0) {
-      return { success: true, message: "All staff are fully booked for the remainder of today. I'd recommend booking for another day — would you like me to find the next available date?" };
-    }
 
     const suggestions = best
       .filter((w) => w.freeStaff > 0)
@@ -2259,7 +2435,7 @@ async function handleGetWalkinAvailability(
     };
   } catch (err) {
     console.error("[AI Receptionist] Walk-in availability check failed:", err);
-    return { success: false, message: "I wasn't able to check today's schedule. Walk-ins are generally welcome — please feel free to come in and we'll do our best to accommodate you." };
+    return { success: false, message: "I wasn't able to verify the salon's live capacity, so I cannot safely suggest a walk-in time. Please offer to schedule the caller for a future date instead." };
   }
 }
 
@@ -2536,6 +2712,7 @@ async function handleDatabaseFallback(
         .where(and(eq(appointments.id, apptId), eq(appointments.storeId, salon.storeId)));
 
       logAiToolEvent("database_fallback.cancel.success", { storeId: salon.storeId, appointmentId: apptId });
+      void pushBookingEvent(salon.storeId, apptId, "cancelled_ai");
       return { success: true, message: `Appointment ${apptId} cancelled via direct DB.` };
     } catch (err) {
       return { success: false, message: `Cancel failed: ${err instanceof Error ? err.message : String(err)}` };
@@ -2788,6 +2965,7 @@ async function handleCancel(
       void enqueueAvailabilityInvalidation(storeId, cancelledDateStr, "booking_cancelled");
       void enqueueSlotRebuild(storeId, buildDateRange(14).filter((d) => d >= cancelledDateStr), "booking_changed");
     }
+    void pushBookingEvent(storeId, Number(targetAppointmentId), "cancelled_ai");
     return { success: true, message: `Appointment ${targetAppointmentId} cancelled. You're all set.` };
   } catch (err) {
     logAiToolEvent("cancel.failure", {
@@ -2922,6 +3100,7 @@ async function handleReschedule(
     hour: "numeric",
     minute: "2-digit",
   });
+  void pushBookingEvent(storeId, Number(args.appointmentId), "rescheduled_ai");
   return { success: true, message: `Appointment ${args.appointmentId} rescheduled to ${confirmedLocal} (salon time).` };
 }
 
@@ -3040,6 +3219,75 @@ function createCallSession(twilioWs: WebSocket) {
   // new delta rather than waiting for a completion marker that doesn't exist.
   let aiSpeakingIdleTimer: ReturnType<typeof setTimeout> | null = null;
   const AI_SPEAKING_IDLE_MS = 700;
+  // Consecutive-frame debounce for the barge-in detector below — a single noisy
+  // 20ms frame (line hiss, comfort noise, a click) must not clear a full sentence.
+  let interruptVoicedStreak = 0;
+  const INTERRUPT_VOICED_FRAMES_REQUIRED = 5; // ~100ms of sustained energy
+
+  // Outbound audio to Twilio must be paced to real time (one 20ms frame every
+  // 20ms) rather than dumped in a burst the instant a delta arrives — Twilio
+  // Media Streams can silently drop frames sent faster than real-time playback,
+  // with no error surfaced back over the WebSocket, which otherwise looks
+  // exactly like a successfully-sent-but-never-heard call.
+  const outboundFrameQueue: string[] = [];
+  let outboundPacerTimer: ReturnType<typeof setInterval> | null = null;
+  let ambienceCursor: AutumnBackgroundAudioCursor | null = null;
+  let ambienceInitializationStarted = false;
+  let ambienceOutboundFrameCount = 0;
+  // Twilio's playback path can silently swallow media frames sent in the first
+  // instant after the stream "starts," even though the WebSocket itself is
+  // already open — several real calls got a fully successful session with
+  // packets genuinely sent, yet the recording shows total silence on the AI
+  // side. Set once the "start" event lands; the pacer below holds frames in
+  // the queue (nothing is dropped) until this grace period has passed.
+  let twilioStreamReadyAt: number | null = null;
+  const TWILIO_PLAYBACK_WARMUP_MS = 300;
+
+  const startOutboundPacer = (): void => {
+    if (outboundPacerTimer) return;
+    outboundPacerTimer = setInterval(() => {
+      if (twilioWs.readyState !== WebSocket.OPEN || !streamSid) return;
+      if (twilioStreamReadyAt !== null && Date.now() - twilioStreamReadyAt < TWILIO_PLAYBACK_WARMUP_MS) return;
+      const queuedAiFrame = outboundFrameQueue.shift();
+      if (!queuedAiFrame && !ambienceCursor) return;
+      try {
+        const payload = ambienceCursor
+          ? mixTwilioOutboundFrame(
+              queuedAiFrame ? Buffer.from(queuedAiFrame, "base64") : null,
+              ambienceCursor,
+              queuedAiFrame ? 0.25 : 1,
+            ).toString("base64")
+          : queuedAiFrame!;
+        twilioWs.send(JSON.stringify({ event: "media", streamSid, media: { payload } }));
+        if (ambienceCursor) {
+          ambienceOutboundFrameCount++;
+          if (ambienceOutboundFrameCount === 1 || ambienceOutboundFrameCount % 250 === 0) {
+            console.log(
+              `[AI Receptionist] Salon ambience outbound frame #${ambienceOutboundFrameCount} ` +
+              `call=${sessionCallSid ?? "(pending)"} mixedWithAi=${Boolean(queuedAiFrame)}`,
+            );
+          }
+        }
+      } catch (sendErr) {
+        console.error(`[AI Receptionist] ⚠️  WebSocket send failed (paced outbound):`, sendErr);
+      }
+    }, TWILIO_FRAME_MS);
+  };
+
+  const initializeAmbience = (): void => {
+    if (ambienceInitializationStarted) return;
+    ambienceInitializationStarted = true;
+    const config = readAutumnBackgroundAudioConfig();
+    if (!config.enabled) return;
+    createAutumnBackgroundAudioCursor(config)
+      .then((cursor) => {
+        if (sessionClosed || !cursor) return;
+        ambienceCursor = cursor;
+        startOutboundPacer();
+        console.log(`[AI Receptionist] Salon ambience started for call ${sessionCallSid ?? "(pending)"} at volume=${config.volume}`);
+      })
+      .catch((error) => console.error(`[AI Receptionist] Salon ambience unavailable; continuing without it:`, error));
+  };
 
   // A running, call-scoped sequence number for tool-call log correlation.
   // Live has no discrete "user turn" concept exposed to the app (turn-taking
@@ -3051,11 +3299,6 @@ function createCallSession(twilioWs: WebSocket) {
   let toolCallsThisMinute = 0;
   let rateWindowStart     = Date.now();
 
-  // §1 Per-call hard caps — independent of per-minute rate windows
-  const MAX_BACKEND_TURNS_PER_CALL = 12; // completed backend delegation rounds (cost ceiling)
-  const MAX_TOOL_CALLS_PER_CALL    = 6;  // tool invocations per call (cost ceiling)
-  let backendTurnsThisCall      = 0;
-  let toolCallsThisCall         = 0;
   let gracefulTerminationStarted = false;
 
   // §3 Per-call tool result cache — read-only tools only; mutating tools never cached
@@ -3219,9 +3462,9 @@ function createCallSession(twilioWs: WebSocket) {
     if (sessionConfigured || !openAiWsOpen || !startReceived || !salon) return;
     sessionConfigured = true;
 
-    // S1-fix: Wrap DB lookups in try/catch + hard 3s timeout — a DB failure or hang must
-    // NEVER prevent the session from being configured. The AI can greet the caller without
-    // appointment history; silence at call-start is worse than missing context.
+    // Caller history is useful but never worth delaying the greeting. Most local lookups finish
+    // within a few milliseconds; after 750ms start without CRM context and retrieve anything
+    // subsequently needed through the normal appointment tools.
     let upcoming: CallerAppointment[] = [];
     let crmProfile: CallerCrmProfile | null = null;
     try {
@@ -3232,8 +3475,8 @@ function createCallSession(twilioWs: WebSocket) {
         ]),
         new Promise<never>((_, reject) =>
           setTimeout(
-            () => reject(new Error("DB caller-lookup timed out after 3s")),
-            3_000
+            () => reject(new Error("DB caller-lookup timed out after 750ms")),
+            750
           )
         ),
       ]);
@@ -3395,21 +3638,19 @@ function createCallSession(twilioWs: WebSocket) {
             ` | streamSid=${streamSid ?? "none"} | twilioWs=${twilioWs.readyState === WebSocket.OPEN ? "OPEN" : "CLOSED"}`
           );
         }
-        if (streamSid && twilioWs.readyState === WebSocket.OPEN) {
+        if (streamSid) {
+          // Queue frames rather than sending them all in one synchronous burst —
+          // a real-time pacer below drains one 20ms frame every 20ms so Twilio
+          // receives audio at actual playback speed instead of all-at-once.
           const ulaw = Buffer.from(delta, "base64");
-          try {
-            for (let i = 0; i < ulaw.length; i += TWILIO_ULAW_FRAME_BYTES) {
-              const chunk = ulaw.subarray(i, i + TWILIO_ULAW_FRAME_BYTES).toString("base64");
-              const packet = JSON.stringify({ event: "media", streamSid, media: { payload: chunk } });
-              twilioWs.send(packet);
-            }
-          } catch (sendErr) {
-            console.error(`[AI Receptionist] ⚠️  WebSocket send failed on packet #${outboundAudioCount}:`, sendErr);
+          for (let i = 0; i < ulaw.length; i += TWILIO_ULAW_FRAME_BYTES) {
+            outboundFrameQueue.push(ulaw.subarray(i, i + TWILIO_ULAW_FRAME_BYTES).toString("base64"));
           }
+          startOutboundPacer();
         } else {
           console.warn(
             `[AI Receptionist] ⚠️  Audio delta DROPPED — packet #${outboundAudioCount}` +
-            ` streamSid=${streamSid ?? "none"} twilioWs=${twilioWs.readyState}`
+            ` streamSid=none`
           );
         }
       }
@@ -3428,18 +3669,6 @@ function createCallSession(twilioWs: WebSocket) {
         const usage = resp?.usage as Record<string, unknown> | undefined;
         if (usage && sessionCallSid) costMeter.recordTokens(sessionCallSid, usage);
         callHealthTracker.recordResponseEnd(sessionCallSid ?? null);
-        // §1 Per-call backend-turn cap — cost ceiling independent of the old
-        // per-minute voice-response concept (Live's voice turns aren't app-triggered).
-        backendTurnsThisCall++;
-        if (backendTurnsThisCall >= MAX_BACKEND_TURNS_PER_CALL) {
-          console.warn(
-            `[CostControl] §1 turn cap reached (${backendTurnsThisCall}/${MAX_BACKEND_TURNS_PER_CALL}) — ending call gracefully`
-          );
-          terminateGracefullyFn?.(
-            "cost_limit_exceeded",
-            "I'm sorry, I've reached the limit of what I can do in one call. Please try calling back and I'll be happy to help you from the start."
-          );
-        }
         return;
       }
 
@@ -3476,29 +3705,6 @@ function createCallSession(twilioWs: WebSocket) {
       }
       try { callFileLogger.toolStart(name, JSON.parse(args || "{}")); } catch { callFileLogger.toolStart(name, args); }
 
-      // §1 Per-call tool cap — hard ceiling independent of time windows
-      toolCallsThisCall++;
-      if (toolCallsThisCall > MAX_TOOL_CALLS_PER_CALL) {
-        console.warn(
-          `[CostControl] §1 tool cap reached (${toolCallsThisCall}/${MAX_TOOL_CALLS_PER_CALL}) — ` +
-          `skipping "${name}" and ending call gracefully`
-        );
-        // Deliver synthetic output so the backend doesn't hang waiting for a result
-        if (openAiWs.readyState === WebSocket.OPEN) {
-          openAiWs.send(JSON.stringify({
-            type: "response.item.create",
-            item: {
-              type: "function_call_output",
-              call_id: callId,
-              output: JSON.stringify({ success: false, message: "Service temporarily unavailable — please try again." }),
-            },
-          }));
-          continueBackend();
-        }
-        terminateGracefullyFn?.("cost_limit_exceeded", "I'm sorry, I'm having some trouble completing that right now. Please try calling back in a few minutes and I'll be happy to help.");
-        return;
-      }
-
       _resetRateWindowIfNeeded();
       toolCallsThisMinute++;
       if (toolCallsThisMinute > MAX_TOOL_CALLS_PER_MIN) {
@@ -3512,18 +3718,17 @@ function createCallSession(twilioWs: WebSocket) {
       callHealthTracker.recordToolStart(sessionCallSid ?? null, name);
 
       (async () => {
-        let result: { success: boolean; message: string };
-        let shouldEndCall = false;
+        let result: { success: boolean; message: string; [key: string]: unknown };
         let toolSuccess = false;
 
         try {
-          const toolPromise = async (): Promise<{ success: boolean; message: string }> => {
+          const toolPromise = async (): Promise<{ success: boolean; message: string; [key: string]: unknown }> => {
             if (!salon) return { success: false, message: "Session not initialized." };
 
             if (name === "create_booking") {
               const r = await handleNewBooking(salon.storeId, args, salon);
               if (r.success) {
-                callOutcome = "booked"; callNotes = r.message; shouldEndCall = true;
+                callOutcome = "booked"; callNotes = r.message;
                 // Keep allowlist in sync — without this a same-call cancel fails because
                 // the new appointment ID was never in the session-start allowlist.
                 const idMatch = r.message.match(/Appointment\s+(\d+)\s+confirmed/i);
@@ -3535,11 +3740,11 @@ function createCallSession(twilioWs: WebSocket) {
               return r;
             } else if (name === "cancel_booking") {
               const r = await handleCancel(salon.storeId, args, allowlist, callerPhone ?? undefined, salon.timezone);
-              if (r.success) { callOutcome = "cancelled"; callNotes = r.message; shouldEndCall = true; }
+              if (r.success) { callOutcome = "cancelled"; callNotes = r.message; }
               return r;
             } else if (name === "reschedule_booking") {
               const r = await handleReschedule(salon.storeId, args, allowlist, salon.timezone);
-              if (r.success) { callOutcome = "rescheduled"; callNotes = r.message; shouldEndCall = true; }
+              if (r.success) { callOutcome = "rescheduled"; callNotes = r.message; }
               return r;
             } else if (name === "add_appointment_addon") {
               const r = await handleAddAddon(salon.storeId, args, allowlist, salon.timezone);
@@ -3587,6 +3792,12 @@ function createCallSession(twilioWs: WebSocket) {
               const r = await handleGetWalkinAvailability(salon);
               if (r.success) { callOutcome = "walkin_guidance"; callNotes = r.message; }
               return r;
+            } else if (name === "get_salon_operations_overview") {
+              const overview = await getSalonOperationsOverview(salon.storeId, salon.timezone);
+              const message = summarizeSalonOperations(overview);
+              callOutcome = "availability_checked";
+              callNotes = message;
+              return { success: true, overview, message };
             } else if (name === "request_callback") {
               // Global fallback — save caller phone for manager follow-up
               const r = await handleRequestCallback(args, salon, callerPhone ?? null, callLogId);
@@ -3703,15 +3914,6 @@ function createCallSession(twilioWs: WebSocket) {
         }));
         continueBackend();
         watchdog.onToolResultDelivered();
-
-        if (shouldEndCall) {
-          // 20s gives the AI time to ask "Was there anything else?" and hear the caller's reply
-          setTimeout(() => {
-            console.log(`[AI Receptionist] Closing call after tool "${name}" — store ${salon?.storeId ?? "?"}`);
-            if (salon) safetyGate.recordCallSuccess(salon.storeId);
-            twilioWs.close();
-          }, 20_000);
-        }
       })().catch((err) => {
         console.error(
           `[AI Receptionist][seq=${capturedSeq}] Tool delivery fatal error — tool="${name}" error="${err.message}"`
@@ -3803,6 +4005,8 @@ function createCallSession(twilioWs: WebSocket) {
 
       const startData = msg.start as Record<string, unknown> | undefined;
       streamSid = (msg.streamSid as string) ?? null;
+      twilioStreamReadyAt = Date.now();
+      initializeAmbience();
       const callSid = (startData?.callSid as string) ?? null;
       const customParams = (startData?.customParameters as Record<string, string> | undefined) ?? {};
       // Normalise to 10-digit so it matches the DB format (strips +1 / country code)
@@ -3852,6 +4056,17 @@ function createCallSession(twilioWs: WebSocket) {
         }
         safetyGate.recordCallStart(parsedStoreId);
 
+        // Start OpenAI immediately after the salon is validated. Recording setup, call-log writes,
+        // notifications, and analytics are bookkeeping and must never hold the greeting hostage.
+        // Previously those awaited operations ran first, producing 8–13 seconds of dead air and
+        // making the model appear to require the caller to say "hello" before it would speak.
+        sessionCallSid = callSid ?? `call-${Date.now()}`;
+        salon = loaded;
+        startReceived = true;
+        void configureSessionIfReady().catch((err) =>
+          console.error("[AI Receptionist] Session config error:", err)
+        );
+
         // Optional Twilio native call recording. Disabled by default.
         // Enable with: AI_RECEPTIONIST_TWILIO_RECORDING_ENABLED=1
         const recordingEnabled = String(process.env.AI_RECEPTIONIST_TWILIO_RECORDING_ENABLED ?? "1") !== "0";
@@ -3883,7 +4098,6 @@ function createCallSession(twilioWs: WebSocket) {
         }
 
         // ── Session guard + cost metering ──────────────────────────────────
-        sessionCallSid = callSid ?? `call-${Date.now()}`;
 
         // Graceful termination callback — directs the front-end voice model to say
         // a farewell right now, then hangs up. Under Live there's no response.create/
@@ -3942,8 +4156,6 @@ function createCallSession(twilioWs: WebSocket) {
             "We've reached the maximum call time. I'll need to wrap up now — please call back if you need anything else. Have a great day!"
           );
         }, MAX_SESSION_MS);
-
-        salon = loaded;
 
         // ── Start silence watchdog ─────────────────────────────────────
         watchdog.start({
@@ -4011,12 +4223,8 @@ function createCallSession(twilioWs: WebSocket) {
           }
         })();
 
-        await callLogInsertPromise;
-
-        startReceived = true;
-        configureSessionIfReady().catch((err) =>
-          console.error("[AI Receptionist] Session config error:", err)
-        );
+        // Do not await call-log persistence here. Session setup already started above and logging
+        // completion is coordinated independently during teardown.
       })().catch((err) => console.error("[AI Receptionist] Start handler error:", err));
       return;
     }
@@ -4055,12 +4263,25 @@ function createCallSession(twilioWs: WebSocket) {
       // gate below to decide whether the caller is actually talking over the AI. GPT-Live's
       // own server-side VAD handles stopping generation; this only clears Twilio's already-
       // buffered playback so the caller doesn't keep hearing stale audio.
-      if (aiSpeaking && hasVoiceInTwilioUlaw(payload)) {
-        aiSpeaking = false;
-        console.log(`[AI Receptionist] 🛑 Interruption detected — clearing Twilio playback buffer`);
-        if (streamSid && twilioWs.readyState === WebSocket.OPEN) {
-          twilioWs.send(JSON.stringify({ event: "clear", streamSid }));
+      // Requires several consecutive voiced frames (not just one) so a stray noise
+      // spike on the line can't repeatedly wipe Autumn's audio mid-sentence.
+      if (aiSpeaking) {
+        if (hasVoiceInTwilioUlaw(payload)) {
+          interruptVoicedStreak++;
+          if (interruptVoicedStreak >= INTERRUPT_VOICED_FRAMES_REQUIRED) {
+            interruptVoicedStreak = 0;
+            aiSpeaking = false;
+            outboundFrameQueue.length = 0; // drop queued-but-unsent audio too, not just Twilio's side
+            console.log(`[AI Receptionist] 🛑 Interruption detected — clearing Twilio playback buffer`);
+            if (streamSid && twilioWs.readyState === WebSocket.OPEN) {
+              twilioWs.send(JSON.stringify({ event: "clear", streamSid }));
+            }
+          }
+        } else {
+          interruptVoicedStreak = 0;
         }
+      } else {
+        interruptVoicedStreak = 0;
       }
 
       if (openAiWs.readyState === WebSocket.OPEN) {
@@ -4263,6 +4484,13 @@ function createCallSession(twilioWs: WebSocket) {
       aiSpeakingIdleTimer = null;
     }
 
+    if (outboundPacerTimer) {
+      clearInterval(outboundPacerTimer);
+      outboundPacerTimer = null;
+    }
+    outboundFrameQueue.length = 0;
+    ambienceCursor = null;
+
     // Clear the 12-minute hard-limit timer if it's still pending
     if (sessionMaxDurationHandle) {
       clearTimeout(sessionMaxDurationHandle);
@@ -4273,6 +4501,10 @@ function createCallSession(twilioWs: WebSocket) {
     if (sessionUpdateTimeoutHandle) {
       clearTimeout(sessionUpdateTimeoutHandle);
       sessionUpdateTimeoutHandle = null;
+    }
+
+    if (salon && (callOutcome === "booked" || callOutcome === "cancelled" || callOutcome === "rescheduled")) {
+      safetyGate.recordCallSuccess(salon.storeId);
     }
 
     // Watchdog stop + flush on EVERY exit path (error, stop event, WS close).
@@ -4307,18 +4539,13 @@ async function readPrefs(storeId: number): Promise<Record<string, unknown>> {
   }
 }
 
-async function writePrefs(storeId: number, prefs: Record<string, unknown>): Promise<void> {
-  const prefsJson = JSON.stringify(prefs);
-  const [row] = await db
-    .select({ id: storeSettings.id })
-    .from(storeSettings)
-    .where(eq(storeSettings.storeId, storeId))
-    .limit(1);
-  if (row) {
-    await db.update(storeSettings).set({ preferences: prefsJson }).where(eq(storeSettings.storeId, storeId));
-  } else {
-    await db.insert(storeSettings).values({ storeId, preferences: prefsJson });
-  }
+/** Save one key (or remove it when `value` is undefined) against what is stored right now. */
+async function writePref(storeId: number, key: string, value: unknown): Promise<void> {
+  await mutateStorePreferences(storeId, (prefs) => {
+    const next = { ...prefs };
+    if (value === undefined) delete next[key]; else next[key] = value;
+    return next;
+  });
 }
 
 export async function getReceptionistEnabled(storeId: number): Promise<boolean> {
@@ -4333,24 +4560,20 @@ export async function getReceptionistPhone(storeId: number): Promise<string | nu
 }
 
 export async function setReceptionistEnabled(storeId: number, enabled: boolean): Promise<void> {
-  const prefs = await readPrefs(storeId);
-  prefs[PREF_KEY] = enabled;
-  await writePrefs(storeId, prefs);
+  await writePref(storeId, PREF_KEY, enabled);
 }
 
 export async function setReceptionistPhone(storeId: number, phone: string | null): Promise<void> {
-  const prefs = await readPrefs(storeId);
-  if (phone === null) {
-    delete prefs[PREF_PHONE_KEY];
-  } else {
-    prefs[PREF_PHONE_KEY] = phone;
-  }
-  await writePrefs(storeId, prefs);
+  await writePref(storeId, PREF_PHONE_KEY, phone === null ? undefined : phone);
 }
 
 // ─── Route registration ───────────────────────────────────────────────────────
 
 export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express): void {
+  // Non-blocking startup preparation. Calls remain available if decoding fails.
+  void warmAutumnBackgroundAudio().catch((error) =>
+    console.error("[Autumn ambience] Startup preparation failed; calls will continue without ambience:", error),
+  );
   const apiKeyPresent =
     !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY || !!process.env.OPENAI_API_KEY;
   const apiKeySource = process.env.AI_INTEGRATIONS_OPENAI_API_KEY
@@ -5037,6 +5260,20 @@ export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express):
   // ── Twilio webhook: POST /api/webhook/twilio/:storeId ────────────────────
   const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
 
+  function isValidTwilioSignature(req: Request, publicUrl: string): boolean {
+    if (!twilioAuthToken) return process.env.NODE_ENV !== "production";
+
+    const signature = String(req.headers["x-twilio-signature"] ?? "").trim();
+    if (!signature) return false;
+
+    return twilio.validateRequest(
+      twilioAuthToken,
+      signature,
+      `${publicUrl}${req.originalUrl}`,
+      req.body ?? {},
+    );
+  }
+
   app.post("/api/webhook/twilio/:storeId", async (req: Request, res: Response) => {
     // ── DEBUG: log everything about the incoming request ──────────────────
     console.log("═══════════════════════════════════════════════════════════════");
@@ -5056,13 +5293,11 @@ export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express):
     console.log(`[AI Receptionist]   REPLIT_DEV_DOMAIN: ${process.env.REPLIT_DEV_DOMAIN ?? "(not set)"}`);
     console.log("═══════════════════════════════════════════════════════════════");
 
-    // ── SKIP signature validation during development ──────────────────────
-    // 🔒 Re-enable in production! See line ~1070 for the code.
-    /*
-    if (twilioAuthToken) {
-      // ... signature validation ...
+    const signatureCheckAppUrl = (process.env.APP_URL ?? `https://${process.env.REPLIT_DEV_DOMAIN}`).replace(/\/$/, "");
+    if (!isValidTwilioSignature(req, signatureCheckAppUrl)) {
+      console.warn(`[AI Receptionist] ❌ Rejected unsigned/forged Twilio webhook for storeId=${req.params.storeId}`);
+      return res.status(403).type("text/plain").send("Forbidden");
     }
-    */
 
     const storeId = parseInt(String(req.params.storeId ?? ""), 10);
 
@@ -5087,6 +5322,17 @@ export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express):
         ` (PayloadType=${payloadType || "(none)"})`
       );
       return res.status(200).type("text/plain").send("ok");
+    }
+
+    // Calls with no usable caller ID (blocked/anonymous, or a placeholder like
+    // 0000000000) are rejected immediately — never opens a Live/OpenAI session.
+    const callerPhoneRaw = ((req.body?.From as string | undefined) ?? "").trim();
+    const callerPhone = toTenDigit(callerPhoneRaw);
+    if (!callerPhone) {
+      console.warn(
+        `[AI Receptionist] Incoming call rejected — no valid caller ID (From="${callerPhoneRaw || "(empty)"}") for store ${storeId}`
+      );
+      return res.status(200).type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Reject/></Response>`);
     }
 
     const receptionistEnabled = await getReceptionistEnabled(storeId);
@@ -5139,12 +5385,6 @@ export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express):
     }
 
     console.log(`[AI Receptionist] Found salon: "${salon.businessName}" (store ${storeId})`);
-
-    // ── Extract caller phone ─────────────────────────────────────────────────
-    // Twilio sends From in E.164 (+12125551234). Normalise to bare 10-digit
-    // so it matches the format stored in the DB.
-    const callerPhoneRaw = (req.body?.From as string | undefined) ?? "";
-    const callerPhone = toTenDigit(callerPhoneRaw) ?? callerPhoneRaw.replace(/[<>&"']/g, "");
 
     const appUrl = process.env.APP_URL ?? `https://${process.env.REPLIT_DEV_DOMAIN}`;
     const wssDomain = appUrl.replace(/^https?:\/\//, "");
@@ -5330,7 +5570,7 @@ interface VoiceSession {
     return `You are Autumn, a friendly AI phone receptionist for ${salon.businessName}. Keep responses SHORT — this is a phone call. One or two sentences per turn. Today's date/timezone: ${new Date().toLocaleString("en-US", { timeZone: salon.timezone, dateStyle: "full" })} (${salon.timezone}).
 
 Introduce yourself as Autumn near the start of the call.
-Your FIRST spoken response in a new call must be exactly: "${buildTimeOfDayGreeting(salon.timezone, salon.businessName, "booking")}"
+Your FIRST spoken response in a new call must be exactly: "${buildTimeOfDayGreeting(salon.timezone, salon.businessName, "Autumn", "booking")}"
 ${hasKnownCallerName
   ? `If they say yes and caller name is known (${callerName}), do NOT ask who is speaking. Do NOT repeatedly use their name in normal turns.`
   : `If they say yes, your next question must be: "Great, may I ask who I am speaking with?" After they give their name, say: "Thank you [caller name], are we looking to book a manicure or pedicure?"`}
@@ -5409,7 +5649,7 @@ When done, say a warm goodbye and end the call naturally.`;
             serviceId:           { type: "integer", description: "Numeric service ID from the list" },
             staffId:             { type: "integer", description: "Optional specific staff ID when caller requests a technician." },
             staffName:           { type: "string", description: "Optional specific technician name when caller requests by name (e.g. 'Tom')." },
-            appointmentDateTime: { type: "string", description: "ISO 8601 datetime (e.g. 2025-06-15T14:00:00)" },
+            appointmentDateTime: { type: "string", description: "Local datetime at the salon, NO timezone offset or Z suffix (e.g. 2025-06-15T14:00:00 for 2pm) — always in 24-hour salon-local wall-clock time." },
             extraDurationMinutes: { type: "integer", description: "Optional extra minutes for add-ons (0 if none)." },
           },
           required: ["customerName", "customerPhone", "serviceId", "appointmentDateTime"],
@@ -5695,7 +5935,7 @@ When done, say a warm goodbye and end the call naturally.`;
         console.error("[Voice] Failed to insert call log:", err);
       }
 
-      const greeting = buildTimeOfDayGreeting(salon.timezone, salon.businessName, "booking");
+      const greeting = buildTimeOfDayGreeting(salon.timezone, salon.businessName, "Autumn", "booking");
 
       voiceSessions.set(callSid, {
         storeId,

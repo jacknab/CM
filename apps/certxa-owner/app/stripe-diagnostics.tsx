@@ -278,18 +278,18 @@ export default function StripeDiagnosticsScreen() {
 
     if (abort() || !connectedOk) { setTestRunning(false); return; }
 
-    // 6. Create PaymentIntent (1 cent, USD)
+    // 6. Create PaymentIntent (50 cents, USD — Stripe's live USD minimum)
     setStep('intent', 'running');
     let clientSecret = '';
     let piId = '';
     try {
       const r = await apiCaller.call('/api/payments/terminal/create-payment-intent', 'POST', {
-        amountCents: 1, currency: 'usd', appointmentId: null, clientName: 'Stripe Diagnostics Self-Test',
+        amountCents: 50, currency: 'usd', appointmentId: null, clientName: 'Stripe Diagnostics Self-Test',
       });
       if (!r?.clientSecret) throw new Error(r?.error ?? 'No clientSecret returned');
       clientSecret = r.clientSecret;
       piId = r.paymentIntentId ?? '';
-      setStep('intent', 'pass', 'PI created (1¢)');
+      setStep('intent', 'pass', 'PI created (50¢)');
     } catch (e: any) {
       const msg = e?.message ?? String(e);
       setLastSdkError(msg);

@@ -103,9 +103,13 @@ export const payoutDeductionRules = pgTable("payout_deduction_rules", {
   id:            serial("id").primaryKey(),
   storeId:       integer("store_id").references(() => locations.id, { onDelete: "cascade" }).notNull(),
   contractorId:  integer("contractor_id").references(() => contractors.id),
+  /** The staff member a "specific" rule is for (Payroll). contractorId is the frozen payout system's. */
+  staffId:       integer("staff_id"),
   name:          text("name").notNull(),
-  type:          text("type").default("fixed"),        // fixed | percentage
+  type:          text("type").default("fixed"),        // fixed | percentage | card_tips (Payroll only)
   amount:        decimal("amount", { precision: 10, scale: 2 }).default("0"),
+  /** card_tips: flat fee per tipped card transaction, on top of `amount` percent of the tip. */
+  perTransaction: decimal("per_transaction", { precision: 10, scale: 2 }).notNull().default("0"),
   appliesTo:     text("applies_to").default("all"),    // all | specific
   isActive:      boolean("is_active").default(true),
   createdAt:     timestamp("created_at").defaultNow().notNull(),

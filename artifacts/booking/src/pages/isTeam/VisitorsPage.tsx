@@ -25,6 +25,11 @@ interface Visitor {
   title: string;
   referrer: string;
   ip: string;
+  owner?: string | null;        // organisation the IP is registered to (ISP / hosting company)
+  asn?: number | null;
+  device?: "Desktop" | "Mobile" | "Tablet" | "Bot" | "Unknown";
+  os?: string | null;
+  browser?: string | null;
   country: string | null;       // ISO alpha-2
   countryName: string | null;
   city: string | null;
@@ -134,6 +139,13 @@ function VisitorDrawer({ visitor, now, onClose }: { visitor: Visitor; now: numbe
 
   const rows: [string, React.ReactNode][] = [
     ["IP address", <span className="font-mono text-slate-800">{visitor.ip || "—"}</span>],
+    ["IP belongs to", visitor.owner
+      ? <span>{visitor.owner}{visitor.asn ? <span className="text-slate-400"> · AS{visitor.asn}</span> : null}</span>
+      : <span className="text-slate-400">Unknown</span>],
+    ["Device", visitor.device && visitor.device !== "Unknown"
+      ? <span>{visitor.device}{[visitor.os, visitor.browser].filter(Boolean).length
+          ? <span className="text-slate-400"> · {[visitor.os, visitor.browser].filter(Boolean).join(" · ")}</span> : null}</span>
+      : <span className="text-slate-400">Unknown</span>],
     ["Location", locationLabel(visitor)],
     ["Country", <span>{flagEmoji(visitor.country)} {visitor.country || "—"}{visitor.countryName ? ` · ${visitor.countryName}` : ""}</span>],
     ...(isDevice

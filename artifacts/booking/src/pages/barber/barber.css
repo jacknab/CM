@@ -1,0 +1,925 @@
+/* Barber POS (/barber), navy / steel / white colour scheme — copied from the Nail POS (/nail) — the salon's own dark design, ported from /apps/nailsalon-wrapper.
+   Every rule is scoped under .barber-app so nothing leaks into the rest of the app. */
+
+.barber-app { font-family: 'DM Sans', sans-serif; color: #e8eaed; background: #20242c; font-synthesis: none; }
+.barber-app button { cursor: pointer; }
+.barber-app button:disabled { cursor: not-allowed; }
+.barber-app h1, .barber-app h2, .barber-app h3 { margin: 0; font-family: inherit; letter-spacing: normal; }
+
+/* ===== Layout shell ===== */
+.barber-app .pos-shell { width: 100vw; height: 100vh; min-width: 960px; display: grid; grid-template-columns: 338px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) 92px; gap: 0 9px; background: #20242c; overflow: hidden; }
+.barber-app .ticket-panel, .barber-app .work-area { min-height: 0; margin-top: 6px; }
+
+/* ===== Ticket panel (left) ===== */
+.barber-app .ticket-panel { background: #2a2e36; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid #3b424c; }
+.barber-app .ticket-client-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 11px; background: #232830; border-bottom: 1px solid #3b424c; flex-shrink: 0; }
+.barber-app .ticket-client-main { display: flex; flex-direction: column; gap: 2px; }
+.barber-app .ticket-client-name { font-size: 15px; font-weight: 700; color: #eceff3; line-height: 1.2; }
+.barber-app .ticket-client-points { font-size: 11px; font-weight: 600; color: #3f6ea3; letter-spacing: .3px; }
+.barber-app .ticket-client-num { font-size: 13px; font-weight: 700; color: #8b94a0; font-variant-numeric: tabular-nums; }
+.barber-app .ticket-items { flex: 1; overflow-y: auto; }
+.barber-app .ticket-items::-webkit-scrollbar { width: 5px; }
+.barber-app .ticket-items::-webkit-scrollbar-track { background: #2a2e36; }
+.barber-app .ticket-items::-webkit-scrollbar-thumb { background: #454c56; }
+.barber-app .empty-ticket { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 50px 20px; color: #5d6571; text-align: center; }
+.barber-app .empty-ticket p { font-size: 13px; max-width: 220px; line-height: 1.5; margin: 0; }
+.barber-app .empty-ticket svg { color: #3b424c; }
+.barber-app .ticket-item { height: 73px; padding: 12px 14px; display: grid; grid-template-columns: minmax(0,1fr) 64px 17px; align-items: center; gap: 8px; border-bottom: 1px solid #3b424c; }
+.barber-app .item-copy { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.barber-app .item-copy strong, .barber-app .item-price strong { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #e8eaed; }
+.barber-app .item-copy span { color: #a7afb9; font-size: 12px; }
+.barber-app .item-price { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.barber-app .item-price button { display: flex; gap: 4px; align-items: center; background: transparent; font-size: 11px; color: #9aa2ad; }
+.barber-app .tech-assign { position: relative; }
+.barber-app .tech-dropdown { position: absolute; bottom: 100%; right: 0; margin-bottom: 4px; background: #353a43; border: 1px solid #5a6270; z-index: 50; display: flex; flex-direction: column; box-shadow: 0 -4px 12px rgba(0,0,0,.4); }
+.barber-app .tech-dropdown button { display: flex; align-items: center; gap: 6px; padding: 9px 14px; font-size: 11px; color: #c8cdd3; white-space: nowrap; border-bottom: 1px solid #3b424c; }
+.barber-app .tech-dropdown button:hover { background: #3d444e; }
+.barber-app .tech-dropdown button.selected-tech { color: #3f6ea3; font-weight: 600; }
+.barber-app .tech-dropdown button:last-child { border-bottom: 0; }
+.barber-app .remove-item { color: #ef5a5f; background: transparent; }
+
+.barber-app .time-estimate { background: #2d343d; margin: 0 -14px 12px; padding: 10px 14px; border-top: 1px solid #3b424c; border-bottom: 1px solid #3b424c; }
+.barber-app .time-estimate span { color: #8b94a0; font-weight: 600; font-size: 11px; }
+.barber-app .time-estimate strong { color: #3f6ea3; font-size: 13px; }
+.barber-app .ticket-total { margin-top: auto; background: #232830; border-top: 1px solid #3b424c; padding: 16px 14px 10px; }
+.barber-app .ticket-total > div { display: flex; justify-content: space-between; margin: 0 0 11px; font-size: 12px; }
+.barber-app .ticket-total span { color: #9aa2ad; font-weight: 600; font-size: 11px; }
+.barber-app .ticket-total button { background: none; color: #3f6ea3; font-size: 12px; }
+.barber-app .ticket-total .grand-total { border-top: 1px solid #3b424c; padding-top: 14px; margin-top: 12px; margin-bottom: 16px; }
+.barber-app .grand-total span, .barber-app .grand-total strong { color: #f2f5f4; font-size: 16px; }
+.barber-app .ticket-total .checkout-row { display: flex; gap: 8px; }
+.barber-app .checkout { flex: 1; height: 51px; background: #0d9b6e !important; color: white !important; font-weight: 700; font-size: 14px !important; border-radius: 0; display: flex; justify-content: center; gap: 12px; align-items: center; }
+.barber-app .checkout-clr { width: 72px; height: 51px; background: #ef5a5f !important; color: white !important; font-weight: 700; font-size: 14px !important; border-radius: 0; display: flex; justify-content: center; align-items: center; border: none; cursor: pointer; flex-shrink: 0; }
+.barber-app .checkout-clr:hover { background: #d94f54 !important; }
+.barber-app .checkout-clr:disabled { background: #3b424c !important; cursor: default; opacity: 0.5; }
+.barber-app .checkout.disabled { background: #3b424c !important; cursor: default; opacity: 0.5; }
+.barber-app .checkout span { color: white; font-size: 14px; }
+
+/* ===== Work area (right) ===== */
+.barber-app .work-area { padding-right: 9px; display: flex; flex-direction: column; min-width: 0; }
+
+/* Sale area */
+.barber-app .sale-area { flex: 1; display: grid; grid-template-columns: 425px minmax(0, 1fr); gap: 9px; min-height: 0; }
+.barber-app .keypad, .barber-app .catalog-panel { background: #2a2e36; border-radius: 0; padding: 12px; min-height: 0; overflow: hidden; }
+
+/* Keypad */
+.barber-app .calculator-display { height: 59px; border: 1px solid #454c56; display: flex; align-items: center; justify-content: flex-end; padding: 0 18px; color: #e8eaed; font-size: 28px; font-weight: 700; background: #232830; overflow: hidden; white-space: nowrap; }
+.barber-app .key-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 11px; }
+.barber-app .key-grid button, .barber-app .money-grid button { min-height: 77px; background: #353a43; border: 1px solid #454c56; border-radius: 0; font-size: 24px; color: #e8eaed; }
+.barber-app .key-grid .undo-key { color: #f0a830; background: #3d3528; font-size: 34px; }
+.barber-app .key-grid .qty-key { color: #0d9b6e; font-size: 26px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+.barber-app .qty-key small { font-size: 11px; margin-top: 2px; }
+.barber-app .key-grid .enter-key { background: #0d9b6e; color: white; font-weight: 700; grid-column: span 2; font-size: 19px; border: 0; }
+.barber-app .money-grid { margin-top: 10px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.barber-app .money-grid button { min-height: 65px; font-size: 16px; color: #3f6ea3; font-weight: 700; }
+/* The Keypad's own money-grid has a 5th button (Retail) the shared 4-column layout doesn't allow for. */
+.barber-app .keypad-money-grid { grid-template-columns: repeat(5, 1fr); }
+.barber-app .money-grid button.fn-btn-active { background: rgba(63,110,163,.22); border-color: #9db4d0; color: #e8eaed; }
+.barber-app .money-grid button.fn-btn-active svg { color: #9db4d0; }
+/* Create-ticket keypad fills its full center column instead of leaving a dead block below the
+   function row. The checkout keypad has its own sizing rules further down this file. */
+.barber-app .ticket-keypad { display: flex; flex-direction: column; }
+.barber-app .ticket-keypad .calculator-display { flex: 0 0 59px; box-sizing: border-box; }
+.barber-app .ticket-keypad .key-grid { flex: 1; min-height: 0; grid-template-rows: repeat(4, minmax(0, 1fr)); }
+.barber-app .ticket-keypad .key-grid button { min-height: 0; }
+.barber-app .ticket-keypad .money-grid { flex: 0 0 auto; }
+
+/* Catalog panel */
+.barber-app .catalog-panel { padding: 0 10px 7px; display: flex; flex-direction: column; position: relative; }
+.barber-app .category-tabs { height: 69px; display: grid; grid-template-columns: repeat(8, 1fr); border-bottom: 1px solid #3b424c; flex: 0 0 auto; }
+.barber-app .category-tabs button { position: relative; background: #2a2e36; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 7px; font-size: 9px; font-weight: 700; white-space: nowrap; color: #8b94a0; cursor: pointer; transition: color 0.12s; }
+.barber-app .category-tabs button:hover { color: #c8cdd3; }
+.barber-app .category-tabs button svg { color: #3f6ea3; }
+.barber-app .category-tabs button:nth-child(2) svg, .barber-app .category-tabs button:nth-child(3) svg, .barber-app .category-tabs button:nth-child(4) svg, .barber-app .category-tabs button:nth-child(5) svg, .barber-app .category-tabs button:nth-child(6) svg, .barber-app .category-tabs button:nth-child(7) svg, .barber-app .category-tabs button:nth-child(8) svg { color: #3f6ea3; }
+.barber-app .category-tabs .active { color: #f2f5f4; }
+.barber-app .category-tabs .active::after { content: ''; position: absolute; height: 3px; background: #3f6ea3; left: 9px; right: 9px; bottom: -1px; border-radius: 0; }
+.barber-app .service-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 11px 0 12px; }
+.barber-app .product-card { position: relative; min-width: 0; height: 81px; border: 1px solid #454c56; background: #353a43; border-radius: 0; padding: 12px 15px; text-align: left; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; color: #e8eaed; transition: background 0.12s, border-color 0.12s; overflow: hidden; }
+.barber-app .product-card:hover { background: #3d444e; border-color: #5a6270; }
+.barber-app .product-card:active { transform: scale(0.98); }
+.barber-app .product-card strong { font-size: 12px; line-height: 1.25; word-break: break-word; overflow-wrap: anywhere; width: 100%; display: -webkit-box; line-clamp: 3; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.barber-app .product-card span { color: #8b94a0; font-size: 10px; }
+.barber-app .product-card b { font-size: 12px; margin-top: auto; color: #3f6ea3; }
+.barber-app .product-card.selected { border: 2px solid #3f6ea3; padding: 11px 14px; }
+.barber-app .section-label { font-size: 10px; margin: 0; padding: 5px 0 8px; border-bottom: 1px solid #3b424c; color: #8b94a0; }
+.barber-app .addon-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; padding: 10px 0 9px; }
+.barber-app .product-card.compact { height: 70px; padding: 10px 9px; align-items: center; text-align: center; gap: 3px; }
+.barber-app .product-card.compact strong { font-size: 10px; line-height: 1.2; word-break: break-word; overflow-wrap: anywhere; }
+.barber-app .product-card.compact b { font-size: 11px; margin: 0; }
+.barber-app .product-card.compact:active { transform: scale(0.97); }
+.barber-app .add-circle { width: 18px; height: 18px; border: 1px solid #8b94a0; border-radius: 50%; display: grid; place-items: center; color: #c8cdd3 !important; margin-top: auto; }
+.barber-app .more-card { justify-content: center; }
+.barber-app .more-card svg { margin: 0 auto; color: #8b94a0; }
+
+/* Locked POS state (no ticket open) */
+.barber-app .product-card-locked { opacity: 0.4; cursor: not-allowed; }
+.barber-app .product-card-locked:hover { background: #353a43; border-color: #454c56; transform: none; }
+.barber-app .keypad-locked .key-grid button:disabled, .barber-app .keypad-locked .money-grid button:disabled { opacity: 0.3; cursor: not-allowed; }
+.barber-app .catalog-locked .category-tabs button { pointer-events: none; opacity: 0.5; }
+.barber-app .catalog-locked-overlay { position: absolute; inset: 0; background: rgba(32,36,44,.85); backdrop-filter: blur(2px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; z-index: 20; color: #5d6571; text-align: center; }
+.barber-app .catalog-locked-overlay svg { color: #3b424c; }
+.barber-app .catalog-locked-overlay p { font-size: 15px; max-width: 280px; line-height: 1.5; margin: 0; }
+
+/* Nail shape/size inset selection */
+
+/* Bottom nav */
+.barber-app .bottom-nav { grid-column: 1 / -1; background: #121a28; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)) 132px; align-items: stretch; padding-left: 10px; color: #eceff3; }
+.barber-app .bottom-nav button { position: relative; background: transparent; display: flex; flex-direction: column; gap: 8px; justify-content: center; align-items: center; font-size: 14px; font-weight: 600; color: #8b94a0; }
+.barber-app .bottom-nav button.active { background: #3f6ea3; border-radius: 6px; margin: 8px 3px; color: #fff; }
+.barber-app .bottom-nav button i { position: absolute; right: 14px; top: 10px; min-width: 24px; height: 24px; border-radius: 12px; font-style: normal; display: grid; place-items: center; font-size: 13px; font-weight: 800; color: #fff; padding: 0 6px; }
+.barber-app .bottom-nav button i.nav-badge-waiting { right: auto; left: 14px; background: #facc15 !important; color: #121a28 !important; }
+.barber-app .bottom-nav button i.nav-badge-service { background: #86efac !important; color: #121a28 !important; }
+.barber-app .connection { align-self: center; justify-self: end; margin-right: 18px; color: #0d9b6e; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.barber-app .connection span { width: 11px; height: 11px; border-radius: 50%; background: #0d9b6e; box-shadow: 0 0 0 4px rgba(13,155,110,.12); }
+
+@media (max-width: 1180px) {.barber-app .pos-shell { min-width: 860px; grid-template-columns: 285px minmax(0,1fr); }.barber-app .sale-area { grid-template-columns: 360px minmax(0, 1fr); } }
+
+/* Check-in board page */
+.barber-app .checkin-page { grid-template-columns: 1fr !important; }
+/* The Queue and Techs pages are dark panels of their own — the POS shell's 6px top gap would show its dark background as a black bar. */
+.barber-app .checkin-page .work-area, .barber-app .techs-page .work-area { margin-top: 0; }
+.barber-app .checkin-board { display: flex; flex-direction: column; padding: 28px 32px; overflow-y: auto; min-height: 0; }
+.barber-app .checkin-board-header h1 { font-size: 24px; font-weight: 700; color: #eceff3; margin: 0; }
+.barber-app .checkin-board-header p { font-size: 13px; color: #8b94a0; margin: 4px 0 0; }
+.barber-app .checkin-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; flex: 1; min-height: 0; }
+.barber-app .checkin-columns-full { grid-template-columns: 1fr !important; }
+.barber-app .checkin-column { display: flex; flex-direction: column; gap: 8px; min-height: 0; border-radius: 10px; padding: 14px; }
+.barber-app .checkin-column-waiting { background: rgba(250, 204, 21, 0.10); border: 1px solid rgba(250, 204, 21, 0.20); }
+.barber-app .checkin-column-service { background: rgba(134, 239, 172, 0.10); border: 1px solid rgba(134, 239, 172, 0.20); }
+.barber-app .checkin-column-header { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; border-bottom: 2px solid #3b424c; }
+.barber-app .checkin-column-header h2 { font-size: 15px; font-weight: 700; color: #eceff3; margin: 0; }
+.barber-app .checkin-count { background: #353a43; border: 1px solid #454c56; border-radius: 12px; padding: 2px 10px; font-size: 12px; font-weight: 700; color: #c8cdd3; }
+.barber-app .checkin-card-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; overflow-y: auto; flex: 1; padding-right: 4px; align-content: start; }
+.barber-app .checkin-card { background: #232830; border: 1px solid #3b424c; border-radius: 6px; overflow: hidden; transition: border-color 0.15s, transform 0.15s; }
+.barber-app .checkin-card:hover { border-color: #5a6270; transform: translateY(-1px); }
+.barber-app .checkin-card-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-left: 3px solid #454c56; gap: 8px; }
+.barber-app .checkin-client { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.barber-app .checkin-client strong { font-size: 13px; font-weight: 700; color: #eceff3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.barber-app .checkin-card-name-row { display: flex; align-items: center; gap: 8px; }
+.barber-app .checkin-ticket-num { font-size: 10px; font-weight: 700; color: #3f6ea3; background: rgba(63,110,163,.12); padding: 1px 6px; border-radius: 4px; letter-spacing: .3px; flex-shrink: 0; }
+.barber-app .checkin-client span { font-size: 10px; color: #8b94a0; display: flex; align-items: center; gap: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.barber-app .checkin-card-meta { gap: 8px !important; }
+.barber-app .checkin-card-meta svg { flex-shrink: 0; }
+.barber-app .checkin-status-pill { font-size: 8px; font-weight: 700; letter-spacing: .5px; padding: 3px 8px; border-radius: 10px; flex-shrink: 0; }
+.barber-app .checkin-status-pill[data-in-service="true"] { background: rgba(13,155,110,.15); color: #0d9b6e; border: 1px solid rgba(13,155,110,.3); }
+.barber-app .checkin-status-pill[data-in-service="false"] { background: rgba(239,90,95,.12); color: #ef5a5f; border: 1px solid rgba(239,90,95,.3); }
+.barber-app .checkin-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 48px 20px; color: #8b94a0; text-align: center; grid-column: 1 / -1; }
+.barber-app .checkin-empty p { font-size: 13px; margin: 0; }
+.barber-app .checkin-card-list::-webkit-scrollbar { width: 6px; }
+.barber-app .checkin-card-list::-webkit-scrollbar-track { background: transparent; }
+.barber-app .checkin-card-list::-webkit-scrollbar-thumb { background: #3b424c; border-radius: 3px; }
+
+/* Card tap state */
+.barber-app .checkin-card { cursor: pointer; transition: border-color 0.15s, transform 0.15s, box-shadow 0.2s; }
+.barber-app .checkin-card:hover { border-color: #5a6270; transform: translateY(-1px); }
+.barber-app .checkin-card-active { border-color: #3f6ea3 !important; box-shadow: 0 0 0 2px rgba(63,110,163,.3); }
+
+/* Overlay for modal + keypad */
+.barber-app .checkin-overlay { position: fixed; inset: 0; background: rgba(10,12,16,.65); backdrop-filter: blur(4px); z-index: 100; animation: overlay-in 0.2s ease; }
+@keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* Expanded card modal + dock wrapper */
+.barber-app .checkin-modal-wrapper { position: fixed; inset: 0; z-index: 101; display: flex; align-items: center; justify-content: center; gap: 20px; animation: modal-in 0.25s ease; }
+@keyframes modal-in { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+
+/* Expanded card */
+.barber-app .checkin-modal-card { background: #232830; border: 1px solid #3b424c; border-radius: 12px; width: 520px; max-width: min(70vw, 620px); position: relative; box-shadow: 0 24px 60px rgba(0,0,0,.5); }
+.barber-app .checkin-modal-close { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; border-radius: 6px; background: #2f353d; border: 1px solid #3b424c; color: #8b94a0; display: grid; place-items: center; cursor: pointer; transition: all 0.15s; z-index: 1; }
+.barber-app .checkin-modal-close:hover { background: #3b424c; color: #eceff3; }
+.barber-app .checkin-card-header-lg { padding: 20px 24px 16px; }
+.barber-app .checkin-card-header-lg .checkin-client strong { font-size: 20px; }
+.barber-app .checkin-card-header-lg .checkin-client span { font-size: 13px; }
+.barber-app .checkin-modal-body { padding: 20px 24px 24px; display: flex; flex-direction: column; gap: 18px; }
+.barber-app .checkin-modal-detail { display: flex; align-items: center; gap: 14px; }
+.barber-app .checkin-modal-detail svg { color: #8b94a0; flex-shrink: 0; }
+.barber-app .checkin-modal-detail > div { display: flex; flex-direction: column; gap: 2px; }
+.barber-app .checkin-modal-detail small { font-size: 10px; font-weight: 700; letter-spacing: .5px; color: #8b94a0; text-transform: uppercase; }
+.barber-app .checkin-modal-detail strong { font-size: 15px; font-weight: 600; color: #eceff3; }
+
+/* Floating dock column */
+.barber-app .checkin-dock { display: grid; grid-template-columns: repeat(2, 72px); gap: 10px; }
+.barber-app .checkin-dock-btn { background: #232830; border: 1px solid #3b424c; border-radius: 8px; padding: 14px 6px; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; color: #c8cdd3; transition: all 0.15s; box-shadow: 0 8px 24px rgba(0,0,0,.3); }
+.barber-app .checkin-dock-btn:hover { background: #2f353d; border-color: #5a6270; color: #eceff3; }
+.barber-app .checkin-dock-btn:active { transform: scale(0.95); }
+.barber-app .checkin-dock-btn span { font-size: 9px; font-weight: 700; letter-spacing: .5px; }
+.barber-app .checkin-dock-primary { background: #3f6ea3 !important; border-color: #3f6ea3 !important; color: #fff !important; }
+.barber-app .checkin-dock-primary:hover { background: #345d8c !important; border-color: #345d8c !important; color: #fff !important; }
+.barber-app .checkin-dock-danger { background: #ef5a5f !important; border-color: #ef5a5f !important; color: #fff !important; }
+.barber-app .checkin-dock-danger:hover { background: #d94f54 !important; border-color: #d94f54 !important; color: #fff !important; }
+
+/* Total keypad modal */
+.barber-app .total-keypad-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 102; background: #232830; border: 1px solid #3b424c; border-radius: 10px; width: 380px; max-width: 90vw; box-shadow: 0 24px 60px rgba(0,0,0,.6); animation: modal-in 0.25s ease; }
+.barber-app .total-keypad-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 14px; border-bottom: 1px solid #2f353d; }
+.barber-app .total-keypad-header h3 { font-size: 16px; font-weight: 700; color: #eceff3; margin: 0; }
+.barber-app .total-keypad-header button { width: 30px; height: 30px; border-radius: 6px; background: #2f353d; border: 1px solid #3b424c; color: #8b94a0; display: grid; place-items: center; cursor: pointer; }
+.barber-app .total-keypad-header button:hover { color: #eceff3; }
+.barber-app .total-keypad-client { padding: 10px 20px; font-size: 12px; color: #8b94a0; border-bottom: 1px solid #2f353d; }
+.barber-app .total-keypad-display { padding: 20px; font-size: 36px; font-weight: 700; color: #3f6ea3; text-align: right; font-variant-numeric: tabular-nums; }
+.barber-app .total-keypad-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: #2f353d; }
+.barber-app .total-keypad-grid button { background: #232830; border: none; padding: 18px 0; font-size: 20px; font-weight: 600; color: #eceff3; cursor: pointer; transition: background 0.1s; font-family: inherit; }
+.barber-app .total-keypad-grid button:hover { background: #2f353d; }
+.barber-app .total-keypad-grid button:active { background: #3f6ea3; color: #fff; }
+.barber-app .total-back-key { color: #ef5a5f !important; }
+.barber-app .total-undo-key { color: #f59e0b !important; }
+.barber-app .checkin-card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.barber-app .checkin-card-total { font-size: 18px; font-weight: 800; color: #3f6ea3; font-variant-numeric: tabular-nums; }
+.barber-app .total-enter-key { background: #3f6ea3 !important; color: #fff !important; font-weight: 700; grid-column: span 2; }
+.barber-app .total-enter-key:hover { background: #345d8c !important; }
+.barber-app .total-keypad-money { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: #2f353d; }
+.barber-app .total-keypad-money button { background: #121a28; border: none; padding: 14px 0; font-size: 14px; font-weight: 600; color: #c8cdd3; cursor: pointer; transition: background 0.1s; font-family: inherit; }
+.barber-app .total-keypad-money button:hover { background: #232830; color: #eceff3; }
+
+/* Unassigned indicator on cards */
+.barber-app .checkin-unassigned { color: #f59e0b; font-style: italic; font-size: 10px; }
+
+/* Assign technician picker modal */
+.barber-app .assign-picker-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 102; background: #232830; border: 1px solid #3b424c; border-radius: 10px; width: 420px; max-width: 90vw; box-shadow: 0 24px 60px rgba(0,0,0,.6); animation: modal-in 0.25s ease; }
+.barber-app .assign-picker-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 14px; border-bottom: 1px solid #2f353d; }
+.barber-app .assign-picker-header h3 { font-size: 16px; font-weight: 700; color: #eceff3; margin: 0; }
+.barber-app .assign-picker-header button { width: 30px; height: 30px; border-radius: 6px; background: #2f353d; border: 1px solid #3b424c; color: #8b94a0; display: grid; place-items: center; cursor: pointer; }
+.barber-app .assign-picker-header button:hover { color: #eceff3; }
+.barber-app .assign-picker-client { padding: 10px 20px; font-size: 12px; color: #8b94a0; border-bottom: 1px solid #2f353d; }
+.barber-app .assign-picker-list { display: flex; flex-direction: column; gap: 1px; background: #2f353d; }
+.barber-app .assign-picker-item { display: flex; align-items: center; gap: 12px; background: #232830; border: none; padding: 14px 20px; cursor: pointer; transition: background 0.1s; font-family: inherit; text-align: left; }
+.barber-app .assign-picker-item:hover { background: #2f353d; }
+.barber-app .assign-picker-item-active { background: rgba(63,110,163,.1); }
+.barber-app .assign-picker-item-active:hover { background: rgba(63,110,163,.15); }
+.barber-app .assign-picker-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.barber-app .assign-picker-name { font-size: 14px; font-weight: 600; color: #eceff3; flex: 1; }
+.barber-app .assign-picker-role { font-size: 11px; color: #8b94a0; text-transform: capitalize; }
+.barber-app .assign-picker-empty { padding: 28px 20px; text-align: center; font-size: 13px; color: #8b94a0; }
+
+/* Walk-in phone sheet (slides in from the right) */
+.barber-app .walkin-overlay { position: fixed; inset: 0; background: rgba(10,12,16,.55); backdrop-filter: blur(3px); z-index: 200; animation: overlay-in 0.2s ease; }
+.barber-app .walkin-sheet { position: fixed; top: 0; right: 0; bottom: 0; width: 820px; max-width: 95vw; background: #20242c; border-left: 1px solid #3b424c; z-index: 201; display: flex; flex-direction: column; box-shadow: -12px 0 40px rgba(0,0,0,.4); animation: walkin-slide 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes walkin-slide { from { transform: translateX(100%); } to { transform: translateX(0); } }
+.barber-app .walkin-sheet-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid #2f353d; }
+.barber-app .walkin-title-row { display: flex; align-items: center; gap: 12px; }
+.barber-app .walkin-title-row h2 { font-size: 17px; font-weight: 700; color: #eceff3; margin: 0; }
+.barber-app .walkin-back { background: #2f353d; border: 1px solid #3b424c; border-radius: 6px; width: 32px; height: 32px; color: #c8cdd3; font-size: 18px; cursor: pointer; display: grid; place-items: center; transition: all 0.15s; }
+.barber-app .walkin-back:hover { background: #3b424c; color: #eceff3; }
+.barber-app .walkin-close { background: transparent; border: none; color: #8b94a0; cursor: pointer; padding: 4px; }
+.barber-app .walkin-close:hover { color: #eceff3; }
+.barber-app .walkin-content { flex: 1; display: flex; flex-direction: column; padding: 24px 28px; gap: 20px; overflow-y: auto; }
+.barber-app .walkin-body { flex: 1; display: grid; grid-template-columns: 1fr 360px; overflow: hidden; }
+.barber-app .walkin-staff-panel { border-right: 1px solid #2f353d; display: flex; flex-direction: column; overflow: hidden; }
+.barber-app .walkin-staff-label { font-size: 11px; font-weight: 700; letter-spacing: .6px; color: #8b94a0; text-transform: uppercase; padding: 18px 20px 10px; }
+.barber-app .walkin-staff-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; background: #2f353d; }
+.barber-app .walkin-staff-card { display: flex; align-items: center; gap: 12px; background: #20242c; border: none; padding: 14px 20px; cursor: pointer; transition: background 0.12s; font-family: inherit; text-align: left; }
+.barber-app .walkin-staff-card:hover:not(:disabled) { background: #2a2f38; }
+.barber-app .walkin-staff-card:disabled { cursor: not-allowed; }
+.barber-app .walkin-staff-selected { background: rgba(63,110,163,.1) !important; }
+.barber-app .walkin-staff-busy { opacity: 0.45; }
+.barber-app .walkin-staff-dot { width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0; }
+.barber-app .walkin-staff-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.barber-app .walkin-staff-info strong { font-size: 14px; font-weight: 600; color: #eceff3; }
+.barber-app .walkin-staff-info span { font-size: 11px; color: #8b94a0; text-transform: capitalize; }
+.barber-app .walkin-staff-check { color: #3f6ea3; flex-shrink: 0; }
+.barber-app .walkin-phone-panel { display: flex; flex-direction: column; padding: 20px; gap: 16px; overflow-y: auto; }
+.barber-app .walkin-no-staff-alert { background: rgba(239,90,95,.08); border: 1px solid rgba(239,90,95,.3); border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.barber-app .walkin-no-staff-alert > svg { color: #ef5a5f; flex-shrink: 0; }
+.barber-app .walkin-no-staff-alert > span { font-size: 13px; color: #c8cdd3; line-height: 1.5; }
+.barber-app .walkin-no-staff-actions { display: flex; gap: 8px; }
+.barber-app .walkin-alert-cancel { flex: 1; padding: 10px; border: 1px solid #3b424c; border-radius: 6px; background: transparent; color: #8b94a0; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.barber-app .walkin-alert-cancel:hover { color: #eceff3; }
+.barber-app .walkin-alert-proceed { flex: 1; padding: 10px; border: none; border-radius: 6px; background: #ef5a5f; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.barber-app .walkin-alert-proceed:hover { background: #d94f54; }
+.barber-app .walkin-assigned-staff { font-size: 13px; color: #3f6ea3; margin: 0; }
+.barber-app .walkin-phone-display { display: flex; flex-direction: column; gap: 6px; padding: 18px 20px; background: #232830; border: 1px solid #3b424c; border-radius: 8px; }
+.barber-app .walkin-phone-display span { font-size: 11px; font-weight: 700; letter-spacing: .5px; color: #8b94a0; text-transform: uppercase; }
+.barber-app .walkin-phone-display strong { font-size: 28px; font-weight: 700; color: #eceff3; font-variant-numeric: tabular-nums; min-height: 34px; }
+.barber-app .walkin-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.barber-app .walkin-keypad button { background: #232830; border: 1px solid #3b424c; border-radius: 8px; padding: 18px 0; font-size: 22px; font-weight: 600; color: #eceff3; cursor: pointer; transition: all 0.12s; font-family: inherit; }
+.barber-app .walkin-keypad button:hover { background: #2f353d; border-color: #5a6270; }
+.barber-app .walkin-keypad button:active { transform: scale(0.94); background: #3f6ea3; border-color: #3f6ea3; color: #fff; }
+.barber-app .walkin-backspace { color: #ef5a5f !important; font-size: 20px !important; }
+.barber-app .walkin-backspace:hover { background: rgba(239,90,95,.1) !important; border-color: rgba(239,90,95,.3) !important; }
+.barber-app .walkin-keypad-blanks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.barber-app .walkin-keypad-blanks button { background: #232830; border: 1px solid #3b424c; border-radius: 8px; padding: 18px 0; font-size: 22px; font-weight: 600; color: #eceff3; cursor: default; opacity: 0.35; }
+.barber-app .walkin-continue { margin-top: auto; padding: 16px; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; letter-spacing: .5px; cursor: pointer; transition: all 0.15s; font-family: inherit; background: #353a43; color: #8b94a0; }
+.barber-app .walkin-continue.ready { background: #3f6ea3; color: #fff; }
+.barber-app .walkin-continue.ready:hover { background: #345d8c; }
+.barber-app .walkin-continue:disabled { cursor: not-allowed; }
+
+/* Walk-in name entry step */
+.barber-app .walkin-name-step { display: flex; flex-direction: column; gap: 20px; }
+.barber-app .walkin-prompt { font-size: 14px; color: #c8cdd3; line-height: 1.5; margin: 0; }
+.barber-app .walkin-name-field { display: flex; flex-direction: column; gap: 8px; }
+.barber-app .walkin-name-field label { font-size: 11px; font-weight: 700; letter-spacing: .5px; color: #8b94a0; text-transform: uppercase; }
+.barber-app .walkin-name-field input { background: #232830; border: 1px solid #3b424c; border-radius: 8px; padding: 14px 16px; font-size: 18px; font-weight: 600; color: #eceff3; font-family: inherit; outline: none; transition: border-color 0.15s; }
+.barber-app .walkin-name-field input:focus { border-color: #3f6ea3; }
+.barber-app .walkin-name-field input::placeholder { color: #5a6270; font-weight: 400; }
+.barber-app .walkin-keyboard-hint { font-size: 12px; color: #8b94a0; text-align: center; }
+
+/* Walk-in result states */
+.barber-app .walkin-result { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; padding: 40px 20px; flex: 1; justify-content: center; }
+.barber-app .walkin-result strong { font-size: 16px; color: #eceff3; line-height: 1.5; }
+.barber-app .walkin-result-success svg { color: #0d9b6e; }
+.barber-app .walkin-result-error svg { color: #ef5a5f; }
+
+/* Assign tech after ticket creation */
+.barber-app .assign-create-overlay { position: fixed; inset: 0; background: rgba(10,12,16,.7); backdrop-filter: blur(4px); z-index: 300; animation: overlay-in 0.2s ease; }
+.barber-app .assign-create-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 301; background: #232830; border: 1px solid #3b424c; border-radius: 12px; width: 480px; max-width: 94vw; box-shadow: 0 32px 80px rgba(0,0,0,.6); animation: modal-in 0.25s ease; display: flex; flex-direction: column; overflow: hidden; }
+.barber-app .assign-create-header { display: flex; align-items: flex-start; justify-content: space-between; padding: 22px 22px 16px; border-bottom: 1px solid #2f353d; gap: 12px; }
+.barber-app .assign-create-header h2 { font-size: 18px; font-weight: 700; color: #eceff3; margin: 0 0 4px; }
+.barber-app .assign-create-header p { font-size: 13px; color: #8b94a0; margin: 0; }
+.barber-app .assign-create-close { width: 30px; height: 30px; border-radius: 6px; background: #2f353d; border: 1px solid #3b424c; color: #8b94a0; display: grid; place-items: center; cursor: pointer; flex-shrink: 0; transition: all 0.15s; }
+.barber-app .assign-create-close:hover { background: #3b424c; color: #eceff3; }
+.barber-app .assign-create-notice { display: flex; align-items: center; gap: 10px; padding: 12px 22px; background: rgba(245,158,11,.07); border-bottom: 1px solid rgba(245,158,11,.2); font-size: 12px; color: #f59e0b; }
+.barber-app .assign-create-list { display: flex; flex-direction: column; gap: 1px; background: #2f353d; max-height: 360px; overflow-y: auto; }
+.barber-app .assign-create-item { display: flex; align-items: center; gap: 14px; background: #232830; border: none; padding: 15px 22px; cursor: pointer; font-family: inherit; text-align: left; transition: background 0.1s; }
+.barber-app .assign-create-item:hover { background: #2a2f38; }
+.barber-app .assign-create-item-sel { background: rgba(63,110,163,.1) !important; }
+.barber-app .assign-create-dot { width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0; }
+.barber-app .assign-create-name { font-size: 14px; font-weight: 600; color: #eceff3; flex: 1; }
+.barber-app .assign-create-role { font-size: 11px; color: #8b94a0; text-transform: capitalize; }
+.barber-app .assign-create-footer { display: flex; align-items: center; gap: 12px; padding: 16px 22px; border-top: 1px solid #2f353d; }
+.barber-app .assign-create-skip { background: transparent; border: 1px solid #3b424c; border-radius: 8px; padding: 12px 18px; font-size: 13px; font-weight: 600; color: #8b94a0; cursor: pointer; font-family: inherit; transition: all 0.15s; white-space: nowrap; }
+.barber-app .assign-create-skip:hover { border-color: #5a6270; color: #c8cdd3; }
+.barber-app .assign-create-btn { flex: 1; padding: 14px; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; letter-spacing: .4px; cursor: pointer; font-family: inherit; background: #353a43; color: #5a6270; transition: all 0.15s; }
+.barber-app .assign-create-btn-ready { background: #3f6ea3; color: #fff; }
+.barber-app .assign-create-btn-ready:hover { background: #345d8c; }
+.barber-app .assign-create-btn:disabled { cursor: not-allowed; }
+
+/* ===== Adaptions for the live Certxa build ===== */
+/*
+ * TechCards is the complete Techs screen now. The old two-column layout left
+ * room for the retired arrived-client panel, which made the Techs tab render
+ * in only the first 290px of the viewport.
+ */
+.barber-app .techs-page { grid-template-columns: 1fr !important; }
+.barber-app .arrived-panel { min-height: 0; }
+.barber-app .arrived-list { flex: 1; min-height: 0; overflow-y: auto; }
+.barber-app .arrived-list::-webkit-scrollbar { width: 0; }
+.barber-app .arrived-scroll { flex-shrink: 0; height: 40px; display: flex; align-items: center; justify-content: center; background: #232830; color: #8b94a0; border-top: 1px solid #3b424c; border-bottom: 1px solid #3b424c; }
+.barber-app .arrived-scroll:active { background: #2f353d; color: #eceff3; }
+.barber-app .arrived-row { width: 100%; text-align: left; display: flex; align-items: center; gap: 10px; padding: 11px 12px 11px 14px; border-bottom: 1px solid #3b424c; border-left: 4px solid #454c56; }
+.barber-app .arrived-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.barber-app .arrived-copy strong { font-size: 14px; font-weight: 700; color: #eceff3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.barber-app .arrived-copy span { font-size: 11px; color: #8b94a0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.barber-app .arrived-name-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.barber-app .arrived-name-row strong { min-width: 0; }
+/* The one glanceable signal for "does this client already belong to a tech, or are they still up for grabs" —
+   deliberately NOT relying on the row's left-border color alone, since a tech with no color configured would
+   otherwise be visually identical to an unassigned/walk-in row. */
+.barber-app .arrived-chip { flex-shrink: 0; font-size: 9px; font-weight: 700; letter-spacing: .04em; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+.barber-app .arrived-chip[data-kind="walkin"] { background: #2a3038; color: #8b94a0; }
+.barber-app .arrived-chip[data-kind="assigned"] { background: rgba(63,110,163,.16); color: #9db4d0; }
+.barber-app .arrived-chip[data-kind="unassigned"] { background: rgba(245,158,11,.16); color: #f59e0b; }
+.barber-app .arrived-timer { flex-shrink: 0; font-size: 10px; font-weight: 700; color: #facc15; background: rgba(250,204,21,.10); border: 1px solid rgba(250,204,21,.25); padding: 3px 8px; border-radius: 10px; white-space: nowrap; }
+.barber-app .tech-stage { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.barber-app .tech-grid { display: grid; grid-auto-flow: column; align-content: start; justify-content: start; }
+.barber-app .tech-slot { position: relative; }
+.barber-app .tech-pill { font-size: 10px; font-weight: 700; letter-spacing: .5px; padding: 4px 9px; border-radius: 10px; flex-shrink: 0; border: 1px solid; white-space: nowrap; }
+.barber-app .tech-pill[data-status="in-service"] { background: rgba(13,155,110,.15); color: #0d9b6e; border-color: rgba(13,155,110,.3); }
+.barber-app .tech-pill[data-status="available"] { background: rgba(63,110,163,.12); color: #3f6ea3; border-color: rgba(63,110,163,.3); }
+.barber-app .tech-pill[data-status="break"] { background: rgba(240,168,48,.12); color: #f0a830; border-color: rgba(240,168,48,.3); }
+.barber-app .tech-pill[data-status="off"] { background: #2a2e36; color: #8b94a0; border-color: #3b424c; }
+.barber-app.h-app, .barber-app { position: relative; overflow: hidden; }
+.barber-app .pos-shell { width: 100%; height: 100%; }
+/* 72px minimum so six categories fit a tablet-width catalog without a hidden sideways scroll (the scrollbar is invisible,
+   so a 6th tab past the edge looked like it didn't exist). More than that still scrolls. */
+.barber-app .category-tabs { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(72px, 1fr); overflow-x: auto; }
+.barber-app .category-tabs::-webkit-scrollbar { height: 0; }
+.barber-app .category-tabs button span { text-transform: uppercase; }
+.barber-app .catalog-panel { overflow-y: auto; }
+.barber-app .catalog-panel::-webkit-scrollbar { width: 5px; }
+.barber-app .catalog-panel::-webkit-scrollbar-thumb { background: #454c56; }
+.barber-app .product-card b { font-weight: 700; }
+.barber-app .product-card .card-line { display: flex; justify-content: space-between; width: 100%; margin-top: auto; align-items: baseline; }
+.barber-app .product-card .card-line b { margin: 0; }
+/* Keep "1 hr 5 min" on one line and never squeeze the service name to make room for it. */
+.barber-app .product-card strong { flex-shrink: 0; }
+.barber-app .product-card .card-line { gap: 6px; }
+.barber-app .product-card .card-line > span { white-space: nowrap; }
+.barber-app .product-card.compact .card-line { justify-content: center; gap: 6px; margin-top: 0; }
+.barber-app .product-card.compact span { font-size: 10px; }
+.barber-app .empty-state-hint { font-size: 13px; color: #8b94a0; padding: 10px 2px; grid-column: 1 / -1; }
+.barber-app .ticket-item .item-copy span.note { color: #3f6ea3; }
+.barber-app .display-prompt { color: #f0a830; font-size: 13px; margin-right: auto; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.barber-app .money-grid button.fn-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #e8eaed; font-size: 12px; font-weight: 700; }
+.barber-app .money-grid button.fn-btn svg { color: #c4cad3; }
+.barber-app .display-qty { color: #0d9b6e; font-size: 14px; margin-right: auto; font-weight: 700; }
+.barber-app .key-grid .enter-key:disabled { opacity: .4; }
+.barber-app .barber-notice { position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%); z-index: 400; background: #232830; border: 1px solid #454c56; padding: 10px 20px; font-size: 13px; font-weight: 600; color: #eceff3; box-shadow: 0 12px 30px rgba(0,0,0,.45); border-radius: 4px; }
+.barber-app .checkin-card-marker { border-style: dashed; }
+.barber-app .checkin-modal-lines { font-size: 12px; color: #a7afb9; display: flex; flex-direction: column; gap: 4px; padding-left: 32px; margin-top: -8px; }
+.barber-app .checkin-modal-lines div { display: flex; justify-content: space-between; }
+.barber-app .checkin-dock-btn:disabled { opacity: .4; }
+.barber-app .checkin-column-header h2 { text-transform: none; }
+.barber-app .assign-create-status { font-size: 11px; color: #8b94a0; }
+.barber-app .assign-create-next { font-size: 10px; font-weight: 700; letter-spacing: .5px; color: #3f6ea3; }
+.barber-app .assign-create-error { margin: 0; padding: 10px 22px; font-size: 12px; color: #ef5a5f; background: rgba(239,90,95,.08); border-top: 1px solid rgba(239,90,95,.3); }
+.barber-app .assign-create-hint { padding: 12px 22px; font-size: 12px; color: #8b94a0; border-bottom: 1px solid #2f353d; }
+.barber-app .walkin-staff-hint { padding: 12px 20px; font-size: 12px; color: #8b94a0; }
+.barber-app .walkin-invalid { font-size: 12px; color: #ef5a5f; margin: 0; }
+.barber-app .drawer-picker { position: fixed; inset: 0; z-index: 500; display: flex; align-items: center; justify-content: center; background: rgba(10,12,16,.7); padding: 16px; }
+.barber-app .drawer-picker > div { background: #232830; border: 1px solid #3b424c; border-radius: 12px; padding: 24px; width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 10px; }
+.barber-app .drawer-picker h2 { font-size: 17px; font-weight: 700; color: #eceff3; }
+.barber-app .drawer-picker button { text-align: left; background: #353a43; border: 1px solid #454c56; padding: 14px 16px; font-size: 14px; font-weight: 600; color: #e8eaed; }
+
+.barber-app .arrived-row:active { background: #2f353d; }
+
+/* ===== Register picker + More menu ===== */
+.barber-app .drawer-picker .picker-hint { font-size: 13px; color: #8b94a0; line-height: 1.5; margin: 0 0 6px; }
+.barber-app .drawer-picker .picker-taken { background: transparent; border-style: dashed; color: #8b94a0; }
+.barber-app .drawer-picker .picker-taken small { display: block; font-size: 11px; font-weight: 400; margin-top: 3px; color: #5d6571; }
+.barber-app .drawer-picker .picker-error { font-size: 13px; color: #ef5a5f; background: rgba(239,90,95,.08); border: 1px solid rgba(239,90,95,.3); padding: 10px 14px; margin: 0; }
+
+/* ===== On-screen keyboard (new client's name) ===== */
+.barber-app .name-entry { display: flex; flex-direction: column; gap: 16px; flex: 1; min-height: 0; }
+.barber-app .name-entry-display { text-align: center; padding: 6px 8px 0; }
+.barber-app .name-entry-display strong { display: block; font-size: 34px; font-weight: 700; color: #eceff3; min-height: 44px; letter-spacing: .3px; }
+.barber-app .name-entry-display strong em { font-style: normal; color: #454c56; font-weight: 600; }
+.barber-app .name-entry-display span { display: block; margin-top: 4px; font-size: 12px; font-weight: 600; color: #3f6ea3; }
+.barber-app .osk { margin-top: auto; display: flex; flex-direction: column; gap: 7px; }
+.barber-app .osk-row { display: flex; gap: 6px; }
+.barber-app .osk-indent { padding: 0 4.5%; }
+.barber-app .osk-row button { flex: 1; height: 56px; background: #232830; border: 1px solid #3b424c; border-radius: 8px; font-size: 18px; font-weight: 600; color: #eceff3; display: flex; align-items: center; justify-content: center; font-family: inherit; }
+.barber-app .osk-row button:active { background: #3f6ea3; border-color: #3f6ea3; color: #fff; }
+.barber-app .osk-row .osk-wide { flex: 0 0 64px; color: #8b94a0; }
+.barber-app .osk-row .osk-on { background: #eceff3; color: #20242c; border-color: #eceff3; }
+.barber-app .osk-row .osk-side { flex: 0 0 96px; font-size: 13px; color: #c8cdd3; }
+.barber-app .osk-row .osk-space { flex: 1; font-size: 13px; color: #c8cdd3; }
+.barber-app .walkin-body.name-mode { grid-template-columns: 1fr; }
+.barber-app .walkin-body.name-mode .walkin-staff-panel { display: none; }
+.barber-app .walkin-body.name-mode .walkin-phone-panel { padding: 22px 28px 24px; }
+.barber-app .checkin-sheet-hint { font-size: 13px; color: #8b94a0; line-height: 1.5; margin: 0; }
+.barber-app .checkin-sheet-hint b { color: #3f6ea3; font-weight: 600; }
+.barber-app .checkin-done { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding: 40px 20px; flex: 1; justify-content: center; }
+.barber-app .checkin-done svg { color: #0d9b6e; }
+.barber-app .checkin-done strong { font-size: 20px; color: #eceff3; }
+.barber-app .checkin-done span { font-size: 13px; color: #8b94a0; }
+.barber-app .walkin-sheet.checkin-sheet { width: 600px; }
+/* stack card: tech on top, details underneath (used when the columns are narrow) */
+
+/* ===== Salon at a glance (Techs page header) ===== */
+
+
+/* ===== More menu — big, easy to read and tap on a 10" tablet ===== */
+.barber-app .more-menu { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 301; background: #232830; border: 1px solid #3b424c; border-radius: 14px; width: min(96vw, 980px); height: min(94vh, 700px); display: flex; flex-direction: column; box-shadow: 0 32px 80px rgba(0,0,0,.6); animation: modal-in 0.25s ease; overflow: hidden; }
+.barber-app .more-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 22px; border-bottom: 1px solid #2f353d; flex-shrink: 0; }
+.barber-app .more-header h2 { font-size: 26px; font-weight: 700; color: #eceff3; }
+.barber-app .more-close { width: 52px; height: 52px; border-radius: 10px; background: #2f353d; border: 1px solid #3b424c; color: #c8cdd3; display: grid; place-items: center; }
+.barber-app .more-close:active { background: #3b424c; }
+.barber-app .more-grid { flex: 1; min-height: 0; display: grid; gap: 12px; padding: 16px 18px 18px; }
+.barber-app .more-tile { min-height: 0; background: #2a2e36; border: 1px solid #3b424c; border-radius: 12px; color: #dfe3e8; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 8px 6px; font-family: inherit; }
+.barber-app .more-tile:active { background: #3f6ea3; border-color: #3f6ea3; color: #fff; }
+.barber-app .more-tile span { font-size: 17px; font-weight: 700; text-align: center; line-height: 1.15; }
+.barber-app .more-tile small { font-size: 13px; font-weight: 600; color: #8b94a0; }
+.barber-app .more-tile:active small { color: #e8f6fc; }
+.barber-app .more-confirm { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 28px; padding: 24px 40px; }
+.barber-app .more-confirm p { font-size: 20px; line-height: 1.5; color: #c8cdd3; text-align: center; margin: 0; }
+.barber-app .more-confirm-actions { display: flex; gap: 16px; }
+.barber-app .more-confirm-actions button { flex: 1; height: 72px; border-radius: 12px; font-size: 20px; font-weight: 700; font-family: inherit; }
+.barber-app .more-confirm-cancel { background: transparent; border: 1px solid #454c56 !important; color: #c8cdd3; }
+.barber-app .more-confirm-go { background: #3f6ea3; color: #fff; }
+
+/* ===== New-client name entry: a FULL-SCREEN sheet with big keys (10" tablet) ===== */
+.barber-app .walkin-sheet.name-full { width: 100vw; max-width: 100vw; border-left: 0; animation: none; }
+.barber-app .name-full .walkin-sheet-header { padding: 14px 24px; }
+.barber-app .name-full .walkin-title-row h2 { font-size: 26px; }
+.barber-app .name-full .walkin-back { width: 56px; height: 56px; font-size: 26px; border-radius: 10px; }
+.barber-app .name-full .walkin-close { padding: 12px; }
+.barber-app .name-full .walkin-close svg { width: 30px; height: 30px; }
+.barber-app .name-full .walkin-body { display: flex; flex-direction: column; min-height: 0; }
+.barber-app .name-full .walkin-phone-panel { flex: 1; min-height: 0; padding: 14px 24px 20px; gap: 0; overflow: hidden; }
+.barber-app .name-full .name-entry { gap: 14px; }
+.barber-app .name-full .name-entry-display { padding: 0; }
+.barber-app .name-full .name-entry-display strong { font-size: 54px; min-height: 66px; }
+.barber-app .name-full .name-entry-display span { font-size: 16px; margin-top: 2px; }
+.barber-app .name-full .osk { flex: 1; min-height: 0; margin-top: 0; gap: 10px; }
+.barber-app .name-full .osk-row { flex: 1; min-height: 0; gap: 8px; }
+.barber-app .name-full .osk-indent { padding: 0 5%; }
+.barber-app .name-full .osk-row button { height: auto; min-height: 0; font-size: 32px; border-radius: 12px; }
+.barber-app .name-full .osk-row .osk-wide { flex: 0 0 13%; }
+.barber-app .name-full .osk-row .osk-side { flex: 0 0 15%; font-size: 22px; }
+.barber-app .name-full .osk-row .osk-space { font-size: 22px; }
+.barber-app .name-full .walkin-continue { height: 84px; flex-shrink: 0; font-size: 24px; border-radius: 12px; margin-top: 0; }
+
+/* ===== Quick Area Codes (walk-in sheet variant) ===== */
+.barber-app .walkin-quick-label { font-size: 11px; font-weight: 700; letter-spacing: .2em; color: #8b94a0; text-align: center; margin: 14px 0 8px; }
+.barber-app .walkin-quick-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.barber-app .walkin-quick { padding: 18px 0; border-radius: 8px; font-size: 22px; font-weight: 700; font-family: inherit; color: #3f6ea3; background: rgba(63,110,163,.10); border: 1px solid rgba(63,110,163,.35); transition: background .12s, color .12s, transform .12s; }
+.barber-app .walkin-quick:active { background: #3f6ea3; color: #fff; transform: scale(.96); }
+.barber-app .walkin-quick-blank { background: transparent; border: 1px dashed #3b424c; opacity: .5; }
+/* ===== Techs page: tap a clocked-out card → "Set In / Available" ===== */
+
+.barber-app .tech-popup { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 302; width: min(94vw, 620px); background: #232830; border: 1px solid #3b424c; border-radius: 16px; padding: 30px 30px 24px; box-shadow: 0 32px 80px rgba(0,0,0,.6); animation: modal-in 0.22s ease; display: flex; flex-direction: column; gap: 20px; }
+.barber-app .tech-popup-close { position: absolute; top: 10px; right: 10px; width: 52px; height: 52px; border-radius: 10px; background: transparent; color: #8b94a0; display: grid; place-items: center; }
+.barber-app .tech-popup-close:active { background: #2f353d; color: #eceff3; }
+.barber-app .tech-popup-card { display: flex; align-items: center; gap: 18px; background: #2a2e36; border: 1px solid #3b424c; border-left: 5px solid #454c56; border-radius: 10px; padding: 18px 20px; margin-top: 14px; }
+.barber-app .tech-popup-avatar { width: 68px; height: 68px; border-radius: 50%; border: 3px solid #454c56; display: grid; place-items: center; font-size: 22px; font-weight: 700; color: #c8cdd3; background: #232830; overflow: hidden; flex-shrink: 0; }
+.barber-app .tech-popup-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.barber-app .tech-popup-name { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.barber-app .tech-popup-name strong { font-size: 26px; font-weight: 700; color: #eceff3; }
+.barber-app .tech-popup-name span { font-size: 14px; color: #8b94a0; }
+.barber-app .tech-popup .tech-pill { font-size: 12px; padding: 6px 12px; }
+.barber-app .tech-popup-go { height: 92px; border-radius: 14px; background: #0d9b6e; color: #fff; font-size: 26px; font-weight: 800; letter-spacing: .06em; display: flex; align-items: center; justify-content: center; gap: 14px; font-family: inherit; }
+.barber-app .tech-popup-out { background: #ef5a5f; }
+.barber-app .tech-popup-out:active { background: #d94f54; }
+.barber-app .tech-popup-go:active { background: #0b8a61; transform: scale(.985); }
+.barber-app .tech-popup-go:disabled { opacity: .5; }
+.barber-app .tech-popup-note { text-align: center; font-size: 13px; color: #8b94a0; margin: 0; }
+/* ===== Tech cards: live status timer ===== */
+
+
+/* ===== Checkout inside the POS tab ===== */
+
+.barber-app .checkout-row .checkout-paynow { background: #3f6ea3 !important; font-size: 12px !important; flex: 0 0 96px; }
+.barber-app .checkout-row .checkout-paynow.disabled { background: #3b424c !important; }
+
+.barber-app .arrived-row-wrap { position: relative; }
+.barber-app .arrived-row-wrap .arrived-row { padding-right: 46px; }
+.barber-app .arrived-remove { position: absolute; top: 6px; right: 6px; width: 34px; height: 34px; border-radius: 8px; background: transparent; color: #8b94a0; font-size: 22px; line-height: 1; display: grid; place-items: center; }
+.barber-app .arrived-remove:active { background: #3b424c; color: #ef5a5f; }
+.barber-app .arrived-row-wrap .arrived-timer { margin-right: 4px; }
+/* In Service · Unpaid list: bigger, easier to read and tap on a 10" tablet */
+.barber-app .checkin-columns-full .checkin-card-header { padding: 14px 16px; }
+.barber-app .checkin-columns-full .checkin-client strong { font-size: 17px; }
+.barber-app .checkin-columns-full .checkin-client span { font-size: 13px; }
+.barber-app .checkin-columns-full .checkin-ticket-num { font-size: 12px; }
+.barber-app .checkin-columns-full .checkin-card-total { font-size: 24px; }
+.barber-app .checkin-columns-full .checkin-status-pill { font-size: 11px; padding: 4px 10px; }
+.barber-app .checkin-columns-full .checkin-card-list { gap: 10px; }
+
+
+/* ===== Techs tab — light "Salon at a glance" design (dark version: artifacts/booking/backups/techs-tab-2026-09-21) ===== */
+.barber-app .tt-panel { background: linear-gradient(180deg, #141922 0%, #141922 100%); flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px 14px 12px; overflow: hidden; color: #f2f4f7; }
+/* Slim "Salon at a glance" strip — a thin title line, then short chips (value over label) — so the tech cards get the room. */
+.barber-app .tt-glance { flex-shrink: 0; }
+.barber-app .tt-glance-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.barber-app .tt-tile { border-radius: 10px; padding: 12px 10px; display: flex; flex-direction: row; align-items: center; gap: 8px; min-width: 0; border: 1px solid rgba(255, 255, 255, .06); box-shadow: 0 2px 8px rgba(0, 0, 0, .18); }
+.barber-app .tt-tile svg { flex-shrink: 0; }
+.barber-app .tt-tile > div { display: flex; flex-direction: column; min-width: 0; }
+.barber-app .tt-tile strong { font-size: 20px; font-weight: 800; line-height: 1.05; color: #f2f4f7; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.barber-app .tt-tile[data-long="true"] strong { font-size: 17px; }
+.barber-app .tt-tile span { font-size: 11px; font-weight: 500; line-height: 1.15; color: #c5ccd6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.barber-app .tt-tile-blue { background: linear-gradient(145deg, #1e2530, #19202a); } .barber-app .tt-tile-blue svg { color: #9db4d0; }
+.barber-app .tt-tile-green { background: linear-gradient(145deg, #1e2530, #19202a); } .barber-app .tt-tile-green svg { color: #9db4d0; }
+.barber-app .tt-tile-purple { background: linear-gradient(145deg, #1e2530, #19202a); } .barber-app .tt-tile-purple svg { color: #9db4d0; }
+.barber-app .tt-tile-orange { background: linear-gradient(145deg, #1e2530, #19202a); } .barber-app .tt-tile-orange svg { color: #9db4d0; }
+.barber-app .tt-tile-slate { background: linear-gradient(145deg, #1e2530, #19202a); } .barber-app .tt-tile-slate svg { color: #9db4d0; }
+.barber-app .tt-tile-mint { background: linear-gradient(145deg, #1e2530, #19202a); } .barber-app .tt-tile-mint svg { color: #9db4d0; }
+.barber-app .tt-tile-indigo { background: linear-gradient(145deg, #1e2530, #19202a); } .barber-app .tt-tile-indigo svg { color: #9db4d0; }
+.barber-app .tt-tile-teal { background: linear-gradient(145deg, #1e2530, #19202a); } .barber-app .tt-tile-teal svg { color: #9db4d0; }
+
+/* Queue tab's glance strip — same tile look as the Techs tab's, but 8 tiles instead of 6.
+ * Always one row of 8 (never wraps to a second row) — narrower widths shrink the tiles
+ * (tighter padding, smaller numerals, icon dropped) rather than reflowing the grid. */
+.barber-app .q-glance-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.barber-app .q-glance-row .tt-tile { min-height: 72px; padding: 14px 10px; gap: 10px; border: 0; border-bottom: 2px solid rgba(255, 255, 255, .16); border-radius: 0; box-shadow: none; }
+.barber-app .q-glance-row .tt-tile svg { width: 24px; height: 24px; }
+.barber-app .q-glance-row .tt-tile strong { font-size: 21px; font-weight: 800; line-height: 1.05; }
+.barber-app .q-glance-row .tt-tile[data-long="true"] strong { font-size: 18px; }
+.barber-app .q-glance-row .tt-tile span { font-size: 12px; font-weight: 700; line-height: 1.15; }
+/* Two stat tiles double as the Waiting / In Service page switch (replacing the old tt-tabs
+ * buttons removed from the Queue tab) — give them an obvious pressed/active look. */
+.barber-app .q-glance-row .tt-tile-clickable { cursor: pointer; border: 0; border-bottom: 2px solid rgba(255, 255, 255, .16); text-align: left; font: inherit; -webkit-tap-highlight-color: transparent; }
+.barber-app .q-glance-row .tt-tile-clickable:active { transform: scale(.97); }
+.barber-app .q-glance-row .tt-tile-clickable[data-active="true"] { border-bottom-color: #6f93bd; box-shadow: inset 0 -2px 0 #6f93bd; }
+@media (max-width: 1300px) { .barber-app .q-glance-row .tt-tile svg { display: block; width: 22px; height: 22px; } .barber-app .q-glance-row .tt-tile { min-height: 68px; padding: 12px 7px; gap: 8px; } .barber-app .q-glance-row { gap: 5px; } }
+@media (max-width: 1000px) { .barber-app .q-glance-row .tt-tile strong { font-size: 18px; } .barber-app .q-glance-row .tt-tile[data-long="true"] strong { font-size: 15px; } .barber-app .q-glance-row .tt-tile span { font-size: 10px; } }
+
+.barber-app .tt-panel .tech-stage { flex: 1; min-height: 0; min-width: 0; overflow: hidden; margin-top: 10px; }
+.barber-app [data-testid="barber-techs"] .tt-tabs { margin-top: 10px; }
+.barber-app .barber-skip-link { position: fixed; z-index: 10000; top: 8px; left: 8px; transform: translateY(-160%); padding: 10px 14px; border-radius: 8px; background: #fff; color: #0f1f3d; font-weight: 800; box-shadow: 0 4px 16px rgba(0,0,0,.25); }
+.barber-app .barber-skip-link:focus { transform: translateY(0); }
+.barber-app :is(button, [role="button"], input, select, a):focus-visible { outline: 3px solid #f59e0b; outline-offset: 3px; }
+.barber-app .barber-route-loading { min-height: 240px; display: flex; align-items: center; justify-content: center; gap: 10px; color: #dce7f5; font-weight: 700; }
+
+.barber-app .tt-card { position: absolute; top: 0; left: 0; transform-origin: top left; box-sizing: border-box; background: #1b212c; border: 1px solid #2a3140; border-radius: 16px; box-shadow: 0 8px 22px rgba(0, 0, 0, .27); padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 12px; }
+.barber-app .q-service-card { padding: 20px 22px 18px; gap: 16px; }
+.barber-app .q-service-card .tt-top { gap: 14px; }
+.barber-app .q-service-card .tt-main { gap: 14px; }
+.barber-app .q-service-card .tt-name strong { font-size: 31px; }
+.barber-app .q-service-card .tt-pill { font-size: 13px; padding: 6px 12px; gap: 6px; }
+.barber-app .q-service-card .tt-pill i { width: 8px; height: 8px; }
+.barber-app .q-service-card .tt-clockbox { min-width: 230px; padding: 8px 18px 8px 14px; gap: 12px; }
+.barber-app .q-service-card .tt-clockbox svg { width: 34px; height: 34px; }
+.barber-app .q-service-card .tt-timer { font-size: 30px; }
+.barber-app .q-service-card .tt-bottom { padding: 10px 16px; }
+.barber-app .q-service-card .tt-cell { gap: 14px; }
+.barber-app .q-service-card .tt-cell > svg { width: 28px; height: 28px; }
+.barber-app .q-service-card .tt-cell small { font-size: 14px; }
+.barber-app .q-service-card .tt-cell b { font-size: 18px; }
+.barber-app .tt-card.tt-off { opacity: .72; }
+.barber-app .tt-tappable { cursor: pointer; }
+.barber-app .tt-tappable:active { box-shadow: 0 0 0 3px #2a3140; }
+.barber-app .tt-top { display: flex; gap: 18px; flex: 1; min-height: 0; }
+.barber-app .tt-avatar { width: 104px; height: 104px; border-radius: 50%; background: #262d3a; overflow: hidden; flex-shrink: 0; align-self: center; box-shadow: inset 0 0 0 1px rgba(255, 255, 255,.05); }
+.barber-app .tt-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.barber-app .tt-silhouette { width: 100%; height: 100%; display: block; }
+.barber-app .tt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.barber-app .tt-namerow { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.barber-app .tt-name { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.barber-app .tt-name strong { font-size: 27px; font-weight: 700; color: #f2f4f7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.barber-app .tt-name span { font-size: 17px; color: #c5ccd6; display: flex; align-items: center; gap: 10px; }
+.barber-app .tt-nextup { font-style: normal; font-size: 11px; font-weight: 800; letter-spacing: .1em; color: #fff; background: #3f6ea3; padding: 3px 8px; border-radius: 6px; }
+.barber-app .tt-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; letter-spacing: .02em; padding: 7px 16px; border-radius: 999px; white-space: nowrap; flex-shrink: 0; }
+.barber-app .tt-pill i { width: 11px; height: 11px; border-radius: 50%; background: currentColor; }
+.barber-app .tt-pill[data-status="available"] { background: #1b3c2a; color: #6ce5b2; }
+.barber-app .tt-pill[data-status="in-service"] { background: #262d3a; color: #9db4d0; }
+.barber-app .tt-pill[data-status="break"] { background: #3c301b; color: #e5b36c; }
+.barber-app .tt-pill[data-status="off"] { background: #141922; color: #8b94a3; }
+.barber-app .tt-clockrow { display: flex; align-items: stretch; gap: 0; flex: 1; min-height: 0; }
+.barber-app .tt-clockbox { display: flex; align-items: center; gap: 14px; padding: 8px 20px 8px 16px; border-radius: 12px; flex: 0 0 auto; min-width: 250px; }
+.barber-app .tt-clockbox > div { display: flex; flex-direction: column; }
+.barber-app .tt-clockbox[data-status="available"] { background: #141922; color: #9db4d0; }
+.barber-app .tt-clockbox[data-status="in-service"] { background: #1b3c28; color: #6ce5af; }
+.barber-app .tt-clockbox[data-status="break"] { background: #3c301b; color: #e5b36c; }
+.barber-app .tt-clockbox[data-status="off"] { background: #141922; color: #8b94a3; }
+.barber-app .tt-clocklabel { font-size: 13px; font-weight: 700; letter-spacing: .06em; opacity: .85; }
+.barber-app .tt-timer { font-size: 36px; font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+.barber-app .tt-timer-unknown { opacity: .5; }
+.barber-app .tt-tapnote { font-size: 15px; font-weight: 600; color: #8b94a3; margin-top: 2px; }
+.barber-app .tt-clientstoday { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 17px; color: #c5ccd6; border-left: 1px solid #2a3140; margin: 6px 0 6px 14px; padding-left: 10px; text-align: center; line-height: 1.25; }
+.barber-app .tt-bottom { display: grid; grid-template-columns: 1fr 1fr; background: #141922; border-radius: 12px; padding: 8px 14px; flex-shrink: 0; }
+.barber-app .tt-cell { display: flex; align-items: center; gap: 12px; min-width: 0; color: #c5ccd6; }
+.barber-app .tt-cell + .tt-cell { border-left: 1px solid #2a3140; padding-left: 16px; }
+.barber-app .tt-cell > div { display: flex; flex-direction: column; min-width: 0; }
+.barber-app .tt-cell small { font-size: 13px; color: #8b94a3; }
+.barber-app .tt-cell b { font-size: 16px; font-weight: 500; color: #f2f4f7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.barber-app .tt-timer-sm { font-variant-numeric: tabular-nums; font-weight: 500; }
+.barber-app .tt-clockrow { min-height: 70px; }
+
+/* narrow tablets: the chips lose their icon so the label still fits */
+@media (max-width: 1100px) { .barber-app .tt-tile svg { display: none; } .barber-app .tt-tile { padding: 12px 8px; } .barber-app .tt-glance-row { gap: 6px; } }
+
+/* ===== POS tab: checkout mode ===== */
+.barber-app .row-x { background: transparent; color: #ef5a5f; font-size: 16px; padding: 0 2px; margin-left: 4px; vertical-align: middle; }
+.barber-app .ticket-total .balance-row { border-top: 1px dashed #454c56; padding-top: 10px; margin-top: 2px; }
+.barber-app .ticket-total .balance-row strong { color: #0d9b6e; font-size: 16px; }
+.barber-app .pos-status { height: 46px; flex: 0 0 auto; margin-bottom: 8px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; letter-spacing: .06em; line-height: 1.25; text-transform: uppercase; color: #8b94a0; background: #232830; border: 1px solid #3b424c; padding: 4px 10px; text-align: center; overflow: hidden; }
+.barber-app .pos-status span { display: -webkit-box; line-clamp: 2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+/* Checkout keypad: the key rows share whatever height is left, so a taller status box never pushes the bottom row off a 10" screen. */
+.barber-app .pay-keypad { display: flex; flex-direction: column; }
+.barber-app .pay-keypad .key-grid { flex: 1; min-height: 0; grid-template-rows: repeat(4, minmax(0, 1fr)); }
+.barber-app .pay-keypad .key-grid button { min-height: 0; }
+.barber-app .pay-keypad .money-grid { flex: 0 0 auto; }
+.barber-app .pos-status-success { color: #34d399; } .barber-app .pos-status-error { color: #fbbf24; } .barber-app .pos-status-guided { color: #f4d000; }
+.barber-app .pay-fn-row button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #e8eaed; font-size: 12px; font-weight: 700; background: #353a43; }
+.barber-app .pay-fn-row button svg { color: #c4cad3; }
+.barber-app .pay-keypad .pay-fn-row-stacked { margin-top: 6px; }
+.barber-app .pay-fn-row button:disabled { cursor: default; }
+.barber-app .pay-fn-row button:active { background: #3d444e; }
+.barber-app .pay-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 16px 4px; }
+.barber-app .pay-methods { display: flex; flex-direction: column; gap: 12px; margin: auto 0; }
+.barber-app .pay-methods button { width: 100%; height: 72px; font-size: 18px; font-weight: 800; letter-spacing: .06em; color: #fff; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 12px; }
+.barber-app .pay-cash { background: #0d9b6e; } .barber-app .pay-card { background: #3f6ea3; }
+.barber-app .pay-methods .pay-gift { background: #353a43; border: 1px solid #454c56; }
+.barber-app .pay-methods button:disabled { opacity: .6; }
+.barber-app .spin { animation: barber-spin 1s linear infinite; }
+@keyframes barber-spin { to { transform: rotate(360deg); } }
+.barber-app .pay-methods button:active { transform: scale(.98); filter: brightness(.92); }
+/* Print/Text/No Receipt — shown once the ticket is paid in full, in place of the payment buttons above: same design
+   (same colors, same vertical stack), just narrower — nothing left to tender, so the row doesn't need the full width. */
+.barber-app .receipt-methods { display: flex; flex-direction: column; gap: 12px; margin: auto auto; width: 100%; max-width: 300px; align-self: center; }
+.barber-app .receipt-methods button { width: 100%; height: 64px; font-size: 15px; font-weight: 800; letter-spacing: .05em; color: #fff; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 10px; }
+.barber-app .receipt-print { background: #0d9b6e; } .barber-app .receipt-text { background: #3f6ea3; }
+.barber-app .receipt-methods .receipt-none { background: #353a43; border: 1px solid #454c56; }
+.barber-app .receipt-methods button:disabled { opacity: .6; }
+.barber-app .receipt-methods button:active { transform: scale(.98); filter: brightness(.92); }
+.barber-app .pay-hint { font-size: 12px; color: #8b94a0; line-height: 1.5; margin: 0; }
+.barber-app .fn-wrap { flex: 1; min-height: 0; padding: 12px 0 4px; }
+.barber-app .fn-grid { height: 100%; display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.barber-app .fn-cell { position: relative; min-height: 0; background: #353a43; border: 1px solid #454c56; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #e8eaed; font-size: 11px; font-weight: 700; line-height: 1.15; text-align: center; padding: 4px; }
+.barber-app .fn-cell:active { background: #3d444e; }
+.barber-app .fn-cell em { position: absolute; top: 3px; right: 6px; font-style: normal; color: #8b94a0; font-size: 12px; }
+.barber-app .fn-empty { background: #262a31; box-shadow: none; border-color: #3b424c; cursor: default; }
+
+/* Gear (card-reader choice) in the checkout ticket header, and the gift-card entry popup */
+.barber-app .ticket-client-side { display: flex; align-items: center; gap: 10px; }
+.barber-app .pos-gear { background: transparent; color: #8b94a0; padding: 6px; display: flex; align-items: center; justify-content: center; }
+.barber-app .pos-gear:active { color: #e8eaed; }
+.barber-app .gift-entry { display: flex; flex-direction: column; gap: 12px; padding: 16px 22px; }
+.barber-app .gift-input { height: 56px; background: #232830; border: 1px solid #454c56; color: #e8eaed; font-size: 22px; font-weight: 700; letter-spacing: .08em; padding: 0 16px; text-transform: uppercase; }
+.barber-app .gift-input:focus { outline: none; border-color: #3f6ea3; }
+.barber-app .gift-error { color: #fbbf24; font-size: 13px; font-weight: 700; }
+.barber-app .gift-result { display: flex; justify-content: space-between; align-items: center; background: #232830; border: 1px solid #3b424c; padding: 14px 16px; font-size: 13px; color: #9aa2ad; }
+.barber-app .gift-result strong { color: #34d399; font-size: 18px; font-variant-numeric: tabular-nums; }
+
+/* ===== Techs tab: compact card — used when 4+ techs would shrink the roomy card below a readable size (techLayout.ts) ===== */
+.barber-app .tt-compact .tt-card { padding: 6px 9px; gap: 5px; border-radius: 10px; box-shadow: 0 3px 10px rgba(0, 0, 0, .24); }
+.barber-app .tt-compact .tt-top { gap: 8px; }
+.barber-app .tt-compact .tt-avatar { width: 36px; height: 36px; align-self: flex-start; }
+.barber-app .tt-compact .tt-main { gap: 4px; }
+.barber-app .tt-compact .tt-namerow { gap: 6px; align-items: center; }
+.barber-app .tt-compact .tt-name strong { font-size: 14px; line-height: 1.15; }
+.barber-app .tt-compact .tt-name span { font-size: 10.5px; gap: 5px; line-height: 1.2; }
+.barber-app .tt-compact .tt-nextup { font-size: 8px; padding: 1px 5px; border-radius: 4px; }
+.barber-app .tt-compact .tt-pill { font-size: 9px; padding: 3px 8px; gap: 5px; letter-spacing: .03em; }
+.barber-app .tt-compact .tt-pill i { width: 6px; height: 6px; }
+.barber-app .tt-pill-short { display: none; }
+.barber-app .tt-compact .tt-pill-full { display: none; }
+.barber-app .tt-compact .tt-pill-short { display: inline; }
+.barber-app .tt-compact .tt-clockrow { min-height: 0; }
+.barber-app .tt-compact .tt-clockbox { min-width: 0; padding: 3px 8px; gap: 6px; border-radius: 8px; }
+.barber-app .tt-compact .tt-clockbox svg { width: 18px; height: 18px; }
+.barber-app .tt-compact .tt-clocklabel { font-size: 9.5px; }
+.barber-app .tt-compact .tt-timer { font-size: 19px; }
+.barber-app .tt-compact .tt-tapnote { font-size: 9.5px; margin-top: 0; }
+.barber-app .tt-compact .tt-clientstoday { font-size: 10.5px; gap: 4px; margin: 3px 0 3px 6px; padding-left: 6px; line-height: 1.15; }
+.barber-app .tt-compact .tt-clientstoday svg { width: 13px; height: 13px; }
+.barber-app .tt-compact .tt-bottom { padding: 3px 8px; border-radius: 7px; }
+.barber-app .tt-compact .tt-cell { gap: 5px; }
+.barber-app .tt-compact .tt-cell + .tt-cell { padding-left: 8px; }
+.barber-app .tt-compact .tt-cell > svg { display: none; }
+.barber-app .tt-compact .tt-cell small { font-size: 9.5px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.barber-app .tt-compact .tt-cell b { font-size: 11px; line-height: 1.2; }
+
+/* Techs tab: three swipeable pages (clocked out · clocked in · in service) with a slim tab strip on top */
+.barber-app .tt-tabs { display: flex; gap: 6px; margin-top: 10px; flex-shrink: 0; }
+
+/* Queue tab — "more waiting than fits on one screen" indicator: a dot per waiting page, plus a
+   swipe hint while there's another page past the current one. */
+.barber-app .q-page-dots { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-shrink: 0; }
+.barber-app .q-page-dots button { width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0; background: #262d3a; }
+.barber-app .q-page-dots button.active { width: 20px; border-radius: 4px; background: #3f6ea3; }
+.barber-app .q-page-dots-hint { font-size: 12px; font-weight: 700; color: #c5ccd6; margin-left: 2px; }
+.barber-app .tt-tabs button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; height: 34px; border-radius: 9px; background: #262d3a; color: #c5ccd6; font-size: 13px; font-weight: 700; letter-spacing: .04em; border: 1px solid transparent; }
+.barber-app .tt-tabs button em { font-style: normal; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: grid; place-items: center; font-size: 11px; font-weight: 800; background: rgba(255, 255, 255, .08); color: #c5ccd6; }
+.barber-app .tt-tabs button.active { background: #1b212c; color: #9db4d0; border-color: #2a3140; box-shadow: 0 2px 8px rgba(0, 0, 0, .30); }
+.barber-app .tt-tabs button.active em { background: #3f6ea3; color: #fff; }
+.barber-app .tt-panel .tt-pager { position: relative; margin-top: 8px; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.barber-app .tt-track { display: flex; height: 100%; will-change: transform; } /* width set inline — page count varies (Techs tab: 2, Queue tab: 2) */
+.barber-app .tt-page { flex: 0 0 auto; height: 100%; min-width: 0; overflow: hidden; } /* width set inline, matching .tt-track's per-page share */
+.barber-app .tt-page .checkin-empty { height: 100%; display: flex; align-items: center; justify-content: center; color: #8b94a3; font-size: 16px; font-weight: 600; }
+.barber-app .tt-page .checkin-empty p { margin: 0; }
+
+/* Queue tab — header (light .tt-panel background, so dark text, unlike the dark-themed checkin-board-header) */
+.barber-app .q-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
+.barber-app .q-header p { font-size: 13px; color: #c5ccd6; margin: 0; }
+
+/* "Create Next Ticket" — jumps straight to the earliest checked-in client without a ticket yet, so a
+   busy front desk doesn't have to hunt through the grid for them. */
+.barber-app .q-next-btn { flex-shrink: 0; display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 18px; border-radius: 10px; border: none; background: #3f6ea3; color: #fff; font-size: 14px; font-weight: 800; letter-spacing: .02em; box-shadow: 0 4px 14px rgba(29, 53, 87, .28); }
+.barber-app .q-next-btn:active { transform: scale(.97); }
+.barber-app .q-next-btn:disabled { background: #262d3a; color: #96a3ba; box-shadow: none; }
+/* "Enter ID" — the manual fallback next to it, deliberately less prominent than the primary action. */
+.barber-app .q-next-btn-ghost { background: #1b212c; color: #9db4d0; border: 1px solid #2a3140; box-shadow: none; }
+
+/* Queue tab — waiting client card (same footprint as .tt-card, simpler content, all cards look alike on purpose) */
+.barber-app .q-card { position: absolute; top: 0; left: 0; transform-origin: top left; box-sizing: border-box; background: #1b212c; border: 1px solid #2a3140; border-radius: 16px; box-shadow: 0 8px 22px rgba(0, 0, 0, .27); padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; overflow: hidden; } /* overflow:hidden is a safety net — a long client/tech name must clip, never spill into the card below it */
+.barber-app .q-card:active { transform: scale(.98); }
+.barber-app .q-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; min-width: 0; }
+.barber-app .q-name-row { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.barber-app .q-name { font-size: 19px; font-weight: 800; color: #f2f4f7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* The number printed with the client's QR code. Its compact black ticket-stub shape replaces the
+   generic profile circle and makes the manual lookup key unmistakable at the card's top-left. */
+.barber-app .q-id-badge { align-self: flex-start; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; min-width: 42px; height: 27px; box-sizing: border-box; padding: 0 9px; border-radius: 3px; background: #050505; color: #fff; font-size: 13px; line-height: 1; font-weight: 900; letter-spacing: .03em; font-variant-numeric: tabular-nums; }
+.barber-app .q-sub { align-self: flex-start; font-size: 11px; font-weight: 800; letter-spacing: .05em; color: #c5ccd6; background: #141922; border-radius: 6px; padding: 2px 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.barber-app .q-sub[data-kind="walkin"] { color: #c5ccd6; background: #141922; }
+.barber-app .q-sub[data-kind="assigned"] { color: #6ce5b2; background: #1b3c2a; }
+.barber-app .q-sub[data-kind="unassigned"] { color: #e5b36c; background: #3c301b; }
+.barber-app .q-service { font-size: 15px; font-weight: 600; color: #f2f4f7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.barber-app .q-card-footer { margin-top: auto; display: grid; grid-template-columns: 1fr 1fr; min-height: 42px; background: #141922; border-radius: 9px; padding: 6px 10px; box-sizing: border-box; }
+.barber-app .q-footer-cell { min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.barber-app .q-footer-cell + .q-footer-cell { border-left: 1px solid #2a3140; padding-left: 10px; }
+.barber-app .q-footer-cell small { font-size: 8.5px; line-height: 1.1; font-weight: 800; letter-spacing: .06em; color: #8b94a3; }
+.barber-app .q-footer-cell b { margin-top: 2px; font-size: 12px; line-height: 1; color: #f2f4f7; font-variant-numeric: tabular-nums; }
+.barber-app .q-footer-timer .tt-timer { font-size: 14px; line-height: 1; color: #9db4d0; letter-spacing: 0; }
+
+/* Take a mistaken/left walk-in off the waiting list. */
+.barber-app .q-card-remove { position: absolute; z-index: 1; top: 10px; right: 10px; width: 24px; height: 24px; border-radius: 50%; border: none; background: transparent; color: #a2acbc; display: grid; place-items: center; }
+.barber-app .q-card-remove:active { background: rgba(239, 90, 95, .12); color: #ef5a5f; }
+.barber-app .tt-compact .q-card-remove { width: 18px; height: 18px; top: 6px; right: 6px; }
+.barber-app .q-card-has-remove .q-top { padding-right: 22px; }
+.barber-app .tt-compact .q-card-has-remove .q-top { padding-right: 16px; }
+
+/* Compact density (many clients waiting at once) — same shrink pattern as .tt-compact .tt-card. */
+.barber-app .tt-compact .q-card { padding: 8px 10px; gap: 4px; border-radius: 10px; box-shadow: 0 3px 10px rgba(0, 0, 0, .24); }
+.barber-app .tt-compact .q-name { font-size: 14px; }
+.barber-app .tt-compact .q-id-badge { min-width: 32px; height: 20px; padding: 0 6px; font-size: 9.5px; border-radius: 2px; }
+.barber-app .tt-compact .q-sub { font-size: 9.5px; padding: 1px 5px; }
+.barber-app .tt-compact .q-service { font-size: 11px; }
+.barber-app .tt-compact .q-card-footer { min-height: 30px; padding: 3px 6px; border-radius: 6px; }
+.barber-app .tt-compact .q-footer-cell + .q-footer-cell { padding-left: 6px; }
+.barber-app .tt-compact .q-footer-cell small { font-size: 6.5px; }
+.barber-app .tt-compact .q-footer-cell b { font-size: 9px; margin-top: 1px; }
+.barber-app .tt-compact .q-footer-timer .tt-timer { font-size: 10px; }
+
+/* One client-card grammar across Waiting, In Service, Walk-ins, Appointments, No-shows and
+   Completed. It borrows the Tech card's strong state panel and split footer, but intentionally
+   omits a portrait; ticket number + client name remain the first thing staff scan. */
+.barber-app .q-unified-head { min-height: 28px; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.barber-app .q-unified-head .q-name-row, .barber-app .q-unified-head.q-booking-client { flex: 1; min-width: 0; }
+.barber-app .q-unified-head.q-booking-client strong { flex: 1; }
+.barber-app .q-unified-pill { margin-left: auto; flex: 0 0 auto; max-width: 42%; padding: 4px 9px; border-radius: 999px; background: #141922; color: #8b94a3; font-size: 9px; font-style: normal; font-weight: 900; letter-spacing: .06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }
+.barber-app .q-unified-pill[data-kind="assigned"], .barber-app .q-unified-pill[data-kind="service"], .barber-app .q-unified-pill[data-kind="completed"] { background: #1b3c2a; color: #6ce5b2; }
+.barber-app .q-unified-pill[data-kind="unassigned"], .barber-app .q-unified-pill[data-kind="walk-ins"] { background: #3c301b; color: #e5b16c; }
+.barber-app .q-unified-pill[data-kind="no-shows"] { background: #3c1b20; color: #c24156; }
+.barber-app .q-unified-main { flex: 1; min-height: 58px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(72px, .42fr); align-items: stretch; background: #141922; border-radius: 11px; overflow: hidden; }
+.barber-app .q-unified-clock { min-width: 0; display: flex; align-items: center; gap: 9px; padding: 9px 12px; color: #9db4d0; }
+.barber-app .q-unified-clock > div { min-width: 0; display: flex; flex-direction: column; }
+.barber-app .q-unified-clock small, .barber-app .q-unified-side small, .barber-app .q-unified-footer small { color: #8b99ad; font-size: 9px; font-weight: 800; line-height: 1.1; }
+.barber-app .q-unified-clock b, .barber-app .q-unified-clock .tt-timer { color: #9db4d0; font-size: 18px; font-weight: 850; line-height: 1.2; white-space: nowrap; }
+.barber-app .q-unified-side { border-left: 2px solid #2a3140; display: flex; flex-direction: column; justify-content: center; padding: 8px 11px; min-width: 0; }
+.barber-app .q-unified-side b { margin-top: 3px; color: #c5ccd6; font-size: 12px; white-space: nowrap; }
+.barber-app .q-unified-footer { min-height: 39px; display: grid; grid-template-columns: 1fr 1fr; background: #141922; border-radius: 9px; overflow: hidden; }
+.barber-app .q-unified-footer > div { min-width: 0; padding: 6px 10px; display: flex; flex-direction: column; justify-content: center; }
+.barber-app .q-unified-footer > div + div { border-left: 1px solid #2a3140; }
+.barber-app .q-unified-footer b { margin-top: 2px; color: #f2f4f7; font-size: 11px; font-weight: 750; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: none; }
+.barber-app .q-unified-card { gap: 8px; padding: 10px 12px; }
+.barber-app .q-unified-card .q-booking-client-top { min-height: 28px; }
+.barber-app .q-unified-card .q-unified-main { min-height: 48px; }
+.barber-app .q-unified-card .q-unified-footer { min-height: 32px; }
+.barber-app .q-unified-card .q-booking-client span { order: 0; }
+.barber-app .q-unified-card .q-booking-client strong { order: 1; }
+.barber-app .q-unified-card .q-unified-pill { order: 2; }
+
+/* ── Spotlight — whoever's up next, always visible on the left in a large Techs-tab-styled card,
+   separate from the smaller-card grid the rest of the queue scrolls/paginates through. */
+.barber-app .q-body { flex: 1; min-height: 0; display: flex; gap: 14px; margin-top: 10px; }
+.barber-app .q-rest { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.barber-app .q-rest .tech-stage { margin-top: 0; }
+.barber-app .q-spotlight-wrap { position: relative; flex-shrink: 0; width: 340px; display: flex; }
+/* .tt-card's base rule is position:absolute (every other usage pairs it with a sized .tech-slot
+   wrapper + matching inline width/height/transform via computeTechLayout) — this card instead
+   sizes normally to its 340px-wide flex parent, so it must cancel that back to a normal static
+   position, or its contents render unconstrained and scatter across the page. */
+.barber-app .q-spotlight-card { position: static; width: 100%; height: 100%; padding: 20px 20px 16px; gap: 16px; display: flex; flex-direction: column; }
+.barber-app .q-spotlight-card .q-id-badge-spotlight { min-width: 52px; height: 32px; padding: 0 11px; font-size: 15px; }
+.barber-app .q-spotlight-card .tt-name strong { font-size: 22px; }
+.barber-app .q-spotlight-card .tt-name span { font-size: 13px; }
+.barber-app .q-spotlight-card .tt-clockbox { min-width: 0; width: 100%; }
+.barber-app .q-spotlight-elapsed { font-size: 17px; font-weight: 800; line-height: 1.05; }
+.barber-app .q-spotlight-service { font-size: 15px; }
+.barber-app .q-spotlight-bottom { grid-template-columns: 1fr 1fr; padding: 9px 14px; }
+.barber-app .q-spotlight-meta-cell > div { width: 100%; }
+.barber-app .q-spotlight-meta-cell small { font-size: 10px; font-weight: 800; letter-spacing: .06em; }
+.barber-app .q-spotlight-meta-cell b { margin-top: 2px; font-size: 14px; font-weight: 700; }
+.barber-app .q-spotlight-timer-cell .tt-timer { font-size: 18px; line-height: 1; color: #9db4d0; letter-spacing: 0; }
+.barber-app .q-spotlight-actions { margin-top: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.barber-app .q-spotlight-action, .barber-app .q-spotlight-skip { height: 52px; border-radius: 12px; font-size: 14px; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 7px; }
+.barber-app .q-spotlight-action { border: none; background: #3f6ea3; color: #fff; box-shadow: 0 4px 14px rgba(29, 53, 87, .28); }
+.barber-app .q-spotlight-skip { border: 1px solid #2a3140; background: #141922; color: #f2f4f7; }
+.barber-app .q-spotlight-assign { border-color: #6f93bd; background: #141922; color: #9db4d0; }
+.barber-app .q-spotlight-action:active { transform: scale(.98); }
+.barber-app .q-spotlight-skip:active:not(:disabled) { transform: scale(.98); background: #141922; }
+.barber-app .q-spotlight-skip:disabled { opacity: .45; cursor: not-allowed; }
+
+.barber-app .assign-create-unassigned { margin: 0 18px 12px; min-height: 58px; border: 1px solid #cbd7e8; border-radius: 11px; background: #f5f8fc; color: #182a45; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: 9px 13px; text-align: left; }
+.barber-app .assign-create-unassigned strong { font-size: 14px; font-weight: 850; }
+.barber-app .assign-create-unassigned span { margin-top: 3px; color: #687891; font-size: 11px; font-weight: 650; }
+.barber-app .assign-create-unassigned:active:not(:disabled) { background: #eaf0f8; }
+.barber-app .assign-create-unassigned:disabled { opacity: .5; }
+
+/* Queue summary detail tabs — show real visit cards with silhouettes in unused slots. */
+.barber-app .q-body-detail { display: block; }
+.barber-app .q-detail-view { height: 100%; min-height: 0; display: flex; flex-direction: column; gap: 9px; }
+.barber-app .q-detail-tab { height: 34px; flex: 0 0 34px; border: 2px solid #111; border-radius: 10px; background: #1b212c; color: #9db4d0; display: flex; align-items: center; justify-content: center; gap: 8px; box-sizing: border-box; font-size: 13px; font-weight: 800; letter-spacing: .03em; }
+.barber-app .q-detail-tab em { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; box-sizing: border-box; display: grid; place-items: center; background: #3f6ea3; color: #fff; font-size: 11px; font-style: normal; }
+.barber-app .q-detail-ghost-grid { position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 320px)); grid-template-rows: repeat(4, minmax(0, 145px)); align-content: start; justify-content: start; gap: 14px; }
+.barber-app .q-wait-grid, .barber-app .q-tech-grid { height: 100%; overflow-y: auto; grid-auto-rows: minmax(0, 145px); scrollbar-width: thin; }
+/* Cards need their full 145px (header, clock, Current Service / Next Up). When the screen is too short
+   for four rows (e.g. the Techs tab's Clocked In/Out bar on an 800px-tall tablet), scroll the grid a
+   little instead of squeezing rows and clipping each card's bottom line. */
+.barber-app .q-wait-grid, .barber-app .q-tech-grid { grid-template-rows: none; grid-auto-rows: 145px; }
+.barber-app .q-wait-rest { width: 100%; }
+.barber-app .q-wait-card { position: relative; cursor: pointer; }
+/* No service / no technician yet: a red blank line (the "___" text stays for screen readers, drawn as a solid bar so it reads clearly at card size). */
+.barber-app .q-unified-footer b.q-missing { display: block; width: 34px; height: 3px; margin: 8px 0 5px; border-radius: 2px; background: #dc2626; font-size: 0; }
+.barber-app .q-wait-card.q-up-next { border-color: #6f93bd; box-shadow: inset 3px 0 0 #6f93bd, 0 6px 16px rgba(0, 0, 0, .30); }
+.barber-app .q-up-next .q-unified-pill { background: #141922; color: #9db4d0; }
+.barber-app .q-wait-card .q-booking-client-top { padding-right: 15px; }
+.barber-app .q-wait-card .q-card-remove { top: 5px; right: 5px; }
+.barber-app .q-wait-actions { padding: 3px 5px; display: flex; flex-direction: column; gap: 3px; }
+.barber-app .q-wait-actions button { flex: 1; min-height: 0; border: 1px solid #2a3140; border-radius: 5px; background: #1b212c; color: #9db4d0; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.barber-app .q-wait-actions button:disabled { opacity: .45; }
+.barber-app .q-tech-card { cursor: default; }
+.barber-app .q-tech-card.tt-tappable { cursor: pointer; }
+.barber-app .q-tech-avatar { width: 24px; height: 24px; object-fit: cover; border-radius: 50%; flex-shrink: 0; }
+.barber-app .q-tech-next { flex-shrink: 0; color: #9db4d0; font-size: 10px; font-style: normal; font-weight: 900; }
+.barber-app .q-tech-card .q-unified-pill[data-kind="available"] { background: #1b3c2a; color: #6ce5b2; }
+.barber-app .q-tech-card .q-unified-pill[data-kind="break"] { background: #3c301b; color: #e5b16c; }
+.barber-app .q-tech-card .q-unified-pill[data-kind="off"] { background: #141922; color: #c5ccd6; }
+.barber-app .q-tech-card .q-unified-clock b { font-size: 14px; }
+.barber-app .q-detail-message { position: absolute; z-index: 1; top: 20px; left: 20px; max-width: calc(100% - 40px); padding: 12px 16px; background: #1b212c; border: 1px solid #2a3140; border-radius: 9px; color: #f2f4f7; box-shadow: 0 5px 14px rgba(0, 0, 0, .30); }
+.barber-app .q-detail-ghost-card { width: 100%; max-width: 320px; height: 100%; max-height: 145px; min-width: 0; min-height: 0; border: 1px solid #2a3140; border-radius: 13px; background: rgba(255,255,255,.025); border-color: rgba(255,255,255,.06); box-shadow: none; }
+.barber-app .q-booking-card { width: 100%; max-width: 320px; height: 100%; max-height: 145px; min-width: 0; min-height: 0; box-sizing: border-box; border: 1px solid #2a3140; border-radius: 13px; background: #1b212c; color: inherit; font: inherit; text-align: left; box-shadow: 0 6px 16px rgba(0, 0, 0, .30); padding: 12px 14px; display: flex; flex-direction: column; overflow: hidden; }
+.barber-app .q-booking-time { margin-top: 9px; display: flex; align-items: center; gap: 6px; color: #9db4d0; }
+.barber-app .q-booking-time strong { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.barber-app .q-booking-time > span { margin-left: auto; font-size: 11px; font-weight: 700; color: #8b94a3; }
+.barber-app .q-booking-time > .tt-timer { font-size: 14px; color: #9db4d0; }
+.barber-app .q-booking-client { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.barber-app .q-booking-client-top { min-height: 25px; }
+.barber-app .q-booking-client strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #f2f4f7; font-size: 17px; font-weight: 800; }
+.barber-app .q-booking-client span { flex-shrink: 0; color: #fff; background: #050505; border-radius: 3px; padding: 2px 7px; font-size: 10px; font-weight: 900; }
+.barber-app .q-booking-service { margin-top: 6px; min-width: 0; display: flex; align-items: center; gap: 6px; color: #9db4d0; }
+.barber-app .q-booking-service svg { flex: 0 0 auto; }
+.barber-app .q-booking-service > div { min-width: 0; display: flex; flex-direction: column; }
+.barber-app .q-booking-service span { color: #8b94a3; font-size: 10px; font-weight: 800; line-height: 1; }
+.barber-app .q-booking-service strong { margin-top: 2px; color: #f2f4f7; font-size: 15px; font-weight: 900; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.barber-app .q-booking-staff { margin-top: auto; padding-top: 7px; color: #8b94a3; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Ghost cards — nobody checked in yet, but the tab still shows where cards WILL go instead of
+   going blank: a soft shadowed outline in the same shapes/positions real cards use, spotlight
+   included, so the two-column layout never collapses to a single full-width empty message. */
+.barber-app .q-card-ghost { background: rgba(255, 255, 255, .025); border: 1px solid rgba(255, 255, 255, .07); box-shadow: 0 4px 14px rgba(0, 0, 0, .15); cursor: default; }
+.barber-app .q-ghost-grid { position: relative; }
+.barber-app .q-ghost-caption { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); margin: 0; font-size: 14px; font-weight: 600; color: #96a3ba; white-space: nowrap; pointer-events: none; }
+
+/* Clocked In page: the NEXT badge sits to the left of the FREE timer box */
+.barber-app .tt-nextup-side { align-self: center; flex-shrink: 0; margin-right: 12px; font-size: 15px; letter-spacing: .12em; padding: 6px 14px; border-radius: 8px; }
+.barber-app .tt-compact .tt-nextup-side { margin-right: 7px; font-size: 9.5px; letter-spacing: .1em; padding: 3px 7px; border-radius: 5px; }

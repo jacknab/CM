@@ -154,7 +154,7 @@ require 'includes/nav.php';
     <div class="section-header">
       <span class="tag tag-plum">Giá Cả Rõ Ràng</span>
       <h2 class="section-title">Không hợp đồng. Không phí ẩn.</h2>
-      <p class="section-subtitle">Gói giá bắt đầu từ $9/tháng. Dùng thử miễn phí <?= TRIAL_DAYS ?> ngày, cần thẻ tín dụng nhưng sẽ không bị tính phí cho đến khi hết thời gian dùng thử.</p>
+      <p class="section-subtitle">Gói Solo miễn phí; các gói cho tiệm có nhiều thợ từ $22/tháng. Dùng thử miễn phí <?= TRIAL_DAYS ?> ngày, cần thẻ tín dụng nhưng sẽ không bị tính phí cho đến khi hết thời gian dùng thử.</p>
     </div>
     <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:32px;">
       <a href="/auth?mode=register" class="btn btn-primary btn-lg">Bắt Đầu Dùng Thử Miễn Phí</a>

@@ -124,6 +124,33 @@ export type {
   InsertStaffCommissionAccrual,
 } from "./schema/payouts";
 
+// Re-export Certxa Rentals foundation tables (separate product — see
+// shared/schema/rentals.ts for the domain notes and Phase 0 audit).
+export {
+  rentalSpaces,
+  rentalProfessionals,
+  rentalAgreements,
+  rentCharges,
+  rentPayments,
+  insertRentalSpaceSchema,
+  insertRentalProfessionalSchema,
+  insertRentalAgreementSchema,
+  insertRentChargeSchema,
+  insertRentPaymentSchema,
+} from "./schema/rentals";
+export type {
+  RentalSpace,
+  InsertRentalSpace,
+  RentalProfessional,
+  InsertRentalProfessional,
+  RentalAgreement,
+  InsertRentalAgreement,
+  RentCharge,
+  InsertRentCharge,
+  RentPayment,
+  InsertRentPayment,
+} from "./schema/rentals";
+
 
 // Re-export subscription system tables
 export {
@@ -171,6 +198,13 @@ export const locations = pgTable("locations", {
   postcode: text("postcode"),
   bookingSlug: text("booking_slug").unique(),
   bookingTheme: text("booking_theme").default("simple"),
+  // 12-digit device-pairing code for the implicit default station (registerId 0) — one code
+  // works for setting up EITHER a POS tablet or a /frontdesk or self-serve kiosk tablet (which
+  // role it pairs as depends on which app screen it's entered into, not the code itself), so
+  // whoever's setting up a device never has to type or see this store's real slug/register id.
+  // Generated lazily on first read (see lib/activationCodes.ts), not at store creation, so
+  // existing stores get one the first time they open Settings → POS Stations.
+  activationCode: text("activation_code").unique(),
   commissionPayoutFrequency: text("commission_payout_frequency").default("monthly"),
   smsTokens: integer("sms_tokens").notNull().default(0),
   smsAllowance: integer("sms_allowance").notNull().default(0),
@@ -188,6 +222,9 @@ export const locations = pgTable("locations", {
   // When true, /kiosk/:slug and /frontdesk/:slug(/:registerId) are only
   // reachable from the salon's own network — see storeNetworkTrust below.
   restrictKioskNetwork: boolean("restrict_kiosk_network").notNull().default(false),
+  // 1 = a platform admin has permitted this account to use the self check-in kiosk, 0 = not
+  // permitted (set on /isadmin → ACCOUNTS). Separate from the owner's own kiosk on/off setting.
+  kioskPermitted: integer("kiosk_permitted").notNull().default(0),
   weeklyDigestOptOut: boolean("weekly_digest_opt_out").notNull().default(false),
   parkingOptions: jsonb("parking_options").$type<string[]>().default([]),
   accessibilityFeatures: jsonb("accessibility_features").$type<string[]>().default([]),
@@ -486,6 +523,11 @@ export const staff = pgTable("staff", {
   /** Techs-page timer: their current state ('available' | 'busy' | 'break' | 'off') and when they entered it. */
   availabilityState: text("availability_state"),
   availabilitySince: timestamp("availability_since", { withTimezone: true }),
+  /** Barber / Tech ID typed on the /barber and /nail POS (unique per store); assigned automatically:
+   *  1–89 for technicians and barbers, 90–99 for receptionists (`frontDesk`). */
+  barberNumber: integer("barber_number"),
+  /** Receptionist / front desk: gets an ID in 90–99, and the POS locks on them only after two idle minutes. */
+  frontDesk: boolean("front_desk").notNull().default(false),
   commissionEnabled: boolean("commission_enabled").default(false),
   commissionRate: decimal("commission_rate", { precision: 5, scale: 2 }).default("0"),
   productCommissionRate: decimal("product_commission_rate", { precision: 5, scale: 2 }).default("0"),
@@ -544,6 +586,7 @@ export const appointments = pgTable("appointments", {
   status: text("status").default("pending"),
   notes: text("notes"),
   cancellationReason: text("cancellation_reason"),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
   paymentMethod: text("payment_method"),
   tipAmount: decimal("tip_amount", { precision: 10, scale: 2 }),
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
@@ -1755,6 +1798,9 @@ export const payrollRunItems = pgTable("payroll_run_items", {
   otherEarnings:    decimal("other_earnings", { precision: 10, scale: 2 }).notNull().default("0"),
   boothRent:        decimal("booth_rent", { precision: 10, scale: 2 }).notNull().default("0"),
   otherDeductions:  decimal("other_deductions", { precision: 10, scale: 2 }).notNull().default("0"),
+  /** The part of otherDeductions taken by the salon's recurring deduction rules, and which rule took what. */
+  ruleDeductions:   decimal("rule_deductions", { precision: 10, scale: 2 }).notNull().default("0"),
+  ruleDeductionsDetail: jsonb("rule_deductions_detail"),
   netPay:           decimal("net_pay", { precision: 10, scale: 2 }).notNull().default("0"),
   checkNumber:      text("check_number"),
   status:           text("status").notNull().default("pending"),
@@ -1799,6 +1845,9 @@ export const reviews = pgTable("reviews", {
   isPublic: boolean("is_public").notNull().default(true),
   isFeatured: boolean("is_featured").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
+  // The owner's public reply to this review (migration 0224). The review itself is never edited.
+  ownerResponse: text("owner_response"),
+  ownerResponseAt: timestamp("owner_response_at"),
 });
 
 // === CERTXA PRO — FIELD SERVICE TABLES ===
@@ -2755,6 +2804,9 @@ export const registers = pgTable("registers", {
   sortOrder: integer("sort_order").notNull().default(0),
   isActive:  boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  // Same device-pairing code as locations.activationCode, but for an explicitly-added station
+  // beyond the implicit default (POS #2, #3, …) — see lib/activationCodes.ts.
+  activationCode: text("activation_code").unique(),
 });
 export type Register = typeof registers.$inferSelect;
 export type InsertRegister = typeof registers.$inferInsert;

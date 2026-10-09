@@ -12,7 +12,7 @@ define('PAGE_SCHEMA', json_encode([
   ['@type'=>'FAQPage','mainEntity'=>[
     ['@type'=>'Question','name'=>'Can nail tech booth renters use Certxa independently from the studio owner?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes — Certxa gives every nail tech booth renter a completely independent account. Your clients, booking history, nail records, payments, and data are 100% yours. You are never visible inside the studio owner\'s account unless you choose to be.']],
     ['@type'=>'Question','name'=>'Does Certxa work for a solo nail technician renting a booth?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa is designed to work perfectly as a one-person nail studio. You get online booking, a self-service walk-in kiosk, POS, client nail records with product notes, automated reminders, loyalty rewards, and analytics — everything a full nail salon team gets, sized for one.']],
-    ['@type'=>'Question','name'=>'How much does Certxa cost for a nail tech booth renter?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa starts at $9/month after a full ' . TRIAL_DAYS . '-day free trial. There are no contracts and no subscription setup fees. Optional add-ons like the Autumn AI receptionist are usage-based and billed separately through your Platform Wallet.']],
+    ['@type'=>'Question','name'=>'How much does Certxa cost for a nail tech booth renter?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa\'s Solo plan, built for independent technicians and booth renters, is free. There are no contracts and no subscription setup fees. Optional add-ons like the Autumn AI receptionist are usage-based and billed separately through your Platform Wallet.']],
   ]],
   // Canonical SoftwareApplication (@id #software) is injected site-wide by includes/header.php.
 ]));
@@ -204,7 +204,7 @@ require 'includes/nav.php';
     <h2 class="section-title" style="color:#fff;">Ready to run your<br><em style="color:#F59E0B;">booth like a business?</em></h2>
     <p style="color:rgba(255,255,255,.65);font-size:1rem;line-height:1.65;margin-bottom:36px;">Certxa helps independent nail technicians fill their books, retain their clients, and get paid on time — every time.</p>
     <a href="/auth?mode=register" class="btn btn-gold btn-lg">Start Free — <?= TRIAL_DAYS ?> Days</a>
-    <div style="margin-top:16px;font-size:.82rem;color:rgba(255,255,255,.4);"><?= TRIAL_DAYS ?>-day trial · From $9/mo · Cancel anytime</div>
+    <div style="margin-top:16px;font-size:.82rem;color:rgba(255,255,255,.4);">Solo plan is free · No credit card needed</div>
   </div>
 </section>
 

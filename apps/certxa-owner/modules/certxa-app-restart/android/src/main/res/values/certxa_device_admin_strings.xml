@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="certxa_device_admin_label">Certxa kiosk</string>
+  <string name="certxa_device_admin_description">Keeps this tablet locked to Certxa.</string>
+</resources>

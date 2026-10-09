@@ -2,6 +2,8 @@ import { Navigate, Routes, Route } from "react-router-dom";
 import { useSupportAuth } from "@/hooks/use-support-auth";
 import TeamSidebar from "@/components/isTeam/Sidebar";
 import TeamTopBar from "@/components/isTeam/TopBar";
+import { ChatConnectionProvider } from "@/components/isTeam/ChatConnection";
+import TeamHomePage from "./HomePage";
 import TeamDashboardPage from "./DashboardPage";
 import TeamCustomer360Page from "./Customer360Page";
 import TeamDataTransferQueuePage from "./DataTransferQueuePage";
@@ -10,17 +12,21 @@ import LiveChatPage from "./LiveChatPage";
 import AccountTimelinePage from "./AccountTimelinePage";
 import BillingInvestigationPage from "./BillingInvestigationPage";
 import VisitorsPage from "./VisitorsPage";
+import SignupsPage from "./SignupsPage";
 
 function TeamShell() {
   return (
+    <ChatConnectionProvider>
     <div className="flex h-screen bg-slate-100 overflow-hidden">
       <TeamSidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TeamTopBar />
         <main className="flex-1 overflow-hidden flex flex-col">
           <Routes>
+            <Route path="home" element={<TeamHomePage />} />
             <Route path="accounts" element={<TeamDashboardPage />} />
             <Route path="accounts/:id" element={<TeamCustomer360Page />} />
+            <Route path="signups" element={<SignupsPage />} />
             <Route path="tickets" element={<TicketsPage />} />
             <Route path="live-chat" element={<LiveChatPage />} />
             <Route path="account-timeline" element={<AccountTimelinePage />} />
@@ -32,11 +38,12 @@ function TeamShell() {
             <Route path="billing-investigation" element={<BillingInvestigationPage />} />
             <Route path="billing-investigation/:accountId" element={<BillingInvestigationPage />} />
             <Route path="data-transfers" element={<TeamDataTransferQueuePage />} />
-            <Route path="*" element={<Navigate to="/isTeam/accounts" replace />} />
+            <Route path="*" element={<Navigate to="/isTeam/home" replace />} />
           </Routes>
         </main>
       </div>
     </div>
+    </ChatConnectionProvider>
   );
 }
 

@@ -30,6 +30,17 @@ echo "[2/3] Building Booking Frontend..."
 cd "$ROOT_DIR/artifacts/booking"
 npx vite build --config vite.config.ts
 echo "  ✓ Booking Frontend built"
+# The Booking build no longer empties its output folder (it is shared with the marketplace bundle, and
+# open tablets still need the previous build's files), so old hashed files are pruned here instead.
+find "$ROOT_DIR/artifacts/api-server/dist/public/assets" -type f -mtime +14 -delete 2>/dev/null || true
+
+# ---- 2b. Marketplace client (the salon directory pages: /listings, /deals, /wallet) ----
+# Its bundle lives inside api-server/dist/public (mp-assets). Without it the salon pages answer 404 / 503.
+echo ""
+echo "[2b] Building Marketplace client..."
+cd "$ROOT_DIR/artifacts/marketplace"
+npx vite build --config vite.config.ts
+echo "  ✓ Marketplace client built"
 
 # ---- 3. Website Builder ----
 echo ""

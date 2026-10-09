@@ -1,0 +1,57 @@
+{
+  "expo": {
+    "name": "Certxa Solo",
+    "slug": "certxa-solo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "sdkVersion": "54.0.0",
+    "userInterfaceStyle": "dark",
+    "scheme": "certxa-solo",
+    "platforms": [
+      "ios"
+    ],
+    "newArchEnabled": false,
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "@stripe/stripe-terminal-react-native",
+        {
+          "appDelegate": true,
+          "tapToPayCheck": false
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Certxa needs location access to discover nearby Bluetooth card readers."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "2ff6ae43-25f0-4906-9357-f0a16dec0516"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "ios": {
+      "bundleIdentifier": "com.certxa.solo",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Certxa needs location access to discover nearby Bluetooth card readers.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Certxa needs location access to discover nearby Bluetooth card readers.",
+        "NSBluetoothAlwaysUsageDescription": "Certxa uses Bluetooth to connect to the M2 card reader.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.developer.proximity-reader.payment.acceptance": true
+      }
+    },
+    "owner": "tobyben"
+  }
+}

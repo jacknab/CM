@@ -31,6 +31,7 @@ import type { CardDetails } from './printer';
 
 /** Ticket context the server records with the payment (tip, discount, cash already taken). */
 export interface PaymentContext {
+  nailCheckout?: boolean;
   tipCents?:           number;
   discountCents?:      number;
   priorTenderedCents?: number;
@@ -101,6 +102,7 @@ export function useTerminalPayment() {
   ): Promise<PaymentServerResult> => {
     const r = await apiCaller.call('/api/payments/terminal/create-payment-intent', 'POST', {
       amountCents, currency: 'usd', appointmentId, clientName, method,
+      nailCheckout: ctx?.nailCheckout === true,
       tipCents:           toCents(ctx?.tipCents),
       discountCents:      toCents(ctx?.discountCents),
       priorTenderedCents: toCents(ctx?.priorTenderedCents),

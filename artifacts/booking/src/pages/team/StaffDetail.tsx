@@ -5,6 +5,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useSelectedStore } from "@/hooks/use-store";
 import { apiRequest } from "@/lib/queryClient";
@@ -16,6 +17,8 @@ interface Staff {
   role: string | null; status: string | null;
   commissionRate: string | null; productCommissionRate: string | null;
   avatarUrl: string | null; avatarThumbUrl: string | null; color: string | null;
+  barberNumber?: number | null;
+  frontDesk?: boolean | null;
 }
 interface Category { id: number; name: string }
 interface Service { id: number; name: string; categoryId: number | null }
@@ -74,6 +77,9 @@ export default function StaffDetail() {
 
   // ── editable state ──
   const [name, setName] = useState("");
+  const [frontDesk, setFrontDesk] = useState(false);
+  // Stores whose staff sign in on the /nail or /barber POS with an ID.
+  const posIdStore = /barber|nail/i.test((selectedStore as any)?.category ?? "");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [svcRate, setSvcRate] = useState("0");
@@ -99,9 +105,31 @@ export default function StaffDetail() {
     onError: (err: any) => toast({ title: err.message ?? "Photo upload failed", variant: "destructive" }),
   });
 
+  // Deactivating takes them out of service everywhere without deleting them (unlike "Remove"
+  // below) — same status the calendar's own staff list, online booking's staff list, and login
+  // already filter on (see PATCH /api/team/staff/:id/status), just with a switch here instead of
+  // nothing calling it yet.
+  const setActive = useMutation({
+    mutationFn: async (active: boolean) => {
+      const res = await fetch(`/api/team/staff/${staffId}/status`, {
+        method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: active ? "active" : "deactivated" }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message ?? "Couldn't update status"); }
+      return res.json();
+    },
+    onSuccess: (_data, active) => {
+      qc.invalidateQueries({ queryKey: ["/api/staff", "detail", staffId] });
+      invalidate();
+      toast({ title: active ? `${staff?.name} reactivated` : `${staff?.name} deactivated` });
+    },
+    onError: (err: any) => toast({ title: err.message ?? "Couldn't update status", variant: "destructive" }),
+  });
+
   useEffect(() => {
     if (!staff) return;
     setName(staff.name);
+    setFrontDesk(staff.frontDesk === true);
     setEmail(staff.email ?? "");
     setPhone(staff.phone ?? "");
     setSvcRate(staff.commissionRate ?? "0");
@@ -140,6 +168,8 @@ export default function StaffDetail() {
     );
   }
 
+  const isActive = staff.status == null || staff.status === "active";
+
   const saveAll = async () => {
     if (scheduleHasError(rules)) {
       toast({ title: "Fix the schedule — an end time is before its start", variant: "destructive" });
@@ -154,6 +184,7 @@ export default function StaffDetail() {
         commissionRate: clampPct(svcRate),
         productCommissionRate: clampPct(prodRate),
         commissionEnabled: Number(svcRate) > 0 || Number(prodRate) > 0,
+        ...(posIdStore ? { frontDesk } : {}),
       });
       const serviceIds = allServices
         .filter((s) => s.categoryId != null && checkedCats.has(s.categoryId))
@@ -194,6 +225,9 @@ export default function StaffDetail() {
             <ChevronLeft className="h-4 w-4" /> Staff
           </button>
           <h1 className="text-2xl font-semibold tracking-tight">{staff.name}</h1>
+          {posIdStore && staff.barberNumber != null && (
+            <p className="mt-1 text-sm text-muted-foreground" data-testid="staff-barber-id">{/barber/i.test((selectedStore as any)?.category ?? "") ? "Barber ID" : "Tech ID"} {staff.barberNumber}</p>
+          )}
         </div>
 
         {/* Profile */}
@@ -252,6 +286,33 @@ export default function StaffDetail() {
               <label className="text-[15px] font-medium">Phone</label>
               <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="text-[15px]" />
             </div>
+          </div>
+
+          {posIdStore && (
+            <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
+              <div>
+                <p className="text-[15px] font-medium">Receptionist</p>
+                <p className="text-sm text-muted-foreground">
+                  Front desk staff sign in on the POS with an ID from 90 to 99, and the screen locks on them only after 2 idle minutes.
+                </p>
+              </div>
+              <Switch checked={frontDesk} onCheckedChange={setFrontDesk} data-testid="switch-staff-front-desk" />
+            </div>
+          )}
+
+          <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
+            <div>
+              <p className="text-[15px] font-medium">Active</p>
+              <p className="text-sm text-muted-foreground">
+                {isActive ? "In service — visible on the calendar and online booking." : "Deactivated — hidden from the calendar, online booking, and can no longer log in."}
+              </p>
+            </div>
+            <Switch
+              checked={isActive}
+              disabled={setActive.isPending}
+              onCheckedChange={(v) => setActive.mutate(v)}
+              data-testid="switch-staff-active"
+            />
           </div>
         </section>
 

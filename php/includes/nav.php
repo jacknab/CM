@@ -2,7 +2,7 @@
 <nav class="nav" id="main-nav">
   <div class="container">
     <div class="nav-inner">
-      <a href="/overview" class="nav-logo"><?= BRAND_NAME ?><span>.</span></a>
+      <a href="/" class="nav-logo"><?= BRAND_NAME ?><span>.</span></a>
 
       <ul class="nav-links" id="main-menu" role="list">
 
@@ -10,7 +10,7 @@
           <a href="#">How It Works</a>
           <div class="dropdown">
             <div class="dropdown-section">Client Experience</div>
-            <a href="/overview"><span class="nav-dot"></span>Platform Overview</a>
+            <a href="/"><span class="nav-dot"></span>Platform Overview</a>
             <a href="/online-booking"><span class="nav-dot"></span>Online Booking</a>
             <a href="/client-management"><span class="nav-dot"></span>Client Management</a>
             <a href="/client-notifications"><span class="nav-dot"></span>Client Notifications</a>

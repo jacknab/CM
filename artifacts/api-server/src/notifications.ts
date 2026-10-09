@@ -46,6 +46,8 @@ export type NotificationEvent =
   // Staff opened / closed the POS Check-In sheet — puts /frontdesk on (or takes it off) the phone check-in screen.
   | { type: "kiosk_checkout_checkin_launch"; storeId: number; registerId?: number }
   | { type: "kiosk_checkout_checkin_cancel"; storeId: number; registerId?: number }
+  // A station's customer screen was paired, replaced or let go — screens on that station re-check theirs.
+  | { type: "kiosk_checkout_pairing_changed"; storeId: number; registerId?: number }
   | { type: "sms_inbound"; storeId: number; clientPhone: string; clientName: string | null; body: string; createdAt: string };
 
 export type SyncEvent =

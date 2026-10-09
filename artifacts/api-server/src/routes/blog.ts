@@ -162,7 +162,9 @@ blogRouter.get("/api/admin/blog/posts", async (req: Request, res: Response) => {
   if (!(await requireAdmin(req, res))) return;
   try {
     const result = await pool.query(
-      `SELECT id, title, slug, excerpt, category, author_name,
+      // `content` is included on purpose: the editor opens a post straight from this list, and a row
+      // without its body opened as a blank article that then saved over the real one.
+      `SELECT id, title, slug, excerpt, content, category, author_name,
               cover_color, cover_emoji, read_time, is_featured,
               status, published_at, created_at, updated_at
        FROM blog_posts

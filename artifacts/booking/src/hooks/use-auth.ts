@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { nailOffline } from "@/lib/nail-offline";
 import type { User } from "@shared/models/auth";
 import { apiRequest } from "@/lib/queryClient";
 import { offlineSessionBootstrap } from "@/lib/offline-session-bootstrap";
@@ -96,7 +97,7 @@ export function useAuth() {
   });
 
   const registerMutation = useMutation({
-    mutationFn: async (data: { email: string; password: string; firstName?: string; lastName?: string; phone?: string; keepSignedIn?: boolean }) => {
+    mutationFn: async (data: { email: string; password: string; firstName?: string; lastName?: string; phone?: string; keepSignedIn?: boolean; source?: "rentals" }) => {
       const res = await apiRequest("POST", "/api/auth/register", data);
       return res.json();
     },
@@ -113,12 +114,16 @@ export function useAuth() {
     mutationFn: async () => {
       await apiRequest("POST", "/api/auth/logout");
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.setQueryData(["/api/auth/user"], null);
       queryClient.clear();
       if (typeof window !== "undefined") {
         localStorage.removeItem(STORAGE_KEY);
         offlineSessionBootstrap.clear();
+        // Signing out removes what this device kept from the server for /nail (the board, client names, the
+        // turn line). Work that has not been sent yet is kept — it is the only copy — and waits for the salon
+        // to sign in again. Bounded, so a storage fault can never stop the sign-out itself.
+        await Promise.race([nailOffline.onSignOut().catch(() => {}), new Promise((r) => setTimeout(r, 1500))]);
         window.location.href = "/auth";
       }
     },

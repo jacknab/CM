@@ -28,6 +28,7 @@ export const users = pgTable("users", {
   passwordChanged: boolean("password_changed").default(false), // Track if staff has changed their initial password
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  lastManageBriefingAt: timestamp("last_manage_briefing_at", { withTimezone: true }),
   // Trial / subscription fields (added via migration 0001_add_trial_fields.sql)
   subscriptionStatus: varchar("subscription_status", { length: 20 }).default("active"),
   trialStartedAt: timestamp("trial_started_at"),

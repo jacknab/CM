@@ -1,3 +1,15 @@
 {
-  "expo": {}
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "229d380f-72f7-4b5d-83cb-2de448b711ce"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.tobyben.workspace",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  }
 }

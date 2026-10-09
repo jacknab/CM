@@ -15,6 +15,7 @@ import {
   type RegisterClaimInfo,
 } from "@/hooks/use-registers";
 import type { Register } from "@shared/schema";
+import DeviceCodeCard from "@/components/kiosk/DeviceCodeCard";
 
 function claimAgeLabel(claimedAt: string): string {
   const ms = Date.now() - new Date(claimedAt).getTime();
@@ -22,7 +23,8 @@ function claimAgeLabel(claimedAt: string): string {
   if (min < 1) return "just now";
   if (min < 60) return `${min} min ago`;
   const hr = Math.round(min / 60);
-  return `${hr} hr ago`;
+  if (hr < 48) return `${hr} hr ago`;
+  return `${Math.round(hr / 24)} days ago`;
 }
 
 // Names are auto-assigned ("POS #2", "POS #3", …) and not editable by the
@@ -178,8 +180,8 @@ export default function Registers() {
   const handleDelete = (register: Register) => {
     const next = registerList.filter((r) => r.id !== register.id).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id)[0];
     const msg = register.isDefault && next
-      ? `Remove "${register.name}"? The bare /frontdesk/${bookingSlug} link will become ${next.name}, so the tablet using it will pair with ${next.name}. Tablets paired to ${register.name} on /calendar will be asked to pick a station again.`
-      : `Remove "${register.name}"? Its paired tablet will need a new URL from this page.`;
+      ? `Remove "${register.name}"? ${next.name} becomes the first station. The POS tablet using ${register.name} will be asked to pick a station again, and its customer screen will show a pairing code.`
+      : `Remove "${register.name}"? Its POS tablet will be asked to pick a station again, and its customer screen will show a pairing code to pair with another station.`;
     if (!window.confirm(msg)) return;
     deleteRegister.mutate(register.id, {
       onError: () => toast({ title: "Failed to delete register", variant: "destructive" }),
@@ -198,6 +200,8 @@ export default function Registers() {
             </p>
           </div>
         )}
+
+        <DeviceCodeCard />
 
         {isLoading ? (
           <div className="flex items-center gap-2 text-slate-400 py-12 justify-center">
@@ -238,14 +242,10 @@ export default function Registers() {
               <StationRow
                 key={r.id}
                 name={r.name}
-                // The default/original station keeps the bare URL forever —
-                // that's the one already paired with the salon's existing
-                // tablet, and the kiosk config route falls back to whichever
-                // register is flagged isDefault when no id is in the URL.
-                // Only non-default stations get an id-suffixed URL.
-                url={r.isDefault
-                  ? `${window.location.origin}/frontdesk/${bookingSlug}`
-                  : `${window.location.origin}/frontdesk/${bookingSlug}/${r.id}`}
+                // Every customer screen opens the same link. With more than one station the
+                // screen shows a 4-digit code, and the POS tablet it belongs to types that code
+                // in (More → Station) — the station is not part of the address any more.
+                url={`${window.location.origin}/frontdesk/${bookingSlug}`}
                 isDefault={r.isDefault}
                 onDelete={r.isDefault && registerList.length < 2 ? undefined : () => handleDelete(r)}
                 deletePending={deleteRegister.isPending}

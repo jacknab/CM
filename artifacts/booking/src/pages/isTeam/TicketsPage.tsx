@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { appAlert } from "@/lib/confirm";
+import { useDraft } from "@/hooks/use-draft";
 import {
   MessageSquare, RefreshCw, ChevronDown, Filter, SlidersHorizontal,
   FileText, MoreHorizontal, ExternalLink,
@@ -398,8 +399,12 @@ function ReplyComposer({ ticketId, ticket, onSent }: {
   ticket: TicketDetail;
   onSent: () => void;
 }) {
-  const [content, setContent] = useState("");
-  const [mode, setMode] = useState<"reply" | "note">("reply");
+  // Saved per ticket, so a half-written reply is still here after the agent answers a live chat,
+  // opens another ticket or reloads. The mode is saved with it: text written as an internal note
+  // must never come back as a reply to the customer.
+  const [content, setContent] = useDraft(`ticket:${ticketId}:reply`);
+  const [savedMode, setMode] = useDraft(`ticket:${ticketId}:mode`);
+  const mode: "reply" | "note" = savedMode === "note" ? "note" : "reply";
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const qc = useQueryClient();
 
@@ -603,8 +608,8 @@ function LinkAccountModal({ ticketId, onLinked, onClose }: {
 
 // ─── Inline note composer (replaces ReplyBox for internal notes only) ─────────
 function InlineNoteComposer({ ticketId, onSaved }: { ticketId: number; onSaved: () => void }) {
-  const [content, setContent] = useState("");
-  const [open, setOpen] = useState(false);
+  const [content, setContent] = useDraft(`ticket:${ticketId}:note`);
+  const [open, setOpen] = useState(() => content.length > 0);
   const qc = useQueryClient();
 
   const save = useMutation({

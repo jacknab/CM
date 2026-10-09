@@ -16,11 +16,14 @@ import { cn } from "@/lib/utils";
 import { SubscriptionPaymentModal, type SubscriptionPaymentSession } from "@/components/billing/SubscriptionPaymentModal";
 
 // ─── Plans ────────────────────────────────────────────────────────────────────
+/** "Free" for a plan that costs nothing, otherwise "$22/mo". */
+const planPrice = (p?: { price: number } | null, per = "/mo") => (!p ? "" : p.price === 0 ? "Free" : `$${p.price}${per}`);
+
 const PLANS = [
   {
     code: "solo",
     name: "Solo",
-    price: 9,
+    price: 0, // Solo is free for now (2026-10-09)
     tagline: "For independent stylists & booth renters",
     highlight: "1 calendar · 1 staff · 200 SMS/mo",
     features: ["1 calendar", "1 staff member", "Online booking page", "200 SMS/mo"],
@@ -268,7 +271,7 @@ export default function DashboardBilling() {
       setShowPlanConfirm(false);
       setSwitchingTo(null);
       const newPlan = PLANS.find(p => p.code === newPlanCode) ?? PLANS[0];
-      toast({ title: "Plan updated", description: `Switched to ${newPlan.name} — $${newPlan.price}/month.` });
+      toast({ title: "Plan updated", description: `Switched to ${newPlan.name} — ${planPrice(newPlan, "/month")}.` });
     },
     onError: (err: any) =>
       toast({ title: "Could not switch plan", description: err.message, variant: "destructive" }),
@@ -302,7 +305,7 @@ export default function DashboardBilling() {
       setShowPlanConfirm(false);
       setSwitchingTo(null);
       setCancelStep("idle");
-      toast({ title: "Plan selected", description: `You're now on the ${plan.name} plan — $${plan.price}/mo.` });
+      toast({ title: "Plan selected", description: `You're now on the ${plan.name} plan — ${planPrice(plan)}.` });
     },
     onError: (err: any) =>
       toast({ title: "Could not select plan", description: err.message, variant: "destructive" }),
@@ -493,7 +496,7 @@ export default function DashboardBilling() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-bold text-gray-900 text-base">
-                        {currentPlan ? `${currentPlan.name} — $${currentPlan.price}/mo` : isTrialing ? "Free Trial" : "No active plan"}
+                        {currentPlan ? `${currentPlan.name} — ${planPrice(currentPlan)}` : isTrialing ? "Free Trial" : "No active plan"}
                       </p>
                     </div>
                     <p className="text-sm text-gray-400 mt-0.5">
@@ -1225,11 +1228,11 @@ export default function DashboardBilling() {
                       <div className="space-y-3">
                         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
                           <p className="text-gray-900 font-semibold text-sm">Try our Solo plan instead</p>
-                          <p className="text-gray-500 text-sm mt-1">Just $9/month — perfect for independent stylists and booth renters.</p>
+                          <p className="text-gray-500 text-sm mt-1">Free — perfect for independent stylists and booth renters.</p>
                           {(currentPlan?.code ?? "") !== "solo" && (
                             <button className="mt-3 text-sm font-medium text-gray-700 border border-gray-200 bg-white hover:bg-gray-50 px-3 py-1.5 rounded-lg transition-colors"
                               onClick={() => { setSwitchingTo("solo"); setShowPlanConfirm(true); setCancelStep("idle"); }}>
-                              Switch to Solo ($9/mo)
+                              Switch to Solo (free)
                             </button>
                           )}
                         </div>

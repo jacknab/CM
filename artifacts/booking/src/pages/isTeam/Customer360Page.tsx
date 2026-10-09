@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, RefreshCw, MoreHorizontal, Wallet, Clock } from "lucide-react";
+import { ArrowLeft, ExternalLink, RefreshCw, Wallet, Clock } from "lucide-react";
 import { supportApi, type AccountOverview } from "@/lib/support-api";
 import { StatusBadge } from "@/components/isTeam/ui/StatusBadge";
 import AccountSummaryCard from "@/components/isTeam/customer360/AccountSummaryCard";
@@ -9,6 +9,7 @@ import HealthStatusCard from "@/components/isTeam/customer360/HealthStatusCard";
 import SubscriptionCard from "@/components/isTeam/customer360/SubscriptionCard";
 import InternalNotesCard from "@/components/isTeam/customer360/InternalNotesCard";
 import QuickStatsCard from "@/components/isTeam/customer360/QuickStatsCard";
+import OnboardingCard from "@/components/isTeam/customer360/OnboardingCard";
 import AIUsageCard from "@/components/isTeam/customer360/AIUsageCard";
 import RecentTicketsCard from "@/components/isTeam/customer360/RecentTicketsCard";
 import CustomerActionsCard from "@/components/isTeam/customer360/CustomerActionsCard";
@@ -138,7 +139,6 @@ export default function TeamCustomer360Page() {
 
           <div className="flex items-center gap-2 flex-shrink-0">
             <button onClick={handleRefresh} className="p-2 border border-slate-200 hover:bg-slate-50 text-slate-500 rounded-lg transition"><RefreshCw size={13} /></button>
-            <button className="p-2 border border-slate-200 hover:bg-slate-50 text-slate-500 rounded-lg transition"><MoreHorizontal size={13} /></button>
           </div>
         </div>
 
@@ -167,6 +167,7 @@ export default function TeamCustomer360Page() {
               </div>
               <div className="space-y-5">
                 <HealthStatusCard health={health} />
+                <OnboardingCard accountId={accountId} />
                 <QuickStatsCard stats={stats} />
                 <AIUsageCard stats={stats} />
               </div>

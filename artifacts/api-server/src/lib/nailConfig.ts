@@ -4,7 +4,7 @@
  * Read/write helpers for the store-owned nail configuration system (migration
  * 0154) and the booking-time selection snapshot (migration 0155).
  *
- * Standalone functions over `db` (same style as presetSeed / nailSalonSeed) so
+ * Standalone functions over `db` (same style as templateSeed / nailSalonSeed) so
  * the change stays out of the large IStorage interface.
  */
 
@@ -212,6 +212,8 @@ export async function getPublicServiceNailConfig(serviceId: number) {
     name: r.name as string,
     description: (r.description ?? null) as string | null,
     imageUrl: (r.imageUrl ?? null) as string | null,
+    // The salon's own upload — as opposed to a stock photo filled in from the image library below.
+    ownImage: !!r.imageUrl,
     swatchHex: (r.swatchHex ?? null) as string | null,
     priceAdjustment: Number(r.priceAdjustment ?? 0),
     durationAdjustment: Number(r.durationAdjustment ?? 0),
@@ -405,8 +407,8 @@ export async function resolveNailSelection(serviceId: number, input: SetNailSele
  * whatever the salon configured for THIS service. Recomputes the appointment
  * duration by the delta between the old and new selection.
  */
-export async function setAppointmentNailSelection(appointmentId: number, input: SetNailSelectionInput) {
-  const [appt] = await db
+export async function setAppointmentNailSelection(appointmentId: number, input: SetNailSelectionInput, writer: typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0] = db) {
+  const [appt] = await writer
     .select({ id: appointments.id, storeId: appointments.storeId, serviceId: appointments.serviceId, duration: appointments.duration })
     .from(appointments)
     .where(eq(appointments.id, appointmentId));
@@ -421,7 +423,7 @@ export async function setAppointmentNailSelection(appointmentId: number, input: 
   const total = base + sel.priceAdjustment;
   const newNailDuration = sel.durationAdjustment;
 
-  const prev = await getAppointmentNailSelection(appointmentId);
+  const [prev] = await writer.select().from(appointmentNailSelection).where(eq(appointmentNailSelection.appointmentId, appointmentId));
   const prevNailDuration = prev ? num(prev.lengthDurationAdjSnapshot) + num(prev.shapeDurationAdjSnapshot) + num(prev.artDurationAdjSnapshot) : 0;
 
   const values = {
@@ -447,13 +449,13 @@ export async function setAppointmentNailSelection(appointmentId: number, input: 
     updatedAt: new Date(),
   };
 
-  await db.delete(appointmentNailSelection).where(eq(appointmentNailSelection.appointmentId, appointmentId));
-  const [row] = await db.insert(appointmentNailSelection).values(values).returning();
+  await writer.delete(appointmentNailSelection).where(eq(appointmentNailSelection.appointmentId, appointmentId));
+  const [row] = await writer.insert(appointmentNailSelection).values(values).returning();
 
   // Adjust appointment length by the change in nail-config duration.
   const durationDelta = newNailDuration - prevNailDuration;
   if (durationDelta !== 0) {
-    await db
+    await writer
       .update(appointments)
       .set({ duration: Math.max(1, num(appt.duration) + durationDelta) })
       .where(eq(appointments.id, appointmentId));

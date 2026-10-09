@@ -1,8 +1,17 @@
 /** Typed calls for the nail-salon staff screen. Everything goes through the Certxa API. */
 import type { NailConfigView, NailPick } from "./ticketDraft";
+import { reportUnauthorized } from "@/lib/resumeSignIn";
 import { normalizeNailConfig, toNailBody } from "./ticketDraft";
+import type { Tender } from "@shared/nailCheckout";
+import { syncEngine } from "@/lib/sync-engine";
+import { nailOffline, nailOfflineStore, isLocalId, isNetworkFailure, newIdempotencyKey, type TicketRecord } from "@/lib/nail-offline";
+import { clientPhoneCacheDB } from "@/lib/client-phone-cache-db";
+import { overlayBoard } from "./offlineBoard";
+import { offlineSaleProblem } from "./offlineSale";
+export { offlineSaleProblem };
+import { pickOfflineTech, type TurnLineTech } from "@/lib/nail-offline/turn";
 
-export const BOARD_KEY = ["/api/nail/board"] as const;
+export const boardKey = (storeId: number) => ["/api/nail/board", storeId] as const;
 
 export interface BoardTicket {
   id: number;
@@ -26,14 +35,37 @@ export interface BoardTicket {
   customLines: { label: string; price: number; isRetail?: boolean }[];
   staff: { id: number; name: string; color: string | null } | null;
   total: number;
+  /** Made on this device while the server was out of reach and not sent yet (see lib/nail-offline). */
+  offline?: boolean;
 }
 
 export interface BoardMarker {
   id: number;
+  ticketNumber: number | null;
   clientId: number | null;
   clientName: string | null;
   phone: string | null;
   createdAt: string;
+  /** The technician this client was handed to at the front desk, before any ticket exists (null = still waiting). */
+  staffId?: number | null;
+  staffName?: string | null;
+  /** What the client said they came for at the front desk (a catalog category). */
+  requestedCategory?: string | null;
+  /** Checked in on this device while the server was out of reach and not sent yet. */
+  offline?: boolean;
+}
+
+export interface BoardDayBooking {
+  id: number;
+  ticketNumber: number | null;
+  date: string;
+  duration: number;
+  status: string;
+  clientName: string;
+  serviceName: string;
+  staffName: string | null;
+  /** True for desk-created tickets and kiosk-only check-ins; false for advance bookings. */
+  isWalkIn: boolean;
 }
 
 export interface TechDayStats {
@@ -47,16 +79,20 @@ export interface SalonGlance {
   appointments: number;
   walkIns: number;
   noShows: number;
+  completed: number;
   avgTicket: number | null;
 }
 
 export interface NailBoard {
   tickets: BoardTicket[];
   markers: BoardMarker[];
+  dayBookings: BoardDayBooking[];
   techStats: TechDayStats[];
   glance?: SalonGlance;
   /** The server's clock when this was built — every station measures elapsed times against it. */
   now?: string;
+  /** Set when this board came from the device because the server could not be reached: when the server last sent it. */
+  cachedAt?: string;
 }
 
 export interface TurnTech {
@@ -83,8 +119,8 @@ export interface TurnTech {
 export interface CreatedTicket {
   appointmentId: number;
   ticketNumber: number;
-  staffId: number;
-  staffName: string;
+  staffId: number | null;
+  staffName: string | null;
   status: "started" | "confirmed";
   startsAt: string;
   duration: number;
@@ -102,19 +138,118 @@ export class ApiError extends Error {
   }
 }
 
+/** Shown when something that needs the server is tried while it cannot be reached. */
+export const NEEDS_CONNECTION = "This needs a connection. It will work again once the tablet is back online.";
+
+/**
+ * Every read is remembered on the device as it arrives, so the screen still has the last known board,
+ * nail options and turn line when the server cannot be reached. A write that gets no answer throws a
+ * network failure for its caller to deal with (the callers below save it on the device instead).
+ */
+/** Reads currently being answered from the device, and when the server last sent each. */
+const answeredFromDevice = new Map<string, string>();
+/** When the server last sent this read, if what is on screen came from the device; null when it is fresh. */
+export const cachedSince = (url: string): string | null => answeredFromDevice.get(url) ?? null;
+
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    credentials: "include",
-    ...init,
-    headers: { ...(init?.body ? { "Content-Type": "application/json" } : {}), ...(init?.headers ?? {}) },
-  });
+  const isRead = !init?.method || init.method === "GET";
+  const storeId = nailOfflineStore();
+  const fromDevice = async (): Promise<{ data: T } | undefined> => {
+    const kept = isRead && storeId != null ? await nailOffline.recall<T>(storeId, url).catch(() => undefined) : undefined;
+    if (kept) answeredFromDevice.set(url, kept.at);
+    return kept;
+  };
+  // Known to be offline: answer from the device at once instead of waiting for a request to time out.
+  if (isRead && syncEngine.isOffline()) {
+    const kept = await fromDevice();
+    if (kept) return kept.data;
+  }
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      credentials: "include",
+      ...init,
+      headers: { ...(init?.body ? { "Content-Type": "application/json" } : {}), ...(init?.headers ?? {}) },
+    });
+  } catch (err) {
+    syncEngine.noteUnreachable();
+    const kept = await fromDevice();
+    if (kept) return kept.data;
+    throw err;
+  }
+  if (res.ok) syncEngine.noteSignedIn();
+  if (isRead && res.ok) answeredFromDevice.delete(url);
+  if (isRead && res.ok && res.status !== 204 && storeId != null) {
+    const copy = await res.clone().json().catch(() => undefined);
+    if (copy !== undefined) void nailOffline.remember(storeId, url, copy).catch(() => {});
+  }
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => null);
+  if (res.status === 401) reportUnauthorized(url);
   if (!res.ok) throw new ApiError(data?.message || data?.error || `Request failed (${res.status})`, res.status, data);
   return data as T;
 }
 
-export const fetchBoard = () => call<NailBoard>("/api/nail/board");
+/** The server's board plus whatever was made on this device and has not come back from the server yet. */
+export const fetchBoard = async (): Promise<NailBoard> => {
+  const storeId = nailOfflineStore();
+  const local = storeId != null ? await nailOffline.records(storeId).catch(() => []) : [];
+  try {
+    const board = overlayBoard(await call<NailBoard>("/api/nail/board"), local);
+    // Shown from the device, not fresh from the server: say as of when.
+    const since = cachedSince("/api/nail/board");
+    return since ? { ...board, cachedAt: since } : board;
+  } catch (err) {
+    // Never loaded on this device and no server: the board is whatever was made here.
+    if (isNetworkFailure(err) && local.length) return overlayBoard(null, local);
+    throw err;
+  }
+};
+
+export interface TechSignIn {
+  /** `frontDesk`: reception / manager / owner — the screen locks on them only after two idle minutes. */
+  staff: { id: number; name: string; color: string | null; barberNumber: number; frontDesk?: boolean };
+  activeMarker: { id: number; clientId: number | null; clientName: string | null } | null;
+  /** A ticket of theirs already in service — the POS goes straight to its checkout. */
+  activeTicketId: number | null;
+  /** Signing in just gave them this waiting client — the screen announces it and stays locked. */
+  justAssigned?: { clientName: string | null; ticketNumber: number | null } | null;
+}
+
+const TECH_ROSTER = "device:tech-ids";
+
+/**
+ * Tech ID sign-in. Each ID that signs in is remembered on this device, so the same technician can still get
+ * past the lock screen while the server cannot be reached. Offline it only says who is at the screen: it does
+ * not clock them in or hand them a client — the server does that when the connection is back.
+ */
+export async function identifyTech(techId: number): Promise<TechSignIn> {
+  const storeId = nailOfflineStore();
+  const roster = async () => (storeId != null ? (await nailOffline.recall<Record<string, TechSignIn["staff"]>>(storeId, TECH_ROSTER).catch(() => undefined))?.data ?? {} : {});
+  const fromDevice = async (): Promise<TechSignIn> => {
+    const staff = (await roster())[String(techId)];
+    if (!staff) throw new ApiError("No connection, and this ID has not been used on this tablet before. Use an ID that has, or try again once the tablet is back online.", 0);
+    return { staff, activeMarker: null, activeTicketId: null };
+  };
+  if (syncEngine.isOffline()) return fromDevice();
+  let signedIn: TechSignIn;
+  try {
+    signedIn = await call<TechSignIn>("/api/nail/identify", { method: "POST", body: JSON.stringify({ barberId: techId }) });
+  } catch (err) {
+    if (isNetworkFailure(err)) return fromDevice();
+    throw err;
+  }
+  if (storeId != null) void roster().then((known) => nailOffline.remember(storeId, TECH_ROSTER, { ...known, [String(techId)]: signedIn.staff })).catch(() => {});
+  return signedIn;
+}
+
+/** Calendar records are a fallback for board deployments that only return glance totals. */
+export const fetchCalendarBoardBookings = () => {
+  const now = Date.now();
+  const from = new Date(now - 48 * 60 * 60_000).toISOString();
+  const to = new Date(now + 48 * 60 * 60_000).toISOString();
+  return call<import("./boardView").CalendarBoardBooking[]>(`/api/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+};
 
 export const fetchTurn = (storeId: number, serviceId: number | null) =>
   call<{ technicians: TurnTech[]; eligibleTechnicians: TurnTech[] }>(
@@ -131,8 +266,32 @@ export interface ClientSummary {
   loyaltyPoints: number;
 }
 
+/** A client from what this device holds: one made here offline, or one seen before. */
+export async function clientOnDevice(id: number): Promise<ClientSummary | null> {
+  const storeId = nailOfflineStore();
+  if (storeId == null) return null;
+  if (isLocalId(id)) {
+    const rec = (await nailOffline.records(storeId).catch(() => [])).find((r) => r.kind === "client" && r.id === id);
+    return rec && rec.kind === "client" ? { id, name: rec.name, phone: rec.phone, loyaltyPoints: 0 } : null;
+  }
+  const kept = await clientPhoneCacheDB.getById(storeId, id).catch(() => null);
+  return kept ? { id, name: kept.name, phone: kept.phone10 ?? kept.phone ?? null, loyaltyPoints: 0 } : null;
+}
+
 export async function fetchClient(id: number): Promise<ClientSummary> {
-  const c = await call<any>(`/api/customers/${id}`);
+  if (isLocalId(id)) {
+    const local = await clientOnDevice(id);
+    if (local) return local;
+    throw new Error("That client is no longer on this device");
+  }
+  let c: any;
+  try {
+    c = await call<any>(`/api/customers/${id}`);
+  } catch (err) {
+    const kept = isNetworkFailure(err) ? await clientOnDevice(id) : null;
+    if (kept) return kept;
+    throw err;
+  }
   return {
     id: c.id,
     name: c.fullName ?? c.name ?? "Client",
@@ -148,9 +307,78 @@ export interface TicketBody {
   customLines: { label: string; price: number; isRetail?: boolean }[];
 }
 
-export const createTicket = (body: TicketBody & { clientId: number; staffId?: number | null; checkinId?: number | null }) =>
+/** What a ticket saved on the device needs to be shown and sent later (the server works these out itself when online). */
+export interface TicketOfflineContext {
+  storeId: number;
+  client: { name: string; phone: string | null };
+  service: { name: string; price: number; duration: number };
+  addons: { id: number; name: string; price: number; duration: number }[];
+  nailLines: { label: string; price: number }[];
+  nailPriceAdjustment: number;
+  staff: TicketRecord["staff"];
+  total: number;
+  duration: number;
+}
+
+/**
+ * `autoAssign`: TURN gives it to the next tech in line who can do the service (it waits with them until START); nobody free → saved waiting, unassigned.
+ *
+ * With no server (or for a client or walk-in that itself only exists on this device) the ticket is saved on
+ * the device and queued; `offline: true` in the result says so. The request carries one idempotency key
+ * whichever way it travels, so a request that reached the server but whose reply was lost is not made twice.
+ */
+export async function createTicket(
+  body: TicketBody & { clientId: number; staffId?: number | null; checkinId?: number | null; leaveUnassigned?: boolean; autoAssign?: boolean },
+  offline?: TicketOfflineContext,
+): Promise<CreatedTicket & { offline?: boolean }> {
+  const key = newIdempotencyKey("ticket.create");
+  const saveOnDevice = async (): Promise<CreatedTicket & { offline: boolean }> => {
+    if (!offline) throw new Error(NEEDS_CONNECTION);
+    // Nobody chosen: the turn line as this device last knew it decides, skipping anyone this device has
+    // already given a client to while offline. The ticket is marked as assigned offline.
+    let staff = offline.staff;
+    let assignedOffline = false;
+    if (!staff && body.autoAssign && !body.leaveUnassigned) {
+      const next = await offlineTurnPick(offline.storeId, body.serviceId);
+      if (next) { staff = { id: next.id, name: next.name, color: next.color ?? null }; assignedOffline = true; }
+    }
+    const rec = await nailOffline.createTicket({
+      storeId: offline.storeId, clientId: body.clientId, clientName: offline.client.name, phone: offline.client.phone, walkinId: body.checkinId ?? null,
+      service: { id: body.serviceId, ...offline.service }, addons: offline.addons,
+      nail: toNailBody(body.pick), nailLines: offline.nailLines, nailPriceAdjustment: offline.nailPriceAdjustment,
+      customLines: body.customLines, staff, assignedOffline, total: offline.total, duration: offline.duration,
+    }, key);
+    return { appointmentId: rec.id, ticketNumber: 0, staffId: rec.staff?.id ?? null, staffName: rec.staff?.name ?? null, status: "confirmed",
+      startsAt: rec.createdAt, duration: rec.duration, price: rec.total, waiting: true, offline: true };
+  };
+  // Anything it depends on that the server has never heard of means it cannot be sent yet either.
+  if (syncEngine.isOffline() || isLocalId(body.clientId) || isLocalId(body.checkinId)) return saveOnDevice();
+  try {
+    return await createTicketOnServer(body, key);
+  } catch (err) {
+    if (!isNetworkFailure(err)) throw err;
+    return saveOnDevice();
+  }
+}
+
+/** The next technician in the last turn line the server sent for this service, who this device has not already given a client to. */
+async function offlineTurnPick(storeId: number, serviceId: number): Promise<TurnLineTech | null> {
+  const lineFor = async (sid: number | null) => (await nailOffline.recall<{ technicians: TurnLineTech[]; eligibleTechnicians?: TurnLineTech[] }>(storeId,
+    `/api/turn/eligibility?storeId=${storeId}${sid ? `&serviceId=${sid}` : ""}`).catch(() => undefined))?.data;
+  // The line for this very service knows who can perform it; the general line is the fallback.
+  const line = (await lineFor(serviceId)) ?? (await lineFor(null));
+  if (!line) return null;
+  const held = new Set<number>();
+  for (const r of await nailOffline.records(storeId).catch(() => [] as Awaited<ReturnType<typeof nailOffline.records>>)) {
+    if ((r.kind === "ticket" || r.kind === "patch") && r.staff && !r.paid && !(r.kind === "patch" && r.status === "cancelled")) held.add(r.staff.id);
+  }
+  return pickOfflineTech(line.technicians ?? [], held);
+}
+
+const createTicketOnServer = (body: TicketBody & { clientId: number; staffId?: number | null; checkinId?: number | null; leaveUnassigned?: boolean; autoAssign?: boolean }, key: string) =>
   call<CreatedTicket>("/api/nail/tickets", {
     method: "POST",
+    headers: { "X-Idempotency-Key": key },
     body: JSON.stringify({
       clientId: body.clientId,
       serviceId: body.serviceId,
@@ -158,30 +386,109 @@ export const createTicket = (body: TicketBody & { clientId: number; staffId?: nu
       nail: toNailBody(body.pick),
       customLines: body.customLines,
       staffId: body.staffId ?? null,
+      leaveUnassigned: body.leaveUnassigned === true,
+      autoAssign: body.autoAssign === true,
       checkinId: body.checkinId ?? null,
     }),
   });
 
-export const updateTicket = (id: number, body: TicketBody) =>
+/**
+ * Change what is on a ticket. One that only exists on this device is simply rewritten there. One the server
+ * has is changed there — or, with no server, the change is kept on the device and sent later along with what
+ * the ticket looked like when it was edited, so the server can refuse it if someone else changed it meanwhile.
+ */
+export async function updateTicket(id: number, body: TicketBody, expected?: BoardTicket, offline?: Omit<TicketOfflineContext, "client" | "staff">): Promise<{ duration: number; price: number; offline?: boolean }> {
+  const view = offline && {
+    service: { id: body.serviceId, name: offline.service.name, price: offline.service.price }, addons: offline.addons, customLines: body.customLines,
+    total: offline.total, duration: offline.duration,
+  };
+  if (isLocalId(id)) {
+    if (!offline) throw new Error(NEEDS_CONNECTION);
+    const t = await nailOffline.editLocal(id, { service: { id: body.serviceId, ...offline.service }, addons: offline.addons, nail: toNailBody(body.pick),
+      nailLines: offline.nailLines, nailPriceAdjustment: offline.nailPriceAdjustment, customLines: body.customLines, total: offline.total, duration: offline.duration });
+    return { duration: t.duration, price: t.total, offline: true };
+  }
+  const queue = async () => {
+    if (!offline || !view) throw new Error(NEEDS_CONNECTION);
+    await nailOffline.changeServerTicket(offline.storeId, { id, clientName: expected?.client.name ?? "Client" }, { type: "update", view, body: updateBody(body, expected) });
+    return { duration: offline.duration, price: offline.total, offline: true };
+  };
+  if (syncEngine.isOffline()) return queue();
+  try {
+    return await updateTicketOnServer(id, body, expected);
+  } catch (err) {
+    if (!isNetworkFailure(err)) throw err;
+    return queue();
+  }
+}
+
+const updateBody = (body: TicketBody, expected?: BoardTicket) => ({ serviceId: body.serviceId, addonIds: body.addonIds, nail: toNailBody(body.pick), customLines: body.customLines,
+  expected: expected ? { serviceId: expected.service.id, duration: expected.duration, addonIds: expected.addons.map((a) => a.id), customLines: expected.customLines,
+    nail: expected.nail ? { nailSizeId: expected.nail.sizeId, nailShapeId: expected.nail.shapeId,
+      nailArtApplicationId: expected.nail.applicationId, nailArtEffectId: expected.nail.effectId } : null } : undefined });
+
+const updateTicketOnServer = (id: number, body: TicketBody, expected?: BoardTicket) =>
   call<{ duration: number; price: number }>(`/api/nail/tickets/${id}`, {
     method: "PUT",
-    body: JSON.stringify({ serviceId: body.serviceId, addonIds: body.addonIds, nail: toNailBody(body.pick), customLines: body.customLines }),
+    body: JSON.stringify({ serviceId: body.serviceId, addonIds: body.addonIds, nail: toNailBody(body.pick), customLines: body.customLines,
+      expected: expected ? { serviceId: expected.service.id, duration: expected.duration, addonIds: expected.addons.map((a) => a.id), customLines: expected.customLines,
+        nail: expected.nail ? { nailSizeId: expected.nail.sizeId, nailShapeId: expected.nail.shapeId,
+          nailArtApplicationId: expected.nail.applicationId, nailArtEffectId: expected.nail.effectId } : null } : undefined }),
   });
 
-export const reassignTicket = (id: number, staffId: number) =>
-  call<{ staffId: number; staffName: string; status: string; startsAt: string }>(`/api/nail/tickets/${id}/reassign`, {
-    method: "POST",
-    body: JSON.stringify({ staffId }),
-  });
+/** A write the server has to answer: with no answer, say plainly that it needs a connection. */
+const needsServer = async <T,>(run: () => Promise<T>): Promise<T> => {
+  try { return await run(); } catch (err) { throw isNetworkFailure(err) ? new Error(NEEDS_CONNECTION) : err; }
+};
 
-export const startTicket = (id: number) =>
-  call(`/api/appointments/${id}`, { method: "PATCH", body: JSON.stringify({ status: "started" }) });
+/**
+ * A change to a ticket the server has: made there, or — with no server — kept on this device and sent in
+ * order when the connection is back (lib/nail-offline `changeServerTicket`).
+ */
+async function onServerOrQueued<T>(run: () => Promise<T>, queue: () => Promise<T>): Promise<T> {
+  if (syncEngine.isOffline()) return queue();
+  try { return await run(); } catch (err) { if (!isNetworkFailure(err)) throw err; return queue(); }
+}
+const storeOrThrow = (): number => { const s = nailOfflineStore(); if (s == null) throw new Error(NEEDS_CONNECTION); return s; };
+/** The ticket as the server last sent it to this device: what a change made offline is based on. */
+async function asLastSeen(id: number, clientName?: string): Promise<{ id: number; clientName: string; status?: string; staffId?: number | null }> {
+  const board = (await nailOffline.recall<NailBoard>(storeOrThrow(), "/api/nail/board").catch(() => undefined))?.data;
+  const t = board?.tickets.find((x) => x.id === id);
+  return t ? { id, clientName: clientName ?? t.client.name, status: t.status, staffId: t.staff?.id ?? null } : { id, clientName: clientName ?? "Client" };
+}
 
-export const cancelTicket = (id: number) =>
-  call(`/api/appointments/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify({ status: "cancelled", cancellationReason: "Cancelled at check-in", calendarHidden: true }),
-  });
+/** `staff`: the technician's name and colour; `clientName`: whose ticket — both needed when the change is kept on this device. */
+export const reassignTicket = async (id: number, staffId: number, staff?: { name: string; color?: string | null }, clientName?: string) => {
+  const chosen = { id: staffId, name: staff?.name ?? "Technician", color: staff?.color ?? null };
+  if (isLocalId(id)) {
+    const t = await nailOffline.assign(id, chosen);
+    return { staffId, staffName: t.staff?.name ?? "", status: t.status, startsAt: t.createdAt };
+  }
+  return onServerOrQueued(
+    () => call<{ staffId: number; staffName: string; status: string; startsAt: string }>(`/api/nail/tickets/${id}/reassign`, { method: "POST", body: JSON.stringify({ staffId }) }),
+    async () => {
+      await nailOffline.changeServerTicket(storeOrThrow(), await asLastSeen(id, clientName), { type: "reassign", staff: chosen });
+      return { staffId, staffName: chosen.name, status: "confirmed", startsAt: new Date().toISOString() };
+    },
+  );
+};
+
+export const startTicket = (id: number, clientName?: string): Promise<unknown> =>
+  isLocalId(id) ? nailOffline.start(id)
+  : onServerOrQueued<unknown>(
+    () => call(`/api/appointments/${id}`, { method: "PATCH", body: JSON.stringify({ status: "started" }) }),
+    async () => nailOffline.changeServerTicket(storeOrThrow(), await asLastSeen(id, clientName), { type: "start" }),
+  );
+
+export const cancelTicket = (id: number, clientName?: string): Promise<unknown> =>
+  isLocalId(id) ? nailOffline.cancel(id)
+  : onServerOrQueued<unknown>(
+    () => call(`/api/appointments/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "cancelled", cancellationReason: "Cancelled at check-in", calendarHidden: true }),
+    }),
+    async () => nailOffline.changeServerTicket(storeOrThrow(), await asLastSeen(id, clientName), { type: "cancel" }),
+  );
 
 /** Front-desk override: put a technician on the clock and into the turn order (the server tells every station). */
 export async function clockInTech(storeId: number, staffId: number): Promise<void> {
@@ -207,14 +514,34 @@ export async function clockOutTech(storeId: number, staffId: number): Promise<vo
   }
 }
 
-export const removeMarker = (id: number) => call(`/api/kiosk/board/${id}`, { method: "DELETE" });
+/** A check-in with no client record: match it to a client by its phone, or save it as a new client. */
+export const resolveMarkerClient = (id: number) =>
+  call<{ clientId: number }>(`/api/nail/markers/${id}/client`, { method: "POST" });
+
+/** Salon-wide /nail screen settings. `lockScreen` off = no Tech ID keypad and no idle lock. */
+export const fetchScreenSettings = () => call<{ lockScreen: boolean }>("/api/nail/screen-settings");
+export const saveScreenSettings = (settings: { lockScreen: boolean }) =>
+  call<{ lockScreen: boolean }>("/api/nail/screen-settings", { method: "PUT", body: JSON.stringify(settings) });
+
+/** The key grid a manager arranged (null = automatic, from the catalog). */
+export const fetchPosGrid = () => call<{ config: import("@shared/posGrid").PosGridConfig | null }>("/api/nail/pos-grid");
+export const savePosGrid = (config: import("@shared/posGrid").PosGridConfig | null) =>
+  call<{ config: import("@shared/posGrid").PosGridConfig | null }>("/api/nail/pos-grid", { method: "PUT", body: JSON.stringify({ config }) });
+
+export const removeMarker = (id: number) =>
+  isLocalId(id) ? nailOffline.cancel(id) : needsServer(() => call(`/api/kiosk/board/${id}`, { method: "DELETE" }));
 
 export const fetchAppointment = (id: number) => call<any>(`/api/appointments/${id}`);
 
 export interface FinalizeData {
+  idempotencyKey: string;
+  tenders: Tender[];
+  extras?: { label: string; price: number }[];
   paymentMethod: string;
   tip: number;
   discount: number;
+  /** Sales tax on the whole sale, already included in totalPaid. */
+  tax: number;
   totalPaid: number;
   serviceRevenue: number;
   productRevenue: number;
@@ -228,79 +555,66 @@ export interface GiftCardInfo { code: string; balance: number; issuedTo: string 
 /** Store-scoped check: the card must be this salon's, active, unexpired and have a balance. */
 export const lookupGiftCard = (code: string) =>
   call<GiftCardInfo>("/api/nail/gift-cards/lookup", { method: "POST", body: JSON.stringify({ code }) });
-const redeemGiftCard = (code: string, amount: number, appointmentId: number) =>
-  call<{ redeemed: number; balance: number; alreadyRedeemed: boolean }>("/api/nail/gift-cards/redeem", {
-    method: "POST", body: JSON.stringify({ code, amount, appointmentId }),
-  });
+/** What a walk-in ticket that was just closed earned its technician in the turn rotation. */
+export interface TurnEarned {
+  appointmentId: number;
+  ticketNumber: number | null;
+  staffName: string | null;
+  /** "dollar" = Dollar-Based Turns, "classic" = Counted Turns (under the threshold is a short turn, earned 0). */
+  mode: "dollar" | "classic";
+  earned: number;
+  serviceAmount: number;
+}
 
-/** Same completion the calendar's checkout does: loyalty redemption, group pay shares, then "completed". */
-export async function completeTicket(id: number, data: FinalizeData): Promise<void> {
-  // Gift cards first, and unlike loyalty this must succeed: if a card can't cover its share the sale stays open. Re-running
-  // after a failure is safe — the server ignores a card it already redeemed for this ticket.
-  for (const g of data.giftCards ?? []) {
-    try { await redeemGiftCard(g.code, g.amount, id); }
-    catch (err: any) { throw new ApiError(`Gift card ${g.code}: ${err?.message ?? "could not be redeemed"}`, err?.status ?? 400, err?.data); }
-  }
-  if (data.redemption?.rewardId && data.redemption.customerId) {
-    // The reward's points must actually be taken before the sale closes — otherwise the discount would be given for free.
-    // The server redeems once per ticket, so re-running after a failure never charges the points twice.
-    try {
-      await call("/api/loyalty/redeem", {
-        method: "POST",
-        body: JSON.stringify({ rewardId: data.redemption.rewardId, customerId: data.redemption.customerId, appointmentId: id }),
-      });
-    } catch (err: any) {
-      throw new ApiError(`Loyalty reward: ${err?.message ?? "could not be redeemed"}`, err?.status ?? 400, err?.data);
-    }
-  }
-  // Past this point, any gift card money or loyalty points above have ALREADY been taken from the
-  // customer — there is no reversal path anywhere in this app if the sale doesn't end up closing.
-  // Retrying completeTicket is safe (every step above is idempotent), but if the cashier doesn't
-  // retry — cancels the ticket, walks away — that money/points are simply gone with no completed
-  // sale. Say so explicitly on a PATCH failure instead of surfacing whatever generic error the
-  // PATCH itself produced, so staff know not to re-redeem and to retry THIS SAME ticket instead.
-  const tookMoney = (data.giftCards?.length ?? 0) > 0 || !!data.redemption?.rewardId;
-  const patch = (apptId: number, d: { paymentMethod: string; tip: number; discount: number; totalPaid: number; serviceRevenue: number; productRevenue: number }) =>
-    call(`/api/appointments/${apptId}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        status: "completed",
-        paymentMethod: d.paymentMethod,
-        tipAmount: String(d.tip),
-        discountAmount: String(d.discount),
-        totalPaid: String(d.totalPaid),
-        serviceRevenue: String(d.serviceRevenue),
-        productRevenue: String(d.productRevenue),
-      }),
-    });
-  if (data.groupTickets && data.groupTickets.length > 0) {
-    // Promise.all would let some tickets in the group commit as "completed" while others reject —
-    // the full group payment was already taken, but only the succeeded ones get marked paid, with
-    // no way to tell which from the caller's perspective. Report exactly which ids failed instead.
-    const results = await Promise.allSettled(data.groupTickets.map((g) => patch(g.appointmentId, g)));
-    const failed = results
-      .map((r, i) => ({ r, apptId: data.groupTickets![i].appointmentId }))
-      .filter((x): x is { r: PromiseRejectedResult; apptId: number } => x.r.status === "rejected");
-    if (failed.length > 0) {
-      const succeededIds = data.groupTickets.filter((g) => !failed.some((f) => f.apptId === g.appointmentId)).map((g) => g.appointmentId);
-      const firstErr: any = failed[0].r.reason;
-      const moneyNote = tookMoney ? " Gift card/loyalty redemption for the group already went through — do not redeem again." : "";
-      throw new ApiError(
-        `${succeededIds.length > 0 ? `Ticket #${succeededIds.join(", #")} saved, but ` : ""}ticket #${failed.map((f) => f.apptId).join(", #")} did NOT save (${firstErr?.message ?? "unknown error"}) even though the group payment was taken.${moneyNote} Retry this same group, or complete the failed ticket(s) manually.`,
-        firstErr?.status ?? 400, firstErr?.data,
-      );
-    }
-    return;
-  }
+/**
+ * Settle all shares, gifts and rewards on the server in one transaction.
+ *
+ * With no server, a CASH sale is recorded on this device instead (`offline: true` in the result): the same
+ * request, under the same idempotency key, is sent unchanged when the connection is back, so the sale closes
+ * on the server exactly once. Until then it shows as cash awaiting reconciliation. Nothing else is settled
+ * offline — a card is never reported as paid without the reader's and the server's confirmation.
+ */
+export async function completeTicket(id: number, data: FinalizeData, who?: { storeId: number; clientName: string }): Promise<{ turns?: TurnEarned[]; offline?: boolean }> {
+  const request = {
+    ...data,
+    tenders: data.tenders.map((t) => ({ method: t.method, amount: t.amount,
+      ...(t.code ? { code: t.code } : {}), ...(t.paymentIntentId ? { paymentIntentId: t.paymentIntentId } : {}) })),
+  };
+  const onDevice = async () => {
+    const problem = offlineSaleProblem(data);
+    if (problem) throw new ApiError(problem, 0);
+    if (!who) throw new Error(NEEDS_CONNECTION);
+    const cash = data.tenders.reduce((sum, t) => sum + t.amount, 0);
+    await nailOffline.recordCash(who.storeId, { id, clientName: who.clientName }, { totalPaid: data.totalPaid, cash: Math.round(cash * 100) / 100, tip: data.tip, request, idempotencyKey: data.idempotencyKey });
+    return { turns: [], offline: true };
+  };
+  if (isLocalId(id) || syncEngine.isOffline()) return onDevice();
   try {
-    await patch(id, data);
-  } catch (err: any) {
-    if (tookMoney) {
-      throw new ApiError(
-        `The gift card/loyalty redemption above already went through, but saving the sale failed (${err?.message ?? "unknown error"}). Do NOT redeem again — retry this same ticket, or complete it manually.`,
-        err?.status ?? 400, err?.data,
-      );
-    }
-    throw err;
+    return await call<{ turns?: TurnEarned[] }>("/api/nail/checkout", { method: "POST", body: JSON.stringify({ ...request, appointmentId: id }) });
+  } catch (err) {
+    // No answer: the request may or may not have arrived. Kept on the device under the same key, it is
+    // sent again later and the server answers it once either way.
+    if (!isNetworkFailure(err) || offlineSaleProblem(data)) throw err;
+    return onDevice();
+  }
+}
+
+/** Where CheckoutMode keeps a sent-but-unanswered checkout request, so a lost response is retried unchanged. */
+export const checkoutRequestKey = (storeId: number, ticketId: number) => `certxa.nail.checkout.${storeId}.${ticketId}.request`;
+
+/**
+ * A relayed kiosk check-in slip reaches every station; only the one that wins this claim prints it.
+ * If the claim itself can't be made (offline, server error) print anyway — a duplicate slip beats none.
+ */
+export async function claimKioskPrintJob(jobId: string): Promise<boolean> {
+  try {
+    const res = await fetch("/api/kiosk/print-claim", {
+      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jobId }),
+    });
+    if (!res.ok) return true;
+    const data = await res.json().catch(() => null);
+    return data?.claimed !== false;
+  } catch {
+    return true;
   }
 }

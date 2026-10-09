@@ -1,27 +1,28 @@
-import { useNavigate } from "react-router-dom";
-import { CalendarDays, LogIn, MoreHorizontal, Receipt, Users, UserCog, UserRound, type LucideIcon } from "lucide-react";
+import { Hash, LogIn, MoreHorizontal, Users, UserCog, type LucideIcon } from "lucide-react";
 
-export type NailTab = "queue" | "techs" | "pos" | "board";
+export type NailTab = "queue" | "techs" | "pos";
 
 interface Props {
   tab: NailTab;
   onTab: (t: NailTab) => void;
   onCheckIn: () => void;
   onMore: () => void;
+  /** Opens the "# 123" manual ticket lookup — was previously its own button in the Queue tab's
+   *  own header; now lives here so it's reachable from every tab, not just Queue. */
+  onLookupByNumber: () => void;
   waiting: number;
-  inService: number;
   live: boolean;
 }
 
 // POS has no footer button — it's still opened from inside the app (ticket taps, check-in, checkout).
-export function BottomNav({ tab, onTab, onCheckIn, onMore, waiting, inService, live }: Props) {
-  const navigate = useNavigate();
+// "In Service" also has no footer button — that view now lives inside the Queue tab (its "In
+// Service" stat tile jumps straight to it), so a separate nav entry for the old standalone board
+// would just be a second way to reach a page already reachable from Queue.
+export function BottomNav({ tab, onTab, onCheckIn, onMore, onLookupByNumber, waiting, live }: Props) {
   const items: { label: string; icon: LucideIcon; active?: boolean; run: () => void; badgeCount?: number }[] = [
     { label: "Queue", icon: Users, active: tab === "queue", run: () => onTab("queue"), badgeCount: waiting },
     { label: "Techs", icon: UserCog, active: tab === "techs", run: () => onTab("techs") },
-    { label: "In Service", icon: Receipt, active: tab === "board", run: () => onTab("board"), badgeCount: inService },
-    { label: "Calendar", icon: CalendarDays, run: () => navigate("/calendar") },
-    { label: "Customers", icon: UserRound, run: () => navigate("/client-lookup") },
+    { label: "Ticket#", icon: Hash, run: onLookupByNumber },
     { label: "Check-In", icon: LogIn, run: onCheckIn },
     { label: "More", icon: MoreHorizontal, run: onMore },
   ];

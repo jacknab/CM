@@ -2,11 +2,11 @@
  * Keeps live secrets and PII out of the request logger (pm2 logs aren't rotated by this app, and anyone/anything that can
  * read them — backups, log shippers, support pastes — would otherwise see them in plain text). Two layers:
  *   NEVER_LOG_BODY_PREFIXES — endpoints whose response is skipped entirely (Stripe connection tokens / client secrets,
- *                             login and session data).
+ *                             login and session data, Print Agent setup codes).
  *   redactForLog            — for everything else, replaces the VALUE of any key that looks sensitive, however deep it's
  *                             nested, so a field named e.g. "phone" or "clientSecret" never reaches the log.
  */
-export const NEVER_LOG_BODY_PREFIXES = ["/api/payments", "/api/auth"];
+export const NEVER_LOG_BODY_PREFIXES = ["/api/payments", "/api/auth", "/api/print-agent"];
 
 export const REDACT_KEYS = /^(secret|clientsecret|client_secret|token|password|pin|apikey|api_key|authorization|phone|displayphone|phonenumber|phone_number|email|ssn|cvc|cvv|cardnumber|card_number|accountnumber|account_number)$/i;
 

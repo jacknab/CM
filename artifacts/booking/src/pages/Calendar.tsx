@@ -9,12 +9,15 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { useAppointments, useUpdateAppointment } from "@/hooks/use-appointments";
+import { useTipPresets } from "@/hooks/use-tip-presets";
 import { OfflineStatusBanner } from "@/components/OfflineStatusBanner";
 import { useAppointmentSSE } from "@/hooks/use-appointment-sse";
 import { useStaffList, useAllStaffAvailability } from "@/hooks/use-staff";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useCalendarSettings, DEFAULT_CALENDAR_SETTINGS } from "@/hooks/use-calendar-settings";
 import { useActiveRegisterId } from "@/hooks/use-registers";
+import { PairCustomerScreen, StationsFullBanner } from "@/components/pos/PairCustomerScreen";
+import { verifyCardCharge } from "./frontdesk/verifyCardCharge";
 import { useStoreNetworkReport } from "@/hooks/use-store-network-report";
 import { useActiveDrawerId } from "@/hooks/use-cash-drawers";
 import { formatInTz, formatStoreDate, getTimezoneAbbr, getNowInTimezone, storeLocalToUtc, isStoreLocalSlotInPast, isSameLocalDay, isSameStoreDay, isOnStoreDate, addStoreDays, toLocalDateStringInTz } from "@/lib/timezone";
@@ -31,7 +34,7 @@ import { AvailableTimeBanner } from "@/components/AvailableTimeBanner";
 import { useThermalPrinter } from "@/hooks/use-thermal-printer";
 import { buildCheckinTicket, buildCheckoutReceipt } from "@/lib/thermalPrinter";
 import { buildNativeReceiptPayload } from "@/lib/receiptPayload";
-import { openCashDrawerHardware } from "@/lib/cashDrawer";
+import { openCashDrawerHardware, recordNoSale } from "@/lib/cashDrawer";
 import { cn } from "@/lib/utils";
 import { clientPhoneCacheDB } from "@/lib/client-phone-cache-db";
 import { isValidNanpPrefix, isValidNanpNumber } from "@/lib/phone-validation";
@@ -56,6 +59,8 @@ import { assignStaffColors, getContrastColors } from "@/lib/staffColors";
 import { CATEGORY_PALETTE } from "@/components/services/CategoryManager";
 import { usePendingSyncMap } from "@/hooks/use-pending-sync";
 import { AppointmentSyncBadge } from "@/components/AppointmentSyncBadge";
+import { claimKioskPrintJob } from "./nail/nailApi";
+import { printNativeCheckinTicket, slipServiceNames } from "@/lib/native-checkin-ticket";
 
 type SidebarItem =
   | { kind: "link"; to: string; label: string; icon: any }
@@ -209,10 +214,15 @@ export default function Calendar() {
   const navigate = useNavigate();
   const location = useLocation();
   const { selectedStore } = useSelectedStore();
+  const isMobile = useIsMobile();
   const timezone = selectedStore?.timezone || "UTC";
   const lateGracePeriodMinutes = (selectedStore as any)?.lateGracePeriodMinutes ?? 10;
-  const posEnabled = (selectedStore as any)?.posEnabled !== false;
+  // The phone Calendar is scheduling-only. POS/register setup requires the dedicated
+  // tablet/desktop station layout, so phone users must never be prompted to choose a
+  // register, open a drawer, or enter checkout from this responsive view.
+  const posEnabled = !isMobile && (selectedStore as any)?.posEnabled !== false;
   const isNailSalon = (selectedStore as any)?.category === "Nail Salon";
+  const isBarbershop = (selectedStore as any)?.category === "Barbershop";
 
   // Category color map: categoryId → { bg, border }
   const { data: serviceCategories = EMPTY_ARRAY } = useServiceCategories();
@@ -348,6 +358,7 @@ export default function Calendar() {
     isMultiStation,
     currentRegisterName,
     resetRegister,
+    stationsFull,
   } = useActiveRegisterId(selectedStore?.id);
   const [registerPickError, setRegisterPickError] = useState<string | null>(null);
   const [registerPickBusy, setRegisterPickBusy] = useState<number | null>(null);
@@ -566,8 +577,6 @@ export default function Calendar() {
   const qrLastKeyAt   = useRef(0);
   const [qrFlash, setQrFlash] = useState(false);
 
-  const isMobile = useIsMobile();
-
   // The Resources view toggle only exists in the desktop header — a stored
   // "resources" preference from a wider screen would otherwise leave a
   // narrower/mobile session with no view selected at all.
@@ -732,22 +741,34 @@ export default function Calendar() {
             const digits = data.phone.replace(/\D/g, "").slice(-10);
             if (digits.length === 10) setFrontdeskPhone(digits);
           }
-          // Kiosk check-in print jobs → auto-print on connected thermal printer
+          // Kiosk check-in print jobs reach every station → print only where there's a printer (the Android app's own
+          // IP/USB printer, or a Bluetooth printer connected in this browser) and only on the station that wins the claim.
           if (data.type === "kiosk_print_job" && data.jobType === "checkin_ticket") {
-            try {
-              const bytes = buildCheckinTicket({
-                storeName: data.storeName ?? "",
-                clientName: data.clientName ?? "Guest",
-                staffName: data.staffName,
-                services: data.services ?? [],
-                appointmentId: data.appointmentId,
-                ticketNumber: data.ticketNumber,
-                bookingCode: data.bookingCode ?? `BK:${data.appointmentId}`,
-                timeStr: data.timeStr ?? "",
-                dateStr: data.dateStr ?? "",
-              });
-              thermalPrintRef.current?.(bytes).catch(() => {});
-            } catch {}
+            const nativePrinter = !!(window as any).CERTXA_NATIVE_APP && !!(window as any).CERTXA_PRINT_BRIDGE;
+            if (nativePrinter || thermalPrintRef.current) {
+              const qrValue = String(data.bookingCode ?? `BK:${data.appointmentId}`);
+              void (async () => {
+                if (!(await claimKioskPrintJob(`ci:${data.appointmentId ?? qrValue}`))) return;
+                try {
+                  if (nativePrinter && data.ticketNumber != null) {
+                    await printNativeCheckinTicket({ clientName: data.clientName ?? "Guest", ticketNumber: Number(data.ticketNumber), qrValue, todayCount: data.todayCount, services: slipServiceNames(data.services) });
+                    return;
+                  }
+                  const bytes = buildCheckinTicket({
+                    storeName: data.storeName ?? "",
+                    clientName: data.clientName ?? "Guest",
+                    staffName: data.staffName,
+                    services: data.services ?? [],
+                    appointmentId: data.appointmentId,
+                    ticketNumber: data.ticketNumber,
+                    bookingCode: qrValue,
+                    timeStr: data.timeStr ?? "",
+                    dateStr: data.dateStr ?? "",
+                  });
+                  await thermalPrintRef.current?.(bytes);
+                } catch {}
+              })();
+            }
           }
         } catch {}
       };
@@ -1291,6 +1312,14 @@ export default function Calendar() {
         return;
       }
 
+      // A CI code is a walk-in check-in marker, not an appointment. Send it to the nail ticket
+      // builder with both IDs so staff can choose the service and create the ticket linked to that
+      // marker; never run it through the "today booking" calendar lookup below.
+      if (data.type === "checkin") {
+        navigate(`${isBarbershop ? "/barber" : "/nail"}?checkinId=${encodeURIComponent(data.checkinId)}&clientId=${encodeURIComponent(data.clientId)}`);
+        return;
+      }
+
       // Try to find the appointment in the already-loaded list first (fast path)
       const loaded = (appointments ?? []) as AppointmentWithDetails[];
       const found = loaded.find((a) => a.id === data.appointmentId);
@@ -1681,7 +1710,7 @@ export default function Calendar() {
 
   if (authLoading) {
     return (
-      <div className="dark cx-cal text-foreground h-app w-full flex items-center justify-center bg-background">
+      <div className="cx-cal cx-cal-light text-foreground h-app w-full flex items-center justify-center bg-background">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
@@ -1705,7 +1734,7 @@ export default function Calendar() {
   };
   const sidebarTiles = calendarSidebarItems.filter((item) => {
     if (item.kind === "action" && item.action === "cash-drawer") return false;
-    if (!posFeatureEnabled && item.kind === "action" && (item.action === "open-register" || item.action === "day-close")) return false;
+    if ((!posFeatureEnabled || isMobile) && item.kind === "action" && (item.action === "open-register" || item.action === "day-close")) return false;
     // The menu popup doesn't need a Calendar tile — it's opened from the
     // calendar page itself.
     if (item.kind === "link" && item.to === "/calendar") return false;
@@ -1800,10 +1829,19 @@ export default function Calendar() {
       isActive: false,
       onClick: () => navigate("/nail"),
     }] : []),
+    // Barbershops use their dedicated checked-in queue rather than appointments.
+    ...(isBarbershop ? [{
+      key: "barber-mode",
+      testId: "button-barber-mode",
+      label: "Barber Queue",
+      icon: Scissors,
+      isActive: false,
+      onClick: () => navigate("/barber"),
+    }] : []),
   ];
 
   return (
-    <div className="dark cx-cal text-foreground h-app w-full overflow-hidden flex flex-col bg-background">
+    <div className="cx-cal cx-cal-light text-foreground h-app w-full overflow-hidden flex flex-col bg-background">
 
       {/* ── Desktop header ── */}
       {!isMobile && (
@@ -2076,7 +2114,7 @@ export default function Calendar() {
                           <button
                             type="button"
                             onClick={() => setShowResetRegisterConfirm((v) => !v)}
-                            title="Which station this tablet is paired to — tap to reset"
+                            title="Which station this tablet is — tap to pair its customer screen"
                             data-testid="button-register-badge"
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold flex-shrink-0 transition-all duration-300 select-none bg-slate-100 text-slate-500 hover:bg-slate-200"
                           >
@@ -2091,26 +2129,7 @@ export default function Calendar() {
                                 onClick={(e) => e.stopPropagation()}
                                 data-testid="popover-reset-register"
                               >
-                                <p className="text-xs text-slate-600">
-                                  This tablet is paired as <strong>{currentRegisterName}</strong>. Reset if it's being moved to a different station — you'll be asked to pick again.
-                                </p>
-                                <div className="flex gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => setShowResetRegisterConfirm(false)}
-                                    className="flex-1 px-3 py-1.5 rounded-md border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                                  >
-                                    Cancel
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={handleResetRegister}
-                                    data-testid="button-confirm-reset-register"
-                                    className="flex-1 px-3 py-1.5 rounded-md bg-slate-800 text-white text-xs font-semibold hover:bg-slate-700"
-                                  >
-                                    Reset pairing
-                                  </button>
-                                </div>
+                                <PairCustomerScreen stationName={currentRegisterName} onDone={() => setShowResetRegisterConfirm(false)} />
                               </div>
                             </>
                           )}
@@ -2205,7 +2224,7 @@ export default function Calendar() {
               has configured 2+ cash drawers (Settings → Cash Drawers). Drawer
               count isn't tied to register count, so this is independent of
               the register picker below. */}
-          {needsDrawerPicker && (
+          {posEnabled && needsDrawerPicker && (
             <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4">
               <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
                 <div>
@@ -2237,7 +2256,8 @@ export default function Calendar() {
               here is what keeps this terminal's checkout traffic paired to
               its own front-desk tablet instead of cross-talking with another
               station's. */}
-          {needsRegisterPicker && (
+          {posEnabled && <StationsFullBanner show={stationsFull} />}
+          {posEnabled && needsRegisterPicker && (
             <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4">
               <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
                 <div>
@@ -2540,7 +2560,7 @@ export default function Calendar() {
                             data-testid={`staff-header-${member.id}`}
                             data-staff-header-menu
                           >
-                            <div className="hidden w-9 h-9 rounded-lg overflow-hidden ring-2 ring-white shadow-md flex-shrink-0">
+                            <div className="w-7 h-7 rounded-full overflow-hidden flex-shrink-0">
                               {member.avatarUrl ? (
                                 <img src={member.avatarUrl} alt={member.name} className="w-full h-full object-cover object-top" />
                               ) : (
@@ -2553,40 +2573,8 @@ export default function Calendar() {
                               )}
                             </div>
                             <span className="text-[12px] font-semibold truncate max-w-full leading-tight" data-testid={`text-staff-name-${member.id}`}>
-                              {(() => {
-                                const parts = (member.name as string).trim().split(/\s+/);
-                                return parts.length > 1
-                                  ? `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.`
-                                  : parts[0];
-                              })()}
+                              {member.name}
                             </span>
-                            {(() => {
-                              // Same ISO-day fix — must match the store's local day not UTC day.
-                            const todayDow = parseInt(formatStoreDate(currentDate, "i"), 10) % 7;
-                              const rule = allStaffAvailability?.find(
-                                (r) => r.staffId === member.id && r.dayOfWeek === todayDow
-                              );
-                              if (rule) {
-                                return (
-                                  <span className="text-[10px] text-slate-400 leading-tight">
-                                    {formatHourLabel(rule.startTime)} – {formatHourLabel(rule.endTime)}
-                                  </span>
-                                );
-                              }
-                              if (allStaffAvailability) {
-                                return (
-                                  <Link
-                                    to={`/team/${member.id}?tab=availability`}
-                                    className="text-[10px] text-blue-500 hover:underline leading-tight"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    Set hours
-                                  </Link>
-                                );
-                              }
-                              return null;
-                            })()}
-
                             {/* Staff header menu popover */}
                             {openStaffMenu === member.id && (
                               <div
@@ -2609,6 +2597,33 @@ export default function Calendar() {
                                   </button>
                                 </div>
                                 <div className="p-1.5 flex flex-col gap-1">
+                                  {/* Today's working hours (they used to sit under the name in the column header) */}
+                                  {(() => {
+                                    // Same ISO-day fix — must match the store's local day not UTC day.
+                                  const todayDow = parseInt(formatStoreDate(currentDate, "i"), 10) % 7;
+                                    const rule = allStaffAvailability?.find(
+                                      (r) => r.staffId === member.id && r.dayOfWeek === todayDow
+                                    );
+                                    if (rule) {
+                                      return (
+                                        <span className="px-3 py-1 text-xs font-medium text-slate-500 leading-tight">
+                                          {formatHourLabel(rule.startTime)} – {formatHourLabel(rule.endTime)}
+                                        </span>
+                                      );
+                                    }
+                                    if (allStaffAvailability) {
+                                      return (
+                                        <Link
+                                          to={`/team/${member.id}?tab=availability`}
+                                          className="px-3 py-1 text-xs font-medium text-blue-500 hover:underline leading-tight"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          Set hours
+                                        </Link>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
                                   {/* Availability toggle — backed by timeclock clock-in/clock-out */}
                                   <button
                                     className={cn(
@@ -2757,8 +2772,7 @@ export default function Calendar() {
                                   // staff availability). Past slots stay un-marked but remain
                                   // unbookable via the onClick guard + handleSlotClick's own check.
                                   backgroundColor: isNonWorking ? 'var(--cal-nonworking)' : undefined,
-                                  backgroundImage: isNonWorking ? 'radial-gradient(rgba(148,163,184,0.32) 1px, transparent 1.3px)' : undefined,
-                                  backgroundSize: isNonWorking ? '9px 9px' : undefined,
+                                  backgroundImage: isNonWorking ? 'repeating-linear-gradient(135deg, rgba(148,163,184,0.30) 0 1px, transparent 1px 10px)' : undefined,
                                 }}
                                 onClick={() => !isUnbookable && handleSlotClick(member.id, slot.hour, slot.minute)}
                                 onDragOver={(e) => handleSlotDragOver(e, member.id, slot.hour, slot.minute)}
@@ -2810,14 +2824,14 @@ export default function Calendar() {
                             const isSelected = selectedAppointment?.id === apt.id;
 
                             // Band color by status — "Studio Slate" status palette
-                            // (see .cx-cal in index.css). Tuned for a dark grid.
+                            // (see .cx-cal in index.css). Tuned for the light grid.
                             const bandColor =
-                              apt.status === "completed" ? "#94a3b8"  // slate — handled
-                              : apt.status === "started" ? "#4ade80"  // green — in progress
-                              : apt.status === "late" ? "#fbbf24"     // amber — overdue
-                              : apt.status === "no_show" ? "#f87171"  // red
-                              : apt.status === "confirmed" ? "#2dd4bf" // teal — checked in
-                              : "#5b9bff"; // pending / default = booked (blue)
+                              apt.status === "completed" ? "#64748b"  // slate — handled
+                              : apt.status === "started" ? "#16a34a"  // green — in progress
+                              : apt.status === "late" ? "#d97706"     // amber — overdue
+                              : apt.status === "no_show" ? "#dc2626"  // red
+                              : apt.status === "confirmed" ? "#0d9488" // teal — checked in
+                              : "#2563eb"; // pending / default = booked (blue)
 
                             const isLocked = apt.status === "completed";
 
@@ -2844,23 +2858,27 @@ export default function Calendar() {
                               ? categoryColorMap.get(apt.service.categoryId)
                               : undefined;
 
-                            // Dark calendar: a solid accent colour per status/category,
+                            // A solid accent colour per status/category,
                             // rendered as a translucent fill + solid left/border accent.
                             // Neutral states (pending/confirmed) keep their service
                             // category colour on the card fill; the left band + chip
                             // carry the status. Terminal states override with a
                             // status colour so they read at a glance.
                             const cardAccent =
-                              isCancelled ? "#fb7185"
-                              : isNoShow ? "#f87171"
-                              : apt.status === "completed" ? "#94a3b8"
-                              : apt.status === "started" ? "#4ade80"
-                              : apt.status === "late" ? "#fbbf24"
-                              : (catColor?.border ?? "#5b9bff");
+                              isCancelled ? "#e11d48"
+                              : isNoShow ? "#dc2626"
+                              : apt.status === "completed" ? "#64748b"
+                              : apt.status === "started" ? "#16a34a"
+                              : apt.status === "late" ? "#d97706"
+                              : (catColor?.border ?? "#2563eb");
 
+                            // A booked/confirmed card in a coloured service category keeps the category's own
+                            // pastel fill; those pastels are too pale to carry text, so its time reads in slate.
+                            const usesCategoryColor = !!catColor && cardAccent === catColor.border;
                             const effectiveBg = (isAptOverdue && !isCancelled && !isNoShow)
-                              ? "rgba(239,68,68,0.14)"
-                              : `${cardAccent}22`;
+                              ? "rgba(239,68,68,0.10)"
+                              : usesCategoryColor ? catColor!.bg : `${cardAccent}1c`;
+                            const timeColor = usesCategoryColor ? "#334155" : cardAccent;
                             const effectiveBorder = (isAptOverdue && !isCancelled && !isNoShow) ? "#ef4444" : cardAccent;
 
                             return (
@@ -2923,31 +2941,29 @@ export default function Calendar() {
                                 <div className="px-2 py-1.5 overflow-hidden flex flex-col min-h-0 gap-0.5 relative z-[2]">
                                   {/* Row 1: time range + status badge (matches mobile WeeklyAgendaView) */}
                                   <div className="flex items-start justify-between gap-1">
-                                    <span className="text-[11px] font-semibold leading-tight" style={{ color: cardAccent }}>{startTime} – {endTime}</span>
+                                    <span className="text-[11px] font-semibold leading-tight" style={{ color: timeColor }}>{startTime} – {endTime}</span>
                                     <div className="flex items-center gap-1 flex-shrink-0">
                                       {apt.clientRequestedStaff && (
                                         <span className="text-[8px] font-bold text-amber-500 leading-none uppercase tracking-tight">REQ</span>
                                       )}
                                       {(() => {
-                                        // Translucent chips — bright white pills scattered
-                                        // on a dark grid are a real eye-strain source over
-                                        // a shift. Each chip = 18% status-colour fill + a
-                                        // lightened status-colour label.
+                                        // Translucent chips: a light status-colour fill with a
+                                        // darker label of the same hue, readable on the white grid.
                                         const statusMap: Record<string, { bg: string; text: string; label: string }> = {
-                                          pending:   { bg: "rgba(91,155,255,0.18)",  text: "#a9c8ff", label: "Booked" },
-                                          confirmed: { bg: "rgba(45,212,191,0.18)",  text: "#7fe9db", label: "Confirmed" },
-                                          started:   { bg: "rgba(74,222,128,0.18)",  text: "#95efb4", label: "In Progress" },
-                                          completed: { bg: "rgba(148,163,184,0.22)", text: "#cbd5e1", label: "Done" },
-                                          cancelled: { bg: "rgba(251,113,133,0.18)", text: "#fda9b4", label: "Cancelled" },
-                                          no_show:   { bg: "rgba(248,113,113,0.18)", text: "#fcaeae", label: "No Show" },
-                                          late:      { bg: "rgba(251,191,36,0.20)",  text: "#fcd670", label: "Late" },
+                                          pending:   { bg: "rgba(37,99,235,0.12)",   text: "#1d4ed8", label: "Booked" },
+                                          confirmed: { bg: "rgba(13,148,136,0.14)",  text: "#0f766e", label: "Confirmed" },
+                                          started:   { bg: "rgba(22,163,74,0.14)",   text: "#15803d", label: "In Progress" },
+                                          completed: { bg: "rgba(100,116,139,0.16)", text: "#475569", label: "Done" },
+                                          cancelled: { bg: "rgba(225,29,72,0.12)",   text: "#be123c", label: "Cancelled" },
+                                          no_show:   { bg: "rgba(220,38,38,0.12)",   text: "#b91c1c", label: "No Show" },
+                                          late:      { bg: "rgba(217,119,6,0.16)",   text: "#b45309", label: "Late" },
                                         };
                                         // Paid appointments always show a green "Paid" badge
                                         if (apt.paymentStatus === "paid") {
                                           return (
                                             <span
                                               className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold leading-none flex-shrink-0"
-                                              style={{ backgroundColor: "rgba(74,222,128,0.20)", color: "#95efb4" }}
+                                              style={{ backgroundColor: "rgba(22,163,74,0.14)", color: "#15803d" }}
                                             >
                                               Paid
                                             </span>
@@ -3140,8 +3156,7 @@ export default function Calendar() {
                                   top: `${topPx}px`,
                                   height: `${slotHeight}px`,
                                   backgroundColor: isResNonWorking ? 'var(--cal-nonworking)' : undefined,
-                                  backgroundImage: isResNonWorking ? 'radial-gradient(rgba(148,163,184,0.32) 1px, transparent 1.3px)' : undefined,
-                                  backgroundSize: isResNonWorking ? '9px 9px' : undefined,
+                                  backgroundImage: isResNonWorking ? 'repeating-linear-gradient(135deg, rgba(148,163,184,0.30) 0 1px, transparent 1px 10px)' : undefined,
                                 }}
                                 onClick={() => {
                                   if (isPast) return;
@@ -3164,11 +3179,11 @@ export default function Calendar() {
                             // any other appointment is colored by the assigned staff member's
                             // own Calendar Color instead of the service category.
                             const isNeutral = !isCancelled && !isNoShow && apt.status !== "completed" && apt.status !== "started";
-                            // Dark calendar: translucent fill + solid accent (see staff view above).
-                            const resAccent = isCancelled ? "#f472b6" : isNoShow ? "#fb7185" : apt.status === "completed" ? "#94a3b8" : apt.status === "started" ? "#34d399" : staffColor;
+                            // Translucent fill + solid accent (see staff view above).
+                            const resAccent = isCancelled ? "#e11d48" : isNoShow ? "#dc2626" : apt.status === "completed" ? "#64748b" : apt.status === "started" ? "#16a34a" : staffColor;
                             const pastelBg = `${resAccent}22`;
                             const pastelBorder = resAccent;
-                            const neutralContrast = isNeutral ? { text: "#f5f5f7", textMuted: "#9a9aa0" } : null;
+                            const neutralContrast = isNeutral ? { text: "#0f172a", textMuted: "#475569" } : null;
                             return (
                               <div
                                 key={apt.id}
@@ -3223,21 +3238,6 @@ export default function Calendar() {
             <CalendarFaderScrollbar scrollContainerRef={scrollContainerRef as React.RefObject<HTMLDivElement>} />
           )}
         </div>
-
-        {/* ── Right: Current Queue Lineup panel — nail salons only, and only when Turn System is enabled ── */}
-        {!isMobile && isNailSalon && turnSystemEnabled && (
-          <div className="w-[110px] flex-shrink-0 border-l border-slate-200 bg-white hidden lg:flex flex-col overflow-hidden">
-            <CalendarQueuePanel
-              staffList={staffList ?? []}
-              appointments={appointments ?? []}
-              timezone={timezone}
-              currentDate={currentDate}
-              turnEligibility={turnEligibility}
-              onOpenTurnPage={() => setShowTurnPage(true)}
-              getStaffColor={getStaffColor}
-            />
-          </div>
-        )}
 
         <Sheet open={quickCheckoutOpen} onOpenChange={setQuickCheckoutOpen}>
           <SheetContent
@@ -3953,237 +3953,6 @@ export default function Calendar() {
   );
 }
 
-function CalendarQueuePanel({
-  staffList,
-  appointments = [],
-  timezone,
-  currentDate,
-  turnEligibility,
-  onOpenTurnPage,
-  getStaffColor,
-}: {
-  staffList: any[];
-  appointments?: any[];
-  timezone?: string;
-  currentDate?: Date;
-  turnEligibility?: { eligibleTechnicians: TurnTechnician[]; technicians: TurnTechnician[] };
-  onOpenTurnPage?: () => void;
-  getStaffColor?: (member: any) => string;
-}) {
-  const { pick } = useLanguage();
-  const tz = timezone ?? "UTC";
-  const now = new Date();
-  const today = currentDate ?? now;
-
-  const staffWithStatus = useMemo(() => {
-    const available   = pick({ en: "Available",          vi: "Sẵn sàng",           es: "Disponible",      fr: "Disponible" });
-    const busy        = pick({ en: "Busy",               vi: "Đang bận",            es: "Ocupado",         fr: "Occupé" });
-    const retaining   = pick({ en: "Busy • Retaining spot", vi: "Đang bận • Giữ vị trí", es: "Ocupado • Reteniendo turno", fr: "Occupé • Conserve sa place" });
-    const onBreak     = pick({ en: "On Break",           vi: "Đang nghỉ",           es: "En descanso",     fr: "En pause" });
-
-    // For nail salons (turnEligibility present) only show clocked-in staff.
-    const clockedInIds = turnEligibility?.technicians
-      ? new Set(turnEligibility.technicians.filter((t: TurnTechnician) => t.clockedIn).map((t: TurnTechnician) => t.id))
-      : null;
-
-    // Sort by the turn queue order from turnEligibility.technicians so the panel
-    // matches the TURN popup order (not the calendar column order).
-    const turnOrderMap = new Map(
-      (turnEligibility?.technicians ?? []).map((t: TurnTechnician, i: number) => [t.id, i])
-    );
-
-    const sourceList = (clockedInIds
-      ? staffList.filter((member: any) => clockedInIds.has(member.id))
-      : staffList
-    )
-      .filter((member: any) => member.showOnCalendar !== false)
-      .sort((a: any, b: any) => (turnOrderMap.get(a.id) ?? 999) - (turnOrderMap.get(b.id) ?? 999));
-
-    return sourceList.map((member: any, idx: number) => {
-      let status: "available" | "busy" | "on_break" = "available";
-      let statusLabel = available;
-
-      if (turnEligibility?.technicians) {
-        const techData = turnEligibility.technicians.find((t: TurnTechnician) => t.id === member.id);
-        if (techData) {
-          status = techData.currentStatus ?? "available";
-          if (status === "busy") {
-            statusLabel = techData.shortTurnProtected ? retaining : busy;
-          } else if (status === "on_break") {
-            statusLabel = onBreak;
-          } else {
-            const tc = techData.turnCount ?? 0;
-            statusLabel = tc > 0
-              ? pick({ en: `Available • ${tc} turn${tc !== 1 ? "s" : ""}`, vi: `Sẵn sàng • ${tc} lượt`, es: `Disponible • ${tc} turno${tc !== 1 ? "s" : ""}`, fr: `Disponible • ${tc} tour${tc !== 1 ? "s" : ""}` })
-              : available;
-          }
-          return { member, status, statusLabel, position: idx + 1 };
-        }
-      }
-
-      const todayApts = appointments.filter((apt: any) => {
-        if (!apt.staffId || apt.staffId !== member.id) return false;
-        return isOnStoreDate(apt.date, today, tz) && (apt.status === "started" || apt.status === "pending" || apt.status === "confirmed");
-      });
-
-      const inProgress = todayApts.find((apt: any) => {
-        const s = new Date(apt.date);
-        const e = addMinutes(s, Number(apt.duration ?? 0));
-        return s <= now && e > now && apt.status === "started";
-      });
-
-      if (inProgress) {
-        status = "busy";
-        statusLabel = busy;
-      }
-
-      return { member, status, statusLabel, position: idx + 1 };
-    });
-  }, [staffList, appointments, turnEligibility, tz, today, pick, now]);
-
-  const allBusy = staffWithStatus.length > 0 && staffWithStatus.every((s) => s.status === "busy");
-
-  // Approx wait time: only when ALL staff are busy.
-  // For each busy staff, check if there's 30+ min free after their current ticket.
-  // If yes → candidate = current ticket end time.
-  // If no (next booking starts within 30 min) → candidate = that next booking's end time.
-  // Display the earliest candidate.
-  const WALK_IN_GAP_MIN = 30;
-  const approxWaitMinutes: number | null = (() => {
-    if (!allBusy || !appointments.length) return null;
-    const nowMs = new Date();
-
-    const staffApts = new Map<number, Array<{ start: Date; end: Date }>>();
-    for (const apt of appointments) {
-      if (!apt.staffId) continue;
-      const aptStart = new Date(apt.date);
-      if (!isOnStoreDate(aptStart, today, tz)) continue;
-      const aptEnd = addMinutes(aptStart, Number(apt.duration ?? 0));
-      if (!staffApts.has(apt.staffId)) staffApts.set(apt.staffId, []);
-      staffApts.get(apt.staffId)!.push({ start: aptStart, end: aptEnd });
-    }
-    for (const list of staffApts.values()) list.sort((a, b) => a.start.getTime() - b.start.getTime());
-
-    let earliest: Date | null = null;
-    for (const { member, status } of staffWithStatus) {
-      if (status !== "busy") continue;
-      const apts = staffApts.get(member.id) ?? [];
-      const inProgress = apts.find((a) => a.start <= nowMs && a.end > nowMs);
-      if (!inProgress) continue;
-      const gapCutoff = addMinutes(inProgress.end, WALK_IN_GAP_MIN);
-      const nextBooking = apts.find((a) => a.start > nowMs && a.start < gapCutoff);
-      const candidate = nextBooking ? nextBooking.end : inProgress.end;
-      if (earliest === null || candidate < earliest) earliest = candidate;
-    }
-    if (!earliest) return null;
-    return Math.max(1, Math.round((earliest.getTime() - nowMs.getTime()) / 60000));
-  })();
-
-  if (staffWithStatus.length === 0) {
-    return (
-      <div className="flex flex-col">
-        <div className="flex-1 flex items-center justify-center py-10 px-4 text-xs text-slate-400 text-center">
-          {pick({ en: "No staff scheduled", vi: "Không có nhân viên", es: "Sin personal programado", fr: "Aucun personnel prévu" })}
-        </div>
-      </div>
-    );
-  }
-
-  const availableRows = staffWithStatus.filter(({ status }) => status === "available");
-  const busyRows      = staffWithStatus.filter(({ status }) => status !== "available");
-
-  return (
-    <div className="flex flex-col h-full bg-white">
-      {/* Header */}
-      <div className="flex-shrink-0 h-11 border-b border-slate-200 bg-slate-50">
-        <button
-          type="button"
-          onClick={onOpenTurnPage}
-          data-testid="button-open-turn-page"
-          className="w-full h-full rounded-none bg-[#1b1b1f] text-slate-100 text-[10px] font-extrabold uppercase tracking-widest hover:bg-[#26262b] active:opacity-90 transition-colors"
-        >
-          {pick({ en: "TURN QUEUE", vi: "Hàng Chờ", es: "TURNO", fr: "FILE D'ATTENTE" })}
-        </button>
-      </div>
-
-      {/* Queue rows */}
-      <div className="flex-1 overflow-y-auto divide-y divide-slate-200 bg-white">
-        {staffWithStatus.length === 0 ? (
-          <p className="py-8 text-center text-[10px] text-slate-500">
-            {pick({ en: "No staff\nclocked in", vi: "Chưa vào ca", es: "Sin personal\nregistrado", fr: "Aucun personnel\nconnecté" })}
-          </p>
-        ) : (
-          <>
-            {availableRows.map(({ member, statusLabel, position }) => {
-              const staffColor = getStaffColor ? getStaffColor(member) : "#94a3b8";
-              return (
-                <div
-                  key={member.id}
-                  className={cn(
-                    "flex flex-col items-center gap-1 px-2 py-2.5",
-                    position === 1 ? "bg-emerald-500/10" : ""
-                  )}
-                >
-                  <div className="relative">
-                    <Avatar className="w-8 h-8 shrink-0" style={{ boxShadow: `0 0 0 2px ${staffColor}` }}>
-                      <AvatarImage src={member.avatarUrl || undefined} alt={member.name} />
-                      <AvatarFallback className="text-[10px] font-bold bg-slate-200 text-slate-700">
-                        {member.name?.[0]?.toUpperCase() || "?"}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className={cn(
-                      "absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center rounded-full text-[9px] font-extrabold ring-2 ring-[#0d0d0f]",
-                      position === 1 ? "bg-emerald-500 text-white" : "bg-[#2dd4bf] text-slate-900"
-                    )}>
-                      {position}
-                    </div>
-                  </div>
-                  <p className="text-[11px] font-semibold text-slate-100 truncate w-full text-center leading-tight">
-                    {member.name}
-                  </p>
-                  <p className="text-[10px] font-medium text-emerald-400 leading-tight text-center">{statusLabel}</p>
-                </div>
-              );
-            })}
-
-            {busyRows.length > 0 && (
-              <>
-                <div className="flex items-center gap-1 px-2 py-1 bg-rose-500/10">
-                  <div className="h-px flex-1 bg-rose-500/25" />
-                  <span className="shrink-0 text-[8px] font-bold uppercase tracking-wider text-rose-400">
-                    {pick({ en: "Busy", vi: "Bận", es: "Ocupado", fr: "Occupé" })}
-                  </span>
-                  <div className="h-px flex-1 bg-rose-500/25" />
-                </div>
-                {busyRows.map(({ member, statusLabel }) => {
-                  const staffColor = getStaffColor ? getStaffColor(member) : "#94a3b8";
-                  return (
-                    <div key={member.id} className="flex flex-col items-center gap-1 px-2 py-2.5 bg-rose-500/10">
-                      <Avatar className="w-8 h-8 shrink-0" style={{ boxShadow: `0 0 0 2px ${staffColor}` }}>
-                        <AvatarImage src={member.avatarUrl || undefined} alt={member.name} />
-                        <AvatarFallback className="text-[10px] font-bold bg-rose-500/15 text-rose-300">
-                          {member.name?.[0]?.toUpperCase() || "?"}
-                        </AvatarFallback>
-                      </Avatar>
-                      <p className="text-[11px] font-semibold text-slate-100 truncate w-full text-center leading-tight">
-                        {member.name}
-                      </p>
-                      <p className="text-[10px] font-medium text-rose-400 leading-tight text-center">{statusLabel}</p>
-                    </div>
-                  );
-                })}
-              </>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Footer fill */}
-      <div className="flex-shrink-0 h-1 bg-slate-100" />
-    </div>
-  );
-}
-
 function InlineTurnQueuePanel({
   turnEligibility,
   staffList,
@@ -4496,7 +4265,7 @@ function TurnTechCard({
   );
 }
 
-function TurnPageModal({
+export function TurnPageModal({
   currentDate,
   timezone,
   appointments,
@@ -6348,6 +6117,9 @@ export function CheckoutPOSPanel({
   /** Extra ticket lines to start the cart with (e.g. the nail salon screen's length / shape / art upcharges). */
   initialExtraItems?: { name: string; price: number; kind?: string }[];
 }) {
+  // The salon's own tip percentages (POS Settings → Tip presets) in place of the built-in list above.
+  const tipPcts = useTipPresets();
+  const TIP_PRESETS = useMemo<{ label: string; value?: number; percent?: number }[]>(() => [{ label: "No Tip", value: 0 }, ...tipPcts.map((pct) => ({ label: `${pct}%`, percent: pct / 100 }))], [tipPcts.join(",")]);
   const { pick } = useLanguage();
   const tPOS = {
     checkoutHdr:     pick({ en: "Checkout",              vi: "Thanh toán",               es: "Pagar",                    fr: "Encaisser" }),
@@ -6496,7 +6268,7 @@ export function CheckoutPOSPanel({
   const tipAutoRequestedRef = useRef(false);
   const requestClientTipScreen = () => {
     setWaitingForTip(true);
-    broadcastToKiosk("kiosk_checkout_tip_request", { total: Math.round(preTotal * 100) / 100, cardMethod, appointmentId: appointment.id });
+    broadcastToKiosk("kiosk_checkout_tip_request", { total: Math.round(preTotal * 100) / 100, cardMethod: cardMethod === "frontdesk" ? "tap" : cardMethod, appointmentId: appointment.id });
   };
   const [phase, setPhase] = useState<"cart" | "payment">("cart");
   const [tipMode, setTipMode] = useState<"preset" | "custom">("preset");
@@ -6511,13 +6283,13 @@ export function CheckoutPOSPanel({
   // settings button, saved to this device's localStorage, and sent to the
   // customer display so the tip-page CONFIRM arms the right native bridge.
   const POS_CARD_METHOD_KEY = "certxa.pos.cardMethod";
-  const [cardMethod, setCardMethod] = useState<"m2" | "tap">(() => {
+  const [cardMethod, setCardMethod] = useState<"m2" | "tap" | "frontdesk">(() => {
     try {
       const v = localStorage.getItem(POS_CARD_METHOD_KEY);
-      return v === "m2" || v === "tap" ? v : "tap";
+      return v === "m2" || v === "tap" || v === "frontdesk" ? v : "tap";
     } catch { return "tap"; }
   });
-  const updateCardMethod = (m: "m2" | "tap") => {
+  const updateCardMethod = (m: "m2" | "tap" | "frontdesk") => {
     setCardMethod(m);
     try { localStorage.setItem(POS_CARD_METHOD_KEY, m); } catch {}
   };
@@ -6800,6 +6572,7 @@ export function CheckoutPOSPanel({
   // the tip, discount, any redeemed loyalty reward and the total tendered. The handler is
   // re-created every render (fresh state); a single stable listener calls the latest one.
   const nativePaidSeen = useRef(new Set<string>());
+  const verifyingRemote = useRef(new Set<string>());
   const [paymentNotice, setPaymentNotice] = useState<{ amount: number; last4: string | null; label: string; paymentIntentId: string | null } | null>(null);
   const [printingReceipt, setPrintingReceipt] = useState(false);
   const nativeCompleteRef = useRef<(d: any) => void>(() => {});
@@ -7020,16 +6793,25 @@ export function CheckoutPOSPanel({
           );
         }
         if (msg.type === "kiosk_checkout_payment_result") {
+          if (msg.appointmentId != null && Number(msg.appointmentId) !== apptIdRef.current) return;
           if (msg.via === "client_confirm") {
             // The customer confirmed the tip on the customer screen and the
             // native bridge (M2 or Tap to Pay) ran there. Record the tender so
             // the POS's "paid in full" logic completes the sale.
             if (msg.success) {
               const paid = Number(msg.total) || 0;
-              if (paid > 0) {
-                const m = msg.method === "m2" ? "m2" : "tap";
-                setTenders(prev => [...prev, { id: (prev[prev.length - 1]?.id ?? 0) + 1, method: m, amount: paid }]);
-                showPosStatus(tSt.cardApproved(paid.toFixed(2)), "success");
+              const key = typeof msg.paymentIntentId === "string" ? msg.paymentIntentId : "";
+              if (key && !nativePaidSeen.current.has(key) && !verifyingRemote.current.has(key)) {
+                verifyingRemote.current.add(key);
+                void verifyCardCharge(key, appointment.id, paid).then((verified) => {
+                  if (nativePaidSeen.current.has(key) || apptIdRef.current !== appointment.id) return;
+                  nativePaidSeen.current.add(key);
+                  const m = msg.method === "m2" ? "m2" : "tap";
+                  setTenders(prev => [...prev, { id: (prev[prev.length - 1]?.id ?? 0) + 1, method: m, amount: verified }]);
+                  setPaymentNotice({ amount: verified, last4: msg.last4 ?? null, label: m === "tap" ? "Tap to Pay" : "Card", paymentIntentId: key });
+                  showPosStatus(tSt.cardApproved(verified.toFixed(2)), "success");
+                }).catch((err: Error) => showPosStatus(err.message.toUpperCase(), "error"))
+                  .finally(() => verifyingRemote.current.delete(key));
               }
             } else {
               showPosStatus(msg.error ? String(msg.error).toUpperCase() : tSt.cardDeclined, "error");
@@ -7158,12 +6940,12 @@ export function CheckoutPOSPanel({
   // Ask the customer display for a tip once the ticket moves to payment. While
   // the ticket is still being built the display shows the live cart mirror.
   useEffect(() => {
-    if (!dualScreenEnabled || phase !== "payment") return;
+    if (!dualScreenEnabled || phase !== "payment" || cardMethod === "frontdesk") return;
     if (tipAutoRequestedRef.current || tipCollected) return;
     tipAutoRequestedRef.current = true;
     requestClientTipScreen();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dualScreenEnabled, phase, tipCollected]);
+  }, [dualScreenEnabled, phase, tipCollected, cardMethod]);
 
   // ── Live cart mirror → front-desk display (dual screen only) ──────────────
   const mirrorItems = useMemo(() => {
@@ -7276,6 +7058,8 @@ export function CheckoutPOSPanel({
     broadcastToKiosk("kiosk_checkout_cancel");
     const methodsSummary = tenders.map(t => `${t.method}:${t.amount.toFixed(2)}`).join(",");
     const r2 = (n: number) => Math.round(n * 100) / 100;
+    // What the sale kept: change handed back is not revenue and never stays in the drawer.
+    const amountPaid = r2(Math.min(totalTendered, grandTotal));
 
     let groupTickets: GroupTicketShare[] | undefined;
     if (linkedAppointments.length > 0) {
@@ -7285,13 +7069,13 @@ export function CheckoutPOSPanel({
         ...linkedAppointments.map((a) => ({ id: a.id, base: ticketSubtotal(a), split: { serviceRevenue: ticketSubtotal(a), productRevenue: 0 } })),
       ];
       const totalBase = tickets.reduce((s, t) => s + t.base, 0) || 1;
-      let tipLeft = r2(tip), discLeft = r2(discount), paidLeft = r2(totalTendered);
+      let tipLeft = r2(tip), discLeft = r2(discount), paidLeft = amountPaid;
       groupTickets = tickets.map((t, i) => {
         const last = i === tickets.length - 1;
         const share = t.base / totalBase;
         const tShare = last ? tipLeft : r2(tip * share);
         const dShare = last ? discLeft : r2(discount * share);
-        const pShare = last ? paidLeft : r2(totalTendered * share);
+        const pShare = last ? paidLeft : r2(amountPaid * share);
         tipLeft = r2(tipLeft - tShare); discLeft = r2(discLeft - dShare); paidLeft = r2(paidLeft - pShare);
         return { appointmentId: t.id, tip: tShare, discount: dShare, totalPaid: pShare, paymentMethod: methodsSummary, ...t.split };
       });
@@ -7301,7 +7085,7 @@ export function CheckoutPOSPanel({
       paymentMethod: methodsSummary,
       tip: r2(tip),
       discount: r2(discount),
-      totalPaid: r2(totalTendered),
+      totalPaid: amountPaid,
       serviceRevenue: r2(ownServiceRevenue),
       productRevenue: r2(ownProductRevenue),
       groupTickets,
@@ -7672,6 +7456,20 @@ export function CheckoutPOSPanel({
   };
   // Pay-tab tender using the shared cents keypad (`cartKeypad`).
   const applyMobileTender = (method: string) => {
+    if (method === "card" && cardMethod === "frontdesk") {
+      if (!dualScreenEnabled) { showPosStatus("PAIR A FRONT DESK SCREEN FIRST", "error"); return; }
+      if (balanceDue <= 0) { showPosStatus(tSt.nothingDue, "error"); return; }
+      const selected = posKeypadDollars();
+      const charge = Math.min(selected > 0 ? selected : balanceDue, balanceDue);
+      broadcastToKiosk("kiosk_checkout_tip_request", {
+        total: Math.round(preTotal * 100) / 100, cardMethod: "tap", paymentOnConfirm: true, appointmentId: appointment.id,
+        amountDueBeforeTip: Math.max(0, Math.round((charge - tip) * 100) / 100),
+        remainingAfterPayment: Math.max(0, Math.round((balanceDue - charge) * 100) / 100),
+        discountCents: Math.round(discount * 100), priorTenderedCents: Math.round(totalTendered * 100),
+      });
+      showPosStatus("TIP AND CARD PAYMENT SENT TO FRONT DESK", "info");
+      return;
+    }
     const amt = posKeypadDollars();
     if (amt <= 0) { showPosStatus(tSt.enterAmountFirst, "error"); return; }
     if (method === "cash") kickDrawer();
@@ -7793,6 +7591,7 @@ export function CheckoutPOSPanel({
         return;
       case "no-sale":
         kickDrawer();
+        recordNoSale();
         return;
 
       case "loyalty-redeem":
@@ -8251,6 +8050,7 @@ export function CheckoutPOSPanel({
                 {([
                   { key: "tap" as const, label: "Tap to Pay", icon: Smartphone, hint: "Phone / watch tap on the customer screen" },
                   { key: "m2" as const, label: "M2 Reader", icon: CreditCard, hint: "Bluetooth chip / swipe reader" },
+                  { key: "frontdesk" as const, label: "Front Desk Tap to Pay", icon: Smartphone, hint: "CARD opens tips; Confirm starts NFC payment on the paired tablet" },
                 ]).map(opt => {
                   const active = cardMethod === opt.key;
                   const OptIcon = opt.icon;

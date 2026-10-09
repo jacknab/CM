@@ -44,11 +44,11 @@ export function RewardsPanel({ storeName, pointsPerDollar, points, rewards, rede
             <div className="fd-card" style={{ display: "flex", alignItems: "center", gap: 15 }} data-testid="fd-rewards-brand">
               <span className="fd-badge" aria-hidden>💎</span>
               <div style={{ minWidth: 0, textAlign: "left" }}>
-                <p style={{ margin: 0, fontSize: 12, fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase", color: "#0b0b12" }}>Rewards program</p>
-                <p style={{ margin: "2px 0 0", fontSize: 23, fontWeight: 900, lineHeight: 1.15, textShadow: "0 1px 0 rgba(255,255,255,.35)" }}>{brand}</p>
+                <p style={{ margin: 0, fontSize: 12, fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--fd-card-text, #0b0b12)" }}>Rewards program</p>
+                <p style={{ margin: "2px 0 0", fontSize: 23, fontWeight: 900, lineHeight: 1.15, textShadow: "var(--fd-card-text-shadow, 0 1px 0 rgba(255,255,255,.35))" }}>{brand}</p>
                 {pointsPerDollar != null && pointsPerDollar > 0 && (
-                  <p style={{ margin: "6px 0 0", fontSize: 15, fontWeight: 600, lineHeight: 1.4, color: "#0b0b12", textWrap: "balance" as any }} data-testid="fd-rewards-earn">
-                    Earn <b style={{ fontWeight: 900, color: "#0b0b12", background: "rgba(255,255,255,.45)", borderRadius: 8, padding: "1px 8px" }}>{fmtRate(pointsPerDollar)} {pointsPerDollar === 1 ? "point" : "points"}</b> for every <b style={{ fontWeight: 900 }}>$1</b> you spend
+                  <p style={{ margin: "6px 0 0", fontSize: 15, fontWeight: 600, lineHeight: 1.4, color: "var(--fd-card-text, #0b0b12)", textWrap: "balance" as any }} data-testid="fd-rewards-earn">
+                    Earn <b style={{ fontWeight: 900, color: "var(--fd-card-text, #0b0b12)", background: "rgba(255,255,255,.45)", borderRadius: 8, padding: "1px 8px" }}>{fmtRate(pointsPerDollar)} {pointsPerDollar === 1 ? "point" : "points"}</b> for every <b style={{ fontWeight: 900 }}>$1</b> you spend
                   </p>
                 )}
               </div>
@@ -61,11 +61,11 @@ export function RewardsPanel({ storeName, pointsPerDollar, points, rewards, rede
           <div className="fd-float" style={cardFloatStyle(1)}>
             <div className="fd-card" data-testid="fd-rewards-balance">
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
-                <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: "#0b0b12" }}>Your points</span>
-                <span style={{ fontSize: 40, fontWeight: 900, lineHeight: 1, fontVariantNumeric: "tabular-nums", textShadow: "0 1px 0 rgba(255,255,255,.35)" }} data-testid="fd-rewards-points">{fmtPts(shown)}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--fd-card-text, #0b0b12)" }}>Your points</span>
+                <span style={{ fontSize: 40, fontWeight: 900, lineHeight: 1, fontVariantNumeric: "tabular-nums", textShadow: "var(--fd-card-text-shadow, 0 1px 0 rgba(255,255,255,.35))" }} data-testid="fd-rewards-points">{fmtPts(shown)}</span>
               </div>
               {sorted.length > 0 && (
-                <p style={{ margin: "9px 0 0", fontSize: 13.5, fontWeight: 600, color: "#0b0b12" }}>
+                <p style={{ margin: "9px 0 0", fontSize: 13.5, fontWeight: 600, color: "var(--fd-card-text, #0b0b12)" }}>
                   {next ? <>{fmtPts(next.pointsCost - points)} more points to unlock <b style={{ fontWeight: 900 }}>{next.name}</b></> : "You've unlocked every reward 🎉"}
                 </p>
               )}
@@ -76,7 +76,7 @@ export function RewardsPanel({ storeName, pointsPerDollar, points, rewards, rede
         {/* ── the rewards: cards floating above the screen ── */}
         <div className="fd-rw-scroll">
           {rewards.length === 0 && (
-            <p style={{ fontSize: 14, color: "#0b0b12", textAlign: "center", margin: "10px 0" }}>No rewards available right now.</p>
+            <p style={{ fontSize: 14, color: "var(--fd-card-text, #0b0b12)", textAlign: "center", margin: "10px 0" }}>No rewards available right now.</p>
           )}
           {sorted.map((rw, i) => {
             const isThis = redeemedRewardId === rw.id;
@@ -88,14 +88,14 @@ export function RewardsPanel({ storeName, pointsPerDollar, points, rewards, rede
                   <div className={`fd-card ${canRedeem ? "fd-ready" : ""}`} data-testid={`fd-reward-${rw.id}`}>
                     <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                       <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-                        <p style={{ margin: 0, fontSize: 21, fontWeight: 900, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textShadow: "0 1px 0 rgba(255,255,255,.35)" }}>{rw.name}</p>
-                        <p style={{ margin: "3px 0 0", fontSize: 14, fontWeight: 600, color: "#0b0b12" }}>{fmtPts(rw.pointsCost)} pts · ${rw.dollarValue.toFixed(2)} off</p>
+                        <p style={{ margin: 0, fontSize: 21, fontWeight: 900, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textShadow: "var(--fd-card-text-shadow, 0 1px 0 rgba(255,255,255,.35))" }}>{rw.name}</p>
+                        <p style={{ margin: "3px 0 0", fontSize: 14, fontWeight: 600, color: "var(--fd-card-text, #0b0b12)" }}>{fmtPts(rw.pointsCost)} pts · ${rw.dollarValue.toFixed(2)} off</p>
                       </div>
                       <button
                         type="button"
                         className={`fd-btn ${isThis ? "done" : canRedeem ? "on" : "off"}`}
                         style={canRedeem && !isThis ? { color: accentDark } : undefined}
-                        onPointerDown={(e) => { e.preventDefault(); if (canRedeem) onRedeem(rw); }}
+                        onClick={() => { if (canRedeem) onRedeem(rw); }}
                         disabled={!canRedeem}
                         data-testid={`fd-reward-redeem-${rw.id}`}
                       >
@@ -105,7 +105,7 @@ export function RewardsPanel({ storeName, pointsPerDollar, points, rewards, rede
                     {!isThis && !canRedeem && (
                       <div style={{ marginTop: 12 }}>
                         <div className="fd-bar" aria-hidden><i style={{ width: `${pct}%` }} /></div>
-                        <p style={{ margin: "6px 0 0", fontSize: 12.5, fontWeight: 600, color: "#0b0b12" }}>{fmtPts(rw.pointsCost - points)} pts to go</p>
+                        <p style={{ margin: "6px 0 0", fontSize: 12.5, fontWeight: 600, color: "var(--fd-card-text, #0b0b12)" }}>{fmtPts(rw.pointsCost - points)} pts to go</p>
                       </div>
                     )}
                   </div>

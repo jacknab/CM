@@ -4,6 +4,7 @@ import { db } from "../db";
 import { appointments } from "@shared/schema";
 import { storage } from "../storage";
 import type { BusinessDay, BusinessDayWithActions } from "@shared/schema";
+import { allocateTenders } from "./tenderAllocation";
 
 /**
  * Returns the salon-local calendar date (YYYY-MM-DD) for "now", using the
@@ -100,22 +101,13 @@ export async function computeBusinessDayTotals(day: BusinessDayWithActions, time
   let cardSales = 0;
   let tips = 0;
 
+  const tendersById = allocateTenders(completed.map((a) => ({ ...a, date: a.completedAt ?? a.date })));
   for (const apt of completed) {
     const paid = Number(apt.totalPaid) || 0;
-    const tip = Number(apt.tipAmount) || 0;
-    tips += tip;
-
-    if (apt.paymentMethod) {
-      const parts = apt.paymentMethod.split(",");
-      for (const part of parts) {
-        const [method, amtStr] = part.split(":");
-        const amt = Number(amtStr) || paid;
-        const key = method.trim().toLowerCase();
-        if (key === "cash") cashSales += amt;
-        else cardSales += amt;
-      }
-    } else {
-      cardSales += paid;
+    tips += Number(apt.tipAmount) || 0;
+    for (const [method, amt] of Object.entries(tendersById.get(apt.id) ?? { card: paid })) {
+      if (method === "cash") cashSales += amt;
+      else cardSales += amt;
     }
   }
 

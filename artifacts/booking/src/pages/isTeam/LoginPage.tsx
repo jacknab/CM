@@ -8,7 +8,7 @@ export default function TeamLoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  if (agent) return <Navigate to="/isTeam/accounts" replace />;
+  if (agent) return <Navigate to="/isTeam/home" replace />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -21,7 +21,7 @@ define('PAGE_SCHEMA', json_encode([
   [
     '@type'      => 'FAQPage',
     'mainEntity' => [
-      ['@type'=>'Question','name'=>'Is Certxa cheaper than GlossGenius?','acceptedAnswer'=>['@type'=>'Answer','text'=>'For most nail salons, yes. Certxa\'s plans run $9–$49/month ($7–$39/month billed annually). GlossGenius\'s three plans are $24–$168/month ($28–$168/month billed monthly, $24–$148/month billed annually). GlossGenius\'s Gold plan drops its platform fee to 0% on card processing, but the subscription itself still costs more than any Certxa plan.']],
+      ['@type'=>'Question','name'=>'Is Certxa cheaper than GlossGenius?','acceptedAnswer'=>['@type'=>'Answer','text'=>'For most nail salons, yes. Certxa\'s Solo plan is free and its team plans run $22–$49/month ($18–$39/month billed annually). GlossGenius\'s three plans are $24–$168/month ($28–$168/month billed monthly, $24–$148/month billed annually). GlossGenius\'s Gold plan drops its platform fee to 0% on card processing, but the subscription itself still costs more than any Certxa plan.']],
       ['@type'=>'Question','name'=>'Does GlossGenius have an AI receptionist like Certxa\'s Autumn?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa\'s Autumn AI receptionist is available today as a usage-based add-on. GlossGenius has announced "Reception by GlossGenius," an AI phone-answering feature, but as of this writing it is listed as Coming Soon and is not yet available to salons.']],
       ['@type'=>'Question','name'=>'Can I migrate from GlossGenius to Certxa?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. Certxa offers free data migration from GlossGenius — your client list, appointment history, and service menu are imported for you, typically in under an hour.']],
       ['@type'=>'Question','name'=>'Does Certxa have a self-service check-in kiosk?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. Certxa includes a self-service walk-in check-in kiosk on every plan — clients check themselves in on a tablet, choose a service and technician preference, and are added to your live waitlist automatically.']],
@@ -78,7 +78,7 @@ require 'includes/nav.php';
       <a href="/pricing" class="btn-outline-white btn-lg">See Certxa Pricing</a>
     </div>
     <div class="vs-hero-stats">
-      <div class="vs-hero-stat"><div class="num">$9</div><div class="lbl">Certxa starting price/mo</div></div>
+      <div class="vs-hero-stat"><div class="num">$0</div><div class="lbl">Certxa Solo plan</div></div>
       <div class="vs-hero-stat"><div class="num">$24</div><div class="lbl">GlossGenius starting price/mo</div></div>
       <div class="vs-hero-stat"><div class="num"><?= TRIAL_DAYS ?>d</div><div class="lbl">Certxa free trial</div></div>
     </div>
@@ -97,13 +97,13 @@ require 'includes/nav.php';
         <thead>
           <tr>
             <th style="width:34%;"></th>
-            <th><div class="plan-header featured-col">Certxa</div><div class="plan-header-price" style="color:var(--plum-mid);">$9 – $49/mo ⭐</div></th>
+            <th><div class="plan-header featured-col">Certxa</div><div class="plan-header-price" style="color:var(--plum-mid);">Free – $49/mo ⭐</div></th>
             <th><div class="plan-header">GlossGenius</div><div class="plan-header-price">$24 – $148/mo</div></th>
           </tr>
         </thead>
         <tbody>
           <tr class="section-row"><td colspan="3">Plans</td></tr>
-          <tr><td>Entry plan</td><td class="featured-col ct-text">Solo — $9/mo ($7 annual)</td><td class="ct-text">Standard — $28/mo ($24 annual)</td></tr>
+          <tr><td>Entry plan</td><td class="featured-col ct-text">Solo — free</td><td class="ct-text">Standard — $28/mo ($24 annual)</td></tr>
           <tr><td>Mid plan</td><td class="featured-col ct-text">Professional — $22/mo ($18 annual)</td><td class="ct-text">Gold — $56/mo ($48 annual)</td></tr>
           <tr><td>Top plan</td><td class="featured-col ct-text">Elite — $49/mo ($39 annual)</td><td class="ct-text">Platinum — $168/mo ($148 annual)</td></tr>
           <tr><td>Staff / calendars on mid plan</td><td class="featured-col ct-check">Unlimited</td><td class="ct-text">Not publicly specified</td></tr>
@@ -161,7 +161,7 @@ require 'includes/nav.php';
     <div class="accordion">
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Is Certxa cheaper than GlossGenius? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">For most nail salons, yes. Certxa's plans run $9–$49/month ($7–$39/month billed annually). GlossGenius's three plans are $24–$168/month billed monthly ($24–$148/month billed annually). GlossGenius's Gold plan drops its platform fee to 0% on card processing, but the subscription itself still costs more than any Certxa plan.</div>
+        <div class="accordion-body">For most nail salons, yes. Certxa's Solo plan is free and its team plans run $22–$49/month ($18–$39/month billed annually). GlossGenius's three plans are $24–$168/month billed monthly ($24–$148/month billed annually). GlossGenius's Gold plan drops its platform fee to 0% on card processing, but the subscription itself still costs more than any Certxa plan.</div>
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Does GlossGenius have an AI receptionist like Certxa's Autumn? <span class="accordion-icon">+</span></button></h3>
