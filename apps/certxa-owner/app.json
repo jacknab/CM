@@ -2,7 +2,7 @@
   "expo": {
     "name": "Certxa",
     "slug": "ucertxa",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "default",
     "sdkVersion": "54.0.0",
     "userInterfaceStyle": "dark",
@@ -93,8 +93,9 @@
     },
     "owner": "tobybens-team",
     "updates": {
-      "enabled": false,
-      "checkAutomatically": "NEVER",
+      "url": "https://u.expo.dev/01e6b026-b16a-488d-a32e-0046018b5437",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
     },
     "ios": {
@@ -105,6 +106,9 @@
         "NSBluetoothAlwaysUsageDescription": "Certxa uses Bluetooth to connect to card readers and receipt printers.",
         "ITSAppUsesNonExemptEncryption": false
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     }
   }
 }
