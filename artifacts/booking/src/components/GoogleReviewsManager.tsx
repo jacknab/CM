@@ -209,10 +209,11 @@ export function GoogleReviewsManager({ storeId: propStoreId }: GoogleReviewsMana
     }
   };
 
-  const loadReviews = async () => {
+  // `quiet`: a background refresh — no loading state, so the list doesn't flicker.
+  const loadReviews = async (quiet = false) => {
     if (!storeId) return;
     try {
-      setLoading(true);
+      if (!quiet) setLoading(true);
       const p: Record<string, any> = { limit: 50 };
       if (filterRating) p.rating = filterRating;
       if (filterStatus) p.status = filterStatus;
@@ -224,6 +225,17 @@ export function GoogleReviewsManager({ storeId: propStoreId }: GoogleReviewsMana
       setLoading(false);
     }
   };
+
+  // A reply goes out a minute or two after a review is first seen (and that can be the very sync this page
+  // triggers on opening), so a page left open kept saying "No Response" for a review that had been answered.
+  // Refresh the list and the counts every minute while the page is in view.
+  const refreshQuietly = useRef<() => void>(() => {});
+  refreshQuietly.current = () => { void loadReviews(true); void loadStats(); };
+  useEffect(() => {
+    if (!storeId) return;
+    const timer = setInterval(() => { if (document.visibilityState === "visible") refreshQuietly.current(); }, 60_000);
+    return () => clearInterval(timer);
+  }, [storeId]);
 
   const loadStats = async () => {
     if (!storeId) return;
