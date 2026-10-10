@@ -1,7 +1,7 @@
 <?php
 define('BRAND_NAME',     'Certxa');
 define('PAGE_TITLE',     'AI Receptionist for Salons | Certxa');
-define('PAGE_DESC',      'Autumn answers every salon call in under 2 seconds, books appointments directly into your Certxa calendar, upsells add-ons, and handles rescheduling — 24/7. Available on every Certxa plan. Pay only for what you use.');
+define('PAGE_DESC',      'Autumn answers every salon call in under 2 seconds, books appointments directly into your Certxa calendar, tells callers how busy the salon is right now and how long the wait is, upsells add-ons, and handles rescheduling — 24/7. Available on every Certxa plan. Pay only for what you use.');
 define('PAGE_KEYWORDS',  'salon AI receptionist, AI phone answering for salons, automated salon booking, salon virtual receptionist, AI call answering salon, salon phone automation, Autumn AI receptionist, Certxa AI receptionist');
 define('PAGE_CANONICAL', 'https://certxa.com/autumn');
 define('PAGE_BREADCRUMBS', json_encode([
@@ -22,7 +22,10 @@ define('PAGE_SCHEMA', json_encode([
     'mainEntity' => [
       ['@type'=>'Question','name'=>'Do I need a separate subscription for Autumn?','acceptedAnswer'=>['@type'=>'Answer','text'=>'No. Autumn is available on all Certxa plans — Solo, Professional, and Elite. You simply load credit to your account and enable her. There\'s no additional monthly fee.']],
       ['@type'=>'Question','name'=>'How does the credit balance work?','acceptedAnswer'=>['@type'=>'Answer','text'=>'You top up your Autumn credit balance from inside your Certxa dashboard. Autumn draws from that balance for each minute of active call time. You can set a low-balance auto top-up so she never goes offline mid-day.']],
-      ['@type'=>'Question','name'=>'Does Autumn need training before she can take calls?','acceptedAnswer'=>['@type'=>'Answer','text'=>'No. From the moment you enable her, Autumn already knows your services, staff members, schedule, business hours, and pricing — pulled directly from your Certxa account. Setup takes minutes.']],
+      ['@type'=>'Question','name'=>'Does Autumn know how busy my salon is?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. While your salon is open, Autumn sees who is clocked in, who is free, who is with a client and how many people are waiting, and uses that to tell a caller whether there is a wait and roughly how long. She never makes up a wait time.']],
+    ['@type'=>'Question','name'=>'Can a caller ask whether a specific technician is available?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. Autumn can say whether that technician is working today, whether they are free or with a client right now, and roughly when they will be free.']],
+    ['@type'=>'Question','name'=>'What does Autumn do when the salon is closed?','acceptedAnswer'=>['@type'=>'Answer','text'=>'She tells the caller the salon is closed and acts as an after-hours answering service: booking, rescheduling, cancelling and answering questions. She does not give live wait times after hours.']],
+    ['@type'=>'Question','name'=>'Does Autumn need training before she can take calls?','acceptedAnswer'=>['@type'=>'Answer','text'=>'No. From the moment you enable her, Autumn already knows your services, staff members, schedule, business hours, and pricing — pulled directly from your Certxa account. Setup takes minutes.']],
       ['@type'=>'Question','name'=>'What happens if my credit balance runs out?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Autumn will stop taking new calls until the balance is topped up. We\'ll notify you well in advance and the optional auto top-up feature means you\'ll rarely run dry.']],
       ['@type'=>'Question','name'=>'Can callers tell they\'re speaking to an AI?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Autumn is designed to sound warm, natural, and professional. Many callers don\'t realise she isn\'t your front-desk team. If a caller specifically asks whether they\'re speaking to an AI, Autumn will answer honestly.']],
       ['@type'=>'Question','name'=>'Does Autumn work for multi-location businesses?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. Autumn can be enabled independently per location, each with its own credit balance and configuration — ideal for salon groups and franchise owners.']],
@@ -493,6 +496,7 @@ require __DIR__ . '/../includes/nav.php';
 .au2-feat-body  { font-size: .875rem; color: #6b7280; line-height: 1.65; }
 
 /* ── Calendar intelligence ──────────────────────────────────── */
+@media (min-width: 1000px) { .au2-live-grid { grid-template-columns: repeat(3, 1fr) !important; } }
 .au2-cal-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -865,7 +869,7 @@ require __DIR__ . '/../includes/nav.php';
 
       <div class="fade-in" style="transition-delay:.2s">
         <p class="au2-hero-sub">
-          Autumn answers every call instantly, books appointments directly into your calendar, handles rescheduling, answers client questions, and upsells add-ons — all without you lifting a finger.
+          Autumn answers every call instantly, books appointments directly into your calendar, handles rescheduling, answers client questions, and upsells add-ons. While you're open she sees your salon as it is right now, so she can tell a caller whether there's a wait — all without you lifting a finger.
         </p>
       </div>
 
@@ -1065,6 +1069,8 @@ require __DIR__ . '/../includes/nav.php';
         <ul class="au2-check-list">
           <?php foreach ([
             ['📅', 'Books, reschedules, and cancels appointments in real time'],
+            ['⏰', 'Knows how busy the salon is right now and gives callers a real wait time'],
+            ['👤', 'Tells callers whether a technician is working today, and whether they are free or with a client'],
             ['💬', 'Answers questions about services, prices, and availability'],
             ['📈', 'Upsells add-ons and premium services on every call'],
             ['👤', 'Recognises returning clients and personalises the experience'],
@@ -1102,7 +1108,10 @@ require __DIR__ . '/../includes/nav.php';
         ['📅','Real-time booking',               'She sees live availability across all staff and books — or reschedules — directly into your Certxa calendar.'],
         ['📈','Built-in upselling',              'Autumn naturally suggests add-ons and upgrades on every call, increasing your average ticket without any training.'],
         ['👤','Client recognition',              'Returning clients are greeted by name. Autumn knows their history and can pull up their last appointment.'],
-        ['🛡️','Policy enforcement',             'Autumn applies your cancellation policy and handles late-notice requests gracefully — no awkward conversations for your team.'],
+        ['🛡️','Follows your rules', 'Walk-ins only, appointments only, no same-day bookings, a walk-in cutoff — Autumn only offers what your salon actually accepts.'],
+        ['⏰','Live salon awareness', 'While you\'re open, Autumn sees who is clocked in, who is free, who is with a client and how many people are waiting — and tells callers the real wait.'],
+        ['📞','After-hours answering service', 'When the salon is closed Autumn says so, then keeps booking, rescheduling and answering questions. She never pretends someone is in the building.'],
+        ['💬','Only real answers', 'Hours, prices, services and wait times come straight from your Certxa account. If Autumn doesn\'t have a fact, she says so instead of guessing.'],
         ['🛡️','Protection layer',               'Spam filter included — robocalls, telemarketers, and obvious loops are ended in the first few seconds.'],
         ['🔊','Natural conversation',            'Autumn sounds warm, professional, and human. Callers routinely can\'t tell she isn\'t your front-desk team.'],
         ['🔄','Always up to date',               'Change your services, hours, or staff? Autumn syncs automatically — no retraining required.'],
@@ -1120,6 +1129,42 @@ require __DIR__ . '/../includes/nav.php';
   </div>
 </section>
 
+<!-- ══ 4a. LIVE SALON AWARENESS ═══════════════════════════════ -->
+<section class="au2-section au2-section-white">
+  <div class="au2-container-md">
+    <div class="fade-in" style="text-align:center;margin-bottom:64px;">
+      <div class="au2-section-label">⏰ Live Salon Awareness</div>
+      <h2 class="au2-section-title" style="max-width:680px;margin:0 auto 16px;">
+        Autumn knows what's happening in your salon<br>
+        <em>right now.</em>
+      </h2>
+      <p class="au2-section-sub" style="max-width:640px;margin:0 auto;">
+        A caller asks "Can I come in now?" A receptionist standing at the front desk would look around before answering. Autumn does the same: while you're open she sees your salon's live board, the same one your team works from, and answers from what is actually going on.
+      </p>
+    </div>
+
+    <div class="au2-cal-grid au2-live-grid">
+      <?php
+      $live = [
+        ['⏰','A real wait time',         '"There\'s no wait right now" or "It\'s about twenty minutes" — worked out from who is in a chair, who is waiting and who is free. If she can\'t tell, she says so.'],
+        ['👤','Who is working today',     'Autumn knows which technicians are clocked in. She won\'t send a caller in for someone who isn\'t there.'],
+        ['📅','Free, busy or on a break', 'For each technician she can see whether they\'re free, with a client or on a break, and roughly when they\'ll be free next.'],
+        ['📊','How busy the salon is',    'Clients in service and clients waiting are counted live, so "we\'re quiet, come on in" and "we\'re busy this afternoon" are both true when she says them.'],
+        ['🛡️','Your walk-in rules',      'If you\'ve stopped taking walk-ins, or it\'s past your walk-in cutoff, Autumn doesn\'t invite anyone in. She offers an appointment instead.'],
+        ['📞','Open hours only',          'Live answers are given while the salon is open. After closing, Autumn tells callers the salon is closed and helps them book for another time.'],
+      ];
+      foreach ($live as $i => [$ico,$title,$body]):
+      ?>
+      <div class="au2-cal-card fade-in" style="transition-delay:<?= $i * 0.07 ?>s">
+        <div class="au2-cal-icon"><?= $ico ?></div>
+        <div style="font-weight:700;font-size:.95rem;color:#1c1917;margin-bottom:8px;"><?= $title ?></div>
+        <div style="font-size:.85rem;color:#6b7280;line-height:1.65;"><?= $body ?></div>
+      </div>
+      <?php endforeach; ?>
+    </div>
+  </div>
+</section>
+
 <!-- ══ 4b. CALENDAR INTELLIGENCE ══════════════════════════════ -->
 <section class="au2-section au2-section-cream">
   <div class="au2-container-md">
@@ -1130,18 +1175,18 @@ require __DIR__ . '/../includes/nav.php';
         <em>Not just answered — optimised.</em>
       </h2>
       <p class="au2-section-sub" style="max-width:600px;margin:0 auto;">
-        Every gap in your day is lost revenue. Autumn doesn't just take bookings — she actively works your schedule to maximise utilisation and client value.
+        Every gap in your day is lost revenue. Autumn doesn't just take bookings — she works from your real schedule to fill open time and add value to every call.
       </p>
     </div>
 
     <div class="au2-cal-grid">
       <?php
       $cal = [
-        ['⏰','Fills dead time automatically',   'Autumn spots open slots and works to fill them — reaching out, suggesting alternatives, and keeping the waitlist moving.'],
-        ['🔄','Increases repeat bookings',        'She nudges lapsed clients, reminds regulars it\'s time to rebook, and turns one-time visitors into loyal regulars.'],
+        ['⏰','Fills today\'s open time', 'When a caller wants to come in today, Autumn finds the best open windows from your technicians\' real workload and offers those first.'],
+        ['🔄','Makes rebooking easy', 'Returning callers are recognised by their number and offered the service they had last time, so rebooking takes seconds.'],
         ['📈','Pushes upsells intelligently',     'Based on service history and slot duration, Autumn suggests the right add-ons at exactly the right moment.'],
-        ['⭐','Prioritises high-value clients',   'VIP clients and high-ticket services get preference when slots are tight — Autumn knows who matters most.'],
-        ['📊','Smooths calendar utilisation',     'No more back-to-back chaos or dead afternoons. Autumn distributes bookings to match your team\'s rhythm.'],
+        ['⭐','Knows your VIPs', 'Clients you mark as VIP are recognised when they call and greeted with extra care.'],
+        ['📊','Never double-books', 'Every booking is checked against each technician\'s real schedule before Autumn confirms it.'],
       ];
       foreach ($cal as $i => [$ico,$title,$body]):
       ?>
@@ -1242,6 +1287,12 @@ require __DIR__ . '/../includes/nav.php';
        'No. Autumn is available on all Certxa plans — Solo, Professional, and Elite. You simply load credit to your account and enable her. There\'s no additional monthly fee.'],
       ['How does the credit balance work?',
        'You top up your Autumn credit balance from inside your Certxa dashboard. Autumn draws from that balance for each minute of active call time. You can set a low-balance auto top-up so she never goes offline mid-day.'],
+      ['Does Autumn know how busy my salon is?',
+       'Yes. While your salon is open, Autumn sees who is clocked in, who is free, who is with a client and how many people are waiting. She uses that to tell a caller whether there is a wait and roughly how long. She never makes up a wait time: if there isn\'t enough information, she says so.'],
+      ['Can a caller ask whether a specific technician is available?',
+       'Yes. Autumn can say whether that technician is working today, whether they are free or with a client right now, and roughly when they will be free.'],
+      ['What does Autumn do when the salon is closed?',
+       'She tells the caller the salon is closed and acts as your after-hours answering service: booking, rescheduling, cancelling and answering questions. She does not give live wait times after hours, and she never implies anyone is at the salon.'],
       ['Does Autumn need training before she can take calls?',
        'No. From the moment you enable her, Autumn already knows your services, staff members, schedule, business hours, and pricing — pulled directly from your Certxa account. Setup takes minutes.'],
       ['What happens if my credit balance runs out?',
