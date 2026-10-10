@@ -326,21 +326,36 @@ export default function PortalScreen() {
     activateKeepAwakeAsync().catch(() => {});
     return () => { deactivateKeepAwake(); };
   }, []);
+  // Waking used to put back a brightness NUMBER read just before dimming. On Android that number is the
+  // tablet's brightness slider, which on a tablet using automatic brightness is often far lower than what
+  // the screen was really showing — so after the first sleep the app stayed dim for good, while anything
+  // in its own window (the exit PIN, a dialog) was bright, because the dimming applies to this window only.
+  // Waking now hands the window back to the tablet's own brightness instead of pinning it to a number.
+  const asleepNow = useRef(false);
+  const restoreBrightness = useCallback(async () => {
+    try {
+      if (Platform.OS === 'android') await Brightness.restoreSystemBrightnessAsync();
+      else if (savedBrightness.current !== null) await Brightness.setBrightnessAsync(savedBrightness.current);
+    } catch {}
+    savedBrightness.current = null;
+  }, []);
   useEffect(() => {
-    if (asleep) {
-      // Read the current level BEFORE dimming (not concurrently) so a slow read can never
-      // race the write and capture 0 as the "original" brightness to restore later.
-      (async () => {
-        try {
-          savedBrightness.current = await Brightness.getBrightnessAsync();
-          await Brightness.setBrightnessAsync(0);
-        } catch {}
-      })();
-    } else if (savedBrightness.current !== null) {
-      Brightness.setBrightnessAsync(savedBrightness.current).catch(() => {});
-      savedBrightness.current = null;
-    }
-  }, [asleep]);
+    asleepNow.current = asleep;
+    if (!asleep) { void restoreBrightness(); return; }
+    (async () => {
+      try {
+        // Read the current level BEFORE dimming (not concurrently) so a slow read can never
+        // race the write and capture 0 as the "original" brightness to restore later.
+        const current = await Brightness.getBrightnessAsync();
+        // Woken by a tap while that read was in flight: don't dim a screen someone is using.
+        if (!asleepNow.current) return;
+        savedBrightness.current = current;
+        await Brightness.setBrightnessAsync(0);
+        // ...or woken while the dim was being applied: undo it.
+        if (!asleepNow.current) await restoreBrightness();
+      } catch {}
+    })();
+  }, [asleep, restoreBrightness]);
 
   // Card reader: at every launch, have Bluetooth + Location on (kiosk-managed tablets only).
   useEffect(() => { prepareCardReader(); }, []);
