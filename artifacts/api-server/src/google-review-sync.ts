@@ -890,10 +890,15 @@ export async function syncReviewsForStore(storeId: number): Promise<SyncResult> 
  * Discovers active stores from both the new schema and legacy table.
  * Errors on individual stores are caught and logged — they never stop other stores.
  */
+/** When each store's reviews were last matched to services (per process; a restart simply matches once more). */
+const lastServiceMatchAt = new Map<number, number>();
+
 export function startGoogleReviewSyncScheduler(): void {
-  const INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+  // New reviews are looked for every half hour, so a reply goes out the same day the review is written.
+  // (It used to be once every 24 hours — and in practice far less often: see the throttle below.)
+  const INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
   const INITIAL_DELAY_MS = 5 * 60 * 1000; // 5 minutes after boot (avoids quota on restarts)
-  const THROTTLE_MS = 24 * 60 * 60 * 1000; // skip stores synced within the last 24 hours
+  const THROTTLE_MS = 25 * 60 * 1000; // skip stores whose REVIEWS were synced in the last 25 minutes
 
   const syncAll = async () => {
     // Skip the sweep if we're in a quota cooldown window
@@ -947,7 +952,10 @@ export function startGoogleReviewSyncScheduler(): void {
 
     for (const storeId of allStoreIds) {
       try {
-        // Skip stores that have already been synced within the last 24 hours
+        // Skip stores whose reviews were synced a moment ago (a restart, or a manual sync from the page).
+        // Only REVIEW syncs count. This table is shared with the services, listing, post and photo jobs, which
+        // log a "success" every few minutes; counting those meant the review sync was skipped almost every
+        // time (6 review syncs in 21 days for one salon), so new reviews sat unseen for days.
         const cutoff = new Date(Date.now() - THROTTLE_MS);
         const recentSync = await db
           .select({ syncedAt: googleBusinessSyncLogs.syncedAt })
@@ -956,6 +964,7 @@ export function startGoogleReviewSyncScheduler(): void {
             and(
               eq(googleBusinessSyncLogs.storeId, storeId),
               eq(googleBusinessSyncLogs.status, "success"),
+              eq(googleBusinessSyncLogs.syncType, "reviews"),
               gte(googleBusinessSyncLogs.syncedAt, cutoff),
             ),
           )
@@ -964,7 +973,14 @@ export function startGoogleReviewSyncScheduler(): void {
 
         if (recentSync.length) {
           const age = Math.round((Date.now() - recentSync[0].syncedAt!.getTime()) / 60_000);
-          console.log(`[ReviewSync] Scheduler — storeId=${storeId} skipped (synced ${age}min ago, within 24h window)`);
+          console.log(`[ReviewSync] Scheduler — storeId=${storeId} skipped (reviews synced ${age}min ago)`);
+          // Reviews already stored but not yet queued for a reply are still picked up.
+          try {
+            const { processNewReviewsForStore } = await import("./services/google-review-engine");
+            await processNewReviewsForStore(storeId);
+          } catch (engErr: any) {
+            console.warn(`[ReviewSync] ReviewEngine processNewReviews failed for storeId=${storeId}:`, engErr?.message ?? engErr);
+          }
           continue;
         }
 
@@ -988,8 +1004,13 @@ export function startGoogleReviewSyncScheduler(): void {
           console.warn(`[ReviewSync] ReviewEngine processNewReviews failed for storeId=${storeId}:`, engErr?.message ?? engErr);
         }
 
-        // Phase 3: run AI service-review matching so website template cards stay fresh
-        try {
+        // Phase 3: run AI service-review matching so website template cards stay fresh — when this sync
+        // brought a new review, and otherwise once a day as before (the sync itself now runs every half hour).
+        // (`updated` counts every review already stored, so it cannot be the test: a new review, or a day
+        // since the last match, is.)
+        const matchedAt = lastServiceMatchAt.get(storeId) ?? 0;
+        if (result.inserted > 0 || Date.now() - matchedAt > 24 * 60 * 60 * 1000) try {
+          lastServiceMatchAt.set(storeId, Date.now());
           const { matchServiceReviewsForStore } = await import("./lib/serviceReviewMatcher");
           const matchResult = await matchServiceReviewsForStore(storeId);
           console.log(
