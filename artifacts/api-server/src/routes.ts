@@ -18378,11 +18378,15 @@ or
         autoAssign: z.boolean().optional(),
         notes: z.string().max(500).nullable().optional(),
         checkinId: z.number().int().nullable().optional(),
+        // Further services of the same visit: each becomes its own ticket, saved with this one.
+        extraServiceIds: z.array(z.number().int()).max(8).optional(),
       }).safeParse(req.body);
       if (!body.success) return res.status(400).json({ message: "Invalid ticket" });
       const userId = (req.session as any)?.userId;
-      const result = await nailTickets.createNailTicket(nailDeps, {
-        ...body.data,
+      const { extraServiceIds = [], ...ticket } = body.data;
+      const result = await nailTickets.createNailTicketGroup(nailDeps, {
+        ...ticket,
+        extraServiceIds,
         storeId,
         idempotencyKey: typeof req.get("x-idempotency-key") === "string" ? String(req.get("x-idempotency-key")).trim() : null,
         // /nail never starts a ticket on its own; the barbershop screen still does.

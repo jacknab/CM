@@ -138,11 +138,13 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const techRef = useRef(tech);
   techRef.current = tech;
   // "Ticket #12 assigned to Mia" — shown for five seconds after a saved ticket goes to a free technician.
-  const [startedNotice, setStartedNotice] = useState<{ ticketNumber: number; staffName: string } | null>(null);
+  const [startedNotice, setStartedNotice] = useState<Array<{ ticketNumber: number; serviceName: string; staffName: string | null }> | null>(null);
   const [assignedNotice, setAssignedNotice] = useState<{ clientName: string | null; ticketNumber: number | null; staffName: string } | null>(null);
   const [client, setClient] = useState<ClientSummary | null>(null);
   const [checkinId, setCheckinId] = useState<number | null>(null);
   const [service, setService] = useState<CatalogService | null>(null);
+  // Further services on the same ticket. Add-ons and nail options belong to the first service.
+  const [extraServices, setExtraServices] = useState<CatalogService[]>([]);
   const [addonIds, setAddonIds] = useState<number[]>([]);
   const [pick, setPick] = useState<NailPick>(EMPTY_PICK);
   const [customs, setCustoms] = useState<DraftCustomLine[]>([]);
@@ -392,6 +394,22 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     () => draftTotals(service, addonIds, activeAddons, nailCfg, pick, customs),
     [service, addonIds, activeAddons, nailCfg, pick, customs],
   );
+  // The ticket as shown: the first service with its add-ons and options, then each further service.
+  const draft = useMemo(() => {
+    const several = extraServices.length > 0;
+    const extraLines: TicketLine[] = extraServices.map((s) => ({
+      key: `service-${s.id}`, kind: "service", label: s.name, duration: Number(s.duration) || 0, price: Number(s.price) || 0,
+      serviceId: s.id, removable: true,
+    }));
+    const firstLines = totals.lines.map((l) => (l.kind === "service" ? { ...l, serviceId: service?.id, removable: several } : l));
+    return {
+      lines: [...firstLines, ...extraLines],
+      price: totals.price + extraLines.reduce((sum, l) => sum + l.price, 0),
+      duration: totals.duration + extraLines.reduce((sum, l) => sum + l.duration, 0),
+      firstPrice: totals.price,
+      firstDuration: totals.duration,
+    };
+  }, [totals, extraServices, service]);
   // A picked nail option (size/shape/art/effect) can vanish from the catalog mid-build if an admin
   // disables it on another register — draftTotals then silently drops its price/duration. Warn once
   // per occurrence rather than let the charge quietly come up short with no signal to staff.
@@ -406,7 +424,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   // ── ticket building ───────────────────────────────────────────────────────
   const resetDraft = useCallback(() => {
-    setClient(null); setCheckinId(null); setService(null); setAddonIds([]); setPick(EMPTY_PICK); setCustoms([]);
+    setClient(null); setCheckinId(null); setService(null); setExtraServices([]); setAddonIds([]); setPick(EMPTY_PICK); setCustoms([]);
     setEditing(null); pickSeededFor.current = null; setMoreAddons(false);
   }, []);
 
@@ -447,6 +465,12 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   const chooseService = (svc: CatalogService) => {
     if (service?.id === svc.id) return;
+    // A new ticket that already has a service gains another one; a saved ticket being edited holds one
+    // service, so picking there still swaps it.
+    if (service && editing === null) {
+      setExtraServices((cur) => (cur.some((s) => s.id === svc.id) ? cur : [...cur, svc]));
+      return;
+    }
     setService(svc);
     pickSeededFor.current = null;
     if (editing === null) setPick(EMPTY_PICK);
@@ -462,6 +486,14 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     }]);
   };
   const removeLine = (line: TicketLine) => {
+    if (line.kind === "service" && line.serviceId != null) {
+      if (extraServices.some((s) => s.id === line.serviceId)) { setExtraServices((cur) => cur.filter((s) => s.id !== line.serviceId)); return; }
+      // Taking off the first service: the next one takes its place, with its own add-ons and nail options to choose.
+      const [next, ...rest] = extraServices;
+      if (!next) return;
+      setService(next); setExtraServices(rest); setAddonIds([]); setPick(EMPTY_PICK); pickSeededFor.current = null;
+      return;
+    }
     if (line.customId != null) setCustoms((cur) => cur.filter((c) => c.id !== line.customId));
     else if (line.addonId != null) toggleAddon(line.addonId);
     else if (line.group) setPick((p) => ({ ...p, [line.group!]: null }));
@@ -511,7 +543,9 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       // A client the front desk check-in already handed to a technician stays with that technician;
       // everyone else goes to the next technician in turn, as before.
       return createTicket({ clientId: client!.id, serviceId: service!.id, addonIds, pick, customLines,
-        staffId: checkinStaffId, autoAssign: checkinStaffId == null, checkinId }, {
+        staffId: checkinStaffId, autoAssign: checkinStaffId == null, checkinId,
+        ...(extraServices.length > 0 && { extraServiceIds: extraServices.map((s) => s.id) }) }, {
+        extras: extraServices.map((s) => ({ id: s.id, name: s.name, price: Number(s.price) || 0, duration: Number(s.duration) || 0 })),
         storeId,
         client: { name: client!.name, phone: client!.phone },
         service: { name: service!.name, price: Number(service!.price) || 0, duration: Number(service!.duration) || 0 },
@@ -520,7 +554,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
         nailLines: nail.lines.map((l) => ({ label: l.label, price: l.price })),
         nailPriceAdjustment: nail.lines.reduce((sum, l) => sum + l.price, 0),
         staff: held ? { id: held.id, name: held.name, color: held.color ?? null } : null,
-        total: totals.price, duration: totals.duration,
+        total: draft.firstPrice, duration: draft.firstDuration,
       });
     },
     onSuccess: (r) => {
@@ -541,9 +575,12 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
         ? `Ticket #${r.ticketNumber} · ${r.staffName} · ${r.waiting ? `waiting, starts about ${new Date(r.startsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : r.status === "started" ? "in service" : "assigned"}`
         : `Ticket #${r.ticketNumber} is waiting · no technician free yet`);
       if (shouldPay) resetDraft();
-      // A free technician got it: say so for five seconds before the keypad returns.
-      else if (r.staffName && !r.waiting) { resetDraft(); setStartedNotice({ ticketNumber: r.ticketNumber, staffName: r.staffName }); }
-      else lock();
+      // Show who each service went to for five seconds before the keypad returns.
+      else {
+        const saved = r.tickets ?? [{ ticketNumber: r.ticketNumber, serviceName: service?.name ?? "Service", staffName: r.staffName }];
+        resetDraft();
+        setStartedNotice(saved.map((t) => ({ ticketNumber: t.ticketNumber, serviceName: t.serviceName, staffName: t.staffName })));
+      }
     },
     onError: (err: any) => {
       payAfterCreate.current = false;
@@ -1067,9 +1104,9 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
             <TicketPanel
               client={client}
               badge={editing ? `#${editing.ticketNumber ?? editing.id}` : "NEW"}
-              lines={totals.lines}
-              duration={totals.duration}
-              price={totals.price}
+              lines={draft.lines}
+              duration={draft.duration}
+              price={draft.price}
                submitLabel={editing ? "UPDATE TICKET" : !client ? "CHOOSE A CLIENT FIRST" : !service ? "ADD A SERVICE FIRST" : "SAVE TICKET"}
               canSubmit={canSubmit}
               busy={busy}
@@ -1077,7 +1114,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
               onRemove={removeLine}
               onClear={clearDraft}
               onSubmit={submit}
-              onPayNow={editing ? undefined : () => payNow()}
+              onPayNow={editing || !service ? undefined : () => payNow()}
             />
             <section className="work-area">
               <div className="sale-area">
@@ -1130,7 +1167,12 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
           frontdeskShowing={dualScreen}
           clientEnteringPhone={clientTyping}
           onClose={() => setShowCheckIn(false)}
-          onDone={(line) => { setShowCheckIn(false); say(line); invalidateBoard(); }}
+          onDone={(line, r) => {
+            setShowCheckIn(false); say(line); invalidateBoard();
+            // A walk-in has no ticket yet: go straight to the POS tab to build it. A booked client's
+            // appointment is already their ticket, so they are only marked as arrived.
+            if (r.status !== "appointment" && !r.todayAppointment && r.client?.id > 0) void pickClient(r.client.id, r.checkin?.id ?? null);
+          }}
           onPrintTicket={thermalPrinter.isConnected ? async (result) => {
             const appointment = result.todayAppointment;
             const qrValue = appointment ? `BK:${appointment.id}` : result.checkin ? `CI:${result.checkin.token}` : "";
@@ -1178,9 +1220,15 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       {startedNotice && (
         <div className="fixed inset-0 z-[290] flex items-center justify-center px-6" style={{ background: "rgba(10,12,16,.72)" }} role="status" aria-live="polite" data-testid="nail-started-notice">
           <div className="rounded-2xl px-10 py-9 text-center" style={{ background: "#232830", border: "1px solid #3b424c", boxShadow: "0 30px 70px rgba(0,0,0,.5)", maxWidth: 620 }}>
-            <p style={{ margin: 0, fontSize: 28, fontWeight: 700, lineHeight: 1.3, color: "#fff" }}>
-              Ticket #{startedNotice.ticketNumber} assigned to {startedNotice.staffName}
-            </p>
+            {startedNotice.map((t) => (
+              <p key={t.ticketNumber} style={{ margin: "6px 0", fontSize: startedNotice.length > 1 ? 22 : 28, fontWeight: 700, lineHeight: 1.3, color: "#fff" }} data-testid="nail-saved-line">
+                #{t.ticketNumber} · {t.serviceName}
+                <br />
+                <span style={{ fontWeight: 500, color: t.staffName ? "#7dd3fc" : "#cbd5e1" }}>
+                  {t.staffName ? `Assigned to ${t.staffName}` : "Waiting for the next free technician"}
+                </span>
+              </p>
+            ))}
           </div>
         </div>
       )}

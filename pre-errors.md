@@ -6,6 +6,18 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-10-12 — Support ticket closure emails are failing to send
+
+**Where:** server error log (`/root/.pm2/logs/certxa-api-error*.log`), lines `[AutoClose] Could not send closure email for ticket #TK-…: Invalid login: 454 4.7.0 Account is temporarily unavailable.`
+
+**Symptom:** when the support system auto-closes a ticket, the email telling the customer fails because the mail account's sign-in is refused by the provider ("account temporarily unavailable"). The ticket still closes; the customer is not told.
+
+**Context:** seen while checking logs after an unrelated /nail deploy. The same mailbox may be the one the support inbox reads from, so inbound support mail could be affected too — not checked.
+
+**Why not fixed:** it is a mail-account problem at the provider (credentials or a lock on the account), not code; needs the owner to check that mailbox's sign-in.
+
+---
+
 ## 2026-10-12 — Marketing site move: what is still open
 
 The new site (`artifacts/marketing`) now serves `/`, `/pricing`, `/features`, `/booking`, `/autumn`, `/about`, `/contact`, `/careers`, `/changelog`, `/roadmap`. Still to do, each needing the owner or more work:

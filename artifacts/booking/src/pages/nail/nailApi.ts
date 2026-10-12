@@ -1,7 +1,7 @@
 /** Typed calls for the nail-salon staff screen. Everything goes through the Certxa API. */
 import type { NailConfigView, NailPick } from "./ticketDraft";
 import { reportUnauthorized } from "@/lib/resumeSignIn";
-import { normalizeNailConfig, toNailBody } from "./ticketDraft";
+import { EMPTY_PICK, normalizeNailConfig, toNailBody } from "./ticketDraft";
 import type { Tender } from "@shared/nailCheckout";
 import { syncEngine } from "@/lib/sync-engine";
 import { nailOffline, nailOfflineStore, isLocalId, isNetworkFailure, newIdempotencyKey, type TicketRecord } from "@/lib/nail-offline";
@@ -16,6 +16,8 @@ export const boardKey = (storeId: number) => ["/api/nail/board", storeId] as con
 export interface BoardTicket {
   id: number;
   ticketNumber: number | null;
+  /** Set on tickets saved together as one visit of several services — the id of the first one. */
+  groupId?: number | null;
   status: "confirmed" | "started";
   date: string;
   checkedInAt: string | null;
@@ -126,6 +128,8 @@ export interface CreatedTicket {
   duration: number;
   price: number;
   waiting: boolean;
+  /** Every ticket of the visit when more than one service was saved, the first one included. */
+  tickets?: Array<{ appointmentId: number; ticketNumber: number; staffId: number | null; staffName: string | null; serviceId: number; serviceName: string; waiting: boolean }>;
 }
 
 export class ApiError extends Error {
@@ -318,6 +322,8 @@ export interface TicketOfflineContext {
   staff: TicketRecord["staff"];
   total: number;
   duration: number;
+  /** Further services of the same visit; each is saved as its own ticket. */
+  extras?: { id: number; name: string; price: number; duration: number }[];
 }
 
 /**
@@ -328,7 +334,7 @@ export interface TicketOfflineContext {
  * whichever way it travels, so a request that reached the server but whose reply was lost is not made twice.
  */
 export async function createTicket(
-  body: TicketBody & { clientId: number; staffId?: number | null; checkinId?: number | null; leaveUnassigned?: boolean; autoAssign?: boolean },
+  body: TicketBody & { clientId: number; staffId?: number | null; checkinId?: number | null; leaveUnassigned?: boolean; autoAssign?: boolean; extraServiceIds?: number[] },
   offline?: TicketOfflineContext,
 ): Promise<CreatedTicket & { offline?: boolean }> {
   const key = newIdempotencyKey("ticket.create");
@@ -348,6 +354,14 @@ export async function createTicket(
       nail: toNailBody(body.pick), nailLines: offline.nailLines, nailPriceAdjustment: offline.nailPriceAdjustment,
       customLines: body.customLines, staff, assignedOffline, total: offline.total, duration: offline.duration,
     }, key);
+    // Each further service of the visit is kept as a ticket of its own, waiting for a technician.
+    for (const extra of offline.extras ?? []) {
+      await nailOffline.createTicket({
+        storeId: offline.storeId, clientId: body.clientId, clientName: offline.client.name, phone: offline.client.phone, walkinId: null,
+        service: extra, addons: [], nail: toNailBody(EMPTY_PICK), nailLines: [], nailPriceAdjustment: 0,
+        customLines: [], staff: null, assignedOffline: false, total: extra.price, duration: extra.duration,
+      }, newIdempotencyKey("ticket.create"));
+    }
     return { appointmentId: rec.id, ticketNumber: 0, staffId: rec.staff?.id ?? null, staffName: rec.staff?.name ?? null, status: "confirmed",
       startsAt: rec.createdAt, duration: rec.duration, price: rec.total, waiting: true, offline: true };
   };

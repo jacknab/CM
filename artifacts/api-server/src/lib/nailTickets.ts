@@ -407,6 +407,12 @@ export interface CreateTicketInput {
   customLines?: CustomLine[] | null;
   /** A specific technician chosen by staff; omit to take whoever TURN says is next. */
   staffId?: number | null;
+  /** With autoAssign: take this technician if TURN lists them as eligible for the service, instead of
+   *  the first in line. Used for a ticket of several services, to keep them with one technician. */
+  preferStaffId?: number | null;
+  /** Put the ticket with this technician without consulting TURN and without treating it as a client
+   *  request: a further service of a visit whose first service TURN already gave to them. */
+  sameTechStaffId?: number | null;
   /** Save in Checked In without assigning TURN or starting service. */
   leaveUnassigned?: boolean;
   /** Give the ticket to whoever TURN says is next AND can perform the service right now.
@@ -436,6 +442,87 @@ export interface CreatedTicket {
   price: number;
   /** True when the technician is busy and the ticket is queued behind their current client. */
   waiting: boolean;
+}
+
+export interface CreatedTicketGroup extends CreatedTicket {
+  /** Every ticket of the visit, the first one included, in the order the services were added. */
+  tickets: Array<CreatedTicket & { serviceId: number; serviceName: string }>;
+}
+
+/**
+ * The first technician in TURN order for the first service who is also eligible for every other
+ * service — the one person who can take the whole visit. Null when nobody can.
+ */
+export function commonTechnician(eligibleByService: number[][]): number | null {
+  if (eligibleByService.length === 0) return null;
+  const [first, ...rest] = eligibleByService;
+  const sets = rest.map((ids) => new Set(ids));
+  return first.find((id) => sets.every((set) => set.has(id))) ?? null;
+}
+
+/**
+ * A visit of several services: one ticket per service, saved together.
+ *
+ * One technician takes all of them when TURN has someone eligible for every service; otherwise each
+ * service goes to the next technician in turn who can do it. Nothing is started here.
+ * Add-ons, nail options, custom lines and the check-in marker belong to the first service.
+ */
+export async function createNailTicketGroup(
+  deps: TicketDeps,
+  input: CreateTicketInput & { extraServiceIds: number[] },
+): Promise<TicketResult<CreatedTicketGroup>> {
+  const serviceIds = [input.serviceId, ...input.extraServiceIds];
+  return withTurnLock(input.storeId, async () => {
+    const names = new Map<number, string>();
+    for (const id of serviceIds) {
+      const svc = await storage.getService(id);
+      if (!svc || svc.storeId !== input.storeId) return { ok: false as const, status: 400, message: "One of the services is no longer in the catalog." };
+      names.set(id, svc.name);
+    }
+
+    // Staff picking a technician, or a check-in already handed to one, decides the first service as before.
+    const turnDecides = input.autoAssign === true && !input.staffId && !input.leaveUnassigned;
+    let common: number | null = null;
+    if (turnDecides && serviceIds.length > 1) {
+      const lists: number[][] = [];
+      let turnOn = true;
+      for (const id of serviceIds) {
+        const e: any = await deps.getTurnEligibility(input.storeId, id);
+        if (e.settings?.turnEnabled === false) turnOn = false;
+        lists.push(e.eligibleTechnicians.map((t: any) => Number(t.id)));
+      }
+      common = turnOn ? commonTechnician(lists) : null;
+    }
+
+    const first = await createNailTicket(deps, { ...input, preferStaffId: common });
+    if (!first.ok) return first;
+    const tickets: CreatedTicketGroup["tickets"] = [
+      { ...first.data, serviceId: input.serviceId, serviceName: names.get(input.serviceId)! },
+    ];
+    // The whole visit stays with the first service's technician when that was the plan (TURN found one
+    // person for everything) or when staff or the check-in chose them and they can do the service.
+    const keepWith = common != null && first.data.staffId === common ? common : input.staffId ? first.data.staffId : null;
+
+    for (const serviceId of input.extraServiceIds) {
+      const base: CreateTicketInput = {
+        storeId: input.storeId, clientId: input.clientId, serviceId, bookedByUserId: input.bookedByUserId ?? null,
+        startOnAssign: false, idempotencyKey: null,
+      };
+      let made = keepWith != null ? await createNailTicket(deps, { ...base, sameTechStaffId: keepWith }) : null;
+      if (!made || !made.ok) made = await createNailTicket(deps, { ...base, autoAssign: !input.leaveUnassigned, leaveUnassigned: input.leaveUnassigned });
+      if (!made.ok) {
+        // The first service is already saved; say what happened instead of leaving a half-made visit unexplained.
+        return { ok: false as const, status: made.status, message: `Ticket #${first.data.ticketNumber} was saved, but ${names.get(serviceId)} could not be added: ${made.message}` };
+      }
+      tickets.push({ ...made.data, serviceId, serviceName: names.get(serviceId)! });
+    }
+
+    if (tickets.length > 1) {
+      await pool.query(`UPDATE appointments SET ticket_group_id = $1 WHERE store_id = $2 AND id = ANY($3::int[])`,
+        [first.data.appointmentId, input.storeId, tickets.map((t) => t.appointmentId)]);
+    }
+    return { ok: true as const, data: { ...first.data, tickets } };
+  });
 }
 
 export async function createNailTicket(deps: TicketDeps, input: CreateTicketInput): Promise<TicketResult<CreatedTicket>> {
@@ -488,7 +575,8 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
   let staffId: number | null = null;
   let staffName: string | null = null;
   const requested = input.staffId ? Number(input.staffId) : null;
-  const autoAssign = input.autoAssign === true && !leaveUnassigned && !requested;
+  const sameTech = !requested && input.sameTechStaffId ? Number(input.sameTechStaffId) : null;
+  const autoAssign = input.autoAssign === true && !leaveUnassigned && !requested && !sameTech;
   if (leaveUnassigned) {
     // Intentionally do not consult or advance TURN. This is only a checked-in ticket.
   } else if (requested) {
@@ -499,11 +587,21 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
     if (!(await techCanDo(requested, service.id))) return fail(400, `${member.name} doesn't perform this service.`);
     staffId = member.id;
     staffName = member.name;
+  } else if (sameTech) {
+    const member = await storage.getStaffMember(sameTech);
+    if (!member || member.storeId !== storeId || !(await techCanDo(sameTech, service.id))) {
+      return fail(400, "That technician can't take this service.");
+    }
+    staffId = member.id;
+    staffName = member.name;
   } else {
     // eligibleTechnicians is already TURN order filtered to techs who are in, free and able to do
     // this service — the first one is the next in line who can take it.
     // With the turn system switched off nobody is picked automatically: the ticket waits for staff.
-    const next = (eligibility as any).settings?.turnEnabled === false ? undefined : eligibility.eligibleTechnicians[0];
+    const preferred = input.preferStaffId != null
+      ? eligibility.eligibleTechnicians.find((t: any) => Number(t.id) === Number(input.preferStaffId))
+      : undefined;
+    const next = (eligibility as any).settings?.turnEnabled === false ? undefined : (preferred ?? eligibility.eligibleTechnicians[0]);
     if (next) {
       staffId = Number(next.id);
       staffName = String(next.name);
@@ -910,7 +1008,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
   const shiftStart = closeRows[0]?.closed_at ?? null;
 
   const { rows } = await pool.query(
-    `SELECT a.id, a.ticket_number, a.status, a.date, a.duration, a.checked_in_at, a.started_at, a.staff_id,
+    `SELECT a.id, a.ticket_number, a.ticket_group_id, a.status, a.date, a.duration, a.checked_in_at, a.started_at, a.staff_id,
             a.customer_id, a.custom_lines, c.full_name AS client_name, COALESCE(c.loyalty_points, 0) AS loyalty_points,
             (SELECT COALESCE(p.display_phone, p.phone_number_e164) FROM client_phones p
                WHERE p.client_id = c.id ORDER BY p.is_primary DESC, p.id LIMIT 1) AS client_phone,
@@ -960,6 +1058,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
     return {
       id: r.id,
       ticketNumber: r.ticket_number ?? null,
+      groupId: r.ticket_group_id ?? null,
       status: r.status,
       date: new Date(r.date).toISOString(),
       checkedInAt: r.checked_in_at ? new Date(r.checked_in_at).toISOString() : null,

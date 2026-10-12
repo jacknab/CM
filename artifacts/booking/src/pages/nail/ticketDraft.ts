@@ -93,6 +93,10 @@ export interface TicketLine {
   addonId?: number;
   /** Set on keypad "Custom Amount" lines — their id in the draft. */
   customId?: number;
+  /** Set on service lines: the service's id, for removing it from a ticket of several services. */
+  serviceId?: number;
+  /** A service line that can be taken off (the ticket has more than one service). */
+  removable?: boolean;
   note?: string;
 }
 

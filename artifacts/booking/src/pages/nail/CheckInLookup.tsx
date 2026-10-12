@@ -61,7 +61,7 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
   clientEnteringPhone?: boolean;
   onClose: () => void;
   /** Checked in: the message for the notice bar. */
-  onDone: (message: string) => void;
+  onDone: (message: string, result: CheckInResult) => void;
   /** Browser-connected thermal printer; native bridge remains the fallback. */
   onPrintTicket?: (result: CheckInResult) => Promise<void>;
 }) {
@@ -166,7 +166,7 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
     const line = r.status === "already" ? `${first} is already checked in`
       : r.status === "appointment" ? `${first} checked in${r.todayAppointment?.staffName ? ` · ${r.todayAppointment.staffName}` : ""}`
       : `${first} checked in · waiting for a technician`;
-    setTimeout(() => onDone(line), 1400);
+    setTimeout(() => onDone(line, r), 1400);
   };
 
   const run = async (digits: string) => {

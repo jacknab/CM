@@ -130,7 +130,9 @@ export function CheckoutMode(p: Props) {
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardRecoveryKey]);
-  const [linkedIds, setLinkedIds] = useState<number[]>([]);
+  // Tickets saved together as one visit are paid together unless staff unlinks them.
+  const [linkedIds, setLinkedIds] = useState<number[]>(() =>
+    p.ticket.groupId != null ? p.otherTickets.filter((t) => t.groupId === p.ticket.groupId).map((t) => t.id) : []);
   // The right panel shows Payment; Discount and Gift Card swap in their option screen, and Back returns to Payment.
   const [rightTab, setRightTab] = useState<"functions" | "payment" | "services">("payment");
   const [changingService, setChangingService] = useState(false);
@@ -154,6 +156,15 @@ export function CheckoutMode(p: Props) {
   useEffect(() => () => { if (statusTimer.current) clearTimeout(statusTimer.current); }, []);
 
   const amount = centsToDollars(cents);
+  // Right after a visit is saved the board may not have its other tickets yet: link them when they arrive, once.
+  const groupSeeded = useRef(false);
+  useEffect(() => {
+    if (groupSeeded.current || p.ticket.groupId == null) return;
+    const ids = p.otherTickets.filter((t) => t.groupId === p.ticket.groupId).map((t) => t.id);
+    if (ids.length === 0) return;
+    groupSeeded.current = true;
+    setLinkedIds((cur) => Array.from(new Set([...cur, ...ids])));
+  }, [p.otherTickets, p.ticket.groupId]);
   const linked = useMemo(() => p.otherTickets.filter((t) => linkedIds.includes(t.id)), [p.otherTickets, linkedIds]);
   // A Retail-marked custom line built into the ticket itself (see CatalogPanel's Keypad) is still
   // part of ticket.total, but must be pulled out of service revenue for commission purposes.
