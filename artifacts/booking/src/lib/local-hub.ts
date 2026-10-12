@@ -98,8 +98,12 @@ class LocalHubClient {
     this.wire();
     this.storeId = storeId;
     this.role = role;
+    // The app keeps its hub running across page loads and stays silent when asked for what it is already
+    // doing. Stopping it once per page load makes it start afresh and say what state the link is in.
+    let restarted = false;
     const apply = (s: HubSettings | null) => {
       if (!s) return;
+      if (!restarted) { restarted = true; this.post({ type: "HUB_STOP" }); }
       if (role === "pos") { this.post({ type: "HUB_SERVE", token: s.token }); this.post({ type: "HUB_ADDRESS" }); }
       else if (s.address) this.post({ type: "HUB_JOIN", host: s.address, token: s.token });
     };
