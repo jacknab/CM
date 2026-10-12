@@ -6,6 +6,7 @@
  *   · the customer-facing /frontdesk screen.
  * The maths lives in shared/nailCheckout.ts (unit-tested); this file is screen state + wiring.
  */
+import { relayCheckoutEvent } from "@/lib/local-hub";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Ban, Banknote, BadgePercent, Calculator, Check, CreditCard, DoorOpen, Gift, Hand, HandCoins, Loader2, MessageSquare, Percent, Printer, Settings, ShoppingBag, Users, X, Zap } from "lucide-react";
@@ -200,10 +201,7 @@ export function CheckoutMode(p: Props) {
   const shownToCustomer = useRef(true);
   const send = (type: string, payload: Record<string, unknown> = {}) => {
     if (!p.dualScreen) return;
-    fetch("/api/kiosk/checkout-event", {
-      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, registerId: p.registerId, ...payload }),
-    }).catch(() => {});
+    void relayCheckoutEvent({ type, registerId: p.registerId, ...payload });
   };
   useEffect(() => {
     if (!p.dualScreen) return;

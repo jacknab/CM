@@ -21,7 +21,7 @@ if ("serviceWorker" in navigator) {
     // site's built files the page has actually loaded (including the screen's own lazily loaded parts), to
     // keep alongside the app page. Asked again after a while, once the screen has loaded what it needs.
     const keepForOffline = () => {
-      if (!/^\/(app-login|nail|barber|calendar)(\/|$)/.test(window.location.pathname)) return;
+      if (!/^\/(app-login|nail|barber|calendar|frontdesk|kiosk)(\/|$)/.test(window.location.pathname)) return;
       const urls = performance.getEntriesByType("resource").map((e) => e.name).filter((u) => u.startsWith(window.location.origin + "/assets/"));
       void navigator.serviceWorker.ready.then((reg) => reg.active?.postMessage({ type: "CERTXA_KEEP_FOR_OFFLINE", urls })).catch(() => {});
     };

@@ -23,6 +23,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { runLocalDb, type LocalDbRequest } from '../lib/localDb';
+import { localHub } from '../lib/localHub';
 import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -91,6 +92,8 @@ const BRIDGE_JS = `
   window.CERTXA_NATIVE_APP = true;
   // This build keeps the salon's offline data in an encrypted SQLite file (lib/localDb.ts).
   window.CERTXA_NATIVE_LOCAL_DB = 1;
+  // This build can link the salon's tablets over its own Wi-Fi (lib/localHub.ts).
+  window.CERTXA_NATIVE_HUB = 1;
   // This build can print receipts on the thermal printer (PRINT_RECEIPT) — the web checkout checks this flag.
   window.CERTXA_PRINT_BRIDGE = true;
   // ...and can pop the cash drawer through the printer (OPEN_DRAWER).
@@ -513,6 +516,13 @@ export default function PortalScreen() {
   const lastActivityAt = useCallback(() => lastActivityRef.current, []);
   useNightlyRestart(isBusyNow, lastActivityAt);
 
+  // Whatever the hub hears from the salon's other tablets, and its own state, goes to this tablet's screen.
+  useEffect(() => localHub.onEvent((event) => {
+    webViewRef.current?.injectJavaScript(
+      `window.__certxaHubEvent && window.__certxaHubEvent(${JSON.stringify(JSON.stringify(event))}); true;`
+    );
+  }), []);
+
   // ── Handle messages from WebView ────────────────────────────────────────────
   const onMessage = useCallback((event: WebViewMessageEvent) => {
     try {
@@ -521,6 +531,26 @@ export default function PortalScreen() {
       switch (msg.type) {
         case 'CERTXA_ACTIVITY':
           recordActivity();
+          break;
+        case 'HUB_SERVE':
+          // Main POS tablet: accept the salon's other tablets on the local network.
+          void localHub.serve(String(msg.token ?? ''));
+          break;
+        case 'HUB_JOIN':
+          // Customer screen / kiosk: connect to the main POS tablet.
+          if (msg.host) localHub.join(String(msg.host), String(msg.token ?? ''));
+          break;
+        case 'HUB_STOP':
+          localHub.stop();
+          break;
+        case 'HUB_SEND':
+          localHub.send(msg.message);
+          break;
+        case 'HUB_ADDRESS':
+          void localHub.localAddress().then((address) =>
+            webViewRef.current?.injectJavaScript(
+              `window.__certxaHubEvent && window.__certxaHubEvent(${JSON.stringify(JSON.stringify({ kind: 'address', address }))}); true;`
+            ));
           break;
         case 'LOCAL_DB': {
           // A read or write on the tablet's encrypted database, asked for by the web screen. The answer

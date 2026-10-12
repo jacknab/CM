@@ -18561,6 +18561,41 @@ or
     }
   });
 
+  // ── Local hub: how the salon's tablets find each other on its own Wi-Fi when the internet is down. ──
+  // The main POS tablet reports its address on the local network; every signed-in tablet of the salon is
+  // given that address and the salon's hub token (made here on first use) while it is online, and keeps both.
+  const privateAddress = (v: unknown): string | null => {
+    const ip = typeof v === "string" ? v.trim() : "";
+    return /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})$/.test(ip) ? ip : null;
+  };
+  app.get("/api/nail/hub", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const prefs: any = await mutateStorePreferences(storeId, (current: any) =>
+        current.localHub?.token ? null : { ...current, localHub: { ...(current.localHub ?? {}), token: crypto.randomBytes(24).toString("hex") } });
+      return res.json({ token: prefs.localHub.token, address: prefs.localHub.address ?? null, port: 9477 });
+    } catch (err) {
+      console.error("[nail/hub get]", err);
+      return res.status(500).json({ message: "Could not load the hub settings" });
+    }
+  });
+  app.put("/api/nail/hub", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const address = privateAddress(req.body?.address);
+      if (!address) return res.status(400).json({ message: "That is not an address on a local network" });
+      await mutateStorePreferences(storeId, (current: any) =>
+        current.localHub?.address === address ? null : { ...current, localHub: { ...(current.localHub ?? {}), address, addressAt: new Date().toISOString() } });
+      broadcastNotification({ type: "settings_changed", storeId, scope: "/api/nail/hub" } as any);
+      return res.json({ address });
+    } catch (err) {
+      console.error("[nail/hub put]", err);
+      return res.status(500).json({ message: "Could not save the hub address" });
+    }
+  });
+
   // ── The POS key grid a manager arranges (shared/posGrid.ts). Nothing saved = filled automatically from the catalog. ──
   app.get("/api/nail/pos-grid", isAuthenticated, async (req, res) => {
     try {

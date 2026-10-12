@@ -21,6 +21,7 @@
  *
  * Route: /frontdesk/:slug   (slug === locations.bookingSlug, same as /kiosk/:slug)
  */
+import { forRegister, localHub, relayCheckoutEvent } from "@/lib/local-hub";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { printNativeCheckinTicket } from "../lib/native-checkin-ticket";
 import { useParams } from "react-router-dom";
@@ -485,10 +486,25 @@ export default function FrontDeskDisplay() {
     return () => { cancelled = true; clearInterval(iv); };
   }, [slug, configUrl, screen, applyConfig]);
 
+  // ── Local hub: the POS tablet over the salon's own Wi-Fi, for when the server cannot be reached ──
+  // What arrives through it is handled exactly like a message from the server's socket.
+  const registerIdRef = useRef(registerId);
+  const hubSinkRef = useRef<((e: MessageEvent) => void) | null>(null);
+  registerIdRef.current = registerId;
+  useEffect(() => {
+    if (!storeId) return;
+    void localHub.start(storeId, "screen");
+    return localHub.onMessage((message) => {
+      if (!forRegister(message, registerIdRef.current)) return;
+      hubSinkRef.current?.(new MessageEvent("message", { data: JSON.stringify(message) }));
+    });
+  }, [storeId]);
+
   // ── Notifications WebSocket (unauthenticated, keyed by storeId) ───────────
   const sendWs = useCallback((type: string, payload: Record<string, unknown> = {}) => {
     const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    // No connection to the server: the salon's local hub carries it to the POS tablet instead.
+    if (!ws || ws.readyState !== WebSocket.OPEN) { localHub.send({ type, registerId: registerIdRef.current, ...payload }); return; }
     ws.send(JSON.stringify({ type, ...payload }));
   }, []);
 
@@ -497,10 +513,7 @@ export default function FrontDeskDisplay() {
   // is sent on it. Falls back to the socket when HTTP isn't available (e.g. a display in a plain
   // browser that isn't signed in). Delivered once either way.
   const sendReliable = useCallback((type: string, payload: Record<string, unknown> = {}) => {
-    const post = () => fetch("/api/kiosk/checkout-event", {
-      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, registerId, ...payload }),
-    }).then((r) => r.ok);
+    const post = () => relayCheckoutEvent({ type, registerId, ...payload });
     void (async () => {
       for (let attempt = 0; attempt < 3; attempt++) {
         try { if (await post()) return; } catch { /* retry */ }
@@ -567,6 +580,9 @@ export default function FrontDeskDisplay() {
       const sock = new WebSocket(`${proto}://${window.location.host}/ws/notifications?storeId=${storeId}&registerId=${registerId}`);
       ws = sock;
       wsRef.current = sock;
+      // The local hub hands its messages to the newest socket's handler, which outlives the connection
+      // itself: between reconnect attempts there is no open socket, but the hub still has to be heard.
+      hubSinkRef.current = (e: MessageEvent) => sock.onmessage?.(e);
       // Heartbeat: a socket that has gone quiet (Wi-Fi hiccup, NAT timeout) can still report
       // itself open while nothing gets through — replace it instead of trusting it.
       let lastHeard = Date.now();

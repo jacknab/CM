@@ -2,7 +2,7 @@
   "expo": {
     "name": "Certxa",
     "slug": "ucertxa",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "default",
     "sdkVersion": "54.0.0",
     "userInterfaceStyle": "dark",

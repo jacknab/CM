@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { forRegister, localHub } from "@/lib/local-hub";
 import { useQueryClient } from "@tanstack/react-query";
 import { boardKey } from "./nailApi";
 
@@ -41,19 +42,9 @@ export function useNailRealtime(opts: {
       queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
     };
 
-    const connect = () => {
-      if (destroyed) return;
-      const proto = window.location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${proto}://${window.location.host}/ws/notifications?storeId=${storeId}&registerId=${opts.registerId}`);
-      ws.onopen = () => {
-        setConnected(true);
-        // A reconnect may have missed events while offline.
-        if (seenOpen) { invalidateTickets(); cb.current.refreshAll(); }
-        seenOpen = true;
-      };
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
+    // One handler for a message from the server's socket or from the salon's local hub.
+    const onData = (data: any) => {
+      try {
           switch (data.type) {
             case "booking_created":
             case "booking_updated":
@@ -92,6 +83,23 @@ export function useNailRealtime(opts: {
               break;
           }
         } catch { /* ignore malformed frames */ }
+    };
+    const offHub = localHub.onMessage((message) => { if (forRegister(message, opts.registerId)) onData(message); });
+
+    const connect = () => {
+      if (destroyed) return;
+      const proto = window.location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${proto}://${window.location.host}/ws/notifications?storeId=${storeId}&registerId=${opts.registerId}`);
+      ws.onopen = () => {
+        setConnected(true);
+        // A reconnect may have missed events while offline.
+        if (seenOpen) { invalidateTickets(); cb.current.refreshAll(); }
+        seenOpen = true;
+      };
+      ws.onmessage = (event) => {
+        let data: any;
+        try { data = JSON.parse(event.data); } catch { return; }
+        onData(data);
       };
       ws.onerror = () => ws?.close();
       ws.onclose = () => {
@@ -104,6 +112,7 @@ export function useNailRealtime(opts: {
       destroyed = true;
       if (timer) clearTimeout(timer);
       ws?.close();
+      offHub();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.storeId, opts.registerId, queryClient]);

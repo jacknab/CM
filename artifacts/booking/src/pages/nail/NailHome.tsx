@@ -5,6 +5,7 @@
  * choice is the TURN queue, checkout is the POS tab itself (CheckoutMode). This
  * file only owns the screen state and wires the pieces together.
  */
+import { localHub, relayCheckoutEvent } from "@/lib/local-hub";
 import { OfflineLimitLock } from "@/components/offline/OfflineLimitLock";
 import { EMPTY_ARRAY } from "@/lib/empty";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -222,6 +223,9 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     queryClient.invalidateQueries({ queryKey: ["/api/nail/screen-settings"] });
     queryClient.invalidateQueries({ queryKey: ["/api/nail/pos-grid"] });
   }, [refreshSettings, queryClient]);
+  // This is the salon's main screen: inside the Android app it accepts the customer screen and kiosk over
+  // the salon's own Wi-Fi, so they keep working with it when the internet is down.
+  useEffect(() => { void localHub.start(storeId, "pos"); }, [storeId]);
   const live = useNailRealtime({
     storeId, registerId, refreshAll, onFrontdeskPhone: setFrontdeskPhone, onFrontdeskTyping,
     onCheckoutEvent: (m) => setCheckoutEvent({ ...m }),
@@ -885,10 +889,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   }, [storeId]);
   useEffect(() => {
     if (!showBook || !dualScreen) return;
-    const send = (type: string) => fetch("/api/kiosk/checkout-event", {
-      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, registerId }),
-    }).catch(() => {});
+    const send = (type: string) => relayCheckoutEvent({ type, registerId });
     void send("kiosk_checkout_phone_prompt");
     return () => { void send("kiosk_checkout_phone_cancel"); };
   }, [showBook, dualScreen, registerId]);
@@ -942,10 +943,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // ── Check-In sheet: put the /frontdesk tablet on its check-in screen while it's open ──
   useEffect(() => {
     if (!showCheckIn || !dualScreen) return;
-    const send = (type: string) => fetch("/api/kiosk/checkout-event", {
-      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, registerId }),
-    }).catch(() => {});
+    const send = (type: string) => relayCheckoutEvent({ type, registerId });
     void send("kiosk_checkout_checkin_launch");
     return () => { void send("kiosk_checkout_checkin_cancel"); };
   }, [showCheckIn, dualScreen, registerId]);
