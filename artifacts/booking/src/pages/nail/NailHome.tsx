@@ -493,11 +493,11 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     window.addEventListener("keydown", touched, true);
     return () => { clearTimeout(timer); window.removeEventListener("pointerdown", touched, true); window.removeEventListener("keydown", touched, true); };
   }, [signedIn, idleLockMs]);
-  // The assigned-ticket notice closes itself after five seconds, then the keypad comes back for the next
+  // The assigned-ticket notice closes itself after ten seconds, then the keypad comes back for the next
   // technician — whoever saved the ticket, front desk included.
   useEffect(() => {
     if (!startedNotice) return;
-    const timer = setTimeout(() => { setStartedNotice(null); lock(); setTech(null); }, 5000);
+    const timer = setTimeout(() => { setStartedNotice(null); lock(); setTech(null); }, 10_000);
     return () => clearTimeout(timer);
   }, [startedNotice, lock]);
   // The "client assigned" notice after a Tech ID sign-in: five seconds over the queue, then the keypad
@@ -624,7 +624,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
         ? `Ticket #${r.ticketNumber} · ${r.staffName} · ${r.waiting ? `waiting, starts about ${new Date(r.startsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : r.status === "started" ? "in service" : "assigned"}`
         : `Ticket #${r.ticketNumber} is waiting · no technician free yet`);
       if (shouldPay) resetDraft();
-      // Show who each service went to for five seconds before the keypad returns.
+      // Show who each service went to for ten seconds before the keypad returns.
       else {
         const saved = r.tickets ?? [{ ticketNumber: r.ticketNumber, serviceName: service?.name ?? "Service", staffName: r.staffName, appointmentId: r.appointmentId }];
         const savedClient = client?.name;
@@ -1275,7 +1275,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
                 {t.staffName && (
                   <>
                     <br />
-                    {/* Starting from here saves a trip to the Queue. Updating the notice also restarts its five seconds. */}
+                    {/* Starting from here saves a trip to the Queue. Updating the notice also restarts its ten seconds. */}
                     <button type="button" disabled={t.started} data-testid="nail-saved-start"
                       onClick={() => {
                         act.mutate(() => startTicket(t.appointmentId, t.clientName));
