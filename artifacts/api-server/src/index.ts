@@ -146,6 +146,7 @@ import jwt from "jsonwebtoken";
 import path from "path";
 import { startPhpServer, phpMiddleware, isPhpReady, isPhpRoute, resolvePhpPort } from "./php-proxy";
 import { createMarketingSite } from "./marketing-site";
+import { shopRouter } from "./routes/shop";
 import { pool } from "./db";
 import { resolveSessionStoreId } from "./lib/sessionStore";
 import { createRequire } from "module";
@@ -780,6 +781,7 @@ app.use(marketplaceDealsApiRouter);
 // --- New marketing site: renders the paths already moved off PHP ---
 // Ahead of the PHP proxy so those paths come from the new app; anything it
 // does not own, or cannot render, falls through to PHP below.
+app.use(shopRouter);
 app.use(createMarketingSite());
 
 // --- PHP Site Proxy (certxa.com marketing pages, template catalog, assets) ---

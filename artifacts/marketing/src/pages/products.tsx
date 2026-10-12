@@ -1,4 +1,5 @@
 import { Helmet } from '@dr.pogodin/react-helmet';
+import BuyButton from '@/components/BuyButton';
 import { Link } from 'react-router';
 import { motion } from 'motion/react';
 import { ArrowRight, Check, Zap } from 'lucide-react';
@@ -266,13 +267,13 @@ export default function ProductsPage() {
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground mb-4">{prod.financing}</p>
-                      <Link
-                        to="/contact"
+                      <BuyButton
+                        productName={prod.name}
                         className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-all duration-200"
                       >
                         {prod.cta}
                         <ArrowRight size={15} />
-                      </Link>
+                      </BuyButton>
                     </div>
                   </div>
                 </motion.div>
@@ -335,13 +336,13 @@ export default function ProductsPage() {
                       <span className="text-xl font-extrabold text-foreground" style={{ fontFamily: 'var(--font-heading)' }}>
                         {acc.price}
                       </span>
-                      <Link
-                        to="/contact"
+                      <BuyButton
+                        productName={acc.name}
                         className="text-sm font-semibold text-primary hover:underline inline-flex items-center gap-1"
                       >
                         Order
                         <ArrowRight size={13} />
-                      </Link>
+                      </BuyButton>
                     </div>
                   </div>
                 </motion.div>

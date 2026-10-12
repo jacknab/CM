@@ -26,6 +26,8 @@ import Week1SubmissionsPage from './pages/backlinks/week1-submissions';
 // and abort to client rendering. The prod 404 page is tiny; the dev-tools
 // variant stays lazy because it pulls in dev-only code we don't want in
 // production bundles.
+import CartPage from './pages/cart';
+import OrderConfirmedPage from './pages/order-confirmed';
 import ProdNotFoundPage from './pages/_404';
 
 const NotFoundPage = ProdNotFoundPage;
@@ -118,6 +120,14 @@ export const routes: RouteObject[] = [
   {
     path: '/backlinks/week1-submissions',
     element: <Week1SubmissionsPage />,
+  },
+  {
+    path: '/cart',
+    element: <CartPage />,
+  },
+  {
+    path: '/order-confirmed',
+    element: <OrderConfirmedPage />,
   },
   {
     id: 'airo-not-found',

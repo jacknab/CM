@@ -29,6 +29,8 @@ const DEFAULT_PATHS = [
   "/booking",
   "/autumn",
   "/products",
+  "/cart",
+  "/order-confirmed",
   "/compare/certxa-vs-glossgenius",
   "/compare/certxa-vs-vagaro",
   "/compare/certxa-vs-fresha",

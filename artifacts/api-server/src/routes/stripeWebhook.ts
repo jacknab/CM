@@ -195,6 +195,9 @@ router.post(
         // ── Checkout session completed ────────────────────────────────────
         case "checkout.session.completed": {
           const session = event.data.object as Stripe.Checkout.Session;
+          // Hardware shop orders are their own flow and must not reach the subscription handler.
+          const { markShopOrderPaid } = await import("../lib/shop");
+          if (await markShopOrderPaid(session)) break;
           await handleCheckoutCompleted(session);
           break;
         }

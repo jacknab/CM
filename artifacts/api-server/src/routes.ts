@@ -15829,19 +15829,29 @@ or
     return true;
   };
 
-  // === DEVICE FULFILLMENT ===
-  // The fulfillment UI previously requested a non-API URL, so Express returned
-  // the SPA HTML shell and the client attempted to parse "<!DOCTYPE" as JSON.
-  // There is currently no fulfillment ledger in the database; return an empty,
-  // correctly shaped queue until a subscription explicitly creates a shipment.
+  // === HARDWARE SHOP FULFILLMENT ===
+  // Hardware shop orders that are paid and waiting to ship.
   app.get("/api/admin/fulfillment/pending", async (req, res) => {
     if (!(await requireAdmin(req, res))) return;
-    return res.json({ data: [] });
+    const { shopOrdersAwaitingShipment } = await import("./lib/shop");
+    return res.json({ data: await shopOrdersAwaitingShipment() });
   });
 
   app.post("/api/admin/fulfillment/record", async (req, res) => {
     if (!(await requireAdmin(req, res))) return;
-    return res.status(501).json({ message: "Device fulfillment recording is not configured" });
+    const { recordShopShipment, ShopError } = await import("./lib/shop");
+    try {
+      const orderNumber = await recordShopShipment(
+        Number(req.body?.order_id),
+        String(req.body?.tracking_number ?? ""),
+        String(req.body?.serial_numbers ?? ""),
+      );
+      return res.json({ ok: true, order_number: orderNumber });
+    } catch (err: any) {
+      if (err instanceof ShopError) return res.status(err.status).json({ message: err.message });
+      console.error("[shop] record shipment failed:", err);
+      return res.status(500).json({ message: "Could not record the shipment" });
+    }
   });
 
   app.post("/api/admin/fulfillment/buy-label", async (req, res) => {
