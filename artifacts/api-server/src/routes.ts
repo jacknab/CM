@@ -18533,6 +18533,36 @@ or
     }
   });
 
+  // ── Who processes card payments at checkout: Certxa's Stripe reader, or the salon's own card terminal. ──
+  // With "own" the POS only records that a card was taken; nothing is charged and nothing is shown to the customer.
+  app.get("/api/card-provider", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
+      const prefs: any = safeParsePreferences(row?.preferences as string | undefined);
+      return res.json({ provider: prefs.cardProvider === "own" ? "own" : "stripe" });
+    } catch (err) {
+      console.error("[card-provider get]", err);
+      return res.status(500).json({ message: "Could not load the card setting" });
+    }
+  });
+
+  app.put("/api/card-provider", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      const provider = req.body?.provider;
+      if (provider !== "stripe" && provider !== "own") return res.status(400).json({ message: "Choose Stripe or Own Provider." });
+      await mutateStorePreferences(storeId, (current: any) => ({ ...current, cardProvider: provider }));
+      broadcastNotification({ type: "settings_changed", storeId, scope: "/api/card-provider" } as any);
+      return res.json({ provider });
+    } catch (err) {
+      console.error("[card-provider put]", err);
+      return res.status(500).json({ message: "Could not save the card setting" });
+    }
+  });
+
   app.get("/api/nail/screen-settings", isAuthenticated, async (req, res) => {
     try {
       const storeId = await nailStoreId(req, res);

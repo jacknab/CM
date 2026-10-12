@@ -13,6 +13,7 @@ import { api } from "@shared/routes";
 import { ShoppingCart, Percent, Package, Lock, Monitor, Phone } from "lucide-react";
 import { checkQuickAreaCodes } from "@shared/areaCodes";
 import { TipPresetsCard } from "@/components/pos/TipPresetsCard";
+import { CardProviderCard } from "@/components/pos/CardProviderCard";
 
 // ── Tax category toggle ───────────────────────────────────────────────────────
 
@@ -413,6 +414,7 @@ export default function POSSettings() {
         </Card>
 
         <TipPresetsCard />
+        <CardProviderCard />
       </div>
     </AppLayout>
   );

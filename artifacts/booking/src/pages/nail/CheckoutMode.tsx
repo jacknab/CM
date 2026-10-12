@@ -6,6 +6,7 @@
  *   · the customer-facing /frontdesk screen.
  * The maths lives in shared/nailCheckout.ts (unit-tested); this file is screen state + wiring.
  */
+import { useCardProvider } from "@/hooks/use-card-provider";
 import { relayCheckoutEvent } from "@/lib/local-hub";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -91,6 +92,12 @@ export function CheckoutMode(p: Props) {
   const [reward, setReward] = useState<Reward | null>(null);
   const [tip, setTip] = useState(0);
   const [tenders, setTenders] = useState<Tender[]>([]);
+  // PAY / CHECKOUT moves the POS from building the bill to taking payment. From then on an amount typed on
+  // the keypad and entered is a payment of the selected type, not another line on the bill.
+  const [paying, setPaying] = useState(false);
+  const [payType, setPayType] = useState<"cash" | "card">("cash");
+  // Settings → Checkout → CARD button. "own": the salon's own terminal takes the card; this POS only records it.
+  const cardProvider = useCardProvider();
   const cardRecoveryKey = `certxa.nail.captured.${p.storeId}.${ticket.id}`;
   const checkoutKey = `certxa.nail.checkout.${p.storeId}.${ticket.id}`;
   const requestKey = checkoutRequestKey(p.storeId, ticket.id);
@@ -305,11 +312,8 @@ export function CheckoutMode(p: Props) {
       setTip(amt);
       // `confirmed`: the customer pressed Continue / Skip (a pick alone only previews the tip here).
       if (m.confirmed === true || !awaitingTip) say(amt > 0 ? `TIP RECEIVED · ${money(amt)}` : "NO TIP SELECTED BY CLIENT", amt > 0 ? "success" : "info");
-      if (m.confirmed === true && awaitingTip) {
-        const base = awaitingTip.base;
-        setAwaitingTip(null);
-        setChargeAfterTip(r2(base + amt));
-      }
+      // The client has finished with the tip screen. Payment is taken by staff: nothing starts by itself.
+      if (m.confirmed === true && awaitingTip) setAwaitingTip(null);
     } else if (m.type === "kiosk_checkout_receipt_choice") {
       // The customer picked a receipt on their screen. Text goes out right away (it's a link to the saved
       // receipt). "Print" prints the customer copy on THIS station's receipt printer (the Android app's IP/USB
@@ -384,6 +388,7 @@ export function CheckoutMode(p: Props) {
         return;
       }
       if (amount <= 0) { say("ENTER AN AMOUNT FIRST", "error"); return; }
+      if (paying) { if (payType === "card") recordOwnCard(); else addCash(amount); return; }
       addExtra("+Extra", amount, "custom"); setCents(""); say(`EXTRA ADDED · ${money(amount)}`, "success");
       return;
     }
@@ -470,13 +475,13 @@ export function CheckoutMode(p: Props) {
   /** What a tender takes: the keypad amount (a part-payment) or, with nothing typed, the whole balance. */
   const wanted = () => (amount > 0 ? amount : rest());
   // Guards against a double-tap / touch-bounce registering the same cash amount twice — CASH has
-  // no busy state the way CARD does (disabled={cardBusy}), and takeCash runs synchronously with
+  // no busy state the way CARD does (disabled={cardBusy}), and addCash runs synchronously with
   // nothing to naturally prevent two rapid taps from each reading the same `wanted()` value.
   const cashLock = useRef(false);
-  const takeCash = () => {
+  const addCash = (value: number) => {
     if (cashLock.current) return;
-    const value = wanted();
-    if (value <= 0) return say(rest() <= 0 ? "NOTHING DUE" : "ENTER AN AMOUNT FIRST", "error");
+    if (value <= 0) return say("ENTER AN AMOUNT FIRST", "error");
+    if (rest() <= 0) return say("NOTHING DUE", "error");
     cashLock.current = true;
     setTimeout(() => { cashLock.current = false; }, 600);
     openDrawer(); // cash may be over-tendered — change comes back
@@ -505,17 +510,41 @@ export function CheckoutMode(p: Props) {
     cards.frontdesk(payload);
   };
   // CARD charges through the M2 on either this device or the paired front-desk device.
+  // Entering the payment stage: the client's tip screen goes up at once (when there is a customer screen and no
+  // tip yet) and the POS waits for their choice. Nothing is charged here.
+  const beginPaying = () => {
+    if (paying) return;
+    setPaying(true);
+    setPayType("cash");
+    setRightTab("payment");
+    if (p.dualScreen && tip <= 0 && rest() > 0) {
+      setAwaitingTip({ base: 0 });
+      requestTipScreen();
+      say("WAITING FOR CLIENT TO SELECT TIP", "info");
+    }
+  };
+  // CASH is the payment type, not a payment: the amount comes from the keypad.
+  const chooseCash = () => { beginPaying(); setPayType("cash"); };
+  // The salon's own terminal approved the card: record a card payment of the typed amount, or of what is still due.
+  const recordOwnCard = () => {
+    if (cashLock.current) return;
+    const value = Math.min(wanted(), rest());
+    if (value <= 0) return say(rest() <= 0 ? "NOTHING DUE" : "ENTER AN AMOUNT FIRST", "error");
+    cashLock.current = true;
+    setTimeout(() => { cashLock.current = false; }, 600);
+    setTenders((cur) => [...cur, { id: nextId.current++, method: "card", amount: value }]);
+    setCents("");
+    setPayType("cash");
+    send("kiosk_checkout_payment_result", { success: true, total: value, appointmentId: ticket.id, ...settlementAfter(value) });
+  };
+  // CARD: staff start it. With the salon's own provider it only switches the panel to "Card Payment Approved";
+  // otherwise it charges through the M2 on this device or the paired front-desk device.
   const takeCard = () => {
+    if (!paying) return beginPaying();
+    if (cardProvider === "own") { setPayType("card"); return; }
     const value = Math.min(wanted(), rest());
     if (value <= 0) return say(rest() <= 0 ? "NOTHING DUE" : "ENTER AN AMOUNT FIRST", "error");
     if (cardMethod === "frontdesk") return sendToFrontdesk(value);
-    // No tip on the ticket yet and the customer has a screen: ask them first, then charge here.
-    if (p.dualScreen && tip <= 0 && !awaitingTip) {
-      setAwaitingTip({ base: value });
-      requestTipScreen();
-      say("TIP SCREEN SENT TO CLIENT · THE READER STARTS WHEN THEY CHOOSE", "info");
-      return;
-    }
     cards.m2(value);
   };
   const m2Busy = ["loading", "discovering", "connecting", "collecting", "processing"].includes(cards.status);
@@ -524,11 +553,8 @@ export function CheckoutMode(p: Props) {
   // Once the balance is settled it closes the sale, as before.
   const payCheckout = () => {
     if (totals.settled) return finish();
-    const value = Math.min(wanted(), rest());
-    if (value <= 0) return say("ENTER AN AMOUNT FIRST", "error");
-    // No customer screen paired: there is no front desk reader to send to, so charge the way CARD does.
-    if (!p.dualScreen && cardMethod !== "frontdesk") return void cards.m2(value);
-    sendToFrontdesk(value);
+    if (!paying) return beginPaying();
+    say(payType === "card" ? "TAP CARD PAYMENT APPROVED ONCE YOUR TERMINAL APPROVES IT" : "TYPE THE CASH AMOUNT AND PRESS ENTER, OR TAP CARD", "info");
   };
   // The customer's screen follows what staff are looking at. Leaving the POS tab, or the screen locking, sends it
   // back to its welcome page; coming back shows the order again. A card being taken keeps it where it is.
@@ -961,22 +987,34 @@ export function CheckoutMode(p: Props) {
                 </div>
               ) : (
               <div className="pay-panel" data-testid="nail-pay-payment">
+                {paying && payType === "card" && cardProvider === "own" ? (
+                  // The salon's own terminal takes the card. Nothing is sent to the customer screen; staff confirm here.
+                  <div className="pay-methods">
+                    <button type="button" className="pay-card pay-approved" onClick={recordOwnCard} data-testid="nail-pay-card-approved">
+                      <CreditCard size={26} /><span>CARD PAYMENT APPROVED</span>
+                    </button>
+                    <button type="button" className="pay-gift" onClick={() => setPayType("cash")} data-testid="nail-pay-card-back"><Banknote size={26} /><span>BACK</span></button>
+                  </div>
+                ) : (
                 <div className="pay-methods">
-                  <button type="button" className="pay-cash" onClick={takeCash} data-testid="nail-pay-cash"><Banknote size={26} /><span>CASH</span></button>
-                  <button type="button" className="pay-card" disabled={cardBusy} onClick={takeCard} data-testid="nail-pay-card">
-                    {cardBusy ? <Loader2 size={26} className="spin" /> : <CreditCard size={26} />}<span>{cardLabel}</span>
+                  <button type="button" className={`pay-cash ${paying && payType === "cash" ? "pay-type-on" : ""}`} aria-pressed={paying && payType === "cash"} onClick={chooseCash} data-testid="nail-pay-cash"><Banknote size={26} /><span>CASH</span></button>
+                  <button type="button" className="pay-card" disabled={cardBusy && cardProvider !== "own"} onClick={takeCard} data-testid="nail-pay-card">
+                    {cardBusy && cardProvider !== "own" ? <Loader2 size={26} className="spin" /> : <CreditCard size={26} />}<span>{cardProvider === "own" ? "CARD" : cardLabel}</span>
                   </button>
                   <button type="button" className="pay-gift" onClick={() => openGift("pay")} data-testid="nail-pay-gift"><Gift size={26} /><span>GIFT CARD</span></button>
                   <button type="button" className="pay-gift" disabled={cardBusy || p.finalizing} onClick={() => setRightTab("services")} data-testid="nail-pay-services"><Hand size={26} /><span>SERVICES</span></button>
                 </div>
+                )}
                 {(awaitingTip || cards.awaitingFrontdesk) && (
                   <div className="pay-waiting" data-testid="nail-pay-waiting">
-                    <span>{awaitingTip ? "Waiting for the customer to choose a tip." : "Waiting for the customer at the front desk."}</span>
-                    {awaitingTip && <button type="button" onClick={() => stopWaitingForTip(true)} data-testid="nail-pay-charge-no-tip">Charge now</button>}
+                    <span>{awaitingTip ? "Waiting for client to select tip." : "Waiting for the customer at the front desk."}</span>
                     <button type="button" onClick={() => { if (awaitingTip) stopWaitingForTip(false); else { cards.cancelFrontdesk(); say("STOPPED WAITING FOR THE FRONT DESK", "info"); } }} data-testid="nail-pay-stop-waiting">Cancel</button>
                   </div>
                 )}
-                <p className="pay-hint">Type an amount on the keypad, then tap a method — or tap one with nothing typed to take the whole balance. CARD charges with {cardMethod === "m2" ? "the M2 reader connected to this POS device" : "the M2 reader connected to the front desk device after tip confirmation"} (change it with the gear at the top of the ticket). Cash over the balance gives change.</p>
+                <p className="pay-hint">{!paying ? "Tap PAY / CHECKOUT to take payment."
+                  : cardProvider === "own" && payType === "card" ? "Take the card on your own terminal, then tap CARD PAYMENT APPROVED. Type an amount first to record part of the bill."
+                  : cardProvider === "own" ? "Cash: type the amount and press ENTER. CARD records a payment taken on your own terminal."
+                  : `Cash: type the amount and press ENTER. CARD charges with ${cardMethod === "m2" ? "the M2 reader connected to this POS device" : "the front desk M2 reader"}.`}</p>
               </div>
               )
             ) : (
