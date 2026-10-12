@@ -73,7 +73,7 @@ $_base_schema = [
       'width'  => 512,
       'height' => 512,
     ],
-    // X/Twitter, BBB, LinkedIn, Facebook, G2, and Instagram are all
+    // X/Twitter, BBB, LinkedIn, Facebook, G2, Capterra, and Instagram are all
     // confirmed live. Reddit (linked from the marketplace half of the site
     // in an earlier version) is deliberately left out: that account has no
     // independently-verifiable activity. Keep this array identical to the
@@ -87,6 +87,7 @@ $_base_schema = [
       'https://www.bbb.org/us/az/phoenix/profile/software-consultants/certxa-llc-1126-1000175065',
       'https://www.linkedin.com/company/certxa',
       'https://www.g2.com/products/certxa-booking-software',
+      'https://www.capterra.com/p/10182349/Certxa-Booking-Software/',
     ],
     'contactPoint' => [
       '@type'            => 'ContactPoint',
