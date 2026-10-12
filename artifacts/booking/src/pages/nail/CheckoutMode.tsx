@@ -1133,6 +1133,19 @@ export function CheckoutMode(p: Props) {
           </div>
         </>
       )}
+      {/* The client is choosing their tip. The POS waits for them: nothing on it can be used until they
+          finish, apart from Cancel for a client who has walked away or won't choose. */}
+      {awaitingTip && (
+        <div className="fixed inset-0 z-[280] flex items-center justify-center px-6" style={{ background: "rgba(10,12,16,.82)" }} role="alertdialog" aria-modal="true" aria-live="polite" data-testid="nail-pay-tip-lock">
+          <div className="rounded-2xl px-10 py-9 text-center" style={{ background: "#232830", border: "1px solid #3b424c", boxShadow: "0 30px 70px rgba(0,0,0,.5)", maxWidth: 560 }}>
+            <p style={{ margin: 0, fontSize: 28, fontWeight: 700, lineHeight: 1.3, color: "#fff" }}>Waiting for client to select tip</p>
+            <button type="button" onClick={() => stopWaitingForTip(false)} data-testid="nail-pay-tip-lock-cancel"
+              style={{ marginTop: 28, fontSize: 18, fontWeight: 700, padding: "14px 36px", borderRadius: 12, border: "1px solid #4b5563", background: "#353a43", color: "#fff" }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
