@@ -83,6 +83,15 @@ async function throwIfConflict(res: Response, type: ActionType): Promise<void> {
   }
 }
 
+/** How long a device may keep working with no answer from the server. */
+export const OFFLINE_LIMIT_MS = 12 * 60 * 60 * 1000;
+const LAST_CONTACT_KEY = "certxa.sync.lastContactAt";
+
+/** Pure rule behind the lock: has it been longer than the limit since the server last answered? */
+export function offlineLimitReached(lastContactAt: number, now: number, limitMs: number = OFFLINE_LIMIT_MS): boolean {
+  return now - lastContactAt > limitMs;
+}
+
 class SyncEngine {
   private status: SyncStatus = navigator.onLine ? "online" : "offline";
   // Whether the Certxa server actually answers. `navigator.onLine` only says the tablet has a network
@@ -144,6 +153,45 @@ class SyncEngine {
     this.scheduleSyncWithDelay(500);
   }
 
+  // ── How long this device may work with no server ────────────────────────────────────────────────────────
+  // The moment the server last answered is kept on the device. Past OFFLINE_LIMIT_MS without an answer the
+  // screens lock until it is back; nothing saved on the device is touched.
+  private lastContactAt: number = (() => {
+    try {
+      const saved = Number(localStorage.getItem(LAST_CONTACT_KEY));
+      if (Number.isFinite(saved) && saved > 0) return saved;
+    } catch { /* storage unavailable */ }
+    return Date.now();
+  })();
+  private lastContactSavedAt = 0;
+
+  /** The server answered just now. */
+  noteContact() {
+    const now = Date.now();
+    this.lastContactAt = now;
+    if (now - this.lastContactSavedAt < 60_000) return;
+    this.lastContactSavedAt = now;
+    try { localStorage.setItem(LAST_CONTACT_KEY, String(now)); } catch { /* storage unavailable */ }
+  }
+
+  /** True when the server has been out of reach for longer than a device is allowed to work alone. */
+  offlineTooLong(now: number = Date.now()): boolean {
+    return this.isOffline() && offlineLimitReached(this.lastContactAt, now);
+  }
+
+  /** Ask the server once, now, whether it can be reached. */
+  async checkNow(): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/sync/heartbeat?t=${Date.now()}`, { cache: "no-store" });
+      if (!res.ok) return false;
+      this.noteContact();
+      if (!this.reachable) { this.reachable = true; this.handleOnline(); this.scheduleSyncWithDelay(800); }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** True when the server cannot be reached — no network, or a network with no way out. */
   isOffline(): boolean {
     return !navigator.onLine || !this.reachable;
@@ -171,6 +219,7 @@ class SyncEngine {
       const res = await fetch(`/api/sync/heartbeat?t=${Date.now()}`, { cache: "no-store", signal: ctrl.signal });
       if (res.ok) {
         this.reachable = true;
+        this.noteContact();
         this.handleOnline();
         // Handlers registered by the app run their own sync; make sure one runs either way.
         this.scheduleSyncWithDelay(800);

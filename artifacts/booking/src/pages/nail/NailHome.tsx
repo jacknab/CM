@@ -5,6 +5,7 @@
  * choice is the TURN queue, checkout is the POS tab itself (CheckoutMode). This
  * file only owns the screen state and wires the pieces together.
  */
+import { OfflineLimitLock } from "@/components/offline/OfflineLimitLock";
 import { EMPTY_ARRAY } from "@/lib/empty";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
@@ -1075,6 +1076,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   return (
     <div className="dark cx-cal nail-app h-app w-full" data-testid="nail-home">
+      <OfflineLimitLock />
       <a className="nail-skip-link" href="#nail-main">Skip to main content</a>
       <h1 className="sr-only">Nail salon front desk</h1>
       {notice && <div className="nail-notice" data-testid="nail-notice">{notice}</div>}

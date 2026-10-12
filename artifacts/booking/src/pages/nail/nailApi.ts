@@ -183,6 +183,8 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
     if (kept) return kept.data;
     throw err;
   }
+  // Any answer at all, even an error status, means the server was reached.
+  syncEngine.noteContact();
   if (res.ok) syncEngine.noteSignedIn();
   if (isRead && res.ok) answeredFromDevice.delete(url);
   if (isRead && res.ok && res.status !== 204 && storeId != null) {
