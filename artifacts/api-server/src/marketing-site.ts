@@ -20,7 +20,7 @@ const SITE_ORIGIN = "https://certxa.com";
 const APEX_HOSTS = new Set(["certxa.com", "www.certxa.com", "localhost", "127.0.0.1"]);
 
 /** Paths the new app owns. Add a path here (or in the env var) to move it off PHP. */
-const DEFAULT_PATHS = ["/about", "/careers"];
+const DEFAULT_PATHS = ["/about", "/careers", "/changelog", "/roadmap"];
 
 /**
  * Where a link in the new design should point while its own page has not
