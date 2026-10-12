@@ -8,17 +8,19 @@ define('PAGE_BREADCRUMBS', json_encode([
   ['name'=>'Home','url'=>'https://certxa.com/'],
   ['name'=>'Self-Service Check-In Kiosk','url'=>'https://certxa.com/checkin-kiosk'],
 ]));
+// One list feeds both the visible FAQ and its FAQPage markup, so they cannot drift apart.
+$faqs = [
+  ['What device do I need for the kiosk?', 'Any iPad or Android tablet works. Just open the Certxa app in kiosk mode — the screen locks to the check-in flow so clients can\'t browse anything else. A tablet stand or wall mount completes the setup.'],
+  ['Does this replace my front desk?', 'It handles the walk-in greeting and check-in process automatically. Many single-tech studios use the kiosk as a full front desk replacement. Larger studios use it to free up staff time during busy hours.'],
+  ['Can booked clients check in here too — not just walk-ins?', 'Yes — booked clients enter their phone number and are instantly marked as arrived. A ticket prints at your front desk and they\'ll appear as "checked in" on your calendar.'],
+  ['How does the Google review SMS work?', 'After a client\'s service is marked complete in your SalonOS dashboard, Certxa automatically sends them an SMS asking about their experience. Happy clients tap the Google link and leave a review. If they\'re not satisfied, they\'re redirected privately to you — so negative feedback comes to you first, not Google.'],
+  ['Is the kiosk included in my Certxa plan?', 'Yes — kiosk mode is included in all Certxa plans at no extra cost. Automated Google review requests are available on Professional and Elite plans. You just need a compatible tablet and the Certxa app.'],
+  ['Can clients see how long they\'ll wait?', 'Yes — after checking in, the client sees an estimated wait time based on your current queue. You can also send them an automatic SMS when it\'s almost their turn so they can wait comfortably instead of standing at the door.'],
+];
 define('PAGE_SCHEMA', json_encode([
   [
     '@type'      => 'FAQPage',
-    'mainEntity' => [
-      ['@type'=>'Question','name'=>'What is the Certxa walk-in check-in kiosk?','acceptedAnswer'=>['@type'=>'Answer','text'=>'The Certxa check-in kiosk is a self-service tablet screen placed at the front of your nail salon. Walk-in clients choose a service and pick a technician preference — all without you having to stop your work. They\'re instantly added to your live waitlist and a ticket prints automatically at the front desk printer.']],
-      ['@type'=>'Question','name'=>'Does the kiosk work for both walk-ins and booked appointments?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes — the Certxa kiosk handles both. Booked clients can check themselves in by entering their name or phone number, confirming their arrival. Walk-in clients enter fresh and are added to the end of your waitlist automatically. Both flows are handled on the same screen.']],
-      ['@type'=>'Question','name'=>'What device does the kiosk run on?','acceptedAnswer'=>['@type'=>'Answer','text'=>'The Certxa kiosk runs on any iPad or Android tablet. Simply open the Certxa app in kiosk mode, lock the screen to the check-in flow, and place it on your front desk or reception counter. No special hardware required — any modern tablet works.']],
-      ['@type'=>'Question','name'=>'Can clients choose their preferred nail technician at the kiosk?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes — the kiosk lets walk-in clients select a preferred technician or choose "any available tech." Their preference is shown on your waitlist dashboard so you can assign them to the right person as soon as a seat opens.']],
-      ['@type'=>'Question','name'=>'Does the kiosk notify me when someone checks in?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes — the moment a client checks in at the kiosk, a ticket prints instantly at your front desk printer and the waitlist updates in real time. You\'ll never miss a walk-in again, even if you\'re mid-service at the nail station.']],
-      ['@type'=>'Question','name'=>'How does the kiosk help get more Google reviews?','acceptedAnswer'=>['@type'=>'Answer','text'=>'After a client\'s service is complete, Certxa automatically sends them an SMS asking about their experience. Happy clients are guided directly to your Google review page with one tap — making it effortless to collect 5-star reviews without any awkward in-person asks.']],
-    ],
+    'mainEntity' => array_map(fn($f) => ['@type'=>'Question','name'=>$f[0],'acceptedAnswer'=>['@type'=>'Answer','text'=>$f[1]]], $faqs),
   ],
   // HowTo removed 2026-09-22 — Google discontinued HowTo rich results in
   // Sep 2023; it was pure page weight with no search benefit (see
@@ -1493,14 +1495,6 @@ require __DIR__ . '/../includes/nav.php';
     </div>
     <div class="ck-faq">
       <?php
-      $faqs = [
-        ['What device do I need for the kiosk?', 'Any iPad or Android tablet works. Just open the Certxa app in kiosk mode — the screen locks to the check-in flow so clients can\'t browse anything else. A tablet stand or wall mount completes the setup.'],
-        ['Does this replace my front desk?', 'It handles the walk-in greeting and check-in process automatically. Many single-tech studios use the kiosk as a full front desk replacement. Larger studios use it to free up staff time during busy hours.'],
-        ['Can booked clients check in here too — not just walk-ins?', 'Yes — booked clients enter their phone number and are instantly marked as arrived. A ticket prints at your front desk and they\'ll appear as "checked in" on your calendar.'],
-        ['How does the Google review SMS work?', 'After a client\'s service is marked complete in your SalonOS dashboard, Certxa automatically sends them an SMS asking about their experience. Happy clients tap the Google link and leave a review. If they\'re not satisfied, they\'re redirected privately to you — so negative feedback comes to you first, not Google.'],
-        ['Is the kiosk included in my Certxa plan?', 'Yes — kiosk mode is included in all Certxa plans at no extra cost. Automated Google review requests are available on Professional and Elite plans. You just need a compatible tablet and the Certxa app.'],
-        ['Can clients see how long they\'ll wait?', 'Yes — after checking in, the client sees an estimated wait time based on your current queue. You can also send them an automatic SMS when it\'s almost their turn so they can wait comfortably instead of standing at the door.'],
-      ];
       foreach ($faqs as $f): ?>
       <div class="ck-faq-item">
         <button class="ck-faq-q">

@@ -1,168 +1,211 @@
 # GEO Audit Report: Certxa
 
-**Audit Date:** 2026-09-22
+**Audit Date:** 2026-10-12
 **URL:** https://certxa.com
-**Business Type:** Hybrid — Nail Salon SaaS (B2B) + Consumer Salon Directory/Marketplace (B2C), same root domain
-**Pages Analyzed:** ~45 (33 core marketing pages, 6 blog posts sampled of 13, 5 salon directory listings sampled of ~10,000+ shown in the sitemap, 1 state hub page, plus robots.txt/llms.txt/llms-full.txt/sitemap index and children)
+**Business Type:** Hybrid — nail salon software (B2B SaaS, dominant) plus a consumer nail-salon directory on the same domain
+**Pages Analyzed:** 34 unique pages fetched across five analyses (5,242 URLs listed in the four sitemaps)
+**Previous audit:** 2026-09-22, 49/100
 
 ---
 
 ## Executive Summary
 
-**Overall GEO Score: 49/100 (Poor)**
+**Overall GEO Score: 51/100 (Poor)**
 
-Certxa's core SaaS marketing site is well-built — full server-side rendering, every major AI crawler explicitly allowed, a real llms.txt, and genuinely citable FAQ content. But the composite score is dragged down by three things: **Brand Authority is still critical (12/100)** — the entity essentially doesn't exist outside certxa.com itself (no Wikipedia/Reddit/Product Hunt, one stagnant Capterra review, an inconsistent near-empty LinkedIn page); **a deliberate 2026-09-15 code change re-broke a fix from two weeks ago**, re-indexing the entire unclaimed salon directory (~10,000+ pages sampled, likely far more) with `index, follow` and a full `aggregateRating` schema block on boilerplate, unverified third-party listings; and **the site never appears in actual AI-synthesized answers** for the exact "best nail salon software" queries that triggered this whole audit thread a few weeks ago, even though it resolves fine once you search for it by name. This is the fourth audit of certxa.com this month (2026-09-04, -08, -17, and today); several issues are recurring across audits rather than being resolved (the llms.txt root-URL mismatch has now been wrong in three consecutive audits, in two different directions).
+The site itself is in good technical shape: every AI crawler is allowed, all public content is in the raw HTML, pages answer in under 0.2 s, and no errors were seen. What holds the score down is everything around the site. AI systems have almost nothing outside certxa.com to confirm Certxa exists (one Capterra review, a LinkedIn page with 4 followers and the wrong founding year, no Wikipedia, Reddit, YouTube or G2 content), and Certxa did not appear in any of five non-brand test searches. The second weakness is on the site: pages contradict each other on facts an AI would quote (what Autumn costs, whether deposits exist, support hours, whether there are native apps), and nothing on the marketing pages cites an outside source.
 
-### Fixes Applied After This Audit (same day, 2026-09-22)
-
-The user asked for the logged findings to be fixed immediately. The following were resolved in code right after this audit ran (scores above reflect the state *before* these fixes — a re-audit would score higher):
-
-- **Critical #1 (directory regression):** restored the `isVerified` gate in `entry-server.tsx` (unclaimed salons → `noindex, follow`, and `aggregateRating` now also requires `isVerified`) and switched both sitemap routes in `salonDirectory.ts` back to `getClaimedSalonList()`.
-- **Critical #2 (fake-looking sitewide rating):** removed `aggregateRating` from the `SoftwareApplication` schema in `php/includes/header.php` until there's a real sample size.
-- **Critical #4 (llms.txt root mismatch):** corrected `llms.txt` and `llms-full.txt` to state the root URL is the SaaS homepage, not the directory; also fixed a stale, self-contradicting comment in `php/router.php` that was part of why this kept drifting across audits.
-- **High (`/nail`/`/calendar` crawlable SPA shell):** turned out to be systemic across all ~80 internal app routes, not just those two — added `injectNoindex()` in `static.ts`'s final SPA catch-all.
-- **High (homepage mock date):** `php/overview/default.php`'s demo client card now reads "Client since Apr 2026" instead of "Mar 2024."
-- **High (obsolete `HowTo` schema):** removed from `/online-booking`, `/client-reviews`, `/autumn`, and `/checkin-kiosk` (found on all 4, not just `/online-booking`).
-
-Not fixed (need the user, not code): Brand Authority (LinkedIn/G2/Wikipedia/Product Hunt/Capterra reviews), the `Article`/`BlogPosting` schema gap, blog author attribution, and the comparison-page tone rewrite.
+The score is up 2 points from September. Technical and schema improved; brand authority has not moved (13 vs 12).
 
 ### Score Breakdown
 
 | Category | Score | Weight | Weighted Score |
 |---|---|---|---|
-| AI Citability | 68/100 | 25% | 17.0 |
-| Brand Authority | 12/100 | 20% | 2.4 |
-| Content E-E-A-T | 48/100 | 20% | 9.6 |
-| Technical GEO | 70/100 | 15% | 10.5 |
-| Schema & Structured Data | 55/100 | 10% | 5.5 |
-| Platform Optimization | 41/100 | 10% | 4.1 |
-| **Overall GEO Score** | | | **49.1 → 49/100** |
+| AI Citability | 65/100 | 25% | 16.25 |
+| Brand Authority | 13/100 | 20% | 2.60 |
+| Content E-E-A-T | 36/100 | 20% | 7.20 |
+| Technical GEO | 88/100 | 15% | 13.20 |
+| Schema & Structured Data | 76/100 | 10% | 7.60 |
+| Platform Optimization | 42/100 | 10% | 4.20 |
+| **Overall GEO Score** | | | **51/100** |
+
+### Fixed during this audit (live now)
+
+| What | Where |
+|---|---|
+| `llms.txt` said "Plans start at $9/month" in three places; now "Solo plan is free; team plans start at $22/month" | `/llms.txt` |
+| `llms-full.txt` carried the old Solo price in 12 places ("Solo — $9/mo ($7 annual)", "Certxa $9 – $49/mo", the Vietnamese page) | `/llms-full.txt` |
+| `llms.txt` linked `/listings/` twice (404) and `/overview` (redirect); now links real pages | `/llms.txt` |
+| `llms.txt` said in one section that `/` is the software home page and in another that `/` is the salon directory; the second was wrong and is corrected | `/llms.txt` |
+| Home page "How much does Certxa cost?" never mentioned the free plan and said a credit card is required; now states Solo free, Professional $22, Elite $49, card only for team plans (visible text and FAQ markup) | `/` |
+| "Best free" page said "Certxa isn't free" and "no staff cap on any Certxa plan" beside "$0 Certxa Solo plan" and "1 on Solo" | `/best-free-salon-booking-system` |
+| Kiosk page's FAQ markup listed six questions that were not on the page; markup is now generated from the visible list | `/checkin-kiosk` |
 
 ---
 
 ## Critical Issues (Fix Immediately)
 
-1. **Salon directory indexing/schema gating was deliberately reverted, re-indexing the entire unclaimed corpus.** Commit `4fcdf767` (2026-09-08) added claim-status gating so unclaimed `/salon/:slug` pages got `noindex, follow` and were excluded from the sitemap. Commit `2acebbf5` (2026-09-15) explicitly deleted this — `artifacts/marketplace/src/entry-server.tsx:397-402` now emits `index, follow` unconditionally, and `artifacts/api-server/src/routes/salonDirectory.ts:128-174`'s sitemap route switched from `getClaimedSalonList()` to the full `getSalonList()`. Confirmed live on 3 independently sampled pages (e.g. `certxa.com/sahara-nails-and-lashes-east-lincoln-avenue-orange-Xa7JCo`): `index, follow`, full `aggregateRating` (4.8★/313 reviews) asserted on an unclaimed business, ~7,000 chars of near-identical templated boilerplate ("Experience a serene escape... skilled team is dedicated... warm atmosphere..."), no visible review content backing the count. At scale (~10,000+ sampled URLs across 10 sitemap shards, part of a larger ~47-55k record dataset per the code), this is a real Google structured-data policy risk and the most plausible single driver of a sitewide quality/trust discount. Logged to `pre-errors.md`.
-
-2. **`SoftwareApplication.aggregateRating` (`ratingValue: 5, ratingCount: 1`) is asserted sitewide off a single review.** Present in the shared `@graph` (`php/includes/header.php:145`, included on the homepage, `/pricing`, `/about`, `/nail-salon-software`, `/online-booking`, and every blog post). A code comment there says it reflects a real Capterra review, so it isn't fabricated — but a perfect 5.0 score backed by exactly one review, published identically on every page of the site, is exactly the pattern Google's structured-data guidelines flag as low-trust/self-serving, and it risks rich-result suppression for the *entire domain*, not just this node. Fix: drop `aggregateRating` from the sitewide schema until there's a real sample size, or source it live from Capterra/G2 instead of hardcoding it.
-
-3. **Brand Authority remains critical and effectively unchanged across four audits (13→20→11→12/100).** Zero Wikipedia/Wikidata, zero Reddit, zero Product Hunt, YouTube presence is a single non-brand upload. LinkedIn now exists (new since the 09-08 audit) but is a near-empty shell — 3 followers, no posts, and states "11-50 employees / Founded 2024," directly contradicting the site's own "founded Feb 2026, 7 months old" story; an AI system cross-checking entities would read this as an inconsistency, not a credibility boost. The G2 listing referenced in `sameAs` returns HTTP 403 to automated checks and surfaces no corroborating content in web search — its substance is unverifiable. Capterra is real but stuck at exactly 1 review since the 09-08 audit. This is not fixable in code; it needs real-world action (see Quick Wins/30-Day Plan).
-
-4. **`llms.txt`/`llms-full.txt` have misdescribed the site root in every audit this month, in two different directions.** The 09-17 audit found them pointing at the SaaS homepage while the live root served the marketplace. Today, both files state the opposite: the root URL is described as the consumer directory homepage ("a considered local guide to independent salons..."), while the live root (confirmed via fresh fetch, 2026-09-22) actually serves the SaaS marketing homepage (title "Nail Salon Management Platform | Certxa", H1 "Nail salon software that fills every chair"). Any AI system trusting llms.txt over a live crawl will describe certxa.com's own homepage incorrectly — precisely the failure mode llms.txt exists to prevent, and it has now been wrong for at least two consecutive site-architecture changes without the file ever being updated to track them.
-
----
+1. **Certxa is not recognized as an entity outside its own site.** Searching "Certxa reviews" returned wine and cheese results (treated as a misspelling). No Wikipedia or Wikidata entry (both APIs return zero), no Reddit, YouTube, Product Hunt or Trustpilot mentions, one Capterra review in total. G2 returned 403 and has no indexed page. This cannot be fixed from the server.
+2. **Certxa is absent from every non-brand query tested.** "best nail salon software 2026", "free salon booking software", "AI receptionist for salons", "nail salon check-in kiosk software": none returned Certxa. The one listicle that mentions it (iTechGuides) lists "SalonOS by Certxa" at $7/month with no free plan, which is now wrong.
+3. **Autumn's price is stated two contradictory ways.** `/pricing`: "From $29 /mo" and "$0.50 per call handled". `/autumn`: "There's no additional monthly fee", billed per "minute of active call time". An AI asked what Autumn costs will quote one of these, and one is wrong. Needs your decision on the real price.
+4. **Deposits are both "Coming Soon" and available.** `/pricing` lists "Deposits & prepayments — Coming Soon" on all plans; `/online-booking` says "You can require a deposit (fixed amount or percentage)"; `/best-free-salon-booking-system` says "Deposits, POS, and a kiosk included".
 
 ## High Priority Issues
 
-- **Zero AI-synthesized-answer visibility for the exact queries that triggered this audit thread.** Live WebSearch for "best nail salon booking software 2026" and "nail salon POS software comparison" surfaces Mangomint, Boulevard, Fresha, Booksy, Square, GlossGenius, Vagaro, Setmore, and others — no Certxa. Searching "Certxa" by name resolves fine (Capterra, own pages, one listicle), confirming the entity is indexed but simply never selected at the discovery/comparison stage.
-- **Comparison pages read as one-sided marketing and don't rank for their own query.** `/certxa-vs-glossgenius` frames GlossGenius's shipped-vs-announced features unfavorably and doesn't surface at all in web search for "Certxa vs GlossGenius" — third-party "alternatives" roundups win that query instead. A neutral, fact-checkable rewrite (acknowledging real competitor strengths) is more likely to be cited by Perplexity/AI Overviews than the current copy.
-- **No `Article`/`BlogPosting` schema on any blog post.** The sitewide `@graph` only emits a generic `WebPage` node for content pages — no `headline`, `datePublished`, `author`→Person link, or `wordCount`. This is the single most GEO-relevant schema type for citable content and it's absent entirely.
-- **No author attribution or bio on any of the 13 blog posts.** All carry byline "Thanh Lam" with no link, credentials, or bio, and there's no dedicated author page — the founder's genuinely strong `/about` narrative never transfers to the content that most needs it.
-- **Zero external citations across all 7 sampled blog posts** (of 13) — every post links only to Certxa's own product pages. This is a moderate originality/E-E-A-T risk at scale even though the writing itself doesn't read as AI-generated filler.
-- **`HowTo` schema present on `/online-booking`** — Google removed HowTo rich results in September 2023; it's dead weight, not a benefit.
-- **No IndexNow implementation** despite a live Bing Webmaster Tools verification tag — Bing/Copilot is relying on crawl-only discovery.
-- **`/nail` and `/calendar` (no trailing slash) serve a crawlable, `index, follow` SPA shell** with no robots.txt rule covering the no-slash path (only `/calendar/` with a trailing slash is disallowed). Logged to `pre-errors.md`.
-- **Unverified "50,000+ beauty professionals" claim surfaced in search snippets from certxa.com**, sitting next to a 7-month-old founding date — worth confirming this figure is real before it propagates further into AI answers, since an implausible number next to a visible "founded 2026" signal is exactly the kind of thing cross-referencing AI systems (Perplexity, Gemini) discount a source for.
-- **Homepage demo dashboard shows a client "since Mar 2024,"** two years before Certxa's real Feb 2026 founding date (`php/overview/default.php:368`) — an easy internal-consistency slip. Logged to `pre-errors.md`.
-
----
+1. **Support hours conflict.** Home: "24/7 live support". `/contact`: "Monday – Friday · 9:00 am – 6:00 pm ET · Closed weekends".
+2. **Native apps conflict.** Home: "Certxa has native apps for both iOS … and Android". `/pricing`: "iOS & Android app — Coming Soon".
+3. **Off-site facts are stale.** Capterra shows a $9 starting price; LinkedIn says founded 2024 with 11–50 employees (the site says February 2026); iTechGuides says $7/month.
+4. **No outbound sources anywhere.** Zero external citations on all 16 marketing and blog pages fetched. Competitor prices on the comparison pages are dated ("as of August 2026", "September 2026") but not linked to the competitor's pricing page.
+5. **No visible date or author on marketing pages.** Only blog posts show a byline and date. The comparison pages are the most quotable content on the site (80/100) and carry neither.
+6. **Home page FAQ markup still differs from the visible FAQ.** "Does Certxa work for solo nail technicians?" in the markup is worded differently on the page, four answers are paraphrases, and the migration question differs. (The cost answer was aligned today.)
+7. **Directory pages carry no Organization data.** Salon profiles, `/listings/*`, `/deals`, `/search` and `/for-business` have no Organization node, `@id` or `sameAs`. The marketing pages carry the correct seven-link list; the directory half says nothing about who publishes it.
+8. **Home page meta description leads with the 60-day trial, not the free plan.**
 
 ## Medium Priority Issues
 
-- `/autumn`'s "2,847 calls answered this week / 1,203 appointments booked / 98.4% client satisfaction" is a live demo-widget mockup, not an aggregate company metric, but nothing in the page text distinguishes it from a real claim to an AI crawler — same pattern as the sitewide single-review rating: precise-looking, unverifiable numbers.
-- Founder `Person` schema (`@id: #founder-tom-tham`) has no `sameAs` (no personal LinkedIn/X), weakening E-E-A-T verification for content attributed to him.
-- No `speakable` schema anywhere on the site.
-- `sameAs` is missing Wikipedia/Wikidata/Crunchbase/YouTube — the strongest AI entity-resolution signals, absent entirely.
-- Comparison pages (`/certxa-vs-*`) get no comparison-specific schema — just the generic sitewide FAQPage.
-- Directory hub pages (e.g. `/listings/alabama`) carry BreadcrumbList/CollectionPage but no Organization/sameAs at all, so AI models can't connect the directory back to Certxa's own entity graph.
-- `main.js` on marketing pages lacks `defer`/`async` — minor render-blocking/INP risk.
-- Blog posts show no visible `datePublished`/freshness signal to readers, only in schema (which itself is currently just a generic WebPage node — see Critical/High).
+1. Unsupported claims: "24/7 Platform uptime guarantee" (`/pricing`, no SLA); "Funds land in your bank account by next business day, guaranteed" and "Most migrations complete in under an hour" (home); "Average response under 2 minutes" and "no bots" (`/contact`); "Salons using this combination inside Certxa report meaningfully fewer no-shows" (blog); "Lower cost at every tier" (`/certxa-vs-glossgenius`, ignores Certxa's $0.60 per transaction).
+2. `/autumn`: "callers routinely can't tell she isn't your front-desk team" is unprovable, stronger than the page's own FAQ ("Many callers don't realise") and an AI-disclosure risk. "Picks up within two seconds" should stay only if call logs support it. The page also gives no price figure at all.
+3. Mock-up numbers read as real results: "94% booking fill rate", "↑ 23%", "Client since Apr 2026 · 24 visits" on the home page; the `/online-booking` calendar shows "May 2025", before the company existed.
+4. Scope conflict: "built exclusively for nail studios" (home FAQ, `/pricing`) against blog copy for "stylists, nail technicians, and barbers" and `/online-booking` mock-ups showing balayage and beard cuts.
+5. Founder appears as "Thanh Lam" on the page and "Tom Tham" only in schema `alternateName`; the Person node has no `sameAs`; there is no author page or bio.
+6. `/certxa-vs-glossgenius`: table says "Standard — $28/mo", FAQ says "$24–$168/month billed monthly".
+7. The two 2026-10-04 blog posts (about 1,300 and 1,550 words, published two minutes apart) contain no numbers, prices or sources.
+8. `/about` is about 350–500 words with two headings: thin for the main page describing the company. `/help` is 3 KB.
+9. Claimed salon profile (`/tluxxe-nail-studio-…`): `aggregateRating` 5.0 from 4 reviews with no reviews shown; service prices in markup (25/40/55) not shown on the page.
+10. All salon profiles: `streetAddress` holds the whole address, `postalCode` is missing, no `openingHoursSpecification`.
+11. `/salons` has a second SoftwareApplication node ("price 0, Free trial included") that conflicts with the main one.
+12. `/sitemap-listings.xml` stamps all 5,192 URLs with today's date as `lastmod`; the blog sitemap has no `lastmod` at all; 13 of 16 blog posts date from 25–26 August.
+13. `sameAs` lacks YouTube, Google Business Profile, Wikidata and Crunchbase.
 
 ## Low Priority Issues
 
-- Cosmetic schema `@id` mismatch: `#founder-tom-tham` vs. the displayed name "Thanh Lam" (`alternateName: "Tom Tham"` explains it, but it's a confusing artifact for anyone reading the raw graph).
-- Directory listing URLs carry a trailing 6-character mixed-case random ID (e.g. `-Xa7JCo`), a minor deviation from all-lowercase URL convention, repeated at high volume.
-- Capterra review count stagnant at 1 since the prior audit — solicit more.
-- Product Hunt launch absent — low-cost, high-signal opportunity for a young SaaS product.
-- Security headers otherwise comprehensive and duplicate-free of leaks (no `Host`/`X-Powered-By` disclosure — the prior `php-proxy.ts` fix holds); minor redundancy where both nginx and the app set the same headers.
+1. PHP pages send no `Cache-Control`, `ETag` or `Last-Modified`.
+2. Node-served pages send some security headers twice, with conflicting `x-xss-protection` values; CSP allows `unsafe-inline` and `unsafe-eval`.
+3. `Claude-SearchBot` is not named in `robots.txt` (it is covered by the `*` rule). No IndexNow. No HTTP/3.
+4. `/online-booking` points `breadcrumb` at `#breadcrumb`, which is not declared; `/launchsite` references `#website` and `#software` without declaring them; `contactPoint.hoursAvailable` is a string; `legalName` is missing.
+5. Heading level skip (h2 to h4) on `/online-booking`; emoji in a heading on `/pricing`.
+6. City listing pages are thin (about 345 words); salon profile images have no width/height.
+7. `/terms` says Delaware law and shows no "Certxa LLC" or street address.
+8. "SalonOS" collides with unrelated products of the same name on Capterra.
 
 ---
 
 ## Category Deep Dives
 
-### AI Citability (68/100)
+### AI Citability (65/100)
 
-Crawler access is exemplary — every major AI crawler explicitly `Allow`ed, and the FAQPage schema plus direct Q&A phrasing on pages like `/online-booking` ("A salon online booking service is software that lets clients schedule their own appointments...") is exactly the self-contained, quotable structure AI Overviews lift verbatim. The comparison pages' specific pricing breakdowns ("Certxa's Professional plan ($22/mo) costs less than GlossGenius's entry-level Standard plan") are similarly strong. The recurring weakness is a pattern of precise-sounding but unsourced or demo-derived statistics (`/autumn`'s live-demo call counters, `/checkin-kiosk`'s "2,400+ salons using kiosk mode," the "50,000+ beauty professionals" claim) — individually minor, but the repetition of unverifiable precision compounds the trust problem the sitewide single-review rating already creates.
+| Page | Score |
+|---|---|
+| `/certxa-vs-glossgenius` | 80 |
+| `/pricing` | 74 |
+| `/autumn` | 70 |
+| `/` | 62 |
+| `/checkin-kiosk` | 60 |
+| `/blog/salon-turn-system-walk-in-queue-software` | 58 |
+| `/online-booking` | 55 |
+| `/about` | 52 |
+| `/blog/vietnamese-nail-salon-pos-system` | 50 |
 
-### Brand Authority (12/100)
+Strongest passage, from the GlossGenius comparison: "Entry plan Solo — free / Standard — $28/mo ($24 annual) … Figures as of August 2026". It is dated, specific and stands on its own. The weakest was the home page cost answer, which gave no price; it was rewritten today. Marketing headings are slogans, not questions: `/online-booking` and `/checkin-kiosk` have no question headings above the FAQ, and the kiosk FAQ questions are buttons, not headings.
 
-The weakest category, essentially flat across four audits this month (13 → 20 → 11 → 12). Wikipedia and Wikidata confirmed absent via direct search. Reddit: zero real discussion found (the `sameAs` link points to an unconfirmed personal profile, not a subreddit or verified presence). YouTube: one non-brand video. LinkedIn is new since the 09-08 audit but net-negative in its current state — a 3-follower shell page with a founding-date claim that contradicts the site itself. G2 is referenced in schema but unverifiable (403, no search corroboration). Capterra is the one genuine, real asset — a specific, positive, verified review — but it hasn't grown past 1 since the prior audit. This category needs real-world action from the user (reviews, a real LinkedIn presence, a Product Hunt launch); it cannot be fixed from the codebase.
+### Brand Authority (13/100)
 
-### Content E-E-A-T (48/100)
+| Platform | Status | Evidence |
+|---|---|---|
+| Wikipedia / Wikidata | Absent | Both APIs return zero results |
+| Capterra | Exists, thin | 1 review, 5.0, still shows $9 |
+| G2 | Unknown | 403 on fetch, no indexed page |
+| LinkedIn | Exists, inactive | 4 followers, "founded 2024", "11–50 employees" |
+| Reddit, YouTube, Product Hunt, Trustpilot | Absent | Search finds only other companies (Certopus, Certa) |
+| Listicles | One | iTechGuides, with an outdated price |
+| Facebook, X, Instagram, BBB | Not checked | |
 
-The founder narrative on `/about` is a real, specific, verifiable-in-principle asset (ran a nail salon, frustrated by long-term contracts, named, dated, located) and the single strongest E-E-A-T signal on the site — but it's isolated: no link from any blog post, no dedicated author page, no LinkedIn tie-in. All 13 blog posts share one unlinked byline and cite zero external sources; the strongest sampled post (`how-to-choose-nail-salon-software`) names real competitors and gives genuinely comparative advice, while the weakest (`get-more-google-reviews-nail-salon`) is generic SaaS-blog boilerplate. Maturity claims are otherwise handled honestly (no fake customer counts on homepage/pricing), which makes the homepage's "Client since Mar 2024" mock-data slip and the sitewide single-review rating stand out more, not less — they're the two concrete, avoidable inconsistencies in an otherwise honest content posture.
+Unchanged since September. Adding links to `sameAs` records profiles; it does not create mentions.
 
-### Technical GEO (70/100)
+### Content E-E-A-T (36/100)
 
-The core marketing site is genuinely strong: confirmed real SSR (full page text present in raw HTML before JS), comprehensive security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy all present and correctly scoped), no backend-identifying header leaks, proper mobile viewport, and a real 404 (the prior soft-404 fix holds). The score is pulled down almost entirely by one issue: the confirmed-systemic directory indexing regression (Critical #1), which — because it's sampled at 3-for-3 and backed by a source-level root-cause — is treated as a major, not minor, technical defect, plus the newly-found `/nail` and `/calendar` no-slash crawlability leak.
+Experience 9/25, Expertise 10/25, Authoritativeness 6/25, Trustworthiness 11/25. The founder story on `/about` and the honest `/case-studies` page are real strengths, and no invented testimonials, ratings or review markup were found. The score is low because of the contradictions listed above, the absence of any outside source, no author bio, and no first-hand evidence (screenshots of the real product, customer data, call statistics).
 
-### Schema & Structured Data (55/100)
+### Technical GEO (88/100)
 
-100% JSON-LD, no dangling `@id` references, valid nesting throughout everything checked (WebSite → Organization → Person → SoftwareApplication → FAQPage, plus BreadcrumbList on comparison/directory pages). The `Offers`/`priceSpecification` structure is fully valid (no `billingIncrement` error like an earlier audit found — that stays fixed). The two real defects are the aggregateRating issues (Critical #2, and the same pattern repeated on ~10,000+ unclaimed directory listings per Critical #1) and a completeness gap: no `Article`/`BlogPosting` on any content page, `HowTo` lingering on `/online-booking` despite Google discontinuing that rich result in 2023, and `sameAs` missing the highest-value entity-resolution links (Wikipedia/Wikidata).
+Measured from the server itself, so timings exclude network latency: no 5xx in 25 requests; first byte in 0.08–0.16 s; HTTP/2; gzip and brotli; HSTS with preload; canonical tags, unique titles and descriptions on all seven pages sampled; real 404 with `noindex` for a made-up URL; GPTBot and ClaudeBot receive byte-identical pages to a browser. Visible words without JavaScript: home 2,059, pricing 1,624, Autumn 1,872, online booking 1,030. Core Web Vitals and real-world speed were not measured.
 
-### Platform Optimization (41/100)
+### Schema & Structured Data (76/100)
 
-Real, current AI-answer testing (not inference) confirms the core problem: Certxa is indexed and answerable by name but never selected in comparative/discovery queries, where 7+ named competitors dominate identical searches. Per-platform: Bing Copilot scores best (~55, helped by a live `msvalidate.01` verification tag and clean literal titles, held back by no IndexNow), Google AI Overviews next (~50, good FAQPage schema but no comprehensiveness/authority edge yet), Gemini (~40), ChatGPT web search (~35, no Wikipedia/Wikidata), and Perplexity worst (~25, near-total absence of Reddit/community validation, which this platform weights heavily). This mirrors the Brand Authority findings almost exactly — the platform-visibility gap and the entity-recognition gap are the same underlying problem viewed from two angles.
+All structured data is server-rendered JSON-LD and parses. Holding as intended: no software-wide star rating; offers show Solo 0, Professional 22, Elite 49; unclaimed listings are `noindex` and unrated; `/pricing`, `/autumn` (all nine questions, including the three new ones), `/about`, `/certxa-vs-vagaro` and blog posts are valid. Gaps are the directory half having no Organization data and the home page FAQ mismatch.
+
+### Platform Optimization (42/100)
+
+| Platform | Score | Biggest gap | Biggest strength |
+|---|---|---|---|
+| Bing Copilot | 53 | No IndexNow | Bing-verified on every page, clean HTML |
+| Google AI Overviews | 50 | Headings are slogans, no rankings | FAQ, software and speakable markup everywhere |
+| ChatGPT search | 40 | Brand barely recognized | OpenAI crawlers explicitly allowed |
+| Perplexity | 34 | No outbound sources, no community validation | Dated claims on comparison pages |
+| Gemini | 31 | No Google Business Profile, YouTube or Knowledge Graph signals | One consistent Organization and founder block sitewide |
+
+Per-platform scores are estimates; actual index status in Google and Bing was not checked.
 
 ---
 
 ## Quick Wins (Implement This Week)
 
-1. Restore the `isVerified` gate in `artifacts/marketplace/src/entry-server.tsx` and switch `salonDirectory.ts`'s sitemap routes back to `getClaimedSalonList()` — reverting the `2acebbf5` regression is the single highest-leverage fix available, addressing a Critical, at-scale policy risk with a small, already-proven code change.
-2. Remove or re-source the sitewide `SoftwareApplication.aggregateRating` (`php/includes/header.php:145`) — either drop it until there's real review volume, or pull it live from Capterra/G2 rather than hardcoding a 1-review 5.0.
-3. Fix the `llms.txt`/`llms-full.txt` root-URL description to match whatever the live root actually serves today (the SaaS homepage) — a one-file fix for an error that has now persisted, in two different directions, across three consecutive audits.
-4. Add `noindex` (or a robots.txt rule) to the no-trailing-slash `/nail` and `/calendar` SPA shell routes.
-5. Fix the homepage mock "Client since Mar 2024" date (`php/overview/default.php:368`) to something after Feb 2026.
+1. Decide the four facts the site disagrees on (Autumn's price, deposits, support hours, native apps) so every page can say the same thing. These are the answers an AI is most likely to quote.
+2. Update the Capterra listing price to "Free" and the LinkedIn page to founded 2026 with the real team size.
+3. Ask iTechGuides to correct their entry (Solo is free, not $7/month).
+4. Add a visible "Last updated" date and source links to competitor pricing pages on the five comparison pages.
+5. Make the home page FAQ markup come from the visible list, as was done for the kiosk page today.
 
 ## 30-Day Action Plan
 
-### Week 1: Stop the regression, fix the trust signals
-- [ ] Revert the `2acebbf5` directory-indexing regression (restore claim-status gating on `index/noindex` and the sitemap source)
-- [ ] Remove/re-source the sitewide fake-looking `aggregateRating`
-- [ ] Fix the `llms.txt` root-URL mismatch
-- [ ] Fix the "Client since Mar 2024" mock-data date
+### Week 1: One set of facts
+- [ ] Settle Autumn pricing, deposits, support hours and app availability; apply to every page and to `llms-full.txt`
+- [ ] Remove or soften the unsupported guarantees ("24/7 uptime guarantee", "next business day, guaranteed", "under 2 minutes")
+- [ ] Label mock-up figures as examples and fix the "May 2025" calendar
 
-### Week 2: Schema completeness
-- [ ] Add `Article`/`BlogPosting` schema to the blog template (headline, dates, author→Person, publisher→Organization)
-- [ ] Wire blog `author` to the founder's existing `Person` node instead of leaving it unlinked
-- [ ] Remove the obsolete `HowTo` schema from `/online-booking`
-- [ ] Add `speakable` to content templates; add `sameAs` to the founder `Person` node
+### Week 2: Outside profiles
+- [ ] Correct Capterra, LinkedIn and the iTechGuides entry
+- [ ] Ask existing salons for Capterra and G2 reviews (target 10 each)
+- [ ] Create a YouTube channel with three short product walkthroughs and a Google Business Profile; add both to `sameAs`
 
-### Week 3: Content authority
-- [ ] Add a dedicated author page for Thanh Lam, linked from every blog post
-- [ ] Add 1-2 external, authoritative citations to each blog post going forward
-- [ ] Rewrite `/certxa-vs-*` comparison pages toward neutral, fact-checkable framing that acknowledges real competitor strengths
-- [ ] Verify (or soften) the "50,000+ beauty professionals" claim surfacing in search snippets
+### Week 3: Proof on the page
+- [ ] Add an author page for Thanh Lam with a bio and profile links; put bylines and dates on marketing pages
+- [ ] Add source links and a checked-on date to every competitor claim
+- [ ] Expand `/about` with company details (Certxa LLC, address, team) and real product screenshots
 
-### Week 4: Off-site brand authority (needs the user, not code)
-- [ ] Fix the LinkedIn "Founded 2024 / 11-50 employees" mismatch and post real content to reduce the empty-shell signal
-- [ ] Solicit 2-3 more genuine Capterra/G2 reviews from real customers
-- [ ] Launch on Product Hunt
-- [ ] Implement IndexNow (key file + ping on content changes)
+### Week 4: Structure
+- [ ] Add the Organization node to the directory pages
+- [ ] Fix salon profile addresses (`postalCode`, opening hours) and show the reviews behind any star rating
+- [ ] Use real change dates in the listings sitemap and add `lastmod` to the blog sitemap
+- [ ] Rewrite two or three section headings per product page as the questions people ask
 
 ---
 
 ## Appendix: Pages Analyzed
 
-| URL | Notes |
-|---|---|
-| `/` | SaaS homepage, live-verified 2026-09-22, contradicts llms.txt |
-| `/pricing`, `/about`, `/nail-salon-software`, `/online-booking`, `/certxa-vs-vagaro`, `/certxa-vs-glossgenius` | Raw HTML + JSON-LD fetched/parsed |
-| `/blog/how-to-price-your-menu-in-2026` + 6 more of 13 sampled | Word count, byline, citations checked |
-| `/listings/alabama` | Directory hub schema checked |
-| 5 salon listing pages (sampled from `sitemap-salons-1.xml`) | All 5/5 confirmed `index, follow` + unbacked `aggregateRating` |
-| `/nail`, `/calendar` (no slash) | Confirmed crawlable SPA shell, no robots rule |
-| `/this-page-does-not-exist-xyz` | Confirmed real 404, not soft-404 |
-| `robots.txt`, `sitemap.xml` + 4 child sitemaps, `llms.txt`, `llms-full.txt` | Fetched and parsed in full |
+| URL | Title / role | GEO Issues |
+|---|---|---|
+| `/` | Home | 6 |
+| `/pricing` | Pricing | 5 |
+| `/autumn` | AI receptionist | 4 |
+| `/online-booking` | Online booking | 5 |
+| `/checkin-kiosk` | Check-in kiosk | 2 (1 fixed) |
+| `/about` | About | 2 |
+| `/contact` | Contact | 2 |
+| `/help` | Help | 1 |
+| `/terms` | Terms | 1 |
+| `/case-studies` | Case studies | 0 |
+| `/certxa-vs-glossgenius` | Comparison | 3 |
+| `/certxa-vs-vagaro` | Comparison | 2 |
+| `/best-free-salon-booking-system` | Comparison | 2 (2 fixed) |
+| `/salons`, `/launchsite` | Product pages | 1 each |
+| `/blog/salon-turn-system-walk-in-queue-software` | Blog, 2026-10-04 | 2 |
+| `/blog/vietnamese-nail-salon-pos-system` | Blog, 2026-10-04 | 2 |
+| `/blog/how-to-price-your-menu-in-2026` | Blog | 0 |
+| `/blog/how-to-choose-nail-salon-software` | Blog | 1 |
+| `/blog/reduce-no-shows-nail-salon` | Blog | 1 |
+| `/tluxxe-nail-studio-…-HaR2gr` | Claimed salon profile | 3 |
+| `/nailtique-green-valley-road-birmingham-TE1QXl` and two others | Unclaimed profiles (noindex) | 1 |
+| `/listings/wayne--new-jersey`, `/listings/birmingham--alabama` | City listings | 1 |
+| `/robots.txt`, `/llms.txt`, `/llms-full.txt`, five sitemaps | Crawl files | 3 (2 fixed) |
 
-No fetch failures or timeouts encountered. Prior audits referenced for delta comparison: 2026-09-04, 2026-09-08 (session memory), 2026-09-17 (`GEO-AUDIT-REPORT.md` git history).
+**Not verified:** G2 profile content (403), Capterra and iTechGuides page contents (search snippets only), Facebook, X, Instagram and BBB profiles, competitor prices against competitor sites, Core Web Vitals, and Google or Bing index status. Search tests used one US engine and seven queries.

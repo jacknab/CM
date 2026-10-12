@@ -257,7 +257,7 @@ From $29.99/mo after the trial ends
 Certxa
 No — 60-day trial
 Unlimited
-From $9/mo, but booking + POS + client management + kiosk included on every plan
+Team plans from $22/mo; booking + POS + client management + kiosk included on every plan
 Pricing and free-plan details for Setmore, Square Appointments, Fresha, Vagaro, and Booksy are based on each provider's publicly published pricing pages as of September 2026. Terms change frequently — always confirm current pricing directly with the provider before switching.
 
 ## Setmore and Square Appointments
@@ -283,7 +283,7 @@ Free scheduling tools rarely include a walk-in check-in kiosk, built-in POS, or 
 ## Certxa: the next step after free
 Certxa isn't free, but it's built to be the cheapest real upgrade once a free plan stops fitting — unlimited staff from the entry plan, no long-term contract, and a 60-day free trial to test it first.
 
-### Unlimited staff, from $9/mo
+### Unlimited staff, from $22/mo
 No per-seat pricing and no staff cap on any Certxa plan — a meaningful difference from Setmore's 4-person free ceiling.
 
 ### Deposits, POS, and a kiosk included
@@ -478,11 +478,11 @@ Fresha's low subscription price comes with a marketplace commission on top. Here
 
 ## What each plan actually costs
 Fresha removed its free-forever plan in early 2025. Figures as of August 2026 — verify current pricing directly with each provider before switching.
-Certxa $9 – $49/mo ⭐
+Certxa $0 – $49/mo ⭐
 Fresha $14.95 – $19.95/mo + commission
 Subscription
 Entry plan
-Solo — $9/mo ($7 annual)
+Solo — free
 Individual — $19.95/mo
 Team plan
 Professional — $22/mo ($18 annual), unlimited staff
@@ -548,11 +548,11 @@ Both platforms cover booking, payments, and client management. Here's how the pr
 
 ## What each plan actually costs
 GlossGenius pricing shown is billed annually (monthly billing runs higher on both platforms). Figures as of August 2026 — verify current pricing directly with each provider before switching.
-Certxa $9 – $49/mo ⭐
+Certxa $0 – $49/mo ⭐
 GlossGenius $24 – $148/mo
 Plans
 Entry plan
-Solo — $9/mo ($7 annual)
+Solo — free
 Standard — $28/mo ($24 annual)
 Mid plan
 Professional — $22/mo ($18 annual)
@@ -625,11 +625,11 @@ GoCheckIn prices by staff count and adds a setup fee. Here's how the plans, fees
 
 ## What each plan actually costs
 GoCheckIn's plans are tiered by staff count, with SMS add-ons billed separately. Figures as of August 2026 — verify current pricing directly with each provider before switching.
-Certxa $9 – $49/mo ⭐
+Certxa $0 – $49/mo ⭐
 GoCheckIn $20 – $99/mo + $100 setup
 Plans
 Entry plan
-Solo — $9/mo ($7 annual), 1 staff
+Solo — free, 1 staff
 Basic — $20/mo, up to 5 staff
 Mid plan
 Professional — $22/mo ($18 annual), unlimited staff
@@ -695,11 +695,11 @@ Vagaro's advertised price covers one calendar. Here's what a real multi-staff na
 
 ## What each plan actually costs
 Vagaro's core pricing model charges per bookable calendar (per staff member), with add-ons billed separately. Figures as of August 2026 — verify current pricing directly with each provider before switching.
-Certxa $9 – $49/mo ⭐
+Certxa $0 – $49/mo ⭐
 Vagaro From $24–$30/mo + add-ons
 Pricing Model
 Base price (1 staff)
-Solo — $9/mo ($7 annual)
+Solo — free
 $24–$30/mo (1 bookable calendar)
 Pricing structure
 Flat monthly plans
@@ -1679,7 +1679,7 @@ Credit card required to subscribe
 
 ## What's included in each plan
 Every detail, side by side — so you can choose with complete confidence.
-Solo From $7/mo
+Solo Free
 Professional From $18/mo ⭐
 Elite From $39/mo
 Booking & Scheduling
@@ -2607,7 +2607,7 @@ Nhận thanh toán thẻ, Apple Pay, Google Pay ngay tại tiệm hoặc trực 
 Tạo website đẹp, có sẵn chức năng đặt lịch, trong vài phút — không cần biết thiết kế web.
 
 ## Không hợp đồng. Không phí ẩn.
-Gói giá bắt đầu từ $9/tháng. Dùng thử miễn phí 60 ngày, cần thẻ tín dụng nhưng sẽ không bị tính phí cho đến khi hết thời gian dùng thử.
+Gói Solo miễn phí; gói cho nhóm từ $22/tháng. Dùng thử miễn phí 60 ngày, cần thẻ tín dụng nhưng sẽ không bị tính phí cho đến khi hết thời gian dùng thử.
 
 ## Những câu hỏi thường gặp
 

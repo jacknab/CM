@@ -6,6 +6,19 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-10-12 — Marketing pages contradict each other on four product facts (found by the GEO audit)
+
+Each needs the owner to say which statement is true; the wrong side can then be edited in a minute. Not fixed because the correct fact is a product/pricing decision, not something the code can tell me.
+
+1. **Autumn price.** `php/pricing/default.php:677` ("From $29 /mo", and "$0.50 per call handled" elsewhere on the page) vs `php/autumn/default.php` ("There's no additional monthly fee", billed per minute of active call time).
+2. **Deposits.** `php/pricing/default.php` comparison table: "Deposits & prepayments — Coming Soon" on all plans, vs `php/online-booking/default.php` ("You can require a deposit (fixed amount or percentage)") and `php/best-free-salon-booking-system/default.php` ("Deposits, POS, and a kiosk included").
+3. **Support hours.** `php/overview/default.php` ("24/7 live support") vs `php/contact/default.php` ("Monday – Friday · 9:00 am – 6:00 pm ET · Closed weekends").
+4. **Native apps.** `php/overview/default.php` ("Certxa has native apps for both iOS … and Android") vs `php/pricing/default.php` ("iOS & Android app — Coming Soon").
+
+Also open from the same audit, all listed in `GEO-AUDIT-REPORT.md` (2026-10-12): the home page FAQ markup (`php/overview/default.php:40-70`) is hand-written separately from the visible accordion (~line 815) and four answers differ; the React directory pages emit no Organization node (`artifacts/marketplace/src/entry-server.tsx`); salon profile JSON-LD puts the whole address in `streetAddress` with no `postalCode`; `/sitemap-listings.xml` stamps every URL with the generation date as `lastmod`; unsupported guarantees on `/pricing`, `/contact` and the home page. `artifacts/booking/public/llms-full.txt` is a hand-maintained snapshot of page text with no generator, so it goes stale whenever a marketing page changes (it still had the $9 Solo price until today).
+
+---
+
 ## 2026-10-10 — The production API is restarted by pm2 for memory 6 to 22 times an hour
 
 **Where:** pm2 app `certxa-api`, `max_memory_restart` = 1000 MB. `/root/.pm2/pm2.log`: "Process 9 restarted because it exceeds --max-memory-restart value (current_memory≈1.08 GB)" — 2,637 times in the log, 149 times on 2026-10-09 alone (6–22 an hour, sometimes every 30 seconds for several minutes). The process sits at about 985 MB when idle, so it is at the limit as soon as it starts.

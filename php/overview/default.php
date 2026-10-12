@@ -45,7 +45,7 @@ define('PAGE_SCHEMA', json_encode([
       [
         '@type'          => 'Question',
         'name'           => 'How much does Certxa cost?',
-        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Certxa offers a free ' . TRIAL_DAYS . '-day trial. A credit card is required to subscribe, but you won\'t be charged until the trial ends. After your trial, plans are available for solo professionals, growing salons, and multi-location businesses. All plans include unlimited bookings, online booking, client management, and integrated payments with no hidden fees.'],
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'The Solo plan, for one independent professional, is free with no credit card needed. Team plans are Professional at $22/month and Elite at $49/month, each with a free ' . TRIAL_DAYS . '-day trial. A credit card is required to start a team plan, but you won\'t be charged until the trial ends. All plans include unlimited bookings, online booking, client management, and integrated payments with no hidden fees and no long-term contracts.'],
       ],
       [
         '@type'          => 'Question',
@@ -822,7 +822,7 @@ require 'includes/nav.php';
 
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">How much does Certxa cost? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Certxa offers a free <?= TRIAL_DAYS ?>-day trial. A credit card is required to subscribe, but you won't be charged until the trial ends — cancel before it's up and you owe nothing. Every plan includes unlimited bookings, online booking, client management, and integrated payments — with no hidden fees and no long-term contracts.</div>
+        <div class="accordion-body">The Solo plan, for one independent professional, is free with no credit card needed. Team plans are Professional at $22/month and Elite at $49/month, each with a free <?= TRIAL_DAYS ?>-day trial. A credit card is required to start a team plan, but you won't be charged until the trial ends — cancel before it's up and you owe nothing. Every plan includes unlimited bookings, online booking, client management, and integrated payments — with no hidden fees and no long-term contracts.</div>
       </div>
 
       <div class="accordion-item">

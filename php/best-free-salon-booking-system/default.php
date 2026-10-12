@@ -181,12 +181,12 @@ require 'includes/nav.php';
     <div class="section-header">
       <span class="tag tag-gold">What We'd Suggest Instead</span>
       <h2 class="section-title">Certxa: the next step after free</h2>
-      <p class="section-subtitle">Certxa isn't free, but it's built to be the cheapest real upgrade once a free plan stops fitting — unlimited staff from the entry plan, no long-term contract, and a <?= TRIAL_DAYS ?>-day free trial to test it first.</p>
+      <p class="section-subtitle">Certxa's Solo plan is free for one professional. For teams, it's built to be the cheapest real upgrade once a free plan stops fitting — unlimited staff from $22/mo, no long-term contract, and a <?= TRIAL_DAYS ?>-day free trial to test it first.</p>
     </div>
     <div class="bento" style="grid-template-columns:repeat(3,1fr);">
       <div class="bento-card">
         <h3 class="bento-title">Unlimited staff, from $22/mo</h3>
-        <p class="bento-text">No per-seat pricing and no staff cap on any Certxa plan — a meaningful difference from Setmore's 4-person free ceiling.</p>
+        <p class="bento-text">No per-seat pricing and no staff cap on Certxa's team plans — a meaningful difference from Setmore's 4-person free ceiling.</p>
       </div>
       <div class="bento-card">
         <h3 class="bento-title">Deposits, POS, and a kiosk included</h3>
