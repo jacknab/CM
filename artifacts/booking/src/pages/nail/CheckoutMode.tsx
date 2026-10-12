@@ -148,7 +148,6 @@ export function CheckoutMode(p: Props) {
     p.ticket.groupId != null ? p.otherTickets.filter((t) => t.groupId === p.ticket.groupId).map((t) => t.id) : []);
   // The right panel shows Payment; Discount and Gift Card swap in their option screen, and Back returns to Payment.
   const [rightTab, setRightTab] = useState<"functions" | "payment" | "services">("payment");
-  const [changingService, setChangingService] = useState(false);
   const [menu, setMenu] = useState<"gift" | "discount">("discount");
   const [popup, setPopup] = useState<Popup>(null);
   const [guided, setGuided] = useState<number | null>(null);
@@ -427,18 +426,14 @@ export function CheckoutMode(p: Props) {
       case "group": if (p.otherTickets.length === 0) return say("NO OTHER ACTIVE TICKETS", "error"); setPopup("group"); return;
     }
   };
-  // The right panel can show the service grid while a ticket is being paid: picking a service puts it on the
-  // ticket in place of the one it has, the totals follow, and the panel goes back to Payment.
-  const changeService = async (svc: CatalogService) => {
-    if (changingService || p.paid || p.finalizing) return;
-    if (svc.id === ticket.service.id) { backToPayment(); return; }
-    setChangingService(true);
-    ownChange.current = true;
-    const changed = await p.onChangeService(svc);
-    setChangingService(false);
-    // Same price as before: nothing for the total watcher to swallow.
-    if (!changed || Number(svc.price) === ticket.service.price) ownChange.current = false;
-    if (changed) { backToPayment(); say(`SERVICE CHANGED · ${svc.name.toUpperCase()}`, "success"); }
+  // Until PAY / CHECKOUT is pressed the checkout works like the ticket screen: the right panel is the key grid
+  // and a service picked there is added to the bill as another line (ERC takes the last one off). The lines
+  // are part of the sale when it is closed.
+  const addServiceLine = (svc: CatalogService) => {
+    if (p.paid || p.finalizing) return;
+    const price = Number(svc.price) || 0;
+    addExtra(svc.name, price, "custom");
+    say(`${svc.name.toUpperCase()} ADDED · ${money(price)}`, "success");
   };
   const comingSoon = (label: string) => say(`${label.toUpperCase()} — COMING SOON`);
 
@@ -992,10 +987,11 @@ export function CheckoutMode(p: Props) {
           </div>
 
           {/* ── functions / payment ──────────────────────────────────────── */}
-          {rightTab === "services" && !p.paid ? (
-            <CatalogPanel layout={p.layout} locked={changingService} groups={p.groups} activeGroup="" onGroup={() => {}} serviceId={ticket.service.id} onService={(svc) => void changeService(svc)}
+          {!p.paid && (rightTab === "services" || (rightTab === "payment" && !paying)) ? (
+            // The payment buttons appear only once PAY / CHECKOUT has been pressed; before that this is the key grid.
+            <CatalogPanel layout={p.layout} locked={p.finalizing} groups={p.groups} activeGroup="" onGroup={() => {}} serviceId={null} onService={addServiceLine}
               addons={[]} moreAddons={false} onToggleMore={() => {}} hasMoreAddons={false} addonIds={[]} onToggleAddon={() => {}}
-              exit={{ label: "Payment", onClick: backToPayment }} />
+              exit={paying ? { label: "Payment", onClick: backToPayment } : { label: "Pay / Checkout", onClick: payCheckout }} />
           ) : (
           <div className="catalog-panel" data-testid="nail-pay-right">
 
