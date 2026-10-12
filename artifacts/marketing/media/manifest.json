@@ -21,7 +21,8 @@
   },
   "team/thanh-lam-founder": {
     "file": "team__thanh-lam-founder",
-    "type": "image/jpeg"
+    "type": "image/jpeg",
+    "local": true
   },
   "pages/autumn/device-mockup": {
     "file": "pages__autumn__device-mockup",

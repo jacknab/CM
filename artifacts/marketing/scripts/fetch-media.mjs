@@ -24,8 +24,21 @@ for (const [slot, info] of Object.entries(slots)) {
   if (info.mediaType === "logo" && info.darkSurfaceUrl) wanted.push(`${slot}/dark`);
 }
 
+// Slots marked "local" in the existing manifest hold a file supplied directly
+// (not from the Airo site) and are left untouched.
+let previous = {};
+try {
+  previous = JSON.parse(await readFile(join(root, "media", "manifest.json"), "utf-8"));
+} catch {
+  /* first run */
+}
 const manifest = {};
 for (const slot of wanted) {
+  if (previous[slot]?.local) {
+    manifest[slot] = previous[slot];
+    console.log(`keep ${slot} (local file)`);
+    continue;
+  }
   const res = await fetch(SOURCE + slot, { redirect: "follow" });
   const type = res.headers.get("content-type") || "";
   if (!res.ok || !/^(image|video)\//.test(type)) {
