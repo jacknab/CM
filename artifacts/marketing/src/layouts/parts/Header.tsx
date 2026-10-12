@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import BrandWordmark from '@/components/BrandWordmark';
 import { Link, useLocation } from 'react-router';
 import { Menu, X } from 'lucide-react';
 
@@ -37,7 +36,13 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-6 md:px-10 h-16 flex items-center justify-between">
         {/* Logo */}
         <Link to="/" className="shrink-0 flex items-center">
-          <BrandWordmark />
+          <img
+            src={`${import.meta.env.BASE_URL}logo.png`}
+            alt="Certxa"
+            width={679}
+            height={144}
+            className="block h-7 w-auto"
+          />
         </Link>
 
         {/* Desktop Nav */}

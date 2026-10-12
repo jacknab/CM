@@ -2,7 +2,7 @@
 <nav class="nav" id="main-nav">
   <div class="container">
     <div class="nav-inner">
-      <a href="/" class="nav-logo"><?= BRAND_NAME ?><span>.</span></a>
+      <a href="/" class="nav-logo"><img src="/_site/logo.png" alt="<?= BRAND_NAME ?>" width="679" height="144" style="display:block;height:28px;width:auto;"></a>
 
       <ul class="nav-links" id="main-menu" role="list">
 
