@@ -20,7 +20,7 @@ define('PAGE_SCHEMA', json_encode([
   [
     '@type'      => 'FAQPage',
     'mainEntity' => [
-      ['@type'=>'Question','name'=>'Do I need a separate subscription for Autumn?','acceptedAnswer'=>['@type'=>'Answer','text'=>'No. Autumn is included in every Certxa plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite. After that, each additional call is $0.50.']],
+      ['@type'=>'Question','name'=>'Do I need a separate subscription for Autumn?','acceptedAnswer'=>['@type'=>'Answer','text'=>'No. Autumn is included in every Certxa plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite. After that, each additional call is $0.50. There is a one-time $15 activation fee and $2/month for your dedicated phone number. Included calls start once your paid plan begins.']],
       ['@type'=>'Question','name'=>'How does the credit balance work?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Your plan\'s included calls are used first. Once they are used up, each additional call is $0.50, taken from the credit balance you top up inside your Certxa dashboard. You can set a low-balance auto top-up so she never goes offline mid-day.']],
       ['@type'=>'Question','name'=>'Does Autumn know how busy my salon is?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. While your salon is open, Autumn sees who is clocked in, who is free, who is with a client and how many people are waiting, and uses that to tell a caller whether there is a wait and roughly how long. She never makes up a wait time.']],
     ['@type'=>'Question','name'=>'Can a caller ask whether a specific technician is available?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. Autumn can say whether that technician is working today, whether they are free or with a client right now, and roughly when they will be free.']],
@@ -1237,7 +1237,7 @@ require __DIR__ . '/../includes/nav.php';
       <div class="au2-section-label">💳 How Pricing Works</div>
       <h2 class="au2-section-title">Included in your plan.</h2>
       <p class="au2-section-sub" style="max-width:540px;margin:0 auto;">
-        Autumn is included in every Certxa plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite. There's no extra subscription. Each call beyond your plan's included calls is $0.50, drawn from the balance you load into your account.
+        Autumn is included in every Certxa plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite. There's no extra subscription. Each call beyond your plan's included calls is $0.50, drawn from the balance you load into your account. There is a one-time $15 activation fee and $2/month for your dedicated phone number. Included calls start once your paid plan begins.
       </p>
     </div>
 
@@ -1284,7 +1284,7 @@ require __DIR__ . '/../includes/nav.php';
     <?php
     $faqs = [
       ['Do I need a separate subscription for Autumn?',
-       'No. Autumn is included in every Certxa plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite. After that, each additional call is $0.50.'],
+       'No. Autumn is included in every Certxa plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite. After that, each additional call is $0.50. There is a one-time $15 activation fee and $2/month for your dedicated phone number. Included calls start once your paid plan begins.'],
       ['How does the credit balance work?',
        'Your plan\'s included calls are used first. Once they are used up, each additional call is $0.50, taken from the credit balance you top up inside your Certxa dashboard. You can set a low-balance auto top-up so she never goes offline mid-day.'],
       ['Does Autumn know how busy my salon is?',
