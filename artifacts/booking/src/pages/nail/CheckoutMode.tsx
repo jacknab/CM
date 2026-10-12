@@ -6,6 +6,7 @@
  *   · the customer-facing /frontdesk screen.
  * The maths lives in shared/nailCheckout.ts (unit-tested); this file is screen state + wiring.
  */
+import { useQueryClient } from "@tanstack/react-query";
 import { useCardProvider } from "@/hooks/use-card-provider";
 import { relayCheckoutEvent } from "@/lib/local-hub";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -100,6 +101,7 @@ export function CheckoutMode(p: Props) {
   // the checkout, whatever is paid in cash, by gift card or by card: they are not shown the tip screen again.
   const [tipSubmitted, setTipSubmitted] = useState(false);
   // Settings → Checkout → CARD button. "own": the salon's own terminal takes the card; this POS only records it.
+  const queryClient = useQueryClient();
   const cardProvider = useCardProvider();
   const cardRecoveryKey = `certxa.nail.captured.${p.storeId}.${ticket.id}`;
   const checkoutKey = `certxa.nail.checkout.${p.storeId}.${ticket.id}`;
@@ -585,7 +587,29 @@ export function CheckoutMode(p: Props) {
     : cards.status === "loading" ? "LOADING…" : cards.status === "discovering" ? "SCANNING…" : cards.status === "connecting" ? "CONNECTING…"
     : cards.status === "collecting" ? "WAITING FOR CARD…" : cards.status === "processing" ? "PROCESSING…" : cards.nativeBusy ? "CHARGING…" : "CARD";
 
+  // Settings → CARD button. Stripe's reader or the salon's own terminal is one setting for the whole salon;
+  // which Stripe reader this device uses is kept on the device.
+  const saveCardProvider = async (provider: "stripe" | "own") => {
+    if (provider === cardProvider) return true;
+    queryClient.setQueryData(["/api/card-provider"], { provider });
+    try {
+      const res = await fetch("/api/card-provider", { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider }) });
+      if (!res.ok) throw new Error("not saved");
+      return true;
+    } catch {
+      void queryClient.invalidateQueries({ queryKey: ["/api/card-provider"] });
+      say("COULD NOT SAVE THE CARD SETTING — CHECK THE CONNECTION", "error");
+      return false;
+    }
+  };
+  const chooseOwnProvider = async () => {
+    setPopup(null);
+    setPayType("cash");
+    if (await saveCardProvider("own")) say("CARD WILL RECORD PAYMENTS TAKEN ON YOUR OWN TERMINAL", "success");
+  };
   const chooseCardMethod = (m: NailCardMethod) => {
+    void saveCardProvider("stripe");
+    setPayType("cash");
     setCardMethod(m);
     try { localStorage.setItem(CARD_METHOD_KEY, m); } catch { /* private mode: it just won't be remembered */ }
     setPopup(null);
@@ -1082,12 +1106,18 @@ export function CheckoutMode(p: Props) {
                   <div className="assign-create-hint">Card payment method — what the CARD button uses. Also used when the customer confirms the tip on their screen.</div>
                   {([
                     { key: "m2" as const, label: "M2 Reader — POS Device", icon: CreditCard, hint: "Charge with the M2 reader paired to this POS device" },
-                    { key: "frontdesk" as const, label: "Front Desk M2 Reader", icon: CreditCard, hint: "CARD opens tips; Confirm charges with the M2 reader paired to the front desk device" },
-                  ]).map((o) => (
-                    <button key={o.key} type="button" className={`assign-create-item ${cardMethod === o.key ? "assign-create-item-sel" : ""}`} onClick={() => chooseCardMethod(o.key)} data-testid={`nail-pay-method-${o.key}`}>
-                      <o.icon size={18} /><span className="assign-create-name">{o.label}</span><span className="assign-create-status">{o.hint}</span>{cardMethod === o.key && <Check size={18} />}
+                    { key: "frontdesk" as const, label: "Front Desk M2 Reader", icon: CreditCard, hint: "Charge with the M2 reader paired to the front desk device" },
+                  ]).map((o) => {
+                    const on = cardProvider !== "own" && cardMethod === o.key;
+                    return (
+                    <button key={o.key} type="button" className={`assign-create-item ${on ? "assign-create-item-sel" : ""}`} onClick={() => chooseCardMethod(o.key)} data-testid={`nail-pay-method-${o.key}`}>
+                      <o.icon size={18} /><span className="assign-create-name">{o.label}</span><span className="assign-create-status">{o.hint}</span>{on && <Check size={18} />}
                     </button>
-                  ))}
+                    );
+                  })}
+                  <button type="button" className={`assign-create-item ${cardProvider === "own" ? "assign-create-item-sel" : ""}`} onClick={() => void chooseOwnProvider()} data-testid="nail-pay-method-own">
+                    <CreditCard size={18} /><span className="assign-create-name">Own Provider</span><span className="assign-create-status">Your own card terminal. No M2, no Tap to Pay, no card payment on the customer screen. CARD records the payment. Applies to every POS station.</span>{cardProvider === "own" && <Check size={18} />}
+                  </button>
                   {canNativePrint && (
                     <button type="button" className="assign-create-item" data-testid="nail-pay-setup-printer"
                       onClick={() => { (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "SETUP_PRINTER", storeName: p.storeName || "Receipt" })); setPopup(null); }}>

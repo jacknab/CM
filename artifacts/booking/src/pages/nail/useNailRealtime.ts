@@ -17,6 +17,8 @@ export function useNailRealtime(opts: {
   onFrontdeskPhone?: (digits: string) => void;
   /** A print job the server pushed (the kiosk's check-in ticket) — print it if a printer is connected. */
   onPrintJob?: (job: any) => void;
+  /** A client who was waiting has just been given a technician (the ticket's id). */
+  onTicketAssigned?: (appointmentId: number) => void;
   /** The client is (or has stopped) typing their number on the paired /frontdesk tablet's check-in screen. */
   onFrontdeskTyping?: (typing: boolean) => void;
   /** Customer-screen checkout events (tip picked, card result) for the checkout open on this station. */
@@ -58,6 +60,10 @@ export function useNailRealtime(opts: {
             case "payment_received":
               invalidateTickets();
               queryClient.invalidateQueries({ queryKey: ["/api/kiosk/walkins/today"] });
+              break;
+            case "nail_ticket_assigned":
+              invalidateTickets();
+              if (Number.isFinite(Number(data.appointmentId))) cb.current.onTicketAssigned?.(Number(data.appointmentId));
               break;
             case "settings_changed":
               cb.current.refreshAll();

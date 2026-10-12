@@ -226,8 +226,28 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // This is the salon's main screen: inside the Android app it accepts the customer screen and kiosk over
   // the salon's own Wi-Fi, so they keep working with it when the internet is down.
   useEffect(() => { void localHub.start(storeId, "pos"); }, [storeId]);
+  // A waiting client was just given a technician: every POS station says so, over whatever it is showing —
+  // the Tech ID keypad included — with Start Service on it. It closes by itself; the screen is left as it was.
+  const [waitingAssigned, setWaitingAssigned] = useState<null | { appointmentId: number; ticketNumber: number | null; clientName: string; serviceName: string; staffName: string; started?: boolean }>(null);
+  const signInNoticeUp = useRef(false);
+  const onTicketAssigned = useCallback(async (appointmentId: number) => {
+    // The station where the technician just signed in already shows "Your next client" for this.
+    if (signInNoticeUp.current) return;
+    try {
+      const fresh = await queryClient.fetchQuery({ queryKey: boardKey(storeId), queryFn: fetchBoard, staleTime: 0 });
+      const t = fresh.tickets.find((x) => x.id === appointmentId);
+      if (!t || !t.staff || t.status !== "confirmed") return;
+      setWaitingAssigned({ appointmentId, ticketNumber: t.ticketNumber, clientName: t.client.name, serviceName: t.service.name, staffName: t.staff.name });
+    } catch { /* the Queue still shows it */ }
+  }, [queryClient, storeId]);
+  useEffect(() => {
+    if (!waitingAssigned) return;
+    const timer = setTimeout(() => setWaitingAssigned(null), waitingAssigned.started ? 1_500 : 10_000);
+    return () => clearTimeout(timer);
+  }, [waitingAssigned]);
+
   const live = useNailRealtime({
-    storeId, registerId, refreshAll, onFrontdeskPhone: setFrontdeskPhone, onFrontdeskTyping,
+    storeId, registerId, refreshAll, onFrontdeskPhone: setFrontdeskPhone, onFrontdeskTyping, onTicketAssigned,
     onCheckoutEvent: (m) => setCheckoutEvent({ ...m }),
     // A browser kiosk's check-in slip is relayed to every station. It prints here only when this station can print —
     // the Android app's own (IP/USB) printer, or a Bluetooth printer connected in this browser — and wins the claim,
@@ -502,6 +522,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   }, [startedNotice, lock]);
   // The "client assigned" notice after a Tech ID sign-in: five seconds over the queue, then the keypad
   // comes back for the next technician.
+  // The technician's own sign-in notice takes the place of the station-wide one, whichever arrives first.
+  useEffect(() => { signInNoticeUp.current = assignedNotice !== null; if (assignedNotice) setWaitingAssigned(null); }, [assignedNotice]);
   useEffect(() => {
     if (!assignedNotice) return;
     const timer = setTimeout(() => { setAssignedNotice(null); lock(); setTech(null); }, 5000);
@@ -1288,6 +1310,26 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
                 )}
               </p>
             ))}
+          </div>
+        </div>
+      )}
+      {waitingAssigned && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center px-8" style={{ background: "#14171c" }} role="alertdialog" aria-modal="true" aria-live="assertive" data-testid="nail-waiting-assigned">
+          <div className="text-center" style={{ maxWidth: 900 }}>
+            <p style={{ margin: 0, fontSize: 30, fontWeight: 600, color: "#cbd5e1" }}>
+              {waitingAssigned.ticketNumber != null && waitingAssigned.ticketNumber > 0 ? `Ticket #${waitingAssigned.ticketNumber}` : "Ticket"}
+            </p>
+            <p style={{ margin: "14px 0 0", fontSize: 64, fontWeight: 800, lineHeight: 1.1, color: "#fff" }}>{waitingAssigned.clientName}</p>
+            <p style={{ margin: "14px 0 0", fontSize: 34, fontWeight: 600, color: "#fff" }}>{waitingAssigned.serviceName}</p>
+            <p style={{ margin: "22px 0 0", fontSize: 40, fontWeight: 700, color: "#7dd3fc" }}>Assigned to {waitingAssigned.staffName}</p>
+            <button type="button" disabled={waitingAssigned.started} data-testid="nail-waiting-assigned-start"
+              onClick={() => {
+                act.mutate(() => startTicket(waitingAssigned.appointmentId, waitingAssigned.clientName));
+                setWaitingAssigned((cur) => cur && { ...cur, started: true });
+              }}
+              style={{ marginTop: 40, fontSize: 30, fontWeight: 800, padding: "22px 64px", borderRadius: 16, border: "none", background: waitingAssigned.started ? "#353a43" : "#0d9b6e", color: "#fff" }}>
+              {waitingAssigned.started ? "Started" : "Start Service"}
+            </button>
           </div>
         </div>
       )}

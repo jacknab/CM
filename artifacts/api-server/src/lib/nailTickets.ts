@@ -167,7 +167,7 @@ export interface TicketDeps {
   getTurnPreferences(storeId: number): Promise<Record<string, any>>;
   saveTurnPreferences(storeId: number, updates: Record<string, any>): Promise<unknown>;
   /** Fan-out after any ticket change: websocket + dashboard refresh. */
-  notify(storeId: number, event: { appointmentId: number; kind: "created" | "updated" | "started" }): void;
+  notify(storeId: number, event: { appointmentId: number; kind: "created" | "updated" | "started" | "assigned" }): void;
 }
 
 export type TicketResult<T> =
@@ -344,7 +344,8 @@ export async function matchWaitingNailTicketForTechnician(
     // a new ticket starts when its barber is free; no free chair (when chairs are set up) → it stays
     // assigned and waiting, and staff can press START once one frees up.
     const started = startOnAssign && await startClaimedTicketNow(args.storeId, candidate.id);
-    deps.notify(args.storeId, { appointmentId: candidate.id, kind: started ? "started" : "updated" });
+    // "assigned": a client who was waiting now has a technician — every POS station is told, so it can say so.
+    deps.notify(args.storeId, { appointmentId: candidate.id, kind: started ? "started" : "assigned" });
     return { appointmentId: candidate.id, serviceId };
   }
   return null;

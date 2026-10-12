@@ -1007,6 +1007,7 @@ async function matchWaitingClients(storeId: number) {
     logCategoryAssignment,
     notify: (id, ev) => {
       broadcastSyncEvent({ type: "booking_updated", storeId: id, appointmentId: ev.appointmentId });
+      if (ev.kind === "assigned") broadcastNotification({ type: "nail_ticket_assigned", storeId: id, appointmentId: ev.appointmentId } as any);
       if (ev.kind === "started") {
         broadcastAppointmentStatus({ appointmentId: ev.appointmentId, storeId: id, status: "started", source: "manual" });
       }
@@ -18245,6 +18246,7 @@ or
       } else {
         broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId: ev.appointmentId });
       }
+      if (ev.kind === "assigned") broadcastNotification({ type: "nail_ticket_assigned", storeId, appointmentId: ev.appointmentId } as any);
       if (ev.kind === "started") {
         broadcastAppointmentStatus({ appointmentId: ev.appointmentId, storeId, status: "started", source: "manual" });
       }
