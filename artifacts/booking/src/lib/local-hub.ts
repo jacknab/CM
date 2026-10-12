@@ -58,10 +58,24 @@ class LocalHubClient {
         this.listeners.forEach((fn) => { try { fn(event.message as HubMessage); } catch { /* one listener must not stop the rest */ } });
       } else if (event.kind === "status") {
         this.status = String(event.status);
+        void this.reportStatus(event);
       } else if (event.kind === "address" && event.address) {
         void this.reportAddress(String(event.address));
       }
     };
+  }
+
+  /** While online, tell the server what state this tablet's hub link is in, so a link that never comes up
+   *  can be diagnosed without the tablet in hand. Only when the state changes. */
+  private lastReported = "";
+  private async reportStatus(event: { status?: string; peers?: number; address?: string | null }) {
+    const line = `${this.role}:${event.status}:${event.peers ?? 0}:${event.address ?? ""}`;
+    if (line === this.lastReported || syncEngine.isOffline()) return;
+    this.lastReported = line;
+    try {
+      await fetch("/api/nail/hub/status", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: this.role, status: event.status, peers: event.peers ?? 0, address: event.address ?? null }) });
+    } catch { /* diagnostics only */ }
   }
 
   /** The main POS tablet tells the server where it is on the salon's network, so the others can find it. */
@@ -127,13 +141,19 @@ export const localHub = new LocalHubClient();
  */
 export async function relayCheckoutEvent(body: HubMessage): Promise<boolean> {
   if (!syncEngine.isOffline()) {
+    // With the Wi-Fi up but the internet down a request can hang for a long time before failing. These
+    // messages are part of a live checkout, so the server gets three seconds and then the hub takes over.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3_000);
     try {
       const res = await fetch("/api/kiosk/checkout-event", {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctrl.signal,
       });
       if (res.ok) return true;
     } catch {
       syncEngine.noteUnreachable();
+    } finally {
+      clearTimeout(timer);
     }
   }
   return localHub.send(body);

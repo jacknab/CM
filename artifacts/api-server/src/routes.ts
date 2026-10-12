@@ -18580,6 +18580,15 @@ or
       return res.status(500).json({ message: "Could not load the hub settings" });
     }
   });
+  // Diagnostics: each tablet says what state its hub link is in, so it shows in the server log.
+  app.post("/api/nail/hub/status", isAuthenticated, async (req, res) => {
+    const storeId = await nailStoreId(req, res);
+    if (!storeId) return;
+    const clean = (v: unknown) => String(v ?? "").replace(/[^\w.:-]/g, "").slice(0, 40);
+    console.log(`[local-hub] store=${storeId} role=${clean(req.body?.role)} status=${clean(req.body?.status)} peers=${Number(req.body?.peers) || 0} address=${clean(req.body?.address)}`);
+    return res.json({ ok: true });
+  });
+
   app.put("/api/nail/hub", isAuthenticated, async (req, res) => {
     try {
       const storeId = await nailStoreId(req, res);
