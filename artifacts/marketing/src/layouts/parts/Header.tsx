@@ -41,7 +41,7 @@ export default function Header() {
             alt="Certxa"
             width={679}
             height={144}
-            className="block h-7 w-auto"
+            className="block h-9 w-auto"
           />
         </Link>
 
