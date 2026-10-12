@@ -35,12 +35,12 @@ define('PAGE_SCHEMA', json_encode([
       [
         '@type'          => 'Question',
         'name'           => 'What is the catch with free salon booking software?',
-        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Free plans typically cap the number of staff, remove SMS reminders and calendar sync, keep the provider\'s branding on your booking page, and skip deposit collection, point-of-sale, and check-in tools — features that reduce no-shows and speed up service at busier salons.'],
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Free plans typically cap the number of staff, remove SMS reminders and calendar sync, keep the provider\'s branding on your booking page, and skip point-of-sale and check-in tools — features that reduce no-shows and speed up service at busier salons.'],
       ],
       [
         '@type'          => 'Question',
         'name'           => 'When should a salon upgrade from a free booking tool?',
-        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Usually once you pass the free staff cap (4 on Setmore, 1 on Square Appointments), want to charge deposits to cut no-shows, or want booking, payments, and client records in one system instead of stitching several free tools together.'],
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Usually once you pass the free staff cap (4 on Setmore, 1 on Square Appointments), want SMS reminders to cut no-shows, or want booking, payments, and client records in one system instead of stitching several free tools together.'],
       ],
     ],
   ],
@@ -166,7 +166,7 @@ require 'includes/nav.php';
       </div>
       <div class="bento-card">
         <h3 class="bento-title">No-shows start costing you</h3>
-        <p class="bento-text">None of the free tiers above let clients pay a deposit at booking — the single most effective lever against no-shows for high-value services.</p>
+        <p class="bento-text">Free tiers typically leave out SMS reminders — the simplest protection against clients who just forget their appointment.</p>
       </div>
       <div class="bento-card">
         <h3 class="bento-title">You want one system, not five</h3>
@@ -217,11 +217,11 @@ require 'includes/nav.php';
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">What's the catch with free salon booking software? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Free plans typically cap the number of staff, remove SMS reminders and calendar sync, keep the provider's branding on your booking page, and skip deposit collection, point-of-sale, and check-in tools — features that reduce no-shows and speed up service at busier salons.</div>
+        <div class="accordion-body">Free plans typically cap the number of staff, remove SMS reminders and calendar sync, keep the provider's branding on your booking page, and skip point-of-sale and check-in tools — features that reduce no-shows and speed up service at busier salons.</div>
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">When should a salon upgrade from a free booking tool? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Usually once you pass the free staff cap (4 on Setmore, 1 on Square Appointments), want to charge deposits to cut no-shows, or want booking, payments, and client records in one system instead of stitching several free tools together.</div>
+        <div class="accordion-body">Usually once you pass the free staff cap (4 on Setmore, 1 on Square Appointments), want SMS reminders to cut no-shows, or want booking, payments, and client records in one system instead of stitching several free tools together.</div>
       </div>
     </div>
 

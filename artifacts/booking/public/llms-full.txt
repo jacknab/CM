@@ -270,7 +270,7 @@ Free salon booking tools work well right up until one of these becomes true for 
 Setmore's free tier stops at 4 people and Square's free tier stops at 1. Add another chair and you're shopping for a paid plan somewhere.
 
 ### No-shows start costing you
-None of the free tiers above let clients pay a deposit at booking — the single most effective lever against no-shows for high-value services.
+Free tiers typically leave out SMS reminders — the simplest protection against clients who just forget their appointment.
 
 ### You want one system, not five
 Free scheduling tools rarely include a walk-in check-in kiosk, built-in POS, or client history in the same place — so you end up stitching several apps together instead.
