@@ -22,7 +22,7 @@ define('PAGE_SCHEMA', json_encode([
     '@type'      => 'FAQPage',
     'mainEntity' => [
       ['@type'=>'Question','name'=>'Is Certxa cheaper than GlossGenius?','acceptedAnswer'=>['@type'=>'Answer','text'=>'For most nail salons, yes. Certxa\'s Solo plan is free and its team plans run $22–$49/month ($18–$39/month billed annually). GlossGenius\'s three plans are $24–$168/month ($28–$168/month billed monthly, $24–$148/month billed annually). GlossGenius\'s Gold plan drops its platform fee to 0% on card processing, but the subscription itself still costs more than any Certxa plan.']],
-      ['@type'=>'Question','name'=>'Does GlossGenius have an AI receptionist like Certxa\'s Autumn?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa\'s Autumn AI receptionist is available today as a usage-based add-on. GlossGenius has announced "Reception by GlossGenius," an AI phone-answering feature, but as of this writing it is listed as Coming Soon and is not yet available to salons.']],
+      ['@type'=>'Question','name'=>'Does GlossGenius have an AI receptionist like Certxa\'s Autumn?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa\'s Autumn AI receptionist is available today, included in every plan. GlossGenius has announced "Reception by GlossGenius," an AI phone-answering feature, but as of this writing it is listed as Coming Soon and is not yet available to salons.']],
       ['@type'=>'Question','name'=>'Can I migrate from GlossGenius to Certxa?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. Certxa offers free data migration from GlossGenius — your client list, appointment history, and service menu are imported for you, typically in under an hour.']],
       ['@type'=>'Question','name'=>'Does Certxa have a self-service check-in kiosk?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. Certxa includes a self-service walk-in check-in kiosk on every plan — clients check themselves in on a tablet, choose a service and technician preference, and are added to your live waitlist automatically.']],
     ],
@@ -116,7 +116,7 @@ require 'includes/nav.php';
 
           <tr class="section-row"><td colspan="3">Features</td></tr>
           <tr><td>Self-service check-in kiosk</td><td class="featured-col ct-check">✓</td><td class="ct-cross">–</td></tr>
-          <tr><td>AI phone receptionist</td><td class="featured-col ct-text">Available now (Autumn, usage-based)</td><td class="ct-text">Announced, listed "Coming Soon"</td></tr>
+          <tr><td>AI phone receptionist</td><td class="featured-col ct-text">Available now (Autumn, included in every plan)</td><td class="ct-text">Announced, listed "Coming Soon"</td></tr>
           <tr><td>Built-in POS</td><td class="featured-col ct-check">✓</td><td class="ct-check">✓</td></tr>
           <tr><td>Online booking</td><td class="featured-col ct-check">✓</td><td class="ct-check">✓</td></tr>
           <tr><td>Client management / CRM</td><td class="featured-col ct-check">✓</td><td class="ct-check">✓</td></tr>
@@ -165,7 +165,7 @@ require 'includes/nav.php';
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Does GlossGenius have an AI receptionist like Certxa's Autumn? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Certxa's Autumn AI receptionist is available today as a usage-based add-on. GlossGenius has announced "Reception by GlossGenius," an AI phone-answering feature, but as of this writing it is listed as Coming Soon and is not yet available to salons.</div>
+        <div class="accordion-body">Certxa's Autumn AI receptionist is available today, included in every plan. GlossGenius has announced "Reception by GlossGenius," an AI phone-answering feature, but as of this writing it is listed as Coming Soon and is not yet available to salons.</div>
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Can I migrate from GlossGenius to Certxa? <span class="accordion-icon">+</span></button></h3>

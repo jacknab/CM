@@ -23,7 +23,7 @@ define('PAGE_SCHEMA', json_encode([
     'mainEntity' => [
       ['@type'=>'Question','name'=>'Does Vagaro charge per staff member?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. Vagaro\'s advertised $24–$30/month starting price covers one bookable calendar — each additional staff member\'s calendar adds to the bill. Certxa\'s Professional plan is a flat $22/month ($18/month billed annually) with unlimited staff and calendars included.']],
       ['@type'=>'Question','name'=>'What does a multi-staff salon actually pay on Vagaro?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Based on Vagaro\'s published add-on pricing (payments, text marketing, branded app, payroll), a salon with several staff adding a website and text marketing commonly lands well above $100/month before card processing fees, according to independent pricing breakdowns. Certxa\'s comparable Professional plan is $22/month flat.']],
-      ['@type'=>'Question','name'=>'Does Vagaro have an AI receptionist?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Not natively. Vagaro covers booking, POS, and marketing, but AI phone answering requires a third-party integration. Certxa\'s Autumn AI receptionist is built in and available today as a usage-based add-on.']],
+      ['@type'=>'Question','name'=>'Does Vagaro have an AI receptionist?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Not natively. Vagaro covers booking, POS, and marketing, but AI phone answering requires a third-party integration. Certxa\'s Autumn AI receptionist is built in and available today, included in every plan.']],
       ['@type'=>'Question','name'=>'Can I migrate from Vagaro to Certxa?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. Certxa offers free data migration from Vagaro — your client list, appointment history, and service menu are imported for you, typically in under an hour.']],
     ],
   ],
@@ -117,7 +117,7 @@ require 'includes/nav.php';
 
           <tr class="section-row"><td colspan="3">Features</td></tr>
           <tr><td>Self-service check-in kiosk</td><td class="featured-col ct-check">✓</td><td class="ct-cross">–</td></tr>
-          <tr><td>AI phone receptionist</td><td class="featured-col ct-text">Available now (Autumn, usage-based)</td><td class="ct-text">Third-party integration only</td></tr>
+          <tr><td>AI phone receptionist</td><td class="featured-col ct-text">Available now (Autumn, included in every plan)</td><td class="ct-text">Third-party integration only</td></tr>
           <tr><td>Built-in POS</td><td class="featured-col ct-check">✓</td><td class="ct-check">✓</td></tr>
           <tr><td>Online booking</td><td class="featured-col ct-check">✓</td><td class="ct-check">✓</td></tr>
           <tr><td>Client management / CRM</td><td class="featured-col ct-check">✓</td><td class="ct-check">✓</td></tr>
@@ -146,7 +146,7 @@ require 'includes/nav.php';
       </div>
       <div class="bento-card">
         <h3 class="bento-title">AI receptionist built in</h3>
-        <p class="bento-text">Autumn, Certxa's AI receptionist, is available today as a native usage-based add-on. Vagaro has no native AI phone answering — it requires a separate third-party integration.</p>
+        <p class="bento-text">Autumn, Certxa's AI receptionist, is available today and included in every plan. Vagaro has no native AI phone answering — it requires a separate third-party integration.</p>
       </div>
     </div>
   </div>
@@ -169,7 +169,7 @@ require 'includes/nav.php';
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Does Vagaro have an AI receptionist? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Not natively. Vagaro covers booking, POS, and marketing, but AI phone answering requires a third-party integration. Certxa's Autumn AI receptionist is built in and available today as a usage-based add-on.</div>
+        <div class="accordion-body">Not natively. Vagaro covers booking, POS, and marketing, but AI phone answering requires a third-party integration. Certxa's Autumn AI receptionist is built in and available today, included in every plan.</div>
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Can I migrate from Vagaro to Certxa? <span class="accordion-icon">+</span></button></h3>

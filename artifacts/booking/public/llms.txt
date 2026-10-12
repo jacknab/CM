@@ -7,7 +7,7 @@
 - [Overview](https://certxa.com/): Platform overview — online booking, POS, staff management, client records, and AI receptionist in one system.
 - [Nail Salon Software](https://certxa.com/nail-salon-software): Core platform built for nail studios and nail technicians.
 - [SalonOS](https://certxa.com/salonos): The full salon operating system — booking, POS, loyalty, check-in, waitlist, and review management.
-- [Online Booking](https://certxa.com/online-booking): Certxa's salon online booking service — 24/7 client self-booking with real-time technician availability, deposits, and reminders.
+- [Online Booking](https://certxa.com/online-booking): Certxa's salon online booking service — 24/7 client self-booking with real-time technician availability and reminders.
 - [Self-Service Check-In Kiosk](https://certxa.com/checkin-kiosk): Tablet-based walk-in check-in that feeds a live front-desk waitlist.
 - [Payments & POS](https://certxa.com/payments): Built-in point of sale.
 - [Payment Processing](https://certxa.com/payment-processing): Stripe-powered card, tap, and contactless payments via the Stripe M2 reader.
@@ -19,7 +19,7 @@
 - [Revenue Intelligence](https://certxa.com/revenue-intelligence): Booking pattern, retention, and revenue-leakage analytics.
 - [Custom Website Builder](https://certxa.com/custom-website-builder): Branded booking website builder, no code required.
 - [Launchit Templates](https://certxa.com/launchsite): Gallery of salon website templates available through the Custom Website Builder.
-- [Autumn AI Receptionist](https://certxa.com/autumn): Automated phone and booking assistant powered by AI.
+- [Autumn AI Receptionist](https://certxa.com/autumn): Automated phone and booking assistant powered by AI. Included in every plan (20 calls a month on Solo, 50 on Professional, 100 on Elite), then $0.50 per call.
 - [Data Transfer](https://certxa.com/data-transfer): Free migration from GlossGenius, Vagaro, Square Appointments, Booksy, and Fresha.
 - [Free Salon Business Calculators](https://certxa.com/tools): Break-even-point and no-show-cost calculators for salon owners.
 - [Pricing](https://certxa.com/pricing): Solo plan is free; team plans from $22/month with a free trial.

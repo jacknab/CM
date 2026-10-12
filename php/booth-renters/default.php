@@ -12,7 +12,7 @@ define('PAGE_SCHEMA', json_encode([
   ['@type'=>'FAQPage','mainEntity'=>[
     ['@type'=>'Question','name'=>'Can nail tech booth renters use Certxa independently from the studio owner?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes — Certxa gives every nail tech booth renter a completely independent account. Your clients, booking history, nail records, payments, and data are 100% yours. You are never visible inside the studio owner\'s account unless you choose to be.']],
     ['@type'=>'Question','name'=>'Does Certxa work for a solo nail technician renting a booth?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa is designed to work perfectly as a one-person nail studio. You get online booking, a self-service walk-in kiosk, POS, client nail records with product notes, automated reminders, loyalty rewards, and analytics — everything a full nail salon team gets, sized for one.']],
-    ['@type'=>'Question','name'=>'How much does Certxa cost for a nail tech booth renter?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa\'s Solo plan, built for independent technicians and booth renters, is free. There are no contracts and no subscription setup fees. Optional add-ons like the Autumn AI receptionist are usage-based and billed separately through your Platform Wallet.']],
+    ['@type'=>'Question','name'=>'How much does Certxa cost for a nail tech booth renter?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa\'s Solo plan, built for independent technicians and booth renters, is free. There are no contracts and no subscription setup fees. The Autumn AI receptionist is included with 20 calls a month; additional calls are $0.50 each, billed through your Platform Wallet.']],
   ]],
   // Canonical SoftwareApplication (@id #software) is injected site-wide by includes/header.php.
 ]));
@@ -177,7 +177,6 @@ require 'includes/nav.php';
             ['Instant card payments', true, false],
             ['Loyalty & rewards program', true, false],
             ['Revenue analytics', true, false],
-            ['No-show deposits', true, false],
             ['Gift card sales', true, false],
           ];
           foreach ($rows as $i => $row): ?>

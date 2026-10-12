@@ -182,6 +182,7 @@ export async function render(url: string, apiOrigin: string, publicOrigin: strin
             'https://www.linkedin.com/company/certxa',
             'https://www.g2.com/products/certxa-booking-software',
             'https://www.capterra.com/p/10182349/Certxa-Booking-Software/',
+            'https://www.producthunt.com/products/certxa',
           ],
         },
         {

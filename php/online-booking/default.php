@@ -1,7 +1,7 @@
 <?php
 define('BRAND_NAME',    'Certxa');
 define('PAGE_TITLE',    'Salon Online Booking Service | Certxa');
-define('PAGE_DESC',     'Certxa is a salon online booking service for nail salons, spas, and studios — online appointments, technician selection, deposits, reminders, waitlists, and walk-ins. Let clients book from your website, social profiles, or Google.');
+define('PAGE_DESC',     'Certxa is a salon online booking service for nail salons, spas, and studios — online appointments, technician selection, reminders, waitlists, and walk-ins. Let clients book from your website, social profiles, or Google.');
 define('PAGE_KEYWORDS', 'salon online booking service, online booking service for salons, best salon online booking service, nail salon booking software, nail salon booking system, nail salon scheduling software, online booking for nail salons, nail technician booking software, salon appointment scheduling');
 define('PAGE_CANONICAL', 'https://certxa.com/online-booking');
 define('PAGE_BREADCRUMBS', json_encode([
@@ -32,7 +32,7 @@ define('PAGE_SCHEMA', json_encode([
       [
         '@type'          => 'Question',
         'name'           => 'Can I accept deposits or prepayments at booking?',
-        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Absolutely. You can require a deposit (fixed amount or percentage) to secure bookings. This dramatically reduces no-shows and protects your time for high-value services.'],
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Not yet — deposits and prepayments at booking are still in development. Today, Certxa protects your time with automated SMS and email reminders before every appointment.'],
       ],
       [
         '@type'          => 'Question',
@@ -475,7 +475,7 @@ $now_top = cal_top('11:20'); // simulate current time line
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Can I accept deposits or prepayments at booking? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Absolutely. You can require a deposit (fixed amount or percentage) to secure bookings. This dramatically reduces no-shows and protects your time for high-value services.</div>
+        <div class="accordion-body">Not yet — deposits and prepayments at booking are still in development. Today, Certxa protects your time with automated SMS and email reminders before every appointment.</div>
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Can I manage multiple staff members' schedules? <span class="accordion-icon">+</span></button></h3>

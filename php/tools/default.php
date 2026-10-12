@@ -97,7 +97,7 @@ define('PAGE_SCHEMA', json_encode([
       [
         '@type'          => 'Question',
         'name'           => 'How can I reduce no-shows at my salon?',
-        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Automated SMS and email reminders sent ahead of the appointment, combined with a deposit or card on file at booking, typically cut no-shows by about half. Certxa includes both — automated client notifications and Stripe-powered deposit protection — built into online booking.'],
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Automated SMS and email reminders sent ahead of the appointment are the most direct way to cut no-shows, since most missed appointments come down to clients forgetting. Certxa includes automated client notifications built into online booking. Deposits at booking are in development.'],
       ],
       [
         '@type'          => 'Question',
@@ -483,7 +483,7 @@ require 'includes/nav.php';
           </div>
 
           <div class="be-noshow-cta">
-            <strong>Certxa's automated reminders and deposits typically cut no-shows by about half.</strong> At half your current no-show rate, you'd only need to book <strong id="be-out-booked-certxa">0</strong> appointments/day to hit the same target — <a href="/client-notifications">see client notifications →</a>
+            <strong>Certxa's automated reminders are built to cut no-shows.</strong> At half your current no-show rate, you'd only need to book <strong id="be-out-booked-certxa">0</strong> appointments/day to hit the same target — <a href="/client-notifications">see client notifications →</a>
           </div>
         </div>
 
@@ -729,7 +729,7 @@ require 'includes/nav.php';
       <p class="calc-compare-note">Certxa's automated SMS &amp; email reminders cut no-shows by an average of 50%.</p>
     </div>
 
-    <p class="tool-cta-note">Certxa sends automated reminders and supports deposits on every booking — <a href="/client-notifications">see client notifications →</a> or <a href="/payment-processing">deposit protection →</a></p>
+    <p class="tool-cta-note">Certxa sends automated reminders on every booking — <a href="/client-notifications">see client notifications →</a></p>
   </div>
 </section>
 
@@ -816,7 +816,7 @@ require 'includes/nav.php';
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">How can I reduce no-shows at my salon? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Automated SMS and email reminders sent ahead of the appointment, combined with a deposit or card on file at booking, typically cut no-shows by about half. Certxa includes both — automated client notifications and Stripe-powered deposit protection — built into online booking.</div>
+        <div class="accordion-body">Automated SMS and email reminders sent ahead of the appointment are the most direct way to cut no-shows, since most missed appointments come down to clients forgetting. Certxa includes automated client notifications built into online booking. Deposits at booking are in development.</div>
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Are these calculators free to use? <span class="accordion-icon">+</span></button></h3>
@@ -831,7 +831,7 @@ require 'includes/nav.php';
   <div class="container" style="position:relative;z-index:1;text-align:center;">
     <span class="tag" style="background:rgba(255,255,255,.15);color:#fff;margin-bottom:16px;display:inline-block;">Put the numbers to work</span>
     <h2 class="cta-title">Hit break-even faster.<br><em>Lose fewer bookings to no-shows.</em></h2>
-    <p class="cta-text">Certxa brings 24/7 online booking, automated reminders, and deposit protection into one platform built for nail salons. Start free for <?= TRIAL_DAYS ?> days.</p>
+    <p class="cta-text">Certxa brings 24/7 online booking and automated reminders into one platform built for nail salons. Start free for <?= TRIAL_DAYS ?> days.</p>
     <div class="cta-actions">
       <a href="/auth?mode=register" class="btn btn-gold">Start Free Trial</a>
       <a href="/salonos" class="btn btn-outline-white">Explore All Features</a>

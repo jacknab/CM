@@ -27,7 +27,7 @@ define('PAGE_SCHEMA', json_encode([
       ['@type'=>'Question','name'=>'What is the best software for nail salons?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Certxa is purpose-built for nail salons and studios. It includes 24/7 online booking, detailed client profiles with nail history and product notes, automated reminders to cut no-shows, integrated payments, a POS system, and a branded website — all in one platform. Start with a ' . TRIAL_DAYS . '-day free trial.']],
       ['@type'=>'Question','name'=>'Can clients choose their nail technician when booking?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes — clients can select their preferred technician, or choose "any available" for maximum flexibility. Each technician has their own calendar, service list, and availability — all managed from your Certxa dashboard.']],
       ['@type'=>'Question','name'=>'Can I store client nail formulas and preferences?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes — Certxa client profiles let you record gel brand, colour codes, nail shape, enhancements, sensitivities, photos, and any custom notes. Everything is there before a client arrives so you can deliver a personalised experience every single time.']],
-      ['@type'=>'Question','name'=>'Can I take deposits for nail appointments?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Absolutely — Certxa lets you require a deposit (fixed amount or percentage) for any service. This is particularly popular for long nail art and full-set sessions where no-shows are most costly. Deposits are processed automatically at booking and are fully refundable or non-refundable based on your policy.']],
+      ['@type'=>'Question','name'=>'Can I take deposits for nail appointments?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Not yet — deposits and prepayments at booking are still in development. Today, Certxa protects your time with automated SMS and email reminders before every appointment.']],
     ],
   ],
   // Canonical SoftwareApplication (@id #software) is injected site-wide by includes/header.php.
@@ -105,7 +105,7 @@ require 'includes/nav.php';
       <div class="bento-card"><h3 class="bento-title">Attract and book clients</h3><p class="bento-text">Share a booking link through your website, social profiles, Google Business Profile, or a QR code. Clients can choose a service, technician, and available time without phone tag. See the <a href="/online-booking">nail salon booking workflow</a>.</p></div>
       <div class="bento-card"><h3 class="bento-title">Prepare for every appointment</h3><p class="bento-text">Keep client history, nail formulas, product notes, sensitivities, and appointment history together so your team can deliver a more consistent visit. Explore <a href="/client-management">client management for salons</a>.</p></div>
       <div class="bento-card"><h3 class="bento-title">Handle the front desk and walk-ins</h3><p class="bento-text">Coordinate technician calendars, live availability, walk-ins, and waitlists while you stay focused on the service. The <a href="/checkin-kiosk">self-service check-in kiosk</a> helps clients enter the queue without interrupting the team.</p></div>
-      <div class="bento-card"><h3 class="bento-title">Get paid and grow repeat business</h3><p class="bento-text">Connect booking, deposits, checkout, tips, client communication, reviews, and revenue visibility. Review the <a href="/payment-processing">nail salon POS and payment workflow</a> or see <a href="/revenue-intelligence">revenue intelligence for salons</a>.</p></div>
+      <div class="bento-card"><h3 class="bento-title">Get paid and grow repeat business</h3><p class="bento-text">Connect booking, checkout, tips, client communication, reviews, and revenue visibility. Review the <a href="/payment-processing">nail salon POS and payment workflow</a> or see <a href="/revenue-intelligence">revenue intelligence for salons</a>.</p></div>
     </div>
 
     <p style="margin:28px 0 0;color:var(--mid-grey);line-height:1.7;">Certxa also supports independent audiences: explore <a href="/solo-professionals">software for solo nail technicians</a> or <a href="/booth-renters">booking software for nail tech booth renters</a>.</p>
@@ -124,7 +124,7 @@ require 'includes/nav.php';
         ['24/7 Online Booking','Clients book gel sets, acrylics, pedicures, and nail art sessions any time — from your website, Instagram bio, or Google. No phone calls, no back-and-forth.'],
         ['Client Nail History','Every client profile stores gel brands, colour codes, nail shape, enhancements, sensitivity notes, and photos. See everything before they walk through the door.'],
         ['Multi-Tech Scheduling','Let clients book with their favourite nail technician. Each tech has their own calendar, services, and working hours — perfectly organised at a glance.'],
-        ['No-Show Deposits','Require a deposit when clients book colour or enhancement services. Block your time from cancellations with one simple setting.'],
+        ['No-Show Deposits (Coming Soon)','Requiring a deposit when clients book colour or enhancement services is in development.'],
         ['Automated Reminders','SMS and email reminders go out automatically — reducing no-shows without you lifting a finger. Clients appreciate the heads-up, you appreciate the filled chair.'],
         ['Integrated Card Payments','Accept card in-salon and online. Certxa POS handles tips, splits, gift card redemptions, and membership discounts — all from one screen.'],
       ];
@@ -159,7 +159,7 @@ require 'includes/nav.php';
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Can I take deposits for nail appointments? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Absolutely — Certxa lets you require a deposit (fixed amount or percentage) for any service. This is particularly popular for long nail art and full-set sessions where no-shows are most costly. Deposits are processed automatically at booking and are fully refundable or non-refundable based on your policy.</div>
+        <div class="accordion-body">Not yet — deposits and prepayments at booking are still in development. Today, Certxa protects your time with automated SMS and email reminders before every appointment.</div>
       </div>
     </div>
   </div>

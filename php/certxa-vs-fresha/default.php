@@ -23,7 +23,7 @@ define('PAGE_SCHEMA', json_encode([
     'mainEntity' => [
       ['@type'=>'Question','name'=>'Does Fresha charge a commission on bookings?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. Fresha charges a 20% commission (minimum $6) on new clients who book through its marketplace, on top of its $19.95–$14.95/month subscription and card processing fees. Certxa charges no marketplace commission — only a flat $0.60 connection fee per transaction on top of Stripe\'s standard processing rate.']],
       ['@type'=>'Question','name'=>'Is Fresha still free?','acceptedAnswer'=>['@type'=>'Answer','text'=>'No. Fresha removed its free-forever plan in early 2025. As of 2026, Fresha\'s Individual plan starts at $19.95/month and its Team plan is $14.95 per team member per month, in addition to marketplace commission and processing fees.']],
-      ['@type'=>'Question','name'=>'Does Fresha have an AI receptionist?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes — Fresha launched its own AI Concierge phone-answering feature in May 2026. Certxa also offers a native AI receptionist (Autumn), available today as a usage-based add-on. Both platforms offer this capability.']],
+      ['@type'=>'Question','name'=>'Does Fresha have an AI receptionist?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes — Fresha launched its own AI Concierge phone-answering feature in May 2026. Certxa also offers a native AI receptionist (Autumn), available today, included in every plan. Both platforms offer this capability.']],
       ['@type'=>'Question','name'=>'Can I migrate from Fresha to Certxa?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. Certxa offers free data migration from Fresha — your client list, appointment history, and service menu are imported for you, typically in under an hour.']],
     ],
   ],
@@ -113,7 +113,7 @@ require 'includes/nav.php';
 
           <tr class="section-row"><td colspan="3">Features</td></tr>
           <tr><td>Self-service check-in kiosk</td><td class="featured-col ct-check">✓</td><td class="ct-cross">–</td></tr>
-          <tr><td>AI phone receptionist</td><td class="featured-col ct-text">Autumn — available now, usage-based</td><td class="ct-text">AI Concierge — launched May 2026</td></tr>
+          <tr><td>AI phone receptionist</td><td class="featured-col ct-text">Autumn — available now, included in every plan</td><td class="ct-text">AI Concierge — launched May 2026</td></tr>
           <tr><td>Built-in POS</td><td class="featured-col ct-check">✓</td><td class="ct-check">✓</td></tr>
           <tr><td>Online booking</td><td class="featured-col ct-check">✓</td><td class="ct-check">✓</td></tr>
           <tr><td>Client management / CRM</td><td class="featured-col ct-check">✓</td><td class="ct-check">✓</td></tr>
@@ -165,7 +165,7 @@ require 'includes/nav.php';
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Does Fresha have an AI receptionist? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Yes — Fresha launched its own AI Concierge phone-answering feature in May 2026. Certxa also offers a native AI receptionist (Autumn), available today as a usage-based add-on. Both platforms offer this capability.</div>
+        <div class="accordion-body">Yes — Fresha launched its own AI Concierge phone-answering feature in May 2026. Certxa also offers a native AI receptionist (Autumn), available today, included in every plan. Both platforms offer this capability.</div>
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">Can I migrate from Fresha to Certxa? <span class="accordion-icon">+</span></button></h3>

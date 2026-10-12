@@ -376,7 +376,7 @@ require 'includes/nav.php';
             [true,  'SMS & email reminders (200/mo)'],
             [true,  'Basic website builder'],
             [true,  'Stripe Connect POS & card reader'],
-            ['soon','iOS & Android app'],
+            [true,  'Autumn AI receptionist (20 calls/mo)'],
             [false, 'Google Business Profile Booking Link'],
             [false, 'Automated review requests'],
             [false, 'Advanced reporting'],
@@ -406,6 +406,7 @@ require 'includes/nav.php';
             [true,  'Premium website builder + custom domain'],
             [true,  'Google Business Profile Booking Link'],
             [true,  'Automated review requests'],
+            [true,  'Autumn AI receptionist (50 calls/mo)'],
             [true,  'Client re-engagement campaigns'],
             [true,  'Advanced revenue reporting'],
             [true,  'Priority support'],
@@ -430,6 +431,7 @@ require 'includes/nav.php';
             [true,  'Up to 5 locations included'],
             [true,  'Multi-location dashboard'],
             [true,  'Cross-location reporting'],
+            [true,  'Autumn AI receptionist (100 calls/mo)'],
             [true,  'API access for integrations'],
             [true,  'Priority phone support'],
             [true,  'Staff commission tracking'],
@@ -674,10 +676,10 @@ require 'includes/nav.php';
       <?php
       $addons = [
         [
-          'price'  => 'From $29',
-          'period' => '/mo',
+          'price'  => 'Included',
+          'period' => '',
           'name'   => 'Autumn AI Receptionist',
-          'desc'   => '24/7 AI phone receptionist that books, reschedules, and answers client calls — even when you\'re mid-appointment. Per-minute usage pricing. Never miss a booking again.',
+          'desc'   => '24/7 AI phone receptionist that books, reschedules, and answers client calls — even when you\'re mid-appointment. Included in every plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite. Additional calls are $0.50 each.',
           'tag'    => null,
         ],
         [
@@ -781,7 +783,7 @@ require 'includes/nav.php';
 
           <div class="p-est-field">
             <label>Autumn AI calls / month</label>
-            <span class="hint">$0.50 per call handled (&gt;30 sec)</span>
+            <span class="hint">Included: 20 on Solo, 50 on Professional, 100 on Elite. Then $0.50 per call handled (&gt;30 sec)</span>
             <div class="p-est-slider-row">
               <input type="range" class="p-est-sl" id="pe-calls" min="0" max="200" value="0" step="5">
               <span class="p-est-vl" id="pe-calls-lbl">0</span>
@@ -793,7 +795,7 @@ require 'includes/nav.php';
         <div class="p-est-lines">
           <div class="p-est-line"><span>Plan fee</span><span id="pe-r-plan">$22.00</span></div>
           <div class="p-est-line"><span>Certxa connection fees <span style="font-weight:400;color:var(--mid-grey);">($0.60 × txns)</span></span><span id="pe-r-certxa">$30.00</span></div>
-          <div class="p-est-line"><span>Autumn AI calls <span style="font-weight:400;color:var(--mid-grey);">($0.50 × calls)</span></span><span id="pe-r-calls">$0.00</span></div>
+          <div class="p-est-line"><span>Autumn AI calls <span style="font-weight:400;color:var(--mid-grey);">($0.50 × calls over your plan's included calls)</span></span><span id="pe-r-calls">$0.00</span></div>
           <div class="p-est-line" style="border-top:1px solid var(--light-grey);padding-top:10px;margin-top:4px;font-weight:700;">
             <span>Estimated monthly total</span><span id="pe-r-total" style="color:var(--plum);font-size:1rem;">$52.00</span>
           </div>
@@ -815,6 +817,7 @@ require 'includes/nav.php';
 (function(){
   var planPrices = [0, 22, 49];
   var planNames  = ['Solo','Professional','Elite'];
+  var includedCalls = [20, 50, 100];
   var slPlan  = document.getElementById('pe-plan');
   var slTxns  = document.getElementById('pe-txns');
   var slCalls = document.getElementById('pe-calls');
@@ -833,7 +836,7 @@ require 'includes/nav.php';
 
     var planAmt  = planPrices[plan];
     var certxa   = txns * 0.60;
-    var autumn   = calls * 0.50;
+    var autumn   = Math.max(0, calls - includedCalls[plan]) * 0.50;
     var total    = planAmt + certxa + autumn;
 
     document.getElementById('pe-plan-lbl').textContent  = '$' + planAmt;

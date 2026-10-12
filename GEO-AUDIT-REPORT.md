@@ -40,6 +40,18 @@ The score is up 2 points from September. Technical and schema improved; brand au
 | "Best free" page said "Certxa isn't free" and "no staff cap on any Certxa plan" beside "$0 Certxa Solo plan" and "1 on Solo" | `/best-free-salon-booking-system` |
 | Kiosk page's FAQ markup listed six questions that were not on the page; markup is now generated from the visible list | `/checkin-kiosk` |
 
+### Settled by the owner and fixed after the audit (2026-10-12, live)
+
+| Conflict | Now |
+|---|---|
+| Autumn's price (Critical 3) | Included in every plan: 20 calls a month on Solo, 50 on Professional, 100 on Elite, then $0.50 per call. Every page, both cost estimators, the in-app fee card and the billing code now agree. |
+| Deposits (Critical 4) | Still in development. Every page that claimed deposits now says so or no longer mentions them. |
+| Support hours (High 1) | Every day, 10 am – 9 pm ET, on the home page, contact page and Organization data. |
+| Native apps (High 2) | All mentions removed, including `operatingSystem` in the software data. |
+| Product Hunt | `https://www.producthunt.com/products/certxa` added to the Organization profile links. |
+
+The issues below are listed as found; the four above are closed.
+
 ---
 
 ## Critical Issues (Fix Immediately)

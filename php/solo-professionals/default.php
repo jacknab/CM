@@ -89,7 +89,7 @@ require 'includes/nav.php';
         ['👁️', 'Lash Artists', 'Full & hybrid sets, fills, and removal — all organized.'],
         ['🌿', 'Estheticians', 'Facials, waxing, peels, and skincare consultations.'],
         ['💆', 'Brow Specialists', 'Microblading, lamination, tinting, and waxing.'],
-        ['💋', 'Makeup Artists', 'Bridal, editorial, and event bookings with deposits.'],
+        ['💋', 'Makeup Artists', 'Bridal, editorial, and event bookings.'],
         ['💪', 'Massage Therapists', 'Intake forms, room scheduling, and session notes.'],
         ['🧖', 'Waxing Pros', 'Full menu management with package and series pricing.'],
       ];
@@ -144,7 +144,7 @@ require 'includes/nav.php';
   <div class="container" style="max-width:720px;text-align:center;">
     <span class="tag tag-plum">Simple Pricing</span>
     <h2 class="section-title" style="margin-top:16px;">One flat rate.<br><em>Core platform included.</em></h2>
-    <p style="color:var(--mid-grey);font-size:1rem;line-height:1.65;margin-bottom:40px;">Your monthly subscription covers all core platform features. Optional add-ons like the Autumn AI receptionist and SMS beyond your plan allowance are usage-based and billed separately.</p>
+    <p style="color:var(--mid-grey);font-size:1rem;line-height:1.65;margin-bottom:40px;">Your monthly subscription covers all core platform features. The Autumn AI receptionist is included with 20 calls a month. Calls beyond that ($0.50 each) and SMS beyond your plan allowance are billed separately.</p>
     <div style="display:inline-block;background:#fafafa;border:2px solid #f0f0f2;border-radius:20px;padding:36px 48px;text-align:center;">
       <div style="font-size:.8rem;font-weight:700;color:var(--mid-grey);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px;">Starting at</div>
       <div style="font-size:3.2rem;font-weight:900;color:var(--charcoal);line-height:1;margin-bottom:4px;">$0<span style="font-size:1.2rem;color:var(--mid-grey);font-weight:500;">/mo</span></div>

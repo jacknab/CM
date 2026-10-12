@@ -1,7 +1,7 @@
 <?php
 define('BRAND_NAME',    'Certxa');
 define('PAGE_TITLE',    'Certxa Support | Contact Us');
-define('PAGE_DESC',     'Get in touch with the Certxa support team. Reach us by phone, email, or live chat. Available Monday–Friday 9am–6pm ET. Toll-free support for all Certxa customers.');
+define('PAGE_DESC',     'Get in touch with the Certxa support team. Reach us by phone, email, or live chat. Available every day, 10am–9pm ET. Toll-free support for all Certxa customers.');
 define('PAGE_KEYWORDS', 'certxa contact, certxa support, nail salon software help, certxa phone number, certxa customer service, nail salon software support');
 define('PAGE_CANONICAL', 'https://certxa.com/contact');
 define('PAGE_BREADCRUMBS', json_encode([
@@ -36,7 +36,7 @@ require 'includes/nav.php';
       We're here<br><em style="background:linear-gradient(135deg,#F59E0B,#FBBF24);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">to help.</em>
     </h1>
     <p style="font-size:1.12rem;color:rgba(255,255,255,.62);max-width:480px;margin:0 auto 36px;line-height:1.75;">
-      Your success is our priority. Our team is on hand Monday–Friday to help you get the most from Certxa.
+      Your success is our priority. Our team is on hand every day to help you get the most from Certxa.
     </p>
 
     <!-- Toll-free number -->
@@ -48,7 +48,7 @@ require 'includes/nav.php';
     <!-- Hours -->
     <div style="margin-top:20px;color:rgba(255,255,255,.45);font-size:.88rem;display:flex;align-items:center;justify-content:center;gap:8px;">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      Monday – Friday &nbsp;·&nbsp; 9:00 am – 6:00 pm ET &nbsp;·&nbsp; Closed weekends
+      Every day &nbsp;·&nbsp; 10:00 am – 9:00 pm ET
     </div>
   </div>
 </section>
@@ -66,7 +66,7 @@ require 'includes/nav.php';
         <h3 style="font-family:'Cormorant Garamond',serif;font-size:1.35rem;font-weight:600;color:var(--plum);margin-bottom:10px;">Call Us</h3>
         <p style="font-size:.88rem;color:var(--mid-grey);line-height:1.65;margin-bottom:20px;">Speak directly with a Certxa specialist. Fastest way to resolve urgent issues.</p>
         <a href="tel:+18002784392" style="font-size:1.1rem;font-weight:700;color:var(--plum);display:block;margin-bottom:6px;">1 (800) 278-4392</a>
-        <div style="font-size:.78rem;color:var(--mid-grey);">Toll-free · Mon–Fri 9am–6pm ET</div>
+        <div style="font-size:.78rem;color:var(--mid-grey);">Toll-free · Every day 10am–9pm ET</div>
       </div>
 
       <!-- Live Chat -->
@@ -117,13 +117,13 @@ require 'includes/nav.php';
           <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--mid-grey);margin-bottom:16px;">Support Hours (ET)</div>
           <?php
           $hours = [
-            ['Monday',    '9:00 am – 6:00 pm', true],
-            ['Tuesday',   '9:00 am – 6:00 pm', true],
-            ['Wednesday', '9:00 am – 6:00 pm', true],
-            ['Thursday',  '9:00 am – 6:00 pm', true],
-            ['Friday',    '9:00 am – 6:00 pm', true],
-            ['Saturday',  'Closed', false],
-            ['Sunday',    'Closed', false],
+            ['Monday',    '10:00 am – 9:00 pm', true],
+            ['Tuesday',   '10:00 am – 9:00 pm', true],
+            ['Wednesday', '10:00 am – 9:00 pm', true],
+            ['Thursday',  '10:00 am – 9:00 pm', true],
+            ['Friday',    '10:00 am – 9:00 pm', true],
+            ['Saturday',  '10:00 am – 9:00 pm', true],
+            ['Sunday',    '10:00 am – 9:00 pm', true],
           ];
           foreach ($hours as $h):
           ?>

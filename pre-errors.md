@@ -6,14 +6,11 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
-## 2026-10-12 — Marketing pages contradict each other on four product facts (found by the GEO audit)
+## 2026-10-12 — Open items from the GEO audit, and two Autumn fee questions
 
-Each needs the owner to say which statement is true; the wrong side can then be edited in a minute. Not fixed because the correct fact is a product/pricing decision, not something the code can tell me.
+The four cross-page conflicts found by the audit (Autumn price, deposits, support hours, native apps) were settled by the owner and fixed the same day.
 
-1. **Autumn price.** `php/pricing/default.php:677` ("From $29 /mo", and "$0.50 per call handled" elsewhere on the page) vs `php/autumn/default.php` ("There's no additional monthly fee", billed per minute of active call time).
-2. **Deposits.** `php/pricing/default.php` comparison table: "Deposits & prepayments — Coming Soon" on all plans, vs `php/online-booking/default.php` ("You can require a deposit (fixed amount or percentage)") and `php/best-free-salon-booking-system/default.php` ("Deposits, POS, and a kiosk included").
-3. **Support hours.** `php/overview/default.php` ("24/7 live support") vs `php/contact/default.php` ("Monday – Friday · 9:00 am – 6:00 pm ET · Closed weekends").
-4. **Native apps.** `php/overview/default.php` ("Certxa has native apps for both iOS … and Android") vs `php/pricing/default.php` ("iOS & Android app — Coming Soon").
+**Autumn fees still to confirm.** Call billing now follows the owner's pricing (`artifacts/api-server/src/lib/autumnCallBilling.ts`: Solo 20, Professional 50, Elite 100 handled calls per calendar month, then $0.50 per call; calls of 30 s or less free). Two things were not part of that instruction and are unchanged: (1) the $15 one-time number setup fee and $2/month number fee (`routes/aiReceptionist.ts` ~line 5182, shown in `booking/src/pages/manage/AiReceptionistEnrollment.tsx`) are still charged, while the website now says Autumn is "included" and mentions neither; (2) plans without a stated allowance (`free_trial`, `enterprise`, and anything not solo/professional/elite) get 0 included calls, so a salon on the 60-day trial pays $0.50 from the first handled call. Both need the owner's decision.
 
 Also open from the same audit, all listed in `GEO-AUDIT-REPORT.md` (2026-10-12): the home page FAQ markup (`php/overview/default.php:40-70`) is hand-written separately from the visible accordion (~line 815) and four answers differ; the React directory pages emit no Organization node (`artifacts/marketplace/src/entry-server.tsx`); salon profile JSON-LD puts the whole address in `streetAddress` with no `postalCode`; `/sitemap-listings.xml` stamps every URL with the generation date as `lastmod`; unsupported guarantees on `/pricing`, `/contact` and the home page. `artifacts/booking/public/llms-full.txt` is a hand-maintained snapshot of page text with no generator, so it goes stale whenever a marketing page changes (it still had the $9 Solo price until today).
 

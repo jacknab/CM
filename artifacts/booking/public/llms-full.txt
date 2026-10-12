@@ -25,7 +25,6 @@ Stop stitching together separate apps. Certxa connects online booking, client re
 Let clients book directly from your website, Instagram bio, or straight from Google — no phone tag, no back-and-forth, no empty chairs.
 - Real-time availability synced across every channel
 - Google, Instagram & Facebook booking links
-- Automatic deposit collection at booking time
 - Instant SMS + email confirmation sent to clients
 
 ### Every client, perfectly remembered.
@@ -36,9 +35,8 @@ Detailed profiles store nail records, gel colour codes, shape preferences, produ
 - Automatic rebooking nudges at each client's cadence
 
 ### Get paid. Every single time.
-From online deposits that eliminate no-shows to instant in-person card payments — Certxa makes getting paid effortless. Funds land in your bank account by next business day, guaranteed.
+From instant in-person card payments to automatic payouts — Certxa makes getting paid effortless. Funds land in your bank account by next business day, guaranteed.
 - Accept cards, Apple Pay & Google Pay
-- Require deposits at booking — protect your time
 - Stripe-powered POS with tap-to-pay card reader
 - Next-day payouts to your bank, automatically
 
@@ -46,7 +44,6 @@ From online deposits that eliminate no-shows to instant in-person card payments 
 Certxa automatically sends perfectly-timed SMS and email reminders so clients never forget their appointment — without you lifting a finger. Early Certxa customers report up to 68% fewer no-shows.
 - Automated reminders at 72h, 24h & 2h before
 - Clients can confirm, reschedule or cancel via SMS
-- No-show deposit protection collected at booking
 - Post-visit review request sent automatically
 
 ### Find your missing revenue automatically.
@@ -100,8 +97,6 @@ Can't find the answer you're looking for? Chat with our team →
 ### Can I migrate from GlossGenius, Vagaro, or another platform? +
 
 ### How does Certxa reduce no-shows? +
-
-### Is Certxa available on iPhone and Android? +
 
 ## Ready to grow your salon business?
 The nail salon platform built to run your business — from your first booking to your hundredth client.
@@ -189,22 +184,22 @@ Head to the Autumn section in your Certxa dashboard and add credit to your accou
 Enable Autumn with one click. She reads your services, staff, and calendar automatically — no manual setup.
 
 ### Forward your calls
-Point your salon phone to Autumn's number. She starts answering immediately. Your balance covers every minute she's on a call.
+Point your salon phone to Autumn's number. She starts answering immediately. Your plan's included calls are used first; after that each call is $0.50 from your balance.
 
-## Pay for what Autumn actually uses.
-Autumn is available on every Certxa plan. There's no extra subscription — instead you load funds into your account and Autumn draws from that balance as she handles calls.
+## Included in your plan.
+Autumn is included in every Certxa plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite. There's no extra subscription. Each call beyond your plan's included calls is $0.50, drawn from the balance you load into your account.
 
 ### Load your balance
 Add any amount to your Autumn credit balance directly from your Certxa dashboard. Funds never expire.
 
 ### Autumn handles calls
-Every minute Autumn spends on an active call draws from your balance. Nothing is charged when she's idle.
+Your plan covers 20, 50 or 100 calls a month. After that, each call is $0.50 from your balance. Nothing is charged when she's idle.
 
 ### Auto top-up (optional)
 Set a low-balance threshold and Certxa will top up your account automatically — so Autumn never stops mid-day.
 
 ### Works with every Certxa plan
-Autumn is an add-on available to Solo, Professional, and Elite subscribers. Simply load credit and enable her — no plan upgrade required.
+Autumn is included for Solo, Professional, and Elite subscribers — 20 calls a month on Solo, 50 on Professional and 100 on Elite. No plan upgrade required.
 
 ## Common questions
 
@@ -286,7 +281,7 @@ Certxa isn't free, but it's built to be the cheapest real upgrade once a free pl
 ### Unlimited staff, from $22/mo
 No per-seat pricing and no staff cap on any Certxa plan — a meaningful difference from Setmore's 4-person free ceiling.
 
-### Deposits, POS, and a kiosk included
+### POS and a kiosk included
 Booking, client management, point of sale, and a self-service walk-in check-in kiosk ship on every plan — not as paid add-ons.
 
 ### No markup on card processing
@@ -432,7 +427,6 @@ Client history & color notes
 Instant card payments
 Loyalty & rewards program
 Revenue analytics
-No-show deposits
 Gift card sales
 
 ## Ready to run your booth like a business?
@@ -503,7 +497,7 @@ None advertised
 Features
 Self-service check-in kiosk
 AI phone receptionist
-Autumn — available now, usage-based
+Autumn — available now, included in every plan
 AI Concierge — launched May 2026
 Built-in POS
 Online booking
@@ -578,7 +572,7 @@ Available (length not published)
 Features
 Self-service check-in kiosk
 AI phone receptionist
-Available now (Autumn, usage-based)
+Available now (Autumn, included in every plan)
 Announced, listed "Coming Soon"
 Built-in POS
 Online booking
@@ -732,7 +726,7 @@ Free trial
 Features
 Self-service check-in kiosk
 AI phone receptionist
-Available now (Autumn, usage-based)
+Available now (Autumn, included in every plan)
 Third-party integration only
 Built-in POS
 Online booking
@@ -751,7 +745,7 @@ Certxa's Professional plan is $22/mo flat with unlimited staff and calendars. On
 Text marketing, a branded app, and payroll are core parts of Certxa's plans. On Vagaro, each is a separate line-item add-on — $20/mo, $100/mo, and $34+$5/employee respectively.
 
 ### AI receptionist built in
-Autumn, Certxa's AI receptionist, is available today as a native usage-based add-on. Vagaro has no native AI phone answering — it requires a separate third-party integration.
+Autumn, Certxa's AI receptionist, is available today and included in every plan. Vagaro has no native AI phone answering — it requires a separate third-party integration.
 
 ## Certxa vs Vagaro — common questions
 
@@ -988,7 +982,7 @@ Credit card required · No charge until trial ends · Setup in minutes
 Source: https://certxa.com/contact
 
 # We're here to help.
-Your success is our priority. Our team is on hand Monday–Friday to help you get the most from Certxa.
+Your success is our priority. Our team is on hand every day to help you get the most from Certxa.
 
 ### Call Us
 Speak directly with a Certxa specialist. Fastest way to resolve urgent issues.
@@ -1044,7 +1038,6 @@ Choose from 15+ professionally designed templates created specifically for beaut
 Every Certxa website comes with your full booking system already embedded. Clients can browse your services and book an appointment without ever leaving your site — and every booking flows straight into your Certxa calendar.
 - Full booking system on every page of your site
 - Real-time availability always up to date
-- Online deposits and prepayments supported
 - Service menu with photos, descriptions, and pricing
 - Staff profiles and individual booking pages
 
@@ -1377,7 +1370,7 @@ Keep client history, nail formulas, product notes, sensitivities, and appointmen
 Coordinate technician calendars, live availability, walk-ins, and waitlists while you stay focused on the service. The self-service check-in kiosk helps clients enter the queue without interrupting the team.
 
 ### Get paid and grow repeat business
-Connect booking, deposits, checkout, tips, client communication, reviews, and revenue visibility. Review the nail salon POS and payment workflow or see revenue intelligence for salons .
+Connect booking, checkout, tips, client communication, reviews, and revenue visibility. Review the nail salon POS and payment workflow or see revenue intelligence for salons .
 Certxa also supports independent audiences: explore software for solo nail technicians or booking software for nail tech booth renters .
 
 ## Everything your nail salon needs to run and grow
@@ -1391,8 +1384,8 @@ Every client profile stores gel brands, colour codes, nail shape, enhancements, 
 ### Multi-Tech Scheduling
 Let clients book with their favourite nail technician. Each tech has their own calendar, services, and working hours — perfectly organised at a glance.
 
-### No-Show Deposits
-Require a deposit when clients book colour or enhancement services. Block your time from cancellations with one simple setting.
+### No-Show Deposits (Coming Soon)
+Requiring a deposit when clients book colour or enhancement services is in development.
 
 ### Automated Reminders
 SMS and email reminders go out automatically — reducing no-shows without you lifting a finger. Clients appreciate the heads-up, you appreciate the filled chair.
@@ -1563,7 +1556,7 @@ What the Wallet covers
 One balance. Every pay-as-you-go feature on your account draws from it.
 
 ### Autumn AI Receptionist
-Every call Autumn handles draws from your Wallet balance. Billing is per minute — $0.0041 per second, which works out to $0.25 per minute of connected call time.
+Your plan includes 20 calls a month on Solo, 50 on Professional and 100 on Elite. Each call Autumn handles beyond that is $0.50, drawn from your Wallet balance. Calls of 30 seconds or less are free.
 
 ### SMS Overage
 When your plan's monthly SMS allowance is used up, your Wallet covers additional messages so notifications keep going without interruption.
@@ -1651,7 +1644,6 @@ Credit card required to subscribe
 - ✓ SMS & email reminders (200/mo)
 - ✓ Basic website builder
 - ✓ Stripe Connect POS & card reader
-- ◷ iOS & Android app Coming Soon
 - – Google Business Profile Booking Link
 - – Automated review requests
 - – Advanced reporting
@@ -2234,7 +2226,7 @@ Attach before/after photos directly to client profiles. Build a visual record of
 Sync your booking link to your Google listing so clients can book you directly from Google Search and Maps.
 
 ## One flat rate. Core platform included.
-Your monthly subscription covers all core platform features. Optional add-ons like the Autumn AI receptionist and SMS beyond your plan allowance are usage-based and billed separately.
+Your monthly subscription covers all core platform features. The Autumn AI receptionist is included with 20 calls a month. Calls beyond that ($0.50 each) and SMS beyond your plan allowance are billed separately.
 
 ## Stop running your business on sticky notes.
 Get the full Certxa platform free for 60 days. Credit card required to subscribe — no charge until your trial ends.
@@ -2546,7 +2538,7 @@ Enter your salon's numbers below. See exactly how much revenue walks out the doo
 
 #### Annual Revenue Lost to No-Shows
 Certxa's automated SMS & email reminders cut no-shows by an average of 50%.
-Certxa sends automated reminders and supports deposits on every booking — see client notifications → or deposit protection →
+Certxa sends automated reminders on every booking — see client notifications →
 
 ## Calculator questions, answered
 
@@ -2567,7 +2559,7 @@ Certxa sends automated reminders and supports deposits on every booking — see 
 ### Are these calculators free to use? +
 
 ## Hit break-even faster. Lose fewer bookings to no-shows.
-Certxa brings 24/7 online booking, automated reminders, and deposit protection into one platform built for nail salons. Start free for 60 days.
+Certxa brings 24/7 online booking and automated reminders into one platform built for nail salons. Start free for 60 days.
 Credit card required · No charge until trial ends
 
 

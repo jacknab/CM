@@ -179,7 +179,6 @@ require 'includes/nav.php';
         <ul class="feature-list">
           <li>Full booking system on every page of your site</li>
           <li>Real-time availability always up to date</li>
-          <li>Online deposits and prepayments supported</li>
           <li>Service menu with photos, descriptions, and pricing</li>
           <li>Staff profiles and individual booking pages</li>
         </ul>

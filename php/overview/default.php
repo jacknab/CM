@@ -60,12 +60,7 @@ define('PAGE_SCHEMA', json_encode([
       [
         '@type'          => 'Question',
         'name'           => 'How does Certxa reduce no-shows?',
-        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Certxa sends automated SMS and email reminders at intervals you choose — typically 72 hours and 24 hours before each appointment. Automated reminders are one of the most effective ways to cut no-shows since most missed appointments come down to clients simply forgetting. You can also require a deposit at booking for additional protection.'],
-      ],
-      [
-        '@type'          => 'Question',
-        'name'           => 'Is Certxa available on iPhone and Android?',
-        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Yes — Certxa has native apps on both iOS (iPhone and iPad) and Android. Your clients can also book through any web browser with no app download required on their end.'],
+        'acceptedAnswer' => ['@type'=>'Answer','text'=>'Certxa sends automated SMS and email reminders at intervals you choose — typically 72 hours and 24 hours before each appointment. Automated reminders are one of the most effective ways to cut no-shows since most missed appointments come down to clients simply forgetting.'],
       ],
     ],
   ],
@@ -257,7 +252,7 @@ require 'includes/nav.php';
 <!-- ══════════════ IMPACT MARQUEE ══════════════ -->
 <div class="impact-marquee">
   <?php
-  $items = ['Online Booking','Automated Reminders','Card Payments','No-Show Deposits','Client Drift Engine','Revenue Leakage Report','Dead Seat Intelligence','No-Show Prediction','Client Profiles','Google Business Profile','Google Reviews','Website Builder','Gift Cards','Memberships','POS System','Rebooking Rate by Stylist','LTV + Churn Risk Score','Growth Score','SMS Notifications','Colour Formulas','Multi-Staff Calendar','Instant Payouts'];
+  $items = ['Online Booking','Automated Reminders','Card Payments','Client Drift Engine','Revenue Leakage Report','Dead Seat Intelligence','No-Show Prediction','Client Profiles','Google Business Profile','Google Reviews','Website Builder','Gift Cards','Memberships','POS System','Rebooking Rate by Stylist','LTV + Churn Risk Score','Growth Score','SMS Notifications','Colour Formulas','Multi-Staff Calendar','Instant Payouts'];
   // duplicate for seamless loop
   $all = array_merge($items, $items);
   ?>
@@ -300,7 +295,6 @@ require 'includes/nav.php';
           <ul class="feat-list">
             <li>Real-time availability synced across every channel</li>
             <li>Google, Instagram &amp; Facebook booking links</li>
-            <li>Automatic deposit collection at booking time</li>
             <li>Instant SMS + email confirmation sent to clients</li>
           </ul>
           <a href="/online-booking" class="feat-link">Explore Online Booking →</a>
@@ -396,10 +390,9 @@ require 'includes/nav.php';
         <div class="feat-copy">
           <div class="feat-eyebrow">Integrated Payments</div>
           <h3 class="feat-title">Get paid.<br><em>Every single time.</em></h3>
-          <p class="feat-desc">From online deposits that eliminate no-shows to instant in-person card payments — Certxa makes getting paid effortless. Funds land in your bank account by next business day, guaranteed.</p>
+          <p class="feat-desc">From instant in-person card payments to automatic payouts — Certxa makes getting paid effortless. Funds land in your bank account by next business day, guaranteed.</p>
           <ul class="feat-list">
             <li>Accept cards, Apple Pay &amp; Google Pay</li>
-            <li>Require deposits at booking — protect your time</li>
             <li>Stripe-powered POS with tap-to-pay card reader</li>
             <li>Next-day payouts to your bank, automatically</li>
           </ul>
@@ -436,7 +429,6 @@ require 'includes/nav.php';
           <ul class="feat-list">
             <li>Automated reminders at 72h, 24h &amp; 2h before</li>
             <li>Clients can confirm, reschedule or cancel via SMS</li>
-            <li>No-show deposit protection collected at booking</li>
             <li>Post-visit review request sent automatically</li>
           </ul>
           <a href="/client-notifications" class="feat-link">Explore Smart Reminders →</a>
@@ -596,7 +588,7 @@ require 'includes/nav.php';
       <?php foreach ([
         TRIAL_DAYS . '-day free trial', 'Credit card required · No charge until trial ends', 'Setup in 5 minutes',
         'Built for nail studios', 'Cancel any time',
-        'Stripe POS built-in', 'Free data migration', '24/7 live support',
+        'Stripe POS built-in', 'Free data migration', 'Live support every day, 10 am – 9 pm ET',
       ] as $p): ?>
       <span class="statement-pill"><?= $p ?></span>
       <?php endforeach; ?>
@@ -837,12 +829,7 @@ require 'includes/nav.php';
 
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">How does Certxa reduce no-shows? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Certxa sends fully automated SMS and email reminders at intervals you control — typically 72 hours and 24 hours before each appointment. Automated reminders are one of the most effective ways to cut no-shows since most missed appointments come down to clients simply forgetting. You can also require an upfront deposit at the time of booking for additional protection on high-value services.</div>
-      </div>
-
-      <div class="accordion-item">
-        <h3 class="accordion-heading"><button class="accordion-btn">Is Certxa available on iPhone and Android? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Yes — Certxa has native apps for both iOS (iPhone and iPad) and Android so you can manage your business from anywhere. Your clients can also book through any web browser without downloading anything. Your salon is always open, even when you're not.</div>
+        <div class="accordion-body">Certxa sends fully automated SMS and email reminders at intervals you control — typically 72 hours and 24 hours before each appointment. Automated reminders are one of the most effective ways to cut no-shows since most missed appointments come down to clients simply forgetting.</div>
       </div>
 
     </div>

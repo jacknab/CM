@@ -274,7 +274,7 @@ require 'includes/nav.php';
             </div>
             <div style="background:#f0fdf4;border-radius:8px;padding:10px 12px;border-left:3px solid #059669;">
               <div style="font-size:.82rem;font-weight:600;color:#059669;">Confirmed ✓</div>
-              <div style="font-size:.72rem;color:var(--mid-grey);">Reminder sent · $145 deposit held</div>
+              <div style="font-size:.72rem;color:var(--mid-grey);">Reminder sent</div>
             </div>
           </div>
         </div>',

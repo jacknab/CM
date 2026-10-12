@@ -189,7 +189,7 @@ require 'includes/nav.php';
         <p class="bento-text">No per-seat pricing and no staff cap on Certxa's team plans — a meaningful difference from Setmore's 4-person free ceiling.</p>
       </div>
       <div class="bento-card">
-        <h3 class="bento-title">Deposits, POS, and a kiosk included</h3>
+        <h3 class="bento-title">POS and a kiosk included</h3>
         <p class="bento-text">Booking, client management, point of sale, and a self-service walk-in check-in kiosk ship on every plan — not as paid add-ons.</p>
       </div>
       <div class="bento-card">

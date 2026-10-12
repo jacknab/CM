@@ -20,8 +20,8 @@ define('PAGE_SCHEMA', json_encode([
   [
     '@type'      => 'FAQPage',
     'mainEntity' => [
-      ['@type'=>'Question','name'=>'Do I need a separate subscription for Autumn?','acceptedAnswer'=>['@type'=>'Answer','text'=>'No. Autumn is available on all Certxa plans — Solo, Professional, and Elite. You simply load credit to your account and enable her. There\'s no additional monthly fee.']],
-      ['@type'=>'Question','name'=>'How does the credit balance work?','acceptedAnswer'=>['@type'=>'Answer','text'=>'You top up your Autumn credit balance from inside your Certxa dashboard. Autumn draws from that balance for each minute of active call time. You can set a low-balance auto top-up so she never goes offline mid-day.']],
+      ['@type'=>'Question','name'=>'Do I need a separate subscription for Autumn?','acceptedAnswer'=>['@type'=>'Answer','text'=>'No. Autumn is included in every Certxa plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite. After that, each additional call is $0.50.']],
+      ['@type'=>'Question','name'=>'How does the credit balance work?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Your plan\'s included calls are used first. Once they are used up, each additional call is $0.50, taken from the credit balance you top up inside your Certxa dashboard. You can set a low-balance auto top-up so she never goes offline mid-day.']],
       ['@type'=>'Question','name'=>'Does Autumn know how busy my salon is?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. While your salon is open, Autumn sees who is clocked in, who is free, who is with a client and how many people are waiting, and uses that to tell a caller whether there is a wait and roughly how long. She never makes up a wait time.']],
     ['@type'=>'Question','name'=>'Can a caller ask whether a specific technician is available?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Yes. Autumn can say whether that technician is working today, whether they are free or with a client right now, and roughly when they will be free.']],
     ['@type'=>'Question','name'=>'What does Autumn do when the salon is closed?','acceptedAnswer'=>['@type'=>'Answer','text'=>'She tells the caller the salon is closed and acts as an after-hours answering service: booking, rescheduling, cancelling and answering questions. She does not give live wait times after hours.']],
@@ -1216,7 +1216,7 @@ require __DIR__ . '/../includes/nav.php';
       $steps = [
         ['1','Load your account balance',   'Head to the Autumn section in your Certxa dashboard and add credit to your account. You choose how much to load.'],
         ['2','Activate Autumn',             'Enable Autumn with one click. She reads your services, staff, and calendar automatically — no manual setup.'],
-        ['3','Forward your calls',          'Point your salon phone to Autumn\'s number. She starts answering immediately. Your balance covers every minute she\'s on a call.'],
+        ['3','Forward your calls',          'Point your salon phone to Autumn\'s number. She starts answering immediately. Your plan\'s included calls are used first; after that each call is $0.50 from your balance.'],
       ];
       foreach ($steps as $i => [$num,$title,$body]):
       ?>
@@ -1235,17 +1235,17 @@ require __DIR__ . '/../includes/nav.php';
   <div class="au2-container-md">
     <div class="fade-in" style="text-align:center;margin-bottom:60px;">
       <div class="au2-section-label">💳 How Pricing Works</div>
-      <h2 class="au2-section-title">Pay for what Autumn actually uses.</h2>
+      <h2 class="au2-section-title">Included in your plan.</h2>
       <p class="au2-section-sub" style="max-width:540px;margin:0 auto;">
-        Autumn is available on every Certxa plan. There's no extra subscription — instead you load funds into your account and Autumn draws from that balance as she handles calls.
+        Autumn is included in every Certxa plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite. There's no extra subscription. Each call beyond your plan's included calls is $0.50, drawn from the balance you load into your account.
       </p>
     </div>
 
     <div class="au2-pricing-grid">
       <?php
       $pricing = [
-        ['💳','Load your balance',     'Add any amount to your Autumn credit balance directly from your Certxa dashboard. Funds never expire.',false],
-        ['📞','Autumn handles calls',  'Every minute Autumn spends on an active call draws from your balance. Nothing is charged when she\'s idle.',true],
+        ['💳','Load your balance',     'Add any amount to your Autumn credit balance directly from your Certxa dashboard. It pays for calls beyond the ones your plan includes. Funds never expire.',false],
+        ['📞','Autumn handles calls',  'Your plan covers 20, 50 or 100 calls a month. After that, each call is $0.50 from your balance. Nothing is charged when she\'s idle.',true],
         ['📈','Auto top-up (optional)','Set a low-balance threshold and Certxa will top up your account automatically — so Autumn never stops mid-day.',false],
       ];
       foreach ($pricing as $i => [$ico,$title,$body,$hi]):
@@ -1262,7 +1262,7 @@ require __DIR__ . '/../includes/nav.php';
       <div style="flex:1;min-width:240px;">
         <h3 style="font-weight:700;font-size:1.05rem;color:#1c1917;margin-bottom:8px;">Works with every Certxa plan</h3>
         <p style="font-size:.88rem;color:#6b7280;line-height:1.6;">
-          Autumn is an add-on available to Solo, Professional, and Elite subscribers. Simply load credit and enable her — no plan upgrade required.
+          Autumn is included for Solo, Professional, and Elite subscribers — 20 calls a month on Solo, 50 on Professional and 100 on Elite. No plan upgrade required.
         </p>
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap;">
@@ -1284,9 +1284,9 @@ require __DIR__ . '/../includes/nav.php';
     <?php
     $faqs = [
       ['Do I need a separate subscription for Autumn?',
-       'No. Autumn is available on all Certxa plans — Solo, Professional, and Elite. You simply load credit to your account and enable her. There\'s no additional monthly fee.'],
+       'No. Autumn is included in every Certxa plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite. After that, each additional call is $0.50.'],
       ['How does the credit balance work?',
-       'You top up your Autumn credit balance from inside your Certxa dashboard. Autumn draws from that balance for each minute of active call time. You can set a low-balance auto top-up so she never goes offline mid-day.'],
+       'Your plan\'s included calls are used first. Once they are used up, each additional call is $0.50, taken from the credit balance you top up inside your Certxa dashboard. You can set a low-balance auto top-up so she never goes offline mid-day.'],
       ['Does Autumn know how busy my salon is?',
        'Yes. While your salon is open, Autumn sees who is clocked in, who is free, who is with a client and how many people are waiting. She uses that to tell a caller whether there is a wait and roughly how long. She never makes up a wait time: if there isn\'t enough information, she says so.'],
       ['Can a caller ask whether a specific technician is available?',

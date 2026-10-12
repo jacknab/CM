@@ -17,13 +17,9 @@ import { callUsageRecords, locations } from "@shared/schema";
 import { type TokenUsage, type CallCost } from "./costEngine";
 import { callEventBus } from "./callEventBus";
 import { OPENAI_PRICING } from "./openaiPricing";
+import { autumnCallCharge, includedCallsForPlan, isHandledCall } from "./autumnCallBilling";
+import { resolveStorePlan } from "./featureAccess";
 
-/**
- * Per-second credit charge deducted from the salon's platform balance.
- * $0.0041/second = $0.25/minute.
- * Override with AI_CALL_RATE_PER_SECOND in your .env (e.g. AI_CALL_RATE_PER_SECOND=0.0041).
- */
-const AI_CALL_RATE_PER_SECOND = parseFloat(process.env.AI_CALL_RATE_PER_SECOND || "0.0041");
 
 type UsageTotals = {
   totalTokens: number;
@@ -246,11 +242,37 @@ class CostMeterService {
         `final_cost=$${round4(totalEstCost).toFixed(4)} raw_usage=${JSON.stringify(s.lastUsageRaw ?? {})}`
       );
 
-      // ── Deduct per-second credit from salon's platform balance ─────────────
-      // $0.0041/second = $0.25/minute. Skip zero-duration calls only.
-      if (durationSeconds > 0 && AI_CALL_RATE_PER_SECOND > 0) {
+      // ── Charge the call against the salon's plan ───────────────────────────
+      // The plan includes a number of handled calls per calendar month; each
+      // one beyond that is a flat fee from the platform balance. Calls of 30
+      // seconds or less are free and use up nothing.
+      let charge = 0;
+      if (isHandledCall(durationSeconds)) {
         try {
-          const charge = round4(durationSeconds * AI_CALL_RATE_PER_SECOND);
+          const plan     = await resolveStorePlan(s.storeId);
+          const included = includedCallsForPlan(plan?.planCode);
+          // Counts the record inserted just above, so this call is included.
+          const counted  = await db.execute(sql`
+            SELECT COUNT(*)::int AS n FROM call_usage_records
+            WHERE store_id = ${s.storeId}
+              AND duration_seconds > 30
+              AND created_at >= date_trunc('month', now())
+          `);
+          const handledThisMonth = Number((counted as any).rows?.[0]?.n ?? 0);
+          const priced = autumnCallCharge(durationSeconds, handledThisMonth, included);
+          charge = priced.charge;
+          console.log(
+            `[CostMeter] Call priced — store=${s.storeId} plan=${plan?.planCode ?? "none"} ` +
+            `call ${handledThisMonth} of ${included} included → ${priced.reason} $${charge.toFixed(2)} callSid=${callSid}`
+          );
+        } catch (err: any) {
+          // Not knowing the plan must never turn into a charge.
+          console.error("[CostMeter] Could not price call, not charging:", err.message);
+        }
+      }
+
+      if (charge > 0) {
+        try {
           const mins   = Math.floor(durationSeconds / 60);
           const secs   = durationSeconds % 60;
           const label  = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;

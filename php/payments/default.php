@@ -25,7 +25,7 @@ define('PAGE_SCHEMA', json_encode([
     'mainEntity' => [
       ['@type'=>'Question','name'=>'Does Certxa take a percentage of my card sales?','acceptedAnswer'=>['@type'=>'Answer','text'=>'No. Certxa does not take any percentage of your card sales. All processing fees go directly to Stripe at their standard rates. Our only payment-related charge is a flat $0.60 connection fee per transaction — that covers the cost of the Stripe Connect integration we maintain for you.']],
       ['@type'=>'Question','name'=>'Do I buy the card reader from Certxa?','acceptedAnswer'=>['@type'=>'Answer','text'=>'No — the Stripe M2 card reader is purchased directly from Stripe Terminal. Certxa connects to your Stripe account, so the reader talks to Stripe directly — not through us. You own the hardware outright and it stays with you even if you ever change platforms.']],
-      ['@type'=>'Question','name'=>'What is the Platform Wallet and how is it different from my subscription?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Your subscription covers your core platform access: booking, calendars, CRM, website builder, and your monthly SMS allowance. The Platform Wallet is a separate prepaid balance used for pay-as-you-go extras — Autumn AI Receptionist calls, overflow SMS when your allowance runs out, AI phone number provisioning, and future usage-based features. You only need to add funds if you use those extras.']],
+      ['@type'=>'Question','name'=>'What is the Platform Wallet and how is it different from my subscription?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Your subscription covers your core platform access: booking, calendars, CRM, website builder, and your monthly SMS allowance. The Platform Wallet is a separate prepaid balance used for pay-as-you-go extras — Autumn AI Receptionist calls beyond the ones your plan includes, overflow SMS when your allowance runs out, AI phone number provisioning, and future usage-based features. You only need to add funds if you use those extras.']],
       ['@type'=>'Question','name'=>'What happens if my Wallet runs out during an Autumn call?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Autumn completes any in-progress call even if it takes the balance slightly negative (up to -$10.00 grace). New calls will be blocked until you top up. Enable Auto-Refill and this will never happen — the system automatically tops up the moment the balance drops below your set threshold.']],
       ['@type'=>'Question','name'=>'What happens to unused SMS when my billing period resets?','acceptedAnswer'=>['@type'=>'Answer','text'=>'Your plan\'s monthly SMS allowance resets each billing period — unused messages don\'t carry over. On the Professional and Elite plans, SMS is unlimited so this doesn\'t apply. On the Solo plan, you get 200 SMS/month; if you go over, additional messages are billed at $0.026 per SMS from your Platform Wallet.']],
       ['@type'=>'Question','name'=>'Is there a minimum amount I need to add to the Wallet?','acceptedAnswer'=>['@type'=>'Answer','text'=>'No minimum. Add any amount via Stripe Checkout from your dashboard. A good rule of thumb: if Autumn handles around 100 calls a month, a $50–$75 top-up gives you comfortable runway. With Auto-Refill on, you set the threshold once and never think about it again.']],
@@ -674,8 +674,8 @@ require __DIR__ . '/../includes/nav.php';
       <div class="wallet-use-card">
         <span class="wallet-use-icon">🍂</span>
         <h3>Autumn AI Receptionist</h3>
-        <p>Every call Autumn handles draws from your Wallet balance. Billing is per minute — $0.0041 per second, which works out to $0.25 per minute of connected call time.</p>
-        <span class="wallet-use-rate">$0.25 per minute</span>
+        <p>Your plan includes 20 calls a month on Solo, 50 on Professional and 100 on Elite. Each call Autumn handles beyond that is $0.50, drawn from your Wallet balance. Calls of 30 seconds or less are free.</p>
+        <span class="wallet-use-rate">$0.50 per call after your included calls</span>
       </div>
       <div class="wallet-use-card">
         <span class="wallet-use-icon">💬</span>
@@ -857,8 +857,8 @@ $_proPrice  = number_format($_proCents  / 100, 0);
 
           <div class="est-input-group">
             <div class="est-label">
-              Autumn AI minutes per month
-              <span class="est-label-hint">$0.25 per minute ($0.0041/sec)</span>
+              Autumn AI calls per month
+              <span class="est-label-hint">Included: 20 Solo, 50 Professional, 100 Elite. Then $0.50 per call</span>
             </div>
             <div class="est-slider-row">
               <input type="range" class="est-slider" id="sl-calls" min="0" max="300" value="0" step="5">
@@ -910,7 +910,7 @@ $_proPrice  = number_format($_proCents  / 100, 0);
           <div class="est-line">
             <div class="est-line-label">
               Autumn AI Receptionist
-              <span class="est-line-sub">$0.25 per minute ($0.0041/sec)</span>
+              <span class="est-line-sub">$0.50 per call after your included calls</span>
             </div>
             <div class="est-line-amt" id="r-autumn">$0.00</div>
           </div>
@@ -1024,7 +1024,7 @@ $_proPrice  = number_format($_proCents  / 100, 0);
     // Calculations
     var stripeAmt  = txns * (avg * 0.027 + 0.05);
     var certxaAmt  = txns * 0.60;
-    var autumnAmt  = calls * 0.25;
+    var autumnAmt  = Math.max(0, calls - ({solo: 20, professional: 50, elite: 100}[selectedPlan] || 0)) * 0.50;
     var smsAmt     = sms  * 0.026;
     var total      = planAmt + stripeAmt + certxaAmt + autumnAmt + smsAmt;
 
@@ -1091,7 +1091,7 @@ $_proPrice  = number_format($_proCents  / 100, 0);
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">What is the Platform Wallet and how is it different from my subscription? <span class="accordion-icon">+</span></button></h3>
-        <div class="accordion-body">Your subscription covers your core platform access: booking, calendars, CRM, website builder, and your monthly SMS allowance. The Platform Wallet is a <strong>separate prepaid balance</strong> used for pay-as-you-go extras — Autumn AI Receptionist calls, overflow SMS when your allowance runs out, AI phone number provisioning, and future usage-based features. You only need to add funds if you use those extras.</div>
+        <div class="accordion-body">Your subscription covers your core platform access: booking, calendars, CRM, website builder, and your monthly SMS allowance. The Platform Wallet is a <strong>separate prepaid balance</strong> used for pay-as-you-go extras — Autumn AI Receptionist calls beyond the ones your plan includes, overflow SMS when your allowance runs out, AI phone number provisioning, and future usage-based features. You only need to add funds if you use those extras.</div>
       </div>
       <div class="accordion-item">
         <h3 class="accordion-heading"><button class="accordion-btn">What happens if my Wallet runs out during an Autumn call? <span class="accordion-icon">+</span></button></h3>
