@@ -199,6 +199,34 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 /** The server's board plus whatever was made on this device and has not come back from the server yet. */
+/**
+ * For data that seldom changes (a service's nail options): answer from this device at once when it has a
+ * copy, and ask the server again in the background at most every ten minutes to bring the copy up to date.
+ * With no copy yet it is an ordinary request.
+ */
+const SETTLED_REFRESH_MS = 10 * 60_000;
+const settledCheckedAt = new Map<string, number>();
+async function callSettled<T>(url: string): Promise<T> {
+  const storeId = nailOfflineStore();
+  const kept = storeId != null ? await nailOffline.recall<T>(storeId, url).catch(() => undefined) : undefined;
+  if (!kept) return call<T>(url);
+  const last = settledCheckedAt.get(url) ?? Date.parse(kept.at);
+  if (!syncEngine.isOffline() && Date.now() - last > SETTLED_REFRESH_MS) {
+    settledCheckedAt.set(url, Date.now());
+    void call<T>(url).catch(() => {});
+  }
+  return kept.data;
+}
+
+/** True when this device already holds a copy of a read. */
+export const keptOnDevice = async (url: string): Promise<boolean> => {
+  const storeId = nailOfflineStore();
+  return storeId != null && !!(await nailOffline.recall(storeId, url).catch(() => undefined));
+};
+
+/** Fetches one service's nail options so they are on this device before they are needed. */
+export const keepNailConfig = (serviceId: number) => call<unknown>(`/api/services/${serviceId}/nail-config`).then(() => undefined);
+
 export const fetchBoard = async (): Promise<NailBoard> => {
   const storeId = nailOfflineStore();
   const local = storeId != null ? await nailOffline.records(storeId).catch(() => []) : [];
@@ -271,7 +299,7 @@ export const fetchTurn = (storeId: number, serviceId: number | null) =>
   );
 
 export const fetchNailConfig = async (serviceId: number): Promise<NailConfigView | null> =>
-  normalizeNailConfig(await call<any>(`/api/services/${serviceId}/nail-config`));
+  normalizeNailConfig(await callSettled<any>(`/api/services/${serviceId}/nail-config`));
 
 export interface ClientSummary {
   id: number;

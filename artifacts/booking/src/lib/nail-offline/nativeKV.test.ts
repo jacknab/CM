@@ -60,4 +60,14 @@ describe("moving from the browser's storage to the app's database", () => {
     const kv = movedKV(browser, nativeSqliteKV(fakeApp().send));
     expect(await kv.keys("records")).toEqual(["-1"]);
   });
+
+  it("falls back to the browser's storage when the app's database cannot be used", async () => {
+    const browser = memoryKV();
+    await browser.batch([{ store: "records", key: "-1", value: { kind: "ticket" } }]);
+    const broken = nativeSqliteKV(async () => { throw new Error("file is not a database"); });
+    const kv = movedKV(browser, broken);
+    expect(await kv.keys("records")).toEqual(["-1"]);
+    await kv.batch([{ store: "meta", key: "counter", value: 1 }]);
+    expect(await browser.get("meta", "counter")).toBe(1);
+  });
 });

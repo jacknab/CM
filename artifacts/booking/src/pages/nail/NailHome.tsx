@@ -38,7 +38,7 @@ import {
   ApiError, boardKey, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchCalendarBoardBookings, fetchClient,
   clockInTech, clockOutTech, fetchNailConfig, fetchPosGrid, fetchScreenSettings, fetchTurn, reassignTicket, savePosGrid, saveScreenSettings, removeMarker, resolveMarkerClient, startTicket, updateTicket,
   type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData, type TechSignIn, type TurnEarned, type TurnTech,
-} from "./nailApi";
+ keptOnDevice, keepNailConfig,} from "./nailApi";
 import { defaultPick, draftTotals, EMPTY_PICK, type DraftCustomLine, type NailPick, type TicketLine } from "./ticketDraft";
 import { useNailRealtime } from "./useNailRealtime";
 import { TicketPanel } from "./TicketPanel";
@@ -271,10 +271,14 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     return () => { offQueue(); offLocal(); };
   }, [storeId, queryClient]);
 
+  // While the live connection is up the server pushes every change, so asking again on a timer is only a
+  // safety net. Without it the screen asks as often as before.
+  const pollMs = live ? 300_000 : 30_000;
+  const settingsPollMs = live ? 300_000 : 60_000;
   const { data: board, error: boardError } = useQuery({
     queryKey: boardKey(storeId),
     queryFn: fetchBoard,
-    refetchInterval: 30_000,
+    refetchInterval: pollMs,
     refetchOnWindowFocus: true,
     // Runs with no network too: the board then comes from this device (the default would just pause it).
     networkMode: "always",
@@ -290,7 +294,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     queryKey: ["/api/appointments", "nail-board-fallback", storeId],
     queryFn: fetchCalendarBoardBookings,
     enabled: needsCalendarFallback,
-    refetchInterval: 30_000,
+    refetchInterval: pollMs,
   });
   const dayBookings = board?.dayBookings?.length ? board.dayBookings
     : needsCalendarFallback && calendarBookings
@@ -325,7 +329,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     queryFn: () => fetchTurn(storeId, null),
     // Also while locked: the Tech ID screen shows the turn queue.
     enabled: tab === "techs" || tab === "queue" || !tech,
-    refetchInterval: 30_000,
+    refetchInterval: pollMs,
     networkMode: "always",
   });
   const techList = techFeed?.technicians ?? EMPTY_ARRAY;
@@ -340,7 +344,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const lockKey = `certxa.nail.lockScreen.${storeId}`;
   const screenKey = ["/api/nail/screen-settings", storeId];
   const { data: screenSettings } = useQuery({
-    queryKey: screenKey, queryFn: fetchScreenSettings, refetchInterval: 60_000, staleTime: 15_000,
+    queryKey: screenKey, queryFn: fetchScreenSettings, refetchInterval: settingsPollMs, staleTime: 15_000,
     placeholderData: () => { try { return localStorage.getItem(lockKey) === "off" ? { lockScreen: false } : undefined; } catch { return undefined; } },
   });
   const lockEnabled = screenSettings?.lockScreen !== false;
@@ -356,7 +360,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   // The key grid a manager arranged for the POS's right panel (null = filled automatically from the catalog).
   const posGridKey = ["/api/nail/pos-grid", storeId];
-  const { data: posGrid } = useQuery({ queryKey: posGridKey, queryFn: fetchPosGrid, refetchInterval: 60_000, staleTime: 15_000 });
+  const { data: posGrid } = useQuery({ queryKey: posGridKey, queryFn: fetchPosGrid, refetchInterval: settingsPollMs, staleTime: 15_000 });
   // The editor opens from the Manager tab, which is already behind the manager PIN.
   const [gridEditor, setGridEditor] = useState<null | "open">(null);
   const saveGrid = useMutation({
@@ -387,6 +391,22 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   useEffect(() => {
     if (groups.length > 0 && !groups.some((g) => g.key === activeGroup)) setActiveGroup(groups[0].key);
   }, [groups, activeGroup]);
+  // Have every service's nail options on this tablet before they are needed, so any service can be rung
+  // up with no connection — not only the ones someone happened to open while online. One at a time, and
+  // only the ones this tablet does not hold yet.
+  useEffect(() => {
+    if (groups.length === 0) return;
+    let stop = false;
+    void (async () => {
+      for (const svc of groups.flatMap((g) => g.services)) {
+        if (stop || syncEngine.isOffline()) return;
+        if (await keptOnDevice(`/api/services/${svc.id}/nail-config`)) continue;
+        await keepNailConfig(svc.id).catch(() => {});
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    })();
+    return () => { stop = true; };
+  }, [groups]);
 
   const activeAddons = useMemo(() => ((storeAddons ?? []) as any[]).filter((a) => a.isActive !== false), [storeAddons]);
   const { data: linkedAddons } = useAddonsForService(service?.id ?? null);

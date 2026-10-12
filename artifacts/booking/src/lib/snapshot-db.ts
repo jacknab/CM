@@ -1,3 +1,4 @@
+import { hasNativeDb, sharedNativeKV } from "./nail-offline/nativeKV";
 const DB_NAME = "certxa_snapshot";
 const DB_VERSION = 2;
 const STORE_NAME = "snapshots";
@@ -149,8 +150,17 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
+// Inside the Certxa Android app the store's snapshot — its clients, catalogue, staff, bookings, hours and
+// turn settings — is kept in the app's encrypted SQLite database. The browser's copy is still written, so
+// a tablet that goes back to an older build of the app has not lost it.
+// Filed under the salon like everything else kept for it, so signing out of the salon removes it too.
+const nativeKey = (storeId: number) => `${storeId}:snapshot`;
+
 export const snapshotDB = {
   async save(snapshot: BusinessSnapshot): Promise<void> {
+    if (hasNativeDb()) {
+      await sharedNativeKV().batch([{ store: "cache", key: nativeKey(snapshot.storeId), value: snapshot }]).catch(() => {});
+    }
     const db = await openDB();
     return new Promise((resolve, reject) => {
       const t = db.transaction(STORE_NAME, "readwrite");
@@ -162,6 +172,10 @@ export const snapshotDB = {
   },
 
   async load(storeId: number): Promise<BusinessSnapshot | null> {
+    if (hasNativeDb()) {
+      const kept = await sharedNativeKV().get<BusinessSnapshot>("cache", nativeKey(storeId)).catch(() => undefined);
+      if (kept) return kept;
+    }
     const db = await openDB();
     return new Promise((resolve, reject) => {
       const t = db.transaction(STORE_NAME, "readonly");

@@ -65,6 +65,13 @@ export function nativeSqliteKV(send: Send = nativeSend()): KV {
   };
 }
 
+let shared: KV | null = null;
+/** The one connection to the app's database for this page. There must be only one: answers come back
+ *  through a single callback, and a second connection would take it over. */
+export function sharedNativeKV(): KV {
+  return (shared ??= nativeSqliteKV());
+}
+
 const STORES: StoreName[] = ["cache", "records", "ops", "meta"];
 const MOVED_KEY = "movedFromBrowserStorage";
 
@@ -94,12 +101,17 @@ export async function moveOnce(from: KV, to: KV): Promise<boolean> {
  * the app's database for everything.
  */
 export function movedKV(from: KV, to: KV): KV {
-  let ready: Promise<unknown> | null = null;
-  const whenReady = () => (ready ??= moveOnce(from, to).catch((err) => { ready = null; throw err; }));
+  // If the app's database cannot be opened at all (first use fails), the browser's storage carries on for
+  // this session exactly as before, so a faulty database can never stop the POS from saving.
+  let chosen: Promise<KV> | null = null;
+  const pick = () => (chosen ??= moveOnce(from, to).then(
+    () => to,
+    (err) => { console.warn("[offline] the app's database is unavailable, using browser storage:", err?.message ?? err); return from; },
+  ));
   return {
-    async get<T>(store: StoreName, key: string) { await whenReady(); return to.get<T>(store, key); },
-    async getAll<T>(store: StoreName) { await whenReady(); return to.getAll<T>(store); },
-    async keys(store: StoreName) { await whenReady(); return to.keys(store); },
-    async batch(writes: Write[]) { await whenReady(); return to.batch(writes); },
+    async get<T>(store: StoreName, key: string) { return (await pick()).get<T>(store, key); },
+    async getAll<T>(store: StoreName) { return (await pick()).getAll<T>(store); },
+    async keys(store: StoreName) { return (await pick()).keys(store); },
+    async batch(writes: Write[]) { return (await pick()).batch(writes); },
   };
 }
