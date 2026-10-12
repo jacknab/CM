@@ -1,0 +1,142 @@
+{
+  "hero": {
+    "eyebrow": "Online booking",
+    "headline": "Let clients book themselves. Any time, anywhere.",
+    "subhead": "Certxa's online booking system works around the clock — so you're filling your calendar even when you're with a client, asleep, or off the floor.",
+    "ctaPrimary": "Start free trial",
+    "ctaSecondary": "See all features",
+    "socialProof": "60-day free trial · Cancel anytime"
+  },
+  "howItWorks": {
+    "eyebrow": "How it works",
+    "heading": "Bookings on autopilot in three steps",
+    "steps": [
+      {
+        "id": "s1",
+        "number": "01",
+        "title": "Share your booking link",
+        "body": "Add your Certxa booking link to your Google Business Profile, Instagram bio, Facebook page, or anywhere clients find you."
+      },
+      {
+        "id": "s2",
+        "number": "02",
+        "title": "Clients pick their slot",
+        "body": "Clients choose their service, provider, and time — all from their phone. No calls, no back-and-forth."
+      },
+      {
+        "id": "s3",
+        "number": "03",
+        "title": "You get notified instantly",
+        "body": "Certxa confirms the booking, sends the client a reminder, and updates your calendar in real time."
+      }
+    ]
+  },
+  "features": {
+    "eyebrow": "What's included",
+    "heading": "Everything your booking system needs",
+    "items": [
+      {
+        "id": "f1",
+        "title": "Google & Instagram booking",
+        "body": "Clients book directly from your Google Business Profile or Instagram profile — no app download required."
+      },
+      {
+        "id": "f2",
+        "title": "Automated reminders",
+        "body": "SMS and email reminders go out automatically before each appointment, cutting no-shows by up to 60%."
+      },
+      {
+        "id": "f3",
+        "title": "Real-time availability",
+        "body": "Your calendar updates instantly as bookings come in — no double-bookings, no manual updates."
+      },
+      {
+        "id": "f4",
+        "title": "Multi-provider scheduling",
+        "body": "Clients choose their preferred provider. Each staff member gets their own calendar and availability settings."
+      },
+      {
+        "id": "f5",
+        "title": "Deposit collection",
+        "body": "Require a deposit at booking to protect your time. Deposits are processed securely via Stripe."
+      },
+      {
+        "id": "f6",
+        "title": "Waitlist management",
+        "body": "When a slot opens up, Certxa automatically notifies the next client on the waitlist — filling gaps without any effort from you."
+      }
+    ]
+  },
+  "integrations": {
+    "eyebrow": "Works where your clients are",
+    "heading": "Book from Google, Instagram, and more",
+    "body": "Certxa connects your booking calendar to the platforms your clients already use. One link, everywhere.",
+    "channels": [
+      {
+        "id": "c1",
+        "name": "Google Business Profile"
+      },
+      {
+        "id": "c2",
+        "name": "Instagram"
+      },
+      {
+        "id": "c3",
+        "name": "Facebook"
+      },
+      {
+        "id": "c4",
+        "name": "Your website"
+      },
+      {
+        "id": "c5",
+        "name": "SMS link"
+      },
+      {
+        "id": "c6",
+        "name": "QR code"
+      }
+    ]
+  },
+  "faq": {
+    "eyebrow": "FAQ",
+    "heading": "Common questions about online booking",
+    "items": [
+      {
+        "id": "q1",
+        "question": "Do clients need to download an app to book?",
+        "answer": "No. Certxa's booking page works in any mobile browser. Clients tap your link and book in under a minute — no app, no account required."
+      },
+      {
+        "id": "q2",
+        "question": "Can I require a deposit or card on file?",
+        "answer": "Yes. You can require a deposit at booking or save a card on file to charge for no-shows. Payments are processed securely via Stripe."
+      },
+      {
+        "id": "q3",
+        "question": "How do automated reminders work?",
+        "answer": "Certxa sends SMS and email reminders at intervals you configure — for example, 48 hours and 2 hours before the appointment. Clients can confirm or cancel directly from the reminder."
+      },
+      {
+        "id": "q4",
+        "question": "Can clients book with a specific provider?",
+        "answer": "Yes. Each staff member has their own calendar and availability. Clients can choose their preferred provider or let Certxa assign the next available one."
+      },
+      {
+        "id": "q5",
+        "question": "What happens when a slot opens up?",
+        "answer": "Certxa automatically notifies the next client on the waitlist by SMS or email. They can claim the slot with one tap — no manual follow-up needed."
+      }
+    ]
+  },
+  "cta": {
+    "heading": "Ready to fill your calendar on autopilot?",
+    "subhead": "Start your free 60-day trial. Set up in minutes.",
+    "button": "Start free trial",
+    "secondary": "View pricing"
+  },
+  "share": {
+    "label": "Know a salon owner who needs this?",
+    "tweet": "Just found Certxa — online booking for salons that works with Google, Instagram, and more. No-show protection, automated reminders, waitlist management. Check it out:"
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "hero": {
+    "eyebrow": "The Certxa blog",
+    "headline": "Insights for salon owners.",
+    "subhead": "Tips, guides, and industry news to help you run a more profitable, efficient salon."
+  },
+  "posts": [
+    {
+      "id": "p1",
+      "slug": "turn-rotation-guide",
+      "category": "Operations",
+      "title": "How Turn Rotation Eliminates Wait-Time Complaints at Nail Salons",
+      "excerpt": "Walk-in management is one of the biggest pain points in nail salons. Here's how a fair, transparent turn system changes the experience for clients and staff alike.",
+      "date": "October 8, 2026",
+      "readTime": "6 min read"
+    },
+    {
+      "id": "p2",
+      "slug": "loyalty-program-roi",
+      "category": "Growth",
+      "title": "The Real ROI of a Salon Loyalty Program (With Numbers)",
+      "excerpt": "Loyalty programs aren't just a nice-to-have. We analyzed data from 500 salons and found that punch-card customers visit 2.3× more often than non-members.",
+      "date": "October 3, 2026",
+      "readTime": "8 min read"
+    },
+    {
+      "id": "p3",
+      "slug": "ai-receptionist-after-hours",
+      "category": "Technology",
+      "title": "How Autumn AI Handles After-Hours Booking So You Don't Have To",
+      "excerpt": "Most booking requests come in after 8pm. Autumn answers them instantly, books the appointment, and sends a confirmation — all while you sleep.",
+      "date": "September 28, 2026",
+      "readTime": "5 min read"
+    },
+    {
+      "id": "p4",
+      "slug": "self-checkin-kiosk-setup",
+      "category": "Hardware",
+      "title": "Setting Up a Self Check-In Kiosk: A Step-by-Step Guide",
+      "excerpt": "A kiosk at the front door reduces front-desk congestion, speeds up check-in, and lets your staff focus on clients instead of paperwork.",
+      "date": "September 22, 2026",
+      "readTime": "7 min read"
+    },
+    {
+      "id": "p5",
+      "slug": "stripe-payment-rates-explained",
+      "category": "Payments",
+      "title": "Understanding Your Salon's Payment Processing Rates",
+      "excerpt": "2.7% + 10¢ vs 3.5% + 15¢ — what's the difference, when does it apply, and how much does it actually cost you per month? We break it down.",
+      "date": "September 15, 2026",
+      "readTime": "5 min read"
+    },
+    {
+      "id": "p6",
+      "slug": "google-reviews-automation",
+      "category": "Growth",
+      "title": "Why Automated Review Requests Outperform Manual Ones 4-to-1",
+      "excerpt": "Timing is everything. Sending a review request 30 minutes after checkout gets 4× the response rate of asking in person. Here's how to set it up.",
+      "date": "September 9, 2026",
+      "readTime": "4 min read"
+    }
+  ],
+  "categories": [
+    {
+      "id": "c0",
+      "label": "All"
+    },
+    {
+      "id": "c1",
+      "label": "Operations"
+    },
+    {
+      "id": "c2",
+      "label": "Growth"
+    },
+    {
+      "id": "c3",
+      "label": "Technology"
+    },
+    {
+      "id": "c4",
+      "label": "Hardware"
+    },
+    {
+      "id": "c5",
+      "label": "Payments"
+    }
+  ]
+}

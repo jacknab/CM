@@ -1,0 +1,518 @@
+{
+  "hero": {
+    "eyebrow": "Everything you need",
+    "headline": "One platform. Every tool your business needs.",
+    "subhead": "Certxa covers the full day at your business — from the first online booking to end-of-day close, payroll, client notifications, waitlist management, and review management. Built for nail salons, hair salons, barbershops, spas, massage studios, hair removal studios, and braid and weave salons."
+  },
+  "sections": [
+    {
+      "id": "sec-booking",
+      "tag": "Online booking",
+      "headline": "Clients book online, around the clock.",
+      "body": [
+        {
+          "id": "p1",
+          "text": "Give every client a booking page where they pick their service, provider, and time — from any device, any time of day. Clients can book directly from your website, a direct link, Google, or Instagram. Service-specific options like nail length, shape, and design are available for nail salons."
+        },
+        {
+          "id": "p2",
+          "text": "Automated text and email reminders go out before every appointment, and instant confirmations are sent the moment a booking is made. Clients can reschedule from the same confirmation link without calling."
+        }
+      ],
+      "bullets": [
+        {
+          "id": "b1",
+          "text": "Service, provider, and time selection"
+        },
+        {
+          "id": "b2",
+          "text": "Service-specific options at booking (e.g. nail length, shape, and design)"
+        },
+        {
+          "id": "b3",
+          "text": "Book from your website, Google, or Instagram"
+        },
+        {
+          "id": "b4",
+          "text": "Automated text and email reminders"
+        },
+        {
+          "id": "b5",
+          "text": "Instant booking confirmations"
+        },
+        {
+          "id": "b6",
+          "text": "Client self-service rescheduling"
+        },
+        {
+          "id": "b7",
+          "text": "Google and Apple Calendar feed"
+        }
+      ],
+      "autumnLink": false
+    },
+    {
+      "id": "sec-calendar",
+      "tag": "Front desk calendar",
+      "headline": "Every team member's day, at a glance.",
+      "body": [
+        {
+          "id": "p1",
+          "text": "A live multi-staff calendar gives your whole team instant visibility of every appointment, break, and booking gap. Appointments are color-coded by team member so the front desk can see the full picture in seconds."
+        },
+        {
+          "id": "p2",
+          "text": "Drag and drop to move appointments, block time for breaks and holidays, and print a daily run sheet in one click. Walk-ins appear alongside bookings so nothing falls through the cracks."
+        }
+      ],
+      "bullets": [
+        {
+          "id": "b1",
+          "text": "Live multi-staff calendar view"
+        },
+        {
+          "id": "b2",
+          "text": "Color-coded by team member"
+        },
+        {
+          "id": "b3",
+          "text": "Drag-and-drop rescheduling"
+        },
+        {
+          "id": "b4",
+          "text": "Block time for breaks and holidays"
+        },
+        {
+          "id": "b5",
+          "text": "Printable daily run sheets"
+        },
+        {
+          "id": "b6",
+          "text": "Walk-ins alongside bookings"
+        }
+      ],
+      "autumnLink": false
+    },
+    {
+      "id": "sec-kiosk",
+      "tag": "Self check-in kiosk",
+      "headline": "Clients check themselves in.",
+      "body": [
+        {
+          "id": "p1",
+          "text": "A tablet at the front door lets clients check in with their phone number or a QR code, choose their service, and join the queue without waiting for staff. Service-specific options — like nail length and shape for nail salons, or treatment type for spas and massage studios — are presented at check-in."
+        },
+        {
+          "id": "p2",
+          "text": "The kiosk recognizes returning clients and suggests what they are due for based on their visit history. It prints a check-in slip and works in English, Spanish, Vietnamese, Chinese, and Korean."
+        }
+      ],
+      "bullets": [
+        {
+          "id": "b1",
+          "text": "Check in by phone number or QR code"
+        },
+        {
+          "id": "b2",
+          "text": "Returning client recognition and service suggestions"
+        },
+        {
+          "id": "b3",
+          "text": "Service-specific options at check-in"
+        },
+        {
+          "id": "b4",
+          "text": "Joins queue and prints check-in slip"
+        },
+        {
+          "id": "b5",
+          "text": "English, Spanish, Vietnamese, Chinese, and Korean"
+        }
+      ],
+      "autumnLink": false
+    },
+    {
+      "id": "sec-pos",
+      "tag": "Built-in POS",
+      "headline": "Checkout in seconds, not minutes.",
+      "body": [
+        {
+          "id": "p1",
+          "text": "A touch-screen POS handles tickets, services, add-ons, discounts, tips, and split payments — all synced instantly to every client record. Accept card payments with a card reader, cash, and gift cards."
+        },
+        {
+          "id": "p2",
+          "text": "Print receipts, open the cash drawer, and close the day with a cash count and printed report. Works across multiple front desk stations and keeps running when the internet goes down."
+        }
+      ],
+      "bullets": [
+        {
+          "id": "b1",
+          "text": "Services, add-ons, discounts, and tips in one checkout"
+        },
+        {
+          "id": "b2",
+          "text": "Split payments and gift card redemption"
+        },
+        {
+          "id": "b3",
+          "text": "Tipping prompts on every transaction"
+        },
+        {
+          "id": "b4",
+          "text": "Next-day payouts to your bank"
+        },
+        {
+          "id": "b5",
+          "text": "Syncs to client profiles automatically"
+        },
+        {
+          "id": "b6",
+          "text": "Receipt printing and cash drawer"
+        },
+        {
+          "id": "b7",
+          "text": "Multi-station support"
+        },
+        {
+          "id": "b8",
+          "text": "Offline mode — saves tickets when internet is down"
+        }
+      ],
+      "autumnLink": false
+    },
+    {
+      "id": "sec-waitlist",
+      "tag": "Waitlist management",
+      "headline": "Never lose a walk-in again.",
+      "body": [
+        {
+          "id": "p1",
+          "text": "When your business is fully booked, Certxa captures walk-ins on a live digital waitlist. The moment a slot opens up, the next client is automatically notified and given a simple confirmation window — so you fill cancellations instantly without any manual follow-up."
+        },
+        {
+          "id": "p2",
+          "text": "Clients on the waitlist can see their estimated wait time, and loyalty members can be given priority. Every walk-in is captured, every slot is filled."
+        }
+      ],
+      "bullets": [
+        {
+          "id": "b1",
+          "text": "Live digital waitlist for walk-ins"
+        },
+        {
+          "id": "b2",
+          "text": "Auto-text when a slot opens"
+        },
+        {
+          "id": "b3",
+          "text": "One-tap client confirmation"
+        },
+        {
+          "id": "b4",
+          "text": "Priority bumping for loyalty members"
+        },
+        {
+          "id": "b5",
+          "text": "Estimated wait time display"
+        }
+      ],
+      "autumnLink": false
+    },
+    {
+      "id": "sec-notifications",
+      "tag": "Client notifications",
+      "headline": "The right message, at the right moment.",
+      "body": [
+        {
+          "id": "p1",
+          "text": "Certxa handles every client communication automatically — booking confirmations, appointment reminders, rescheduling alerts, waitlist notifications, and post-visit review requests. Clients always know where they stand without your staff making a single call."
+        },
+        {
+          "id": "p2",
+          "text": "When a client is overdue for their next visit, Certxa sends a personalized re-engagement text at exactly the right time — based on their own visit history, not a generic schedule."
+        }
+      ],
+      "bullets": [
+        {
+          "id": "b1",
+          "text": "Booking confirmations and reminders via SMS and email"
+        },
+        {
+          "id": "b2",
+          "text": "Rescheduling and cancellation alerts"
+        },
+        {
+          "id": "b3",
+          "text": "Waitlist slot-open notifications"
+        },
+        {
+          "id": "b4",
+          "text": "Post-visit review request texts"
+        },
+        {
+          "id": "b5",
+          "text": "Personalized re-engagement texts for overdue clients"
+        }
+      ],
+      "autumnLink": false
+    },
+    {
+      "id": "sec-turns",
+      "tag": "Turn rotation",
+      "headline": "Fair turns, automatically.",
+      "body": [
+        {
+          "id": "p1",
+          "text": "Certxa assigns walk-ins to staff members automatically based on rules the business sets. The turn board shows who is next, who is with a client, and who is on a break — keeping things fair and transparent for the whole team."
+        }
+      ],
+      "bullets": [
+        {
+          "id": "b1",
+          "text": "Automatic turn assignment for walk-ins"
+        },
+        {
+          "id": "b2",
+          "text": "Business-set rotation rules"
+        },
+        {
+          "id": "b3",
+          "text": "Live view of next, busy, and on-break status"
+        }
+      ],
+      "autumnLink": false
+    },
+    {
+      "id": "sec-payroll",
+      "tag": "Staff, commissions and payroll",
+      "headline": "Pay your team accurately, every time.",
+      "body": [
+        {
+          "id": "p1",
+          "text": "Set commission rates per staff member and track tips separately. Add recurring deductions the owner sets, run pay periods, and print earnings statements and paychecks."
+        },
+        {
+          "id": "p2",
+          "text": "Every paycheck includes a breakdown of exactly which tickets earned each commission, so there are no disputes and no guesswork."
+        }
+      ],
+      "bullets": [
+        {
+          "id": "b1",
+          "text": "Per-staff commission rates"
+        },
+        {
+          "id": "b2",
+          "text": "Tips tracked separately"
+        },
+        {
+          "id": "b3",
+          "text": "Recurring deductions"
+        },
+        {
+          "id": "b4",
+          "text": "Pay periods and earnings statements"
+        },
+        {
+          "id": "b5",
+          "text": "Printed paychecks"
+        },
+        {
+          "id": "b6",
+          "text": "Ticket-level commission breakdown"
+        }
+      ],
+      "autumnLink": false
+    },
+    {
+      "id": "sec-clients",
+      "tag": "Clients and loyalty",
+      "headline": "Two loyalty programs. One happy client base.",
+      "body": [
+        {
+          "id": "p1",
+          "text": "Choose the program that fits your business. The digital punch card awards one punch per visit — once a client reaches the number you set, a reward is automatically applied at checkout. No paper cards, no manual tracking."
+        },
+        {
+          "id": "p2",
+          "text": "Prefer a points-based program? Clients earn points for every dollar they spend. You set the rewards — a dollar-off discount, a free add-on, whatever works for your business. Every client also has a full profile with visit history and preferences, and you can send targeted text campaigns to bring people back during slow periods."
+        }
+      ],
+      "bullets": [
+        {
+          "id": "b1",
+          "text": "Digital punch card — one punch per visit, reward at your set threshold"
+        },
+        {
+          "id": "b2",
+          "text": "Points program — clients earn points per dollar spent"
+        },
+        {
+          "id": "b3",
+          "text": "Owner sets all reward values and thresholds"
+        },
+        {
+          "id": "b4",
+          "text": "Rewards automatically applied at checkout when earned"
+        },
+        {
+          "id": "b5",
+          "text": "Client profiles with full visit history and preferences"
+        },
+        {
+          "id": "b6",
+          "text": "Gift cards"
+        },
+        {
+          "id": "b7",
+          "text": "Targeted text message campaigns"
+        }
+      ],
+      "autumnLink": false
+    },
+    {
+      "id": "sec-revenue",
+      "tag": "Revenue intelligence",
+      "headline": "Know exactly where your revenue is going.",
+      "body": [
+        {
+          "id": "p1",
+          "text": "Certxa monitors your booking data continuously and surfaces the revenue opportunities your team would otherwise miss. When a client drifts past their usual visit cadence, a personalized re-engagement text goes out automatically — no manual follow-up needed."
+        },
+        {
+          "id": "p2",
+          "text": "See which time slots are consistently underbooked, which staff members have the highest rebooking rates, and which clients are at risk of churning — all in one place. A monthly revenue leakage report shows exactly which lapsed clients represent lost income, with a one-tap option to reach them."
+        }
+      ],
+      "bullets": [
+        {
+          "id": "b1",
+          "text": "Client drift detection — auto-texts overdue clients at the right moment"
+        },
+        {
+          "id": "b2",
+          "text": "Monthly revenue leakage report with lapsed client list"
+        },
+        {
+          "id": "b3",
+          "text": "Dead seat intelligence — identifies and helps fill slow time slots"
+        },
+        {
+          "id": "b4",
+          "text": "No-show risk scoring for upcoming appointments"
+        },
+        {
+          "id": "b5",
+          "text": "Rebooking rate by staff member"
+        },
+        {
+          "id": "b6",
+          "text": "Smart cancellation recovery — auto-fills gaps from waitlist and lapsed clients"
+        },
+        {
+          "id": "b7",
+          "text": "Client lifetime value and churn risk scoring"
+        },
+        {
+          "id": "b8",
+          "text": "Business health score — retention, utilization, and rebooking in one number"
+        }
+      ],
+      "autumnLink": false
+    },
+    {
+      "id": "sec-reviews",
+      "tag": "Review management",
+      "headline": "More five-star reviews, on autopilot.",
+      "body": [
+        {
+          "id": "p1",
+          "text": "After every visit, Certxa automatically texts the client asking for a review. Happy clients are sent straight to your Google review page. Unhappy clients can reach you privately first, so you can fix problems before they go public."
+        },
+        {
+          "id": "p2",
+          "text": "See all your Google reviews in one place, get alerts for new ones, reply from inside Certxa, and keep your Google Business Profile up to date — including your booking link."
+        }
+      ],
+      "bullets": [
+        {
+          "id": "b1",
+          "text": "Automatic post-visit review request by text"
+        },
+        {
+          "id": "b2",
+          "text": "Happy clients directed to Google review page"
+        },
+        {
+          "id": "b3",
+          "text": "Private feedback channel for unhappy clients"
+        },
+        {
+          "id": "b4",
+          "text": "All Google reviews in one place with alerts"
+        },
+        {
+          "id": "b5",
+          "text": "Reply to reviews from inside Certxa"
+        },
+        {
+          "id": "b6",
+          "text": "Google Business Profile kept up to date"
+        }
+      ],
+      "autumnLink": false
+    },
+    {
+      "id": "sec-autumn",
+      "tag": "Autumn AI receptionist",
+      "headline": "Your receptionist, available 24/7.",
+      "body": [
+        {
+          "id": "p1",
+          "text": "Autumn answers every call within two seconds — booking new appointments, handling rescheduling and cancellations, answering questions about services and pricing, and upselling add-ons. All without you lifting a finger."
+        },
+        {
+          "id": "p2",
+          "text": "While your salon is open, Autumn sees your live board: who is clocked in, who is with a client, and how many people are waiting. She gives callers a real wait time — not a guess. After hours, she keeps booking and answering questions without implying anyone is in the building."
+        }
+      ],
+      "bullets": [
+        {
+          "id": "b1",
+          "text": "Answers every call in under 2 seconds, 24/7"
+        },
+        {
+          "id": "b2",
+          "text": "Books, reschedules, and cancels appointments in real time"
+        },
+        {
+          "id": "b3",
+          "text": "Knows live wait times and staff availability"
+        },
+        {
+          "id": "b4",
+          "text": "Upsells add-ons and premium services on every call"
+        },
+        {
+          "id": "b5",
+          "text": "Recognises returning clients by name and history"
+        },
+        {
+          "id": "b6",
+          "text": "After-hours answering — keeps booking when the salon is closed"
+        },
+        {
+          "id": "b7",
+          "text": "No extra subscription — pay only for active call minutes"
+        }
+      ],
+      "autumnLink": true
+    }
+  ],
+  "cta": {
+    "headline": "Ready to see it in action?",
+    "subhead": "Start your free 60-day trial — cancel anytime.",
+    "button": "Get started free"
+  }
+}

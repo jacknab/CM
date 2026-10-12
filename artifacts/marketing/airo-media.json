@@ -1,0 +1,853 @@
+{
+  "logo/horizontal": {
+    "mediaType": "logo",
+    "currentUrl": "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/9c4f0433-e457-4d2c-99df-16953be2779e/horizontal-transparent-15da4f3a-c653-4a90-b05d-1f929d4edad1/logo-logo.png",
+    "searchQuery": "horizontal",
+    "alternatives": [
+      "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/da85fab7-193b-4d3e-a404-16430a62f520/transparent-bd1b88bd-5c0e-4416-85c1-f223d9e70856/logo-logo.png"
+    ],
+    "logoSourceMap": {
+      "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/9c4f0433-e457-4d2c-99df-16953be2779e/horizontal-transparent-15da4f3a-c653-4a90-b05d-1f929d4edad1/logo-logo.png": {
+        "sessionId": "9c4f0433-e457-4d2c-99df-16953be2779e",
+        "logoId": "15da4f3a-c653-4a90-b05d-1f929d4edad1",
+        "groupId": "a9f34091-29a1-4b60-82e7-33a4e4c28ebf"
+      },
+      "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/da85fab7-193b-4d3e-a404-16430a62f520/transparent-bd1b88bd-5c0e-4416-85c1-f223d9e70856/logo-logo.png": {
+        "sessionId": "da85fab7-193b-4d3e-a404-16430a62f520",
+        "logoId": "bd1b88bd-5c0e-4416-85c1-f223d9e70856",
+        "groupId": "a9f34091-29a1-4b60-82e7-33a4e4c28ebf"
+      }
+    },
+    "logoGroupId": "a9f34091-29a1-4b60-82e7-33a4e4c28ebf",
+    "solidUrlMap": {
+      "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/9c4f0433-e457-4d2c-99df-16953be2779e/horizontal-transparent-15da4f3a-c653-4a90-b05d-1f929d4edad1/logo-logo.png": "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/9c4f0433-e457-4d2c-99df-16953be2779e/horizontal-original-15da4f3a-c653-4a90-b05d-1f929d4edad1/logo-logo.png",
+      "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/da85fab7-193b-4d3e-a404-16430a62f520/transparent-bd1b88bd-5c0e-4416-85c1-f223d9e70856/logo-logo.png": "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/da85fab7-193b-4d3e-a404-16430a62f520/original-bd1b88bd-5c0e-4416-85c1-f223d9e70856/logo-logo.png"
+    },
+    "mockupUrlMap": {
+      "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/9c4f0433-e457-4d2c-99df-16953be2779e/horizontal-transparent-15da4f3a-c653-4a90-b05d-1f929d4edad1/logo-logo.png": "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/9c4f0433-e457-4d2c-99df-16953be2779e/horizontal-transparent-15da4f3a-c653-4a90-b05d-1f929d4edad1/logo-logo.png"
+    },
+    "landscapeMockupUrlMap": {},
+    "productMockupsMap": {
+      "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/9c4f0433-e457-4d2c-99df-16953be2779e/horizontal-transparent-15da4f3a-c653-4a90-b05d-1f929d4edad1/logo-logo.png": [
+        {
+          "type": "mug",
+          "label": "Mug",
+          "url": "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/9c4f0433-e457-4d2c-99df-16953be2779e/horizontal-mockup-mug-15da4f3a-c653-4a90-b05d-1f929d4edad1/logo-logo.png"
+        },
+        {
+          "type": "card",
+          "label": "Business Card",
+          "url": "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/9c4f0433-e457-4d2c-99df-16953be2779e/horizontal-mockup-card-15da4f3a-c653-4a90-b05d-1f929d4edad1/logo-logo.png"
+        },
+        {
+          "type": "tshirt",
+          "label": "T-Shirt",
+          "url": "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/9c4f0433-e457-4d2c-99df-16953be2779e/horizontal-mockup-tshirt-15da4f3a-c653-4a90-b05d-1f929d4edad1/logo-logo.png"
+        },
+        {
+          "type": "box",
+          "label": "Packaging",
+          "url": "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/9c4f0433-e457-4d2c-99df-16953be2779e/horizontal-mockup-box-15da4f3a-c653-4a90-b05d-1f929d4edad1/logo-logo.png"
+        }
+      ]
+    },
+    "productMockups": [
+      {
+        "type": "mug",
+        "label": "Mug",
+        "url": "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/9c4f0433-e457-4d2c-99df-16953be2779e/horizontal-mockup-mug-15da4f3a-c653-4a90-b05d-1f929d4edad1/logo-logo.png"
+      },
+      {
+        "type": "card",
+        "label": "Business Card",
+        "url": "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/9c4f0433-e457-4d2c-99df-16953be2779e/horizontal-mockup-card-15da4f3a-c653-4a90-b05d-1f929d4edad1/logo-logo.png"
+      },
+      {
+        "type": "tshirt",
+        "label": "T-Shirt",
+        "url": "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/9c4f0433-e457-4d2c-99df-16953be2779e/horizontal-mockup-tshirt-15da4f3a-c653-4a90-b05d-1f929d4edad1/logo-logo.png"
+      },
+      {
+        "type": "box",
+        "label": "Packaging",
+        "url": "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/9c4f0433-e457-4d2c-99df-16953be2779e/horizontal-mockup-box-15da4f3a-c653-4a90-b05d-1f929d4edad1/logo-logo.png"
+      }
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T04:52:56.123Z",
+    "lastUpdated": "2026-10-12T07:38:26.358Z",
+    "surfaceMode": "dark",
+    "generatedForSurfaceColor": "#1a1a2e",
+    "lightSurfaceUrl": "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/9c4f0433-e457-4d2c-99df-16953be2779e/horizontal-transparent-15da4f3a-c653-4a90-b05d-1f929d4edad1/logo-logo.png",
+    "darkSurfaceUrl": "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/da85fab7-193b-4d3e-a404-16430a62f520/transparent-bd1b88bd-5c0e-4416-85c1-f223d9e70856/logo-logo.png"
+  },
+  "logo/favicon": {
+    "mediaType": "logo",
+    "currentUrl": "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/bf5e3f4c-0aa7-487e-b6ca-14d275fe0065/favicon-transparent-219072a3-4524-4648-a378-d25fb8af7ca3/logo-logo.png",
+    "searchQuery": "favicon",
+    "alternatives": [],
+    "logoSourceMap": {
+      "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/bf5e3f4c-0aa7-487e-b6ca-14d275fe0065/favicon-transparent-219072a3-4524-4648-a378-d25fb8af7ca3/logo-logo.png": {
+        "sessionId": "bf5e3f4c-0aa7-487e-b6ca-14d275fe0065",
+        "logoId": "219072a3-4524-4648-a378-d25fb8af7ca3",
+        "groupId": "a9f34091-29a1-4b60-82e7-33a4e4c28ebf"
+      }
+    },
+    "logoGroupId": "a9f34091-29a1-4b60-82e7-33a4e4c28ebf",
+    "solidUrlMap": {
+      "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/bf5e3f4c-0aa7-487e-b6ca-14d275fe0065/favicon-transparent-219072a3-4524-4648-a378-d25fb8af7ca3/logo-logo.png": "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/bf5e3f4c-0aa7-487e-b6ca-14d275fe0065/favicon-original-219072a3-4524-4648-a378-d25fb8af7ca3/logo-logo.png"
+    },
+    "userModified": false,
+    "createdAt": "2026-10-10T04:54:46.438Z",
+    "lastUpdated": "2026-10-10T04:54:58.777Z",
+    "surfaceMode": "light",
+    "generatedForSurfaceColor": "#ffffff",
+    "lightSurfaceUrl": "https://isteam.wsimg.com/genai-assistant/logoagent/customer/087d9532-bc21-407b-b688-2a83edcdb9d4/session/bf5e3f4c-0aa7-487e-b6ca-14d275fe0065/favicon-transparent-219072a3-4524-4648-a378-d25fb8af7ca3/logo-logo.png"
+  },
+  "pages/home/feature-analytics": {
+    "requestedSize": {
+      "width": 700,
+      "height": 500,
+      "fit": "cover"
+    },
+    "orientations": "horizontal",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/2276078361",
+    "searchQuery": "laptop software dashboard analytics clean minimal",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/2280011246",
+      "https://img1.wsimg.com/isteam/getty/2278369814",
+      "https://img1.wsimg.com/isteam/getty/2269653001"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T04:55:27.549Z",
+    "lastUpdated": "2026-10-10T04:55:27.549Z",
+    "gettyId": "2276078361",
+    "alternativeGettyIds": [
+      "2280011246",
+      "2278369814",
+      "2269653001"
+    ]
+  },
+  "pages/home/hero": {
+    "requestedSize": {
+      "width": 1200,
+      "height": 900,
+      "fit": "cover"
+    },
+    "orientations": "horizontal",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/1674533313",
+    "searchQuery": "nail salon reception desk clients waiting modern bright interior",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/2207555921",
+      "https://img1.wsimg.com/isteam/getty/1437091362",
+      "https://img1.wsimg.com/isteam/getty/2297513414",
+      "https://img1.wsimg.com/isteam/getty/505065954",
+      "https://img1.wsimg.com/isteam/getty/1495609838"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T04:55:29.830Z",
+    "lastUpdated": "2026-10-10T08:09:58.921Z",
+    "gettyId": "1674533313",
+    "alternativeGettyIds": [
+      "2207555921",
+      "1437091362",
+      "2297513414",
+      "505065954",
+      "1495609838"
+    ]
+  },
+  "pages/home/feature-payments": {
+    "requestedSize": {
+      "width": 700,
+      "height": 500,
+      "fit": "cover"
+    },
+    "orientations": "horizontal",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/1447590641",
+    "searchQuery": "beauty professional client consultation modern salon",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/2262249443",
+      "https://img1.wsimg.com/isteam/getty/1447572995",
+      "https://img1.wsimg.com/isteam/getty/2289255640"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T04:55:31.881Z",
+    "lastUpdated": "2026-10-10T04:55:31.881Z",
+    "gettyId": "1447590641",
+    "alternativeGettyIds": [
+      "2262249443",
+      "1447572995",
+      "2289255640"
+    ]
+  },
+  "pages/home/feature-booking": {
+    "requestedSize": {
+      "width": 700,
+      "height": 500,
+      "fit": "cover"
+    },
+    "orientations": "horizontal",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/1447591363",
+    "searchQuery": "hair stylist working with client in luxury salon",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/1447590641",
+      "https://img1.wsimg.com/isteam/getty/1421820954",
+      "https://img1.wsimg.com/isteam/getty/1806099583"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T04:55:32.629Z",
+    "lastUpdated": "2026-10-10T04:55:32.629Z",
+    "gettyId": "1447591363",
+    "alternativeGettyIds": [
+      "1447590641",
+      "1421820954",
+      "1806099583"
+    ]
+  },
+  "pages/features/hero": {
+    "requestedSize": {
+      "width": 700,
+      "height": 500,
+      "fit": "cover"
+    },
+    "orientations": "horizontal",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/2259894197",
+    "searchQuery": "salon receptionist checking in client modern desk",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/2180428281",
+      "https://img1.wsimg.com/isteam/getty/2059568789",
+      "https://img1.wsimg.com/isteam/getty/1991903589"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T05:11:00.102Z",
+    "lastUpdated": "2026-10-10T05:11:00.102Z",
+    "gettyId": "2259894197",
+    "alternativeGettyIds": [
+      "2180428281",
+      "2059568789",
+      "1991903589"
+    ]
+  },
+  "pages/features/nail-salon": {
+    "requestedSize": {
+      "width": 700,
+      "height": 525,
+      "fit": "cover"
+    },
+    "orientations": "horizontal",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/2290646110",
+    "searchQuery": "nail salon technician client manicure table",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/2252910909",
+      "https://img1.wsimg.com/isteam/getty/519546165"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T05:30:19.605Z",
+    "lastUpdated": "2026-10-10T05:30:19.605Z",
+    "gettyId": "2290646110",
+    "alternativeGettyIds": [
+      "2252910909",
+      "519546165"
+    ]
+  },
+  "pages/features/reviews": {
+    "requestedSize": {
+      "width": 700,
+      "height": 525,
+      "fit": "cover"
+    },
+    "orientations": "horizontal",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/1334288822",
+    "searchQuery": "customer leaving five star review on phone after salon visit",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/1220739167",
+      "https://img1.wsimg.com/isteam/getty/1398013587"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T05:30:21.891Z",
+    "lastUpdated": "2026-10-10T05:30:21.891Z",
+    "gettyId": "1334288822",
+    "alternativeGettyIds": [
+      "1220739167",
+      "1398013587"
+    ]
+  },
+  "pages/features/staff-payroll": {
+    "requestedSize": {
+      "width": 700,
+      "height": 525,
+      "fit": "cover"
+    },
+    "orientations": "horizontal",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/2172888289",
+    "searchQuery": "salon staff team meeting payroll management",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/2060419885",
+      "https://img1.wsimg.com/isteam/getty/1392008662"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T05:30:23.613Z",
+    "lastUpdated": "2026-10-10T05:30:23.613Z",
+    "gettyId": "2172888289",
+    "alternativeGettyIds": [
+      "2060419885",
+      "1392008662"
+    ]
+  },
+  "pages/home/feature-turns": {
+    "requestedSize": {
+      "width": 700,
+      "height": 525,
+      "fit": "cover"
+    },
+    "orientations": "horizontal",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/2207555921",
+    "searchQuery": "nail salon waiting area clients queue front desk",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/1437091362",
+      "https://img1.wsimg.com/isteam/getty/2268593594"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T05:34:13.005Z",
+    "lastUpdated": "2026-10-10T05:34:13.005Z",
+    "gettyId": "2207555921",
+    "alternativeGettyIds": [
+      "1437091362",
+      "2268593594"
+    ]
+  },
+  "pages/home/feature-autumn": {
+    "requestedSize": {
+      "width": 700,
+      "height": 525,
+      "fit": "cover"
+    },
+    "orientations": "horizontal",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/1634053192",
+    "searchQuery": "AI virtual receptionist phone answering service modern office",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/2228093590",
+      "https://img1.wsimg.com/isteam/getty/1396322048",
+      "https://img1.wsimg.com/isteam/getty/2207081051"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T05:38:47.839Z",
+    "lastUpdated": "2026-10-10T05:38:47.839Z",
+    "gettyId": "1634053192",
+    "alternativeGettyIds": [
+      "2228093590",
+      "1396322048",
+      "2207081051"
+    ]
+  },
+  "pages/home/feature-loyalty": {
+    "requestedSize": {
+      "width": 700,
+      "height": 525,
+      "fit": "cover"
+    },
+    "orientations": "horizontal",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/2267424033",
+    "searchQuery": "loyalty rewards punch card program customer smiling salon",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/1349298949",
+      "https://img1.wsimg.com/isteam/getty/2206755296",
+      "https://img1.wsimg.com/isteam/getty/485340365"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T05:45:27.293Z",
+    "lastUpdated": "2026-10-10T05:45:27.293Z",
+    "gettyId": "2267424033",
+    "alternativeGettyIds": [
+      "1349298949",
+      "2206755296",
+      "485340365"
+    ]
+  },
+  "products/card-reader": {
+    "requestedSize": {
+      "width": 600,
+      "height": 600,
+      "fit": "cover"
+    },
+    "orientations": "square",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "/airo-assets/uploads/products-card-reader-af961dc4.jpg",
+    "searchQuery": "sirtxa salon management software website homepage",
+    "alternatives": [
+      "/airo-assets/uploads/products-card-reader-39272fcc.png",
+      "https://img1.wsimg.com/isteam/getty/1507227276",
+      "https://img1.wsimg.com/isteam/getty/1213166383",
+      "https://img1.wsimg.com/isteam/getty/2283114824"
+    ],
+    "userModified": true,
+    "createdAt": "2026-10-10T05:49:01.600Z",
+    "lastUpdated": "2026-10-10T08:38:12.789Z",
+    "alternativeGettyIds": [
+      "",
+      "1507227276",
+      "1213166383",
+      "2283114824"
+    ],
+    "uploadSources": {
+      "/airo-assets/uploads/products-card-reader-39272fcc.png": "umh30hv2h5_1791611555347_file_h0m8W6dVFc.png",
+      "/airo-assets/uploads/products-card-reader-af961dc4.jpg": "umh30hv2h5_1791619254804_file_-SwQ-o6uo4.jpg"
+    },
+    "uploadContentHash": "97aef6ed8bd4df6dc792b19e7e7db8a1b07ec6f14d8e8e151b3f9ca0d31a10f0",
+    "resizedUrl": "/airo-assets/uploads/variants/a630fb9f8bde7e06503faf90ad54201a.jpg",
+    "resizedFrom": {
+      "currentUrl": "/airo-assets/uploads/products-card-reader-af961dc4.jpg",
+      "sourceBytes": 43033,
+      "requestedSize": {
+        "width": 600,
+        "height": 600,
+        "fit": "cover"
+      }
+    },
+    "caption": "sirtxa salon management software website homepage"
+  },
+  "products/cash-drawer": {
+    "requestedSize": {
+      "width": 600,
+      "height": 600,
+      "fit": "cover"
+    },
+    "orientations": "square",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/2288580196",
+    "searchQuery": "cash drawer register retail counter black",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/1159006733",
+      "https://img1.wsimg.com/isteam/getty/1133084001"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T05:49:02.726Z",
+    "lastUpdated": "2026-10-10T05:49:02.726Z",
+    "gettyId": "2288580196",
+    "alternativeGettyIds": [
+      "1159006733",
+      "1133084001"
+    ]
+  },
+  "products/receipt-printer": {
+    "requestedSize": {
+      "width": 600,
+      "height": 600,
+      "fit": "cover"
+    },
+    "orientations": "square",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/2150553749",
+    "searchQuery": "thermal receipt printer white retail counter",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/1393816996",
+      "https://img1.wsimg.com/isteam/getty/2052448873"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T05:49:06.079Z",
+    "lastUpdated": "2026-10-10T05:49:06.079Z",
+    "gettyId": "2150553749",
+    "alternativeGettyIds": [
+      "1393816996",
+      "2052448873"
+    ]
+  },
+  "products/pos-terminal": {
+    "requestedSize": {
+      "width": 600,
+      "height": 600,
+      "fit": "cover"
+    },
+    "orientations": "square",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/2249949719",
+    "searchQuery": "modern salon POS terminal touchscreen payment system white",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/2202712383",
+      "https://img1.wsimg.com/isteam/getty/902963342"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T05:49:09.256Z",
+    "lastUpdated": "2026-10-10T05:49:09.256Z",
+    "gettyId": "2249949719",
+    "alternativeGettyIds": [
+      "2202712383",
+      "902963342"
+    ]
+  },
+  "products/qr-scanner": {
+    "requestedSize": {
+      "width": 600,
+      "height": 600,
+      "fit": "cover"
+    },
+    "orientations": "square",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/2288539128",
+    "searchQuery": "barcode QR code scanner retail handheld device",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/543357264",
+      "https://img1.wsimg.com/isteam/getty/466476709"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T05:49:10.375Z",
+    "lastUpdated": "2026-10-10T05:49:10.375Z",
+    "gettyId": "2288539128",
+    "alternativeGettyIds": [
+      "543357264",
+      "466476709"
+    ]
+  },
+  "pages/products/hero": {
+    "requestedSize": {
+      "width": 1200,
+      "height": 500,
+      "fit": "cover"
+    },
+    "orientations": "horizontal",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/2059568789",
+    "searchQuery": "modern salon front desk checkout counter POS setup",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/2156417106",
+      "https://img1.wsimg.com/isteam/getty/1991903589"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T05:49:11.524Z",
+    "lastUpdated": "2026-10-10T05:49:11.524Z",
+    "gettyId": "2059568789",
+    "alternativeGettyIds": [
+      "2156417106",
+      "1991903589"
+    ]
+  },
+  "products/tablet-stand": {
+    "requestedSize": {
+      "width": 600,
+      "height": 600,
+      "fit": "cover"
+    },
+    "orientations": "square",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "/airo-assets/uploads/products-tablet-stand-39272fcc.png",
+    "searchQuery": "nail salon service menu on tablet display",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/2218461643",
+      "https://img1.wsimg.com/isteam/getty/1029962850",
+      "https://img1.wsimg.com/isteam/getty/2217002563"
+    ],
+    "userModified": true,
+    "createdAt": "2026-10-10T05:49:20.155Z",
+    "lastUpdated": "2026-10-10T05:52:45.944Z",
+    "alternativeGettyIds": [
+      "2218461643",
+      "1029962850",
+      "2217002563"
+    ],
+    "uploadSources": {
+      "/airo-assets/uploads/products-tablet-stand-39272fcc.png": "umh30hv2h5_1791611555347_file_h0m8W6dVFc.png"
+    },
+    "uploadContentHash": "c95ee34f623bc4157b24dd19d26185aaf886fc7d2a43617bc0578e3bdb5df92d",
+    "resizedUrl": "/airo-assets/uploads/variants/885623aaad71f16cc87d9775e86d2e11.png",
+    "resizedFrom": {
+      "currentUrl": "/airo-assets/uploads/products-tablet-stand-39272fcc.png",
+      "sourceBytes": 168651,
+      "requestedSize": {
+        "width": 600,
+        "height": 600,
+        "fit": "cover"
+      }
+    },
+    "caption": "nail salon service menu on tablet display"
+  },
+  "products/barcode-scanner": {
+    "requestedSize": {
+      "width": 600,
+      "height": 600,
+      "fit": "cover"
+    },
+    "orientations": "square",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/481244383",
+    "searchQuery": "handheld barcode scanner retail white USB",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/2288539128",
+      "https://media.gettyimages.com/id/177975433/photo/bluetooth-barcode-and-qr-code-scanner-isolated-over-white-backgr.jpg?b=1&s=2048x2048&w=0&k=20&c=uk5bD-QKJub_DxvpZGGAJicvuf2gYKglnPYgzqeTh0U="
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T06:03:31.730Z",
+    "lastUpdated": "2026-10-10T06:03:31.730Z",
+    "gettyId": "481244383",
+    "alternativeGettyIds": [
+      "2288539128",
+      "177975433"
+    ]
+  },
+  "products/thermal-printer": {
+    "requestedSize": {
+      "width": 600,
+      "height": 600,
+      "fit": "cover"
+    },
+    "orientations": "square",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/1426236571",
+    "searchQuery": "thermal receipt printer 80mm white compact POS",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/2150553749",
+      "https://img1.wsimg.com/isteam/getty/1393816996"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T06:03:33.573Z",
+    "lastUpdated": "2026-10-10T06:03:33.573Z",
+    "gettyId": "1426236571",
+    "alternativeGettyIds": [
+      "2150553749",
+      "1393816996"
+    ]
+  },
+  "products/customer-screen": {
+    "requestedSize": {
+      "width": 600,
+      "height": 600,
+      "fit": "cover"
+    },
+    "orientations": "square",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/2227249872",
+    "searchQuery": "customer facing display screen retail checkout counter",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/521623458",
+      "https://img1.wsimg.com/isteam/getty/973108994"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T06:03:40.127Z",
+    "lastUpdated": "2026-10-10T06:03:40.127Z",
+    "gettyId": "2227249872",
+    "alternativeGettyIds": [
+      "521623458",
+      "973108994"
+    ]
+  },
+  "products/cash-drawer-new": {
+    "requestedSize": {
+      "width": 600,
+      "height": 600,
+      "fit": "cover"
+    },
+    "orientations": "square",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/1159006733",
+    "searchQuery": "cash drawer POS retail black metal open",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/2227249872",
+      "https://img1.wsimg.com/isteam/getty/2193719739"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T06:03:45.389Z",
+    "lastUpdated": "2026-10-10T06:03:45.389Z",
+    "gettyId": "1159006733",
+    "alternativeGettyIds": [
+      "2227249872",
+      "2193719739"
+    ]
+  },
+  "pages/features/notifications": {
+    "requestedSize": {
+      "width": 700,
+      "height": 525,
+      "fit": "cover"
+    },
+    "orientations": "horizontal",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/2270544025",
+    "searchQuery": "salon client receiving text message notification on phone smiling",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/499742100",
+      "https://img1.wsimg.com/isteam/getty/2266107821",
+      "https://img1.wsimg.com/isteam/getty/2150776686",
+      "https://img1.wsimg.com/isteam/getty/2270544069"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T08:17:25.642Z",
+    "lastUpdated": "2026-10-10T08:17:25.642Z",
+    "gettyId": "2270544025",
+    "alternativeGettyIds": [
+      "499742100",
+      "2266107821",
+      "2150776686",
+      "2270544069"
+    ]
+  },
+  "pages/features/waitlist": {
+    "requestedSize": {
+      "width": 700,
+      "height": 525,
+      "fit": "cover"
+    },
+    "orientations": "horizontal",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/2172888357",
+    "searchQuery": "nail salon clients waiting queue front desk digital tablet",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/1372036184",
+      "https://img1.wsimg.com/isteam/getty/1951044214",
+      "https://img1.wsimg.com/isteam/getty/2213670251",
+      "https://img1.wsimg.com/isteam/getty/2160493708"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T08:17:27.521Z",
+    "lastUpdated": "2026-10-10T08:17:27.521Z",
+    "gettyId": "2172888357",
+    "alternativeGettyIds": [
+      "1372036184",
+      "1951044214",
+      "2213670251",
+      "2160493708"
+    ]
+  },
+  "pages/features/revenue-intelligence": {
+    "requestedSize": {
+      "width": 700,
+      "height": 525,
+      "fit": "cover"
+    },
+    "orientations": "horizontal",
+    "graphicalStyles": "photography",
+    "minimumSize": "large",
+    "mediaType": "image",
+    "currentUrl": "https://img1.wsimg.com/isteam/getty/2263735114",
+    "searchQuery": "salon owner reviewing business analytics dashboard on laptop",
+    "alternatives": [
+      "https://img1.wsimg.com/isteam/getty/2255653898",
+      "https://img1.wsimg.com/isteam/getty/2150226402",
+      "https://img1.wsimg.com/isteam/getty/1440753655",
+      "https://img1.wsimg.com/isteam/getty/2277467473"
+    ],
+    "userModified": false,
+    "createdAt": "2026-10-10T08:17:28.767Z",
+    "lastUpdated": "2026-10-10T08:17:28.767Z",
+    "gettyId": "2263735114",
+    "alternativeGettyIds": [
+      "2255653898",
+      "2150226402",
+      "1440753655",
+      "2277467473"
+    ]
+  },
+  "team/thanh-lam-founder": {
+    "mediaType": "image",
+    "currentUrl": "/airo-assets/uploads/team-thanh-lam-founder-e1ea00d7.jpg",
+    "searchQuery": "man in navy business suit portrait",
+    "alternatives": [],
+    "userModified": true,
+    "createdAt": "2026-10-10T10:25:37.768Z",
+    "lastUpdated": "2026-10-10T10:25:37.768Z",
+    "uploadSources": {
+      "/airo-assets/uploads/team-thanh-lam-founder-e1ea00d7.jpg": "umh30hv2h5_1791627668147_file_y1nGUt_duy.jpg"
+    },
+    "uploadContentHash": "12a5eae9399f251d3c464e6ac9c083848bbc72bcaee0818b8531d9c79e48a26d",
+    "caption": "man in navy business suit portrait"
+  },
+  "pages/autumn/device-mockup": {
+    "mediaType": "image",
+    "currentUrl": "/airo-assets/uploads/pages-autumn-device-mockup-39272fcc.png",
+    "searchQuery": "nail salon service menu on tablet display",
+    "alternatives": [],
+    "userModified": true,
+    "createdAt": "2026-10-10T10:42:55.384Z",
+    "lastUpdated": "2026-10-10T10:52:00.668Z",
+    "uploadSources": {
+      "/airo-assets/uploads/pages-autumn-device-mockup-39272fcc.png": "umh30hv2h5_1791611555347_file_h0m8W6dVFc.png"
+    },
+    "uploadContentHash": "c95ee34f623bc4157b24dd19d26185aaf886fc7d2a43617bc0578e3bdb5df92d",
+    "caption": "nail salon service menu on tablet display"
+  },
+  "pages/autumn/software-screenshot": {
+    "mediaType": "image",
+    "currentUrl": "/airo-assets/uploads/pages-autumn-software-screenshot-af961dc4.jpg",
+    "searchQuery": "sirtxa salon management software website homepage",
+    "alternatives": [],
+    "userModified": true,
+    "createdAt": "2026-10-10T10:42:59.284Z",
+    "lastUpdated": "2026-10-10T10:52:00.096Z",
+    "uploadSources": {
+      "/airo-assets/uploads/pages-autumn-software-screenshot-af961dc4.jpg": "umh30hv2h5_1791619254804_file_-SwQ-o6uo4.jpg"
+    },
+    "uploadContentHash": "97aef6ed8bd4df6dc792b19e7e7db8a1b07ec6f14d8e8e151b3f9ca0d31a10f0",
+    "caption": "sirtxa salon management software website homepage"
+  },
+  "pages/autumn/new-screenshot": {
+    "mediaType": "image",
+    "currentUrl": "/airo-assets/uploads/pages-autumn-new-screenshot-3cca01f8.jpg",
+    "searchQuery": "salon management software website homepage",
+    "alternatives": [],
+    "userModified": true,
+    "createdAt": "2026-10-10T10:52:00.391Z",
+    "lastUpdated": "2026-10-10T10:52:00.391Z",
+    "uploadSources": {
+      "/airo-assets/uploads/pages-autumn-new-screenshot-3cca01f8.jpg": "umh30hv2h5_1791629348009_file_Jx-N8G6D5U.jpg"
+    },
+    "uploadContentHash": "8e574e47f7d17a309df1d4853148a409224bbe2dc979b059d86319304ddb520f",
+    "caption": "salon management software website homepage"
+  }
+}

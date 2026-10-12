@@ -1,0 +1,35 @@
+{
+  "eyebrow": "Backlink strategy — option 2",
+  "heading": "Trade publication pitches",
+  "description": "Six ready-to-send pitch emails for the top beauty and salon trade publications. Each pitch is pre-filled with the publication name, relevant section, and a tailored angle. Click any row to expand the full email, then copy and send.",
+  "badges": {
+    "count": "6 publications",
+    "angle": "Founder story angle",
+    "personalised": "Personalised per outlet"
+  },
+  "tips": {
+    "heading": "Tips for higher reply rates",
+    "items": [
+      {
+        "id": "t1",
+        "text": "Send Tuesday–Thursday, 9–11 AM in the editor's timezone for best open rates."
+      },
+      {
+        "id": "t2",
+        "text": "Replace [Editor's name] with the actual editor's name — check the masthead or LinkedIn."
+      },
+      {
+        "id": "t3",
+        "text": "Follow up once after 7 days if no reply. Keep it to one sentence: \"Just wanted to bump this up in case it got buried.\""
+      },
+      {
+        "id": "t4",
+        "text": "Offer a free trial account in every pitch — editors are far more likely to cover tools they can actually test."
+      },
+      {
+        "id": "t5",
+        "text": "Link to certxa.com/about in your email signature so editors can see the founder story before replying."
+      }
+    ]
+  }
+}

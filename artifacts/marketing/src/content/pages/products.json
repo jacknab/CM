@@ -1,0 +1,184 @@
+{
+  "hero": {
+    "eyebrow": "POS hardware",
+    "headline": "Hardware built for your salon.",
+    "subhead": "Every piece of Certxa hardware is designed to work seamlessly with your software — out of the box, same day."
+  },
+  "mainProducts": [
+    {
+      "id": "prod-station",
+      "badge": "Most popular",
+      "name": "Certxa Station",
+      "tagline": "The full front desk, all in one.",
+      "description": "A sleek all-in-one touchscreen terminal that runs your entire front desk. Check clients in, manage the queue, process payments, print receipts, and close the day — all from one device. Built for busy salons with multiple technicians.",
+      "price": "$799",
+      "financing": "or $0 due today with Certxa Pay",
+      "cta": "Buy now",
+      "highlights": [
+        {
+          "id": "h1",
+          "text": "15\" HD touchscreen display"
+        },
+        {
+          "id": "h2",
+          "text": "USB hub for printer and cash drawer"
+        },
+        {
+          "id": "h3",
+          "text": "Offline mode — keeps working without internet"
+        },
+        {
+          "id": "h4",
+          "text": "Available in black"
+        }
+      ]
+    },
+    {
+      "id": "prod-kiosk",
+      "badge": "Best for kiosks",
+      "name": "Certxa Kiosk",
+      "tagline": "The self check-in kiosk and customer screen in one.",
+      "description": "A tablet kiosk that lets clients check in, browse services with photos and pricing, pick their nail length, shape, and design, and join the queue — all without staff involvement. Also works as a customer-facing checkout screen paired with Certxa Station.",
+      "price": "$399",
+      "financing": "or $0 due today with Certxa Pay",
+      "cta": "Buy now",
+      "highlights": [
+        {
+          "id": "h1",
+          "text": "Self check-in with service photos and pricing"
+        },
+        {
+          "id": "h2",
+          "text": "Nail length, shape, and design selection"
+        },
+        {
+          "id": "h3",
+          "text": "Customer-facing checkout with tip selection"
+        },
+        {
+          "id": "h4",
+          "text": "Loyalty points display and reward redemption"
+        },
+        {
+          "id": "h5",
+          "text": "Pairs with Certxa Station or runs standalone"
+        }
+      ]
+    },
+    {
+      "id": "prod-reader",
+      "badge": "Free on Pro",
+      "name": "Wireless Card Reader",
+      "tagline": "Fast, wireless payments anywhere.",
+      "description": "A compact wireless card reader powered by Stripe that connects to any device running Certxa. Accept chip, tap, and swipe payments at the chair, the front desk, or anywhere in the salon. Included free with every Pro plan.",
+      "price": "Free",
+      "financing": "included with Pro plan — or $149 standalone",
+      "cta": "Get started",
+      "highlights": [
+        {
+          "id": "h1",
+          "text": "Chip, tap, and swipe"
+        },
+        {
+          "id": "h2",
+          "text": "Apple Pay, Google Pay, and Samsung Pay"
+        },
+        {
+          "id": "h3",
+          "text": "Wireless — connects via Bluetooth"
+        },
+        {
+          "id": "h4",
+          "text": "Works with any device running Certxa"
+        },
+        {
+          "id": "h5",
+          "text": "Free with every Pro plan"
+        }
+      ]
+    }
+  ],
+  "accessories": [
+    {
+      "id": "acc-customer-screen",
+      "name": "Customer Facing Screen",
+      "description": "A dedicated display that faces the client at checkout — shows their bill, tip options, and loyalty balance in real time.",
+      "price": "$149",
+      "compatible": "Compatible with Certxa Station"
+    },
+    {
+      "id": "acc-printer",
+      "name": "IP Thermal Receipt Printer",
+      "description": "80mm thermal printer with network (IP) connectivity. Fast, quiet, and reliable — prints receipts, check-in slips, and end-of-day reports.",
+      "price": "$199",
+      "compatible": "Compatible with Certxa Station"
+    },
+    {
+      "id": "acc-drawer",
+      "name": "Cash Drawer",
+      "description": "Sturdy steel cash drawer that connects directly to the Certxa Station via USB. Auto-opens on cash transactions.",
+      "price": "$99",
+      "compatible": "Compatible with Certxa Station"
+    },
+    {
+      "id": "acc-scanner",
+      "name": "Barcode Scanner",
+      "description": "Handheld USB barcode scanner for scanning product barcodes at checkout. Speeds up retail sales and inventory lookups.",
+      "price": "$89",
+      "compatible": "Compatible with Certxa Station"
+    }
+  ],
+  "payments": {
+    "headline": "Transparent processing rates. No hidden fees.",
+    "subhead": "Certxa Payments is powered by Stripe Connect. One flat rate — no monthly fee, no surprises.",
+    "tiers": [
+      {
+        "id": "tier-standard",
+        "name": "Standard rate",
+        "volume": "All merchants",
+        "rate": "2.7% + 10¢",
+        "rateNote": "per dip and tap",
+        "monthly": "No monthly fee"
+      }
+    ],
+    "note": "Keyed-in transactions: 3.5% + 15¢. Rates apply to all Certxa hardware via Stripe Connect."
+  },
+  "faq": [
+    {
+      "id": "faq-1",
+      "question": "What hardware does Certxa offer?",
+      "answer": "Certxa offers three main devices — Certxa Station (the full front desk terminal), Certxa Kiosk (the self check-in and customer-facing screen), and the Wireless Card Reader (powered by Stripe). Accessories include a customer facing screen, IP thermal receipt printer, cash drawer, and barcode scanner."
+    },
+    {
+      "id": "faq-2",
+      "question": "Is the card reader really free?",
+      "answer": "Yes. The Wireless Card Reader is included free with every Pro plan. No minimum processing volume required — just sign up for Pro and it ships with your account."
+    },
+    {
+      "id": "faq-3",
+      "question": "Is the hardware difficult to set up?",
+      "answer": "No. All Certxa hardware is plug-and-play. Connect it to your Certxa account and you're ready to go — most salons are up and running the same day their hardware arrives."
+    },
+    {
+      "id": "faq-4",
+      "question": "What payment types are accepted?",
+      "answer": "All Certxa hardware supports chip (EMV), contactless tap-to-pay (NFC), and major digital wallets including Apple Pay, Google Pay, and Samsung Pay. Swipe and keyed-in transactions are also supported."
+    },
+    {
+      "id": "faq-5",
+      "question": "Does the hardware work if the internet goes down?",
+      "answer": "Yes. Certxa Station includes offline mode — tickets are saved locally and synced automatically when your connection is restored. No lost sales, no interruptions."
+    },
+    {
+      "id": "faq-6",
+      "question": "What is Certxa Pay financing?",
+      "answer": "Certxa Pay lets you get hardware with $0 due today and pay over time. There are no fixed fees or interest — repayments are taken as a small percentage of your daily card sales."
+    }
+  ],
+  "cta": {
+    "headline": "Not sure which setup is right for you?",
+    "subhead": "Talk to us and we'll help you pick the right hardware for your salon size and workflow.",
+    "button": "Contact us",
+    "secondary": "Start free trial"
+  }
+}

@@ -3,6 +3,7 @@ packages:
   - artifacts/*
   - '!artifacts/scripts'
   - '!artifacts/shared'
+  - '!artifacts/marketing'
   - lib/*
   - lib/integrations/*
   - scripts

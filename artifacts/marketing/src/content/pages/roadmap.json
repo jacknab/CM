@@ -1,0 +1,101 @@
+{
+  "hero": {
+    "eyebrow": "Product roadmap",
+    "headline": "Where Certxa is headed.",
+    "subhead": "This is our public roadmap. We update it every sprint. Vote on features, track progress, and see what's shipping next."
+  },
+  "columns": [
+    {
+      "id": "col1",
+      "status": "in_progress",
+      "label": "In progress",
+      "items": [
+        {
+          "id": "rp1",
+          "title": "Android Certxa app",
+          "description": "Native Android companion app for staff and owners. Mirrors the iOS feature set.",
+          "votes": 214
+        },
+        {
+          "id": "rp2",
+          "title": "Two-way SMS with clients",
+          "description": "Reply to client messages directly from the Certxa dashboard. No third-party app needed.",
+          "votes": 187
+        },
+        {
+          "id": "rp3",
+          "title": "Inventory management",
+          "description": "Track retail product stock, set reorder thresholds, and generate purchase orders.",
+          "votes": 156
+        }
+      ]
+    },
+    {
+      "id": "col2",
+      "status": "planned",
+      "label": "Planned",
+      "items": [
+        {
+          "id": "rp4",
+          "title": "Gift cards",
+          "description": "Sell and redeem digital and physical gift cards directly through Certxa POS.",
+          "votes": 302
+        },
+        {
+          "id": "rp5",
+          "title": "Multi-location dashboard",
+          "description": "Unified analytics and staff management across multiple salon locations.",
+          "votes": 278
+        },
+        {
+          "id": "rp6",
+          "title": "Waitlist management",
+          "description": "Let clients join a digital waitlist and get notified when a slot opens up.",
+          "votes": 241
+        },
+        {
+          "id": "rp7",
+          "title": "Payroll integrations",
+          "description": "Direct sync with Gusto and QuickBooks Payroll. No more manual exports.",
+          "votes": 198
+        }
+      ]
+    },
+    {
+      "id": "col3",
+      "status": "shipped",
+      "label": "Shipped",
+      "items": [
+        {
+          "id": "rp8",
+          "title": "Autumn AI receptionist",
+          "description": "AI-powered after-hours booking and client communication.",
+          "votes": 0
+        },
+        {
+          "id": "rp9",
+          "title": "Self check-in kiosk",
+          "description": "Tablet-based kiosk with turn queue and service selection.",
+          "votes": 0
+        },
+        {
+          "id": "rp10",
+          "title": "Points loyalty program",
+          "description": "Earn points per dollar spent, redeemable for services.",
+          "votes": 0
+        },
+        {
+          "id": "rp11",
+          "title": "Google review automation",
+          "description": "Automated post-visit review request with smart timing.",
+          "votes": 0
+        }
+      ]
+    }
+  ],
+  "cta": {
+    "heading": "Have a feature idea?",
+    "subhead": "We read every suggestion. Send us yours and it might make the next sprint.",
+    "button": "Submit an idea"
+  }
+}

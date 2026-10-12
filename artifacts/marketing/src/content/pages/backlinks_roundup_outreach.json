@@ -1,0 +1,22 @@
+{
+  "eyebrow": "Backlink strategy — option 3",
+  "heading": "Roundup article outreach",
+  "description": "Find \"best salon software\" listicles that don't yet include Certxa, pitch them with a ready-to-send email, and track your progress below. Each article that adds Certxa is a high-authority backlink pointing directly at your comparison pages.",
+  "statsLabels": {
+    "toPitch": "To pitch",
+    "pitched": "Pitched",
+    "listed": "Listed"
+  },
+  "queriesHeading": "Target search queries",
+  "queriesDescription": "Search each query on Google, open the top 10 results, and add any listicle that doesn't include Certxa to the tracker below.",
+  "assetsHeading": "Your pitch assets — link these in every email",
+  "assetsDescription": "These comparison pages are already SEO-optimised for the exact queries roundup articles rank for. Linking to them gives editors a ready-made reference and increases your chance of inclusion.",
+  "trackerHeading": "Article tracker",
+  "addHeading": "Add an article to track",
+  "statusLabels": {
+    "notPitched": "Not pitched",
+    "pitched": "Pitched",
+    "listed": "Listed ✓",
+    "declined": "Declined"
+  }
+}

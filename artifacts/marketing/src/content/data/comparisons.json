@@ -1,0 +1,574 @@
+[
+  {
+    "id": "glossgenius",
+    "slug": "certxa-vs-glossgenius",
+    "competitor": "GlossGenius",
+    "metaTitle": "Certxa vs GlossGenius — Salon Software Comparison (2026)",
+    "metaDescription": "Comparing Certxa and GlossGenius for nail salons, hair salons, and barbershops? See how Certxa's waitlist, revenue intelligence, built-in POS, and AI receptionist stack up.",
+    "heroEyebrow": "Certxa vs GlossGenius",
+    "heroHeadline": "More than booking. A complete business platform.",
+    "heroSubhead": "GlossGenius is a solid booking tool for solo stylists. Certxa is built for the full operation — walk-ins, waitlist, team payroll, revenue intelligence, and an AI receptionist — all in one platform, with no long-term contracts.",
+    "heroCta": "Try Certxa free for 60 days",
+    "targetBusinesses": "nail salons, hair salons, barbershops, spas, and massage studios",
+    "competitorSummary": "GlossGenius is a booking and payment platform popular with independent stylists and solo beauty professionals. It offers a clean booking experience and card processing, but is primarily designed for single-provider businesses.",
+    "certxaSummary": "Certxa is built for multi-staff beauty businesses — nail salons, hair salons, barbershops, spas, and massage studios. It covers the full operation: online booking, walk-in management, waitlist, self check-in kiosk, POS, team payroll, loyalty programs, revenue intelligence, and an AI receptionist.",
+    "differentiators": [
+      {
+        "id": "d1",
+        "title": "Waitlist management",
+        "certxa": "Live digital waitlist captures every walk-in. When a slot opens, the next client is auto-texted and given a one-tap confirmation window.",
+        "competitor": "No built-in waitlist management for walk-in businesses."
+      },
+      {
+        "id": "d2",
+        "title": "Revenue intelligence",
+        "certxa": "Automatically detects client drift, identifies dead time slots, scores no-show risk, and sends re-engagement texts — without any manual work.",
+        "competitor": "Basic reporting. No proactive revenue recovery or client drift detection."
+      },
+      {
+        "id": "d3",
+        "title": "Self check-in kiosk",
+        "certxa": "Tablet kiosk lets clients check in, pick their service, and join the queue — in English, Spanish, Vietnamese, Chinese, and Korean.",
+        "competitor": "No self check-in kiosk for walk-in or appointment-based businesses."
+      },
+      {
+        "id": "d4",
+        "title": "AI receptionist",
+        "certxa": "Autumn AI answers calls 24/7, books appointments, and handles rescheduling against your real-time availability.",
+        "competitor": "No AI receptionist or automated phone answering."
+      },
+      {
+        "id": "d5",
+        "title": "Team payroll",
+        "certxa": "Commission rates per staff member, tips tracked separately, pay periods, earnings statements, and printed paychecks — all built in.",
+        "competitor": "Limited to solo providers. No built-in team payroll or commission tracking for multi-staff businesses."
+      },
+      {
+        "id": "d6",
+        "title": "Turn rotation",
+        "certxa": "Automatic walk-in assignment to staff based on rules you set. Live turn board shows who is next, busy, or on break.",
+        "competitor": "No turn rotation system for walk-in queue management."
+      }
+    ],
+    "comparisonTable": [
+      {
+        "id": "t1",
+        "feature": "Online booking",
+        "certxa": true,
+        "competitor": true
+      },
+      {
+        "id": "t2",
+        "feature": "Walk-in waitlist management",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t3",
+        "feature": "Self check-in kiosk",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t4",
+        "feature": "Turn rotation",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t5",
+        "feature": "Built-in POS with offline mode",
+        "certxa": true,
+        "competitor": true
+      },
+      {
+        "id": "t6",
+        "feature": "Team payroll and commissions",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t7",
+        "feature": "Loyalty programs",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t8",
+        "feature": "Revenue intelligence",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t9",
+        "feature": "AI receptionist (24/7 calls)",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t10",
+        "feature": "Multi-language kiosk",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t11",
+        "feature": "No long-term contracts",
+        "certxa": true,
+        "competitor": true
+      },
+      {
+        "id": "t12",
+        "feature": "60-day free trial",
+        "certxa": true,
+        "competitor": false
+      }
+    ],
+    "faq": [
+      {
+        "id": "f1",
+        "question": "Is Certxa better than GlossGenius for nail salons?",
+        "answer": "For nail salons with walk-in traffic, multiple staff members, and a need for turn rotation and waitlist management, Certxa is a significantly more complete platform. GlossGenius is better suited to solo stylists who primarily take appointments."
+      },
+      {
+        "id": "f2",
+        "question": "Can I switch from GlossGenius to Certxa?",
+        "answer": "Yes. Certxa's onboarding team can help you migrate your client list and service menu. The 60-day free trial lets you run both in parallel before committing."
+      },
+      {
+        "id": "f3",
+        "question": "Does Certxa work for hair salons, not just nail salons?",
+        "answer": "Yes. Certxa is built for nail salons, hair salons, barbershops, spas, massage studios, hair removal studios, and braid and weave salons. Every feature adapts to the services your business offers."
+      }
+    ]
+  },
+  {
+    "id": "vagaro",
+    "slug": "certxa-vs-vagaro",
+    "competitor": "Vagaro",
+    "metaTitle": "Certxa vs Vagaro — Salon & Spa Software Comparison (2026)",
+    "metaDescription": "Comparing Certxa and Vagaro for salons, spas, and barbershops? See how Certxa's transparent pricing, waitlist, revenue intelligence, and AI receptionist compare.",
+    "heroEyebrow": "Certxa vs Vagaro",
+    "heroHeadline": "All the power. None of the complexity.",
+    "heroSubhead": "Vagaro packs in features — but also add-on fees, a marketplace you didn't ask for, and a learning curve that takes weeks. Certxa gives you everything a salon or spa needs in one flat monthly price, with a setup that takes hours, not weeks.",
+    "heroCta": "Try Certxa free for 60 days",
+    "targetBusinesses": "nail salons, hair salons, barbershops, spas, and massage studios",
+    "competitorSummary": "Vagaro is a feature-rich salon and spa management platform used by a wide range of beauty businesses. It offers booking, POS, payroll, and marketing tools, but many advanced features require paid add-ons, and the platform's complexity can be a barrier for smaller teams.",
+    "certxaSummary": "Certxa is purpose-built for beauty businesses that need a complete, easy-to-use platform without the add-on fees or complexity. One flat monthly price covers online booking, walk-in waitlist, self check-in kiosk, POS, team payroll, loyalty programs, revenue intelligence, and an AI receptionist.",
+    "differentiators": [
+      {
+        "id": "d1",
+        "title": "Transparent flat pricing",
+        "certxa": "One flat monthly price. No add-on fees for text reminders, email marketing, or advanced features. Starter at $29/mo, Pro at $79/mo.",
+        "competitor": "Base subscription plus paid add-ons for text notifications, email marketing, and other features. Costs can add up quickly."
+      },
+      {
+        "id": "d2",
+        "title": "Revenue intelligence",
+        "certxa": "Automatically detects client drift, identifies dead time slots, scores no-show risk, and sends re-engagement texts — without any manual work.",
+        "competitor": "Reporting tools available, but no automated revenue recovery or proactive client drift detection."
+      },
+      {
+        "id": "d3",
+        "title": "AI receptionist",
+        "certxa": "Autumn AI answers calls 24/7, books appointments, and handles rescheduling against your real-time availability.",
+        "competitor": "No built-in AI receptionist or automated phone answering."
+      },
+      {
+        "id": "d4",
+        "title": "Setup and ease of use",
+        "certxa": "Designed to be up and running in hours. Clean, modern interface built for busy front desks.",
+        "competitor": "Feature-rich but complex. Many businesses report a steep learning curve and lengthy setup process."
+      },
+      {
+        "id": "d5",
+        "title": "Waitlist management",
+        "certxa": "Live digital waitlist captures every walk-in. When a slot opens, the next client is auto-texted and given a one-tap confirmation window.",
+        "competitor": "Basic waitlist functionality. No automated slot-open notifications or one-tap confirmation."
+      },
+      {
+        "id": "d6",
+        "title": "No marketplace dependency",
+        "certxa": "Your booking page is yours. Clients book directly with your business — no Certxa marketplace, no competing listings.",
+        "competitor": "Vagaro operates a consumer marketplace where your business competes alongside other local providers."
+      }
+    ],
+    "comparisonTable": [
+      {
+        "id": "t1",
+        "feature": "Online booking",
+        "certxa": true,
+        "competitor": true
+      },
+      {
+        "id": "t2",
+        "feature": "Walk-in waitlist management",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t3",
+        "feature": "Self check-in kiosk",
+        "certxa": true,
+        "competitor": true
+      },
+      {
+        "id": "t4",
+        "feature": "Turn rotation",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t5",
+        "feature": "Built-in POS with offline mode",
+        "certxa": true,
+        "competitor": true
+      },
+      {
+        "id": "t6",
+        "feature": "Team payroll and commissions",
+        "certxa": true,
+        "competitor": true
+      },
+      {
+        "id": "t7",
+        "feature": "Loyalty programs",
+        "certxa": true,
+        "competitor": true
+      },
+      {
+        "id": "t8",
+        "feature": "Revenue intelligence",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t9",
+        "feature": "AI receptionist (24/7 calls)",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t10",
+        "feature": "Flat pricing — no add-on fees",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t11",
+        "feature": "No marketplace competition",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t12",
+        "feature": "60-day free trial",
+        "certxa": true,
+        "competitor": true
+      }
+    ],
+    "faq": [
+      {
+        "id": "f1",
+        "question": "Is Certxa cheaper than Vagaro?",
+        "answer": "Certxa's Starter plan is $29/mo and Pro is $79/mo — both include features that Vagaro charges as add-ons (text reminders, email marketing, advanced reporting). For most multi-staff businesses, the total cost of Certxa is lower."
+      },
+      {
+        "id": "f2",
+        "question": "Can I switch from Vagaro to Certxa?",
+        "answer": "Yes. Certxa's onboarding team can help you migrate your client list and service menu. The 60-day free trial lets you run both in parallel before committing."
+      },
+      {
+        "id": "f3",
+        "question": "Does Certxa have a marketplace like Vagaro?",
+        "answer": "No. Certxa does not operate a consumer marketplace. Your booking page is your own — clients book directly with your business, and you are never listed alongside competitors."
+      }
+    ]
+  },
+  {
+    "id": "fresha",
+    "slug": "certxa-vs-fresha",
+    "competitor": "Fresha",
+    "metaTitle": "Certxa vs Fresha — Salon Software Comparison (2026)",
+    "metaDescription": "Comparing Certxa and Fresha for salons and spas? See how Certxa's flat pricing, revenue intelligence, built-in payroll, and AI receptionist compare to Fresha's commission model.",
+    "heroEyebrow": "Certxa vs Fresha",
+    "heroHeadline": "No commissions. No surprises. Just software.",
+    "heroSubhead": "Fresha is free to start — but charges a 20% commission on every new client booking. Certxa charges a flat monthly fee and zero commissions, so you keep every dollar you earn.",
+    "heroCta": "Try Certxa free for 60 days",
+    "targetBusinesses": "nail salons, hair salons, barbershops, spas, and massage studios",
+    "competitorSummary": "Fresha is a free salon and spa management platform that generates revenue by charging a 20% commission on new client bookings made through its marketplace. It offers booking, POS, and basic reporting tools.",
+    "certxaSummary": "Certxa charges a flat monthly subscription with zero commissions on any bookings. It covers the full operation: online booking, walk-in waitlist, self check-in kiosk, POS, team payroll, loyalty programs, revenue intelligence, and an AI receptionist.",
+    "differentiators": [
+      {
+        "id": "d1",
+        "title": "Zero commissions",
+        "certxa": "Flat monthly subscription. Zero commissions on any booking — new client or returning. You keep 100% of every transaction.",
+        "competitor": "Free software, but charges a 20% commission on every new client booking made through the Fresha marketplace."
+      },
+      {
+        "id": "d2",
+        "title": "Revenue intelligence",
+        "certxa": "Automatically detects client drift, identifies dead time slots, scores no-show risk, and sends re-engagement texts — without any manual work.",
+        "competitor": "Basic reporting. No proactive revenue recovery, client drift detection, or automated re-engagement."
+      },
+      {
+        "id": "d3",
+        "title": "Built-in team payroll",
+        "certxa": "Commission rates per staff member, tips tracked separately, pay periods, earnings statements, and printed paychecks — all built in.",
+        "competitor": "Limited payroll features. Commission and payroll management requires additional setup or third-party tools."
+      },
+      {
+        "id": "d4",
+        "title": "AI receptionist",
+        "certxa": "Autumn AI answers calls 24/7, books appointments, and handles rescheduling against your real-time availability.",
+        "competitor": "No AI receptionist or automated phone answering."
+      },
+      {
+        "id": "d5",
+        "title": "No marketplace dependency",
+        "certxa": "Your booking page is yours. Clients book directly with your business — no Certxa marketplace, no competing listings, no commission exposure.",
+        "competitor": "Fresha's business model depends on its consumer marketplace. New client bookings through the marketplace trigger the 20% commission."
+      },
+      {
+        "id": "d6",
+        "title": "Predictable costs",
+        "certxa": "Flat monthly fee. As your business grows and you take more new clients, your software cost stays the same.",
+        "competitor": "Costs scale with new client volume. A busy month means a larger commission bill."
+      }
+    ],
+    "comparisonTable": [
+      {
+        "id": "t1",
+        "feature": "Online booking",
+        "certxa": true,
+        "competitor": true
+      },
+      {
+        "id": "t2",
+        "feature": "Walk-in waitlist management",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t3",
+        "feature": "Self check-in kiosk",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t4",
+        "feature": "Turn rotation",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t5",
+        "feature": "Built-in POS with offline mode",
+        "certxa": true,
+        "competitor": true
+      },
+      {
+        "id": "t6",
+        "feature": "Team payroll and commissions",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t7",
+        "feature": "Loyalty programs",
+        "certxa": true,
+        "competitor": true
+      },
+      {
+        "id": "t8",
+        "feature": "Revenue intelligence",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t9",
+        "feature": "AI receptionist (24/7 calls)",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t10",
+        "feature": "Zero commissions on bookings",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t11",
+        "feature": "Flat monthly pricing",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t12",
+        "feature": "60-day free trial",
+        "certxa": true,
+        "competitor": false
+      }
+    ],
+    "faq": [
+      {
+        "id": "f1",
+        "question": "Is Fresha really free?",
+        "answer": "Fresha's software is free, but it charges a 20% commission on every new client booking made through its marketplace. For a busy salon, those commissions can easily exceed the cost of a flat-rate subscription like Certxa."
+      },
+      {
+        "id": "f2",
+        "question": "Can I switch from Fresha to Certxa?",
+        "answer": "Yes. Certxa's onboarding team can help you migrate your client list and service menu. The 60-day free trial lets you run both in parallel before committing."
+      },
+      {
+        "id": "f3",
+        "question": "Does Certxa charge commissions on bookings?",
+        "answer": "No. Certxa charges a flat monthly subscription — $29/mo for Starter, $79/mo for Pro. There are zero commissions on any bookings, new client or returning."
+      }
+    ]
+  },
+  {
+    "id": "square",
+    "slug": "certxa-vs-square",
+    "competitor": "Square for Beauty",
+    "metaTitle": "Certxa vs Square for Beauty — Salon Software Comparison (2026)",
+    "metaDescription": "Comparing Certxa and Square for Beauty for salons and barbershops? See how Certxa's salon-specific features — waitlist, turn rotation, kiosk, AI receptionist, and payroll — compare.",
+    "heroEyebrow": "Certxa vs Square for Beauty",
+    "heroHeadline": "Built for beauty. Not bolted on.",
+    "heroSubhead": "Square is a great general-purpose POS. But nail salons, barbershops, and spas need more than a generic register — they need turn rotation, a walk-in waitlist, a self check-in kiosk, and payroll built for commission-based teams. Certxa was built for exactly that.",
+    "heroCta": "Try Certxa free for 60 days",
+    "targetBusinesses": "nail salons, hair salons, barbershops, spas, and massage studios",
+    "competitorSummary": "Square for Beauty is Square's salon-focused offering, built on top of Square's general-purpose POS and payment infrastructure. It covers booking, payments, and basic staff management, but lacks the salon-specific depth that walk-in-heavy businesses need.",
+    "certxaSummary": "Certxa is purpose-built for beauty businesses from the ground up — not adapted from a general retail POS. It covers online booking, walk-in waitlist, self check-in kiosk, turn rotation, POS, team payroll, loyalty programs, revenue intelligence, and an AI receptionist.",
+    "differentiators": [
+      {
+        "id": "d1",
+        "title": "Walk-in waitlist and turn rotation",
+        "certxa": "Live digital waitlist captures every walk-in. Automatic turn rotation assigns clients to staff fairly. The turn board shows who is next, busy, or on break.",
+        "competitor": "No built-in walk-in waitlist management or turn rotation system for beauty businesses."
+      },
+      {
+        "id": "d2",
+        "title": "Self check-in kiosk",
+        "certxa": "Tablet kiosk lets clients check in, pick their service, and join the queue — in English, Spanish, Vietnamese, Chinese, and Korean.",
+        "competitor": "No self check-in kiosk designed for salon walk-in and appointment workflows."
+      },
+      {
+        "id": "d3",
+        "title": "Revenue intelligence",
+        "certxa": "Automatically detects client drift, identifies dead time slots, scores no-show risk, and sends re-engagement texts — without any manual work.",
+        "competitor": "Standard sales reporting. No proactive revenue recovery or automated client re-engagement."
+      },
+      {
+        "id": "d4",
+        "title": "AI receptionist",
+        "certxa": "Autumn AI answers calls 24/7, books appointments, and handles rescheduling against your real-time availability.",
+        "competitor": "No AI receptionist or automated phone answering."
+      },
+      {
+        "id": "d5",
+        "title": "Commission-based payroll",
+        "certxa": "Commission rates per staff member, tips tracked separately, pay periods, earnings statements, and printed paychecks — all built in.",
+        "competitor": "Basic team management. Commission-based payroll for beauty businesses requires additional Square Payroll subscription."
+      },
+      {
+        "id": "d6",
+        "title": "Built for beauty from day one",
+        "certxa": "Every feature — from the kiosk languages to the turn board to the revenue intelligence — was designed specifically for how salons, barbershops, and spas operate.",
+        "competitor": "Square for Beauty is Square's general POS adapted for salons. Core infrastructure is retail-first, not beauty-first."
+      }
+    ],
+    "comparisonTable": [
+      {
+        "id": "t1",
+        "feature": "Online booking",
+        "certxa": true,
+        "competitor": true
+      },
+      {
+        "id": "t2",
+        "feature": "Walk-in waitlist management",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t3",
+        "feature": "Self check-in kiosk",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t4",
+        "feature": "Turn rotation",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t5",
+        "feature": "Built-in POS with offline mode",
+        "certxa": true,
+        "competitor": true
+      },
+      {
+        "id": "t6",
+        "feature": "Commission-based payroll (built in)",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t7",
+        "feature": "Loyalty programs",
+        "certxa": true,
+        "competitor": true
+      },
+      {
+        "id": "t8",
+        "feature": "Revenue intelligence",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t9",
+        "feature": "AI receptionist (24/7 calls)",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t10",
+        "feature": "Multi-language kiosk",
+        "certxa": true,
+        "competitor": false
+      },
+      {
+        "id": "t11",
+        "feature": "No long-term contracts",
+        "certxa": true,
+        "competitor": true
+      },
+      {
+        "id": "t12",
+        "feature": "60-day free trial",
+        "certxa": true,
+        "competitor": false
+      }
+    ],
+    "faq": [
+      {
+        "id": "f1",
+        "question": "Is Certxa better than Square for nail salons?",
+        "answer": "For nail salons with walk-in traffic, Certxa is significantly more capable. Square for Beauty lacks turn rotation, a walk-in waitlist, a self check-in kiosk, and revenue intelligence — all features that nail salons rely on daily."
+      },
+      {
+        "id": "f2",
+        "question": "Can I switch from Square to Certxa?",
+        "answer": "Yes. Certxa's onboarding team can help you migrate your client list and service menu. The 60-day free trial lets you run both in parallel before committing."
+      },
+      {
+        "id": "f3",
+        "question": "Does Certxa work with Square hardware?",
+        "answer": "Certxa uses its own hardware ecosystem — the Certxa Station, Certxa Kiosk, and Stripe-powered card readers. Square hardware is not compatible with Certxa."
+      }
+    ]
+  }
+]

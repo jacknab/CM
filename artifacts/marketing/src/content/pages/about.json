@@ -1,0 +1,52 @@
+{
+  "hero": {
+    "eyebrow": "Our story",
+    "headline": "Founded by a salon owner, for salon owners.",
+    "subhead": "Certxa was founded in Phoenix, Arizona in 2026 by Thanh Lam, a Vietnamese nail salon owner who got tired of watching salon owners get pushed into long-term contracts for software that never quite fit how salons actually work."
+  },
+  "mission": {
+    "heading": "Why we built Certxa",
+    "body": "Thanh started Certxa after watching Vietnamese-owned nail salons — a community he's part of — get locked into long-term contracts with existing salon software providers just to get basic booking and check-in tools. He wanted to build a real alternative: no long-term lock-in, and software built by someone who has actually run a salon, not just sold to one. That's still the idea behind Certxa today: salon software should help you run your business — not overwhelm it, and not trap you in a contract you can't get out of. Many platforms require multiple subscriptions, disconnected tools, and complicated workflows just to manage everyday tasks. Certxa brings online booking, point of sale, payments, client management, team management, payroll, and AI-powered tools together in one platform — so you spend less time switching between systems and more time focusing on your clients. Certxa is built for nail salons, hair salons, barbershops, spas, massage studios, hair removal studios, and braid and weave salons."
+  },
+  "values": [
+    {
+      "id": "v1",
+      "title": "Salons first",
+      "body": "Every feature we build starts with a real problem a salon owner told us about. We don't ship for the sake of shipping."
+    },
+    {
+      "id": "v2",
+      "title": "Radical simplicity",
+      "body": "If a feature takes more than 30 seconds to learn, we redesign it. Complexity is a bug, not a feature."
+    },
+    {
+      "id": "v3",
+      "title": "Transparent by default",
+      "body": "No hidden fees, no surprise rate changes, no lock-in contracts. We earn your business every month."
+    },
+    {
+      "id": "v4",
+      "title": "Always improving",
+      "body": "We ship updates every week. Our changelog is public and our roadmap is open — you always know what's coming."
+    }
+  ],
+  "team": [
+    {
+      "id": "t1",
+      "name": "Thanh Lam",
+      "role": "Founder",
+      "bio": "A Vietnamese nail salon owner from Phoenix, Arizona. Thanh built Certxa after experiencing firsthand how existing salon software locked owners into long-term contracts for tools that didn't fit how salons actually operate."
+    },
+    {
+      "id": "t2",
+      "name": "Toby Benjamin",
+      "role": "SaaS Developer",
+      "bio": "Toby brings the technical depth to turn Thanh's vision into a reliable, scalable platform. He focuses on building software that's fast, stable, and genuinely easy to use."
+    }
+  ],
+  "cta": {
+    "heading": "Ready to see it in action?",
+    "subhead": "Book a 20-minute demo and we'll show you exactly how Certxa fits your business.",
+    "button": "Request a demo"
+  }
+}

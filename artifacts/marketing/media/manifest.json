@@ -1,0 +1,38 @@
+{
+  "logo/horizontal": {
+    "file": "logo__horizontal",
+    "type": "image/png"
+  },
+  "logo/horizontal/dark": {
+    "file": "logo__horizontal__dark",
+    "type": "image/png"
+  },
+  "logo/favicon": {
+    "file": "logo__favicon",
+    "type": "image/png"
+  },
+  "products/card-reader": {
+    "file": "products__card-reader",
+    "type": "image/jpeg"
+  },
+  "products/tablet-stand": {
+    "file": "products__tablet-stand",
+    "type": "image/png"
+  },
+  "team/thanh-lam-founder": {
+    "file": "team__thanh-lam-founder",
+    "type": "image/jpeg"
+  },
+  "pages/autumn/device-mockup": {
+    "file": "pages__autumn__device-mockup",
+    "type": "image/png"
+  },
+  "pages/autumn/software-screenshot": {
+    "file": "pages__autumn__software-screenshot",
+    "type": "image/jpeg"
+  },
+  "pages/autumn/new-screenshot": {
+    "file": "pages__autumn__new-screenshot",
+    "type": "image/jpeg"
+  }
+}

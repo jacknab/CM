@@ -1,0 +1,155 @@
+{
+  "hero": {
+    "eyebrow": "All-in-one salon software",
+    "headline": "Run your salon. Effortlessly.",
+    "subhead": "Certxa brings online booking, a salon POS, client management, waitlist, staff payroll, and review tools into one platform — built for nail salons, hair salons, barbershops, spas, massage studios, hair removal studios, and braid and weave salons.",
+    "ctaPrimary": "Start free trial",
+    "ctaSecondary": "See how it works",
+    "socialProof": "60-day free trial · Cancel anytime"
+  },
+  "directoryBadges": {
+    "label": "As seen on",
+    "platforms": [
+      {
+        "id": "db-ph",
+        "name": "Product Hunt",
+        "url": "https://www.producthunt.com/posts/certxa"
+      },
+      {
+        "id": "db-1",
+        "name": "Capterra",
+        "url": "https://www.capterra.com/p/10182349/Certxa-Booking-Software/"
+      },
+      {
+        "id": "db-2",
+        "name": "G2",
+        "url": "https://www.g2.com/products/certxa-booking-software"
+      },
+      {
+        "id": "db-3",
+        "name": "GetApp",
+        "url": "https://www.getapp.com/p/certxa"
+      },
+      {
+        "id": "db-4",
+        "name": "Software Advice",
+        "url": "https://softwareadvice.com/p/certxa"
+      }
+    ]
+  },
+  "features": [
+    {
+      "id": "feat-1",
+      "tag": "Online booking",
+      "title": "Your business's own booking webpage.",
+      "description": "Every business on Certxa gets a dedicated booking page clients can visit anytime — from your website, a direct link, Google, or Instagram. They pick their service, provider, and time. Automated reminders cut no-shows before they happen.",
+      "cta": "Learn more"
+    },
+    {
+      "id": "feat-2",
+      "tag": "Salon POS",
+      "title": "A register built for beauty businesses.",
+      "description": "A touch-screen front desk that handles tickets, services, add-ons, tips, split payments, gift cards, and cash — all in one place. Syncs to every client record automatically. Works across multiple stations and keeps running even when the internet goes down.",
+      "cta": "Learn more"
+    },
+    {
+      "id": "feat-3",
+      "tag": "Self check-in kiosk",
+      "title": "Clients check themselves in.",
+      "description": "A tablet at the front door lets clients check in with their phone number or a QR code, pick their service, and join the queue — no staff needed. Recognizes returning clients and suggests what they are due for. Available in English, Spanish, Vietnamese, Chinese, and Korean.",
+      "cta": "Learn more"
+    },
+    {
+      "id": "feat-4",
+      "tag": "Waitlist management",
+      "title": "Never lose a walk-in again.",
+      "description": "When your business is fully booked, Certxa captures walk-ins on a live digital waitlist. The moment a slot opens, the next client is automatically notified and given a one-tap confirmation window — so you fill cancellations instantly without any manual follow-up.",
+      "cta": "Learn more"
+    },
+    {
+      "id": "feat-5",
+      "tag": "Turn rotation",
+      "title": "Fair turns, automatically.",
+      "description": "Certxa assigns walk-ins to staff members based on rules you set. The turn board shows who is next, who is with a client, and who is on a break — keeping things fair and transparent for the whole team without any manual tracking.",
+      "cta": "Learn more"
+    },
+    {
+      "id": "feat-6",
+      "tag": "Loyalty rewards",
+      "title": "Two ways to keep clients coming back.",
+      "description": "Choose the loyalty program that fits your business. The digital punch card awards one punch per visit — once a client hits the number you set, a reward is automatically applied at checkout. Or run a points program where clients earn points per dollar spent, redeemable for discounts you define.",
+      "cta": "Learn more"
+    },
+    {
+      "id": "feat-7",
+      "tag": "Autumn AI receptionist",
+      "title": "Your receptionist, available 24/7.",
+      "description": "Most salons miss 30–40% of their calls. Autumn answers every one — in under 2 seconds, around the clock. She books new appointments, handles rescheduling and cancellations, answers questions about services and pricing, and upsells add-ons. While your salon is open she sees your live board, so callers get a real wait time, not a guess. After hours she keeps booking without implying anyone is in the building.",
+      "benefits": [
+        {
+          "id": "b1",
+          "text": "Answers every call in under 2 seconds"
+        },
+        {
+          "id": "b2",
+          "text": "Books, reschedules, and cancels in real time"
+        },
+        {
+          "id": "b3",
+          "text": "Knows live wait times and staff availability"
+        },
+        {
+          "id": "b4",
+          "text": "Upsells add-ons on every call"
+        },
+        {
+          "id": "b5",
+          "text": "After-hours booking — never misses a call"
+        }
+      ],
+      "cta": "Learn more"
+    },
+    {
+      "id": "feat-8",
+      "tag": "Reviews and growth",
+      "title": "More five-star reviews, on autopilot.",
+      "description": "After every visit, Certxa automatically texts the client asking for a review. Happy clients are sent straight to your Google review page. Unhappy clients can reach you privately first — so you fix problems before they go public.",
+      "cta": "Learn more"
+    }
+  ],
+  "pricing": [
+    {
+      "id": "plan-starter",
+      "name": "Starter",
+      "price": "$29",
+      "period": "/ mo",
+      "description": "Online booking, POS, waitlist, and turn rotation for growing beauty businesses.",
+      "cta": "Start free trial",
+      "featured": false
+    },
+    {
+      "id": "plan-pro",
+      "name": "Pro",
+      "price": "$79",
+      "period": "/ mo",
+      "description": "Everything in Starter plus Autumn AI receptionist, advanced loyalty, and a free wireless card reader.",
+      "cta": "Start free trial",
+      "featured": true
+    },
+    {
+      "id": "plan-enterprise",
+      "name": "Enterprise",
+      "price": "Custom",
+      "period": "",
+      "description": "Multi-location management, dedicated onboarding, and a custom contract.",
+      "cta": "Contact us",
+      "featured": false
+    }
+  ],
+  "cta": {
+    "headline": "Your salon, running itself.",
+    "subhead": "Join hundreds of salons already using Certxa to fill their books, reduce no-shows, and grow revenue — without the admin.",
+    "button": "Start your free trial",
+    "note": "60-day free trial · Cancel anytime"
+  }
+}

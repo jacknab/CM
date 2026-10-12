@@ -1,0 +1,274 @@
+{
+  "hero": {
+    "liveTag": "Live — Autumn is answering calls now",
+    "eyebrow": "Autumn AI receptionist",
+    "headline": "Your receptionist, available 24/7.",
+    "subhead": "Autumn answers every call instantly, books appointments directly into your calendar, handles rescheduling, answers client questions, and upsells add-ons — all without you lifting a finger.",
+    "ctaPrimary": "Enable for my salon",
+    "ctaSecondary": "See pricing",
+    "stats": [
+      {
+        "id": "st1",
+        "value": "< 2 sec",
+        "label": "Answer time"
+      },
+      {
+        "id": "st2",
+        "value": "24 / 7",
+        "label": "Always on"
+      },
+      {
+        "id": "st3",
+        "value": "0",
+        "label": "Missed calls"
+      }
+    ]
+  },
+  "intro": {
+    "eyebrow": "What Autumn does",
+    "heading": "A receptionist who never puts a caller on hold.",
+    "body": "Autumn is deeply integrated with your Certxa account. From the moment she's activated, she knows every service you offer, every staff member's schedule, your business hours, and your booking rules.",
+    "bullets": [
+      {
+        "id": "b1",
+        "text": "Books, reschedules, and cancels appointments in real time"
+      },
+      {
+        "id": "b2",
+        "text": "Knows how busy the salon is right now and gives callers a real wait time"
+      },
+      {
+        "id": "b3",
+        "text": "Tells callers whether a provider is working today, and whether they are free or with a client"
+      },
+      {
+        "id": "b4",
+        "text": "Answers questions about services, prices, and availability"
+      },
+      {
+        "id": "b5",
+        "text": "Upsells add-ons and premium services on every call"
+      },
+      {
+        "id": "b6",
+        "text": "Recognises returning clients and personalises the experience"
+      },
+      {
+        "id": "b7",
+        "text": "Fills calendar gaps and keeps your schedule fully booked"
+      }
+    ]
+  },
+  "capabilities": {
+    "eyebrow": "Everything Autumn handles",
+    "heading": "Everything a great receptionist does, without the overhead.",
+    "items": [
+      {
+        "id": "c1",
+        "title": "Instant answer, every time",
+        "body": "Autumn picks up within two seconds, rain or shine. No more missed calls while your providers are mid-service."
+      },
+      {
+        "id": "c2",
+        "title": "Real-time booking",
+        "body": "She sees live availability across all staff and books — or reschedules — directly into your Certxa calendar."
+      },
+      {
+        "id": "c3",
+        "title": "Built-in upselling",
+        "body": "Autumn naturally suggests add-ons and upgrades on every call, increasing your average ticket without any training."
+      },
+      {
+        "id": "c4",
+        "title": "Client recognition",
+        "body": "Returning clients are greeted by name. Autumn knows their history and can pull up their last appointment."
+      },
+      {
+        "id": "c5",
+        "title": "Follows your rules",
+        "body": "Walk-ins only, appointments only, no same-day bookings, a walk-in cutoff — Autumn only offers what your salon actually accepts."
+      },
+      {
+        "id": "c6",
+        "title": "Live salon awareness",
+        "body": "While you're open, Autumn sees who is clocked in, who is free, who is with a client and how many people are waiting — and tells callers the real wait."
+      },
+      {
+        "id": "c7",
+        "title": "After-hours answering",
+        "body": "When the salon is closed Autumn says so, then keeps booking, rescheduling and answering questions. She never pretends someone is in the building."
+      },
+      {
+        "id": "c8",
+        "title": "Only real answers",
+        "body": "Hours, prices, services and wait times come straight from your Certxa account. If Autumn doesn't have a fact, she says so instead of guessing."
+      },
+      {
+        "id": "c9",
+        "title": "Spam protection",
+        "body": "Robocalls, telemarketers, and obvious loops are ended in the first few seconds — so your balance is spent on real clients."
+      },
+      {
+        "id": "c10",
+        "title": "Natural conversation",
+        "body": "Autumn sounds warm, professional, and human. Callers routinely can't tell she isn't your front-desk team."
+      },
+      {
+        "id": "c11",
+        "title": "Always up to date",
+        "body": "Change your services, hours, or staff? Autumn syncs automatically — no retraining required."
+      },
+      {
+        "id": "c12",
+        "title": "Zero setup friction",
+        "body": "Autumn reads your Certxa account from day one. You're live in minutes, not days."
+      }
+    ]
+  },
+  "liveAwareness": {
+    "eyebrow": "Live salon awareness",
+    "heading": "Autumn knows what's happening in your salon right now.",
+    "intro": "A caller asks \"Can I come in now?\" A receptionist standing at the front desk would look around before answering. Autumn does the same.",
+    "items": [
+      {
+        "id": "la1",
+        "title": "A real wait time",
+        "body": "\"There's no wait right now\" or \"It's about twenty minutes\" — worked out from who is in a chair, who is waiting and who is free."
+      },
+      {
+        "id": "la2",
+        "title": "Who is working today",
+        "body": "Autumn knows which providers are clocked in. She won't send a caller in for someone who isn't there."
+      },
+      {
+        "id": "la3",
+        "title": "Free, busy, or on a break",
+        "body": "For each provider she can see whether they're free, with a client or on a break, and roughly when they'll be free next."
+      },
+      {
+        "id": "la4",
+        "title": "How busy the salon is",
+        "body": "Clients in service and clients waiting are counted live, so \"we're quiet, come on in\" and \"we're busy this afternoon\" are both true when she says them."
+      },
+      {
+        "id": "la5",
+        "title": "Your walk-in rules",
+        "body": "If you've stopped taking walk-ins, or it's past your walk-in cutoff, Autumn doesn't invite anyone in. She offers an appointment instead."
+      },
+      {
+        "id": "la6",
+        "title": "Open hours only",
+        "body": "Live answers are given while the salon is open. After closing, Autumn tells callers the salon is closed and helps them book for another time."
+      }
+    ]
+  },
+  "setup": {
+    "eyebrow": "Up and running in minutes",
+    "heading": "Up and running in minutes.",
+    "body": "Autumn works with the data already inside your Certxa account. There's nothing to configure from scratch.",
+    "steps": [
+      {
+        "id": "sp1",
+        "number": "1",
+        "title": "Load your account balance",
+        "body": "Head to the Autumn section in your Certxa dashboard and add credit to your account. You choose how much to load."
+      },
+      {
+        "id": "sp2",
+        "number": "2",
+        "title": "Activate Autumn",
+        "body": "Enable Autumn with one click. She reads your services, staff, and calendar automatically — no manual setup."
+      },
+      {
+        "id": "sp3",
+        "number": "3",
+        "title": "Forward your calls",
+        "body": "Point your salon phone to Autumn's number. She starts answering immediately. Your balance covers every minute she's on a call."
+      }
+    ]
+  },
+  "pricing": {
+    "eyebrow": "How pricing works",
+    "heading": "Pay for what Autumn actually uses.",
+    "body": "Autumn is available on every Certxa plan. There's no extra subscription — instead you load funds into your account and Autumn draws from that balance as she handles calls.",
+    "points": [
+      {
+        "id": "pp1",
+        "title": "Load your balance",
+        "body": "Add any amount to your Autumn credit balance directly from your Certxa dashboard. Funds never expire."
+      },
+      {
+        "id": "pp2",
+        "title": "Autumn handles calls",
+        "body": "Every minute Autumn spends on an active call draws from your balance. Nothing is charged when she's idle."
+      },
+      {
+        "id": "pp3",
+        "title": "Auto top-up (optional)",
+        "body": "Set a low-balance threshold and Certxa will top up your account automatically — so Autumn never stops mid-day."
+      }
+    ],
+    "planNote": "Works with every Certxa plan — Starter, Pro, and Enterprise. Simply load credit and enable her — no plan upgrade required."
+  },
+  "faq": {
+    "eyebrow": "FAQ",
+    "heading": "Common questions about Autumn",
+    "items": [
+      {
+        "id": "fq1",
+        "question": "Do I need a separate subscription for Autumn?",
+        "answer": "No. Autumn is available on all Certxa plans — Starter, Pro, and Enterprise. You simply load credit to your account and enable her. There's no additional monthly fee."
+      },
+      {
+        "id": "fq2",
+        "question": "How does the credit balance work?",
+        "answer": "You top up your Autumn credit balance from inside your Certxa dashboard. Autumn draws from that balance for each minute of active call time. You can set a low-balance auto top-up so she never goes offline mid-day."
+      },
+      {
+        "id": "fq3",
+        "question": "Does Autumn know how busy my salon is?",
+        "answer": "Yes. While your salon is open, Autumn sees who is clocked in, who is free, who is with a client and how many people are waiting. She uses that to tell a caller whether there is a wait and roughly how long. She never makes up a wait time: if there isn't enough information, she says so."
+      },
+      {
+        "id": "fq4",
+        "question": "Can a caller ask whether a specific provider is available?",
+        "answer": "Yes. Autumn can say whether that provider is working today, whether they are free or with a client right now, and roughly when they will be free."
+      },
+      {
+        "id": "fq5",
+        "question": "What does Autumn do when the salon is closed?",
+        "answer": "She tells the caller the salon is closed and acts as your after-hours answering service: booking, rescheduling, cancelling and answering questions. She does not give live wait times after hours, and she never implies anyone is at the salon."
+      },
+      {
+        "id": "fq6",
+        "question": "Does Autumn need training before she can take calls?",
+        "answer": "No. From the moment you enable her, Autumn already knows your services, staff members, schedule, business hours, and pricing — pulled directly from your Certxa account. Setup takes minutes."
+      },
+      {
+        "id": "fq7",
+        "question": "What happens if my credit balance runs out?",
+        "answer": "Autumn will stop taking new calls until the balance is topped up. We'll notify you well in advance and the optional auto top-up feature means you'll rarely run dry."
+      },
+      {
+        "id": "fq8",
+        "question": "Can callers tell they're speaking to an AI?",
+        "answer": "Autumn is designed to sound warm, natural, and professional. Many callers don't realise she isn't your front-desk team. If a caller specifically asks whether they're speaking to an AI, Autumn will answer honestly."
+      },
+      {
+        "id": "fq9",
+        "question": "Does Autumn work for multi-location businesses?",
+        "answer": "Yes. Autumn can be enabled independently per location, each with its own credit balance and configuration — ideal for salon groups and franchise owners."
+      }
+    ]
+  },
+  "cta": {
+    "heading": "Your phone is ringing. Is Autumn there?",
+    "subhead": "Start your free 60-day trial and enable Autumn from day one.",
+    "button": "Enable for my salon",
+    "secondary": "View pricing"
+  },
+  "share": {
+    "label": "Know a salon owner who'd love this?",
+    "tweet": "Certxa's AI receptionist Autumn answers every salon call in under 2 seconds — books appointments, handles rescheduling, and knows live wait times. No missed calls, ever:"
+  }
+}

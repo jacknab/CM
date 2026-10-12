@@ -1,0 +1,45 @@
+{
+  "hero": {
+    "eyebrow": "Get in touch",
+    "headline": "We'd love to hear from you.",
+    "subhead": "Whether you're ready to get started, have a question about pricing, or want to see a live demo — our team is here to help."
+  },
+  "info": {
+    "email": "support@certxa.com",
+    "phone": "(888) 747-8924",
+    "hours": "Monday – Friday, 9am – 6pm MT",
+    "responseTime": "We typically respond within a few hours during business hours."
+  },
+  "form": {
+    "heading": "Send us a message",
+    "subheading": "Fill out the form and we'll get back to you as soon as possible.",
+    "successTitle": "Message sent!",
+    "successMessage": "Thanks for reaching out. We'll be in touch shortly.",
+    "topics": [
+      {
+        "id": "t1",
+        "label": "General inquiry"
+      },
+      {
+        "id": "t2",
+        "label": "Pricing & plans"
+      },
+      {
+        "id": "t3",
+        "label": "Request a demo"
+      },
+      {
+        "id": "t4",
+        "label": "Hardware & setup"
+      },
+      {
+        "id": "t5",
+        "label": "Technical support"
+      },
+      {
+        "id": "t6",
+        "label": "Other"
+      }
+    ]
+  }
+}

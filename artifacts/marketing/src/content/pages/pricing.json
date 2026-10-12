@@ -1,0 +1,499 @@
+{
+  "hero": {
+    "eyebrow": "Pricing",
+    "headline": "Simple pricing that scales with you.",
+    "subhead": "No hidden fees, no long-term contracts. Pick the plan that fits your business and upgrade anytime."
+  },
+  "plans": [
+    {
+      "id": "plan-starter",
+      "name": "Starter",
+      "price": "$29",
+      "period": "/ month",
+      "description": "Everything a solo provider or small studio needs to get started.",
+      "featured": false,
+      "cta": "Start free trial",
+      "features": [
+        {
+          "id": "f1",
+          "text": "Online booking page"
+        },
+        {
+          "id": "f2",
+          "text": "Calendar and appointments"
+        },
+        {
+          "id": "f3",
+          "text": "Client profiles and visit history"
+        },
+        {
+          "id": "f4",
+          "text": "Automated text and email reminders"
+        },
+        {
+          "id": "f5",
+          "text": "Front desk POS"
+        },
+        {
+          "id": "f6",
+          "text": "Card, cash, and gift card payments"
+        },
+        {
+          "id": "f7",
+          "text": "Basic sales reports"
+        }
+      ]
+    },
+    {
+      "id": "plan-pro",
+      "name": "Pro",
+      "price": "$79",
+      "period": "/ month",
+      "description": "For growing businesses that need the full toolkit.",
+      "featured": true,
+      "cta": "Start free trial",
+      "features": [
+        {
+          "id": "f1",
+          "text": "Everything in Starter"
+        },
+        {
+          "id": "f2",
+          "text": "Self check-in kiosk"
+        },
+        {
+          "id": "f3",
+          "text": "Customer-facing screen"
+        },
+        {
+          "id": "f4",
+          "text": "Turn rotation"
+        },
+        {
+          "id": "f5",
+          "text": "Staff commissions and payroll"
+        },
+        {
+          "id": "f6",
+          "text": "Loyalty points and rewards"
+        },
+        {
+          "id": "f7",
+          "text": "Review management and Google integration"
+        },
+        {
+          "id": "f8",
+          "text": "Text message campaigns"
+        },
+        {
+          "id": "f9",
+          "text": "Advanced reports"
+        },
+        {
+          "id": "f10",
+          "text": "Priority support"
+        }
+      ]
+    },
+    {
+      "id": "plan-enterprise",
+      "name": "Enterprise",
+      "price": "Custom",
+      "period": "",
+      "description": "Tailored for multi-location chains and franchise groups.",
+      "featured": false,
+      "cta": "Contact us",
+      "features": [
+        {
+          "id": "f1",
+          "text": "Everything in Pro"
+        },
+        {
+          "id": "f2",
+          "text": "Multi-location management"
+        },
+        {
+          "id": "f3",
+          "text": "Autumn AI receptionist"
+        },
+        {
+          "id": "f4",
+          "text": "Business website builder"
+        },
+        {
+          "id": "f5",
+          "text": "Certxa directory listing"
+        },
+        {
+          "id": "f6",
+          "text": "Custom integrations and API access"
+        },
+        {
+          "id": "f7",
+          "text": "Dedicated account manager"
+        },
+        {
+          "id": "f8",
+          "text": "Custom onboarding and training"
+        }
+      ]
+    }
+  ],
+  "comparison": {
+    "headline": "Compare plans",
+    "categories": [
+      {
+        "id": "cat-booking",
+        "name": "Booking",
+        "rows": [
+          {
+            "id": "r1",
+            "feature": "Online booking page",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r2",
+            "feature": "Service-specific booking options",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r3",
+            "feature": "Service add-ons and packages",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r4",
+            "feature": "Automated text and email reminders",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r5",
+            "feature": "Waitlist",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r6",
+            "feature": "Google and Apple Calendar feed",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          }
+        ]
+      },
+      {
+        "id": "cat-pos",
+        "name": "Front desk and POS",
+        "rows": [
+          {
+            "id": "r1",
+            "feature": "Touch-screen POS",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r2",
+            "feature": "Card, cash, and gift card payments",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r3",
+            "feature": "Receipt printing and cash drawer",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r4",
+            "feature": "End-of-day close and report",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r5",
+            "feature": "Multi-station support",
+            "starter": "no",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r6",
+            "feature": "Offline mode",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r7",
+            "feature": "Self check-in kiosk",
+            "starter": "no",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r8",
+            "feature": "Customer-facing screen",
+            "starter": "no",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r9",
+            "feature": "Turn rotation",
+            "starter": "no",
+            "pro": "yes",
+            "enterprise": "yes"
+          }
+        ]
+      },
+      {
+        "id": "cat-clients",
+        "name": "Clients and loyalty",
+        "rows": [
+          {
+            "id": "r1",
+            "feature": "Client profiles and visit history",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r2",
+            "feature": "Loyalty points and rewards",
+            "starter": "no",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r3",
+            "feature": "Gift cards",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r4",
+            "feature": "Text message campaigns",
+            "starter": "no",
+            "pro": "yes",
+            "enterprise": "yes"
+          }
+        ]
+      },
+      {
+        "id": "cat-staff",
+        "name": "Staff and payroll",
+        "rows": [
+          {
+            "id": "r1",
+            "feature": "Commission rates per staff member",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r2",
+            "feature": "Tips tracked separately",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r3",
+            "feature": "Pay periods and earnings statements",
+            "starter": "no",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r4",
+            "feature": "Printed paychecks",
+            "starter": "no",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r5",
+            "feature": "Ticket-level commission breakdown",
+            "starter": "no",
+            "pro": "yes",
+            "enterprise": "yes"
+          }
+        ]
+      },
+      {
+        "id": "cat-reviews",
+        "name": "Reviews and growth",
+        "rows": [
+          {
+            "id": "r1",
+            "feature": "Automatic post-visit review requests",
+            "starter": "no",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r2",
+            "feature": "Google review page integration",
+            "starter": "no",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r3",
+            "feature": "Private feedback for unhappy clients",
+            "starter": "no",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r4",
+            "feature": "Google Business Profile management",
+            "starter": "no",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r5",
+            "feature": "Autumn AI receptionist",
+            "starter": "no",
+            "pro": "no",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r6",
+            "feature": "Business website builder",
+            "starter": "no",
+            "pro": "no",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r7",
+            "feature": "Certxa directory listing",
+            "starter": "no",
+            "pro": "no",
+            "enterprise": "yes"
+          }
+        ]
+      },
+      {
+        "id": "cat-reporting",
+        "name": "Reports",
+        "rows": [
+          {
+            "id": "r1",
+            "feature": "Basic sales reports",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r2",
+            "feature": "Staff and commission reports",
+            "starter": "no",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r3",
+            "feature": "Client and service reports",
+            "starter": "no",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r4",
+            "feature": "Custom reports and export",
+            "starter": "no",
+            "pro": "no",
+            "enterprise": "yes"
+          }
+        ]
+      },
+      {
+        "id": "cat-support",
+        "name": "Support",
+        "rows": [
+          {
+            "id": "r1",
+            "feature": "Email support",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r2",
+            "feature": "Priority support",
+            "starter": "no",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r3",
+            "feature": "Dedicated account manager",
+            "starter": "no",
+            "pro": "no",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r4",
+            "feature": "Custom onboarding and training",
+            "starter": "no",
+            "pro": "no",
+            "enterprise": "yes"
+          }
+        ]
+      }
+    ]
+  },
+  "faq": [
+    {
+      "id": "faq-1",
+      "question": "Is there a free trial?",
+      "answer": "Yes — every plan starts with a 60-day free trial. You can upgrade, downgrade, or cancel at any time."
+    },
+    {
+      "id": "faq-2",
+      "question": "Can I change plans later?",
+      "answer": "Absolutely. You can upgrade or downgrade your plan at any time from your account settings. Changes take effect immediately."
+    },
+    {
+      "id": "faq-3",
+      "question": "Are there any setup fees?",
+      "answer": "None. There are no setup fees, no hidden charges, and no long-term contracts. You only pay the monthly subscription."
+    },
+    {
+      "id": "faq-4",
+      "question": "What payment methods do you accept?",
+      "answer": "We accept all major credit and debit cards. Enterprise customers can also pay by invoice."
+    },
+    {
+      "id": "faq-5",
+      "question": "Do you offer discounts for annual billing?",
+      "answer": "Yes — pay annually and save 20% compared to monthly billing. Contact us to switch to an annual plan."
+    },
+    {
+      "id": "faq-6",
+      "question": "What types of businesses does Certxa support?",
+      "answer": "Certxa is built for nail salons, hair salons, barbershops, spas, massage studios, hair removal studios, and braid and weave salons. The booking flow, kiosk, and POS all adapt to the services your business offers."
+    }
+  ],
+  "cta": {
+    "headline": "Start your free 60-day trial.",
+    "subhead": "Cancel anytime.",
+    "button": "Get started free"
+  }
+}
