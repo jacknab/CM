@@ -4,31 +4,15 @@
 
 ## Product
 
-- [Overview](https://certxa.com/): Platform overview — online booking, POS, staff management, client records, and AI receptionist in one system.
-- [Nail Salon Software](https://certxa.com/nail-salon-software): Core platform built for nail studios and nail technicians.
-- [SalonOS](https://certxa.com/salonos): The full salon operating system — booking, POS, loyalty, check-in, waitlist, and review management.
-- [Online Booking](https://certxa.com/online-booking): Certxa's salon online booking service — 24/7 client self-booking with real-time technician availability and reminders.
-- [Self-Service Check-In Kiosk](https://certxa.com/checkin-kiosk): Tablet-based walk-in check-in that feeds a live front-desk waitlist.
-- [Payments & POS](https://certxa.com/payments): Built-in point of sale.
-- [Payment Processing](https://certxa.com/payment-processing): Stripe-powered card, tap, and contactless payments via the Stripe M2 reader.
-- [Client Management](https://certxa.com/client-management): Client profiles, service history, and notes.
-- [Client Notifications](https://certxa.com/client-notifications): Automated SMS/email appointment reminders and no-show reduction.
-- [Client Reviews](https://certxa.com/client-reviews): Automated Google review requests after completed appointments.
-- [Get More Reviews — Review Monitoring & Engagement](https://certxa.com/get-more-reviews): Real-time Google review monitoring with sentiment-aware AI responses (auto-reply to 4-5 star, draft-for-approval at 3 star, owner-only notification below 3 star) plus Google Business Profile post/photo automation.
-- [Google Business Profile Integration](https://certxa.com/google-business-profile): Sync booking links and manage your Google Business Profile from Certxa.
-- [Revenue Intelligence](https://certxa.com/revenue-intelligence): Booking pattern, retention, and revenue-leakage analytics.
-- [Custom Website Builder](https://certxa.com/custom-website-builder): Branded booking website builder, no code required.
-- [Launchit Templates](https://certxa.com/launchsite): Gallery of salon website templates available through the Custom Website Builder.
+- [Home](https://certxa.com/): Platform overview — online booking, salon POS, self check-in kiosk, waitlist, turn rotation, loyalty, payroll, reviews and an AI receptionist in one system.
+- [Features](https://certxa.com/features): Every feature in detail: booking, front desk POS, check-in kiosk, waitlist and turn rotation, client records, loyalty, staff commissions and payroll, review requests, reports.
+- [Online Booking](https://certxa.com/booking): 24/7 client self-booking with provider selection, reminders and a waitlist. Deposits at booking are still in development.
 - [Autumn AI Receptionist](https://certxa.com/autumn): Automated phone and booking assistant powered by AI. Included in every plan (20 calls a month on Solo, 50 on Professional, 100 on Elite), then $0.50 per call. One-time $15 activation fee for the dedicated phone number, no monthly number fee; included calls start once a paid plan begins.
-- [Data Transfer](https://certxa.com/data-transfer): Free migration from GlossGenius, Vagaro, Square Appointments, Booksy, and Fresha.
-- [Free Salon Business Calculators](https://certxa.com/tools): Break-even-point and no-show-cost calculators for salon owners.
-- [Pricing](https://certxa.com/pricing): Solo plan is free; team plans from $22/month with a free trial.
-
-## Audiences
-
-- [Solo Professionals](https://certxa.com/solo-professionals): Certxa for independent, single-technician studios.
-- [Booth Renters](https://certxa.com/booth-renters): Independent accounts for nail techs renting a chair/booth.
-- [Phần Mềm Quản Lý Tiệm Nail Cho Chủ Tiệm Người Việt](https://certxa.com/vietnamese-salon-software): Certxa page written fully in Vietnamese (not a machine translation of an English page) for Vietnamese-speaking salon owners — covers the founder's story, Vietnamese-language dashboard support, and no-long-term-contract pricing. `lang="vi"`.
+- [Pricing](https://certxa.com/pricing): Solo plan is free; Professional $22/month and Elite $49/month with a 60-day free trial.
+- [Launchit Templates](https://certxa.com/launchsite): Gallery of salon website templates available through the website builder.
+- [Data Transfer](https://certxa.com/data-transfer): Free migration from GlossGenius, Vagaro, Square Appointments and others.
+- [Changelog](https://certxa.com/changelog): Release notes.
+- [Roadmap](https://certxa.com/roadmap): Planned and in-progress features.
 
 ## Comparisons
 
@@ -36,16 +20,15 @@
 - [Certxa vs Vagaro](https://certxa.com/certxa-vs-vagaro): Pricing, fees, and feature comparison.
 - [Certxa vs Fresha](https://certxa.com/certxa-vs-fresha): Pricing, fees, and feature comparison.
 - [Certxa vs GoCheckIn](https://certxa.com/certxa-vs-gocheckin): Pricing, fees, and feature comparison.
-- [Best Free Salon Booking System](https://certxa.com/best-free-salon-booking-system): Which salon booking tools are genuinely free (Setmore, Square Appointments) versus trial-only (Fresha, Vagaro, Booksy), what each free tier caps or omits, and when to move to a paid platform.
 
 ## Company
 
-- [About Certxa](https://certxa.com/about): Our mission and story.
-- [Why Certxa](https://certxa.com/case-studies): The founding story and what early customers get — Certxa is a new company (founded Feb 2026) and does not yet publish customer case studies.
-- [Contact](https://certxa.com/contact): Get in touch with the Certxa team.
-- [Blog](https://certxa.com/blog): Practical articles on running a nail salon — reducing no-shows, choosing software, managing walk-ins, getting Google reviews, and every core Certxa feature explained on its own.
+- [About Certxa](https://certxa.com/about): Our mission, founding story and team.
+- [Contact](https://certxa.com/contact): Email, phone and a contact form. Support is open every day, 10am–9pm ET.
+- [Careers](https://certxa.com/careers): Open roles.
+- [Blog](https://certxa.com/blog): Practical articles on running a nail salon — reducing no-shows, choosing software, pricing your menu.
 - [Privacy Policy](https://certxa.com/privacy): How we handle your data.
-- [Google Data Policy](https://certxa.com/google-data-policy): What Google Business Profile data Certxa accesses, how it's used, and how to revoke access.
+- [Google Data Policy](https://certxa.com/google-data-policy): What Google Business Profile data Certxa accesses and why.
 - [Terms of Service](https://certxa.com/terms): Terms governing use of the platform.
 
 ## Marketplace

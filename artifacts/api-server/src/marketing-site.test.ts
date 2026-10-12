@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyInterimLinks, movedTo } from "./marketing-site";
+import { applyInterimLinks, movedTo, readContactMessage } from "./marketing-site";
 
 describe("marketing site interim links", () => {
   it("points a link at today's page while the new one is not live", () => {
@@ -31,5 +31,23 @@ describe("marketing site moved addresses", () => {
 
   it("never redirects an address the new site serves itself", () => {
     expect(movedTo("/pricing", new Set(["/pricing"]))).toBeNull();
+  });
+});
+
+describe("marketing site contact form", () => {
+  it("accepts a complete message and trims it", () => {
+    expect(readContactMessage({ name: " Ana ", email: "ana@example.com", topic: "Demo", message: " Hi " })).toEqual({
+      name: "Ana",
+      email: "ana@example.com",
+      topic: "Demo",
+      message: "Hi",
+    });
+  });
+
+  it("refuses a message with no name, a bad email or no text", () => {
+    expect(readContactMessage({ email: "a@b.co", message: "x" })).toEqual({ error: "Please enter your name." });
+    expect(readContactMessage({ name: "A", email: "nope", message: "x" })).toHaveProperty("error");
+    expect(readContactMessage({ name: "A", email: "a@b.co", message: "  " })).toHaveProperty("error");
+    expect(readContactMessage(null)).toHaveProperty("error");
   });
 });

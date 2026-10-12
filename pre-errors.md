@@ -6,6 +6,19 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-10-12 — Marketing site move: what is still open
+
+The new site (`artifacts/marketing`) now serves `/`, `/pricing`, `/features`, `/booking`, `/autumn`, `/about`, `/contact`, `/careers`, `/changelog`, `/roadmap`. Still to do, each needing the owner or more work:
+
+1. **Old contact form never sent anything.** `php/contact/default.php:259` (`handleContactForm`) only showed "Message received!" after a timer; every message typed into it was discarded. Not fixed in PHP because `/contact` now comes from the new app, whose form posts to `POST /api/contact-form` (`artifacts/api-server/src/marketing-site.ts`) and emails support@certxa.com. The new contact page has no live chat button; the PHP one did.
+2. **Changelog and Roadmap content is unverified** (Airo-written version history v2.10–v2.14, vote counts, gift cards listed as "planned", an Android app that "mirrors the iOS feature set"). Live at the owner's request; needs real content.
+3. **Pages held on PHP until their facts are checked:** `/products` (hardware prices $799/$399/$149, "Certxa Pay" financing, "free wireless card reader", processing 2.7% + 10¢ where the real rate is 2.7% + $0.05), the four `/compare/*` pages (competitor claims unverified; Certxa prices in `src/content/data/comparisons.json` still say $29/$79; "No credit card required" in `comparison_layout.json`), `/privacy` and `/terms` (legal text), `/blog` (new page is a static list; real posts are in the database).
+4. **Stock photographs** (23 Getty images) are not hosted here; `/airo-assets/images/<slot>` redirects to GoDaddy's CDN. They disappear if the Airo site is cancelled.
+5. **Logo** is a text wordmark stand-in (`src/components/BrandWordmark.tsx`); the exported logo image spells "sirtXa". The home page's Autumn screenshot (`media/pages__autumn__new-screenshot`) also shows the old logo.
+6. **Redirects from old addresses are temporary (302)** (`MOVED` in `marketing-site.ts`); make them 301 once the owner has approved where each lands.
+7. `artifacts/booking/public/llms-full.txt` still holds the text of the old PHP pages.
+---
+
 ## 2026-10-12 — Open items from the GEO audit, and two Autumn fee questions
 
 The four cross-page conflicts found by the audit (Autumn price, deposits, support hours, native apps) were settled by the owner and fixed the same day.

@@ -15,6 +15,8 @@ import express, { type NextFunction, type Request, type Response, type Router } 
 import fs from "fs";
 import path from "path";
 import { pathToFileURL } from "url";
+import rateLimit from "express-rate-limit";
+import { sendEmail } from "./mail";
 
 const SITE_ORIGIN = "https://certxa.com";
 const APEX_HOSTS = new Set(["certxa.com", "www.certxa.com", "localhost", "127.0.0.1"]);
@@ -27,6 +29,7 @@ const DEFAULT_PATHS = [
   "/booking",
   "/autumn",
   "/about",
+  "/contact",
   "/careers",
   "/changelog",
   "/roadmap",
@@ -101,6 +104,33 @@ function resolveSiteDir(): string | null {
   return candidates.find((dir) => fs.existsSync(path.join(dir, "dist", "client", "index.html"))) ?? null;
 }
 
+const SUPPORT_INBOX = "support@certxa.com";
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+export interface ContactMessage {
+  name: string;
+  email: string;
+  topic: string;
+  message: string;
+}
+
+/** Checks a contact form submission; returns the cleaned message or the reason it is refused. */
+export function readContactMessage(body: unknown): ContactMessage | { error: string } {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  const name = text(b.name, 120);
+  const email = text(b.email, 200);
+  const topic = text(b.topic, 120);
+  const message = text(b.message, 5000);
+  if (!name) return { error: "Please enter your name." };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Please enter a valid email address." };
+  if (!message) return { error: "Please enter a message." };
+  return { name, email, topic, message };
+}
+
 /** Where an old address should send the visitor, or null to leave it alone. */
 export function movedTo(pagePath: string, owned: Set<string>): string | null {
   const target = MOVED[pagePath];
@@ -127,6 +157,40 @@ export function applyInterimLinks(html: string, owned: Set<string>): string {
 
 export function createMarketingSite(): Router {
   const router = express.Router();
+
+  // Contact form on the marketing site: emailed to the support inbox.
+  router.post(
+    "/api/contact-form",
+    rateLimit({
+      windowMs: 10 * 60 * 1000,
+      max: 5,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { success: false, error: "Too many messages. Please try again in a few minutes." },
+    }),
+    express.json({ limit: "20kb" }),
+    async (req: Request, res: Response) => {
+      const msg = readContactMessage(req.body);
+      if ("error" in msg) return res.status(400).json({ success: false, error: msg.error });
+      const html =
+        `<p><strong>From:</strong> ${escapeHtml(msg.name)} &lt;${escapeHtml(msg.email)}&gt;</p>` +
+        `<p><strong>Topic:</strong> ${escapeHtml(msg.topic || "Not chosen")}</p>` +
+        `<p style="white-space:pre-wrap">${escapeHtml(msg.message)}</p>`;
+      const text = `From: ${msg.name} <${msg.email}>\nTopic: ${msg.topic || "Not chosen"}\n\n${msg.message}`;
+      try {
+        const sent = await sendEmail(0, SUPPORT_INBOX, `Contact form: ${msg.topic || "message"} — ${msg.name}`, html, text);
+        if (!sent.success) throw new Error(sent.error || "mail provider refused the message");
+        console.log(`[marketing-site] contact form message from ${msg.email} sent to ${SUPPORT_INBOX}`);
+        res.json({ success: true });
+      } catch (err: any) {
+        console.error("[marketing-site] contact form email failed:", err?.message);
+        res.status(502).json({
+          success: false,
+          error: `We could not send your message. Please email ${SUPPORT_INBOX} instead.`,
+        });
+      }
+    },
+  );
   const siteDir = resolveSiteDir();
   if (process.env.MARKETING_SITE === "off" || !siteDir) {
     if (!siteDir) console.warn("[marketing-site] build not found; PHP serves every page");

@@ -52,21 +52,10 @@ export default function ContactPage() {
     setErrorMsg('');
 
     try {
-      // Field mapping: only the message textarea goes in messages_attributes[0].body.
-      // All other fields (dropdowns, radios, checkboxes) must be added to conversation.data as { "Label": value } pairs.
-      const res = await fetch('/api/contact/contact-us', {
+      const res = await fetch('/api/contact-form', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          conversation: {
-            messages_attributes: [{ body: message || 'New contact form submission' }],
-            data: {
-              __gd_contact_form_title: 'Contact Us',
-              'Topic': topic,
-            },
-          },
-          user: { email, name },
-        }),
+        body: JSON.stringify({ name, email, topic, message }),
       });
 
       const json = await res.json();
