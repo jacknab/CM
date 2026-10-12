@@ -144,7 +144,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const techRef = useRef(tech);
   techRef.current = tech;
   // "Ticket #12 assigned to Mia" — shown for five seconds after a saved ticket goes to a free technician.
-  const [startedNotice, setStartedNotice] = useState<Array<{ ticketNumber: number; serviceName: string; staffName: string | null }> | null>(null);
+  const [startedNotice, setStartedNotice] = useState<Array<{ ticketNumber: number; serviceName: string; staffName: string | null; appointmentId: number; clientName?: string; started?: boolean }> | null>(null);
   const [assignedNotice, setAssignedNotice] = useState<{ clientName: string | null; ticketNumber: number | null; staffName: string } | null>(null);
   const [client, setClient] = useState<ClientSummary | null>(null);
   const [checkinId, setCheckinId] = useState<number | null>(null);
@@ -608,11 +608,12 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       if (r.offline) {
         payAfterCreate.current = false;
         const savedService = service?.name ?? "Service";
+        const savedClient = client?.name;
         resetDraft();
         setTab("queue");
         say("Ticket saved on this tablet · it will be sent when the connection is back");
         // The same notice as online: the ticket's number, its service and who it went to.
-        setStartedNotice([{ ticketNumber: r.ticketNumber, serviceName: savedService, staffName: r.staffName }]);
+        setStartedNotice([{ ticketNumber: r.ticketNumber, serviceName: savedService, staffName: r.staffName, appointmentId: r.appointmentId, clientName: savedClient }]);
         return;
       }
       const shouldPay = payAfterCreate.current;
@@ -625,9 +626,10 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       if (shouldPay) resetDraft();
       // Show who each service went to for five seconds before the keypad returns.
       else {
-        const saved = r.tickets ?? [{ ticketNumber: r.ticketNumber, serviceName: service?.name ?? "Service", staffName: r.staffName }];
+        const saved = r.tickets ?? [{ ticketNumber: r.ticketNumber, serviceName: service?.name ?? "Service", staffName: r.staffName, appointmentId: r.appointmentId }];
+        const savedClient = client?.name;
         resetDraft();
-        setStartedNotice(saved.map((t) => ({ ticketNumber: t.ticketNumber, serviceName: t.serviceName, staffName: t.staffName })));
+        setStartedNotice(saved.map((t) => ({ ticketNumber: t.ticketNumber, serviceName: t.serviceName, staffName: t.staffName, appointmentId: t.appointmentId, clientName: savedClient })));
       }
     },
     onError: (err: any) => {
@@ -1270,6 +1272,20 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
                 <span style={{ fontWeight: 500, color: t.staffName ? "#7dd3fc" : "#cbd5e1" }}>
                   {t.staffName ? `Assigned to ${t.staffName}` : "Waiting for the next free technician"}
                 </span>
+                {t.staffName && (
+                  <>
+                    <br />
+                    {/* Starting from here saves a trip to the Queue. Updating the notice also restarts its five seconds. */}
+                    <button type="button" disabled={t.started} data-testid="nail-saved-start"
+                      onClick={() => {
+                        act.mutate(() => startTicket(t.appointmentId, t.clientName));
+                        setStartedNotice((cur) => cur && cur.map((x, j) => (j === i ? { ...x, started: true } : x)));
+                      }}
+                      style={{ marginTop: 12, fontSize: 18, fontWeight: 700, padding: "12px 32px", borderRadius: 12, border: "none", background: t.started ? "#353a43" : "#0d9b6e", color: "#fff" }}>
+                      {t.started ? "Started" : "Start Service"}
+                    </button>
+                  </>
+                )}
               </p>
             ))}
           </div>
