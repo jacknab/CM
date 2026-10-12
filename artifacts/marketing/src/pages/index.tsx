@@ -1,4 +1,5 @@
 import { Helmet } from '@dr.pogodin/react-helmet';
+import AutumnCallIllustration from '@/components/AutumnCallIllustration';
 import { Link } from 'react-router';
 import { motion } from 'motion/react';
 import { ArrowRight } from 'lucide-react';
@@ -371,21 +372,12 @@ export default function HomePage() {
                 </motion.div>
               </div>
 
-              {/* New screenshot */}
+              {/* Animated call illustration */}
               <motion.div
                 variants={fadeUp}
                 className="flex justify-center lg:justify-end"
               >
-                <div className="w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl ring-1 ring-primary-foreground/20">
-                  <img
-                    src="/airo-assets/images/pages/autumn/new-screenshot"
-                    alt="Autumn AI receptionist live call activity in the Certxa dashboard"
-                    className="w-full h-auto object-cover"
-                    loading="lazy"
-                    width={700}
-                    height={500}
-                  />
-                </div>
+                <AutumnCallIllustration className="hidden min-[901px]:block w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl ring-1 ring-primary-foreground/20" />
               </motion.div>
             </motion.div>
           </div>
