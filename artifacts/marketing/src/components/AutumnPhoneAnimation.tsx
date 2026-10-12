@@ -285,7 +285,6 @@ export default function AutumnPhoneAnimation() {
         {[
           { label: 'Avg answer time', value: '< 2 s' },
           { label: 'Calls handled', value: '24/7' },
-          { label: 'Booking rate', value: '94%' },
         ].map((s) => (
           <div
             key={s.label}

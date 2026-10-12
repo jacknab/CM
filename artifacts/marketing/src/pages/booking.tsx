@@ -27,7 +27,7 @@ const jsonLd = {
       name: 'Online Booking Software for Salons — Certxa',
       url: PAGE_URL,
       description:
-        'Certxa online booking lets salon clients book 24/7 via Google, Instagram, and Facebook. Automated reminders, deposit collection, waitlist management, and multi-provider scheduling.',
+        'Certxa online booking lets salon clients book 24/7 via Google, Instagram, and Facebook. Automated reminders, waitlist management, and multi-provider scheduling.',
       isPartOf: { '@id': `${SITE}/#website` },
       about: { '@id': `${SITE}/#organization` },
       breadcrumb: {
@@ -55,16 +55,16 @@ export default function BookingPage() {
     <>
       <Helmet>
         <title>Salon Online Booking Software — 24/7 Booking via Google & Instagram | Certxa</title>
-        <meta name="description" content="Let clients book 24/7 via Google, Instagram, and Facebook. Automated reminders cut no-shows by 60%. Deposit collection, waitlist management, and multi-provider scheduling — all in Certxa." />
+        <meta name="description" content="Let clients book 24/7 via Google, Instagram, and Facebook. Automated reminders, waitlist management, and multi-provider scheduling — all in Certxa." />
         <link rel="canonical" href={PAGE_URL} />
         <meta property="og:title" content="Salon Online Booking Software — 24/7 via Google & Instagram | Certxa" />
-        <meta property="og:description" content="Let clients book 24/7 via Google, Instagram, and Facebook. Automated reminders, deposit collection, and waitlist management built into Certxa." />
+        <meta property="og:description" content="Let clients book 24/7 via Google, Instagram, and Facebook. Automated reminders and waitlist management built into Certxa." />
         <meta property="og:image" content={OG_IMAGE} />
         <meta property="og:url" content={PAGE_URL} />
         <meta property="og:type" content="website" />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content="Salon Online Booking Software — 24/7 via Google & Instagram | Certxa" />
-        <meta name="twitter:description" content="Let clients book 24/7 via Google, Instagram, and Facebook. Automated reminders, deposit collection, and waitlist management built into Certxa." />
+        <meta name="twitter:description" content="Let clients book 24/7 via Google, Instagram, and Facebook. Automated reminders and waitlist management built into Certxa." />
         <meta name="twitter:image" content={OG_IMAGE} />
         <script type="application/ld+json">{JSON.stringify(jsonLd).replace(/</g, '\\u003c')}</script>
       </Helmet>

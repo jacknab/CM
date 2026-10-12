@@ -69,17 +69,17 @@ const jsonLd = {
       offers: [
         {
           '@type': 'Offer',
-          name: 'Starter',
-          price: '29',
+          name: 'Solo',
+          price: '0',
           priceCurrency: 'USD',
-          description: 'Online booking, POS, waitlist, and turn rotation for growing beauty businesses.',
+          description: 'Free for one independent professional: online booking, POS, kiosk and 20 Autumn calls a month.',
         },
         {
           '@type': 'Offer',
-          name: 'Pro',
-          price: '79',
+          name: 'Professional',
+          price: '22',
           priceCurrency: 'USD',
-          description: 'Everything in Starter plus Autumn AI receptionist, advanced loyalty, and a free wireless card reader.',
+          description: 'Unlimited staff and calendars, payroll, review requests and 50 Autumn calls a month.',
         },
       ],
     },
@@ -109,7 +109,7 @@ export default function HomePage() {
         <meta property="og:title" content="Certxa — Salon Booking Software & POS System for Beauty Businesses" />
         <meta
           property="og:description"
-          content="Online booking, salon POS, self check-in kiosk, loyalty programs, and AI receptionist — built for nail salons, hair salons, barbershops, spas, and more. Starting at $29/mo."
+          content="Online booking, salon POS, self check-in kiosk, loyalty programs, and AI receptionist — built for nail salons, hair salons, barbershops, spas, and more. Free Solo plan; teams from $22/mo."
         />
         <meta property="og:image" content={OG_IMAGE} />
         <meta property="og:type" content="website" />
@@ -516,7 +516,7 @@ export default function HomePage() {
                       {plan.description}
                     </p>
                     <Link
-                      to={plan.name === 'Enterprise' ? '/contact' : '/contact'}
+                      to={`/auth?mode=register&plan=${plan.id === 'plan-starter' ? 'solo' : plan.id === 'plan-pro' ? 'professional' : 'elite'}`}
                       className={`mt-auto text-center text-sm font-semibold px-5 py-3 rounded-lg transition-all duration-200 hover:opacity-90 ${
                         plan.featured
                           ? 'bg-primary-foreground text-primary'

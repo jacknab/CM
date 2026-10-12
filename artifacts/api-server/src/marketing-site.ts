@@ -20,7 +20,57 @@ const SITE_ORIGIN = "https://certxa.com";
 const APEX_HOSTS = new Set(["certxa.com", "www.certxa.com", "localhost", "127.0.0.1"]);
 
 /** Paths the new app owns. Add a path here (or in the env var) to move it off PHP. */
-const DEFAULT_PATHS = ["/about", "/careers", "/changelog", "/roadmap"];
+const DEFAULT_PATHS = [
+  "/",
+  "/pricing",
+  "/features",
+  "/booking",
+  "/autumn",
+  "/about",
+  "/careers",
+  "/changelog",
+  "/roadmap",
+];
+
+/**
+ * Old PHP addresses that have no page of their own in the new site, and the
+ * new page that covers the subject. A redirect applies only once its target
+ * is being served by the new app; until then the PHP page keeps answering.
+ * Temporary (302) while the move is being reviewed.
+ */
+const MOVED: Record<string, string> = {
+  "/online-booking": "/booking",
+  "/overview": "/features",
+  "/salonos": "/features",
+  "/checkin-kiosk": "/features",
+  "/nail-salon-software": "/features",
+  "/barbershop-software": "/features",
+  "/hair-salon-software": "/features",
+  "/client-management": "/features",
+  "/client-notifications": "/features",
+  "/client-reviews": "/features",
+  "/get-more-reviews": "/features",
+  "/google-business-profile": "/features",
+  "/reserve-with-google": "/features",
+  "/revenue-intelligence": "/features",
+  "/staff-management": "/features",
+  "/payment-processing": "/features",
+  "/custom-website-builder": "/features",
+  "/tools": "/features",
+  "/payments": "/pricing",
+  "/solo-professionals": "/pricing",
+  "/booth-renters": "/pricing",
+  "/best-free-salon-booking-system": "/pricing",
+  "/card-reader-pos": "/products",
+  "/case-studies": "/about",
+  "/vietnamese-salon-software": "/",
+  "/certxa-vs-glossgenius": "/compare/certxa-vs-glossgenius",
+  "/certxa-vs-vagaro": "/compare/certxa-vs-vagaro",
+  "/certxa-vs-fresha": "/compare/certxa-vs-fresha",
+};
+
+/** Hosts a stock-image slot may be redirected to (where the design's photos are hosted). */
+const IMAGE_HOSTS = new Set(["img1.wsimg.com", "isteam.wsimg.com"]);
 
 /**
  * Where a link in the new design should point while its own page has not
@@ -28,8 +78,12 @@ const DEFAULT_PATHS = ["/about", "/careers", "/changelog", "/roadmap"];
  */
 const INTERIM_LINKS: Record<string, string> = {
   "/booking": "/online-booking",
-  "/products": "/card-reader-pos",
+  "/products": "/features",
   "/features": "/nail-salon-software",
+  "/compare/certxa-vs-glossgenius": "/certxa-vs-glossgenius",
+  "/compare/certxa-vs-vagaro": "/certxa-vs-vagaro",
+  "/compare/certxa-vs-fresha": "/certxa-vs-fresha",
+  "/compare/certxa-vs-square": "/pricing",
 };
 
 type Render = (url: string, siteOrigin?: string) => Promise<{
@@ -45,6 +99,12 @@ function resolveSiteDir(): string | null {
     path.resolve(process.cwd(), "artifacts", "marketing"),
   ];
   return candidates.find((dir) => fs.existsSync(path.join(dir, "dist", "client", "index.html"))) ?? null;
+}
+
+/** Where an old address should send the visitor, or null to leave it alone. */
+export function movedTo(pagePath: string, owned: Set<string>): string | null {
+  const target = MOVED[pagePath];
+  return target && owned.has(target) && !owned.has(pagePath) ? target : null;
 }
 
 export function marketingPaths(): Set<string> {
@@ -79,6 +139,7 @@ export function createMarketingSite(): Router {
 
   let template: string;
   let media: Record<string, { file: string; type: string }> = {};
+  let slots: Record<string, { currentUrl?: string }> = {};
   try {
     template = fs.readFileSync(path.join(clientDir, "index.html"), "utf-8");
     if (!template.includes("<!--app-head-->") || !template.includes("<!--app-html-->")) {
@@ -86,6 +147,8 @@ export function createMarketingSite(): Router {
     }
     const manifestPath = path.join(mediaDir, "manifest.json");
     if (fs.existsSync(manifestPath)) media = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    const slotsPath = path.join(siteDir, "airo-media.json");
+    if (fs.existsSync(slotsPath)) slots = JSON.parse(fs.readFileSync(slotsPath, "utf-8"));
   } catch (err: any) {
     console.error("[marketing-site] disabled:", err.message);
     return router;
@@ -115,15 +178,32 @@ export function createMarketingSite(): Router {
   );
 
   router.get(/^\/airo-assets\/images\/(.+)$/, (req: Request, res: Response, next: NextFunction) => {
-    const entry = media[String(req.params[0]).replace(/\/+$/, "")];
-    if (!entry) return next();
-    res.set("Cache-Control", "public, max-age=86400");
-    res.type(entry.type).sendFile(path.join(mediaDir, entry.file));
+    const slot = String(req.params[0]).replace(/\/+$/, "");
+    const entry = media[slot];
+    if (entry) {
+      res.set("Cache-Control", "public, max-age=86400");
+      return res.type(entry.type).sendFile(path.join(mediaDir, entry.file));
+    }
+    // Stock photographs are not copied here; send the browser to where the
+    // design hosts them, as the original site does.
+    const source = slots[slot]?.currentUrl;
+    try {
+      if (source && IMAGE_HOSTS.has(new URL(source).hostname)) {
+        res.set("Cache-Control", "public, max-age=3600");
+        return res.redirect(302, source);
+      }
+    } catch {
+      /* not an absolute URL */
+    }
+    next();
   });
 
   router.get(/.*/, async (req: Request, res: Response, next: NextFunction) => {
     const pagePath = req.path.replace(/\/+$/, "") || "/";
-    if (!render || !owned.has(pagePath) || !APEX_HOSTS.has(req.hostname)) return next();
+    if (!render || !APEX_HOSTS.has(req.hostname)) return next();
+    const moved = movedTo(pagePath, owned);
+    if (moved) return res.redirect(302, moved);
+    if (!owned.has(pagePath)) return next();
     try {
       const result = await render(pagePath, SITE_ORIGIN);
       if (result.redirect || !result.html) return next();

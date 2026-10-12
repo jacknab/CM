@@ -2,17 +2,17 @@
   "hero": {
     "eyebrow": "Pricing",
     "headline": "Simple pricing that scales with you.",
-    "subhead": "No hidden fees, no long-term contracts. Pick the plan that fits your business and upgrade anytime."
+    "subhead": "Start free on Solo. No hidden fees, no long-term contracts. Upgrade when your team grows."
   },
   "plans": [
     {
       "id": "plan-starter",
-      "name": "Starter",
-      "price": "$29",
+      "name": "Solo",
+      "price": "$0",
       "period": "/ month",
-      "description": "Everything a solo provider or small studio needs to get started.",
+      "description": "Free for one independent professional. No credit card needed.",
       "featured": false,
-      "cta": "Start free trial",
+      "cta": "Get started free",
       "features": [
         {
           "id": "f1",
@@ -20,121 +20,125 @@
         },
         {
           "id": "f2",
-          "text": "Calendar and appointments"
+          "text": "1 calendar, 1 staff member (you)"
         },
         {
           "id": "f3",
-          "text": "Client profiles and visit history"
+          "text": "Up to 500 client profiles"
         },
         {
           "id": "f4",
-          "text": "Automated text and email reminders"
+          "text": "Text and email reminders (200 a month)"
         },
         {
           "id": "f5",
-          "text": "Front desk POS"
+          "text": "Front desk POS and card reader"
         },
         {
           "id": "f6",
-          "text": "Card, cash, and gift card payments"
+          "text": "Self check-in kiosk"
         },
         {
           "id": "f7",
-          "text": "Basic sales reports"
+          "text": "Basic website builder"
+        },
+        {
+          "id": "f8",
+          "text": "Autumn AI receptionist (20 calls a month)"
         }
       ]
     },
     {
       "id": "plan-pro",
-      "name": "Pro",
-      "price": "$79",
+      "name": "Professional",
+      "price": "$22",
       "period": "/ month",
-      "description": "For growing businesses that need the full toolkit.",
+      "description": "Everything, unlimited, for any salon size. $18 a month billed annually.",
       "featured": true,
       "cta": "Start free trial",
       "features": [
         {
           "id": "f1",
-          "text": "Everything in Starter"
+          "text": "Everything in Solo"
         },
         {
           "id": "f2",
-          "text": "Self check-in kiosk"
+          "text": "Unlimited calendars and staff"
         },
         {
           "id": "f3",
-          "text": "Customer-facing screen"
+          "text": "Unlimited text and email reminders"
         },
         {
           "id": "f4",
-          "text": "Turn rotation"
-        },
-        {
-          "id": "f5",
           "text": "Staff commissions and payroll"
         },
         {
+          "id": "f5",
+          "text": "Automated review requests"
+        },
+        {
           "id": "f6",
-          "text": "Loyalty points and rewards"
+          "text": "Client re-engagement campaigns"
         },
         {
           "id": "f7",
-          "text": "Review management and Google integration"
+          "text": "Google Business Profile booking link"
         },
         {
           "id": "f8",
-          "text": "Text message campaigns"
+          "text": "Premium website builder and custom domain"
         },
         {
           "id": "f9",
-          "text": "Advanced reports"
+          "text": "Advanced revenue reports"
         },
         {
           "id": "f10",
+          "text": "Autumn AI receptionist (50 calls a month)"
+        },
+        {
+          "id": "f11",
           "text": "Priority support"
         }
       ]
     },
     {
       "id": "plan-enterprise",
-      "name": "Enterprise",
-      "price": "Custom",
-      "period": "",
-      "description": "Tailored for multi-location chains and franchise groups.",
+      "name": "Elite",
+      "price": "$49",
+      "period": "/ month",
+      "description": "For multi-location businesses and salon groups. $39 a month billed annually.",
       "featured": false,
-      "cta": "Contact us",
+      "cta": "Start free trial",
       "features": [
         {
           "id": "f1",
-          "text": "Everything in Pro"
+          "text": "Everything in Professional"
         },
         {
           "id": "f2",
-          "text": "Multi-location management"
+          "text": "Up to 5 locations included"
         },
         {
           "id": "f3",
-          "text": "Autumn AI receptionist"
+          "text": "Multi-location dashboard and reporting"
         },
         {
           "id": "f4",
-          "text": "Business website builder"
+          "text": "API access for integrations"
         },
         {
           "id": "f5",
-          "text": "Certxa directory listing"
+          "text": "Autumn AI receptionist (100 calls a month)"
         },
         {
           "id": "f6",
-          "text": "Custom integrations and API access"
+          "text": "Phone support and account manager"
         },
         {
           "id": "f7",
-          "text": "Dedicated account manager"
-        },
-        {
-          "id": "f8",
-          "text": "Custom onboarding and training"
+          "text": "Onboarding session"
         }
       ]
     }
@@ -155,38 +159,45 @@
           },
           {
             "id": "r2",
-            "feature": "Service-specific booking options",
-            "starter": "yes",
-            "pro": "yes",
-            "enterprise": "yes"
+            "feature": "Calendars",
+            "starter": "1",
+            "pro": "Unlimited",
+            "enterprise": "Unlimited"
           },
           {
             "id": "r3",
-            "feature": "Service add-ons and packages",
-            "starter": "yes",
-            "pro": "yes",
-            "enterprise": "yes"
+            "feature": "Staff members",
+            "starter": "1",
+            "pro": "Unlimited",
+            "enterprise": "Unlimited"
           },
           {
             "id": "r4",
-            "feature": "Automated text and email reminders",
-            "starter": "yes",
+            "feature": "Waitlist",
+            "starter": "no",
             "pro": "yes",
             "enterprise": "yes"
           },
           {
             "id": "r5",
-            "feature": "Waitlist",
-            "starter": "yes",
+            "feature": "Google Business Profile booking link",
+            "starter": "no",
             "pro": "yes",
             "enterprise": "yes"
           },
           {
             "id": "r6",
-            "feature": "Google and Apple Calendar feed",
-            "starter": "yes",
-            "pro": "yes",
+            "feature": "Multi-location booking",
+            "starter": "no",
+            "pro": "no",
             "enterprise": "yes"
+          },
+          {
+            "id": "r7",
+            "feature": "Deposits and prepayments",
+            "starter": "Coming soon",
+            "pro": "Coming soon",
+            "enterprise": "Coming soon"
           }
         ]
       },
@@ -203,77 +214,8 @@
           },
           {
             "id": "r2",
-            "feature": "Card, cash, and gift card payments",
+            "feature": "Card reader support (Stripe M2)",
             "starter": "yes",
-            "pro": "yes",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r3",
-            "feature": "Receipt printing and cash drawer",
-            "starter": "yes",
-            "pro": "yes",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r4",
-            "feature": "End-of-day close and report",
-            "starter": "yes",
-            "pro": "yes",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r5",
-            "feature": "Multi-station support",
-            "starter": "no",
-            "pro": "yes",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r6",
-            "feature": "Offline mode",
-            "starter": "yes",
-            "pro": "yes",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r7",
-            "feature": "Self check-in kiosk",
-            "starter": "no",
-            "pro": "yes",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r8",
-            "feature": "Customer-facing screen",
-            "starter": "no",
-            "pro": "yes",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r9",
-            "feature": "Turn rotation",
-            "starter": "no",
-            "pro": "yes",
-            "enterprise": "yes"
-          }
-        ]
-      },
-      {
-        "id": "cat-clients",
-        "name": "Clients and loyalty",
-        "rows": [
-          {
-            "id": "r1",
-            "feature": "Client profiles and visit history",
-            "starter": "yes",
-            "pro": "yes",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r2",
-            "feature": "Loyalty points and rewards",
-            "starter": "no",
             "pro": "yes",
             "enterprise": "yes"
           },
@@ -286,7 +228,69 @@
           },
           {
             "id": "r4",
-            "feature": "Text message campaigns",
+            "feature": "Tips and add-ons at checkout",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r5",
+            "feature": "Self check-in kiosk",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r6",
+            "feature": "Card processing",
+            "starter": "2.7% + $0.05 in person",
+            "pro": "2.7% + $0.05 in person",
+            "enterprise": "2.7% + $0.05 in person"
+          },
+          {
+            "id": "r7",
+            "feature": "Certxa fee per card transaction",
+            "starter": "$0.60",
+            "pro": "$0.60",
+            "enterprise": "$0.60"
+          }
+        ]
+      },
+      {
+        "id": "cat-clients",
+        "name": "Clients and marketing",
+        "rows": [
+          {
+            "id": "r1",
+            "feature": "Client profiles",
+            "starter": "Up to 500",
+            "pro": "Unlimited",
+            "enterprise": "Unlimited"
+          },
+          {
+            "id": "r2",
+            "feature": "Appointment history and notes",
+            "starter": "yes",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r3",
+            "feature": "Text and email reminders",
+            "starter": "200 a month",
+            "pro": "Unlimited",
+            "enterprise": "Unlimited"
+          },
+          {
+            "id": "r4",
+            "feature": "Client segments and tags",
+            "starter": "no",
+            "pro": "yes",
+            "enterprise": "yes"
+          },
+          {
+            "id": "r5",
+            "feature": "Re-engagement campaigns",
             "starter": "no",
             "pro": "yes",
             "enterprise": "yes"
@@ -299,35 +303,7 @@
         "rows": [
           {
             "id": "r1",
-            "feature": "Commission rates per staff member",
-            "starter": "yes",
-            "pro": "yes",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r2",
-            "feature": "Tips tracked separately",
-            "starter": "yes",
-            "pro": "yes",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r3",
-            "feature": "Pay periods and earnings statements",
-            "starter": "no",
-            "pro": "yes",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r4",
-            "feature": "Printed paychecks",
-            "starter": "no",
-            "pro": "yes",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r5",
-            "feature": "Ticket-level commission breakdown",
+            "feature": "Staff commission tracking and payroll",
             "starter": "no",
             "pro": "yes",
             "enterprise": "yes"
@@ -340,51 +316,30 @@
         "rows": [
           {
             "id": "r1",
-            "feature": "Automatic post-visit review requests",
+            "feature": "Automated review requests",
             "starter": "no",
             "pro": "yes",
             "enterprise": "yes"
           },
           {
             "id": "r2",
-            "feature": "Google review page integration",
-            "starter": "no",
-            "pro": "yes",
-            "enterprise": "yes"
+            "feature": "Autumn AI receptionist",
+            "starter": "20 calls a month",
+            "pro": "50 calls a month",
+            "enterprise": "100 calls a month"
           },
           {
             "id": "r3",
-            "feature": "Private feedback for unhappy clients",
-            "starter": "no",
-            "pro": "yes",
-            "enterprise": "yes"
+            "feature": "Website builder",
+            "starter": "Basic",
+            "pro": "Premium",
+            "enterprise": "Premium"
           },
           {
             "id": "r4",
-            "feature": "Google Business Profile management",
+            "feature": "Custom domain",
             "starter": "no",
             "pro": "yes",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r5",
-            "feature": "Autumn AI receptionist",
-            "starter": "no",
-            "pro": "no",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r6",
-            "feature": "Business website builder",
-            "starter": "no",
-            "pro": "no",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r7",
-            "feature": "Certxa directory listing",
-            "starter": "no",
-            "pro": "no",
             "enterprise": "yes"
           }
         ]
@@ -395,28 +350,14 @@
         "rows": [
           {
             "id": "r1",
-            "feature": "Basic sales reports",
-            "starter": "yes",
-            "pro": "yes",
-            "enterprise": "yes"
+            "feature": "Revenue reports",
+            "starter": "no",
+            "pro": "Advanced",
+            "enterprise": "Advanced + export"
           },
           {
             "id": "r2",
-            "feature": "Staff and commission reports",
-            "starter": "no",
-            "pro": "yes",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r3",
-            "feature": "Client and service reports",
-            "starter": "no",
-            "pro": "yes",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r4",
-            "feature": "Custom reports and export",
+            "feature": "Multi-location dashboard",
             "starter": "no",
             "pro": "no",
             "enterprise": "yes"
@@ -429,28 +370,14 @@
         "rows": [
           {
             "id": "r1",
-            "feature": "Email support",
-            "starter": "yes",
-            "pro": "yes",
-            "enterprise": "yes"
+            "feature": "Support",
+            "starter": "Email and chat",
+            "pro": "Priority chat",
+            "enterprise": "Phone + account manager"
           },
           {
             "id": "r2",
-            "feature": "Priority support",
-            "starter": "no",
-            "pro": "yes",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r3",
-            "feature": "Dedicated account manager",
-            "starter": "no",
-            "pro": "no",
-            "enterprise": "yes"
-          },
-          {
-            "id": "r4",
-            "feature": "Custom onboarding and training",
+            "feature": "Onboarding session",
             "starter": "no",
             "pro": "no",
             "enterprise": "yes"
@@ -462,38 +389,38 @@
   "faq": [
     {
       "id": "faq-1",
-      "question": "Is there a free trial?",
-      "answer": "Yes — every plan starts with a 60-day free trial. You can upgrade, downgrade, or cancel at any time."
+      "question": "How much does Certxa cost?",
+      "answer": "The Solo plan, for one independent professional, is free with no credit card needed. Professional is $22 a month and Elite is $49 a month, or $18 and $39 a month when billed annually."
     },
     {
       "id": "faq-2",
-      "question": "Can I change plans later?",
-      "answer": "Absolutely. You can upgrade or downgrade your plan at any time from your account settings. Changes take effect immediately."
+      "question": "Is there a free trial?",
+      "answer": "Yes. Professional and Elite start with a 60-day free trial. A credit card is required to start a paid plan, but you are not charged until the trial ends. Solo is free and needs no trial."
     },
     {
       "id": "faq-3",
-      "question": "Are there any setup fees?",
-      "answer": "None. There are no setup fees, no hidden charges, and no long-term contracts. You only pay the monthly subscription."
+      "question": "Can I change plans later?",
+      "answer": "Yes. You can upgrade, downgrade, or cancel at any time. There are no long-term contracts."
     },
     {
       "id": "faq-4",
-      "question": "What payment methods do you accept?",
-      "answer": "We accept all major credit and debit cards. Enterprise customers can also pay by invoice."
+      "question": "What does card processing cost?",
+      "answer": "Payments run through Stripe. In-person card payments are 2.7% + $0.05 and online payments are 2.9% + $0.30, which is Stripe's rate, plus a $0.60 Certxa fee per card transaction."
     },
     {
       "id": "faq-5",
-      "question": "Do you offer discounts for annual billing?",
-      "answer": "Yes — pay annually and save 20% compared to monthly billing. Contact us to switch to an annual plan."
+      "question": "Is the Autumn AI receptionist included?",
+      "answer": "Yes. Every plan includes Autumn: 20 calls a month on Solo, 50 on Professional and 100 on Elite. Additional calls are $0.50 each. There is a one-time $15 activation fee for your dedicated phone number, and included calls start once your paid plan begins."
     },
     {
       "id": "faq-6",
       "question": "What types of businesses does Certxa support?",
-      "answer": "Certxa is built for nail salons, hair salons, barbershops, spas, massage studios, hair removal studios, and braid and weave salons. The booking flow, kiosk, and POS all adapt to the services your business offers."
+      "answer": "Certxa is built for nail salons, hair salons, barbershops, spas, massage studios, hair removal studios, and braid and weave salons."
     }
   ],
   "cta": {
-    "headline": "Start your free 60-day trial.",
-    "subhead": "Cancel anytime.",
+    "headline": "Start free on Solo.",
+    "subhead": "Or try Professional or Elite free for 60 days. Cancel anytime.",
     "button": "Get started free"
   }
 }

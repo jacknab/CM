@@ -25,10 +25,10 @@ const jsonLd = {
     {
       '@type': 'WebPage',
       '@id': `${PAGE_URL}#webpage`,
-      name: 'Salon Software Pricing — Certxa | From $29/mo',
+      name: 'Salon Software Pricing — Certxa | Free Solo Plan, Teams From $22/mo',
       url: PAGE_URL,
       description:
-        'Simple, transparent pricing for Certxa salon booking software. Starter at $29/mo, Pro at $79/mo, and Enterprise plans. No setup fees, no commissions, no hidden charges.',
+        'Simple, transparent pricing for Certxa salon software. Solo is free, Professional is $22/mo and Elite is $49/mo. No commissions, no long-term contracts.',
       isPartOf: { '@id': `${SITE}/#website` },
       about: { '@id': `${SITE}/#organization` },
       breadcrumb: {
@@ -42,55 +42,11 @@ const jsonLd = {
     {
       '@type': 'FAQPage',
       '@id': `${PAGE_URL}#faq`,
-      mainEntity: [
-        {
-          '@type': 'Question',
-          name: 'Is there a free trial?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'Yes. Every Certxa plan includes a 60-day free trial. You can upgrade, downgrade, or cancel at any time.',
-          },
-        },
-        {
-          '@type': 'Question',
-          name: 'Can I cancel anytime?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'Yes. There are no long-term contracts. You can cancel your Certxa subscription at any time from your account settings.',
-          },
-        },
-        {
-          '@type': 'Question',
-          name: 'What payment processing rates does Certxa charge?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'Certxa Payments is powered by Stripe Connect. The standard rate is 2.7% + 10¢ per dip and tap transaction. Keyed-in transactions are 3.5% + 15¢. There is no monthly payment processing fee.',
-          },
-        },
-        {
-          '@type': 'Question',
-          name: 'What types of businesses does Certxa support?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'Certxa is built for nail salons, hair salons, barbershops, spas, massage studios, hair removal studios, and braid and weave salons. Features like turn rotation, service menus, and self check-in kiosks are designed around how these businesses operate.',
-          },
-        },
-        {
-          '@type': 'Question',
-          name: 'What is included in the Pro plan?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'The Pro plan at $79/month includes everything in Starter plus the Autumn AI receptionist, advanced loyalty programs, priority support, and a free wireless card reader.',          },
-        },
-        {
-          '@type': 'Question',
-          name: 'Is there a setup fee?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'No. There are no setup fees, onboarding fees, or hidden charges. You pay only the monthly subscription and standard payment processing rates.',
-          },
-        },
-      ],
+      mainEntity: pricing.faq.map((item) => ({
+        '@type': 'Question',
+        name: item.question,
+        acceptedAnswer: { '@type': 'Answer', text: item.answer },
+      })),
     },
   ],
 };
@@ -99,25 +55,25 @@ export default function PricingPage() {
   return (
     <>
       <Helmet>
-        <title>Salon Software Pricing — Certxa | From $29/mo, No Commissions</title>
+        <title>Salon Software Pricing — Certxa | Free Solo Plan, Teams From $22/mo</title>
         <meta
           name="description"
-          content="Certxa salon booking software starts at $29/mo. Flat-rate pricing with no commissions, no setup fees, and no hidden charges. Starter, Pro, and Enterprise plans — 60-day free trial included."
+          content="Certxa's Solo plan is free. Professional is $22/mo and Elite is $49/mo, each with a 60-day free trial. No commissions and no long-term contracts."
         />
         <link rel="canonical" href={PAGE_URL} />
-        <meta property="og:title" content="Salon Software Pricing — Certxa | From $29/mo, No Commissions" />
+        <meta property="og:title" content="Salon Software Pricing — Certxa | Free Solo Plan, Teams From $22/mo" />
         <meta
           property="og:description"
-          content="Flat-rate salon software pricing starting at $29/mo. No commissions, no setup fees. 60-day free trial."
+          content="Free Solo plan. Team plans from $22/mo with a 60-day free trial. No commissions, no long-term contracts."
         />
         <meta property="og:image" content={OG_IMAGE} />
         <meta property="og:url" content={PAGE_URL} />
         <meta property="og:type" content="website" />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Salon Software Pricing — Certxa | From $29/mo, No Commissions" />
+        <meta name="twitter:title" content="Salon Software Pricing — Certxa | Free Solo Plan, Teams From $22/mo" />
         <meta
           name="twitter:description"
-          content="Flat-rate salon software pricing starting at $29/mo. No commissions, no setup fees. 60-day free trial."
+          content="Free Solo plan. Team plans from $22/mo with a 60-day free trial. No commissions, no long-term contracts."
         />
         <meta name="twitter:image" content={OG_IMAGE} />
         <script type="application/ld+json">
@@ -219,7 +175,7 @@ export default function PricingPage() {
 
                   {/* CTA */}
                   <Link
-                    to={plan.name === 'Enterprise' ? '/contact' : '/contact'}
+                    to={`/auth?mode=register&plan=${plan.id === 'plan-starter' ? 'solo' : plan.id === 'plan-pro' ? 'professional' : 'elite'}`}
                     className={`text-center text-sm font-semibold px-5 py-3 rounded-lg transition-all duration-200 hover:opacity-90 ${
                       plan.featured
                         ? 'bg-primary-foreground text-primary'
@@ -470,7 +426,7 @@ export default function PricingPage() {
               <motion.div variants={fadeUp}>
                 <ShareBar
                   url={PAGE_URL}
-                  title="Certxa salon software — flat-rate pricing from $29/mo, no commissions"
+                  title="Certxa salon software — free Solo plan, team plans from $22/mo, no commissions"
                   label="Share pricing"
                 />
               </motion.div>

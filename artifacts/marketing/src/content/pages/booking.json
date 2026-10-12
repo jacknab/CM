@@ -5,7 +5,7 @@
     "subhead": "Certxa's online booking system works around the clock — so you're filling your calendar even when you're with a client, asleep, or off the floor.",
     "ctaPrimary": "Start free trial",
     "ctaSecondary": "See all features",
-    "socialProof": "60-day free trial · Cancel anytime"
+    "socialProof": "Free Solo plan · 60-day trial on team plans"
   },
   "howItWorks": {
     "eyebrow": "How it works",
@@ -43,7 +43,7 @@
       {
         "id": "f2",
         "title": "Automated reminders",
-        "body": "SMS and email reminders go out automatically before each appointment, cutting no-shows by up to 60%."
+        "body": "SMS and email reminders go out automatically before each appointment, so fewer clients forget their appointment."
       },
       {
         "id": "f3",
@@ -54,11 +54,6 @@
         "id": "f4",
         "title": "Multi-provider scheduling",
         "body": "Clients choose their preferred provider. Each staff member gets their own calendar and availability settings."
-      },
-      {
-        "id": "f5",
-        "title": "Deposit collection",
-        "body": "Require a deposit at booking to protect your time. Deposits are processed securely via Stripe."
       },
       {
         "id": "f6",
@@ -110,7 +105,7 @@
       {
         "id": "q2",
         "question": "Can I require a deposit or card on file?",
-        "answer": "Yes. You can require a deposit at booking or save a card on file to charge for no-shows. Payments are processed securely via Stripe."
+        "answer": "Not yet. Deposits and prepayments at booking are still in development. Today, Certxa protects your time with automated text and email reminders before every appointment."
       },
       {
         "id": "q3",

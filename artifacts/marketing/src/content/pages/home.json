@@ -5,7 +5,7 @@
     "subhead": "Certxa brings online booking, a salon POS, client management, waitlist, staff payroll, and review tools into one platform — built for nail salons, hair salons, barbershops, spas, massage studios, hair removal studios, and braid and weave salons.",
     "ctaPrimary": "Start free trial",
     "ctaSecondary": "See how it works",
-    "socialProof": "60-day free trial · Cancel anytime"
+    "socialProof": "Free Solo plan · 60-day trial on team plans"
   },
   "directoryBadges": {
     "label": "As seen on",
@@ -84,7 +84,7 @@
       "id": "feat-7",
       "tag": "Autumn AI receptionist",
       "title": "Your receptionist, available 24/7.",
-      "description": "Most salons miss 30–40% of their calls. Autumn answers every one — in under 2 seconds, around the clock. She books new appointments, handles rescheduling and cancellations, answers questions about services and pricing, and upsells add-ons. While your salon is open she sees your live board, so callers get a real wait time, not a guess. After hours she keeps booking without implying anyone is in the building.",
+      "description": "Autumn answers every call — in under 2 seconds, around the clock. She books new appointments, handles rescheduling and cancellations, answers questions about services and pricing, and upsells add-ons. While your salon is open she sees your live board, so callers get a real wait time, not a guess. After hours she keeps booking without implying anyone is in the building.",
       "benefits": [
         {
           "id": "b1",
@@ -120,36 +120,36 @@
   "pricing": [
     {
       "id": "plan-starter",
-      "name": "Starter",
-      "price": "$29",
+      "name": "Solo",
+      "price": "$0",
       "period": "/ mo",
-      "description": "Online booking, POS, waitlist, and turn rotation for growing beauty businesses.",
-      "cta": "Start free trial",
+      "description": "Free for one independent professional: online booking, POS, kiosk and 20 Autumn calls a month.",
+      "cta": "Get started free",
       "featured": false
     },
     {
       "id": "plan-pro",
-      "name": "Pro",
-      "price": "$79",
+      "name": "Professional",
+      "price": "$22",
       "period": "/ mo",
-      "description": "Everything in Starter plus Autumn AI receptionist, advanced loyalty, and a free wireless card reader.",
+      "description": "Unlimited staff and calendars, payroll, review requests and 50 Autumn calls a month.",
       "cta": "Start free trial",
       "featured": true
     },
     {
       "id": "plan-enterprise",
-      "name": "Enterprise",
-      "price": "Custom",
-      "period": "",
-      "description": "Multi-location management, dedicated onboarding, and a custom contract.",
-      "cta": "Contact us",
+      "name": "Elite",
+      "price": "$49",
+      "period": "/ mo",
+      "description": "Up to 5 locations, multi-location reporting, API access and 100 Autumn calls a month.",
+      "cta": "Start free trial",
       "featured": false
     }
   ],
   "cta": {
     "headline": "Your salon, running itself.",
-    "subhead": "Join hundreds of salons already using Certxa to fill their books, reduce no-shows, and grow revenue — without the admin.",
+    "subhead": "Use Certxa to fill your books, reduce no-shows, and grow revenue — without the admin.",
     "button": "Start your free trial",
-    "note": "60-day free trial · Cancel anytime"
+    "note": "Free Solo plan · 60-day trial on team plans · Cancel anytime"
   }
 }
