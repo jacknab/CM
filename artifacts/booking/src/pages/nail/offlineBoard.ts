@@ -48,13 +48,21 @@ export function overlayBoard(board: NailBoard | null | undefined, records: Local
         ...(p.staff ? { staff: p.staff } : {}), offline: true };
     });
   const serverTicketIds = new Set(base.tickets.map((t) => t.id));
-  const tickets = [...serverTickets, ...localTickets.filter((t) => !(t.realId && serverTicketIds.has(t.realId))).map(ticketFromRecord)];
+  // Once the server has a ticket, the server's board says whether it is still open. A ticket the server
+  // confirmed is drawn from this device's copy only while the board on hand is older than that
+  // confirmation (it has not caught up yet). After that, absent from the board means paid or cancelled —
+  // drawing it from the device again is what left paid tickets sitting in the queue.
+  const boardAt = base.now ? Date.parse(base.now) : NaN;
+  const settledByServer = (r: { realId?: number | null; syncedAt?: string }) =>
+    r.realId != null && Number.isFinite(boardAt) && (!r.syncedAt || boardAt >= Date.parse(r.syncedAt));
+  const tickets = [...serverTickets,
+    ...localTickets.filter((t) => !(t.realId && serverTicketIds.has(t.realId)) && !settledByServer(t)).map(ticketFromRecord)];
 
   // A waiting entry already turned into a ticket on this device is no longer waiting.
   const ticketed = new Set(localTickets.filter((t) => !t.realId).map((t) => t.walkinId).filter((id): id is number => id != null));
   const serverMarkerIds = new Set(base.markers.map((m) => m.id));
   const waiting: BoardMarker[] = walkins
-    .filter((w) => w.status === "waiting" && !(w.synced && (w.realId == null || serverMarkerIds.has(w.realId))))
+    .filter((w) => w.status === "waiting" && !(w.synced && (w.realId == null || serverMarkerIds.has(w.realId))) && !(w.synced && settledByServer(w)))
     .map((w) => ({ id: w.realId ?? w.id, ticketNumber: w.ticketNumber ?? null, clientId: w.clientId, clientName: w.clientName, phone: w.phone, createdAt: w.createdAt, offline: !w.synced }));
   return { ...base, tickets, markers: [...base.markers.filter((m) => !ticketed.has(m.id)), ...waiting] };
 }

@@ -27,6 +27,8 @@ export interface WalkinRecord {
   status: "waiting" | "ticketed"; realId?: number | null; synced?: boolean; createdAt: string;
   /** The number given on this device; the server keeps it when it is still free. */
   ticketNumber?: number | null;
+  /** When the server confirmed it. From then on the server's board decides whether it is still waiting. */
+  syncedAt?: string;
 }
 export interface TicketLine { id: number; name: string; price: number; duration: number }
 export interface TicketRecord {
@@ -42,6 +44,8 @@ export interface TicketRecord {
   startedAt: string | null;
   total: number; duration: number;
   realId?: number; ticketNumber?: number | null; createdAt: string;
+  /** When the server confirmed it. From then on the server's board decides whether it is still open. */
+  syncedAt?: string;
   /** The technician was picked on this device from the last known turn line, not by the server. */
   assignedOffline?: boolean;
   /** Cash taken for it on this device (see `recordCash`). `synced` only once the server has confirmed the sale. */
@@ -502,7 +506,7 @@ export class NailOffline {
           if (!clientId) continue;
           reply = await transport.send("POST", "/api/nail/checkin", { clientId, ...(rec.ticketNumber ? { ticketNumber: rec.ticketNumber } : {}) }, op.idempotencyKey);
           // "already" / "appointment": the server has them checked in another way — just as good.
-          if (reply.status < 300) patch = { realId: reply.body?.checkin?.id ?? null, synced: true,
+          if (reply.status < 300) patch = { realId: reply.body?.checkin?.id ?? null, synced: true, syncedAt: this.now().toISOString(),
             ticketNumber: reply.body?.checkin?.ticketNumber ?? rec.ticketNumber ?? null } as Partial<WalkinRecord>;
         } else if (op.type === "ticket.create" && rec.kind === "ticket") {
           const clientId = await realOf(rec.clientId);
@@ -527,7 +531,7 @@ export class NailOffline {
           if (reply.status === 409 && checkinId != null && /check-in was already used/i.test(String(reply.body?.message ?? ""))) {
             reply = await transport.send("POST", "/api/nail/tickets", body(null), op.idempotencyKey);
           }
-          if (reply.status < 300) patch = { realId: Number(reply.body.appointmentId), ticketNumber: reply.body.ticketNumber ?? null,
+          if (reply.status < 300) patch = { realId: Number(reply.body.appointmentId), syncedAt: this.now().toISOString(), ticketNumber: reply.body.ticketNumber ?? null,
             staff: reply.body.staffId ? { id: reply.body.staffId, name: reply.body.staffName ?? rec.staff?.name ?? "", color: rec.staff?.color ?? null } : null } as Partial<TicketRecord>;
         } else if (rec.kind === "ticket" || rec.kind === "patch") {
           // Everything else acts on a ticket the server must already have: one made here waits for its own create.

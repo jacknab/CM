@@ -57,4 +57,29 @@ describe("overlayBoard", () => {
     // A ticket made AND paid on this device is not on the floor either.
     expect(overlayBoard(null, [ticket({ paid: { at: "x", totalPaid: 35, cash: 35, tip: 0, request: {} } })]).tickets).toHaveLength(0);
   });
+
+  // Reported from a salon tablet: tickets made on the tablet stayed in the Queue after being paid in full.
+  it("drops a ticket the server confirmed once the server's board no longer lists it (paid or cancelled)", () => {
+    const paidElsewhere = ticket({ id: -1, realId: 50, syncedAt: "2026-10-12T10:00:00.000Z" });
+    const board: NailBoard = { ...EMPTY_BOARD, now: "2026-10-12T10:05:00.000Z" };
+    expect(overlayBoard(board, [paidElsewhere]).tickets).toHaveLength(0);
+  });
+
+  it("still shows a just-confirmed ticket while the board on hand is older than the confirmation", () => {
+    const justSent = ticket({ id: -1, realId: 50, syncedAt: "2026-10-12T10:00:00.000Z" });
+    const staleBoard: NailBoard = { ...EMPTY_BOARD, now: "2026-10-12T09:59:00.000Z" };
+    expect(overlayBoard(staleBoard, [justSent]).tickets).toHaveLength(1);
+  });
+
+  it("still shows a ticket the server has never been told about", () => {
+    const board: NailBoard = { ...EMPTY_BOARD, now: "2026-10-12T10:05:00.000Z" };
+    expect(overlayBoard(board, [ticket({ id: -1 })]).tickets).toHaveLength(1);
+  });
+
+  it("drops a confirmed check-in once the server's board no longer lists it (it became a ticket)", () => {
+    const w: WalkinRecord = { kind: "walkin", id: -2, storeId: 1, clientId: 9, clientName: "Bea", phone: null, status: "waiting",
+      realId: 70, synced: true, syncedAt: "2026-10-12T10:00:00.000Z", createdAt: "2026-10-12T09:50:00.000Z" };
+    expect(overlayBoard({ ...EMPTY_BOARD, now: "2026-10-12T10:05:00.000Z" }, [w]).markers).toHaveLength(0);
+    expect(overlayBoard({ ...EMPTY_BOARD, now: "2026-10-12T09:59:00.000Z" }, [w]).markers).toHaveLength(1);
+  });
 });
