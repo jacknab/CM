@@ -5,6 +5,7 @@ import AiroErrorBoundary from '../export-plugins/AiroErrorBoundary';
 import { AiroRouterProvider } from '../export-plugins/AiroRouterProvider';
 import { createAiroBrowserRouter } from '../export-plugins/router-contract';
 import RootLayout from './layouts/RootLayout';
+import { LiveChatLauncher } from './components/LiveChat';
 import Spinner from './components/Spinner';
 import { routes } from './routes';
 
@@ -65,6 +66,7 @@ export default function App() {
   return (
     <>
       <AiroRouterProvider router={router} />
+      <LiveChatLauncher />
     </>
   );
 }

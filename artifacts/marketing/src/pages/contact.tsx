@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { LiveChatButton } from '@/components/LiveChat';
 import { Helmet } from '@dr.pogodin/react-helmet';
 import { motion } from 'motion/react';
 import { Mail, Phone, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
@@ -189,6 +190,9 @@ export default function ContactPage() {
                       <p className="text-xs text-muted-foreground mt-1">{contact.info.responseTime}</p>
                     </div>
                   </motion.div>
+
+                  {/* Live chat: present only while chat is staffed */}
+                  <LiveChatButton className="self-start" />
                 </div>
 
                 {/* Decorative × */}
