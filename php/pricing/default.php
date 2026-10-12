@@ -679,7 +679,7 @@ require 'includes/nav.php';
           'price'  => 'Included',
           'period' => '',
           'name'   => 'Autumn AI Receptionist',
-          'desc'   => '24/7 AI phone receptionist that books, reschedules, and answers client calls — even when you\'re mid-appointment. Included in every plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite. Additional calls are $0.50 each. There is a one-time $15 activation fee and $2/month for your dedicated phone number. Included calls start once your paid plan begins.',
+          'desc'   => '24/7 AI phone receptionist that books, reschedules, and answers client calls — even when you\'re mid-appointment. Included in every plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite. Additional calls are $0.50 each. There is a one-time $15 activation fee for your dedicated phone number. Included calls start once your paid plan begins.',
           'tag'    => null,
         ],
         [

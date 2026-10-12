@@ -143,8 +143,6 @@ function IntroStep({ onContinue }: { onContinue: () => void }) {
     pricing:    pick({ en: "Pricing",        vi: "Bảng giá",       es: "Precios",          fr: "Tarifs" }),
     activationFee:    pick({ en: "One-Time Activation Fee",    vi: "Phí kích hoạt một lần",  es: "Tarifa de activación única",      fr: "Frais d'activation uniques" }),
     activationDesc:   pick({ en: "Covers setup & activation of your dedicated phone number, plus provisioning of the Autumn system.", vi: "Bao gồm cài đặt & kích hoạt số điện thoại và cấp phép hệ thống Autumn.", es: "Cubre la configuración y activación de tu número y el aprovisionamiento del sistema Autumn.", fr: "Couvre la configuration et l'activation de votre numéro et le provisionnement du système Autumn." }),
-    monthlyFee:       pick({ en: "Monthly Phone Lease",        vi: "Thuê số điện thoại hàng tháng", es: "Arrendamiento mensual del número", fr: "Location mensuelle du numéro" }),
-    monthlyDesc:      pick({ en: "Your dedicated local phone number, leased and maintained.", vi: "Số điện thoại địa phương riêng của bạn.", es: "Tu número local dedicado, arrendado y mantenido.", fr: "Votre numéro local dédié, loué et maintenu." }),
     perMinFee:        pick({ en: "Per call, after your included calls", vi: "Mỗi cuộc gọi, sau số cuộc gọi đã bao gồm", es: "Por llamada, tras las incluidas", fr: "Par appel, après les appels inclus" }),
     perMinDesc:       pick({ en: "Solo includes 20 calls a month, Professional 50 and Elite 100. Calls of 30 seconds or less are free and are not counted.", vi: "Gói Solo gồm 20 cuộc gọi mỗi tháng, Professional 50 và Elite 100. Cuộc gọi từ 30 giây trở xuống miễn phí và không bị tính.", es: "Solo incluye 20 llamadas al mes, Professional 50 y Elite 100. Las llamadas de 30 segundos o menos son gratis y no se cuentan.", fr: "Solo inclut 20 appels par mois, Professional 50 et Elite 100. Les appels de 30 secondes ou moins sont gratuits et ne sont pas comptés." }),
     freeBadge:        pick({ en: "30 sec or less free",        vi: "Từ 30 giây trở xuống miễn phí", es: "30 seg o menos gratis",            fr: "30 sec ou moins gratuit" }),
@@ -173,13 +171,6 @@ function IntroStep({ onContinue }: { onContinue: () => void }) {
       label: t.activationFee,
       desc: t.activationDesc,
       highlight: true,
-    },
-    {
-      amount: "$2",
-      period: pick({ en: "/ month", vi: "/ tháng", es: "/ mes", fr: "/ mois" }),
-      label: t.monthlyFee,
-      desc: t.monthlyDesc,
-      highlight: false,
     },
     {
       amount: "$0.50",

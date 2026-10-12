@@ -19,7 +19,7 @@
 - [Revenue Intelligence](https://certxa.com/revenue-intelligence): Booking pattern, retention, and revenue-leakage analytics.
 - [Custom Website Builder](https://certxa.com/custom-website-builder): Branded booking website builder, no code required.
 - [Launchit Templates](https://certxa.com/launchsite): Gallery of salon website templates available through the Custom Website Builder.
-- [Autumn AI Receptionist](https://certxa.com/autumn): Automated phone and booking assistant powered by AI. Included in every plan (20 calls a month on Solo, 50 on Professional, 100 on Elite), then $0.50 per call. One-time $15 activation fee and $2/month for the phone number; included calls start once a paid plan begins.
+- [Autumn AI Receptionist](https://certxa.com/autumn): Automated phone and booking assistant powered by AI. Included in every plan (20 calls a month on Solo, 50 on Professional, 100 on Elite), then $0.50 per call. One-time $15 activation fee for the dedicated phone number, no monthly number fee; included calls start once a paid plan begins.
 - [Data Transfer](https://certxa.com/data-transfer): Free migration from GlossGenius, Vagaro, Square Appointments, Booksy, and Fresha.
 - [Free Salon Business Calculators](https://certxa.com/tools): Break-even-point and no-show-cost calculators for salon owners.
 - [Pricing](https://certxa.com/pricing): Solo plan is free; team plans from $22/month with a free trial.
