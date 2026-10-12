@@ -96,6 +96,9 @@ export function CheckoutMode(p: Props) {
   // the keypad and entered is a payment of the selected type, not another line on the bill.
   const [paying, setPaying] = useState(false);
   const [payType, setPayType] = useState<"cash" | "card">("cash");
+  // The client has submitted their tip choice (an amount or none) for this ticket. It stands for the rest of
+  // the checkout, whatever is paid in cash, by gift card or by card: they are not shown the tip screen again.
+  const [tipSubmitted, setTipSubmitted] = useState(false);
   // Settings → Checkout → CARD button. "own": the salon's own terminal takes the card; this POS only records it.
   const cardProvider = useCardProvider();
   const cardRecoveryKey = `certxa.nail.captured.${p.storeId}.${ticket.id}`;
@@ -313,6 +316,7 @@ export function CheckoutMode(p: Props) {
       // `confirmed`: the customer pressed Continue / Skip (a pick alone only previews the tip here).
       if (m.confirmed === true || !awaitingTip) say(amt > 0 ? `TIP RECEIVED · ${money(amt)}` : "NO TIP SELECTED BY CLIENT", amt > 0 ? "success" : "info");
       // The client has finished with the tip screen. Payment is taken by staff: nothing starts by itself.
+      if (m.confirmed === true) setTipSubmitted(true);
       if (m.confirmed === true && awaitingTip) setAwaitingTip(null);
     } else if (m.type === "kiosk_checkout_receipt_choice") {
       // The customer picked a receipt on their screen. Text goes out right away (it's a link to the saved
@@ -497,6 +501,8 @@ export function CheckoutMode(p: Props) {
     // snapshot (not a later cart broadcast) to compute the charge exactly once.
     const payload = {
       total: preTip, tipBase, cardMethod: frontdeskReaderMethod(), paymentOnConfirm: true, appointmentId: ticket.id,
+      // The client's tip is already on the ticket: the front desk goes straight to the reader.
+      tipAlreadyChosen: tipSubmitted, tipAmount: tip,
       // The front desk's M2 charge must be tagged as a nail checkout, like this device's own M2 charges:
       // the server then records the card but leaves completing the ticket to this checkout (with tip,
       // discount, gift card and group shares), instead of closing it at capture with the card total alone.
@@ -517,7 +523,7 @@ export function CheckoutMode(p: Props) {
     setPaying(true);
     setPayType("cash");
     setRightTab("payment");
-    if (p.dualScreen && tip <= 0 && rest() > 0) {
+    if (p.dualScreen && tip <= 0 && !tipSubmitted && rest() > 0) {
       setAwaitingTip({ base: 0 });
       requestTipScreen();
       say("WAITING FOR CLIENT TO SELECT TIP", "info");

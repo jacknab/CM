@@ -322,7 +322,7 @@ export function useCardPayments(o: CardPaymentsOpts) {
     frontdeskBaseCents.current = Number.isFinite(base) ? Math.round(base * 100) : null;
     setAwaitingFrontdesk(true);
     opts.current.send("kiosk_checkout_tip_request", payload);
-    opts.current.say("TIP AND CARD PAYMENT SENT TO FRONT DESK", "info");
+    opts.current.say(payload.tipAlreadyChosen === true ? "CARD PAYMENT SENT TO FRONT DESK" : "TIP AND CARD PAYMENT SENT TO FRONT DESK", "info");
   };
 
   /** Staff stop waiting on the front desk (customer walked off, screen never showed it): the POS is usable again. */

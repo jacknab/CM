@@ -708,7 +708,27 @@ export default function FrontDeskDisplay() {
               : null;
             paymentPendingRef.current = false;
             if (msg.appointmentId != null) setAwaitApptId(tipApptId);
-            setCardMethod(msg.cardMethod === "m2" ? "m2" : msg.cardMethod === "tap" ? "tap" : readLocalCardMethod());
+            const requestedMethod = msg.cardMethod === "m2" ? "m2" : msg.cardMethod === "tap" ? "tap" : readLocalCardMethod();
+            setCardMethod(requestedMethod);
+            // The client already chose their tip for this ticket (the POS asked when checkout started): it is
+            // not asked again. The reader starts straight away for what is due plus that tip — the same steps
+            // the Continue button on the tip page takes.
+            const known = tipPaymentRef.current;
+            if (msg.tipAlreadyChosen === true && known && isNative) {
+              known.tipCents = Math.round(Math.max(0, Number(msg.tipAmount) || 0) * 100);
+              setPosTotal((known.baseCents + known.tipCents) / 100);
+              paymentPendingRef.current = true;
+              awaitRemainingRef.current = known.remaining;
+              awaitPaidTotalRef.current = (known.priorTenderedCents + known.baseCents + known.tipCents) / 100;
+              setAwaitMode(requestedMethod);
+              awaitModeRef.current = requestedMethod;
+              payTriggerRef.current = "client_confirm";
+              setPayError("");
+              tapArmedRef.current = false;
+              confirmArmRef.current = true;
+              setPosCheckout("await_payment");
+              break;
+            }
             setPosCheckout("tip");
             break;
           }
