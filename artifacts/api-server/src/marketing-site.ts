@@ -28,6 +28,11 @@ const DEFAULT_PATHS = [
   "/features",
   "/booking",
   "/autumn",
+  "/products",
+  "/compare/certxa-vs-glossgenius",
+  "/compare/certxa-vs-vagaro",
+  "/compare/certxa-vs-fresha",
+  "/compare/certxa-vs-square",
   "/about",
   "/contact",
   "/careers",
@@ -70,6 +75,7 @@ const MOVED: Record<string, string> = {
   "/certxa-vs-glossgenius": "/compare/certxa-vs-glossgenius",
   "/certxa-vs-vagaro": "/compare/certxa-vs-vagaro",
   "/certxa-vs-fresha": "/compare/certxa-vs-fresha",
+  "/certxa-vs-gocheckin": "/pricing",
 };
 
 /** Hosts a stock-image slot may be redirected to (where the design's photos are hosted). */

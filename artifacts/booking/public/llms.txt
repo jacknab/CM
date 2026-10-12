@@ -8,6 +8,7 @@
 - [Features](https://certxa.com/features): Every feature in detail: booking, front desk POS, check-in kiosk, waitlist and turn rotation, client records, loyalty, staff commissions and payroll, review requests, reports.
 - [Online Booking](https://certxa.com/booking): 24/7 client self-booking with provider selection, reminders and a waitlist. Deposits at booking are still in development.
 - [Autumn AI Receptionist](https://certxa.com/autumn): Automated phone and booking assistant powered by AI. Included in every plan (20 calls a month on Solo, 50 on Professional, 100 on Elite), then $0.50 per call. One-time $15 activation fee for the dedicated phone number, no monthly number fee; included calls start once a paid plan begins.
+- [Hardware](https://certxa.com/products): Certxa Station, Certxa Kiosk, wireless card reader and accessories, with prices.
 - [Pricing](https://certxa.com/pricing): Solo plan is free; Professional $22/month and Elite $49/month with a 60-day free trial.
 - [Launchit Templates](https://certxa.com/launchsite): Gallery of salon website templates available through the website builder.
 - [Data Transfer](https://certxa.com/data-transfer): Free migration from GlossGenius, Vagaro, Square Appointments and others.
@@ -16,10 +17,10 @@
 
 ## Comparisons
 
-- [Certxa vs GlossGenius](https://certxa.com/certxa-vs-glossgenius): Pricing, fees, and feature comparison.
-- [Certxa vs Vagaro](https://certxa.com/certxa-vs-vagaro): Pricing, fees, and feature comparison.
-- [Certxa vs Fresha](https://certxa.com/certxa-vs-fresha): Pricing, fees, and feature comparison.
-- [Certxa vs GoCheckIn](https://certxa.com/certxa-vs-gocheckin): Pricing, fees, and feature comparison.
+- [Certxa vs GlossGenius](https://certxa.com/compare/certxa-vs-glossgenius): Feature and pricing comparison.
+- [Certxa vs Vagaro](https://certxa.com/compare/certxa-vs-vagaro): Feature and pricing comparison.
+- [Certxa vs Fresha](https://certxa.com/compare/certxa-vs-fresha): Feature and pricing comparison.
+- [Certxa vs Square](https://certxa.com/compare/certxa-vs-square): Feature and pricing comparison.
 
 ## Company
 

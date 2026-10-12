@@ -82,7 +82,7 @@ const jsonLd = {
           item: {
             '@type': 'Product',
             name: 'Wireless Card Reader',
-            description: 'Stripe-powered wireless card reader. Chip, tap, and swipe. Free with Pro plan.',
+            description: 'Stripe-powered wireless card reader. Chip, tap, and swipe. Free with the Professional plan.',
             offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD', availability: 'https://schema.org/InStock' },
           },
         },

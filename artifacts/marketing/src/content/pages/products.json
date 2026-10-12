@@ -12,7 +12,7 @@
       "tagline": "The full front desk, all in one.",
       "description": "A sleek all-in-one touchscreen terminal that runs your entire front desk. Check clients in, manage the queue, process payments, print receipts, and close the day — all from one device. Built for busy salons with multiple technicians.",
       "price": "$799",
-      "financing": "or $0 due today with Certxa Pay",
+      "financing": "",
       "cta": "Buy now",
       "highlights": [
         {
@@ -40,7 +40,7 @@
       "tagline": "The self check-in kiosk and customer screen in one.",
       "description": "A tablet kiosk that lets clients check in, browse services with photos and pricing, pick their nail length, shape, and design, and join the queue — all without staff involvement. Also works as a customer-facing checkout screen paired with Certxa Station.",
       "price": "$399",
-      "financing": "or $0 due today with Certxa Pay",
+      "financing": "",
       "cta": "Buy now",
       "highlights": [
         {
@@ -67,12 +67,12 @@
     },
     {
       "id": "prod-reader",
-      "badge": "Free on Pro",
+      "badge": "Free on Professional",
       "name": "Wireless Card Reader",
       "tagline": "Fast, wireless payments anywhere.",
       "description": "A compact wireless card reader powered by Stripe that connects to any device running Certxa. Accept chip, tap, and swipe payments at the chair, the front desk, or anywhere in the salon. Included free with every Pro plan.",
       "price": "Free",
-      "financing": "included with Pro plan — or $149 standalone",
+      "financing": "included with the Professional plan — or $149 standalone",
       "cta": "Get started",
       "highlights": [
         {
@@ -93,7 +93,7 @@
         },
         {
           "id": "h5",
-          "text": "Free with every Pro plan"
+          "text": "Free with every Professional plan"
         }
       ]
     }
@@ -152,7 +152,7 @@
     {
       "id": "faq-2",
       "question": "Is the card reader really free?",
-      "answer": "Yes. The Wireless Card Reader is included free with every Pro plan. No minimum processing volume required — just sign up for Pro and it ships with your account."
+      "answer": "Yes. The Wireless Card Reader is included free with every Professional plan. No minimum processing volume required — just sign up for Professional and it ships with your account."
     },
     {
       "id": "faq-3",
@@ -168,11 +168,6 @@
       "id": "faq-5",
       "question": "Does the hardware work if the internet goes down?",
       "answer": "Yes. Certxa Station includes offline mode — tickets are saved locally and synced automatically when your connection is restored. No lost sales, no interruptions."
-    },
-    {
-      "id": "faq-6",
-      "question": "What is Certxa Pay financing?",
-      "answer": "Certxa Pay lets you get hardware with $0 due today and pay over time. There are no fixed fees or interest — repayments are taken as a small percentage of your daily card sales."
     }
   ],
   "cta": {
