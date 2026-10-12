@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { OFFLINE_LIMIT_MS, offlineLimitReached } from "./sync-engine";
+import { OFFLINE_LIMIT_MS, offlineLimitReached } from "./offline-limit";
 
 const HOUR = 60 * 60 * 1000;
 

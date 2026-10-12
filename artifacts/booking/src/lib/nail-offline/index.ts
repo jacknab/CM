@@ -1,10 +1,13 @@
 /** The /nail offline engine as the browser uses it: IndexedDB for storage, `fetch` for the server. */
+import { hasNativeDb, movedKV, nativeSqliteKV } from "./nativeKV";
 import { NailOffline, Unreachable, type Reply, type Transport } from "./engine";
 import { indexedDbKV } from "./store";
 
 export * from "./engine";
 
-export const nailOffline = new NailOffline(indexedDbKV());
+// Inside the Certxa Android app (1.0.2+) the data lives in the app's encrypted SQLite database, after a one-time
+// carry-over of whatever the browser's storage held. Everywhere else it stays in IndexedDB.
+export const nailOffline = new NailOffline(hasNativeDb() ? movedKV(indexedDbKV(), nativeSqliteKV()) : indexedDbKV());
 
 /** The salon this device is signed in to (set by the /nail screen); everything kept offline is filed under it. */
 let storeId: number | null = null;

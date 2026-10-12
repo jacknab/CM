@@ -22,6 +22,7 @@ import {
   Platform, Text, TouchableOpacity, BackHandler, Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { runLocalDb, type LocalDbRequest } from '../lib/localDb';
 import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -88,6 +89,8 @@ const BRIDGE_JS = `
   if (window.__certxaBridgeInstalled) return;
   window.__certxaBridgeInstalled = true;
   window.CERTXA_NATIVE_APP = true;
+  // This build keeps the salon's offline data in an encrypted SQLite file (lib/localDb.ts).
+  window.CERTXA_NATIVE_LOCAL_DB = 1;
   // This build can print receipts on the thermal printer (PRINT_RECEIPT) — the web checkout checks this flag.
   window.CERTXA_PRINT_BRIDGE = true;
   // ...and can pop the cash drawer through the printer (OPEN_DRAWER).
@@ -519,6 +522,18 @@ export default function PortalScreen() {
         case 'CERTXA_ACTIVITY':
           recordActivity();
           break;
+        case 'LOCAL_DB': {
+          // A read or write on the tablet's encrypted database, asked for by the web screen. The answer
+          // goes back under the same id; values stay as JSON text end to end.
+          const reply = (body: Record<string, unknown>) =>
+            webViewRef.current?.injectJavaScript(
+              `window.__certxaLocalDbReply && window.__certxaLocalDbReply(${JSON.stringify(JSON.stringify({ id: msg.id, ...body }))}); true;`
+            );
+          runLocalDb(msg.request as LocalDbRequest)
+            .then((result) => reply({ ok: true, result }))
+            .catch((err) => reply({ ok: false, error: String(err?.message ?? err) }));
+          break;
+        }
         case 'FRONTDESK_SESSION_READY':
           // SPA navigation from /app-login to /frontdesk doesn't trigger the
           // WebView URL callback. The page sends this only after /api/auth/user

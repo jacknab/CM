@@ -1,4 +1,5 @@
 import { offlineDB, type PendingOp, type ServerEntry } from "./offline-db";
+import { offlineLimitReached } from "./offline-limit";
 import { actionQueueDB, type ActionType, type SyncAction } from "./action-queue-db";
 import { appointmentsCacheDB } from "./appointments-cache-db";
 import { getDeviceId } from "./device-id";
@@ -83,14 +84,7 @@ async function throwIfConflict(res: Response, type: ActionType): Promise<void> {
   }
 }
 
-/** How long a device may keep working with no answer from the server. */
-export const OFFLINE_LIMIT_MS = 12 * 60 * 60 * 1000;
 const LAST_CONTACT_KEY = "certxa.sync.lastContactAt";
-
-/** Pure rule behind the lock: has it been longer than the limit since the server last answered? */
-export function offlineLimitReached(lastContactAt: number, now: number, limitMs: number = OFFLINE_LIMIT_MS): boolean {
-  return now - lastContactAt > limitMs;
-}
 
 class SyncEngine {
   private status: SyncStatus = navigator.onLine ? "online" : "offline";
