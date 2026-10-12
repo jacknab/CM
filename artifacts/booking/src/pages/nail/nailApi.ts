@@ -93,6 +93,8 @@ export interface NailBoard {
   glance?: SalonGlance;
   /** The server's clock when this was built — every station measures elapsed times against it. */
   now?: string;
+  /** The next ticket number the salon will give out. */
+  nextTicketNumber?: number | null;
   /** Set when this board came from the device because the server could not be reached: when the server last sent it. */
   cachedAt?: string;
 }
@@ -202,6 +204,12 @@ export const fetchBoard = async (): Promise<NailBoard> => {
     const board = overlayBoard(await call<NailBoard>("/api/nail/board"), local);
     // Shown from the device, not fresh from the server: say as of when.
     const since = cachedSince("/api/nail/board");
+    // Fresh from the server: remember where the salon's ticket numbering has got to, for when the network drops.
+    if (!since && storeId != null) {
+      const used = [...board.tickets, ...board.markers].map((x) => Number(x.ticketNumber) || 0);
+      const highest = Math.max((board.nextTicketNumber ?? 1) - 1, ...used);
+      void nailOffline.noteTicketNumbers(storeId, highest).catch(() => {});
+    }
     return since ? { ...board, cachedAt: since } : board;
   } catch (err) {
     // Never loaded on this device and no server: the board is whatever was made here.
@@ -362,7 +370,7 @@ export async function createTicket(
         customLines: [], staff: null, assignedOffline: false, total: extra.price, duration: extra.duration,
       }, newIdempotencyKey("ticket.create"));
     }
-    return { appointmentId: rec.id, ticketNumber: 0, staffId: rec.staff?.id ?? null, staffName: rec.staff?.name ?? null, status: "confirmed",
+    return { appointmentId: rec.id, ticketNumber: rec.ticketNumber ?? 0, staffId: rec.staff?.id ?? null, staffName: rec.staff?.name ?? null, status: "confirmed",
       startsAt: rec.createdAt, duration: rec.duration, price: rec.total, waiting: true, offline: true };
   };
   // Anything it depends on that the server has never heard of means it cannot be sent yet either.

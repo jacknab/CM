@@ -997,6 +997,27 @@ export class DatabaseStorage implements IStorage {
     return Number(result?.rows?.[0]?.assigned);
   }
 
+  /**
+   * Takes one specific ticket number for the store — the number a tablet gave a client while it was
+   * offline — and moves the counter past it. False when that number is already on a recent ticket or
+   * check-in (another tablet used it), or is nowhere near the counter: the caller then takes the next
+   * number in the normal way.
+   */
+  async claimTicketNumber(storeId: number, wanted: number): Promise<boolean> {
+    if (!Number.isInteger(wanted) || wanted < 1) return false;
+    const result = await db.execute(sql`
+      UPDATE locations SET next_ticket_number = GREATEST(next_ticket_number, ${wanted} + 1)
+      WHERE id = ${storeId}
+        AND ${wanted} < next_ticket_number + 500
+        AND NOT EXISTS (SELECT 1 FROM appointments a WHERE a.store_id = ${storeId} AND a.ticket_number = ${wanted}
+                          AND a.created_at > now() - interval '3 days')
+        AND NOT EXISTS (SELECT 1 FROM kiosk_checkins k WHERE k.store_id = ${storeId} AND k.ticket_number = ${wanted}
+                          AND k.created_at > now() - interval '3 days')
+      RETURNING id
+    `) as any;
+    return (result?.rows?.length ?? 0) > 0;
+  }
+
   async createAppointment(insertAppointment: InsertAppointment): Promise<Appointment> {
     // storeId is technically nullable on this table — fall back to no ticket
     // number (display falls back to the real id) rather than risk a NaN in

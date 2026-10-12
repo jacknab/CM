@@ -294,7 +294,23 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const tickets = board?.tickets ?? [];
   // Elapsed times ("waiting 12 min", "free for 25 min") are measured against the SERVER clock so two POS stations agree.
   const [clockOffsetMs, setClockOffsetMs] = useState(0);
-  useEffect(() => { if (board?.now) setClockOffsetMs(Date.parse(board.now) - Date.now()); }, [board]);
+  // Only a board fresh from the server tells the time: one shown from the device's saved copy carries the
+  // moment it was saved, which would make every timer read as if no time had passed since. The last
+  // measured difference is kept on the device so timers are right from the first second of an outage.
+  useEffect(() => {
+    if (board?.now && !board.cachedAt) {
+      const offset = Date.parse(board.now) - Date.now();
+      setClockOffsetMs(offset);
+      nailOffline.setClockOffset(offset);
+      try { localStorage.setItem("certxa.nail.clockOffsetMs", String(offset)); } catch { /* storage unavailable */ }
+    }
+  }, [board]);
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem("certxa.nail.clockOffsetMs"));
+      if (Number.isFinite(saved) && saved !== 0) { setClockOffsetMs((cur) => (cur === 0 ? saved : cur)); nailOffline.setClockOffset(saved); }
+    } catch { /* storage unavailable */ }
+  }, []);
   const markers = board?.markers ?? [];
   const waitingCount = tickets.filter((t) => t.status === "confirmed").length + markers.length;
 
@@ -562,9 +578,12 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       // Saved on this device, not sent yet: it is on the board, and it is paid once the server has it.
       if (r.offline) {
         payAfterCreate.current = false;
+        const savedService = service?.name ?? "Service";
         resetDraft();
         setTab("queue");
         say("Ticket saved on this tablet · it will be sent when the connection is back");
+        // The same notice as online: the ticket's number, its service and who it went to.
+        setStartedNotice([{ ticketNumber: r.ticketNumber, serviceName: savedService, staffName: r.staffName }]);
         return;
       }
       const shouldPay = payAfterCreate.current;
@@ -1171,7 +1190,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
             setShowCheckIn(false); say(line); invalidateBoard();
             // A walk-in has no ticket yet: go straight to the POS tab to build it. A booked client's
             // appointment is already their ticket, so they are only marked as arrived.
-            if (r.status !== "appointment" && !r.todayAppointment && r.client?.id > 0) void pickClient(r.client.id, r.checkin?.id ?? null);
+            if (r.status !== "appointment" && !r.todayAppointment && r.client?.id) void pickClient(r.client.id, r.checkin?.id ?? null);
           }}
           onPrintTicket={thermalPrinter.isConnected ? async (result) => {
             const appointment = result.todayAppointment;
@@ -1220,9 +1239,9 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       {startedNotice && (
         <div className="fixed inset-0 z-[290] flex items-center justify-center px-6" style={{ background: "rgba(10,12,16,.72)" }} role="status" aria-live="polite" data-testid="nail-started-notice">
           <div className="rounded-2xl px-10 py-9 text-center" style={{ background: "#232830", border: "1px solid #3b424c", boxShadow: "0 30px 70px rgba(0,0,0,.5)", maxWidth: 620 }}>
-            {startedNotice.map((t) => (
-              <p key={t.ticketNumber} style={{ margin: "6px 0", fontSize: startedNotice.length > 1 ? 22 : 28, fontWeight: 700, lineHeight: 1.3, color: "#fff" }} data-testid="nail-saved-line">
-                #{t.ticketNumber} · {t.serviceName}
+            {startedNotice.map((t, i) => (
+              <p key={i} style={{ margin: "6px 0", fontSize: startedNotice.length > 1 ? 22 : 28, fontWeight: 700, lineHeight: 1.3, color: "#fff" }} data-testid="nail-saved-line">
+                {t.ticketNumber > 0 ? `#${t.ticketNumber} · ` : ""}{t.serviceName}
                 <br />
                 <span style={{ fontWeight: 500, color: t.staffName ? "#7dd3fc" : "#cbd5e1" }}>
                   {t.staffName ? `Assigned to ${t.staffName}` : "Waiting for the next free technician"}

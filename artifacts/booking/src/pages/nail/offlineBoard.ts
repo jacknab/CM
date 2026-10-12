@@ -55,6 +55,6 @@ export function overlayBoard(board: NailBoard | null | undefined, records: Local
   const serverMarkerIds = new Set(base.markers.map((m) => m.id));
   const waiting: BoardMarker[] = walkins
     .filter((w) => w.status === "waiting" && !(w.synced && (w.realId == null || serverMarkerIds.has(w.realId))))
-    .map((w) => ({ id: w.realId ?? w.id, ticketNumber: null, clientId: w.clientId, clientName: w.clientName, phone: w.phone, createdAt: w.createdAt, offline: !w.synced }));
+    .map((w) => ({ id: w.realId ?? w.id, ticketNumber: w.ticketNumber ?? null, clientId: w.clientId, clientName: w.clientName, phone: w.phone, createdAt: w.createdAt, offline: !w.synced }));
   return { ...base, tickets, markers: [...base.markers.filter((m) => !ticketed.has(m.id)), ...waiting] };
 }

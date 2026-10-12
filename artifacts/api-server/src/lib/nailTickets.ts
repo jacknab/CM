@@ -425,6 +425,10 @@ export interface CreateTicketInput {
   notes?: string | null;
   /** A kiosk "waiting" marker to close out once the ticket exists. */
   checkinId?: number | null;
+  /** The number a tablet gave this ticket while offline. Kept when it is still free; otherwise the
+   *  ticket takes the next number as usual. Ignored when the ticket comes from a check-in, which
+   *  already has its number. */
+  ticketNumber?: number | null;
   /** The request's idempotency key: the ticket's id is noted against it in the same transaction that creates
    *  the ticket, so a retry after a crash finds the ticket instead of making a second one (lib/idempotency.ts). */
   idempotencyKey?: string | null;
@@ -645,8 +649,10 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
   // recordWalkInCheckinMarker in routes.ts) rather than minting a second, different number here.
   // Claim the waiting marker and create its appointment on one DB connection. A stale marker
   // or a different client's marker cannot be reused to mint duplicate printed ticket numbers.
+  const offlineNumber = input.checkinId == null && input.ticketNumber && (await storage.claimTicketNumber(storeId, Number(input.ticketNumber)))
+    ? Number(input.ticketNumber) : null;
   const creation = await db.transaction(async (tx) => {
-    let ticketNumberOverride: number | null = null;
+    let ticketNumberOverride: number | null = offlineNumber;
     if (input.checkinId != null) {
       const marker = (await tx.execute(sql`SELECT ticket_number, client_id, status, appointment_id
         FROM kiosk_checkins WHERE id = ${input.checkinId} AND store_id = ${storeId} FOR UPDATE`)).rows[0] as any;
@@ -996,7 +1002,7 @@ export interface SalonGlance {
   avgTicket: number | null;
 }
 
-export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTicket[]; markers: BoardWaitingMarker[]; dayBookings: BoardDayBooking[]; techStats: TechDayStats[]; glance: SalonGlance; now: string }> {
+export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTicket[]; markers: BoardWaitingMarker[]; dayBookings: BoardDayBooking[]; techStats: TechDayStats[]; glance: SalonGlance; now: string; nextTicketNumber: number | null }> {
   const store = await storage.getStore(storeId);
   const tz = (store as any)?.timezone || "UTC";
   // Closing a shift starts a new operational day even when the local calendar date (or 4 AM
@@ -1205,7 +1211,10 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
   };
 
   // `now` lets every POS station measure "waiting 12 min" against the SERVER clock, so two tablets with different clocks agree.
-  return { tickets, markers, dayBookings, techStats: [...stats.values()], glance, now: new Date().toISOString() };
+  // The next ticket number the store will give out, so a tablet can keep numbering if it goes offline.
+  const counter = await pool.query(`SELECT next_ticket_number FROM locations WHERE id = $1`, [storeId]);
+  const nextTicketNumber = counter.rows[0]?.next_ticket_number != null ? Number(counter.rows[0].next_ticket_number) : null;
+  return { tickets, markers, dayBookings, techStats: [...stats.values()], glance, now: new Date().toISOString(), nextTicketNumber };
 }
 
 // ── Barbershop (/barber): Barber ID sign-in and taking a waiting client before any ticket exists ──

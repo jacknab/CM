@@ -18340,9 +18340,12 @@ or
       // No appointment lookup for barbers: every staff check-in is a walk-in
       // marker, even if the shared appointment table contains older bookings.
       const barberCheckin = req.originalUrl?.startsWith("/api/barber/");
+      // The number a tablet gave this client while it was offline.
+      const wanted = Number(req.body?.ticketNumber);
+      const offlineTicketNumber = Number.isInteger(wanted) && wanted > 0 ? wanted : null;
       const { todayAppointment, checkin } = barberCheckin
-        ? { todayAppointment: null, checkin: await recordWalkInCheckinMarker(storeId, client.id, client.fullName, digits) }
-        : await performClientCheckin(store, client, digits, "staff");
+        ? { todayAppointment: null, checkin: await recordWalkInCheckinMarker(storeId, client.id, client.fullName, digits, offlineTicketNumber) }
+        : await performClientCheckin(store, client, digits, "staff", offlineTicketNumber);
       // `checkin` is only set for a true walk-in (no booking matched) — the marker's token is
       // what a "CI:{token}" check-in QR encodes; a matched appointment already has its own id,
       // so the printed ticket there uses "BK:{todayAppointment.id}" instead (see NailHome.tsx).
@@ -18380,6 +18383,8 @@ or
         checkinId: z.number().int().nullable().optional(),
         // Further services of the same visit: each becomes its own ticket, saved with this one.
         extraServiceIds: z.array(z.number().int()).max(8).optional(),
+        // The number a tablet gave the ticket while offline.
+        ticketNumber: z.number().int().positive().nullable().optional(),
       }).safeParse(req.body);
       if (!body.success) return res.status(400).json({ message: "Invalid ticket" });
       const userId = (req.session as any)?.userId;
@@ -22729,6 +22734,8 @@ or
     clientId: number,
     clientName: string | null,
     digits: string,
+    /** The number a tablet gave this check-in while offline; kept when it is still free. */
+    wantedTicketNumber?: number | null,
   ): Promise<{ id: number; token: string; ticketNumber: number }> {
     const { rows: recentCheckin } = await pool.query(
       `SELECT id, token, ticket_number FROM kiosk_checkins
@@ -22740,7 +22747,9 @@ or
     );
     if (recentCheckin.length > 0) return { id: recentCheckin[0].id, token: recentCheckin[0].token, ticketNumber: recentCheckin[0].ticket_number };
     const token = crypto.randomBytes(24).toString("hex");
-    const ticketNumber = await storage.getNextTicketNumber(storeId);
+    const ticketNumber = wantedTicketNumber && (await storage.claimTicketNumber(storeId, wantedTicketNumber))
+      ? wantedTicketNumber
+      : await storage.getNextTicketNumber(storeId);
     const { rows: inserted } = await pool.query(
       `INSERT INTO kiosk_checkins (store_id, client_id, phone, client_name, token, status, ticket_number)
        VALUES ($1, $2, $3, $4, $5, 'waiting', $6) RETURNING id`,
@@ -22801,7 +22810,7 @@ or
   // Check-In sheet (/api/nail/checkin): checks in today's next appointment (TURN hands it to the next tech unless
   // the client asked for someone) or, with no appointment today, records the waiting walk-in marker.
   // Returns the appointment that was checked in, or null when it was a walk-in.
-  async function performClientCheckin(store: any, client: any, digits: string, source: "kiosk" | "staff" = "kiosk") {
+  async function performClientCheckin(store: any, client: any, digits: string, source: "kiosk" | "staff" = "kiosk", wantedTicketNumber: number | null = null) {
     // ── Check for today's appointment for this client ────────────────────────
     // Lower bound: scheduled time must be within the last 30 minutes or still
     // upcoming — prevents latching onto stale appointments from earlier in the day.
@@ -22908,7 +22917,7 @@ or
       // once the real appointment is created. No expires_at, so this is
       // excluded from the public queue/wait-estimate math (kiosk/availability),
       // which only counts real waitlist tickets.
-      const marker = await recordWalkInCheckinMarker(store.id, client.id, client.fullName ?? null, digits);
+      const marker = await recordWalkInCheckinMarker(store.id, client.id, client.fullName ?? null, digits, wantedTicketNumber);
       return { todayAppointment, checkin: marker };
     }
     return { todayAppointment, checkin: null };

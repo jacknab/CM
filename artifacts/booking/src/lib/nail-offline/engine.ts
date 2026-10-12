@@ -25,6 +25,8 @@ export interface ClientRecord { kind: "client"; id: number; storeId: number; nam
 export interface WalkinRecord {
   kind: "walkin"; id: number; storeId: number; clientId: number; clientName: string; phone: string | null;
   status: "waiting" | "ticketed"; realId?: number | null; synced?: boolean; createdAt: string;
+  /** The number given on this device; the server keeps it when it is still free. */
+  ticketNumber?: number | null;
 }
 export interface TicketLine { id: number; name: string; price: number; duration: number }
 export interface TicketRecord {
@@ -138,7 +140,34 @@ export class NailOffline {
       return { ok: false, problem: this.problem };
     }
   }
-  constructor(private kv: KV, private now: () => Date = () => new Date()) {}
+  constructor(private kv: KV, private deviceNow: () => Date = () => new Date()) {}
+
+  /** How far the server's clock is from this device's, as last measured while online. Times recorded here
+   *  are written in the server's time, so a timer started offline reads the same as one started online. */
+  private clockOffsetMs = 0;
+  setClockOffset(ms: number): void { if (Number.isFinite(ms)) this.clockOffsetMs = ms; }
+  private now = (): Date => new Date(this.deviceNow().getTime() + this.clockOffsetMs);
+
+  /**
+   * The highest ticket number the server is known to have used for a salon. Told to the device whenever
+   * a live board arrives, so numbering can carry on from there while offline.
+   */
+  async noteTicketNumbers(storeId: number, highestUsed: number): Promise<void> {
+    if (!Number.isInteger(highestUsed) || highestUsed < 0) return;
+    const key = `ticketNumber:${storeId}`;
+    const known = (await this.kv.get<number>("meta", key)) ?? 0;
+    if (highestUsed > known) await this.kv.batch([{ store: "meta", key, value: highestUsed }]);
+  }
+  /** The next ticket number for a client served on this device, or null when the salon's numbering has
+   *  never been seen here (a tablet that has not been online since numbering was added). */
+  private async takeTicketNumber(storeId: number, writes: Write[]): Promise<number | null> {
+    const key = `ticketNumber:${storeId}`;
+    const known = await this.kv.get<number>("meta", key);
+    if (known == null) return null;
+    const n = known + 1;
+    writes.push({ store: "meta", key, value: n });
+    return n;
+  }
 
   onChange(fn: () => void): () => void { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; }
   private changed() { this.listeners.forEach((fn) => { try { fn(); } catch { /* a listener must not break saving */ } }); }
@@ -192,17 +221,25 @@ export class NailOffline {
     if (open) return { walkin: open, already: true };
     const writes: Write[] = [];
     const { id, seq } = await this.next(writes);
-    const rec: WalkinRecord = { kind: "walkin", id, storeId, clientId: client.id, clientName: client.name, phone: client.phone, status: "waiting", createdAt: this.now().toISOString() };
+    const rec: WalkinRecord = { kind: "walkin", id, storeId, clientId: client.id, clientName: client.name, phone: client.phone, status: "waiting", createdAt: this.now().toISOString(),
+      ticketNumber: await this.takeTicketNumber(storeId, writes) };
     const op = this.op(seq, storeId, "walkin.create", id, key);
     writes.push({ store: "records", key: recKey(id), value: rec }, { store: "ops", key: op.id, value: op });
     await this.commit(writes);
     return { walkin: rec, already: false };
   }
 
-  async createTicket(input: Omit<TicketRecord, "kind" | "id" | "status" | "startedAt" | "createdAt" | "realId" | "ticketNumber">, key?: string): Promise<TicketRecord> {
+  async createTicket(input: Omit<TicketRecord, "kind" | "id" | "status" | "startedAt" | "createdAt" | "realId" | "ticketNumber"> & { ticketNumber?: number | null }, key?: string): Promise<TicketRecord> {
     const writes: Write[] = [];
     const { id, seq } = await this.next(writes);
-    const rec: TicketRecord = { ...input, kind: "ticket", id, status: "confirmed", startedAt: null, createdAt: this.now().toISOString() };
+    // A client who checked in keeps the number from their check-in; anyone else takes the next one.
+    let ticketNumber: number | null = input.ticketNumber ?? null;
+    if (ticketNumber == null && input.walkinId != null && isLocalId(input.walkinId)) {
+      const w = await this.kv.get<WalkinRecord>("records", recKey(input.walkinId));
+      if (w?.kind === "walkin") ticketNumber = w.ticketNumber ?? null;
+    }
+    if (ticketNumber == null) ticketNumber = await this.takeTicketNumber(input.storeId, writes);
+    const rec: TicketRecord = { ...input, kind: "ticket", id, status: "confirmed", startedAt: null, createdAt: this.now().toISOString(), ticketNumber };
     const op = this.op(seq, input.storeId, "ticket.create", id, key);
     writes.push({ store: "records", key: recKey(id), value: rec }, { store: "ops", key: op.id, value: op });
     // The walk-in it came from (made here, or still only on this device) is now this ticket.
@@ -463,9 +500,10 @@ export class NailOffline {
         } else if (op.type === "walkin.create" && rec.kind === "walkin") {
           const clientId = await realOf(rec.clientId);
           if (!clientId) continue;
-          reply = await transport.send("POST", "/api/nail/checkin", { clientId }, op.idempotencyKey);
+          reply = await transport.send("POST", "/api/nail/checkin", { clientId, ...(rec.ticketNumber ? { ticketNumber: rec.ticketNumber } : {}) }, op.idempotencyKey);
           // "already" / "appointment": the server has them checked in another way — just as good.
-          if (reply.status < 300) patch = { realId: reply.body?.checkin?.id ?? null, synced: true } as Partial<WalkinRecord>;
+          if (reply.status < 300) patch = { realId: reply.body?.checkin?.id ?? null, synced: true,
+            ticketNumber: reply.body?.checkin?.ticketNumber ?? rec.ticketNumber ?? null } as Partial<WalkinRecord>;
         } else if (op.type === "ticket.create" && rec.kind === "ticket") {
           const clientId = await realOf(rec.clientId);
           if (!clientId) continue;
@@ -481,6 +519,8 @@ export class NailOffline {
           const body = (cid: number | null) => ({
             clientId, serviceId: rec.service.id, addonIds: rec.addons.map((a) => a.id), nail: rec.nail, customLines: rec.customLines,
             staffId: rec.staff?.id ?? null, autoAssign: rec.staff == null, leaveUnassigned: false, checkinId: cid,
+            // The number given on this device: the server keeps it when no other tablet has used it.
+            ...(rec.ticketNumber ? { ticketNumber: rec.ticketNumber } : {}),
           });
           reply = await transport.send("POST", "/api/nail/tickets", body(checkinId), op.idempotencyKey);
           // The check-in was turned into a ticket some other way meanwhile: the ticket still stands on its own.

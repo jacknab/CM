@@ -130,8 +130,10 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
   const checkInOnDevice = async (clientId: number, key: string): Promise<CheckInResult> => {
     const who = await clientOnDevice(clientId);
     if (!who) throw new Error("This client isn't on this tablet yet, and the server can't be reached. Add them as a new client to check them in.");
-    const { already } = await nailOffline.checkIn(storeId, { id: clientId, name: who.name, phone: who.phone }, key);
-    return { status: already ? "already" : "walkin", client: { id: clientId, name: who.name, loyaltyPoints: 0 }, todayAppointment: null, checkin: null };
+    const { already, walkin } = await nailOffline.checkIn(storeId, { id: clientId, name: who.name, phone: who.phone }, key);
+    return { status: already ? "already" : "walkin", client: { id: clientId, name: who.name, loyaltyPoints: 0 }, todayAppointment: null,
+      // The check-in saved on this tablet, with the number it was given here.
+      checkin: { id: walkin.id, token: "", ticketNumber: walkin.ticketNumber ?? 0 } };
   };
 
   const checkIn = async (clientId: number) => {
