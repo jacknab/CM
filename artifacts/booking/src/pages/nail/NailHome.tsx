@@ -69,11 +69,15 @@ import { calendarBookingsForBoard, hasNewWaitingEntityForPhone, waitingEntityKey
 import { printNativeCheckinTicket, slipServiceNames } from "@/lib/native-checkin-ticket";
 import type { SalesTaxSettings } from "@shared/nailCheckout";
 
-const CheckoutMode = lazy(() => import("./CheckoutMode").then((module) => ({ default: module.CheckoutMode })));
+// The checkout screen is loaded on its own. It is fetched as soon as this screen opens, not on the first
+// tap of CHECKOUT, so it is already on the tablet when the network drops.
+const loadCheckoutMode = () => import("./CheckoutMode");
+const CheckoutMode = lazy(() => loadCheckoutMode().then((module) => ({ default: module.CheckoutMode })));
 
 type Assigning = { mode: "assign" | "reassign"; ticket: BoardTicket } | null;
 
 export default function NailHome() {
+  useEffect(() => { void loadCheckoutMode().catch(() => {}); }, []);
   const { selectedStore } = useSelectedStore();
   const { user } = useAuth();
   const nailSalon = isNailSalonBiz((selectedStore as any)?.category);
