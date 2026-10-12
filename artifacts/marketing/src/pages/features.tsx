@@ -113,7 +113,7 @@ export default function FeaturesPage() {
               </motion.p>
               <motion.div variants={fadeUp} className="mt-8 flex flex-wrap gap-4">
                 <Link
-                  to="/contact"
+                  to="/auth?mode=register"
                   className="inline-flex items-center gap-2 px-6 py-3.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 hover:-translate-y-px transition-all duration-200"
                 >
                   Start free trial
@@ -300,7 +300,7 @@ export default function FeaturesPage() {
                 </motion.p>
                 <motion.div variants={fadeUp}>
                   <Link
-                    to="/contact"
+                    to="/auth?mode=register"
                     className="inline-flex items-center gap-2 px-7 py-4 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 hover:-translate-y-px transition-all duration-200"
                   >
                     {features.cta.button}

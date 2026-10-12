@@ -79,7 +79,7 @@ export default function Header() {
             Sign in
           </a>
           <Link
-            to="/contact"
+            to="/auth?mode=register"
             className="text-sm font-semibold px-5 py-2.5 rounded-lg bg-primary text-primary-foreground transition-all duration-200 hover:opacity-90 hover:-translate-y-px"
           >
             Get started
@@ -112,7 +112,7 @@ export default function Header() {
             </Link>
           ))}
           <Link
-            to="/contact"
+            to="/auth?mode=register"
             className="mt-2 text-center text-sm font-semibold px-5 py-3 rounded-lg bg-primary text-primary-foreground"
           >
             Get started

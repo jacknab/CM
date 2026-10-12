@@ -68,7 +68,7 @@ export default function ProductHuntBanner() {
           <ArrowRight size={12} />
         </a>
         <Link
-          to="/contact?ref=producthunt"
+          to="/auth?mode=register&ref=producthunt"
           className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold text-primary-foreground/80 hover:text-primary-foreground transition-colors"
         >
           Start free trial

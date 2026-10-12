@@ -90,7 +90,7 @@ export default function BookingPage() {
               </motion.p>
               <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-4 pt-2">
                 <Link
-                  to="/contact"
+                  to="/auth?mode=register"
                   className="inline-flex items-center gap-2 px-6 py-3.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-opacity duration-200"
                 >
                   {booking.hero.ctaPrimary}
@@ -187,7 +187,7 @@ export default function BookingPage() {
                 </h2>
                 <p className="text-muted-foreground leading-relaxed">{booking.integrations.body}</p>
                 <Link
-                  to="/contact"
+                  to="/auth?mode=register"
                   className="self-start inline-flex items-center gap-2 px-6 py-3.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-opacity duration-200"
                 >
                   {booking.hero.ctaPrimary}
@@ -263,7 +263,7 @@ export default function BookingPage() {
               </motion.div>
               <motion.div variants={fadeUp} className="flex flex-wrap gap-3 shrink-0">
                 <Link
-                  to="/contact"
+                  to="/auth?mode=register"
                   className="inline-flex items-center gap-2 px-7 py-4 rounded-lg bg-primary-foreground text-primary font-semibold text-sm hover:opacity-90 transition-all duration-200"
                 >
                   {booking.cta.button}

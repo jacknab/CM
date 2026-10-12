@@ -457,7 +457,7 @@ export default function PricingPage() {
                 </motion.p>
                 <motion.div variants={fadeUp}>
                   <Link
-                    to="/contact"
+                    to="/auth?mode=register"
                     className="inline-flex items-center gap-2 px-7 py-4 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 hover:-translate-y-px transition-all duration-200"
                   >
                     {pricing.cta.button}

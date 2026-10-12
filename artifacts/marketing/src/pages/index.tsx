@@ -163,7 +163,7 @@ export default function HomePage() {
 
               <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-4 pt-2">
                 <Link
-                  to="/contact"
+                  to="/auth?mode=register"
                   className="inline-flex items-center gap-2 px-6 py-3.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 hover:-translate-y-px transition-all duration-200"
                 >
                   {home.hero.ctaPrimary}
@@ -350,7 +350,7 @@ export default function HomePage() {
                     <ArrowRight size={15} />
                   </Link>
                   <Link
-                    to="/contact"
+                    to="/auth?mode=register"
                     className="inline-flex items-center gap-2 px-6 py-3.5 rounded-lg border border-primary-foreground/30 text-primary-foreground font-semibold text-sm hover:bg-primary-foreground/10 transition-all duration-200"
                   >
                     Start free trial
@@ -558,7 +558,7 @@ export default function HomePage() {
                 </motion.p>
                 <motion.div variants={fadeUp} className="flex flex-col sm:flex-row gap-4 items-start">
                   <Link
-                    to="/contact"
+                    to="/auth?mode=register"
                     className="inline-flex items-center gap-2 px-7 py-4 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 hover:-translate-y-px transition-all duration-200"
                   >
                     {home.cta.button}

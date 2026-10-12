@@ -267,13 +267,24 @@ export default function ProductsPage() {
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground mb-4">{prod.financing}</p>
-                      <BuyButton
-                        productName={prod.name}
-                        className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-all duration-200"
-                      >
-                        {prod.cta}
-                        <ArrowRight size={15} />
-                      </BuyButton>
+                      {prod.price === 'Free' ? (
+                        // Included with the Professional plan: the way to get it is to sign up.
+                        <Link
+                          to="/auth?mode=register&plan=professional"
+                          className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-all duration-200"
+                        >
+                          {prod.cta}
+                          <ArrowRight size={15} />
+                        </Link>
+                      ) : (
+                        <BuyButton
+                          productName={prod.name}
+                          className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-all duration-200"
+                        >
+                          {prod.cta}
+                          <ArrowRight size={15} />
+                        </BuyButton>
+                      )}
                     </div>
                   </div>
                 </motion.div>
@@ -466,7 +477,7 @@ export default function ProductsPage() {
                     <ArrowRight size={16} />
                   </Link>
                   <Link
-                    to="/contact"
+                    to="/auth?mode=register"
                     className="inline-flex items-center gap-2 px-7 py-4 rounded-lg border border-border text-foreground font-semibold text-sm hover:bg-muted transition-all duration-200"
                   >
                     {products.cta.secondary}
