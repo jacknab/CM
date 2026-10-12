@@ -14,6 +14,11 @@ describe("nail checkout input constraints", () => {
   it("rejects duplicate intent IDs", () => expect(() => validateNailCheckoutInput({ ...sale(), totalPaid: 50,
     tenders: [{ method: "tap", amount: 25, paymentIntentId: "pi_cardcharge123" },
       { method: "tap", amount: 25, paymentIntentId: "pi_cardcharge123" }] })).toThrow("Duplicate card charge"));
+  it("accepts a card recorded from the salon's own terminal, with no charge behind it", () => {
+    expect(() => validateNailCheckoutInput({ ...sale(), paymentMethod: "card:25.00", tenders: [{ method: "card", amount: 25 }] })).not.toThrow();
+    // Like a gift card, it cannot be for more than the bill: only cash gives change.
+    expect(() => validateNailCheckoutInput({ ...sale(), tenders: [{ method: "card", amount: 30 }] })).toThrow();
+  });
   it("rejects missing payment", () => expect(() => validateNailCheckoutInput({ ...sale(), tenders: [] }))
     .toThrow("Payment amounts do not settle"));
   it("permits cash change but not gift/card overpayment", () => {

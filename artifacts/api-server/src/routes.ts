@@ -18769,12 +18769,20 @@ or
         paymentMethod: z.string().max(200), groupTickets: z.array(nailShare).max(30).optional(),
         extras: z.array(z.object({ label: z.string().min(1).max(100), price: money })).max(30).optional(),
         redemption: z.object({ customerId: z.number().int().positive(), rewardId: z.number().int().positive() }).optional(),
-        tenders: z.array(z.object({ method: z.enum(["cash", "gift", "m2", "tap"]), amount: money,
+        tenders: z.array(z.object({ method: z.enum(["cash", "gift", "m2", "tap", "card"]), amount: money,
           code: z.string().optional(), paymentIntentId: z.string().optional() })).max(30),
         // A cash sale taken on a tablet while it was offline says when the money was actually collected.
         collectedAt: z.string().datetime().optional(),
       }).safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: "Invalid checkout" });
+      // A card that is only recorded (no charge behind it) is accepted only from a salon whose CARD button
+      // is set to its own provider; everyone else's card payments must be real charges on the reader.
+      if (parsed.data.tenders.some((t) => t.method === "card")) {
+        const [settingsRow] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
+        if ((safeParsePreferences(settingsRow?.preferences as string | undefined) as any).cardProvider !== "own") {
+          return res.status(400).json({ message: "This salon's CARD button charges on the card reader. Set it to Own Provider to record a card taken on your own terminal." });
+        }
+      }
       // Only cash can have been collected without the server, only in the past, and only recently.
       let collectedAt: Date | null = null;
       if (parsed.data.collectedAt && parsed.data.tenders.length > 0 && parsed.data.tenders.every((t) => t.method === "cash")) {

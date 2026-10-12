@@ -7,7 +7,8 @@ import { getPaymentAccount, retrieveTerminalPaymentIntent } from "./stripeConnec
 import { applyLoyaltyDeltaTx } from "./loyaltyAward";
 import { NO_SALES_TAX, salesTaxCents, type SalesTaxSettings } from "@shared/nailCheckout";
 
-export interface NailTender { method: "cash" | "gift" | "m2" | "tap"; amount: number; code?: string; paymentIntentId?: string }
+/** `card`: a card taken on the salon's own terminal and only recorded here — no Certxa charge behind it. */
+export interface NailTender { method: "cash" | "gift" | "m2" | "tap" | "card"; amount: number; code?: string; paymentIntentId?: string }
 export interface NailShare { appointmentId: number; tip: number; discount: number; totalPaid: number; serviceRevenue: number; productRevenue: number; paymentMethod: string }
 export interface NailCheckoutInput {
   storeId: number; appointmentId: number; idempotencyKey: string;
@@ -44,7 +45,7 @@ export function validateNailCheckoutInput(a: NailCheckoutInput): void {
       cents(shares.reduce((n, s) => n + s.tip, 0)) !== cents(a.tip) ||
       cents(shares.reduce((n, s) => n + s.discount, 0)) !== cents(a.discount) ||
       cents(shares.reduce((n, s) => n + s.totalPaid, 0)) !== cents(a.totalPaid)) throw new NailCheckoutError("Group checkout shares do not match", 400);
-  if (a.tenders.some((t) => !validMoney(t.amount) || t.amount <= 0 || !["cash", "gift", "m2", "tap"].includes(t.method) ||
+  if (a.tenders.some((t) => !validMoney(t.amount) || t.amount <= 0 || !["cash", "gift", "m2", "tap", "card"].includes(t.method) ||
     ((t.method === "m2" || t.method === "tap") && !/^pi_[a-zA-Z0-9]+$/.test(t.paymentIntentId ?? "")) ||
     (t.method === "gift" && !t.code?.trim()))) throw new NailCheckoutError("Invalid tender", 400);
   if (new Set(a.tenders.filter((t) => t.paymentIntentId).map((t) => t.paymentIntentId)).size !== a.tenders.filter((t) => t.paymentIntentId).length)
