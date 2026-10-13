@@ -1106,9 +1106,11 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     const statusOf = (t: TurnTech) => t.currentStatus ?? "available";
     const free = clockedIn.filter((t) => statusOf(t) === "available");
     const held = clockedIn.filter((t) => statusOf(t) !== "available");
+    // Turns so far, in thousandths: the server (and the offline line) send it; an older copy only has the number of turns.
+    const unitsOf = (t: TurnTech) => Number.isFinite(Number((t as any).turnUnits)) ? Number((t as any).turnUnits) : Math.round((Number(t.turnCount) || 0) * 1000);
     return [
-      ...free.map((t, i) => ({ id: t.id, name: t.name, status: "available" as const, position: i + 1 })),
-      ...held.map((t) => ({ id: t.id, name: t.name, status: statusOf(t) as "busy" | "on_break", position: null })),
+      ...free.map((t, i) => ({ id: t.id, name: t.name, status: "available" as const, position: i + 1, turnUnits: unitsOf(t) })),
+      ...held.map((t) => ({ id: t.id, name: t.name, status: statusOf(t) as "busy" | "on_break", position: null, turnUnits: unitsOf(t) })),
     ];
   }, [techList]);
 

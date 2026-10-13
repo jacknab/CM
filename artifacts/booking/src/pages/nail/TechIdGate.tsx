@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Delete, Loader2 } from "lucide-react";
+import { TURN_UNIT, formatTurns } from "@shared/turnRules";
 import { useShake } from "@/hooks/use-shake";
 import { ApiError, identifyTech, type TechSignIn } from "./nailApi";
 import { resumeOrSignIn } from "@/lib/resumeSignIn";
@@ -16,7 +17,7 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
   /** The shop's timezone, so the clock reads shop time whatever the tablet is set to. */
   timezone: string;
   /** Clocked-in technicians in turn order: the free ones first (numbered — 1 is next up), then those busy or on break. */
-  turnQueue: { id: number; name: string; status: "available" | "busy" | "on_break"; position: number | null }[];
+  turnQueue: { id: number; name: string; status: "available" | "busy" | "on_break"; position: number | null; /** Turns so far this period, in thousandths of a turn. */ turnUnits: number }[];
   /** Opens the full Turn page (it used to open from the calendar's turn queue column). */
   onOpenTurnPage: () => void;
   onSignedIn: (who: TechSignIn) => void;
@@ -111,7 +112,8 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
                   <li key={t.id} data-status={t.status} data-testid="tech-id-turn-row">
                     <span>{t.position ?? "–"}</span>
                     <strong>{t.name}</strong>
-                    <em>{t.status === "available" ? "Available" : t.status === "busy" ? "Busy" : "On break"}</em>
+                    {/* How many turns they have, halves included: "½ turn", "1 turn", "1½ turns". */}
+                    <em data-testid="tech-id-turn-count">{formatTurns(t.turnUnits)} {t.turnUnits > 0 && t.turnUnits <= TURN_UNIT ? "turn" : "turns"}</em>
                   </li>
                 ))}
               </ol>
