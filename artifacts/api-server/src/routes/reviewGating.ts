@@ -67,6 +67,26 @@ router.get("/review/:token", async (req: Request, res: Response, next: NextFunct
   }
 });
 
+// The short form of the same link, used in text messages: certxa.com/rv/<token>. A store with a Google
+// destination goes straight there; otherwise the visitor is sent on to the review form at /review/<token>.
+router.get("/rv/:token", async (req: Request, res: Response) => {
+  const token = String(req.params.token || "");
+  try {
+    const row = await getReviewToken(token);
+    if (!row) { res.redirect(302, `${SITE_ORIGIN}/`); return; }
+    const externalUrl = await resolveExternalReviewUrl(row.storeId);
+    if (externalUrl) {
+      if (!row.usedAt) await markReviewTokenUsed(row.id).catch(() => {});
+      res.redirect(302, externalUrl);
+      return;
+    }
+    res.redirect(302, `${SITE_ORIGIN}/review/${encodeURIComponent(token)}`);
+  } catch (e: any) {
+    console.error("[ReviewRedirect] /rv/:token error:", e?.message ?? e);
+    res.redirect(302, `${SITE_ORIGIN}/`);
+  }
+});
+
 router.get("/r/:slug", async (req: Request, res: Response) => {
   const slug = String(req.params.slug || "").trim().toLowerCase();
   if (!slug) { res.redirect(302, `${SITE_ORIGIN}/`); return; }

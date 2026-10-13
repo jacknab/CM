@@ -598,14 +598,18 @@ export async function sendReviewRequest(
     customerPhone,
   });
 
-  const reviewUrl = `${process.env.APP_URL ?? "https://certxa.com"}/review/${token}`;
+  // The short form of the link (routes/reviewGating.ts, GET /rv/:token): a text message has little room.
+  const reviewUrl = `${process.env.APP_URL ?? "https://certxa.com"}/rv/${token}`;
 
   const template =
     settings.reviewTemplate ||
     "Hi {customerName}, thank you for visiting {storeName}! We'd love your feedback. Leave us a review: {reviewUrl}";
 
+  // The text greets the client by first name only.
+  const firstName = String((appointment.customer as any)?.firstName ?? "").trim() || String(customerName ?? "").trim().split(/\s+/)[0] || "";
+
   const body = interpolateTemplate(template, {
-    customerName: customerName || "there",
+    customerName: firstName || "there",
     storeName: appointment.store?.name || "our salon",
     reviewUrl: reviewUrl,
   });

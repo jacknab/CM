@@ -137,6 +137,18 @@ export interface CreateReviewTokenInput {
  * same link. Safe to call from both without creating duplicate tokens for
  * the same appointment.
  */
+const TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"; // no 0/O, 1/l/I: easy to read and retype
+function shortReviewToken(): string {
+  let out = "";
+  while (out.length < 10) {
+    // discard bytes past the last whole multiple of the alphabet so every character is equally likely
+    for (const byte of crypto.randomBytes(16)) {
+      if (byte < 256 - (256 % TOKEN_ALPHABET.length) && out.length < 10) out += TOKEN_ALPHABET[byte % TOKEN_ALPHABET.length];
+    }
+  }
+  return out;
+}
+
 export async function createReviewToken(input: CreateReviewTokenInput): Promise<string> {
   const existing = await pool.query(
     `SELECT token FROM review_tokens WHERE appointment_id = $1 LIMIT 1`,
@@ -144,7 +156,9 @@ export async function createReviewToken(input: CreateReviewTokenInput): Promise<
   );
   if (existing.rows[0]) return existing.rows[0].token as string;
 
-  const token = crypto.randomBytes(24).toString("hex");
+  // Ten letters and digits: short enough to keep the text message link small, and still one of
+  // 8 × 10^17 possibilities for a link that only lives 14 days.
+  const token = shortReviewToken();
   const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14 days
   await pool.query(
     `INSERT INTO review_tokens (token, store_id, appointment_id, customer_id, customer_name, customer_phone, expires_at)
