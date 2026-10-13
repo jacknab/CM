@@ -72,8 +72,6 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0 }
   // A close that failed stays on screen until the next try: a passing toast made a failed Day Close look done.
   const [closeError, setCloseError] = useState<string | null>(null);
   // The server asked whether a quiet tablet has been checked; true once the person closing confirms it.
-  const [checkedOtherTablets, setCheckedOtherTablets] = useState(false);
-  const [askOtherTablets, setAskOtherTablets] = useState(false);
   // The Z Report printed on the Certxa Android app's own (IP/USB) receipt printer right after the close.
   const [zPrint, setZPrint] = useState<{ state: "idle" | "printing" | "printed" | "failed"; error?: string; sessionId?: number }>({ state: "idle" });
 
@@ -211,8 +209,6 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0 }
           autoOpenNext: true,
           // So the server can tell this tablet from the others when it checks for unsent offline cash.
           deviceId: getDeviceId(),
-          // Set once the person closing has confirmed they checked a tablet that has gone quiet.
-          acknowledgeQuietDevices: checkedOtherTablets,
         }),
       });
       if (!res.ok) {
@@ -220,7 +216,6 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0 }
         if (body.code === "UNPAID_TICKETS" && Array.isArray(body.unpaidTickets)) {
           setServerBlockedTickets(body.unpaidTickets);
         }
-        if (body.code === "QUIET_DEVICES") setAskOtherTablets(true);
         if (body.code === "DAY_CLOSE_LOCKED" && body.lockedUntil) {
           queryClient.setQueryData([closeStatusKey], { lockedUntil: body.lockedUntil });
         }
@@ -474,26 +469,10 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0 }
               </div>
             </div>
 
-            {/* Another tablet that was in use today and has gone quiet may be offline, holding sales the server has not seen. */}
-            {!!closeStatus?.devices?.quiet.length && (
-              <div role="status" className="mx-5 mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-testid="day-close-quiet-devices">
-                <p className="font-semibold">Check the other tablet{closeStatus.devices.quiet.length === 1 ? "" : "s"} before closing.</p>
-                <p className="mt-0.5">
-                  {closeStatus.devices.quiet.map((d) => `Tablet ${d.device} (last heard from ${new Date(d.lastSeenAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })})`).join(", ")}
-                  {" "}may be offline. If it took cash while offline, that cash is not in these totals until it reconnects.
-                </p>
-              </div>
-            )}
-
             {closeError && (
               <div role="alert" className="mx-5 mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" data-testid="day-close-error">
                 <p className="font-semibold">The day was not closed.</p>
                 <p className="mt-0.5">{closeError}</p>
-                {askOtherTablets && !checkedOtherTablets && (
-                  <Button variant="outline" className="mt-3 h-9" onClick={() => { setCheckedOtherTablets(true); setAskOtherTablets(false); setCloseError(null); }} data-testid="day-close-checked-tablets">
-                    I've checked the other tablet — continue
-                  </Button>
-                )}
               </div>
             )}
 

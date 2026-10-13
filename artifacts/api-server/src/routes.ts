@@ -7192,15 +7192,8 @@ If you have any questions, please contact your administrator.
           devices: others.holdingCash,
         });
       }
-      // A tablet used today that has gone quiet may be offline and holding sales nobody can see. That cannot
-      // be known, only asked about: the day closes once the person closing says they have checked.
-      if (others.quiet.length > 0 && req.body?.acknowledgeQuietDevices !== true) {
-        return res.status(409).json({
-          code: "QUIET_DEVICES",
-          message: `Tablet ${others.quiet.map((d: any) => d.device).join(", ")} has not been in contact for a while and may be offline. If it took cash while offline, that cash is not in today's totals. Check that tablet, then confirm to close the day.`,
-          devices: others.quiet,
-        });
-      }
+      // A tablet that has merely gone quiet does not hold up the close: a tablet switched off for the night looks
+      // exactly the same, so asking about it stopped every close. Cash it took offline is counted when it reconnects.
       // The closing count is computed server-side from the denomination breakdown when one was sent.
       const finalClosingBalance = denominationTotal(input.denominationBreakdown) ?? parseDrawerAmount(input.closingBalance);
       if (finalClosingBalance == null) return res.status(400).json({ message: "Enter a valid cash amount." });
