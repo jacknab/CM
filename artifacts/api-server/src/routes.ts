@@ -6260,6 +6260,22 @@ If you have any questions, please contact your administrator.
       if (existingAppointment.status === "cancelled" && input.status && input.status !== "cancelled") {
         return res.status(409).json({ error: "Cancelled appointments cannot be restored or checked out" });
       }
+      // Moving or lengthening a booking from the Certxa Pro app (`checkConflicts: true`): refused when the same
+      // technician already has another booking in that time, with the salon's gap between appointments held.
+      // Opt-in, because the salon calendar and the walk-in screens are allowed to overlap bookings on purpose.
+      if (req.body?.checkConflicts === true && (input.date || input.duration != null || input.staffId != null)) {
+        const staffId = input.staffId ?? existingAppointment.staffId;
+        if (staffId && existingAppointment.storeId) {
+          const start = new Date(input.date ?? existingAppointment.date);
+          const end = new Date(start.getTime() + (Number(input.duration ?? existingAppointment.duration) || 30) * 60000);
+          const bufferMin = await getBufferMinutes(existingAppointment.storeId);
+          const others = await storage.getAppointments({ storeId: existingAppointment.storeId });
+          const clash = others.some((apt) => apt.id !== appointmentId && apt.staffId === staffId
+            && apt.status !== "cancelled" && apt.status !== "no_show"
+            && clashesWithBuffer(new Date(apt.date), apt.duration, start, end, bufferMin));
+          if (clash) return res.status(409).json({ code: "TIME_TAKEN", message: "Another appointment is already booked at that time." });
+        }
+      }
       // Checking a client in from the calendar stamps the arrival time, like the kiosk does —
       // the nail-salon board lists "waiting" clients by it.
       if (input.status === "confirmed" && existingAppointment.status !== "confirmed" &&

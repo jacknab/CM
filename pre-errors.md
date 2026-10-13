@@ -6,6 +6,14 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-10-13 — Certxa Pro app: "Notify client" switch does nothing; edit screen offers six fixed times
+
+- **File:** `certxa-pro-replit/staff-app-latest/artifacts/certxa-pro/app/(tabs)/index.tsx` (reschedule dialog, `notifyClient`) and `app/appointment/[id].tsx:11` (`timeSlots`).
+- **Symptom 1:** after dragging an appointment, the dialog has a "Notify client" switch. Its value is never sent to the server, so the client gets no message whichever way it is set.
+- **Symptom 2:** the appointment edit screen can only move a booking to one of six hard-coded times (9:00, 10:30, 12:00, 2:00, 3:30, 5:00), not to the times the business is actually open and free.
+- **Context:** found while fixing the day view and overlap check. The server has no "reschedule and notify" option on `PATCH /api/appointments/:id` today, so symptom 1 needs a decision on what the client should be sent (SMS, e-mail, both).
+- **Why not fixed now:** both are product decisions rather than defects in what was asked for.
+
 ## 2026-10-12 — Support ticket closure emails are failing to send
 
 **Where:** server error log (`/root/.pm2/logs/certxa-api-error*.log`), lines `[AutoClose] Could not send closure email for ticket #TK-…: Invalid login: 454 4.7.0 Account is temporarily unavailable.`
