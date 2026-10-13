@@ -4,7 +4,7 @@ import type { Server } from "node:http";
 
 const state = vi.hoisted(() => ({
   query: vi.fn(), createCustomer: vi.fn(),
-  bookings: [] as Record<string, any>[], customers: [] as Record<string, any>[],
+  bookings: [] as Record<string, any>[], customers: [] as Record<string, any>[], ownStaff: null as number | null,
 }));
 vi.mock("../db", () => ({ pool: { query: state.query } }));
 vi.mock("../storage", () => ({ storage: { createCustomer: state.createCustomer } }));
@@ -35,18 +35,25 @@ beforeAll(async () => {
 });
 afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(err => err ? reject(err) : resolve())); });
 beforeEach(() => {
-  state.bookings.length = 0; state.customers.length = 0;
+  state.bookings.length = 0; state.customers.length = 0; state.ownStaff = null;
   state.customers.push(customer);
   state.createCustomer.mockReset().mockImplementation(async () => ({ id: 1 }));
   state.query.mockReset().mockImplementation(async (sql: string, values: any[]) => {
+    if (sql.includes("FROM users u JOIN staff s")) return { rows: state.ownStaff ? [{ id: state.ownStaff }] : [] };
+    if (sql.includes("FROM calendar_settings")) return { rows: [] };
+    if (sql.includes("FROM appointments o")) {
+      const from = Date.parse(values[3]); const to = Date.parse(values[4]);
+      return { rows: state.bookings.filter(b => b.id !== values[2] && b.status !== "cancelled" && (b.staffId ?? null) === values[1]
+        && Date.parse(b.date) < to && Date.parse(b.date) + b.duration * 60000 > from).map(() => ({})) };
+    }
     if (sql.includes("FROM clients c WHERE c.id=$1")) return { rows: state.customers.filter(c => c.id === values[0]) };
     if (sql.includes("FROM clients c WHERE c.store_id=$1")) return { rows: state.customers };
     if (sql.includes("FROM services WHERE store_id=$1")) return { rows: [service] };
     if (sql.includes("SELECT id FROM services")) return { rows: values[0] === service.id ? [service] : [] };
     if (sql.includes("INSERT INTO appointments")) {
       if (values[0] !== customer.id || values[1] !== service.id) return { rows: [] };
-      state.bookings.push({ id: 10, date: values[4], duration: values[3], notes: values[5], status: "pending", customer, service, cancelledAt: null, cancellationReason: null });
-      return { rows: [{ id: 10 }] };
+      state.bookings.push({ id: 10 + state.bookings.length, staffId: values[6] ?? null, date: values[4], duration: values[3], notes: values[5], status: "pending", customer, service, cancelledAt: null, cancellationReason: null });
+      return { rows: [{ id: state.bookings[state.bookings.length - 1].id }] };
     }
     if (sql.includes("UPDATE appointments SET status='cancelled'")) {
       const row = state.bookings.find(b => b.id === values[0] && b.status !== "cancelled");
@@ -90,6 +97,20 @@ describe("Certxa Pro API", () => {
     expect((await request("/appointments?from=2026-09-30T00:00:00.000Z")).body).toHaveLength(0);
     const updated = await request("/appointments/10", "PATCH", { status: "confirmed", notes: "Updated" });
     expect(updated.body).toMatchObject({ status: "confirmed", notes: "Updated" });
+  });
+  it("refuses a booking, or a move, onto a time that is already taken", async () => {
+    state.ownStaff = 5;
+    expect((await request("/appointments", "POST", create)).status).toBe(201);
+    // 16:00 for 90 minutes is taken: 17:00 overlaps it, 17:30 does not.
+    const clash = await request("/appointments", "POST", { ...create, date: "2026-09-29T17:00:00.000Z" });
+    expect(clash.status).toBe(409);
+    expect(clash.body.code).toBe("TIME_TAKEN");
+    expect((await request("/appointments", "POST", { ...create, date: "2026-09-29T17:30:00.000Z", staffId: 99, customLines: [{ label: "Extra", price: 10 }] })).status).toBe(201);
+    expect(state.bookings.map(b => b.staffId)).toEqual([5, 5]);
+    // Moving the second one back onto the first is refused; an edit that leaves the time alone is not.
+    expect((await request("/appointments/11", "PATCH", { date: "2026-09-29T16:30:00.000Z", checkConflicts: true })).status).toBe(409);
+    expect((await request("/appointments/11", "PATCH", { status: "confirmed" })).status).toBe(200);
+    expect((await request("/appointments/11", "PATCH", { date: "2026-09-29T19:00:00.000Z", checkConflicts: true })).status).toBe(200);
   });
   it("soft cancels idempotently, retaining original booking and reason", async () => {
     await request("/appointments", "POST", create);

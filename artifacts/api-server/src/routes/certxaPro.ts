@@ -6,6 +6,7 @@ import { isAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import { verifySoloToken } from "../lib/soloAuth";
 import { storage } from "../storage";
+import { getBufferMinutes } from "../lib/appointmentBuffer";
 
 const router = Router();
 const id = z.coerce.number().int().positive();
@@ -20,6 +21,10 @@ const customerInput = z.object({
 const appointmentInput = z.object({
   customerId: id, serviceId: id, duration: z.number().int().positive().max(1440),
   date, notes: z.string().max(10000).nullish(),
+  // The app sends the technician its open time was offered for; the booking is always made for the owner (see ownStaff).
+  staffId: id.optional(),
+  // Further services on the same visit, as priced lines.
+  customLines: z.array(z.object({ label: z.string().trim().min(1).max(60), price: z.number().min(0).max(100000) }).strict()).max(20).optional(),
 }).strict();
 const updateInput = z.object({
   date: date.optional(), serviceId: id.optional(),
@@ -27,6 +32,8 @@ const updateInput = z.object({
   status: status.optional(), notes: z.string().max(10000).nullable().optional(),
   // Kept for compatibility with the shipped native appointment screen.
   cancellationReason: z.string().max(10000).optional(),
+  // Sent by the app when it moves a booking. A move is always checked here, with or without it.
+  checkConflicts: z.boolean().optional(),
 }).strict().refine(value => Object.keys(value).length > 0, "At least one field is required");
 const cancelInput = z.object({
   notifyClient: z.boolean().default(false), reason: z.string().max(10000).optional(),
@@ -46,8 +53,38 @@ async function store(req: Request, res: Response): Promise<number | null> {
   return storeId;
 }
 
+/**
+ * The app is one person's calendar: the account owner's own staff record (users.staff_id). Bookings are listed
+ * and made for that person only, never for another technician of the same business. Null when the account has
+ * no staff record linked — then the whole business is the calendar.
+ */
+async function ownStaff(req: Request, storeId: number): Promise<number | null> {
+  const bearer = req.headers.authorization;
+  const userId = (bearer?.startsWith("Bearer ") ? verifySoloToken(bearer.slice(7))?.userId : undefined)
+    ?? (req.session as { userId?: string } | undefined)?.userId;
+  if (!userId) return null;
+  const result = await pool.query(
+    "SELECT s.id FROM users u JOIN staff s ON s.id=u.staff_id AND s.store_id=$2 WHERE u.id=$1", [userId, storeId]);
+  return result.rows[0]?.id ?? null;
+}
+
+/** Is that time already taken on this calendar? The salon's gap between appointments is held on both sides. */
+async function timeTaken(storeId: number, staffId: number | null, start: string | Date, minutes: number, exceptId: number | null) {
+  const buffer = await getBufferMinutes(storeId);
+  const from = new Date(start);
+  const to = new Date(from.getTime() + minutes * 60_000);
+  const result = await pool.query(
+    `SELECT 1 FROM appointments o WHERE o.store_id=$1 AND o.staff_id IS NOT DISTINCT FROM $2
+      AND o.status NOT IN ('cancelled','no_show') AND ($3::int IS NULL OR o.id<>$3)
+      AND o.date < $5::timestamptz + make_interval(mins => $6)
+      AND o.date + make_interval(mins => o.duration + $6) > $4::timestamptz LIMIT 1`,
+    [storeId, staffId, exceptId, from.toISOString(), to.toISOString(), buffer]);
+  return result.rows.length > 0;
+}
+const TAKEN = { error: "Another appointment is already booked at that time.", code: "TIME_TAKEN" };
+
 // JSON shape shared by list, creation, update, and cancellation. Prices are dollars.
-const appointmentSelect = `SELECT a.id, a.date, a.duration, a.status, a.notes,
+const appointmentSelect = `SELECT a.id, a.date, a.duration, a.status, a.notes, a.staff_id AS "staffId",
   a.cancellation_reason AS "cancellationReason", a.cancelled_at AS "cancelledAt",
   json_build_object('id', c.id, 'name', c.full_name,
     'phone', (SELECT COALESCE(p.display_phone, p.phone_number_e164) FROM client_phones p WHERE p.client_id=c.id ORDER BY p.is_primary DESC, p.id LIMIT 1),
@@ -154,10 +191,12 @@ router.get("/appointments", async (req, res) => {
     return res.status(400).json({ error: "from must not be after to" });
   try {
     const storeId = await store(req, res); if (!storeId) return;
+    const staffId = await ownStaff(req, storeId);
     const rows = await pool.query(`${appointmentSelect} WHERE a.store_id=$1
       AND ($2::timestamptz IS NULL OR a.date >= $2::timestamptz)
-      AND ($3::timestamptz IS NULL OR a.date <= $3::timestamptz) ORDER BY a.date,a.id`,
-      [storeId, dates.data.from ?? null, dates.data.to ?? null]);
+      AND ($3::timestamptz IS NULL OR a.date <= $3::timestamptz)
+      AND ($4::int IS NULL OR a.staff_id=$4) ORDER BY a.date,a.id`,
+      [storeId, dates.data.from ?? null, dates.data.to ?? null, staffId]);
     return res.json(rows.rows);
   } catch (error) { return unexpected(res, error); }
 });
@@ -167,11 +206,13 @@ router.post("/appointments", async (req, res) => {
   if (!parsed.success) return invalid(res, parsed.error);
   try {
     const storeId = await store(req, res); if (!storeId) return;
-    const { customerId, serviceId, duration, date: when, notes } = parsed.data;
-    const result = await pool.query(`INSERT INTO appointments (customer_id,service_id,store_id,duration,date,notes,status)
-      SELECT c.id,s.id,$3,$4,$5::timestamptz,$6,'pending' FROM clients c CROSS JOIN services s
+    const { customerId, serviceId, duration, date: when, notes, customLines } = parsed.data;
+    const staffId = await ownStaff(req, storeId);
+    if (await timeTaken(storeId, staffId, when, duration, null)) return res.status(409).json(TAKEN);
+    const result = await pool.query(`INSERT INTO appointments (customer_id,service_id,store_id,duration,date,notes,status,staff_id,custom_lines)
+      SELECT c.id,s.id,$3,$4,$5::timestamptz,$6,'pending',$7,$8::jsonb FROM clients c CROSS JOIN services s
       WHERE c.id=$1 AND c.store_id=$3 AND c.archived_at IS NULL AND s.id=$2 AND s.store_id=$3 AND s.is_active=true RETURNING id`,
-      [customerId, serviceId, storeId, duration, when, notes ?? null]);
+      [customerId, serviceId, storeId, duration, when, notes ?? null, staffId, customLines?.length ? JSON.stringify(customLines) : null]);
     if (!result.rows[0]) return res.status(400).json({ error: "Customer or service not found in this store" });
     return res.status(201).json(await appointment(result.rows[0].id, storeId));
   } catch (error) { return unexpected(res, error); }
@@ -195,6 +236,13 @@ router.patch("/appointments/:id", async (req, res) => {
       const service = await pool.query("SELECT id FROM services WHERE id=$1 AND store_id=$2 AND is_active=true", [parsed.data.serviceId, storeId]);
       if (!service.rows[0]) return res.status(400).json({ error: "Service not found in this store" });
     }
+    // A new time or a longer visit must not land on another booking of the same calendar. (An edit that leaves
+    // both alone is never refused, even when the booking already overlaps one made elsewhere.)
+    const moved = parsed.data.date !== undefined && new Date(parsed.data.date).getTime() !== new Date(current.date).getTime();
+    const longer = parsed.data.duration !== undefined && parsed.data.duration > Number(current.duration);
+    if (parsed.data.status !== "cancelled" && (moved || longer) &&
+        await timeTaken(storeId, current.staffId ?? null, parsed.data.date ?? current.date, parsed.data.duration ?? Number(current.duration), parsedId.data))
+      return res.status(409).json(TAKEN);
     if (parsed.data.status === "cancelled") {
       await pool.query(`UPDATE appointments SET status='cancelled',
         cancelled_at=COALESCE(cancelled_at,NOW()), cancellation_reason=COALESCE($3,cancellation_reason)
