@@ -185,6 +185,8 @@ export function useCardPayments(o: CardPaymentsOpts) {
     (window as any).ReactNativeWebView.postMessage(JSON.stringify({
       type, appointmentId: o.ticketId, amountCents: cents, clientName: o.clientName, nailCheckout: true, ...o.context(),
     }));
+    // The customer's screen shows the card animation; this device's reader takes the card.
+    o.send("kiosk_checkout_await_payment", { mode: "m2", total: amount, appointmentId: o.ticketId, ...o.settlementAfter(amount) });
     o.say("M2 READER — INSERT / TAP CARD", "info");
   };
 
