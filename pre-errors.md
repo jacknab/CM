@@ -36,7 +36,7 @@ The new site (`artifacts/marketing`) now serves `/`, `/pricing`, `/features`, `/
 4. **Stock photographs** (23 Getty images) are not hosted here; `/airo-assets/images/<slot>` redirects to GoDaddy's CDN. They disappear if the Airo site is cancelled.
 5. **Logo.** The owner's logo file (reads "cirtXa") is in every page header at the owner's instruction (`artifacts/marketing/public/logo.png`, also used by `php/includes/nav.php`). The dark footer still uses the text wordmark `BrandWordmark.tsx` ("certXa") because no light-on-dark version of the logo exists, so header and footer spell the name differently. The home page's Autumn screenshot (`media/pages__autumn__new-screenshot`) still shows the older "sirtXa" logo.
 6. **Redirects from old addresses are temporary (302)** (`MOVED` in `marketing-site.ts`); make them 301 once the owner has approved where each lands.
-7. `artifacts/booking/public/llms-full.txt` still holds the text of the old PHP pages.
+7. `artifacts/booking/public/llms-full.txt` was rebuilt from the live site on 2026-10-13 (`scripts/gen-llms-full.py`); re-run the script after changing marketing pages.
 ---
 
 ## 2026-10-12 — Open items from the GEO audit, and two Autumn fee questions
@@ -55,7 +55,7 @@ Also open from the same audit, all listed in `GEO-AUDIT-REPORT.md` (2026-10-12):
 
 **Why it matters:** every restart is a few seconds when the server does not answer. Since the offline work (Phase 2), a /nail tablet that gets no answer shows OFFLINE and saves to its own queue until the server is back — safe, but staff will see the offline pill come and go many times an hour. Each restart also applies whatever migration files are on disk: migration 0237 reached production this way on 2026-10-09 16:29 UTC without any deploy.
 
-**Limit raised 2026-10-10:** `ecosystem.config.js` already said 2000 MB but pm2 had never been given it; it was applied with the Phase 4/5 deploy (`pm2 reload ecosystem.config.js --only certxa-api --update-env`). **Still open:** the server uses about 1 GB as soon as it starts and grows from there (the config file's own comment points at the unbounded `_enrichmentCache` in `artifacts/api-server/src/lib/salonData.ts`); if it reaches 2 GB the restarts come back.
+**Limit raised 2026-10-10:** `ecosystem.config.js` already said 2000 MB but pm2 had never been given it; it was applied with the Phase 4/5 deploy (`pm2 reload ecosystem.config.js --only certxa-api --update-env`). **Still open:** the server uses about 1 GB as soon as it starts and grows from there (the config file's own comment points at the unbounded `_enrichmentCache` in `artifacts/api-server/src/lib/salonData.ts`); if it reaches 2 GB the restarts come back. Checked 2026-10-13: no memory restart in `pm2.log` since the limit was raised; the process was at about 1 GB.
 
 ---
 
@@ -105,7 +105,7 @@ Solo is free (migration 0234; billing activates it without a checkout; site and 
 
 **16. Offline start and the 3 AM restart are untested on a real tablet.** In a desktop Chromium simulation (`artifacts/booking/scripts/offline-launch-check.cjs`) the staff screens start with the server gone, including on a tablet's first run. The owner app now retries a failed load every 20 seconds (`apps/certxa-owner/app/index.tsx`), but that needs a new APK build, and none of it has been run on Android.
 
-**17. A tablet that is offline cannot tell the server it holds unsent cash.** Day Close refuses on reported cash and now asks for a confirmation when a tablet used today has gone quiet (`QUIET_DEVICES`), but whether that tablet holds money can only be found by looking at it.
+**17. A tablet that is offline cannot tell the server it holds unsent cash.** Day Close refuses when another tablet has reported unsent cash. The extra confirmation for a tablet that had merely gone quiet was removed on 2026-10-13 (it fired for every tablet switched off for the night), so cash taken on a tablet that never got back in touch is not in that night's totals; it lands in the next shift when the tablet reconnects.
 
 **18. Client profile edits from two devices are still last-write-wins.** /nail has no client edit screen, so nothing was queued for it; the calendar's older offline queue (`UPDATE_CLIENT` in `lib/sync-engine.ts`) sends edits with no version check.
 
