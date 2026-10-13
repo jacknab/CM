@@ -43,55 +43,55 @@ Disallow: /launchsite/barbershops
 Disallow: /launchsite/hair-salons
 Disallow: /salon-data.json
 
-# ── Major AI crawlers — explicitly named so a future accidental broad
-# Disallow doesn't silently block them with no dedicated fallback rule ──────
+# ── Major AI crawlers — named explicitly so a future broad Disallow cannot block them by accident.
+# A crawler that finds its own name here ignores the "*" group above, so the same internal paths
+# are listed again: these crawlers are welcome on every public page and kept out of the app and API. ──
 User-agent: GPTBot
-Allow: /
-
 User-agent: OAI-SearchBot
-Allow: /
-
 User-agent: ChatGPT-User
-Allow: /
-
 User-agent: ClaudeBot
-Allow: /
-
 User-agent: Claude-User
-Allow: /
-
 User-agent: Claude-Web
-Allow: /
-
 User-agent: anthropic-ai
-Allow: /
-
 User-agent: PerplexityBot
-Allow: /
-
 User-agent: Perplexity-User
-Allow: /
-
 User-agent: Google-Extended
-Allow: /
-
 User-agent: Applebot-Extended
-Allow: /
-
 User-agent: Amazonbot
-Allow: /
-
 User-agent: CCBot
-Allow: /
-
 User-agent: Cohere-ai
-Allow: /
-
 User-agent: FacebookBot
-Allow: /
-
 User-agent: GoogleOther
 Allow: /
+Allow: /api/r2/
+Disallow: /api/
+Disallow: /auth/
+Disallow: /manage/
+Disallow: /admin/
+Disallow: /isadmin/
+Disallow: /isTeam/
+Disallow: /onboarding/
+Disallow: /staff/
+Disallow: /staff-auth/
+Disallow: /staff-forgot-password/
+Disallow: /staff-reset-password/
+Disallow: /staff-dashboard/
+Disallow: /dashboard/
+Disallow: /calendar/
+Disallow: /customers/
+Disallow: /products/
+Disallow: /includes/
+Disallow: /config.php
+Disallow: /router.php
+Disallow: /editor
+Disallow: /launchsite/admin
+Disallow: /launchsite/editor
+Disallow: /launchsite/preview
+Disallow: /launchsite/scraped-tmp/
+Disallow: /launchsite/api/
+Disallow: /launchsite/barbershops
+Disallow: /launchsite/hair-salons
+Disallow: /salon-data.json
 
 # ── Known scraper / data-harvesting agents — block from the salon listing
 # hub pages. Individual salon pages are flat at root (certxa.com/{slug}), so
