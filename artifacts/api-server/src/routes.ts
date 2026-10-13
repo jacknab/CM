@@ -1,4 +1,4 @@
-import express, { type Express, type Request, type Response } from "express";
+import express, { type Express, type Request, type RequestHandler, type Response } from "express";
 import { getRedisClient } from "./lib/redis";
 import * as checkSignature from "./lib/checkSignature";
 import { createServer, type Server } from "http";
@@ -7867,7 +7867,39 @@ If you have any questions, please contact your administrator.
     }
   });
 
-  app.post("/api/onboarding", isAuthenticated, async (req, res) => {
+  // One onboarding at a time per account. A double-tap on the last step (or a retry while the first
+  // request is still working) used to run alongside it: the first created the business, the second took
+  // the "recover a partial onboarding" branch and created every technician again. The second request now
+  // waits for the first to finish, finds the account already set up, and returns the same business.
+  // The lock is a Postgres advisory lock, so it holds across the API's worker processes.
+  const ONBOARDING_LOCK_NAMESPACE = 918_274;
+  const onboardingOneAtATime: RequestHandler = async (req, res, next) => {
+    const userId = String((req.session as any)?.userId ?? "");
+    if (!userId) return next();
+    let conn: import("pg").PoolClient | null = null;
+    try {
+      conn = (await pool.connect()) as import("pg").PoolClient;
+      await conn.query(`SELECT pg_advisory_lock($1, hashtext($2))`, [ONBOARDING_LOCK_NAMESPACE, userId]);
+    } catch (err: any) {
+      conn?.release();
+      console.error("[onboarding] could not take the account lock:", err?.message);
+      return res.status(503).json({ message: "We couldn't start setting up your account. Please try again." });
+    }
+    let released = false;
+    const held = conn;
+    const release = () => {
+      if (released) return;
+      released = true;
+      held.query(`SELECT pg_advisory_unlock($1, hashtext($2))`, [ONBOARDING_LOCK_NAMESPACE, userId])
+        .catch(() => {})
+        .finally(() => held.release());
+    };
+    res.once("finish", release);
+    res.once("close", release);
+    next();
+  };
+
+  app.post("/api/onboarding", isAuthenticated, onboardingOneAtATime, async (req, res) => {
     try {
       console.log("Onboarding: Starting process for user:", (req.session as any).userId);
       const userId = (req.session as any).userId;
