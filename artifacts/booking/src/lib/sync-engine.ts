@@ -688,6 +688,9 @@ class SyncEngine {
           body: JSON.stringify({ staffId, storeId, ...rest }),
           credentials: "include",
         });
+        // Already clocked in (409), or no open clock-in to close (404): someone got there first, and that is
+        // the state this punch wanted. Not a conflict for staff to resolve.
+        if ((punchAction === "clock_in" && res.status === 409) || (punchAction !== "clock_in" && res.status === 404)) return null;
         await throwIfConflict(res, action.type);
         if (!res.ok) throw new Error(`TIMECLOCK_PUNCH failed: ${res.status}`);
         return null;

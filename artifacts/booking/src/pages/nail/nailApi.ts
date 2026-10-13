@@ -9,7 +9,9 @@ import { clientPhoneCacheDB } from "@/lib/client-phone-cache-db";
 import { overlayBoard } from "./offlineBoard";
 import { offlineSaleProblem } from "./offlineSale";
 export { offlineSaleProblem };
-import { pickOfflineTech, type TurnLineTech } from "@/lib/nail-offline/turn";
+import { commonOfflineTech, computeOfflineLine, eventsFromDevice, type BaseLine, type OfflineLine, type OfflineLineTech } from "@/lib/nail-offline/line";
+import { snapshotDB } from "@/lib/snapshot-db";
+import { actionQueueDB } from "@/lib/action-queue-db";
 
 export const boardKey = (storeId: number) => ["/api/nail/board", storeId] as const;
 
@@ -293,10 +295,70 @@ export const fetchCalendarBoardBookings = () => {
   return call<import("./boardView").CalendarBoardBooking[]>(`/api/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
 };
 
-export const fetchTurn = (storeId: number, serviceId: number | null) =>
-  call<{ technicians: TurnTech[]; eligibleTechnicians: TurnTech[] }>(
-    `/api/turn/eligibility?storeId=${storeId}${serviceId ? `&serviceId=${serviceId}` : ""}`,
-  );
+const turnUrl = (storeId: number, serviceId: number | null) => `/api/turn/eligibility?storeId=${storeId}${serviceId ? `&serviceId=${serviceId}` : ""}`;
+
+/**
+ * The turn line. From the server when it can be reached. Otherwise worked out on this device
+ * (lib/nail-offline/line.ts): the server's last line, brought up to date with every clock-in, assignment,
+ * payment and cancellation made here since — never the stale copy as it was when the connection dropped.
+ */
+export const fetchTurn = async (storeId: number, serviceId: number | null): Promise<{ technicians: TurnTech[]; eligibleTechnicians: TurnTech[] }> => {
+  const url = turnUrl(storeId, serviceId);
+  if (syncEngine.isOffline()) {
+    const line = await offlineTurnLine(storeId, serviceId);
+    if (line) return line as unknown as { technicians: TurnTech[]; eligibleTechnicians: TurnTech[] };
+  }
+  const data = await call<{ technicians: TurnTech[]; eligibleTechnicians: TurnTech[] }>(url);
+  // The request failed and `call` answered with the device's copy: that copy is the starting point, not the answer.
+  if (cachedSince(url)) {
+    const line = await offlineTurnLine(storeId, serviceId);
+    if (line) return line as unknown as { technicians: TurnTech[]; eligibleTechnicians: TurnTech[] };
+  }
+  return data;
+};
+
+/**
+ * The line as this device can work it out with no server. Null when the device has never been sent a line
+ * for this salon (it has nothing to start from).
+ */
+export async function offlineTurnLine(storeId: number, serviceId: number | null): Promise<OfflineLine | null> {
+  const recallLine = (sid: number | null) => nailOffline.recall<BaseLine>(storeId, turnUrl(storeId, sid)).catch(() => undefined);
+  // The whole salon's line is the starting point (every screen keeps it fresh while online); the line last
+  // sent for this one service is the fallback, and says who performs it when the device has no skill list.
+  const forService = serviceId ? await recallLine(serviceId) : undefined;
+  const kept = (await recallLine(null)) ?? forService;
+  if (!kept?.data?.technicians) return null;
+
+  const [records, board, snapshot, pending] = await Promise.all([
+    nailOffline.records(storeId).catch(() => [] as Awaited<ReturnType<typeof nailOffline.records>>),
+    nailOffline.recall<NailBoard>(storeId, "/api/nail/board").catch(() => undefined),
+    snapshotDB.load(storeId).catch(() => null),
+    actionQueueDB.getPending().catch(() => [] as Awaited<ReturnType<typeof actionQueueDB.getPending>>),
+  ]);
+
+  // Who performs what: the salon's full list when this device holds it, else what the server last said for this service.
+  let skills: Map<number, Set<number>> | null = null;
+  if (snapshot?.staffServices?.length) {
+    skills = new Map();
+    for (const row of snapshot.staffServices) {
+      if (!skills.has(row.staffId)) skills.set(row.staffId, new Set());
+      skills.get(row.staffId)!.add(row.serviceId);
+    }
+  } else if (serviceId && forService?.data?.technicians) {
+    skills = new Map(forService.data.technicians.map((t) => [t.id, new Set(t.supportsService === false ? [] : [serviceId])]));
+  }
+
+  // What was done on this device after the server sent that line.
+  const events = eventsFromDevice({
+    records, since: Date.parse(kept.at),
+    staffOnBoard: new Map((board?.data?.tickets ?? []).map((t) => [t.id, t.staff?.id ?? null])),
+    punches: pending.filter((a) => a.type === "TIMECLOCK_PUNCH" && Number((a.payload as any)?.storeId) === storeId)
+      .map((a) => ({ action: String((a.payload as any)?.action), staffId: Number((a.payload as any)?.staffId), at: Number(a.timestamp) || Date.now() })),
+  });
+
+  const openTickets = overlayBoard(board?.data, records).tickets.map((t) => ({ staffId: t.staff?.id ?? null, status: t.status }));
+  return computeOfflineLine({ base: kept.data, serviceId, skills, openTickets, events });
+}
 
 export const fetchNailConfig = async (serviceId: number): Promise<NailConfigView | null> =>
   normalizeNailConfig(await callSettled<any>(`/api/services/${serviceId}/nail-config`));
@@ -382,9 +444,22 @@ export async function createTicket(
     // already given a client to while offline. The ticket is marked as assigned offline.
     let staff = offline.staff;
     let assignedOffline = false;
+    const asStaff = (t: OfflineLineTech): NonNullable<TicketRecord["staff"]> => ({ id: t.id, name: t.name, color: (t.color as string | null | undefined) ?? null });
+    const extras = offline.extras ?? [];
+    // A technician chosen by staff must be someone who is clocked in and performs the service, offline as online.
+    if (staff) {
+      const problem = await offlineAssignProblem(offline.storeId, body.serviceId, staff.id);
+      if (problem) throw new ApiError(problem, 400);
+    }
+    // One technician for the whole visit when one person can take every service of it.
+    let visitTech: OfflineLineTech | null = null;
     if (!staff && body.autoAssign && !body.leaveUnassigned) {
-      const next = await offlineTurnPick(offline.storeId, body.serviceId);
-      if (next) { staff = { id: next.id, name: next.name, color: next.color ?? null }; assignedOffline = true; }
+      if (extras.length > 0) {
+        const lines = (await Promise.all([body.serviceId, ...extras.map((e) => e.id)].map((id) => offlineTurnLine(offline.storeId, id)))).filter((l): l is OfflineLine => !!l);
+        if (lines.length === extras.length + 1) visitTech = commonOfflineTech(lines);
+      }
+      const next = visitTech ?? await offlineTurnPick(offline.storeId, body.serviceId);
+      if (next) { staff = asStaff(next); assignedOffline = true; }
     }
     const rec = await nailOffline.createTicket({
       storeId: offline.storeId, clientId: body.clientId, clientName: offline.client.name, phone: offline.client.phone, walkinId: body.checkinId ?? null,
@@ -392,12 +467,18 @@ export async function createTicket(
       nail: toNailBody(body.pick), nailLines: offline.nailLines, nailPriceAdjustment: offline.nailPriceAdjustment,
       customLines: body.customLines, staff, assignedOffline, total: offline.total, duration: offline.duration,
     }, key);
-    // Each further service of the visit is kept as a ticket of its own, waiting for a technician.
-    for (const extra of offline.extras ?? []) {
+    // Each further service of the visit is a ticket of its own. It stays with the first service's technician
+    // when they perform it; otherwise it goes to whoever is next in line for it, or waits unassigned.
+    for (const extra of extras) {
+      let extraStaff: TicketRecord["staff"] = null;
+      if (staff && !body.leaveUnassigned) {
+        if (visitTech || !(await offlineAssignProblem(offline.storeId, extra.id, staff.id))) extraStaff = staff;
+        else if (body.autoAssign) { const next = await offlineTurnPick(offline.storeId, extra.id); extraStaff = next ? asStaff(next) : null; }
+      }
       await nailOffline.createTicket({
         storeId: offline.storeId, clientId: body.clientId, clientName: offline.client.name, phone: offline.client.phone, walkinId: null,
         service: extra, addons: [], nail: toNailBody(EMPTY_PICK), nailLines: [], nailPriceAdjustment: 0,
-        customLines: [], staff: null, assignedOffline: false, total: extra.price, duration: extra.duration,
+        customLines: [], staff: extraStaff, assignedOffline: !!extraStaff, total: extra.price, duration: extra.duration,
       }, newIdempotencyKey("ticket.create"));
     }
     return { appointmentId: rec.id, ticketNumber: rec.ticketNumber ?? 0, staffId: rec.staff?.id ?? null, staffName: rec.staff?.name ?? null, status: "confirmed",
@@ -413,18 +494,26 @@ export async function createTicket(
   }
 }
 
-/** The next technician in the last turn line the server sent for this service, who this device has not already given a client to. */
-async function offlineTurnPick(storeId: number, serviceId: number): Promise<TurnLineTech | null> {
-  const lineFor = async (sid: number | null) => (await nailOffline.recall<{ technicians: TurnLineTech[]; eligibleTechnicians?: TurnLineTech[] }>(storeId,
-    `/api/turn/eligibility?storeId=${storeId}${sid ? `&serviceId=${sid}` : ""}`).catch(() => undefined))?.data;
-  // The line for this very service knows who can perform it; the general line is the fallback.
-  const line = (await lineFor(serviceId)) ?? (await lineFor(null));
-  if (!line) return null;
-  const held = new Set<number>();
-  for (const r of await nailOffline.records(storeId).catch(() => [] as Awaited<ReturnType<typeof nailOffline.records>>)) {
-    if ((r.kind === "ticket" || r.kind === "patch") && r.staff && !r.paid && !(r.kind === "patch" && r.status === "cancelled")) held.add(r.staff.id);
-  }
-  return pickOfflineTech(line.technicians ?? [], held);
+/** The next technician in line for this service, as this device can work it out with no server. */
+async function offlineTurnPick(storeId: number, serviceId: number): Promise<OfflineLineTech | null> {
+  const line = await offlineTurnLine(storeId, serviceId);
+  // With the turn system switched off nobody is handed a client automatically, offline as online.
+  if (!line || line.settings.turnEnabled === false) return null;
+  return line.eligibleTechnicians[0] ?? null;
+}
+
+/**
+ * Why this technician cannot be given a ticket for this service while offline — the same two rules the
+ * server holds: they must be clocked in, and they must perform the service. Null when they can (or when
+ * the device has no line to judge by).
+ */
+async function offlineAssignProblem(storeId: number, serviceId: number, staffId: number): Promise<string | null> {
+  const line = await offlineTurnLine(storeId, serviceId);
+  const tech = line?.technicians.find((t) => t.id === staffId);
+  if (!tech) return null;
+  if (!tech.clockedIn) return `${tech.name} isn't clocked in.`;
+  if (!tech.supportsService) return `${tech.name} doesn't perform this service.`;
+  return null;
 }
 
 const createTicketOnServer = (body: TicketBody & { clientId: number; staffId?: number | null; checkinId?: number | null; leaveUnassigned?: boolean; autoAssign?: boolean }, key: string) =>
@@ -512,13 +601,24 @@ async function asLastSeen(id: number, clientName?: string): Promise<{ id: number
 /** `staff`: the technician's name and colour; `clientName`: whose ticket — both needed when the change is kept on this device. */
 export const reassignTicket = async (id: number, staffId: number, staff?: { name: string; color?: string | null }, clientName?: string, reason?: string | null) => {
   const chosen = { id: staffId, name: staff?.name ?? "Technician", color: staff?.color ?? null };
+  // Kept on this device, the hand-over is checked here the way the server would check it.
+  const checkOffline = async () => {
+    const storeId = storeOrThrow();
+    const local = isLocalId(id) ? (await nailOffline.records(storeId).catch(() => [])).find((r) => r.kind === "ticket" && r.id === id) : undefined;
+    const board = isLocalId(id) ? undefined : (await nailOffline.recall<NailBoard>(storeId, "/api/nail/board").catch(() => undefined))?.data;
+    const serviceId = local && local.kind === "ticket" ? local.service.id : board?.tickets.find((t) => t.id === id)?.service.id;
+    const problem = serviceId ? await offlineAssignProblem(storeId, serviceId, staffId) : null;
+    if (problem) throw new ApiError(problem, 400);
+  };
   if (isLocalId(id)) {
+    await checkOffline();
     const t = await nailOffline.assign(id, chosen);
     return { staffId, staffName: t.staff?.name ?? "", status: t.status, startsAt: t.createdAt };
   }
   return onServerOrQueued(
     () => call<{ staffId: number; staffName: string; status: string; startsAt: string }>(`/api/nail/tickets/${id}/reassign`, { method: "POST", body: JSON.stringify({ staffId, ...(reason ? { reason } : {}) }) }),
     async () => {
+      await checkOffline();
       await nailOffline.changeServerTicket(storeOrThrow(), await asLastSeen(id, clientName), { type: "reassign", staff: chosen });
       return { staffId, staffName: chosen.name, status: "confirmed", startsAt: new Date().toISOString() };
     },
@@ -542,11 +642,30 @@ export const cancelTicket = (id: number, clientName?: string): Promise<unknown> 
     async () => nailOffline.changeServerTicket(storeOrThrow(), await asLastSeen(id, clientName), { type: "cancel" }),
   );
 
+/**
+ * With no server, a clock-in or clock-out is kept on this device with the time it was really made and sent
+ * when the connection is back (the app's action queue, TIMECLOCK_PUNCH). The turn line on this device
+ * counts it at once. Returns false when the server can be reached — the caller then asks it directly.
+ */
+async function punchOffline(storeId: number, staffId: number, action: "clock_in" | "clock_out", failed = false): Promise<boolean> {
+  if (!failed && !syncEngine.isOffline()) return false;
+  if (failed) syncEngine.noteUnreachable();
+  const now = Date.now();
+  await actionQueueDB.add({
+    type: "TIMECLOCK_PUNCH", entity_temp_id: `punch_${staffId}_${now}`, timestamp: now,
+    idempotency_key: newIdempotencyKey("timeclock.punch"),
+    payload: { action, staffId, storeId, at: new Date(now).toISOString() },
+  });
+  return true;
+}
+
 /** Front-desk override: put a technician on the clock and into the turn order (the server tells every station). */
 export async function clockInTech(storeId: number, staffId: number): Promise<void> {
+  if (await punchOffline(storeId, staffId, "clock_in")) return;
   const res = await fetch("/api/timeclock/clock-in", {
     method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, staffId }),
-  });
+  }).catch(async (err) => { if (await punchOffline(storeId, staffId, "clock_in", true)) return null; throw err; });
+  if (!res) return;
   // 409 = already clocked in (someone got there first) — that is the state we wanted.
   if (!res.ok && res.status !== 409) {
     const data = await res.json().catch(() => null);
@@ -556,9 +675,11 @@ export async function clockInTech(storeId: number, staffId: number): Promise<voi
 
 /** Front-desk override: take a technician off the clock and out of the turn order (the server tells every station). */
 export async function clockOutTech(storeId: number, staffId: number): Promise<void> {
+  if (await punchOffline(storeId, staffId, "clock_out")) return;
   const res = await fetch("/api/timeclock/clock-out", {
     method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, staffId }),
-  });
+  }).catch(async (err) => { if (await punchOffline(storeId, staffId, "clock_out", true)) return null; throw err; });
+  if (!res) return;
   // 404 = no open clock-in (someone already clocked them out) — that is the state we wanted.
   if (!res.ok && res.status !== 404) {
     const data = await res.json().catch(() => null);

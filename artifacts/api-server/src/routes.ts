@@ -361,6 +361,17 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000);
 
+/**
+ * When a clock-in or clock-out really happened. A tablet that was offline sends the punch later with the
+ * time it was made (`at`); that time is kept when it is in the past and no more than a day old, so the
+ * technician's hours are theirs and not "whenever the tablet got back online". Anything else is now.
+ */
+function punchTime(at: unknown): Date {
+  const now = Date.now();
+  const given = typeof at === "string" ? Date.parse(at) : NaN;
+  return Number.isFinite(given) && given <= now + 60_000 && now - given <= 24 * 60 * 60_000 ? new Date(Math.min(given, now)) : new Date(now);
+}
+
 /** The longest visit a client can book or check in for themselves: two services, two and a half hours. */
 const MAX_VISIT_MINUTES = 150;
 
@@ -19498,7 +19509,7 @@ or
           staffId,
           storeId,
           workDate: today,
-          clockIn: new Date(),
+          clockIn: punchTime(req.body?.at),
         })
         .returning();
 
@@ -19559,7 +19570,7 @@ or
 
       const [record] = await db
         .update(timeclock)
-        .set({ clockOut: new Date() })
+        .set({ clockOut: punchTime(req.body?.at) })
         .where(eq(timeclock.id, existing.id))
         .returning();
 
