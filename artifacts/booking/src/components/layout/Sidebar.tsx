@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { isProAccount } from "@shared/proAccount";
 import { useSelectedStore } from "@/hooks/use-store";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useFeatureFlags } from "@/hooks/use-features";
@@ -446,7 +447,9 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
     staleTime: 5 * 60 * 1000,
   });
   const isElite = subscription?.planCode === "elite";
+  // An account made in the Certxa Pro app is always a one-person business, whatever plan it is on.
   const isSolo  =
+    isProAccount((user as any)?.accountType) ||
     (selectedStore as any)?.teamSize === "myself" ||
     !!subscription?.planCode?.toLowerCase().includes("solo");
 

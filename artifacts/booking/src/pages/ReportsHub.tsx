@@ -7,6 +7,8 @@ import {
   Boxes, FileText, Star, Users, Scissors, UserCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
+import { isProAccount, isHiddenForProAccount } from "@shared/proAccount";
 
 type ReportCard = {
   title: string;
@@ -34,6 +36,8 @@ const CARDS: ReportCard[] = [
 ];
 
 export default function ReportsHub() {
+  const { user: authUser } = useAuth();
+  const proAccount = isProAccount((authUser as any)?.accountType);
   const navigate = useNavigate();
   const [comingSoon, setComingSoon] = useState<string | null>(null);
 
@@ -42,7 +46,7 @@ export default function ReportsHub() {
       <div className="p-6 max-w-5xl mx-auto">
         <h1 className="text-2xl font-bold mb-6">Reports</h1>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {CARDS.map((card) => (
+          {CARDS.filter((card) => !(proAccount && card.to && isHiddenForProAccount(card.to))).map((card) => (
             <button
               key={card.title}
               type="button"

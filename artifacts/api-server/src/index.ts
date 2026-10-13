@@ -457,6 +457,8 @@ const publicLimiter = rateLimit({
 // Apply strict limiter only to credential-mutating endpoints, NOT /api/auth/user
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/register", authLimiter);
+app.use("/api/solo/login", authLimiter);
+app.use("/api/solo/register", authLimiter);
 app.use("/api/auth/logout", authLimiter);
 app.use("/api/auth/resume", authLimiter);
 app.use("/api/auth/forgot-password", authLimiter);

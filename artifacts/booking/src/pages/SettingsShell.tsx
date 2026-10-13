@@ -6,6 +6,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useLanguage } from "@/hooks/use-language";
 import { useFeatureFlags } from "@/hooks/use-features";
 import { cn } from "@/lib/utils";
+import { isProAccount, isHiddenForProAccount } from "@shared/proAccount";
+import { useAuth } from "@/hooks/use-auth";
 import { buildSettingsNav, type SettingsTab, type SettingsNavItem } from "@/lib/settings-nav";
 import { SettingsShellContext } from "@/lib/settings-shell-context";
 
@@ -82,15 +84,17 @@ export default function SettingsShell() {
     deleteLabel: pick({ en: "Delete Account", vi: "Xóa tài khoản", es: "Eliminar cuenta",  fr: "Supprimer le compte" }),
   };
 
+  const { user: authUser } = useAuth();
+  const proAccount = isProAccount((authUser as any)?.accountType);
   const tabs = useMemo(
     () =>
       buildSettingsNav(pick)
         .map((tab) => ({
           ...tab,
-          items: tab.items.filter((it) => !(it.requiresPos && !features.pos)),
+          items: tab.items.filter((it) => !(it.requiresPos && !features.pos) && !(proAccount && isHiddenForProAccount(it.to))),
         }))
         .filter((tab) => tab.items.length > 0),
-    [pick, features.pos],
+    [pick, features.pos, proAccount],
   );
 
   const allItems = useMemo(() => tabs.flatMap((tab) => tab.items), [tabs]);

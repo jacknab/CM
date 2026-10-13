@@ -146,6 +146,7 @@ import { buildRegionSlug, ALL_CITIES, BOOKING_BUSINESS_TYPES } from "./seo-citie
 import { notifyKioskNoShowWaitlist } from "./lib/kioskNoShowWaitlist";
 import { seedFromBusinessTemplate } from "./lib/templateSeed";
 import { seedNailSalonCatalog } from "./lib/nailSalonSeed";
+import { PRO_ACCOUNT_TYPE, isProAccount } from "@shared/proAccount";
 import * as nailConfig from "./lib/nailConfig";
 import {
   GoogleBusinessAPIManager,
@@ -1694,6 +1695,7 @@ export async function registerRoutes(
     // Allow public routes
     if (req.path.startsWith("/auth/")) return next();
     if (req.path === "/solo/login") return next(); // Native app credential exchange
+    if (req.path === "/solo/register") return next(); // Certxa Pro app sign-up
     if (req.path.startsWith("/store/by-subdomain")) return next(); // Allow public access to subdomain store
     if (req.path.startsWith("/public/")) return next(); // Allow public routes
     if (req.path.startsWith("/contractor-payouts/public/")) return next(); // Contractor onboarding — public token-gated routes
@@ -4034,6 +4036,15 @@ export async function registerRoutes(
       const { options: rawOptions, ...serviceBody } = req.body;
       const input = insertServiceSchema.parse({ ...serviceBody, storeId: sessionStoreId });
       const service = await storage.createService(input);
+      // A one-calendar (Certxa Pro app) business has nobody to assign services to but its owner: a new service
+      // goes straight onto the owner's calendar, or no time could ever be offered for it.
+      try {
+        const [owner] = await db.select({ staffId: users.staffId, accountType: users.accountType })
+          .from(locations).innerJoin(users, eq(users.id, locations.userId)).where(eq(locations.id, sessionStoreId)).limit(1);
+        if (isProAccount(owner?.accountType) && owner?.staffId) {
+          await db.insert(staffServices).values({ staffId: owner.staffId, serviceId: service.id });
+        }
+      } catch (e: any) { console.error("[services:create] owner assignment failed:", e?.message); }
       // Log service creation to activity feed (fire-and-forget)
       void pool.query(
         `INSERT INTO service_events (store_id, service_id, service_name, event_type, actor_user_id) VALUES ($1,$2,$3,$4,$5)`,
@@ -21506,6 +21517,85 @@ or
 
   // ── Certxa Solo Mobile API (login only — every other endpoint the app uses
   //    is the same isAuthenticated-gated API the web app calls) ─────────────────
+  // ── Certxa Pro app sign-up ────────────────────────────────────────────────────
+  // An account made in the app is a one-calendar business: the owner is its only calendar, and it has no
+  // staff, commission or payroll areas (users.account_type = "certxa_pro"; see shared/proAccount.ts). It is on
+  // the free Solo plan from the start — no trial clock. Everything a booking needs is set up here in one go:
+  // the business, its hours, a starter list of services for its type, and the owner's own calendar.
+  app.post("/api/solo/register", async (req, res) => {
+    const input = z.object({
+      firstName: z.string().trim().min(1).max(60),
+      lastName: z.string().trim().min(1).max(60),
+      businessName: z.string().trim().min(2).max(100),
+      businessType: z.string().trim().min(1).max(60),
+      email: z.string().trim().toLowerCase().email().max(254),
+      password: z.string().min(8).max(200),
+      phone: z.string().regex(/^\d{10}$/).optional(),
+      timezone: z.string().max(64).optional(),
+    }).safeParse(req.body);
+    if (!input.success) {
+      const field = String(input.error.issues[0]?.path[0] ?? "");
+      const message = field === "password" ? "Choose a password of at least 8 characters."
+        : field === "email" ? "Enter a valid e-mail address."
+        : field === "phone" ? "Enter a 10-digit phone number."
+        : "Please fill in every field.";
+      return res.status(400).json({ message });
+    }
+    const d = input.data;
+    let timezone = "America/New_York";
+    try { if (d.timezone) { new Intl.DateTimeFormat("en-US", { timeZone: d.timezone }); timezone = d.timezone; } } catch { /* keep the default */ }
+    let createdUserId: string | null = null;
+    let createdStoreId: number | null = null;
+    try {
+      const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, d.email));
+      if (existing) return res.status(409).json({ message: "An account with this e-mail already exists." });
+
+      const [user] = await db.insert(users).values({
+        email: d.email, password: await bcrypt.hash(d.password, 10),
+        firstName: d.firstName, lastName: d.lastName, phone: d.phone ?? null,
+        role: "owner", accountType: PRO_ACCOUNT_TYPE, subscriptionStatus: "active",
+      }).returning();
+      createdUserId = user.id;
+
+      const store = await storage.createStore({
+        name: d.businessName, email: d.email, timezone, phone: d.phone ?? null,
+        category: d.businessType, userId: user.id, parkingOptions: [], accessibilityFeatures: [],
+      } as any);
+      createdStoreId = store.id;
+      await storage.updateStore(store.id, { bookingSlug: await chooseOnboardingSlug(d.businessName) });
+      // Monday to Saturday, 9 to 6. The owner changes this under Availability in the app.
+      await storage.setBusinessHours(store.id, [0, 1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({
+        storeId: store.id, dayOfWeek, openTime: "09:00", closeTime: "18:00", isClosed: dayOfWeek === 0,
+      })));
+      const serviceIds = d.businessType === "Nail Salon" ? await seedNailSalonCatalog(store.id)
+        : await seedFromBusinessTemplate(store.id, businessTemplates[d.businessType] ?? { categories: [] });
+      // The owner's calendar. No availability rules of its own: the business hours are the schedule.
+      const calendar = await storage.createStaff({ name: `${d.firstName} ${d.lastName}`, color: "#3b82f6", storeId: store.id });
+      if (serviceIds.length > 0) await storage.setStaffServices(calendar.id, serviceIds);
+      await db.update(users).set({ staffId: calendar.id, onboardingCompleted: true }).where(eq(users.id, user.id));
+      const [soloPlan] = await db.select({ id: subscriptionPlans.id }).from(subscriptionPlans).where(eq(subscriptionPlans.code, "solo")).limit(1);
+      if (soloPlan) {
+        await db.insert(storeSubscriptions).values({
+          storeId: store.id, planId: soloPlan.id, status: "active", currentPeriodStart: new Date(), createdAt: new Date(), updatedAt: new Date(),
+        } as any);
+      }
+
+      const [fresh] = await db.select().from(users).where(eq(users.id, user.id));
+      const { password: _pw, ...safeUser } = fresh;
+      const { signSoloToken } = await import("./lib/soloAuth");
+      console.log(`[solo/register] app account created user=${user.id} store=${store.id} type=${d.businessType}`);
+      return res.status(201).json({ token: signSoloToken({ userId: user.id }), user: safeUser });
+    } catch (err) {
+      console.error("[solo/register] Error:", err);
+      // Leave nothing half-made behind: the e-mail must be free to try again.
+      try {
+        if (createdStoreId) await db.delete(locations).where(eq(locations.id, createdStoreId));
+        if (createdUserId) await db.delete(users).where(eq(users.id, createdUserId));
+      } catch (cleanupErr) { console.error("[solo/register] clean-up failed:", cleanupErr); }
+      return res.status(500).json({ message: "We couldn't create your account. Please try again." });
+    }
+  });
+
   const { default: soloMobileRouter } = await import("./routes/solo-mobile.js");
   app.use("/api/solo", soloMobileRouter);
 

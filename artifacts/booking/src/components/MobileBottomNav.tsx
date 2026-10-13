@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useAuth } from "@/hooks/use-auth";
+import { isProAccount, isHiddenForProAccount } from "@shared/proAccount";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useQuery } from "@tanstack/react-query";
 import { useFeatureFlags } from "@/hooks/use-features";
@@ -83,7 +84,8 @@ const LIME     = "#c5d42a";
 export function MobileBottomNav() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const { logoutAsync } = useAuth();
+  const { logoutAsync, user: authUser } = useAuth();
+  const proAccount = isProAccount((authUser as any)?.accountType);
   const [menuOpen, setMenuOpen] = useState(false);
   const { selectedStore } = useSelectedStore();
   const { isStaff } = usePermissions();
@@ -263,6 +265,7 @@ export function MobileBottomNav() {
                     </p>
                     {section.items.filter(({ to }) => {
                       if (isSolo && to === "/payouts/contractors") return false;
+                      if (proAccount && isHiddenForProAccount(to)) return false;
                       if (!features.waitlist     && to === "/waitlist")      return false;
                       if (!features.pos          && to === "/cash-drawer")   return false;
                       if (!features.rewardPoints && to === "/loyalty")       return false;

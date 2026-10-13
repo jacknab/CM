@@ -17,6 +17,7 @@ import { eq } from "drizzle-orm";
 import { signSoloToken } from "../lib/soloAuth";
 import { pool } from "../db";
 import { isExpoPushToken } from "../lib/ownerPush";
+import { isProAccount } from "@shared/proAccount";
 
 const router = Router();
 
@@ -38,6 +39,15 @@ router.post("/login", async (req, res) => {
     const valid = await bcrypt.compare(password, user.password ?? "");
     if (!valid) {
       res.status(401).json({ message: "Invalid email or password" });
+      return;
+    }
+
+    // The app is for accounts that were created in the app. Every other Certxa account uses the website.
+    if (!isProAccount(user.accountType)) {
+      res.status(403).json({
+        code: "NOT_AN_APP_ACCOUNT",
+        message: "This account was created on the Certxa website, so it signs in at certxa.com. To use this app, create an account here.",
+      });
       return;
     }
 

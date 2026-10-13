@@ -15,6 +15,7 @@ import { OfflineStatusBanner } from "@/components/OfflineStatusBanner";
 import { SyncConflictPanel } from "@/components/SyncConflictPanel";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useAuth } from "@/hooks/use-auth";
+import { isProAccount, isHiddenForProAccount } from "@shared/proAccount";
 import { useTheme } from "@/hooks/use-theme";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { FeatureGuard } from "@/components/FeatureGuard";
@@ -388,6 +389,14 @@ function OwnerOnlyRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** An account made in the Certxa Pro app is one calendar: the staff, commission and payroll pages send it to the calendar. */
+function ProAccountRedirect() {
+  const { user } = useAuth();
+  const location = useLocation();
+  if (isProAccount((user as any)?.accountType) && isHiddenForProAccount(location.pathname)) return <Navigate to="/calendar" replace />;
+  return null;
+}
+
 function SoloGuard({ children }: { children: React.ReactNode }) {
   const { selectedStore } = useSelectedStore();
   const { data: subscription } = useQuery<any>({
@@ -443,6 +452,7 @@ function AppRoutes() {
 
   const routes = (
     <Suspense fallback={<main className="h-screen w-full flex items-center justify-center" role="status"><Loader2 className="w-7 h-7 animate-spin" /><span className="sr-only">Loading page</span></main>}>
+    <ProAccountRedirect />
     <Routes>
       {/* Root → PHP marketing landing page (hard navigation bypasses React Router) */}
       <Route path="/" element={<RootRedirect />} />
