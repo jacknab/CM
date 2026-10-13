@@ -41,6 +41,7 @@ import { formatInTz, getNowInTimezone } from "@/lib/timezone";
 import { apiRequest } from "@/lib/queryClient";
 import { addDays, subDays, isSameDay } from "date-fns";
 import { StoreData, ServiceData, ServiceOptionData, CategoryData, TimeSlot } from "./types";
+import { bookingServiceFields, canAddService, extraServiceQuery, technicianLine } from "./twoServices";
 
 type Step = "client" | "services" | "time" | "confirm" | "success";
 
@@ -121,6 +122,7 @@ export default function BookingWidget({
       slug,
       "availability",
       primaryService?.id,
+      selectedServices[1]?.id,
       dateString,
       totalDuration,
     ],
@@ -129,6 +131,7 @@ export default function BookingWidget({
         serviceId: String(primaryService!.id),
         date: dateString!,
         duration: String(totalDuration),
+        ...extraServiceQuery(selectedServices),
       });
       const res = await fetch(
         `/api/public/store/${slug}/availability?${params}`,
@@ -208,6 +211,7 @@ export default function BookingWidget({
     if (service.options && service.options.length > 1) {
       setOptionPickerService(service);
     } else {
+      if (!canAddService(selectedServices, service)) return;
       setSelectedServices((prev) => [...prev, service]);
     }
   };
@@ -219,6 +223,7 @@ export default function BookingWidget({
       price: option.price,
       name: `${service.name} – ${option.name}`,
     };
+    if (!canAddService(selectedServices, serviceWithOption)) return;
     setSelectedServices((prev) => [...prev, serviceWithOption]);
     setOptionPickerService(null);
   };
@@ -267,7 +272,7 @@ export default function BookingWidget({
       serviceId: primaryService.id,
       staffId: selectedSlot.staffId,
       date: selectedSlot.time,
-      duration: totalDuration,
+      ...bookingServiceFields(selectedServices),
       customerName: customerName.trim(),
       customerEmail: customerEmail.trim(),
       customerPhone: customerPhone.trim(),
@@ -734,7 +739,7 @@ export default function BookingWidget({
                       <p className="text-xs text-gray-500">
                         {service.category} &middot; {service.duration} min
                         {selectedSlot && (
-                          <> &middot; {selectedSlot.staffName}</>
+                          <> &middot; {technicianLine(selectedSlot)}</>
                         )}
                       </p>
                     </div>

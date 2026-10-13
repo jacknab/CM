@@ -42,6 +42,9 @@ interface NailConfig {
 
 interface ServiceOptionItem  { id: number; name: string; description?: string | null; durationMinutes: number; price: number; isDefault: boolean; displayOrder: number; imageUrl?: string | null; }
 interface ServiceItem        { id: number; optionId?: number; name: string; description?: string | null; duration: number; longevity?: string | null; price: number; category: string; imageUrl?: string | null; optionCount?: number; }
+/** The longest visit a client can check in for by themselves: two services, two and a half hours. */
+const MAX_VISIT_MINUTES = 150;
+
 interface AddonItem          { id: number; name: string; description?: string | null; price: number; duration: number; imageUrl?: string | null; serviceIds: number[]; }
 interface StaffItem          { id: number; name: string; role: string | null; color: string | null; avatarThumbUrl: string | null; }
 interface ClientInfo         { id: number; name: string; loyaltyPoints: number; totalVisits: number; }
@@ -369,6 +372,8 @@ function KioskCheckInScreens() {
   // check-in (reported with the ticket, so suggestions can be measured against paid tickets).
   const [smart, setSmart] = useState<SmartInfo | null>(null);
   const offeredRef = useRef<{ serviceIds: number[]; addonId: number | null }>({ serviceIds: [], addonId: null });
+  // Shown in place of the chips when a third service (or one that makes the visit too long) is tapped.
+  const [svcLimitNote, setSvcLimitNote] = useState(false);
   // A suggested service chosen while everyone is busy: carried through the "would you like to wait?" screen.
   const waitingServiceRef = useRef<ServiceItem | null>(null);
   const [selectedAddons, setSelectedAddons]   = useState<AddonItem[]>([]);
@@ -572,7 +577,7 @@ function KioskCheckInScreens() {
   const resetToIdle = useCallback(() => {
     cancelPendingMarker();
     setScreen("idle"); setPhone(""); setClientInfo(null);
-    setNewClientName(""); setSel([]); setSelStaff("none");
+    setNewClientName(""); setSel([]); setSelStaff("none"); setSvcLimitNote(false);
     setTicket(null); setError("");
     setSvcPage(0);
     setSelectedCategoryGroup(null); setFilteredServices(null);
@@ -898,10 +903,19 @@ function KioskCheckInScreens() {
     } catch { setError("Connection error. Please try again."); setScreen("error"); }
   };
 
+  // Up to two services on one visit, two and a half hours in all (the server holds the same limit).
+  // Tapping a chosen service takes it off. With two chosen, tapping another swaps the second one.
+  // Add-ons and nail choices belong to the first service, so they start again only when that one changes.
   const toggleSvc = (s: ServiceItem) => {
-    // Single-select: tapping the same service deselects it; tapping a new one replaces the previous
-    setSel(p => p.find(x => x.id === s.id) ? [] : [s]);
-    setSelectedAddons([]); // reset addons when service changes
+    const current = selectedServices;
+    let next: ServiceItem[];
+    if (current.find(x => x.id === s.id)) next = current.filter(x => x.id !== s.id);
+    else if (current.length === 0) next = [s];
+    else if (current[0].duration + s.duration <= MAX_VISIT_MINUTES) next = [current[0], s];
+    else { setSvcLimitNote(true); kick(); return; }
+    setSvcLimitNote(false);
+    setSel(next);
+    if (next[0]?.id !== current[0]?.id) setSelectedAddons([]);
     kick();
   };
 
@@ -2095,7 +2109,9 @@ function KioskCheckInScreens() {
 
           {/* Selected chips */}
           <div className="flex-1 flex items-center gap-2 overflow-hidden">
-            {selectedServices.length === 0 ? (
+            {svcLimitNote ? (
+              <p className="text-base" style={{ color: SUBTLE }} data-testid="kiosk-two-services-note">{t.twoServicesMax}</p>
+            ) : selectedServices.length === 0 ? (
               <p className="text-base" style={{ color: SUBTLE }}>{t.noServiceSelected}</p>
             ) : (
               <>

@@ -26,6 +26,7 @@ import { formatInTz, getNowInTimezone } from "@/lib/timezone";
 import { apiRequest } from "@/lib/queryClient";
 import { addDays, subDays, isSameDay } from "date-fns";
 import { StoreData, ServiceData, CategoryData, TimeSlot } from "./types";
+import { bookingServiceFields, canAddService, extraServiceQuery, technicianLine } from "./twoServices";
 
 type Step = "client" | "services" | "time" | "confirm";
 
@@ -106,6 +107,7 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
       slug,
       "availability",
       primaryService?.id,
+      selectedServices[1]?.id,
       dateString,
       totalDuration,
       preselectedStaffId,
@@ -115,6 +117,7 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
         serviceId: String(primaryService!.id),
         date: dateString!,
         duration: String(totalDuration),
+        ...extraServiceQuery(selectedServices),
       });
       if (preselectedStaffId) params.set("staffId", String(preselectedStaffId));
       const res = await fetch(
@@ -199,11 +202,12 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
   };
 
   const toggleService = (service: ServiceData) => {
-    setSelectedServices((prev) => {
-      const exists = prev.find((s) => s.id === service.id);
-      if (exists) return prev.filter((s) => s.id !== service.id);
-      return [...prev, service];
-    });
+    if (selectedServices.find((s) => s.id === service.id)) {
+      setSelectedServices((prev) => prev.filter((s) => s.id !== service.id));
+      return;
+    }
+    if (!canAddService(selectedServices, service)) return;
+    setSelectedServices((prev) => [...prev, service]);
   };
 
   const handleClientSelect = (type: "new" | "returning") => {
@@ -236,7 +240,7 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
       serviceId: primaryService.id,
       staffId: selectedSlot.staffId,
       date: selectedSlot.time,
-      duration: totalDuration,
+      ...bookingServiceFields(selectedServices),
       customerName: customerName.trim(),
       customerEmail: customerEmail.trim() || undefined,
       customerPhone: customerPhone.trim() || undefined,
@@ -615,7 +619,7 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
                         <p className="text-xs text-gray-500">
                           {service.category} &middot; {service.duration} min
                           {selectedSlot && (
-                            <> &middot; {selectedSlot.staffName}</>
+                            <> &middot; {technicianLine(selectedSlot)}</>
                           )}
                         </p>
                       </div>

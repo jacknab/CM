@@ -310,7 +310,8 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
       serviceId: primaryService.id,
       staffId: selectedSlot.staffId,
       date: selectedSlot.time,
-      duration: totalDuration,
+      // one service at a time in this theme; its own length — the server adds the add-ons' time
+      duration: primaryService.duration,
       customerName: customerName.trim() || "Guest", // Fallback for returning flow if name not captured
       customerEmail: customerEmail.trim() || undefined,
       customerPhone: customerPhone.trim(),

@@ -361,6 +361,9 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000);
 
+/** The longest visit a client can book or check in for themselves: two services, two and a half hours. */
+const MAX_VISIT_MINUTES = 150;
+
 const DEFAULT_TURN_SETTINGS = {
   turnEnabled: true,
   autoAdvanceOnCheckout: true,
@@ -8753,6 +8756,17 @@ If you have any questions, please contact your administrator.
       if (!serviceId || !date || !duration) {
         return res.status(400).json({ message: "serviceId, date, and duration are required" });
       }
+      // A second service on the same visit (`extraServiceId`). `duration` is then the whole visit: the first
+      // service (with its add-ons) followed by the second. One technician does both when one can; when
+      // nobody performs both, the second service goes to another technician straight after the first.
+      const extraServiceId = req.query.extraServiceId ? Number(req.query.extraServiceId) : null;
+      let extraDuration = 0;
+      if (extraServiceId) {
+        const extra = await storage.getService(extraServiceId);
+        if (!extra || extra.storeId !== store.id || (extra as any).isActive === false || extraServiceId === serviceId) return res.json([]);
+        extraDuration = Number(extra.duration) || 0;
+        if (duration > MAX_VISIT_MINUTES) return res.json([]);
+      }
 
       const tz = store.timezone || "UTC";
       const calSettings = await storage.getCalendarSettings(store.id);
@@ -8789,6 +8803,21 @@ If you have any questions, please contact your administrator.
 
       if (candidateStaff.length === 0) return res.json([]);
 
+      // Two services: keep only the technicians who perform both. If nobody does, the visit is split —
+      // `secondStaff` are the technicians who can take the second service.
+      let secondStaff: typeof candidateStaff = [];
+      if (extraServiceId) {
+        const extraStaff = (await storage.getStaffForService(extraServiceId))
+          .filter((m: any) => m.status !== "removed" && m.status !== "deactivated");
+        const both = candidateStaff.filter((m) => extraStaff.some((x) => x.id === m.id));
+        if (both.length > 0) candidateStaff = both;
+        else if (extraStaff.length > 0 && duration - extraDuration > 0) secondStaff = extraStaff;
+        else return res.json([]);
+      }
+      const splitVisit = secondStaff.length > 0;
+      // The first technician's part of the visit (all of it, unless the visit is split).
+      const firstDuration = splitVisit ? duration - extraDuration : duration;
+
       const dateParts = date.split("-").map(Number);
       const dayOfWeek = parseInt(formatInTimeZone(new Date(`${date}T12:00:00`), tz, "i"), 10) % 7;
       const dayHours = hours.find(h => h.dayOfWeek === dayOfWeek);
@@ -8809,7 +8838,7 @@ If you have any questions, please contact your administrator.
         ? (() => { const d = new Date(nowUtc); d.setMonth(d.getMonth() + Math.max(1, Number((store as any).advanceBookingMonths ?? 3))); return d; })()
         : null;
 
-      type SlotResult = { time: string; staffId: number; staffName: string };
+      type SlotResult = { time: string; staffId: number; staffName: string; extraStaffId?: number; extraStaffName?: string };
       const slots: SlotResult[] = [];
 
       const staffLastAppointment: Map<number, Date> = new Map();
@@ -8824,25 +8853,15 @@ If you have any questions, please contact your administrator.
         }
       }
 
-      for (let hour = startHour; hour < endHour; hour++) {
-        for (let min = 0; min < 60; min += slotInterval) {
-          const slotStart = fromZonedTime(new Date(`${date}T${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}:00`), tz);
-          const slotEnd = new Date(slotStart.getTime() + duration * 60000);
-
-          if (slotStart < earliestBookableUtc) continue;
-          if (latestBookableUtc && slotStart > latestBookableUtc) continue;
-          if (slotEnd > businessEndUtc) continue;
-
-          const availableForSlot: { staffMember: any; lastApt: Date | null }[] = [];
-
-          for (const staffMember of candidateStaff) {
+      /** Is this technician free for the whole of [from, to): no booking in the way (with the salon's gap), and inside their own working hours? */
+      const isStaffFree = async (staffMember: any, from: Date, to: Date): Promise<boolean> => {
             let hasConflict = false;
             for (const apt of dayAppointments) {
               if (apt.staffId !== staffMember.id) continue;
               if (apt.status === "cancelled") continue;
               const aptStart = new Date(apt.date);
               const aptEnd = new Date(aptStart.getTime() + apt.duration * 60000);
-              if (slotStart.getTime() < aptEnd.getTime() + bufferMs && slotEnd.getTime() + bufferMs > aptStart.getTime()) {
+              if (from.getTime() < aptEnd.getTime() + bufferMs && to.getTime() + bufferMs > aptStart.getTime()) {
                 hasConflict = true;
                 break;
               }
@@ -8855,22 +8874,22 @@ If you have any questions, please contact your administrator.
               const staffAvailRules = await storage.getStaffAvailability(staffMember.id);
               if (staffAvailRules && staffAvailRules.length > 0) {
                 // iso day token: 1=Mon … 7=Sun → map to 0=Sun … 6=Sat
-                const slotDayOfWeek = parseInt(formatInTimeZone(slotStart, tz, "i"), 10) % 7;
+                const slotDayOfWeek = parseInt(formatInTimeZone(from, tz, "i"), 10) % 7;
                 const dayAvailability = staffAvailRules.find(r => r.dayOfWeek === slotDayOfWeek);
 
                 if (dayAvailability) {
                   const [availStartHour, availStartMin] = dayAvailability.startTime.split(":").map(Number);
                   const [availEndHour, availEndMin] = dayAvailability.endTime.split(":").map(Number);
                   const slotTimeInMin =
-                    parseInt(formatInTimeZone(slotStart, tz, "H"), 10) * 60 +
-                    parseInt(formatInTimeZone(slotStart, tz, "m"), 10);
-                  const slotEndTimeInMin =
-                    parseInt(formatInTimeZone(slotEnd, tz, "H"), 10) * 60 +
-                    parseInt(formatInTimeZone(slotEnd,  tz, "m"), 10);
+                    parseInt(formatInTimeZone(from, tz, "H"), 10) * 60 +
+                    parseInt(formatInTimeZone(from, tz, "m"), 10);
+                  const toTimeInMin =
+                    parseInt(formatInTimeZone(to, tz, "H"), 10) * 60 +
+                    parseInt(formatInTimeZone(to,  tz, "m"), 10);
                   const availStartInMin = availStartHour * 60 + availStartMin;
                   const availEndInMin   = availEndHour   * 60 + availEndMin;
 
-                  if (slotTimeInMin < availStartInMin || slotEndTimeInMin > availEndInMin) {
+                  if (slotTimeInMin < availStartInMin || toTimeInMin > availEndInMin) {
                     hasConflict = true;
                   }
                 } else {
@@ -8880,6 +8899,22 @@ If you have any questions, please contact your administrator.
               }
             }
 
+            return !hasConflict;
+      };
+
+      for (let hour = startHour; hour < endHour; hour++) {
+        for (let min = 0; min < 60; min += slotInterval) {
+          const slotStart = fromZonedTime(new Date(`${date}T${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}:00`), tz);
+          const slotEnd = new Date(slotStart.getTime() + duration * 60000);
+
+          if (slotStart < earliestBookableUtc) continue;
+          if (latestBookableUtc && slotStart > latestBookableUtc) continue;
+          if (slotEnd > businessEndUtc) continue;
+
+          const availableForSlot: { staffMember: any; lastApt: Date | null }[] = [];
+
+          for (const staffMember of candidateStaff) {
+            const hasConflict = !(await isStaffFree(staffMember, slotStart, new Date(slotStart.getTime() + firstDuration * 60000)));
             if (!hasConflict) {
               availableForSlot.push({
                 staffMember,
@@ -8897,10 +8932,20 @@ If you have any questions, please contact your administrator.
             });
 
             const chosen = availableForSlot[0];
+            // A split visit also needs someone free for the second service, straight after the first.
+            let second: any = null;
+            if (splitVisit) {
+              const secondFrom = new Date(slotStart.getTime() + firstDuration * 60000);
+              for (const candidate of secondStaff) {
+                if (await isStaffFree(candidate, secondFrom, slotEnd)) { second = candidate; break; }
+              }
+              if (!second) continue;
+            }
             slots.push({
               time: slotStart.toISOString(),
               staffId: chosen.staffMember.id,
               staffName: chosen.staffMember.name,
+              ...(second ? { extraStaffId: second.id, extraStaffName: second.name } : {}),
             });
           }
         }
@@ -9184,6 +9229,9 @@ If you have any questions, please contact your administrator.
         customerPhone: z.string().min(1),
         notes: z.string().optional(),
         addonIds: z.array(z.number()).optional().default([]),
+        // A second service on the same visit. It is booked as its own appointment straight after the first,
+        // with the same technician when they perform it. `duration` stays the FIRST service's own length.
+        extraServiceId: z.number().int().positive().optional(),
         // Payment policy fields (set when store requires card/deposit)
         paymentPolicy: z.enum(["none", "card_on_file", "deposit"]).optional().default("none"),
         paymentStatus: z.string().optional(),
@@ -9213,6 +9261,21 @@ If you have any questions, please contact your administrator.
         }
       } else if (!parsed.serviceId) {
         return res.status(400).json({ message: "serviceId or packageId is required" });
+      }
+
+      // A second service: checked before anything is created.
+      let extraService: Awaited<ReturnType<typeof storage.getService>> | null = null;
+      if (parsed.extraServiceId) {
+        if (parsed.packageId || parsed.voucherCode) return res.status(400).json({ message: "A second service can't be added to a package booking." });
+        extraService = (await storage.getService(parsed.extraServiceId)) ?? null;
+        if (!extraService || extraService.storeId !== store.id || (extraService as any).isActive === false || parsed.extraServiceId === parsed.serviceId) {
+          return res.status(400).json({ message: "The second service is no longer available." });
+        }
+        const addonRows = parsed.addonIds.length ? await Promise.all(parsed.addonIds.map((id) => storage.getAddon(id))) : [];
+        const visitMinutes = parsed.duration + addonRows.reduce((sum, a) => sum + (Number(a?.duration) || 0), 0) + (Number(extraService.duration) || 0);
+        if (visitMinutes > MAX_VISIT_MINUTES) {
+          return res.status(400).json({ message: "Two services can be booked together for up to 2½ hours. Please book the second service separately." });
+        }
       }
 
       // Voucher validation — must belong to this store's deal, be for the
@@ -9600,13 +9663,47 @@ If you have any questions, please contact your administrator.
         }
       }
 
+      // ── The second service ───────────────────────────────────────────────────
+      // Its own appointment, starting the moment the first one ends: with the same technician when they
+      // perform it and are free, otherwise with the first technician who is. If nobody can take it, the
+      // whole visit is undone (and any deposit refunded) rather than leaving the client half-booked.
+      let extraAppointment: { id: number; serviceName: string; staffId: number; staffName: string; date: string; duration: number } | null = null;
+      if (extraService) {
+        const first = await storage.getAppointment(appointmentId);
+        const secondStart = new Date(new Date(first!.date).getTime() + Number(first!.duration) * 60_000);
+        const performers = (await storage.getStaffForService(extraService.id))
+          .filter((m: any) => m.status !== "removed" && m.status !== "deactivated");
+        const ordered = [...performers.filter((m) => m.id === input.staffId), ...performers.filter((m) => m.id !== input.staffId)];
+        for (const member of ordered) {
+          const second = await atomicCreateBooking({
+            storeId: store.id, timezone: store.timezone ?? "UTC", startTime: secondStart,
+            durationMinutes: Number(extraService.duration) || 30, staffId: member.id, serviceId: extraService.id,
+            customerId: customer.id, notes: input.notes || null, status: "pending", resourceId: null, packageId: null,
+          });
+          if (second.ok) {
+            extraAppointment = { id: second.data.id, serviceName: extraService.name, staffId: member.id, staffName: member.name, date: secondStart.toISOString(), duration: Number(extraService.duration) || 30 };
+            break;
+          }
+        }
+        if (!extraAppointment) {
+          await storage.deleteAppointment(appointmentId).catch(() => {});
+          if (input.stripePaymentIntentId) {
+            const { compensateStripePayment } = await import("./routes/bookingPayments.js");
+            await compensateStripePayment(store.id, input.stripePaymentIntentId).catch(() => {});
+          }
+          return res.status(409).json({ message: "That time no longer has room for both services. Please choose another time." });
+        }
+        // The two appointments are one visit: the staff screens show and check them out together.
+        await pool.query(`UPDATE appointments SET ticket_group_id = $1 WHERE id = ANY($2::int[]) AND store_id = $3`, [appointmentId, [appointmentId, extraAppointment.id], store.id]);
+      }
+
       const fullAppointment = await storage.getAppointment(appointmentId);
       if (fullAppointment) {
         sendBookingConfirmation(fullAppointment).catch(console.error);
         sendBookingConfirmationEmail(fullAppointment).catch(console.error);
       }
 
-      return res.status(201).json(fullAppointment ?? { id: appointmentId });
+      return res.status(201).json({ ...(fullAppointment ?? { id: appointmentId }), ...(extraAppointment ? { extraAppointment } : {}) });
     } catch (error) {
       console.error("Public booking error:", error);
       return res.status(400).json({ message: "Failed to create booking" });
@@ -23609,6 +23706,14 @@ or
       const selectedServices: any[] = verified.services;
       const selectedAddons: any[] = verified.addons;
       const primaryServiceId = selectedServices[0].id;
+      // A client checks in for at most two services, two and a half hours in all. Longer visits are made at the desk.
+      {
+        const visitMinutes = selectedServices.reduce((sum: number, sv: any) => sum + (Number(sv.duration) || 30), 0)
+          + selectedAddons.reduce((sum: number, a: any) => sum + (Number(a.duration) || 0), 0);
+        if (selectedServices.length > 2 || (selectedServices.length === 2 && visitMinutes > MAX_VISIT_MINUTES)) {
+          return res.status(400).json({ error: "You can check in for up to 2 services (2½ hours). Please ask the front desk to add more." });
+        }
+      }
 
       // A new client arrives with no clientId, just the name and number they typed. Find them by that
       // number (same rule as /rewards-signup), or create them, so the ticket carries their name and phone —
@@ -23734,11 +23839,15 @@ or
           // A barbershop's service starts with the hand-over, as on /barber; a nail salon's waits for START.
           startOnAssign: isBarbershop,
         };
-        let made = wanted
-          ? await nailTickets.createNailTicket(nailDeps, { ...ticketInput, staffId: wanted })
-          : await nailTickets.createNailTicket(nailDeps, { ...ticketInput, autoAssign: true });
+        // A second service is its own ticket of the same visit (lib/nailTickets.ts, createNailTicketGroup): the
+        // same technician takes both when one can, otherwise the second goes to whoever is next for it.
+        const extraServiceIds: number[] = selectedServices.slice(1).map((sv: any) => Number(sv.id)).filter((id: number) => Number.isInteger(id) && id > 0 && id !== Number(primaryServiceId));
+        const makeTicket = (how: { staffId: number } | { autoAssign: true }) => extraServiceIds.length > 0
+          ? nailTickets.createNailTicketGroup(nailDeps, { ...ticketInput, ...how, extraServiceIds })
+          : nailTickets.createNailTicket(nailDeps, { ...ticketInput, ...how });
+        let made = wanted ? await makeTicket({ staffId: wanted }) : await makeTicket({ autoAssign: true });
         // The technician they asked for can't take it (left, or doesn't do this service): the line decides instead.
-        if (!made.ok && wanted) made = await nailTickets.createNailTicket(nailDeps, { ...ticketInput, autoAssign: true });
+        if (!made.ok && wanted) made = await makeTicket({ autoAssign: true });
         if (!made.ok) {
           console.warn(`[kiosk/checkin] walk-in ticket refused for store ${store.id}: ${made.message}`);
           return res.status(made.status).json({ error: made.message });

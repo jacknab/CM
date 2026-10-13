@@ -115,6 +115,7 @@ export interface KioskStrings {
   tapToSelect: string;
   noServices: string;
   noServiceSelected: string;
+  twoServicesMax: string;
   pageOf: (cur: number, total: number) => string;
   previousBtn: string;
   seeMore: string;
@@ -244,6 +245,7 @@ const en: KioskStrings = {
   tapToSelect: "Tap to select your service",
   noServices: "No services configured yet.",
   noServiceSelected: "No service selected yet — tap a card above",
+  twoServicesMax: "Up to 2 services (2½ hours) here. Please ask the front desk to add more.",
   pageOf: (c, t) => `Page ${c}/${t}`,
   previousBtn: "← Previous",
   seeMore: "See More  ›",
@@ -365,6 +367,7 @@ const es: KioskStrings = {
   tapToSelect: "Toca para seleccionar tu servicio",
   noServices: "Sin servicios configurados aún.",
   noServiceSelected: "Ningún servicio seleccionado — toca una tarjeta arriba",
+  twoServicesMax: "Hasta 2 servicios (2½ horas) aquí. Pide en recepción que agreguen más.",
   pageOf: (c, t) => `Página ${c}/${t}`,
   previousBtn: "← Anterior",
   seeMore: "Ver más  ›",
@@ -486,6 +489,7 @@ const vi: KioskStrings = {
   tapToSelect: "Chọn dịch vụ của bạn",
   noServices: "Chưa có dịch vụ nào được cấu hình.",
   noServiceSelected: "Chưa chọn dịch vụ — nhấn vào thẻ ở trên",
+  twoServicesMax: "Tối đa 2 dịch vụ (2½ giờ) tại đây. Vui lòng nhờ quầy lễ tân thêm dịch vụ khác.",
   pageOf: (c, t) => `Trang ${c}/${t}`,
   previousBtn: "← Trước",
   seeMore: "Xem thêm  ›",
@@ -607,6 +611,7 @@ const zh: KioskStrings = {
   tapToSelect: "点击选择您的服务",
   noServices: "暂无可用服务。",
   noServiceSelected: "尚未选择服务 — 请点击上方卡片",
+  twoServicesMax: "此处最多可选 2 项服务（2.5 小时）。如需更多，请联系前台。",
   pageOf: (c, t) => `第 ${c}/${t} 页`,
   previousBtn: "← 上一页",
   seeMore: "查看更多  ›",
@@ -728,6 +733,7 @@ const ko: KioskStrings = {
   tapToSelect: "서비스를 선택하려면 탭하세요",
   noServices: "아직 서비스가 없습니다.",
   noServiceSelected: "서비스를 선택하지 않았습니다 — 위의 카드를 탭하세요",
+  twoServicesMax: "여기서는 최대 2개 서비스(2시간 30분)까지 선택할 수 있습니다. 추가는 프런트에 문의하세요.",
   pageOf: (c, t) => `${c}/${t} 페이지`,
   previousBtn: "← 이전",
   seeMore: "더 보기  ›",

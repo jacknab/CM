@@ -24,6 +24,7 @@ import { formatInTz, getNowInTimezone } from "@/lib/timezone";
 import { apiRequest } from "@/lib/queryClient";
 import { addDays, subDays, isSameDay } from "date-fns";
 import { StoreData, ServiceData, ServiceOptionData, CategoryData, TimeSlot, AddonData, ServiceAddonData } from "./types";
+import { bookingServiceFields, canAddService, extraServiceQuery, technicianLine } from "./twoServices";
 import { detectBrowserLang, BOOKING_STRINGS } from "@/lib/bookingTranslations";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js/pure";
@@ -292,12 +293,13 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
     : null;
 
   const { data: slots, isLoading: slotsLoading } = useQuery<TimeSlot[]>({
-    queryKey: ["/api/public/store", slug, "availability", primaryService?.id, dateString, totalDuration, preselectedStaffId],
+    queryKey: ["/api/public/store", slug, "availability", primaryService?.id, selectedServices[1]?.id, dateString, totalDuration, preselectedStaffId],
     queryFn: async () => {
       const params = new URLSearchParams({
         serviceId: String(primaryService!.id),
         date: dateString!,
         duration: String(totalDuration),
+        ...extraServiceQuery(selectedServices),
       });
       if (preselectedStaffId) params.set("staffId", String(preselectedStaffId));
       const res = await fetch(`/api/public/store/${slug}/availability?${params}`, { credentials: "include" });
@@ -391,6 +393,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
       setOptionPickerService(service);
       return;
     }
+    if (!canAddService(selectedServices, service)) return;
     const serviceAddonsList = getAddonsForService(service.id);
     if (serviceAddonsList.length > 0) {
       setViewingAddonsForService(service);
@@ -406,6 +409,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
       name: `${service.name} – ${option.name}`,
       options: [],
     };
+    if (!canAddService(selectedServices, serviceWithOption)) return;
     setSelectedServices((prev) => [...prev, serviceWithOption]);
     setOptionPickerService(null);
   };
@@ -474,7 +478,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
       serviceId: primaryService.id,
       staffId: selectedSlot.staffId,
       date: selectedSlot.time,
-      duration: totalDuration,
+      ...bookingServiceFields(selectedServices),
       customerName: customerName.trim(),
       customerEmail: customerEmail.trim() || undefined,
       customerPhone: customerPhone.trim(),
@@ -483,7 +487,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
       cancellationPolicyAccepted: cancellationAccepted,
       ...paymentInfo,
     });
-  }, [primaryService, selectedSlot, selectedAddons, totalDuration, customerName, customerEmail, customerPhone, smsOptIn, cancellationAccepted, bookMutation]);
+  }, [primaryService, selectedSlot, selectedAddons, selectedServices, customerName, customerEmail, customerPhone, smsOptIn, cancellationAccepted, bookMutation]);
 
   // ── Calculate deposit in cents ─────────────────────────────────────────────
   const calculateDepositCents = useCallback((totalPriceDollars: number): number => {
@@ -1051,7 +1055,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
                     formatInTz(selectedSlot.time, timezone, "EEEE, d MMMM yyyy 'at' h:mm a")}
                 </p>
                 <p className="text-sm text-gray-600">
-                  With {selectedSlot?.staffName}
+                  With {technicianLine(selectedSlot)}
                 </p>
                 {showPrices && (
                   <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
@@ -1154,7 +1158,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
               <p className="text-sm text-gray-600">
                 {selectedSlot && formatInTz(selectedSlot.time, timezone, "EEEE, d MMMM yyyy 'at' h:mm a")}
               </p>
-              <p className="text-sm text-gray-500">With {selectedSlot?.staffName}</p>
+              <p className="text-sm text-gray-500">With {technicianLine(selectedSlot)}</p>
               {intentType === "payment" && depositAmountCents > 0 && (
                 <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
                   <div className="flex justify-between text-sm text-gray-600">

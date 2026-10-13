@@ -79,8 +79,7 @@ Solo is free (migration 0234; billing activates it without a checkout; site and 
 
 **3. Tip screen leftovers:** the preset notes ("Good service." …) are English only, and the tip page does not use the salon's theme or show the technician's name.
 
-**4. The kiosk takes one service per check-in.**
-`KioskCheckIn.tsx` `toggleSvc` replaces the selection; the server only makes the first service the ticket's service. Allowing two (a manicure and a pedicure) touches the ticket, the slip and the wait estimate. Also needed for Smart Check-In's complementary offers.
+**4. Two services per visit (built 2026-10-13) — what is left.** A client can now choose two services (2½ hours at most) at the kiosk and in online booking. Left: the Mobile and Bloom booking themes still take one service; the second service at the kiosk cannot be one with size options; a kiosk walk-in at a business with no staff screen (hair salon, spa) still records only the first service; the kiosk two-service path was not run end to end (the test server's kiosk is switched off).
 
 **5. Kiosk walk-ins at businesses without a staff screen** (hair salon, spa…) still go through the booking engine and can be refused. Nail salons and barbershops make tickets.
 

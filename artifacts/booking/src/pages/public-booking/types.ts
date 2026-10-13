@@ -77,4 +77,7 @@ export interface TimeSlot {
   time: string;
   staffId: number;
   staffName: string;
+  /** Two services that no one technician performs both of: who takes the second, straight after the first. */
+  extraStaffId?: number;
+  extraStaffName?: string;
 }
