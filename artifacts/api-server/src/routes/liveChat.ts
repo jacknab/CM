@@ -1287,10 +1287,54 @@ async function requeueAbandonedChats() {
   }
 }
 
+// ─── Visitor presence: a chat does not wait in the queue for a visitor who has gone ───────────
+// A visitor who leaves while waiting is marked missed by the timer on their own connection — but only
+// while the chat is still in the queue at that moment, and only if this worker lives long enough to
+// run it. A visitor who left DURING a chat, whose agent then disconnected, was put back in the queue
+// with nobody on the other end, and stayed there until an agent closed it by hand. Presence is kept in
+// the database (live_chats.visitor_seen_at), stamped by whichever worker holds the visitor's
+// connection, so any worker can see that a waiting chat has no visitor left.
+const VISITOR_GONE_SEC = 90;
+
+function touchVisitorPresence(chatIds: string[]) {
+  if (!chatIds.length) return;
+  pool.query(
+    `UPDATE live_chats SET visitor_seen_at = now() WHERE id::text = ANY($1::text[]) AND status IN ('queued', 'active')`,
+    [chatIds],
+  ).catch(() => {});
+}
+
+/** Takes chats out of the queue whose visitor is no longer connected. */
+async function missChatsWithNoVisitor() {
+  try {
+    // One UPDATE, so when several workers sweep at once each chat is handled by exactly one of them.
+    const r = await pool.query<{ id: string }>(
+      `UPDATE live_chats
+          SET status = 'missed'
+        WHERE status = 'queued'
+          AND COALESCE(visitor_seen_at, started_at) < now() - ($1 || ' seconds')::interval
+        RETURNING id`,
+      [String(VISITOR_GONE_SEC)],
+    );
+    for (const chat of r.rows) {
+      await persistMessage(chat.id, "system", null, "system", "The visitor left before an agent was available");
+    }
+    if (r.rows.length) {
+      console.log(`[live-chat] ${r.rows.length} waiting chat(s) marked missed: the visitor had left`);
+      await pushQueueUpdateToAgents();
+    }
+  } catch (err) {
+    console.error("[live-chat] visitor sweep failed:", (err as Error)?.message);
+  }
+}
+
 function startAgentPresence() {
-  setInterval(() => touchAgentPresence(Array.from(agentSockets.keys())), PRESENCE_BEAT_MS);
-  // After a restart every agent has to reconnect: wait before judging anyone gone.
-  setTimeout(() => { setInterval(requeueAbandonedChats, SWEEP_MS); }, 90_000);
+  setInterval(() => {
+    touchAgentPresence(Array.from(agentSockets.keys()));
+    touchVisitorPresence(Array.from(visitorSockets.keys()));
+  }, PRESENCE_BEAT_MS);
+  // After a restart every agent and visitor has to reconnect: wait before judging anyone gone.
+  setTimeout(() => { setInterval(() => { void requeueAbandonedChats().then(missChatsWithNoVisitor); }, SWEEP_MS); }, 90_000);
 }
 
 export function setupLiveChatWS(httpServer: Server): void {
@@ -1325,6 +1369,7 @@ export function setupLiveChatWS(httpServer: Server): void {
       const chatId = params.get("chatId");
       if (!chatId) { ws.close(4001, "chatId required"); return; }
       visitorSockets.set(chatId, ws);
+      touchVisitorPresence([chatId]);
 
       pool.query(
         `SELECT c.status, sa.first_name || ' ' || sa.last_name AS agent_name, c.department_id

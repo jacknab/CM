@@ -116,5 +116,3 @@ Solo is free (migration 0234; billing activates it without a checkout; site and 
 **13. Duplicate numeric prefixes in `/apps/CM/migrations/`** (0000, 0001, 0025, 0123, 0132 each appear twice). Harmless: the tracking table is keyed by the full filename. Renaming applied migrations would make them run again, so leave them.
 
 **14. Stores created before 2026-10-03 that are not nail salons still hold a copy of the nail catalogue** (only store 38 was cleaned). Removing services from a live store is that salon's call.
-
-**15. Live chat:** a chat re-queued after its agent disappeared stays in the queue if the visitor has also left, until an agent closes it.
