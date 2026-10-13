@@ -778,6 +778,15 @@ app.use(salonDirectoryRouter);
 app.use(salonApiRouter);
 app.use(marketplaceDealsApiRouter);
 
+// --- /.well-known/* ---
+// Nothing is published there (no plugin manifest, no app-link files), but the app's page fallback answered
+// every such address with a 200 and the app shell — a "soft 404" to anything probing for
+// /.well-known/ai-plugin.json and the like. They are real 404s now. Certificate challenges are left alone.
+app.use("/.well-known", (req, res, next) => {
+  if (req.path.startsWith("/acme-challenge/")) return next();
+  res.status(404).type("text/plain").set("Cache-Control", "public, max-age=3600").send("Not found");
+});
+
 // --- New marketing site: renders the paths already moved off PHP ---
 // Ahead of the PHP proxy so those paths come from the new app; anything it
 // does not own, or cannot render, falls through to PHP below.

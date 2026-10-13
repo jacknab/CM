@@ -52,18 +52,20 @@ None. No Tier 1 crawler is blocked.
 
 **Named AI crawlers were allowed into the app and API paths.** The file listed each AI crawler in its own group with only `Allow: /`. A crawler that finds a group with its own name ignores the `*` group, so the internal-path rules there (`/api/`, `/auth/`, `/manage/`, `/admin/`, `/dashboard/` and the rest) did not apply to GPTBot, ClaudeBot, PerplexityBot or the other thirteen. They are now one group that repeats the same exclusions, with `/api/r2/` (salon photos) still allowed. Public pages are unaffected. Source: `artifacts/booking/public/robots.txt`.
 
+## Follow-up fixes (2026-10-13, after the owner said to do whatever helps visibility)
+
+| Item | Done |
+|---|---|
+| Content Signals | `Content-Signal: ai-train=yes, search=yes, ai-retrieval=yes` added to both groups in robots.txt: yes to AI search, retrieval and training, the choice that gives the most exposure. |
+| `/.well-known/ai-plugin.json` soft 404 | Every `/.well-known/` address now answers a real 404 (web server rule, plus the same in the app server). Certificate challenges are untouched. |
+| `llms-full.txt` | Rebuilt from the live site by a new script, `scripts/gen-llms-full.py`: 35 pages including every blog post, 185 KB. Re-run it after changing marketing pages. |
+| Stale `Disallow: /products/` | Removed; `/products` is the Hardware page. |
+| Claude-SearchBot | Added to the named AI crawlers. |
+| Bytespider | Left as it is (allowed except the directory hubs). Blocking it would not help visibility. |
+
 ## Recommendations
 
-### Immediate Actions
-
-Nothing is required for access.
-
-### Worth doing
-
-1. **Declare AI usage preferences** with a `Content-Signal:` line (see below). This is a decision about whether Certxa's content may be used to train models, so it has not been added.
-2. **`/.well-known/ai-plugin.json` answers 200 with an HTML page** (3 KB app shell) where it should be a 404. No crawler is harmed by it; it is an untidy soft-404.
-3. **`Disallow: /products/`** is left over from an old app path. The new Hardware page is `/products` with no trailing slash and is not blocked, but anything later placed under `/products/…` would be.
-4. **Bytespider** is only kept out of `/listings/`. Block it fully (`Disallow: /`) if there is no interest in ByteDance's products.
+Nothing further is needed for crawler access.
 
 ### robots.txt Recommendation
 
@@ -121,13 +123,15 @@ Disallow: /manage/
 
 ### Content Signals (IETF Draft)
 
-**Status:** Absent
+**Status:** Present (added 2026-10-13)
 
-**Recommendation:** Add a `Content-Signal:` directive to robots.txt to declare AI usage preferences explicitly. Example:
+| Signal Key | Value | Meaning |
+|---|---|---|
+| ai-train | yes | Content may be used to train AI models |
+| search | yes | Content may be used in AI-powered search results |
+| ai-retrieval | yes | Content may be fetched to ground an AI answer |
 
-`Content-Signal: ai-train=no, search=yes, ai-retrieval=yes`
-
-That example allows AI search and retrieval while opting out of model training. For a site whose problem is that AI systems don't know it exists, allowing training as well (`ai-train=yes`) is the choice that maximises exposure. See https://contentsignals.org/ for the full specification.
+See https://contentsignals.org/ for the specification.
 
 ---
 

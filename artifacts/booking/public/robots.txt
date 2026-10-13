@@ -3,6 +3,9 @@
 # Internal app pages (dashboard, admin, staff tools) are disallowed.
 
 User-agent: *
+# How this site's content may be used by AI systems (Content Signals, contentsignals.org):
+# yes to AI search, yes to being retrieved for answers, yes to model training.
+Content-Signal: ai-train=yes, search=yes, ai-retrieval=yes
 Allow: /
 
 # Internal app sections — not for public indexing
@@ -27,7 +30,6 @@ Disallow: /staff-dashboard/
 Disallow: /dashboard/
 Disallow: /calendar/
 Disallow: /customers/
-Disallow: /products/
 
 # PHP marketing-site internals
 Disallow: /includes/
@@ -62,6 +64,8 @@ User-agent: CCBot
 User-agent: Cohere-ai
 User-agent: FacebookBot
 User-agent: GoogleOther
+User-agent: Claude-SearchBot
+Content-Signal: ai-train=yes, search=yes, ai-retrieval=yes
 Allow: /
 Allow: /api/r2/
 Disallow: /api/
@@ -79,7 +83,6 @@ Disallow: /staff-dashboard/
 Disallow: /dashboard/
 Disallow: /calendar/
 Disallow: /customers/
-Disallow: /products/
 Disallow: /includes/
 Disallow: /config.php
 Disallow: /router.php
