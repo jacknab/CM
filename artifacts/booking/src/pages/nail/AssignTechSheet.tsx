@@ -17,14 +17,19 @@ interface Props {
   onClose: () => void;
 }
 
+/** A ticket cannot be given to someone who is not clocked in or who does not perform the service. */
+const cannotTake = (t: TurnTech) => t.clockedIn === false || !!t.exclusionReasons?.includes("service_not_supported");
+
 function statusOf(t: TurnTech): string {
   if (t.eligible) return "Available";
+  // The two reasons a ticket cannot go to someone at all come first, whatever else they are doing.
+  if (t.clockedIn === false) return "Not clocked in";
+  if (t.exclusionReasons?.includes("service_not_supported")) return "Doesn't perform this service";
   // currentStatus "busy" covers two different things: an actual started service, or a tech merely
   // locked/assigned to a checked-in client who hasn't started yet (see TechCards.tsx's statusOf()
   // for the same distinction on the Techs board). `inService` disambiguates which one this is.
   if (t.currentStatus === "busy") return t.inService ? "With a client" : "Assigned — not started yet";
   if (t.currentStatus === "on_break") return "On break";
-  if (t.clockedIn === false) return "Not clocked in";
   return t.exclusionReasons?.[0] ?? "Unavailable";
 }
 
@@ -75,8 +80,8 @@ export function AssignTechSheet({ storeId, serviceId, clientName, mode, excludeS
           {techs.map((t) => {
             const isSel = selected === t.id;
             return (
-              <button key={t.id} type="button" onClick={() => setSelected(isSel ? null : t.id)} data-testid={`nail-tech-${t.id}`}
-                className={`assign-create-item ${isSel ? "assign-create-item-sel" : ""}`}>
+              <button key={t.id} type="button" disabled={cannotTake(t)} onClick={() => setSelected(isSel ? null : t.id)} data-testid={`nail-tech-${t.id}`}
+                className={`assign-create-item ${isSel ? "assign-create-item-sel" : ""}`} style={cannotTake(t) ? { opacity: 0.45 } : undefined}>
                 <span className="assign-create-dot" style={{ background: t.color || "#454c56" }} />
                 <span className="assign-create-name">{t.name}</span>
                 {assigning && nextUp?.id === t.id && <span className="assign-create-next">NEXT UP</span>}

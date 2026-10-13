@@ -862,6 +862,12 @@ export async function reassignNailTicket(
     return fail(400, "That technician isn't available.");
   }
   if (!(await techCanDo(member.id, appt.serviceId))) return fail(400, `${member.name} doesn't perform this service.`);
+  // A ticket can only be handed to someone who is in the salon. (Leaving it with the technician it already
+  // has is not a hand-over, so that is not refused here.)
+  if (member.id !== appt.staffId) {
+    const line: any = await deps.getTurnEligibility(args.storeId, appt.serviceId);
+    if (!isClockedIn(line.technicians, member.id)) return fail(400, `${member.name} isn't clocked in.`);
+  }
 
   const oldStaffId = appt.staffId ?? null;
   if (oldStaffId === member.id) {
