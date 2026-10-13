@@ -2,134 +2,194 @@
   "hero": {
     "eyebrow": "Changelog",
     "headline": "What's new in Certxa.",
-    "subhead": "We ship updates every week. Here's everything we've released, in reverse order."
+    "subhead": "What we've released, newest first."
   },
   "releases": [
     {
       "id": "rel1",
-      "version": "v2.14",
-      "date": "October 8, 2026",
+      "version": "2026.10.12",
+      "date": "October 12, 2026",
       "tags": [
         "feature",
-        "improvement"
+        "improvement",
+        "fix"
       ],
       "items": [
         {
           "id": "i1",
           "type": "feature",
-          "text": "Autumn AI now supports multi-language responses — English, Spanish, and Vietnamese."
+          "text": "A ticket can now hold more than one service. One technician takes the whole visit when someone in the turn line can do every service; otherwise each service goes to the next technician who can."
         },
         {
           "id": "i2",
-          "type": "improvement",
-          "text": "Turn rotation queue now shows estimated wait time to clients on the kiosk screen."
+          "type": "feature",
+          "text": "Autumn, the AI receptionist, is now included in every plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite."
         },
         {
           "id": "i3",
+          "type": "feature",
+          "text": "Salons that use their own card terminal can set the CARD button to Own Provider, so the POS records the card payment without charging it."
+        },
+        {
+          "id": "i4",
           "type": "improvement",
-          "text": "Loyalty punch cards can now be configured with custom expiry windows (30, 60, 90, or 180 days)."
+          "text": "Checkout asks the client for a tip once, as soon as staff press Pay / Checkout, and keeps it for the rest of the sale."
+        },
+        {
+          "id": "i5",
+          "type": "improvement",
+          "text": "The POS keeps numbering tickets and running its timers when the internet is down."
+        },
+        {
+          "id": "i6",
+          "type": "fix",
+          "text": "Paid tickets that were created while offline no longer stay in the queue."
         }
       ]
     },
     {
       "id": "rel2",
-      "version": "v2.13",
-      "date": "September 24, 2026",
-      "tags": [
-        "feature",
-        "fix"
-      ],
-      "items": [
-        {
-          "id": "i4",
-          "type": "feature",
-          "text": "New Hardware page in the dashboard for managing connected devices and checking firmware versions."
-        },
-        {
-          "id": "i5",
-          "type": "fix",
-          "text": "Fixed an edge case where back-to-back appointments could overlap by 1 minute on certain timezone configurations."
-        },
-        {
-          "id": "i6",
-          "type": "fix",
-          "text": "Receipt printer now correctly handles special characters in service names."
-        }
-      ]
-    },
-    {
-      "id": "rel3",
-      "version": "v2.12",
-      "date": "September 10, 2026",
-      "tags": [
-        "feature"
-      ],
-      "items": [
-        {
-          "id": "i7",
-          "type": "feature",
-          "text": "Introduced Points per Dollar loyalty mode alongside the existing punch card system."
-        },
-        {
-          "id": "i8",
-          "type": "feature",
-          "text": "Clients can now view their loyalty balance and history from the booking confirmation page."
-        },
-        {
-          "id": "i9",
-          "type": "improvement",
-          "text": "Dashboard analytics now include a 90-day revenue trend chart."
-        }
-      ]
-    },
-    {
-      "id": "rel4",
-      "version": "v2.11",
-      "date": "August 27, 2026",
+      "version": "2026.10.10",
+      "date": "October 10, 2026",
       "tags": [
         "improvement",
         "fix"
       ],
       "items": [
         {
-          "id": "i10",
+          "id": "i7",
           "type": "improvement",
-          "text": "Booking confirmation emails redesigned — cleaner layout, salon logo, and one-tap reschedule link."
+          "text": "Autumn sees the salon as it is right now: who is working, who is free and how many clients are waiting, so callers get a real wait time."
+        },
+        {
+          "id": "i8",
+          "type": "fix",
+          "text": "New Google reviews are checked every 30 minutes and answered automatically; a check that was being skipped is fixed."
+        }
+      ]
+    },
+    {
+      "id": "rel3",
+      "version": "2026.10.09",
+      "date": "October 9, 2026",
+      "tags": [
+        "feature",
+        "improvement"
+      ],
+      "items": [
+        {
+          "id": "i9",
+          "type": "feature",
+          "text": "The POS works offline: check-ins, tickets, assignments and cash sales are saved on the tablet and sent when the connection returns."
+        },
+        {
+          "id": "i10",
+          "type": "feature",
+          "text": "Smart Check-In: the kiosk recognises returning clients and suggests the service they are due for."
         },
         {
           "id": "i11",
-          "type": "improvement",
-          "text": "Staff payroll report now exportable as CSV and PDF."
+          "type": "feature",
+          "text": "The Solo plan is now free."
         },
         {
           "id": "i12",
-          "type": "fix",
-          "text": "Resolved a display issue on the kiosk where service prices weren't showing for walk-in clients."
+          "type": "feature",
+          "text": "Salons can set their own tip percentages for the customer tip screen and checkout."
+        },
+        {
+          "id": "i13",
+          "type": "feature",
+          "text": "Day Close reports: look up the close-out report for any day."
+        },
+        {
+          "id": "i14",
+          "type": "improvement",
+          "text": "A new look for the nail salon kiosk, with a guide that helps clients choose a nail shape and length."
+        }
+      ]
+    },
+    {
+      "id": "rel4",
+      "version": "2026.10.05",
+      "date": "October 5, 2026",
+      "tags": [
+        "feature",
+        "improvement"
+      ],
+      "items": [
+        {
+          "id": "i15",
+          "type": "feature",
+          "text": "Dollar-Based Turns: a second way to run the turn rotation, where a ticket earns turns by its service amount."
+        },
+        {
+          "id": "i16",
+          "type": "improvement",
+          "text": "Only walk-in services count toward the turn rotation; tips, retail and advance bookings do not."
+        },
+        {
+          "id": "i17",
+          "type": "feature",
+          "text": "Managers can arrange the POS key grid: which categories and services appear on which key."
         }
       ]
     },
     {
       "id": "rel5",
-      "version": "v2.10",
-      "date": "August 13, 2026",
+      "version": "2026.09.23",
+      "date": "September 23, 2026",
       "tags": [
-        "feature"
+        "improvement",
+        "feature",
+        "fix"
       ],
       "items": [
         {
-          "id": "i13",
-          "type": "feature",
-          "text": "Launched Certxa Kiosk hardware — self check-in tablet with integrated turn queue management."
-        },
-        {
-          "id": "i14",
-          "type": "feature",
-          "text": "Review Management: automated post-visit Google review requests with customizable timing."
-        },
-        {
-          "id": "i15",
+          "id": "i18",
           "type": "improvement",
-          "text": "POS checkout flow reduced from 5 taps to 3 for the most common transaction types."
+          "text": "Redesigned printed receipts, with a salon copy and a customer copy, and receipts sent by text as a link."
+        },
+        {
+          "id": "i19",
+          "type": "feature",
+          "text": "Gift cards can be sold, looked up and redeemed at checkout."
+        },
+        {
+          "id": "i20",
+          "type": "feature",
+          "text": "Group Pay: pay several tickets together in one checkout."
+        },
+        {
+          "id": "i21",
+          "type": "fix",
+          "text": "Receipt printing no longer crashes or freezes the tablet app on network and Bluetooth printers."
+        }
+      ]
+    },
+    {
+      "id": "rel6",
+      "version": "2026.09.20",
+      "date": "September 20, 2026",
+      "tags": [
+        "feature",
+        "improvement"
+      ],
+      "items": [
+        {
+          "id": "i22",
+          "type": "feature",
+          "text": "Nail POS: a front desk screen for nail salons with walk-in tickets, turn-based assignment, a live board of who is waiting and in service, and checkout."
+        },
+        {
+          "id": "i23",
+          "type": "feature",
+          "text": "Techs board: a card for each technician showing whether they are free, in service or on break, with a live timer."
+        },
+        {
+          "id": "i24",
+          "type": "improvement",
+          "text": "A setting for time between appointments (0, 5, 10 or 15 minutes), applied everywhere bookings are made."
         }
       ]
     }

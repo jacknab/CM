@@ -2,7 +2,7 @@
   "hero": {
     "eyebrow": "Product roadmap",
     "headline": "Where Certxa is headed.",
-    "subhead": "This is our public roadmap. We update it every sprint. Vote on features, track progress, and see what's shipping next."
+    "subhead": "What we're building now, what comes next, and what has shipped."
   },
   "columns": [
     {
@@ -12,21 +12,21 @@
       "items": [
         {
           "id": "rp1",
-          "title": "Android Certxa app",
-          "description": "Native Android companion app for staff and owners. Mirrors the iOS feature set.",
-          "votes": 214
+          "title": "Tablets that keep working together offline",
+          "description": "The POS and the customer screen stay connected over the salon's own Wi-Fi when the internet is down. In testing.",
+          "votes": 0
         },
         {
           "id": "rp2",
-          "title": "Two-way SMS with clients",
-          "description": "Reply to client messages directly from the Certxa dashboard. No third-party app needed.",
-          "votes": 187
+          "title": "Card payments during an outage",
+          "description": "Take chip and contactless cards on the card reader with no internet; the payments are sent when the connection returns.",
+          "votes": 0
         },
         {
           "id": "rp3",
-          "title": "Inventory management",
-          "description": "Track retail product stock, set reorder thresholds, and generate purchase orders.",
-          "votes": 156
+          "title": "Order hardware online",
+          "description": "Buy Certxa hardware from the Hardware page, with shipping worked out for your address.",
+          "votes": 0
         }
       ]
     },
@@ -37,27 +37,21 @@
       "items": [
         {
           "id": "rp4",
-          "title": "Gift cards",
-          "description": "Sell and redeem digital and physical gift cards directly through Certxa POS.",
-          "votes": 302
+          "title": "Deposits and prepayments",
+          "description": "Require a deposit or full prepayment when a client books online.",
+          "votes": 0
         },
         {
           "id": "rp5",
-          "title": "Multi-location dashboard",
-          "description": "Unified analytics and staff management across multiple salon locations.",
-          "votes": 278
+          "title": "Kiosk check-in with no internet",
+          "description": "Clients keep checking themselves in at the kiosk during an outage.",
+          "votes": 0
         },
         {
           "id": "rp6",
-          "title": "Waitlist management",
-          "description": "Let clients join a digital waitlist and get notified when a slot opens up.",
-          "votes": 241
-        },
-        {
-          "id": "rp7",
-          "title": "Payroll integrations",
-          "description": "Direct sync with Gusto and QuickBooks Payroll. No more manual exports.",
-          "votes": 198
+          "title": "Instagram gallery sync",
+          "description": "Show your Instagram photos on your salon website automatically.",
+          "votes": 0
         }
       ]
     },
@@ -67,27 +61,45 @@
       "label": "Shipped",
       "items": [
         {
-          "id": "rp8",
+          "id": "rp7",
           "title": "Autumn AI receptionist",
-          "description": "AI-powered after-hours booking and client communication.",
+          "description": "Answers the salon's phone, books appointments and gives callers a real wait time.",
+          "votes": 0
+        },
+        {
+          "id": "rp8",
+          "title": "Self check-in kiosk",
+          "description": "Clients check themselves in on a tablet and join the queue.",
           "votes": 0
         },
         {
           "id": "rp9",
-          "title": "Self check-in kiosk",
-          "description": "Tablet-based kiosk with turn queue and service selection.",
+          "title": "Turn rotation",
+          "description": "Walk-ins are given to the next technician in line, by counted or dollar-based turns.",
           "votes": 0
         },
         {
           "id": "rp10",
-          "title": "Points loyalty program",
-          "description": "Earn points per dollar spent, redeemable for services.",
+          "title": "Loyalty points and rewards",
+          "description": "Clients earn points per dollar and redeem them for money off.",
           "votes": 0
         },
         {
           "id": "rp11",
-          "title": "Google review automation",
-          "description": "Automated post-visit review request with smart timing.",
+          "title": "Gift cards",
+          "description": "Sell and redeem gift cards at checkout.",
+          "votes": 0
+        },
+        {
+          "id": "rp12",
+          "title": "Google review requests and replies",
+          "description": "Clients are asked for a review after their visit, and new Google reviews are answered automatically.",
+          "votes": 0
+        },
+        {
+          "id": "rp13",
+          "title": "Offline mode for the POS",
+          "description": "Check-ins, tickets and cash sales keep working without internet and sync afterwards.",
           "votes": 0
         }
       ]

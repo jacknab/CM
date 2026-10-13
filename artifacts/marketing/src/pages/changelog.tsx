@@ -40,7 +40,7 @@ export default function ChangelogPage() {
     <>
       <Helmet>
         <title>Certxa Changelog — Latest Updates & New Features</title>
-        <meta name="description" content="Every update, fix, and new feature shipped to Certxa salon software. We ship every week — see the full release history including AI receptionist, kiosk, and loyalty updates." />
+        <meta name="description" content="Every update, fix, and new feature shipped to Certxa salon software. See the release history, including AI receptionist, kiosk, POS and offline updates." />
         <link rel="canonical" href={PAGE_URL} />
         <meta property="og:title" content="Certxa Changelog — Latest Updates & New Features" />
         <meta property="og:description" content="Every update, fix, and new feature shipped to Certxa salon software, in reverse chronological order." />

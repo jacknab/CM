@@ -48,16 +48,16 @@ export default function RoadmapPage() {
     <>
       <Helmet>
         <title>Certxa Product Roadmap — Upcoming Salon Software Features</title>
-        <meta name="description" content="See what the Certxa team is building next — Android app, two-way SMS, gift cards, multi-location dashboard, and more. Vote on features and track progress." />
+        <meta name="description" content="See what the Certxa team is building next — offline card payments, deposits at booking, online hardware ordering — and what has already shipped." />
         <link rel="canonical" href={PAGE_URL} />
         <meta property="og:title" content="Certxa Product Roadmap — Upcoming Salon Software Features" />
-        <meta property="og:description" content="See what is in progress, planned, and already shipped. Vote on features and track progress on the public Certxa roadmap." />
+        <meta property="og:description" content="See what is in progress, planned, and already shipped on the public Certxa roadmap." />
         <meta property="og:image" content={OG_IMAGE} />
         <meta property="og:url" content={PAGE_URL} />
         <meta property="og:type" content="website" />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content="Certxa Product Roadmap — Upcoming Salon Software Features" />
-        <meta name="twitter:description" content="See what is in progress, planned, and already shipped. Vote on features and track progress." />
+        <meta name="twitter:description" content="See what is in progress, planned, and already shipped." />
         <meta name="twitter:image" content={OG_IMAGE} />
         <script type="application/ld+json">{JSON.stringify(jsonLd).replace(/</g, '\\u003c')}</script>
       </Helmet>

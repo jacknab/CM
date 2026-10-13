@@ -768,37 +768,55 @@ Source: https://certxa.com/changelog
 Changelog
 
 # What's new in Certxa.
-We ship updates every week. Here's everything we've released, in reverse order.
-v2.14 October 8, 2026 New Improved New
-Autumn AI now supports multi-language responses — English, Spanish, and Vietnamese.
-Improved
-Turn rotation queue now shows estimated wait time to clients on the kiosk screen.
-Improved
-Loyalty punch cards can now be configured with custom expiry windows (30, 60, 90, or 180 days).
-v2.13 September 24, 2026 New Fixed New
-New Hardware page in the dashboard for managing connected devices and checking firmware versions.
-Fixed
-Fixed an edge case where back-to-back appointments could overlap by 1 minute on certain timezone configurations.
-Fixed
-Receipt printer now correctly handles special characters in service names.
-v2.12 September 10, 2026 New New
-Introduced Points per Dollar loyalty mode alongside the existing punch card system.
+What we've released, newest first.
+2026.10.12 October 12, 2026 New Improved Fixed New
+A ticket can now hold more than one service. One technician takes the whole visit when someone in the turn line can do every service; otherwise each service goes to the next technician who can.
 New
-Clients can now view their loyalty balance and history from the booking confirmation page.
-Improved
-Dashboard analytics now include a 90-day revenue trend chart.
-v2.11 August 27, 2026 Improved Fixed Improved
-Booking confirmation emails redesigned — cleaner layout, salon logo, and one-tap reschedule link.
-Improved
-Staff payroll report now exportable as CSV and PDF.
-Fixed
-Resolved a display issue on the kiosk where service prices weren't showing for walk-in clients.
-v2.10 August 13, 2026 New New
-Launched Certxa Kiosk hardware — self check-in tablet with integrated turn queue management.
+Autumn, the AI receptionist, is now included in every plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite.
 New
-Review Management: automated post-visit Google review requests with customizable timing.
+Salons that use their own card terminal can set the CARD button to Own Provider, so the POS records the card payment without charging it.
 Improved
-POS checkout flow reduced from 5 taps to 3 for the most common transaction types.
+Checkout asks the client for a tip once, as soon as staff press Pay / Checkout, and keeps it for the rest of the sale.
+Improved
+The POS keeps numbering tickets and running its timers when the internet is down.
+Fixed
+Paid tickets that were created while offline no longer stay in the queue.
+2026.10.10 October 10, 2026 Improved Fixed Improved
+Autumn sees the salon as it is right now: who is working, who is free and how many clients are waiting, so callers get a real wait time.
+Fixed
+New Google reviews are checked every 30 minutes and answered automatically; a check that was being skipped is fixed.
+2026.10.09 October 9, 2026 New Improved New
+The POS works offline: check-ins, tickets, assignments and cash sales are saved on the tablet and sent when the connection returns.
+New
+Smart Check-In: the kiosk recognises returning clients and suggests the service they are due for.
+New
+The Solo plan is now free.
+New
+Salons can set their own tip percentages for the customer tip screen and checkout.
+New
+Day Close reports: look up the close-out report for any day.
+Improved
+A new look for the nail salon kiosk, with a guide that helps clients choose a nail shape and length.
+2026.10.05 October 5, 2026 New Improved New
+Dollar-Based Turns: a second way to run the turn rotation, where a ticket earns turns by its service amount.
+Improved
+Only walk-in services count toward the turn rotation; tips, retail and advance bookings do not.
+New
+Managers can arrange the POS key grid: which categories and services appear on which key.
+2026.09.23 September 23, 2026 Improved New Fixed Improved
+Redesigned printed receipts, with a salon copy and a customer copy, and receipts sent by text as a link.
+New
+Gift cards can be sold, looked up and redeemed at checkout.
+New
+Group Pay: pay several tickets together in one checkout.
+Fixed
+Receipt printing no longer crashes or freezes the tablet app on network and Bluetooth printers.
+2026.09.20 September 20, 2026 New Improved New
+Nail POS: a front desk screen for nail salons with walk-in tickets, turn-based assignment, a live board of who is waiting and in service, and checkout.
+New
+Techs board: a card for each technician showing whether they are free, in service or on break, with a live timer.
+Improved
+A setting for time between appointments (0, 5, 10 or 15 minutes), applied everywhere bookings are made.
 
 
 ---
@@ -809,48 +827,49 @@ Source: https://certxa.com/roadmap
 Product roadmap
 
 # Where Certxa is headed.
-This is our public roadmap. We update it every sprint. Vote on features, track progress, and see what's shipping next.
+What we're building now, what comes next, and what has shipped.
 In progress 3
 
-### Android Certxa app
-Native Android companion app for staff and owners. Mirrors the iOS feature set.
-214 votes
+### Tablets that keep working together offline
+The POS and the customer screen stay connected over the salon's own Wi-Fi when the internet is down. In testing.
 
-### Two-way SMS with clients
-Reply to client messages directly from the Certxa dashboard. No third-party app needed.
-187 votes
+### Card payments during an outage
+Take chip and contactless cards on the card reader with no internet; the payments are sent when the connection returns.
 
-### Inventory management
-Track retail product stock, set reorder thresholds, and generate purchase orders.
-156 votes Planned 4
+### Order hardware online
+Buy Certxa hardware from the Hardware page, with shipping worked out for your address.
+Planned 3
 
-### Gift cards
-Sell and redeem digital and physical gift cards directly through Certxa POS.
-302 votes
+### Deposits and prepayments
+Require a deposit or full prepayment when a client books online.
 
-### Multi-location dashboard
-Unified analytics and staff management across multiple salon locations.
-278 votes
+### Kiosk check-in with no internet
+Clients keep checking themselves in at the kiosk during an outage.
 
-### Waitlist management
-Let clients join a digital waitlist and get notified when a slot opens up.
-241 votes
-
-### Payroll integrations
-Direct sync with Gusto and QuickBooks Payroll. No more manual exports.
-198 votes Shipped 4
+### Instagram gallery sync
+Show your Instagram photos on your salon website automatically.
+Shipped 7
 
 ### Autumn AI receptionist
-AI-powered after-hours booking and client communication.
+Answers the salon's phone, books appointments and gives callers a real wait time.
 
 ### Self check-in kiosk
-Tablet-based kiosk with turn queue and service selection.
+Clients check themselves in on a tablet and join the queue.
 
-### Points loyalty program
-Earn points per dollar spent, redeemable for services.
+### Turn rotation
+Walk-ins are given to the next technician in line, by counted or dollar-based turns.
 
-### Google review automation
-Automated post-visit review request with smart timing.
+### Loyalty points and rewards
+Clients earn points per dollar and redeem them for money off.
+
+### Gift cards
+Sell and redeem gift cards at checkout.
+
+### Google review requests and replies
+Clients are asked for a review after their visit, and new Google reviews are answered automatically.
+
+### Offline mode for the POS
+Check-ins, tickets and cash sales keep working without internet and sync afterwards.
 
 ## Have a feature idea?
 We read every suggestion. Send us yours and it might make the next sprint.
