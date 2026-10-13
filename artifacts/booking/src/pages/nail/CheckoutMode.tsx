@@ -991,7 +991,7 @@ export function CheckoutMode(p: Props) {
             // The payment buttons appear only once PAY / CHECKOUT has been pressed; before that this is the key grid.
             <CatalogPanel layout={p.layout} locked={p.finalizing} groups={p.groups} activeGroup="" onGroup={() => {}} serviceId={null} onService={addServiceLine}
               addons={[]} moreAddons={false} onToggleMore={() => {}} hasMoreAddons={false} addonIds={[]} onToggleAddon={() => {}}
-              exit={paying ? { label: "Payment", onClick: backToPayment } : { label: "Pay / Checkout", onClick: payCheckout }} />
+              exit={paying ? { label: "Payment", onClick: backToPayment } : undefined} />
           ) : (
           <div className="catalog-panel" data-testid="nail-pay-right">
 
