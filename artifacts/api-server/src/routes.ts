@@ -178,7 +178,8 @@ import usageRouter from "./routes/usage";
 import { autoAssignTechnician } from "./services/appointment-assignment";
 import { autoAssignResource } from "./services/resource-assignment";
 import * as nailTickets from "./lib/nailTickets";
-import { normalizeTurnRules, orderTurnLine, turnAmount, turnValue } from "./lib/turnRules";
+import { TURN_UNIT, explainAssignment, formatTurns, isDollarMode, lineMessage, normalizeTurnRules, rankTurnLine, turnAmount, turnRulesToSettings, turnValue, type ConsideredTechnician } from "./lib/turnRules";
+import * as turnEngine from "./lib/turnEngine";
 import { withTurnLock } from "./lib/turnLock";
 import { mutateStorePreferences, writeStorePreferences } from "./lib/storePreferences";
 import * as nailGiftCards from "./lib/nailGiftCards";
@@ -376,6 +377,12 @@ const DEFAULT_TURN_SETTINGS = {
   turnMode: "classic" as "classic" | "dollar",
   /** Dollar-Based Turns: what a ticket under the dollars-per-turn amount earns. */
   partialTurnValue: 0.5,
+  /** Goes up by one every time the salon changes its turn rules; written on every history row. */
+  turnConfigVersion: 1,
+  /** Hand-picking a technician (not at the client's request) uses that technician's turn in fixed order. */
+  turnOverrideUsesTurn: false,
+  /** Staff must say why when they give a client to someone other than the next technician. */
+  turnOverrideReasonRequired: false,
 };
 
 /** The short-turn holders, including a value saved before there could be more than one. */
@@ -571,34 +578,18 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
     }
   }
 
-  // === TURN TOTALS (computed first — needed for the fairness order below) ===
-  // What each technician has earned today under the salon's turn rules (lib/turnRules.ts): every
-  // finished, paid WALK-IN ticket is worth turns by its SERVICE amount — tips, retail and tax earn
-  // nothing. Advance bookings earn no turns: the rotation shares out walk-ins only.
-  // Tickets still in progress never count until checkout is final.
-  const completedToday = await db
-    .select({
-      staffId: appointments.staffId,
-      totalPaid: appointments.totalPaid,
-      tipAmount: appointments.tipAmount,
-      serviceRevenue: appointments.serviceRevenue,
-      productRevenue: appointments.productRevenue,
-    })
-    .from(appointments)
-    .where(and(
-      eq(appointments.storeId, storeId),
-      gte(appointments.date, todayStartUtc),
-      sql`${appointments.date} <= ${todayEndUtc}`,
-      sql`${appointments.status} = 'completed'`,
-      isNotNull(appointments.staffId),
-      sql.raw(nailTickets.walkInSQL("appointments")),
-    ));
-
-  const turnCountMap = new Map<number, number>();
-  for (const row of completedToday) {
-    const earned = turnValue(rules, turnAmount(row));
-    if (earned > 0) turnCountMap.set(row.staffId!, (turnCountMap.get(row.staffId!) ?? 0) + earned);
-  }
+  // === TURN SCORES (computed first — needed for the fairness order below) ===
+  // Each technician's score for the current turn period under the salon's method (shared/turnRules.ts,
+  // lib/turnEngine.ts): turns earned by finished, paid WALK-IN tickets, clients served, or — in fixed
+  // order — when they last took a turn. Lowest is next. Tickets still in progress never count.
+  const periodStart = await turnEngine.turnPeriodStart(storeId, rules, settings, todayStartUtc);
+  const overallScores = await turnEngine.loadTurnScores({ storeId, rules, periodStart, until: todayEndUtc });
+  // A salon that keeps a rotation per service category is asked "who is next FOR THIS SERVICE".
+  const turnCategory = rules.categoryRotation && serviceId ? await turnEngine.serviceCategory(storeId, serviceId) : null;
+  const scopedScores = turnCategory ? await turnEngine.loadTurnScores({ storeId, rules, periodStart, until: todayEndUtc, category: turnCategory }) : overallScores;
+  const periodKey = periodStart.toISOString();
+  // A technician who joined part-way through and was levelled with the line keeps that starting point for the period.
+  const savedOffsets: Record<string, number> = settings.turnOffsetsPeriod === periodKey && settings.turnOffsets && typeof settings.turnOffsets === "object" ? { ...settings.turnOffsets } : {};
 
   // === DEQUE ORDER MANAGEMENT ===
   // The deque is the canonical queue order, persisted in store settings.
@@ -624,24 +615,53 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
 
   const merged = [...filteredDeque, ...newlyClockedIn];
 
+  // Joining part-way through, where the salon levels late joiners: they start level with the lowest
+  // technician already in the line instead of at zero (which would hand them every client until they
+  // caught up). In fixed order that means the back of the order.
+  const offsets = { ...savedOffsets };
+  if (rules.lateJoin === "level" && filteredDeque.length > 0) {
+    const nowScore = now.getTime() - periodStart.getTime() + 1;
+    const lowest = Math.min(...filteredDeque.map((id) => (overallScores.scores.get(id) ?? 0) + (rules.mode === "round_robin" ? 0 : offsets[id] ?? 0)));
+    for (const id of newlyClockedIn) {
+      const own = overallScores.scores.get(id) ?? 0;
+      offsets[id] = rules.mode === "round_robin" ? nowScore : Math.max(offsets[id] ?? 0, lowest - own);
+    }
+  }
+  const offsetsChanged = JSON.stringify(offsets) !== JSON.stringify(savedOffsets) || (Object.keys(offsets).length > 0 && settings.turnOffsetsPeriod !== periodKey);
+  const withOffsets = (scores: ReadonlyMap<number, number>) => {
+    const out = new Map<number, number>();
+    for (const id of merged) {
+      const own = scores.get(id) ?? 0, off = offsets[id] ?? 0;
+      out.set(id, rules.mode === "round_robin" ? Math.max(own, off) : own + off);
+    }
+    return out;
+  };
+  const turnCountMap = scopedScores.shown;
+
   // Lowest turn total first; technicians level on turns keep their first-come order. Counted Turns
   // also holds its short-turn technicians at the very front (Dollar-Based Turns has no such hold —
   // the partial turn is what a small ticket costs).
   const shortTurnHeld = rules.mode === "classic" ? shortTurnPins(settings).filter((id) => clockedInToday.has(id)) : [];
-  const syncedDeque = orderTurnLine(merged, turnCountMap, shortTurnHeld);
+  const lineScores = withOffsets(overallScores.scores);
+  const syncedDeque = rankTurnLine({ line: merged, scores: lineScores, pinnedFront: shortTurnHeld, tieBreak: rules.tieBreak, clockInOrder });
+  // The order asked about: the salon's line, or this category's own rotation.
+  const scopedLineScores = turnCategory ? withOffsets(scopedScores.scores) : lineScores;
+  const scopedOrder = turnCategory
+    ? rankTurnLine({ line: syncedDeque, scores: scopedLineScores, pinnedFront: shortTurnHeld, tieBreak: rules.tieBreak, clockInOrder })
+    : syncedDeque;
 
   // Persist the cleaned+sorted line if it changed — but only over the exact line this was worked
   // out from, so a lock or a checkout saved in the meantime is never overwritten by this read.
-  if (JSON.stringify(syncedDeque) !== JSON.stringify(savedDeque)) {
+  if (JSON.stringify(syncedDeque) !== JSON.stringify(savedDeque) || offsetsChanged) {
     const basedOn = JSON.stringify(savedDeque);
     mutateTurnPreferences(storeId, (turn) => {
       const nowSaved = Array.isArray(turn.dequeOrder) ? (turn.dequeOrder as any[]).map(Number).filter(Number.isFinite) : [];
-      return JSON.stringify(nowSaved) === basedOn ? { dequeOrder: syncedDeque } : null;
+      return JSON.stringify(nowSaved) === basedOn ? { dequeOrder: syncedDeque, ...(offsetsChanged ? { turnOffsets: offsets, turnOffsetsPeriod: periodKey } : {}) } : null;
     }).catch(() => {});
   }
 
   // Position map: staffId → 0-based index in deque (0 = "next up")
-  const dequePos = new Map<number, number>(syncedDeque.map((id, pos) => [id, pos]));
+  const dequePos = new Map<number, number>(scopedOrder.map((id, pos) => [id, pos]));
 
   // === ACTIVE APPOINTMENTS RIGHT NOW (used to derive "busy" status) ===
   // Scoped to today only so stale open-status appointments from previous days
@@ -755,7 +775,11 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
         eligible: exclusionReasons.length === 0,
         exclusionReasons,
         turnPosition: memberDequePos,
-        turnCount: turnCountMap.get(member.id) ?? 0,
+        // "Turns" (or clients) this period, as a number of turns; turnUnits is the same in thousandths.
+        turnCount: (turnCountMap.get(member.id) ?? 0) / TURN_UNIT,
+        turnUnits: turnCountMap.get(member.id) ?? 0,
+        // The score the line is ordered by (lowest is next), levelling for a late start included.
+        turnScore: scopedLineScores.get(member.id) ?? 0,
         currentStatus,
         // Distinguishes the two things that both collapse into currentStatus "busy": an actual
         // started service (busyStaffIds) vs. the Consideration Lock (a client checked in and
@@ -773,6 +797,14 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
     })
     .sort((a, b) => Number(a.turnPosition) - Number(b.turnPosition) || Number(a.id) - Number(b.id));
 
+  // What each technician is told about their own place. "You're next" is only ever said to the
+  // technician who would really get the next client (for this service, when one was asked about).
+  let eligibleAhead = 0;
+  for (const tech of technicians as any[]) {
+    tech.lineMessage = lineMessage({ eligible: tech.eligible, reasons: tech.exclusionReasons as string[], clockedIn: tech.clockedIn }, eligibleAhead);
+    if (tech.eligible) eligibleAhead += 1;
+  }
+
   const clockedInTechs = technicians.filter((t) => t.clockedIn);
   const currentCycle =
     clockedInTechs.length > 0
@@ -782,6 +814,8 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
   return {
     settings,
     turnRules: rules,
+    turnCategory,
+    turnPeriodStart: periodKey,
     generatedAt: now.toISOString(),
     serviceId: serviceId || null,
     technicians,
@@ -822,11 +856,16 @@ async function assignAppointmentViaTurn(opts: {
   /** Treat an exact-tech selection as a normal TURN consumption, not a manager override. */
   consumeTurn?: boolean;
   source?: string;
-}): Promise<{ technician: any; eligibility: any; dequeAdvanced: boolean } | null> {
+  /** Why staff gave the client to someone other than the next technician. */
+  overrideReason?: string | null;
+  /** The staff member (technician login) who made the assignment, for the history. */
+  actorStaffId?: number | null;
+}): Promise<{ technician: any; eligibility: any; dequeAdvanced: boolean; explanation: string } | null> {
   const {
     storeId, serviceId = null, appointmentId = null,
     requestedStaffId = null, bookedByUserId = null, offline = false,
     writeStaffId = false, consumeTurn = false, source,
+    overrideReason = null, actorStaffId = null,
   } = opts;
   // Pick-and-lock is one protected step per salon: two walk-ins at the same instant can't both
   // read the same leader.
@@ -873,6 +912,49 @@ async function assignAppointmentViaTurn(opts: {
   }
 
   const recommendedTech = eligibility.eligibleTechnicians[0];
+
+  // ── History: who was considered, who was passed over and why, and why this technician ──
+  const turnRulesNow = eligibility.turnRules;
+  const considered: ConsideredTechnician[] = (eligibility.technicians as any[])
+    .filter((tech) => tech.clockedIn)
+    .map((tech, position) => ({
+      id: tech.id, name: tech.name, position, eligible: tech.eligible,
+      reasons: tech.exclusionReasons as string[],
+      units: turnRulesNow.mode === "round_robin" ? undefined : Number(tech.turnScore) || 0,
+    }));
+  // "manual" = a person chose; "requested" = the client asked for this technician (the screens that know say so).
+  const manual = isRequestBypass;
+  const requested = manual && (source === "client_request" || source === "kiosk_request");
+  const explanation = explainAssignment({
+    rules: turnRulesNow, chosenId: selected.id, considered, manual, requested,
+    category: eligibility.turnCategory, overrideReason,
+  });
+  // Fixed order: taking a client from the line uses the technician's turn. A hand-picked technician keeps
+  // their place unless the salon has said a hand-pick uses the turn; a client's own request never does.
+  const usesTurn = !manual || (!requested && eligibility.settings.turnOverrideUsesTurn === true);
+  await turnEngine.recordTurnEvent({
+    storeId, kind: "assigned", staffId: selected.id, appointmentId, category: eligibility.turnCategory,
+    turnUnits: usesTurn ? TURN_UNIT : 0, method: turnRulesNow.mode,
+    configVersion: Number(eligibility.settings.turnConfigVersion) || 1,
+    automatic: !manual, reason: overrideReason, actorUserId: bookedByUserId, actorStaffId, explanation,
+    details: { source: source ?? null, considered, nextInLine: recommendedTech?.id ?? null },
+  });
+  // Fixed order, where the salon says being passed over for a given reason uses the turn: everyone ahead
+  // of the chosen technician who was passed for one of those reasons goes to the back with them.
+  if (!manual && turnRulesNow.mode === "round_robin" && (turnRulesNow.skipLosesTurn?.length ?? 0) > 0) {
+    const chosenAt = considered.find((t) => t.id === selected.id)?.position ?? 0;
+    for (const tech of considered) {
+      if (tech.position >= chosenAt || tech.eligible) continue;
+      const cause = tech.reasons.find((r) => (turnRulesNow.skipLosesTurn as string[]).includes(r));
+      if (!cause) continue;
+      await turnEngine.recordTurnEvent({
+        storeId, kind: "passed", staffId: tech.id, appointmentId, category: eligibility.turnCategory, turnUnits: TURN_UNIT,
+        method: turnRulesNow.mode, configVersion: Number(eligibility.settings.turnConfigVersion) || 1, reason: cause,
+        explanation: `${tech.name} was passed over and goes to the back of the order.`,
+      });
+    }
+  }
+
   try {
     await db.insert(turnAssignmentLog).values({
       storeId,
@@ -893,7 +975,7 @@ async function assignAppointmentViaTurn(opts: {
     runEngineForStaff(storeId, selected.id).catch(() => {});
   }).catch(() => {});
 
-  return { technician: selected, eligibility, dequeAdvanced: !isRequestBypass };
+  return { technician: selected, eligibility, dequeAdvanced: !isRequestBypass, explanation };
   });
 }
 
@@ -918,7 +1000,7 @@ async function handleTurnCheckout(
     const appointmentId = ticket.appointmentId != null && Number.isFinite(Number(ticket.appointmentId)) ? Number(ticket.appointmentId) : null;
     // What the ticket itself recorded is the authority (service revenue is frozen there at checkout);
     // the caller's figures only fill in for a ticket that has none yet.
-    let amountSource: { serviceRevenue?: unknown; productRevenue?: unknown; totalPaid?: unknown; tipAmount?: unknown } =
+    let amountSource: { serviceRevenue?: unknown; productRevenue?: unknown; totalPaid?: unknown; tipAmount?: unknown; discountAmount?: unknown } =
       { totalPaid: ticket.totalPaid ?? 0, tipAmount: ticket.tipAmount ?? 0 };
     let firstReport = true;
     if (appointmentId != null) {
@@ -928,7 +1010,7 @@ async function handleTurnCheckout(
       );
       firstReport = (claimed.rowCount ?? 0) > 0;
       const { rows } = await pool.query(
-        `SELECT service_revenue, product_revenue, total_paid, tip_amount FROM appointments WHERE id = $1 AND store_id = $2`,
+        `SELECT service_revenue, product_revenue, total_paid, tip_amount, discount_amount FROM appointments WHERE id = $1 AND store_id = $2`,
         [appointmentId, storeId],
       );
       const row = rows[0];
@@ -939,17 +1021,27 @@ async function handleTurnCheckout(
           productRevenue: row.product_revenue,
           totalPaid: Number.isFinite(recordedTotal) && recordedTotal > 0 ? recordedTotal : ticket.totalPaid ?? 0,
           tipAmount: row.tip_amount ?? ticket.tipAmount ?? 0,
+          discountAmount: row.discount_amount ?? 0,
         };
       }
     }
     // An advance booking is outside the rotation: it earns no turn and moves nobody. The technician's
     // hold is released and they get back the place they had (handled as "nothing earned" below).
     const isBooking = appointmentId != null && !(await nailTickets.walkInTicketIds(storeId, [appointmentId])).has(appointmentId);
-    const amount = isBooking ? 0 : turnAmount(amountSource);
+    const rulesNow = normalizeTurnRules(await getTurnPreferences(storeId));
+    const amount = isBooking ? 0 : turnAmount(amountSource, rulesNow.amountBasis);
+    // What the ticket earned is written down once, with the rules that applied — the history, and what
+    // the line counts from now on, even if the salon changes its rules later today.
+    let creditedUnits: number | null = null;
+    if (appointmentId != null && firstReport) {
+      const prefs = await getTurnPreferences(storeId);
+      const credit = await turnEngine.creditTicket({ storeId, staffId, appointmentId, rules: rulesNow, configVersion: Number((prefs as any).turnConfigVersion) || 1, amount, isBooking });
+      creditedUnits = credit.units;
+    }
 
     await mutateTurnPreferences(storeId, (turn) => {
       const rules = normalizeTurnRules(turn);
-      const earned = turnValue(rules, amount);
+      const earned = creditedUnits != null ? creditedUnits / TURN_UNIT : turnValue(rules, amount);
       const lockedIds: number[] = Array.isArray(turn.lockedStaffIds) ? (turn.lockedStaffIds as any[]).map(Number).filter(Number.isFinite) : [];
       const deque: number[] = Array.isArray(turn.dequeOrder) ? (turn.dequeOrder as any[]).map(Number).filter(Number.isFinite) : [];
       const pins = shortTurnPins(turn);
@@ -1006,6 +1098,7 @@ async function matchWaitingClients(storeId: number) {
     saveTurnPreferences,
     mutateTurnPreferences,
     logCategoryAssignment,
+    recordTurnMove,
     notify: (id, ev) => {
       broadcastSyncEvent({ type: "booking_updated", storeId: id, appointmentId: ev.appointmentId });
       if (ev.kind === "assigned") broadcastNotification({ type: "nail_ticket_assigned", storeId: id, appointmentId: ev.appointmentId } as any);
@@ -1030,6 +1123,27 @@ async function matchWaitingClients(storeId: number) {
 }
 
 /** A front-desk check-in handed to a technician by category: the same audit row a ticket assignment writes. */
+/** History row for a ticket staff moved from one technician to another (the line itself is adjusted by the caller's locks). */
+async function recordTurnMove(entry: { storeId: number; appointmentId: number; serviceId: number; staffId: number; fromStaffId: number; reason: string | null }) {
+  const eligibility = await getTurnEligibility(entry.storeId, entry.serviceId);
+  const rules = eligibility.turnRules;
+  const considered: ConsideredTechnician[] = (eligibility.technicians as any[]).filter((t) => t.clockedIn).map((t, position) => ({
+    id: t.id, name: t.name, position, eligible: t.eligible, reasons: t.exclusionReasons as string[],
+    units: rules.mode === "round_robin" ? undefined : Number(t.turnScore) || 0,
+  }));
+  const from = (eligibility.technicians as any[]).find((t) => t.id === entry.fromStaffId);
+  const to = (eligibility.technicians as any[]).find((t) => t.id === entry.staffId);
+  await turnEngine.recordTurnEvent({
+    storeId: entry.storeId, kind: "assigned", staffId: entry.staffId, appointmentId: entry.appointmentId, category: eligibility.turnCategory,
+    // Fixed order: the technician the ticket came from keeps the turn they took for it unless the ticket is cancelled;
+    // the one it went to uses a turn only where the salon says a hand-pick does.
+    turnUnits: eligibility.settings.turnOverrideUsesTurn === true ? TURN_UNIT : 0,
+    method: rules.mode, configVersion: Number(eligibility.settings.turnConfigVersion) || 1, automatic: false, reason: entry.reason,
+    explanation: `Moved by staff from ${from?.name ?? "another technician"} to ${to?.name ?? "this technician"}${entry.reason ? ` (${entry.reason})` : ""}.`,
+    details: { source: "nail_reassign", fromStaffId: entry.fromStaffId, considered },
+  });
+}
+
 async function logCategoryAssignment(entry: { storeId: number; staffId: number; recommendedStaffId: number | null }) {
   try {
     await db.insert(turnAssignmentLog).values({
@@ -18117,15 +18231,42 @@ or
       if (!storeId) return res.status(400).json({ error: "storeId required" });
       const store = await assertOwnStore(userId, storeId);
       if (!store) return res.status(403).json({ error: "Unauthorized" });
+      // The rules as saved, with whatever this request changes laid over them. Anything the request
+      // leaves out stays as it is; anything unreadable falls back to a safe value (shared/turnRules.ts).
+      const before = await getTurnPreferences(storeId);
+      const RULE_FIELDS = ["turnMode", "turnValueThreshold", "partialTurnValue", "turnBrackets", "turnBoundary", "turnAmountBasis",
+        "turnTieBreak", "turnSkipLosesTurn", "turnResetPeriod", "turnLateJoin", "turnRefundPolicy", "turnCategoryRotation"] as const;
+      const requested: Record<string, unknown> = {};
+      for (const key of RULE_FIELDS) if (req.body[key] !== undefined) requested[key] = req.body[key];
+      const beforeRules = turnRulesToSettings(normalizeTurnRules(before));
+      const nextRules = turnRulesToSettings(normalizeTurnRules({ ...before, ...requested }));
+      const overrideUsesTurn = req.body.turnOverrideUsesTurn !== undefined ? req.body.turnOverrideUsesTurn === true : (before as any).turnOverrideUsesTurn === true;
+      const overrideReasonRequired = req.body.turnOverrideReasonRequired !== undefined ? req.body.turnOverrideReasonRequired === true : (before as any).turnOverrideReasonRequired === true;
+      const rulesChanged = JSON.stringify(beforeRules) !== JSON.stringify(nextRules)
+        || overrideUsesTurn !== ((before as any).turnOverrideUsesTurn === true);
+      // A different method (or switching per-category rotations on or off) starts the line again from now:
+      // turns earned under the old method are kept in the history but are never re-counted under the new one.
+      const methodChanged = beforeRules.turnMode !== nextRules.turnMode || beforeRules.turnCategoryRotation !== nextRules.turnCategoryRotation;
+      const version = (Number((before as any).turnConfigVersion) || 1) + (rulesChanged ? 1 : 0);
       const settings = await saveTurnPreferences(storeId, {
         turnEnabled: req.body.turnEnabled !== false,
         autoAdvanceOnCheckout: req.body.autoAdvanceOnCheckout !== false,
-        turnValueThreshold: req.body.turnValueThreshold,
         appointmentExclusionWindowMinutes: req.body.appointmentExclusionWindowMinutes,
-        // the pre-configured turn system and its partial-turn value (lib/turnRules.ts)
-        turnMode: normalizeTurnRules({ turnMode: req.body.turnMode }).mode,
-        partialTurnValue: normalizeTurnRules({ partialTurnValue: req.body.partialTurnValue }).partialTurnValue,
+        ...nextRules,
+        turnOverrideUsesTurn: overrideUsesTurn,
+        turnOverrideReasonRequired: overrideReasonRequired,
+        turnConfigVersion: version,
+        ...(methodChanged ? { turnPeriodStartedAt: new Date().toISOString(), shortTurnProtectedIds: [], shortTurnProtectedId: null, turnOffsets: {}, turnOffsetsPeriod: null } : {}),
       });
+      if (rulesChanged) {
+        await turnEngine.recordTurnEvent({
+          storeId, kind: "config_changed", method: String(nextRules.turnMode), configVersion: version, automatic: false, actorUserId: userId,
+          explanation: methodChanged
+            ? "The turn method was changed. The line started again from this moment; earlier turns are kept in the history and were not re-counted."
+            : "The turn rules were changed. Tickets already checked out keep the turns they earned; the new rules apply from the next checkout.",
+          details: { before: { ...beforeRules, turnOverrideUsesTurn: (before as any).turnOverrideUsesTurn === true }, after: { ...nextRules, turnOverrideUsesTurn: overrideUsesTurn } },
+        });
+      }
       broadcastTurnEligibilityChanged(storeId);
       return res.json(settings);
     } catch (err) {
@@ -18147,6 +18288,60 @@ or
     } catch (err) {
       console.error("[turn] Failed to get eligibility:", err);
       return res.status(500).json({ error: "Failed to get turn eligibility" });
+    }
+  });
+
+  // POST /api/turn/restart?storeId=X — start the line again from now (the owner's "new round"). Nothing is
+  // deleted: earlier turns stay in the history, they just stop counting toward who is next.
+  app.post("/api/turn/restart", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      const storeId = req.query.storeId ? Number(req.query.storeId) : null;
+      if (!storeId) return res.status(400).json({ error: "storeId required" });
+      const store = await assertOwnStore(userId, storeId);
+      if (!store) return res.status(403).json({ error: "Unauthorized" });
+      const settings = await saveTurnPreferences(storeId, { turnPeriodStartedAt: new Date().toISOString(), shortTurnProtectedIds: [], shortTurnProtectedId: null, turnOffsets: {}, turnOffsetsPeriod: null });
+      await turnEngine.recordTurnEvent({
+        storeId, kind: "config_changed", method: normalizeTurnRules(settings).mode, configVersion: Number((settings as any).turnConfigVersion) || 1,
+        automatic: false, actorUserId: userId, reason: "restart",
+        explanation: "The line was started again. Everyone counts from zero from this moment; earlier turns are kept in the history.",
+      });
+      broadcastTurnEligibilityChanged(storeId);
+      return res.json({ ok: true, turnPeriodStartedAt: (settings as any).turnPeriodStartedAt });
+    } catch (err) {
+      console.error("[turn] Failed to restart the line:", err);
+      return res.status(500).json({ error: "Failed to start the line again" });
+    }
+  });
+
+  // GET /api/turn/history?storeId=X&date=YYYY-MM-DD — the rotation's history for one turn day (4 AM to 4 AM,
+  // salon time): every assignment with why, everyone passed over, every turn earned, every rule change.
+  // A technician signed in as themselves sees dollar amounts for their own tickets only.
+  app.get("/api/turn/history", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      const sessionStaffId = (req.session as any)?.staffId ? Number((req.session as any).staffId) : undefined;
+      const storeId = req.query.storeId ? Number(req.query.storeId) : null;
+      if (!storeId) return res.status(400).json({ error: "storeId required" });
+      const access = await assertStoreAccess(userId, sessionStaffId, storeId);
+      if (!access) return res.status(403).json({ error: "Unauthorized" });
+      const [storeRow] = await db.select({ timezone: locations.timezone }).from(locations).where(eq(locations.id, storeId)).limit(1);
+      const tz = (storeRow as any)?.timezone ?? "UTC";
+      const asked = typeof req.query.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date) ? req.query.date : null;
+      const local = toZonedTime(new Date(Date.now() - 4 * 60 * 60_000), tz);
+      const day = asked ?? `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, "0")}-${String(local.getDate()).padStart(2, "0")}`;
+      const from = fromZonedTime(new Date(`${day}T04:00:00`), tz);
+      const to = new Date(from.getTime() + 24 * 60 * 60_000);
+      const seesAmounts = !!(await assertOwnStore(userId, storeId));
+      const events = (await turnEngine.listTurnEvents(storeId, from, to)).map((e: any) => {
+        if (seesAmounts || (sessionStaffId && e.staffId === sessionStaffId)) return e;
+        const considered = Array.isArray(e.details?.considered) ? e.details.considered.map((t: any) => ({ ...t, units: undefined })) : undefined;
+        return { ...e, amountCents: null, details: e.kind === "config_changed" ? e.details : { ...(e.details ?? {}), considered } };
+      });
+      return res.json({ date: day, timezone: tz, events });
+    } catch (err) {
+      console.error("[turn] Failed to load history:", err);
+      return res.status(500).json({ error: "Failed to load the turn history" });
     }
   });
 
@@ -18259,6 +18454,7 @@ or
     saveTurnPreferences,
     mutateTurnPreferences,
     logCategoryAssignment,
+    recordTurnMove,
     notify: (storeId, ev) => {
       broadcastTurnEligibilityChanged(storeId);
       if (ev.kind === "created") {
@@ -18455,11 +18651,11 @@ or
     try {
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;
-      const body = z.object({ staffId: z.number().int(), expectedStaffId: z.number().int().nullable().optional() }).safeParse(req.body);
+      const body = z.object({ staffId: z.number().int(), expectedStaffId: z.number().int().nullable().optional(), reason: z.string().max(200).nullable().optional() }).safeParse(req.body);
       const appointmentId = Number(req.params.id);
       if (!body.success || !Number.isFinite(appointmentId)) return res.status(400).json({ message: "Invalid request" });
-      const result = await nailTickets.reassignNailTicket(nailDeps, { storeId, appointmentId, staffId: body.data.staffId, expectedStaffId: body.data.expectedStaffId });
-      if (!result.ok) return res.status(result.status).json({ message: result.message });
+      const result = await nailTickets.reassignNailTicket(nailDeps, { storeId, appointmentId, staffId: body.data.staffId, expectedStaffId: body.data.expectedStaffId, reason: body.data.reason });
+      if (!result.ok) return res.status(result.status).json({ message: result.message, code: result.code });
       return res.json(result.data);
     } catch (err) {
       console.error("[nail/tickets reassign]", err);

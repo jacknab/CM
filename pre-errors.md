@@ -6,6 +6,13 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-10-13 — Onboarding: two requests at the same moment create every technician twice
+
+- **File:** `artifacts/api-server/src/routes.ts`, `POST /api/onboarding` (the "partial onboarding recovery" branch).
+- **Symptom:** when the same account sends the onboarding request twice within the same second (a double-tap on the last step, or a retry), the first request creates the business and the second takes the recovery branch and creates the staff again. Seen on the test server: staff "Lan, Kim, Lan, Kim" for one salon, the second pair with no services assigned.
+- **Context:** found while two test runs hit the scratch server together. Nothing guards the route against a second request while the first is still running (no lock, no idempotency key), and `onboardingCompleted` is only set at the very end.
+- **Why not fixed now:** it is in sign-up, outside the turn-system work, and the fix (one onboarding at a time per account) deserves its own test.
+
 ## 2026-10-13 — Certxa Pro app: "Notify client" switch does nothing; edit screen offers six fixed times
 
 - **File:** `certxa-pro-replit/staff-app-latest/artifacts/certxa-pro/app/(tabs)/index.tsx` (reschedule dialog, `notifyClient`) and `app/appointment/[id].tsx:11` (`timeSlots`).

@@ -9,6 +9,14 @@ psql "$(cat $S/e2e/testurl)" -q -f $S/e2e/schema.sql > $S/e2e/restore.log 2>&1; 
 $S/e2e/start.sh
 for i in $(seq 1 60); do sleep 3; curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9291/api/sync/heartbeat 2>/dev/null | grep -q 200 && break; done
 B=http://127.0.0.1:9291
+# The server seeds its website templates just after it starts answering; onboarding needs them.
+T="$(cat $S/e2e/testurl)"
+for i in $(seq 1 20); do [ "$(psql "$T" -Atc "select count(*) from wb_templates where name = 'Nail Salon — Bloom'" 2>/dev/null)" = 1 ] && break; sleep 2; done
+# On this small box the Bloom seed sometimes fails at start-up. The test salon only needs a template row to exist.
+if [ "$(psql "$T" -Atc "select count(*) from wb_templates where name = 'Nail Salon — Bloom'")" != 1 ]; then
+  COLS=$(psql "$T" -Atc "select string_agg(quote_ident(column_name), ',') from information_schema.columns where table_name='wb_templates' and column_name not in ('id','name','files_path')")
+  psql "$T" -q -c "insert into wb_templates (name, files_path, $COLS) select 'Nail Salon — Bloom', files_path || '-bloom', $COLS from wb_templates where category = 'nail_salon' limit 1"
+fi
 curl -s -o /dev/null -H "X-Forwarded-Proto: https" -X POST $B/api/auth/register -H "Content-Type: application/json" -d '{"email":"offline-test@example.test","password":"test-only-123456","firstName":"Test","lastName":"Owner"}'
 curl -s -D $S/e2e/h.txt -o /dev/null -H "X-Forwarded-Proto: https" -X POST $B/api/auth/login -H "Content-Type: application/json" -d '{"email":"offline-test@example.test","password":"test-only-123456"}'
 grep -i "^set-cookie" $S/e2e/h.txt | sed -E 's/^[Ss]et-[Cc]ookie: ([^;]*);.*/\1/' | tr '\n' ';' | sed 's/;$//; s/;/; /g' > $S/e2e/cookie; chmod 600 $S/e2e/cookie

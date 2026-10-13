@@ -12,8 +12,10 @@ interface Props {
   excludeStaffId?: number | null;
   busy: boolean;
   error: string | null;
+  /** The salon asks why when the client goes to someone other than the next technician. */
+  needsReason?: boolean;
   /** `staffId` null = whoever TURN says is next. */
-  onConfirm: (staffId: number | null) => void;
+  onConfirm: (staffId: number | null, reason?: string) => void;
   onClose: () => void;
 }
 
@@ -33,7 +35,8 @@ function statusOf(t: TurnTech): string {
   return t.exclusionReasons?.[0] ?? "Unavailable";
 }
 
-export function AssignTechSheet({ storeId, serviceId, clientName, mode, excludeStaffId, busy, error, onConfirm, onClose }: Props) {
+export function AssignTechSheet({ storeId, serviceId, clientName, mode, excludeStaffId, busy, error, needsReason, onConfirm, onClose }: Props) {
+  const [reason, setReason] = useState("");
   const { data, isLoading, isError } = useQuery({
     queryKey: ["/api/turn/eligibility", storeId, "nail-assign", serviceId],
     queryFn: () => fetchTurn(storeId, serviceId),
@@ -92,9 +95,15 @@ export function AssignTechSheet({ storeId, serviceId, clientName, mode, excludeS
           })}
         </div>
         {error && <p className="assign-create-error" data-testid="nail-assign-error">{error}</p>}
+        {needsReason && (
+          <div style={{ padding: "10px 22px" }}>
+            <input className="gift-input" style={{ width: "100%", height: 46, fontSize: 15, fontWeight: 500, letterSpacing: 0, textTransform: "none" }} value={reason} maxLength={200} autoFocus
+              onChange={(event) => setReason(event.target.value)} placeholder="Reason" aria-label="Reason for choosing this technician" data-testid="nail-assign-reason" />
+          </div>
+        )}
         <div className="assign-create-footer">
           <button type="button" className="assign-create-skip" onClick={onClose}>Cancel</button>
-          <button type="button" disabled={!canConfirm} onClick={() => onConfirm(chosen?.id ?? nextUp?.id ?? null)} data-testid="nail-assign-confirm"
+          <button type="button" disabled={!canConfirm || (!!needsReason && !reason.trim())} onClick={() => onConfirm(chosen?.id ?? nextUp?.id ?? null, reason.trim() || undefined)} data-testid="nail-assign-confirm"
             className={`assign-create-btn ${canConfirm ? "assign-create-btn-ready" : ""}`}>
             {confirmLabel}
           </button>

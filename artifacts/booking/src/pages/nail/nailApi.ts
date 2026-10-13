@@ -510,14 +510,14 @@ async function asLastSeen(id: number, clientName?: string): Promise<{ id: number
 }
 
 /** `staff`: the technician's name and colour; `clientName`: whose ticket — both needed when the change is kept on this device. */
-export const reassignTicket = async (id: number, staffId: number, staff?: { name: string; color?: string | null }, clientName?: string) => {
+export const reassignTicket = async (id: number, staffId: number, staff?: { name: string; color?: string | null }, clientName?: string, reason?: string | null) => {
   const chosen = { id: staffId, name: staff?.name ?? "Technician", color: staff?.color ?? null };
   if (isLocalId(id)) {
     const t = await nailOffline.assign(id, chosen);
     return { staffId, staffName: t.staff?.name ?? "", status: t.status, startsAt: t.createdAt };
   }
   return onServerOrQueued(
-    () => call<{ staffId: number; staffName: string; status: string; startsAt: string }>(`/api/nail/tickets/${id}/reassign`, { method: "POST", body: JSON.stringify({ staffId }) }),
+    () => call<{ staffId: number; staffName: string; status: string; startsAt: string }>(`/api/nail/tickets/${id}/reassign`, { method: "POST", body: JSON.stringify({ staffId, ...(reason ? { reason } : {}) }) }),
     async () => {
       await nailOffline.changeServerTicket(storeOrThrow(), await asLastSeen(id, clientName), { type: "reassign", staff: chosen });
       return { staffId, staffName: chosen.name, status: "confirmed", startsAt: new Date().toISOString() };

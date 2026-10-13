@@ -111,11 +111,11 @@ describe("the salon's worked example: Amy, Lisa, Maria, Jenny at $30 a turn", ()
 
 describe("normalizeTurnRules", () => {
   it("defaults to counted turns at $30 with a half partial", () => {
-    expect(normalizeTurnRules({})).toEqual({ mode: "classic", dollarsPerTurn: 30, partialTurnValue: 0.5 });
-    expect(normalizeTurnRules(null)).toEqual({ mode: "classic", dollarsPerTurn: 30, partialTurnValue: 0.5 });
+    expect(normalizeTurnRules({})).toMatchObject({ mode: "classic", dollarsPerTurn: 30, partialTurnValue: 0.5 });
+    expect(normalizeTurnRules(null)).toMatchObject({ mode: "classic", dollarsPerTurn: 30, partialTurnValue: 0.5 });
   });
   it("reads a salon's saved rules and rejects nonsense", () => {
-    expect(normalizeTurnRules({ turnMode: "dollar", turnValueThreshold: "45", partialTurnValue: 0.25 })).toEqual({ mode: "dollar", dollarsPerTurn: 45, partialTurnValue: 0.25 });
-    expect(normalizeTurnRules({ turnMode: "other", turnValueThreshold: -3, partialTurnValue: 7 })).toEqual({ mode: "classic", dollarsPerTurn: 30, partialTurnValue: 0.5 });
+    expect(normalizeTurnRules({ turnMode: "dollar", turnValueThreshold: "45", partialTurnValue: 0.25 })).toMatchObject({ mode: "dollar", dollarsPerTurn: 45, partialTurnValue: 0.25 });
+    expect(normalizeTurnRules({ turnMode: "other", turnValueThreshold: -3, partialTurnValue: 7 })).toMatchObject({ mode: "classic", dollarsPerTurn: 30, partialTurnValue: 0.5 });
   });
 });

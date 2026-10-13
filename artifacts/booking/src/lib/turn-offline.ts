@@ -13,6 +13,7 @@ import { actionQueueDB } from "./action-queue-db";
 import { appointmentsCacheDB } from "./appointments-cache-db";
 import { turnClaimsDB, type TurnClaim } from "./turn-claims-db";
 import { toLocalDateStringInTz } from "./timezone";
+import { TURN_UNIT, normalizeTurnRules, rankTurnLine, turnUnits } from "@shared/turnRules";
 
 // Must be kept in sync with DEFAULT_TURN_SETTINGS in artifacts/api-server/src/routes.ts.
 const DEFAULT_TURN_SETTINGS_CLIENT: SnapshotTurnSettings = {
@@ -145,26 +146,26 @@ export async function computeOfflineTurnEligibility(
     });
   }
 
-  // ── Turn totals: what each technician's finished tickets earned today, by the salon's turn system ──
-  // Mirrors the server (api-server/src/lib/turnRules.ts). Offline there is no service/retail split on
-  // the snapshot, so the amount is total less tip.
-  // The server counts WALK-IN tickets only (advance bookings earn no turns). The offline snapshot does not
-  // say which tickets were walk-ins, so while offline a booking still counts here until the device is back online.
-  const turnValueThreshold = Number(settings.turnValueThreshold) > 0 ? Number(settings.turnValueThreshold) : DEFAULT_TURN_SETTINGS_CLIENT.turnValueThreshold;
-  const dollarMode = (settings as any).turnMode === "dollar";
-  const partialTurn = Number((settings as any).partialTurnValue);
-  const partialTurnValue = Number.isFinite(partialTurn) && partialTurn >= 0 && partialTurn <= 1 ? partialTurn : 0.5;
+  // ── Turn totals: what each technician's finished tickets earned today, under the salon's method ──
+  // The rules themselves are the server's (shared/turnRules.ts) — the same code, not a copy. What differs
+  // offline is what this tablet knows:
+  //   • there is no service/retail split on the snapshot, so the amount is total less tip;
+  //   • the snapshot does not say which tickets were walk-ins, so a booking still counts here;
+  //   • fixed order, per-category rotations, the Day Close / carry-over periods and late-join levelling
+  //     need the server's history. Offline the line keeps the order it had when the tablet last heard from
+  //     the server, and technicians level on today's totals keep that order.
+  // The server works the line out again the moment the tablet is back.
+  const rules = normalizeTurnRules(settings as unknown as Record<string, unknown>);
   const turnCountMap = new Map<number, number>();
-  for (const apt of aptViews) {
-    if (apt.staffId == null || apt.status !== "completed") continue;
-    const paid = apt.totalPaid != null ? Number(apt.totalPaid) : NaN;
-    const tip = apt.tipAmount != null ? Number(apt.tipAmount) : 0;
-    if (!Number.isFinite(paid)) continue;
-    const cents = Math.round((paid - tip) * 100);
-    const perTurn = Math.round(turnValueThreshold * 100);
-    if (cents <= 0) continue;
-    const earned = dollarMode ? (cents < perTurn ? partialTurnValue : Math.floor(cents / perTurn)) : (cents >= perTurn ? 1 : 0);
-    if (earned > 0) turnCountMap.set(apt.staffId, (turnCountMap.get(apt.staffId) ?? 0) + earned);
+  if (rules.mode !== "round_robin") {
+    for (const apt of aptViews) {
+      if (apt.staffId == null || apt.status !== "completed") continue;
+      const paid = apt.totalPaid != null ? Number(apt.totalPaid) : NaN;
+      const tip = apt.tipAmount != null ? Number(apt.tipAmount) : 0;
+      if (!Number.isFinite(paid)) continue;
+      const earned = turnUnits(rules, paid - tip);
+      if (earned > 0) turnCountMap.set(apt.staffId, (turnCountMap.get(apt.staffId) ?? 0) + earned);
+    }
   }
 
   // ── Line: saved order, filtered to clocked-in-today, new clock-ins appended, lowest total first ──
@@ -174,21 +175,10 @@ export async function computeOfflineTurnEligibility(
     .filter((id) => !filteredDeque.includes(id))
     .sort((a, b) => (clockInOrder.get(a) ?? 999) - (clockInOrder.get(b) ?? 999));
   const merged = [...filteredDeque, ...newlyClockedIn];
-  // Counted Turns holds its short-turn technicians at the front (there can be several); Dollar-Based Turns has no such hold.
+  // Counted Turns holds its short-turn technicians at the front (there can be several); no other method has such a hold.
   const savedPins: number[] = Array.isArray((settings as any).shortTurnProtectedIds) ? (settings as any).shortTurnProtectedIds.map(Number).filter(Number.isFinite) : [];
-  const pins = dollarMode ? [] : [...new Set([...savedPins, ...(typeof settings.shortTurnProtectedId === "number" ? [settings.shortTurnProtectedId] : [])])];
-  const pinRank = new Map(pins.map((id, i) => [id, i]));
-  const syncedDeque = merged
-    .map((id, index) => ({ id, index }))
-    .sort((a, b) => {
-      const pa = pinRank.get(a.id), pb = pinRank.get(b.id);
-      if (pa != null || pb != null) {
-        if (pa != null && pb != null) return pa - pb;
-        return pa != null ? -1 : 1;
-      }
-      return (turnCountMap.get(a.id) ?? 0) - (turnCountMap.get(b.id) ?? 0) || a.index - b.index;
-    })
-    .map((x) => x.id);
+  const pins = rules.mode !== "classic" ? [] : [...new Set([...savedPins, ...(typeof settings.shortTurnProtectedId === "number" ? [settings.shortTurnProtectedId] : [])])];
+  const syncedDeque = rankTurnLine({ line: merged, scores: turnCountMap, pinnedFront: pins, tieBreak: rules.tieBreak, clockInOrder });
   const dequePos = new Map<number, number>(syncedDeque.map((id, pos) => [id, pos]));
 
   // ── Busy right now: appointment status started today ──
@@ -243,7 +233,7 @@ export async function computeOfflineTurnEligibility(
         eligible: exclusionReasons.length === 0,
         exclusionReasons,
         turnPosition: memberDequePos,
-        turnCount: turnCountMap.get(member.id) ?? 0,
+        turnCount: (turnCountMap.get(member.id) ?? 0) / TURN_UNIT,
         currentStatus,
       };
     })

@@ -163,7 +163,11 @@ export interface TicketDeps {
     /** Consume the technician's TURN position even when this exact technician was selected. */
     consumeTurn?: boolean;
     source?: string;
+    /** Why staff gave the client to someone other than the next technician. */
+    overrideReason?: string | null;
   }): Promise<{ technician: any } | null>;
+  /** History row for a ticket moved from one technician to another by staff. */
+  recordTurnMove?(entry: { storeId: number; appointmentId: number; serviceId: number; staffId: number; fromStaffId: number; reason: string | null }): Promise<void>;
   getTurnPreferences(storeId: number): Promise<Record<string, any>>;
   saveTurnPreferences(storeId: number, updates: Record<string, any>): Promise<unknown>;
   /** Fan-out after any ticket change: websocket + dashboard refresh. */
@@ -172,9 +176,9 @@ export interface TicketDeps {
 
 export type TicketResult<T> =
   | { ok: true; data: T }
-  | { ok: false; status: number; message: string; technicians?: any[] };
+  | { ok: false; status: number; message: string; technicians?: any[]; code?: string };
 
-const fail = (status: number, message: string, extra?: { technicians?: any[] }): TicketResult<never> =>
+const fail = (status: number, message: string, extra?: { technicians?: any[]; code?: string }): TicketResult<never> =>
   ({ ok: false, status, message, ...extra });
 
 const numArr = (v: unknown): number[] =>
@@ -844,7 +848,7 @@ export async function updateNailTicketItems(deps: TicketDeps, input: UpdateItems
 
 export async function reassignNailTicket(
   deps: TicketDeps,
-  args: { storeId: number; appointmentId: number; staffId: number; /** Who the ticket was with when this device decided to move it (undefined = not checked). */ expectedStaffId?: number | null },
+  args: { storeId: number; appointmentId: number; staffId: number; /** Who the ticket was with when this device decided to move it (undefined = not checked). */ expectedStaffId?: number | null; /** Why this technician rather than the next one in line. */ reason?: string | null },
 ): Promise<TicketResult<{ staffId: number; staffName: string; status: string; startsAt: string }>> {
   const appt = await storage.getAppointment(args.appointmentId);
   if (!appt || appt.storeId !== args.storeId) return fail(404, "Ticket not found");
@@ -867,7 +871,13 @@ export async function reassignNailTicket(
   if (member.id !== appt.staffId) {
     const line: any = await deps.getTurnEligibility(args.storeId, appt.serviceId);
     if (!isClockedIn(line.technicians, member.id)) return fail(400, `${member.name} isn't clocked in.`);
+    // Where the salon asks for it: giving the client to someone other than the next technician needs a reason.
+    const next = line.eligibleTechnicians?.[0];
+    if (line.settings?.turnEnabled !== false && line.settings?.turnOverrideReasonRequired === true && next && next.id !== member.id && !String(args.reason ?? "").trim()) {
+      return fail(400, `${next.name} is next in line. Say why this client is going to ${member.name}.`, { code: "OVERRIDE_REASON_REQUIRED" });
+    }
   }
+  const overrideReason = String(args.reason ?? "").trim().slice(0, 200) || null;
 
   const oldStaffId = appt.staffId ?? null;
   if (oldStaffId === member.id) {
@@ -913,10 +923,19 @@ export async function reassignNailTicket(
     try {
       await deps.assignAppointmentViaTurn({
         storeId: args.storeId, serviceId: appt.serviceId, appointmentId: appt.id,
-        requestedStaffId: member.id, writeStaffId: false, source: "nail_assign",
+        requestedStaffId: member.id, writeStaffId: false, source: "nail_assign", overrideReason,
       });
     } catch (err: any) {
       console.error("[nail-ticket] assign turn bookkeeping failed:", err?.message);
+    }
+  }
+
+  // Moved from one technician to another: the history says who moved it where, and why.
+  if (oldStaffId != null) {
+    try {
+      await deps.recordTurnMove?.({ storeId: args.storeId, appointmentId: appt.id, serviceId: appt.serviceId, staffId: member.id, fromStaffId: oldStaffId, reason: overrideReason });
+    } catch (err: any) {
+      console.error("[nail-ticket] move history failed:", err?.message);
     }
   }
 

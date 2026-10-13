@@ -190,6 +190,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const [sheet, setSheet] = useState<null | "voucher" | "timeclock" | "dayclose" | "clients" | "manager">(null);
   const [assigning, setAssigning] = useState<Assigning>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
+  const [assignNeedsReason, setAssignNeedsReason] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [frontdeskPhone, setFrontdeskPhone] = useState("");
   // The ticket being paid in the POS tab (null = the POS tab is the ticket builder). A new customer-screen event arrives as a new object.
@@ -681,16 +682,20 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   const reassign = useMutation({
     networkMode: "always",
-    mutationFn: (v: { id: number; staffId: number }) => {
+    mutationFn: (v: { id: number; staffId: number; reason?: string }) => {
       const who = techList.find((t) => t.id === v.staffId);
       const whose = tickets.find((t) => t.id === v.id)?.client.name;
-      return reassignTicket(v.id, v.staffId, who ? { name: who.name, color: who.color ?? null } : undefined, whose);
+      return reassignTicket(v.id, v.staffId, who ? { name: who.name, color: who.color ?? null } : undefined, whose, v.reason);
     },
     onSuccess: (r, v) => {
-      invalidateBoard(); setAssigning(null); setAssignError(null); say(`Moved to ${r.staffName}`);
+      invalidateBoard(); setAssigning(null); setAssignError(null); setAssignNeedsReason(false); say(`Moved to ${r.staffName}`);
       if (payAfterAssign.current === v.id) { payAfterAssign.current = null; void openTicketForCheckout(v.id); }
     },
-    onError: (err: any) => setAssignError(err instanceof ApiError ? err.message : "Couldn't reassign. Try again."),
+    onError: (err: any) => {
+      // The salon asks for a reason when the client goes to someone other than the next technician.
+      if (err instanceof ApiError && err.data?.code === "OVERRIDE_REASON_REQUIRED") setAssignNeedsReason(true);
+      setAssignError(err instanceof ApiError ? err.message : "Couldn't reassign. Try again.");
+    },
   });
 
   const act = useMutation({
@@ -1374,10 +1379,11 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
           excludeStaffId={assigning.mode === "reassign" ? assigning.ticket.staff?.id ?? null : null}
           busy={reassign.isPending}
           error={assignError}
-          onClose={() => { setAssigning(null); setAssignError(null); payAfterAssign.current = null; }}
-          onConfirm={(staffId) => {
+          needsReason={assignNeedsReason}
+          onClose={() => { setAssigning(null); setAssignError(null); setAssignNeedsReason(false); payAfterAssign.current = null; }}
+          onConfirm={(staffId, reason) => {
             setAssignError(null);
-            if (staffId != null) reassign.mutate({ id: assigning.ticket.id, staffId });
+            if (staffId != null) reassign.mutate({ id: assigning.ticket.id, staffId, reason });
           }}
         />
       )}
