@@ -449,6 +449,11 @@ export interface CreatedTicket {
   waiting: boolean;
 }
 
+/** Whether a technician is clocked in, from the turn line's own list. Someone not on the list is not in. */
+export function isClockedIn(technicians: Array<{ id: number | string; clockedIn?: boolean }>, staffId: number): boolean {
+  return technicians.some((t) => Number(t.id) === staffId && t.clockedIn === true);
+}
+
 export interface CreatedTicketGroup extends CreatedTicket {
   /** Every ticket of the visit, the first one included, in the order the services were added. */
   tickets: Array<CreatedTicket & { serviceId: number; serviceName: string }>;
@@ -579,9 +584,14 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
 
   let staffId: number | null = null;
   let staffName: string | null = null;
-  const requested = input.staffId ? Number(input.staffId) : null;
+  // A technician named on the request is usually the one a check-in was handed to earlier. If they have
+  // since clocked out, the client must not be left with someone who is not in the salon: the request is
+  // dropped and the ticket goes to whoever TURN says is next, exactly as if nobody had been named.
+  const named = input.staffId ? Number(input.staffId) : null;
+  const namedIsOut = named != null && !leaveUnassigned && !isClockedIn(eligibility.technicians, named);
+  const requested = namedIsOut ? null : named;
   const sameTech = !requested && input.sameTechStaffId ? Number(input.sameTechStaffId) : null;
-  const autoAssign = input.autoAssign === true && !leaveUnassigned && !requested && !sameTech;
+  const autoAssign = (input.autoAssign === true || namedIsOut) && !leaveUnassigned && !requested && !sameTech;
   if (leaveUnassigned) {
     // Intentionally do not consult or advance TURN. This is only a checked-in ticket.
   } else if (requested) {
