@@ -40,7 +40,10 @@ export default function DayCloseReports() {
     .map((s) => ({ id: s.id, closedAt: new Date(s.closedAt!), day: formatInTz(new Date(s.closedAt!), timezone, "yyyy-MM-dd") }))
     .sort((a, b) => b.closedAt.getTime() - a.closedAt.getTime()), [sessions, timezone]);
   const onDay = useMemo(() => closes.filter((c) => c.day === day), [closes, day]);
+  // The nearest day with a Day Close before and after the one shown — what the < and > buttons go to.
   const previous = useMemo(() => closes.find((c) => c.day < day), [closes, day]);
+  const next = useMemo(() => [...closes].reverse().find((c) => c.day > day), [closes, day]);
+  const goTo = (target?: { day: string }) => { if (target) { setPicked(true); setDay(target.day); } };
 
   // Show the day's last close; a day closed more than once offers each one below.
   useEffect(() => { setSessionId(onDay[0]?.id ?? null); setPrintError(null); }, [onDay]);
@@ -78,8 +81,10 @@ export default function DayCloseReports() {
             <p className="text-sm text-muted-foreground mt-1">The Day Close report for the day you choose.</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" className="px-3" onClick={() => goTo(previous)} disabled={!previous} aria-label="Previous Day Close report" data-testid="day-close-report-prev">&lt;</Button>
             <Input type="date" value={day} max={formatInTz(new Date(), timezone, "yyyy-MM-dd")} className="w-44"
               onChange={(e) => { if (e.target.value) { setPicked(true); setDay(e.target.value); } }} data-testid="day-close-report-date" />
+            <Button variant="outline" className="px-3" onClick={() => goTo(next)} disabled={!next} aria-label="Next Day Close report" data-testid="day-close-report-next">&gt;</Button>
             <Button variant="outline" onClick={print} disabled={!html || printing} data-testid="day-close-report-print">
               {printing ? "Printing…" : "Print"}
             </Button>
@@ -106,7 +111,7 @@ export default function DayCloseReports() {
             <div className="self-center text-center px-6 space-y-3">
               <p className="text-sm text-muted-foreground">No Day Close was run on {longDate(day)}.</p>
               {previous && (
-                <Button variant="outline" size="sm" onClick={() => { setPicked(true); setDay(previous.day); }} data-testid="day-close-report-previous">
+                <Button variant="outline" size="sm" onClick={() => goTo(previous)} data-testid="day-close-report-previous">
                   Show the one before it — {longDate(previous.day)}
                 </Button>
               )}
