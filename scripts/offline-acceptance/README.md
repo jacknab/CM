@@ -15,3 +15,8 @@ The paths inside point at a scratch folder; change the `S=` lines to wherever yo
 Afterwards: stop the server on port 9291 and `dropdb certxa_offline_test`.
 
 This is the real server and the real engine, but simulated tablets. It is not a test on Android hardware.
+
+- `nail-offline-desk.cjs` — browser run of /nail through an outage (new client by name, ticket, START, then the
+  sync when the server is back). Before it: `PUT /api/nail/screen-settings {"lockScreen":false}` and
+  `POST /api/timeclock/clock-in {"storeId":1,"staffId":1|2}` with the test cookie. 2026-10-14: passes in both
+  modes (kill / freeze); the first request of an outage waits for its deadline (~8 s), then all is instant.

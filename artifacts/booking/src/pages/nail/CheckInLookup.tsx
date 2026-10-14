@@ -6,7 +6,6 @@ import { isValidNanpPrefix } from "@/lib/phone-validation";
 import { useShake } from "@/hooks/use-shake";
 import { createClient } from "./NameEntry";
 import { syncEngine } from "@/lib/sync-engine";
-import { useNetworkStatus } from "@/hooks/use-network-status";
 import { nailOffline, isLocalId, newIdempotencyKey } from "@/lib/nail-offline";
 import { clientOnDevice } from "./nailApi";
 import { findClientId } from "./clientLookup";
@@ -76,7 +75,6 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
   const [result, setResult] = useState<CheckInResult | null>(null);
   const ran = useRef("");
   const quickCodes = useQuickAreaCodes(storeId);
-  const offline = useNetworkStatus() === "offline";
 
   // Fire the check-in ticket to the printer through the native bridge — doesn't block or delay
   // the "Checked in" screen either way, but a genuine failure still gets surfaced (same
@@ -142,10 +140,8 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
   const checkIn = async (clientId: number) => {
     const key = newIdempotencyKey("walkin.create");
     let r: CheckInResult;
-    let onDevice = false;
     if (syncEngine.isOffline() || isLocalId(clientId)) {
       r = await checkInOnDevice(clientId, key);
-      onDevice = true;
     } else {
       let res: Response;
       try {
@@ -156,7 +152,7 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
         syncEngine.noteUnreachable();
         res = null as unknown as Response;
       }
-      if (!res) { r = await checkInOnDevice(clientId, key); onDevice = true; }
+      if (!res) r = await checkInOnDevice(clientId, key);
       else {
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.status) throw new Error(data?.message || "Could not check the client in");
@@ -165,8 +161,8 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
     }
     setResult(r);
     setStep("done");
-    // A slip needs the ticket number the server gives out, so none is printed for a check-in saved offline.
-    if (r.status !== "already" && !onDevice) printCheckinTicket(r);
+    // A check-in saved offline gets its slip too: its code is the ticket number (TN:), see printCheckinTicket.
+    if (r.status !== "already") printCheckinTicket(r);
     const first = (r.client.name || "Client").trim().split(/\s+/)[0];
     const line = r.status === "already" ? `${first} is already checked in`
       : r.status === "appointment" ? `${first} checked in${r.todayAppointment?.staffName ? ` · ${r.todayAppointment.staffName}` : ""}`
@@ -252,9 +248,6 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
           </Button>
           <span className="text-lg font-semibold">{step === "name" ? "Enter Client Name" : "Check-In"}</span>
         </div>
-        {offline && step !== "name" && (
-          <span className="text-xs text-amber-500 font-medium px-2 py-0.5 rounded-full border border-amber-500/40">Offline — saved on this tablet, sent when back online</span>
-        )}
         <Button variant="ghost" size="icon" className="h-12 w-12" onClick={onClose} data-testid="nail-checkin-close" aria-label="Close">
           <X className="w-6 h-6" />
         </Button>

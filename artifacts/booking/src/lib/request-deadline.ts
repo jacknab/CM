@@ -14,8 +14,8 @@ import { syncEngine } from "./sync-engine";
  * Not given a deadline: the card reader's server steps (a card may be mid-charge) and the cash drawer / Day Close
  * (its report can be slow on a busy server, and must not be abandoned halfway). The heartbeat has its own.
  */
-const READ_DEADLINE_MS = 12_000;
-const WRITE_DEADLINE_MS = 20_000;
+const READ_DEADLINE_MS = 8_000;
+const WRITE_DEADLINE_MS = 12_000;
 const SALON_SCREENS = /^\/(nail|barber|kiosk|frontdesk)(\/|$)/;
 const NO_SHORTCUT = /^\/api\/sync\/heartbeat/;
 const NO_DEADLINE = /^\/api\/(sync\/heartbeat|payments\/|cash-drawer)/;
