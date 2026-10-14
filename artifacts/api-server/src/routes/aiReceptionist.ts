@@ -354,6 +354,20 @@ async function getCallerCrmProfile(callerPhone: string, storeId: number): Promis
   }
 }
 
+// The webhook loads the salon while the phone is still ringing; the media stream needs the same
+// salon a second later. Reusing that load (briefly) keeps six database queries out of the time
+// between the call connecting and the greeting.
+const SALON_CONTEXT_REUSE_MS = 60_000;
+const recentSalonContexts = new Map<number, { at: number; ctx: Promise<SalonContext | null> }>();
+function getSalonContextForCall(storeId: number): Promise<SalonContext | null> {
+  const hit = recentSalonContexts.get(storeId);
+  if (hit && Date.now() - hit.at < SALON_CONTEXT_REUSE_MS) return hit.ctx;
+  const ctx = getSalonContext(storeId);
+  recentSalonContexts.set(storeId, { at: Date.now(), ctx });
+  ctx.then((c) => { if (!c) recentSalonContexts.delete(storeId); }, () => recentSalonContexts.delete(storeId));
+  return ctx;
+}
+
 async function getSalonContext(storeId: number): Promise<SalonContext | null> {
   const [store] = await db
     .select({
@@ -3220,6 +3234,12 @@ async function handleAddAddon(
 // ─── Per-call bridge ──────────────────────────────────────────────────────────
 
 function createCallSession(twilioWs: WebSocket) {
+  // How long each step before the greeting takes, in ms from the stream connecting — one log line per
+  // call when her first audio goes out, so a slow greeting shows exactly which step was slow.
+  const greetingT0 = Date.now();
+  const greetingMarks: string[] = [];
+  let greetingTimingLogged = false;
+  const markGreeting = (step: string) => { if (!greetingTimingLogged) greetingMarks.push(`${step}=${Date.now() - greetingT0}ms`); };
   const apiKey =
     process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -3527,6 +3547,7 @@ function createCallSession(twilioWs: WebSocket) {
     const sessionStartJson = JSON.stringify(sessionStart);
     console.log(`[AI Receptionist] session.start payload (exact): ${sessionStartJson}`);
     openAiWs.send(sessionStartJson);
+    markGreeting("session_start_sent");
     console.log(`[AI Receptionist] session.start sent — waiting for session.started confirmation`);
 
     // If session.started never arrives, the call is unserviceable — there is no
@@ -3544,6 +3565,7 @@ function createCallSession(twilioWs: WebSocket) {
     console.log(`[AI Receptionist] ✅ OpenAI Live WebSocket OPEN`);
     callHealthTracker.recordWsStatus(sessionCallSid ?? null, true);
     openAiWsOpen = true;
+    markGreeting("openai_open");
     configureSessionIfReady().catch((err) =>
       console.error("[AI Receptionist] Session config error (from ws open):", err)
     );
@@ -3560,6 +3582,7 @@ function createCallSession(twilioWs: WebSocket) {
       const sess = msg.session as Record<string, unknown> | undefined;
       console.log(`[AI Receptionist] ✅ session.started — id=${sess?.id ?? "?"} model=${sess?.model ?? "?"} — audio forwarding ENABLED`);
       sessionStarted = true;
+      markGreeting("session_started");
       if (sessionUpdateTimeoutHandle) {
         clearTimeout(sessionUpdateTimeoutHandle);
         sessionUpdateTimeoutHandle = null;
@@ -3651,6 +3674,11 @@ function createCallSession(twilioWs: WebSocket) {
       const delta = msg.delta as string | undefined;
       if (delta) {
         outboundAudioCount++;
+        if (outboundAudioCount === 1) {
+          markGreeting("first_audio_from_openai");
+          greetingTimingLogged = true;
+          console.log(`[AI Receptionist] Greeting timing call=${sessionCallSid ?? "(pending)"} ${greetingMarks.join(" ")}`);
+        }
         // Session audio format is audio/pcmu @ 8kHz — identical to Twilio's native
         // format, so the bytes pass straight through with zero conversion.
         if (outboundAudioCount === 1 || outboundAudioCount % 50 === 0) {
@@ -4039,6 +4067,7 @@ function createCallSession(twilioWs: WebSocket) {
       const startData = msg.start as Record<string, unknown> | undefined;
       streamSid = (msg.streamSid as string) ?? null;
       twilioStreamReadyAt = Date.now();
+      markGreeting("twilio_start");
       initializeAmbience();
       const callSid = (startData?.callSid as string) ?? null;
       const customParams = (startData?.customParameters as Record<string, string> | undefined) ?? {};
@@ -4062,7 +4091,7 @@ function createCallSession(twilioWs: WebSocket) {
       // can't leave the call permanently silent — we just close it cleanly instead.
       (async () => {
         const loaded = await Promise.race([
-          getSalonContext(parsedStoreId).catch(() => null),
+          getSalonContextForCall(parsedStoreId).catch(() => null),
           new Promise<null>((resolve) => setTimeout(() => resolve(null), 4_000)),
         ]);
         if (!loaded) {
@@ -4094,6 +4123,7 @@ function createCallSession(twilioWs: WebSocket) {
         // Previously those awaited operations ran first, producing 8–13 seconds of dead air and
         // making the model appear to require the caller to say "hello" before it would speak.
         sessionCallSid = callSid ?? `call-${Date.now()}`;
+        markGreeting("salon_loaded");
         salon = loaded;
         // The ambience starts the instant the stream connects, before the salon is known; an
         // after-hours call drops it here, before the greeting is spoken.
@@ -5412,7 +5442,7 @@ export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express):
       console.error(`[AI Receptionist] Balance check failed for store ${storeId} — allowing call through:`, balErr.message);
     }
 
-    const salon = await getSalonContext(storeId).catch((err) => {
+    const salon = await getSalonContextForCall(storeId).catch((err) => {
       console.error(`[AI Receptionist] getSalonContext(${storeId}) threw:`, err);
       return null;
     });
