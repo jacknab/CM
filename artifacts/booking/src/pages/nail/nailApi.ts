@@ -730,6 +730,12 @@ export interface FinalizeData {
 
 export interface GiftCardInfo { code: string; balance: number; issuedTo: string | null }
 /** Store-scoped check: the card must be this salon's, active, unexpired and have a balance. */
+/** Sell a gift card at the desk (cash, or a card on the salon's own terminal). Needs the server. */
+export const sellGiftCard = (sale: { amount: number; method: "cash" | "card"; code?: string | null; recipientName?: string | null; soldBy?: string | null }, key: string) =>
+  needsServer(() => call<{ code: string; amount: number; method: "cash" | "card"; drawer: boolean }>("/api/nail/gift-cards/sell", {
+    method: "POST", headers: { "X-Idempotency-Key": key }, body: JSON.stringify(sale),
+  }));
+
 export const lookupGiftCard = (code: string) =>
   call<GiftCardInfo>("/api/nail/gift-cards/lookup", { method: "POST", body: JSON.stringify({ code }) });
 /** What a walk-in ticket that was just closed earned its technician in the turn rotation. */

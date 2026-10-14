@@ -19107,6 +19107,61 @@ or
     }
   });
 
+  // POST /api/nail/gift-cards/sell — sell a gift card at the /nail desk. Paid in cash (the money goes into the
+  // open drawer as a cash-in, so Day Close expects it) or on the salon's own card terminal (recorded only).
+  // A gift card is not a service: no commission, no tip, no turn. Staff can type or scan the code printed on a
+  // physical card; otherwise a code is made. One request per X-Idempotency-Key, so a double tap sells one card.
+  app.post("/api/nail/gift-cards/sell", isAuthenticated, idempotent("nail.giftcard.sell", (r) => resolveSessionStoreId(r)), async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const body = z.object({
+        amount: z.number().finite().min(5).max(1000),
+        method: z.enum(["cash", "card"]),
+        code: z.string().trim().max(40).optional().nullable(),
+        recipientName: z.string().trim().max(80).optional().nullable(),
+        soldBy: z.string().trim().max(80).optional().nullable(),
+      }).safeParse(req.body);
+      if (!body.success) return res.status(400).json({ message: "Enter an amount from $5 to $1,000." });
+      const amount = Math.round(body.data.amount * 100) / 100;
+      let code = body.data.code ? nailGiftCards.normalizeGiftCode(body.data.code) : "";
+      if (code && !/^[A-Z0-9-]{4,40}$/.test(code)) return res.status(400).json({ message: "That card code has characters that cannot be used." });
+      const result = await db.transaction(async (tx) => {
+        if (code) {
+          const [taken] = await tx.select({ id: giftCards.id }).from(giftCards).where(eq(giftCards.code, code)).limit(1);
+          if (taken) return { conflict: true as const };
+        } else {
+          for (let i = 0; i < 5 && !code; i++) {
+            const candidate = generateGiftCardCode();
+            const [taken] = await tx.select({ id: giftCards.id }).from(giftCards).where(eq(giftCards.code, candidate)).limit(1);
+            if (!taken) code = candidate;
+          }
+        }
+        const [card] = await tx.insert(giftCards).values({
+          storeId, code, originalAmount: amount.toFixed(2), remainingBalance: amount.toFixed(2),
+          issuedToName: body.data.recipientName || null, isActive: true,
+          notes: `Sold at the desk${body.data.soldBy ? ` by ${body.data.soldBy}` : ""}, paid by ${body.data.method === "cash" ? "cash" : "card on the salon's terminal"}`,
+        }).returning();
+        await tx.insert(giftCardTransactions).values({ giftCardId: card.id, storeId, amount: amount.toFixed(2), type: "issued", balanceAfter: amount.toFixed(2), notes: `Sold (${body.data.method})` });
+        let drawer = false;
+        if (body.data.method === "cash") {
+          const [open] = await tx.select({ id: cashDrawerSessions.id }).from(cashDrawerSessions)
+            .where(and(eq(cashDrawerSessions.storeId, storeId), eq(cashDrawerSessions.status, "open"))).orderBy(desc(cashDrawerSessions.id)).limit(1);
+          if (open) {
+            await tx.insert(drawerActions).values({ sessionId: open.id, type: "cash_in", amount: amount.toFixed(2), reason: `Gift card ${code} sold`, performedBy: body.data.soldBy || "Front desk", performedAt: new Date() });
+            drawer = true;
+          }
+        }
+        return { conflict: false as const, card, drawer };
+      });
+      if (result.conflict) return res.status(409).json({ message: "A gift card with that code already exists." });
+      return res.status(201).json({ code: result.card.code, amount, method: body.data.method, drawer: result.drawer });
+    } catch (err) {
+      console.error("[nail/gift-cards sell]", err);
+      return res.status(500).json({ message: "Could not sell the gift card" });
+    }
+  });
+
   // ── Manager PIN ────────────────────────────────────────────────────────────────
   // What opens the Manager menu on /nail and approves manager-only actions (a turn adjustment). Each salon
   // sets its own; it is kept only as a hash and checked here, never in the browser. A salon that has not set
