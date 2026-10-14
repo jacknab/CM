@@ -63,6 +63,7 @@ import { BottomNav, type NailTab } from "./BottomNav";
 import { TechIdGate } from "./TechIdGate";
 import { OfflineQueueSheet } from "./OfflineQueueSheet";
 import { TurnEarnedPopup } from "./TurnEarnedPopup";
+import { ChangeManagerPinSheet } from "./ChangeManagerPinSheet";
 import { GridEditor } from "./GridEditor";
 import { RegisterPicker } from "./RegisterPicker";
 import { PairCustomerScreenDialog, StationsFullBanner } from "@/components/pos/PairCustomerScreen";
@@ -191,6 +192,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const [assigning, setAssigning] = useState<Assigning>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assignNeedsReason, setAssignNeedsReason] = useState(false);
+  const [pinChange, setPinChange] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [frontdeskPhone, setFrontdeskPhone] = useState("");
   // The ticket being paid in the POS tab (null = the POS tab is the ticket builder). A new customer-screen event arrives as a new object.
@@ -958,6 +960,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const managerTiles: MoreTile[] = [
     { key: "settings", label: "Settings", icon: Settings, run: () => navigate("/settings") },
     { key: "keygrid", label: "Key Grid", sub: "Arrange the POS keys", icon: LayoutGrid, run: () => setGridEditor("open") },
+    { key: "managerpin", label: "Manager PIN", sub: "Change the PIN for this menu", icon: KeyRound, run: () => { setShowMore(false); setPinChange(true); } },
     { key: "lockscreen", label: "Lock Screen", sub: saveLock.isPending ? "Saving…" : lockEnabled ? "On · Tech ID to use the POS" : "Off · no sign-in", icon: Lock, keepOpen: true,
       run: () => { if (!saveLock.isPending) saveLock.mutate(!lockEnabled); } },
     ...(thermalPrinter.isAvailable ? [{
@@ -1285,6 +1288,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       {gridEditor === "open" && (
         <GridEditor groups={groups} config={posGrid?.config ?? null} saving={saveGrid.isPending} onSave={(config) => saveGrid.mutate(config)} onClose={() => setGridEditor(null)} />
       )}
+      {pinChange && <ChangeManagerPinSheet onClose={() => setPinChange(false)} onDone={() => { setPinChange(false); say("Manager PIN changed"); }} />}
       {sheet === "manager" && <ManagerPinSheet onClose={() => setSheet(null)} onSuccess={() => { setSheet(null); setShowMore("manager"); }} />}
       {posEnabled && (
         <DayCloseModal open={sheet === "dayclose"} onClose={() => setSheet(null)} storeId={storeId}

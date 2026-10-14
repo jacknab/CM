@@ -18949,6 +18949,103 @@ or
     }
   });
 
+  // ── Manager PIN ────────────────────────────────────────────────────────────────
+  // What opens the Manager menu on /nail and approves manager-only actions (a turn adjustment). Each salon
+  // sets its own; it is kept only as a hash and checked here, never in the browser. A salon that has not set
+  // one still has the old shared PIN (2026), so nobody is locked out by this change — set your own.
+  const DEFAULT_MANAGER_PIN = "2026";
+  const pinAttempts = new Map<number, number[]>();
+  /** At most 8 wrong guesses per salon in 5 minutes, so a 4-digit PIN cannot be tried through. */
+  const pinRateLimited = (storeId: number) => {
+    const now = Date.now();
+    const recent = (pinAttempts.get(storeId) ?? []).filter((t) => now - t < 5 * 60_000);
+    pinAttempts.set(storeId, recent);
+    return recent.length >= 8;
+  };
+  async function checkManagerPin(storeId: number, pin: unknown): Promise<"ok" | "wrong" | "locked"> {
+    if (pinRateLimited(storeId)) return "locked";
+    const given = typeof pin === "string" ? pin.trim() : "";
+    const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
+    const hash = (safeParsePreferences(row?.preferences as string | undefined) as any)?.nailScreen?.managerPinHash;
+    const ok = /^\d{4}$/.test(given) && (typeof hash === "string" && hash ? await bcrypt.compare(given, hash) : given === DEFAULT_MANAGER_PIN);
+    if (!ok) pinAttempts.get(storeId)!.push(Date.now());
+    return ok ? "ok" : "wrong";
+  }
+  const pinRefusal = (result: "wrong" | "locked") => result === "locked"
+    ? { status: 429, body: { message: "Too many wrong PINs. Wait a few minutes and try again.", code: "PIN_LOCKED" } }
+    : { status: 403, body: { message: "Incorrect manager PIN.", code: "PIN_WRONG" } };
+
+  app.post("/api/nail/manager-pin/check", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const result = await checkManagerPin(storeId, req.body?.pin);
+      if (result !== "ok") { const r = pinRefusal(result); return res.status(r.status).json(r.body); }
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[nail/manager-pin check]", err);
+      return res.status(500).json({ message: "Could not check the PIN" });
+    }
+  });
+
+  app.put("/api/nail/manager-pin", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const current = await checkManagerPin(storeId, req.body?.currentPin);
+      if (current !== "ok") { const r = pinRefusal(current); return res.status(r.status).json(r.body); }
+      const next = typeof req.body?.newPin === "string" ? req.body.newPin.trim() : "";
+      if (!/^\d{4}$/.test(next)) return res.status(400).json({ message: "The new PIN must be 4 digits." });
+      if (next === DEFAULT_MANAGER_PIN || /^(\d)\1{3}$/.test(next) || next === "1234") return res.status(400).json({ message: "Choose a PIN that is harder to guess." });
+      const managerPinHash = await bcrypt.hash(next, 10);
+      await mutateStorePreferences(storeId, (prefs) => ({ ...prefs, nailScreen: { ...(prefs.nailScreen ?? {}), managerPinHash } }));
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[nail/manager-pin put]", err);
+      return res.status(500).json({ message: "Could not change the PIN" });
+    }
+  });
+
+  // POST /api/nail/turn-adjust — a manager gives or takes turns by hand (a free redo, a favour, a late
+  // start). Approved with the manager PIN, a reason is required, and it is written to the turn history.
+  // In fixed order a turn can only be given: it sends the technician to the back of the order.
+  app.post("/api/nail/turn-adjust", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const body = z.object({
+        staffId: z.number().int().positive(),
+        units: z.number().int().refine((u) => u !== 0 && u % 500 === 0 && Math.abs(u) <= 5 * TURN_UNIT, "Adjust by half turns, up to 5"),
+        reason: z.string().trim().min(2).max(200),
+        managerPin: z.string(),
+      }).safeParse(req.body);
+      if (!body.success) return res.status(400).json({ message: body.error.issues[0]?.message ?? "Invalid adjustment" });
+      const pin = await checkManagerPin(storeId, body.data.managerPin);
+      if (pin !== "ok") { const r = pinRefusal(pin); return res.status(r.status).json(r.body); }
+      const member = await storage.getStaffMember(body.data.staffId);
+      if (!member || member.storeId !== storeId) return res.status(404).json({ message: "Technician not found" });
+      const settings = await getTurnPreferences(storeId);
+      const rules = normalizeTurnRules(settings);
+      if (rules.mode === "round_robin" && body.data.units < 0) {
+        return res.status(400).json({ message: "In fixed order a turn can only be given (it sends the technician to the back)." });
+      }
+      const units = rules.mode === "round_robin" ? TURN_UNIT : body.data.units;
+      await turnEngine.recordTurnEvent({
+        storeId, kind: "adjusted", staffId: member.id, turnUnits: units, method: rules.mode,
+        configVersion: Number((settings as any).turnConfigVersion) || 1, automatic: false, reason: body.data.reason,
+        actorUserId: (req.session as any)?.userId ?? null,
+        explanation: rules.mode === "round_robin"
+          ? `A manager sent ${member.name} to the back of the order: ${body.data.reason}.`
+          : `A manager ${units > 0 ? "gave" : "took"} ${formatTurns(Math.abs(units))} ${Math.abs(units) <= TURN_UNIT ? "turn" : "turns"} ${units > 0 ? "to" : "from"} ${member.name}: ${body.data.reason}.`,
+      });
+      broadcastTurnEligibilityChanged(storeId);
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[nail/turn-adjust]", err);
+      return res.status(500).json({ message: "Could not adjust the turns" });
+    }
+  });
+
   // ── Local hub: how the salon's tablets find each other on its own Wi-Fi when the internet is down. ──
   // The main POS tablet reports its address on the local network; every signed-in tablet of the salon is
   // given that address and the salon's hub token (made here on first use) while it is online, and keeps both.

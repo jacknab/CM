@@ -10,16 +10,11 @@ export interface RevenueLeakageReport {
     noShowCount: number;
     cancellationLoss: number;
     cancellationCount: number;
-    discountLoss: number;
-    discountCount: number;
-    deadSeatLoss: number;
-    deadSeatEstimate: boolean;
   };
   leakageByMonth: Array<{
     month: string;
     noShowLoss: number;
     cancellationLoss: number;
-    discountLoss: number;
   }>;
   topLeakageServices: Array<{
     serviceName: string;
@@ -31,12 +26,11 @@ export interface RevenueLeakageReport {
 }
 
 export async function computeRevenueLeakage(
-  storeId: number,
-  deadSeatMonthlyLoss = 0
+  storeId: number
 ): Promise<RevenueLeakageReport> {
-  const last90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const last45 = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
 
-  // No-shows and cancellations in last 90 days
+  // No-shows and cancellations in the past 45 days using actual appointment data.
   const [noShowStats] = await db
     .select({
       noShowCount: sql<number>`SUM(CASE WHEN status IN ('no_show', 'no-show') THEN 1 ELSE 0 END)`,
@@ -47,7 +41,7 @@ export async function computeRevenueLeakage(
     .where(
       and(
         eq(appointments.storeId, storeId),
-        gte(appointments.date, last90)
+        gte(appointments.date, last45)
       )
     );
 
@@ -56,28 +50,10 @@ export async function computeRevenueLeakage(
   const cancellationCount = Number(noShowStats?.cancelCount || 0);
 
   const noShowLoss = Math.round(noShowCount * avgTicket);
-  const cancellationLoss = Math.round(cancellationCount * avgTicket * 0.7); // 70% fill assumption
-
-  // Discount leakage
-  const [discountStats] = await db
-    .select({
-      discountCount: sql<number>`COUNT(*)`,
-      totalDiscount: sql<string>`COALESCE(SUM(CAST(COALESCE(discount_amount,'0') AS DECIMAL(10,2))), 0)`,
-    })
-    .from(appointments)
-    .where(
-      and(
-        eq(appointments.storeId, storeId),
-        gte(appointments.date, last90),
-        sql`CAST(COALESCE(discount_amount, '0') AS DECIMAL(10,2)) > 0`
-      )
-    );
-
-  const discountLoss = parseFloat(discountStats?.totalDiscount || "0");
-  const discountCount = Number(discountStats?.discountCount || 0);
+  const cancellationLoss = Math.round(cancellationCount * avgTicket);
 
   // Monthly breakdown (last 3 months)
-  const leakageByMonth: Array<{ month: string; noShowLoss: number; cancellationLoss: number; discountLoss: number }> = [];
+  const leakageByMonth: Array<{ month: string; noShowLoss: number; cancellationLoss: number }> = [];
 
   for (let i = 0; i < 3; i++) {
     const monthStart = new Date();
@@ -91,7 +67,6 @@ export async function computeRevenueLeakage(
       .select({
         noShows: sql<number>`SUM(CASE WHEN status IN ('no_show', 'no-show') THEN 1 ELSE 0 END)`,
         cancels: sql<number>`SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END)`,
-        discounts: sql<string>`COALESCE(SUM(CAST(COALESCE(discount_amount,'0') AS DECIMAL(10,2))), 0)`,
       })
       .from(appointments)
       .where(
@@ -106,8 +81,7 @@ export async function computeRevenueLeakage(
     leakageByMonth.push({
       month: monthName,
       noShowLoss: Math.round(Number(monthStats?.noShows || 0) * avgTicket),
-      cancellationLoss: Math.round(Number(monthStats?.cancels || 0) * avgTicket * 0.7),
-      discountLoss: Math.round(parseFloat(monthStats?.discounts || "0")),
+      cancellationLoss: Math.round(Number(monthStats?.cancels || 0) * avgTicket),
     });
   }
 
@@ -123,7 +97,7 @@ export async function computeRevenueLeakage(
     .where(
       and(
         eq(appointments.storeId, storeId),
-        gte(appointments.date, last90)
+        gte(appointments.date, last45)
       )
     )
     .groupBy(appointments.serviceId, services.name)
@@ -137,27 +111,21 @@ export async function computeRevenueLeakage(
     estimatedLoss: Math.round(Number(s.noShowCount) * avgTicket),
   }));
 
-  const totalLeakage = Math.round(noShowLoss + cancellationLoss + discountLoss + (deadSeatMonthlyLoss * 3));
-  const recoveryPotential = Math.round(totalLeakage * 0.4); // Realistic 40% recovery estimate
+  const totalLeakage = Math.round(noShowLoss + cancellationLoss);
+  const recoveryPotential = totalLeakage;
 
   const recommendations: string[] = [];
   if (noShowLoss > 200) recommendations.push("Enable SMS reminders 24 hours before appointments to reduce no-shows");
   if (cancellationLoss > 300) recommendations.push("Send cancellation recovery messages to fill last-minute open slots");
-  if (discountLoss > 100) recommendations.push("Review discount policies — consider loyalty points as an alternative");
-  if (deadSeatMonthlyLoss > 200) recommendations.push("Promote dead-seat time slots with targeted offers");
 
   return {
-    period: "Last 90 days",
+    period: "Last 45 days",
     totalLeakage,
     breakdown: {
       noShowLoss,
       noShowCount,
       cancellationLoss,
       cancellationCount,
-      discountLoss,
-      discountCount,
-      deadSeatLoss: deadSeatMonthlyLoss * 3,
-      deadSeatEstimate: true,
     },
     leakageByMonth: leakageByMonth.reverse(),
     topLeakageServices,

@@ -1,5 +1,7 @@
 import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { checkManagerPin } from "@/lib/managerPin";
+import { formatTurns } from "@shared/turnRules";
 import { CalendarFaderScrollbar } from "@/components/CalendarFaderScrollbar";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -4289,6 +4291,7 @@ export function TurnPageModal({
   onClose: () => void;
 }) {
   const { pick } = useLanguage();
+  const queryClient = useQueryClient();
 
   const t = {
     whyButton:      pick({ en: "Why this order?",                    vi: "Tại sao thứ tự này?",                     es: "¿Por qué este orden?",                    fr: "Pourquoi cet ordre?" }),
@@ -4812,7 +4815,7 @@ export function TurnPageModal({
                       <div className="flex flex-col items-center py-3 px-1">
                         <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Turns</p>
                         <p className="mt-1 text-xl font-extrabold tabular-nums text-slate-800">
-                          {live.turnCount ?? 0}
+                          {formatTurns(Number.isFinite(Number((live as any).turnUnits)) ? Number((live as any).turnUnits) : Math.round((live.turnCount ?? 0) * 1000))}
                         </p>
                       </div>
                       <div className="flex flex-col items-center py-3 px-1">
@@ -4829,6 +4832,17 @@ export function TurnPageModal({
                     </div>
                   );
                 })()}
+
+                <TurnAdjustPanel
+                  storeId={storeId}
+                  staffId={selectedTech.id}
+                  name={selectedTech.name}
+                  fixedOrder={(turnEligibility as any)?.turnRules?.mode === "round_robin"}
+                  onDone={() => {
+                    queryClient.invalidateQueries({ queryKey: ["/api/turn/eligibility"] });
+                    queryClient.invalidateQueries({ queryKey: ["/api/turn/staff-history", storeId, selectedTech.id] });
+                  }}
+                />
 
                 <div className="flex-1 overflow-y-auto px-5 pb-6">
                   <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Completed Turns Today</p>
@@ -10290,12 +10304,71 @@ export function VoucherRedeemSheet({ onClose, onRedeemed }: { onClose: () => voi
   );
 }
 
-// Default PIN unless/until this becomes a real per-store setting — 2026 per
-// the initial ask, kept as a plain client-side gate (not tied to the
-// per-staff `staff_pins` system used for timeclock).
-const DEFAULT_MANAGER_PIN = "2026";
+/**
+ * A manager gives or takes turns by hand (a free redo, a favour, a late start): pick the change, say why,
+ * approve with the manager PIN. The server records it in the turn history. In fixed order a turn can only
+ * be given, which sends the technician to the back of the order.
+ */
+function TurnAdjustPanel({ storeId, staffId, name, fixedOrder, onDone }: { storeId: number; staffId: number; name: string; fixedOrder: boolean; onDone: () => void }) {
+  const { toast } = useToast();
+  const [units, setUnits] = useState<number | null>(null);
+  const [reason, setReason] = useState("");
+  const [askPin, setAskPin] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const first = name.split(" ")[0];
+  const choices = fixedOrder ? [{ units: 1000, label: "Send to back" }] : [
+    { units: -1000, label: "−1" }, { units: -500, label: "−½" }, { units: 500, label: "+½" }, { units: 1000, label: "+1" },
+  ];
+  const save = async (managerPin: string) => {
+    setAskPin(false);
+    setSaving(true);
+    try {
+      const res = await fetch("/api/nail/turn-adjust", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId, staffId, units, reason: reason.trim(), managerPin }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message || "Could not change the turns");
+      toast({ title: fixedOrder ? `${first} goes to the back of the order` : `${(units ?? 0) > 0 ? "Gave" : "Took"} ${formatTurns(Math.abs(units ?? 0))} ${Math.abs(units ?? 0) <= 1000 ? "turn" : "turns"} ${(units ?? 0) > 0 ? "to" : "from"} ${first}` });
+      setUnits(null); setReason("");
+      onDone();
+    } catch (err: any) {
+      toast({ title: err?.message || "Could not change the turns", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="mx-5 mb-3 rounded-xl border border-slate-100 px-4 py-3" data-testid="turn-adjust">
+      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Adjust turns</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {choices.map((c) => (
+          <button key={c.units} type="button" onClick={() => setUnits(units === c.units ? null : c.units)} data-testid={`turn-adjust-${c.units}`}
+            className={`h-9 min-w-[52px] rounded-lg border px-3 text-sm font-semibold ${units === c.units ? "border-slate-800 bg-slate-800 text-white" : "border-slate-200 bg-white text-slate-700"}`}>
+            {c.label}
+          </button>
+        ))}
+      </div>
+      {units != null && (
+        <div className="mt-3 flex gap-2">
+          <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={200} placeholder="Reason (kept in the turn history)"
+            className="h-9 flex-1 rounded-lg border border-slate-200 px-3 text-sm" data-testid="turn-adjust-reason" />
+          <button type="button" disabled={reason.trim().length < 2 || saving} onClick={() => setAskPin(true)} data-testid="turn-adjust-save"
+            className="h-9 rounded-lg bg-slate-800 px-4 text-sm font-semibold text-white disabled:opacity-40">
+            {saving ? "Saving…" : "Approve"}
+          </button>
+        </div>
+      )}
+      {askPin && <ManagerPinSheet title="Approve turn change" onClose={() => setAskPin(false)} onSuccess={(pin) => void save(pin)} />}
+    </div>
+  );
+}
 
-export function ManagerPinSheet({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+/**
+ * Asks for the salon's manager PIN, which the server checks (lib/managerPin.ts). `onSuccess` gets the PIN,
+ * for actions the server approves with it again (a turn adjustment).
+ */
+export function ManagerPinSheet({ onClose, onSuccess, title = "Manager Access" }: { onClose: () => void; onSuccess: (pin: string) => void; title?: string }) {
   const [digits, setDigits] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -10311,15 +10384,22 @@ export function ManagerPinSheet({ onClose, onSuccess }: { onClose: () => void; o
     setErrorMsg(null);
   }, []);
 
+  // The latest onSuccess, so a parent re-rendering mid-check does not send the PIN to the server again.
+  const onSuccessRef = useRef(onSuccess);
+  onSuccessRef.current = onSuccess;
   useEffect(() => {
     if (digits.length !== 4) return;
-    if (digits === DEFAULT_MANAGER_PIN) {
-      onSuccess();
-      return;
-    }
-    setErrorMsg("Incorrect PIN.");
-    setDigits("");
-  }, [digits, onSuccess]);
+    let cancelled = false;
+    void checkManagerPin(digits)
+      .then((result) => {
+        if (cancelled) return;
+        if (result === "ok") { onSuccessRef.current(digits); return; }
+        setErrorMsg(result === "locked" ? "Too many wrong PINs. Wait a few minutes." : "Incorrect PIN.");
+        setDigits("");
+      })
+      .catch(() => { if (!cancelled) { setErrorMsg("Couldn't check the PIN. Try again."); setDigits(""); } });
+    return () => { cancelled = true; };
+  }, [digits]);
 
   const numKeys = [
     ["1", "2", "3"],
@@ -10343,7 +10423,7 @@ export function ManagerPinSheet({ onClose, onSuccess }: { onClose: () => void; o
             <Button variant="ghost" size="icon" onClick={onClose} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100">
               <ArrowLeft className="w-4 h-4" />
             </Button>
-            <span className="font-semibold text-base text-gray-900">Manager Access</span>
+            <span className="font-semibold text-base text-gray-900">{title}</span>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100">
             <X className="w-4 h-4" />

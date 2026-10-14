@@ -229,12 +229,7 @@ router.get("/revenue-leakage", async (req, res) => {
   if (!storeId) return;
 
   try {
-    const deadSeats = await computeDeadSeats(storeId);
-    // totalLostRevenuePotential is already a monthly figure (see dead-seats.ts) —
-    // computeRevenueLeakage expects a monthly loss and itself multiplies by 3 to
-    // project the 90-day window, so it must NOT be divided again here (that
-    // previously understated the dead-seat contribution to leakage ~3x).
-    const report = await computeRevenueLeakage(storeId, deadSeats.totalLostRevenuePotential);
+    const report = await computeRevenueLeakage(storeId);
     res.json(report);
   } catch (err: any) {
     console.error("[intelligence] revenue-leakage error:", err);
@@ -1518,7 +1513,7 @@ function getCoachingClient(): OpenAI {
 const _tabContext: Record<string, string> = {
   overview:   "This is the salon's overall business performance overview.",
   clients:    "This is client retention — how many clients are at risk of not returning.",
-  leakage:    "This is missing/leaked revenue: appointments that were no-shows, cancellations, or clients drifting away.",
+  leakage:    "This is actual missed revenue only: no-show and cancellation losses in the past 45 days.",
   seats:      "This is empty appointment slot data — times when the schedule could have been booked but wasn't.",
   noshow:     "This is no-show rate — clients who booked but didn't show up.",
   rebooking:  "This is rebooking rate by team member — what % of completed appointments led the client to book again within 30 days.",
@@ -1615,7 +1610,7 @@ export async function buildAssistantSnapshot(storeId: number) {
     { activeClients: Number(cs?.total || 0), driftingClients: Number(cs?.drifting || 0), atRiskClients: Number(cs?.atRisk || 0), avgRebookingRate: parseFloat(cs?.avgRebooking || "0") },
     deadSeats.overallUtilization,
   );
-  const leakage = await computeRevenueLeakage(storeId, deadSeats.totalLostRevenuePotential);
+  const leakage = await computeRevenueLeakage(storeId);
   const round = (n: unknown) => Math.round(Number(n) || 0);
 
   return {
@@ -1633,10 +1628,10 @@ export async function buildAssistantSnapshot(storeId: number) {
       const { revenue: _r, ...b } = breakdown ?? {};
       return { ...rest, breakdown: b };
     })(),
-    leakageLast90Days: {
+    leakageLast45Days: {
       total: round(leakage.totalLeakage), noShowLoss: round(leakage.breakdown.noShowLoss), noShows: leakage.breakdown.noShowCount,
       cancellationLoss: round(leakage.breakdown.cancellationLoss), cancellations: leakage.breakdown.cancellationCount,
-      discountLoss: round(leakage.breakdown.discountLoss), recoveryPotential: round(leakage.recoveryPotential),
+      recoveryPotential: round(leakage.recoveryPotential),
     },
   };
 }

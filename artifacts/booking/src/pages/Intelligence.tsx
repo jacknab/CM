@@ -1229,10 +1229,8 @@ export default function Intelligence() {
                 wins.push({
                   icon: <DollarSign className="h-4 w-4 text-red-500" />,
                   color: "border-red-200 bg-red-50/50 dark:bg-red-950/10",
-                  action: `$${leakageData.totalLeakage.toLocaleString()} in missed revenue (90d)`,
-                  value: autoEngageEnabled
-                    ? `$${leakageData.recoveryPotential.toLocaleString()} actively being recovered`
-                    : `$${leakageData.recoveryPotential.toLocaleString()} recoverable`,
+                  action: `$${leakageData.totalLeakage.toLocaleString()} in lost revenue (45d)`,
+                  value: `${leakageData.breakdown.noShowCount + leakageData.breakdown.cancellationCount} missed bookings`,
                   tab: "leakage",
                 });
               }
@@ -1670,39 +1668,23 @@ export default function Intelligence() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Card className="border-red-200 dark:border-red-900/50">
                     <CardContent className="p-5">
-                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Revenue You Missed Out On (90d)</p>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Lost Revenue (Past 45 Days)</p>
                       <p className="text-3xl font-bold text-red-600">${leakageData.totalLeakage.toLocaleString()}</p>
-                      <p className="text-xs text-muted-foreground mt-1">From no-shows, cancellations & discounts</p>
+                      <p className="text-xs text-muted-foreground mt-1">Actual no-show and cancellation revenue lost</p>
                     </CardContent>
                   </Card>
-                  <Card className="border-emerald-200 dark:border-emerald-900/50">
+                  <Card className="border-red-100 dark:border-red-900/30">
                     <CardContent className="p-5">
-                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Money We Can Still Recover</p>
-                      <p className="text-3xl font-bold text-emerald-600">${leakageData.recoveryPotential.toLocaleString()}</p>
-                      <p className="text-xs text-muted-foreground mt-1">Realistic estimate — based on typical recovery rates</p>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">No-Shows</p>
+                      <p className="text-3xl font-bold text-red-500">${leakageData.breakdown.noShowLoss.toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{leakageData.breakdown.noShowCount} missed appointments</p>
                     </CardContent>
                   </Card>
-                  <Card>
+                  <Card className="border-orange-100 dark:border-orange-900/30">
                     <CardContent className="p-5">
-                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Breakdown</p>
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">No-shows ({leakageData.breakdown.noShowCount})</span>
-                          <span className="font-medium text-red-600">${leakageData.breakdown.noShowLoss.toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Cancellations ({leakageData.breakdown.cancellationCount})</span>
-                          <span className="font-medium text-orange-600">${leakageData.breakdown.cancellationLoss.toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Discounts given</span>
-                          <span className="font-medium text-amber-600">${leakageData.breakdown.discountLoss.toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Empty time slots (est.)</span>
-                          <span className="font-medium text-slate-600">${leakageData.breakdown.deadSeatLoss.toLocaleString()}</span>
-                        </div>
-                      </div>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Cancellations</p>
+                      <p className="text-3xl font-bold text-orange-500">${leakageData.breakdown.cancellationLoss.toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{leakageData.breakdown.cancellationCount} cancelled appointments</p>
                     </CardContent>
                   </Card>
                 </div>
@@ -1824,41 +1806,6 @@ export default function Intelligence() {
                   </Card>
                 )}
 
-                {/* Annual leakage projection */}
-                {leakageData.totalLeakage > 0 && (
-                  <Card className="border-red-200 dark:border-red-900/30 bg-red-50/40 dark:bg-red-950/10">
-                    <CardContent className="p-5 flex items-start gap-4">
-                      <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-                        <TrendingDown className="h-5 w-5 text-red-600" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="font-semibold text-sm">Estimated Annual Revenue Gap</p>
-                        <p className="text-2xl font-bold text-red-600 mt-1">
-                          ${Math.round(leakageData.totalLeakage * (365 / 90)).toLocaleString()}
-                          <span className="text-sm font-normal text-muted-foreground ml-1">/ year</span>
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Based on your last 90 days of ${leakageData.totalLeakage.toLocaleString()}.{" "}
-                          {autoEngageEnabled ? (
-                            <>
-                              Auto Client Outreach is active — Certxa is already working to recover{" "}
-                              <span className="font-semibold text-emerald-600">
-                                ${Math.round(leakageData.recoveryPotential * (365 / 90)).toLocaleString()}/year
-                              </span>{" "}of that back.
-                            </>
-                          ) : (
-                            <>
-                              Turning on Auto Client Outreach could recover an estimated{" "}
-                              <span className="font-semibold text-emerald-600">
-                                ${Math.round(leakageData.recoveryPotential * (365 / 90)).toLocaleString()}/year
-                              </span>{" "}of that back.
-                            </>
-                          )}
-                        </p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
               </>
             ) : (
               <div className="flex items-center justify-center h-40">

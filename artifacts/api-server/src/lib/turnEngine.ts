@@ -100,9 +100,10 @@ export async function loadTurnScores(opts: { storeId: number; rules: TurnRules; 
     const { rows } = await pool.query(
       `SELECT e.staff_id, MAX(e.at) AS last_at, COUNT(*) FILTER (WHERE e.kind = 'assigned')::int AS taken
          FROM turn_events e LEFT JOIN appointments a ON a.id = e.appointment_id
-        WHERE e.store_id = $1 AND e.at >= $2 AND e.kind IN ('assigned','passed') AND COALESCE(e.turn_units, 0) > 0
+        WHERE e.store_id = $1 AND e.at >= $2 AND e.kind IN ('assigned','passed','adjusted') AND COALESCE(e.turn_units, 0) > 0
           AND e.staff_id IS NOT NULL AND (a.id IS NULL OR a.status <> 'cancelled')
-          AND ($3::text IS NULL OR lower(e.category) = lower($3))
+          -- a manager's adjustment is for the technician, not one category: it counts in every rotation
+          AND ($3::text IS NULL OR lower(e.category) = lower($3) OR e.kind = 'adjusted')
         GROUP BY e.staff_id`,
       [storeId, periodStart, category],
     );
@@ -153,6 +154,18 @@ export async function loadTurnScores(opts: { storeId: number; rules: TurnRules; 
       scores.set(staffId, (scores.get(staffId) ?? 0) + units);
       shown.set(staffId, (shown.get(staffId) ?? 0) + units);
     }
+  }
+  // Turns a manager gave or took by hand this period (under the method in force now).
+  const adjusted = await pool.query(
+    `SELECT staff_id, SUM(turn_units)::int AS units FROM turn_events
+      WHERE store_id = $1 AND kind = 'adjusted' AND at >= $2 AND method = $3 AND staff_id IS NOT NULL GROUP BY staff_id`,
+    [storeId, periodStart, rules.mode],
+  );
+  for (const row of adjusted.rows) {
+    const staffId = Number(row.staff_id), units = Number(row.units) || 0;
+    if (!units) continue;
+    scores.set(staffId, (scores.get(staffId) ?? 0) + units);
+    shown.set(staffId, (shown.get(staffId) ?? 0) + units);
   }
   return { scores, shown };
 }
