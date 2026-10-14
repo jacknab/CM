@@ -122,7 +122,11 @@ async function buildAll() {
       // Replit-only packages — not available on VPS, excluded from bundle
       "stripe-replit-sync",
     ],
-    sourcemap: "linked",
+    // "external": dist/index.mjs.map is still written (to turn a logged `dist/index.mjs:<line>` back into a
+    // source line by hand), but the bundle does not name it. pm2 runs node with --enable-source-maps, and a
+    // named map is read and parsed as the bundle loads — the 36 MB map held ~400 MB of the API's memory and
+    // kept it at pm2's 1 GB restart limit, restarting it every few minutes (2026-10-14).
+    sourcemap: "external",
     plugins: [
       // pino relies on workers to handle logging, instead of externalizing it we use a plugin to handle it
       esbuildPluginPino({ transports: ["pino-pretty"] })
