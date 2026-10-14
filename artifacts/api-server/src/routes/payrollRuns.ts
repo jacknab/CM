@@ -20,7 +20,7 @@ import { Router, type Request, type Response } from "express";
 import { db, pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { paySchedules, payrollRuns, payrollRunItems, staff, appointments, appointmentAddons, addons, services, locations, clients, payoutDeductionRules } from "@shared/schema";
-import { paidByCard, ruleDeductionsFor, type DeductionRule } from "../lib/payrollDeductions";
+import { cashPortionOf, paidByCard, ruleDeductionsFor, type DeductionRule } from "../lib/payrollDeductions";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { resolveSessionStoreId } from "../lib/sessionStore";
@@ -65,14 +65,16 @@ router.put("/schedule", isAuthenticated, async (req, res) => {
   const frequency = ["weekly", "biweekly", "semimonthly", "monthly"].includes(b.frequency) ? b.frequency : "weekly";
   const anchorDate = typeof b.anchorDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.anchorDate) ? b.anchorDate : null;
   const periodEndOffsetDays = Number.isFinite(+b.periodEndOffsetDays) ? Math.max(0, Math.min(31, +b.periodEndOffsetDays)) : 0;
+  // Share paid by check; the rest is paid in cash. Left out = unchanged (100 for a new schedule).
+  const checkPercent = b.checkPercent === undefined ? undefined : Math.round(Math.max(0, Math.min(100, Number(b.checkPercent) || 0)));
   if (!anchorDate) return res.status(400).json({ error: "anchorDate (YYYY-MM-DD) required" });
 
   const [row] = await db
     .insert(paySchedules)
-    .values({ storeId: sid, frequency, anchorDate, periodEndOffsetDays })
+    .values({ storeId: sid, frequency, anchorDate, periodEndOffsetDays, ...(checkPercent !== undefined ? { checkPercent } : {}) })
     .onConflictDoUpdate({
       target: paySchedules.storeId,
-      set: { frequency, anchorDate, periodEndOffsetDays, updatedAt: new Date() },
+      set: { frequency, anchorDate, periodEndOffsetDays, ...(checkPercent !== undefined ? { checkPercent } : {}), updatedAt: new Date() },
     })
     .returning();
   res.json(row);
@@ -224,6 +226,13 @@ async function cardTipsByStaff(storeId: number, periodStart: string, periodEnd: 
   return byStaff;
 }
 
+/** The share of each paycheck the salon pays by check (100 when it has not said otherwise). */
+async function checkPercentFor(storeId: number): Promise<number> {
+  const [sched] = await db.select({ checkPercent: paySchedules.checkPercent }).from(paySchedules).where(eq(paySchedules.storeId, storeId));
+  const pct = Number(sched?.checkPercent ?? 100);
+  return Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 100;
+}
+
 async function refreshDraftItems(run: typeof payrollRuns.$inferSelect) {
   let items = await db.select().from(payrollRunItems).where(eq(payrollRunItems.payrollRunId, run.id));
   if (run.status !== "draft") return items;
@@ -231,6 +240,7 @@ async function refreshDraftItems(run: typeof payrollRuns.$inferSelect) {
   const computed = await computeLines(run.storeId, run.periodStart, run.periodEnd);
   const rules = (await db.select().from(payoutDeductionRules)
     .where(and(eq(payoutDeductionRules.storeId, run.storeId), eq(payoutDeductionRules.isActive, true)))) as DeductionRule[];
+  const checkPercent = await checkPercentFor(run.storeId);
   const cardTips = rules.some((rule) => rule.type === "card_tips")
     ? await cardTipsByStaff(run.storeId, run.periodStart, run.periodEnd)
     : new Map<number, number[]>();
@@ -241,7 +251,7 @@ async function refreshDraftItems(run: typeof payrollRuns.$inferSelect) {
     // other_deductions is the total: what the owner typed for this period plus the salon's recurring
     // deductions. The typed part carries over; the recurring part is worked out again from the rules.
     const typedDeductions = Math.max(0, Number(prior?.otherDeductions ?? 0) - Number(prior?.ruleDeductions ?? 0));
-    const recurring = ruleDeductionsFor(rules, { staffId: line.staffId, commission: Number(line.commissionAmount), cardTips: cardTips.get(line.staffId) });
+    const recurring = ruleDeductionsFor(rules, { staffId: line.staffId, commission: Number(line.commissionAmount), cardTips: cardTips.get(line.staffId), tickets: Number(line.appointmentCount) || 0 });
     const otherDeductions = typedDeductions + recurring.total;
     const otherEarnings = Number(prior?.otherEarnings ?? 0);
     const netPay = Math.max(0, Number(line.commissionAmount) + Number(line.tips) + otherEarnings - boothRent - otherDeductions);
@@ -254,6 +264,7 @@ async function refreshDraftItems(run: typeof payrollRuns.$inferSelect) {
       ruleDeductionsDetail: recurring.detail.length ? recurring.detail : null,
       otherEarnings: otherEarnings.toFixed(2),
       netPay: netPay.toFixed(2),
+      cashPortion: cashPortionOf(netPay, checkPercent).toFixed(2),
       notes: prior?.notes ?? null,
       status: "pending" as const,
     };
@@ -293,12 +304,14 @@ export async function approvePayrollRunById(runId: number, approvedBy: string | 
   await db.transaction(async (tx) => {
     for (const item of items) {
       const itemNet = Math.max(0, Number(item.netPay));
+      // A check is written for the part not paid in cash.
+      const checkAmount = Math.max(0, itemNet - Number((item as any).cashPortion ?? 0));
       net += itemNet;
       tips += Number(item.tips);
       commission += Number(item.commissionAmount);
       deductions += Number(item.boothRent) + Number(item.otherDeductions);
       let checkNumber: string | null = null;
-      if (itemNet > 0) {
+      if (checkAmount > 0) {
         checkCount++;
         if (checkSequence) checkNumber = String(checkSequence++);
       }
@@ -449,6 +462,7 @@ router.patch("/runs/:id/items/:itemId", isAuthenticated, async (req, res) => {
       otherDeductions: otherDeductions.toFixed(2),
       otherEarnings: otherEarnings.toFixed(2),
       netPay: net.toFixed(2),
+      cashPortion: cashPortionOf(net, await checkPercentFor(sid)).toFixed(2),
       notes: typeof b.notes === "string" ? b.notes.slice(0, 500) : item.notes,
     })
     .where(eq(payrollRunItems.id, itemId));
@@ -481,10 +495,10 @@ router.post("/runs/:id/void", isAuthenticated, async (req, res) => {
 // ── recurring deductions ─────────────────────────────────────────────────
 // Rules the owner sets once (a supply fee, a card processing fee…) that come off every pay period.
 // Stored in payout_deduction_rules, the table the setup wizard and the old Deductions page wrote to.
-function ruleInput(b: any): { name: string; type: "fixed" | "percentage" | "card_tips"; amount: string; perTransaction: string; appliesTo: "all" | "specific"; staffId: number | null } | string {
+function ruleInput(b: any): { name: string; type: "fixed" | "percentage" | "card_tips" | "per_ticket"; amount: string; perTransaction: string; appliesTo: "all" | "specific"; staffId: number | null } | string {
   const name = typeof b?.name === "string" ? b.name.trim().slice(0, 60) : "";
   if (!name) return "Give the deduction a name";
-  const type = b?.type === "percentage" ? "percentage" : b?.type === "card_tips" ? "card_tips" : "fixed";
+  const type = b?.type === "percentage" ? "percentage" : b?.type === "card_tips" ? "card_tips" : b?.type === "per_ticket" ? "per_ticket" : "fixed";
   const amount = Number(b?.amount ?? 0);
   // Card fee on tips: a percent of the tip plus a flat fee per transaction — either may be zero, not both.
   const perTransaction = type === "card_tips" ? Number(b?.perTransaction ?? 0) : 0;

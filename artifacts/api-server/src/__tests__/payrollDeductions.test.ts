@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { paidByCard, ruleDeductionsFor, type DeductionRule } from "../lib/payrollDeductions";
+import { cashPortionOf, paidByCard, ruleDeductionsFor, type DeductionRule } from "../lib/payrollDeductions";
 
 const rule = (r: Partial<DeductionRule>): DeductionRule => ({ id: 1, name: "Fee", type: "fixed", amount: "0", appliesTo: "all", staffId: null, ...r });
 
@@ -50,5 +50,31 @@ describe("card fee on tips", () => {
   it("knows a card payment from cash and gift cards", () => {
     for (const pm of ["card:25.00", "m2", "m2:45.00,cash:10.00", "tap_to_pay", "cash:5.00,tap:20.00"]) expect(paidByCard(pm)).toBe(true);
     for (const pm of ["cash:30.00", "cash:10.00,gift:20.00", "", null, undefined]) expect(paidByCard(pm)).toBe(false);
+  });
+});
+
+describe("supply fee per ticket", () => {
+  const rule = (amount: number): DeductionRule => ({ id: 9, name: "Supply fee", type: "per_ticket", amount, appliesTo: "all", staffId: null });
+  it("charges the amount for every ticket of the period", () => {
+    expect(ruleDeductionsFor([rule(1.5)], { staffId: 1, commission: 400, tickets: 30 }).total).toBe(45);
+  });
+  it("never charges more than the commission earned, and nothing with no tickets", () => {
+    expect(ruleDeductionsFor([rule(2)], { staffId: 1, commission: 10, tickets: 30 }).total).toBe(10);
+    expect(ruleDeductionsFor([rule(2)], { staffId: 1, commission: 400, tickets: 0 }).total).toBe(0);
+  });
+});
+
+describe("pay split between check and cash", () => {
+  it("pays all by check at 100%, and all in cash at 0%", () => {
+    expect(cashPortionOf(1234.56, 100)).toBe(0);
+    expect(cashPortionOf(1234.56, 0)).toBe(1234.56);
+  });
+  it("pays the cash part in whole dollars, leaving the cents on the check", () => {
+    expect(cashPortionOf(1234.56, 70)).toBe(370); // 30% = 370.37 → $370 cash, $864.56 check
+    expect(cashPortionOf(3234.09, 60)).toBe(1293);
+  });
+  it("never pays out more than the pay", () => {
+    expect(cashPortionOf(0, 50)).toBe(0);
+    expect(cashPortionOf(0.8, 50)).toBe(0);
   });
 });

@@ -3819,7 +3819,9 @@ export async function registerRoutes(
         // Payroll run items are the approved source of truth. Recomputing tips or
         // treating a legitimate $0 net as "missing" made stubs disagree with review.
         const tipAmt = Number((item as any).tips ?? 0);
-        const totalPay = parseFloat(Number((item as any).netPay ?? 0).toFixed(2));
+        // The check is the pay less the part the salon pays in cash (Payroll → schedule, "paid by check").
+        const cashPortion = parseFloat(Math.max(0, Number((item as any).cashPortion ?? 0)).toFixed(2));
+        const totalPay = parseFloat(Math.max(0, Number((item as any).netPay ?? 0) - cashPortion).toFixed(2));
         return {
           ...item,
           tipsAmount:   parseFloat(tipAmt.toFixed(2)),
@@ -3828,6 +3830,7 @@ export async function registerRoutes(
           otherEarnings:   parseFloat(Number((item as any).otherEarnings ?? 0).toFixed(2)),
           otherDeductions: parseFloat(Number((item as any).otherDeductions ?? 0).toFixed(2)),
           totalPay,
+          cashPortion,
           ytd: ytdByStaff.get(item.staffId) ?? null,
           deductionYtd: deductionYtdByStaff.get(item.staffId) ?? {},
           deductionNames: activeDeductionRules.filter((rule) => rule.appliesTo !== "specific" || rule.staffId === item.staffId).map((rule) => rule.name),

@@ -8,13 +8,14 @@
  *   • "card_tips" — the card processing cost of paying out tips: for each of the person's tickets that
  *     was paid by card and carried a tip, a percentage of that tip plus a flat fee per transaction.
  *     Cash tips cost nothing. The fee on a ticket is never more than its tip.
+ *   • "per_ticket" — a flat amount for each ticket the person closed in the period (a supply fee per service).
  *   • A rule is for everyone, or for one staff member.
  */
 
 export interface DeductionRule {
   id: number;
   name: string;
-  /** "fixed" | "percentage" | "card_tips" */
+  /** "fixed" | "percentage" | "card_tips" | "per_ticket" */
   type: string | null;
   amount: string | number | null;
   /** card_tips only: flat fee per tipped card transaction. */
@@ -42,7 +43,7 @@ export function paidByCard(paymentMethod: string | null | undefined): boolean {
 
 export function ruleDeductionsFor(
   rules: readonly DeductionRule[],
-  line: { staffId: number; commission: number; /** The tip on each of their card-paid tickets. */ cardTips?: readonly number[] },
+  line: { staffId: number; commission: number; /** The tip on each of their card-paid tickets. */ cardTips?: readonly number[]; /** Tickets they closed in the period. */ tickets?: number },
 ): { total: number; detail: AppliedDeduction[] } {
   const detail: AppliedDeduction[] = [];
   for (const rule of rules) {
@@ -56,10 +57,24 @@ export function ruleDeductionsFor(
         if (tip > 0) amount += Math.min(tip, percentOf(tip, percent) + flat);
       }
       amount = cents(amount);
+    } else if (rule.type === "per_ticket") {
+      // Never more than they earned in commission: a slow period does not leave them owing.
+      if (Number.isFinite(value) && value > 0 && (line.tickets ?? 0) > 0) amount = Math.min(cents(value * (line.tickets ?? 0)), Math.max(0, cents(line.commission)));
     } else if (line.commission > 0 && Number.isFinite(value) && value > 0) {
       amount = rule.type === "percentage" ? percentOf(line.commission, value) : cents(value);
     }
     if (amount > 0) detail.push({ ruleId: rule.id, name: rule.name, amount });
   }
   return { total: cents(detail.reduce((sum, d) => sum + d.amount, 0)), detail };
+}
+
+/**
+ * The part of a paycheck paid in cash: what is not paid by check, in whole dollars so the cash part needs
+ * no coins (the cents stay on the check). All of it when nothing is paid by check.
+ */
+export function cashPortionOf(netPay: number, checkPercent: number): number {
+  const net = Math.max(0, Math.round(netPay * 100) / 100);
+  if (checkPercent >= 100) return 0;
+  if (checkPercent <= 0) return net;
+  return Math.min(net, Math.floor(net * (100 - checkPercent) / 100));
 }

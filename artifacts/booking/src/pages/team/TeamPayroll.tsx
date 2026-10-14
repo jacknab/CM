@@ -18,6 +18,8 @@ interface Schedule {
   frequency: string;
   anchorDate: string;
   periodEndOffsetDays: number;
+  /** Share of each paycheck paid by check; the rest is paid in cash (whole dollars). */
+  checkPercent?: number;
 }
 interface Run {
   id: number;
@@ -47,13 +49,15 @@ interface Line {
   ruleDeductions: string;
   ruleDeductionsDetail: { ruleId: number; name: string; amount: number }[] | null;
   netPay: string;
+  /** The part of netPay paid in cash; the check is netPay − cashPortion. */
+  cashPortion?: string;
   checkNumber: string | null;
 }
 /** A deduction the salon takes from every pay period. */
 interface DeductionRule {
   id: number;
   name: string;
-  type: "fixed" | "percentage" | "card_tips" | null;
+  type: "fixed" | "percentage" | "card_tips" | "per_ticket" | null;
   amount: string;
   /** card_tips: flat fee per tipped card transaction. */
   perTransaction?: string | null;
@@ -130,6 +134,21 @@ function Overview({ storeId, onOpenRun }: { storeId?: number; onOpenRun: (id: nu
     onError: () => toast({ title: "Couldn't save", variant: "destructive" }),
   });
 
+  // Part check, part cash: the share of each paycheck paid by check (the rest in cash, whole dollars).
+  // Draft periods are worked out again with it; approved ones keep what they had.
+  const saveCheckPercent = useMutation({
+    mutationFn: (checkPercent: number) =>
+      apiRequest("PUT", "/api/payroll/schedule", {
+        storeId, frequency: data?.schedule?.frequency, anchorDate: data?.schedule?.anchorDate,
+        periodEndOffsetDays: Number(data?.schedule?.periodEndOffsetDays ?? 0), checkPercent,
+      }),
+    onSuccess: (_r, pct) => {
+      qc.invalidateQueries({ queryKey: ["/api/payroll/runs", storeId] });
+      toast({ title: pct === 100 ? "Paychecks: all by check" : pct === 0 ? "Pay: all in cash" : `Paychecks: ${pct}% by check, the rest in cash` });
+    },
+    onError: () => toast({ title: "Couldn't save", variant: "destructive" }),
+  });
+
   const setup = useMutation({
     mutationFn: () =>
       apiRequest("PUT", "/api/payroll/schedule", { storeId, frequency: freq, anchorDate: anchor, periodEndOffsetDays: Number(offset) }),
@@ -188,6 +207,15 @@ function Overview({ storeId, onOpenRun }: { storeId?: number; onOpenRun: (id: nu
                 <span className="font-medium capitalize">{data.schedule.frequency.replace("biweekly", "every 2 weeks").replace("semimonthly", "twice a month")}</span>
                 <span className="text-muted-foreground">·</span>
                 <span className="text-muted-foreground">first pay {fmtDate(data.schedule.anchorDate)}{data.schedule.periodEndOffsetDays ? `, period ends ${data.schedule.periodEndOffsetDays}d before` : ""}</span>
+                <span className="text-muted-foreground">·</span>
+                <label className="flex items-center gap-2 text-muted-foreground">
+                  Paid by check
+                  <select value={String(data.schedule.checkPercent ?? 100)} disabled={saveCheckPercent.isPending}
+                    onChange={(e) => saveCheckPercent.mutate(Number(e.target.value))} data-testid="payroll-check-percent"
+                    className="h-8 rounded-md border border-border bg-background px-2 text-sm text-foreground">
+                    {[100, 90, 80, 75, 70, 60, 50, 40, 30, 25, 20, 10, 0].map((pct) => <option key={pct} value={pct}>{pct === 100 ? "All" : pct === 0 ? "None (all cash)" : `${pct}%`}</option>)}
+                  </select>
+                </label>
                 <button onClick={() => refetch()} disabled={isFetching} className="ml-auto text-primary hover:underline" title="Refresh payroll periods">{isFetching ? "Refreshing…" : "Refresh"}</button>
               </div>
             )}
@@ -242,7 +270,7 @@ function Overview({ storeId, onOpenRun }: { storeId?: number; onOpenRun: (id: nu
 }
 
 // ── recurring deductions ─────────────────────────────────────────────────
-type RuleType = "fixed" | "percentage" | "card_tips";
+type RuleType = "fixed" | "percentage" | "card_tips" | "per_ticket";
 const EMPTY_RULE = { name: "", type: "fixed" as RuleType, amount: "", perTransaction: "", appliesTo: "all" as "all" | "specific", staffId: "" };
 
 function DeductionsCard({ storeId }: { storeId: number }) {
@@ -303,11 +331,11 @@ function DeductionsCard({ storeId }: { storeId: number }) {
       ) : rules.map((r) => (
         <div key={r.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border px-4 py-2.5 text-sm" data-testid={`payroll-deduction-${r.id}`}>
           <span className={cn("min-w-0 flex-1 font-medium", r.isActive === false && "text-muted-foreground")}>{r.name}</span>
-          <span className="tabular-nums">{r.type === "card_tips" ? `${Number(r.amount)}% + ${money(r.perTransaction ?? 0)} per card tip` : r.type === "percentage" ? `${Number(r.amount)}% of commission` : `${money(r.amount)} per pay period`}</span>
+          <span className="tabular-nums">{r.type === "per_ticket" ? `${money(r.amount)} per ticket` : r.type === "card_tips" ? `${Number(r.amount)}% + ${money(r.perTransaction ?? 0)} per card tip` : r.type === "percentage" ? `${Number(r.amount)}% of commission` : `${money(r.amount)} per pay period`}</span>
           <span className="w-28 truncate text-muted-foreground">{who(r)}</span>
           <Switch checked={r.isActive !== false} onCheckedChange={() => toggle.mutate(r)} aria-label={`${r.name} on or off`} />
           <button type="button" className="text-primary hover:underline" onClick={() => setEditing({ id: r.id, form: {
-            name: r.name, type: r.type === "percentage" || r.type === "card_tips" ? r.type : "fixed", amount: String(Number(r.amount)), perTransaction: String(Number(r.perTransaction ?? 0)),
+            name: r.name, type: r.type === "percentage" || r.type === "card_tips" || r.type === "per_ticket" ? r.type : "fixed", amount: String(Number(r.amount)), perTransaction: String(Number(r.perTransaction ?? 0)),
             appliesTo: r.appliesTo === "specific" ? "specific" : "all", staffId: r.staffId != null ? String(r.staffId) : "" } })}>Edit</button>
           <button type="button" className="text-muted-foreground hover:underline" onClick={() => { if (window.confirm(`Remove "${r.name}"? It stops coming off future pay periods.`)) remove.mutate(r); }}>Remove</button>
         </div>
@@ -330,12 +358,12 @@ function DeductionsCard({ storeId }: { storeId: number }) {
                   <label className="text-sm font-medium">Type</label>
                   <Select value={form.type} onValueChange={(v) => setForm({ type: v as RuleType })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectItem value="fixed">Dollar amount</SelectItem><SelectItem value="percentage">Percent of commission</SelectItem><SelectItem value="card_tips">Card fee on tips</SelectItem></SelectContent>
+                    <SelectContent><SelectItem value="fixed">Dollar amount</SelectItem><SelectItem value="percentage">Percent of commission</SelectItem><SelectItem value="per_ticket">Per ticket (supply fee)</SelectItem><SelectItem value="card_tips">Card fee on tips</SelectItem></SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">{form.type === "card_tips" ? "Percent of tip" : form.type === "percentage" ? "Percent" : "Amount"}</label>
-                  <Input type="number" min={0} step="0.01" value={form.amount} placeholder={form.type === "card_tips" ? "2.9" : form.type === "percentage" ? "1.5" : "12.00"} onChange={(e) => setForm({ amount: e.target.value })} data-testid="payroll-deduction-amount" />
+                  <Input type="number" min={0} step="0.01" value={form.amount} placeholder={form.type === "card_tips" ? "2.9" : form.type === "percentage" ? "1.5" : form.type === "per_ticket" ? "1.00" : "12.00"} onChange={(e) => setForm({ amount: e.target.value })} data-testid="payroll-deduction-amount" />
                 </div>
               </div>
               {form.type === "card_tips" && (
@@ -483,6 +511,11 @@ function RunReview({ runId, storeId, onBack }: { runId: number; storeId: number;
                       <td className={cn("px-3 py-2.5 text-right font-semibold tabular-nums", Number(it.netPay) <= 0 && "text-muted-foreground")}>
                         {money(it.netPay)}
                         {Number(it.netPay) <= 0 && <div className="text-[10px] font-normal">no check</div>}
+                        {Number(it.cashPortion ?? 0) > 0 && Number(it.netPay) > 0 && (
+                          <div className="text-[10px] font-normal text-muted-foreground" data-testid="payroll-cash-portion">
+                            check {money(Number(it.netPay) - Number(it.cashPortion))} · cash {money(it.cashPortion!)}
+                          </div>
+                        )}
                         {it.checkNumber && <div className="text-[10px] font-normal text-muted-foreground">#{it.checkNumber}</div>}
                       </td>
                     </tr>

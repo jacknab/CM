@@ -1751,6 +1751,8 @@ export const paySchedules = pgTable("pay_schedules", {
   frequency:           text("frequency").notNull().default("weekly"), // weekly | biweekly | semimonthly | monthly
   anchorDate:          date("anchor_date").notNull(),                 // first pay date; periods roll from here
   periodEndOffsetDays: integer("period_end_offset_days").notNull().default(0),
+  /** Share of each paycheck paid by check (the rest in cash, whole dollars). 100 = all by check. */
+  checkPercent: integer("check_percent").notNull().default(100),
   createdAt:           timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt:           timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -1804,6 +1806,8 @@ export const payrollRunItems = pgTable("payroll_run_items", {
   ruleDeductions:   decimal("rule_deductions", { precision: 10, scale: 2 }).notNull().default("0"),
   ruleDeductionsDetail: jsonb("rule_deductions_detail"),
   netPay:           decimal("net_pay", { precision: 10, scale: 2 }).notNull().default("0"),
+  /** The part of netPay paid in cash (pay_schedules.check_percent); the check is netPay − cashPortion. */
+  cashPortion: decimal("cash_portion", { precision: 10, scale: 2 }).notNull().default("0"),
   checkNumber:      text("check_number"),
   status:           text("status").notNull().default("pending"),
   notes:            text("notes"),

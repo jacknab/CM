@@ -2155,6 +2155,9 @@ function PayrollChecksTab({ settings, initialRunId }: { settings: PrintSettings;
       rows.push({ label: "Other Deductions", amount: -Math.round(otherThisPeriod * 100) / 100, ytd: Math.round(otherYtd * 100) / 100 });
     } else if (od > 0) rows.push({ label: "Other Deductions", amount: -od });
     if (item.hoursWorked > 0) rows.push({ label: "Hours Worked", amount: 0, sub: `${item.hoursWorked.toFixed(1)} hrs` });
+    // The part of the pay handed over in cash: it comes off the check, so the stub's net pay is the check.
+    const cash = Number((item as any).cashPortion ?? 0);
+    if (cash > 0) rows.push({ label: "Paid in cash", amount: -cash, deduction: true, ytd: null });
     return rows;
   }
 
