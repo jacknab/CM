@@ -67,7 +67,7 @@ interface Props {
 }
 
 type Tone = "info" | "success" | "error";
-type Popup = null | "tip" | "group" | "settings" | "gift";
+type Popup = null | "tip" | "group" | "settings" | "gift" | "tipsplit";
 /** The Nail POS's own reader choice, separate from the calendar's preference. */
 const CARD_METHOD_KEY = "certxa.nail.cardMethod";
 const tenderLabel = (t: Tender) => (t.method === "gift" ? `GIFT CARD${t.code ? ` ·${t.code.slice(-4)}` : ""}` : t.method === "tap" ? "TAP TO PAY" : t.method === "cash" ? "CASH" : "CARD");
@@ -178,6 +178,61 @@ export function CheckoutMode(p: Props) {
     setLinkedIds((cur) => Array.from(new Set([...cur, ...ids])));
   }, [p.otherTickets, p.ticket.groupId]);
   const linked = useMemo(() => p.otherTickets.filter((t) => linkedIds.includes(t.id)), [p.otherTickets, linkedIds]);
+  // ── The tip per technician, when the client says who gets what ──
+  // Every ticket of this checkout, with its technician. With two or more technicians staff can enter each
+  // one's tip; otherwise the tip is shared by service time as before.
+  const tipTickets = useMemo(() => [ticket, ...linked].map((t) => ({ id: t.id, duration: t.duration, staffId: t.staff?.id ?? 0, staffName: t.staff?.name ?? "No technician" })), [ticket, linked]);
+  const tipTechs = useMemo(() => {
+    const byId = new Map<number, { staffId: number; name: string; ticketIds: number[] }>();
+    for (const t of tipTickets) {
+      if (!byId.has(t.staffId)) byId.set(t.staffId, { staffId: t.staffId, name: t.staffName, ticketIds: [] });
+      byId.get(t.staffId)!.ticketIds.push(t.id);
+    }
+    return [...byId.values()];
+  }, [tipTickets]);
+  const [tipByStaff, setTipByStaff] = useState<Record<number, number> | null>(null);
+  const [tipDraft, setTipDraft] = useState<Record<number, string>>({});
+  // A split only stands while it still adds up to the tip: a new tip from the client's screen or Tip Adjust replaces it.
+  useEffect(() => {
+    if (!tipByStaff) return;
+    const sum = Object.values(tipByStaff).reduce((s, v) => s + v, 0);
+    if (Math.round(sum * 100) !== Math.round(tip * 100) || tipTechs.some((t) => tipByStaff[t.staffId] == null)) setTipByStaff(null);
+  }, [tip, tipByStaff, tipTechs]);
+  /** Each ticket's share of its technician's tip (a technician with two tickets shares theirs by service time). */
+  const tipByTicket = useMemo(() => {
+    if (!tipByStaff) return undefined;
+    const out: Record<number, number> = {};
+    for (const tech of tipTechs) {
+      const mine = tipTickets.filter((t) => t.staffId === tech.staffId);
+      const totalMin = mine.reduce((s, t) => s + Math.max(0, t.duration), 0);
+      let left = r2(tipByStaff[tech.staffId] ?? 0);
+      mine.forEach((t, i) => {
+        const share = i === mine.length - 1 ? left : r2((tipByStaff[tech.staffId] ?? 0) * (totalMin ? Math.max(0, t.duration) / totalMin : 1 / mine.length));
+        out[t.id] = Math.min(left, share); left = r2(left - out[t.id]);
+      });
+    }
+    return out;
+  }, [tipByStaff, tipTechs, tipTickets]);
+  const openTipSplit = () => {
+    // Start from what each technician gets now: the split already entered, or the tip shared by service time.
+    const totalMin = tipTickets.reduce((s, t) => s + Math.max(0, t.duration), 0);
+    const draft: Record<number, string> = {};
+    for (const tech of tipTechs) {
+      const now = tipByStaff?.[tech.staffId] ?? r2(tip * (totalMin ? tipTickets.filter((t) => t.staffId === tech.staffId).reduce((s, t) => s + Math.max(0, t.duration), 0) / totalMin : 1 / tipTechs.length));
+      draft[tech.staffId] = now ? now.toFixed(2) : "";
+    }
+    setTipDraft(draft);
+    setPopup("tipsplit");
+  };
+  const saveTipSplit = () => {
+    const entered: Record<number, number> = {};
+    for (const tech of tipTechs) entered[tech.staffId] = r2(Math.max(0, Number(tipDraft[tech.staffId]) || 0));
+    const sum = r2(Object.values(entered).reduce((s, v) => s + v, 0));
+    setTip(sum);
+    setTipByStaff(entered);
+    setPopup(null);
+    say(`TIP SPLIT · ${tipTechs.map((t) => `${t.name.split(" ")[0].toUpperCase()} ${money(entered[t.staffId])}`).join(" · ")}`, "success");
+  };
   // A Retail-marked custom line built into the ticket itself (see CatalogPanel's Keypad) is still
   // part of ticket.total, but must be pulled out of service revenue for commission purposes.
   const ticketRetailTotal = useMemo(() => ticket.customLines.filter((l) => l.isRetail).reduce((s, l) => s + l.price, 0), [ticket.customLines]);
@@ -678,7 +733,7 @@ export function CheckoutMode(p: Props) {
             const retail = r2(t.customLines.filter((l) => l.isRetail).reduce((s, l) => s + l.price, 0));
             return { appointmentId: t.id, base: t.total, duration: t.duration, serviceRevenue: r2(t.total - retail), productRevenue: retail };
           })],
-        { tip: totals.tip, discount: totals.discount, totalPaid: totals.totalPaid }, methods);
+        { tip: totals.tip, discount: totals.discount, totalPaid: totals.totalPaid }, methods, tipByTicket);
     }
     // Don't close the customer's screen here: every tender already told it the sale is paid, and it now
     // offers the customer Print / Text / No Receipt. Sending kiosk_checkout_cancel at this point reset it
@@ -956,7 +1011,7 @@ export function CheckoutMode(p: Props) {
             <div data-testid="nail-pay-tax-row"><span>TAX ({r2(p.salesTax.rate * 100)}%)</span><strong data-testid="nail-pay-tax">{money(totals.tax)}</strong></div>
           )}
           {totals.tip > 0 && (
-            <div><span>TIP</span><strong data-testid="nail-pay-tip">{money(totals.tip)} <button type="button" className="row-x" aria-label="Remove tip" onClick={() => setTip(0)}>×</button></strong></div>
+            <div><span>TIP{tipTechs.length > 1 && <> <button type="button" className="row-x" style={{ width: "auto", padding: "0 8px" }} onClick={openTipSplit} data-testid="nail-pay-tip-split">{tipByStaff ? "SPLIT ✓" : "SPLIT"}</button></>}</span><strong data-testid="nail-pay-tip">{money(totals.tip)} <button type="button" className="row-x" aria-label="Remove tip" onClick={() => setTip(0)}>×</button></strong></div>
           )}
           <div className="grand-total"><span>TOTAL</span><strong data-testid="nail-pay-total">{money(totals.total)}</strong></div>
           {tenders.map((t) => (
@@ -1092,7 +1147,7 @@ export function CheckoutMode(p: Props) {
           <div className="assign-create-modal" data-testid={`nail-pay-popup-${popup}`}>
             <div className="assign-create-header">
               <div>
-                <h2>{popup === "tip" ? "Tip" : popup === "settings" ? "POS settings" : popup === "gift" ? (gift.mode === "balance" ? "Gift card balance" : "Pay with gift card") : "Group pay"}</h2>
+                <h2>{popup === "tipsplit" ? "Tip for each technician" : popup === "tip" ? "Tip" : popup === "settings" ? "POS settings" : popup === "gift" ? (gift.mode === "balance" ? "Gift card balance" : "Pay with gift card") : "Group pay"}</h2>
                 <p>{popup === "group" ? "Pay these tickets together" : popup === "settings" ? "Saved to this device" : popup === "gift" ? "Type or scan the card code" : ticket.client.name}</p>
               </div>
               <button type="button" className="assign-create-close" onClick={() => setPopup(null)} aria-label="Close"><X size={16} /></button>
@@ -1108,6 +1163,22 @@ export function CheckoutMode(p: Props) {
                   ))}
                   <button type="button" className="assign-create-item" onClick={() => applyTip(0)} data-testid="nail-pay-tip-none"><span className="assign-create-name">No tip</span></button>
                   <div className="assign-create-hint">Or type a dollar amount on the keypad and tap Tip Adjust.</div>
+                </>
+              )}
+              {popup === "tipsplit" && (
+                <>
+                  {tipTechs.map((tech) => (
+                    <label key={tech.staffId} className="assign-create-item" style={{ cursor: "default" }} data-testid={`nail-pay-tipsplit-${tech.staffId}`}>
+                      <span className="assign-create-name">{tech.name}</span>
+                      <input type="number" inputMode="decimal" min="0" step="0.01" value={tipDraft[tech.staffId] ?? ""} placeholder="0.00"
+                        onChange={(e) => setTipDraft((d) => ({ ...d, [tech.staffId]: e.target.value }))}
+                        className="gift-input" style={{ width: 130, height: 44, fontSize: 18, textAlign: "right", letterSpacing: 0 }} aria-label={`Tip for ${tech.name}`} />
+                    </label>
+                  ))}
+                  <div className="assign-create-hint">
+                    Tip total {money(r2(tipTechs.reduce((s, t) => s + (Number(tipDraft[t.staffId]) || 0), 0)))} — this replaces the tip on the ticket.
+                  </div>
+                  <button type="button" className="assign-create-btn assign-create-btn-ready" onClick={saveTipSplit} data-testid="nail-pay-tipsplit-save">SAVE TIPS</button>
                 </>
               )}
               {popup === "settings" && (

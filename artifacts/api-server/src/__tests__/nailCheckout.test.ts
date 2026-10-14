@@ -108,3 +108,23 @@ describe("sales tax (POS settings)", () => {
 
 const r = (n: number) => Math.round(n * 100) / 100;
 
+
+describe("splitGroup — tip entered per technician", () => {
+  const members = [
+    { appointmentId: 1, base: 40, duration: 30, serviceRevenue: 40, productRevenue: 0 },
+    { appointmentId: 2, base: 60, duration: 90, serviceRevenue: 60, productRevenue: 0 },
+  ];
+  const totals = { tip: 15, discount: 0, totalPaid: 115 };
+  it("gives each ticket exactly the tip staff entered for it", () => {
+    const shares = splitGroup(members, totals, "cash", { 1: 10, 2: 5 });
+    expect(shares.map((s) => s.tip)).toEqual([10, 5]);
+    expect(shares.map((s) => s.totalPaid)).toEqual([46, 69]);
+  });
+  it("falls back to sharing by service time when the entered tips do not add up to the tip", () => {
+    expect(splitGroup(members, totals, "cash", { 1: 10, 2: 4 }).map((s) => s.tip)).toEqual([3.75, 11.25]);
+    expect(splitGroup(members, totals, "cash").map((s) => s.tip)).toEqual([3.75, 11.25]);
+  });
+  it("ignores a split that leaves a ticket out", () => {
+    expect(splitGroup(members, totals, "cash", { 1: 15 }).map((s) => s.tip)).toEqual([3.75, 11.25]);
+  });
+});

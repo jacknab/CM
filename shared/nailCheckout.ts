@@ -125,7 +125,14 @@ export interface GroupShare { appointmentId: number; tip: number; discount: numb
  * a big-ticket retail item or a pricier service, even if another tech's longer, more involved
  * service is what actually did more of the work.
  */
-export function splitGroup(members: GroupMember[], totals: { tip: number; discount: number; totalPaid: number }, paymentMethod: string): GroupShare[] {
+export function splitGroup(
+  members: GroupMember[], totals: { tip: number; discount: number; totalPaid: number }, paymentMethod: string,
+  /** The tip of each ticket as staff entered it (the client said who gets what). Used when it adds up to the whole tip. */
+  tipByTicket?: Readonly<Record<number, number>>,
+): GroupShare[] {
+  const explicit = tipByTicket && members.every((m) => Number.isFinite(tipByTicket[m.appointmentId]) && tipByTicket[m.appointmentId] >= 0)
+    && Math.round(members.reduce((s, m) => s + tipByTicket[m.appointmentId], 0) * 100) === Math.round(totals.tip * 100)
+    ? tipByTicket : null;
   const totalBase = members.reduce((s, m) => s + m.base, 0);
   const totalDuration = members.reduce((s, m) => s + Math.max(0, m.duration), 0);
   // Every member is $0 (e.g. an all-comped group), or nobody has a known duration (e.g. all
@@ -140,7 +147,7 @@ export function splitGroup(members: GroupMember[], totals: { tip: number; discou
     // Never take more than what's actually left in the pool. Several non-last members' rounded
     // (half-up) proportional shares can otherwise sum to more than the pool itself, forcing the
     // last member — who simply gets whatever remains — into a negative tip/discount/totalPaid.
-    const tip = last ? tipLeft : Math.max(0, Math.min(tipLeft, r2(totals.tip * tipShare)));
+    const tip = explicit ? r2(explicit[m.appointmentId]) : last ? tipLeft : Math.max(0, Math.min(tipLeft, r2(totals.tip * tipShare)));
     const discount = last ? discLeft : Math.max(0, Math.min(discLeft, r2(totals.discount * share)));
     const totalPaid = last ? paidLeft : Math.max(0, Math.min(paidLeft, r2(totals.totalPaid * share)));
     tipLeft = r2(tipLeft - tip); discLeft = r2(discLeft - discount); paidLeft = r2(paidLeft - totalPaid);
