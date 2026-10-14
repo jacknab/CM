@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNailText } from "./i18n";
 import { Delete, Loader2 } from "lucide-react";
 import { TURN_UNIT, formatTurns } from "@shared/turnRules";
 import { TechSlipSheet } from "./TechSlipSheet";
@@ -26,6 +27,7 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
   const [digits, setDigits] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const { t: tx, lang, setLang } = useNailText();
   // MY SLIP: the same Tech ID opens the technician's own pay slip instead of the POS.
   const [slipFor, setSlipFor] = useState<{ id: number; name: string } | null>(null);
   const { shakeClass, shake, onShakeEnd } = useShake();
@@ -106,16 +108,25 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
             <button type="button" className="ng-gate-key" disabled={busy} onClick={() => press("0")} data-testid="tech-id-key-0">0</button>
             <button type="button" className="ng-gate-key ghost" disabled={busy || digits.length === 0} onClick={back} aria-label="Delete" data-testid="tech-id-key-back"><Delete className="h-7 w-7" /></button>
           </div>
-          <button type="button" className="ng-gate-enter" disabled={busy || digits.length === 0} onClick={() => void enter()} data-testid="tech-id-enter">ENTER</button>
+          <button type="button" className="ng-gate-enter" disabled={busy || digits.length === 0} onClick={() => void enter()} data-testid="tech-id-enter">{tx("enter")}</button>
           <button type="button" className="ng-gate-turn-btn" style={{ marginTop: 10 }} disabled={busy || digits.length === 0} onClick={() => void enter(true)} data-testid="tech-id-my-slip">
-            {digits.length === 0 ? "MY SLIP — type your ID first" : "MY SLIP"}
+            {digits.length === 0 ? tx("mySlipFirst") : tx("mySlip")}
           </button>
         </section>
 
         <section className="ng-gate-card ng-gate-wait" data-testid="tech-id-turn-queue">
-          <button type="button" className="ng-gate-turn-btn" onClick={onOpenTurnPage} data-testid="tech-id-open-turn-page">Turn Queue</button>
+          {/* This tablet's language for the staff screens: English, Tiếng Việt, Español. */}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }} role="group" aria-label="Language" data-testid="nail-lang">
+            {(["en", "vi", "es"] as const).map((code) => (
+              <button key={code} type="button" onClick={() => setLang(code)} aria-pressed={lang === code} data-testid={`nail-lang-${code}`}
+                style={{ minWidth: 48, height: 36, borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: lang === code ? "rgba(255,255,255,.18)" : "transparent", color: "inherit", fontWeight: 700, cursor: "pointer" }}>
+                {code.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          <button type="button" className="ng-gate-turn-btn" onClick={onOpenTurnPage} data-testid="tech-id-open-turn-page">{tx("turnQueue")}</button>
           {turnQueue.length === 0
-            ? <p className="ng-gate-empty">No technicians clocked in</p>
+            ? <p className="ng-gate-empty">{tx("noneClockedIn")}</p>
             : (
               <ol>
                 {turnQueue.map((t) => (
@@ -123,7 +134,7 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
                     <span>{t.position ?? "–"}</span>
                     <strong>{t.name}</strong>
                     {/* How many turns they have, halves included: "½ turn", "1 turn", "1½ turns". */}
-                    <em data-testid="tech-id-turn-count">{formatTurns(t.turnUnits)} {t.turnUnits > 0 && t.turnUnits <= TURN_UNIT ? "turn" : "turns"}</em>
+                    <em data-testid="tech-id-turn-count">{formatTurns(t.turnUnits)} {t.turnUnits > 0 && t.turnUnits <= TURN_UNIT ? tx("turn") : tx("turns")}</em>
                   </li>
                 ))}
               </ol>

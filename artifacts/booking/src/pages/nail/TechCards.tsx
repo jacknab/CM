@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useNailText, type NailTextKey } from "./i18n";
 import { Clock } from "lucide-react";
 import { DEFAULT_SERVICE_MIN, estimateWait, formatWait, type WaitTech } from "@shared/waitEstimate";
 import type { BoardMarker, BoardTicket, SalonGlance, TechDayStats, TurnTech } from "./nailApi";
@@ -32,7 +33,7 @@ function statusOf(t: TurnTech, current: BoardTicket | undefined, assumedIn: bool
   return "available";
 }
 
-const TIMER_LABEL: Record<Exclude<Status, "off">, string> = { available: "FREE", assigned: "CLIENT WAITING", "in-service": "IN CHAIR", break: "ON BREAK" };
+const TIMER_LABEL: Record<Exclude<Status, "off">, NailTextKey> = { available: "free", assigned: "clientWaiting", "in-service": "inChair", break: "onBreak" };
 
 /**
  * HH:MM:SS since a moment the SERVER recorded (so it is the same on every POS station and never restarts when a screen is
@@ -53,7 +54,7 @@ function LiveTimer({ since, offsetMs, testId, className = "tt-timer" }: { since:
   return <span className={className} data-testid={testId} data-seconds={secs}>{pad(Math.floor(secs / 3600))}:{pad(Math.floor((secs % 3600) / 60))}:{pad(secs % 60)}</span>;
 }
 
-const PILL: Record<Status, string> = { "in-service": "IN SERVICE", assigned: "ASSIGNED", available: "AVAILABLE", break: "ON BREAK", off: "NOT CLOCKED IN" };
+const PILL: Record<Status, NailTextKey> = { "in-service": "inService", assigned: "assigned", available: "available", break: "onBreak", off: "notClockedIn" };
 const firstName = (n: string) => n.trim().split(/\s+/)[0] ?? n;
 
 /** The tech cards live on two pages you swipe between (or pick from the tab strip): clocked out · clocked in and free.
@@ -80,6 +81,7 @@ export function TechCards({ techs, tickets, markers, glance, stats, loading, clo
   /** Open a metric's detail page on the Queue tab. */
   onQueueView: (view: QueueView) => void;
 }) {
+  const { t: tx } = useNailText();
   const [metricTick, setMetricTick] = useState(() => Date.now());
   const metricNow = metricTick + clockOffsetMs;
   useEffect(() => {
@@ -210,20 +212,20 @@ export function TechCards({ techs, tickets, markers, glance, stats, loading, clo
                   <div className="q-booking-client q-booking-client-top q-unified-head">
                     {t.avatarUrl && <img className="q-tech-avatar" src={t.avatarUrl} alt="" />}
                     <strong>{t.name}</strong>
-                    {status === "available" && nextUp && <em className="q-tech-next" data-testid={`nail-tech-next-${t.id}`}>NEXT</em>}
-                    <em className="q-unified-pill" data-kind={status}>{PILL[status]}</em>
+                    {status === "available" && nextUp && <em className="q-tech-next" data-testid={`nail-tech-next-${t.id}`}>{tx("next")}</em>}
+                    <em className="q-unified-pill" data-kind={status}>{tx(PILL[status])}</em>
                   </div>
                   <div className="q-unified-main">
                     <div className="q-unified-clock"><Clock size={25} strokeWidth={1.8} /><div>
-                      <small>{status === "off" ? "NOT CLOCKED IN" : TIMER_LABEL[status]}</small>
-                      {status === "off" ? <b>Tap to clock in</b> : <LiveTimer since={since} offsetMs={clockOffsetMs} testId={`nail-tech-timer-${t.id}`} />}
+                      <small>{status === "off" ? tx("notClockedIn") : tx(TIMER_LABEL[status])}</small>
+                      {status === "off" ? <b>{tx("tapToClockIn")}</b> : <LiveTimer since={since} offsetMs={clockOffsetMs} testId={`nail-tech-timer-${t.id}`} />}
                     </div>
                     </div>
-                    <div className="q-unified-side"><small>CLIENTS TODAY</small><b>{status === "off" ? "—" : done}</b></div>
+                    <div className="q-unified-side"><small>{tx("clientsToday")}</small><b>{status === "off" ? "—" : done}</b></div>
                   </div>
                   <div className="q-unified-footer">
-                    <div><small>Current Service</small><b>{current ? `${current.service.name} · ${firstName(current.client.name)}` : inLine != null ? `#${inLine} in turn` : "—"}</b></div>
-                    <div><small>Next Up</small><b>{next ? `${next.client.name} · ${fmtTime(+new Date(next.date))}${queue.length > 1 ? ` (+${queue.length - 1})` : ""}` : "—"}</b></div>
+                    <div><small>{tx("currentService")}</small><b>{current ? `${current.service.name} · ${firstName(current.client.name)}` : inLine != null ? `#${inLine} ${tx("inTurn")}` : "—"}</b></div>
+                    <div><small>{tx("nextUp")}</small><b>{next ? `${next.client.name} · ${fmtTime(+new Date(next.date))}${queue.length > 1 ? ` (+${queue.length - 1})` : ""}` : "—"}</b></div>
                   </div>
                 </div>
             );
@@ -250,7 +252,7 @@ export function TechCards({ techs, tickets, markers, glance, stats, loading, clo
       <div className="tt-tabs" role="tablist" data-testid="nail-techs-tabs">
         {PAGES.map((pg, k) => (
           <button key={pg.key} type="button" role="tab" aria-selected={page === k} className={page === k ? "active" : ""} onClick={() => setPage(k)} data-testid={`nail-techs-tab-${pg.key}`}>
-            {pg.label}<em>{pageCards[k].length}</em>
+            {tx(pg.key === "out" ? "clockedOut" : "clockedInTab")}<em>{pageCards[k].length}</em>
           </button>
         ))}
       </div>

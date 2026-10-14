@@ -7,6 +7,7 @@
  * The maths lives in shared/nailCheckout.ts (unit-tested); this file is screen state + wiring.
  */
 import { useQueryClient } from "@tanstack/react-query";
+import { useNailText } from "./i18n";
 import { useCardProvider } from "@/hooks/use-card-provider";
 import { relayCheckoutEvent } from "@/lib/local-hub";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -87,6 +88,7 @@ function recallReceipt(): LastReceipt | null {
 }
 
 export function CheckoutMode(p: Props) {
+  const { t: tx } = useNailText();
   const { ticket } = p;
   const [cents, setCents] = useState("");
   const [extras, setExtras] = useState<Extra[]>([]);
@@ -1007,10 +1009,10 @@ export function CheckoutMode(p: Props) {
         </div>
 
         <div className="ticket-total">
-          <div><span>SUBTOTAL</span><strong data-testid="nail-pay-subtotal">{money(totals.subtotal)}</strong></div>
+          <div><span>{tx("subtotal")}</span><strong data-testid="nail-pay-subtotal">{money(totals.subtotal)}</strong></div>
           {totals.discount > 0 && (
             <div data-testid="nail-pay-discount-row">
-              <span>{reward && !discount ? `REWARD · ${reward.name.toUpperCase()}` : `DISCOUNT${discount?.type === "percent" ? ` (${discount.value}%)` : ""}`}</span>
+              <span>{reward && !discount ? `REWARD · ${reward.name.toUpperCase()}` : `${tx("discount")}${discount?.type === "percent" ? ` (${discount.value}%)` : ""}`}</span>
               <strong>
                 −{money(totals.discount)}{" "}
                 <button type="button" className="row-x" aria-label="Remove discount" onClick={() => { setDiscount(null); setReward(null); }}>×</button>
@@ -1021,27 +1023,27 @@ export function CheckoutMode(p: Props) {
             <div data-testid="nail-pay-cash-price"><span>{cashPriceOn ? `CASH PRICE (−${p.cashDiscountPct}%)` : "CARD PRICE"}</span><strong>{cashPriceOn ? `card ${money(otherPrice)}` : `cash ${money(otherPrice)}`}</strong></div>
           )}
           {totals.tax > 0 && (
-            <div data-testid="nail-pay-tax-row"><span>TAX ({r2(p.salesTax.rate * 100)}%)</span><strong data-testid="nail-pay-tax">{money(totals.tax)}</strong></div>
+            <div data-testid="nail-pay-tax-row"><span>{tx("tax")} ({r2(p.salesTax.rate * 100)}%)</span><strong data-testid="nail-pay-tax">{money(totals.tax)}</strong></div>
           )}
           {totals.tip > 0 && (
-            <div><span>TIP{tipTechs.length > 1 && <> <button type="button" className="row-x" style={{ width: "auto", padding: "0 8px" }} onClick={openTipSplit} data-testid="nail-pay-tip-split">{tipByStaff ? "SPLIT ✓" : "SPLIT"}</button></>}</span><strong data-testid="nail-pay-tip">{money(totals.tip)} <button type="button" className="row-x" aria-label="Remove tip" onClick={() => setTip(0)}>×</button></strong></div>
+            <div><span>{tx("tip")}{tipTechs.length > 1 && <> <button type="button" className="row-x" style={{ width: "auto", padding: "0 8px" }} onClick={openTipSplit} data-testid="nail-pay-tip-split">{tipByStaff ? "SPLIT ✓" : "SPLIT"}</button></>}</span><strong data-testid="nail-pay-tip">{money(totals.tip)} <button type="button" className="row-x" aria-label="Remove tip" onClick={() => setTip(0)}>×</button></strong></div>
           )}
-          <div className="grand-total"><span>TOTAL</span><strong data-testid="nail-pay-total">{money(totals.total)}</strong></div>
+          <div className="grand-total"><span>{tx("total")}</span><strong data-testid="nail-pay-total">{money(totals.total)}</strong></div>
           {tenders.map((t) => (
             <div key={t.id} data-testid={`nail-pay-tender-${t.method}`}><span>{tenderLabel(t)}</span><strong>−{money(t.amount)} {t.method !== "m2" && t.method !== "tap" && <button type="button" className="row-x" aria-label="Remove payment" onClick={() => setTenders((cur) => cur.filter((x) => x.id !== t.id))}>×</button>}</strong></div>
           ))}
           {tenders.length > 0 && (
             <div className="balance-row" data-testid="nail-pay-balance">
-              <span>{totals.changeDue > 0 ? "CHANGE DUE" : totals.balanceDue > 0 ? "BALANCE DUE" : "PAID IN FULL"}</span>
+              <span>{totals.changeDue > 0 ? tx("changeDue") : totals.balanceDue > 0 ? tx("balanceDue") : tx("paidInFull")}</span>
               <strong>{totals.changeDue > 0 ? money(totals.changeDue) : money(totals.balanceDue)}</strong>
             </div>
           )}
           {/* Once PAY / CHECKOUT has been pressed these two go away: the payment types take over, and the sale closes itself when it is paid. */}
           {(!paying || totals.settled || p.paid || p.finalizing) && (
           <div className="checkout-row">
-            <button type="button" className="checkout-clr" onClick={p.onClose} data-testid="nail-pay-back">BACK</button>
+            <button type="button" className="checkout-clr" onClick={p.onClose} data-testid="nail-pay-back">{tx("back")}</button>
             <button type="button" className={`checkout ${p.finalizing || p.paid || (!totals.settled && cardBusy) ? "disabled" : ""}`} disabled={p.finalizing || p.paid || (!totals.settled && cardBusy)} onClick={payCheckout} data-testid="nail-pay-finish">
-              {p.paid ? "PAID ✓" : p.finalizing ? "SAVING…" : "PAY / CHECKOUT"}
+              {p.paid ? tx("paid") : p.finalizing ? tx("saving") : tx("payCheckout")}
             </button>
           </div>
           )}
@@ -1109,16 +1111,16 @@ export function CheckoutMode(p: Props) {
                     <button type="button" className="pay-card pay-approved" onClick={recordOwnCard} data-testid="nail-pay-card-approved">
                       <CreditCard size={26} /><span>CARD PAYMENT APPROVED</span>
                     </button>
-                    <button type="button" className="pay-gift" onClick={() => setPayType("cash")} data-testid="nail-pay-card-back"><Banknote size={26} /><span>BACK</span></button>
+                    <button type="button" className="pay-gift" onClick={() => setPayType("cash")} data-testid="nail-pay-card-back"><Banknote size={26} /><span>{tx("back")}</span></button>
                   </div>
                 ) : (
                 <div className="pay-methods">
-                  <button type="button" className={`pay-cash ${paying && payType === "cash" ? "pay-type-on" : ""}`} aria-pressed={paying && payType === "cash"} onClick={chooseCash} data-testid="nail-pay-cash"><Banknote size={26} /><span>CASH</span></button>
+                  <button type="button" className={`pay-cash ${paying && payType === "cash" ? "pay-type-on" : ""}`} aria-pressed={paying && payType === "cash"} onClick={chooseCash} data-testid="nail-pay-cash"><Banknote size={26} /><span>{tx("cash")}</span></button>
                   <button type="button" className={`pay-card ${paying && payType === "card" ? "pay-type-on" : ""}`} aria-pressed={paying && payType === "card"} disabled={cardBusy && cardProvider !== "own"} onClick={takeCard} data-testid="nail-pay-card">
-                    {cardBusy && cardProvider !== "own" ? <Loader2 size={26} className="spin" /> : <CreditCard size={26} />}<span>{cardProvider === "own" ? "CARD" : cardLabel}</span>
+                    {cardBusy && cardProvider !== "own" ? <Loader2 size={26} className="spin" /> : <CreditCard size={26} />}<span>{cardProvider === "own" || cardLabel === "CARD" ? tx("card") : cardLabel}</span>
                   </button>
-                  <button type="button" className="pay-gift" onClick={() => openGift("pay")} data-testid="nail-pay-gift"><Gift size={26} /><span>GIFT CARD</span></button>
-                  <button type="button" className="pay-gift" disabled={cardBusy || p.finalizing} onClick={() => setRightTab("services")} data-testid="nail-pay-services"><Hand size={26} /><span>SERVICES</span></button>
+                  <button type="button" className="pay-gift" onClick={() => openGift("pay")} data-testid="nail-pay-gift"><Gift size={26} /><span>{tx("giftCard")}</span></button>
+                  <button type="button" className="pay-gift" disabled={cardBusy || p.finalizing} onClick={() => setRightTab("services")} data-testid="nail-pay-services"><Hand size={26} /><span>{tx("services")}</span></button>
                 </div>
                 )}
                 {(awaitingTip || cards.awaitingFrontdesk) && (

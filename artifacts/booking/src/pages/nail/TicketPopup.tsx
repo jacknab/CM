@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Ban, CalendarDays, Clock, Hand, Phone, Play, Receipt, ShoppingBag, UserRound, X, MessageSquare } from "lucide-react";
+import { useNailText } from "./i18n";
 import { formatDuration, formatElapsed } from "./ticketDraft";
 import type { BoardTicket } from "./nailApi";
 
@@ -28,6 +29,7 @@ const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "n
  */
 export function TicketPopup(p: Props) {
   const t = p.ticket;
+  const { t: tr } = useNailText();
   const [tick, setTick] = useState(() => Date.now());
   const now = tick + (p.clockOffsetMs ?? 0);
   useEffect(() => {
@@ -35,22 +37,22 @@ export function TicketPopup(p: Props) {
     return () => clearInterval(iv);
   }, []);
 
-  const dock: { icon: typeof Play; label: string; action: () => void; primary?: boolean; danger?: boolean; disabled?: boolean }[] = t.status === "confirmed"
+  const dock: { icon: typeof Play; id: string; label: string; action: () => void; primary?: boolean; danger?: boolean; disabled?: boolean }[] = t.status === "confirmed"
     ? [
         t.staff
-          ? { icon: Play, label: "START", action: () => p.onStart(t), primary: true }
-          : { icon: UserRound, label: "ASSIGN", action: () => p.onReassign(t), primary: true },
-        ...(t.staff ? [{ icon: ShoppingBag, label: "CHECKOUT", action: () => p.onCheckout(t) }] : []),
-        { icon: UserRound, label: "REASSIGN", action: () => p.onReassign(t), disabled: !t.staff },
-        { icon: Receipt, label: "TICKET", action: () => p.onEdit(t) },
-        ...(t.staff && t.client.phone && p.onTextReady ? [{ icon: MessageSquare, label: "TEXT READY", action: () => p.onTextReady!(t) }] : []),
-        { icon: Ban, label: "CANCEL", action: () => p.onCancel(t), danger: true },
+          ? { icon: Play, id: "START", label: tr("start"), action: () => p.onStart(t), primary: true }
+          : { icon: UserRound, id: "ASSIGN", label: tr("assign"), action: () => p.onReassign(t), primary: true },
+        ...(t.staff ? [{ icon: ShoppingBag, id: "CHECKOUT", label: tr("checkout"), action: () => p.onCheckout(t) }] : []),
+        { icon: UserRound, id: "REASSIGN", label: tr("reassign"), action: () => p.onReassign(t), disabled: !t.staff },
+        { icon: Receipt, id: "TICKET", label: tr("ticket"), action: () => p.onEdit(t) },
+        ...(t.staff && t.client.phone && p.onTextReady ? [{ icon: MessageSquare, id: "TEXT READY", label: tr("textReady"), action: () => p.onTextReady!(t) }] : []),
+        { icon: Ban, id: "CANCEL", label: tr("cancel"), action: () => p.onCancel(t), danger: true },
       ]
     : [
-        { icon: ShoppingBag, label: "CHECKOUT", action: () => p.onCheckout(t), primary: true },
-        { icon: UserRound, label: "REASSIGN", action: () => p.onReassign(t) },
-        { icon: Receipt, label: "TICKET", action: () => p.onEdit(t) },
-        { icon: Ban, label: "CANCEL", action: () => p.onCancel(t), danger: true },
+        { icon: ShoppingBag, id: "CHECKOUT", label: tr("checkout"), action: () => p.onCheckout(t), primary: true },
+        { icon: UserRound, id: "REASSIGN", label: tr("reassign"), action: () => p.onReassign(t) },
+        { icon: Receipt, id: "TICKET", label: tr("ticket"), action: () => p.onEdit(t) },
+        { icon: Ban, id: "CANCEL", label: tr("cancel"), action: () => p.onCancel(t), danger: true },
       ];
 
   return (
@@ -100,7 +102,7 @@ export function TicketPopup(p: Props) {
 
         <div className="checkin-dock" onClick={(e) => e.stopPropagation()}>
           {dock.map((b) => (
-            <button key={b.label} type="button" disabled={p.busy || b.disabled} onClick={() => { b.action(); p.onClose(); }} data-testid={`nail-dock-${b.label.toLowerCase()}`}
+            <button key={b.id} type="button" disabled={p.busy || b.disabled} onClick={() => { b.action(); p.onClose(); }} data-testid={`nail-dock-${b.id.toLowerCase()}`}
               className={`checkin-dock-btn ${b.primary ? "checkin-dock-primary" : ""} ${b.danger ? "checkin-dock-danger" : ""}`}>
               <b.icon size={22} />
               <span>{b.label}</span>
