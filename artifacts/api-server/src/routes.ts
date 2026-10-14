@@ -18949,6 +18949,48 @@ or
     }
   });
 
+  // POST /api/nail/tickets/:id/text-ready — tell a waiting client by text that their technician is ready
+  // ("Hi Maria, Amy is ready for you at Luxury Nails."). Sent when staff press it, never on its own: a text
+  // the moment a ticket is assigned would reach clients already sitting in the salon. Once per ticket per
+  // two minutes, so a double tap does not send two.
+  const readyTextSentAt = new Map<number, number>();
+  app.post("/api/nail/tickets/:id/text-ready", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const appointmentId = Number(req.params.id);
+      if (!Number.isInteger(appointmentId)) return res.status(400).json({ message: "Invalid ticket" });
+      const { rows } = await pool.query(
+        `SELECT a.status, c.full_name AS client_name, s.name AS staff_name, l.name AS store_name,
+                (SELECT COALESCE(p.phone_number_e164, p.display_phone) FROM client_phones p WHERE p.client_id = c.id ORDER BY p.is_primary DESC, p.id LIMIT 1) AS phone
+           FROM appointments a JOIN locations l ON l.id = a.store_id
+           LEFT JOIN clients c ON c.id = a.customer_id LEFT JOIN staff s ON s.id = a.staff_id
+          WHERE a.id = $1 AND a.store_id = $2`, [appointmentId, storeId]);
+      const t = rows[0];
+      if (!t) return res.status(404).json({ message: "Ticket not found" });
+      if (t.status !== "confirmed") return res.status(409).json({ message: "This ticket has already started or closed." });
+      if (!t.staff_name) return res.status(409).json({ message: "Assign a technician first." });
+      if (!t.phone) return res.status(400).json({ message: "This client has no phone number." });
+      const last = readyTextSentAt.get(appointmentId) ?? 0;
+      if (Date.now() - last < 2 * 60_000) return res.json({ sent: false, alreadySent: true });
+      readyTextSentAt.set(appointmentId, Date.now());
+      const first = (s: string | null) => String(s ?? "").trim().split(/\s+/)[0] || "";
+      const body = `Hi ${first(t.client_name) || "there"}, ${first(t.staff_name)} is ready for you at ${t.store_name}. Please come to the front desk.`;
+      const { sendSms } = await import("./sms");
+      // A service text, not marketing: paid by the platform like reminders and confirmations.
+      const result = await sendSms(storeId, String(t.phone), body, "nail_ready", appointmentId, undefined, { skipCreditDeduction: true, smsSource: "platform" });
+      if (!result.success) {
+        readyTextSentAt.delete(appointmentId);
+        return res.status(502).json({ message: result.error || "The text could not be sent." });
+      }
+      if (result.skipped) return res.status(409).json({ message: "This client has asked not to receive texts." });
+      return res.json({ sent: true });
+    } catch (err) {
+      console.error("[nail/text-ready]", err);
+      return res.status(500).json({ message: "Could not send the text" });
+    }
+  });
+
   // ── Manager PIN ────────────────────────────────────────────────────────────────
   // What opens the Manager menu on /nail and approves manager-only actions (a turn adjustment). Each salon
   // sets its own; it is kept only as a hash and checked here, never in the browser. A salon that has not set

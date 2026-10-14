@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Ban, CalendarDays, Clock, Hand, Phone, Play, Receipt, ShoppingBag, UserRound, X } from "lucide-react";
+import { Ban, CalendarDays, Clock, Hand, Phone, Play, Receipt, ShoppingBag, UserRound, X, MessageSquare } from "lucide-react";
 import { formatDuration, formatElapsed } from "./ticketDraft";
 import type { BoardTicket } from "./nailApi";
 
@@ -11,6 +11,8 @@ interface Props {
   onReassign: (t: BoardTicket) => void;
   onEdit: (t: BoardTicket) => void;
   onCancel: (t: BoardTicket) => void;
+  /** Text the client that their technician is ready. Offered for an assigned ticket that has not started. */
+  onTextReady?: (t: BoardTicket) => void;
   onClose: () => void;
   /** Server clock minus this device's clock, so times read the same on every POS station. */
   clockOffsetMs?: number;
@@ -41,6 +43,7 @@ export function TicketPopup(p: Props) {
         ...(t.staff ? [{ icon: ShoppingBag, label: "CHECKOUT", action: () => p.onCheckout(t) }] : []),
         { icon: UserRound, label: "REASSIGN", action: () => p.onReassign(t), disabled: !t.staff },
         { icon: Receipt, label: "TICKET", action: () => p.onEdit(t) },
+        ...(t.staff && t.client.phone && p.onTextReady ? [{ icon: MessageSquare, label: "TEXT READY", action: () => p.onTextReady!(t) }] : []),
         { icon: Ban, label: "CANCEL", action: () => p.onCancel(t), danger: true },
       ]
     : [

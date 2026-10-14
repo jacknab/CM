@@ -37,7 +37,7 @@ import { useStaffList } from "@/hooks/use-staff";
 import { getNowInTimezone } from "@/lib/timezone";
 import {
   ApiError, boardKey, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchCalendarBoardBookings, fetchClient,
-  clockInTech, clockOutTech, fetchNailConfig, fetchPosGrid, fetchScreenSettings, fetchTurn, reassignTicket, savePosGrid, saveScreenSettings, removeMarker, resolveMarkerClient, startTicket, updateTicket,
+  clockInTech, clockOutTech, textClientReady, fetchNailConfig, fetchPosGrid, fetchScreenSettings, fetchTurn, reassignTicket, savePosGrid, saveScreenSettings, removeMarker, resolveMarkerClient, startTicket, updateTicket,
   type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData, type TechSignIn, type TurnEarned, type TurnTech,
  keptOnDevice, keepNailConfig,} from "./nailApi";
 import { defaultPick, draftTotals, EMPTY_PICK, type DraftCustomLine, type NailPick, type TicketLine } from "./ticketDraft";
@@ -1082,6 +1082,12 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     onCheckout: (t: BoardTicket) => { checkoutStart.current = null; requestCheckout(t); },
     onReassign: (t: BoardTicket) => { setAssignError(null); setAssigning({ mode: t.staff ? "reassign" : "assign", ticket: t }); },
     onEdit: startEdit,
+    // "Amy is ready for you" by text. Needs the server; a ticket that only exists on this tablet cannot be texted yet.
+    onTextReady: (t: BoardTicket) => {
+      if (isLocalId(t.id)) { say("Not sent yet — this ticket is still on this tablet"); return; }
+      textClientReady(t.id).then((r) => say(r.alreadySent ? `Already texted ${t.client.name.split(" ")[0]}` : `Texted ${t.client.name.split(" ")[0]}`))
+        .catch((err: any) => toast({ title: "The text was not sent", description: err?.message, variant: "destructive" }));
+    },
     onCancel: (t: BoardTicket) => { if (window.confirm(`Cancel ${t.client.name}'s ticket?`)) act.mutate(() => cancelTicket(t.id, t.client.name)); },
   };
   // ── Tech ID sign-in ───────────────────────────────────────────────────────

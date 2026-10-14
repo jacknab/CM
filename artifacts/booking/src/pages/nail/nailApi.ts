@@ -659,6 +659,10 @@ async function punchOffline(storeId: number, staffId: number, action: "clock_in"
   return true;
 }
 
+/** Text the client that their technician is ready. Needs the server. */
+export const textClientReady = (id: number) =>
+  needsServer(() => call<{ sent: boolean; alreadySent?: boolean }>(`/api/nail/tickets/${id}/text-ready`, { method: "POST" }));
+
 /** Front-desk override: put a technician on the clock and into the turn order (the server tells every station). */
 export async function clockInTech(storeId: number, staffId: number): Promise<void> {
   if (await punchOffline(storeId, staffId, "clock_in")) return;
