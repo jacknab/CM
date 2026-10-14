@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useNailText } from "./i18n";
 import { Delete, Loader2 } from "lucide-react";
 import { TURN_UNIT, formatTurns } from "@shared/turnRules";
-import { TechSlipSheet } from "./TechSlipSheet";
 import { useShake } from "@/hooks/use-shake";
 import { ApiError, identifyTech, type TechSignIn } from "./nailApi";
 import { resumeOrSignIn } from "@/lib/resumeSignIn";
@@ -27,9 +26,7 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
   const [digits, setDigits] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const { t: tx, lang, setLang } = useNailText();
-  // MY SLIP: the same Tech ID opens the technician's own pay slip instead of the POS.
-  const [slipFor, setSlipFor] = useState<{ id: number; name: string } | null>(null);
+  const { t: tx } = useNailText();
   const { shakeClass, shake, onShakeEnd } = useShake();
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -43,14 +40,11 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
   const press = (d: string) => { setMessage(""); setDigits((cur) => (cur.length >= 2 ? cur : cur + d)); };
   const back = () => { setMessage(""); setDigits((cur) => cur.slice(0, -1)); };
 
-  const enter = useCallback(async (forSlip = false) => {
+  const enter = useCallback(async () => {
     if (busy || digits.length === 0) return;
     setBusy(true);
     try {
-      // MY SLIP signs the technician in exactly like ENTER (a technician using the system is clocked in).
-      // If signing in just handed them a waiting client, that is announced as usual instead of the slip.
       const who = await identifyTech(Number(digits));
-      if (forSlip && !who.justAssigned) { setDigits(""); setSlipFor({ id: who.staff.id, name: who.staff.name }); return; }
       onSignedIn(who);
     } catch (err) {
       // 401 = this device is no longer signed in to the salon's account (signed out in another tab, or the
@@ -109,21 +103,9 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
             <button type="button" className="ng-gate-key ghost" disabled={busy || digits.length === 0} onClick={back} aria-label="Delete" data-testid="tech-id-key-back"><Delete className="h-7 w-7" /></button>
           </div>
           <button type="button" className="ng-gate-enter" disabled={busy || digits.length === 0} onClick={() => void enter()} data-testid="tech-id-enter">{tx("enter")}</button>
-          <button type="button" className="ng-gate-turn-btn" style={{ marginTop: 10 }} disabled={busy || digits.length === 0} onClick={() => void enter(true)} data-testid="tech-id-my-slip">
-            {digits.length === 0 ? tx("mySlipFirst") : tx("mySlip")}
-          </button>
         </section>
 
         <section className="ng-gate-card ng-gate-wait" data-testid="tech-id-turn-queue">
-          {/* This tablet's language for the staff screens: English, Tiếng Việt, Español. */}
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }} role="group" aria-label="Language" data-testid="nail-lang">
-            {(["en", "vi", "es"] as const).map((code) => (
-              <button key={code} type="button" onClick={() => setLang(code)} aria-pressed={lang === code} data-testid={`nail-lang-${code}`}
-                style={{ minWidth: 48, height: 36, borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: lang === code ? "rgba(255,255,255,.18)" : "transparent", color: "inherit", fontWeight: 700, cursor: "pointer" }}>
-                {code.toUpperCase()}
-              </button>
-            ))}
-          </div>
           <button type="button" className="ng-gate-turn-btn" onClick={onOpenTurnPage} data-testid="tech-id-open-turn-page">{tx("turnQueue")}</button>
           {turnQueue.length === 0
             ? <p className="ng-gate-empty">{tx("noneClockedIn")}</p>
@@ -142,7 +124,6 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
         </section>
        </div>
       </div>
-      {slipFor && <TechSlipSheet staffId={slipFor.id} staffName={slipFor.name} timezone={timezone} onClose={() => setSlipFor(null)} />}
     </div>
   );
 }

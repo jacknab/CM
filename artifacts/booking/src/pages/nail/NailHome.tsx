@@ -11,7 +11,9 @@ import { EMPTY_ARRAY } from "@/lib/empty";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BarChart3, Bell, Clock, CreditCard, RefreshCw, Gift, KeyRound, LayoutGrid, Loader2, Lock, LockKeyhole, Printer, Search, Settings, ShoppingBag, CalendarPlus, Wallet } from "lucide-react";
+import { BarChart3, Bell, Clock, CreditCard, RefreshCw, Gift, KeyRound, Languages, LayoutGrid, Loader2, Lock, LockKeyhole, Printer, Receipt, Search, Settings, ShoppingBag, CalendarPlus, Wallet } from "lucide-react";
+import { useNailText, type NailLang } from "./i18n";
+import { SlipTechIdSheet, TechSlipSheet } from "./TechSlipSheet";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useAuth } from "@/hooks/use-auth";
 import { useServices } from "@/hooks/use-services";
@@ -108,6 +110,9 @@ export default function NailHome() {
   );
 }
 
+const LANG_ORDER: NailLang[] = ["en", "vi", "es"];
+const LANG_NAMES: Record<NailLang, string> = { en: "English", vi: "Tiếng Việt", es: "Español" };
+
 function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, storePhone, timezone, salesTax, cashDiscountPct, bookingSlug }: {
   /** The salon's booking address, used to ask for open times when booking a future visit. */
   bookingSlug: string;
@@ -140,6 +145,10 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // Who is at the POS right now. Nobody → the Tech ID keypad. For a technician it comes back after each saved ticket or
   // checkout; for the front desk (reception / manager / owner) only after two idle minutes.
   const [tech, setTech] = useState<TechSignIn["staff"] | null>(null);
+  // More → My Slip: whose slip is open, or asking for a Tech ID when no technician is signed in.
+  const [slipFor, setSlipFor] = useState<{ id: number; name: string } | null>(null);
+  const [slipAsk, setSlipAsk] = useState(false);
+  const { lang, setLang } = useNailText();
   // The full Turn page, opened from the top of the lock screen's turn queue.
   const [showTurnPage, setShowTurnPage] = useState(false);
   const { data: turnStaffList } = useStaffList();
@@ -978,30 +987,28 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     { key: "clients", label: "Client Lookup", icon: Search, run: () => setSheet("clients") },
     { key: "voucher", label: "Redeem Voucher", icon: Gift, run: () => setSheet("voucher") },
     ...(timeclockEnabled ? [{ key: "timeclock", label: "In / Out", icon: Clock, run: () => setSheet("timeclock") }] : []),
-    ...(posEnabled ? [
-      { key: "register", label: "Cash Drawer", sub: openDrawerSession ? "Open" : "Closed", icon: Wallet, run: () => setShowOpenRegister(true) },
-      { key: "retail", label: "Retail Sale", icon: ShoppingBag, run: () => navigate("/pos") },
-    ] : []),
+    ...(posEnabled ? [{ key: "retail", label: "Retail Sale", icon: ShoppingBag, run: () => navigate("/pos") }] : []),
+    // The signed-in technician's own slip; with nobody (or the front desk) signed in, it asks for a Tech ID.
+    { key: "myslip", label: "My Slip", icon: Receipt, run: () => { if (tech && !tech.frontDesk) setSlipFor({ id: tech.id, name: tech.name }); else setSlipAsk(true); } },
+    // This tablet's language for the staff screens; each tap goes to the next one.
+    { key: "language", label: "Language", sub: LANG_NAMES[lang], icon: Languages, keepOpen: true,
+      run: () => setLang(LANG_ORDER[(LANG_ORDER.indexOf(lang) + 1) % LANG_ORDER.length]) },
     // Opens the Manager tab (managerTiles below) once the manager PIN is entered.
     { key: "manager", label: "Manager", icon: KeyRound, run: () => setSheet("manager") },
-    { key: "messages", label: "Messages", icon: Bell, run: () => navigate("/sms-inbox") },
     ...(isMultiStation && currentRegisterName ? [{
       key: "station", icon: CreditCard, label: "Station", sub: currentRegisterName,
       run: () => setPairScreenOpen(true),
     }] : []),
     ...(offline ? [] : [{
       key: "refresh", label: "Hard Refresh", sub: "Fix a page that won't load", icon: RefreshCw, run: () => { void hardRefresh(); },
-      confirm: {
-        title: "Hard refresh?",
-        body: "This reloads the whole app from the server, like pressing Ctrl + Shift + R. Any ticket you're in the middle of building will be cleared. Your login and this tablet's station setup are kept.",
-        action: "REFRESH NOW",
-      },
     }]),
   ];
 
   // The Manager tab of the More popup — everything here is behind the manager PIN.
   const managerTiles: MoreTile[] = [
     { key: "settings", label: "Settings", icon: Settings, run: () => navigate("/settings") },
+    ...(posEnabled ? [{ key: "register", label: "Cash Drawer", sub: openDrawerSession ? "Open" : "Closed", icon: Wallet, run: () => setShowOpenRegister(true) }] : []),
+    { key: "messages", label: "Messages", icon: Bell, run: () => navigate("/sms-inbox") },
     { key: "keygrid", label: "Key Grid", sub: "Arrange the POS keys", icon: LayoutGrid, run: () => setGridEditor("open") },
     { key: "managerpin", label: "Manager PIN", sub: "Change the PIN for this menu", icon: KeyRound, run: () => { setShowMore(false); setPinChange(true); } },
     { key: "lockscreen", label: "Lock Screen", sub: saveLock.isPending ? "Saving…" : lockEnabled ? "On · Tech ID to use the POS" : "Off · no sign-in", icon: Lock, keepOpen: true,
@@ -1299,6 +1306,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       {clockInFor && <TechClockInSheet tech={clockInFor} busy={false} onSetIn={() => void setTechIn(clockInFor)} onClose={() => setClockInFor(null)} />}
 
       {showMore === "more" && <MoreMenu tiles={moreTiles} onClose={() => setShowMore(false)} />}
+      {slipAsk && <SlipTechIdSheet onClose={() => setSlipAsk(false)} onSlip={(who) => { setSlipAsk(false); setSlipFor(who); }} onSignedIn={(who) => { setSlipAsk(false); onTechSignedIn(who); }} />}
+      {slipFor && <TechSlipSheet staffId={slipFor.id} staffName={slipFor.name} timezone={timezone} onClose={() => setSlipFor(null)} />}
       {showMore === "manager" && <MoreMenu title="Manager" tiles={managerTiles} onClose={() => setShowMore(false)} onBack={() => setShowMore("more")} />}
 
       {showCheckIn && (

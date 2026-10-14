@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { buildTechSlipText, type TechSlip } from "@/lib/techSlip";
+import { ApiError, identifyTech, type TechSignIn } from "./nailApi";
 
 type Period = "today" | "week" | "pay";
 const PERIODS: { key: Period; label: string }[] = [
@@ -31,7 +32,7 @@ function printOnTablet(text: string): Promise<{ ok: boolean; error?: string }> {
 }
 
 /**
- * A technician's own pay slip, opened from the lock screen with their Tech ID: today (each ticket), this
+ * A technician's own pay slip, opened from More → My Slip (signed in, or with their Tech ID): today (each ticket), this
  * week or the pay period (each day), shown on screen and printed on the receipt printer only when they
  * ask — the front desk does not print slips for everyone.
  */
@@ -99,6 +100,55 @@ export function TechSlipSheet({ staffId, staffName, timezone, onClose }: { staff
           <button type="button" disabled={!slip || printing} onClick={() => void print()} data-testid="nail-slip-print"
             className={`assign-create-btn ${slip && !printing ? "assign-create-btn-ready" : ""}`}>{printing ? "PRINTING…" : "PRINT"}</button>
         </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * More → My Slip when no technician is signed in on this tablet: the technician types their own Tech ID,
+ * which signs them in exactly like the lock screen does (a technician using the system is clocked in).
+ * If signing in just handed them a waiting client, that is announced as usual instead of the slip.
+ */
+export function SlipTechIdSheet({ onSlip, onSignedIn, onClose }: {
+  onSlip: (staff: { id: number; name: string }) => void;
+  onSignedIn: (who: TechSignIn) => void;
+  onClose: () => void;
+}) {
+  const [digits, setDigits] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const press = (d: string) => { setMessage(null); setDigits((cur) => (cur.length >= 2 ? cur : cur + d)); };
+  const enter = async () => {
+    if (busy || !digits) return;
+    setBusy(true);
+    try {
+      const who = await identifyTech(Number(digits));
+      if (who.justAssigned) onSignedIn(who); else onSlip({ id: who.staff.id, name: who.staff.name });
+    } catch (err) {
+      setMessage(err instanceof ApiError && err.status === 404 ? "No technician has that ID." : (err as any)?.message || "Could not check the ID. It needs a connection.");
+      setDigits("");
+    } finally { setBusy(false); }
+  };
+  const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"];
+  return (
+    <>
+      <div className="assign-create-overlay" onClick={onClose} style={{ zIndex: 520 }} />
+      <div className="assign-create-modal" role="dialog" aria-modal="true" aria-label="My Slip" data-testid="nail-slip-id" style={{ zIndex: 521, maxWidth: 420 }}>
+        <div className="assign-create-header">
+          <h2>My Slip</h2>
+          <button type="button" className="assign-create-close" onClick={onClose} aria-label="Close">×</button>
+        </div>
+        <p style={{ textAlign: "center", fontSize: 34, fontWeight: 700, letterSpacing: 8, minHeight: 44, margin: "8px 0" }} data-testid="nail-slip-id-digits">{digits || <span style={{ fontSize: 18, fontWeight: 500, letterSpacing: 0, opacity: .5 }}>Enter your Tech ID</span>}</p>
+        {message && <p className="assign-create-error" role="alert">{message}</p>}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+          {keys.map((k, i) => k === "" ? <span key={i} /> : (
+            <button key={i} type="button" className="assign-create-item" disabled={busy} style={{ justifyContent: "center", fontSize: 24, height: 64 }}
+              onClick={() => (k === "⌫" ? setDigits((cur) => cur.slice(0, -1)) : press(k))} data-testid={`nail-slip-id-key-${k === "⌫" ? "back" : k}`}>{k}</button>
+          ))}
+        </div>
+        <button type="button" className="assign-create-item assign-create-item-sel" disabled={busy || !digits} onClick={() => void enter()}
+          style={{ justifyContent: "center", width: "100%", height: 60, marginTop: 10, fontSize: 20, fontWeight: 700 }} data-testid="nail-slip-id-enter">{busy ? "…" : "ENTER"}</button>
       </div>
     </>
   );
