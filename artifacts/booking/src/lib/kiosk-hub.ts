@@ -1,18 +1,33 @@
 import { localHub } from "./local-hub";
 
 /**
- * The kiosk asking the main POS tablet over the salon's own Wi-Fi (lib/local-hub.ts) when the internet is down:
- * look up a client by phone, and check a client in. The POS answers from what it holds and puts the client on
- * its waiting list (lib/nail-offline), exactly as a check-in at the front desk does offline.
+ * The kiosk (and the customer screen) asking the main POS tablet over the salon's own Wi-Fi
+ * (lib/local-hub.ts) when the internet is down. The POS answers from what it holds, the way it works offline
+ * itself: a lookup also says whether the client is already on a ticket or has a booking today (and marks that
+ * booking arrived); a check-in makes the same ticket the online kiosk makes — services, add-ons, nail options,
+ * the technician asked for or the next in turn — sent to the server when the connection is back.
  *
  * One request, one answer with the same `requestId`; no answer within a few seconds counts as no hub.
  */
-export interface KioskLookupAnswer { found: boolean; client?: { id: number; name: string } | null }
+export interface KioskLookupAnswer {
+  found: boolean;
+  client?: { id: number; name: string } | null;
+  /** Already on a ticket, or already waiting: nothing more to do here. */
+  alreadyOnTicket?: boolean;
+  /** A booking today: it has been marked arrived. */
+  todayAppointment?: { id: number; serviceName: string; staffName: string | null; staffAvatarThumbUrl: null; appointmentTime: string; ticketNumber: number | null } | null;
+}
 export interface KioskCheckinRequest {
   clientId: number | null; clientName: string; phone: string;
-  services: { name: string }[]; staffName: string | null;
+  /** The services in order (the first is the visit's main one); empty from the customer screen. */
+  serviceIds: number[];
+  addonIds: number[];
+  nail: { sizeId: number | null; shapeId: number | null; effectId: number | null };
+  /** The technician the client asked for. */
+  staffId: number | null;
 }
-export interface KioskCheckinAnswer { success: boolean; ticketNumber?: number | null; clientName?: string; error?: string }
+export interface KioskCheckinAnswer { success: boolean; ticketNumber?: number | null; clientName?: string; staffName?: string | null; error?: string }
+export interface KioskWaitAnswer { hasAvailableStaff: boolean; estimatedWaitMinutes: number | null }
 
 const ANSWER_MS = 6_000;
 
@@ -29,23 +44,35 @@ function ask<T>(type: string, body: Record<string, unknown>): Promise<T | null> 
 
 export const hubKioskLookup = (phone: string) => ask<KioskLookupAnswer>("hub_kiosk_lookup", { phone });
 export const hubKioskCheckin = (req: KioskCheckinRequest) => ask<KioskCheckinAnswer>("hub_kiosk_checkin", { ...req });
+export const hubKioskWait = () => ask<KioskWaitAnswer>("hub_kiosk_wait", {});
+
+const ids = (v: unknown): number[] => (Array.isArray(v) ? v.map(Number).filter((n) => Number.isInteger(n) && n > 0) : []);
+const idOrNull = (v: unknown): number | null => (v != null && Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : null);
 
 /** On the POS: answer the kiosk's requests. Returns the unsubscribe. */
 export function serveKioskOverHub(handlers: {
   lookup: (phone: string) => Promise<KioskLookupAnswer>;
   checkin: (req: KioskCheckinRequest) => Promise<KioskCheckinAnswer>;
+  wait: () => Promise<KioskWaitAnswer>;
 }): () => void {
   return localHub.onMessage((m: any) => {
-    if (m?.type === "hub_kiosk_lookup" && typeof m.requestId === "string") {
+    if (typeof m?.requestId !== "string") return;
+    const reply = (type: string, answer: object) => localHub.send({ type, requestId: m.requestId, ...answer });
+    if (m.type === "hub_kiosk_lookup") {
       void handlers.lookup(String(m.phone ?? "")).catch(() => ({ found: false }))
-        .then((answer) => localHub.send({ type: "hub_kiosk_lookup_result", requestId: m.requestId, ...answer }));
-    } else if (m?.type === "hub_kiosk_checkin" && typeof m.requestId === "string") {
+        .then((answer) => reply("hub_kiosk_lookup_result", answer));
+    } else if (m.type === "hub_kiosk_checkin") {
       void handlers.checkin({
-        clientId: Number.isFinite(Number(m.clientId)) && m.clientId != null ? Number(m.clientId) : null,
+        clientId: idOrNull(m.clientId),
         clientName: String(m.clientName ?? "Walk-in Guest"), phone: String(m.phone ?? ""),
-        services: Array.isArray(m.services) ? m.services : [], staffName: typeof m.staffName === "string" ? m.staffName : null,
+        serviceIds: ids(m.serviceIds), addonIds: ids(m.addonIds),
+        nail: { sizeId: idOrNull(m.nail?.sizeId), shapeId: idOrNull(m.nail?.shapeId), effectId: idOrNull(m.nail?.effectId) },
+        staffId: idOrNull(m.staffId),
       }).catch((err) => ({ success: false, error: (err as Error)?.message ?? "Check-in failed" }))
-        .then((answer) => localHub.send({ type: "hub_kiosk_checkin_result", requestId: m.requestId, ...answer }));
+        .then((answer) => reply("hub_kiosk_checkin_result", answer));
+    } else if (m.type === "hub_kiosk_wait") {
+      void handlers.wait().catch(() => ({ hasAvailableStaff: true, estimatedWaitMinutes: null }))
+        .then((answer) => reply("hub_kiosk_wait_result", answer));
     }
   });
 }

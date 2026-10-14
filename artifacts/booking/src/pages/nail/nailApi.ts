@@ -12,6 +12,7 @@ export { offlineSaleProblem };
 import { commonOfflineTech, computeOfflineLine, eventsFromDevice, type BaseLine, type OfflineLine, type OfflineLineTech } from "@/lib/nail-offline/line";
 import { snapshotDB } from "@/lib/snapshot-db";
 import type { OfflineBookingData } from "./offlineBooking";
+import { estimateWait, type WaitTech } from "@shared/waitEstimate";
 import { actionQueueDB } from "@/lib/action-queue-db";
 
 export const boardKey = (storeId: number) => ["/api/nail/board", storeId] as const;
@@ -742,6 +743,54 @@ export async function queueBooking(storeId: number, body: { clientId: number; se
     idempotency_key: key,
     payload: { storeId, ...body, ...times, info: { label } },
   });
+}
+
+/**
+ * A booking this client has today that has not been checked in, from the salon data this tablet holds (for a
+ * kiosk check-in with no internet). Null when there is none, or the tablet has no salon data.
+ */
+export async function todaysBookingOnDevice(storeId: number, timezone: string, clientId: number): Promise<{ id: number; serviceName: string; staffName: string | null; appointmentTime: string } | null> {
+  const snapshot = await snapshotDB.load(storeId).catch(() => null);
+  if (!snapshot) return null;
+  const tz = snapshot.timezone || timezone;
+  const dayOf = (d: Date | string | number) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date(d));
+  const today = dayOf(Date.now());
+  const appt = (snapshot.appointments ?? [])
+    .filter((a) => Number(a.customerId) === clientId && dayOf(a.date) === today && ["pending", "confirmed"].includes(String(a.status)))
+    .sort((a, b) => Date.parse(a.date) - Date.parse(b.date))[0];
+  if (!appt) return null;
+  return {
+    id: appt.id,
+    serviceName: (snapshot.services ?? []).find((sv) => sv.id === appt.serviceId)?.name ?? "Appointment",
+    staffName: (snapshot.staff ?? []).find((m) => m.id === appt.staffId)?.name ?? null,
+    appointmentTime: new Date(appt.date).toISOString(),
+  };
+}
+
+/**
+ * Whether someone can take a walk-in now, and roughly how long the wait is, from this tablet's board and
+ * turn line — the same estimate the Queue tab shows (shared/waitEstimate.ts). For the kiosk with no internet.
+ */
+export async function waitOnDevice(storeId: number): Promise<{ hasAvailableStaff: boolean; estimatedWaitMinutes: number | null }> {
+  const [line, board] = await Promise.all([offlineTurnLine(storeId, null).catch(() => null), fetchBoard().catch(() => null)]);
+  const now = Date.now();
+  const tickets = board?.tickets ?? [];
+  const started = tickets.filter((t) => t.status === "started");
+  const waitingTickets = tickets.filter((t) => t.status === "confirmed");
+  const techs: WaitTech[] = (line?.technicians ?? []).map((t) => {
+    const current = started.find((x) => x.staff?.id === t.id);
+    return {
+      id: t.id, clockedIn: !!t.clockedIn, paused: !!t.paused, busy: !!current,
+      remainingMin: current ? (Date.parse(current.startedAt ?? current.date) + current.duration * 60_000 - now) / 60_000
+        : waitingTickets.some((x) => x.staff?.id === t.id) ? 0 : null,
+    };
+  });
+  const waiting = [
+    ...waitingTickets.map((t) => ({ durationMin: t.duration, staffId: t.staff?.id ?? null })),
+    ...(board?.markers ?? []).map(() => ({ durationMin: null, staffId: null })),
+  ];
+  const e = estimateWait({ techs, waiting });
+  return { hasAvailableStaff: e.staffIn > 0 && (e.minutes ?? 0) <= 0, estimatedWaitMinutes: e.minutes };
 }
 
 /** Text the client that their technician is ready. Needs the server. */

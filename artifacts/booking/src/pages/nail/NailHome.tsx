@@ -44,7 +44,7 @@ import {
   ApiError, boardKey, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchCalendarBoardBookings, fetchClient, fetchUpcoming,
   clockInTech, clockOutTech, textClientReady, fetchNailConfig, fetchPosGrid, fetchScreenSettings, fetchTurn, reassignTicket, savePosGrid, saveScreenSettings, removeMarker, resolveMarkerClient, startTicket, updateTicket,
   type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData, type TechSignIn, type TurnEarned, type TurnTech,
- keptOnDevice, keepNailConfig, queueBooking, clientOnDevice,} from "./nailApi";
+ keptOnDevice, keepNailConfig, queueBooking, clientOnDevice, todaysBookingOnDevice, waitOnDevice,} from "./nailApi";
 import { defaultPick, draftTotals, EMPTY_PICK, type DraftCustomLine, type NailPick, type TicketLine } from "./ticketDraft";
 import { useNailRealtime } from "./useNailRealtime";
 import { TicketPanel } from "./TicketPanel";
@@ -132,33 +132,6 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  // The kiosk, with no internet, asks this POS tablet over the salon hub (lib/kiosk-hub.ts): find a client by
-  // phone, and check a client in — answered from what this tablet holds, the check-in put on its waiting list
-  // and sent to the server when the connection is back, like a front-desk check-in made offline.
-  useEffect(() => serveKioskOverHub({
-    lookup: async (phone) => {
-      const digits = phone.replace(/\D/g, "").slice(-10);
-      if (digits.length !== 10) return { found: false };
-      const id = await findClientId(storeId, digits);
-      if (id == null) return { found: false };
-      const c = await fetchClient(id).catch(() => clientOnDevice(id));
-      return c ? { found: true, client: { id: c.id, name: c.name } } : { found: false };
-    },
-    checkin: async (req) => {
-      const digits = req.phone.replace(/\D/g, "").slice(-10);
-      let client: { id: number; name: string; phone: string | null };
-      if (req.clientId != null) {
-        const c = await fetchClient(req.clientId).catch(() => clientOnDevice(req.clientId!));
-        client = { id: req.clientId, name: c?.name ?? req.clientName, phone: digits || c?.phone || null };
-      } else {
-        const made = await nailOffline.createClient(storeId, req.clientName, digits);
-        client = { id: made.id, name: made.name, phone: made.phone };
-      }
-      const { walkin } = await nailOffline.checkIn(storeId, client);
-      queryClient.invalidateQueries({ queryKey: boardKey(storeId) });
-      return { success: true, ticketNumber: walkin.ticketNumber ?? null, clientName: client.name };
-    },
-  }), [storeId, queryClient]);
   // Something done on this tablet offline that the server refused when it was sent (a booking whose time was
   // taken meanwhile): the front desk has to act on it, so it stays on screen until closed.
   useEffect(() => syncEngine.onConflict((_kind, detail) => {
@@ -506,6 +479,82 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   }, [groups]);
 
   const activeAddons = useMemo(() => ((storeAddons ?? []) as any[]).filter((a) => a.isActive !== false), [storeAddons]);
+
+  // The kiosk and the customer screen, with no internet, ask this POS tablet over the salon hub
+  // (lib/kiosk-hub.ts). Answered from what this tablet holds, the way it works offline itself; whatever it
+  // makes is sent to the server when the connection is back.
+  const hubCatalog = useRef({ services: [] as any[], addons: [] as any[], techs: [] as TurnTech[] });
+  hubCatalog.current = { services: (services ?? []) as any[], addons: activeAddons, techs: techList };
+  useEffect(() => serveKioskOverHub({
+    lookup: async (phone) => {
+      const digits = phone.replace(/\D/g, "").slice(-10);
+      if (digits.length !== 10) return { found: false };
+      const id = await findClientId(storeId, digits);
+      if (id == null) return { found: false };
+      const c = await fetchClient(id).catch(() => clientOnDevice(id));
+      if (!c) return { found: false };
+      const client = { id: c.id, name: c.name };
+      // Already on a ticket today (waiting or in the chair): nothing more to do, as online.
+      const b = await fetchBoard().catch(() => null);
+      if (b?.tickets.some((t) => t.client?.id === id && (t.status === "confirmed" || t.status === "started"))) return { found: true, client, alreadyOnTicket: true };
+      // A booking today: they are here — on the waiting list now, and the server marks the booking arrived when it gets the check-in.
+      const appt = await todaysBookingOnDevice(storeId, timezone, id);
+      if (appt) {
+        const { walkin, already } = await nailOffline.checkIn(storeId, { id, name: c.name, phone: digits });
+        if (already) return { found: true, client, alreadyOnTicket: true };
+        queryClient.invalidateQueries({ queryKey: boardKey(storeId) });
+        return { found: true, client, todayAppointment: { ...appt, staffAvatarThumbUrl: null, ticketNumber: walkin.ticketNumber ?? null } };
+      }
+      return { found: true, client };
+    },
+    checkin: async (req) => {
+      const digits = req.phone.replace(/\D/g, "").slice(-10);
+      let client: { id: number; name: string; phone: string | null };
+      if (req.clientId != null) {
+        const c = await fetchClient(req.clientId).catch(() => clientOnDevice(req.clientId!));
+        client = { id: req.clientId, name: c?.name ?? req.clientName, phone: digits || c?.phone || null };
+      } else {
+        const known = digits.length === 10 ? await findClientId(storeId, digits) : null;
+        const made = known == null ? await nailOffline.createClient(storeId, req.clientName, digits) : null;
+        client = made ? { id: made.id, name: made.name, phone: made.phone } : { id: known!, name: req.clientName, phone: digits };
+      }
+      const { services: svcs, addons, techs } = hubCatalog.current;
+      const first = svcs.find((x) => x.id === req.serviceIds[0]);
+      if (!first) {
+        // No service chosen (the customer screen): on the waiting list, as a check-in at the desk.
+        const { walkin } = await nailOffline.checkIn(storeId, client);
+        queryClient.invalidateQueries({ queryKey: boardKey(storeId) });
+        return { success: true, ticketNumber: walkin.ticketNumber ?? null, clientName: client.name, staffName: null };
+      }
+      // The same ticket the online kiosk makes: services, add-ons and nail options, to the technician asked for
+      // (when they are in and do the service) or the next in turn.
+      const extras = req.serviceIds.slice(1).map((id) => svcs.find((x) => x.id === id)).filter(Boolean) as any[];
+      const chosenAddons = req.addonIds.map((id) => addons.find((x) => x.id === id)).filter(Boolean) as any[];
+      const pick: NailPick = { size: req.nail.sizeId, shape: req.nail.shapeId, application: null, effect: req.nail.effectId };
+      const nail = nailAdjustment(await fetchNailConfig(first.id).catch(() => null), pick);
+      const price = (Number(first.price) || 0) + chosenAddons.reduce((sum, x) => sum + (Number(x.price) || 0), 0) + nail.price;
+      const duration = (Number(first.duration) || 0) + chosenAddons.reduce((sum, x) => sum + (Number(x.duration) || 0), 0) + nail.duration;
+      const wanted = req.staffId != null ? techs.find((t) => t.id === req.staffId) : undefined;
+      const make = (staff: TurnTech | undefined) => createTicket({
+        clientId: client.id, serviceId: first.id, addonIds: chosenAddons.map((x) => x.id), pick, customLines: [],
+        staffId: staff?.id ?? null, autoAssign: !staff, ...(extras.length > 0 && { extraServiceIds: extras.map((x) => x.id) }),
+      }, {
+        storeId, client: { name: client.name, phone: client.phone },
+        service: { name: first.name, price: Number(first.price) || 0, duration: Number(first.duration) || 0 },
+        addons: chosenAddons.map((x) => ({ id: x.id, name: x.name, price: Number(x.price) || 0, duration: Number(x.duration) || 0 })),
+        nailLines: nail.lines.map((l) => ({ label: l.label, price: l.price })), nailPriceAdjustment: nail.price,
+        staff: staff ? { id: staff.id, name: staff.name, color: staff.color ?? null } : null,
+        total: price, duration,
+        extras: extras.map((x) => ({ id: x.id, name: x.name, price: Number(x.price) || 0, duration: Number(x.duration) || 0 })),
+      });
+      let made;
+      try { made = await make(wanted); }
+      catch (err) { if (!wanted) throw err; made = await make(undefined); } // the one asked for can't take it: the turn line decides
+      queryClient.invalidateQueries({ queryKey: boardKey(storeId) });
+      return { success: true, ticketNumber: made.ticketNumber ?? null, clientName: client.name, staffName: made.staffName ?? null };
+    },
+    wait: () => waitOnDevice(storeId),
+  }), [storeId, timezone, queryClient]);
   const { data: linkedAddons } = useAddonsForService(service?.id ?? null);
   const suggestedAddons = useMemo(() => {
     const linked = ((linkedAddons ?? []) as any[]).filter((a) => a.isActive !== false);

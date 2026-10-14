@@ -1090,7 +1090,7 @@ export default function FrontDeskDisplay() {
 
   // ── No internet: the POS tablet checks the client in over the salon hub (lib/kiosk-hub.ts) ──
   const checkInOverHub = async (digits: string, clientId: number | null, name: string): Promise<boolean> => {
-    const answer = await hubKioskCheckin({ clientId, clientName: name, phone: digits, services: [], staffName: null });
+    const answer = await hubKioskCheckin({ clientId, clientName: name, phone: digits, serviceIds: [], addonIds: [], nail: { sizeId: null, shapeId: null, effectId: null }, staffId: null });
     if (!answer?.success) return false;
     const nm = answer.clientName ?? name;
     setClientInfo({ id: clientId ?? 0, name: nm, loyaltyPoints: 0, totalVisits: 0 } as any);
@@ -1148,7 +1148,20 @@ export default function FrontDeskDisplay() {
     } catch {
       // No internet: find them through the POS tablet; a new number goes on to the name keyboard.
       const answer = await hubKioskLookup(p);
-      if (answer?.found && answer.client) {
+      if (answer?.found && answer.client && answer.alreadyOnTicket) {
+        setClientInfo({ id: answer.client.id, name: answer.client.name, loyaltyPoints: 0, totalVisits: 0 } as any);
+        setTodayAppointment(null);
+        setScreen("checked_in_generic");
+        return;
+      } else if (answer?.found && answer.client && answer.todayAppointment) {
+        // Their booking today was marked arrived on the POS.
+        setClientInfo({ id: answer.client.id, name: answer.client.name, loyaltyPoints: 0, totalVisits: 0 } as any);
+        setTodayAppointment(answer.todayAppointment as any);
+        setScreen("appointment_confirmed");
+        const n = answer.todayAppointment.ticketNumber;
+        if (isNative && n != null) void printNativeCheckinTicket({ clientName: answer.client.name, ticketNumber: Number(n), qrValue: `BK:${answer.todayAppointment.id}` }).catch(() => false);
+        return;
+      } else if (answer?.found && answer.client) {
         if (await checkInOverHub(p, answer.client.id, answer.client.name)) return;
       } else if (answer) {
         setNewClientName("");

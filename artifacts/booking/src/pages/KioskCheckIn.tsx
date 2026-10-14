@@ -8,7 +8,7 @@ import { isValidNanpPrefix } from "../lib/phone-validation";
 import { useShake } from "../hooks/use-shake";
 import { kioskFetch, isKioskDeviceAuthorized } from "../lib/kioskDevice";
 import { localHub } from "../lib/local-hub";
-import { hubKioskCheckin, hubKioskLookup } from "../lib/kiosk-hub";
+import { hubKioskCheckin, hubKioskLookup, hubKioskWait } from "../lib/kiosk-hub";
 import { installRequestDeadline } from "../lib/request-deadline";
 import { syncEngine } from "../lib/sync-engine";
 
@@ -643,7 +643,12 @@ function KioskCheckInScreens() {
         setScreen(mins > 60 ? "fully_booked" : "wait_confirm");
       }
     } catch {
-      setScreen("service_type"); // fail open — don't block check-in on a network error
+      // No internet: the POS tablet works out the wait from its own board. No answer: fail open, as before.
+      const d = await hubKioskWait();
+      if (!d || d.hasAvailableStaff) { setScreen("service_type"); return; }
+      const mins = d.estimatedWaitMinutes ?? 30;
+      setWaitInfo({ estimatedMinutes: mins });
+      setScreen(mins > 60 ? "fully_booked" : "wait_confirm");
     }
   }, [slug]);
 
@@ -669,7 +674,8 @@ function KioskCheckInScreens() {
         setScreen("error");
       }
     } catch {
-      setError("Connection error. Please try again.");
+      // No internet: the text could never be sent, so say so instead of a connection error.
+      setError("We can't add you to the text list right now. Please check in to wait, or ask the front desk.");
       setScreen("error");
     }
   }, [slug, phone, clientInfo, newClientName]);
@@ -814,9 +820,23 @@ function KioskCheckInScreens() {
       offeredRef.current = { serviceIds: [], addonId: null };
       if (answer.found && answer.client) {
         setClientInfo(answer.client as any);
-        setTodayAppointment(null);
-        setScreen("welcome");
-        setTimeout(() => { checkAvailabilityAndRoute(); }, 1200);
+        if (answer.alreadyOnTicket) {
+          setError(t.alreadyCheckedIn);
+          setScreen("error");
+        } else if (answer.todayAppointment) {
+          // Their booking today is marked arrived on the POS: same screen and slip as online.
+          const appt = answer.todayAppointment;
+          setTodayAppointment(appt);
+          setScreen("appointment_confirmed");
+          void printCheckinSlip({
+            clientName: answer.client.name, staffName: appt.staffName ?? undefined,
+            services: appt.serviceName ? [{ name: appt.serviceName }] : [], appointmentId: appt.id, ticketNumber: appt.ticketNumber,
+          });
+        } else {
+          setTodayAppointment(null);
+          setScreen("welcome");
+          setTimeout(() => { checkAvailabilityAndRoute(); }, 1200);
+        }
       } else {
         setScreen("name_entry");
       }
@@ -950,14 +970,22 @@ function KioskCheckInScreens() {
     } catch {
       // No internet: the POS tablet checks the client in over the salon hub and gives the ticket number.
       const clientName = clientInfo?.name ?? (newClientName.trim() || "Walk-in Guest");
-      const staffName = selectedStaff && selectedStaff !== "none" ? (selectedStaff as StaffItem).name : null;
-      const answer = await hubKioskCheckin({ clientId: clientInfo?.id ?? null, clientName, phone, services: selectedServices.map((s) => ({ name: s.name })), staffName });
+      const answer = await hubKioskCheckin({
+        clientId: clientInfo?.id ?? null, clientName, phone,
+        serviceIds: selectedServices.map((s) => s.id), addonIds: selectedAddons.map((a) => a.id),
+        nail: { sizeId: nailSize?.nailVocabId ?? null, shapeId: nailShape?.nailVocabId ?? null, effectId: nailEffect?.nailVocabId ?? null },
+        staffId: staffIdToSend,
+      });
       if (!answer?.success) { setError(answer?.error || "Connection error. Please try again."); setScreen("error"); return; }
       markerTokenRef.current = null;
       setTicket({ token: "", clientName: answer.clientName ?? clientName, appointmentId: null, ticketNumber: answer.ticketNumber ?? null,
-        services: selectedServices, addons: selectedAddons, staffName: null, offline: true });
+        services: selectedServices, addons: selectedAddons, staffName: answer.staffName ?? null, offline: true });
       setScreen("ticket");
-      await printCheckinSlip({ clientName: answer.clientName ?? clientName, services: selectedServices.map((s) => ({ name: s.name })), appointmentId: null, ticketNumber: answer.ticketNumber ?? null });
+      await printCheckinSlip({
+        clientName: answer.clientName ?? clientName, staffName: answer.staffName ?? undefined,
+        services: [...selectedServices.map((s) => ({ name: s.name })), ...selectedAddons.map((a) => ({ name: `+ ${a.name}` }))],
+        appointmentId: null, ticketNumber: answer.ticketNumber ?? null,
+      });
     }
   };
 
