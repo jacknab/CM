@@ -55,13 +55,13 @@ export function isSalonAfterHours(
   return true;
 }
 
-export function buildAfterHoursGreeting(businessName: string, random: () => number = Math.random): string {
+/** The after-hours greeting. Every variant says the agent's name, so the caller knows who they're talking to. */
+export function buildAfterHoursGreeting(businessName: string, agentName: string, random: () => number = Math.random): string {
   const variants = [
-    `Thank you for calling ${businessName}. You've reached our after-hours answering service. How can I help you?`,
-    `Thanks for calling ${businessName}. We're currently closed, but you've reached our answering service. What can I help you with?`,
-    `${businessName}, after-hours answering service. How can I help?`,
-    `Thank you for calling ${businessName}. The salon is closed right now, but I can still help with an appointment or answer questions.`,
+    `Thank you for calling ${businessName}. You've reached our after-hours answering service, this is ${agentName}. How can I help you?`,
+    `Thanks for calling ${businessName}. We're currently closed, but this is ${agentName} with the answering service. What can I help you with?`,
+    `${businessName}, after-hours answering service, this is ${agentName}. How can I help?`,
+    `Thank you for calling ${businessName}, this is ${agentName}. The salon is closed right now, but I can still help with an appointment or answer questions.`,
   ];
   return variants[Math.floor(random() * variants.length)] ?? variants[0];
 }
-

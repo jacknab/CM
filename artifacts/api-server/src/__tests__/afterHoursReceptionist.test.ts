@@ -33,9 +33,13 @@ describe("after-hours receptionist context", () => {
   });
 
   it("builds a closed-salon answering-service greeting", () => {
-    const greeting = buildAfterHoursGreeting("Luxury Nails", () => 0);
+    const greeting = buildAfterHoursGreeting("Luxury Nails", "Autumn", () => 0);
     expect(greeting).toContain("Luxury Nails");
     expect(greeting).toContain("after-hours answering service");
+  });
+
+  it("says the agent's name in every after-hours greeting", () => {
+    for (const r of [0, 0.3, 0.6, 0.9]) expect(buildAfterHoursGreeting("Luxury Nails", "Autumn", () => r)).toContain("this is Autumn");
   });
 });
 

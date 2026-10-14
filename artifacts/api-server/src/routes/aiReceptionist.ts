@@ -112,6 +112,7 @@ import {
   type ConfiguredBusinessHours,
 } from "../lib/afterHoursReceptionist";
 import { getSalonOperationsOverview, summarizeSalonOperations } from "../lib/salonOperationsOverview";
+import { getStaffSchedules, summarizeSchedules } from "../lib/staffScheduleLookup";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -610,7 +611,7 @@ function buildOpenAiSessionConfig(
   // picked variant) and reused everywhere below so every reference in this
   // prompt, and the actual spoken greeting nudge, agree on the same line.
   const greetingLine = afterHours
-    ? buildAfterHoursGreeting(salon.businessName)
+    ? buildAfterHoursGreeting(salon.businessName, personaName)
     : buildTimeOfDayGreeting(salon.timezone, salon.businessName, personaName, "open_ended", salon.address);
 
   // ── Build the existing-appointment context block ──────────────────────────
@@ -680,6 +681,7 @@ English is the default response language.
 
 	Introduce yourself as ${personaName} near the start of the call.
 	${afterHours ? `AFTER-HOURS ROLE — The physical salon is currently closed. You are ${salon.businessName}'s answering service, not a receptionist physically at the salon. Keep helping with every remotely supported task, including booking appointments and answering questions about services, pricing, policies, and business information. If a request requires an open salon or an on-site staff member, explain that naturally without implying anyone is currently there. Never say "I'm the receptionist and the salon is closed."` : ""}
+	STAFF SCHEDULES — For any question about when a technician works, is in, is off, will be in on a day, or which services they do, call get_staff_schedule silently and answer from its result: give the hours for the day asked, or the next days they work. It is the salon's real schedule — never say you don't have a technician's schedule. Do not reveal other clients' details.
 	${!afterHours ? `LIVE SALON OPERATIONS — For questions about coming in now/today, walk-ins, current wait, how busy the salon is, immediate capacity, or whether a named staff member is working or available, call get_salon_operations_overview silently before answering. Use only its current values; never invent a wait or blindly invite someone in. Clocked-in means working, but verify availability and workload before suggesting the caller come in. Never mention Certxa, databases, tools, technical checks, or that you are checking. If walk-ins are disabled, do not offer one. If appointments are disabled, do not manufacture appointment availability.` : ""}
 	${isReturningCaller
   ? `Your FIRST spoken response must be: "${greetingLine}"` +
@@ -1099,6 +1101,23 @@ FAILURE RECOVERY: If technical difficulty occurs, briefly acknowledge and contin
     },
   ];
 
+  // Technicians' schedules — open or closed, a caller may ask when someone works.
+  bookingTools.push({
+    type: "function",
+    name: "get_staff_schedule",
+    description: "Get when technicians work: each day's working hours (or day off / salon closed / time away), whether they are clocked in right now, and which services they do. Call it for ANY question about when a technician is in, works, is off, or what a technician does. Pass staffName (or staffId) for one technician, or neither for everyone. Covers up to 14 days from startDate (default today).",
+    parameters: {
+      type: "object",
+      properties: {
+        staffName: { type: "string", description: "The technician's name as the caller said it (first name is fine)." },
+        staffId: { type: "number", description: "The technician's staffId, if known." },
+        startDate: { type: "string", description: "First day, YYYY-MM-DD in the salon's time. Defaults to today." },
+        days: { type: "number", description: "How many days, 1–14. Defaults to 7." },
+      },
+      required: [],
+    },
+  } as any);
+
   // Live operational state is intentionally daytime-only. After hours retains
   // the separate answering-service behavior and existing capabilities.
   if (!afterHours) {
@@ -1125,7 +1144,7 @@ Right now at the salon it is ${formatInTimeZone(new Date(), salon.timezone || "U
 For "what time do you open / close" on a given day, read that day's line above. A day marked Closed is closed; every other day is open for the hours shown.
 Services and prices:
 ${serviceList}
-${staffBlock ? `${staffBlock}\n` : ""}${amenitiesBlock ? `${amenitiesBlock}\n` : ""}Answer general questions directly and confidently from the facts above. Delegate only live availability, appointment records, and account-changing actions to the backend.
+${staffBlock ? `${staffBlock}\n` : ""}${amenitiesBlock ? `${amenitiesBlock}\n` : ""}Answer general questions directly and confidently from the facts above. Delegate only live availability, technicians' schedules (when someone works or is in), appointment records, and account-changing actions to the backend — the backend has every technician's real schedule, so never tell a caller you don't have it.
 Backend work is silent. Never say "let me check," "let me see," "I'll check," "I'll look that up," "I'll pull that up," "one moment," "please hold," or anything similar. Do not narrate tools, searches, systems, or waiting. When a result arrives, lead immediately with the answer.
 Never invent or guess an appointment time, price, ID, or add-on. Never say a booking, cancellation, reschedule, or add-on succeeded unless the backend result confirms it.
 Never say you'll transfer the call or that someone will call the caller back.`;
@@ -3233,6 +3252,8 @@ function createCallSession(twilioWs: WebSocket) {
   let outboundPacerTimer: ReturnType<typeof setInterval> | null = null;
   let ambienceCursor: AutumnBackgroundAudioCursor | null = null;
   let ambienceInitializationStarted = false;
+  // After hours there is no salon behind the answering service, so no salon sound at all.
+  let ambienceSilenced = false;
   let ambienceOutboundFrameCount = 0;
   // Twilio's playback path can silently swallow media frames sent in the first
   // instant after the stream "starts," even though the WebSocket itself is
@@ -3281,7 +3302,7 @@ function createCallSession(twilioWs: WebSocket) {
     if (!config.enabled) return;
     createAutumnBackgroundAudioCursor(config)
       .then((cursor) => {
-        if (sessionClosed || !cursor) return;
+        if (sessionClosed || !cursor || ambienceSilenced) return;
         ambienceCursor = cursor;
         startOutboundPacer();
         console.log(`[AI Receptionist] Salon ambience started for call ${sessionCallSid ?? "(pending)"} at volume=${config.volume}`);
@@ -3792,6 +3813,18 @@ function createCallSession(twilioWs: WebSocket) {
               const r = await handleGetWalkinAvailability(salon);
               if (r.success) { callOutcome = "walkin_guidance"; callNotes = r.message; }
               return r;
+            } else if (name === "get_staff_schedule") {
+              const a = parsedToolArgs as { staffName?: string; staffId?: number; startDate?: string; days?: number };
+              const result = await getStaffSchedules(salon.storeId, salon.timezone, {
+                name: typeof a.staffName === "string" ? a.staffName : undefined,
+                staffId: Number.isSafeInteger(Number(a.staffId)) && Number(a.staffId) > 0 ? Number(a.staffId) : undefined,
+                from: typeof a.startDate === "string" ? a.startDate : undefined,
+                days: Number(a.days) || undefined,
+              });
+              const message = summarizeSchedules(result, typeof a.staffName === "string" ? a.staffName : undefined);
+              callOutcome = "availability_checked";
+              callNotes = message;
+              return { success: true, message };
             } else if (name === "get_salon_operations_overview") {
               const overview = await getSalonOperationsOverview(salon.storeId, salon.timezone);
               const message = summarizeSalonOperations(overview);
@@ -4062,6 +4095,12 @@ function createCallSession(twilioWs: WebSocket) {
         // making the model appear to require the caller to say "hello" before it would speak.
         sessionCallSid = callSid ?? `call-${Date.now()}`;
         salon = loaded;
+        // The ambience starts the instant the stream connects, before the salon is known; an
+        // after-hours call drops it here, before the greeting is spoken.
+        if (isSalonAfterHours(loaded.businessHours, loaded.timezone)) {
+          ambienceSilenced = true;
+          ambienceCursor = null;
+        }
         startReceived = true;
         void configureSessionIfReady().catch((err) =>
           console.error("[AI Receptionist] Session config error:", err)
