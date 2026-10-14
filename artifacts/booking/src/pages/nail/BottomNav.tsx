@@ -12,14 +12,17 @@ interface Props {
    *  own header; now lives here so it's reachable from every tab, not just Queue. */
   onLookupByNumber: () => void;
   waiting: number;
-  live: boolean;
+  /** The connection, as the footer shows it: green when all is well, grey otherwise. */
+  status: { label: string; ok: boolean };
+  /** Tapping the connection opens what this tablet still has to send. */
+  onStatus: () => void;
 }
 
 // POS has no footer button — it's still opened from inside the app (ticket taps, check-in, checkout).
 // "In Service" also has no footer button — that view now lives inside the Queue tab (its "In
 // Service" stat tile jumps straight to it), so a separate nav entry for the old standalone board
 // would just be a second way to reach a page already reachable from Queue.
-export function BottomNav({ tab, onTab, onCheckIn, onMore, onLookupByNumber, waiting, live }: Props) {
+export function BottomNav({ tab, onTab, onCheckIn, onMore, onLookupByNumber, waiting, status, onStatus }: Props) {
   const { t: tx } = useNailText();
   const items: { id: string; label: string; icon: LucideIcon; active?: boolean; run: () => void; badgeCount?: number }[] = [
     { id: "Queue", label: tx("queue"), icon: Users, active: tab === "queue", run: () => onTab("queue"), badgeCount: waiting },
@@ -37,9 +40,10 @@ export function BottomNav({ tab, onTab, onCheckIn, onMore, onLookupByNumber, wai
           {!!badgeCount && <i className="nav-badge-service">{badgeCount}</i>}
         </button>
       ))}
-      <div className="connection" data-testid="nail-live" style={live ? undefined : { color: "#8b94a0" }}>
-        <span style={live ? undefined : { background: "#5d6571", boxShadow: "none" }} /> {live ? tx("connected") : tx("offline")}
-      </div>
+      <button type="button" className="connection" data-testid="nail-live" data-ok={status.ok} onClick={onStatus}
+        style={{ background: "none", border: "none", font: "inherit", cursor: "pointer", ...(status.ok ? {} : { color: "#8b94a0" }) }}>
+        <span style={status.ok ? undefined : { background: "#5d6571", boxShadow: "none" }} /> {status.label}
+      </button>
     </nav>
   );
 }

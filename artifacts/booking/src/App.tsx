@@ -735,8 +735,10 @@ function AppRoutes() {
           <AccountStatusGate>
             {routes}
           </AccountStatusGate>
-          {location.pathname !== "/calendar" && <OfflineStatusBanner />}
-          <SyncConflictPanel />
+          {/* No offline badge on the salon screens: /nail shows its connection in its footer; the kiosk and the
+              customer screen never show the system's state to clients. */}
+          {location.pathname !== "/calendar" && !/^\/(nail|kiosk|frontdesk)(\/|$)/.test(location.pathname) && <OfflineStatusBanner />}
+          {!/^\/(kiosk|frontdesk)(\/|$)/.test(location.pathname) && <SyncConflictPanel />}
           {/* Global mobile bottom nav — fixed bottom-0, visible on every authenticated page */}
           <MobileBottomNav />
         </SnapshotProvider>

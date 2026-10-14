@@ -30,6 +30,10 @@ const T = {
   more: { en: "More", vi: "Thêm", es: "Más" },
   connected: { en: "Connected", vi: "Đã kết nối", es: "Conectado" },
   offline: { en: "Offline", vi: "Mất mạng", es: "Sin conexión" },
+  sending: { en: "Sending", vi: "Đang gửi", es: "Enviando" },
+  needsAttention: { en: "Needs attention", vi: "Cần xem lại", es: "Requiere atención" },
+  signInNeeded: { en: "Sign in needed", vi: "Cần đăng nhập", es: "Inicie sesión" },
+  storageProblem: { en: "Storage problem", vi: "Lỗi bộ nhớ", es: "Error de almacenamiento" },
   // technician cards
   inService: { en: "IN SERVICE", vi: "ĐANG LÀM", es: "EN SERVICIO" },
   assigned: { en: "ASSIGNED", vi: "ĐÃ GIAO", es: "ASIGNADO" },

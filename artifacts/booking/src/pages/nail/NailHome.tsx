@@ -163,7 +163,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // More → My Slip: whose slip is open, or asking for a Tech ID when no technician is signed in.
   const [slipFor, setSlipFor] = useState<{ id: number; name: string } | null>(null);
   const [slipAsk, setSlipAsk] = useState(false);
-  const { lang, setLang } = useNailText();
+  const { lang, setLang, t: nailText } = useNailText();
   // The full Turn page, opened from the top of the lock screen's turn queue.
   const [showTurnPage, setShowTurnPage] = useState(false);
   const { data: turnStaffList } = useStaffList();
@@ -1140,6 +1140,14 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // Offline mode runs from cached files — wiping them there would break it, so no Hard Refresh while offline.
   const offline = useNetworkStatus() === "offline";
   const [showQueued, setShowQueued] = useState(false);
+  // The connection, in the footer (there is no offline badge at the top of the screen): offline, or what this
+  // tablet still has to send, or a problem it needs someone for. Tapping it shows the details.
+  const footerStatus = recovery.storage ? { label: nailText("storageProblem"), ok: false }
+    : recovery.signIn ? { label: nailText("signInNeeded"), ok: false }
+    : offline || !live ? { label: nailText("offline"), ok: false }
+    : queued.attention > 0 ? { label: nailText("needsAttention"), ok: false }
+    : queued.pending > 0 ? { label: nailText("sending"), ok: true }
+    : { label: nailText("connected"), ok: true };
   const moreTiles: MoreTile[] = [
     { key: "book", label: "Book Appointment", icon: CalendarPlus, run: () => { setFrontdeskPhone(""); setShowBook(true); } },
     { key: "clients", label: "Client Lookup", icon: Search, run: () => setSheet("clients") },
@@ -1356,15 +1364,6 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       <a className="nail-skip-link" href="#nail-main">Skip to main content</a>
       <h1 className="sr-only">Nail salon front desk</h1>
       {notice && <div className="nail-notice" data-testid="nail-notice">{notice}</div>}
-      {(offline || queued.pending > 0 || queued.attention > 0 || recovery.signIn || recovery.storage) && (
-        <button type="button" className="nail-offline-pill" data-testid="nail-offline-pill" onClick={() => setShowQueued(true)}>
-          {recovery.storage ? "TABLET STORAGE PROBLEM" : recovery.signIn ? "SIGN IN NEEDED" : offline ? "OFFLINE" : "SENDING"}
-          {offline && board?.cachedAt && ` · AS OF ${new Date(board.cachedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`}
-          {queued.pending > 0 && ` · ${queued.pending} TO SEND`}
-          {queued.attention > 0 && ` · ${queued.attention} NEED ATTENTION`}
-          {queued.cash.count > 0 && ` · $${queued.cash.amount.toFixed(2)} CASH NOT SENT`}
-        </button>
-      )}
       {showQueued && <OfflineQueueSheet storeId={storeId} offline={offline} onClose={() => setShowQueued(false)} />}
 
       <main id="nail-main" className={`pos-shell ${tab === "queue" ? "checkin-page" : ""} ${tab === "techs" ? "techs-page" : ""}`}>
@@ -1459,7 +1458,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
           <QueueTab techs={techList} tickets={tickets} markers={markers} dayBookings={dayBookings} glance={board?.glance} upcoming={upcoming} appointmentsLoading={upcomingPending || (needsCalendarFallback && calendarFallbackPending)} appointmentsError={(upcomingError && !upcoming) || (needsCalendarFallback && calendarFallbackError)} timezone={timezone} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} initialView={queueView} onMarker={(m) => void startFromMarker(m)} onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))} onTicket={(t) => setPopupId(t.id)} onAssignTicket={(t) => { setAssignError(null); setAssigning({ mode: "assign", ticket: t }); }} onStartTicket={ticketActions.onStart} onTicketTap={(t) => setPopupId(t.id)} onTechs={() => setTab("techs")} />
         )}
 
-      <BottomNav tab={tab} onTab={(next) => { setQueueView(null); if (next === "queue" && tab === "queue") { setPopupId(null); setTech(null); } else setTab(next); }} onCheckIn={openCheckIn} onMore={() => setShowMore("more")} onLookupByNumber={() => setShowLookupByNumber(true)} waiting={waitingCount} live={live} />
+      <BottomNav tab={tab} onTab={(next) => { setQueueView(null); if (next === "queue" && tab === "queue") { setPopupId(null); setTech(null); } else setTab(next); }} onCheckIn={openCheckIn} onMore={() => setShowMore("more")} onLookupByNumber={() => setShowLookupByNumber(true)} waiting={waitingCount} status={footerStatus} onStatus={() => setShowQueued(true)} />
       </main>
 
       {showGift && <GiftCardSheet onClose={() => setShowGift(false)} onSay={say} />}
