@@ -64,6 +64,7 @@ import { TechIdGate } from "./TechIdGate";
 import { OfflineQueueSheet } from "./OfflineQueueSheet";
 import { TurnEarnedPopup } from "./TurnEarnedPopup";
 import { ChangeManagerPinSheet } from "./ChangeManagerPinSheet";
+import { BookingPanel, type BookingSlot } from "./BookingPanel";
 import { GridEditor } from "./GridEditor";
 import { RegisterPicker } from "./RegisterPicker";
 import { PairCustomerScreenDialog, StationsFullBanner } from "@/components/pos/PairCustomerScreen";
@@ -102,11 +103,14 @@ export default function NailHome() {
       timezone={st.timezone ?? "UTC"}
       salesTax={{ rate: Number(st.salesTaxRate ?? 0) || 0, services: st.taxServicesTaxable === true, products: st.taxProductsTaxable !== false }}
       cashDiscountPct={Number((st as any).cashDiscountPercent ?? 0) || 0}
+      bookingSlug={st.bookingSlug ?? ""}
     />
   );
 }
 
-function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, storePhone, timezone, salesTax, cashDiscountPct }: {
+function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, storePhone, timezone, salesTax, cashDiscountPct, bookingSlug }: {
+  /** The salon's booking address, used to ask for open times when booking a future visit. */
+  bookingSlug: string;
   storeId: number; storeName: string; storeAddress?: string; storeCityStateZip?: string; storePhone?: string; timezone: string; salesTax: SalesTaxSettings;
   /** Cash price: percent off a ticket paid entirely in cash. 0 = off. */
   cashDiscountPct: number;
@@ -151,6 +155,9 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const [startedNotice, setStartedNotice] = useState<Array<{ ticketNumber: number; serviceName: string; staffName: string | null; appointmentId: number; clientName?: string; started?: boolean }> | null>(null);
   const [assignedNotice, setAssignedNotice] = useState<{ clientName: string | null; ticketNumber: number | null; staffName: string } | null>(null);
   const [client, setClient] = useState<ClientSummary | null>(null);
+  // Booking a future visit on the ticket screen: the services as for a ticket, then PICK TIME swaps the service
+  // keys for day / time / technician keys (BookingPanel), and BOOK saves it. Null = building a walk-in ticket.
+  const [booking, setBooking] = useState<{ step: "services" | "time"; slot: BookingSlot | null } | null>(null);
   const [checkinId, setCheckinId] = useState<number | null>(null);
   const [service, setService] = useState<CatalogService | null>(null);
   // Further services on the same ticket. Add-ons and nail options belong to the first service.
@@ -496,7 +503,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // ── ticket building ───────────────────────────────────────────────────────
   const resetDraft = useCallback(() => {
     setClient(null); setCheckinId(null); setService(null); setExtraServices([]); setAddonIds([]); setPick(EMPTY_PICK); setCustoms([]);
-    setEditing(null); pickSeededFor.current = null; setMoreAddons(false);
+    setEditing(null); pickSeededFor.current = null; setMoreAddons(false); setBooking(null);
   }, []);
 
   // Done at the POS: a technician hands it back to the keypad; the front desk carries on.
@@ -607,6 +614,32 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // Saving a ticket hands it to TURN: the next technician in line who can do the service gets it. It waits with
   // them until START is pressed. Nobody free → it waits, unassigned, and the next tech to finish a client picks it up.
   const checkinStaffId = checkinId != null ? markers.find((m) => m.id === checkinId)?.staffId ?? null : null;
+  const bookVisit = useMutation({
+    mutationFn: async () => {
+      if (!client || !service || !booking?.slot) throw new Error("Pick a time first");
+      if (extraServices.length > 1) throw new Error("A booking can have up to 2 services.");
+      const res = await fetch("/api/nail/bookings", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: client.id, serviceId: service.id, extraServiceId: extraServices[0]?.id ?? null, addonIds,
+          staffId: booking.slot.staffId, extraStaffId: booking.slot.extraStaffId ?? null, date: booking.slot.time }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message || "Could not save the booking");
+      return data;
+    },
+    onSuccess: () => {
+      const slot = booking?.slot;
+      say(`Booked ${client?.name.split(" ")[0] ?? "client"} · ${slot ? bookingLabel(slot) : ""}`);
+      resetDraft(); invalidateBoard(); setTab("queue");
+    },
+    onError: (err: any) => { toast({ title: "Not booked", description: err?.message, variant: "destructive" }); setBooking((b) => (b ? { ...b, slot: null } : b)); },
+  });
+  /** "Sat, Oct 18 · 10:30 AM · Amy" (and the second technician, when the visit is split). */
+  const bookingLabel = (slot: BookingSlot) => {
+    const when = new Date(slot.time).toLocaleString("en-US", { timeZone: timezone, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    return `${when} · ${slot.staffName}${slot.extraStaffName && slot.extraStaffName !== slot.staffName ? ` then ${slot.extraStaffName}` : ""}`;
+  };
+
   const create = useMutation({
     // With no network the ticket is saved on this device instead (the default would hold the save back).
     networkMode: "always",
@@ -1190,23 +1223,35 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
           <>
             <TicketPanel
               client={client}
-              badge={editing ? `#${editing.ticketNumber ?? editing.id}` : "NEW"}
+              badge={booking ? "BOOK" : editing ? `#${editing.ticketNumber ?? editing.id}` : "NEW"}
               lines={draft.lines}
               duration={draft.duration}
               price={draft.price}
-               submitLabel={editing ? "UPDATE TICKET" : !client ? "CHOOSE A CLIENT FIRST" : !service ? "ADD A SERVICE FIRST" : "SAVE TICKET"}
-              canSubmit={canSubmit}
-              busy={busy}
+              submitLabel={booking ? (!service ? "ADD A SERVICE FIRST" : booking.step === "services" ? "PICK TIME" : booking.slot ? "BOOK" : "PICK A TIME")
+                : editing ? "UPDATE TICKET" : !client ? "CHOOSE A CLIENT FIRST" : !service ? "ADD A SERVICE FIRST" : "SAVE TICKET"}
+              canSubmit={booking ? canSubmit && (booking.step === "services" || !!booking.slot) : canSubmit}
+              busy={booking ? bookVisit.isPending : busy}
+              appointment={booking?.slot ? bookingLabel(booking.slot) : null}
               editing={!!editing}
               onRemove={removeLine}
               onClear={clearDraft}
-              onSubmit={submit}
-              onPayNow={editing || !service ? undefined : () => payNow()}
+              onSubmit={!booking ? submit : booking.step === "services"
+                ? () => { if (extraServices.length > 1) { say("A booking can have up to 2 services"); return; } setBooking({ step: "time", slot: null }); }
+                : () => bookVisit.mutate()}
+              onPayNow={booking || editing || !service ? undefined : () => payNow()}
             />
             <section className="work-area">
               <div className="sale-area">
                 <Keypad locked={!client} onEnter={addCustom} onGiftCard={() => setShowGift(true)} onCheckoutFn={payNowWith} onNotice={say}
                   onNoSale={() => { void openCashDrawerHardware({ onThermalPrint: thermalPrinter.isConnected ? thermalPrinter.print : undefined }); recordNoSale({ drawerId, performedBy: tech?.name }); say("Cash drawer opened"); }} />
+                {booking?.step === "time" && service ? (
+                  <BookingPanel
+                    slug={bookingSlug} timezone={timezone} serviceId={service.id} extraServiceId={extraServices[0]?.id ?? null}
+                    duration={draft.duration} technicians={techList.map((t) => ({ id: t.id, name: t.name, color: t.color ?? null }))}
+                    slot={booking.slot} onSlot={(slot) => setBooking((b) => (b ? { ...b, slot } : b))}
+                    onServices={() => setBooking({ step: "services", slot: null })}
+                  />
+                ) : (
                 <CatalogPanel
                   layout={posGrid?.config ?? null}
                   locked={!client}
@@ -1222,6 +1267,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
                   addonIds={addonIds}
                   onToggleAddon={toggleAddon}
                 />
+                )}
               </div>
             </section>
           </>
@@ -1286,7 +1332,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
           walkInsEnabled={false}
           phoneFromFrontdesk={frontdeskPhone}
           onClose={() => { setShowBook(false); setFrontdeskPhone(""); }}
-          onSelectClient={(id) => { setShowBook(false); setFrontdeskPhone(""); navigate(`/booking/new?clientId=${id}`); }}
+          onSelectClient={(id) => { setShowBook(false); setFrontdeskPhone(""); resetDraft(); void pickClient(id).then(() => setBooking({ step: "services", slot: null })); }}
           onWalkIn={() => setShowBook(false)}
         />
       )}

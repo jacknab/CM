@@ -8784,8 +8784,11 @@ If you have any questions, please contact your administrator.
       if (storeStatusAvail === "suspended" || storeStatusAvail === "canceled") {
         return res.status(403).json({ message: "This business is not currently accepting bookings." });
       }
+      // Salon staff signed in to this salon (booking from /nail) are not held to the rules for clients
+      // booking themselves online: online booking switched off, the minimum notice, the advance cap.
+      const staffView = req.query.staff === "1" && await sessionCoversStore(req, store.id);
       // Booking Controls: online booking turned off for this store.
-      if (((store as any).onlineBookingMode ?? "all") === "off") return res.json([]);
+      if (!staffView && ((store as any).onlineBookingMode ?? "all") === "off") return res.json([]);
 
       const serviceId = Number(req.query.serviceId);
       const date = String(req.query.date);
@@ -8869,11 +8872,11 @@ If you have any questions, please contact your administrator.
       const nowUtc = new Date();
       // Minimum-notice window (Booking Controls). Clients can't book a slot that
       // starts sooner than this many hours from now.
-      const bookingWindowMs = Math.max(0, Number(calSettings?.bookingWindowHours ?? 0)) * 3600_000;
+      const bookingWindowMs = staffView ? 0 : Math.max(0, Number(calSettings?.bookingWindowHours ?? 0)) * 3600_000;
       const earliestBookableUtc = new Date(nowUtc.getTime() + bookingWindowMs);
       // Booking Controls: advance-booking cap — clients can't book further ahead
       // than N months from today when the limit is enabled.
-      const latestBookableUtc = (store as any).advanceBookingEnabled
+      const latestBookableUtc = !staffView && (store as any).advanceBookingEnabled
         ? (() => { const d = new Date(nowUtc); d.setMonth(d.getMonth() + Math.max(1, Number((store as any).advanceBookingMonths ?? 3))); return d; })()
         : null;
 
@@ -19159,6 +19162,78 @@ or
     } catch (err) {
       console.error("[nail/gift-cards sell]", err);
       return res.status(500).json({ message: "Could not sell the gift card" });
+    }
+  });
+
+  // POST /api/nail/bookings — a future booking made at the /nail desk, on the same screen as a ticket. One
+  // appointment per service, back to back; the second stays with the first technician when they perform it and
+  // are free, otherwise goes to the technician the open-times list named (or anyone free who performs it). Not a
+  // walk-in, so outside the turn rotation. The client gets the usual booking confirmation.
+  app.post("/api/nail/bookings", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const body = z.object({
+        clientId: z.number().int().positive(),
+        serviceId: z.number().int().positive(),
+        extraServiceId: z.number().int().positive().nullable().optional(),
+        addonIds: z.array(z.number().int().positive()).max(20).optional(),
+        staffId: z.number().int().positive(),
+        extraStaffId: z.number().int().positive().nullable().optional(),
+        date: z.string().datetime(),
+        notes: z.string().max(500).nullable().optional(),
+      }).safeParse(req.body);
+      if (!body.success) return res.status(400).json({ message: "Invalid booking" });
+      const d = body.data;
+      const store: any = await storage.getStore(storeId);
+      const client = await storage.getCustomer(d.clientId);
+      if (!client || (client as any).storeId !== storeId) return res.status(404).json({ message: "Client not found" });
+      const service = await storage.getService(d.serviceId);
+      if (!service || service.storeId !== storeId) return res.status(400).json({ message: "That service is no longer in the catalog." });
+      const extra = d.extraServiceId ? await storage.getService(d.extraServiceId) : null;
+      if (d.extraServiceId && (!extra || extra.storeId !== storeId)) return res.status(400).json({ message: "The second service is no longer in the catalog." });
+      const addonRows = (await Promise.all((d.addonIds ?? []).map((id) => storage.getAddon(id)))).filter((a): a is NonNullable<typeof a> => !!a && (a as any).storeId === storeId);
+      const firstMinutes = (Number(service.duration) || 30) + addonRows.reduce((sum, a) => sum + (Number(a.duration) || 0), 0);
+      if (extra && firstMinutes + (Number(extra.duration) || 30) > MAX_VISIT_MINUTES) {
+        return res.status(400).json({ message: "Two services can be booked together for up to 2½ hours. Book the second one separately." });
+      }
+      const start = new Date(d.date);
+      const first = await atomicCreateBooking({
+        storeId, timezone: store?.timezone ?? "UTC", startTime: start, durationMinutes: firstMinutes, staffId: d.staffId, serviceId: service.id,
+        customerId: client.id, notes: d.notes ?? null, status: "pending", resourceId: null, packageId: null,
+      });
+      if (!first.ok) return res.status(409).json({ message: "That time was just taken. Pick another time." });
+      const firstId = first.data.id;
+      if (addonRows.length) await storage.setAppointmentAddons(firstId, addonRows.map((a) => a.id));
+      let second: { id: number; staffId: number; staffName: string } | null = null;
+      if (extra) {
+        const secondStart = new Date(start.getTime() + firstMinutes * 60_000);
+        const performers = (await storage.getStaffForService(extra.id)).filter((m: any) => m.status !== "removed" && m.status !== "deactivated");
+        const order = [d.staffId, d.extraStaffId ?? null].filter((x): x is number => x != null);
+        const ordered = [...order.map((id) => performers.find((m) => m.id === id)).filter((m): m is NonNullable<typeof m> => !!m), ...performers.filter((m) => !order.includes(m.id))];
+        for (const member of ordered) {
+          const r = await atomicCreateBooking({
+            storeId, timezone: store?.timezone ?? "UTC", startTime: secondStart, durationMinutes: Number(extra.duration) || 30, staffId: member.id, serviceId: extra.id,
+            customerId: client.id, notes: d.notes ?? null, status: "pending", resourceId: null, packageId: null,
+          });
+          if (r.ok) { second = { id: r.data.id, staffId: member.id, staffName: member.name }; break; }
+        }
+        if (!second) {
+          await storage.deleteAppointment(firstId).catch(() => {});
+          return res.status(409).json({ message: "No technician is free for the second service right after the first. Pick another time." });
+        }
+        await pool.query(`UPDATE appointments SET ticket_group_id = $1 WHERE id = ANY($2::int[]) AND store_id = $3`, [firstId, [firstId, second.id], storeId]);
+      }
+      const full = await storage.getAppointment(firstId);
+      if (full) {
+        sendBookingConfirmation(full).catch(console.error);
+        sendBookingConfirmationEmail(full).catch(console.error);
+      }
+      broadcastSyncEvent({ type: "booking_created", storeId, appointmentId: firstId, source: "nail" } as any);
+      return res.status(201).json({ appointmentId: firstId, date: start.toISOString(), staffId: d.staffId, second });
+    } catch (err) {
+      console.error("[nail/bookings]", err);
+      return res.status(500).json({ message: "Could not save the booking" });
     }
   });
 

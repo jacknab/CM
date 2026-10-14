@@ -18,9 +18,11 @@ interface Props {
   onSubmit: () => void;
   /** Create the ticket AND go straight to paying it (only while building a new ticket). */
   onPayNow?: () => void;
+  /** A booking being made: when and with whom, shown under the services ("Sat, Oct 18 · 10:30 AM · Amy"). */
+  appointment?: string | null;
 }
 
-export function TicketPanel({ client, badge, lines, duration, price, submitLabel, canSubmit, busy, editing, onRemove, onClear, onSubmit, onPayNow }: Props) {
+export function TicketPanel({ client, badge, lines, duration, price, submitLabel, canSubmit, busy, editing, onRemove, onClear, onSubmit, onPayNow, appointment }: Props) {
   return (
     <section className="ticket-panel" data-testid="nail-ticket-panel">
       {client && (
@@ -62,6 +64,11 @@ export function TicketPanel({ client, badge, lines, duration, price, submitLabel
       </div>
 
       <div className="ticket-total">
+        {appointment && (
+          <div className="time-estimate" data-testid="nail-ticket-appointment">
+            <span>BOOKING</span>{" "}<strong>{appointment}</strong>
+          </div>
+        )}
         {lines.length > 0 && duration > 0 && (
           <div className="time-estimate">
             <span>EST. TIME</span>{" "}
