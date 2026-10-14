@@ -17,6 +17,7 @@ import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { requireOptionalNativeModule } from 'expo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Updates from 'expo-updates';
 
 interface NativeAppRestart {
   isDefaultHome(): boolean;
@@ -74,6 +75,28 @@ export function openDeviceSettings(): void {
   try { native?.openDeviceSettings(); } catch { /* no settings app to open */ }
 }
 
+const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+  Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timed out')), ms))]);
+
+/**
+ * Download a waiting over-the-air update before the nightly restart, so the restart starts it. On its own the
+ * app only downloads an update as it launches and runs it from the launch after — two nights for every update
+ * (the pay-slip printing published 2026-10-13 had not reached the tablets the next morning). No connection,
+ * or nothing new: nothing happens, and the restart goes ahead as before.
+ */
+async function fetchWaitingUpdate(): Promise<void> {
+  if (!Updates.isEnabled) return;
+  try {
+    const check = await withTimeout(Updates.checkForUpdateAsync(), 20_000);
+    if (check.isAvailable) {
+      await withTimeout(Updates.fetchUpdateAsync(), 90_000);
+      console.log('[nightly-restart] downloaded the new update; the restart starts it');
+    }
+  } catch (e: any) {
+    console.warn('[nightly-restart] update check skipped:', e?.message ?? e);
+  }
+}
+
 const localDateKey = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
@@ -98,6 +121,9 @@ export function useNightlyRestart(isBusy: () => boolean, lastActivityAt: () => n
         const today = localDateKey(now);
         if ((await AsyncStorage.getItem(LAST_RESTART_KEY)) === today) return;
         await AsyncStorage.setItem(LAST_RESTART_KEY, today);
+        await fetchWaitingUpdate();
+        // Something may have started while the update was downloading: then wait for the next minute's check.
+        if (isBusy()) { await AsyncStorage.removeItem(LAST_RESTART_KEY); return; }
         console.log('[nightly-restart] restarting the app');
         native.restart();
       } catch (e: any) {

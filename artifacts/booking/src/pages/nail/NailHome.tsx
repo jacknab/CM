@@ -1491,7 +1491,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
           }}
           onPrintTicket={thermalPrinter.isConnected ? async (result) => {
             const appointment = result.todayAppointment;
-            const qrValue = appointment ? `BK:${appointment.id}` : result.checkin ? `CI:${result.checkin.token}` : "";
+            const qrValue = appointment ? `BK:${appointment.id}` : result.checkin?.token ? `CI:${result.checkin.token}` : result.checkin?.ticketNumber ? `TN:${result.checkin.ticketNumber}` : "";
             const ticketNumber = appointment?.ticketNumber ?? result.checkin?.ticketNumber ?? undefined;
             if (!qrValue || ticketNumber == null) throw new Error("Check-in response has no printable ticket number");
             const checkedInAt = new Date();

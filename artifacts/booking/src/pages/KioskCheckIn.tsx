@@ -571,7 +571,8 @@ function KioskCheckInScreens() {
 
   const sendKioskEvent = (type: string, payload: Record<string, unknown> = {}) => {
     const ws = kioskWsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    // No connection to the server: the salon hub takes it to the POS tablet (a check-in slip still prints there).
+    if (!ws || ws.readyState !== WebSocket.OPEN || syncEngine.isOffline()) { localHub.send({ type, ...payload }); return; }
     ws.send(JSON.stringify({ type, ...payload }));
   };
 

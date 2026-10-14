@@ -87,7 +87,10 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
   // "CI:{checkinToken}" for a true walk-in (no appointment exists yet — see /api/qr/lookup on the
   // server for how each resolves, and how that resolution moves forward once a ticket is created).
   const printCheckinTicket = (r: CheckInResult) => {
-    const qrValue = r.todayAppointment ? `BK:${r.todayAppointment.id}` : r.checkin ? `CI:${r.checkin.token}` : null;
+    // A check-in saved on this tablet offline has no server code yet: its slip carries the ticket number (TN:),
+    // which the POS scans as a ticket-number lookup.
+    const qrValue = r.todayAppointment ? `BK:${r.todayAppointment.id}` : r.checkin?.token ? `CI:${r.checkin.token}`
+      : r.checkin?.ticketNumber ? `TN:${r.checkin.ticketNumber}` : null;
     const ticketNumber = r.todayAppointment?.ticketNumber ?? r.checkin?.ticketNumber ?? null;
     if (!qrValue || ticketNumber == null) {
       console.warn("[check-in ticket print] skipped: check-in response has no QR value or ticket number", {
