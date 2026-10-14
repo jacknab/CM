@@ -8776,6 +8776,212 @@ If you have any questions, please contact your administrator.
     }
   });
 
+  /**
+   * The open times on one day for a service (and an optional second service, and an optional technician) —
+   * the one calculation online booking and /nail bookings both use. `staffView`: the salon's own staff are
+   * booking, so the online-only limits (minimum notice, how far ahead) do not apply. `firstOnly`: stop at
+   * the first open time (enough to know the day has room).
+   */
+  async function openTimesForDay(store: any, opts: { serviceId: number; date: string; duration: number; specificStaffId?: number; extraServiceId: number | null; staffView: boolean; firstOnly?: boolean }): Promise<{ time: string; staffId: number; staffName: string; extraStaffId?: number; extraStaffName?: string }[]> {
+    const { serviceId, date, duration, specificStaffId, extraServiceId, staffView, firstOnly } = opts;
+    // A second service on the same visit (`extraServiceId`). `duration` is then the whole visit: the first
+    // service (with its add-ons) followed by the second. One technician does both when one can; when
+    // nobody performs both, the second service goes to another technician straight after the first.
+    let extraDuration = 0;
+    if (extraServiceId) {
+      const extra = await storage.getService(extraServiceId);
+      if (!extra || extra.storeId !== store.id || (extra as any).isActive === false || extraServiceId === serviceId) return [];
+      extraDuration = Number(extra.duration) || 0;
+      if (duration > MAX_VISIT_MINUTES) return [];
+    }
+
+    const tz = store.timezone || "UTC";
+    const calSettings = await storage.getCalendarSettings(store.id);
+    const businessStartHour = 9;
+    const businessEndHour = 18;
+    const slotInterval = calSettings?.timeSlotInterval || 15;
+    const bufferMs = normalizeBufferMinutes((calSettings as any)?.bufferMinutes) * 60_000;
+
+    const hours = await storage.getBusinessHours(store.id);
+    const dayStartLocal = fromZonedTime(new Date(`${date}T00:00:00`), tz);
+    const dayEndLocal = fromZonedTime(new Date(`${date}T23:59:59.999`), tz);
+
+    const dayAppointments = await storage.getAppointments({
+      from: dayStartLocal,
+      to: dayEndLocal,
+      storeId: store.id,
+    });
+
+    let candidateStaff: typeof import("@shared/schema").staff.$inferSelect[];
+    if (specificStaffId) {
+      const member = await storage.getStaffMember(specificStaffId);
+      // Verify this staff member is assigned to the requested service and is active
+      if (member && (member as any).status !== "removed" && (member as any).status !== "deactivated") {
+        const staffServices = await storage.getStaffServices(specificStaffId);
+        const canPerformService = staffServices.some(ss => ss.serviceId === serviceId);
+        candidateStaff = canPerformService ? [member] : [];
+      } else {
+        candidateStaff = [];
+      }
+    } else {
+      candidateStaff = await storage.getStaffForService(serviceId);
+      // Do NOT fall back to all staff — only show staff assigned to this service
+    }
+
+    if (candidateStaff.length === 0) return [];
+
+    // Two services: keep only the technicians who perform both. If nobody does, the visit is split —
+    // `secondStaff` are the technicians who can take the second service.
+    let secondStaff: typeof candidateStaff = [];
+    if (extraServiceId) {
+      const extraStaff = (await storage.getStaffForService(extraServiceId))
+        .filter((m: any) => m.status !== "removed" && m.status !== "deactivated");
+      const both = candidateStaff.filter((m) => extraStaff.some((x) => x.id === m.id));
+      if (both.length > 0) candidateStaff = both;
+      else if (extraStaff.length > 0 && duration - extraDuration > 0) secondStaff = extraStaff;
+      else return [];
+    }
+    const splitVisit = secondStaff.length > 0;
+    // The first technician's part of the visit (all of it, unless the visit is split).
+    const firstDuration = splitVisit ? duration - extraDuration : duration;
+
+    const dateParts = date.split("-").map(Number);
+    const dayOfWeek = parseInt(formatInTimeZone(new Date(`${date}T12:00:00`), tz, "i"), 10) % 7;
+    const dayHours = hours.find(h => h.dayOfWeek === dayOfWeek);
+    const startHour = dayHours && !dayHours.isClosed ? parseInt(dayHours.openTime.split(":")[0]) : businessStartHour;
+    const endHour = dayHours && !dayHours.isClosed ? parseInt(dayHours.closeTime.split(":")[0]) : businessEndHour;
+
+    if (dayHours?.isClosed) return [];
+
+    const businessEndUtc = fromZonedTime(new Date(`${date}T${String(endHour).padStart(2, "0")}:00:00`), tz);
+    const nowUtc = new Date();
+    // Minimum-notice window (Booking Controls). Clients can't book a slot that
+    // starts sooner than this many hours from now.
+    const bookingWindowMs = staffView ? 0 : Math.max(0, Number(calSettings?.bookingWindowHours ?? 0)) * 3600_000;
+    const earliestBookableUtc = new Date(nowUtc.getTime() + bookingWindowMs);
+    // Booking Controls: advance-booking cap — clients can't book further ahead
+    // than N months from today when the limit is enabled.
+    const latestBookableUtc = !staffView && (store as any).advanceBookingEnabled
+      ? (() => { const d = new Date(nowUtc); d.setMonth(d.getMonth() + Math.max(1, Number((store as any).advanceBookingMonths ?? 3))); return d; })()
+      : null;
+
+    type SlotResult = { time: string; staffId: number; staffName: string; extraStaffId?: number; extraStaffName?: string };
+    const slots: SlotResult[] = [];
+
+    const staffLastAppointment: Map<number, Date> = new Map();
+    // Only to pick who gets a time (whoever has waited longest) — not needed to know a day has room.
+    const allAppointments = firstOnly ? [] : await storage.getAppointments({ storeId: store.id });
+    for (const apt of allAppointments) {
+      if (apt.status === "cancelled") continue;
+      if (!apt.staffId) continue;
+      const aptDate = new Date(apt.date);
+      const current = staffLastAppointment.get(apt.staffId);
+      if (!current || aptDate > current) {
+        staffLastAppointment.set(apt.staffId, aptDate);
+      }
+    }
+
+    /** Is this technician free for the whole of [from, to): no booking in the way (with the salon's gap), and inside their own working hours? */
+    const isStaffFree = async (staffMember: any, from: Date, to: Date): Promise<boolean> => {
+          let hasConflict = false;
+          for (const apt of dayAppointments) {
+            if (apt.staffId !== staffMember.id) continue;
+            if (apt.status === "cancelled") continue;
+            const aptStart = new Date(apt.date);
+            const aptEnd = new Date(aptStart.getTime() + apt.duration * 60000);
+            if (from.getTime() < aptEnd.getTime() + bufferMs && to.getTime() + bufferMs > aptStart.getTime()) {
+              hasConflict = true;
+              break;
+            }
+          }
+
+          // Check staff availability rules (days off and custom hours)
+          // Use formatInTimeZone throughout — toZonedTime+.getHours()/.getDay() is
+          // broken in date-fns-tz v3 on non-UTC servers (returns server-local values).
+          if (!hasConflict) {
+            const staffAvailRules = await storage.getStaffAvailability(staffMember.id);
+            if (staffAvailRules && staffAvailRules.length > 0) {
+              // iso day token: 1=Mon … 7=Sun → map to 0=Sun … 6=Sat
+              const slotDayOfWeek = parseInt(formatInTimeZone(from, tz, "i"), 10) % 7;
+              const dayAvailability = staffAvailRules.find(r => r.dayOfWeek === slotDayOfWeek);
+
+              if (dayAvailability) {
+                const [availStartHour, availStartMin] = dayAvailability.startTime.split(":").map(Number);
+                const [availEndHour, availEndMin] = dayAvailability.endTime.split(":").map(Number);
+                const slotTimeInMin =
+                  parseInt(formatInTimeZone(from, tz, "H"), 10) * 60 +
+                  parseInt(formatInTimeZone(from, tz, "m"), 10);
+                const toTimeInMin =
+                  parseInt(formatInTimeZone(to, tz, "H"), 10) * 60 +
+                  parseInt(formatInTimeZone(to,  tz, "m"), 10);
+                const availStartInMin = availStartHour * 60 + availStartMin;
+                const availEndInMin   = availEndHour   * 60 + availEndMin;
+
+                if (slotTimeInMin < availStartInMin || toTimeInMin > availEndInMin) {
+                  hasConflict = true;
+                }
+              } else {
+                // Staff has availability rules but none for this day — they are off
+                hasConflict = true;
+              }
+            }
+          }
+
+          return !hasConflict;
+    };
+
+    for (let hour = startHour; hour < endHour; hour++) {
+      for (let min = 0; min < 60; min += slotInterval) {
+        const slotStart = fromZonedTime(new Date(`${date}T${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}:00`), tz);
+        const slotEnd = new Date(slotStart.getTime() + duration * 60000);
+
+        if (slotStart < earliestBookableUtc) continue;
+        if (latestBookableUtc && slotStart > latestBookableUtc) continue;
+        if (slotEnd > businessEndUtc) continue;
+
+        const availableForSlot: { staffMember: any; lastApt: Date | null }[] = [];
+
+        for (const staffMember of candidateStaff) {
+          const hasConflict = !(await isStaffFree(staffMember, slotStart, new Date(slotStart.getTime() + firstDuration * 60000)));
+          if (!hasConflict) {
+            availableForSlot.push({
+              staffMember,
+              lastApt: staffLastAppointment.get(staffMember.id) || null,
+            });
+          }
+        }
+
+        if (availableForSlot.length > 0) {
+          availableForSlot.sort((a, b) => {
+            if (a.lastApt === null && b.lastApt === null) return 0;
+            if (a.lastApt === null) return -1;
+            if (b.lastApt === null) return 1;
+            return a.lastApt.getTime() - b.lastApt.getTime();
+          });
+
+          const chosen = availableForSlot[0];
+          // A split visit also needs someone free for the second service, straight after the first.
+          let second: any = null;
+          if (splitVisit) {
+            const secondFrom = new Date(slotStart.getTime() + firstDuration * 60000);
+            for (const candidate of secondStaff) {
+              if (await isStaffFree(candidate, secondFrom, slotEnd)) { second = candidate; break; }
+            }
+            if (!second) continue;
+          }
+          slots.push({
+            time: slotStart.toISOString(),
+            staffId: chosen.staffMember.id,
+            staffName: chosen.staffMember.name,
+            ...(second ? { extraStaffId: second.id, extraStaffName: second.name } : {}),
+          });
+          if (firstOnly) return slots;
+        }
+      }
+    }
+    return slots;
+  }
+
   app.get("/api/public/store/:slug/availability", async (req, res) => {
     try {
       const store = await storage.getStoreBySlug(req.params.slug);
@@ -8798,202 +9004,8 @@ If you have any questions, please contact your administrator.
       if (!serviceId || !date || !duration) {
         return res.status(400).json({ message: "serviceId, date, and duration are required" });
       }
-      // A second service on the same visit (`extraServiceId`). `duration` is then the whole visit: the first
-      // service (with its add-ons) followed by the second. One technician does both when one can; when
-      // nobody performs both, the second service goes to another technician straight after the first.
       const extraServiceId = req.query.extraServiceId ? Number(req.query.extraServiceId) : null;
-      let extraDuration = 0;
-      if (extraServiceId) {
-        const extra = await storage.getService(extraServiceId);
-        if (!extra || extra.storeId !== store.id || (extra as any).isActive === false || extraServiceId === serviceId) return res.json([]);
-        extraDuration = Number(extra.duration) || 0;
-        if (duration > MAX_VISIT_MINUTES) return res.json([]);
-      }
-
-      const tz = store.timezone || "UTC";
-      const calSettings = await storage.getCalendarSettings(store.id);
-      const businessStartHour = 9;
-      const businessEndHour = 18;
-      const slotInterval = calSettings?.timeSlotInterval || 15;
-      const bufferMs = normalizeBufferMinutes((calSettings as any)?.bufferMinutes) * 60_000;
-
-      const hours = await storage.getBusinessHours(store.id);
-      const dayStartLocal = fromZonedTime(new Date(`${date}T00:00:00`), tz);
-      const dayEndLocal = fromZonedTime(new Date(`${date}T23:59:59.999`), tz);
-
-      const dayAppointments = await storage.getAppointments({
-        from: dayStartLocal,
-        to: dayEndLocal,
-        storeId: store.id,
-      });
-
-      let candidateStaff: typeof import("@shared/schema").staff.$inferSelect[];
-      if (specificStaffId) {
-        const member = await storage.getStaffMember(specificStaffId);
-        // Verify this staff member is assigned to the requested service and is active
-        if (member && (member as any).status !== "removed" && (member as any).status !== "deactivated") {
-          const staffServices = await storage.getStaffServices(specificStaffId);
-          const canPerformService = staffServices.some(ss => ss.serviceId === serviceId);
-          candidateStaff = canPerformService ? [member] : [];
-        } else {
-          candidateStaff = [];
-        }
-      } else {
-        candidateStaff = await storage.getStaffForService(serviceId);
-        // Do NOT fall back to all staff — only show staff assigned to this service
-      }
-
-      if (candidateStaff.length === 0) return res.json([]);
-
-      // Two services: keep only the technicians who perform both. If nobody does, the visit is split —
-      // `secondStaff` are the technicians who can take the second service.
-      let secondStaff: typeof candidateStaff = [];
-      if (extraServiceId) {
-        const extraStaff = (await storage.getStaffForService(extraServiceId))
-          .filter((m: any) => m.status !== "removed" && m.status !== "deactivated");
-        const both = candidateStaff.filter((m) => extraStaff.some((x) => x.id === m.id));
-        if (both.length > 0) candidateStaff = both;
-        else if (extraStaff.length > 0 && duration - extraDuration > 0) secondStaff = extraStaff;
-        else return res.json([]);
-      }
-      const splitVisit = secondStaff.length > 0;
-      // The first technician's part of the visit (all of it, unless the visit is split).
-      const firstDuration = splitVisit ? duration - extraDuration : duration;
-
-      const dateParts = date.split("-").map(Number);
-      const dayOfWeek = parseInt(formatInTimeZone(new Date(`${date}T12:00:00`), tz, "i"), 10) % 7;
-      const dayHours = hours.find(h => h.dayOfWeek === dayOfWeek);
-      const startHour = dayHours && !dayHours.isClosed ? parseInt(dayHours.openTime.split(":")[0]) : businessStartHour;
-      const endHour = dayHours && !dayHours.isClosed ? parseInt(dayHours.closeTime.split(":")[0]) : businessEndHour;
-
-      if (dayHours?.isClosed) return res.json([]);
-
-      const businessEndUtc = fromZonedTime(new Date(`${date}T${String(endHour).padStart(2, "0")}:00:00`), tz);
-      const nowUtc = new Date();
-      // Minimum-notice window (Booking Controls). Clients can't book a slot that
-      // starts sooner than this many hours from now.
-      const bookingWindowMs = staffView ? 0 : Math.max(0, Number(calSettings?.bookingWindowHours ?? 0)) * 3600_000;
-      const earliestBookableUtc = new Date(nowUtc.getTime() + bookingWindowMs);
-      // Booking Controls: advance-booking cap — clients can't book further ahead
-      // than N months from today when the limit is enabled.
-      const latestBookableUtc = !staffView && (store as any).advanceBookingEnabled
-        ? (() => { const d = new Date(nowUtc); d.setMonth(d.getMonth() + Math.max(1, Number((store as any).advanceBookingMonths ?? 3))); return d; })()
-        : null;
-
-      type SlotResult = { time: string; staffId: number; staffName: string; extraStaffId?: number; extraStaffName?: string };
-      const slots: SlotResult[] = [];
-
-      const staffLastAppointment: Map<number, Date> = new Map();
-      const allAppointments = await storage.getAppointments({ storeId: store.id });
-      for (const apt of allAppointments) {
-        if (apt.status === "cancelled") continue;
-        if (!apt.staffId) continue;
-        const aptDate = new Date(apt.date);
-        const current = staffLastAppointment.get(apt.staffId);
-        if (!current || aptDate > current) {
-          staffLastAppointment.set(apt.staffId, aptDate);
-        }
-      }
-
-      /** Is this technician free for the whole of [from, to): no booking in the way (with the salon's gap), and inside their own working hours? */
-      const isStaffFree = async (staffMember: any, from: Date, to: Date): Promise<boolean> => {
-            let hasConflict = false;
-            for (const apt of dayAppointments) {
-              if (apt.staffId !== staffMember.id) continue;
-              if (apt.status === "cancelled") continue;
-              const aptStart = new Date(apt.date);
-              const aptEnd = new Date(aptStart.getTime() + apt.duration * 60000);
-              if (from.getTime() < aptEnd.getTime() + bufferMs && to.getTime() + bufferMs > aptStart.getTime()) {
-                hasConflict = true;
-                break;
-              }
-            }
-
-            // Check staff availability rules (days off and custom hours)
-            // Use formatInTimeZone throughout — toZonedTime+.getHours()/.getDay() is
-            // broken in date-fns-tz v3 on non-UTC servers (returns server-local values).
-            if (!hasConflict) {
-              const staffAvailRules = await storage.getStaffAvailability(staffMember.id);
-              if (staffAvailRules && staffAvailRules.length > 0) {
-                // iso day token: 1=Mon … 7=Sun → map to 0=Sun … 6=Sat
-                const slotDayOfWeek = parseInt(formatInTimeZone(from, tz, "i"), 10) % 7;
-                const dayAvailability = staffAvailRules.find(r => r.dayOfWeek === slotDayOfWeek);
-
-                if (dayAvailability) {
-                  const [availStartHour, availStartMin] = dayAvailability.startTime.split(":").map(Number);
-                  const [availEndHour, availEndMin] = dayAvailability.endTime.split(":").map(Number);
-                  const slotTimeInMin =
-                    parseInt(formatInTimeZone(from, tz, "H"), 10) * 60 +
-                    parseInt(formatInTimeZone(from, tz, "m"), 10);
-                  const toTimeInMin =
-                    parseInt(formatInTimeZone(to, tz, "H"), 10) * 60 +
-                    parseInt(formatInTimeZone(to,  tz, "m"), 10);
-                  const availStartInMin = availStartHour * 60 + availStartMin;
-                  const availEndInMin   = availEndHour   * 60 + availEndMin;
-
-                  if (slotTimeInMin < availStartInMin || toTimeInMin > availEndInMin) {
-                    hasConflict = true;
-                  }
-                } else {
-                  // Staff has availability rules but none for this day — they are off
-                  hasConflict = true;
-                }
-              }
-            }
-
-            return !hasConflict;
-      };
-
-      for (let hour = startHour; hour < endHour; hour++) {
-        for (let min = 0; min < 60; min += slotInterval) {
-          const slotStart = fromZonedTime(new Date(`${date}T${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}:00`), tz);
-          const slotEnd = new Date(slotStart.getTime() + duration * 60000);
-
-          if (slotStart < earliestBookableUtc) continue;
-          if (latestBookableUtc && slotStart > latestBookableUtc) continue;
-          if (slotEnd > businessEndUtc) continue;
-
-          const availableForSlot: { staffMember: any; lastApt: Date | null }[] = [];
-
-          for (const staffMember of candidateStaff) {
-            const hasConflict = !(await isStaffFree(staffMember, slotStart, new Date(slotStart.getTime() + firstDuration * 60000)));
-            if (!hasConflict) {
-              availableForSlot.push({
-                staffMember,
-                lastApt: staffLastAppointment.get(staffMember.id) || null,
-              });
-            }
-          }
-
-          if (availableForSlot.length > 0) {
-            availableForSlot.sort((a, b) => {
-              if (a.lastApt === null && b.lastApt === null) return 0;
-              if (a.lastApt === null) return -1;
-              if (b.lastApt === null) return 1;
-              return a.lastApt.getTime() - b.lastApt.getTime();
-            });
-
-            const chosen = availableForSlot[0];
-            // A split visit also needs someone free for the second service, straight after the first.
-            let second: any = null;
-            if (splitVisit) {
-              const secondFrom = new Date(slotStart.getTime() + firstDuration * 60000);
-              for (const candidate of secondStaff) {
-                if (await isStaffFree(candidate, secondFrom, slotEnd)) { second = candidate; break; }
-              }
-              if (!second) continue;
-            }
-            slots.push({
-              time: slotStart.toISOString(),
-              staffId: chosen.staffMember.id,
-              staffName: chosen.staffMember.name,
-              ...(second ? { extraStaffId: second.id, extraStaffName: second.name } : {}),
-            });
-          }
-        }
-      }
-
-      return res.json(slots);
+      return res.json(await openTimesForDay(store, { serviceId, date, duration, specificStaffId, extraServiceId, staffView }));
     } catch (error) {
       console.error("Public availability error:", error);
       return res.status(500).json({ message: "Internal server error" });
@@ -18678,6 +18690,68 @@ or
     } catch (err) {
       console.error("[nail/board]", err);
       return res.status(500).json({ message: "Failed to load the board" });
+    }
+  });
+
+  // /nail booking: the technicians who can take this visit — those who do the service (with a second service,
+  // those who do both when anyone does; otherwise the visit is split and whoever does the first one starts it).
+  app.get("/api/nail/booking-techs", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const serviceId = Number(req.query.serviceId);
+      const extraServiceId = req.query.extraServiceId ? Number(req.query.extraServiceId) : null;
+      if (!Number.isSafeInteger(serviceId) || serviceId <= 0) return res.status(400).json({ message: "Invalid service" });
+      const active = (m: any) => m.storeId === storeId && m.status !== "removed" && m.status !== "deactivated" && m.showOnCalendar !== false;
+      let techs = (await storage.getStaffForService(serviceId)).filter(active);
+      if (extraServiceId) {
+        const extra = (await storage.getStaffForService(extraServiceId)).filter(active);
+        const both = techs.filter((m) => extra.some((x) => x.id === m.id));
+        if (both.length > 0) techs = both;
+      }
+      return res.json(techs.map((m: any) => ({ id: m.id, name: m.name, color: m.color ?? null })));
+    } catch (err) {
+      console.error("[nail/booking-techs]", err);
+      return res.status(500).json({ message: "Could not load the technicians" });
+    }
+  });
+
+  // /nail booking: the days that have an open time for this visit (and technician), so the day keys show only
+  // days that can be booked. Scans forward from `from` until `limit` open days are found (or 90 days are looked
+  // at); `next` is where the following page starts.
+  app.get("/api/nail/booking-days", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const q = z.object({
+        serviceId: z.coerce.number().int().positive(),
+        extraServiceId: z.coerce.number().int().positive().optional(),
+        staffId: z.coerce.number().int().positive().optional(),
+        duration: z.coerce.number().int().positive().max(MAX_VISIT_MINUTES * 2),
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        limit: z.coerce.number().int().min(1).max(31).default(15),
+      }).safeParse(req.query);
+      if (!q.success) return res.status(400).json({ message: "Invalid request" });
+      const store: any = await storage.getStore(storeId);
+      if (!store) return res.status(404).json({ message: "Store not found" });
+      const tz = store.timezone || "UTC";
+      const today = formatInTimeZone(new Date(), tz, "yyyy-MM-dd");
+      const start = q.data.from < today ? today : q.data.from;
+      const lastDay = formatInTimeZone(new Date(Date.now() + 90 * 86_400_000), tz, "yyyy-MM-dd");
+      const open: string[] = [];
+      let day = start;
+      while (day <= lastDay && open.length < q.data.limit) {
+        const times = await openTimesForDay(store, {
+          serviceId: q.data.serviceId, date: day, duration: q.data.duration, specificStaffId: q.data.staffId,
+          extraServiceId: q.data.extraServiceId ?? null, staffView: true, firstOnly: true,
+        });
+        if (times.length > 0) open.push(day);
+        const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + 1); day = d.toISOString().slice(0, 10);
+      }
+      return res.json({ days: open, next: day <= lastDay ? day : null });
+    } catch (err) {
+      console.error("[nail/booking-days]", err);
+      return res.status(500).json({ message: "Could not load the open days" });
     }
   });
 

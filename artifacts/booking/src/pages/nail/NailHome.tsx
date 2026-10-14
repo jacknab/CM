@@ -1261,7 +1261,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
                 {booking?.step === "time" && service ? (
                   <BookingPanel
                     slug={bookingSlug} timezone={timezone} serviceId={service.id} extraServiceId={extraServices[0]?.id ?? null}
-                    duration={draft.duration} technicians={techList.map((t) => ({ id: t.id, name: t.name, color: t.color ?? null }))}
+                    duration={draft.duration}
                     slot={booking.slot} onSlot={(slot) => setBooking((b) => (b ? { ...b, slot } : b))}
                     onServices={() => setBooking({ step: "services", slot: null })}
                   />
