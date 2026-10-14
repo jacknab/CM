@@ -44,7 +44,7 @@ import { useNightlyRestart, isDefaultHomeApp, openDeviceSettings, isKioskManaged
 import { KioskExitPinModal } from '@/components/KioskExitPinModal';
 import { POSModal, type POSData } from '@/components/POSModal';
 import { viewportLockJs } from '@/lib/viewportLock';
-import { getSavedPrinter, printReceipt, printReceiptCopies, openCashDrawer, printCheckinTicket, printZReport, type ReceiptData, type CheckinTicketData, type ZReportPrintData } from '@/lib/printer';
+import { getSavedPrinter, printReceipt, printReceiptCopies, openCashDrawer, printCheckinTicket, printZReport, printText, type ReceiptData, type CheckinTicketData, type ZReportPrintData } from '@/lib/printer';
 import { QrCapture } from '@/components/QrCapture';
 import { NumberBarCapture } from '@/components/NumberBarCapture';
 import { PrinterSetupModal } from '@/components/PrinterSetupModal';
@@ -96,6 +96,8 @@ const BRIDGE_JS = `
   window.CERTXA_NATIVE_HUB = 1;
   // This build can print receipts on the thermal printer (PRINT_RECEIPT) — the web checkout checks this flag.
   window.CERTXA_PRINT_BRIDGE = true;
+  // ...and can print text the web app has laid out (PRINT_TEXT: technicians' pay slips).
+  window.CERTXA_PRINT_TEXT = 1;
   // ...and can pop the cash drawer through the printer (OPEN_DRAWER).
   window.CERTXA_DRAWER_BRIDGE = true;
 
@@ -665,6 +667,26 @@ export default function PortalScreen() {
               reply(true);
             } catch (e: any) {
               reply(false, e?.message ?? 'Could not print the Z Report');
+            }
+          })();
+          break;
+        }
+        case 'PRINT_TEXT': {
+          // Text the web app laid out for the paper (a technician's pay slip, lib/techSlip.ts on the web
+          // side). Same requestId / certxa_native_print_result reply as the other prints.
+          const { requestId, text } = msg;
+          const reply = (ok: boolean, error?: string) => {
+            const detail = { requestId: requestId ?? null, ok, error: error ?? null };
+            webViewRef.current?.injectJavaScript(
+              `window.dispatchEvent(new CustomEvent('certxa_native_print_result', { detail: ${JSON.stringify(detail)} })); true;`
+            );
+          };
+          void (async () => {
+            try {
+              await printText(typeof text === 'string' ? text : '');
+              reply(true);
+            } catch (e: any) {
+              reply(false, e?.message ?? 'Could not print');
             }
           })();
           break;

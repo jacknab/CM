@@ -18991,6 +18991,94 @@ or
     }
   });
 
+  // GET /api/nail/tech-slip?staffId=N&period=today|week|pay — a technician's own pay slip, printed by the
+  // technician at the /nail lock screen (salon owners do not want the front desk printing slips for everyone).
+  // Laid out like the slips salons already use: total sale, commission, non-cash tips and total pay for the
+  // period, then one line per day; for a single day, one line per ticket. Business days run 4 AM to 4 AM.
+  //   • Commission follows the one commission rule (shared/commissionBasis.ts).
+  //   • A tip is "non-cash" (paid to the technician through payroll) unless the ticket was paid in cash only;
+  //     cash tips are already in the technician's pocket and are not added to Total Pay.
+  app.get("/api/nail/tech-slip", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const staffId = Number(req.query.staffId);
+      if (!Number.isInteger(staffId) || staffId <= 0) return res.status(400).json({ message: "staffId required" });
+      const member = await storage.getStaffMember(staffId);
+      if (!member || member.storeId !== storeId) return res.status(404).json({ message: "Technician not found" });
+      const [storeRow] = await db.select({ timezone: locations.timezone, name: locations.name }).from(locations).where(eq(locations.id, storeId)).limit(1);
+      const tz = (storeRow as any)?.timezone ?? "UTC";
+      const local = toZonedTime(new Date(Date.now() - 4 * 60 * 60_000), tz);
+      const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const today = ymd(local);
+      const addDays = (day: string, n: number) => { const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+      const period = req.query.period === "week" || req.query.period === "pay" ? req.query.period : "today";
+      let firstDay = today, lastDay = today, payrollType = "Commission";
+      if (period === "week") {
+        // Monday to Sunday, this week.
+        const dow = new Date(`${today}T12:00:00Z`).getUTCDay();
+        firstDay = addDays(today, -((dow + 6) % 7)); lastDay = addDays(firstDay, 6);
+      } else if (period === "pay") {
+        const { paySchedules } = await import("@shared/schema");
+        const [sched] = await db.select().from(paySchedules).where(eq(paySchedules.storeId, storeId));
+        if (sched) {
+          const { currentPayrollPeriod } = await import("./lib/payrollPeriods");
+          const p = currentPayrollPeriod(sched.frequency, sched.anchorDate as unknown as string, sched.periodEndOffsetDays, today);
+          firstDay = p.periodStart; lastDay = p.periodEnd;
+        } else {
+          // No pay schedule set: the 1st–15th or the 16th–end of the month, as most salons pay.
+          const [y, m, d] = today.split("-").map(Number);
+          const end = new Date(Date.UTC(y, m, 0)).getUTCDate();
+          firstDay = `${today.slice(0, 8)}${d <= 15 ? "01" : "16"}`; lastDay = `${today.slice(0, 8)}${d <= 15 ? "15" : String(end).padStart(2, "0")}`;
+        }
+      }
+      const from = fromZonedTime(new Date(`${firstDay}T04:00:00`), tz);
+      const to = fromZonedTime(new Date(`${addDays(lastDay, 1)}T04:00:00`), tz);
+      const { rows } = await pool.query(
+        `SELECT a.ticket_number, COALESCE(a.completed_at, a.date) AS closed_at, a.total_paid, a.tip_amount, a.discount_amount,
+                a.service_revenue, a.product_revenue, a.payment_method, sv.name AS service_name
+           FROM appointments a LEFT JOIN services sv ON sv.id = a.service_id
+          WHERE a.store_id = $1 AND a.staff_id = $2 AND a.status = 'completed'
+            AND COALESCE(a.completed_at, a.date) >= $3 AND COALESCE(a.completed_at, a.date) < $4
+          ORDER BY COALESCE(a.completed_at, a.date)`,
+        [storeId, staffId, from, to],
+      );
+      const commissionOn = (member as any).commissionEnabled !== false && Number((member as any).commissionRate) > 0;
+      const serviceRate = Number((member as any).commissionRate) || 0, productRate = Number((member as any).productCommissionRate) || 0;
+      const cents = (n: number) => Math.round(n * 100);
+      const days = new Map<string, { sale: number; commission: number; ncTips: number }>();
+      for (let d = firstDay; d <= lastDay; d = addDays(d, 1)) days.set(d, { sale: 0, commission: 0, ncTips: 0 });
+      const tickets: any[] = [];
+      let cashTips = 0;
+      for (const r of rows) {
+        const basis = commissionBasis({ totalPaid: r.total_paid, tipAmount: r.tip_amount, discountAmount: r.discount_amount, serviceRevenue: r.service_revenue, productRevenue: r.product_revenue });
+        const sale = basis.service + basis.product;
+        const commission = commissionOn ? commissionAmountFor(basis, serviceRate, productRate).total : 0;
+        const tip = Math.max(0, Number(r.tip_amount) || 0);
+        const method = String(r.payment_method ?? "").toLowerCase();
+        const cashOnly = method !== "" && method.split(/[,;+]/).every((part) => part.trim().startsWith("cash"));
+        const ncTip = cashOnly ? 0 : tip;
+        if (cashOnly) cashTips += tip;
+        const day = ymd(toZonedTime(new Date(new Date(r.closed_at).getTime() - 4 * 60 * 60_000), tz));
+        const bucket = days.get(day);
+        if (bucket) { bucket.sale += sale; bucket.commission += commission; bucket.ncTips += ncTip; }
+        tickets.push({ ticketNumber: r.ticket_number != null ? Number(r.ticket_number) : null, closedAt: new Date(r.closed_at).toISOString(),
+          service: r.service_name ?? "Service", sale: cents(sale) / 100, commission: cents(commission) / 100, tip, nonCashTip: ncTip });
+      }
+      const dayRows = [...days].map(([date, v]) => ({ date, sale: cents(v.sale) / 100, commission: cents(v.commission) / 100, ncTips: cents(v.ncTips) / 100 }));
+      const sum = (k: "sale" | "commission" | "ncTips") => cents(dayRows.reduce((s, d) => s + d[k], 0)) / 100;
+      const totals = { sale: sum("sale"), commission: sum("commission"), ncTips: sum("ncTips"), cashTips: cents(cashTips) / 100, tickets: rows.length };
+      return res.json({
+        storeName: (storeRow as any)?.name ?? "", staffName: member.name, period, firstDay, lastDay, payrollType, commissionOn,
+        totals: { ...totals, pay: cents(totals.commission + totals.ncTips) / 100 },
+        days: dayRows, tickets: period === "today" ? tickets : [],
+      });
+    } catch (err) {
+      console.error("[nail/tech-slip]", err);
+      return res.status(500).json({ message: "Could not load the slip" });
+    }
+  });
+
   // ── Manager PIN ────────────────────────────────────────────────────────────────
   // What opens the Manager menu on /nail and approves manager-only actions (a turn adjustment). Each salon
   // sets its own; it is kept only as a hash and checked here, never in the browser. A salon that has not set

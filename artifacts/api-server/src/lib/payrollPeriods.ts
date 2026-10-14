@@ -75,3 +75,10 @@ export function autoApprovalDate(periodEnd: string): string {
   return date;
 }
 
+
+/** The pay period that is still open today (the one after the newest closed period). */
+export function currentPayrollPeriod(frequency: string, anchorPayDate: string, periodEndOffsetDays: number, today: string): PayrollPeriod {
+  const newest = payrollPeriodsDue(frequency, anchorPayDate, periodEndOffsetDays, today, 1)[0];
+  if (!newest) return periodForPayDate(frequency, anchorPayDate, periodEndOffsetDays);
+  return periodForPayDate(frequency, movePayDate(newest.payDate, frequency, 1), periodEndOffsetDays);
+}

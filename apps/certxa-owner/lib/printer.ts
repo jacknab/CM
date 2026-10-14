@@ -332,6 +332,15 @@ export async function printCheckinTicket(data: CheckinTicketData, numberBarBase6
   await mod.printBill(toPrinterTags(buildCheckinTicketFooter(data)));
 }
 
+/** Print text the web app has already laid out for the paper (a technician's pay slip). Uses the same
+ *  [C]/[L]/<b> tags as the receipt templates; one copy. */
+export async function printText(text: string): Promise<void> {
+  if (!text.trim()) throw new Error('Nothing to print');
+  const printer = await resolvePrinter();
+  const mod = await getActivePrinterModule(printer);
+  await mod.printBill(toPrinterTags(text));
+}
+
 /** Print the Day Close / Z Report — a single copy (it's a register document, not something
  *  handed to a customer, so there's no salon/customer split like printReceiptCopies()). */
 export async function printZReport(data: ZReportPrintData): Promise<void> {

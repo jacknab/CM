@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Delete, Loader2 } from "lucide-react";
 import { TURN_UNIT, formatTurns } from "@shared/turnRules";
+import { TechSlipSheet } from "./TechSlipSheet";
 import { useShake } from "@/hooks/use-shake";
 import { ApiError, identifyTech, type TechSignIn } from "./nailApi";
 import { resumeOrSignIn } from "@/lib/resumeSignIn";
@@ -25,6 +26,8 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
   const [digits, setDigits] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  // MY SLIP: the same Tech ID opens the technician's own pay slip instead of the POS.
+  const [slipFor, setSlipFor] = useState<{ id: number; name: string } | null>(null);
   const { shakeClass, shake, onShakeEnd } = useShake();
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -38,11 +41,15 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
   const press = (d: string) => { setMessage(""); setDigits((cur) => (cur.length >= 2 ? cur : cur + d)); };
   const back = () => { setMessage(""); setDigits((cur) => cur.slice(0, -1)); };
 
-  const enter = useCallback(async () => {
+  const enter = useCallback(async (forSlip = false) => {
     if (busy || digits.length === 0) return;
     setBusy(true);
     try {
-      onSignedIn(await identifyTech(Number(digits)));
+      // MY SLIP signs the technician in exactly like ENTER (a technician using the system is clocked in).
+      // If signing in just handed them a waiting client, that is announced as usual instead of the slip.
+      const who = await identifyTech(Number(digits));
+      if (forSlip && !who.justAssigned) { setDigits(""); setSlipFor({ id: who.staff.id, name: who.staff.name }); return; }
+      onSignedIn(who);
     } catch (err) {
       // 401 = this device is no longer signed in to the salon's account (signed out in another tab, or the
       // login expired). No Tech ID can work until someone signs in again, so say that and go to the sign-in page.
@@ -100,6 +107,9 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
             <button type="button" className="ng-gate-key ghost" disabled={busy || digits.length === 0} onClick={back} aria-label="Delete" data-testid="tech-id-key-back"><Delete className="h-7 w-7" /></button>
           </div>
           <button type="button" className="ng-gate-enter" disabled={busy || digits.length === 0} onClick={() => void enter()} data-testid="tech-id-enter">ENTER</button>
+          <button type="button" className="ng-gate-turn-btn" style={{ marginTop: 10 }} disabled={busy || digits.length === 0} onClick={() => void enter(true)} data-testid="tech-id-my-slip">
+            {digits.length === 0 ? "MY SLIP — type your ID first" : "MY SLIP"}
+          </button>
         </section>
 
         <section className="ng-gate-card ng-gate-wait" data-testid="tech-id-turn-queue">
@@ -121,6 +131,7 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
         </section>
        </div>
       </div>
+      {slipFor && <TechSlipSheet staffId={slipFor.id} staffName={slipFor.name} timezone={timezone} onClose={() => setSlipFor(null)} />}
     </div>
   );
 }
