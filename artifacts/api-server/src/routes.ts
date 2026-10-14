@@ -40,6 +40,8 @@ import { z } from "zod";
 import { db, pool, waitForDb } from "./db";
 import { users } from "@shared/models/auth";
 import { eq, and, or, ne, desc, sql, count, gte, lte, asc, isNull, isNotNull, inArray, notInArray, like } from "drizzle-orm";
+import { resetTurnSystemForStore } from "./services/auto-clock-out";
+import { clockOutOpenRecords } from "./lib/clockOut";
 import { sendEmail, sendBookingConfirmationEmail, sendReminderEmail, sendReviewRequestEmail, startEmailReminderScheduler } from "./mail";
 import { businessTemplates } from "./onboarding-data";
 import { fromZonedTime, toZonedTime, formatInTimeZone } from "date-fns-tz";
@@ -7463,6 +7465,9 @@ If you have any questions, please contact your administrator.
           performedAt: now,
         });
         if (!input.autoOpenNext) return { updated, newSession: null };
+        // Day Close ends the day for everyone: nobody stays clocked in overnight (whatever day they
+        // clocked in on), in the same transaction, so a closed day never leaves a technician on the clock.
+        await clockOutOpenRecords(session.storeId, { now, exec: tx });
         const [newSession] = await tx.insert(cashDrawerSessions).values({
           storeId: session.storeId,
           drawerId: sessionDrawerId,
@@ -7481,6 +7486,12 @@ If you have any questions, please contact your administrator.
         return { updated, newSession };
       });
       if (!updated) return res.status(409).json({ message: "Session already closed" });
+      if (input.autoOpenNext) {
+        // Everyone is off the clock: the turn line starts empty tomorrow, and every tablet hears it now.
+        await resetTurnSystemForStore(session.storeId).catch((err) => console.error("[day-close] turn reset failed", err));
+        broadcastTurnEligibilityChanged(session.storeId);
+        triggerDashboardBroadcast(session.storeId);
+      }
 
       if (shortageCents >= 200) {
         try {
@@ -19972,6 +19983,8 @@ or
       if (existing) {
         return res.status(409).json({ error: "Already clocked in", record: existing });
       }
+      // A clock-in forgotten from an earlier day is closed at the end of that day first, so only today's is open.
+      await clockOutOpenRecords(storeId, { staffId });
 
       const [record] = await db
         .insert(timeclock)
@@ -20022,27 +20035,16 @@ or
       const localNowOut = toZonedTime(new Date(), storeTzOut);
       const today = (req.body.workDate as string) || `${localNowOut.getFullYear()}-${String(localNowOut.getMonth() + 1).padStart(2, "0")}-${String(localNowOut.getDate()).padStart(2, "0")}`;
 
-      // Find open clock-in record for today
-      const [existing] = await db
-        .select()
-        .from(timeclock)
-        .where(and(
-          eq(timeclock.staffId, staffId),
-          eq(timeclock.storeId, storeId),
-          eq(timeclock.workDate, today),
-          isNull(timeclock.clockOut)
-        ))
-        .limit(1);
-
-      if (!existing) {
+      // Close whatever clock-in is still open for them — not only one dated today: a clock-in left open
+      // from an earlier day kept them "clocked in" on every screen with no way to clock them out.
+      // An old one ends at the end of its own day (lib/clockOut.ts), not now.
+      const closed = await clockOutOpenRecords(storeId, { staffId, now: punchTime(req.body?.at) });
+      if (closed.length === 0) {
         return res.status(404).json({ error: "No active clock-in found" });
       }
-
-      const [record] = await db
-        .update(timeclock)
-        .set({ clockOut: punchTime(req.body?.at) })
-        .where(eq(timeclock.id, existing.id))
-        .returning();
+      const [record] = await db.select().from(timeclock)
+        .where(and(eq(timeclock.staffId, staffId), eq(timeclock.storeId, storeId)))
+        .orderBy(desc(timeclock.clockIn)).limit(1);
 
       // Update turn system settings — remove from clocked-in, add to clocked-out
       const turnPrefs = await getTurnPreferences(storeId);

@@ -104,7 +104,7 @@ function buildCloseTimestamp(dateStr: string, closeTime: string, tz: string): Da
  * - lockedStaffIds reset to []
  * - shortTurnProtectedId cleared
  */
-async function resetTurnSystemForStore(storeId: number): Promise<void> {
+export async function resetTurnSystemForStore(storeId: number): Promise<void> {
   // Against what is saved right now, and only for a salon that already has settings.
   await mutateStorePreferences(storeId, (prefs) => {
     const currentTurn = prefs.turnSystem && typeof prefs.turnSystem === "object" ? prefs.turnSystem : {};
