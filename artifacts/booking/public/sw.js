@@ -6,7 +6,9 @@ const CACHE_NAME = "certxa-app-v7";
 // the page this device last loaded, so the script files it names are the ones this device already has cached.
 const SHELL_CACHE = "certxa-shell-v1";
 const SHELL_KEY = "/__offline_shell__";
-const OFFLINE_START = ["/app-login", "/nail", "/barber", "/calendar"];
+// The kiosk and the customer screen too: a kiosk-locked tablet restarting (3 AM) while the server is down
+// must come back as the kiosk, working through the POS tablet, not as a "You're offline" page.
+const OFFLINE_START = ["/app-login", "/nail", "/barber", "/calendar", "/kiosk", "/frontdesk"];
 const startsOffline = (pathname) => OFFLINE_START.some((p) => pathname === p || pathname.startsWith(p + "/"));
 
 // Keep a copy of the current app page and the script/style files it names. Done when this worker takes over
@@ -102,8 +104,22 @@ self.addEventListener("fetch", (event) => {
   //    which 404s the whole app. Better to fail loudly (or show a tiny offline
   //    notice) than to boot an obsolete shell.
   if (isHtmlShell(request, url)) {
+    // A staff screen with no server: the page it last loaded. "No server" also means no answer within 8 s (the
+    // server powered off can leave a load hanging) and nginx answering 502–504 (the app not running behind it,
+    // e.g. while the VPS boots after maintenance).
+    const staffScreen = request.mode === "navigate" && startsOffline(url.pathname);
+    const load = staffScreen
+      ? new Promise((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error("no answer")), 8000);
+          fetch(request, { cache: "no-store" }).then((r) => {
+            clearTimeout(timer);
+            if (r.status >= 502 && r.status <= 504 && !(r.headers.get("content-type") || "").includes("application/json")) reject(new Error(`gateway ${r.status}`));
+            else resolve(r);
+          }, (e) => { clearTimeout(timer); reject(e); });
+        })
+      : fetch(request, { cache: "no-store" });
     event.respondWith(
-      fetch(request, { cache: "no-store" }).then((response) => {
+      load.then((response) => {
         if (request.mode === "navigate" && startsOffline(url.pathname) && response.ok &&
             (response.headers.get("content-type") || "").includes("text/html")) {
           const copy = response.clone();

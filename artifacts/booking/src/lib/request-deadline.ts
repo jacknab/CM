@@ -20,6 +20,14 @@ const SALON_SCREENS = /^\/(nail|barber|kiosk|frontdesk)(\/|$)/;
 const NO_SHORTCUT = /^\/api\/sync\/heartbeat/;
 const NO_DEADLINE = /^\/api\/(sync\/heartbeat|payments\/|cash-drawer)/;
 
+/**
+ * 502 / 503 / 504 from nginx: the app behind it is not running. Our own app's answers are JSON (including its
+ * own 503s, which mean "try again" and are treated the same way by the offline paths); nginx's are HTML.
+ */
+export function isGatewayFailure(res: Response): boolean {
+  return res.status >= 502 && res.status <= 504 && !(res.headers.get("content-type") ?? "").includes("application/json");
+}
+
 /** The path of a request to this app's own API, or null for anything else. */
 function apiPath(input: RequestInfo | URL): string | null {
   try {
@@ -56,7 +64,16 @@ export function installRequestDeadline(): void {
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, method === "GET" ? READ_DEADLINE_MS : WRITE_DEADLINE_MS);
     return original(input, { ...init, signal: ctrl.signal }).then(
-      (res) => { clearTimeout(timer); return res; },
+      (res) => {
+        clearTimeout(timer);
+        // The web server in front of the app answering for it (the app is down, restarting, or the VPS is still
+        // booting): that is the server being unreachable, not an answer — work from the device.
+        if (isGatewayFailure(res)) {
+          syncEngine.noteUnreachable();
+          throw new TypeError(`The server is not answering (${res.status})`);
+        }
+        return res;
+      },
       (err) => {
         clearTimeout(timer);
         if (timedOut) {

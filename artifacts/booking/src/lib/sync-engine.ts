@@ -179,7 +179,7 @@ class SyncEngine {
     const timer = setTimeout(() => ctrl.abort(), 5_000);
     try {
       const res = await fetch(`/api/sync/heartbeat?t=${Date.now()}`, { cache: "no-store", signal: ctrl.signal });
-      if (!res.ok) return false;
+      if (!res.ok) { if (res.status >= 502 && res.status <= 504) this.noteUnreachable(); return false; }
       this.noteContact();
       if (!this.reachable) { this.reachable = true; this.handleOnline(); this.scheduleSyncWithDelay(800); }
       return true;
@@ -205,7 +205,8 @@ class SyncEngine {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 5_000);
       fetch(`/api/sync/heartbeat?t=${Date.now()}`, { cache: "no-store", signal: ctrl.signal })
-        .then((res) => { if (res.ok) this.noteContact(); })
+        // nginx answering 502–504 = the app is down behind it (a restart, or the VPS still booting).
+        .then((res) => { if (res.ok) this.noteContact(); else if (res.status >= 502 && res.status <= 504) this.noteUnreachable(); })
         .catch(() => this.noteUnreachable())
         .finally(() => clearTimeout(timer));
     }, 15_000);
