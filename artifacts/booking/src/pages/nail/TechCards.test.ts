@@ -1,18 +1,20 @@
 import { createElement } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { TechCards } from "./TechCards";
 
 describe("technician card design", () => {
   it("uses the same full card layout on Clocked In and Clocked Out", () => {
-    const html = renderToStaticMarkup(createElement(TechCards, {
+    // The card text comes from the salon's language setting, which is read through React Query.
+    const html = renderToStaticMarkup(createElement(QueryClientProvider, { client: new QueryClient() }, createElement(TechCards, {
       techs: [
         { id: 1, name: "Avery", eligible: true, clockedIn: true, turnPosition: 0 },
         { id: 2, name: "Sam", eligible: false, clockedIn: false },
       ],
       tickets: [], markers: [], stats: [{ staffId: 1, doneToday: 3, lastFinishedAt: null, clockedInAt: null }],
       glance: undefined, loading: false, onQueueView: () => {},
-    }));
+    })));
     const clockedOut = html.match(/data-testid="nail-techs-page-out"[\s\S]*?(?=data-testid="nail-techs-page-in")/)?.[0];
     const clockedIn = html.match(/data-testid="nail-techs-page-in"[\s\S]*/)?.[0];
     expect(clockedOut).toContain('data-testid="nail-tech-card-2"');
