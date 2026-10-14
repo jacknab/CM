@@ -1038,6 +1038,46 @@ export interface SalonGlance {
   avgTicket: number | null;
 }
 
+/**
+ * The booked visits still to come — today's that have not arrived yet, then the coming days' — for the
+ * Queue tab's Appointments list. Walk-ins are never on it (they are here already), nor is anyone who has
+ * checked in (their ticket is on the client cards).
+ */
+export async function getNailUpcoming(storeId: number): Promise<BoardDayBooking[]> {
+  const store = await storage.getStore(storeId);
+  const tz = (store as any)?.timezone || "UTC";
+  const { rows } = await pool.query(
+    `SELECT a.id, a.ticket_number, a.date, COALESCE(a.duration, 0) AS duration, a.status::text AS status,
+            COALESCE(c.full_name, 'Guest') AS client_name,
+            COALESCE(s.name, 'Service') AS service_name,
+            st.name AS staff_name
+       FROM appointments a
+       LEFT JOIN clients c ON c.id = a.customer_id
+       LEFT JOIN services s ON s.id = a.service_id
+       LEFT JOIN staff st ON st.id = a.staff_id
+      WHERE a.store_id = $1
+        AND a.status::text IN ('pending', 'confirmed')
+        AND a.checked_in_at IS NULL
+        AND ${bizDayOf("a.date")} >= ${BIZ_TODAY}
+        AND a.date < NOW() + INTERVAL '90 days'
+        AND NOT ${walkInSQL("a")}
+      ORDER BY a.date ASC, a.id ASC
+      LIMIT 300`,
+    [storeId, tz],
+  );
+  return rows.map((r: any) => ({
+    id: r.id,
+    ticketNumber: r.ticket_number ?? null,
+    date: new Date(r.date).toISOString(),
+    duration: Number(r.duration) || 0,
+    status: r.status,
+    clientName: r.client_name,
+    serviceName: r.service_name,
+    staffName: r.staff_name ?? null,
+    isWalkIn: false,
+  }));
+}
+
 export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTicket[]; markers: BoardWaitingMarker[]; dayBookings: BoardDayBooking[]; techStats: TechDayStats[]; glance: SalonGlance; now: string; nextTicketNumber: number | null }> {
   const store = await storage.getStore(storeId);
   const tz = (store as any)?.timezone || "UTC";

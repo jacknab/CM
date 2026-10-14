@@ -106,11 +106,16 @@ const DETAIL_TABS: { kind: DetailKind; label: string }[] = [
  * swipe pattern as the Techs tab's card grid. TURN assigns tickets on its own (START is pressed by staff); the
  * lowest-numbered waiting client is marked UP NEXT.
  */
-export function QueueTab({ techs, tickets, markers, dayBookings, glance, appointmentsLoading = false, appointmentsError = false, clockOffsetMs = 0, assumedIn = EMPTY_ARRAY, initialView, onTicket, onAssignTicket, onStartTicket, onMarker, onMarkerRemove, onTicketTap, onTechs }: {
+export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timezone, glance, appointmentsLoading = false, appointmentsError = false, clockOffsetMs = 0, assumedIn = EMPTY_ARRAY, initialView, onTicket, onAssignTicket, onStartTicket, onMarker, onMarkerRemove, onTicketTap, onTechs }: {
   techs: TurnTech[];
   tickets: BoardTicket[];
   markers: BoardMarker[];
   dayBookings: BoardDayBooking[];
+  /** Booked visits still to come (today's not arrived yet, then the coming days') — the Appointments list.
+   *  Until it has loaded (or with no connection) the list falls back to today's from the board. */
+  upcoming?: BoardDayBooking[];
+  /** The salon's time zone, for the day each upcoming visit is on. */
+  timezone?: string;
   glance: SalonGlance | undefined;
   appointmentsLoading?: boolean;
   appointmentsError?: boolean;
@@ -335,15 +340,24 @@ export function QueueTab({ techs, tickets, markers, dayBookings, glance, appoint
 
   // The day's appointment / no-show / walk-in / completed lists — 16 a screen, more on the next.
   const [detailPage, setDetailPage] = useState(0);
+  // "TODAY", "TOMORROW", else "SAT, OCT 18" — in the salon's time zone.
+  const visitDay = (iso: string) => {
+    const tz = timezone || undefined;
+    const key = (ms: number) => new Date(ms).toLocaleDateString("en-CA", { timeZone: tz });
+    const day = key(+new Date(iso));
+    if (day === key(now)) return "TODAY";
+    if (day === key(now + 86_400_000)) return "TOMORROW";
+    return new Date(iso).toLocaleDateString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric" }).toUpperCase();
+  };
   const renderDetailGhosts = (kind: DetailKind) => {
     const detail = DETAIL_TABS.find((tab) => tab.kind === kind)!;
-    const count = kind === "appointments" ? glance?.appointments
+    const count = kind === "appointments" ? (upcoming ? upcoming.length : glance?.appointments)
       : kind === "no-shows" ? glance?.noShows
       : kind === "walk-ins" ? glance?.walkIns
       : glance?.completed;
     // No-shows are real appointments that were missed, not an empty-state metric. Keep accepting
     // the legacy hyphenated status as well so older records remain visible on the board.
-    const all = bookingsForDetail(dayBookings, kind);
+    const all = kind === "appointments" && upcoming ? upcoming : bookingsForDetail(dayBookings, kind);
     const screens = Math.max(1, Math.ceil(all.length / PER_PAGE));
     const current = Math.min(detailPage, screens - 1);
     const bookings = all.slice(current * PER_PAGE, current * PER_PAGE + PER_PAGE);
@@ -373,7 +387,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, glance, appoint
                 <em className="q-unified-pill" data-kind={kind}>{detail.label}</em>
               </div>
               <div className="q-unified-main">
-                <div className="q-unified-clock"><Clock size={25} strokeWidth={1.8} /><div><small>{kind === "completed" ? "COMPLETED" : kind === "no-shows" ? "MISSED" : "APPOINTMENT"}</small><b>{fmtTime(+new Date(booking.date))}</b></div></div>
+                <div className="q-unified-clock"><Clock size={25} strokeWidth={1.8} /><div><small>{kind === "completed" ? "COMPLETED" : kind === "no-shows" ? "MISSED" : kind === "appointments" ? visitDay(booking.date) : "APPOINTMENT"}</small><b>{fmtTime(+new Date(booking.date))}</b></div></div>
                 <div className="q-unified-side"><small>DURATION</small><b>{booking.duration > 0 ? `${booking.duration} min` : "—"}</b></div>
               </div>
               <div className="q-unified-footer">

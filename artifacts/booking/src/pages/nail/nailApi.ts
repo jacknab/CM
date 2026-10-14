@@ -295,6 +295,9 @@ export const fetchCalendarBoardBookings = () => {
   return call<import("./boardView").CalendarBoardBooking[]>(`/api/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
 };
 
+/** Booked visits still to come: today's not arrived yet, then the coming days'. */
+export const fetchUpcoming = () => call<BoardDayBooking[]>("/api/nail/upcoming");
+
 const turnUrl = (storeId: number, serviceId: number | null) => `/api/turn/eligibility?storeId=${storeId}${serviceId ? `&serviceId=${serviceId}` : ""}`;
 
 /**

@@ -36,7 +36,7 @@ import { ChooseClientPanel, ClientLookupSheet, ManagerPinSheet, TimeClockSheet, 
 import { useStaffList } from "@/hooks/use-staff";
 import { getNowInTimezone } from "@/lib/timezone";
 import {
-  ApiError, boardKey, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchCalendarBoardBookings, fetchClient,
+  ApiError, boardKey, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchCalendarBoardBookings, fetchClient, fetchUpcoming,
   clockInTech, clockOutTech, textClientReady, fetchNailConfig, fetchPosGrid, fetchScreenSettings, fetchTurn, reassignTicket, savePosGrid, saveScreenSettings, removeMarker, resolveMarkerClient, startTicket, updateTicket,
   type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData, type TechSignIn, type TurnEarned, type TurnTech,
  keptOnDevice, keepNailConfig,} from "./nailApi";
@@ -331,6 +331,13 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     queryKey: ["/api/appointments", "nail-board-fallback", storeId],
     queryFn: fetchCalendarBoardBookings,
     enabled: needsCalendarFallback,
+    refetchInterval: pollMs,
+  });
+  // The Appointments list on the Queue tab: every booked visit still to come, not only today's.
+  const { data: upcoming, isPending: upcomingPending, isError: upcomingError } = useQuery({
+    queryKey: ["/api/appointments", "nail-upcoming", storeId],
+    queryFn: fetchUpcoming,
+    enabled: tab === "queue",
     refetchInterval: pollMs,
   });
   const dayBookings = board?.dayBookings?.length ? board.dayBookings
@@ -1274,7 +1281,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
         ) : tab === "techs" ? (
           <TechCards techs={techList} tickets={tickets} markers={markers} glance={board?.glance} stats={board?.techStats ?? EMPTY_ARRAY} loading={techsLoading} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} onClockedOutTap={setClockInFor} onClockedInTap={setClockOutFor} onTicketTap={(t) => setPopupId(t.id)} onQueueView={(view) => { setQueueView(view); setTab("queue"); }} />
         ) : (
-          <QueueTab techs={techList} tickets={tickets} markers={markers} dayBookings={dayBookings} glance={board?.glance} appointmentsLoading={needsCalendarFallback && calendarFallbackPending} appointmentsError={needsCalendarFallback && calendarFallbackError} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} initialView={queueView} onMarker={(m) => void startFromMarker(m)} onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))} onTicket={(t) => setPopupId(t.id)} onAssignTicket={(t) => { setAssignError(null); setAssigning({ mode: "assign", ticket: t }); }} onStartTicket={ticketActions.onStart} onTicketTap={(t) => setPopupId(t.id)} onTechs={() => setTab("techs")} />
+          <QueueTab techs={techList} tickets={tickets} markers={markers} dayBookings={dayBookings} glance={board?.glance} upcoming={upcoming} appointmentsLoading={upcomingPending || (needsCalendarFallback && calendarFallbackPending)} appointmentsError={(upcomingError && !upcoming) || (needsCalendarFallback && calendarFallbackError)} timezone={timezone} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} initialView={queueView} onMarker={(m) => void startFromMarker(m)} onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))} onTicket={(t) => setPopupId(t.id)} onAssignTicket={(t) => { setAssignError(null); setAssigning({ mode: "assign", ticket: t }); }} onStartTicket={ticketActions.onStart} onTicketTap={(t) => setPopupId(t.id)} onTechs={() => setTab("techs")} />
         )}
 
       <BottomNav tab={tab} onTab={(next) => { setQueueView(null); if (next === "queue" && tab === "queue") { setPopupId(null); setTech(null); } else setTab(next); }} onCheckIn={openCheckIn} onMore={() => setShowMore("more")} onLookupByNumber={() => setShowLookupByNumber(true)} waiting={waitingCount} live={live} />

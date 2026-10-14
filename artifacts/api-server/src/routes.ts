@@ -18681,6 +18681,17 @@ or
     }
   });
 
+  app.get("/api/nail/upcoming", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      return res.json(await nailTickets.getNailUpcoming(storeId));
+    } catch (err) {
+      console.error("[nail/upcoming]", err);
+      return res.status(500).json({ message: "Failed to load the upcoming appointments" });
+    }
+  });
+
   // A captured card may have succeeded while the register lost its callback.
   // Only pending captures for this same-store ticket are offered for recovery.
   app.get("/api/nail/captured-card-payments/:id", isAuthenticated, async (req, res) => {
