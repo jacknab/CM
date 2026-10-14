@@ -18060,6 +18060,7 @@ or
           status: staff.status,
           employmentType: staff.employmentType,
           storeId: staff.storeId,
+          barberNumber: staff.barberNumber,
         }).from(staff).where(and(eq(staff.storeId, storeId), eq(staff.status, "active"))).orderBy(asc(staff.name)),
 
         db.select({
@@ -19265,7 +19266,8 @@ or
   // appointment per service, back to back; the second stays with the first technician when they perform it and
   // are free, otherwise goes to the technician the open-times list named (or anyone free who performs it). Not a
   // walk-in, so outside the turn rotation. The client gets the usual booking confirmation.
-  app.post("/api/nail/bookings", isAuthenticated, async (req, res) => {
+  // A booking made on a tablet with no connection is sent later under its own key: answered once, never made twice.
+  app.post("/api/nail/bookings", isAuthenticated, idempotent("nail.booking.create", (r) => resolveSessionStoreId(r)), async (req, res) => {
     try {
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;

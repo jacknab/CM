@@ -72,6 +72,11 @@ export function useAuth() {
   const { data: user, isLoading } = useQuery<User | null>({
     queryKey: ["/api/auth/user"],
     queryFn: fetchUser,
+    // The signed-in user this device last saw, shown at once and checked in the background: a tablet that
+    // restarts with the internet down must open its screens from what it holds, not wait for a request
+    // that may take a minute to fail. A server "not signed in" still clears it (fetchUser).
+    initialData: () => (hasStoredSession ? offlineSessionBootstrap.getUser() ?? undefined : undefined),
+    initialDataUpdatedAt: 0,
     retry: false,
     staleTime: 1000 * 60 * 5,
     gcTime: Infinity,

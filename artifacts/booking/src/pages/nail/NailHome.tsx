@@ -29,9 +29,12 @@ import { DayCloseModal } from "@/components/cash/DayCloseModal";
 import { useStoreNetworkReport } from "@/hooks/use-store-network-report";
 import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
 import { hardRefresh } from "@/lib/hard-refresh";
+import { installRequestDeadline } from "@/lib/request-deadline";
+import { serveKioskOverHub } from "@/lib/kiosk-hub";
+import { findClientId } from "./clientLookup";
 import { useNetworkStatus } from "@/hooks/use-network-status";
 import { syncEngine } from "@/lib/sync-engine";
-import { nailOffline, setNailOfflineStore, isLocalId } from "@/lib/nail-offline";
+import { nailOffline, setNailOfflineStore, isLocalId, isNetworkFailure, newIdempotencyKey } from "@/lib/nail-offline";
 import { nailAdjustment } from "./ticketDraft";
 import { buildCheckinTicket } from "@/lib/thermalPrinter";
 import { ChooseClientPanel, ClientLookupSheet, ManagerPinSheet, TimeClockSheet, TurnPageModal, VoucherRedeemSheet } from "@/pages/Calendar";
@@ -41,7 +44,7 @@ import {
   ApiError, boardKey, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchCalendarBoardBookings, fetchClient, fetchUpcoming,
   clockInTech, clockOutTech, textClientReady, fetchNailConfig, fetchPosGrid, fetchScreenSettings, fetchTurn, reassignTicket, savePosGrid, saveScreenSettings, removeMarker, resolveMarkerClient, startTicket, updateTicket,
   type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData, type TechSignIn, type TurnEarned, type TurnTech,
- keptOnDevice, keepNailConfig,} from "./nailApi";
+ keptOnDevice, keepNailConfig, queueBooking, clientOnDevice,} from "./nailApi";
 import { defaultPick, draftTotals, EMPTY_PICK, type DraftCustomLine, type NailPick, type TicketLine } from "./ticketDraft";
 import { useNailRealtime } from "./useNailRealtime";
 import { TicketPanel } from "./TicketPanel";
@@ -78,6 +81,13 @@ import type { SalesTaxSettings } from "@shared/nailCheckout";
 // The checkout screen is loaded on its own. It is fetched as soon as this screen opens, not on the first
 // tap of CHECKOUT, so it is already on the tablet when the network drops.
 const loadCheckoutMode = () => import("./CheckoutMode");
+
+// Before this screen's first request: no tap waits on a server that cannot be reached
+// (lib/request-deadline.ts), one quick check says at once whether the server answers, and the tablet keeps
+// checking so a dropped internet is noticed within seconds instead of on the next tap.
+installRequestDeadline();
+void syncEngine.checkNow();
+syncEngine.watchReachability();
 const CheckoutMode = lazy(() => loadCheckoutMode().then((module) => ({ default: module.CheckoutMode })));
 
 type Assigning = { mode: "assign" | "reassign"; ticket: BoardTicket } | null;
@@ -122,6 +132,38 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  // The kiosk, with no internet, asks this POS tablet over the salon hub (lib/kiosk-hub.ts): find a client by
+  // phone, and check a client in — answered from what this tablet holds, the check-in put on its waiting list
+  // and sent to the server when the connection is back, like a front-desk check-in made offline.
+  useEffect(() => serveKioskOverHub({
+    lookup: async (phone) => {
+      const digits = phone.replace(/\D/g, "").slice(-10);
+      if (digits.length !== 10) return { found: false };
+      const id = await findClientId(storeId, digits);
+      if (id == null) return { found: false };
+      const c = await fetchClient(id).catch(() => clientOnDevice(id));
+      return c ? { found: true, client: { id: c.id, name: c.name } } : { found: false };
+    },
+    checkin: async (req) => {
+      const digits = req.phone.replace(/\D/g, "").slice(-10);
+      let client: { id: number; name: string; phone: string | null };
+      if (req.clientId != null) {
+        const c = await fetchClient(req.clientId).catch(() => clientOnDevice(req.clientId!));
+        client = { id: req.clientId, name: c?.name ?? req.clientName, phone: digits || c?.phone || null };
+      } else {
+        const made = await nailOffline.createClient(storeId, req.clientName, digits);
+        client = { id: made.id, name: made.name, phone: made.phone };
+      }
+      const { walkin } = await nailOffline.checkIn(storeId, client);
+      queryClient.invalidateQueries({ queryKey: boardKey(storeId) });
+      return { success: true, ticketNumber: walkin.ticketNumber ?? null, clientName: client.name };
+    },
+  }), [storeId, queryClient]);
+  // Something done on this tablet offline that the server refused when it was sent (a booking whose time was
+  // taken meanwhile): the front desk has to act on it, so it stays on screen until closed.
+  useEffect(() => syncEngine.onConflict((_kind, detail) => {
+    if (detail) toast({ title: "Needs attention", description: detail, variant: "destructive", duration: 24 * 60 * 60_000 });
+  }), [toast]);
   const { user } = useAuth();
   const features = useFeatureFlags();
   const thermalPrinter = useThermalPrinter();
@@ -300,6 +342,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // ── Offline (lib/nail-offline): what this device holds is filed under the salon it is signed in to. Anything
   // saved on the device redraws the board at once, and the queue is sent as soon as the server answers again.
   setNailOfflineStore(storeId);
+  // No tap waits on a server that cannot be reached (lib/request-deadline.ts), and the tablet notices a dropped
+  // internet within seconds instead of on the next tap.
   const [queued, setQueued] = useState({ pending: 0, attention: 0, cash: { count: 0, amount: 0 } });
   const [recovery, setRecovery] = useState({ signIn: false, storage: false });
   useEffect(() => {
@@ -637,22 +681,39 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // Saving a ticket hands it to TURN: the next technician in line who can do the service gets it. It waits with
   // them until START is pressed. Nobody free → it waits, unassigned, and the next tech to finish a client picks it up.
   const checkinStaffId = checkinId != null ? markers.find((m) => m.id === checkinId)?.staffId ?? null : null;
+  // One key per booking attempt: a request that reached the server but lost its answer, sent again, books once.
+  const bookingKey = useRef(newIdempotencyKey("nail.booking"));
   const bookVisit = useMutation({
     mutationFn: async () => {
       if (!client || !service || !booking?.slot) throw new Error("Pick a time first");
       if (extraServices.length > 1) throw new Error("A booking can have up to 2 services.");
-      const res = await fetch("/api/nail/bookings", {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId: client.id, serviceId: service.id, extraServiceId: extraServices[0]?.id ?? null, addonIds,
-          staffId: booking.slot.staffId, extraStaffId: booking.slot.extraStaffId ?? null, date: booking.slot.time }),
-      });
+      const body = { clientId: client.id, serviceId: service.id, extraServiceId: extraServices[0]?.id ?? null, addonIds,
+        staffId: booking.slot.staffId, extraStaffId: booking.slot.extraStaffId ?? null, date: booking.slot.time };
+      // No connection (or a client made offline): kept on this tablet and sent when the connection is back.
+      const onDevice = async () => {
+        const extraDuration = Number(extraServices[0]?.duration ?? 0) || 0;
+        await queueBooking(storeId, body, { duration: draft.duration, extraDuration }, `${client.name} · ${bookingLabel(booking.slot!)}`, bookingKey.current);
+        return { offline: true };
+      };
+      if (syncEngine.isOffline() || isLocalId(client.id)) return onDevice();
+      let res: Response;
+      try {
+        res = await fetch("/api/nail/bookings", {
+          method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-Idempotency-Key": bookingKey.current },
+          body: JSON.stringify(body),
+        });
+      } catch (err) {
+        if (isNetworkFailure(err)) return onDevice();
+        throw err;
+      }
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.message || "Could not save the booking");
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       const slot = booking?.slot;
-      say(`Booked ${client?.name.split(" ")[0] ?? "client"} · ${slot ? bookingLabel(slot) : ""}`);
+      bookingKey.current = newIdempotencyKey("nail.booking");
+      say(`Booked ${client?.name.split(" ")[0] ?? "client"} · ${slot ? bookingLabel(slot) : ""}${data?.offline ? " · sent when the connection is back" : ""}`);
       resetDraft(); invalidateBoard(); setTab("queue");
     },
     onError: (err: any) => { toast({ title: "Not booked", description: err?.message, variant: "destructive" }); setBooking((b) => (b ? { ...b, slot: null } : b)); },
@@ -909,7 +970,30 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     });
   }, [openTicketById, pickClient]);
 
+  // Offline: the ticket or check-in with this number on the board this tablet holds.
+  const startFromMarkerRef = useRef<((m: BoardMarker) => void) | null>(null);
+  const lookupByNumberRef = useRef<((n: number) => Promise<boolean>) | null>(null);
+  const openNumberOnDevice = useCallback(async (ticketNumber: number): Promise<boolean> => {
+    const b = await queryClient.fetchQuery({ queryKey: boardKey(storeId), queryFn: fetchBoard }).catch(() => null);
+    const ticket = b?.tickets.find((t) => t.ticketNumber === ticketNumber);
+    if (ticket) { setPopupId(ticket.id); return true; }
+    const marker = b?.markers.find((m) => m.ticketNumber === ticketNumber);
+    if (marker && startFromMarkerRef.current) { startFromMarkerRef.current(marker); return true; }
+    return false;
+  }, [queryClient, storeId]);
+
   const handleScan = useCallback(async (raw: string) => {
+    // No connection: a booking's slip (BK:<id>) opens from the board on this tablet; a check-in slip's code
+    // needs the server, but its ticket number is printed on it.
+    // A slip the kiosk printed through this tablet with no internet carries its ticket number.
+    const numbered = /^TN:(\d+)$/.exec(raw.trim());
+    if (numbered) { if (!(await lookupByNumberRef.current?.(Number(numbered[1])))) toast({ title: "That ticket isn't on the board" }); return; }
+    if (syncEngine.isOffline()) {
+      const booked = /^BK:(\d+)$/.exec(raw.trim());
+      if (booked) { await openTicketById(Number(booked[1])); return; }
+      toast({ title: "No connection", description: "Type the ticket # from the slip instead (the # button)." });
+      return;
+    }
     try {
       const res = await fetch("/api/qr/lookup", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ qrToken: raw }),
@@ -929,7 +1013,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       }
       await applyLookupResult(data);
     } catch {
-      toast({ title: "Scan failed", description: "Couldn't reach the server. Try again.", variant: "destructive" });
+      toast({ title: "No connection", description: "Type the ticket # from the slip instead (the # button)." });
     }
   }, [toast, say, openTicketById, applyLookupResult]);
   useBarcodeScanner(handleScan);
@@ -937,6 +1021,11 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // The "# 123" ticket-number fallback when a slip's QR won't scan — see LookupByNumberDialog.
   const [showLookupByNumber, setShowLookupByNumber] = useState(false);
   const lookupByNumber = useCallback(async (ticketNumber: number): Promise<boolean> => {
+    if (syncEngine.isOffline()) {
+      const found = await openNumberOnDevice(ticketNumber);
+      if (found) setShowLookupByNumber(false);
+      return found;
+    }
     try {
       const res = await fetch("/api/nail/lookup-by-number", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticketNumber }),
@@ -947,9 +1036,13 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       setShowLookupByNumber(false);
       return true;
     } catch {
-      return false;
+      // No answer from the server: look on this tablet.
+      const found = await openNumberOnDevice(ticketNumber);
+      if (found) setShowLookupByNumber(false);
+      return found;
     }
-  }, [applyLookupResult]);
+  }, [applyLookupResult, openNumberOnDevice]);
+  lookupByNumberRef.current = lookupByNumber;
 
   // ── open-register prompts: on load during the morning window, and again at 1 AM store time ──
   const dayKey = useCallback(() => new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date()), [timezone]);
@@ -972,11 +1065,20 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   }, [posEnabled, timezone, dayKey]);
 
   // ── mirror the Book Appointment phone prompt to the paired /frontdesk tablet ───────
-  const [dualScreen, setDualScreen] = useState(false);
+  // Kept on the tablet: started with no connection, the customer screen (tip screen, phone prompts over the
+  // salon hub) must still be used — the setting used to be lost, and with it the customer screen.
+  const dualScreenKey = `certxa.nail.dualScreen.${storeId}`;
+  const [dualScreen, setDualScreen] = useState(() => { try { return localStorage.getItem(`certxa.nail.dualScreen.${storeId}`) === "1"; } catch { return false; } });
   useEffect(() => {
     fetch("/api/kiosk-settings", { credentials: "include" })
-      .then((r) => r.json()).then((d) => setDualScreen(d?.dualScreenMode === true)).catch(() => {});
-  }, [storeId]);
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d) => {
+        const on = d?.dualScreenMode === true;
+        setDualScreen(on);
+        try { localStorage.setItem(dualScreenKey, on ? "1" : "0"); } catch { /* storage unavailable */ }
+      })
+      .catch(() => { /* keep the last known setting */ });
+  }, [storeId, dualScreenKey]);
   useEffect(() => {
     if (!showBook || !dualScreen) return;
     const send = (type: string) => relayCheckoutEvent({ type, registerId });
@@ -1112,18 +1214,28 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   // A kiosk check-in with no ticket yet → start their ticket. One with no client on file is first matched to a
   // client by the phone they typed, or saved as a new client from the name and number on the check-in.
+  const fullNameOf = (n: string | null | undefined) => (n ?? "").trim().replace(/\s+/g, " ") || "Walk-in";
   const startFromMarker = async (m: BoardMarker) => {
     let clientId = m.clientId;
     if (!clientId) {
       try { clientId = (await resolveMarkerClient(m.id)).clientId; invalidateBoard(); }
       catch (err: any) {
-        toast({ title: "Couldn't open this check-in", description: err instanceof ApiError ? err.message : "Try again.", variant: "destructive" });
-        return;
+        // No server: the client is made on this tablet (sent with the ticket when the connection is back), so a
+        // walk-in who checked in by name still gets their ticket.
+        if (isNetworkFailure(err)) {
+          try { clientId = (await nailOffline.createClient(storeId, fullNameOf(m.clientName), m.phone ?? "")).id; }
+          catch { clientId = null; }
+        }
+        if (!clientId) {
+          toast({ title: "Couldn't open this check-in", description: err instanceof ApiError ? err.message : "Try again.", variant: "destructive" });
+          return;
+        }
       }
     }
     setTab("pos");
     void pickClient(clientId, m.id);
   };
+  startFromMarkerRef.current = (m) => void startFromMarker(m);
 
   const ticketActions = {
     // Defense in depth: even if another view invokes Start for an unassigned ticket,
@@ -1267,7 +1379,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
                   onNoSale={() => { void openCashDrawerHardware({ onThermalPrint: thermalPrinter.isConnected ? thermalPrinter.print : undefined }); recordNoSale({ drawerId, performedBy: tech?.name }); say("Cash drawer opened"); }} />
                 {booking?.step === "time" && service ? (
                   <BookingPanel
-                    slug={bookingSlug} timezone={timezone} serviceId={service.id} extraServiceId={extraServices[0]?.id ?? null}
+                    storeId={storeId} slug={bookingSlug} timezone={timezone} serviceId={service.id} extraServiceId={extraServices[0]?.id ?? null}
                     duration={draft.duration}
                     slot={booking.slot} onSlot={(slot) => setBooking((b) => (b ? { ...b, slot } : b))}
                     onServices={() => setBooking({ step: "services", slot: null })}

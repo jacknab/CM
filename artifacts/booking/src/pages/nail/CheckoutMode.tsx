@@ -9,7 +9,8 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useNailText } from "./i18n";
 import { useCardProvider } from "@/hooks/use-card-provider";
-import { relayCheckoutEvent } from "@/lib/local-hub";
+import { localHub, relayCheckoutEvent } from "@/lib/local-hub";
+import { syncEngine } from "@/lib/sync-engine";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Ban, Banknote, BadgePercent, Calculator, Check, CreditCard, DoorOpen, Gift, Hand, HandCoins, Loader2, MessageSquare, Percent, Printer, Settings, ShoppingBag, Users, X, Zap } from "lucide-react";
@@ -20,7 +21,7 @@ import {
 import { buildCheckoutReceipt } from "@/lib/thermalPrinter";
 import { buildNativeReceiptPayload } from "@/lib/receiptPayload";
 import { openCashDrawerHardware, recordNoSale } from "@/lib/cashDrawer";
-import { checkoutRequestKey, lookupGiftCard, type BoardTicket, type FinalizeData, type GiftCardInfo } from "./nailApi";
+import { checkoutRequestKey, lookupGiftCard, queueReceiptText, type BoardTicket, type FinalizeData, type GiftCardInfo } from "./nailApi";
 import { bridgeState, isNativeApp, useCardPayments } from "./useCardPayments";
 import { frontdeskReaderMethod, readNailCardMethod, type NailCardMethod } from "./cardMethod";
 import { verifyCardCharge } from "../frontdesk/verifyCardCharge";
@@ -425,23 +426,28 @@ export function CheckoutMode(p: Props) {
     const digits = String(m.phone ?? "").replace(/\D/g, "").slice(-10) || phoneOnFile;
     if (digits.length !== 10) { say("NO PHONE NUMBER FOR THIS CLIENT — RECEIPT NOT TEXTED", "error"); return reply(false); }
     say("TEXTING RECEIPT…", "info");
+    const snapshot = {
+      items: cartItems(), dateIso: new Date().toISOString(), clientName: ticket.client.name,
+      subtotal: totals.subtotal, discount: totals.discount, tax: totals.tax, tip: totals.tip, total: totals.total,
+      tenders: tenders.map((t) => ({ method: tenderLabel(t), amount: t.amount })),
+    };
     try {
       const r = await fetch("/api/pos/receipt-link", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          appointmentId: ticket.id, phone: digits,
-          snapshot: {
-            items: cartItems(), dateIso: new Date().toISOString(), clientName: ticket.client.name,
-            subtotal: totals.subtotal, discount: totals.discount, tax: totals.tax, tip: totals.tip, total: totals.total,
-            tenders: tenders.map((t) => ({ method: tenderLabel(t), amount: t.amount })),
-          },
-        }),
+        body: JSON.stringify({ appointmentId: ticket.id, phone: digits, snapshot }),
       });
       if (!r.ok) throw new Error(String(r.status));
       say("RECEIPT TEXTED", "success");
       reply(true);
       p.onReceiptDone();
-    } catch {
+    } catch (err) {
+      // No connection: the text waits on the tablet and goes out when the connection is back.
+      if (err instanceof TypeError && await queueReceiptText(p.storeId, ticket.id, digits, snapshot).then(() => true, () => false)) {
+        say("RECEIPT WILL BE TEXTED WHEN THE TABLET IS BACK ONLINE", "info");
+        reply(true);
+        p.onReceiptDone();
+        return;
+      }
       say("COULD NOT TEXT RECEIPT", "error");
       reply(false);
     }
@@ -668,6 +674,8 @@ export function CheckoutMode(p: Props) {
     if (!p.dualScreen) return;
     const bye = () => {
       try { navigator.sendBeacon("/api/kiosk/checkout-event", new Blob([JSON.stringify({ type: "kiosk_checkout_cancel", registerId: p.registerId })], { type: "application/json" })); } catch { /* best effort */ }
+      // With no internet the beacon goes nowhere; the salon hub still reaches the customer screen.
+      if (syncEngine.isOffline()) { try { void localHub.send({ type: "kiosk_checkout_cancel", registerId: p.registerId }); } catch { /* best effort */ } }
     };
     window.addEventListener("pagehide", bye);
     return () => window.removeEventListener("pagehide", bye);
@@ -936,24 +944,28 @@ export function CheckoutMode(p: Props) {
     if (phoneOnFile.length !== 10) { say("NO PHONE NUMBER ON FILE FOR THIS CLIENT", "error"); return; }
     setReceiptBusy("text");
     say("TEXTING RECEIPT…", "info");
+    const snapshot = {
+      clientName: ticket.client.name, items: cartItems(), dateIso: new Date().toISOString(),
+      subtotal: totals.subtotal, discount: totals.discount, tax: totals.tax, tip: totals.tip, total: totals.total,
+      tenders: tenders.map((t) => ({ method: tenderLabel(t), amount: t.amount })),
+    };
     try {
       const r = await fetch("/api/pos/receipt-link", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          appointmentId: ticket.id, phone: phoneOnFile,
-          snapshot: {
-            clientName: ticket.client.name, items: cartItems(), dateIso: new Date().toISOString(),
-            subtotal: totals.subtotal, discount: totals.discount, tax: totals.tax, tip: totals.tip, total: totals.total,
-            tenders: tenders.map((t) => ({ method: tenderLabel(t), amount: t.amount })),
-          },
-        }),
+        body: JSON.stringify({ appointmentId: ticket.id, phone: phoneOnFile, snapshot }),
       });
       if (!r.ok) throw new Error(String(r.status));
       setReceiptBusy(null);
       say("RECEIPT TEXTED", "success");
       p.onReceiptDone();
-    } catch {
+    } catch (err) {
       setReceiptBusy(null);
+      // No connection: the text waits on the tablet and goes out when the connection is back.
+      if (err instanceof TypeError && await queueReceiptText(p.storeId, ticket.id, phoneOnFile, snapshot).then(() => true, () => false)) {
+        say("RECEIPT WILL BE TEXTED WHEN THE TABLET IS BACK ONLINE", "info");
+        p.onReceiptDone();
+        return;
+      }
       say("COULD NOT TEXT RECEIPT", "error");
     }
   };

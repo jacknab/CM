@@ -175,15 +175,40 @@ class SyncEngine {
 
   /** Ask the server once, now, whether it can be reached. */
   async checkNow(): Promise<boolean> {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5_000);
     try {
-      const res = await fetch(`/api/sync/heartbeat?t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(`/api/sync/heartbeat?t=${Date.now()}`, { cache: "no-store", signal: ctrl.signal });
       if (!res.ok) return false;
       this.noteContact();
       if (!this.reachable) { this.reachable = true; this.handleOnline(); this.scheduleSyncWithDelay(800); }
       return true;
     } catch {
+      this.noteUnreachable();
       return false;
+    } finally {
+      clearTimeout(timer);
     }
+  }
+
+  /**
+   * While the server answers, ask it every 15 s whether it still does. With the salon's Wi-Fi up and the
+   * internet down nothing else notices until someone taps and waits; this way the screen is already working
+   * from the device by then. One small request per tablet; started by the salon screens.
+   */
+  private watching = false;
+  watchReachability() {
+    if (this.watching) return;
+    this.watching = true;
+    setInterval(() => {
+      if (!this.reachable || document.visibilityState === "hidden") return;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 5_000);
+      fetch(`/api/sync/heartbeat?t=${Date.now()}`, { cache: "no-store", signal: ctrl.signal })
+        .then((res) => { if (res.ok) this.noteContact(); })
+        .catch(() => this.noteUnreachable())
+        .finally(() => clearTimeout(timer));
+    }, 15_000);
   }
 
   /** True when the server cannot be reached — no network, or a network with no way out. */
@@ -346,7 +371,7 @@ class SyncEngine {
       }
 
       // ── Phase 2: action queue (bookings, clients, loyalty, timeclock) ───
-      await this.processActionQueue();
+      await this.processActionQueue((a) => a.type !== "RECEIPT_TEXT" && a.type !== "NAIL_BOOKING");
 
       // ── Phase 3: clients, walk-ins and tickets made on /nail while offline (lib/nail-offline) ───
       // Only the signed-in salon's changes are sent; with no salon known, nothing is.
@@ -361,6 +386,9 @@ class SyncEngine {
       }
       if (nail.stopped === "server") this.scheduleSyncWithDelay(20_000);
       if (nail.synced > 0) { this.notifyQueueChange(); void nailOffline.prune().catch(() => {}); }
+      // ── Phase 4: bookings made and receipts texted offline — after the clients, tickets and cash sales they
+      // belong to have gone through.
+      if (nail.stopped == null) await this.processActionQueue((a) => a.type === "NAIL_BOOKING" || a.type === "RECEIPT_TEXT");
       // Back in touch: say what is (or is no longer) waiting on this device.
       void this.reportDeviceStatus();
 
@@ -385,8 +413,8 @@ class SyncEngine {
 
   // ── Action queue processing ──────────────────────────────────────────────
 
-  private async processActionQueue(): Promise<void> {
-    const pending = await actionQueueDB.getPending().catch(() => [] as SyncAction[]);
+  private async processActionQueue(which: (action: SyncAction) => boolean = () => true): Promise<void> {
+    const pending = (await actionQueueDB.getPending().catch(() => [] as SyncAction[])).filter(which);
     const tempIdMappings: Record<string, number> = {};
 
     const applyClientMappings = async (action: SyncAction): Promise<SyncAction> => {
@@ -731,6 +759,49 @@ class SyncEngine {
         });
         // Log failures are non-critical — don't retry endlessly
         if (!res.ok && res.status !== 404) throw new Error(`TURN_LOG_OVERRIDE failed: ${res.status}`);
+        return null;
+      }
+
+      case "NAIL_BOOKING": {
+        const { storeId, clientId, info: _info, ...rest } = payload as any;
+        let client = Number(clientId);
+        // A client made on the tablet offline has a temporary (negative) id until it is sent.
+        if (client < 0) {
+          const rec = (await nailOffline.records(Number(storeId)).catch(() => [])).find((r) => r.id === client) as { realId?: number | null } | undefined;
+          if (!rec?.realId) throw new Error(`Waiting for offline client ${client} to sync before ${action.type}`);
+          client = Number(rec.realId);
+        }
+        const res = await fetch("/api/nail/bookings", {
+          method: "POST", headers, credentials: "include", body: JSON.stringify({ ...rest, clientId: client }),
+        });
+        // The time was taken on another device meanwhile, or the booking no longer fits: the front desk has to
+        // call the client and pick another time — shown as a conflict, never retried into a double booking.
+        if (res.status === 409 || res.status === 400) {
+          const data = await res.json().catch(() => null);
+          const who = (payload as any).info?.label ? ` (${(payload as any).info.label})` : "";
+          throw new SyncConflictError("booking_updated", `A booking made offline could not be kept${who}: ${data?.message ?? "the time is no longer free"}. Call the client to pick another time.`);
+        }
+        await throwIfConflict(res, action.type);
+        if (!res.ok) throw new Error(`NAIL_BOOKING failed: ${res.status}`);
+        try { window.dispatchEvent(new CustomEvent("turn-eligibility-changed")); } catch { /* ignore */ }
+        return null;
+      }
+
+      case "RECEIPT_TEXT": {
+        const { storeId, appointmentId, phone, snapshot } = payload as any;
+        let id = Number(appointmentId);
+        // A ticket made on the tablet offline has a temporary (negative) id until it is sent.
+        if (id < 0) {
+          const rec = (await nailOffline.records(Number(storeId)).catch(() => [])).find((r) => r.id === id) as { realId?: number | null } | undefined;
+          if (!rec?.realId) throw new Error(`Waiting for offline ticket ${id} to sync before ${action.type}`);
+          id = Number(rec.realId);
+        }
+        const res = await fetch("/api/pos/receipt-link", {
+          method: "POST", headers, credentials: "include",
+          body: JSON.stringify({ appointmentId: id, phone, snapshot }),
+        });
+        await throwIfConflict(res, action.type);
+        if (!res.ok) throw new Error(`RECEIPT_TEXT failed: ${res.status}`);
         return null;
       }
 

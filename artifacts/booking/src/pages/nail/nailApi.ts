@@ -11,6 +11,7 @@ import { offlineSaleProblem } from "./offlineSale";
 export { offlineSaleProblem };
 import { commonOfflineTech, computeOfflineLine, eventsFromDevice, type BaseLine, type OfflineLine, type OfflineLineTech } from "@/lib/nail-offline/line";
 import { snapshotDB } from "@/lib/snapshot-db";
+import type { OfflineBookingData } from "./offlineBooking";
 import { actionQueueDB } from "@/lib/action-queue-db";
 
 export const boardKey = (storeId: number) => ["/api/nail/board", storeId] as const;
@@ -271,8 +272,19 @@ export async function identifyTech(techId: number): Promise<TechSignIn> {
   const storeId = nailOfflineStore();
   const roster = async () => (storeId != null ? (await nailOffline.recall<Record<string, TechSignIn["staff"]>>(storeId, TECH_ROSTER).catch(() => undefined))?.data ?? {} : {});
   const fromDevice = async (): Promise<TechSignIn> => {
-    const staff = (await roster())[String(techId)];
-    if (!staff) throw new ApiError("No connection, and this ID has not been used on this tablet before. Use an ID that has, or try again once the tablet is back online.", 0);
+    let staff = (await roster())[String(techId)];
+    // Never used on this tablet: the salon's staff list kept on the device has every Tech ID.
+    if (!staff && storeId != null) {
+      const member = (await snapshotDB.load(storeId).catch(() => null))?.staff?.find((m) => Number(m.barberNumber) === techId && (m.status ?? "active") === "active");
+      if (member) staff = { id: member.id, name: member.name, color: member.color ?? null, barberNumber: techId, frontDesk: techId >= 90 && techId <= 99 };
+    }
+    if (!staff) throw new ApiError("No connection, and no one with that ID is on this tablet's staff list. Check the ID, or try again once the tablet is back online.", 0);
+    // A technician using the system is clocked in, offline too: on the device now, on the server when it is back.
+    if (storeId != null && !staff.frontDesk) {
+      const line = await offlineTurnLine(storeId, null).catch(() => null);
+      const onLine = line?.technicians.find((t) => t.id === staff!.id);
+      if (!onLine || onLine.clockedIn === false) await clockInTech(storeId, staff.id).catch(() => {});
+    }
     return { staff, activeMarker: null, activeTicketId: null };
   };
   if (syncEngine.isOffline()) return fromDevice();
@@ -660,6 +672,76 @@ async function punchOffline(storeId: number, staffId: number, action: "clock_in"
     payload: { action, staffId, storeId, at: new Date(now).toISOString() },
   });
   return true;
+}
+
+/**
+ * A receipt to text, kept on this device when the server cannot be reached; it is sent when the connection
+ * is back (after the ticket and its sale, if they were made offline too). The snapshot is what was on screen.
+ */
+export async function queueReceiptText(storeId: number, appointmentId: number, phone: string, snapshot: unknown): Promise<void> {
+  const now = Date.now();
+  await actionQueueDB.add({
+    type: "RECEIPT_TEXT", entity_temp_id: `receipt_${appointmentId}_${now}`, timestamp: now,
+    idempotency_key: newIdempotencyKey("receipt.text"),
+    payload: { storeId, appointmentId, phone, snapshot },
+  });
+}
+
+/**
+ * What this tablet knows for booking a future visit with no connection (see offlineBooking.ts): the salon data
+ * it holds, plus today's board, the last Upcoming list and the bookings already queued here, all of which take
+ * time. Null when the tablet has never been sent the salon data.
+ */
+export async function loadOfflineBookingData(storeId: number, timezone: string, extraServiceId: number | null): Promise<{ data: OfflineBookingData; extraDuration: number } | null> {
+  const [snapshot, board, upcoming, records, pending] = await Promise.all([
+    snapshotDB.load(storeId).catch(() => null),
+    nailOffline.recall<NailBoard>(storeId, "/api/nail/board").catch(() => undefined),
+    nailOffline.recall<BoardDayBooking[]>(storeId, "/api/nail/upcoming").catch(() => undefined),
+    nailOffline.records(storeId).catch(() => [] as Awaited<ReturnType<typeof nailOffline.records>>),
+    actionQueueDB.getPending().catch(() => [] as Awaited<ReturnType<typeof actionQueueDB.getPending>>),
+  ]);
+  if (!snapshot?.storeHours?.length) return null;
+  const staff = (snapshot.staff ?? []).filter((m) => (m.status ?? "active") === "active").map((m) => ({ id: m.id, name: m.name }));
+  const byName = new Map(staff.map((m) => [m.name, m.id]));
+  const skills = new Map<number, Set<number>>();
+  for (const row of snapshot.staffServices ?? []) {
+    if (!skills.has(row.staffId)) skills.set(row.staffId, new Set());
+    skills.get(row.staffId)!.add(row.serviceId);
+  }
+  const span = (staffId: number | null | undefined, date: string, minutes: number) =>
+    staffId ? [{ staffId: Number(staffId), start: Date.parse(date), end: Date.parse(date) + (Number(minutes) || 0) * 60_000 }] : [];
+  const busy = [
+    ...(snapshot.appointments ?? []).filter((a) => !["cancelled", "no_show", "no-show"].includes(String(a.status)))
+      .flatMap((a) => span(a.staffId, a.date, a.duration)),
+    ...overlayBoard(board?.data, records).tickets.flatMap((t) => span(t.staff?.id, t.startedAt ?? t.date, t.duration)),
+    ...(upcoming?.data ?? []).flatMap((b) => span(b.staffName ? byName.get(b.staffName) : null, b.date, b.duration)),
+    ...pending.filter((a) => a.type === "NAIL_BOOKING" && Number((a.payload as any)?.storeId) === storeId).flatMap((a) => {
+      const p = a.payload as any;
+      const firstMinutes = p.extraStaffId ? Number(p.duration) - Number(p.extraDuration) : Number(p.duration);
+      return [...span(p.staffId, p.date, firstMinutes),
+        ...(p.extraStaffId ? span(p.extraStaffId, new Date(Date.parse(p.date) + firstMinutes * 60_000).toISOString(), Number(p.extraDuration)) : [])];
+    }),
+  ];
+  const extraDuration = extraServiceId ? Number((snapshot.services ?? []).find((x) => x.id === extraServiceId)?.duration ?? 0) || 0 : 0;
+  return {
+    data: { timezone: snapshot.timezone || timezone, hours: snapshot.storeHours, rules: snapshot.staffAvailability ?? [], staff, skills, busy },
+    extraDuration,
+  };
+}
+
+/**
+ * A future visit booked with no connection: kept on this tablet and sent (POST /api/nail/bookings, under its own
+ * key) when the connection is back. The server checks the time again then; if it was taken meanwhile the front
+ * desk is told. `duration` is the whole visit, `extraDuration` the second service's part.
+ */
+export async function queueBooking(storeId: number, body: { clientId: number; serviceId: number; extraServiceId: number | null; addonIds: number[]; staffId: number; extraStaffId: number | null; date: string },
+  times: { duration: number; extraDuration: number }, label: string, key: string = newIdempotencyKey("nail.booking")): Promise<void> {
+  const now = Date.now();
+  await actionQueueDB.add({
+    type: "NAIL_BOOKING", entity_temp_id: `booking_${now}`, timestamp: now,
+    idempotency_key: key,
+    payload: { storeId, ...body, ...times, info: { label } },
+  });
 }
 
 /** Text the client that their technician is ready. Needs the server. */

@@ -17,7 +17,11 @@ export type ActionType =
   | "LOYALTY_ADJUST"
   | "TIMECLOCK_PUNCH"
   | "TURN_ASSIGN"
-  | "TURN_LOG_OVERRIDE";
+  | "TURN_LOG_OVERRIDE"
+  // A receipt the client asked to have texted while the tablet had no connection: sent when it is back.
+  | "RECEIPT_TEXT"
+  // A future visit booked on /nail while the tablet had no connection (POST /api/nail/bookings when it is back).
+  | "NAIL_BOOKING";
 
 export type ActionState = "PENDING" | "SYNCING" | "CONFIRMED" | "CONFLICT";
 

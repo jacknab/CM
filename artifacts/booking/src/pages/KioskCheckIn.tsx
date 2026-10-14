@@ -7,6 +7,18 @@ import { KIOSK_LANGS, LangCode, translations } from "../lib/kioskTranslations";
 import { isValidNanpPrefix } from "../lib/phone-validation";
 import { useShake } from "../hooks/use-shake";
 import { kioskFetch, isKioskDeviceAuthorized } from "../lib/kioskDevice";
+import { localHub } from "../lib/local-hub";
+import { hubKioskCheckin, hubKioskLookup } from "../lib/kiosk-hub";
+import { installRequestDeadline } from "../lib/request-deadline";
+import { syncEngine } from "../lib/sync-engine";
+
+// No tap here waits on a server that cannot be reached; with no internet the kiosk works through the POS tablet.
+installRequestDeadline();
+syncEngine.watchReachability();
+const kioskConfigKey = (slug: string) => `certxa.kiosk.config.${slug}`;
+const kioskNailCfgKey = (slug: string, serviceId: number) => `certxa.kiosk.nailcfg.${slug}.${serviceId}`;
+const keepJson = (key: string, value: unknown) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ } };
+const keptJson = (key: string): any => { try { return JSON.parse(localStorage.getItem(key) ?? "null"); } catch { return null; } };
 import KioskPairing from "../components/kiosk/KioskPairing";
 import KioskSuspendedScreen from "../components/kiosk/KioskSuspendedScreen";
 
@@ -56,7 +68,9 @@ interface SmartInfo {
 }
 interface StoreConfig        { name: string; phone: string; address: string; }
 interface KioskConfig        { kioskEnabled: boolean; welcomeHeadline: string | null; welcomeSubText: string | null; loyaltyPromoText: string | null; categoryImages: Record<string, string> | null; timezone: string | null; showServicePrice: boolean; showServiceDuration: boolean; dualScreenMode: boolean; }
-interface TicketData         { token: string; clientName: string; appointmentId: number | null; ticketNumber?: number | null; services: ServiceItem[]; addons?: AddonItem[]; staffName: string | null; }
+interface TicketData         { token: string; clientName: string; appointmentId: number | null; ticketNumber?: number | null; services: ServiceItem[]; addons?: AddonItem[]; staffName: string | null;
+  /** Checked in through the POS tablet over the salon hub with no internet: no server ticket (and no QR) yet. */
+  offline?: boolean; }
 interface TodayAppointment   { id: number; serviceName: string; staffName: string | null; staffAvatarThumbUrl: string | null; appointmentTime: string; }
 
 const QWERTY: string[][] = [
@@ -454,9 +468,14 @@ function KioskCheckInScreens() {
   useEffect(() => {
     if (!slug) return;
     fetch(`/api/public/kiosk/${slug}/config`)
-      .then(r => r.json())
-      .then(d => applyConfig(d, true))
-      .catch(() => { setError("Failed to connect."); setScreen("error"); });
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(d => { keepJson(kioskConfigKey(slug), d); applyConfig(d, true); })
+      .catch(() => {
+        // No connection: open with the last menu and settings this kiosk was sent.
+        const kept = keptJson(kioskConfigKey(slug));
+        if (kept) applyConfig(kept, true);
+        else { setError("Failed to connect."); setScreen("error"); }
+      });
   }, [slug, applyConfig]);
 
   // Periodic background refresh of the catalog (services/staff/addons/pricing/
@@ -469,14 +488,17 @@ function KioskCheckInScreens() {
     let cancelled = false;
     const refresh = () => {
       fetch(`/api/public/kiosk/${slug}/config`)
-        .then(r => r.json())
-        .then(d => { if (!cancelled) applyConfig(d, false); })
+        .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then(d => { keepJson(kioskConfigKey(slug), d); if (!cancelled) applyConfig(d, false); })
         .catch(() => {});
     };
     refresh();
     const iv = setInterval(refresh, 5 * 60_000);
     return () => { cancelled = true; clearInterval(iv); };
   }, [slug, screen, applyConfig]);
+
+  // The salon hub: with no internet, lookups and check-ins go to the POS tablet over the salon's Wi-Fi.
+  useEffect(() => { if (storeId) void localHub.start(storeId, "screen"); }, [storeId]);
 
   // ── WebSocket: account_status_changed + dual-screen POS checkout events ──
   useEffect(() => {
@@ -708,11 +730,12 @@ function KioskCheckInScreens() {
     todayCount?: number;
   }) => {
     let printedLocally = false;
-    if (slip.ticketNumber != null && slip.appointmentId != null) {
+    if (slip.ticketNumber != null) {
       printedLocally = await printNativeCheckinTicket({
         clientName: slip.clientName || "Guest",
         ticketNumber: Number(slip.ticketNumber),
-        qrValue: `BK:${slip.appointmentId}`,
+        // A check-in made through the POS with no internet has no booking yet: its code is the ticket number.
+        qrValue: slip.appointmentId != null ? `BK:${slip.appointmentId}` : `TN:${slip.ticketNumber}`,
         todayCount: slip.todayCount,
         services: slipServiceNames(slip.services),
       });
@@ -731,7 +754,7 @@ function KioskCheckInScreens() {
         services: slip.services,
         appointmentId: slip.appointmentId,
         ticketNumber: slip.ticketNumber,
-        bookingCode: `BK:${slip.appointmentId}`,
+        bookingCode: slip.appointmentId != null ? `BK:${slip.appointmentId}` : `TN:${slip.ticketNumber}`,
         todayCount: slip.todayCount,
         timeStr,
         dateStr,
@@ -782,7 +805,22 @@ function KioskCheckInScreens() {
       } else {
         setScreen("name_entry");
       }
-    } catch { setError("Connection error. Please try again."); setScreen("error"); }
+    } catch {
+      // No internet: ask the POS tablet over the salon hub.
+      const answer = await hubKioskLookup(p);
+      if (!answer) { setError("Connection error. Please try again."); setScreen("error"); return; }
+      markerTokenRef.current = null;
+      setSmart(null);
+      offeredRef.current = { serviceIds: [], addonId: null };
+      if (answer.found && answer.client) {
+        setClientInfo(answer.client as any);
+        setTodayAppointment(null);
+        setScreen("welcome");
+        setTimeout(() => { checkAvailabilityAndRoute(); }, 1200);
+      } else {
+        setScreen("name_entry");
+      }
+    }
   };
 
   const goToStylist = () => {
@@ -836,8 +874,17 @@ function KioskCheckInScreens() {
     if (selSvc) {
       setScreen("loading");
       try {
-        const r = await fetch(`/api/public/kiosk/${slug}/nail-config/${selSvc.id}`);
-        const cfg: NailConfig = await r.json();
+        let cfg: NailConfig;
+        try {
+          const r = await fetch(`/api/public/kiosk/${slug}/nail-config/${selSvc.id}`);
+          cfg = await r.json();
+          if (r.ok) keepJson(kioskNailCfgKey(slug!, selSvc.id), cfg);
+        } catch (err) {
+          // No connection: the options this kiosk was last sent for this service.
+          const kept = keptJson(kioskNailCfgKey(slug!, selSvc.id));
+          if (!kept) throw err;
+          cfg = kept;
+        }
         if (cfg?.enabled && (cfg.sizes?.length || cfg.shapes?.length || cfg.effects?.length)) {
           setNailCfg(cfg);
           setScreen(cfg.sizes?.length ? "nail_size" : cfg.shapes?.length ? "nail_shape" : "nail_effects");
@@ -900,7 +947,18 @@ function KioskCheckInScreens() {
       }
       else if (r.status === 409 && d.appointmentId) { markerTokenRef.current = null; setError(t.alreadyCheckedIn); setScreen("error"); }
       else            { setError(d.error || "Check-in failed"); setScreen("error"); }
-    } catch { setError("Connection error. Please try again."); setScreen("error"); }
+    } catch {
+      // No internet: the POS tablet checks the client in over the salon hub and gives the ticket number.
+      const clientName = clientInfo?.name ?? (newClientName.trim() || "Walk-in Guest");
+      const staffName = selectedStaff && selectedStaff !== "none" ? (selectedStaff as StaffItem).name : null;
+      const answer = await hubKioskCheckin({ clientId: clientInfo?.id ?? null, clientName, phone, services: selectedServices.map((s) => ({ name: s.name })), staffName });
+      if (!answer?.success) { setError(answer?.error || "Connection error. Please try again."); setScreen("error"); return; }
+      markerTokenRef.current = null;
+      setTicket({ token: "", clientName: answer.clientName ?? clientName, appointmentId: null, ticketNumber: answer.ticketNumber ?? null,
+        services: selectedServices, addons: selectedAddons, staffName: null, offline: true });
+      setScreen("ticket");
+      await printCheckinSlip({ clientName: answer.clientName ?? clientName, services: selectedServices.map((s) => ({ name: s.name })), appointmentId: null, ticketNumber: answer.ticketNumber ?? null });
+    }
   };
 
   // Up to two services on one visit, two and a half hours in all (the server holds the same limit).
@@ -2804,12 +2862,20 @@ function KioskCheckInScreens() {
 
       <div className="flex-1 flex flex-col items-center justify-center gap-6">
         <p className="text-sm uppercase tracking-widest font-semibold" style={{ color: SUBTLE }}>{t.staffScanQr}</p>
-        <div className="p-5 rounded-3xl shadow-2xl" style={{ background: "#fff" }}>
-          <QRCodeCanvas value={ticketUrl} size={280} level="M" includeMargin={false} />
-        </div>
-        <p className="text-xs font-mono" style={{ color: SUBTLE }}>
-          {ticket.ticketNumber != null ? String(ticket.ticketNumber).padStart(3, "0") : (ticket.appointmentId ?? ticket.token.substring(0, 10))}
-        </p>
+        {ticket.offline ? (
+          <p className="font-mono font-black" style={{ color: TEXT, fontSize: 120, lineHeight: 1 }}>
+            {ticket.ticketNumber != null ? String(ticket.ticketNumber).padStart(3, "0") : "—"}
+          </p>
+        ) : (
+          <>
+            <div className="p-5 rounded-3xl shadow-2xl" style={{ background: "#fff" }}>
+              <QRCodeCanvas value={ticketUrl} size={280} level="M" includeMargin={false} />
+            </div>
+            <p className="text-xs font-mono" style={{ color: SUBTLE }}>
+              {ticket.ticketNumber != null ? String(ticket.ticketNumber).padStart(3, "0") : (ticket.appointmentId ?? ticket.token.substring(0, 10))}
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

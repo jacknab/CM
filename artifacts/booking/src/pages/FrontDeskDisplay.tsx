@@ -29,6 +29,14 @@ import { LangCode, translations } from "../lib/kioskTranslations";
 import { isValidNanpPrefix } from "../lib/phone-validation";
 import { useShake } from "../hooks/use-shake";
 import { kioskFetch, isKioskDeviceAuthorized } from "../lib/kioskDevice";
+import { hubKioskCheckin, hubKioskLookup } from "../lib/kiosk-hub";
+import { installRequestDeadline } from "../lib/request-deadline";
+import { syncEngine } from "../lib/sync-engine";
+
+// No tap here waits on a server that cannot be reached; with no internet this screen works through the POS tablet.
+installRequestDeadline();
+syncEngine.watchReachability();
+const frontdeskConfigKey = (url: string) => `certxa.frontdesk.config.${url}`;
 import { getStationDeviceId } from "../lib/stationDevice";
 import KioskPairing from "../components/kiosk/KioskPairing";
 import KioskSuspendedScreen from "../components/kiosk/KioskSuspendedScreen";
@@ -437,9 +445,18 @@ export default function FrontDeskDisplay() {
   useEffect(() => {
     if (!slug) return;
     fetch(configUrl)
-      .then(r => r.json())
-      .then(d => applyConfig(d, true))
-      .catch(() => { setError("Failed to connect."); setScreen("error"); });
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(d => {
+        if (!d?.error && !d?.accountSuspended) { try { localStorage.setItem(frontdeskConfigKey(configUrl), JSON.stringify(d)); } catch { /* storage unavailable */ } }
+        applyConfig(d, true);
+      })
+      .catch(() => {
+        // No connection: open with what this screen was last sent, so the hub can still link it to the POS.
+        let kept: any = null;
+        try { kept = JSON.parse(localStorage.getItem(frontdeskConfigKey(configUrl)) ?? "null"); } catch { kept = null; }
+        if (kept) applyConfig(kept, true);
+        else { setError("Failed to connect."); setScreen("error"); }
+      });
   }, [slug, configUrl, applyConfig]);
 
   // The salon's rewards. One failed request (a deploy, a network blip) used to leave "No rewards available" until the tablet was
@@ -477,8 +494,11 @@ export default function FrontDeskDisplay() {
     let cancelled = false;
     const refresh = () => {
       fetch(configUrl)
-        .then(r => r.json())
-        .then(d => { if (!cancelled) applyConfig(d, false); })
+        .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then(d => {
+          if (!d?.error && !d?.accountSuspended) { try { localStorage.setItem(frontdeskConfigKey(configUrl), JSON.stringify(d)); } catch { /* storage unavailable */ } }
+          if (!cancelled) applyConfig(d, false);
+        })
         .catch(() => {});
     };
     refresh();
@@ -1016,6 +1036,8 @@ export default function FrontDeskDisplay() {
       // closes instead of duplicating what the customer just did here.
       sendWs("kiosk_checkin_client_named", { phone: digits });
     } catch {
+      // No internet, and not during a checkout: the POS tablet makes the client and checks them in.
+      if (!apptId && name?.trim() && await checkInOverHub(digits, null, name.trim())) return;
       setError(t.somethingWrong);
       setScreen("error");
     }
@@ -1066,6 +1088,21 @@ export default function FrontDeskDisplay() {
     }
   }, [clientInfo?.id, slug]);
 
+  // ── No internet: the POS tablet checks the client in over the salon hub (lib/kiosk-hub.ts) ──
+  const checkInOverHub = async (digits: string, clientId: number | null, name: string): Promise<boolean> => {
+    const answer = await hubKioskCheckin({ clientId, clientName: name, phone: digits, services: [], staffName: null });
+    if (!answer?.success) return false;
+    const nm = answer.clientName ?? name;
+    setClientInfo({ id: clientId ?? 0, name: nm, loyaltyPoints: 0, totalVisits: 0 } as any);
+    setTodayAppointment(null);
+    setSvcResult(null); setSvcError("");
+    setScreen("checked_in_generic");
+    if (isNative && answer.ticketNumber != null) {
+      void printNativeCheckinTicket({ clientName: nm, ticketNumber: Number(answer.ticketNumber), qrValue: `TN:${answer.ticketNumber}` }).catch(() => false);
+    }
+    return true;
+  };
+
   // ── Check-in lookup ─────────────────────────────────────────────────────
   const doLookup = async (p: string) => {
     setScreen("loading");
@@ -1109,6 +1146,15 @@ export default function FrontDeskDisplay() {
         sendWs("kiosk_checkin_unknown_phone", { phone: p });
       }
     } catch {
+      // No internet: find them through the POS tablet; a new number goes on to the name keyboard.
+      const answer = await hubKioskLookup(p);
+      if (answer?.found && answer.client) {
+        if (await checkInOverHub(p, answer.client.id, answer.client.name)) return;
+      } else if (answer) {
+        setNewClientName("");
+        setScreen("name_entry");
+        return;
+      }
       setError(t.somethingWrong);
       setScreen("error");
     }

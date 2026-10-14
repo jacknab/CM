@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, MoreHorizontal } from "lucide-react";
+import { syncEngine } from "@/lib/sync-engine";
+import { loadOfflineBookingData } from "./nailApi";
+import { bookingTechs, openDaysOffline, openTimesOffline } from "./offlineBooking";
 
 /** An open time: who takes it, and (two services nobody does both of) who takes the second service. */
 export interface BookingSlot { time: string; staffId: number; staffName: string; extraStaffId?: number; extraStaffName?: string }
@@ -35,6 +38,7 @@ async function getJson<T>(url: string, fallback: string): Promise<T> {
  * learns nothing new. The ticket on the left keeps showing the visit being booked.
  */
 export function BookingPanel(p: {
+  storeId: number;
   slug: string;
   timezone: string;
   serviceId: number;
@@ -60,6 +64,24 @@ export function BookingPanel(p: {
   const [slots, setSlots] = useState<BookingSlot[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // With no connection the technicians, days and times come from this tablet (offlineBooking.ts).
+  const [offline, setOffline] = useState(false);
+  const offlineData = useMemo(() => {
+    let loaded: ReturnType<typeof loadOfflineBookingData> | null = null;
+    return () => (loaded ??= loadOfflineBookingData(p.storeId, p.timezone, p.extraServiceId));
+  }, [p.storeId, p.timezone, p.extraServiceId]);
+  const fromServerOr = async <T,>(url: string, fallbackMsg: string, onDevice: (d: NonNullable<Awaited<ReturnType<typeof loadOfflineBookingData>>>) => T): Promise<T> => {
+    const local = async () => {
+      const d = await offlineData();
+      if (!d) throw new Error("No connection, and this tablet does not have the salon's booking data yet.");
+      setOffline(true);
+      return onDevice(d);
+    };
+    if (syncEngine.isOffline()) return local();
+    try { const r = await getJson<T>(url, fallbackMsg); setOffline(false); return r; }
+    catch (err) { if (err instanceof TypeError) return local(); throw err; }
+  };
+
   const visit = useMemo(() => {
     const q = new URLSearchParams({ serviceId: String(p.serviceId), duration: String(Math.max(5, p.duration)) });
     if (p.extraServiceId) q.set("extraServiceId", String(p.extraServiceId));
@@ -70,7 +92,7 @@ export function BookingPanel(p: {
   useEffect(() => {
     let cancelled = false;
     setTechs(null); setError(null);
-    getJson<{ id: number; name: string }[]>(`/api/nail/booking-techs?${visit}`, "Could not load the technicians")
+    fromServerOr(`/api/nail/booking-techs?${visit}`, "Could not load the technicians", (d) => bookingTechs(d.data, p.serviceId, p.extraServiceId))
       .then((list) => { if (!cancelled) setTechs(list); })
       .catch((err) => { if (!cancelled) setError(err?.message || "Could not load the technicians. It needs a connection."); });
     return () => { cancelled = true; };
@@ -85,7 +107,10 @@ export function BookingPanel(p: {
     const q = new URLSearchParams(visit);
     q.set("from", dayStart); q.set("limit", String(DAYS_PER_PAGE));
     if (staffId) q.set("staffId", String(staffId));
-    getJson<{ days: string[]; next: string | null }>(`/api/nail/booking-days?${q}`, "Could not load the open days")
+    fromServerOr(`/api/nail/booking-days?${q}`, "Could not load the open days", (d) => openDaysOffline(d.data, {
+      from: dayStart, limit: DAYS_PER_PAGE, serviceId: p.serviceId, extraServiceId: p.extraServiceId,
+      duration: Math.max(5, p.duration), extraDuration: d.extraDuration, staffId, now: Date.now(),
+    }))
       .then((d) => { if (!cancelled) setDays(d); })
       .catch((err) => { if (!cancelled) setError(err?.message || "Could not load the open days. It needs a connection."); });
     return () => { cancelled = true; };
@@ -100,7 +125,10 @@ export function BookingPanel(p: {
     const q = new URLSearchParams(visit);
     q.set("date", day); q.set("staff", "1");
     if (staffId) q.set("staffId", String(staffId));
-    getJson<BookingSlot[]>(`/api/public/store/${encodeURIComponent(p.slug)}/availability?${q}`, "Could not load the open times")
+    fromServerOr<BookingSlot[]>(`/api/public/store/${encodeURIComponent(p.slug)}/availability?${q}`, "Could not load the open times", (d) => openTimesOffline(d.data, {
+      date: day, serviceId: p.serviceId, extraServiceId: p.extraServiceId, duration: Math.max(5, p.duration),
+      extraDuration: d.extraDuration, staffId, now: Date.now(),
+    }))
       .then((data) => { if (!cancelled) setSlots(Array.isArray(data) ? data : []); })
       .catch((err) => { if (!cancelled) setError(err?.message || "Could not load the open times. It needs a connection."); });
     return () => { cancelled = true; };
@@ -141,7 +169,7 @@ export function BookingPanel(p: {
     ];
     if (dayStarts.length > 1) cells.push(nav("Earlier", () => setDayStarts((s) => s.slice(0, -1)), "nail-book-days-earlier"));
     if (days?.next && list.length >= DAYS_PER_PAGE) cells.push(nav("Later", () => setDayStarts((s) => [...s, days.next!]), "nail-book-days-later", "more"));
-    message = error ? error : days == null ? "Finding open days…" : list.length === 0 ? `${staffId ? techName : "Nobody"} has no open time for this visit${dayStarts.length > 1 ? " after these days" : " in the next 90 days"}.` : null;
+    message = error ? error : days == null ? "Finding open days…" : list.length === 0 ? `${staffId ? techName : "Nobody"} has no open time for this visit${dayStarts.length > 1 ? " after these days" : offline ? " in the next 30 days" : " in the next 90 days"}.` : null;
   } else {
     // Back to the days, then the times (16 a page, More for the rest).
     const list = slots ?? [];
@@ -157,7 +185,8 @@ export function BookingPanel(p: {
     ];
     if ((timePage + 1) * TIMES_PER_PAGE < list.length) cells.push(nav("More", () => setTimePage((n) => n + 1), "nail-book-times-more", "more"));
     else if (timePage > 0) cells.push(nav("Back", () => setTimePage(0), "nail-book-times-first"));
-    message = error ? error : slots == null ? "Finding open times…" : list.length === 0 ? "This day just filled up. Pick another day." : null;
+    message = error ? error : slots == null ? "Finding open times…" : list.length === 0 ? "This day just filled up. Pick another day."
+      : offline ? "No connection: times from this tablet. The booking is sent when the connection is back." : null;
   }
 
   return (

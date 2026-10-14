@@ -42,6 +42,8 @@ export type SnapshotStaff = {
   status?: string | null;
   employmentType?: string | null;
   storeId?: number | null;
+  /** Tech / Barber ID, so any technician can sign in on a tablet with no connection. */
+  barberNumber?: number | null;
 };
 
 export type SnapshotCustomer = {
