@@ -263,8 +263,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     } catch { /* the Queue still shows it */ }
   }, [queryClient, storeId]);
   useEffect(() => {
-    if (!waitingAssigned) return;
-    const timer = setTimeout(() => setWaitingAssigned(null), waitingAssigned.started ? 1_500 : 10_000);
+    if (!waitingAssigned || waitingAssigned.started) return; // once started, the effect after `lock` closes it
+    const timer = setTimeout(() => setWaitingAssigned(null), 10_000);
     return () => clearTimeout(timer);
   }, [waitingAssigned]);
 
@@ -543,12 +543,19 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     return () => { clearTimeout(timer); window.removeEventListener("pointerdown", touched, true); window.removeEventListener("keydown", touched, true); };
   }, [signedIn, idleLockMs]);
   // The assigned-ticket notice closes itself after ten seconds, then the keypad comes back for the next
-  // technician — whoever saved the ticket, front desk included.
+  // technician — whoever saved the ticket, front desk included. Once START is tapped it reads "Service
+  // Started" and goes back to the lock screen after three seconds.
   useEffect(() => {
     if (!startedNotice) return;
-    const timer = setTimeout(() => { setStartedNotice(null); lock(); setTech(null); }, 10_000);
+    const timer = setTimeout(() => { setStartedNotice(null); lock(); setTech(null); }, startedNotice.some((t) => t.started) ? 3_000 : 10_000);
     return () => clearTimeout(timer);
   }, [startedNotice, lock]);
+  // The same for the "assigned to you" notice: three seconds after START, back to the lock screen.
+  useEffect(() => {
+    if (!waitingAssigned?.started) return;
+    const timer = setTimeout(() => { setWaitingAssigned(null); lock(); setTech(null); }, 3_000);
+    return () => clearTimeout(timer);
+  }, [waitingAssigned, lock]);
   // The "client assigned" notice after a Tech ID sign-in: five seconds over the queue, then the keypad
   // comes back for the next technician.
   // The technician's own sign-in notice takes the place of the station-wide one, whichever arrives first.
@@ -1380,14 +1387,14 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
                 {t.staffName && (
                   <>
                     <br />
-                    {/* Starting from here saves a trip to the Queue. Updating the notice also restarts its ten seconds. */}
+                    {/* Starting from here saves a trip to the Queue. After START the notice closes in three seconds. */}
                     <button type="button" disabled={t.started} data-testid="nail-saved-start"
                       onClick={() => {
                         act.mutate(() => startTicket(t.appointmentId, t.clientName));
                         setStartedNotice((cur) => cur && cur.map((x, j) => (j === i ? { ...x, started: true } : x)));
                       }}
                       style={{ marginTop: 12, fontSize: 18, fontWeight: 700, padding: "12px 32px", borderRadius: 12, border: "none", background: t.started ? "#353a43" : "#0d9b6e", color: "#fff" }}>
-                      {t.started ? "Started" : "Start Service"}
+                      {t.started ? "Service Started" : "Start Service"}
                     </button>
                   </>
                 )}
@@ -1411,7 +1418,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
                 setWaitingAssigned((cur) => cur && { ...cur, started: true });
               }}
               style={{ marginTop: 40, fontSize: 30, fontWeight: 800, padding: "22px 64px", borderRadius: 16, border: "none", background: waitingAssigned.started ? "#353a43" : "#0d9b6e", color: "#fff" }}>
-              {waitingAssigned.started ? "Started" : "Start Service"}
+              {waitingAssigned.started ? "Service Started" : "Start Service"}
             </button>
           </div>
         </div>
