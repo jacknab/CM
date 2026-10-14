@@ -62,6 +62,7 @@ const T = {
   services: { en: "SERVICES", vi: "DỊCH VỤ", es: "SERVICIOS" },
   payCheckout: { en: "PAY / CHECKOUT", vi: "TÍNH TIỀN", es: "PAGAR / COBRAR" },
   back: { en: "BACK", vi: "TRỞ LẠI", es: "ATRÁS" },
+  exit: { en: "EXIT", vi: "THOÁT", es: "SALIR" },
   subtotal: { en: "SUBTOTAL", vi: "TẠM TÍNH", es: "SUBTOTAL" },
   discount: { en: "DISCOUNT", vi: "GIẢM GIÁ", es: "DESCUENTO" },
   tax: { en: "TAX", vi: "THUẾ", es: "IMPUESTO" },

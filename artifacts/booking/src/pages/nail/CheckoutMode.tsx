@@ -603,6 +603,14 @@ export function CheckoutMode(p: Props) {
       say("WAITING FOR CLIENT TO SELECT TIP", "info");
     }
   };
+  // EXIT: back from the payment step to the ticket as it was before PAY / CHECKOUT.
+  const exitPaying = () => {
+    if (tenders.length > 0 || cardBusy) return;
+    setPaying(false);
+    setPayType("cash");
+    setCents("");
+    setRightTab("payment");
+  };
   // CASH is the payment type, not a payment: the amount comes from the keypad.
   const chooseCash = () => { beginPaying(); setPayType("cash"); };
   // The salon's own terminal approved the card: record a card payment of the typed amount, or of what is still due.
@@ -1120,7 +1128,9 @@ export function CheckoutMode(p: Props) {
                     {cardBusy && cardProvider !== "own" ? <Loader2 size={26} className="spin" /> : <CreditCard size={26} />}<span>{cardProvider === "own" || cardLabel === "CARD" ? tx("card") : cardLabel}</span>
                   </button>
                   <button type="button" className="pay-gift" onClick={() => openGift("pay")} data-testid="nail-pay-gift"><Gift size={26} /><span>{tx("giftCard")}</span></button>
-                  <button type="button" className="pay-gift" disabled={cardBusy || p.finalizing} onClick={() => setRightTab("services")} data-testid="nail-pay-services"><Hand size={26} /><span>{tx("services")}</span></button>
+                  {/* EXIT leaves the payment step (not the POS): the service keys come back on the right and CLR /
+                      PAY / CHECKOUT under the cart. Only before any payment is recorded — BACK would drop it. */}
+                  <button type="button" className="pay-gift" disabled={cardBusy || p.finalizing || tenders.length > 0} onClick={exitPaying} data-testid="nail-pay-exit"><Hand size={26} /><span>{tx("exit")}</span></button>
                 </div>
                 )}
                 {(awaitingTip || cards.awaitingFrontdesk) && (
