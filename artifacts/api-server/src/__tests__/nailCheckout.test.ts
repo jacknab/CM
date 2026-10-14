@@ -128,3 +128,19 @@ describe("splitGroup — tip entered per technician", () => {
     expect(splitGroup(members, totals, "cash", { 1: 15 }).map((s) => s.tip)).toEqual([3.75, 11.25]);
   });
 });
+
+describe("computeCheckout — cash price", () => {
+  const base: CheckoutInput = { ticketTotal: 50, extras: [], linkedSubtotal: 0, discount: { type: "percent", value: 0 }, rewardDollar: 0, tip: 10, tenders: [] };
+  test("takes the cash percentage off the services, not the tip or tax", () => {
+    const t = computeCheckout({ ...base, cashDiscountPct: 3.5, salesTax: { rate: 0.08, services: true, products: true } });
+    expect(t.discount).toBe(1.75);
+    expect(t.tax).toBe(3.86);
+    expect(t.total).toBe(62.11);
+  });
+  test("comes on top of a manual discount, on what is left", () => {
+    expect(computeCheckout({ ...base, discount: { type: "dollar", value: 10 }, cashDiscountPct: 5 }).discount).toBe(12);
+  });
+  test("is nothing when off", () => {
+    expect(computeCheckout({ ...base, cashDiscountPct: 0 }).total).toBe(60);
+  });
+});

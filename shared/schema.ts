@@ -235,6 +235,8 @@ export const locations = pgTable("locations", {
   // key shared across every store on the platform).
   nextTicketNumber: integer("next_ticket_number").notNull().default(1),
   salesTaxRate: decimal("sales_tax_rate", { precision: 5, scale: 4 }).notNull().default("0.0000"),
+  /** Percent off a ticket paid entirely in cash (catalog prices are card prices). 0 = off. */
+  cashDiscountPercent: decimal("cash_discount_percent", { precision: 5, scale: 2 }).notNull().default("0"),
   taxServicesTaxable: boolean("tax_services_taxable").notNull().default(false),
   taxAddonsTaxable: boolean("tax_addons_taxable").notNull().default(false),
   taxProductsTaxable: boolean("tax_products_taxable").notNull().default(true),

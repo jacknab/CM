@@ -60,6 +60,8 @@ export interface CheckoutInput {
   rewardDollar: number;
   tip: number;
   tenders: Tender[];
+  /** Cash price: percent off what is left after the discount and reward, when the ticket is paid in cash. 0 = none. */
+  cashDiscountPct?: number;
 }
 
 export interface CheckoutTotals {
@@ -89,7 +91,10 @@ export function computeCheckout(a: CheckoutInput): CheckoutTotals {
   const manual = !a.discount ? 0
     : a.discount.type === "percent" ? subtotal * (Math.min(100, Math.max(0, a.discount.value)) / 100)
     : Math.max(0, a.discount.value);
-  const discount = r2(Math.min(subtotal, manual + Math.max(0, a.rewardDollar)));
+  const before = Math.min(subtotal, manual + Math.max(0, a.rewardDollar));
+  // The cash price comes off whatever is left to pay for the services and products (never the tip or tax).
+  const cashOff = (a.cashDiscountPct ?? 0) > 0 ? (subtotal - before) * (Math.min(100, a.cashDiscountPct!) / 100) : 0;
+  const discount = r2(Math.min(subtotal, before + cashOff));
   const tip = r2(Math.max(0, a.tip));
   const productRevenue = r2(
     a.extras.filter((e) => e.kind === "retail").reduce((s, e) => s + e.price, 0) + Math.max(0, a.ticketRetailTotal ?? 0),

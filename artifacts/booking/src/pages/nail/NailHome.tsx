@@ -101,12 +101,15 @@ export default function NailHome() {
       storePhone={st.phone || undefined}
       timezone={st.timezone ?? "UTC"}
       salesTax={{ rate: Number(st.salesTaxRate ?? 0) || 0, services: st.taxServicesTaxable === true, products: st.taxProductsTaxable !== false }}
+      cashDiscountPct={Number((st as any).cashDiscountPercent ?? 0) || 0}
     />
   );
 }
 
-function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, storePhone, timezone, salesTax }: {
+function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, storePhone, timezone, salesTax, cashDiscountPct }: {
   storeId: number; storeName: string; storeAddress?: string; storeCityStateZip?: string; storePhone?: string; timezone: string; salesTax: SalesTaxSettings;
+  /** Cash price: percent off a ticket paid entirely in cash. 0 = off. */
+  cashDiscountPct: number;
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -1158,6 +1161,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
               key={checkout.id}
               ticket={liveCheckout ?? checkout}
               salesTax={salesTax}
+              cashDiscountPct={cashDiscountPct}
               storeId={storeId}
               storeName={storeName}
               storeAddress={storeAddress}

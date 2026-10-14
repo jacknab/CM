@@ -67,6 +67,8 @@ export default function POSSettings() {
   const { selectedStore } = useSelectedStore();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [cashPct, setCashPct] = useState("0");
+  const [cashSaving, setCashSaving] = useState(false);
   const inShell = useInSettingsShell();
 
   const [taxRate, setTaxRate] = useState("");
@@ -126,6 +128,7 @@ export default function POSSettings() {
         // the field for a 0% rate, which made a successful save of 0 look like
         // it hadn't persisted at all.
         setTaxRate(rate === 0 ? "0" : rate.toFixed(3).replace(/\.?0+$/, ""));
+        setCashPct(String(Number(d.cashDiscountPercent ?? 0) || 0));
         if (Array.isArray(d.quickAreaCodes)) setAreaCodes([0, 1, 2].map((i) => (typeof d.quickAreaCodes[i] === "string" ? d.quickAreaCodes[i] : "")));
         setTaxRules({
           services:  d.taxServicesTaxable  ?? false,
@@ -137,6 +140,29 @@ export default function POSSettings() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [selectedStore?.id]);
+
+  // Cash price: percent off a ticket paid entirely in cash. The catalog price is the card price.
+  async function handleSaveCashPrice() {
+    if (!selectedStore?.id) return;
+    const pct = Number(cashPct);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 10) { toast({ title: "Enter a percentage from 0 to 10", variant: "destructive" }); return; }
+    setCashSaving(true);
+    try {
+      const r = await fetch(`/api/pos-settings/${selectedStore.id}/cash-discount`, {
+        method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ percent: pct }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || "Save failed");
+      setCashPct(String(body.cashDiscountPercent));
+      // The Nail POS reads it from the store record.
+      await queryClient.invalidateQueries({ queryKey: ["/api/stores"] });
+      toast({ title: Number(body.cashDiscountPercent) > 0 ? `Cash price saved: ${body.cashDiscountPercent}% off for cash` : "Cash price turned off" });
+    } catch (err: any) {
+      toast({ title: err?.message || "Save failed", variant: "destructive" });
+    } finally {
+      setCashSaving(false);
+    }
+  }
 
   async function handleSaveAreaCodes() {
     if (!selectedStore?.id) return;
@@ -374,6 +400,26 @@ export default function POSSettings() {
             >
               {areaCodesSaving ? "Saving…" : "Save"}
             </Button>
+          </CardContent>
+        </Card>
+
+        <Card data-testid="card-cash-price">
+          <CardHeader>
+            <CardTitle className="text-base">Cash Price</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Your prices are the card prices. A ticket paid entirely in cash gets this percentage off, shown at checkout as the cash price.
+              Commission and turns are worked out on the full price. Set 0 to turn it off.
+            </p>
+            <div className="flex items-end gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="cash-price-pct">Percent off for cash</Label>
+                <Input id="cash-price-pct" data-testid="input-cash-price" inputMode="decimal" type="number" min="0" max="10" step="0.25"
+                  value={cashPct} disabled={loading} onChange={(e) => setCashPct(e.target.value)} className="w-32" />
+              </div>
+              <Button onClick={handleSaveCashPrice} disabled={cashSaving || loading} data-testid="button-save-cash-price">{cashSaving ? "Saving…" : "Save"}</Button>
+            </div>
           </CardContent>
         </Card>
 

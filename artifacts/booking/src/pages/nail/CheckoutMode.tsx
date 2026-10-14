@@ -40,6 +40,8 @@ interface Props {
   dualScreen: boolean;
   /** The store's sales-tax settings (Settings → Checkout & Tax). */
   salesTax: SalesTaxSettings;
+  /** Cash price: percent off a ticket paid entirely in cash (catalog prices are card prices). 0 = off. */
+  cashDiscountPct?: number;
   /** Other open tickets (for Group Pay). */
   otherTickets: BoardTicket[];
   /** Connected Bluetooth receipt printer, if any. */
@@ -237,10 +239,18 @@ export function CheckoutMode(p: Props) {
   // part of ticket.total, but must be pulled out of service revenue for commission purposes.
   const ticketRetailTotal = useMemo(() => ticket.customLines.filter((l) => l.isRetail).reduce((s, l) => s + l.price, 0), [ticket.customLines]);
   const linkedRetailTotal = useMemo(() => r2(linked.reduce((s, t) => s + t.customLines.filter((l) => l.isRetail).reduce((n, l) => n + l.price, 0), 0)), [linked]);
+  // Cash price: on while the ticket is being paid in cash only — no card, gift card or reader payment on it
+  // and CARD not chosen. Any other payment puts the whole ticket back on the card price.
+  const cashPriceOn = (p.cashDiscountPct ?? 0) > 0 && payType === "cash" && tenders.every((t) => t.method === "cash");
   const totals = useMemo(() => computeCheckout({
     ticketTotal: ticket.total, ticketRetailTotal, extras, linkedSubtotal: linked.reduce((s, t) => s + t.total, 0), linkedRetailTotal,
-    discount, rewardDollar: reward?.dollarValue ?? 0, tip, tenders, salesTax: p.salesTax,
-  }), [ticket.total, ticketRetailTotal, extras, linked, linkedRetailTotal, discount, reward, tip, tenders, p.salesTax]);
+    discount, rewardDollar: reward?.dollarValue ?? 0, tip, tenders, salesTax: p.salesTax, cashDiscountPct: cashPriceOn ? p.cashDiscountPct : 0,
+  }), [ticket.total, ticketRetailTotal, extras, linked, linkedRetailTotal, discount, reward, tip, tenders, p.salesTax, cashPriceOn, p.cashDiscountPct]);
+  // The other price, for staff to quote: the card price while cash is selected, and the other way round.
+  const otherPrice = useMemo(() => (p.cashDiscountPct ?? 0) > 0 ? computeCheckout({
+    ticketTotal: ticket.total, ticketRetailTotal, extras, linkedSubtotal: linked.reduce((s, t) => s + t.total, 0), linkedRetailTotal,
+    discount, rewardDollar: reward?.dollarValue ?? 0, tip, tenders: [], salesTax: p.salesTax, cashDiscountPct: cashPriceOn ? 0 : p.cashDiscountPct,
+  }).total : null, [ticket.total, ticketRetailTotal, extras, linked, linkedRetailTotal, discount, reward, tip, p.salesTax, cashPriceOn, p.cashDiscountPct]);
   // The ticket is kept live from the board; if another station changes it mid-checkout, say so
   // rather than let the total move without anyone noticing.
   const seenTotal = useRef(ticket.total);
@@ -1006,6 +1016,9 @@ export function CheckoutMode(p: Props) {
                 <button type="button" className="row-x" aria-label="Remove discount" onClick={() => { setDiscount(null); setReward(null); }}>×</button>
               </strong>
             </div>
+          )}
+          {otherPrice != null && (
+            <div data-testid="nail-pay-cash-price"><span>{cashPriceOn ? `CASH PRICE (−${p.cashDiscountPct}%)` : "CARD PRICE"}</span><strong>{cashPriceOn ? `card ${money(otherPrice)}` : `cash ${money(otherPrice)}`}</strong></div>
           )}
           {totals.tax > 0 && (
             <div data-testid="nail-pay-tax-row"><span>TAX ({r2(p.salesTax.rate * 100)}%)</span><strong data-testid="nail-pay-tax">{money(totals.tax)}</strong></div>

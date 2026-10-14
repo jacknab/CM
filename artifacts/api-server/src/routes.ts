@@ -2901,6 +2901,7 @@ export async function registerRoutes(
         taxProductsTaxable: locations.taxProductsTaxable,
         taxGiftCardsTaxable: locations.taxGiftCardsTaxable,
         quickAreaCodes: locations.quickAreaCodes,
+        cashDiscountPercent: locations.cashDiscountPercent,
       }).from(locations).where(eq(locations.id, storeId));
       return res.json({
         quickAreaCodes: readQuickAreaCodes(row?.quickAreaCodes),
@@ -2909,6 +2910,7 @@ export async function registerRoutes(
         taxAddonsTaxable: row?.taxAddonsTaxable ?? false,
         taxProductsTaxable: row?.taxProductsTaxable ?? true,
         taxGiftCardsTaxable: row?.taxGiftCardsTaxable ?? false,
+        cashDiscountPercent: Number(row?.cashDiscountPercent ?? 0) || 0,
       });
     } catch (err) {
       console.error("[pos-settings] GET:", err);
@@ -2932,20 +2934,43 @@ export async function registerRoutes(
     }
   });
 
+  // PUT /api/pos-settings/:storeId/cash-discount — the cash price: percent off a ticket paid entirely in
+  // cash, 0 to 10. Its own route, like the area codes, so it can never rewrite the tax settings.
+  app.put("/api/pos-settings/:storeId/cash-discount", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ error: "No store context" });
+      const pct = Number(req.body?.percent);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 10) return res.status(400).json({ error: "The cash price must be between 0% and 10% off." });
+      const value = (Math.round(pct * 100) / 100).toFixed(2);
+      await db.update(locations).set({ cashDiscountPercent: value }).where(eq(locations.id, storeId));
+      return res.json({ cashDiscountPercent: Number(value) });
+    } catch (err) {
+      console.error("[pos-settings] cash-discount PUT:", err);
+      return res.status(500).json({ error: "Failed to save the cash price" });
+    }
+  });
+
   app.patch("/api/pos-settings/:storeId", isAuthenticated, async (req, res) => {
     try {
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(403).json({ error: "No store context" });
       const { salesTaxRate, taxServicesTaxable, taxAddonsTaxable, taxProductsTaxable, taxGiftCardsTaxable } = req.body;
-      const rate = parseFloat(salesTaxRate ?? "0");
-      if (isNaN(rate) || rate < 0 || rate > 1) return res.status(400).json({ error: "salesTaxRate must be between 0 and 1" });
-      const updates: Record<string, any> = { salesTaxRate: rate.toFixed(4) };
+      // The rate changes only when it is sent: a save that leaves it out used to set the salon's tax to 0%.
+      const updates: Record<string, any> = {};
+      let rate: number | null = null;
+      if (salesTaxRate !== undefined && salesTaxRate !== null && salesTaxRate !== "") {
+        rate = parseFloat(String(salesTaxRate));
+        if (isNaN(rate) || rate < 0 || rate > 1) return res.status(400).json({ error: "salesTaxRate must be between 0 and 1" });
+        updates.salesTaxRate = rate.toFixed(4);
+      }
       if (typeof taxServicesTaxable === "boolean") updates.taxServicesTaxable = taxServicesTaxable;
       if (typeof taxAddonsTaxable === "boolean") updates.taxAddonsTaxable = taxAddonsTaxable;
       if (typeof taxProductsTaxable === "boolean") updates.taxProductsTaxable = taxProductsTaxable;
       if (typeof taxGiftCardsTaxable === "boolean") updates.taxGiftCardsTaxable = taxGiftCardsTaxable;
-      await db.update(locations).set(updates).where(eq(locations.id, storeId));
-      return res.json({ salesTaxRate: rate.toFixed(4), ...updates });
+      if (Object.keys(updates).length > 0) await db.update(locations).set(updates).where(eq(locations.id, storeId));
+      const [saved] = await db.select({ salesTaxRate: locations.salesTaxRate }).from(locations).where(eq(locations.id, storeId));
+      return res.json({ ...updates, salesTaxRate: saved?.salesTaxRate ?? (rate != null ? rate.toFixed(4) : "0.0000") });
     } catch (err) {
       console.error("[pos-settings] PATCH:", err);
       return res.status(500).json({ error: "Failed to save POS settings" });
