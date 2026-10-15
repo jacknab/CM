@@ -75,6 +75,9 @@ export interface BoardDayBooking {
   staffName: string | null;
   /** True for desk-created tickets and kiosk-only check-ins; false for advance bookings. */
   isWalkIn: boolean;
+  /** When a walk-in arrived (kiosk check-in, or the ticket being made at the desk). `date` moves to the start
+   *  time once the service starts, so it can't say when they came in. */
+  arrivedAt?: string;
 }
 
 export interface TechDayStats {

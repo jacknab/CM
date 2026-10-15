@@ -3,7 +3,7 @@ import { Armchair, CalendarDays, Clock, EyeOff, PersonStanding, Ticket, UserChec
 import { DEFAULT_SERVICE_MIN, estimateWait, formatWait, type WaitTech } from "@shared/waitEstimate";
 import type { BoardDayBooking, BoardMarker, BoardTicket, SalonGlance, TurnTech } from "./nailApi";
 import { EMPTY_ARRAY } from "@/lib/empty";
-import { bookingsForDetail, type DetailKind } from "./boardView";
+import { bookingsForDetail, walkInState, type DetailKind } from "./boardView";
 
 const money = (n: number) => `$${n.toFixed(n % 1 === 0 ? 0 : 2)}`;
 
@@ -385,10 +385,10 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
               <div className="q-booking-client q-booking-client-top q-unified-head">
                 {booking.ticketNumber != null && <span>#{booking.ticketNumber}</span>}
                 <strong>{booking.clientName}</strong>
-                <em className="q-unified-pill" data-kind={kind}>{detail.label}</em>
+                <em className="q-unified-pill" data-kind={kind}>{kind === "walk-ins" ? walkInState(booking.status) : detail.label}</em>
               </div>
               <div className="q-unified-main">
-                <div className="q-unified-clock"><Clock size={25} strokeWidth={1.8} /><div><small>{kind === "completed" ? "COMPLETED" : kind === "no-shows" ? "MISSED" : kind === "appointments" ? visitDay(booking.date) : "APPOINTMENT"}</small><b>{fmtTime(+new Date(booking.date), timezone || undefined)}</b></div></div>
+                <div className="q-unified-clock"><Clock size={25} strokeWidth={1.8} /><div><small>{kind === "completed" ? "COMPLETED" : kind === "no-shows" ? "MISSED" : kind === "appointments" ? visitDay(booking.date) : kind === "walk-ins" ? "WALKED IN" : "APPOINTMENT"}</small><b>{fmtTime(+new Date(kind === "walk-ins" ? booking.arrivedAt ?? booking.date : booking.date), timezone || undefined)}</b></div></div>
                 <div className="q-unified-side"><small>DURATION</small><b>{booking.duration > 0 ? `${booking.duration} min` : "—"}</b></div>
               </div>
               <div className="q-unified-footer">

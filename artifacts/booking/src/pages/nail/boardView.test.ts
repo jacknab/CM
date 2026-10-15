@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bookingsForDetail, businessDayKey, calendarBookingsForBoard, hasNewWaitingEntityForPhone, waitingEntityKeys } from "./boardView";
+import { bookingsForDetail, businessDayKey, walkInState, calendarBookingsForBoard, hasNewWaitingEntityForPhone, waitingEntityKeys } from "./boardView";
 import type { BoardDayBooking, BoardMarker, BoardTicket } from "./nailApi";
 
 const booking = (id: number, status: string, isWalkIn: boolean): BoardDayBooking => ({
@@ -8,12 +8,19 @@ const booking = (id: number, status: string, isWalkIn: boolean): BoardDayBooking
 });
 
 describe("nail board views", () => {
-  it("keeps appointment detail tabs mutually exclusive", () => {
-    const rows = [booking(1, "confirmed", false), booking(2, "completed", false), booking(3, "no_show", false), booking(4, "confirmed", true)];
+  it("keeps appointments, completed and no-shows apart; walk-ins lists every walk-in its tile counts", () => {
+    const rows = [booking(1, "confirmed", false), booking(2, "completed", false), booking(3, "no_show", false), booking(4, "confirmed", true),
+      booking(5, "completed", true), booking(6, "started", true)];
     expect(bookingsForDetail(rows, "appointments").map((row) => row.id)).toEqual([1]);
-    expect(bookingsForDetail(rows, "completed").map((row) => row.id)).toEqual([2]);
+    expect(bookingsForDetail(rows, "completed").map((row) => row.id)).toEqual([2, 5]);
     expect(bookingsForDetail(rows, "no-shows").map((row) => row.id)).toEqual([3]);
-    expect(bookingsForDetail(rows, "walk-ins").map((row) => row.id)).toEqual([4]);
+    // A finished walk-in is still one of the day's walk-ins (the tile counts it).
+    expect(bookingsForDetail(rows, "walk-ins").map((row) => row.id)).toEqual([4, 5, 6]);
+  });
+
+  it("names where each walk-in is now", () => {
+    expect(["confirmed", "waiting", "called", "started", "serving", "completed", "no_show", "expired"].map(walkInState))
+      .toEqual(["Waiting", "Waiting", "Waiting", "In service", "In service", "Completed", "No-show", "Never served"]);
   });
 
   it("recovers scheduled appointments from calendar data when the board only has totals", () => {
