@@ -37,7 +37,7 @@ import { logger } from "../lib/logger";
 import { renderMarketplacePage } from "../lib/marketplaceSsr";
 import { requestIp, resolveVisitorCity } from "../lib/geoLookup";
 import {
-  ensureLoaded, getCityData, getClaimedSalonList, getSalonMap, getSalonRedirectSlug, getStateBySlug, getStateIndex,
+  ensureLoaded, getCityData, getClaimedSalonList, getIndexableHubs, getSalonMap, getSalonRedirectSlug, getStateBySlug, getStateIndex,
   CERTXA_DOMAIN, SITEMAP_PAGE_SIZE,
 } from "../lib/salonData";
 
@@ -189,11 +189,15 @@ router.get("/sitemap-listings.xml", sitemapRateLimit, async (_req: Request, res:
   try {
     await ensureLoaded();
     const lastmod = new Date().toISOString().slice(0, 10);
-    const urls: string[] = [`${CERTXA_DOMAIN}/`];
+    // Only hub pages that pass getIndexableHubs() — the same rule that sets
+    // their robots tag — so the sitemap never lists a noindex page.
+    const hubs = await getIndexableHubs();
+    const urls: string[] = [];
     for (const state of getStateIndex()) {
+      if (!hubs.states.has(state.code)) continue;
       urls.push(`${CERTXA_DOMAIN}/listings/${state.slug}`);
       for (const city of state.cities) {
-        urls.push(`${CERTXA_DOMAIN}/listings/${city.slug}--${state.slug}`);
+        if (hubs.cities.has(`${state.code}:${city.slug}`)) urls.push(`${CERTXA_DOMAIN}/listings/${city.slug}--${state.slug}`);
       }
     }
     const entries = urls.map(u =>

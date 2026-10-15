@@ -210,6 +210,7 @@ export async function render(url: string, apiOrigin: string, publicOrigin: strin
             `Nail salons in ${state.name} | ${SITE_NAME}`,
             `Find ${state.count.toLocaleString()} nail ${pluralize(state.count, 'salon')} across ${state.name}. Browse by city and get in touch.`,
             canonical,
+            state.indexable ? 'index, follow' : 'noindex, follow',
           );
           headTags += jsonLdScript([
             {
@@ -249,6 +250,7 @@ export async function render(url: string, apiOrigin: string, publicOrigin: strin
             `Nail salons in ${city.cityName}, ${city.stateName} | ${SITE_NAME}`,
             `${city.salons.length.toLocaleString()} nail ${pluralize(city.salons.length, 'salon')} in ${city.cityName}, ${city.stateName}.`,
             canonical,
+            city.indexable ? 'index, follow' : 'noindex, follow',
           );
           headTags += jsonLdScript([
             {
@@ -423,11 +425,8 @@ export async function render(url: string, apiOrigin: string, publicOrigin: strin
           name: salon.name,
           url: canonical,
           image: [salon.imageUrl, ...(salon.gallery || [])],
-          // Prefer the real, unique AI-written paragraph over the generic
-          // "Nail salon in {city}, {state}." fallback — `salon.description`
-          // is never empty, so `description || about` previously always
-          // picked the generic string even when a real one existed.
-          description: salon.about || salon.description,
+          // Generated "about" text is no longer published (plans/salon-directory.md).
+          description: salon.description,
           ...(salon.phone ? { telephone: salon.phone } : {}),
           address: {
             '@type': 'PostalAddress',

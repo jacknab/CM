@@ -101,7 +101,7 @@ A single folder makes the directory a clear section: easy to measure in Search C
 
 ## Rollout
 
-**Phase 0: stop the damage (about a day, no decisions needed).**
+**Phase 0: stop the damage. Done 2026-10-15** (commit after `eff09243`; live after the deploy step). The gate lives in `getIndexableHubs()` in `artifacts/api-server/src/lib/salonData.ts`. With 1 Certxa salon on the site, no hub page qualifies yet.
 - Remove "Popular local searches".
 - Stop rendering the generated first-person "About" text.
 - Remove Google ratings from page schema and display.

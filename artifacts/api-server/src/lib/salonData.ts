@@ -288,6 +288,33 @@ export async function getClaimedSalonList(): Promise<SalonRecord[]> {
   return list;
 }
 
+/**
+ * Which directory hub pages may be indexed — the single rule the page robots
+ * tag and sitemap-listings.xml both read (plans/salon-directory.md). A city
+ * page qualifies once it lists MIN_INDEXABLE_SALONS_PER_CITY salons that book
+ * on Certxa; a state page once it has one qualifying city. Everything else
+ * stays up for visitors but is noindex and out of the sitemap, so the
+ * directory is never thousands of near-empty city pages in Google.
+ */
+export const MIN_INDEXABLE_SALONS_PER_CITY = 3;
+
+export async function getIndexableHubs(): Promise<{ cities: Set<string>; states: Set<string> }> {
+  const perCity = new Map<string, number>();
+  for (const r of await getClaimedSalonList()) {
+    if (!US_STATES.has(r.ss) || !r.c) continue;
+    const key = `${r.ss}:${toCitySlug(r.c)}`;
+    perCity.set(key, (perCity.get(key) ?? 0) + 1);
+  }
+  const cities = new Set<string>();
+  const states = new Set<string>();
+  for (const [key, n] of perCity) {
+    if (n < MIN_INDEXABLE_SALONS_PER_CITY) continue;
+    cities.add(key);
+    states.add(key.split(":")[0]);
+  }
+  return { cities, states };
+}
+
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 // Used only if the site_assets image pool (below) can't be loaded — e.g. a

@@ -12,7 +12,7 @@ import type { Request, Response } from "express";
 import { pool } from "../db";
 import { logger } from "../lib/logger";
 import {
-  ensureLoaded, getSalonMap, getSalonList, getClaimedSalonList,
+  ensureLoaded, getSalonMap, getSalonList, getClaimedSalonList, getIndexableHubs,
   findMatchingStore, findEnrichment, deriveAddress, heroImage,
   formatHour12, DAY_NAMES, CERTXA_DOMAIN,
   getStateBySlug, getCityData, getStateIndex, toCitySlug,
@@ -50,8 +50,10 @@ function formatDistanceMiles(miles: number): string {
 
 function toApiSalon(r: SalonRecord, claimedSet: Set<string>, distanceMiles?: number): ApiSalon {
   const addr = deriveAddress(r);
-  const rating = r.r ? parseFloat(r.r) : 0;
-  const reviewCount = r.rc ? parseInt(r.rc, 10) : 0;
+  // Google's rating is not republished (plans/salon-directory.md); list cards
+  // carry no rating, and a salon profile shows only Certxa's own reviews.
+  const rating = 0;
+  const reviewCount = 0;
   const lat = r.la ? parseFloat(r.la) : undefined;
   const lng = r.lo ? parseFloat(r.lo) : undefined;
   return {
@@ -259,25 +261,22 @@ router.get("/api/salons/:slug", async (req: Request, res: Response) => {
     }
 
     const live = salon.p ? await findMatchingStore(salon.s, salon.p) : null;
-    // Scraped Google Places enrichment (hours/attributes/review text) is
-    // looked up by the salon's own scraper-DB id, independent of whether a
-    // matching live Certxa store was found — claim status and scrape
-    // coverage are unrelated, so a claimed store can still have real scraped
-    // review text. (attributes are still only rendered for unclaimed
-    // listings below — a live store's own hours/data take priority there.)
+    // Google Places enrichment (hours/attributes) is looked up by the salon's
+    // own scraper-DB id. Its review text is no longer shown (see below).
+    // Attributes are only rendered for unclaimed listings — a live store's
+    // own hours/data take priority.
     const enrichment = await findEnrichment(salon.id);
     const addr = deriveAddress(salon);
     const claimedSet = new Set(live ? [salon.s] : []);
     const base = toApiSalon(salon, claimedSet);
 
-    // Fallback rating/reviews for a claimed store with no scraped Google
-    // rating (the common case for a new Certxa customer) — Certxa's own
-    // native reviews, same >=3-review minimum used elsewhere before a rating
-    // is considered real enough to display.
-    let rating = base.rating;
-    let reviewCount = base.reviewCount;
-    let reviewList: Array<{ author: string; rating: number | null; text: string | null; serviceName?: string | null; staffName?: string | null }> = enrichment.reviews;
-    if (live && base.rating === 0) {
+    // Ratings and reviews come only from Certxa's own reviews (left after a
+    // completed Certxa appointment), never from Google, and only once a store
+    // has at least 3 — the minimum used elsewhere before a rating is shown.
+    let rating = 0;
+    let reviewCount = 0;
+    let reviewList: Array<{ author: string; rating: number | null; text: string | null; serviceName?: string | null; staffName?: string | null }> = [];
+    if (live) {
       const nativeAgg = await pool.query<{ avg: string | null; cnt: string }>(
         `SELECT AVG(rating)::text AS avg, COUNT(*)::text AS cnt FROM reviews WHERE store_id = $1 AND is_public = true`,
         [live.storeId]
@@ -353,7 +352,6 @@ router.get("/api/salons/:slug", async (req: Request, res: Response) => {
       services,
       gallery: [],
       highlights,
-      about: salon.ab || undefined,
       bookingUrl: live?.bookingSlug ? `${CERTXA_DOMAIN}/${live.bookingSlug}` : undefined,
       city: addr.city,
       state: addr.state,
@@ -432,6 +430,7 @@ router.get("/api/listings/:param", async (req: Request, res: Response) => {
     const param = String(req.params.param);
     const sep = param.lastIndexOf("--");
     const claimed = new Set((await getClaimedSalonList()).map((r) => r.s));
+    const hubs = await getIndexableHubs();
 
     if (sep === -1) {
       const state = getStateBySlug(param);
@@ -444,6 +443,7 @@ router.get("/api/listings/:param", async (req: Request, res: Response) => {
         name: state.name,
         slug: state.slug,
         count: state.count,
+        indexable: hubs.states.has(state.code),
         cities: state.cities.map((c) => ({ name: c.name, slug: c.slug, count: c.count })),
       });
       return;
@@ -466,6 +466,7 @@ router.get("/api/listings/:param", async (req: Request, res: Response) => {
       stateSlug: state.slug,
       cityName: city.name,
       citySlug,
+      indexable: hubs.cities.has(`${state.code}:${citySlug}`),
       salons: city.records.map((r) => toApiSalon(r, claimed)),
     });
   } catch (err) {

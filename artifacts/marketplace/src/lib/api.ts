@@ -168,6 +168,8 @@ export interface StateListing {
   name: string;
   slug: string;
   count: number;
+  /** Whether this page may be indexed (api-server getIndexableHubs). */
+  indexable?: boolean;
   cities: Array<{ name: string; slug: string; count: number }>;
 }
 
@@ -176,6 +178,8 @@ export interface CityListing {
   stateSlug: string;
   cityName: string;
   citySlug: string;
+  /** Whether this page may be indexed (api-server getIndexableHubs). */
+  indexable?: boolean;
   salons: Salon[];
 }
 
