@@ -1737,6 +1737,8 @@ export default function Calendar() {
   const sidebarTiles = calendarSidebarItems.filter((item) => {
     if (item.kind === "action" && item.action === "cash-drawer") return false;
     if ((!posFeatureEnabled || isMobile) && item.kind === "action" && (item.action === "open-register" || item.action === "day-close")) return false;
+    // A nail salon checks out on the Nail POS (its own tile below), so the general POS tile is left out.
+    if (isNailSalon && item.kind === "action" && item.action === "open-register") return false;
     // The menu popup doesn't need a Calendar tile — it's opened from the
     // calendar page itself.
     if (item.kind === "link" && item.to === "/calendar") return false;
