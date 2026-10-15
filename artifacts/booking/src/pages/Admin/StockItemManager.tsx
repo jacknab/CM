@@ -9,9 +9,9 @@ import {
   Trash2
 } from 'lucide-react';
 
-// The Kiosk permission column is hidden for now. Set to true to show it again. The permission
-// itself (locations.kiosk_permitted) is unchanged and still enforced.
-const SHOW_KIOSK_COLUMN = false;
+// The Kiosk permission column (locations.kiosk_permitted): whether a salon's Android tablets may turn into the
+// check-in kiosk when rotated. Set to false to hide the column; the permission is enforced either way.
+const SHOW_KIOSK_COLUMN = true;
 
 interface StoreAccount {
   id: number;
