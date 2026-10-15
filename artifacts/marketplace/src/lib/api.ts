@@ -45,6 +45,11 @@ export interface Salon {
   description: string;
   latitude?: number;
   longitude?: number;
+  street?: string;
+  /** The salon's directory page, /salons/{state}/{city}/{salon}. */
+  url: string;
+  /** Holds a current license from its state board. */
+  licensed: boolean;
 }
 
 export interface SalonService {
@@ -74,8 +79,11 @@ export interface SalonProfile extends Salon {
   bookingUrl?: string;
   /** Real nearby salons sorted by actual distance — [] when this salon has no coordinates on file. */
   nearby: Salon[];
-  /** Real review text — scraped Google reviews when present, else Certxa's own native reviews for a claimed store. [] when neither exists. */
-  /** serviceName/staffName are only ever present on Certxa's own native reviews — a scraped Google review never has this data. */
+  /** The state license the listing comes from. Absent for a salon listed from its Certxa store alone. */
+  license?: { board: string; short: string; number: string; status: string; expires?: string; verifyUrl: string; /** YYYY-MM-DD the license was last found current in the state's records. */ checked: string };
+  stateUrl?: string;
+  cityUrl?: string;
+  /** Certxa's own reviews, left after a completed Certxa appointment. [] when there are none. */
   reviews: Array<{ author: string; rating: number | null; text: string | null; serviceName?: string | null; staffName?: string | null }>;
 }
 
@@ -170,7 +178,26 @@ export interface StateListing {
   count: number;
   /** Whether this page may be indexed (api-server getIndexableHubs). */
   indexable?: boolean;
-  cities: Array<{ name: string; slug: string; count: number }>;
+  url: string;
+  license?: { board: string; verifyUrl: string };
+  cities: Array<{ name: string; slug: string; count: number; url: string }>;
+}
+
+export interface DirectoryState {
+  code: string;
+  name: string;
+  slug: string;
+  count: number;
+  cities: number;
+  url: string;
+  indexable: boolean;
+}
+
+export interface RemovalRequest {
+  name: string;
+  email: string;
+  relationship?: string;
+  reason?: string;
 }
 
 export interface CityListing {
@@ -180,7 +207,18 @@ export interface CityListing {
   citySlug: string;
   /** Whether this page may be indexed (api-server getIndexableHubs). */
   indexable?: boolean;
+  url: string;
+  stateUrl: string;
+  license?: { board: string; verifyUrl: string };
   salons: Salon[];
+}
+
+export function getDirectoryStates(): Promise<DirectoryState[]> {
+  return apiFetch('/api/listings');
+}
+
+export function requestRemoval(slug: string, data: RemovalRequest): Promise<{ removed: true }> {
+  return apiFetch(`/api/directory/${encodeURIComponent(slug)}/removal`, { method: 'POST', body: JSON.stringify(data) });
 }
 
 export function getStateListing(stateSlug: string): Promise<StateListing> {
@@ -238,6 +276,15 @@ export function useGetCityListing(citySlug: string, stateSlug: string, options?:
     enabled: !!citySlug && !!stateSlug,
     ...options?.query,
   });
+}
+
+export const getDirectoryStatesQueryKey = () => ['listings', 'states'] as const;
+export function useGetDirectoryStates(options?: QueryOpt<DirectoryState[]>) {
+  return useQuery({ queryKey: getDirectoryStatesQueryKey(), queryFn: getDirectoryStates, ...options?.query });
+}
+
+export function useRequestRemoval() {
+  return useMutation({ mutationFn: ({ slug, data }: { slug: string; data: RemovalRequest }) => requestRemoval(slug, data) });
 }
 
 export function useCreateInquiry() {

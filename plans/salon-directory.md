@@ -107,6 +107,19 @@ A single folder makes the directory a clear section: easy to measure in Search C
 - Remove Google ratings from page schema and display.
 - Apply the hub-page gate using today's data: noindex hubs with fewer than 3 claimed or Certxa salons, and drop them from the sitemap. In practice that's nearly all of them for now. Indexed pages fall sharply at first; that's intended.
 
+**Status 2026-10-15: Phases 1 and 2 are built** (live after the deploy step). The summary:
+- `directory_listings` holds 25,406 salons: 10,314 TX, 8,637 CA and 6,454 FL from license records, plus TLuxxe from its Certxa store. 89% are geocoded by the US Census geocoder.
+- The importer is `scripts/import-license-records.py`.
+- The public pages read only `directory_listings` (`lib/salonData.ts`).
+- Pages live at `/salons/...`. `/listings/*`, `/:slug` and `/salon/*` 301 there, or answer 410 when the salon isn't listed.
+- `/salons/about` and the removal form (`POST /api/directory/:slug/removal`) are live.
+- No Google ratings, reviews, hours, attributes or generated text are published.
+- Not done yet:
+  - the weekly import schedule (needs the owner's go-ahead)
+  - the remaining 46 states' license data
+  - price ranges per city
+  - verified-review collection
+
 **Phase 1: data (1–2 weeks).**
 - Create the `directory_listings` table.
 - Import state license records, starting with Texas, California and Florida, then the remaining states. Match them to existing rows by phone, address and `place_id`.

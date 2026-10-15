@@ -51,8 +51,13 @@ export interface SalonRecord {
   rc: string; // review count
   w:  string; // website
   pi: string; // place_id
-  ab: string; // AI-generated about text (nail_salons.about_text) — "" until backfilled
+  ab: string; // always "" — generated about text is no longer published (plans/salon-directory.md)
   lm: string; // last_seen_at, as YYYY-MM-DD — real per-record sitemap <lastmod>, not a wholesale today's-date stamp
+  ls: string; // license source: tx_tdlr | ca_bbc | fl_dbpr
+  ln: string; // license number
+  lst: string; // license status, as the state reports it
+  lx: string; // license expiry, YYYY-MM-DD
+  sid: number | null; // Certxa store (locations.id) when the salon runs on Certxa
 }
 
 export interface LiveStoreData {
@@ -150,11 +155,6 @@ export function splitAddress(a: string): { street: string; city: string; state: 
   };
 }
 
-// A handful of listings' `website` value is Google's own generic
-// "claim your business profile" page rather than a real business site —
-// linking "Visit Website" there would send visitors to a dead end.
-const GOOGLE_PLACEHOLDER_WEBSITE_RE = /^https?:\/\/business\.google\.com\//i;
-
 // ── Data loading (DB-backed) ────────────────────────────────────────────────────
 
 let _salonMap: Map<string, SalonRecord> | null = null;
@@ -162,48 +162,65 @@ let _salonList: SalonRecord[] | null = null;
 let _loadError: Error | null = null;
 let _loadPromise: Promise<void> | null = null;
 
+// The public directory reads directory_listings — salons taken from state
+// license records (scripts/import-license-records.py) — not the nail_salons
+// sales-lead table, which holds Google Places data (plans/salon-directory.md).
+// A listing someone asked to remove, or whose license the latest import no
+// longer found, is left out.
 async function loadSalonDataFromDb(): Promise<void> {
   const res = await pool.query<{
-    id: number; slug: string; name: string; phone: string | null; address: string | null;
-    website: string | null; latitude: number; longitude: number;
-    place_id: string; rating: number | null; review_count: number | null;
-    about_text: string | null; last_seen_at: Date | null;
+    id: number; slug: string; name: string; phone: string | null; street: string | null; city: string | null;
+    state: string; postal_code: string | null; latitude: number | null; longitude: number | null; place_id: string | null;
+    license_source: string; license_number: string; license_status: string | null; license_expires: Date | null;
+    store_id: number | null; last_seen_at: Date;
   }>(
-    `SELECT id, slug, name, phone, address, website, latitude, longitude, place_id, rating, review_count, about_text, last_seen_at
-     FROM nail_salons WHERE slug IS NOT NULL`
+    `SELECT id, slug, name, phone, street, city, state, postal_code, latitude, longitude, place_id,
+            license_source, license_number, license_status, license_expires, store_id, last_seen_at
+     FROM directory_listings
+     WHERE opted_out_at IS NULL AND last_seen_at > now() - interval '60 days'`
   );
-  const todayIso = new Date().toISOString().slice(0, 10);
 
   const map = new Map<string, SalonRecord>();
   const list: SalonRecord[] = [];
   for (const row of res.rows) {
-    const addr = splitAddress(row.address || "");
-    const website = row.website && !GOOGLE_PLACEHOLDER_WEBSITE_RE.test(row.website) ? row.website : "";
+    const street = row.street || "";
+    const city = row.city || "";
+    const zip = row.postal_code || "";
     const rec: SalonRecord = {
       id: row.id,
       s: row.slug,
       n: row.name,
       p: row.phone || "",
-      a: row.address || "",
-      st: addr.street,
-      c: addr.city,
-      ss: addr.state,
-      z: addr.zip,
+      a: [street, city, `${row.state} ${zip}`.trim(), "USA"].filter(Boolean).join(", "),
+      st: street,
+      c: city,
+      ss: row.state,
+      z: zip,
       la: row.latitude != null ? String(row.latitude) : "",
       lo: row.longitude != null ? String(row.longitude) : "",
-      r: row.rating != null ? String(row.rating) : "",
-      rc: row.review_count != null ? String(row.review_count) : "",
-      w: website,
-      pi: row.place_id,
-      ab: row.about_text || "",
-      lm: row.last_seen_at ? row.last_seen_at.toISOString().slice(0, 10) : todayIso,
+      r: "",
+      rc: "",
+      w: "",
+      pi: row.place_id || "",
+      ab: "",
+      lm: row.last_seen_at.toISOString().slice(0, 10),
+      ls: row.license_source,
+      ln: row.license_number,
+      lst: row.license_status || "",
+      lx: row.license_expires ? row.license_expires.toISOString().slice(0, 10) : "",
+      sid: row.store_id,
     };
     map.set(rec.s, rec);
     list.push(rec);
   }
   _salonMap = map;
   _salonList = list;
-  logger.info({ count: map.size }, "[salonData] loaded salon data from DB");
+  _stateIndex = null; // rebuilt from the new list on next use
+  _stateBySlug = null;
+  _cityData = null;
+  _claimedCache = null;
+  _loadedAt = Date.now();
+  logger.info({ count: map.size }, "[salonData] loaded directory listings from DB");
 
   try {
     const imgRes = await pool.query<{ r2_url: string }>(
@@ -220,9 +237,21 @@ async function loadSalonDataFromDb(): Promise<void> {
   }
 }
 
-/** Call before touching the sync helpers below. */
+const RELOAD_AFTER_MS = 30 * 60 * 1000;
+let _loadedAt = 0;
+let _reloading = false;
+
+/** Call before touching the sync helpers below. Data older than 30 minutes is refreshed in the background. */
 export async function ensureLoaded(): Promise<void> {
-  if (_salonMap) return;
+  if (_salonMap) {
+    if (Date.now() - _loadedAt > RELOAD_AFTER_MS && !_reloading) {
+      _reloading = true;
+      loadSalonDataFromDb()
+        .catch((err) => logger.warn({ err }, "[salonData] background reload failed; keeping the previous data"))
+        .finally(() => { _reloading = false; });
+    }
+    return;
+  }
   if (_loadError) throw _loadError;
   if (!_loadPromise) {
     _loadPromise = loadSalonDataFromDb().catch((err) => {
@@ -250,14 +279,20 @@ export function getSalonList(): SalonRecord[] {
 // already-indexed old URL 301s instead of 404ing. Only consulted on a
 // getSalonMap() miss — not on the normal request path.
 export async function getSalonRedirectSlug(oldSlug: string): Promise<string | null> {
-  const res = await pool.query<{ salon_id: number }>(
-    `SELECT salon_id FROM nail_salon_slug_redirects WHERE old_slug = $1`,
+  // Renamed slugs were recorded against nail_salons; a directory listing keeps
+  // the slug of the nail_salons row it matched.
+  const res = await pool.query<{ slug: string }>(
+    `SELECT n.slug FROM nail_salon_slug_redirects r JOIN nail_salons n ON n.id = r.salon_id WHERE r.old_slug = $1`,
     [oldSlug]
   );
-  const salonId = res.rows[0]?.salon_id;
-  if (!salonId) return null;
-  const salon = getSalonList().find((s) => s.id === salonId);
-  return salon?.s ?? null;
+  const slug = res.rows[0]?.slug;
+  return slug && getSalonMap().has(slug) ? slug : null;
+}
+
+/** A salon page the earlier, Google-sourced directory had and the license-based one doesn't. */
+export async function isRetiredSalonSlug(slug: string): Promise<boolean> {
+  const res = await pool.query(`SELECT 1 FROM nail_salons WHERE slug = $1 LIMIT 1`, [slug]);
+  return (res.rowCount ?? 0) > 0;
 }
 
 // Only *claimed* listings (a registered Certxa store whose phone matches) get
@@ -283,7 +318,8 @@ export async function getClaimedSalonList(): Promise<SalonRecord[]> {
   const claimed = new Set(
     res.rows.map((r) => phone10(r.phone ?? "")).filter(Boolean),
   );
-  const list = getSalonList().filter((r) => r.p && claimed.has(phone10(r.p)));
+  // On Certxa: linked by the import (store_id), or the same phone as a live store.
+  const list = getSalonList().filter((r) => r.sid != null || (r.p && claimed.has(phone10(r.p))));
   _claimedCache = { list, at: Date.now() };
   return list;
 }
@@ -388,6 +424,41 @@ export function deriveAddress(salon: SalonRecord): {
     country,
   };
 }
+
+// ── Directory addresses: /salons/{state}/{city}/{salon} ─────────────────────────
+// One folder for the whole directory (plans/salon-directory.md). Every link,
+// canonical tag, sitemap and redirect builds its URL here.
+
+export function statePath(stateCode: string): string {
+  return `/salons/${toStateSlug(STATE_NAMES[stateCode] || stateCode)}`;
+}
+
+export function cityPath(stateCode: string, citySlug: string): string {
+  return `${statePath(stateCode)}/${citySlug}`;
+}
+
+export function salonPath(r: SalonRecord): string {
+  return US_STATES.has(r.ss) && r.c ? `${cityPath(r.ss, toCitySlug(r.c))}/${r.s}` : `/salons/${r.s}`;
+}
+
+/** Who licenses each source's salons, and where anyone can check a license. */
+export const LICENSE_SOURCES: Record<string, { board: string; short: string; verifyUrl: string }> = {
+  tx_tdlr: {
+    board: "Texas Department of Licensing and Regulation",
+    short: "TDLR",
+    verifyUrl: "https://www.tdlr.texas.gov/LicenseSearch/",
+  },
+  ca_bbc: {
+    board: "California Board of Barbering and Cosmetology",
+    short: "BBC",
+    verifyUrl: "https://search.dca.ca.gov/",
+  },
+  fl_dbpr: {
+    board: "Florida Department of Business and Professional Regulation",
+    short: "DBPR",
+    verifyUrl: "https://www.myfloridalicense.com/wl11.asp",
+  },
+};
 
 export const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 export const CERTXA_DOMAIN = "https://certxa.com";
@@ -672,4 +743,16 @@ export function cityForOldSlug(oldSlug: string): { stateCode: string; stateSlug:
     }
   }
   return null;
+}
+
+/** Drops a listing from this worker's copy at once (other workers pick it up on their next reload). */
+export function forgetSalon(slug: string): void {
+  const rec = _salonMap?.get(slug);
+  if (!rec || !_salonMap || !_salonList) return;
+  _salonMap.delete(slug);
+  _salonList = _salonList.filter((r) => r !== rec);
+  _stateIndex = null;
+  _stateBySlug = null;
+  _cityData = null;
+  _claimedCache = null;
 }

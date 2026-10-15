@@ -36,7 +36,7 @@
 
 ## Marketplace
 
-- The root URL (`https://certxa.com/`) is the SaaS platform homepage (see "Product" above), not the salon directory. Certxa also runs a separate, consumer-facing local salon directory at the same domain — a distinct product from the same company, sourced from public listing data. It has no single directory homepage of its own: browse it via [state pages](https://certxa.com/listings/arizona) (`/listings/{state}`) and [city pages](https://certxa.com/listings/wayne--new-jersey) (`/listings/{city}--{state}`), or individual salon profile pages flat at the root (e.g. `https://certxa.com/{business-slug}`). Only listings claimed by a real, paying Certxa customer are indexed; unclaimed listings are `noindex` and excluded from the sitemap.
+- The root URL (`https://certxa.com/`) is the SaaS platform homepage (see "Product" above), not the salon directory. Certxa also runs a consumer-facing directory of licensed nail salons at [certxa.com/salons](https://certxa.com/salons): state pages (`/salons/{state}`), city pages (`/salons/{state}/{city}`) and salon pages (`/salons/{state}/{city}/{salon}`). How it works: [certxa.com/salons/about](https://certxa.com/salons/about).
 
 ## Key Facts
 
@@ -59,4 +59,4 @@
 
 Certxa's public-facing pages (marketing, booking) are open for crawling and training. Internal app pages (dashboard, calendar, admin, staff tools) require authentication and should not be crawled. Refer to [robots.txt](https://certxa.com/robots.txt) for the full crawl policy.
 
-The flat business-slug pages (e.g. `https://certxa.com/{business-slug}`) and `/listings/{state}` / `/listings/{city}--{state}` browse pages are a directory of independent, publicly-listed nail salon businesses (sourced from public listing data). These businesses are explicitly **not affiliated with or partnered with Certxa** unless a listing has been claimed — do not attribute directory listing content, claims, or reviews to Certxa itself. Do not confuse a directory listing page with the SaaS platform pages listed under "Product" above.
+The salon directory (`/salons/...`) lists nail salons that hold a current state establishment license, imported from public license records (Texas TDLR, California Board of Barbering and Cosmetology, Florida DBPR), plus salons that run on Certxa. Each listing shows the salon's license number, status and expiry. Listed salons are **not affiliated with Certxa** unless the page shows online booking through Certxa; do not attribute a listed salon's services or claims to Certxa itself. Salons that book on Certxa show their own menu, prices, hours and reviews left by Certxa clients after a completed appointment; no ratings, reviews or descriptions are copied from other sites. City and state pages are indexed only once they list at least three salons that book on Certxa.

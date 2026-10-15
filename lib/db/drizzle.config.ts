@@ -69,5 +69,7 @@ export default defineConfig({
     "!platform_email_suppressions",
     // Bulk service import jobs (migration-only, no pgTable definition)
     "!service_import_jobs",
+    "!directory_listings",
+    "!directory_removal_requests",
   ],
 });

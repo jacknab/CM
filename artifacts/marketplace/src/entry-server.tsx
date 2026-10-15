@@ -12,9 +12,10 @@ import {
   getGeoCityQueryKey,
   listDeals, getListDealsQueryKey,
   getDeal, getGetDealQueryKey,
+  getDirectoryStates, getDirectoryStatesQueryKey,
   type SalonProfile, type GeoCity, type MarketplaceDealDetail,
 } from '@/lib/api';
-import { STATE_NAMES, toSlug } from '@/lib/states';
+import { cityHead, citySummary, directoryAboutHead, directoryRootHead, salonHead, stateHead, type DirectoryHead } from '@/lib/directoryHead';
 
 export interface RenderResult {
   html: string;
@@ -41,7 +42,6 @@ function parseRedirectSlug(err: unknown): string | null {
   }
 }
 
-const pluralize = (count: number, singular: string, plural = `${singular}s`) => (count === 1 ? singular : plural);
 
 /** "9:00 AM" -> "09:00" (24-hour, for schema.org openingHoursSpecification). Returns null if unparseable/closed. */
 function to24Hour(t: string): string | null {
@@ -66,30 +66,6 @@ function priceRangeFromServices(services: { price: number }[]): string | null {
   if (avg < 50) return '$$';
   if (avg < 100) return '$$$';
   return '$$$$';
-}
-
-// Fallback for the ~90%+ of the salon corpus with no real service/price data
-// of our own: Google Places' price_level field, already collected into
-// salon_google_places but previously never wired into priceRange. Handles
-// the modern Places API's PRICE_LEVEL_* enum, the legacy 0-4 numeric scale,
-// and an already-$-formatted value, in that order. Returns null (omit the
-// property) rather than guess when the value is missing or unrecognized —
-// consistent with priceRangeFromServices never asserting a flat constant.
-function priceRangeFromPriceLevel(priceLevel: string | null | undefined): string | null {
-  if (!priceLevel) return null;
-  const v = priceLevel.trim().toUpperCase();
-  const enumMap: Record<string, string> = {
-    PRICE_LEVEL_FREE: '$',
-    PRICE_LEVEL_INEXPENSIVE: '$',
-    PRICE_LEVEL_MODERATE: '$$',
-    PRICE_LEVEL_EXPENSIVE: '$$$',
-    PRICE_LEVEL_VERY_EXPENSIVE: '$$$$',
-  };
-  if (enumMap[v]) return enumMap[v];
-  const numericMap: Record<string, string> = { '0': '$', '1': '$', '2': '$$', '3': '$$$', '4': '$$$$' };
-  if (numericMap[v]) return numericMap[v];
-  if (/^\${1,4}$/.test(priceLevel.trim())) return priceLevel.trim();
-  return null;
 }
 
 const escapeHtml = (s: string) =>
@@ -199,87 +175,148 @@ export async function render(url: string, apiOrigin: string, publicOrigin: strin
           },
         },
       ]);
-    } else if (pathname.startsWith('/listings/')) {
-      const param = decodeURIComponent(pathname.slice('/listings/'.length));
-      const sep = param.lastIndexOf('--');
-      if (sep === -1) {
-        try {
-          const state = await getStateListing(param);
-          queryClient.setQueryData(getStateListingQueryKey(param), state);
-          headTags = baseHead(
-            `Nail salons in ${state.name} | ${SITE_NAME}`,
-            `Find ${state.count.toLocaleString()} nail ${pluralize(state.count, 'salon')} across ${state.name}. Browse by city and get in touch.`,
-            canonical,
-            state.indexable ? 'index, follow' : 'noindex, follow',
-          );
-          headTags += jsonLdScript([
-            {
-              '@context': 'https://schema.org',
-              '@type': 'BreadcrumbList',
-              itemListElement: [
-                { '@type': 'ListItem', position: 1, name: 'Home', item: `${publicOrigin}/` },
-                { '@type': 'ListItem', position: 2, name: state.name },
-              ],
+    } else if (pathname === '/salons' || pathname.startsWith('/salons/')) {
+      // The directory (plans/salon-directory.md): /salons, /salons/about,
+      // /salons/{state}, /salons/{state}/{city}, /salons/{state}/{city}/{salon}.
+      const seg = pathname.split('/').filter(Boolean).slice(1).map((p) => decodeURIComponent(p));
+      const crumbs = (items: Array<{ name: string; path?: string }>) => ({
+        '@context': 'https://schema.org',
+        '@type': 'BreadcrumbList',
+        itemListElement: [{ name: 'Salons', path: '/salons' }, ...items].map((c, i) => ({
+          '@type': 'ListItem', position: i + 1, name: c.name, ...(c.path ? { item: `${publicOrigin}${c.path}` } : {}),
+        })),
+      });
+      const head = (h: DirectoryHead) => baseHead(h.title, h.description, canonical, h.robots);
+      const notFound = () => {
+        statusCode = 404;
+        headTags = baseHead('Not in the directory | Certxa', 'That page is not in the Certxa salon directory.', canonical, 'noindex, follow');
+      };
+      try {
+        if (seg.length === 0) {
+          const states = await getDirectoryStates();
+          queryClient.setQueryData(getDirectoryStatesQueryKey(), states);
+          headTags = head(directoryRootHead(states)) + jsonLdScript([{
+            '@context': 'https://schema.org',
+            '@type': 'CollectionPage',
+            name: 'Licensed nail salons by state',
+            url: canonical,
+            isPartOf: { '@id': `${publicOrigin}/#website` },
+            mainEntity: {
+              '@type': 'ItemList',
+              numberOfItems: states.length,
+              itemListElement: states.map((s, i) => ({ '@type': 'ListItem', position: i + 1, name: s.name, url: `${publicOrigin}${s.url}` })),
             },
+          }]);
+        } else if (seg.length === 1 && seg[0] === 'about') {
+          headTags = head(directoryAboutHead()) + jsonLdScript([
+            { '@context': 'https://schema.org', '@type': 'AboutPage', name: 'How the Certxa salon directory works', url: canonical,
+              isPartOf: { '@id': `${publicOrigin}/#website` }, publisher: { '@id': `${publicOrigin}/#organization` } },
+            crumbs([{ name: 'How this directory works' }]),
+          ]);
+        } else if (seg.length === 1) {
+          const state = await getStateListing(seg[0]);
+          queryClient.setQueryData(getStateListingQueryKey(seg[0]), state);
+          if (state.url !== pathname) { statusCode = 301; redirectTo = state.url; }
+          headTags = head(stateHead(state)) + jsonLdScript([
+            crumbs([{ name: state.name }]),
             {
               '@context': 'https://schema.org',
               '@type': 'CollectionPage',
-              name: `Nail salons in ${state.name}`,
+              name: `Licensed nail salons in ${state.name}`,
               url: canonical,
               mainEntity: {
                 '@type': 'ItemList',
                 numberOfItems: state.cities.length,
-                itemListElement: state.cities.map((c, i) => ({
-                  '@type': 'ListItem', position: i + 1, name: c.name,
-                  url: `${publicOrigin}/listings/${c.slug}--${state.slug}`,
-                })),
+                itemListElement: state.cities.map((c, i) => ({ '@type': 'ListItem', position: i + 1, name: c.name, url: `${publicOrigin}${c.url}` })),
               },
             },
           ]);
-        } catch {
-          statusCode = 404;
-          headTags = baseHead('State not found', 'That state could not be found.', canonical, 'noindex, follow');
-        }
-      } else {
-        const citySlug = param.slice(0, sep);
-        const stateSlug = param.slice(sep + 2);
-        try {
-          const city = await getCityListing(citySlug, stateSlug);
-          queryClient.setQueryData(getCityListingQueryKey(citySlug, stateSlug), city);
-          headTags = baseHead(
-            `Nail salons in ${city.cityName}, ${city.stateName} | ${SITE_NAME}`,
-            `${city.salons.length.toLocaleString()} nail ${pluralize(city.salons.length, 'salon')} in ${city.cityName}, ${city.stateName}.`,
-            canonical,
-            city.indexable ? 'index, follow' : 'noindex, follow',
-          );
-          headTags += jsonLdScript([
-            {
-              '@context': 'https://schema.org',
-              '@type': 'BreadcrumbList',
-              itemListElement: [
-                { '@type': 'ListItem', position: 1, name: 'Home', item: `${publicOrigin}/` },
-                { '@type': 'ListItem', position: 2, name: city.stateName, item: `${publicOrigin}/listings/${city.stateSlug}` },
-                { '@type': 'ListItem', position: 3, name: city.cityName },
-              ],
-            },
+        } else if (seg.length === 2) {
+          const city = await getCityListing(seg[1], seg[0]);
+          queryClient.setQueryData(getCityListingQueryKey(seg[1], seg[0]), city);
+          if (city.url !== pathname) { statusCode = 301; redirectTo = city.url; }
+          headTags = head(cityHead(city)) + jsonLdScript([
+            crumbs([{ name: city.stateName, path: city.stateUrl }, { name: city.cityName }]),
             {
               '@context': 'https://schema.org',
               '@type': 'CollectionPage',
               name: `Nail salons in ${city.cityName}, ${city.stateName}`,
+              description: citySummary(city),
               url: canonical,
               mainEntity: {
                 '@type': 'ItemList',
                 numberOfItems: city.salons.length,
-                itemListElement: city.salons.map((s, i) => ({
-                  '@type': 'ListItem', position: i + 1, name: s.name,
-                  url: `${publicOrigin}/${s.slug}`,
-                })),
+                itemListElement: city.salons.map((s, i) => ({ '@type': 'ListItem', position: i + 1, name: s.name, url: `${publicOrigin}${s.url}` })),
               },
             },
           ]);
-        } catch {
-          statusCode = 404;
-          headTags = baseHead('City not found', 'That city could not be found.', canonical, 'noindex, follow');
+        } else if (seg.length === 3) {
+          const slug = seg[2];
+          const salon: SalonProfile = await getSalonBySlug(slug);
+          queryClient.setQueryData(getGetSalonBySlugQueryKey(slug), salon);
+          if (salon.url !== pathname) { statusCode = 301; redirectTo = salon.url; }
+          const salonUrl = `${publicOrigin}${salon.url}`;
+          const openingHours = (salon.hours || [])
+            .map((h) => {
+              const opens = to24Hour(h.open);
+              const closes = to24Hour(h.close);
+              if (!opens || !closes) return null;
+              return { '@type': 'OpeningHoursSpecification', dayOfWeek: `https://schema.org/${h.day}`, opens, closes };
+            })
+            .filter((h): h is NonNullable<typeof h> => h !== null);
+          const priceRange = salon.services?.length ? priceRangeFromServices(salon.services) : null;
+          const jsonLd: Record<string, unknown> = {
+            '@context': 'https://schema.org',
+            '@type': 'NailSalon',
+            '@id': `${salonUrl}#salon`,
+            name: salon.name,
+            url: salonUrl,
+            description: salon.description,
+            ...(salon.phone ? { telephone: salon.phone } : {}),
+            address: {
+              '@type': 'PostalAddress',
+              ...(salon.street ? { streetAddress: salon.street } : {}),
+              addressLocality: salon.city,
+              addressRegion: salon.state,
+              addressCountry: 'US',
+            },
+            ...(salon.latitude != null && salon.longitude != null
+              ? { geo: { '@type': 'GeoCoordinates', latitude: salon.latitude, longitude: salon.longitude } }
+              : {}),
+            ...(openingHours.length ? { openingHoursSpecification: openingHours } : {}),
+            // The state license shown on the page.
+            ...(salon.license ? { hasCredential: {
+              '@type': 'EducationalOccupationalCredential',
+              credentialCategory: 'license',
+              name: 'Salon establishment license',
+              identifier: salon.license.number,
+              ...(salon.license.expires ? { expires: salon.license.expires } : {}),
+              recognizedBy: { '@type': 'GovernmentOrganization', name: salon.license.board },
+            } } : {}),
+            // Certxa's own reviews only, shown on the page (salonApi.ts), on a salon that books on Certxa.
+            ...(salon.bookingUrl && salon.rating > 0 && salon.reviewCount > 0
+              ? { aggregateRating: { '@type': 'AggregateRating', ratingValue: salon.rating, reviewCount: salon.reviewCount } }
+              : {}),
+            ...(salon.services?.length
+              ? { makesOffer: salon.services.map((sv) => ({ '@type': 'Offer', name: sv.name, price: sv.price, priceCurrency: 'USD' })) }
+              : {}),
+            ...(priceRange ? { priceRange } : {}),
+          };
+          const trail: Array<{ name: string; path?: string }> = [];
+          if (salon.stateUrl) trail.push({ name: salon.state, path: salon.stateUrl });
+          if (salon.cityUrl && salon.city) trail.push({ name: salon.city, path: salon.cityUrl });
+          trail.push({ name: salon.name });
+          headTags = head(salonHead(salon)) + jsonLdScript([jsonLd, crumbs(trail)]);
+        } else {
+          notFound();
+        }
+      } catch (err) {
+        const redirectSlug = seg.length === 3 ? parseRedirectSlug(err) : null;
+        if (redirectSlug) {
+          statusCode = 301;
+          redirectTo = `/${redirectSlug}`; // the /:slug fallback sends it on to its /salons page
+        } else {
+          notFound();
         }
       }
     } else if (pathname === '/deals') {
@@ -381,117 +418,6 @@ export async function render(url: string, apiOrigin: string, publicOrigin: strin
         'Certxa puts independent salons in front of local clients who care where they book. Get a real public profile, local discovery, and better-fit bookings.',
         canonical,
       );
-    } else if (pathname !== '/search' && pathname !== '/saved' && pathname !== '/for-business' && pathname !== '/') {
-      // Flat /:slug — individual salon profile page.
-      const slug = pathname.slice(1);
-      try {
-        const salon: SalonProfile = await getSalonBySlug(slug);
-        queryClient.setQueryData(getGetSalonBySlugQueryKey(slug), salon);
-        // Only a claimed listing (a real, paying Certxa customer — bookingUrl
-        // is only ever set from a live store's bookingSlug, see salonApi.ts)
-        // is indexable. An unclaimed listing is boilerplate, AI-summarized
-        // third-party data Certxa doesn't represent; indexing ~50k of those
-        // was a real Google structured-data policy risk and a plausible
-        // driver of a sitewide quality discount (see GEO-AUDIT-REPORT.md).
-        // This mirrors getClaimedSalonList()'s own gating in salonData.ts —
-        // keep both in sync.
-        const isVerified = !!salon.bookingUrl;
-        const ratingStr = salon.rating > 0 ? ` Rated ${salon.rating}/5 from ${salon.reviewCount} reviews.` : '';
-        // Title uses city/state, not the full street address — the address
-        // was pushing many titles past Semrush's/Google's ~60-char length
-        // guidance (a real "title too long" finding on ~26 salon pages).
-        // City/state is shorter, still real, and is the more useful local-
-        // SEO signal in a title anyway; the full address stays in the
-        // description and the PostalAddress schema below.
-        const cityState = [salon.city, salon.state].filter(Boolean).join(', ');
-        headTags = baseHead(
-          cityState ? `${salon.name} | Nail Salon in ${cityState}` : `${salon.name} | Nail Salon`,
-          `${salon.name} is a nail salon located at ${salon.address}.${ratingStr}`,
-          canonical,
-          isVerified ? 'index, follow, max-image-preview:large, max-snippet:-1' : 'noindex, follow',
-        );
-        const stateName = STATE_NAMES[salon.state] || salon.state;
-        const openingHours = (salon.hours || [])
-          .map((h) => {
-            const opens = to24Hour(h.open);
-            const closes = to24Hour(h.close);
-            if (!opens || !closes) return null;
-            return { '@type': 'OpeningHoursSpecification', dayOfWeek: `https://schema.org/${h.day}`, opens, closes };
-          })
-          .filter((h): h is NonNullable<typeof h> => h !== null);
-        const jsonLd: Record<string, unknown> = {
-          '@context': 'https://schema.org',
-          '@type': 'BeautySalon',
-          name: salon.name,
-          url: canonical,
-          image: [salon.imageUrl, ...(salon.gallery || [])],
-          // Generated "about" text is no longer published (plans/salon-directory.md).
-          description: salon.description,
-          ...(salon.phone ? { telephone: salon.phone } : {}),
-          address: {
-            '@type': 'PostalAddress',
-            streetAddress: salon.address,
-            addressLocality: salon.city,
-            addressRegion: salon.state,
-            addressCountry: 'US',
-          },
-          ...(salon.latitude != null && salon.longitude != null
-            ? { geo: { '@type': 'GeoCoordinates', latitude: salon.latitude, longitude: salon.longitude } }
-            : {}),
-          ...(openingHours.length ? { openingHoursSpecification: openingHours } : {}),
-          // Also gated on isVerified: asserting a third party's review count
-          // on a page for a business that hasn't claimed its listing (and
-          // has no visible Review content on the page backing the number)
-          // is what unclaimed pages were flagged for — see isVerified above.
-          ...(isVerified && salon.rating > 0 && salon.reviewCount > 0
-            ? { aggregateRating: { '@type': 'AggregateRating', ratingValue: salon.rating, reviewCount: salon.reviewCount } }
-            : {}),
-          ...(salon.services?.length
-            ? { makesOffer: salon.services.map((s) => ({ '@type': 'Offer', name: s.name, price: s.price, priceCurrency: 'USD' })) }
-            : {}),
-          // Derived from the salon's own real, priced service list first
-          // (never a flat asserted constant — that was flagged in an earlier
-          // audit as unverifiable on unclaimed pages); Google Places'
-          // price_level as a fallback for the many unclaimed listings with
-          // no service menu of their own. Omitted entirely when neither
-          // source has real data.
-          ...(function () {
-            const priceRange = (salon.services?.length ? priceRangeFromServices(salon.services) : null)
-              ?? priceRangeFromPriceLevel(salon.priceLevel);
-            return priceRange ? { priceRange } : {};
-          })(),
-        };
-        // A handful of scraped listings have an incomplete address with no
-        // state at all (e.g. just "street, city") — state/city breadcrumb
-        // levels are skipped rather than emitted with an empty name and a
-        // malformed /listings/ URL, since neither can be built into a real,
-        // working link without a real state to slugify.
-        const breadcrumbItems: Array<{ '@type': string; position: number; name: string; item?: string }> = [
-          { '@type': 'ListItem', position: 1, name: 'Home', item: `${publicOrigin}/` },
-        ];
-        if (salon.state && stateName) {
-          breadcrumbItems.push({ '@type': 'ListItem', position: breadcrumbItems.length + 1, name: stateName, item: `${publicOrigin}/listings/${toSlug(stateName)}` });
-          if (salon.city) {
-            breadcrumbItems.push({ '@type': 'ListItem', position: breadcrumbItems.length + 1, name: salon.city, item: `${publicOrigin}/listings/${toSlug(salon.city)}--${toSlug(stateName)}` });
-          }
-        }
-        breadcrumbItems.push({ '@type': 'ListItem', position: breadcrumbItems.length + 1, name: salon.name });
-        const breadcrumb = {
-          '@context': 'https://schema.org',
-          '@type': 'BreadcrumbList',
-          itemListElement: breadcrumbItems,
-        };
-        headTags += jsonLdScript([jsonLd, breadcrumb]);
-      } catch (err) {
-        const redirectSlug = parseRedirectSlug(err);
-        if (redirectSlug) {
-          statusCode = 301;
-          redirectTo = `/${redirectSlug}`;
-        } else {
-          statusCode = 404;
-          headTags = baseHead('Salon not found', 'That salon could not be found.', canonical, 'noindex, follow');
-        }
-      }
     }
   } catch (err) {
     // Prefetch failure shouldn't take the whole page down — fall through to

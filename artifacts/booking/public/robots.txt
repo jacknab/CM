@@ -96,34 +96,39 @@ Disallow: /launchsite/barbershops
 Disallow: /launchsite/hair-salons
 Disallow: /salon-data.json
 
-# ── Known scraper / data-harvesting agents — block from the salon listing
-# hub pages. Individual salon pages are flat at root (certxa.com/{slug}), so
-# they can't be targeted by a robots.txt prefix without also disallowing
-# real marketing pages — only /listings/ (state/city hubs) can be blocked
-# this way; the sitemap rate limiter is the actual backstop against bulk
-# harvesting of the flat salon pages themselves. ────────────────────────────
+# ── Known scraper / data-harvesting agents — kept out of the salon directory.
+# The whole directory lives under /salons/ (state, city and salon pages), so
+# one prefix covers it; /listings/ is its earlier address (now 301s). ──────
 User-agent: AhrefsBot
+Disallow: /salons/
 Disallow: /listings/
 
 User-agent: SemrushBot
+Disallow: /salons/
 Disallow: /listings/
 
 User-agent: MJ12bot
+Disallow: /salons/
 Disallow: /listings/
 
 User-agent: DotBot
+Disallow: /salons/
 Disallow: /listings/
 
 User-agent: BLEXBot
+Disallow: /salons/
 Disallow: /listings/
 
 User-agent: DataForSeoBot
+Disallow: /salons/
 Disallow: /listings/
 
 User-agent: PetalBot
+Disallow: /salons/
 Disallow: /listings/
 
 User-agent: Bytespider
+Disallow: /salons/
 Disallow: /listings/
 
 # Sitemap

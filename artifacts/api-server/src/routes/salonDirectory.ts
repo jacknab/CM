@@ -1,35 +1,19 @@
 /**
  * Salon Marketplace — the certxa.com homepage and consumer directory.
  *
- * URL structure matches Vagaro's (vagaro.com/listings/{city}--{state},
- * vagaro.com/{business-slug}): flat and root-level, not tucked under a
- * feature-specific prefix — this *is* the main site now, not a bolted-on
- * directory. `export default router` (mounted BEFORE phpMiddleware) owns
- * "/" and "/listings/*"; `salonSlugFallbackRouter` (mounted AFTER
- * phpMiddleware) owns the flat "/:slug" individual listing page — see the
- * comments at both mount points in index.ts for why the split matters:
- * every real marketing page must get first refusal before a scraped salon
- * slug is ever allowed to match.
+ * Every directory page lives under /salons (plans/salon-directory.md):
+ * /salons, /salons/{state}, /salons/{state}/{city}, /salons/{state}/{city}/{salon}
+ * and /salons/about. Listings come from state license records
+ * (directory_listings), not Google Places.
  *
  * Actual page rendering is real React SSR (artifacts/marketplace's built
  * entry-server.tsx, loaded via lib/marketplaceSsr.ts) — this file is just
  * routing + the sitemaps. Data access lives in lib/salonData.ts, shared
  * with the JSON API in routes/salonApi.ts.
  *
- * Routes:
- *   /                                    — homepage: national search/map
- *   /listings/:stateSlug                 — state browse page
- *   /listings/:citySlug--:stateSlug      — city page, paginated
- *   /sitemap-salons.xml                  — sitemap (index if >50k records)
- *   /sitemap-salons-:page.xml            — paginated sitemap slice
- *   /sitemap-listings.xml                — sitemap of state/city hub pages
- *   /:slug                               — individual salon page (fallback router)
- *
- * The earlier build of this feature lived at /nail-salons/... and /salon/:slug. Google still had
- * thousands of those addresses (Search Console, Oct 2026: most of the site's "Not found (404)"),
- * so they 301 to the current page: /salon/:slug → /:slug (also through a renamed slug), and
- * /nail-salons/:state/:city → /listings/:city--:state. An old salon that no longer exists goes to its
- * city's page (cityForOldSlug) when its state can be proven, and is answered 410 Gone otherwise.
+ * Earlier addresses all answer with a 301 to the matching /salons page, or 410 Gone when the
+ * salon isn't in the license-based directory: /:slug and /salon/:slug (salon pages until
+ * Oct 2026), /listings/:state and /listings/:city--:state (hubs), /nail-salons/... (before that).
  */
 
 import { Router } from "express";
@@ -38,7 +22,8 @@ import { logger } from "../lib/logger";
 import { renderMarketplacePage } from "../lib/marketplaceSsr";
 import { requestIp, resolveVisitorCity } from "../lib/geoLookup";
 import {
-  cityForOldSlug, ensureLoaded, getCityData, getClaimedSalonList, getIndexableHubs, getSalonMap, getSalonRedirectSlug, getStateBySlug, getStateIndex,
+  ensureLoaded, getCityData, getClaimedSalonList, getIndexableHubs, getSalonMap, getSalonRedirectSlug, getStateBySlug, getStateIndex,
+  isRetiredSalonSlug, salonPath, statePath, cityPath,
   CERTXA_DOMAIN, SITEMAP_PAGE_SIZE,
 } from "../lib/salonData";
 
@@ -142,7 +127,7 @@ router.get("/sitemap-salons.xml", sitemapRateLimit, async (_req: Request, res: R
 
     if (totalPages <= 1) {
       const entries = list.map(r =>
-        `  <url><loc>${xmlEsc(`${CERTXA_DOMAIN}/${r.s}`)}</loc><lastmod>${r.lm}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`
+        `  <url><loc>${xmlEsc(`${CERTXA_DOMAIN}${salonPath(r)}`)}</loc><lastmod>${r.lm}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`
       ).join("\n");
       res.setHeader("Content-Type", "application/xml; charset=utf-8");
       res.setHeader("Cache-Control", "public, max-age=86400");
@@ -171,7 +156,7 @@ router.get("/sitemap-salons-:page.xml", sitemapRateLimit, async (req: Request, r
     if (slice.length === 0) { res.status(404).send("Not found"); return; }
 
     const entries = slice.map(r =>
-      `  <url><loc>${xmlEsc(`${CERTXA_DOMAIN}/${r.s}`)}</loc><lastmod>${r.lm}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`
+      `  <url><loc>${xmlEsc(`${CERTXA_DOMAIN}${salonPath(r)}`)}</loc><lastmod>${r.lm}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`
     ).join("\n");
     res.setHeader("Content-Type", "application/xml; charset=utf-8");
     res.setHeader("Cache-Control", "public, max-age=86400");
@@ -193,12 +178,12 @@ router.get("/sitemap-listings.xml", sitemapRateLimit, async (_req: Request, res:
     // Only hub pages that pass getIndexableHubs() — the same rule that sets
     // their robots tag — so the sitemap never lists a noindex page.
     const hubs = await getIndexableHubs();
-    const urls: string[] = [];
+    const urls: string[] = hubs.states.size ? [`${CERTXA_DOMAIN}/salons`] : [];
     for (const state of getStateIndex()) {
       if (!hubs.states.has(state.code)) continue;
-      urls.push(`${CERTXA_DOMAIN}/listings/${state.slug}`);
+      urls.push(`${CERTXA_DOMAIN}${statePath(state.code)}`);
       for (const city of state.cities) {
-        if (hubs.cities.has(`${state.code}:${city.slug}`)) urls.push(`${CERTXA_DOMAIN}/listings/${city.slug}--${state.slug}`);
+        if (hubs.cities.has(`${state.code}:${city.slug}`)) urls.push(`${CERTXA_DOMAIN}${cityPath(state.code, city.slug)}`);
       }
     }
     const entries = urls.map(u =>
@@ -219,10 +204,32 @@ router.get("/sitemap-listings.xml", sitemapRateLimit, async (_req: Request, res:
 // handler here is what lets it fall through to phpMiddleware. The rest of the marketplace (listings,
 // deals, wallet, /api/marketplace/*) is untouched and still live at its own paths.
 
-// State + city hub pages, Vagaro-style: /listings/california (state) and
-// /listings/los-angeles--california (city) — disambiguated inside the SSR
-// entry itself by whether the param contains "--".
-router.get("/listings/:param", (req: Request, res: Response) => serveSsrPage(req, res));
+// The directory: /salons, /salons/about, /salons/{state}, /salons/{state}/{city},
+// /salons/{state}/{city}/{salon}. Which one is decided inside the SSR entry.
+router.get("/salons", (req: Request, res: Response) => serveSsrPage(req, res));
+router.get("/salons/:a", (req: Request, res: Response) => serveSsrPage(req, res));
+router.get("/salons/:a/:b", (req: Request, res: Response) => serveSsrPage(req, res));
+router.get("/salons/:a/:b/:c", (req: Request, res: Response) => serveSsrPage(req, res));
+
+// Hub pages' earlier addresses: /listings/{state} and /listings/{city}--{state}.
+router.get("/listings/:param", async (req: Request, res: Response, next) => {
+  try {
+    await ensureLoaded();
+    const param = String(req.params.param);
+    const sep = param.lastIndexOf("--");
+    const state = getStateBySlug(sep === -1 ? param : param.slice(sep + 2));
+    if (state && sep !== -1 && getCityData(state.code, param.slice(0, sep))) {
+      res.redirect(301, cityPath(state.code, param.slice(0, sep)));
+      return;
+    }
+    if (state) { res.redirect(301, statePath(state.code)); return; }
+  } catch (err) {
+    logger.warn({ err }, "[salonDirectory] old /listings/ address lookup failed");
+    next();
+    return;
+  }
+  gone(res);
+});
 
 // Deals browse + detail — real first-class content pages (not a
 // directory-scraped slug guess), so they're routed explicitly here rather
@@ -240,14 +247,8 @@ function gone(res: Response): void {
 }
 router.get("/salon/:slug", async (req: Request, res: Response, next) => {
   try {
-    await ensureLoaded();
-    const slug = String(req.params.slug);
-    if (getSalonMap().has(slug)) { res.redirect(301, `/${slug}`); return; }
-    const moved = await getSalonRedirectSlug(slug);
-    if (moved) { res.redirect(301, `/${moved}`); return; }
-    // A salon the directory no longer lists: its city's page, read off the old address.
-    const city = cityForOldSlug(slug);
-    if (city) { res.redirect(301, `/listings/${city.citySlug}--${city.stateSlug}`); return; }
+    const target = await currentSalonPath(String(req.params.slug));
+    if (target) { res.redirect(301, target); return; }
   } catch (err) {
     logger.warn({ err }, "[salonDirectory] old /salon/ address lookup failed");
     next(); // the lookup itself failed: say nothing permanent
@@ -255,17 +256,21 @@ router.get("/salon/:slug", async (req: Request, res: Response, next) => {
   }
   gone(res);
 });
-router.get("/nail-salons", (_req: Request, res: Response) => res.redirect(301, "/"));
+
+/** Where an earlier salon address lives now, if the salon is still listed. */
+async function currentSalonPath(slug: string): Promise<string | null> {
+  await ensureLoaded();
+  const rec = getSalonMap().get(slug) ?? getSalonMap().get((await getSalonRedirectSlug(slug)) ?? "");
+  return rec ? salonPath(rec) : null;
+}
+router.get("/nail-salons", (_req: Request, res: Response) => res.redirect(301, "/salons"));
 // Only to a page that exists: an old address whose state or city isn't in the directory stays a plain 404
 // (a redirect that lands on "not found" reads as a soft 404).
 router.get("/nail-salons/:state", async (req: Request, res: Response, next) => {
   try {
     await ensureLoaded();
     const state = getStateBySlug(String(req.params.state));
-    if (state) { res.redirect(301, `/listings/${state.slug}`); return; }
-    // The earlier build also had cities one level down ("/nail-salons/palmetto").
-    const city = cityForOldSlug(String(req.params.state));
-    if (city) { res.redirect(301, `/listings/${city.citySlug}--${city.stateSlug}`); return; }
+    if (state) { res.redirect(301, statePath(state.code)); return; }
   } catch (err) {
     logger.warn({ err }, "[salonDirectory] old /nail-salons/ address lookup failed");
     next();
@@ -278,8 +283,8 @@ router.get("/nail-salons/:state/:city", async (req: Request, res: Response, next
     await ensureLoaded();
     const state = getStateBySlug(String(req.params.state));
     const citySlug = String(req.params.city);
-    if (state && getCityData(state.code, citySlug)) { res.redirect(301, `/listings/${citySlug}--${state.slug}`); return; }
-    if (state) { res.redirect(301, `/listings/${state.slug}`); return; }
+    if (state && getCityData(state.code, citySlug)) { res.redirect(301, cityPath(state.code, citySlug)); return; }
+    if (state) { res.redirect(301, statePath(state.code)); return; }
   } catch (err) {
     logger.warn({ err }, "[salonDirectory] old /nail-salons/ address lookup failed");
     next();
@@ -310,24 +315,15 @@ const RESERVED_SLUGS = new Set([
 salonSlugFallbackRouter.get("/:slug", async (req: Request, res: Response, next) => {
   const slug = String(req.params.slug);
   if (RESERVED_SLUGS.has(slug)) { next(); return; }
+  // Salon pages used to live at the root (/:slug). A salon still in the
+  // directory moves to its /salons page; one that isn't is gone for good.
+  // Anything else isn't a salon address at all: let the request carry on.
   try {
-    const port = process.env.PORT || "9200";
-    const page = await renderMarketplacePage(req.originalUrl, `http://127.0.0.1:${port}`);
-    if (!page) { next(); return; }
-    // Not a real salon slug — let the request continue exactly as it would
-    // have before this router existed (tenant SPA / final 404), rather than
-    // claiming every unmatched single-segment path as "salon not found".
-    if (page.statusCode === 404) { next(); return; }
-    if (page.redirectTo) {
-      res.redirect(page.statusCode === 301 ? 301 : 302, page.redirectTo);
-      return;
-    }
-    res.status(page.statusCode);
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
-    res.send(page.html);
+    const target = await currentSalonPath(slug);
+    if (target) { res.redirect(301, target); return; }
+    if (await isRetiredSalonSlug(slug)) { gone(res); return; }
   } catch (err) {
-    logger.error({ err, slug }, "[salonDirectory] SSR fallback render error");
-    next();
+    logger.warn({ err, slug }, "[salonDirectory] old salon address lookup failed");
   }
+  next();
 });

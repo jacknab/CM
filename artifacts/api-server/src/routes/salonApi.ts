@@ -1,10 +1,11 @@
 /**
  * Marketplace JSON API — backs the React app in artifacts/marketplace (both
  * client-side fetches and the SSR entry's server-side prefetches call these
- * same shapes). Real data from nail_salons + salon_google_* + locations,
- * matching the Salon/SalonProfile contract the frontend expects. No
- * fabricated content: unclaimed listings only ever include what's actually
- * known (see salonData.ts's findEnrichment for the enrichment story).
+ * same shapes). Real data from nail_salons + locations, matching the
+ * Salon/SalonProfile contract the frontend expects. No Google ratings,
+ * reviews, hours or attributes and no generated text are published
+ * (plans/salon-directory.md); a salon's hours, menu and reviews come from
+ * its own Certxa store.
  */
 
 import { Router } from "express";
@@ -13,13 +14,16 @@ import { pool } from "../db";
 import { logger } from "../lib/logger";
 import {
   ensureLoaded, getSalonMap, getSalonList, getClaimedSalonList, getIndexableHubs,
-  findMatchingStore, findEnrichment, deriveAddress, heroImage,
+  findMatchingStore, deriveAddress, heroImage, forgetSalon,
   formatHour12, DAY_NAMES, CERTXA_DOMAIN,
   getStateBySlug, getCityData, getStateIndex, toCitySlug,
   STATE_NAMES, US_STATES, haversineMiles, getSalonRedirectSlug,
+  salonPath, statePath, cityPath, LICENSE_SOURCES,
   type SalonRecord,
 } from "../lib/salonData";
 import { requestIp, resolveVisitorCity } from "../lib/geoLookup";
+import rateLimit from "express-rate-limit";
+import { sendEmail } from "../mail";
 
 const router = Router();
 
@@ -42,6 +46,11 @@ interface ApiSalon {
   description: string;
   latitude?: number;
   longitude?: number;
+  street: string;
+  /** The salon's directory page, /salons/{state}/{city}/{salon}. */
+  url: string;
+  /** "Active" / "Current" license from the state board that issued it. */
+  licensed: boolean;
 }
 
 function formatDistanceMiles(miles: number): string {
@@ -73,6 +82,9 @@ function toApiSalon(r: SalonRecord, claimedSet: Set<string>, distanceMiles?: num
     description: addr.city ? `Nail salon in ${addr.city}${addr.state ? `, ${addr.state}` : ""}.` : "Nail salon.",
     ...(lat != null && !Number.isNaN(lat) ? { latitude: lat } : {}),
     ...(lng != null && !Number.isNaN(lng) ? { longitude: lng } : {}),
+    street: addr.street,
+    url: salonPath(r),
+    licensed: /^(active|current)$/i.test(r.lst),
   };
 }
 
@@ -261,11 +273,6 @@ router.get("/api/salons/:slug", async (req: Request, res: Response) => {
     }
 
     const live = salon.p ? await findMatchingStore(salon.s, salon.p) : null;
-    // Google Places enrichment (hours/attributes) is looked up by the salon's
-    // own scraper-DB id. Its review text is no longer shown (see below).
-    // Attributes are only rendered for unclaimed listings — a live store's
-    // own hours/data take priority.
-    const enrichment = await findEnrichment(salon.id);
     const addr = deriveAddress(salon);
     const claimedSet = new Set(live ? [salon.s] : []);
     const base = toApiSalon(salon, claimedSet);
@@ -303,10 +310,10 @@ router.get("/api/salons/:slug", async (req: Request, res: Response) => {
       }
     }
 
+    // Hours come only from the salon's own Certxa store, never from Google
+    // Places (plans/salon-directory.md).
     const hours = live?.hours.length
       ? live.hours.map((h) => ({ day: DAY_NAMES[h.day], open: h.closed ? "Closed" : formatHour12(h.open), close: h.closed ? "" : formatHour12(h.close) }))
-      : enrichment.hours.length
-      ? enrichment.hours.map((h) => ({ day: DAY_NAMES[h.day], open: h.closedAllDay || !h.open ? "Closed" : formatHour12(h.open), close: h.closedAllDay || !h.close ? "" : formatHour12(h.close) }))
       : [];
 
     const services = live?.services.length
@@ -314,13 +321,6 @@ router.get("/api/salons/:slug", async (req: Request, res: Response) => {
       : [];
 
     const highlights: string[] = [];
-    if (!live && enrichment.attributes) {
-      const attr = enrichment.attributes;
-      if (attr.priceLevel) highlights.push(attr.priceLevel.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase()));
-      if (attr.wheelchairAccessibleEntrance) highlights.push("Wheelchair accessible");
-      if (attr.goodForChildren) highlights.push("Good for children");
-      if (attr.allowsDogs) highlights.push("Dog friendly");
-    }
 
     // Real nearby salons (by actual distance from this salon's own real
     // coordinates) — adds genuine content depth and internal linking to
@@ -340,8 +340,14 @@ router.get("/api/salons/:slug", async (req: Request, res: Response) => {
       nearby = withDistance.slice(0, 6).map(({ r, miles }) => toApiSalon(r, new Set(), miles));
     }
 
+    const board = LICENSE_SOURCES[salon.ls];
     res.json({
       ...base,
+      license: board
+        ? { board: board.board, short: board.short, number: salon.ln, status: salon.lst, expires: salon.lx || undefined, verifyUrl: board.verifyUrl, checked: salon.lm }
+        : undefined,
+      stateUrl: US_STATES.has(salon.ss) ? statePath(salon.ss) : undefined,
+      cityUrl: US_STATES.has(salon.ss) && salon.c ? cityPath(salon.ss, toCitySlug(salon.c)) : undefined,
       name: live?.name || base.name,
       rating,
       reviewCount,
@@ -400,6 +406,63 @@ router.post("/api/salons/:slug/inquiries", async (req: Request, res: Response) =
   }
 });
 
+// ── POST /api/directory/:slug/removal — "Remove this listing" ───────────────
+// Anyone can ask for a directory listing to be removed. It is hidden at once
+// (directory_listings.opted_out_at); the request is kept and support is emailed
+// so a bad-faith removal can be reversed (plans/salon-directory.md).
+
+router.post(
+  "/api/directory/:slug/removal",
+  rateLimit({ windowMs: 60 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false }),
+  async (req: Request, res: Response) => {
+    try {
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+      const name = text(b.name, 200);
+      const email = text(b.email, 200);
+      const relationship = text(b.relationship, 100);
+      const reason = text(b.reason, 2000);
+      if (name.length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        res.status(400).json({ error: "Please give your name and a valid email address." });
+        return;
+      }
+      const listing = await pool.query<{ id: number; name: string; city: string | null; state: string }>(
+        `UPDATE directory_listings SET opted_out_at = COALESCE(opted_out_at, now()), opt_out_reason = $2
+         WHERE slug = $1 RETURNING id, name, city, state`,
+        [String(req.params.slug), reason || null],
+      );
+      const row = listing.rows[0];
+      if (!row) {
+        res.status(404).json({ error: "Listing not found" });
+        return;
+      }
+      await pool.query(
+        `INSERT INTO directory_removal_requests (listing_id, name, email, relationship, reason, ip) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [row.id, name, email, relationship || null, reason || null, requestIp(req)],
+      );
+      logger.info({ listingId: row.id, slug: req.params.slug }, "[salonApi] directory listing removed on request");
+      forgetSalon(String(req.params.slug));
+      const where = [row.city, row.state].filter(Boolean).join(", ");
+      void sendEmail(
+        0,
+        "support@certxa.com",
+        `Directory listing removed: ${row.name}${where ? ` (${where})` : ""}`,
+        `<p>${escapeHtml(name)} &lt;${escapeHtml(email)}&gt; asked for the listing <strong>${escapeHtml(row.name)}</strong> (${escapeHtml(String(req.params.slug))}) to be removed. It is now hidden.</p>` +
+          `<p><strong>Relationship:</strong> ${escapeHtml(relationship || "not given")}<br><strong>Reason:</strong> ${escapeHtml(reason || "not given")}</p>` +
+          `<p>To restore it: <code>UPDATE directory_listings SET opted_out_at = NULL WHERE id = ${row.id};</code></p>`,
+      ).catch((err) => logger.warn({ err }, "[salonApi] removal notice email failed"));
+      res.status(201).json({ removed: true });
+    } catch (err) {
+      logger.error({ err }, "[salonApi] directory removal failed");
+      res.status(500).json({ error: "Something went wrong" });
+    }
+  },
+);
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 // ── POST /api/business-inquiries — "For salon owners" lead form ────────────
 
 router.post("/api/business-inquiries", async (req: Request, res: Response) => {
@@ -420,6 +483,29 @@ router.post("/api/business-inquiries", async (req: Request, res: Response) => {
     res.status(500).json({ error: "Something went wrong" });
   }
 });
+
+// ── GET /api/listings — every state in the directory ───────────────────────
+
+router.get("/api/listings", async (_req: Request, res: Response) => {
+  try {
+    await ensureLoaded();
+    const hubs = await getIndexableHubs();
+    res.json(getStateIndex().map((s) => ({
+      code: s.code, name: s.name, slug: s.slug, count: s.count, cities: s.cities.length,
+      url: statePath(s.code), indexable: hubs.states.has(s.code),
+    })));
+  } catch (err) {
+    logger.error({ err }, "[salonApi] state list failed");
+    res.status(503).json({ error: "Salon data unavailable" });
+  }
+});
+
+/** Which board licenses a state's salons, for the state and city pages. */
+function stateLicenseNote(stateCode: string): { board: string; verifyUrl: string } | undefined {
+  const source = { TX: "tx_tdlr", CA: "ca_bbc", FL: "fl_dbpr" }[stateCode];
+  const board = source ? LICENSE_SOURCES[source] : undefined;
+  return board ? { board: board.board, verifyUrl: board.verifyUrl } : undefined;
+}
 
 // ── GET /api/listings/:param — state or city--state listing hub ────────────
 // param without "--" is a state slug; with "--" it's "citySlug--stateSlug".
@@ -444,7 +530,9 @@ router.get("/api/listings/:param", async (req: Request, res: Response) => {
         slug: state.slug,
         count: state.count,
         indexable: hubs.states.has(state.code),
-        cities: state.cities.map((c) => ({ name: c.name, slug: c.slug, count: c.count })),
+        url: statePath(state.code),
+        license: stateLicenseNote(state.code),
+        cities: state.cities.map((c) => ({ name: c.name, slug: c.slug, count: c.count, url: cityPath(state.code, c.slug) })),
       });
       return;
     }
@@ -466,6 +554,9 @@ router.get("/api/listings/:param", async (req: Request, res: Response) => {
       stateSlug: state.slug,
       cityName: city.name,
       citySlug,
+      url: cityPath(state.code, citySlug),
+      stateUrl: statePath(state.code),
+      license: stateLicenseNote(state.code),
       indexable: hubs.cities.has(`${state.code}:${citySlug}`),
       salons: city.records.map((r) => toApiSalon(r, claimed)),
     });
