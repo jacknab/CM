@@ -36,7 +36,8 @@ import { getDeviceId } from "@/lib/device-id";
 import { findClientId } from "./clientLookup";
 import { useNetworkStatus } from "@/hooks/use-network-status";
 import { syncEngine } from "@/lib/sync-engine";
-import { nailOffline, setNailOfflineStore, isLocalId, isNetworkFailure, newIdempotencyKey } from "@/lib/nail-offline";
+import { nailOffline, setNailOfflineStore, isLocalId, isNetworkFailure, newIdempotencyKey, type TicketRecord } from "@/lib/nail-offline";
+import { archivedTicket, refreshTicketArchive } from "./ticketArchive";
 import { nailAdjustment } from "./ticketDraft";
 import { buildCheckinTicket } from "@/lib/thermalPrinter";
 import { ChooseClientPanel, ClientLookupSheet, ManagerPinSheet, TimeClockSheet, TurnPageModal, VoucherRedeemSheet } from "@/pages/Calendar";
@@ -83,6 +84,11 @@ import type { SalesTaxSettings } from "@shared/nailCheckout";
 // The checkout screen is loaded on its own. It is fetched as soon as this screen opens, not on the first
 // tap of CHECKOUT, so it is already on the tablet when the network drops.
 const loadCheckoutMode = () => import("./CheckoutMode");
+/** A ticket's date as the server's ticket # lookup writes it ("Tue, Oct 14, 3:05 PM"). */
+const lookupDate = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "Unknown date" : d.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+};
 
 // Before this screen's first request: no tap waits on a server that cannot be reached
 // (lib/request-deadline.ts), one quick check says at once whether the server answers, and the tablet keeps
@@ -512,6 +518,16 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     });
     return () => { sharing.stop(); offChange(); offStatus(); };
   }, [storeId, queryClient]);
+
+  // Every past ticket kept on this tablet, so a ticket # can be looked up with no internet (ticketArchive.ts):
+  // brought up to date on open, every 15 minutes, and when the connection comes back.
+  useEffect(() => {
+    const refresh = () => { if (!syncEngine.isOffline()) void refreshTicketArchive(storeId); };
+    refresh();
+    const timer = setInterval(refresh, 15 * 60_000);
+    const offStatus = syncEngine.onStatusChange((status) => { if (status === "online") refresh(); });
+    return () => { clearInterval(timer); offStatus(); };
+  }, [storeId]);
 
   // Only POS #1 answers (one check-in, not one per POS tablet).
   useEffect(() => hubRole !== "pos" ? undefined : serveKioskOverHub({
@@ -1027,6 +1043,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // fallback for a slip whose QR won't scan) so the two paths can never behave differently for
   // the same underlying record.
   const [receiptToken, setReceiptToken] = useState<string | null>(null);
+  // A paid ticket's receipt from this tablet's copy of the ticket archive (no internet).
+  const [receiptSnapshot, setReceiptSnapshot] = useState<unknown>(null);
   // A ticket that resolved to a real appointment but isn't on today's live board — cancelled,
   // no-show, pending, or completed with no receipt token to open instead. Nothing live to open
   // for any of these; TicketStatusDialog shows the record's actual status rather than erroring
@@ -1057,7 +1075,21 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     if (ticket) { setPopupId(ticket.id); return true; }
     const marker = b?.markers.find((m) => m.ticketNumber === ticketNumber);
     if (marker && startFromMarkerRef.current) { startFromMarkerRef.current(marker); return true; }
-    return false;
+    // A ticket paid on this tablet with no internet, not sent yet.
+    const records = await nailOffline.records(storeId).catch(() => []);
+    const paidHere = records.find((r) => r.kind === "ticket" && r.ticketNumber === ticketNumber && r.paid) as TicketRecord | undefined;
+    if (paidHere) {
+      setLookupStatus({ appointmentId: paidHere.realId ?? paidHere.id, ticketNumber, clientName: paidHere.clientName, service: paidHere.service.name,
+        date: lookupDate(paidHere.paid!.at), status: "completed", isPaid: true });
+      return true;
+    }
+    // Any earlier ticket, from the archive this tablet keeps (ticketArchive.ts).
+    const past = await archivedTicket(storeId, ticketNumber);
+    if (!past) return false;
+    if (past.isPaid && past.receipt) { setReceiptSnapshot(past.receipt); return true; }
+    setLookupStatus({ appointmentId: past.id, ticketNumber, clientName: past.clientName, service: past.service,
+      date: lookupDate(past.date), status: past.status, isPaid: past.isPaid });
+    return true;
   }, [queryClient, storeId]);
 
   const handleScan = useCallback(async (raw: string) => {
@@ -1494,6 +1526,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
       {popupTicket && <TicketPopup ticket={popupTicket} busy={act.isPending} {...ticketActions} clockOffsetMs={clockOffsetMs} onClose={() => setPopupId(null)} />}
       {receiptToken && <ReceiptDialog token={receiptToken} onClose={() => setReceiptToken(null)} />}
+      {receiptSnapshot != null && <ReceiptDialog token={null} snapshot={receiptSnapshot} onClose={() => setReceiptSnapshot(null)} />}
       {lookupStatus && <TicketStatusDialog ticket={lookupStatus} onClose={() => setLookupStatus(null)} />}
       {showLookupByNumber && <LookupByNumberDialog onLookup={lookupByNumber} onClose={() => setShowLookupByNumber(false)} />}
 

@@ -180,6 +180,11 @@ export class NailOffline {
   async remember(storeId: number, url: string, data: unknown): Promise<void> {
     await this.kv.batch([{ store: "cache", key: `${storeId}:${url}`, value: { data, at: this.now().toISOString() } }]);
   }
+  /** Several reads kept in one write (the ticket archive comes down a page at a time). */
+  async rememberMany(storeId: number, entries: ReadonlyArray<{ url: string; data: unknown }>): Promise<void> {
+    const at = this.now().toISOString();
+    await this.kv.batch(entries.map((e) => ({ store: "cache" as const, key: `${storeId}:${e.url}`, value: { data: e.data, at } })));
+  }
   async recall<T>(storeId: number, url: string): Promise<{ data: T; at: string } | undefined> {
     return this.kv.get(`cache` as const, `${storeId}:${url}`);
   }

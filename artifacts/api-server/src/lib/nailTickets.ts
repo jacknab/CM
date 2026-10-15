@@ -1486,3 +1486,57 @@ export async function staffHoldingCheckins(storeId: number): Promise<number[]> {
   );
   return rows.map((r: any) => Number(r.staff_id));
 }
+
+// ── Ticket archive: every past ticket of a salon, kept on its tablets so a ticket # can be looked up offline ──
+
+export interface ArchivedTicket {
+  id: number;
+  ticketNumber: number;
+  status: string;
+  date: string;
+  clientName: string;
+  service: string;
+  staffName: string | null;
+  isPaid: boolean;
+  /** The receipt as it was printed (appointments.receipt_snapshot), for a paid ticket that has one. */
+  receipt: unknown | null;
+}
+
+/**
+ * One page of the salon's numbered tickets, oldest first. `afterId`: the tablet's first copy, page by page.
+ * `changedSince`: tickets made or closed since then, for a tablet that already has the rest (a ticket can be
+ * paid, cancelled or refunded after it was made, so the tablet asks again for its last days).
+ */
+export async function ticketArchivePage(storeId: number, opts: { afterId: number; changedSince: Date | null; limit: number }): Promise<{ tickets: ArchivedTicket[]; lastId: number | null; more: boolean }> {
+  const { rows } = await pool.query(
+    `SELECT a.id, a.ticket_number, a.status, a.date, a.total_paid, a.receipt_snapshot,
+            COALESCE(c.full_name, (SELECT kc.client_name FROM kiosk_checkins kc WHERE kc.appointment_id = a.id ORDER BY kc.id DESC LIMIT 1)) AS client_name,
+            s.name AS service_name, st.name AS staff_name
+       FROM appointments a
+       LEFT JOIN clients  c  ON c.id  = a.customer_id
+       LEFT JOIN services s  ON s.id  = a.service_id
+       LEFT JOIN staff    st ON st.id = a.staff_id
+      WHERE a.store_id = $1 AND a.ticket_number IS NOT NULL AND a.id > $2
+        AND ($3::timestamptz IS NULL OR a.created_at >= $3::timestamptz OR a.completed_at >= $3::timestamptz OR a.date >= $3::timestamptz)
+      ORDER BY a.id ASC
+      LIMIT $4`,
+    [storeId, opts.afterId, opts.changedSince ? opts.changedSince.toISOString() : null, opts.limit + 1],
+  );
+  const more = rows.length > opts.limit;
+  const page = rows.slice(0, opts.limit);
+  const tickets: ArchivedTicket[] = page.map((r: any) => {
+    const isPaid = r.status === "completed" && r.total_paid != null;
+    return {
+      id: Number(r.id),
+      ticketNumber: Number(r.ticket_number),
+      status: r.status ?? "pending",
+      date: new Date(r.date).toISOString(),
+      clientName: r.client_name || "Guest",
+      service: r.service_name ?? "Appointment",
+      staffName: r.staff_name ?? null,
+      isPaid,
+      receipt: isPaid ? r.receipt_snapshot ?? null : null,
+    };
+  });
+  return { tickets, lastId: page.length ? Number(page[page.length - 1].id) : null, more };
+}

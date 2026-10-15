@@ -23162,6 +23162,22 @@ or
     }
   });
 
+  // GET /api/nail/ticket-archive — the salon's past tickets, a page at a time, for the tablets to keep so a
+  // ticket # (and a paid ticket's receipt) can still be looked up with no internet. See ticketArchivePage.
+  app.get("/api/nail/ticket-archive", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const afterId = Math.max(0, Number(req.query.afterId) || 0);
+      const since = typeof req.query.changedSince === "string" ? new Date(req.query.changedSince) : null;
+      const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 500));
+      return res.json(await nailTickets.ticketArchivePage(storeId, { afterId, changedSince: since && !Number.isNaN(since.getTime()) ? since : null, limit }));
+    } catch (err: any) {
+      console.error("[nail/ticket-archive]", err?.message);
+      return res.status(500).json({ message: "Could not load past tickets" });
+    }
+  });
+
   // POST /api/qr/redeem-voucher — the ONLY way a deal voucher gets redeemed.
   // Requires either physically scanning the customer's QR (`qrToken`) or
   // staff manually typing the voucher's 7-digit random suffix (`manualCode`,

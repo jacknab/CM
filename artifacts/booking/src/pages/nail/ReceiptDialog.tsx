@@ -46,18 +46,20 @@ const fmtEntry = (m: string) => ENTRY_LABEL[m.toLowerCase()] ?? m.toUpperCase();
  * so staff don't lose their place on the board. Styled like the physical thermal receipt this
  * data would otherwise only ever be seen as, rather than an ordinary app screen.
  */
-export function ReceiptDialog({ token, onClose }: { token: string; onClose: () => void }) {
-  const [data, setData] = useState<ReceiptSnapshot | null>(null);
+/** `snapshot`: a receipt this tablet already holds (the ticket archive, offline) — shown without asking the server. */
+export function ReceiptDialog({ token, snapshot, onClose }: { token: string | null; snapshot?: unknown; onClose: () => void }) {
+  const [data, setData] = useState<ReceiptSnapshot | null>((snapshot as ReceiptSnapshot | undefined) ?? null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
+    if (snapshot || !token) return;
     let cancelled = false;
     fetch(`/api/public/receipt/${token}`)
       .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
       .then((d) => { if (!cancelled) setData(d); })
       .catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
-  }, [token]);
+  }, [token, snapshot]);
 
   const r = data;
   const date = r ? new Date(r.dateIso) : null;
