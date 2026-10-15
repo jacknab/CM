@@ -28,7 +28,8 @@
  * The earlier build of this feature lived at /nail-salons/... and /salon/:slug. Google still had
  * thousands of those addresses (Search Console, Oct 2026: most of the site's "Not found (404)"),
  * so they 301 to the current page: /salon/:slug → /:slug (also through a renamed slug), and
- * /nail-salons/:state/:city → /listings/:city--:state. An old salon that no longer exists 404s.
+ * /nail-salons/:state/:city → /listings/:city--:state. An old salon that no longer exists goes to its
+ * city's page (cityForOldSlug) when its state can be proven, and is answered 410 Gone otherwise.
  */
 
 import { Router } from "express";
@@ -37,7 +38,7 @@ import { logger } from "../lib/logger";
 import { renderMarketplacePage } from "../lib/marketplaceSsr";
 import { requestIp, resolveVisitorCity } from "../lib/geoLookup";
 import {
-  ensureLoaded, getCityData, getClaimedSalonList, getIndexableHubs, getSalonMap, getSalonRedirectSlug, getStateBySlug, getStateIndex,
+  cityForOldSlug, ensureLoaded, getCityData, getClaimedSalonList, getIndexableHubs, getSalonMap, getSalonRedirectSlug, getStateBySlug, getStateIndex,
   CERTXA_DOMAIN, SITEMAP_PAGE_SIZE,
 } from "../lib/salonData";
 
@@ -231,6 +232,12 @@ router.get("/deals", (req: Request, res: Response) => serveSsrPage(req, res));
 router.get("/deals/:id", (req: Request, res: Response) => serveSsrPage(req, res));
 
 // ── The directory's earlier addresses → where those pages are now (301) ───────────
+// One with nowhere right to go is answered 410 Gone: removed for good, so search engines drop it sooner than a 404.
+function gone(res: Response): void {
+  res.status(410).type("html").setHeader("Cache-Control", "public, max-age=86400");
+  res.send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>No longer listed | Certxa</title></head>`
+    + `<body><h1>This salon page is no longer listed</h1><p><a href="/">Find a salon on Certxa</a></p></body></html>`);
+}
 router.get("/salon/:slug", async (req: Request, res: Response, next) => {
   try {
     await ensureLoaded();
@@ -238,10 +245,15 @@ router.get("/salon/:slug", async (req: Request, res: Response, next) => {
     if (getSalonMap().has(slug)) { res.redirect(301, `/${slug}`); return; }
     const moved = await getSalonRedirectSlug(slug);
     if (moved) { res.redirect(301, `/${moved}`); return; }
+    // A salon the directory no longer lists: its city's page, read off the old address.
+    const city = cityForOldSlug(slug);
+    if (city) { res.redirect(301, `/listings/${city.citySlug}--${city.stateSlug}`); return; }
   } catch (err) {
     logger.warn({ err }, "[salonDirectory] old /salon/ address lookup failed");
+    next(); // the lookup itself failed: say nothing permanent
+    return;
   }
-  next(); // no such salon any more: the normal 404
+  gone(res);
 });
 router.get("/nail-salons", (_req: Request, res: Response) => res.redirect(301, "/"));
 // Only to a page that exists: an old address whose state or city isn't in the directory stays a plain 404
@@ -251,10 +263,15 @@ router.get("/nail-salons/:state", async (req: Request, res: Response, next) => {
     await ensureLoaded();
     const state = getStateBySlug(String(req.params.state));
     if (state) { res.redirect(301, `/listings/${state.slug}`); return; }
+    // The earlier build also had cities one level down ("/nail-salons/palmetto").
+    const city = cityForOldSlug(String(req.params.state));
+    if (city) { res.redirect(301, `/listings/${city.citySlug}--${city.stateSlug}`); return; }
   } catch (err) {
     logger.warn({ err }, "[salonDirectory] old /nail-salons/ address lookup failed");
+    next();
+    return;
   }
-  next();
+  gone(res);
 });
 router.get("/nail-salons/:state/:city", async (req: Request, res: Response, next) => {
   try {
@@ -265,8 +282,10 @@ router.get("/nail-salons/:state/:city", async (req: Request, res: Response, next
     if (state) { res.redirect(301, `/listings/${state.slug}`); return; }
   } catch (err) {
     logger.warn({ err }, "[salonDirectory] old /nail-salons/ address lookup failed");
+    next();
+    return;
   }
-  next();
+  gone(res);
 });
 
 // Guest "My vouchers" wallet — reached only via an emailed magic link.

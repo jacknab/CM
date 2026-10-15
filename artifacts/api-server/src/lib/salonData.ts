@@ -634,3 +634,42 @@ export async function findEnrichment(salonId: number): Promise<EnrichmentData> {
     return empty;
   }
 }
+
+/** Words that say nothing about which street it is. */
+const GENERIC_STREET_WORDS = new Set([
+  "north", "south", "east", "west", "n", "s", "e", "w", "nw", "ne", "sw", "se", "road", "rd", "street", "st", "avenue", "ave",
+  "drive", "dr", "boulevard", "blvd", "highway", "hwy", "lane", "ln", "way", "court", "ct", "place", "pl", "parkway", "pkwy",
+  "pike", "suite", "ste", "unit", "apt", "building", "bldg", "floor", "us", "route", "rte", "state", "the", "and", "of",
+  // the salon's name runs into the street in the old address
+  "nail", "nails", "nailz", "spa", "salon", "salons", "beauty", "hair", "lash", "lashes", "studio", "bar", "lounge", "llc", "inc",
+]);
+
+/**
+ * The city page for an address of the directory's earlier build whose salon is no longer listed: its slug was
+ * `<name>-<street>-<city>-<6-char id>` ("plain-janes-hair-nails-nw-englewood-road-kansas-city-XLGqoq"). The city
+ * is read off the end — the longest run of words that is a city the directory has, so "kansas-city" wins over
+ * "city". The old address has no state, and a city name can be in several (St. Joseph MO and IL), so the state
+ * must be proven: a salon listed today on the same street in that city. An address with no street (an old city
+ * page, "/nail-salons/palmetto") needs a city name only one state has. Otherwise null: better a 404 than a
+ * redirect to the wrong state.
+ */
+export function cityForOldSlug(oldSlug: string): { stateCode: string; stateSlug: string; citySlug: string } | null {
+  buildStateIndex();
+  const all = oldSlug.toLowerCase().split("-").filter(Boolean);
+  const cityOnly = all.length <= 3 && !/\d/.test(oldSlug);
+  // As written ("/nail-salons/palmetto"), then without the trailing id of a salon address.
+  for (const words of cityOnly ? [all] : [all.slice(0, -1)]) {
+    for (let k = Math.min(4, words.length); k >= 1; k--) {
+      const citySlug = words.slice(-k).join("-");
+      const states = getStateIndex().filter((st) => _cityData?.get(st.code)?.has(citySlug));
+      if (!states.length) continue;
+      if (cityOnly) return states.length === 1 ? { stateCode: states[0].code, stateSlug: states[0].slug, citySlug } : null;
+      const street = words.slice(Math.max(0, words.length - k - 6), words.length - k).filter((w) => !GENERIC_STREET_WORDS.has(w) && !/^\d+[a-z]?$/.test(w) && w.length > 1);
+      if (!street.length) return null;
+      const proven = states.filter((st) => _cityData!.get(st.code)!.get(citySlug)!.records
+        .some((r) => street.some((w) => r.s.includes(`-${w}-`) && r.s.includes(`-${citySlug}-`))));
+      return proven.length === 1 ? { stateCode: proven[0].code, stateSlug: proven[0].slug, citySlug } : null;
+    }
+  }
+  return null;
+}
