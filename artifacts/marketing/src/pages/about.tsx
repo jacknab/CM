@@ -29,8 +29,10 @@ const jsonLd = {
     },
     {
       '@type': 'Person',
-      '@id': `${SITE}/#thanh-lam`,
+      '@id': `${SITE}/#founder-tom-tham`,
       name: 'Thanh Lam',
+      alternateName: 'Tom Tham',
+      url: `${SITE}/about`,
       jobTitle: 'Founder',
       worksFor: { '@id': `${SITE}/#organization` },
       description: 'Former nail salon owner and founder of Certxa. Built the platform after experiencing firsthand the limitations of existing salon software.',
@@ -56,7 +58,7 @@ export default function AboutPage() {
     <>
       <Helmet>
         <title>About Certxa — Salon Software Built by Salon People</title>
-        <meta name="description" content="Certxa was built by former salon owners frustrated with clunky software. Meet the team, our mission, and the values behind the all-in-one salon management platform." />
+        <meta name="description" content="Certxa was built by a former nail salon owner frustrated with clunky software. Meet the team, our mission, and the values behind the all-in-one salon management platform." />
         <link rel="canonical" href={PAGE_URL} />
         <meta property="og:title" content="About Certxa — Salon Software Built by Salon People" />
         <meta property="og:description" content="Meet the team behind Certxa — our mission, values, and why we built the all-in-one salon management platform." />
@@ -86,6 +88,8 @@ export default function AboutPage() {
                 <img
                   src="/airo-assets/images/team/thanh-lam-founder"
                   alt="Thanh Lam, Founder of Certxa"
+                  width={1145}
+                  height={1374}
                   className="w-full h-full object-cover object-top"
                   loading="eager"
                   fetchPriority="high"
@@ -100,13 +104,12 @@ export default function AboutPage() {
                 className="flex flex-col justify-center gap-6 py-16 lg:py-20 lg:pl-14 xl:pl-20 order-1 lg:order-2"
               >
                 <motion.span variants={fadeUp} className="text-xs font-semibold text-primary tracking-widest uppercase">{about.hero.eyebrow}</motion.span>
-                <motion.h1
-                  variants={fadeUp}
+                <h1
                   className="text-4xl md:text-5xl font-extrabold leading-tight tracking-tight text-foreground"
                   style={{ fontFamily: 'var(--font-heading)' }}
                 >
                   {about.hero.headline}
-                </motion.h1>
+                </h1>
                 <motion.p variants={fadeUp} className="text-lg text-muted-foreground leading-relaxed">{about.hero.subhead}</motion.p>
               </motion.div>
             </div>

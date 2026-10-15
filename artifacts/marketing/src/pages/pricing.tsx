@@ -97,13 +97,12 @@ export default function PricingPage() {
               >
                 {pricing.hero.eyebrow}
               </motion.span>
-              <motion.h1
-                variants={fadeUp}
+              <h1
                 className="text-4xl md:text-5xl font-extrabold leading-tight tracking-tight text-foreground max-w-2xl"
                 style={{ fontFamily: 'var(--font-heading)' }}
               >
                 {pricing.hero.headline}
-              </motion.h1>
+              </h1>
               <motion.p
                 variants={fadeUp}
                 className="text-lg text-muted-foreground max-w-xl"
@@ -222,7 +221,7 @@ export default function PricingPage() {
               viewport={{ once: true }}
               className="text-center text-sm text-muted-foreground mt-8"
             >
-              All plans include a 60-day free trial · Cancel anytime
+              Professional and Elite include a 60-day free trial · Cancel anytime
             </motion.p>
           </div>
         </section>

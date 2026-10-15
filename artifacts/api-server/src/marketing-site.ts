@@ -17,6 +17,7 @@ import path from "path";
 import { pathToFileURL } from "url";
 import rateLimit from "express-rate-limit";
 import { sendEmail } from "./mail";
+import { pingIndexNow } from "./lib/indexNow";
 
 const SITE_ORIGIN = "https://certxa.com";
 const APEX_HOSTS = new Set(["certxa.com", "www.certxa.com", "localhost", "127.0.0.1"]);
@@ -48,11 +49,12 @@ const DEFAULT_PATHS = [
  * Old PHP addresses that have no page of their own in the new site, and the
  * new page that covers the subject. A redirect applies only once its target
  * is being served by the new app; until then the PHP page keeps answering.
- * Temporary (302) while the move is being reviewed.
+ * Permanent (301): the move is settled, so search engines move the old
+ * address's standing to the new page.
  */
 const MOVED: Record<string, string> = {
   "/online-booking": "/booking",
-  "/overview": "/features",
+  "/overview": "/",
   "/salonos": "/features",
   "/checkin-kiosk": "/features",
   "/nail-salon-software": "/vietnamese-nail-salon-software",
@@ -228,6 +230,8 @@ export function createMarketingSite(): Router {
     return router;
   }
 
+  pingChangedPages(clientDir, owned);
+
   let render: Render | null = null;
   import(pathToFileURL(path.join(siteDir, "dist", "render", "entry-server.mjs")).href).then(
     (mod) => {
@@ -276,13 +280,20 @@ export function createMarketingSite(): Router {
     const pagePath = req.path.replace(/\/+$/, "") || "/";
     if (!render || !APEX_HOSTS.has(req.hostname)) return next();
     const moved = movedTo(pagePath, owned);
-    if (moved) return res.redirect(302, moved);
+    if (moved) return res.redirect(301, moved);
     if (!owned.has(pagePath)) return next();
     try {
       const result = await render(pagePath, SITE_ORIGIN);
       if (result.redirect || !result.html) return next();
+      // Pages set their own canonical tag; add one only for a page that doesn't,
+      // because two canonical tags on a page make search engines ignore both.
+      const canonical = /rel="canonical"/.test(result.head)
+        ? ""
+        : `<link rel="canonical" href="${escapeAttr(SITE_ORIGIN + pagePath)}">`;
       const head =
-        `<link rel="canonical" href="${escapeAttr(SITE_ORIGIN + pagePath)}">` +
+        canonical +
+        // Bing Webmaster Tools verification; same tag as php/includes/header.php.
+        `<meta name="msvalidate.01" content="261005E6A952E6B004A337B7532827B4">` +
         result.head +
         // Sections fade in on scroll and are rendered hidden until the script
         // runs; without JavaScript they must simply be visible.
@@ -305,4 +316,23 @@ export function createMarketingSite(): Router {
   });
 
   return router;
+}
+
+/**
+ * Tells Bing (via IndexNow) about every marketing page once per new build, so
+ * changed pages are recrawled without waiting for the crawler's own schedule.
+ * Only one cluster worker sends it, and a marker file stops a plain restart
+ * from sending it again.
+ */
+function pingChangedPages(clientDir: string, owned: Set<string>): void {
+  if ((process.env.NODE_APP_INSTANCE ?? "0") !== "0") return;
+  try {
+    const built = String(fs.statSync(path.join(clientDir, "index.html")).mtimeMs);
+    const marker = path.join(clientDir, "..", ".indexnow-pinged");
+    if (fs.existsSync(marker) && fs.readFileSync(marker, "utf-8") === built) return;
+    fs.writeFileSync(marker, built);
+    void pingIndexNow([...owned].map((p) => SITE_ORIGIN + (p === "/" ? "/" : p)));
+  } catch (err: any) {
+    console.warn("[marketing-site] IndexNow ping skipped:", err?.message);
+  }
 }

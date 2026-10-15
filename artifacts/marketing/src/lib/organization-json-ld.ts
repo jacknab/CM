@@ -31,6 +31,34 @@ export function buildOrganizationNode(params: {
   return node;
 }
 
+// Keep in step with the Organization node in php/includes/header.php: both
+// halves of the site share one @id and must describe the same company.
+function certxaOrganizationDetails(siteUrl: string): Record<string, unknown> {
+  return {
+    description:
+      'Certxa is all-in-one salon and nail studio management software with online booking, point of sale, payments, staff management, payroll, and an AI receptionist.',
+    foundingDate: '2026-02-01',
+    founder: { '@id': `${siteUrl}/#founder-tom-tham` },
+    address: {
+      '@type': 'PostalAddress',
+      streetAddress: '2325 E Camelback Rd, Ste 400',
+      addressLocality: 'Phoenix',
+      addressRegion: 'AZ',
+      postalCode: '85016',
+      addressCountry: 'US',
+    },
+    logo: { '@type': 'ImageObject', url: `${siteUrl}/assets/images/logo.png`, width: 512, height: 512 },
+    contactPoint: {
+      '@type': 'ContactPoint',
+      contactType: 'customer support',
+      email: 'support@certxa.com',
+      telephone: '+1-800-278-4392',
+      hoursAvailable: 'Mo-Su 10:00-21:00',
+      availableLanguage: 'English',
+    },
+  };
+}
+
 export function buildHomepageSameAsJsonLdDocument(params: {
   siteUrl: string;
   organizationName: string;
@@ -41,6 +69,7 @@ export function buildHomepageSameAsJsonLdDocument(params: {
       siteUrl: params.siteUrl,
       name: params.organizationName,
     }),
+    ...certxaOrganizationDetails(params.siteUrl),
   };
 }
 

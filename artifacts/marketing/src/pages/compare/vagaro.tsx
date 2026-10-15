@@ -60,7 +60,6 @@ export default function CertxaVsVagaroPage() {
           {JSON.stringify(jsonLd).replace(/</g, '\\u003c')}
         </script>
       </Helmet>
-      <h1 className="sr-only">{data.heroHeadline}</h1>
       <ComparisonLayout data={data} pageUrl={PAGE_URL} />
     </>
   );

@@ -73,7 +73,7 @@ export default function BlogPage() {
           <div className="max-w-7xl mx-auto px-6 md:px-10">
             <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-2xl flex flex-col gap-5">
               <motion.span variants={fadeUp} className="text-xs font-semibold text-primary tracking-widest uppercase">{blog.hero.eyebrow}</motion.span>
-              <motion.h1 variants={fadeUp} className="text-4xl md:text-5xl font-extrabold leading-tight tracking-tight text-foreground" style={{ fontFamily: 'var(--font-heading)' }}>{blog.hero.headline}</motion.h1>
+              <h1 className="text-4xl md:text-5xl font-extrabold leading-tight tracking-tight text-foreground" style={{ fontFamily: 'var(--font-heading)' }}>{blog.hero.headline}</h1>
               <motion.p variants={fadeUp} className="text-lg text-muted-foreground leading-relaxed">{blog.hero.subhead}</motion.p>
             </motion.div>
           </div>

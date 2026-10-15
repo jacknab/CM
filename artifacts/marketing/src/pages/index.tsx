@@ -84,6 +84,13 @@ const jsonLd = {
           priceCurrency: 'USD',
           description: 'Unlimited staff and calendars, payroll, review requests and 50 Autumn calls a month.',
         },
+        {
+          '@type': 'Offer',
+          name: 'Elite',
+          price: '49',
+          priceCurrency: 'USD',
+          description: 'Everything in Professional for up to 5 locations, with a multi-location dashboard, API access and 100 Autumn calls a month.',
+        },
       ],
     },
     {
@@ -93,7 +100,7 @@ const jsonLd = {
       name: 'Certxa — Salon Booking Software & POS for Beauty Businesses',
       isPartOf: { '@id': `${SITE}/#website` },
       about: { '@id': `${SITE}/#organization` },
-      datePublished: '2024-01-01',
+      datePublished: '2026-02-01',
       dateModified: '2026-10-12',
     },
   ],
@@ -106,7 +113,7 @@ export default function HomePage() {
         <title>Certxa — Salon Booking Software & POS System for Beauty Businesses</title>
         <meta
           name="description"
-          content="Certxa is salon booking software and POS built for nail salons, hair salons, barbershops, spas, and massage studios. Online booking, self check-in kiosk, turn rotation, loyalty programs, and AI receptionist — starting at $29/mo."
+          content="Salon booking software and POS for nail salons and spas: online booking, check-in kiosk, turn rotation, AI receptionist. Free Solo plan; teams from $22/mo."
         />
         <link rel="canonical" href={`${SITE}/`} />
         <meta property="og:title" content="Certxa — Salon Booking Software & POS System for Beauty Businesses" />
@@ -148,13 +155,12 @@ export default function HomePage() {
                 {home.hero.eyebrow}
               </motion.span>
 
-              <motion.h1
-                variants={fadeUp}
+              <h1
                 className="text-5xl md:text-6xl font-extrabold leading-[1.08] tracking-tight text-foreground"
                 style={{ fontFamily: 'var(--font-heading)' }}
               >
                 {home.hero.headline}
-              </motion.h1>
+              </h1>
 
               <motion.p
                 variants={fadeUp}

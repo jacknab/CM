@@ -74,9 +74,8 @@ function FaqAccordion({ items }: { items: FaqItem[] }) {
               className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform duration-200 ${open === item.id ? 'rotate-180' : ''}`}
             />
           </button>
-          {open === item.id && (
-            <p className="pb-5 text-muted-foreground leading-relaxed">{item.answer}</p>
-          )}
+          {/* Always in the HTML (FAQ schema and crawlers that don't run scripts need the answer); hidden until opened. */}
+          <p hidden={open !== item.id} className="pb-5 text-muted-foreground leading-relaxed">{item.answer}</p>
         </div>
       ))}
     </div>
@@ -113,9 +112,9 @@ export default function ComparisonLayout({ data, pageUrl }: Props) {
             <motion.p variants={fadeUp} className="text-sm font-semibold text-primary mb-3 tracking-wide">
               {data.heroEyebrow}
             </motion.p>
-            <motion.h1 variants={fadeUp} className="text-4xl md:text-5xl font-bold text-foreground mb-5 leading-tight">
+            <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-5 leading-tight">
               {data.heroHeadline}
-            </motion.h1>
+            </h1>
             <motion.p variants={fadeUp} className="text-lg text-muted-foreground mb-8 leading-relaxed">
               {data.heroSubhead}
             </motion.p>

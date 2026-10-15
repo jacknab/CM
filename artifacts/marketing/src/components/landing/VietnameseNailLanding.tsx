@@ -49,7 +49,7 @@ const COPY: Record<Lang, Copy> = {
   en: {
     metaTitle: 'Vietnamese Nail Salon Software | Certxa POS, Turns & Tech Payroll',
     metaDescription:
-      'Certxa is nail salon software for Vietnamese-owned salons: a POS your technicians can use in Vietnamese, turn rotation, tickets, tips per tech, pay slips, a check-in kiosk and an AI phone receptionist. Free to start; $22 a month for a salon.',
+      'Nail salon software for Vietnamese-owned salons: a POS in Vietnamese, turn rotation, tips per tech, pay slips, check-in kiosk. Free to start; $22/mo.',
     eyebrow: 'Vietnamese nail salon software',
     h1: 'Nail salon software built for Vietnamese-owned salons',
     answer:

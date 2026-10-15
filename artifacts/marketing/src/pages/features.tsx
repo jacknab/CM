@@ -59,7 +59,7 @@ export default function FeaturesPage() {
         <title>Salon Booking Software Features — Online Booking, POS & More | Certxa</title>
         <meta
           name="description"
-          content="Certxa salon booking software includes online booking, a beauty-native POS system, self check-in kiosk, waitlist management, turn rotation, loyalty programs, and an AI receptionist — all in one platform for nail salons, hair salons, barbershops, and spas."
+          content="Online booking, salon POS, check-in kiosk, waitlist, turn rotation, loyalty and an AI receptionist in one platform for nail salons, barbershops and spas."
         />
         <link rel="canonical" href={PAGE_URL} />
         <meta property="og:title" content="Salon Booking Software Features — Online Booking, POS & More | Certxa" />
@@ -98,13 +98,12 @@ export default function FeaturesPage() {
               >
                 {features.hero.eyebrow}
               </motion.span>
-              <motion.h1
-                variants={fadeUp}
+              <h1
                 className="mt-4 text-4xl md:text-5xl font-extrabold leading-tight tracking-tight text-foreground"
                 style={{ fontFamily: 'var(--font-heading)' }}
               >
                 {features.hero.headline}
-              </motion.h1>
+              </h1>
               <motion.p
                 variants={fadeUp}
                 className="mt-5 text-lg text-muted-foreground leading-relaxed max-w-2xl"

@@ -119,13 +119,12 @@ export default function ContactPage() {
               >
                 {contact.hero.eyebrow}
               </motion.span>
-              <motion.h1
-                variants={fadeUp}
+              <h1
                 className="text-4xl md:text-5xl font-extrabold leading-tight tracking-tight text-foreground"
                 style={{ fontFamily: 'var(--font-heading)' }}
               >
                 {contact.hero.headline}
-              </motion.h1>
+              </h1>
               <motion.p variants={fadeUp} className="text-lg text-muted-foreground leading-relaxed">
                 {contact.hero.subhead}
               </motion.p>

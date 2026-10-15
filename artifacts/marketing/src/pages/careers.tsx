@@ -54,13 +54,12 @@ export default function CareersPage() {
                 <span>{careers.eyebrow}</span>
               </motion.span>
 
-              <motion.h1
-                variants={fadeUp}
+              <h1
                 className="text-4xl md:text-5xl font-extrabold tracking-tight text-foreground leading-tight"
                 style={{ fontFamily: 'var(--font-heading)' }}
               >
                 {careers.headline}
-              </motion.h1>
+              </h1>
 
               <motion.p
                 variants={fadeUp}

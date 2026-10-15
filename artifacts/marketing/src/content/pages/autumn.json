@@ -208,7 +208,7 @@
         "body": "Set a low-balance threshold and Certxa will top up your account automatically — so Autumn never stops mid-day."
       }
     ],
-    "planNote": "Included in every Certxa plan — 20 calls a month on Solo, 50 on Professional and 100 on Elite. Additional calls are $0.50 each. There is a one-time $15 activation fee for your dedicated phone number, and included calls start once your paid plan begins."
+    "planNote": "Included in every Certxa plan — 20 calls a month on Solo, 50 on Professional and 100 on Elite. Additional calls are $0.50 each. There is a one-time $15 activation fee for your dedicated phone number. Free trials don't include calls; a trial's calls are $0.50 each."
   },
   "faq": {
     "eyebrow": "FAQ",
@@ -217,7 +217,7 @@
       {
         "id": "fq1",
         "question": "Do I need a separate subscription for Autumn?",
-        "answer": "No. Autumn is included in every Certxa plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite. After that, each additional call is $0.50. There is a one-time $15 activation fee for your dedicated phone number, and included calls start once your paid plan begins."
+        "answer": "No. Autumn is included in every Certxa plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite. After that, each additional call is $0.50. There is a one-time $15 activation fee for your dedicated phone number. Free trials don't include calls; a trial's calls are $0.50 each."
       },
       {
         "id": "fq2",

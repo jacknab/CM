@@ -78,13 +78,12 @@ export default function BookingPage() {
               <motion.span variants={fadeUp} className="text-xs font-semibold text-primary tracking-widest uppercase">
                 {booking.hero.eyebrow}
               </motion.span>
-              <motion.h1
-                variants={fadeUp}
+              <h1
                 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight text-foreground"
                 style={{ fontFamily: 'var(--font-heading)' }}
               >
                 {booking.hero.headline}
-              </motion.h1>
+              </h1>
               <motion.p variants={fadeUp} className="text-lg md:text-xl text-muted-foreground leading-relaxed max-w-2xl">
                 {booking.hero.subhead}
               </motion.p>

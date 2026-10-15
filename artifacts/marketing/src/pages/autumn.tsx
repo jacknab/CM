@@ -96,13 +96,12 @@ export default function AutumnPage() {
                   {autumn.hero.eyebrow}
                 </motion.span>
 
-                <motion.h1
-                  variants={fadeUp}
+                <h1
                   className="text-5xl md:text-6xl font-extrabold leading-[1.08] tracking-tight text-foreground"
                   style={{ fontFamily: 'var(--font-heading)' }}
                 >
                   {autumn.hero.headline}
-                </motion.h1>
+                </h1>
 
                 <motion.p variants={fadeUp} className="text-lg text-muted-foreground leading-relaxed max-w-xl">
                   {autumn.hero.subhead}

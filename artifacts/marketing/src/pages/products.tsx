@@ -149,13 +149,12 @@ export default function ProductsPage() {
               >
                 {products.hero.eyebrow}
               </motion.span>
-              <motion.h1
-                variants={fadeUp}
+              <h1
                 className="text-4xl md:text-5xl font-extrabold leading-tight tracking-tight text-background"
                 style={{ fontFamily: 'var(--font-heading)' }}
               >
                 {products.hero.headline}
-              </motion.h1>
+              </h1>
               <motion.p variants={fadeUp} className="text-lg leading-relaxed" style={{ color: 'hsl(var(--background) / 0.75)' }}>
                 {products.hero.subhead}
               </motion.p>
