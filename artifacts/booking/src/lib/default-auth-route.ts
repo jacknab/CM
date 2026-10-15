@@ -2,14 +2,16 @@ import { isNailSalonBiz } from "@/hooks/use-features";
 
 const SELECTED_STORE_KEY = "certxa_selected_store_id";
 
-type RouteUser = { staffId?: number | null } | null | undefined;
+type RouteUser = { staffId?: number | null; role?: string | null } | null | undefined;
 type RouteStore = { id: number; category?: string | null };
 
 /** Resolve the account's landing page after authentication.
  * Nail-salon owners/managers go directly to the dedicated front-desk workspace;
  * staff accounts and every other business type keep the standard calendar home. */
 export async function getDefaultAuthenticatedRoute(user?: RouteUser): Promise<"/nail" | "/calendar"> {
-  if (user?.staffId) return "/calendar";
+  // A technician's own login. An owner or manager whose account is also linked to a staff record (they work
+  // on clients too) still has a staffId, and is not a technician login: they go to the salon's workspace.
+  if (user?.role === "staff" || (user?.staffId && !user?.role)) return "/calendar";
 
   try {
     const response = await fetch("/api/stores", { credentials: "include" });
