@@ -35,5 +35,10 @@
   "pages/autumn/new-screenshot": {
     "file": "pages__autumn__new-screenshot",
     "type": "image/jpeg"
+  },
+  "pages/home/hero": {
+    "file": "pages__home__hero",
+    "type": "image/jpeg",
+    "local": true
   }
 }
