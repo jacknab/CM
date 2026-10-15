@@ -17,6 +17,12 @@ function hasTimeOverlap(
   return aStart < bEnd && bStart < aEnd;
 }
 
+/** Marks missed appointments as no-shows (routes.ts autoMarkNoShowsForStore, which needs helpers that live there). */
+let noShowSweeper: ((storeId: number) => Promise<void>) | null = null;
+export function setNoShowSweeper(fn: (storeId: number) => Promise<void>): void {
+  noShowSweeper = fn;
+}
+
 export async function reconcileStore(storeId: number): Promise<void> {
   const ACTIVE_STATUSES = ["pending", "started", "checked_in"];
   // Statuses that mean "the client is physically here / being served right
@@ -167,6 +173,11 @@ export async function runReconciliationJob(): Promise<void> {
       await reconcileStore(storeId).catch((err) =>
         console.error(`[sync-jobs] Reconciliation failed for store ${storeId}:`, err)
       );
+      if (noShowSweeper) {
+        await noShowSweeper(storeId).catch((err) =>
+          console.error(`[sync-jobs] No-show marking failed for store ${storeId}:`, err)
+        );
+      }
     }
   } catch (err) {
     console.error("[sync-jobs] Job error:", err);

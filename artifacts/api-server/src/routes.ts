@@ -437,6 +437,93 @@ function normalizeNumber(value: unknown, fallback: number, min = 0): number {
   return Number.isFinite(parsed) && parsed >= min ? parsed : fallback;
 }
 
+/**
+ * Marks appointments a client never came to as no-shows, once the store's late grace period has passed — when the
+ * store has "Mark no-shows automatically" on. Run every 5 minutes for every store by the background job
+ * (routes/sync-jobs.ts, scheduler instance only), so it doesn't depend on anyone opening the calendar: the /nail
+ * screen never did, and a missed appointment stayed under Appointments there until someone did.
+ * Only appointments from the last 24 hours are considered, so turning the setting on never rewrites old history.
+ */
+async function autoMarkNoShowsForStore(storeId: number): Promise<void> {
+  const calSettings = await storage.getCalendarSettings(storeId);
+  if (!calSettings?.autoMarkNoShows) return;
+  const store = await storage.getStore(storeId);
+  const graceMs = Math.max(0, store?.lateGracePeriodMinutes ?? 10) * 60000;
+  const now = new Date();
+  const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const appointments = await storage.getAppointments({ storeId, from: twentyFourHoursAgo, to: now });
+  for (const apt of appointments) {
+    const aptDate = new Date(apt.date);
+    if (aptDate < twentyFourHoursAgo) continue;
+    if (
+      apt.status !== "cancelled" &&
+      apt.status !== "completed" &&
+      apt.status !== "no_show" &&
+      apt.status !== "started" &&
+      apt.status !== "confirmed"
+    ) {
+      const noShowAt = new Date(aptDate.getTime() + graceMs);
+      if (noShowAt < now) {
+        await storage.updateAppointment(apt.id, { status: "no_show" });
+        apt.status = "no_show";
+
+        // Push SSE event so connected calendars update instantly.
+        broadcastAppointmentStatus({
+          appointmentId: apt.id,
+          storeId: storeId,
+          status: "no_show",
+          source: "auto",
+        });
+
+        // Release consideration lock — same side-effect as manual PATCH → no-show.
+        // Without this the tech stays stuck in "Busy" forever since the direct
+        // storage.updateAppointment call bypasses the PATCH route handler.
+        if (apt.staffId) {
+          try {
+            const prefs = await getTurnPreferences(storeId);
+            const lockedIds: number[] = Array.isArray(prefs.lockedStaffIds)
+              ? (prefs.lockedStaffIds as any[]).map(Number).filter(Number.isFinite)
+              : [];
+            if (lockedIds.includes(apt.staffId)) {
+              const deque: number[] = Array.isArray(prefs.dequeOrder)
+                ? (prefs.dequeOrder as any[]).map(Number).filter(Number.isFinite)
+                : [];
+              await saveTurnPreferences(storeId, {
+                lockedStaffIds: lockedIds.filter((id) => id !== apt.staffId),
+                dequeOrder: [apt.staffId!, ...deque.filter((id) => id !== apt.staffId!)],
+              });
+              console.log(`[turn] Auto no-show: Lock released for staff ${apt.staffId} (apt ${apt.id})`);
+            }
+          } catch (lockErr) {
+            console.error("[turn] Auto no-show: Failed to release lock:", lockErr);
+          }
+        }
+
+        // Trigger no-show win-back SMS — same as manual PATCH → no-show.
+        setImmediate(async () => {
+          try {
+            const { sendNoShowWinback } = await import("./intelligence/no-show-winback");
+            if (apt.customerId) {
+              await sendNoShowWinback(storeId, apt.customerId, apt.id);
+              console.log(`[intelligence] Auto no-show win-back triggered for customer ${apt.customerId}`);
+            }
+          } catch (err: any) {
+            console.error("[intelligence] Auto no-show win-back error:", err.message);
+          }
+          // Notify any kiosk walk-in waitlist customer of the freed slot
+          try {
+            await notifyKioskNoShowWaitlist(storeId, apt);
+          } catch (err: any) {
+            console.error("[kiosk/noshow-waitlist] auto-mark notify error:", err.message);
+          }
+        });
+
+        broadcastTurnEligibilityChanged(storeId);
+      }
+    }
+  }
+}
+
 async function getTurnPreferences(storeId: number) {
   const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
   const prefs = safeParsePreferences(row?.preferences as string | undefined);
@@ -5926,88 +6013,13 @@ If you have any questions, please contact your administrator.
       if (filters.storeId) {
         const calSettings = await storage.getCalendarSettings(filters.storeId);
         const store = await storage.getStore(filters.storeId);
-        const graceMinutes = Math.max(0, store?.lateGracePeriodMinutes ?? 10);
-        const graceMs = graceMinutes * 60000;
         const now = new Date();
 
         // Only auto-process appointments within the last 24 h.
-        // Without this boundary the loop retroactively marks every old pending
-        // appointment in the store's entire history as a no-show the first time
-        // the feature is enabled.
         const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-        if (calSettings?.autoMarkNoShows) {
-          for (const apt of appointments) {
-            const aptDate = new Date(apt.date);
-            if (aptDate < twentyFourHoursAgo) continue;
-            if (
-              apt.status !== "cancelled" &&
-              apt.status !== "completed" &&
-              apt.status !== "no_show" &&
-              apt.status !== "started" &&
-              apt.status !== "confirmed"
-            ) {
-              const noShowAt = new Date(aptDate.getTime() + graceMs);
-              if (noShowAt < now) {
-                await storage.updateAppointment(apt.id, { status: "no_show" });
-                apt.status = "no_show";
-
-                // Push SSE event so connected calendars update instantly.
-                broadcastAppointmentStatus({
-                  appointmentId: apt.id,
-                  storeId: filters.storeId!,
-                  status: "no_show",
-                  source: "auto",
-                });
-
-                // Release consideration lock — same side-effect as manual PATCH → no-show.
-                // Without this the tech stays stuck in "Busy" forever since the direct
-                // storage.updateAppointment call bypasses the PATCH route handler.
-                if (apt.staffId) {
-                  try {
-                    const prefs = await getTurnPreferences(filters.storeId!);
-                    const lockedIds: number[] = Array.isArray(prefs.lockedStaffIds)
-                      ? (prefs.lockedStaffIds as any[]).map(Number).filter(Number.isFinite)
-                      : [];
-                    if (lockedIds.includes(apt.staffId)) {
-                      const deque: number[] = Array.isArray(prefs.dequeOrder)
-                        ? (prefs.dequeOrder as any[]).map(Number).filter(Number.isFinite)
-                        : [];
-                      await saveTurnPreferences(filters.storeId!, {
-                        lockedStaffIds: lockedIds.filter((id) => id !== apt.staffId),
-                        dequeOrder: [apt.staffId!, ...deque.filter((id) => id !== apt.staffId!)],
-                      });
-                      console.log(`[turn] Auto no-show: Lock released for staff ${apt.staffId} (apt ${apt.id})`);
-                    }
-                  } catch (lockErr) {
-                    console.error("[turn] Auto no-show: Failed to release lock:", lockErr);
-                  }
-                }
-
-                // Trigger no-show win-back SMS — same as manual PATCH → no-show.
-                setImmediate(async () => {
-                  try {
-                    const { sendNoShowWinback } = await import("./intelligence/no-show-winback");
-                    if (apt.customerId) {
-                      await sendNoShowWinback(filters.storeId!, apt.customerId, apt.id);
-                      console.log(`[intelligence] Auto no-show win-back triggered for customer ${apt.customerId}`);
-                    }
-                  } catch (err: any) {
-                    console.error("[intelligence] Auto no-show win-back error:", err.message);
-                  }
-                  // Notify any kiosk walk-in waitlist customer of the freed slot
-                  try {
-                    await notifyKioskNoShowWaitlist(filters.storeId!, apt);
-                  } catch (err: any) {
-                    console.error("[kiosk/noshow-waitlist] auto-mark notify error:", err.message);
-                  }
-                });
-
-                broadcastTurnEligibilityChanged(filters.storeId!);
-              }
-            }
-          }
-        }
+        // Missed appointments are marked no-show by the background job (autoMarkNoShowsForStore, run from
+        // routes/sync-jobs.ts every 5 minutes), not on this request, so two requests can never both mark one.
 
         // Auto-Start: once a checked-in (confirmed) appointment with an assigned
         // tech reaches its start time, the service begins automatically.
@@ -22515,7 +22527,8 @@ or
   app.use("/api/payroll", payrollRunsRouter);
 
   if (IS_SCHEDULER_INSTANCE) {
-    const { startReconciliationScheduler } = await import("./routes/sync-jobs.js");
+    const { startReconciliationScheduler, setNoShowSweeper } = await import("./routes/sync-jobs.js");
+    setNoShowSweeper(autoMarkNoShowsForStore);
     startReconciliationScheduler();
   }
 
