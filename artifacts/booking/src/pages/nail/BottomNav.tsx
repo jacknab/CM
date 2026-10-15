@@ -1,4 +1,4 @@
-import { Hash, LogIn, MoreHorizontal, Users, UserCog, type LucideIcon } from "lucide-react";
+import { Hash, LogIn, MoreHorizontal, Users, type LucideIcon } from "lucide-react";
 import { useNailText } from "./i18n";
 
 export type NailTab = "queue" | "techs" | "pos";
@@ -26,7 +26,6 @@ export function BottomNav({ tab, onTab, onCheckIn, onMore, onLookupByNumber, wai
   const { t: tx } = useNailText();
   const items: { id: string; label: string; icon: LucideIcon; active?: boolean; run: () => void; badgeCount?: number }[] = [
     { id: "Queue", label: tx("queue"), icon: Users, active: tab === "queue", run: () => onTab("queue"), badgeCount: waiting },
-    { id: "Techs", label: tx("techs"), icon: UserCog, active: tab === "techs", run: () => onTab("techs") },
     { id: "Ticket#", label: tx("ticketNo"), icon: Hash, run: onLookupByNumber },
     { id: "Check-In", label: tx("checkIn"), icon: LogIn, run: onCheckIn },
     { id: "More", label: tx("more"), icon: MoreHorizontal, run: onMore },

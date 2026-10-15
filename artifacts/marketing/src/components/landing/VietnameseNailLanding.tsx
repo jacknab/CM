@@ -38,6 +38,8 @@ interface Copy {
   priceNote: string;
   faqHeading: string;
   faq: { q: string; a: string }[];
+  compareText: string;
+  compareLink: string;
   finalHeading: string;
   finalBody: string;
   breadcrumbHome: string;
@@ -92,6 +94,8 @@ const COPY: Record<Lang, Copy> = {
       { q: 'How much does Certxa cost for a nail salon?', a: 'Certxa is free for one technician working alone. A salon with a team uses the Professional plan at $22 a month ($18 a month billed yearly), with unlimited technicians and no setup fee.' },
       { q: 'What do I need to run it?', a: 'Certxa runs on touchscreen tablets and computers you may already have. It works with the Stripe M2 card reader and with USB, Bluetooth and network receipt printers.' },
     ],
+    compareText: 'Comparing options?',
+    compareLink: 'Best POS systems for Vietnamese nail salons (2026)',
     finalHeading: 'Try Certxa in your salon',
     finalBody: 'Set up your services and technicians in an afternoon. No setup fee, and the Solo plan is free.',
     breadcrumbHome: 'Home',
@@ -144,6 +148,8 @@ const COPY: Record<Lang, Copy> = {
       { q: 'Certxa giá bao nhiêu cho tiệm nail?', a: 'Certxa miễn phí cho một thợ làm riêng. Tiệm có nhiều thợ dùng gói Professional giá $22 một tháng ($18 một tháng nếu trả theo năm), không giới hạn số thợ và không có phí cài đặt.' },
       { q: 'Cần những gì để dùng?', a: 'Certxa chạy trên máy tính bảng cảm ứng và máy tính bạn có thể đã có sẵn. Dùng được với máy quẹt thẻ Stripe M2 và máy in hóa đơn USB, Bluetooth hoặc qua mạng.' },
     ],
+    compareText: 'Đang so sánh?',
+    compareLink: 'Các máy POS tốt nhất cho tiệm nail của người Việt (2026, tiếng Anh)',
     finalHeading: 'Dùng thử Certxa ở tiệm bạn',
     finalBody: 'Nhập dịch vụ và thợ trong một buổi chiều. Không có phí cài đặt, và gói Solo miễn phí.',
     breadcrumbHome: 'Trang chủ',
@@ -285,6 +291,10 @@ export default function VietnameseNailLanding({ lang }: { lang: Lang }) {
             <p className="text-sm text-muted-foreground">
               {c.priceNote}{' '}
               <Link to="/pricing" className="text-primary font-semibold underline underline-offset-4">{c.ctaPricing}</Link>
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {c.compareText}{' '}
+              <a href="/blog/best-pos-systems-vietnamese-nail-salons" className="text-primary font-semibold underline underline-offset-4">{c.compareLink}</a>
             </p>
           </div>
         </section>
