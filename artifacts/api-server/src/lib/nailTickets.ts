@@ -1030,7 +1030,8 @@ export interface TechDayStats {
 
 /** Today's numbers for the Techs page header ("Salon at a glance"). */
 export interface SalonGlance {
-  /** Pre-booked appointments today (not cancelled). */
+  /** Pre-booked appointments today that are still to come: pending or confirmed, not checked in (the same rule as
+   *  getNailUpcoming, limited to today). Arrived, finished and no-show visits are counted by their own tiles. */
   appointments: number;
   /** Clients who walked in today: tickets made at the desk + kiosk check-ins that never got a ticket. */
   walkIns: number;
@@ -1266,7 +1267,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
         WHERE a.store_id = $1 AND ${bizDayOf("a.date")} = ${BIZ_TODAY}
           AND ${boardAfterCloseSQL("a")}
      )
-      SELECT COUNT(*) FILTER (WHERE status <> 'cancelled' AND NOT walkin)::int AS appointments,
+      SELECT COUNT(*) FILTER (WHERE status::text IN ('pending', 'confirmed') AND checked_in_at IS NULL AND NOT walkin)::int AS appointments,
              COUNT(*) FILTER (WHERE status <> 'cancelled' AND walkin)::int AS walkins,
              COUNT(*) FILTER (WHERE status IN ('no_show', 'no-show'))::int AS no_shows,
              COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,

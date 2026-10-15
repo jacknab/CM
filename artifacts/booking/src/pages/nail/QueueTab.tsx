@@ -10,7 +10,8 @@ const money = (n: number) => `$${n.toFixed(n % 1 === 0 ? 0 : 2)}`;
 const firstName = (n: string | null | undefined) => (n ?? "").trim().split(/\s+/)[0] || "Guest";
 /** The client's whole name as it's on file — every card shows the same thing, waiting or in the chair. */
 const fullName = (n: string | null | undefined) => (n ?? "").trim().replace(/\s+/g, " ") || "Guest";
-const fmtTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+/** A time of day in the salon's time zone (not the device's), like the day shown next to it. */
+const fmtTime = (ms: number, timeZone?: string) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone });
 
 /**
  * HH:MM:SS since a moment the SERVER recorded — identical to the Techs tab's timer, kept as its
@@ -325,7 +326,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
                 <div className="q-unified-side q-wait-actions">
                   <button type="button" onClick={(e) => { e.stopPropagation(); r.start?.(); }} data-testid={`${r.testId}-start`}>Start</button>
                 </div>
-              ) : <div className="q-unified-side"><small>{inChair ? "STARTED" : "CHECKED IN"}</small><b>{fmtTime(+new Date(r.since))}</b></div>}
+              ) : <div className="q-unified-side"><small>{inChair ? "STARTED" : "CHECKED IN"}</small><b>{fmtTime(+new Date(r.since), timezone || undefined)}</b></div>}
             </div>
             <div className="q-unified-footer">
               <div><small>Current Service</small>{r.service ? <b>{r.service}</b> : <b className="q-missing" aria-label="No service yet">___</b>}</div>
@@ -387,7 +388,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
                 <em className="q-unified-pill" data-kind={kind}>{detail.label}</em>
               </div>
               <div className="q-unified-main">
-                <div className="q-unified-clock"><Clock size={25} strokeWidth={1.8} /><div><small>{kind === "completed" ? "COMPLETED" : kind === "no-shows" ? "MISSED" : kind === "appointments" ? visitDay(booking.date) : "APPOINTMENT"}</small><b>{fmtTime(+new Date(booking.date))}</b></div></div>
+                <div className="q-unified-clock"><Clock size={25} strokeWidth={1.8} /><div><small>{kind === "completed" ? "COMPLETED" : kind === "no-shows" ? "MISSED" : kind === "appointments" ? visitDay(booking.date) : "APPOINTMENT"}</small><b>{fmtTime(+new Date(booking.date), timezone || undefined)}</b></div></div>
                 <div className="q-unified-side"><small>DURATION</small><b>{booking.duration > 0 ? `${booking.duration} min` : "—"}</b></div>
               </div>
               <div className="q-unified-footer">
