@@ -788,6 +788,20 @@ class SyncEngine {
         return null;
       }
 
+      case "TURN_ADJUST": {
+        const { storeId: _store, ...body } = payload as any;
+        const res = await fetch("/api/nail/turn-adjust", { method: "POST", headers, credentials: "include", body: JSON.stringify(body) });
+        // The PIN is no longer the salon's (changed meanwhile), the technician is gone, or the rules no longer
+        // allow it: the manager has to look again — shown as a conflict, not retried.
+        if (res.status === 400 || res.status === 403 || res.status === 404) {
+          const data = await res.json().catch(() => null);
+          throw new SyncConflictError("turn_changed", `A turn change made offline was not saved: ${data?.message ?? "it was refused"}.`);
+        }
+        if (!res.ok) throw new Error(`TURN_ADJUST failed: ${res.status}`);
+        try { window.dispatchEvent(new CustomEvent("turn-eligibility-changed")); } catch { /* ignore */ }
+        return null;
+      }
+
       case "RECEIPT_TEXT": {
         const { storeId, appointmentId, phone, snapshot } = payload as any;
         let id = Number(appointmentId);

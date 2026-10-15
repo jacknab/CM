@@ -19395,7 +19395,8 @@ or
   // POST /api/nail/turn-adjust — a manager gives or takes turns by hand (a free redo, a favour, a late
   // start). Approved with the manager PIN, a reason is required, and it is written to the turn history.
   // In fixed order a turn can only be given: it sends the technician to the back of the order.
-  app.post("/api/nail/turn-adjust", isAuthenticated, async (req, res) => {
+  // A change made on a tablet with no connection is sent later under its own key: recorded once.
+  app.post("/api/nail/turn-adjust", isAuthenticated, idempotent("nail.turn-adjust", (r) => resolveSessionStoreId(r)), async (req, res) => {
     try {
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;

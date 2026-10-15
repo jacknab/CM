@@ -985,6 +985,8 @@ export interface BoardTicket {
   customLines: CustomLine[];
   staff: { id: number; name: string; color: string | null } | null;
   total: number;
+  /** Made at the desk (a walk-in), not an advance booking: only walk-ins count in the turn rotation. */
+  walkIn: boolean;
 }
 
 export interface BoardWaitingMarker {
@@ -1091,7 +1093,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
 
   const { rows } = await pool.query(
     `SELECT a.id, a.ticket_number, a.ticket_group_id, a.status, a.date, a.duration, a.checked_in_at, a.started_at, a.staff_id,
-            a.customer_id, a.custom_lines, c.full_name AS client_name, COALESCE(c.loyalty_points, 0) AS loyalty_points,
+            ${walkInSQL("a")} AS walk_in, a.customer_id, a.custom_lines, c.full_name AS client_name, COALESCE(c.loyalty_points, 0) AS loyalty_points,
             (SELECT COALESCE(p.display_phone, p.phone_number_e164) FROM client_phones p
                WHERE p.client_id = c.id ORDER BY p.is_primary DESC, p.id LIMIT 1) AS client_phone,
             -- A ticket made at the kiosk with no client record linked still has the name/number
@@ -1159,6 +1161,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
       customLines,
       staff: r.staff_id ? { id: r.staff_id, name: r.staff_name, color: r.staff_color ?? null } : null,
       total: (Number(r.service_price) || 0) + addons.reduce((s: number, a: any) => s + a.price, 0) + nailAdj + sumCustom(customLines),
+      walkIn: r.walk_in === true,
     };
   });
 

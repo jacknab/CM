@@ -13,12 +13,13 @@
  *     back, with the turns the ticket earned (or held at the front after a Counted Turns short turn);
  *   • the next client goes to whoever is now due, not to whoever was first when the connection dropped.
  *
- * It is one device's view. Two tablets offline at the same time do not see each other's work; each
- * ticket is sent with the technician it was really given to and the server settles the line once they
- * are back. Pure function: no storage, no clock of its own — so it can be tested exactly.
+ * POS tablets offline at the same time hear each other's events over the salon hub (turnShare.ts) and fold
+ * them in (mergeSharedTurns); each ticket is still sent with the technician it was really given to, and the
+ * server settles the line once they are back. Pure functions: no storage, no clock of their own — so they
+ * can be tested exactly.
  */
 import type { LocalRecord } from "./engine";
-import { TURN_UNIT, lineMessage, normalizeTurnRules, rankTurnLine, turnUnits, type TurnRules } from "@shared/turnRules";
+import { TURN_UNIT, lineMessage, normalizeTurnRules, rankTurnLine, turnAmount, turnUnits, turnValue, type TurnRules } from "@shared/turnRules";
 
 /** A technician as the server's last line described them. */
 export interface BaseLineTech {
@@ -48,6 +49,8 @@ export type LineEvent = (
   | { kind: "paid"; at: number; staffId: number; serviceAmount: number }
   /** Their ticket was cancelled or given to someone else: they are free again and keep their place. */
   | { kind: "released"; at: number; staffId: number }
+  /** A manager gave (+) or took (−) turns by hand. In fixed order it sends the technician to the back. */
+  | { kind: "adjusted"; at: number; staffId: number; units: number }
 ) & {
   /** The ticket it is about, so another POS tablet can tell when that ticket is closed. */
   ticketId?: number;
@@ -92,11 +95,10 @@ export interface OfflineLine {
 
 const OUT_OF_LINE = 900;
 
-export function computeOfflineLine(input: OfflineLineInput): OfflineLine {
-  const { base, serviceId, skills, openTickets } = input;
+/** The rules as the server last sent them with a line; a line from before the server sent rules falls back to the settings. */
+export function rulesOfLine(base: BaseLine): TurnRules {
   const settings = (base.settings ?? {}) as Record<string, unknown>;
-  // The rules as the server last sent them; a line from before the server sent rules falls back to the settings.
-  const rules = normalizeTurnRules({
+  return normalizeTurnRules({
     turnMode: base.turnRules?.mode ?? settings.turnMode,
     turnValueThreshold: base.turnRules?.dollarsPerTurn ?? settings.turnValueThreshold,
     partialTurnValue: base.turnRules?.partialTurnValue ?? settings.partialTurnValue,
@@ -110,6 +112,12 @@ export function computeOfflineLine(input: OfflineLineInput): OfflineLine {
     turnRefundPolicy: base.turnRules?.refundPolicy ?? settings.turnRefundPolicy,
     turnCategoryRotation: base.turnRules?.categoryRotation ?? settings.turnCategoryRotation,
   });
+}
+
+export function computeOfflineLine(input: OfflineLineInput): OfflineLine {
+  const { base, serviceId, skills, openTickets } = input;
+  const settings = (base.settings ?? {}) as Record<string, unknown>;
+  const rules = rulesOfLine(base);
   const fixedOrder = rules.mode === "round_robin";
   const periodStart = base.turnPeriodStart ? Date.parse(base.turnPeriodStart) : NaN;
 
@@ -184,6 +192,18 @@ export function computeOfflineLine(input: OfflineLineInput): OfflineLine {
       }
     } else if (e.kind === "released") {
       if (!line.includes(id)) line = [id, ...line];
+    } else if (e.kind === "adjusted") {
+      // As the server counts it (turnEngine): in fixed order, a turn taken now; otherwise units added to the score.
+      if (fixedOrder) {
+        const highest = Math.max(0, ...score.values());
+        score.set(id, Number.isFinite(periodStart) ? Math.max(highest + 1, e.at - periodStart + 1) : highest + 1);
+        shown.set(id, (shown.get(id) ?? 0) + TURN_UNIT);
+        if (line.includes(id)) line = [...line.filter((x) => x !== id), id];
+        pinned = pinned.filter((x) => x !== id);
+      } else {
+        score.set(id, (score.get(id) ?? 0) + e.units);
+        shown.set(id, (shown.get(id) ?? 0) + e.units);
+      }
     }
   }
 
@@ -257,6 +277,7 @@ export function commonOfflineTech(lines: ReadonlyArray<OfflineLine>): OfflineLin
  * to technicians, tickets paid, cancelled or moved, technicians clocked in and out.
  *   • `staffOnBoard`: ticket id → the technician the server's last board showed it with.
  *   • `punches`: clock-ins and clock-outs made here that the server has not had yet.
+ *   • `adjustments`: turns a manager gave or took here that the server has not had yet.
  * Anything older than the line is left out — the server had already counted it.
  */
 export function eventsFromDevice(input: {
@@ -264,6 +285,7 @@ export function eventsFromDevice(input: {
   since: number;
   staffOnBoard: ReadonlyMap<number, number | null>;
   punches: ReadonlyArray<{ action: string; staffId: number; at: number }>;
+  adjustments?: ReadonlyArray<{ staffId: number; units: number; at: number }>;
 }): LineEvent[] {
   const { records, since, staffOnBoard, punches } = input;
   const after = (iso?: string | null) => { const at = iso ? Date.parse(iso) : NaN; return Number.isFinite(at) && (!Number.isFinite(since) || at > since) ? at : null; };
@@ -295,6 +317,9 @@ export function eventsFromDevice(input: {
   }
   for (const p of punches) {
     if (Number.isFinite(p.staffId)) events.push({ kind: p.action === "clock_in" ? "clock_in" : "clock_out", at: p.at, staffId: p.staffId });
+  }
+  for (const a of input.adjustments ?? []) {
+    if (Number.isFinite(a.staffId) && Number.isFinite(a.units) && a.units !== 0) events.push({ kind: "adjusted", at: a.at, staffId: a.staffId, units: a.units });
   }
   return events;
 }
@@ -330,4 +355,26 @@ export function mergeSharedTurns(input: {
     }
   }
   return { events: [...input.events, ...theirs], openTickets: open };
+}
+
+/**
+ * What each walk-in ticket of a sale paid on the tablet offline was worth in the turn rotation, for the screen
+ * to show the technician — worked out as the server does after an online checkout (POST /api/nail/checkout):
+ * advance bookings and tickets that earned nothing are left out, and everything is when the turn system is off.
+ */
+export function turnsEarnedOffline(input: {
+  base: BaseLine;
+  tickets: ReadonlyArray<{
+    appointmentId: number; ticketNumber: number | null; staffName: string | null; walkIn: boolean;
+    serviceRevenue?: number | null; productRevenue?: number | null; totalPaid: number; tip: number;
+  }>;
+}): { appointmentId: number; ticketNumber: number | null; staffName: string | null; mode: TurnRules["mode"]; earned: number; serviceAmount: number }[] {
+  if ((input.base.settings as Record<string, unknown> | null | undefined)?.turnEnabled === false) return [];
+  const rules = rulesOfLine(input.base);
+  return input.tickets.flatMap((t) => {
+    if (!t.staffName || !t.walkIn) return [];
+    const serviceAmount = turnAmount({ serviceRevenue: t.serviceRevenue, productRevenue: t.productRevenue, totalPaid: t.totalPaid, tipAmount: t.tip });
+    if (serviceAmount <= 0) return [];
+    return [{ appointmentId: t.appointmentId, ticketNumber: t.ticketNumber, staffName: t.staffName, mode: rules.mode, earned: turnValue(rules, serviceAmount), serviceAmount }];
+  });
 }

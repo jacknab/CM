@@ -61,7 +61,7 @@ import { assignStaffColors, getContrastColors } from "@/lib/staffColors";
 import { CATEGORY_PALETTE } from "@/components/services/CategoryManager";
 import { usePendingSyncMap } from "@/hooks/use-pending-sync";
 import { AppointmentSyncBadge } from "@/components/AppointmentSyncBadge";
-import { claimKioskPrintJob } from "./nail/nailApi";
+import { claimKioskPrintJob, queueTurnAdjust } from "./nail/nailApi";
 import { printNativeCheckinTicket, slipServiceNames } from "@/lib/native-checkin-ticket";
 
 type SidebarItem =
@@ -10309,7 +10309,8 @@ export function VoucherRedeemSheet({ onClose, onRedeemed }: { onClose: () => voi
 /**
  * A manager gives or takes turns by hand (a free redo, a favour, a late start): pick the change, say why,
  * approve with the manager PIN. The server records it in the turn history. In fixed order a turn can only
- * be given, which sends the technician to the back of the order.
+ * be given, which sends the technician to the back of the order. With no connection it is kept on the tablet,
+ * counted in its line at once, and sent when the connection is back.
  */
 function TurnAdjustPanel({ storeId, staffId, name, fixedOrder, onDone }: { storeId: number; staffId: number; name: string; fixedOrder: boolean; onDone: () => void }) {
   const { toast } = useToast();
@@ -10325,12 +10326,19 @@ function TurnAdjustPanel({ storeId, staffId, name, fixedOrder, onDone }: { store
     setAskPin(false);
     setSaving(true);
     try {
-      const res = await fetch("/api/nail/turn-adjust", {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeId, staffId, units, reason: reason.trim(), managerPin }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.message || "Could not change the turns");
+      const body = { staffId, units: fixedOrder ? 1000 : units ?? 0, reason: reason.trim(), managerPin };
+      try {
+        const res = await fetch("/api/nail/turn-adjust", {
+          method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ storeId, ...body }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.message || "Could not change the turns");
+      } catch (err) {
+        // No server: keep it on the tablet (lib/request-deadline.ts fails an unreachable request with a TypeError).
+        if (!(err instanceof TypeError)) throw err;
+        await queueTurnAdjust(storeId, body);
+      }
       toast({ title: fixedOrder ? `${first} goes to the back of the order` : `${(units ?? 0) > 0 ? "Gave" : "Took"} ${formatTurns(Math.abs(units ?? 0))} ${Math.abs(units ?? 0) <= 1000 ? "turn" : "turns"} ${(units ?? 0) > 0 ? "to" : "from"} ${first}` });
       setUnits(null); setReason("");
       onDone();

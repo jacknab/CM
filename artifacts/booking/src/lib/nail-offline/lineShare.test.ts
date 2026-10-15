@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeOfflineLine, mergeSharedTurns, type BaseLine, type LineEvent } from "./line";
+import { computeOfflineLine, eventsFromDevice, mergeSharedTurns, turnsEarnedOffline, type BaseLine, type LineEvent } from "./line";
 
 // Two POS tablets, both offline. Each had the server's line at time 1000: Amy, Lisa, Maria.
 const tech = (id: number, name: string, turnPosition: number) =>
@@ -62,5 +62,47 @@ describe("two POS tablets offline share one turn line", () => {
   it("a technician tablet A clocked out leaves the line on B too", () => {
     const l = lineOnB([{ kind: "clock_out", at: 2000, staffId: 3 }]);
     expect(next(l)).toEqual(["Amy", "Lisa"]);
+  });
+});
+
+describe("a manager's turn change made offline", () => {
+  const line = (events: LineEvent[], mode = "dollar") =>
+    computeOfflineLine({ base: { ...base, turnRules: { ...base.turnRules, mode: mode as any } }, serviceId: 10, skills, openTickets: [], events });
+
+  it("+1 turn counts at once: Amy goes behind Lisa and Maria", () => {
+    const l = line([{ kind: "adjusted", at: 2000, staffId: 1, units: 1000 }]);
+    expect(next(l)).toEqual(["Lisa", "Maria", "Amy"]);
+    expect(l.technicians.find((t) => t.name === "Amy")!.turnUnits).toBe(1000);
+  });
+
+  it("−1 turn brings Maria to the front", () => {
+    expect(next(line([{ kind: "adjusted", at: 2000, staffId: 3, units: -1000 }]))).toEqual(["Maria", "Amy", "Lisa"]);
+  });
+
+  it("in fixed order it sends the technician to the back", () => {
+    expect(next(line([{ kind: "adjusted", at: 2000, staffId: 1, units: 1000 }], "round_robin"))).toEqual(["Lisa", "Maria", "Amy"]);
+  });
+
+  it("a change still waiting to be sent is one of the tablet's events, whenever it was made", () => {
+    expect(eventsFromDevice({ records: [], since: SINCE, staffOnBoard: new Map(), punches: [], adjustments: [{ staffId: 2, units: 500, at: 10 }] }))
+      .toEqual([{ kind: "adjusted", at: 10, staffId: 2, units: 500 }]);
+  });
+});
+
+describe("turns earned, shown after a sale paid offline", () => {
+  const sale = { appointmentId: -3, ticketNumber: 12, staffName: "Amy", walkIn: true, serviceRevenue: 45, productRevenue: 10, totalPaid: 65, tip: 10 };
+
+  it("a walk-in: the service part only, under the same rules the server uses ($45 at $30 a turn is 1)", () => {
+    expect(turnsEarnedOffline({ base, tickets: [sale] })).toEqual([
+      { appointmentId: -3, ticketNumber: 12, staffName: "Amy", mode: "dollar", earned: 1, serviceAmount: 45 },
+    ]);
+  });
+
+  it("an advance booking, a ticket with no technician, or one that earned nothing: not shown", () => {
+    expect(turnsEarnedOffline({ base, tickets: [{ ...sale, walkIn: false }, { ...sale, staffName: null }, { ...sale, serviceRevenue: 0 }] })).toEqual([]);
+  });
+
+  it("nothing when the salon has the turn system off", () => {
+    expect(turnsEarnedOffline({ base: { ...base, settings: { turnEnabled: false } }, tickets: [sale] })).toEqual([]);
   });
 });

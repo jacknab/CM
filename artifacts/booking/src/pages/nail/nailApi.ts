@@ -9,7 +9,7 @@ import { clientPhoneCacheDB } from "@/lib/client-phone-cache-db";
 import { overlayBoard } from "./offlineBoard";
 import { offlineSaleProblem } from "./offlineSale";
 export { offlineSaleProblem };
-import { commonOfflineTech, computeOfflineLine, eventsFromDevice, mergeSharedTurns, type BaseLine, type LineEvent, type OfflineLine, type OfflineLineTech } from "@/lib/nail-offline/line";
+import { commonOfflineTech, computeOfflineLine, eventsFromDevice, mergeSharedTurns, turnsEarnedOffline, type BaseLine, type LineEvent, type OfflineLine, type OfflineLineTech } from "@/lib/nail-offline/line";
 import { foreignTurnEvents } from "@/lib/nail-offline/turnShare";
 import { snapshotDB } from "@/lib/snapshot-db";
 import type { OfflineBookingData } from "./offlineBooking";
@@ -42,6 +42,8 @@ export interface BoardTicket {
   customLines: { label: string; price: number; isRetail?: boolean }[];
   staff: { id: number; name: string; color: string | null } | null;
   total: number;
+  /** Made at the desk (a walk-in), not an advance booking: only walk-ins count in the turn rotation. */
+  walkIn?: boolean;
   /** Made on this device while the server was out of reach and not sent yet (see lib/nail-offline). */
   offline?: boolean;
 }
@@ -372,6 +374,7 @@ export async function offlineTurnLine(storeId: number, serviceId: number | null)
     staffOnBoard: new Map((board?.data?.tickets ?? []).map((t) => [t.id, t.staff?.id ?? null])),
     punches: pending.filter((a) => a.type === "TIMECLOCK_PUNCH" && Number((a.payload as any)?.storeId) === storeId)
       .map((a) => ({ action: String((a.payload as any)?.action), staffId: Number((a.payload as any)?.staffId), at: Number(a.timestamp) || Date.now() })),
+    adjustments: pendingTurnAdjustments(pending, storeId),
   });
 
   const openTickets = overlayBoard(board?.data, records).tickets.map((t) => ({ id: t.id, staffId: t.staff?.id ?? null, status: t.status }));
@@ -379,6 +382,11 @@ export async function offlineTurnLine(storeId: number, serviceId: number | null)
   const shared = mergeSharedTurns({ events, openTickets, foreign: foreignTurnEvents(storeId), since });
   return computeOfflineLine({ base: kept.data, serviceId, skills, openTickets: shared.openTickets, events: shared.events });
 }
+
+/** Turns a manager gave or took on this tablet that are still waiting to be sent. */
+const pendingTurnAdjustments = (pending: Awaited<ReturnType<typeof actionQueueDB.getPending>>, storeId: number) =>
+  pending.filter((a) => a.type === "TURN_ADJUST" && Number((a.payload as any)?.storeId) === storeId)
+    .map((a) => ({ staffId: Number((a.payload as any)?.staffId), units: Number((a.payload as any)?.units), at: Number(a.timestamp) || Date.now() }));
 
 /** This tablet's own turn events since its last server line — what it shares with the other POS tablets. */
 export async function ownTurnEvents(storeId: number): Promise<LineEvent[]> {
@@ -393,6 +401,7 @@ export async function ownTurnEvents(storeId: number): Promise<LineEvent[]> {
     staffOnBoard: new Map((board?.data?.tickets ?? []).map((t) => [t.id, t.staff?.id ?? null])),
     punches: pending.filter((a) => a.type === "TIMECLOCK_PUNCH" && Number((a.payload as any)?.storeId) === storeId)
       .map((a) => ({ action: String((a.payload as any)?.action), staffId: Number((a.payload as any)?.staffId), at: Number(a.timestamp) || Date.now() })),
+    adjustments: pendingTurnAdjustments(pending, storeId),
   });
 }
 
@@ -696,6 +705,20 @@ async function punchOffline(storeId: number, staffId: number, action: "clock_in"
 }
 
 /**
+ * Turns a manager gave or took with no connection (the PIN was checked against the one this tablet last saw
+ * accepted): counted in this tablet's line at once, and sent (POST /api/nail/turn-adjust, under its own key)
+ * when the connection is back. The server checks the PIN again then.
+ */
+export async function queueTurnAdjust(storeId: number, body: { staffId: number; units: number; reason: string; managerPin: string }): Promise<void> {
+  const now = Date.now();
+  await actionQueueDB.add({
+    type: "TURN_ADJUST", entity_temp_id: `turn_adjust_${body.staffId}_${now}`, timestamp: now,
+    idempotency_key: newIdempotencyKey("nail.turn-adjust"),
+    payload: { storeId, ...body },
+  });
+}
+
+/**
  * A receipt to text, kept on this device when the server cannot be reached; it is sent when the connection
  * is back (after the ticket and its sale, if they were made offline too). The snapshot is what was on screen.
  */
@@ -922,8 +945,10 @@ export async function completeTicket(id: number, data: FinalizeData, who?: { sto
     if (problem) throw new ApiError(problem, 0);
     if (!who) throw new Error(NEEDS_CONNECTION);
     const cash = data.tenders.reduce((sum, t) => sum + t.amount, 0);
+    // Worked out before the sale is saved: once paid, the ticket leaves this tablet's board.
+    const turns = await turnsEarnedOnDevice(who.storeId, id, data);
     await nailOffline.recordCash(who.storeId, { id, clientName: who.clientName }, { totalPaid: data.totalPaid, cash: Math.round(cash * 100) / 100, tip: data.tip, request, idempotencyKey: data.idempotencyKey });
-    return { turns: [], offline: true };
+    return { turns, offline: true };
   };
   if (isLocalId(id) || syncEngine.isOffline()) return onDevice();
   try {
@@ -933,6 +958,30 @@ export async function completeTicket(id: number, data: FinalizeData, who?: { sto
     // sent again later and the server answers it once either way.
     if (!isNetworkFailure(err) || offlineSaleProblem(data)) throw err;
     return onDevice();
+  }
+}
+
+/** What a sale paid on this tablet offline earned in the turn rotation (line.ts, turnsEarnedOffline). Never fails the sale. */
+async function turnsEarnedOnDevice(storeId: number, id: number, data: FinalizeData): Promise<TurnEarned[]> {
+  try {
+    const [kept, board, records] = await Promise.all([
+      nailOffline.recall<BaseLine>(storeId, turnUrl(storeId, null)).catch(() => undefined),
+      nailOffline.recall<NailBoard>(storeId, "/api/nail/board").catch(() => undefined),
+      nailOffline.records(storeId).catch(() => [] as Awaited<ReturnType<typeof nailOffline.records>>),
+    ]);
+    if (!kept?.data) return [];
+    const onBoard = overlayBoard(board?.data, records).tickets;
+    const sales = data.groupTickets?.length ? data.groupTickets
+      : [{ appointmentId: id, serviceRevenue: data.serviceRevenue, productRevenue: data.productRevenue, totalPaid: data.totalPaid, tip: data.tip }];
+    return turnsEarnedOffline({
+      base: kept.data,
+      tickets: sales.map((sale) => {
+        const t = onBoard.find((x) => x.id === sale.appointmentId);
+        return { ...sale, ticketNumber: t?.ticketNumber ?? null, staffName: t?.staff?.name ?? null, walkIn: t?.walkIn === true };
+      }),
+    }) as TurnEarned[];
+  } catch {
+    return [];
   }
 }
 

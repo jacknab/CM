@@ -25,6 +25,8 @@ export function ticketFromRecord(t: TicketRecord): BoardTicket {
     customLines: t.customLines,
     staff: t.staff,
     total: t.total,
+    // Made at the desk on this tablet: a walk-in (the server records it as one too).
+    walkIn: true,
     offline: !t.realId,
   };
 }

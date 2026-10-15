@@ -21,7 +21,9 @@ export type ActionType =
   // A receipt the client asked to have texted while the tablet had no connection: sent when it is back.
   | "RECEIPT_TEXT"
   // A future visit booked on /nail while the tablet had no connection (POST /api/nail/bookings when it is back).
-  | "NAIL_BOOKING";
+  | "NAIL_BOOKING"
+  // Turns a manager gave or took on /nail while the tablet had no connection (POST /api/nail/turn-adjust when it is back).
+  | "TURN_ADJUST";
 
 export type ActionState = "PENDING" | "SYNCING" | "CONFIRMED" | "CONFLICT";
 
