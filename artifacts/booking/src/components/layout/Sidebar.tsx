@@ -50,7 +50,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { isProAccount } from "@shared/proAccount";
 import { useSelectedStore } from "@/hooks/use-store";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useFeatureFlags } from "@/hooks/use-features";
+import { useFeatureFlags, isNailSalonBiz } from "@/hooks/use-features";
 import { useLanguage } from "@/hooks/use-language";
 import { useQuery } from "@tanstack/react-query";
 import { PERMISSIONS } from "@shared/permissions";
@@ -69,6 +69,8 @@ type TopNavItem = {
   hideForStaff?: boolean;
   hideForSolo?: boolean;
   eliteOnly?: boolean;
+  /** Only for nail-salon businesses (the same check the /nail screen makes). */
+  nailOnly?: boolean;
 };
 
 type SubNavItem = { label: string; icon: typeof LayoutDashboard; to: string };
@@ -106,6 +108,15 @@ function buildTopNav(pick: Pick4): TopNavItem[] {
     //   matches: ["/website-builder"],
     //   hideForStaff: true,
     // },
+    {
+      label: pick({ en: "Nail POS", vi: "POS tiệm nail", es: "POS de uñas", fr: "PDV ongles" }),
+      icon: Monitor,
+      to: "/nail",
+      matches: ["/nail"],
+      nailOnly: true,
+      // Technician logins have no salon of their own: /nail sends them back to the calendar.
+      hideForStaff: true,
+    },
     {
       label: pick({ en: "Support", vi: "Hỗ trợ", es: "Soporte", fr: "Support" }),
       icon: HelpCircle,
@@ -471,6 +482,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
     if (isStaff && item.hideForStaff) return false;
     if (isSolo  && item.hideForSolo)  return false;
     if (item.eliteOnly && !isElite)   return false;
+    if (item.nailOnly && !isNailSalonBiz((selectedStore as any)?.category)) return false;
     if (item.permission && !can(item.permission)) return false;
     return true;
   });
