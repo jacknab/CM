@@ -747,6 +747,13 @@ function AppRoutes() {
     );
   }
 
+  // The /manage pages (dashboard, billing, AI receptionist…) are not in authenticatedPaths, so they had no store:
+  // their sidebar showed "My Business" and hid everything that depends on the salon (the Nail POS link).
+  // They get the store, and nothing else of the signed-in shell changes for them.
+  if (location.pathname === "/manage" || location.pathname.startsWith("/manage/")) {
+    return <StoreProvider>{routes}</StoreProvider>;
+  }
+
   return routes;
 }
 

@@ -777,6 +777,18 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
       <div className="flex-shrink-0 border-t border-gray-100 px-2 py-2 bg-white">
 
 
+        {/* Nail POS (nail salons only) — drawn here, right above Support; the main list only draws its own routes */}
+        {visibleItems.filter((i) => i.nailOnly).map((item) => (
+          <NavItem
+            key={item.to}
+            icon={item.icon}
+            label={item.label}
+            isActive={item.matches.some((m) => location.pathname === m || location.pathname.startsWith(m + "/"))}
+            to={item.to}
+            onLinkClick={onLinkClick}
+          />
+        ))}
+
         {/* Support link */}
         {(() => {
           const supportItem = TOP_NAV.find((i) => i.to === "/support");
