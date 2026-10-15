@@ -39,7 +39,7 @@ export interface BaseLine {
 }
 
 /** Something done on this device after the server sent its last line. */
-export type LineEvent =
+export type LineEvent = (
   | { kind: "clock_in"; at: number; staffId: number }
   | { kind: "clock_out"; at: number; staffId: number }
   /** A client was given to this technician. */
@@ -47,7 +47,11 @@ export type LineEvent =
   /** Their ticket was paid. `serviceAmount` is what earns turns: the services, not tip, retail or tax. */
   | { kind: "paid"; at: number; staffId: number; serviceAmount: number }
   /** Their ticket was cancelled or given to someone else: they are free again and keep their place. */
-  | { kind: "released"; at: number; staffId: number };
+  | { kind: "released"; at: number; staffId: number }
+) & {
+  /** The ticket it is about, so another POS tablet can tell when that ticket is closed. */
+  ticketId?: number;
+};
 
 export interface OfflineLineInput {
   base: BaseLine;
@@ -273,24 +277,57 @@ export function eventsFromDevice(input: {
   for (const r of records) {
     if (r.kind === "ticket") {
       const made = after(r.createdAt);
-      if (r.staff && made != null) events.push({ kind: "assigned", at: made, staffId: r.staff.id });
+      if (r.staff && made != null) events.push({ kind: "assigned", at: made, staffId: r.staff.id, ticketId: r.id });
       const paidAt = r.paid ? after(r.paid.at) : null;
-      if (r.staff && r.paid && paidAt != null) events.push({ kind: "paid", at: paidAt, staffId: r.staff.id, serviceAmount: serviceAmount(r.paid, r.total) });
+      if (r.staff && r.paid && paidAt != null) events.push({ kind: "paid", at: paidAt, staffId: r.staff.id, serviceAmount: serviceAmount(r.paid, r.total), ticketId: r.id });
     } else if (r.kind === "patch") {
       const changed = after(r.createdAt);
       const before = r.seen?.staffId ?? staffOnBoard.get(r.ticketId) ?? null;
       const holder = r.staff?.id ?? before;
       if (changed != null && r.staff && r.staff.id !== before) {
-        events.push({ kind: "assigned", at: changed, staffId: r.staff.id });
-        if (before != null) events.push({ kind: "released", at: changed, staffId: before });
+        events.push({ kind: "assigned", at: changed, staffId: r.staff.id, ticketId: r.ticketId });
+        if (before != null) events.push({ kind: "released", at: changed, staffId: before, ticketId: r.ticketId });
       }
-      if (changed != null && r.status === "cancelled" && holder != null) events.push({ kind: "released", at: changed + 1, staffId: holder });
+      if (changed != null && r.status === "cancelled" && holder != null) events.push({ kind: "released", at: changed + 1, staffId: holder, ticketId: r.ticketId });
       const paidAt = r.paid ? after(r.paid.at) : null;
-      if (r.paid && paidAt != null && holder != null) events.push({ kind: "paid", at: paidAt, staffId: holder, serviceAmount: serviceAmount(r.paid, NaN) });
+      if (r.paid && paidAt != null && holder != null) events.push({ kind: "paid", at: paidAt, staffId: holder, serviceAmount: serviceAmount(r.paid, NaN), ticketId: r.ticketId });
     }
   }
   for (const p of punches) {
     if (Number.isFinite(p.staffId)) events.push({ kind: p.action === "clock_in" ? "clock_in" : "clock_out", at: p.at, staffId: p.staffId });
   }
   return events;
+}
+
+/**
+ * Two or more POS tablets offline at the same time: each one's line takes in what the others did (sent over
+ * the salon's hub, lib/nail-offline/turnShare.ts), so they hand clients out from one line instead of two.
+ *   • the others' events join this tablet's (only those after this tablet's own last server line — anything
+ *     earlier the server had already counted);
+ *   • a technician the others gave a client to, and whose ticket they have not closed, is busy here too;
+ *   • a ticket the others paid, cancelled or moved is no longer open here.
+ * Pure: the caller passes what it has.
+ */
+export function mergeSharedTurns(input: {
+  events: ReadonlyArray<LineEvent>;
+  openTickets: ReadonlyArray<{ id?: number; staffId: number | null; status: string }>;
+  foreign: ReadonlyArray<ReadonlyArray<LineEvent>>;
+  since: number;
+}): { events: LineEvent[]; openTickets: { id?: number; staffId: number | null; status: string }[] } {
+  const fresh = (e: LineEvent) => !Number.isFinite(input.since) || e.at > input.since;
+  const theirs = input.foreign.flatMap((list) => list.filter(fresh));
+  // Tickets the others closed or moved: not open here any more, whatever this tablet's copy of the board says.
+  const closed = new Set(theirs.filter((e) => (e.kind === "paid" || e.kind === "released") && e.ticketId != null).map((e) => e.ticketId!));
+  const open = input.openTickets.filter((t) => t.id == null || !closed.has(t.id));
+  // Who the others have with a client right now: their last word on each technician was "assigned".
+  for (const list of input.foreign) {
+    const last = new Map<number, LineEvent>();
+    for (const e of [...list].filter(fresh).sort((a, b) => a.at - b.at)) {
+      if (e.kind === "assigned" || e.kind === "paid" || e.kind === "released" || e.kind === "clock_out") last.set(e.staffId, e);
+    }
+    for (const [staffId, e] of last) {
+      if (e.kind === "assigned" && !open.some((t) => t.staffId === staffId && t.id === e.ticketId)) open.push({ id: e.ticketId, staffId, status: "confirmed" });
+    }
+  }
+  return { events: [...input.events, ...theirs], openTickets: open };
 }

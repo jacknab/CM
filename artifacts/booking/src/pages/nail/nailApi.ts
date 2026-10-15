@@ -9,7 +9,8 @@ import { clientPhoneCacheDB } from "@/lib/client-phone-cache-db";
 import { overlayBoard } from "./offlineBoard";
 import { offlineSaleProblem } from "./offlineSale";
 export { offlineSaleProblem };
-import { commonOfflineTech, computeOfflineLine, eventsFromDevice, type BaseLine, type OfflineLine, type OfflineLineTech } from "@/lib/nail-offline/line";
+import { commonOfflineTech, computeOfflineLine, eventsFromDevice, mergeSharedTurns, type BaseLine, type LineEvent, type OfflineLine, type OfflineLineTech } from "@/lib/nail-offline/line";
+import { foreignTurnEvents } from "@/lib/nail-offline/turnShare";
 import { snapshotDB } from "@/lib/snapshot-db";
 import type { OfflineBookingData } from "./offlineBooking";
 import { estimateWait, type WaitTech } from "@shared/waitEstimate";
@@ -365,15 +366,34 @@ export async function offlineTurnLine(storeId: number, serviceId: number | null)
   }
 
   // What was done on this device after the server sent that line.
+  const since = Date.parse(kept.at);
   const events = eventsFromDevice({
-    records, since: Date.parse(kept.at),
+    records, since,
     staffOnBoard: new Map((board?.data?.tickets ?? []).map((t) => [t.id, t.staff?.id ?? null])),
     punches: pending.filter((a) => a.type === "TIMECLOCK_PUNCH" && Number((a.payload as any)?.storeId) === storeId)
       .map((a) => ({ action: String((a.payload as any)?.action), staffId: Number((a.payload as any)?.staffId), at: Number(a.timestamp) || Date.now() })),
   });
 
-  const openTickets = overlayBoard(board?.data, records).tickets.map((t) => ({ staffId: t.staff?.id ?? null, status: t.status }));
-  return computeOfflineLine({ base: kept.data, serviceId, skills, openTickets, events });
+  const openTickets = overlayBoard(board?.data, records).tickets.map((t) => ({ id: t.id, staffId: t.staff?.id ?? null, status: t.status }));
+  // Another POS tablet offline at the same time: what it did counts here too (lib/nail-offline/turnShare.ts).
+  const shared = mergeSharedTurns({ events, openTickets, foreign: foreignTurnEvents(storeId), since });
+  return computeOfflineLine({ base: kept.data, serviceId, skills, openTickets: shared.openTickets, events: shared.events });
+}
+
+/** This tablet's own turn events since its last server line — what it shares with the other POS tablets. */
+export async function ownTurnEvents(storeId: number): Promise<LineEvent[]> {
+  const [records, board, pending, kept] = await Promise.all([
+    nailOffline.records(storeId).catch(() => [] as Awaited<ReturnType<typeof nailOffline.records>>),
+    nailOffline.recall<NailBoard>(storeId, "/api/nail/board").catch(() => undefined),
+    actionQueueDB.getPending().catch(() => [] as Awaited<ReturnType<typeof actionQueueDB.getPending>>),
+    nailOffline.recall<BaseLine>(storeId, turnUrl(storeId, null)).catch(() => undefined),
+  ]);
+  return eventsFromDevice({
+    records, since: kept ? Date.parse(kept.at) : NaN,
+    staffOnBoard: new Map((board?.data?.tickets ?? []).map((t) => [t.id, t.staff?.id ?? null])),
+    punches: pending.filter((a) => a.type === "TIMECLOCK_PUNCH" && Number((a.payload as any)?.storeId) === storeId)
+      .map((a) => ({ action: String((a.payload as any)?.action), staffId: Number((a.payload as any)?.staffId), at: Number(a.timestamp) || Date.now() })),
+  });
 }
 
 export const fetchNailConfig = async (serviceId: number): Promise<NailConfigView | null> =>

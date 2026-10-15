@@ -192,5 +192,14 @@ export function useActiveRegisterId(storeId: number | undefined) {
     resetRegister,
     /** Every station belongs to another tablet: this one is not linked to a customer screen. */
     stationsFull: isMultiStation && station?.allTaken === true,
+    /**
+     * This tablet is POS #1 (the salon's only station, or its default one) — the one that runs the salon's
+     * local hub; other stations connect to it. Null until the server has said (offline, the caller uses what
+     * it saved last time).
+     */
+    isMainStation: registerList === undefined ? null
+      : !isMultiStation ? true
+      : station?.registerId == null ? null
+      : activeRegisters.find((r) => r.id === station.registerId)?.isDefault === true,
   };
 }

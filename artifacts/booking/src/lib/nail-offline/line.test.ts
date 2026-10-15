@@ -160,7 +160,7 @@ describe("what the device did since the server's last line", () => {
   });
   it("turns a ticket made and paid here into an assignment and a payment of the service amount (not the tip)", () => {
     expect(run([ticket(-1, 2, SINCE + 10, { at: SINCE + 500, serviceRevenue: 35, totalPaid: 45, tip: 10 })])).toEqual([
-      { kind: "assigned", at: SINCE + 10, staffId: 2 }, { kind: "paid", at: SINCE + 500, staffId: 2, serviceAmount: 35 },
+      { kind: "assigned", at: SINCE + 10, staffId: 2, ticketId: -1 }, { kind: "paid", at: SINCE + 500, staffId: 2, serviceAmount: 35, ticketId: -1 },
     ]);
   });
   it("an unassigned ticket moves nobody", () => {
@@ -169,11 +169,11 @@ describe("what the device did since the server's last line", () => {
   it("a server ticket moved, cancelled or paid here frees and credits the right technicians", () => {
     const patch = (more: Record<string, unknown>): LocalRecord => ({ kind: "patch", id: -9, storeId: 1, ticketId: 77, clientName: "C", createdAt: iso(SINCE + 100), ...more } as LocalRecord);
     expect(run([patch({ seen: { staffId: 1 }, staff: { id: 3, name: "Maria", color: null } })])).toEqual([
-      { kind: "assigned", at: SINCE + 100, staffId: 3 }, { kind: "released", at: SINCE + 100, staffId: 1 },
+      { kind: "assigned", at: SINCE + 100, staffId: 3, ticketId: 77 }, { kind: "released", at: SINCE + 100, staffId: 1, ticketId: 77 },
     ]);
-    expect(run([patch({ status: "cancelled" })], [], new Map([[77, 2]]))).toEqual([{ kind: "released", at: SINCE + 101, staffId: 2 }]);
+    expect(run([patch({ status: "cancelled" })], [], new Map([[77, 2]]))).toEqual([{ kind: "released", at: SINCE + 101, staffId: 2, ticketId: 77 }]);
     expect(run([patch({ seen: { staffId: 1 }, paid: { at: iso(SINCE + 900), totalPaid: 60, cash: 60, tip: 0, request: { serviceRevenue: 60 } } })])).toEqual([
-      { kind: "paid", at: SINCE + 900, staffId: 1, serviceAmount: 60 },
+      { kind: "paid", at: SINCE + 900, staffId: 1, serviceAmount: 60, ticketId: 77 },
     ]);
   });
   it("end to end: three walk-ins, one paid — the line the next client sees", () => {

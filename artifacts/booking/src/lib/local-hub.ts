@@ -20,6 +20,11 @@ interface HubWindow {
   __certxaHubEvent?: (json: string) => void;
 }
 export interface HubSettings { token: string; address: string | null }
+/**
+ * `pos`: POS #1 — accepts the salon's other tablets. `station`: another POS station — connects to POS #1, so
+ * the POS tablets share one turn line offline. `screen`: a customer screen or kiosk — connects to POS #1.
+ */
+export type HubRole = "pos" | "station" | "screen";
 type Listener = (message: HubMessage) => void;
 
 const settingsKey = (storeId: number) => `certxa.hub.${storeId}`;
@@ -44,7 +49,7 @@ class LocalHubClient {
   private wired = false;
   private status = "off";
   private storeId: number | null = null;
-  private role: "pos" | "screen" | null = null;
+  private role: HubRole | null = null;
 
   private post(message: Record<string, unknown>) { w().ReactNativeWebView?.postMessage(JSON.stringify(message)); }
 
@@ -90,10 +95,10 @@ class LocalHubClient {
   }
 
   /**
-   * Bring the hub up for this screen. `pos`: this tablet accepts the others. `screen`: this tablet connects
-   * to the main POS tablet. Safe to call again; does nothing outside the Android app.
+   * Bring the hub up for this screen. `pos`: this tablet accepts the others. `station` / `screen`: this tablet
+   * connects to the main POS tablet. Safe to call again (with a new role too); does nothing outside the Android app.
    */
-  async start(storeId: number, role: "pos" | "screen"): Promise<void> {
+  async start(storeId: number, role: HubRole): Promise<void> {
     if (!hasLocalHub()) return;
     this.wire();
     this.storeId = storeId;

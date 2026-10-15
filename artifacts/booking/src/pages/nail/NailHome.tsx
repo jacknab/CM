@@ -31,6 +31,8 @@ import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
 import { hardRefresh } from "@/lib/hard-refresh";
 import { installRequestDeadline } from "@/lib/request-deadline";
 import { serveKioskOverHub } from "@/lib/kiosk-hub";
+import { clearForeignTurnEvents, startTurnSharing } from "@/lib/nail-offline/turnShare";
+import { getDeviceId } from "@/lib/device-id";
 import { findClientId } from "./clientLookup";
 import { useNetworkStatus } from "@/hooks/use-network-status";
 import { syncEngine } from "@/lib/sync-engine";
@@ -44,7 +46,7 @@ import {
   ApiError, boardKey, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchCalendarBoardBookings, fetchClient, fetchUpcoming,
   clockInTech, clockOutTech, textClientReady, fetchNailConfig, fetchPosGrid, fetchScreenSettings, fetchTurn, reassignTicket, savePosGrid, saveScreenSettings, removeMarker, resolveMarkerClient, startTicket, updateTicket,
   type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData, type TechSignIn, type TurnEarned, type TurnTech,
- keptOnDevice, keepNailConfig, queueBooking, clientOnDevice, todaysBookingOnDevice, waitOnDevice,} from "./nailApi";
+ keptOnDevice, keepNailConfig, queueBooking, clientOnDevice, todaysBookingOnDevice, waitOnDevice, ownTurnEvents,} from "./nailApi";
 import { defaultPick, draftTotals, EMPTY_PICK, type DraftCustomLine, type NailPick, type TicketLine } from "./ticketDraft";
 import { useNailRealtime } from "./useNailRealtime";
 import { TicketPanel } from "./TicketPanel";
@@ -143,8 +145,19 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const navigate = useNavigate();
   const {
     registerId, needsPicker: needsRegisterPicker, registers: registerOptions, takenRegisters, selectRegister,
-    isMultiStation, currentRegisterName, resetRegister, stationsFull,
+    isMultiStation, currentRegisterName, resetRegister, stationsFull, isMainStation,
   } = useActiveRegisterId(storeId);
+  // POS #1 runs the salon's local hub; any other POS station connects to it, so the POS tablets share one turn
+  // line offline. Remembered on the tablet: after a restart with no internet it still knows which it is.
+  const hubRoleKey = `certxa.hub.role.${storeId}`;
+  const hubRole: "pos" | "station" = (() => {
+    if (isMainStation != null) return isMainStation ? "pos" : "station";
+    try { return localStorage.getItem(hubRoleKey) === "station" ? "station" : "pos"; } catch { return "pos"; }
+  })();
+  useEffect(() => {
+    if (isMainStation == null) return;
+    try { localStorage.setItem(hubRoleKey, isMainStation ? "pos" : "station"); } catch { /* storage unavailable */ }
+  }, [isMainStation, hubRoleKey]);
   // The Station tile pairs this tablet's customer screen (it used to reset the station).
   const [pairScreenOpen, setPairScreenOpen] = useState(false);
   // Same duties the calendar screen has, so /kiosk and /frontdesk behave identically when this is the screen left open all day.
@@ -262,7 +275,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   }, [refreshSettings, queryClient]);
   // This is the salon's main screen: inside the Android app it accepts the customer screen and kiosk over
   // the salon's own Wi-Fi, so they keep working with it when the internet is down.
-  useEffect(() => { void localHub.start(storeId, "pos"); }, [storeId]);
+  useEffect(() => { void localHub.start(storeId, hubRole); }, [storeId, hubRole]);
   // A waiting client was just given a technician: every POS station says so, over whatever it is showing —
   // the Tech ID keypad included — with Start Service on it. It closes by itself; the screen is left as it was.
   const [waitingAssigned, setWaitingAssigned] = useState<null | { appointmentId: number; ticketNumber: number | null; clientName: string; serviceName: string; staffName: string; started?: boolean }>(null);
@@ -485,7 +498,23 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // makes is sent to the server when the connection is back.
   const hubCatalog = useRef({ services: [] as any[], addons: [] as any[], techs: [] as TurnTech[] });
   hubCatalog.current = { services: (services ?? []) as any[], addons: activeAddons, techs: techList };
-  useEffect(() => serveKioskOverHub({
+  // Two or more POS tablets offline at once share one turn line over the salon hub (lib/nail-offline/turnShare.ts):
+  // each sends what it did, and redraws its line when another's arrives. Online the server's line is used.
+  useEffect(() => {
+    const sharing = startTurnSharing({
+      storeId, deviceId: getDeviceId(), ownEvents: () => ownTurnEvents(storeId), isOffline: () => syncEngine.isOffline(),
+      onHeard: () => queryClient.invalidateQueries({ queryKey: ["/api/turn/eligibility"] }),
+    });
+    const offChange = nailOffline.onChange(() => sharing.share());
+    const offStatus = syncEngine.onStatusChange((status) => {
+      if (status === "offline") sharing.share();
+      else if (status === "online") clearForeignTurnEvents(storeId);
+    });
+    return () => { sharing.stop(); offChange(); offStatus(); };
+  }, [storeId, queryClient]);
+
+  // Only POS #1 answers (one check-in, not one per POS tablet).
+  useEffect(() => hubRole !== "pos" ? undefined : serveKioskOverHub({
     lookup: async (phone) => {
       const digits = phone.replace(/\D/g, "").slice(-10);
       if (digits.length !== 10) return { found: false };
@@ -554,7 +583,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       return { success: true, ticketNumber: made.ticketNumber ?? null, clientName: client.name, staffName: made.staffName ?? null };
     },
     wait: () => waitOnDevice(storeId),
-  }), [storeId, timezone, queryClient]);
+  }), [storeId, timezone, queryClient, hubRole]);
   const { data: linkedAddons } = useAddonsForService(service?.id ?? null);
   const suggestedAddons = useMemo(() => {
     const linked = ((linkedAddons ?? []) as any[]).filter((a) => a.isActive !== false);
