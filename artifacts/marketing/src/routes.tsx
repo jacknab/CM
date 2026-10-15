@@ -1,5 +1,4 @@
 import { RouteObject } from 'react-router';
-import { lazy } from 'react';
 import HomePage from './pages/index';
 import FeaturesPage from './pages/features';
 import PricingPage from './pages/pricing';
@@ -9,6 +8,8 @@ import AboutPage from './pages/about';
 import BlogPage from './pages/blog';
 import BookingPage from './pages/booking';
 import AutumnPage from './pages/autumn';
+import VietnameseNailSalonSoftwarePage from './pages/vietnamese-nail-salon-software';
+import PhanMemTiemNailPage from './pages/vi/phan-mem-tiem-nail';
 import CareersPage from './pages/careers';
 import ChangelogPage from './pages/changelog';
 import RoadmapPage from './pages/roadmap';
@@ -40,6 +41,14 @@ export const routes: RouteObject[] = [
   {
     path: '/features',
     element: <FeaturesPage />,
+  },
+  {
+    path: '/vietnamese-nail-salon-software',
+    element: <VietnameseNailSalonSoftwarePage />,
+  },
+  {
+    path: '/vi/phan-mem-tiem-nail',
+    element: <PhanMemTiemNailPage />,
   },
   {
     path: '/pricing',

@@ -51,6 +51,8 @@ const jsonLd = {
       url: `${SITE}/`,
       applicationCategory: 'BusinessApplication',
       operatingSystem: 'Web',
+      // The salon screens run in English, Vietnamese and Spanish (see /vietnamese-nail-salon-software).
+      inLanguage: ['en', 'vi', 'es'],
       description:
         'All-in-one salon booking software and POS system for nail salons, hair salons, barbershops, spas, massage studios, hair removal studios, and braid and weave salons. Includes online booking, self check-in kiosk, turn rotation, loyalty programs, and Autumn AI receptionist.',
       featureList: [

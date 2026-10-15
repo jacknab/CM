@@ -40,6 +40,8 @@ const DEFAULT_PATHS = [
   "/careers",
   "/changelog",
   "/roadmap",
+  "/vietnamese-nail-salon-software",
+  "/vi/phan-mem-tiem-nail",
 ];
 
 /**
@@ -53,7 +55,7 @@ const MOVED: Record<string, string> = {
   "/overview": "/features",
   "/salonos": "/features",
   "/checkin-kiosk": "/features",
-  "/nail-salon-software": "/features",
+  "/nail-salon-software": "/vietnamese-nail-salon-software",
   "/barbershop-software": "/features",
   "/hair-salon-software": "/features",
   "/client-management": "/features",
@@ -288,7 +290,9 @@ export function createMarketingSite(): Router {
         `<script>window.__SITE_PATHS__=${JSON.stringify([...owned])}</script>`;
       const page = template
         .replace("<!--app-head-->", () => head)
-        .replace("<!--app-html-->", () => applyInterimLinks(result.html, owned));
+        .replace("<!--app-html-->", () => applyInterimLinks(result.html, owned))
+        // Pages under /vi/ are written in Vietnamese: say so on the page itself, for search engines and screen readers.
+        .replace(/<html lang="en"/, pagePath.startsWith("/vi/") ? '<html lang="vi"' : '<html lang="en"');
       res
         .status(result.status)
         .set("Content-Type", "text/html; charset=utf-8")

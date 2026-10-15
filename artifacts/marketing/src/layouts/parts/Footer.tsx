@@ -6,6 +6,8 @@ const footerLinks: Record<string, { label: string; href: string | null }[]> = {
   Product: [
     { label: 'Features', href: '/features' },
     { label: 'Pricing', href: '/pricing' },
+    { label: 'Vietnamese Nail Salons', href: '/vietnamese-nail-salon-software' },
+    { label: 'Phần mềm tiệm nail', href: '/vi/phan-mem-tiem-nail' },
     { label: 'Changelog', href: '/changelog' },
     { label: 'Roadmap', href: '/roadmap' },
   ],
