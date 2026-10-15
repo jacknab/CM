@@ -59,21 +59,12 @@ export async function sessionCoversStore(req: Request, storeId: number): Promise
   return false;
 }
 
-async function kioskSwitchedOn(storeId: number): Promise<boolean> {
-  const r = await pool.query(`SELECT preferences FROM store_settings WHERE store_id = $1 LIMIT 1`, [storeId]);
-  try {
-    const prefs = r.rows[0]?.preferences ? JSON.parse(r.rows[0].preferences) : {};
-    return prefs?.kioskSettings?.kioskEnabled !== false;
-  } catch {
-    return true;
-  }
-}
-
 /**
  * Answers the request itself and returns false when the call is not allowed; true to carry on.
- * kioskOnly: the call exists only for the self check-in kiosk (check-in, waitlist, missed-you text).
+ * The kiosk stands inside the salon, so it is never "closed": only a suspended account, an untrusted
+ * network or an unpaired device stops it.
  */
-export async function kioskGate(req: Request, res: Response, store: StoreRow, opts: { kioskOnly?: boolean } = {}): Promise<boolean> {
+export async function kioskGate(req: Request, res: Response, store: StoreRow): Promise<boolean> {
   const status = String(store.accountStatus ?? "active").toLowerCase();
   if (status === "suspended" || status === "canceled" || status === "cancelled") {
     res.status(403).json({ accountSuspended: true, error: "This business is not currently accepting check-ins." });
@@ -84,12 +75,6 @@ export async function kioskGate(req: Request, res: Response, store: StoreRow, op
   if (!trusted) {
     res.status(403).json({ code: "untrusted_network", error: "Check-in is only available on the salon's own network." });
     return false;
-  }
-  if (opts.kioskOnly) {
-    if (Number(store.kioskPermitted ?? 0) !== 1 || !(await kioskSwitchedOn(store.id))) {
-      res.status(403).json({ kioskClosed: true, error: "Self check-in is not available right now. Please see the front desk." });
-      return false;
-    }
   }
   if (!(await deviceAuthorizedFor(req, store.id))) {
     res.status(401).json({ code: "device_not_paired", error: "This device isn't set up for check-in yet." });

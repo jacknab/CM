@@ -1587,11 +1587,22 @@ async function repairTwilioMessagingServiceInboundWebhook() {
 
       const indexHtmlPath = path.resolve(distPath, "index.html");
 
-      // Load SSR render function and template once at startup (not per-request)
+      // Load SSR render function once at startup (not per-request). The page template is read again whenever
+      // index.html changes: a web deploy copies a new one in while the API keeps running, and a template held
+      // from startup kept serving the previous build's asset names until the API happened to be restarted.
       let ssrRender: ((url: string) => { html: string }) | null = null;
-      let indexTemplate: string | null = fs.existsSync(indexHtmlPath)
-        ? fs.readFileSync(indexHtmlPath, "utf-8")
-        : null;
+      let templateState: { mtimeMs: number; checkedAt: number; html: string | null } = { mtimeMs: -1, checkedAt: 0, html: null };
+      const currentIndexTemplate = (): string | null => {
+        const now = Date.now();
+        if (now - templateState.checkedAt < 2000) return templateState.html;
+        templateState.checkedAt = now;
+        try {
+          const { mtimeMs } = fs.statSync(indexHtmlPath);
+          if (mtimeMs !== templateState.mtimeMs) templateState = { mtimeMs, checkedAt: now, html: fs.readFileSync(indexHtmlPath, "utf-8") };
+        } catch { /* missing: keep what was last read */ }
+        return templateState.html;
+      };
+      const indexTemplate = currentIndexTemplate();
 
       if (fs.existsSync(ssrBundlePath) && indexTemplate) {
         try {
@@ -1609,6 +1620,7 @@ async function repairTwilioMessagingServiceInboundWebhook() {
         if (req.path.startsWith("/api/")) return next();
         if (!SSR_ROUTES.has(req.path)) return next();
         if (isRentalsHost(req)) return next();
+        const indexTemplate = currentIndexTemplate();
         if (!ssrRender || !indexTemplate) return next();
 
         try {
@@ -1633,6 +1645,7 @@ async function repairTwilioMessagingServiceInboundWebhook() {
         // for image requests (broken <img> shows a blank icon, not a silent HTML response).
         if (req.path.startsWith("/uploads/")) return next();
         const seo = isRentalsHost(req) ? undefined : SEO_CONFIG[req.path];
+        const indexTemplate = currentIndexTemplate();
         if (seo && indexTemplate) {
           res
             .status(200)

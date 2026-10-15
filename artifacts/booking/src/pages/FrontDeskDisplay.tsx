@@ -50,7 +50,7 @@ import { buildNativeReceiptPayload } from "../lib/receiptPayload";
 type Screen =
   | "idle" | "phone" | "loading"
   | "appointment_confirmed" | "checked_in_generic" | "name_entry" | "service_select"
-  | "error" | "closed" | "suspended" | "pair";
+  | "error" | "suspended" | "pair";
 
 /** POS-driven checkout overlay states (render over every check-in screen). */
 type PosCheckout = null | "cart" | "tip" | "await_payment" | "thankyou";
@@ -397,12 +397,10 @@ export default function FrontDeskDisplay() {
       timezone: d.timezone ?? null,
     });
     if (initial) {
-      if (d.kioskEnabled === false) setScreen("closed");
-      else {
-        setScreen("idle");
-        // Client lookups need a device the salon set up: signed in (the Certxa app), or paired once.
-        if (slug) isKioskDeviceAuthorized(slug).then(ok => { if (!ok) setScreen("pair"); });
-      }
+      // The customer screen stands inside the salon: never a "closed" screen.
+      setScreen("idle");
+      // Client lookups need a device the salon set up: signed in (the Certxa app), or paired once.
+      if (slug) isKioskDeviceAuthorized(slug).then(ok => { if (!ok) setScreen("pair"); });
     }
   }, []);
 
@@ -1834,17 +1832,6 @@ export default function FrontDeskDisplay() {
 
   if (screen === "pair" && slug) return (
     <KioskPairing slug={slug} storeName={storeConfig?.name} onPaired={() => setScreen("idle")} />
-  );
-
-  if (screen === "closed") return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center gap-8" style={{ ...NO_SELECT, background: BG }}>
-      <div className="w-32 h-32 rounded-full flex items-center justify-center text-6xl shadow-lg" style={{ background: SURFACE, border: `2px solid ${BORDER}` }}>🔒</div>
-      <div className="text-center space-y-3">
-        <h1 className="text-6xl font-black" style={{ color: TEXT }}>{storeConfig?.name ?? "Check-in"}</h1>
-        <p className="text-2xl" style={{ color: MUTED }}>{t.weClosed}</p>
-        <p className="text-lg" style={{ color: SUBTLE }}>{t.seeFrontDesk}</p>
-      </div>
-    </div>
   );
 
   if (screen === "idle") return (

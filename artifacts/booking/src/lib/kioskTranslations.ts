@@ -9,7 +9,6 @@ export interface KioskStrings {
   kioskReady: string;
 
   // Closed
-  weClosed: string;
   seeFrontDesk: string;
 
   // Loading / generic
@@ -162,7 +161,6 @@ const en: KioskStrings = {
   defaultSubText: "Your style journey starts here",
   tapToBegin: "👆  TAP ANYWHERE TO BEGIN",
   kioskReady: "Kiosk Ready",
-  weClosed: "We're closed right now",
   seeFrontDesk: "Please see a team member at the front desk",
   oneMoment: "One moment…",
   somethingWrong: "Something went wrong.",
@@ -284,7 +282,6 @@ const es: KioskStrings = {
   defaultSubText: "Tu viaje de estilo comienza aquí",
   tapToBegin: "👆  TOCA PARA COMENZAR",
   kioskReady: "Kiosk Listo",
-  weClosed: "Estamos cerrados ahora",
   seeFrontDesk: "Por favor hable con un miembro del equipo",
   oneMoment: "Un momento…",
   somethingWrong: "Algo salió mal.",
@@ -406,7 +403,6 @@ const vi: KioskStrings = {
   defaultSubText: "Hành trình làm đẹp của bạn bắt đầu tại đây",
   tapToBegin: "👆  CHẠM VÀO ĐỂ BẮT ĐẦU",
   kioskReady: "Kiosk Sẵn Sàng",
-  weClosed: "Chúng tôi đã đóng cửa",
   seeFrontDesk: "Vui lòng gặp nhân viên ở quầy lễ tân",
   oneMoment: "Một chút…",
   somethingWrong: "Đã xảy ra lỗi.",
@@ -528,7 +524,6 @@ const zh: KioskStrings = {
   defaultSubText: "您的美甲之旅从这里开始",
   tapToBegin: "👆  点击任意处开始",
   kioskReady: "服务台就绪",
-  weClosed: "我们现在已关门",
   seeFrontDesk: "请前往前台联系工作人员",
   oneMoment: "请稍候…",
   somethingWrong: "出现错误，请重试。",
@@ -650,7 +645,6 @@ const ko: KioskStrings = {
   defaultSubText: "당신의 스타일 여정이 시작됩니다",
   tapToBegin: "👆  화면을 탭하여 시작하세요",
   kioskReady: "키오스크 준비 완료",
-  weClosed: "현재 영업 중이 아닙니다",
   seeFrontDesk: "프런트 데스크의 직원에게 문의해 주세요",
   oneMoment: "잠시만요…",
   somethingWrong: "오류가 발생했습니다.",

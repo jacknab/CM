@@ -23502,17 +23502,8 @@ or
       const prefs = settingsRow?.preferences ? JSON.parse(settingsRow.preferences as string) : {};
       const ks = prefs.kioskSettings ?? {};
 
-      if (ks.kioskEnabled === false) {
-        return res.json({
-          store: { id: store.id, name: store.name, phone: store.phone, address: store.address },
-          services: [],
-          kioskEnabled: false,
-          welcomeHeadline: ks.welcomeHeadline ?? null,
-          loyaltyPromoText: ks.loyaltyPromoText ?? null,
-          categoryImages: ks.categoryImages ?? {},
-          timezone: store.timezone ?? "UTC",
-        });
-      }
+      // The kiosk stands inside the salon: it always serves check-in (no "closed" state). Neither the owner's
+      // kiosk switch nor the admin's kiosk permission (the Android app's POS → kiosk switch) closes it.
 
       const storeServices = await db.select({
         id: services.id,
@@ -24210,7 +24201,7 @@ or
       const nailArtEffectId = toIdOrNull(rawNailArtEffectId);
       const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
       if (!store) return res.status(404).json({ error: "Store not found" });
-      if (!(await kioskGate(req, res, store as any, { kioskOnly: true }))) return;
+      if (!(await kioskGate(req, res, store as any))) return;
 
       // What is being booked comes from this salon's catalog: the browser only says which services,
       // options and add-ons. Names, prices and durations are the catalog's (lib/kioskAccess.ts).
@@ -24723,7 +24714,7 @@ or
 
       const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
       if (!store) return res.status(404).json({ error: "Store not found" });
-      if (!(await kioskGate(req, res, store as any, { kioskOnly: true }))) return;
+      if (!(await kioskGate(req, res, store as any))) return;
       if (!claimMissedYouText(store.id, e164MissedPhone)) return res.json({ success: true, skipped: true });
 
       const bookingLink = `https://certxa.com/book/${slug}`;
@@ -24751,7 +24742,7 @@ or
 
       const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
       if (!store) return res.status(404).json({ error: "Store not found" });
-      if (!(await kioskGate(req, res, store as any, { kioskOnly: true }))) return;
+      if (!(await kioskGate(req, res, store as any))) return;
 
       const todayStr = new Date().toISOString().split("T")[0];
 

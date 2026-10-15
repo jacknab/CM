@@ -49,9 +49,7 @@ export default function KioskSetup() {
       if (res.status === 404) { setError("That salon slug wasn't found. Check the spelling and try again."); return; }
       if (!res.ok) { setError("Couldn't reach the server to check that — try again."); return; }
       const data = await res.json().catch(() => null);
-      if (data?.kioskPermitted === false) { setError(`The kiosk isn't enabled for "${s}". Contact Certxa support to have it turned on.`); return; }
       if (data?.accountSuspended) { setError(`"${s}"'s account is currently suspended — contact support before setting up this device.`); return; }
-      if (data?.kioskEnabled === false) { setError(`Self check-in isn't turned on for "${s}" yet — enable it in Settings first, or set this device up as something else.`); return; }
 
       const path = `/kiosk/${s}`;
       try { localStorage.setItem(STORAGE_KEY, path); } catch { /* ignore — still navigate this once */ }

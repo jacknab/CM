@@ -27,7 +27,7 @@ type Screen =
   | "name_entry" | "service_type" | "services" | "service_options"
   | "nail_size" | "nail_shape" | "nail_effects"
   | "addons" | "stylist" | "review" | "ticket"
-  | "appointment_confirmed" | "error" | "closed" | "wait_confirm" | "fully_booked"
+  | "appointment_confirmed" | "error" | "wait_confirm" | "fully_booked"
   | "waitlist_added" | "no_thanks" | "suspended" | "pair";
 
 interface NailOption {
@@ -434,14 +434,6 @@ function KioskCheckInScreens() {
       if (isInitialLoad) { setError(d.error); setScreen("error"); }
       return;
     }
-    // The account is not permitted to use the kiosk (a platform-admin setting, checked on every
-    // refresh so switching it off closes a kiosk that is already running).
-    if (d.kioskPermitted === false) {
-      setStoreId(d.store?.id ?? d.storeId ?? null);
-      setStoreConfig(d.store);
-      setScreen("closed");
-      return;
-    }
     setStoreId(d.store?.id ?? d.storeId ?? null);
     setStoreConfig(d.store);
     setAllServices(d.services || []);
@@ -456,12 +448,10 @@ function KioskCheckInScreens() {
     try { localStorage.setItem(nailLookKey(), nailLook ? "1" : "0"); } catch { /* private mode */ }
     if (nailLook !== NAIL_LOOK) { applyKioskPalette(nailLook); setLookTick((n) => n + 1); }
     if (isInitialLoad) {
-      if (d.kioskEnabled === false) setScreen("closed");
-      else {
-        setScreen("idle");
-        // Check-in calls need a device the salon set up: signed in (the Certxa app), or paired once.
-        if (slug) isKioskDeviceAuthorized(slug).then(ok => { if (!ok) setScreen("pair"); });
-      }
+      // The kiosk stands inside the salon: never a "closed" screen.
+      setScreen("idle");
+      // Check-in calls need a device the salon set up: signed in (the Certxa app), or paired once.
+      if (slug) isKioskDeviceAuthorized(slug).then(ok => { if (!ok) setScreen("pair"); });
     }
   }, []);
 
@@ -626,7 +616,6 @@ function KioskCheckInScreens() {
   const handleGateRefusal = (status: number, d: any): boolean => {
     if (d?.accountSuspended) { setScreen("suspended"); return true; }
     if (status === 401 && d?.code === "device_not_paired") { setScreen("pair"); return true; }
-    if (d?.kioskClosed) { setScreen("closed"); return true; }
     return false;
   };
 
@@ -1200,20 +1189,6 @@ function KioskCheckInScreens() {
 
   if (screen === "pair" && slug) return (
     <KioskPairing slug={slug} storeName={storeConfig?.name} onPaired={() => setScreen("idle")} />
-  );
-
-  // ── CLOSED ──────────────────────────────────────────────────────────────────
-  if (screen === "closed") return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center gap-8"
-      style={{ ...NO_SELECT, background: BG }}>
-      <div className="w-32 h-32 rounded-full flex items-center justify-center text-6xl shadow-lg"
-        style={{ background: SURFACE, border: `2px solid ${BORDER}` }}>{G("🔒")}</div>
-      <div className="text-center space-y-3">
-        <h1 className="text-6xl font-black" style={{ color: TEXT }}>{storeConfig?.name ?? "Check-in"}</h1>
-        <p className="text-2xl" style={{ color: MUTED }}>{t.weClosed}</p>
-        <p className="text-lg" style={{ color: SUBTLE }}>{t.seeFrontDesk}</p>
-      </div>
-    </div>
   );
 
   // ── IDLE ────────────────────────────────────────────────────────────────────
