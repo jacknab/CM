@@ -78,6 +78,9 @@ export interface BoardDayBooking {
   /** When a walk-in arrived (kiosk check-in, or the ticket being made at the desk). `date` moves to the start
    *  time once the service starts, so it can't say when they came in. */
   arrivedAt?: string;
+  /** When a completed visit finished (checked out). Absent for a visit that isn't completed, or one completed
+   *  before every checkout path recorded the time. */
+  completedAt?: string;
 }
 
 export interface TechDayStats {

@@ -1080,6 +1080,9 @@ export class DatabaseStorage implements IStorage {
       const snap = await snapshotCompletionFields(id);
       if (snap.servicePrice   !== undefined) (updateData as any).servicePrice   = snap.servicePrice;
       if (snap.commissionRate !== undefined) (updateData as any).commissionRate = snap.commissionRate;
+      // When the visit finished. Every way of completing an appointment comes through here, and the
+      // Completed list, reports and the turn line all read completed_at.
+      if (!wasAlreadyCompleted && (updateData as any).completedAt == null) (updateData as any).completedAt = new Date();
     }
     // Visit notes/AI profile note also log no-shows (not just completions) so
     // the note can tell a nail tech "their last appointment was a no-show" —

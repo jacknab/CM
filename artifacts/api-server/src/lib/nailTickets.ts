@@ -1018,6 +1018,9 @@ export interface BoardDayBooking {
   /** When a walk-in arrived (kiosk check-in, or the ticket being made at the desk). `date` moves to the start
    *  time once the service starts, so it can't say when they came in. */
   arrivedAt?: string;
+  /** When a completed visit finished (checked out). Absent for a visit that isn't completed, or one completed
+   *  before every checkout path recorded the time. */
+  completedAt?: string;
 }
 
 /** Per-technician numbers for the Techs tab. */
@@ -1195,7 +1198,8 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
               COALESCE(s.name, 'Service') AS service_name,
               st.name AS staff_name,
               ${walkInSQL("a")} AS is_walk_in,
-              COALESCE(a.checked_in_at, a.created_at AT TIME ZONE 'UTC') AS arrived_at
+              COALESCE(a.checked_in_at, a.created_at AT TIME ZONE 'UTC') AS arrived_at,
+              a.completed_at
          FROM appointments a
          LEFT JOIN clients c ON c.id = a.customer_id
          LEFT JOIN services s ON s.id = a.service_id
@@ -1210,7 +1214,8 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
               'Service not selected' AS service_name,
               NULL::text AS staff_name,
               TRUE AS is_walk_in,
-              k.created_at AS arrived_at
+              k.created_at AS arrived_at,
+              NULL::timestamptz AS completed_at
          FROM kiosk_checkins k
         WHERE k.store_id = $1
           AND k.appointment_id IS NULL
@@ -1231,6 +1236,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
     staffName: r.staff_name ?? null,
     isWalkIn: r.is_walk_in === true,
     ...(r.is_walk_in === true && r.arrived_at ? { arrivedAt: new Date(r.arrived_at).toISOString() } : {}),
+    ...(r.status === "completed" && r.completed_at ? { completedAt: new Date(r.completed_at).toISOString() } : {}),
   }));
 
   // Who did how much today, and since when each technician has been free.

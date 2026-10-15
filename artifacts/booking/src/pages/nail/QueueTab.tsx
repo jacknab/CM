@@ -342,6 +342,12 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
   // The day's appointment / no-show / walk-in / completed lists — 16 a screen, more on the next.
   const [detailPage, setDetailPage] = useState(0);
   // "TODAY", "TOMORROW", else "SAT, OCT 18" — in the salon's time zone.
+  // The time each list is about: when a walk-in arrived, when a completed visit finished ("—" when that was
+  // never recorded), otherwise the booked time.
+  const detailTime = (booking: BoardDayBooking, kind: DetailKind) => {
+    const iso = kind === "walk-ins" ? booking.arrivedAt ?? booking.date : kind === "completed" ? booking.completedAt : booking.date;
+    return iso ? fmtTime(+new Date(iso), timezone || undefined) : "—";
+  };
   const visitDay = (iso: string) => {
     const tz = timezone || undefined;
     const key = (ms: number) => new Date(ms).toLocaleDateString("en-CA", { timeZone: tz });
@@ -388,7 +394,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
                 <em className="q-unified-pill" data-kind={kind}>{kind === "walk-ins" ? walkInState(booking.status) : detail.label}</em>
               </div>
               <div className="q-unified-main">
-                <div className="q-unified-clock"><Clock size={25} strokeWidth={1.8} /><div><small>{kind === "completed" ? "COMPLETED" : kind === "no-shows" ? "MISSED" : kind === "appointments" ? visitDay(booking.date) : kind === "walk-ins" ? "WALKED IN" : "APPOINTMENT"}</small><b>{fmtTime(+new Date(kind === "walk-ins" ? booking.arrivedAt ?? booking.date : booking.date), timezone || undefined)}</b></div></div>
+                <div className="q-unified-clock"><Clock size={25} strokeWidth={1.8} /><div><small>{kind === "completed" ? "COMPLETED" : kind === "no-shows" ? "MISSED" : kind === "appointments" ? visitDay(booking.date) : kind === "walk-ins" ? "WALKED IN" : "APPOINTMENT"}</small><b>{detailTime(booking, kind)}</b></div></div>
                 <div className="q-unified-side"><small>DURATION</small><b>{booking.duration > 0 ? `${booking.duration} min` : "—"}</b></div>
               </div>
               <div className="q-unified-footer">
