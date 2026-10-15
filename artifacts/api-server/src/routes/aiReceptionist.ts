@@ -678,7 +678,7 @@ You help callers manage their appointments — book new ones, cancel existing on
 Be warm, calm, efficient, and natural. Sound like a knowledgeable employee working at the front desk, not an outside assistant or a search service.
 Keep responses concise and action-oriented.
 Answer ordinary questions confidently and directly from the salon facts, service menu, pricing, staff list, amenities, and hours included below.
-Never narrate information retrieval. Do not say "let me check," "let me see," "I'll check," "I'll look that up," "I'll pull that up," "one moment," "please hold," or similar progress filler. Call read-only tools silently, then answer with the result.
+Never narrate information retrieval. Do not say "let me check," "let me see," "I'll check," "I'll look that up," "I'll pull that up," "one moment," "please hold," or similar progress filler on your own. Call read-only tools silently, then answer with the result. The one exception: when a SYSTEM note says the caller is waiting, say the single short holding line it asks for.
 
 # Language
 English is the default response language.
@@ -788,7 +788,7 @@ ${availabilitySnapshot ? `\n${availabilitySnapshot}\n` : ""}
 
 ▶ RULE — NO LOOKUP PREAMBLES OR PROGRESS NARRATION:
   Perform tool calls silently. Do not announce that you are checking, looking, pulling up, verifying, searching, or processing anything.
-  Never use stalling phrases such as "let me check," "let me see," "I'll check," "I'll look that up," "I'll pull that up," "one moment," or "please hold."
+  Never use stalling phrases such as "let me check," "let me see," "I'll check," "I'll look that up," "I'll pull that up," "one moment," or "please hold" on your own — only the one short holding line a SYSTEM note asks for when the caller has been waiting.
   For known general information, answer immediately like an employee who already knows the salon. For live results, call the tool silently and lead with the useful answer.
 
 ═══ HOW TO HANDLE EACH SCENARIO ═══
@@ -1159,7 +1159,7 @@ For "what time do you open / close" on a given day, read that day's line above. 
 Services and prices:
 ${serviceList}
 ${staffBlock ? `${staffBlock}\n` : ""}${amenitiesBlock ? `${amenitiesBlock}\n` : ""}Answer general questions directly and confidently from the facts above. Delegate only live availability, technicians' schedules (when someone works or is in), appointment records, and account-changing actions to the backend — the backend has every technician's real schedule, so never tell a caller you don't have it.
-Backend work is silent. Never say "let me check," "let me see," "I'll check," "I'll look that up," "I'll pull that up," "one moment," "please hold," or anything similar. Do not narrate tools, searches, systems, or waiting. When a result arrives, lead immediately with the answer.
+Backend work is silent. Do not say "let me check," "let me see," "I'll check," "I'll look that up," "I'll pull that up," "one moment," "please hold," or anything similar on your own, and never narrate tools, searches or systems. When a SYSTEM note says the caller is waiting, say one short natural holding line ("Okay, one moment"), once. When a SYSTEM note says the caller has gone quiet, check in and ask your question again in other words, like a person on the phone. When a result arrives, lead immediately with the answer.
 Never invent or guess an appointment time, price, ID, or add-on. Never say a booking, cancellation, reschedule, or add-on succeeded unless the backend result confirms it.
 Never say you'll transfer the call or that someone will call the caller back.`;
 
@@ -3262,6 +3262,8 @@ function createCallSession(twilioWs: WebSocket) {
   // 20ms frame (line hiss, comfort noise, a click) must not clear a full sentence.
   let interruptVoicedStreak = 0;
   const INTERRUPT_VOICED_FRAMES_REQUIRED = 5; // ~100ms of sustained energy
+  let callerSoundStreak = 0;
+  const CALLER_SOUND_FRAMES = 5; // ~100ms of voice = the caller is there
 
   // Outbound audio to Twilio must be paced to real time (one 20ms frame every
   // 20ms) rather than dumped in a burst the instant a delta arrives — Twilio
@@ -3300,6 +3302,8 @@ function createCallSession(twilioWs: WebSocket) {
             ).toString("base64")
           : queuedAiFrame!;
         twilioWs.send(JSON.stringify({ event: "media", streamSid, media: { payload } }));
+        // Autumn's voice actually going out to the phone (not just generated): the watchdog times silences from here.
+        if (queuedAiFrame) watchdog.onAiPlayback();
         if (ambienceCursor) {
           ambienceOutboundFrameCount++;
           if (ambienceOutboundFrameCount === 1 || ambienceOutboundFrameCount % 250 === 0) {
@@ -3607,6 +3611,7 @@ function createCallSession(twilioWs: WebSocket) {
     if (type === "session.input_transcript.delta") {
       if (pendingAutumnTranscript) flushTranscript("autumn");
       pendingCallerTranscript += (msg.delta as string | undefined) ?? "";
+      if (((msg.delta as string | undefined) ?? "").trim()) watchdog.onCallerWords();
 
       if (salon) {
         const parsed = parseIntent(pendingCallerTranscript, salon.services);
@@ -3651,6 +3656,7 @@ function createCallSession(twilioWs: WebSocket) {
     if (type === "session.output_transcript.delta") {
       if (pendingCallerTranscript) flushTranscript("caller");
       pendingAutumnTranscript += (msg.delta as string | undefined) ?? "";
+      watchdog.onAutumnText(pendingAutumnTranscript);
       return;
     }
 
@@ -4334,8 +4340,14 @@ function createCallSession(twilioWs: WebSocket) {
       // buffered playback so the caller doesn't keep hearing stale audio.
       // Requires several consecutive voiced frames (not just one) so a stray noise
       // spike on the line can't repeatedly wipe Autumn's audio mid-sentence.
+      // Any real sound from the caller (a short run of voiced frames, not one click) tells the watchdog they are
+      // there, so Autumn does not ask "are you still there?" over someone who is answering.
+      const callerVoiced = hasVoiceInTwilioUlaw(payload);
+      callerSoundStreak = callerVoiced ? callerSoundStreak + 1 : 0;
+      if (callerSoundStreak >= CALLER_SOUND_FRAMES) watchdog.onCallerSound();
+
       if (aiSpeaking) {
-        if (hasVoiceInTwilioUlaw(payload)) {
+        if (callerVoiced) {
           interruptVoicedStreak++;
           if (interruptVoicedStreak >= INTERRUPT_VOICED_FRAMES_REQUIRED) {
             interruptVoicedStreak = 0;

@@ -38,6 +38,14 @@ const TICK_MS                   = 500;
 const POST_TOOL_SILENCE_MS      = 4_000;  // no output audio this long after a tool result → nudge
 const NUDGE_DEBOUNCE_MS         = 5_000;  // minimum gap between consecutive nudges
 const FAIL_SAFE_THRESHOLD       = 2;      // failures needed to enter fail-safe mode
+/** The caller said something and Autumn has not started answering for this long → one short holding line. */
+const HOLD_AFTER_MS             = 3_500;
+/** Autumn finished speaking (on the phone, not just generated) and the caller made no sound for this long → ask again. */
+const REPROMPT_AFTER_MS         = 5_000;
+/** At most this many re-asks in a row without the caller saying anything. */
+const MAX_REPROMPTS             = 2;
+/** Autumn's last words were a goodbye: silence after that is the call ending, not a question going unanswered. */
+const GOODBYE_RE = /\b(good ?bye|bye|have a (great|good|nice|wonderful) (day|night|evening|one)|take care|see you (soon|then|tomorrow))\b[^?]*$/i;
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -67,6 +75,20 @@ export class SilenceWatchdog {
 
   // ── Nudge debounce ───────────────────────────────────────────────────────────
   private lastNudgeAt = 0;
+
+  // ── Conversation flow (no dead air) ─────────────────────────────────────────
+  /** Last time a frame of Autumn's voice actually went out to the phone. */
+  private lastAiPlaybackAt  = 0;
+  /** Last time the caller made a sound on the line (several voiced frames in a row). */
+  private lastCallerSoundAt = 0;
+  /** Last time the caller's words were heard (transcript). */
+  private lastCallerWordsAt = 0;
+  private holdingLineSent   = false;
+  private holdingSentAt     = 0;
+  /** Separate stretches of Autumn's speech since the holding line (the holding line itself, then the answer). */
+  private burstsSinceHold   = 0;
+  private repromptCount     = 0;
+  private lastAutumnText    = "";
 
   // ── Silence event log (L9) ───────────────────────────────────────────────────
   private readonly pendingEvents: SilenceEvent[] = [];
@@ -116,13 +138,40 @@ export class SilenceWatchdog {
   }
 
   onAiAudioDelta(): void {
-    this.lastAiAudioAt = Date.now();
+    const now = Date.now();
+    if (this.holdingSentAt && now - this.lastAiAudioAt > 1_500) this.burstsSinceHold++;
+    this.lastAiAudioAt = now;
     // Output audio arrived — whatever we were waiting on has resolved.
     this.toolResultDeliveredAt = 0;
   }
 
   onToolStart(): void {
     this.toolInProgress = true;
+  }
+
+  /** A frame of Autumn's voice was just sent to the phone. */
+  onAiPlayback(): void {
+    this.lastAiPlaybackAt = Date.now();
+  }
+
+  /** The caller made a sound on the line. Any sound means they are there, so no re-ask. */
+  onCallerSound(): void {
+    this.lastCallerSoundAt = Date.now();
+  }
+
+  /** The caller's words came through: a new turn of theirs. */
+  onCallerWords(): void {
+    this.lastCallerWordsAt = Date.now();
+    this.lastCallerSoundAt = this.lastCallerWordsAt;
+    this.holdingLineSent = false;
+    this.holdingSentAt = 0;
+    this.burstsSinceHold = 0;
+    this.repromptCount = 0;
+  }
+
+  /** What Autumn has just been saying (her live transcript), to recognise a goodbye. */
+  onAutumnText(text: string): void {
+    this.lastAutumnText = text.slice(-200);
   }
 
   onToolEnd(success: boolean): void {
@@ -182,6 +231,7 @@ export class SilenceWatchdog {
     if (this.destroyed || !this.sessionActive || !this.sendFn) return;
 
     const now = Date.now();
+    this.checkConversationFlow(now);
 
     // Post-tool-result dead air: a tool result was delivered to the backend but
     // no output audio has arrived since. Nudge once via session.instructions.append
@@ -213,6 +263,71 @@ export class SilenceWatchdog {
           data:      { layer: "POST_TOOL_SILENCE", silenceDurationMs: silenceMs },
         });
       }
+    }
+  }
+
+  /**
+   * The two kinds of dead air a caller notices on a recording:
+   *  - they spoke and Autumn says nothing while she works it out → one short holding line, so they know she's there;
+   *  - Autumn asked something and the caller says nothing → after a few seconds she checks in and asks again in
+   *    other words, like a person on the phone would (at most twice, and never after a goodbye).
+   */
+  private checkConversationFlow(now: number): void {
+    if (!this.sendFn || now - this.lastNudgeAt < NUDGE_DEBOUNCE_MS) return;
+
+    // 1. The caller's turn is over and nothing has come back yet.
+    const callerTurnAt = Math.max(this.lastCallerWordsAt, this.lastCallerSoundAt);
+    if (
+      !this.holdingLineSent &&
+      this.lastCallerWordsAt > this.lastAiPlaybackAt &&
+      this.lastAiAudioAt < this.lastCallerWordsAt &&
+      now - callerTurnAt > HOLD_AFTER_MS
+    ) {
+      this.holdingLineSent = true;
+      this.holdingSentAt = now;
+      this.burstsSinceHold = 0;
+      this.nudge(now, "CALLER_WAITING", now - callerTurnAt,
+        "SYSTEM: The caller finished speaking a few seconds ago and has heard nothing back, so they may think the call dropped. " +
+        "Say one short, natural holding line right now, like \"Okay, one moment\" or \"Sure, give me just a second\", " +
+        "then continue as soon as you have the answer. Say it only once, and do not repeat what the caller said.");
+      return;
+    }
+
+    // 2. Autumn's turn is over and the caller has said nothing.
+    const autumnDone = this.lastAiPlaybackAt > 0 && this.lastAiAudioAt <= this.lastAiPlaybackAt;
+    // After a holding line she still owes the answer: no "are you still there?" until she has given it.
+    const answerGiven = !this.holdingSentAt || this.burstsSinceHold >= 2 || now - this.holdingSentAt > 25_000;
+    if (
+      autumnDone &&
+      answerGiven &&
+      !this.toolInProgress &&
+      this.toolResultDeliveredAt === 0 &&
+      this.repromptCount < MAX_REPROMPTS &&
+      this.lastCallerSoundAt < this.lastAiPlaybackAt &&
+      this.lastCallerWordsAt < this.lastAiPlaybackAt &&
+      now - this.lastAiPlaybackAt > REPROMPT_AFTER_MS &&
+      !GOODBYE_RE.test(this.lastAutumnText.trim())
+    ) {
+      this.repromptCount++;
+      const first = this.repromptCount === 1;
+      this.nudge(now, first ? "CALLER_SILENT" : "CALLER_SILENT_AGAIN", now - this.lastAiPlaybackAt, first
+        ? "SYSTEM: You finished speaking about five seconds ago and the caller has said nothing. Check in the way a person " +
+          "on the phone would and ask your last question again in different words, briefly — for example \"Sorry, are you " +
+          "still there? I was asking what day works best for you.\" If you had not asked anything, ask how you can help."
+        : "SYSTEM: The caller is still quiet. Say warmly that you're still here whenever they're ready, and repeat the " +
+          "question once more in a few words. Keep it short.");
+    }
+  }
+
+  private nudge(now: number, layer: string, silenceMs: number, content: string): void {
+    this.logSilenceEvent(layer, silenceMs, "instructions_append_nudge");
+    this.sendFn?.({ type: "session.instructions.append", delegation_id: null, content });
+    this.lastNudgeAt = now;
+    if (this.storeId) {
+      callEventBus.emit({
+        type: "filler_injected", storeId: this.storeId, callSid: this.callSid ?? undefined,
+        timestamp: new Date().toISOString(), data: { layer, silenceDurationMs: silenceMs },
+      });
     }
   }
 
