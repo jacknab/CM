@@ -226,6 +226,7 @@ export default function AiReceptionistCallLogs() {
     disabledBtn:      pick({ en: "DISABLED",                   vi: "TẮT",                       es: "DESACTIVADO",                  fr: "DÉSACTIVÉ" }),
     refresh:          pick({ en: "Refresh",                    vi: "Làm mới",                   es: "Actualizar",                   fr: "Actualiser" }),
     manageNumber:     pick({ en: "Manage Number",              vi: "Quản lý số",                es: "Gestionar número",             fr: "Gérer le numéro" }),
+    instructions:     pick({ en: "Instructions",               vi: "Hướng dẫn",                 es: "Instrucciones",                fr: "Instructions" }),
     totalCalls:       pick({ en: "Total Calls",                vi: "Tổng cuộc gọi",             es: "Total de llamadas",            fr: "Total des appels" }),
     avgDuration:      pick({ en: "Avg Duration (this page)",   vi: "Thời lượng TB (trang này)", es: "Duración promedio (esta página)", fr: "Durée moy. (cette page)" }),
     bookings:         pick({ en: "Bookings (this page)",       vi: "Đặt lịch (trang này)",      es: "Reservas (esta página)",       fr: "Réservations (cette page)" }),
@@ -321,6 +322,9 @@ export default function AiReceptionistCallLogs() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button onClick={() => navigate("/manage/ai-receptionist/instructions")} data-testid="button-autumn-instructions" className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+              {t.instructions}
+            </button>
             <button
               onClick={() => { if (!settings) return; toggleLive.mutate(!settings.enabled); }}
               disabled={!settings || toggleLive.isPending}

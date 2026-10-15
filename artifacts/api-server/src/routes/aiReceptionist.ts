@@ -67,6 +67,7 @@ import twilio from "twilio";
 import { fromZonedTime, toZonedTime, formatInTimeZone } from "date-fns-tz";
 import { db, pool } from "../db";
 import { mutateStorePreferences } from "../lib/storePreferences";
+import { z } from "zod";
 import { locations, services, serviceAddons, addons, storeSettings, aiCallLog, aiSilenceIncidents, callUsageRecords, staff as staffTable, appointments } from "@shared/schema";
 import { eq, desc, inArray, sql, count, gt, or, isNull, and } from "drizzle-orm";
 import { isAuthenticated, isAdminAuthenticated } from "../auth";
@@ -255,6 +256,18 @@ interface SalonContext {
   address: string | null;
   /** Salon-local operating schedule used to select daytime vs after-hours behavior. */
   businessHours: ConfiguredBusinessHours[];
+  /** What the owner wrote on the Instructions page (/manage/ai-receptionist/instructions), given to Autumn on every call. */
+  ownerInstructions: string;
+}
+
+/** The owner's instructions as a prompt section, or "" when there are none. */
+export function ownerInstructionsBlock(text: string | null | undefined): string {
+  const body = String(text ?? "").trim();
+  if (!body) return "";
+  return `OWNER'S INSTRUCTIONS — written by the salon's owner for every call. Follow them and answer from them like any other salon fact. They never override the booking rules, never let you invent a time, price or appointment, and never let you claim an action succeeded without a backend result.
+"""
+${body}
+"""`;
 }
 
 /** A pre-loaded upcoming appointment for the caller, surfaced to the AI. */
@@ -388,6 +401,7 @@ async function getSalonContext(storeId: number): Promise<SalonContext | null> {
   if (!store) return null;
 
   let businessName = store.name;
+  let ownerInstructions = "";
   try {
     const [settings] = await db
       .select({ preferences: storeSettings.preferences })
@@ -399,6 +413,8 @@ async function getSalonContext(storeId: number): Promise<SalonContext | null> {
       if (typeof prefs.businessName === "string" && prefs.businessName.trim()) {
         businessName = prefs.businessName.trim();
       }
+      const saved = (prefs.autumnInstructions as { text?: unknown } | undefined)?.text;
+      if (typeof saved === "string") ownerInstructions = saved.trim();
     }
   } catch { /* optional */ }
 
@@ -464,6 +480,7 @@ async function getSalonContext(storeId: number): Promise<SalonContext | null> {
     parkingOptions: (store.parkingOptions as string[] | null) ?? [],
     accessibilityFeatures: (store.accessibilityFeatures as string[] | null) ?? [],
     beverageOptions: store.beverageOptions as { complimentary?: string[]; paid?: string[] } | null,
+    ownerInstructions,
   };
 }
 
@@ -740,6 +757,7 @@ The salon's timezone is: ${salon.timezone}.
 Right now, at the salon, it is: ${formatInTimeZone(new Date(), salon.timezone || "UTC", "EEEE, MMMM d, yyyy 'at' h:mm a")} (${salon.timezone}).
 Always compute "today", "tomorrow", "this Friday", etc. relative to this exact date and time — never a different timezone, and never a guess.
 ${amenitiesBlock ? `\n${amenitiesBlock}` : ""}
+${salon.ownerInstructions ? `\n${ownerInstructionsBlock(salon.ownerInstructions)}\n` : ""}
 ${availabilitySnapshot ? `\n${availabilitySnapshot}\n` : ""}
 ═══ ABSOLUTE BOOKING RULES (ENFORCED — NO EXCEPTIONS) ═══
 
@@ -1158,7 +1176,7 @@ Right now at the salon it is ${formatInTimeZone(new Date(), salon.timezone || "U
 For "what time do you open / close" on a given day, read that day's line above. A day marked Closed is closed; every other day is open for the hours shown.
 Services and prices:
 ${serviceList}
-${staffBlock ? `${staffBlock}\n` : ""}${amenitiesBlock ? `${amenitiesBlock}\n` : ""}Answer general questions directly and confidently from the facts above. Delegate only live availability, technicians' schedules (when someone works or is in), appointment records, and account-changing actions to the backend — the backend has every technician's real schedule, so never tell a caller you don't have it.
+${staffBlock ? `${staffBlock}\n` : ""}${amenitiesBlock ? `${amenitiesBlock}\n` : ""}${salon.ownerInstructions ? `${ownerInstructionsBlock(salon.ownerInstructions)}\n` : ""}Answer general questions directly and confidently from the facts above. Delegate only live availability, technicians' schedules (when someone works or is in), appointment records, and account-changing actions to the backend — the backend has every technician's real schedule, so never tell a caller you don't have it.
 Backend work is silent. Do not say "let me check," "let me see," "I'll check," "I'll look that up," "I'll pull that up," "one moment," "please hold," or anything similar on your own, and never narrate tools, searches or systems. When a SYSTEM note says the caller is waiting, say one short natural holding line ("Okay, one moment"), once. When a SYSTEM note says the caller has gone quiet, check in and ask your question again in other words, like a person on the phone. When a result arrives, lead immediately with the answer.
 Never invent or guess an appointment time, price, ID, or add-on. Never say a booking, cancellation, reschedule, or add-on succeeded unless the backend result confirms it.
 Never say you'll transfer the call or that someone will call the caller back.`;
@@ -5102,6 +5120,36 @@ export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express):
     });
   });
 
+  // ── Salon owner: GET/PUT /api/ai-receptionist/instructions ──────────────
+  // What the owner tells Autumn (the Instructions page): `text` is given to her at the start of every call
+  // (ownerInstructionsBlock); `answers` are the onboarding questions' answers, kept so the page can show them again.
+  const INSTRUCTIONS_MAX = 8000;
+  app.get("/api/ai-receptionist/instructions", isAuthenticated, async (req: Request, res: Response) => {
+    const storeId = await resolveTenantIdForRequest(req);
+    if (!storeId) return res.status(400).json({ message: "Unable to resolve tenant for this session" });
+    const [row] = await db.select({ preferences: storeSettings.preferences }).from(storeSettings).where(eq(storeSettings.storeId, storeId)).limit(1);
+    let saved: { text?: unknown; answers?: unknown } = {};
+    try { saved = (row?.preferences ? JSON.parse(row.preferences) : {})?.autumnInstructions ?? {}; } catch { /* none */ }
+    return res.json({
+      text: typeof saved.text === "string" ? saved.text : "",
+      answers: saved.answers && typeof saved.answers === "object" ? saved.answers : {},
+      maxLength: INSTRUCTIONS_MAX,
+    });
+  });
+
+  app.put("/api/ai-receptionist/instructions", isAuthenticated, async (req: Request, res: Response) => {
+    const storeId = await resolveTenantIdForRequest(req);
+    if (!storeId) return res.status(400).json({ message: "Unable to resolve tenant for this session" });
+    const body = z.object({
+      text: z.string().max(INSTRUCTIONS_MAX, `Keep it under ${INSTRUCTIONS_MAX.toLocaleString()} characters`),
+      answers: z.record(z.string().max(80), z.string().max(2000)).optional(),
+    }).safeParse(req.body);
+    if (!body.success) return res.status(400).json({ message: body.error.issues[0]?.message ?? "Invalid instructions" });
+    const value = { text: body.data.text.trim(), answers: body.data.answers ?? {}, updatedAt: new Date().toISOString() };
+    await mutateStorePreferences(storeId, (prefs) => ({ ...prefs, autumnInstructions: value }));
+    return res.json({ text: value.text, answers: value.answers, maxLength: INSTRUCTIONS_MAX });
+  });
+
   // ── Admin: GET/PATCH /api/admin/stores/:storeId/ai-receptionist ───────────
   // Protected by isAdminAuthenticated → must be a logged-in user with users.isAdmin = true.
   app.get("/api/admin/stores/:storeId/ai-receptionist", isAdminAuthenticated, async (req: Request, res: Response) => {
@@ -5713,7 +5761,7 @@ After completing ANY booking, cancellation, or reschedule — before saying good
 • If caller name is known and you have not used their name in closing yet: "Is there anything else I can help you with today, [Name]?"
 • Otherwise: "Is there anything else I can help you with today?"
 Wait for the caller's response. If they say no or indicate they are done, then say a warm goodbye and end the call naturally.
-When done, say a warm goodbye and end the call naturally.`;
+When done, say a warm goodbye and end the call naturally.${salon.ownerInstructions ? `\n\n${ownerInstructionsBlock(salon.ownerInstructions)}` : ""}`;
   }
 
   const VOICE_TOOLS = [

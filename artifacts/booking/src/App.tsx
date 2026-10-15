@@ -151,6 +151,7 @@ const MembersHome = lazy(() => import("@/pages/manage/MembersHome"));
 const AiReceptionistRouter = lazy(() => import("@/pages/manage/AiReceptionistRouter"));
 const AiReceptionistEnrollment = lazy(() => import("@/pages/manage/AiReceptionistEnrollment"));
 const AiReceptionistCallLogs = lazy(() => import("@/pages/manage/AiReceptionistCallLogs"));
+const AiReceptionistInstructions = lazy(() => import("@/pages/manage/AiReceptionistInstructions"));
 const CreditsTopup = lazy(() => import("@/pages/manage/CreditsTopup"));
 const CustomerSupportPage = lazy(() => import("@/pages/manage/CustomerSupportPage"));
 const FinancePosHub = lazy(() => import("@/pages/manage/FinancePosHub"));
@@ -464,6 +465,7 @@ function AppRoutes() {
       <Route path="/manage/ai-receptionist" element={<AiReceptionistRouter />} />
       <Route path="/manage/ai-receptionist/setup" element={<AiReceptionistEnrollment />} />
       <Route path="/manage/ai-receptionist/call-logs" element={<AiReceptionistCallLogs />} />
+      <Route path="/manage/ai-receptionist/instructions" element={<AiReceptionistInstructions />} />
       <Route path="/manage/credits" element={<CreditsTopup />} />
       <Route path="/manage/billing/credits-topup" element={<CreditsTopup />} />
       <Route path="/manage/customer-support" element={<CustomerSupportPage />} />
