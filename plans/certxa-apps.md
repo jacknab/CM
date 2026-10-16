@@ -106,4 +106,11 @@ These are needed by Phases 3–5, not Phase 1.
   - The /nail and /barber buttons for Settings, Reports, Messages and Retail Sale go through `appPage()`. Inside an app they open `/app/settings`, `/app/reports`, `/app/messages` and `/app/retail`, which Phase 3 builds.
   - Android: `apps/certxa-owner/app.config.js` (APP_PROFILE) and the `nail-preview` / `nail-production` EAS profiles with their own update channels. The shell passes the profile to the page.
   - Tests: `appProfiles.test.ts`.
+- 2026-10-16: Phase 3 (Settings, Reports, Messages) done in code:
+  - **Settings sections:** `APP_SETTINGS_SECTIONS` in `shared/appProfiles.ts`. Each section opens the existing page, and its `area` is allowed by the guard.
+  - **The Settings page:** `pages/app/AppSettings.tsx` (`/app/settings`) lists the profile's sections. `/app/settings/<slug>` opens a Settings-shell page on its own; the pane map moved to `pages/settings/panes.tsx` and is shared with the shell.
+  - **Page frame:** inside an app, `AppLayout` shows an app frame (Back, Home) in place of the platform sidebar, so Reports, Messages and every settings page open without the platform menu.
+  - **Links:** a `/settings/<slug>` link inside a page opens the app's copy.
+  - **Retail Sale** is hidden inside an app until the owner decides what it becomes.
+  - **Not yet tried** on a tablet with a signed-in nail salon.
 

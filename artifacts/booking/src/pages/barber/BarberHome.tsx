@@ -611,12 +611,12 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
     ...(timeclockEnabled ? [{ key: "timeclock", label: "In / Out", icon: Clock, run: () => setSheet("timeclock") }] : []),
     ...(posEnabled ? [
       { key: "register", label: "Cash Drawer", sub: openDrawerSession ? "Open" : "Closed", icon: Wallet, run: () => setShowOpenRegister(true) },
-      { key: "retail", label: "Retail Sale", icon: ShoppingBag, run: () => navigate(appPage("/pos")) },
+      ...(appPage("/pos") ? [{ key: "retail", label: "Retail Sale", icon: ShoppingBag, run: () => navigate(appPage("/pos")!) }] : []),
       { key: "dayclose", label: "Day Close", icon: LockKeyhole, run: () => setSheet("dayclose") },
     ] : []),
     { key: "manager", label: "Manager", icon: KeyRound, run: () => setSheet("manager") },
-    { key: "reports", label: "Reports", icon: BarChart3, run: () => navigate(appPage("/reports")) },
-    { key: "messages", label: "Messages", icon: Bell, run: () => navigate(appPage("/sms-inbox")) },
+    { key: "reports", label: "Reports", icon: BarChart3, run: () => navigate(appPage("/reports")!) },
+    { key: "messages", label: "Messages", icon: Bell, run: () => navigate(appPage("/sms-inbox")!) },
     ...(thermalPrinter.isAvailable ? [{
       key: "printer", icon: Printer, label: "Printer",
       sub: thermalPrinter.isConnected ? `${thermalPrinter.deviceName?.split(" ")[0] ?? "Printer"} · connected` : thermalPrinter.status === "connecting" ? "Connecting…" : thermalPrinter.status === "error" ? "Error · retry" : "Tap to connect",
@@ -626,7 +626,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
       key: "station", icon: CreditCard, label: "Station", sub: currentRegisterName,
       run: () => setPairScreenOpen(true),
     }] : []),
-    { key: "settings", label: "Settings", icon: Settings, run: () => navigate(appPage("/settings")) },
+    { key: "settings", label: "Settings", icon: Settings, run: () => navigate(appPage("/settings")!) },
     ...(offline ? [] : [{
       key: "refresh", label: "Hard Refresh", sub: "Fix a page that won't load", icon: RefreshCw, run: () => { void hardRefresh(); },
       confirm: {

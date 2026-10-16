@@ -61,6 +61,8 @@ const Waitlist = lazy(() => import("@/pages/Waitlist"));
 const QueueDashboard = lazy(() => import("@/pages/queue/QueueDashboard"));
 const QueueSettings = lazy(() => import("@/pages/queue/QueueSettings"));
 const TurnSystem = lazy(() => import("@/pages/TurnSystem"));
+const AppSettings = lazy(() => import("@/pages/app/AppSettings"));
+const AppSettingsSection = lazy(() => import("@/pages/app/AppSettings").then((m) => ({ default: m.AppSettingsSection })));
 const PublicCheckIn = lazy(() => import("@/pages/queue/PublicCheckIn"));
 const QueueDisplay = lazy(() => import("@/pages/queue/QueueDisplay"));
 const KioskCheckIn = lazy(() => import("@/pages/KioskCheckIn"));
@@ -486,6 +488,9 @@ function AppRoutes() {
       {/* Auth */}
       <Route path="/auth" element={<Auth />} />
       <Route path="/app-login" element={<AppLogin />} />
+      {/* A Certxa app's own Settings (plans/certxa-apps.md). */}
+      <Route path="/app/settings" element={<AppSettings />} />
+      <Route path="/app/settings/:section" element={<AppSettingsSection />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
 

@@ -1220,7 +1220,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     { key: "clients", label: "Client Lookup", icon: Search, run: () => setSheet("clients") },
     { key: "voucher", label: "Redeem Voucher", icon: Gift, run: () => setSheet("voucher") },
     ...(timeclockEnabled ? [{ key: "timeclock", label: "In / Out", icon: Clock, run: () => setSheet("timeclock") }] : []),
-    ...(posEnabled ? [{ key: "retail", label: "Retail Sale", icon: ShoppingBag, run: () => navigate(appPage("/pos")) }] : []),
+    // Inside a Certxa app with no retail screen of its own, Retail Sale is left out (shared/appProfiles.ts).
+    ...(posEnabled && appPage("/pos") ? [{ key: "retail", label: "Retail Sale", icon: ShoppingBag, run: () => navigate(appPage("/pos")!) }] : []),
     // The signed-in technician's own slip; with nobody (or the front desk) signed in, it asks for a Tech ID.
     { key: "myslip", label: "My Slip", icon: Receipt, run: () => { if (tech && !tech.frontDesk) setSlipFor({ id: tech.id, name: tech.name }); else setSlipAsk(true); } },
     // This tablet's language for the staff screens; each tap goes to the next one.
@@ -1239,9 +1240,9 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   // The Manager tab of the More popup — everything here is behind the manager PIN.
   const managerTiles: MoreTile[] = [
-    { key: "settings", label: "Settings", icon: Settings, run: () => navigate(appPage("/settings")) },
+    { key: "settings", label: "Settings", icon: Settings, run: () => navigate(appPage("/settings")!) },
     ...(posEnabled ? [{ key: "register", label: "Cash Drawer", sub: openDrawerSession ? "Open" : "Closed", icon: Wallet, run: () => setShowOpenRegister(true) }] : []),
-    { key: "messages", label: "Messages", icon: Bell, run: () => navigate(appPage("/sms-inbox")) },
+    { key: "messages", label: "Messages", icon: Bell, run: () => navigate(appPage("/sms-inbox")!) },
     { key: "keygrid", label: "Key Grid", sub: "Arrange the POS keys", icon: LayoutGrid, run: () => setGridEditor("open") },
     { key: "managerpin", label: "Manager PIN", sub: "Change the PIN for this menu", icon: KeyRound, run: () => { setShowMore(false); setPinChange(true); } },
     { key: "lockscreen", label: "Lock Screen", sub: saveLock.isPending ? "Saving…" : lockEnabled ? "On · Tech ID to use the POS" : "Off · no sign-in", icon: Lock, keepOpen: true,
@@ -1252,7 +1253,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       run: () => { void (thermalPrinter.isConnected ? thermalPrinter.disconnect() : thermalPrinter.connect()); },
     }] : []),
     ...(posEnabled ? [{ key: "dayclose", label: "Day Close", icon: LockKeyhole, run: () => setSheet("dayclose") }] : []),
-    { key: "reports", label: "Reports", icon: BarChart3, run: () => navigate(appPage("/reports")) },
+    { key: "reports", label: "Reports", icon: BarChart3, run: () => navigate(appPage("/reports")!) },
   ];
 
   // ── Check-In sheet: put the /frontdesk tablet on its check-in screen while it's open ──

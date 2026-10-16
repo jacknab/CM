@@ -32,9 +32,11 @@ export function currentAppProfile(): AppProfile | null {
 }
 
 /**
- * Where a staff screen's link to a full-platform page should go: the app's own version inside an app
- * (Settings → /app/settings), the page itself otherwise.
+ * Where a staff screen's link to a full-platform page should go: what the app opens instead inside an
+ * app (Settings → /app/settings), the page itself otherwise. null: the app has no version of it, so the
+ * screen leaves the button out.
  */
-export function appPage(path: string): string {
-  return currentAppProfile() ? APP_PAGE_FOR[path] ?? path : path;
+export function appPage(path: string): string | null {
+  if (!currentAppProfile()) return path;
+  return path in APP_PAGE_FOR ? APP_PAGE_FOR[path] : path;
 }

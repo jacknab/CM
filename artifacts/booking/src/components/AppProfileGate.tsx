@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { appAllowsPath, appFitsBusiness } from "@shared/appProfiles";
+import { appAllowsPath, appFitsBusiness, appSettingsPathFor } from "@shared/appProfiles";
 import { currentAppProfile } from "@/lib/appProfile";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useAuth } from "@/hooks/use-auth";
@@ -12,7 +12,10 @@ import { useAuth } from "@/hooks/use-auth";
 export function AppScreenGuard({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const profile = currentAppProfile();
-  if (profile && !appAllowsPath(profile, pathname)) return <Navigate to={profile.home} replace />;
+  if (profile && !appAllowsPath(profile, pathname)) {
+    // A link to a settings section the app has (/settings/hours) opens the app's copy of it.
+    return <Navigate to={appSettingsPathFor(profile, pathname) ?? profile.home} replace />;
+  }
   return <>{children}</>;
 }
 
