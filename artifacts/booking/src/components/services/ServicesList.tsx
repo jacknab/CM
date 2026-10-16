@@ -12,7 +12,7 @@ import {
   Power, PowerOff, ChevronDown, ChevronRight, Layers, Trash2, EyeOff, Sparkles, AlertTriangle, RefreshCw,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { api } from "@shared/routes";
+import { api } from "@shared/apiPaths";
 import { ServiceForm } from "./ServiceForm";
 import type { ServiceWithOptions } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";

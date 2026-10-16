@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, buildUrl } from "@shared/routes";
+import { api, buildUrl } from "@shared/apiPaths";
 import type { Addon, InsertAddon, ServiceAddon } from "@shared/schema";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useSnapshot } from "@/hooks/use-snapshot";

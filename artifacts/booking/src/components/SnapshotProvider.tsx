@@ -10,7 +10,7 @@ import { useSelectedStore } from "@/hooks/use-store";
 import { enterpriseSyncEngine } from "@/lib/enterprise-sync-engine";
 import { appointmentsCacheDB } from "@/lib/appointments-cache-db";
 import { turnClaimsDB } from "@/lib/turn-claims-db";
-import { api } from "@shared/routes";
+import { api } from "@shared/apiPaths";
 import { toast } from "@/hooks/use-toast";
 
 function todayDateStr(): string {

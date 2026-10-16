@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@shared/routes";
+import { api } from "@shared/apiPaths";
 import type { Store } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 import { offlineSessionBootstrap } from "@/lib/offline-session-bootstrap";

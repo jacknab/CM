@@ -28,7 +28,10 @@ import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
 import { hardRefresh } from "@/lib/hard-refresh";
 import { useNetworkStatus } from "@/hooks/use-network-status";
 import { buildCheckinTicket } from "@/lib/thermalPrinter";
-import { ClientLookupSheet, ManagerPinSheet, TimeClockSheet, VoucherRedeemSheet } from "@/pages/Calendar";
+import { ClientLookupSheet } from "@/components/staff-screen/ClientLookupSheet";
+import { ManagerPinSheet } from "@/components/staff-screen/ManagerPinSheet";
+import { TimeClockSheet } from "@/components/staff-screen/TimeClockSheet";
+import { VoucherRedeemSheet } from "@/components/staff-screen/VoucherRedeemSheet";
 import {
   ApiError, assignMarker, barberUrl, boardKey, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchClient,
   clockInTech, clockOutTech, fetchNailConfig, fetchTurn, reassignTicket, removeMarker, setBarberStoreId, startTicket, updateTicket,

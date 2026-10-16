@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@shared/routes";
+import { api } from "@shared/apiPaths";
 import type { Customer, InsertCustomer } from "@shared/schema";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useSnapshot } from "@/hooks/use-snapshot";

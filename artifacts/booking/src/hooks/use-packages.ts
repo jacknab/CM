@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, buildUrl } from "@shared/routes";
+import { api, buildUrl } from "@shared/apiPaths";
 import type { PackageWithItems } from "@shared/schema";
 import { useSelectedStore } from "@/hooks/use-store";
 

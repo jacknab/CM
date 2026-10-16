@@ -5,7 +5,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { useStaffList } from "@/hooks/use-staff";
 import { STAFF_COLORS } from "@/lib/staffColors";
 import { useQueryClient } from "@tanstack/react-query";
-import { api, buildUrl } from "@shared/routes";
+import { api, buildUrl } from "@shared/apiPaths";
 import type { Staff } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Palette, Loader2, Check } from "lucide-react";

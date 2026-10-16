@@ -40,7 +40,12 @@ import { nailOffline, setNailOfflineStore, isLocalId, isNetworkFailure, newIdemp
 import { archivedTicket, refreshTicketArchive } from "./ticketArchive";
 import { nailAdjustment } from "./ticketDraft";
 import { buildCheckinTicket } from "@/lib/thermalPrinter";
-import { ChooseClientPanel, ClientLookupSheet, ManagerPinSheet, TimeClockSheet, TurnPageModal, VoucherRedeemSheet } from "@/pages/Calendar";
+import { ChooseClientPanel } from "@/components/staff-screen/ChooseClientPanel";
+import { ClientLookupSheet } from "@/components/staff-screen/ClientLookupSheet";
+import { ManagerPinSheet } from "@/components/staff-screen/ManagerPinSheet";
+import { TimeClockSheet } from "@/components/staff-screen/TimeClockSheet";
+import { TurnPageModal } from "@/components/staff-screen/TurnPage";
+import { VoucherRedeemSheet } from "@/components/staff-screen/VoucherRedeemSheet";
 import { useStaffList } from "@/hooks/use-staff";
 import { getNowInTimezone } from "@/lib/timezone";
 import {

@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useToast } from "@/hooks/use-toast";
 import { useInSettingsShell } from "@/lib/settings-shell-context";
-import { api } from "@shared/routes";
+import { api } from "@shared/apiPaths";
 import { ShoppingCart, Percent, Package, Lock, Monitor, Phone } from "lucide-react";
 import { checkQuickAreaCodes } from "@shared/areaCodes";
 import { TipPresetsCard } from "@/components/pos/TipPresetsCard";

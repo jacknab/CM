@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { UpgradeBlockModal, type UpgradeBlockPayload } from "@/components/UpgradeBlockModal";
-import { api } from "@shared/routes";
+import { api } from "@shared/apiPaths";
 import { useToast } from "@/hooks/use-toast";
 
 type UsageMetric = { id: string; used: number; limit: number | null; remaining: number | null; enabled: boolean };
