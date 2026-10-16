@@ -27,7 +27,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { getBufferMinutes, clashesWithBuffer } from "./lib/appointmentBuffer";
+import { getBufferMinutes, clashesWithBuffer, getHouseCallTravelMinutes, heldWindow, neededWindow } from "./lib/appointmentBuffer";
 import { db } from "./db";
 import { appointments } from "@shared/schema";
 import { and, eq, gte, lte, ne, sql } from "drizzle-orm";
@@ -139,6 +139,8 @@ export interface ValidateSlotInput {
   allowSameDay?: boolean;
   /** Optional: also verify this resource (station/chair) is free for the slot */
   resourceId?: number | null;
+  /** 'client' for a house call: its travel time must be free on both sides too. */
+  visitAt?: string | null;
 }
 
 /**
@@ -227,14 +229,17 @@ export async function validateBookingSlot(
   const newEnd   = endTime;
   // Calendar Settings → "Time between appointments": the technician is held this long after each booking.
   const bufferMin = await getBufferMinutes(storeId);
+  const travelMin = await getHouseCallTravelMinutes(storeId);
+  const need = neededWindow(startTime, newEnd, input.visitAt, travelMin);
 
   const conflict = dayAppts.find((a) => {
     if (a.id === excludeAppointmentId) return false;
     const held = occupiedMinutes(a as any);
     if (held === 0) return false;
     if (!staffId && a.staffId !== null) return false;
-    // RULE: appointment.duration (incl. addons) — never service.duration
-    return clashesWithBuffer(new Date(a.date), held, startTime, newEnd, bufferMin);
+    // RULE: appointment.duration (incl. addons) — never service.duration. A house call holds its travel time too.
+    const w = heldWindow(a as any, held, travelMin);
+    return clashesWithBuffer(w.start, w.minutes, need.start, need.end, bufferMin);
   });
 
   if (conflict) {
@@ -306,6 +311,10 @@ export interface AtomicCreateInput {
   depositPaid?: boolean;
   /** Optional: assign a salon resource (station/chair) to this appointment */
   resourceId?: number | null;
+  /** Where the visit happens ('place' | 'client'); a house call's client address and travel fee. */
+  visitAt?: string | null;
+  clientAddress?: Record<string, unknown> | null;
+  travelFee?: string | null;
   /**
    * Set true for a payment-pending hold (AI receptionist booking a store that
    * requires a deposit/card-on-file) — keeps the appointment off the Calendar
@@ -397,11 +406,19 @@ export async function atomicCreateBooking(
         ),
       );
 
+    // A house call holds its travel time on both sides, and a new one needs its own free too.
+    const travelMin = await getHouseCallTravelMinutes(input.storeId);
+    const need = neededWindow(newStart, newEnd, input.visitAt, travelMin);
     const conflict = existing.find((a) => {
       const held = occupiedMinutes(a as any);
       if (held === 0) return false;
       // RULE: appointment.duration (incl. addons) — never service.duration
-      return clashesWithBuffer(new Date(a.date as Date), held, newStart, newEnd, bufferMin);
+      // Two house-call appointments for the same client are one visit (a second service straight after the
+      // first): no travel between them, so they're compared without it.
+      const sameVisit = input.visitAt === "client" && (a as any).visitAt === "client" && input.customerId != null && (a as any).customerId === input.customerId;
+      if (sameVisit) return clashesWithBuffer(new Date(a.date as Date), held, newStart, newEnd, bufferMin);
+      const w = heldWindow(a as any, held, travelMin);
+      return clashesWithBuffer(w.start, w.minutes, need.start, need.end, bufferMin);
     });
 
     if (conflict) {
@@ -483,6 +500,9 @@ export async function atomicCreateBooking(
         resourceId:         input.resourceId ?? null,
         calendarHidden:     input.calendarHidden ?? false,
         packageId:          input.packageId ?? null,
+        ...(input.visitAt === "client"
+          ? { visitAt: "client", clientAddress: input.clientAddress ?? null, travelFee: input.travelFee ?? null }
+          : {}),
         ...(input.paymentStatus ? { paymentStatus: input.paymentStatus } : {}),
       } as any)
       .returning({ id: appointments.id, ticketNumber: appointments.ticketNumber });
@@ -558,11 +578,16 @@ export async function atomicRescheduleBooking(
         .from(appointments)
         .where(whereClause);
 
+      // The appointment being moved may be a house call: its travel time must be free at the new time,
+      // and every existing house call holds its own.
+      const travelMin = await getHouseCallTravelMinutes(input.storeId);
+      const [moving] = await tx.select({ visitAt: appointments.visitAt }).from(appointments).where(eq(appointments.id, input.appointmentId)).limit(1);
+      const need = neededWindow(newStart, newEnd, moving?.visitAt, travelMin);
       const conflict = existing.find((a) => {
         const held = occupiedMinutes(a as any);
         if (held === 0) return false;
         // RULE: appointment.duration (incl. addons) — never service.duration
-        return clashesWithBuffer(new Date(a.date as Date), held, newStart, newEnd, bufferMin);
+        return (() => { const w = heldWindow(a as any, held, travelMin); return clashesWithBuffer(w.start, w.minutes, need.start, need.end, bufferMin); })();
       });
 
       if (conflict) {

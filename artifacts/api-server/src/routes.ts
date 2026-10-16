@@ -1,4 +1,5 @@
 import express, { type Express, type Request, type RequestHandler, type Response } from "express";
+import { checkHouseCall, saveClientAddress, type ClientAddress } from "./lib/houseCalls";
 import { publicStoreView, bookedClientStoreView, addressIsPrivate } from "./lib/publicStore";
 import { getRedisClient } from "./lib/redis";
 import * as checkSignature from "./lib/checkSignature";
@@ -188,7 +189,7 @@ import { withTurnLock } from "./lib/turnLock";
 import { mutateStorePreferences, writeStorePreferences } from "./lib/storePreferences";
 import * as nailGiftCards from "./lib/nailGiftCards";
 import { settleNailCheckout, NailCheckoutError } from "./lib/nailCheckoutSettlement";
-import { getBufferMinutes, normalizeBufferMinutes, clashesWithBuffer } from "./lib/appointmentBuffer";
+import { getBufferMinutes, normalizeBufferMinutes, clashesWithBuffer, getHouseCallTravelMinutes, heldWindow, neededWindow } from "./lib/appointmentBuffer";
 import { commissionBasis, commissionAmount as commissionAmountFor } from "@shared/commissionBasis";
 import { getRequiredResourceType } from "@shared/resourceMatching";
 import { ACTIVE_APPOINTMENT_STATUSES, normalizeAppointmentStatus, appointmentStatusEnum } from "@shared/appointment-status";
@@ -5637,6 +5638,9 @@ If you have any questions, please contact your administrator.
       const calSettings = await storage.getCalendarSettings(storeId);
       const slotInterval = calSettings?.timeSlotInterval || 15;
       const bufferMs = normalizeBufferMinutes((calSettings as any)?.bufferMinutes) * 60_000;
+      // A house call holds its travel time on both sides; a house call being booked needs its own free too.
+      const travelMin = await getHouseCallTravelMinutes(storeId);
+      const visitAt = req.query.visitAt === "client" ? "client" : "place";
 
       // Get actual business hours for the specific date
       const businessHours = await storage.getBusinessHours(storeId);
@@ -5715,9 +5719,11 @@ If you have any questions, please contact your administrator.
               if (apt.status === "cancelled") continue;
               // Treat no-show slots as free — they can be re-filled.
               if (apt.status === "no_show") continue;
-              const aptStart = new Date(apt.date);
-              const aptEnd = new Date(aptStart.getTime() + apt.duration * 60000);
-              if (slotStart.getTime() < aptEnd.getTime() + bufferMs && slotEnd.getTime() + bufferMs > aptStart.getTime()) {
+              const held = heldWindow(apt as any, apt.duration, travelMin);
+              const aptStart = held.start;
+              const aptEnd = new Date(held.start.getTime() + held.minutes * 60000);
+              const need = neededWindow(slotStart, slotEnd, visitAt, travelMin);
+              if (need.start.getTime() < aptEnd.getTime() + bufferMs && need.end.getTime() + bufferMs > aptStart.getTime()) {
                 hasConflict = true;
                 break;
               }
@@ -8837,7 +8843,7 @@ If you have any questions, please contact your administrator.
    * booking, so the online-only limits (minimum notice, how far ahead) do not apply. `firstOnly`: stop at
    * the first open time (enough to know the day has room).
    */
-  async function openTimesForDay(store: any, opts: { serviceId: number; date: string; duration: number; specificStaffId?: number; extraServiceId: number | null; staffView: boolean; firstOnly?: boolean }): Promise<{ time: string; staffId: number; staffName: string; extraStaffId?: number; extraStaffName?: string }[]> {
+  async function openTimesForDay(store: any, opts: { serviceId: number; date: string; duration: number; specificStaffId?: number; extraServiceId: number | null; staffView: boolean; firstOnly?: boolean; visitAt?: string }): Promise<{ time: string; staffId: number; staffName: string; extraStaffId?: number; extraStaffName?: string }[]> {
     const { serviceId, date, duration, specificStaffId, extraServiceId, staffView, firstOnly } = opts;
     // A second service on the same visit (`extraServiceId`). `duration` is then the whole visit: the first
     // service (with its add-ons) followed by the second. One technician does both when one can; when
@@ -8856,6 +8862,9 @@ If you have any questions, please contact your administrator.
     const businessEndHour = 18;
     const slotInterval = calSettings?.timeSlotInterval || 15;
     const bufferMs = normalizeBufferMinutes((calSettings as any)?.bufferMinutes) * 60_000;
+    // A house call holds its travel time on both sides; a house call being booked needs its own free too.
+    const travelMin = await getHouseCallTravelMinutes(store.id);
+    const visitAt = opts.visitAt === "client" ? "client" : "place";
 
     const hours = await storage.getBusinessHours(store.id);
     const dayStartLocal = fromZonedTime(new Date(`${date}T00:00:00`), tz);
@@ -8942,9 +8951,11 @@ If you have any questions, please contact your administrator.
           for (const apt of dayAppointments) {
             if (apt.staffId !== staffMember.id) continue;
             if (apt.status === "cancelled") continue;
-            const aptStart = new Date(apt.date);
-            const aptEnd = new Date(aptStart.getTime() + apt.duration * 60000);
-            if (from.getTime() < aptEnd.getTime() + bufferMs && to.getTime() + bufferMs > aptStart.getTime()) {
+            const held = heldWindow(apt as any, apt.duration, travelMin);
+            const aptStart = held.start;
+            const aptEnd = new Date(held.start.getTime() + held.minutes * 60000);
+            const need = neededWindow(from, to, visitAt, travelMin);
+            if (need.start.getTime() < aptEnd.getTime() + bufferMs && need.end.getTime() + bufferMs > aptStart.getTime()) {
               hasConflict = true;
               break;
             }
@@ -9060,7 +9071,8 @@ If you have any questions, please contact your administrator.
         return res.status(400).json({ message: "serviceId, date, and duration are required" });
       }
       const extraServiceId = req.query.extraServiceId ? Number(req.query.extraServiceId) : null;
-      return res.json(await openTimesForDay(store, { serviceId, date, duration, specificStaffId, extraServiceId, staffView }));
+      // ?visitAt=client: open times for a house call (its travel time must be free too).
+      return res.json(await openTimesForDay(store, { serviceId, date, duration, specificStaffId, extraServiceId, staffView, visitAt: String(req.query.visitAt ?? "") }));
     } catch (error) {
       console.error("Public availability error:", error);
       return res.status(500).json({ message: "Internal server error" });
@@ -9070,6 +9082,26 @@ If you have any questions, please contact your administrator.
   // GET /api/public/store/:slug/available-days
   // Returns which dates in a given month have NO available slots (unavailableDates array).
   // Used by the template booking calendar to grey out closed / fully-booked days.
+  // ── Solo plan house calls: is this address inside the professional's travel radius? ──────────────
+  // The booking page asks before showing times, so the client learns straight away if it's too far, and
+  // sees the travel fee. Rate-limited: every call asks the US Census geocoder.
+  const houseCallCheckLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
+    message: { message: "Too many address checks. Please wait a few minutes and try again." } });
+  app.post("/api/public/store/:slug/house-call", houseCallCheckLimiter, async (req, res) => {
+    try {
+      const store = await storage.getStoreBySlug(String(req.params.slug));
+      if (!store) return res.status(404).json({ message: "Store not found" });
+      const check = await checkHouseCall(store.id, req.body?.address, { enforceRadius: true });
+      if (!check.ok) return res.json({ ok: false, reason: check.reason, message: check.message });
+      // The address goes back without its map position: the page only needs to know it's in range.
+      const { lat: _lat, lng: _lng, ...address } = check.address;
+      return res.json({ ok: true, address, distanceMiles: check.distanceMiles, travelFee: check.travelFee });
+    } catch (error) {
+      console.error("[house-call check]", error);
+      return res.status(500).json({ message: "We couldn't check that address. Please try again." });
+    }
+  });
+
   app.get("/api/public/store/:slug/available-days", async (req, res) => {
     try {
       const store = await storage.getStoreBySlug(req.params.slug);
@@ -9094,6 +9126,9 @@ If you have any questions, please contact your administrator.
       const calSettings = await storage.getCalendarSettings(store.id);
       const slotInterval = calSettings?.timeSlotInterval || 15;
       const bufferMs = normalizeBufferMinutes((calSettings as any)?.bufferMinutes) * 60_000;
+      // A house call holds its travel time on both sides; a house call being booked needs its own free too.
+      const travelMin = await getHouseCallTravelMinutes(store.id);
+      const visitAt = req.query.visitAt === "client" ? "client" : "place";
       const businessHours = await storage.getBusinessHours(store.id);
       const daysInMonth = new Date(year, month, 0).getDate();
 
@@ -9209,9 +9244,11 @@ If you have any questions, please contact your administrator.
               for (const apt of dayApts) {
                 if (apt.staffId !== staffMember.id) continue;
                 if (apt.status === "cancelled") continue;
-                const aptStart = new Date(apt.date);
-                const aptEnd = new Date(aptStart.getTime() + apt.duration * 60000);
-                if (slotStart.getTime() < aptEnd.getTime() + bufferMs && slotEnd.getTime() + bufferMs > aptStart.getTime()) {
+                const held = heldWindow(apt as any, apt.duration, travelMin);
+                const aptStart = held.start;
+                const aptEnd = new Date(held.start.getTime() + held.minutes * 60000);
+                const need = neededWindow(slotStart, slotEnd, visitAt, travelMin);
+                if (need.start.getTime() < aptEnd.getTime() + bufferMs && need.end.getTime() + bufferMs > aptStart.getTime()) {
                   hasConflict = true;
                   break;
                 }
@@ -9354,6 +9391,9 @@ If you have any questions, please contact your administrator.
         // Redeeming a purchased marketplace deal voucher — already fully
         // paid, so this booking skips the store's normal deposit/card policy.
         voucherCode: z.string().optional(),
+        // Solo plan: a house call ('client') with the client's address (plans/solo-work-places-and-approval.md).
+        visitAt: z.enum(["place", "client"]).optional(),
+        clientAddress: z.record(z.string(), z.unknown()).optional(),
       });
 
       const parsed = bookingSchema.parse(req.body);
@@ -9509,6 +9549,20 @@ If you have any questions, please contact your administrator.
       // Override client-declared policy with server's authoritative value
       input.paymentPolicy = effectivePolicy as "none" | "card_on_file" | "deposit";
 
+      // Where the visit happens. A house call needs the business to offer them, a service that can be done at
+      // the client's, and an address inside the travel radius; the travel fee comes with it.
+      const visitAt = input.visitAt ?? ((store as any).ownPlace === "none" ? "client" : "place");
+      const serviceOfferedAt = (serviceRecord as any)?.offeredAt ?? "any";
+      let houseCall: { address: ClientAddress; travelFee: number } | null = null;
+      if (visitAt === "client") {
+        if (serviceOfferedAt === "place") return res.status(400).json({ message: "This service isn't offered as a house call." });
+        const check = await checkHouseCall(store.id, input.clientAddress, { enforceRadius: true });
+        if (!check.ok) return res.status(400).json({ message: check.message, reason: check.reason });
+        houseCall = { address: check.address, travelFee: check.travelFee };
+      } else if ((store as any).ownPlace === "none" || serviceOfferedAt === "client") {
+        return res.status(400).json({ message: "This service is a house call: enter the address where you'd like it." });
+      }
+
       // Customer upsert — must happen before atomicCreateBooking (engine needs customerId)
       let customer = await storage.searchCustomerByPhone(e164CustomerPhone, store.id);
       // Booking Controls: "existing clients only" — a phone with no client record
@@ -9629,11 +9683,13 @@ If you have any questions, please contact your administrator.
         status: "pending",
         resourceId: assignedResourceId,
         packageId: resolvedPackage ? resolvedPackage.packageId : null,
+        ...(houseCall ? { visitAt: "client", clientAddress: houseCall.address, travelFee: houseCall.travelFee.toFixed(2) } : {}),
       });
       if (!createResult.ok) {
         return res.status(409).json({ message: createResult.error.message });
       }
       const appointmentId = createResult.data.id;
+      if (houseCall) await saveClientAddress(customer.id, houseCall.address);
 
       if (voucherRow) {
         // Claim the voucher atomically — WHERE status='pending_booking' guards
@@ -9788,6 +9844,8 @@ If you have any questions, please contact your administrator.
             storeId: store.id, timezone: store.timezone ?? "UTC", startTime: secondStart,
             durationMinutes: Number(extraService.duration) || 30, staffId: member.id, serviceId: extraService.id,
             customerId: customer.id, notes: input.notes || null, status: "pending", resourceId: null, packageId: null,
+            // Same visit: at the client's too when it's a house call; the travel fee is charged once, on the first.
+            ...(houseCall ? { visitAt: "client", clientAddress: houseCall.address, travelFee: null } : {}),
           });
           if (second.ok) {
             extraAppointment = { id: second.data.id, serviceName: extraService.name, staffId: member.id, staffName: member.name, date: secondStart.toISOString(), duration: Number(extraService.duration) || 30 };

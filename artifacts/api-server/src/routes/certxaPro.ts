@@ -6,7 +6,8 @@ import { isAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import { verifySoloToken } from "../lib/soloAuth";
 import { storage } from "../storage";
-import { getBufferMinutes } from "../lib/appointmentBuffer";
+import { getBufferMinutes, getHouseCallTravelMinutes, neededWindow } from "../lib/appointmentBuffer";
+import { checkHouseCall, saveClientAddress, type ClientAddress } from "../lib/houseCalls";
 
 const router = Router();
 const id = z.coerce.number().int().positive();
@@ -25,6 +26,9 @@ const appointmentInput = z.object({
   staffId: id.optional(),
   // Further services on the same visit, as priced lines.
   customLines: z.array(z.object({ label: z.string().trim().min(1).max(60), price: z.number().min(0).max(100000) }).strict()).max(20).optional(),
+  // Solo plan: a house call ('client') and the client's address (plans/solo-work-places-and-approval.md).
+  visitAt: z.enum(["place", "client"]).optional(),
+  clientAddress: z.record(z.string(), z.unknown()).optional(),
 }).strict();
 const updateInput = z.object({
   date: date.optional(), serviceId: id.optional(),
@@ -69,22 +73,24 @@ async function ownStaff(req: Request, storeId: number): Promise<number | null> {
 }
 
 /** Is that time already taken on this calendar? The salon's gap between appointments is held on both sides. */
-async function timeTaken(storeId: number, staffId: number | null, start: string | Date, minutes: number, exceptId: number | null) {
+async function timeTaken(storeId: number, staffId: number | null, start: string | Date, minutes: number, exceptId: number | null, visitAt?: string | null) {
   const buffer = await getBufferMinutes(storeId);
-  const from = new Date(start);
-  const to = new Date(from.getTime() + minutes * 60_000);
+  // A house call holds its travel time on both sides; a house call being booked needs its own free too.
+  const travel = await getHouseCallTravelMinutes(storeId);
+  const need = neededWindow(new Date(start), new Date(new Date(start).getTime() + minutes * 60_000), visitAt, travel);
   const result = await pool.query(
     `SELECT 1 FROM appointments o WHERE o.store_id=$1 AND o.staff_id IS NOT DISTINCT FROM $2
       AND o.status NOT IN ('cancelled','no_show') AND ($3::int IS NULL OR o.id<>$3)
-      AND o.date < $5::timestamptz + make_interval(mins => $6)
-      AND o.date + make_interval(mins => o.duration + $6) > $4::timestamptz LIMIT 1`,
-    [storeId, staffId, exceptId, from.toISOString(), to.toISOString(), buffer]);
+      AND o.date - make_interval(mins => CASE WHEN o.visit_at='client' THEN $7 ELSE 0 END) < $5::timestamptz + make_interval(mins => $6)
+      AND o.date + make_interval(mins => o.duration + $6 + CASE WHEN o.visit_at='client' THEN $7 ELSE 0 END) > $4::timestamptz LIMIT 1`,
+    [storeId, staffId, exceptId, need.start.toISOString(), need.end.toISOString(), buffer, travel]);
   return result.rows.length > 0;
 }
 const TAKEN = { error: "Another appointment is already booked at that time.", code: "TIME_TAKEN" };
 
 // JSON shape shared by list, creation, update, and cancellation. Prices are dollars.
 const appointmentSelect = `SELECT a.id, a.date, a.duration, a.status, a.notes, a.staff_id AS "staffId",
+  a.visit_at AS "visitAt", a.client_address AS "clientAddress", a.travel_fee::float8 AS "travelFee",
   a.cancellation_reason AS "cancellationReason", a.cancelled_at AS "cancelledAt",
   json_build_object('id', c.id, 'name', c.full_name,
     'phone', (SELECT COALESCE(p.display_phone, p.phone_number_e164) FROM client_phones p WHERE p.client_id=c.id ORDER BY p.is_primary DESC, p.id LIMIT 1),
@@ -206,14 +212,24 @@ router.post("/appointments", async (req, res) => {
   if (!parsed.success) return invalid(res, parsed.error);
   try {
     const storeId = await store(req, res); if (!storeId) return;
-    const { customerId, serviceId, duration, date: when, notes, customLines } = parsed.data;
+    const { customerId, serviceId, duration, date: when, notes, customLines, visitAt } = parsed.data;
     const staffId = await ownStaff(req, storeId);
-    if (await timeTaken(storeId, staffId, when, duration, null)) return res.status(409).json(TAKEN);
-    const result = await pool.query(`INSERT INTO appointments (customer_id,service_id,store_id,duration,date,notes,status,staff_id,custom_lines)
-      SELECT c.id,s.id,$3,$4,$5::timestamptz,$6,'pending',$7,$8::jsonb FROM clients c CROSS JOIN services s
+    // A house call the professional books themselves: the address must be real and they must do house calls,
+    // but they may travel further than the radius their clients can book online.
+    let houseCall: { address: ClientAddress; travelFee: number } | null = null;
+    if (visitAt === "client") {
+      const check = await checkHouseCall(storeId, parsed.data.clientAddress, { enforceRadius: false });
+      if (!check.ok) return res.status(400).json({ error: check.message, code: "HOUSE_CALL" });
+      houseCall = { address: check.address, travelFee: check.travelFee };
+    }
+    if (await timeTaken(storeId, staffId, when, duration, null, visitAt)) return res.status(409).json(TAKEN);
+    const result = await pool.query(`INSERT INTO appointments (customer_id,service_id,store_id,duration,date,notes,status,staff_id,custom_lines,visit_at,client_address,travel_fee)
+      SELECT c.id,s.id,$3,$4,$5::timestamptz,$6,'pending',$7,$8::jsonb,$9,$10::jsonb,$11 FROM clients c CROSS JOIN services s
       WHERE c.id=$1 AND c.store_id=$3 AND c.archived_at IS NULL AND s.id=$2 AND s.store_id=$3 AND s.is_active=true RETURNING id`,
-      [customerId, serviceId, storeId, duration, when, notes ?? null, staffId, customLines?.length ? JSON.stringify(customLines) : null]);
+      [customerId, serviceId, storeId, duration, when, notes ?? null, staffId, customLines?.length ? JSON.stringify(customLines) : null,
+       houseCall ? "client" : "place", houseCall ? JSON.stringify(houseCall.address) : null, houseCall ? houseCall.travelFee.toFixed(2) : null]);
     if (!result.rows[0]) return res.status(400).json({ error: "Customer or service not found in this store" });
+    if (houseCall) await saveClientAddress(customerId, houseCall.address);
     return res.status(201).json(await appointment(result.rows[0].id, storeId));
   } catch (error) { return unexpected(res, error); }
 });
@@ -241,7 +257,7 @@ router.patch("/appointments/:id", async (req, res) => {
     const moved = parsed.data.date !== undefined && new Date(parsed.data.date).getTime() !== new Date(current.date).getTime();
     const longer = parsed.data.duration !== undefined && parsed.data.duration > Number(current.duration);
     if (parsed.data.status !== "cancelled" && (moved || longer) &&
-        await timeTaken(storeId, current.staffId ?? null, parsed.data.date ?? current.date, parsed.data.duration ?? Number(current.duration), parsedId.data))
+        await timeTaken(storeId, current.staffId ?? null, parsed.data.date ?? current.date, parsed.data.duration ?? Number(current.duration), parsedId.data, current.visitAt))
       return res.status(409).json(TAKEN);
     if (parsed.data.status === "cancelled") {
       await pool.query(`UPDATE appointments SET status='cancelled',
