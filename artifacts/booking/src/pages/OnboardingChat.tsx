@@ -7,6 +7,7 @@
  * Activate via: ?mode=chat  OR  VITE_AI_ONBOARDING=true
  */
 
+import { rolesForBusinessType } from "@shared/staffRoles";
 import {
   useState,
   useEffect,
@@ -2080,7 +2081,8 @@ function OnboardingChatSession({ userId }: { userId: string }) {
 
       // ── Staff role ──────────────────────────────────────────────────────
       case "staff_role": {
-        const opts = currentStep.options ?? [];
+        // The roles for the business type chosen earlier in this chat (shared/staffRoles.ts).
+        const opts = rolesForBusinessType(session.answers.businessType).map((r) => ({ value: r, label: r }));
         const selected = String(localValue ?? "");
         return (
           <div className="grid grid-cols-2 gap-2">

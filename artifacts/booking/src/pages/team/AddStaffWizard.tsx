@@ -11,6 +11,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useSelectedStore } from "@/hooks/use-store";
 import { apiRequest } from "@/lib/queryClient";
 import { WeeklyScheduleEditor, defaultWeek, scheduleHasError, type DayRule } from "@/components/team/WeeklyScheduleEditor";
+import { RoleFields } from "@/components/team/RoleFields";
+import { defaultRole, defaultTakesTurns } from "@shared/staffRoles";
 import { ChevronLeft, Loader2 } from "lucide-react";
 
 interface Category { id: number; name: string }
@@ -32,6 +34,16 @@ export default function AddStaffWizard() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const businessType = (selectedStore as any)?.category as string | undefined;
+  const [role, setRole] = useState(() => defaultRole(businessType));
+  const [takesTurns, setTakesTurns] = useState(() => defaultTakesTurns(defaultRole(businessType)));
+  // The store loads after the first render: start from its business type's main role once it does.
+  const [roleTouched, setRoleTouched] = useState(false);
+  useEffect(() => {
+    if (roleTouched) return;
+    setRole(defaultRole(businessType));
+    setTakesTurns(defaultTakesTurns(defaultRole(businessType)));
+  }, [businessType, roleTouched]);
 
   // step 2 — categories all checked by default
   const { data: categories = EMPTY_ARRAY } = useQuery<Category[]>({
@@ -80,7 +92,8 @@ export default function AddStaffWizard() {
         name: `${firstName.trim()} ${lastName.trim()}`.trim(),
         email: email.trim() || null,
         phone: phone.trim() || null,
-        role: "stylist",
+        role,
+        takesTurns,
         status: "active",
       });
       const staff = await res.json();
@@ -156,6 +169,13 @@ export default function AddStaffWizard() {
               <label className="text-[15px] font-medium">Phone</label>
               <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="text-[15px]" />
             </div>
+            <RoleFields
+              category={businessType}
+              role={role}
+              takesTurns={takesTurns}
+              onRole={(r) => { setRoleTouched(true); setRole(r); }}
+              onTakesTurns={(t) => { setRoleTouched(true); setTakesTurns(t); }}
+            />
           </div>
         )}
 

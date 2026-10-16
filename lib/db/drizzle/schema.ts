@@ -196,6 +196,7 @@ export const staff = pgTable("staff", {
         permissions: jsonb(),
         status: text().default('active'),
         employmentType: text("employment_type").default('stylist'),
+        takesTurns: boolean("takes_turns").default(true).notNull(),
         inviteToken: text("invite_token"),
         inviteExpiresAt: timestamp("invite_expires_at", { mode: 'string' }),
         invitedAt: timestamp("invited_at", { mode: 'string' }),

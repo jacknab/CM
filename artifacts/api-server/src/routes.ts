@@ -167,6 +167,7 @@ import { requireActiveTrial } from "./middleware/trial-middleware";
 import { isStripeConfigured, getStripe } from "./lib/stripe";
 import { setupNotificationServer, broadcastNotification, broadcastSyncEvent } from "./notifications";
 import { broadcastAppointmentStatus, registerSseClient } from "./lib/appointmentEvents";
+import { defaultTakesTurns, displayRole, FRONT_DESK } from "@shared/staffRoles";
 import { normalizePersonName } from "./lib/personName";
 import { checkQuickAreaCodes, readQuickAreaCodes } from "@shared/areaCodes";
 import { syncTechAvailability, techStateOf } from "./lib/techAvailability";
@@ -632,6 +633,8 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
   const rules = normalizeTurnRules(settings);
 
   const storeStaff = await db.select().from(staff).where(eq(staff.storeId, storeId)).orderBy(asc(staff.id));
+  // Only staff who take turns are in the line (front desk, for instance, doesn't — shared/staffRoles.ts).
+  const turnStaffIds = new Set(storeStaff.filter((member) => member.takesTurns !== false).map((member) => member.id));
   const serviceRows = serviceId
     ? await storage.getStaffServices(undefined, serviceId)
     : [];
@@ -673,7 +676,7 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
   let clockInPos = 0;
   const clockedInToday = new Set<number>();
   for (const rec of todayClockIns) {
-    if (!rec.clockOut) {
+    if (!rec.clockOut && turnStaffIds.has(rec.staffId)) {
       if (!clockInOrder.has(rec.staffId)) {
         clockInOrder.set(rec.staffId, clockInPos++);
       }
@@ -845,7 +848,7 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
   const shortTurnHeldSet = new Set<number>(shortTurnHeld);
 
   const technicians = storeStaff
-    .filter((member) => member.status !== "removed" && member.status !== "deactivated")
+    .filter((member) => member.status !== "removed" && member.status !== "deactivated" && turnStaffIds.has(member.id))
     .map((member) => {
       const upcoming = upcomingByStaff.get(member.id) || null;
       const isClockedIn = clockedInToday.has(member.id);
@@ -5165,7 +5168,13 @@ export async function registerRoutes(
         });
       }
 
-      const input = insertStaffSchema.parse({ ...req.body, storeId: sessionStoreId });
+      // A role from the business type's list (shared/staffRoles.ts); "Takes turns" follows the role unless sent.
+      const store = await storage.getStore(sessionStoreId);
+      const role = displayRole(req.body?.role, (store as any)?.category);
+      const takesTurns = typeof req.body?.takesTurns === "boolean" ? req.body.takesTurns : defaultTakesTurns(role);
+      // Front desk signs in on the /nail and /barber POS with an ID from 90 to 99 (staff.front_desk).
+      const frontDesk = role === FRONT_DESK;
+      const input = insertStaffSchema.parse({ ...req.body, role, takesTurns, frontDesk, storeId: sessionStoreId });
       const member = await storage.createStaff(input);
 
       // Log staff creation to activity feed (fire-and-forget)
@@ -5227,6 +5236,12 @@ export async function registerRoutes(
       if (!existing) return res.status(404).json({ message: "Staff not found" });
       if (existing.storeId !== sessionStoreId) return res.status(403).json({ message: "Forbidden" });
       const input = insertStaffSchema.partial().parse(req.body);
+      // The role decides the front-desk flag (POS ID 90–99); "Takes turns" is set by the owner on its own.
+      if (typeof input.role === "string") {
+        const store = await storage.getStore(sessionStoreId);
+        input.role = displayRole(input.role, (store as any)?.category);
+        if (input.frontDesk === undefined) input.frontDesk = input.role === FRONT_DESK;
+      }
       // claimStaffColor is called inside storage.updateStaff — no inline logic needed here.
       const member = await storage.updateStaff(Number(req.params.id), input);
       if (!member) return res.status(404).json({ message: "Staff not found" });

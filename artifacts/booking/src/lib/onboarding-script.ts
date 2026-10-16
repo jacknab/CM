@@ -162,15 +162,6 @@ const BUSINESS_TYPES: ChipOption[] = [
   { value: "Other",         label: "Other",         emoji: "✨" },
 ];
 
-const STAFF_ROLES: ChipOption[] = [
-  { value: "Nail Technician", label: "Nail Technician", emoji: "💅" },
-  { value: "Esthetician",     label: "Esthetician",     emoji: "🌸" },
-  { value: "Hair Stylist",    label: "Hair Stylist",     emoji: "✂️" },
-  { value: "Manager",         label: "Manager",          emoji: "🗂️" },
-  { value: "Front Desk",      label: "Front Desk",       emoji: "🖥️" },
-  { value: "Other",           label: "Other",            emoji: "👤" },
-];
-
 // ── Phone validation ──────────────────────────────────────────────────────────
 
 function validatePhone(raw: string): string | null {
@@ -438,8 +429,8 @@ export const ONBOARDING_STEPS: StepDefinition[] = [
       const name = (a as any)._currentMember?.firstName ?? "them";
       return `What is ${name}'s role?`;
     },
+    // The choices are the business type's roles (shared/staffRoles.ts), worked out in OnboardingChat.
     inputType: "staff_role",
-    options: STAFF_ROLES,
     required: true,
     nextStep: "team_member_hours",
   },

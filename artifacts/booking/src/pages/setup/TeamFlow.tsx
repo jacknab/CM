@@ -10,6 +10,8 @@ import { useNavigate } from "react-router-dom";
 import { Users, Check, Clock } from "lucide-react";
 import { FlowShell } from "./FlowShell";
 import { useToast } from "@/hooks/use-toast";
+import { useSelectedStore } from "@/hooks/use-store";
+import { rolesForBusinessType } from "@shared/staffRoles";
 
 const STEPS = [
   { key: "add", label: "Add a team member" },
@@ -25,7 +27,6 @@ const DEFAULT_HOURS = DAYS.map((_, i) => ({
   closeTime: "18:00",
 }));
 
-const ROLES = ["Nail Technician", "Manager", "Front Desk", "Esthetician", "Wax Specialist", "Other"];
 
 export default function TeamFlow() {
   const navigate = useNavigate();
@@ -36,7 +37,10 @@ export default function TeamFlow() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState("Nail Technician");
+  // The roles for the store's business type (shared/staffRoles.ts).
+  const { selectedStore } = useSelectedStore();
+  const roles = rolesForBusinessType((selectedStore as any)?.category);
+  const [role, setRole] = useState("");
   const [savingStaff, setSavingStaff] = useState(false);
   const [savedStaffId, setSavedStaffId] = useState<number | null>(null);
 
@@ -58,7 +62,7 @@ export default function TeamFlow() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(), role }),
+        body: JSON.stringify({ firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(), role: role || roles[0] }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -152,8 +156,8 @@ export default function TeamFlow() {
           </div>
           <div className="sm:col-span-2">
             <label className="block text-sm font-semibold text-slate-700 mb-1.5">Role</label>
-            <select value={role} onChange={(e) => setRole(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#1A0333]/20 text-sm bg-white">
-              {ROLES.map((r) => <option key={r}>{r}</option>)}
+            <select value={role || roles[0]} onChange={(e) => setRole(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#1A0333]/20 text-sm bg-white">
+              {roles.map((r) => <option key={r}>{r}</option>)}
             </select>
           </div>
         </div>

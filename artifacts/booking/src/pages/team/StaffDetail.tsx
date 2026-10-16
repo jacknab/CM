@@ -10,6 +10,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useSelectedStore } from "@/hooks/use-store";
 import { apiRequest } from "@/lib/queryClient";
 import { WeeklyScheduleEditor, scheduleHasError, type DayRule } from "@/components/team/WeeklyScheduleEditor";
+import { RoleFields } from "@/components/team/RoleFields";
+import { displayRole } from "@shared/staffRoles";
 import { Camera, ChevronLeft, Loader2 } from "lucide-react";
 
 interface Staff {
@@ -19,6 +21,7 @@ interface Staff {
   avatarUrl: string | null; avatarThumbUrl: string | null; color: string | null;
   barberNumber?: number | null;
   frontDesk?: boolean | null;
+  takesTurns?: boolean | null;
 }
 interface Category { id: number; name: string }
 interface Service { id: number; name: string; categoryId: number | null }
@@ -77,9 +80,11 @@ export default function StaffDetail() {
 
   // ── editable state ──
   const [name, setName] = useState("");
-  const [frontDesk, setFrontDesk] = useState(false);
+  const businessType = (selectedStore as any)?.category as string | undefined;
+  const [role, setRole] = useState("");
+  const [takesTurns, setTakesTurns] = useState(true);
   // Stores whose staff sign in on the /nail or /barber POS with an ID.
-  const posIdStore = /barber|nail/i.test((selectedStore as any)?.category ?? "");
+  const posIdStore = /barber|nail/i.test(businessType ?? "");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [svcRate, setSvcRate] = useState("0");
@@ -129,12 +134,13 @@ export default function StaffDetail() {
   useEffect(() => {
     if (!staff) return;
     setName(staff.name);
-    setFrontDesk(staff.frontDesk === true);
+    setRole(displayRole(staff.role, businessType));
+    setTakesTurns(staff.takesTurns !== false);
     setEmail(staff.email ?? "");
     setPhone(staff.phone ?? "");
     setSvcRate(staff.commissionRate ?? "0");
     setProdRate(staff.productCommissionRate ?? "0");
-  }, [staff]);
+  }, [staff, businessType]);
 
   const servicesByCat = useMemo(() => {
     const m = new Map<number, Service[]>();
@@ -184,7 +190,9 @@ export default function StaffDetail() {
         commissionRate: clampPct(svcRate),
         productCommissionRate: clampPct(prodRate),
         commissionEnabled: Number(svcRate) > 0 || Number(prodRate) > 0,
-        ...(posIdStore ? { frontDesk } : {}),
+        // The role sets the front-desk flag (POS ID 90–99) on the server.
+        role,
+        takesTurns,
       });
       const serviceIds = allServices
         .filter((s) => s.categoryId != null && checkedCats.has(s.categoryId))
@@ -288,17 +296,7 @@ export default function StaffDetail() {
             </div>
           </div>
 
-          {posIdStore && (
-            <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
-              <div>
-                <p className="text-[15px] font-medium">Receptionist</p>
-                <p className="text-sm text-muted-foreground">
-                  Front desk staff sign in on the POS with an ID from 90 to 99, and the screen locks on them only after 2 idle minutes.
-                </p>
-              </div>
-              <Switch checked={frontDesk} onCheckedChange={setFrontDesk} data-testid="switch-staff-front-desk" />
-            </div>
-          )}
+          <RoleFields category={businessType} role={role} takesTurns={takesTurns} onRole={setRole} onTakesTurns={setTakesTurns} />
 
           <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
             <div>

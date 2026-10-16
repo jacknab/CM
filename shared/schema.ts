@@ -539,6 +539,8 @@ export const staff = pgTable("staff", {
   // Team management additions
   status: text("status").default("active"),           // active | invited | deactivated | removed
   employmentType: text("employment_type").default("stylist"), // stylist | booth_renter | receptionist | assistant | manager | marketer | accountant | owner | custom
+  /** In the turn line (shared/staffRoles.ts). Off for front desk; on for everyone else unless the owner switches it off. */
+  takesTurns: boolean("takes_turns").notNull().default(true),
   showOnCalendar: boolean("show_on_calendar").default(true), // false = excluded from calendar "all" view (owners default to false)
   inviteToken: text("invite_token"),
   inviteExpiresAt: timestamp("invite_expires_at"),

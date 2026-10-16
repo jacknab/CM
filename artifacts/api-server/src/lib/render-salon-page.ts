@@ -18,6 +18,7 @@
  * business name, services, staff, hours, or reviews themselves.
  */
 
+import { displayRole } from "@shared/staffRoles";
 import type { TenantData, BusinessData, HoursEntry, ServiceEntry, StaffEntry, GalleryPhotoEntry } from "./tenant-data";
 import { buildBusinessJsonLd, buildBreadcrumbJsonLd, buildServiceJsonLd } from "./tenant-seo";
 import { idSlugPath, parseIdFromSlugParam } from "./tenant-page-urls";
@@ -813,7 +814,7 @@ function renderTeamDetailBody(tenantData: TenantData, chrome: SiteChrome, appUrl
     <div style="text-align:center;margin-bottom:24px;">
       <div class="staff-avatar lg">${member.avatar_url ? `<img src="${esc(member.avatar_url)}" alt="${esc(member.name ?? "")}" loading="lazy">` : initials}</div>
       <h1 class="section-title" style="margin-bottom:4px;">${esc(member.name ?? "")}</h1>
-      ${member.role ? `<div class="staff-role">${esc(member.role)}</div>` : ""}
+      <div class="staff-role">${esc(displayRole(member.role, tenantData.business?.category))}</div>
     </div>
     ${member.bio ? `<p style="color:var(--muted);font-size:16px;line-height:1.7;text-align:center;margin-bottom:24px;">${esc(member.bio)}</p>` : ""}
     ${bookHref ? `<div style="text-align:center;">${bookNowButton(bookHref, `Book with ${member.name}`)}</div>` : ""}
@@ -983,7 +984,7 @@ export function renderAutoSite(
       status: 200,
       html: renderShell({
         pageTitle: `${member.name} | ${businessNamePlain}`,
-        metaDescription: member.bio || `${member.name}${member.role ? `, ${member.role}` : ""} at ${businessNamePlain}.`,
+        metaDescription: member.bio || `${member.name}, ${displayRole(member.role, business?.category)} at ${businessNamePlain}.`,
         canonical: memberUrl,
         jsonLdBlocks: [
           buildBreadcrumbJsonLd([{ name: "Home", url: `${base}/` }, { name: "Team", url: `${base}/team/` }, { name: member.name, url: memberUrl }]),
