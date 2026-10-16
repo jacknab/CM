@@ -7,7 +7,9 @@
  * still goes through the server whenever the server can be reached; the hub is used when it cannot.
  *
  * Each tablet learns the salon's hub token and the main POS tablet's address from the server while online
- * and keeps both, so the link still comes up after a restart with no internet.
+ * and keeps both, so the link still comes up after a restart with no internet. While online it checks again
+ * every minute: the POS tablet's address changes when the tablets move to another Wi-Fi or the router hands
+ * out a new one, and a screen that kept the old address could not reach the POS once the internet was down.
  */
 import { syncEngine } from "./sync-engine";
 import { forRegister, type HubMessage } from "./local-hub-rules";
@@ -50,6 +52,9 @@ class LocalHubClient {
   private status = "off";
   private storeId: number | null = null;
   private role: HubRole | null = null;
+  /** This tablet's own address on the salon's Wi-Fi (main POS only), as the app last said. */
+  private ownAddress: string | null = null;
+  private checkTimer: ReturnType<typeof setInterval> | null = null;
 
   private post(message: Record<string, unknown>) { w().ReactNativeWebView?.postMessage(JSON.stringify(message)); }
 
@@ -65,7 +70,11 @@ class LocalHubClient {
         this.status = String(event.status);
         void this.reportStatus(event);
       } else if (event.kind === "address" && event.address) {
-        void this.reportAddress(String(event.address));
+        // Reported when the page opens and whenever this tablet's address changes, not on every check.
+        const address = String(event.address);
+        if (address === this.ownAddress) return;
+        this.ownAddress = address;
+        void this.reportAddress(address);
       }
     };
   }
@@ -103,6 +112,8 @@ class LocalHubClient {
     this.wire();
     this.storeId = storeId;
     this.role = role;
+    this.ownAddress = null;
+    if (!this.checkTimer) this.checkTimer = setInterval(() => void this.check(), 60_000);
     // The app keeps its hub running across page loads and stays silent when asked for what it is already
     // doing. Stopping it once per page load makes it start afresh and say what state the link is in.
     let restarted = false;
@@ -124,6 +135,25 @@ class LocalHubClient {
       localStorage.setItem(settingsKey(storeId), JSON.stringify(next));
       apply(next);
     } catch { /* keeps what it has */ }
+  }
+
+  /**
+   * The minute-by-minute check while online. A screen or station follows the main POS tablet to its current
+   * address (the app ignores a join to the address it is already on). The main POS asks the app for its own
+   * address, which is reported only if it changed.
+   */
+  private async check() {
+    const storeId = this.storeId, role = this.role;
+    if (storeId == null || !role || syncEngine.isOffline()) return;
+    if (role === "pos") { this.post({ type: "HUB_ADDRESS" }); return; }
+    try {
+      const res = await fetch("/api/nail/hub", { credentials: "include" });
+      if (!res.ok) return;
+      const fresh = (await res.json()) as HubSettings;
+      if (typeof fresh?.token !== "string" || !fresh.address) return;
+      localStorage.setItem(settingsKey(storeId), JSON.stringify({ token: fresh.token, address: fresh.address }));
+      if (this.storeId === storeId && this.role === role) this.post({ type: "HUB_JOIN", host: fresh.address, token: fresh.token });
+    } catch { /* tried again in a minute */ }
   }
 
   /** Hand a message to the hub for the salon's other tablets. False when this is not the Android app. */
