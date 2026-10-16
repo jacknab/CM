@@ -2661,6 +2661,11 @@ export async function registerRoutes(
       }
       
       const input = insertLocationSchema.partial().parse(req.body);
+      // Where the business sees clients and booking approval change only through /api/work-places,
+      // which checks the values and that the business is on the Solo plan.
+      for (const key of ["ownPlace", "houseCalls", "houseCallRadiusMiles", "houseCallFee", "houseCallTravelMinutes", "bookingApproval", "bookingRequestExpiryHours"]) {
+        delete (input as Record<string, unknown>)[key];
+      }
 
       // Auto-resolve timezone whenever address fields change
       if (hasAddressChange(input as Record<string, unknown>)) {
@@ -4267,6 +4272,9 @@ export async function registerRoutes(
   // before the older web endpoints. The router passes non-native calls through.
   const { default: certxaProRouter } = await import("./routes/certxaPro.js");
   app.use("/api", certxaProRouter);
+  // Solo plan: where the professional sees clients, and booking approval (plans/solo-work-places-and-approval.md).
+  const { default: workPlacesRouter } = await import("./routes/workPlaces.js");
+  app.use("/api/work-places", isAuthenticated, workPlacesRouter);
   app.get(api.services.list.path, isAuthenticated, async (req, res) => {
     const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(403).json({ message: "No store context" });
@@ -22378,6 +22386,9 @@ or
       password: z.string().min(8).max(200),
       phone: z.string().regex(/^\d{10}$/).optional(),
       timezone: z.string().max(64).optional(),
+      // Where they see clients (plans/solo-work-places-and-approval.md). Older app builds don't send it.
+      ownPlace: z.enum(["salon", "home", "none"]).optional(),
+      houseCalls: z.boolean().optional(),
     }).safeParse(req.body);
     if (!input.success) {
       const field = String(input.error.issues[0]?.path[0] ?? "");
@@ -22406,6 +22417,8 @@ or
       const store = await storage.createStore({
         name: d.businessName, email: d.email, timezone, phone: d.phone ?? null,
         category: d.businessType, userId: user.id, parkingOptions: [], accessibilityFeatures: [],
+        ownPlace: d.ownPlace === "none" && !d.houseCalls ? "salon" : (d.ownPlace ?? "salon"),
+        houseCalls: d.houseCalls ?? false,
       } as any);
       createdStoreId = store.id;
       await storage.updateStore(store.id, { bookingSlug: await chooseOnboardingSlug(d.businessName) });

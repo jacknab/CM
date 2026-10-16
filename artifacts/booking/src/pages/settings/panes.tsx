@@ -19,6 +19,7 @@ import FeaturesSettings from "@/pages/FeaturesSettings";
 import PersonalDetailsPage from "@/pages/settings/PersonalDetailsPage";
 import MyPreferencesPage from "@/pages/settings/MyPreferencesPage";
 import SecurityPage from "@/pages/settings/SecurityPage";
+import WorkPlacesSettings from "@/pages/settings/WorkPlacesSettings";
 
 // slug → pane component. Every inline settings destination lives here; the nav
 // (settings-nav.ts) decides which appear in the rail and under which tab.
@@ -38,5 +39,6 @@ export const SETTINGS_PANES: Record<string, React.ComponentType> = {
   "advanced": FeaturesSettings,
   "data-transfer": DataTransferPage,
   "commission": PayrollSettings,
+  "work-places": WorkPlacesSettings,
 };
 

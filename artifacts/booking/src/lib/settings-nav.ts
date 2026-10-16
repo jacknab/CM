@@ -24,6 +24,8 @@ export type SettingsNavItem = {
   external?: boolean;
   /** hide unless the POS feature is enabled */
   requiresPos?: boolean;
+  /** only for businesses on the Solo plan */
+  requiresSoloPlan?: boolean;
   /** small pill next to the label (plan gate like "Gold", or a count) */
   badge?: string;
 };
@@ -123,6 +125,11 @@ export function buildSettingsNav(pick: Pick4): SettingsTab[] {
           label: pick({ en: "Business Details", vi: "Thông tin kinh doanh", es: "Datos del negocio", fr: "Informations" }),
           description: pick({ en: "Store name, address, logo and contact details.", vi: "Tên, địa chỉ, logo và thông tin liên hệ.", es: "Nombre, dirección, logo y datos de contacto.", fr: "Nom, adresse, logo et coordonnées." }),
           to: "/settings/business", slug: "business",
+        },
+        {
+          label: pick({ en: "Where You See Clients", vi: "Nơi bạn phục vụ khách", es: "Dónde atiendes a tus clientes", fr: "Où vous recevez vos clients" }),
+          description: pick({ en: "Your salon, suite or home studio, and house calls.", vi: "Tiệm, phòng riêng hoặc tại nhà, và phục vụ tận nơi.", es: "Tu salón, suite o estudio en casa, y servicio a domicilio.", fr: "Votre salon, suite ou studio à domicile, et les déplacements." }),
+          to: "/settings/work-places", slug: "work-places", requiresSoloPlan: true,
         },
         {
           label: pick({ en: "Business Hours", vi: "Giờ làm việc", es: "Horario comercial", fr: "Heures d'ouverture" }),

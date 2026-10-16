@@ -5,6 +5,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useLanguage } from "@/hooks/use-language";
 import { useFeatureFlags } from "@/hooks/use-features";
+import { useSubscriptionFeatures } from "@/hooks/use-subscription-features";
 import { cn } from "@/lib/utils";
 import { isProAccount, isHiddenForProAccount } from "@shared/proAccount";
 import { useAuth } from "@/hooks/use-auth";
@@ -36,6 +37,7 @@ export default function SettingsShell() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const features = useFeatureFlags();
+  const { planCode } = useSubscriptionFeatures();
   const { pick } = useLanguage();
   // Mobile-only: which tab's list the rail shows on the /settings screen
   // (no section). Desktop derives the active tab from the URL instead.
@@ -54,10 +56,10 @@ export default function SettingsShell() {
       buildSettingsNav(pick)
         .map((tab) => ({
           ...tab,
-          items: tab.items.filter((it) => !(it.requiresPos && !features.pos) && !(proAccount && isHiddenForProAccount(it.to))),
+          items: tab.items.filter((it) => !(it.requiresPos && !features.pos) && !(it.requiresSoloPlan && planCode !== "solo") && !(proAccount && isHiddenForProAccount(it.to))),
         }))
         .filter((tab) => tab.items.length > 0),
-    [pick, features.pos, proAccount],
+    [pick, features.pos, proAccount, planCode],
   );
 
   const allItems = useMemo(() => tabs.flatMap((tab) => tab.items), [tabs]);

@@ -78,4 +78,8 @@ The full address is shown only to the professional and to a client with a bookin
 
 - 2026-10-16: plan written.
 - 2026-10-16: Step 1 (data) done. Migration 0246 is applied, and every default keeps today's behaviour (all 6 businesses: own place "salon", no house calls, auto-approve). `booking_requests` is excluded from drizzle-kit (migration-only). The columns are in `shared/schema.ts` (locations, services, appointments) and `shared/schema/clients.ts`.
+- 2026-10-16: Step 2 (settings) done:
+  - **Server:** `routes/workPlaces.ts` provides `GET`/`PUT /api/work-places`, Solo plan only, with every value checked and at least one way of seeing clients required. The general `PATCH /api/stores/:id` ignores these fields. `/api/solo/register` takes `ownPlace` and `houseCalls`.
+  - **Certxa Pro app:** sign-up asks "Where do you see clients?"; Settings has "Where you see clients"; the Get paid address wording follows the choice (private for a home studio or house calls only).
+  - **Website:** Settings → Business → "Where You See Clients" (`pages/settings/WorkPlacesSettings.tsx`), shown on the Solo plan only.
 
