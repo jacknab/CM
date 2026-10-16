@@ -20,16 +20,17 @@ type OwnPlace = "salon" | "home" | "none";
 type WorkPlaces = {
   eligible: boolean;
   ownPlace: OwnPlace;
+  addressPrivate: boolean;
   houseCalls: boolean;
   houseCallRadiusMiles: number;
   houseCallFee: number;
   houseCallTravelMinutes: number;
 };
 
-const PLACES: { value: OwnPlace; label: string; help: string }[] = [
-  { value: "salon", label: "Salon, suite or booth", help: "Clients see your address on your booking website." },
-  { value: "home", label: "Home studio", help: "Your address stays private. Clients see your city only, and get the full address once they have booked." },
-  { value: "none", label: "None", help: "You only see clients at their place." },
+const PLACES: { value: OwnPlace; label: string }[] = [
+  { value: "salon", label: "Salon, suite or booth" },
+  { value: "home", label: "Home studio" },
+  { value: "none", label: "None" },
 ];
 
 function Choice<T extends string | number>({ value, options, onChange, testId }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; testId: string }) {
@@ -68,7 +69,7 @@ export default function WorkPlacesSettings() {
 
   const save = useMutation({
     mutationFn: async (next: WorkPlaces) => (await apiRequest("PUT", "/api/work-places", {
-      ownPlace: next.ownPlace, houseCalls: next.houseCalls, houseCallRadiusMiles: next.houseCallRadiusMiles,
+      ownPlace: next.ownPlace, addressPrivate: next.addressPrivate, houseCalls: next.houseCalls, houseCallRadiusMiles: next.houseCallRadiusMiles,
       houseCallFee: Number(fee.replace(/[^0-9.]/g, "") || 0), houseCallTravelMinutes: next.houseCallTravelMinutes,
     })).json(),
     onSuccess: (saved) => { queryClient.setQueryData(key, saved); toast({ title: "Saved" }); },
@@ -82,7 +83,6 @@ export default function WorkPlacesSettings() {
     return <AppLayout><p className="text-sm text-muted-foreground">Where you see clients is part of the Solo plan.</p></AppLayout>;
   }
   const set = (patch: Partial<WorkPlaces>) => setDraft({ ...draft, ...patch });
-  const place = PLACES.find((p) => p.value === draft.ownPlace) ?? PLACES[0];
   const invalid = draft.ownPlace === "none" && !draft.houseCalls;
 
   return (
@@ -90,8 +90,23 @@ export default function WorkPlacesSettings() {
       <div className="max-w-2xl space-y-6">
         <section className="space-y-3">
           <h2 className="text-[15px] font-semibold">Your place</h2>
-          <Choice value={draft.ownPlace} options={PLACES} onChange={(ownPlace) => set({ ownPlace })} testId="work-place" />
-          <p className="text-sm text-muted-foreground">{place.help}</p>
+          {/* Picking a place sets its usual privacy: a home studio starts private, a salon or suite public. */}
+          <Choice value={draft.ownPlace} options={PLACES} onChange={(ownPlace) => set({ ownPlace, addressPrivate: ownPlace === "home" })} testId="work-place" />
+          {draft.ownPlace === "none" ? (
+            <p className="text-sm text-muted-foreground">You only see clients at their place, so your address is never shown to clients.</p>
+          ) : (
+            <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-card p-4">
+              <div>
+                <p className="text-[15px] font-medium">Keep my address private</p>
+                <p className="text-sm text-muted-foreground">
+                  {draft.addressPrivate
+                    ? "Clients see your city only, and get the full address once they have booked. Your booking website, search listings and Autumn show the city."
+                    : "Clients see your full address on your booking website."}
+                </p>
+              </div>
+              <Switch checked={draft.addressPrivate} onCheckedChange={(addressPrivate) => set({ addressPrivate })} data-testid="switch-address-private" />
+            </div>
+          )}
         </section>
 
         <section className="space-y-4 rounded-xl border border-border bg-card p-5">

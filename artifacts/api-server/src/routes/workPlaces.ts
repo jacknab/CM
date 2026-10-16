@@ -6,7 +6,8 @@
  *
  * Own place: a salon/suite/booth (public address), a home studio (private address) or none, and house
  * calls on or off, with a radius from the business address, a flat travel fee and travel time. At least
- * one of the two is required. Booking approval (auto / manual) is saved here too.
+ * one of the two is required. Whether the address is shown to clients (addressPrivate) — the owner's choice;
+ * lib/publicStore.ts applies it everywhere public. Booking approval (auto / manual) is saved here too.
  * Kept out of PATCH /api/stores/:id, which accepts any store field without these checks.
  */
 import { Router } from "express";
@@ -27,6 +28,7 @@ export async function storeHasWorkPlaces(storeId: number): Promise<boolean> {
 
 export const WORK_PLACE_FIELDS = {
   ownPlace: locations.ownPlace,
+  addressPrivate: locations.addressPrivate,
   houseCalls: locations.houseCalls,
   houseCallRadiusMiles: locations.houseCallRadiusMiles,
   houseCallFee: locations.houseCallFee,
@@ -37,6 +39,8 @@ export const WORK_PLACE_FIELDS = {
 
 const input = z.object({
   ownPlace: z.enum(["salon", "home", "none"]),
+  // Clients see the city only until they've booked. Always so with no place of their own (ownPlace "none").
+  addressPrivate: z.boolean(),
   houseCalls: z.boolean(),
   houseCallRadiusMiles: z.number().int().min(1).max(100),
   houseCallFee: z.number().min(0).max(500),

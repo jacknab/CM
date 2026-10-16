@@ -1,4 +1,5 @@
 import { EMPTY_ARRAY } from "@/lib/empty";
+import { storeAddressLine } from "@/lib/storeAddress";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -646,10 +647,10 @@ export default function MobileTheme({ store, slug, preselectedStaffId, preselect
             {!hideHeader && (
               <div className={cn("rounded-2xl p-6 mb-6 mt-4 text-white shadow-lg", headerBg)}>
                 <h1 className="text-2xl font-bold">{store.name}</h1>
-                {store.address && (
+                {storeAddressLine(store) && (
                   <div className="flex items-center gap-1 mt-2 text-white/80 text-sm">
                     <MapPin className="w-4 h-4" />
-                    <span>{store.address}</span>
+                    <span>{storeAddressLine(store)}</span>
                   </div>
                 )}
                 {closingTime && (

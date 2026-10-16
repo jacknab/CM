@@ -19,6 +19,7 @@
  *   GET  /api/payments/stripe/instant-transfer-failures — recent failed instant transfers
  */
 
+import { addressIsPrivate } from "../lib/publicStore";
 import { Router, type Request, type Response } from "express";
 import {
   buildConnectOAuthUrl,
@@ -452,7 +453,8 @@ async function ensurePaymentAccountId(storeId: number): Promise<{ accountId: str
       name: store?.name ?? undefined,
       support_email: store?.email ?? ownerEmail,
       support_phone: store?.phone ?? undefined,
-      support_address: store?.address
+      // Shown to clients on card receipts: not when the business keeps its address private.
+      support_address: store?.address && !addressIsPrivate(store)
         ? {
             line1: store.address,
             city: store.city ?? undefined,

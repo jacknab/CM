@@ -1,4 +1,5 @@
 import express, { type Express, type Request, type RequestHandler, type Response } from "express";
+import { publicStoreView, bookedClientStoreView, addressIsPrivate } from "./lib/publicStore";
 import { getRedisClient } from "./lib/redis";
 import * as checkSignature from "./lib/checkSignature";
 import { createServer, type Server } from "http";
@@ -2663,7 +2664,7 @@ export async function registerRoutes(
       const input = insertLocationSchema.partial().parse(req.body);
       // Where the business sees clients and booking approval change only through /api/work-places,
       // which checks the values and that the business is on the Solo plan.
-      for (const key of ["ownPlace", "houseCalls", "houseCallRadiusMiles", "houseCallFee", "houseCallTravelMinutes", "bookingApproval", "bookingRequestExpiryHours"]) {
+      for (const key of ["ownPlace", "addressPrivate", "houseCalls", "houseCallRadiusMiles", "houseCallFee", "houseCallTravelMinutes", "bookingApproval", "bookingRequestExpiryHours"]) {
         delete (input as Record<string, unknown>)[key];
       }
 
@@ -8570,7 +8571,8 @@ If you have any questions, please contact your administrator.
   app.get("/api/store/by-subdomain", async (req, res) => {
     if ((req as any).store) {
       const store = (req as any).store;
-      const { userId, ...publicStore } = store;
+      // Public (a salon's own subdomain): no internal fields, no private street address (lib/publicStore.ts).
+      const publicStore = publicStoreView(store);
       const hours = await storage.getBusinessHours(store.id);
       return res.json({ ...publicStore, businessHours: hours });
     } else {
@@ -8595,7 +8597,8 @@ If you have any questions, please contact your administrator.
       if (storeStatus0 === "suspended" || storeStatus0 === "canceled") {
         return res.status(403).json({ message: "This business is not currently accepting bookings." });
       }
-      const { userId, ...publicStore } = store;
+      // No internal fields, and no street address when the business keeps it private (lib/publicStore.ts).
+      const publicStore = publicStoreView(store as any);
       const hours = await storage.getBusinessHours(store.id);
       const calSettings = await storage.getCalendarSettings(store.id);
       const showPrices = calSettings?.showPrices ?? true;
@@ -9905,13 +9908,9 @@ If you have any questions, please contact your administrator.
         return res.status(404).json({ message: "Booking not found" });
       }
 
-      const safeAppointments = appointments.map((apt: any) => {
-        if (apt.staff) {
-          const staffSafe = apt.staff;
-          return { ...apt, staff: staffSafe };
-        }
-        return apt;
-      });
+      // The client has booked, so the full address is theirs to see (even a private one); the business's
+      // internal fields are not (lib/publicStore.ts).
+      const safeAppointments = appointments.map((apt: any) => (apt.store ? { ...apt, store: bookedClientStoreView(apt.store) } : apt));
       return res.json({
         appointments: safeAppointments,
         storePolicy: {
@@ -22418,6 +22417,8 @@ or
         name: d.businessName, email: d.email, timezone, phone: d.phone ?? null,
         category: d.businessType, userId: user.id, parkingOptions: [], accessibilityFeatures: [],
         ownPlace: d.ownPlace === "none" && !d.houseCalls ? "salon" : (d.ownPlace ?? "salon"),
+        // A home studio starts private (clients see the city until they book); the owner can change it.
+        addressPrivate: d.ownPlace === "home",
         houseCalls: d.houseCalls ?? false,
       } as any);
       createdStoreId = store.id;

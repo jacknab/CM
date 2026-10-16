@@ -166,10 +166,15 @@ export async function buildTenantData(
 
   // Business data
   const businessRows = await safeQuery<BusinessData>(
-    sql`SELECT id, name, address, phone, email, city, state, postcode, booking_slug, category,
+    // A business that keeps its address private shows its city and state only: no street, ZIP or map
+    // position on its website or in its search data (lib/publicStore.ts has the same rule).
+    sql`SELECT id, name, phone, email, city, state, booking_slug, category,
                yelp_alias, facebook_page_id, timezone,
                parking_options, accessibility_features,
-               store_latitude AS latitude, store_longitude AS longitude
+               CASE WHEN address_private OR own_place = 'none' THEN NULL ELSE address END AS address,
+               CASE WHEN address_private OR own_place = 'none' THEN NULL ELSE postcode END AS postcode,
+               CASE WHEN address_private OR own_place = 'none' THEN NULL ELSE store_latitude END AS latitude,
+               CASE WHEN address_private OR own_place = 'none' THEN NULL ELSE store_longitude END AS longitude
         FROM locations WHERE id = ${storeIdNum} LIMIT 1`
   );
   const business = businessRows.length > 0 ? businessRows[0] : null;

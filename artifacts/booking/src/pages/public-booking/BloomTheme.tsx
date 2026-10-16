@@ -7,6 +7,7 @@
  * Booking flow opens as a slide-in panel from the right, matching the
  * BookingPanel in templates-storage/nail-salon-bloom/project/src/components/BookingPanel.tsx
  */
+import { storeAddressLine } from "@/lib/storeAddress";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -1849,9 +1850,9 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
                 >
                   <MapPin className="h-8 w-8 text-white" aria-hidden="true" />
                 </span>
-                {store.address && (
+                {storeAddressLine(store) && (
                   <p className="text-sm font-medium" style={{ color: C.ink700 }}>
-                    {store.address}
+                    {storeAddressLine(store)}
                   </p>
                 )}
                 <span

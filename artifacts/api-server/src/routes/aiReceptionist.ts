@@ -60,6 +60,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { addressIsPrivate } from "../lib/publicStore";
 import type { Express, Request, Response } from "express";
 import type { Server as HttpServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
@@ -252,8 +253,10 @@ interface SalonContext {
   accessibilityFeatures: string[];
   /** Beverages offered (from onboarding) */
   beverageOptions: { complimentary?: string[]; paid?: string[] } | null;
-  /** Street address on file, if any (used for a location-qualified greeting variant) */
+  /** Street address on file, if any (used for a location-qualified greeting variant). The city only when private. */
   address: string | null;
+  /** The business keeps its address private: clients get it once they have booked. */
+  addressPrivate: boolean;
   /** Salon-local operating schedule used to select daytime vs after-hours behavior. */
   businessHours: ConfiguredBusinessHours[];
   /** What the owner wrote on the Instructions page (/manage/ai-receptionist/instructions), given to Autumn on every call. */
@@ -390,6 +393,10 @@ async function getSalonContext(storeId: number): Promise<SalonContext | null> {
       bookingSlug: locations.bookingSlug,
       phone: locations.phone,
       address: locations.address,
+      city: locations.city,
+      state: locations.state,
+      ownPlace: locations.ownPlace,
+      addressPrivate: locations.addressPrivate,
       parkingOptions: locations.parkingOptions,
       accessibilityFeatures: locations.accessibilityFeatures,
       beverageOptions: locations.beverageOptions,
@@ -462,7 +469,9 @@ async function getSalonContext(storeId: number): Promise<SalonContext | null> {
     timezone: store.timezone ?? "UTC",
     bookingSlug: store.bookingSlug ?? null,
     businessPhone: store.phone ?? null,
-    address: store.address ?? null,
+    // A private address is never read out to callers: Autumn gets the city and state only (lib/publicStore.ts).
+    address: addressIsPrivate(store) ? ([store.city, store.state].filter(Boolean).join(", ") || null) : (store.address ?? null),
+    addressPrivate: addressIsPrivate(store),
     businessHours: configuredBusinessHours.map((entry) => ({
       dayOfWeek: entry.dayOfWeek,
       openTime: entry.openTime,
@@ -598,7 +607,9 @@ function buildOpenAiSessionConfig(
     : "Hours are not listed.";
   const salonFactsBlock = [
     `Business: ${salon.businessName}.`,
-    salon.address ? `Address: ${salon.address}.` : "",
+    salon.addressPrivate
+      ? `Address: private. The full address is sent to clients once they have booked; never give it out. You may say the business is in ${salon.address ?? "the area"}.`
+      : salon.address ? `Address: ${salon.address}.` : "",
     salon.businessPhone ? `Phone: ${salon.businessPhone}.` : "",
     `Regular hours: ${hoursBlock}`,
   ].filter(Boolean).join("\n");

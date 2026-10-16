@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { storeAddressLine } from "@/lib/storeAddress";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -719,8 +720,8 @@ export default function BookingWidget({
                   <MapPin className="w-4 h-4 text-gray-400" />
                   <div>
                     <p className="font-medium">Certxa Booking Service</p>
-                    {store.address && (
-                      <p className="text-gray-500 text-xs">{store.address}</p>
+                    {storeAddressLine(store) && (
+                      <p className="text-gray-500 text-xs">{storeAddressLine(store)}</p>
                     )}
                   </div>
                 </div>

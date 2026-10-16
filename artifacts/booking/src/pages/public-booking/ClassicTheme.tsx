@@ -1,4 +1,5 @@
 import { EMPTY_ARRAY } from "@/lib/empty";
+import { storeAddressLine } from "@/lib/storeAddress";
 import { useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -599,8 +600,8 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
                     <MapPin className="w-4 h-4 text-gray-400" />
                     <div>
                       <p className="font-medium">{store.name}</p>
-                      {store.address && (
-                        <p className="text-gray-500 text-xs">{store.address}</p>
+                      {storeAddressLine(store) && (
+                        <p className="text-gray-500 text-xs">{storeAddressLine(store)}</p>
                       )}
                     </div>
                   </div>

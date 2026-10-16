@@ -82,4 +82,11 @@ The full address is shown only to the professional and to a client with a bookin
   - **Server:** `routes/workPlaces.ts` provides `GET`/`PUT /api/work-places`, Solo plan only, with every value checked and at least one way of seeing clients required. The general `PATCH /api/stores/:id` ignores these fields. `/api/solo/register` takes `ownPlace` and `houseCalls`.
   - **Certxa Pro app:** sign-up asks "Where do you see clients?"; Settings has "Where you see clients"; the Get paid address wording follows the choice (private for a home studio or house calls only).
   - **Website:** Settings → Business → "Where You See Clients" (`pages/settings/WorkPlacesSettings.tsx`), shown on the Solo plan only.
+- 2026-10-16: Step 3 (privacy) done:
+  - **Owner's change:** the address is the professional's own choice, "Keep my address private" (`locations.address_private`, migration 0247), not tied to "home studio". Picking home studio switches it on, picking a salon/suite switches it off, and either can be changed. With no place of their own (house calls only) the address is always private.
+  - **One rule** in `lib/publicStore.ts` (`publicStoreView`, `bookedClientStoreView`, `addressIsPrivate`), applied to: the public store endpoint and the subdomain endpoint (every booking theme); the website and its search data (`tenant-data.ts` SQL); Autumn (city only, told the address is private); deals; the Stripe support address (it prints on card receipts); and the directory importer's Certxa-store rows.
+  - **Booking themes** show "City, ST · Address sent after you book" (`lib/storeAddress.ts`), with no directions or map.
+  - **A client who has booked** (booking confirmation) still gets the full address.
+  - **Google Business sync** only reads the address from Google, so nothing to change there.
+  - **Found and fixed:** the public store endpoints also returned internal fields to anyone: EIN, legal entity, activation code, Stripe customer ID, credit and SMS balances, suspension details. They're now stripped for every business.
 

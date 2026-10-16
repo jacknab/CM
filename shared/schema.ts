@@ -256,6 +256,8 @@ export const locations = pgTable("locations", {
   onlineBookingMode:            text("online_booking_mode").notNull().default("all"), // 'all' | 'existing' | 'off'
   // Solo plan: where the professional sees clients, and booking approval (plans/solo-work-places-and-approval.md).
   ownPlace:                     text("own_place").notNull().default("salon"), // 'salon' (public address) | 'home' (private) | 'none'
+  /** Clients see the city only until they have booked (always so when ownPlace is 'none'). */
+  addressPrivate:               boolean("address_private").notNull().default(false),
   houseCalls:                   boolean("house_calls").notNull().default(false),
   houseCallRadiusMiles:         integer("house_call_radius_miles").notNull().default(15),
   houseCallFee:                 decimal("house_call_fee", { precision: 10, scale: 2 }).notNull().default("0"),

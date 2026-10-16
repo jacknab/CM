@@ -6,6 +6,7 @@
  * specific package and a substituted photo would misrepresent it.
  */
 
+import { addressIsPrivate } from "../lib/publicStore";
 import { Router } from "express";
 import type { Request, Response } from "express";
 import crypto from "crypto";
@@ -78,7 +79,7 @@ async function getRatingsByStore(storeIds: number[]): Promise<Map<number, { rati
 function toMarketplaceDeal(
   row: typeof deals.$inferSelect,
   pkg: Pick<typeof packages.$inferSelect, "description" | "imageUrl">,
-  store: Pick<typeof locations.$inferSelect, "name" | "city" | "state" | "address" | "phone" | "storeLatitude" | "storeLongitude">,
+  store: Pick<typeof locations.$inferSelect, "name" | "city" | "state" | "address" | "phone" | "storeLatitude" | "storeLongitude" | "ownPlace" | "addressPrivate">,
   ratingInfo: { rating: number; reviewCount: number } | undefined,
   userCoords: { lat: number; lng: number } | null,
 ): ApiMarketplaceDeal {
@@ -103,7 +104,8 @@ function toMarketplaceDeal(
     rating: ratingInfo?.rating ?? null,
     reviewCount: ratingInfo?.reviewCount ?? 0,
     distance,
-    salon: { name: store.name, city: store.city, state: store.state, address: store.address, phone: store.phone },
+    // A private address isn't shown on a deal: the city and state are (lib/publicStore.ts).
+    salon: { name: store.name, city: store.city, state: store.state, address: addressIsPrivate(store) ? null : store.address, phone: store.phone },
   };
 }
 

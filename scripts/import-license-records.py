@@ -324,7 +324,10 @@ WHERE l.booking_slug IS NOT NULL AND l.phone IS NOT NULL AND d.store_id IS NULL
     run_script("""
 INSERT INTO directory_listings (slug, name, street, city, state, postal_code, phone, latitude, longitude,
   geocode_source, license_source, license_number, license_type, nail_reason, nail_salon_id, place_id, store_id)
-SELECT n.slug, l.name, l.address, l.city, upper(l.state), l.postcode,
+SELECT n.slug, l.name,
+       -- A business that keeps its address private is listed with its city only.
+       CASE WHEN l.address_private OR l.own_place = 'none' THEN NULL ELSE l.address END,
+       l.city, upper(l.state), l.postcode,
        '+1' || RIGHT(regexp_replace(l.phone, '[^0-9]', '', 'g'), 10),
        NULLIF(l.store_latitude, '')::double precision, NULLIF(l.store_longitude, '')::double precision,
        CASE WHEN NULLIF(l.store_latitude, '') IS NOT NULL THEN 'store' END,
@@ -336,7 +339,9 @@ WHERE l.booking_slug IS NOT NULL AND l.category ILIKE '%nail%' AND l.suspended_a
   AND NOT EXISTS (SELECT 1 FROM directory_listings d WHERE d.store_id = l.id)
   AND NOT EXISTS (SELECT 1 FROM directory_listings d WHERE d.slug = n.slug)
 ON CONFLICT (license_source, license_number) DO UPDATE SET last_seen_at = now();
-UPDATE directory_listings SET last_seen_at = now() WHERE license_source = 'certxa';
+UPDATE directory_listings d SET last_seen_at = now(),
+       street = CASE WHEN l.address_private OR l.own_place = 'none' THEN NULL ELSE l.address END
+  FROM locations l WHERE d.license_source = 'certxa' AND d.store_id = l.id;
 """)
     print(psql("SELECT state, count(*), count(store_id) FROM directory_listings GROUP BY 1 ORDER BY 1"), flush=True)
 
