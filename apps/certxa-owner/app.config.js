@@ -10,12 +10,9 @@
  * shared by every profile unchanged.
  */
 const PROFILES = {
-  // "Certxa Nail" is a placeholder until the owner chooses the name. The icons are made from the owner's
-  // design (assets/nail/icon-design.png): the logo on its navy, with Android drawing the icon's shape.
-  nail: {
-    name: 'Certxa Nail', androidPackage: 'com.certxa.nail', scheme: 'certxa-nail',
-    icon: './assets/nail/icon.png', adaptiveIcon: './assets/nail/adaptive-icon.png', iconBackground: '#000010',
-  },
+  // "Certxa Nail" is a placeholder until the owner chooses the name. Every app uses the Certxa icon in
+  // app.json (assets/icon.png, made from assets/icon-design.png) unless its profile sets its own.
+  nail: { name: 'Certxa Nail', androidPackage: 'com.certxa.nail', scheme: 'certxa-nail' },
 };
 
 module.exports = ({ config }) => {

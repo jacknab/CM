@@ -52,6 +52,7 @@
         "com.apple.developer.proximity-reader.payment.acceptance": true
       }
     },
-    "owner": "tobyben"
+    "owner": "tobyben",
+    "icon": "./assets/icon.png"
   }
 }

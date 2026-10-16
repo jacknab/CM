@@ -22,7 +22,7 @@
       "package": "com.certxa.owner",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0A001F"
+        "backgroundColor": "#000010"
       },
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
