@@ -10,8 +10,12 @@
  * shared by every profile unchanged.
  */
 const PROFILES = {
-  // "Certxa Nail" is a placeholder until the owner chooses the name; the icon is the Certxa one for now.
-  nail: { name: 'Certxa Nail', androidPackage: 'com.certxa.nail', scheme: 'certxa-nail' },
+  // "Certxa Nail" is a placeholder until the owner chooses the name. The icons are made from the owner's
+  // design (assets/nail/icon-design.png): the logo on its navy, with Android drawing the icon's shape.
+  nail: {
+    name: 'Certxa Nail', androidPackage: 'com.certxa.nail', scheme: 'certxa-nail',
+    icon: './assets/nail/icon.png', adaptiveIcon: './assets/nail/adaptive-icon.png', iconBackground: '#000010',
+  },
 };
 
 module.exports = ({ config }) => {
@@ -23,7 +27,14 @@ module.exports = ({ config }) => {
     ...config,
     name: profile.name,
     scheme: profile.scheme,
-    android: { ...config.android, package: profile.androidPackage },
+    icon: profile.icon ?? config.icon,
+    android: {
+      ...config.android,
+      package: profile.androidPackage,
+      ...(profile.adaptiveIcon
+        ? { adaptiveIcon: { ...config.android?.adaptiveIcon, foregroundImage: profile.adaptiveIcon, backgroundColor: profile.iconBackground } }
+        : {}),
+    },
     extra: { ...config.extra, appProfile: id },
   };
 };
