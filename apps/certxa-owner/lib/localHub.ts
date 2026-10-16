@@ -17,6 +17,8 @@ import * as Network from 'expo-network';
 export const HUB_PORT = 9477;
 const MAX_LINE = 512 * 1024;
 const RECONNECT_MS = 4_000;
+/** A connection the main POS has not welcomed by then is dropped and tried again (it would otherwise wait forever). */
+const WELCOME_MS = 8_000;
 
 export type HubStatus = 'off' | 'serving' | 'connecting' | 'connected';
 export type HubEvent =
@@ -121,14 +123,16 @@ class LocalHub {
       socket.write(JSON.stringify({ hello: this.token }) + '\n');
     });
     this.client = socket;
+    const unanswered = setTimeout(() => { if (this.client === socket && !this.clientReady) socket.destroy(); }, WELCOME_MS);
     const read = lineReader((line) => {
       let msg: any;
       try { msg = JSON.parse(line); } catch { return; }
-      if (msg?.welcome) { this.clientReady = true; this.report(); return; }
+      if (msg?.welcome) { clearTimeout(unanswered); this.clientReady = true; this.report(); return; }
       if (msg?.message !== undefined) this.emit({ kind: 'message', message: msg.message });
     }, () => socket.destroy());
     socket.on('data', read);
     const lost = () => {
+      clearTimeout(unanswered);
       if (this.client !== socket) return;
       this.client = null;
       this.clientReady = false;

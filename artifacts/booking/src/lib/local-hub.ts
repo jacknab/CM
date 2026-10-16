@@ -55,6 +55,7 @@ class LocalHubClient {
   /** This tablet's own address on the salon's Wi-Fi (main POS only), as the app last said. */
   private ownAddress: string | null = null;
   private checkTimer: ReturnType<typeof setInterval> | null = null;
+  private healTimer: ReturnType<typeof setInterval> | null = null;
 
   private post(message: Record<string, unknown>) { w().ReactNativeWebView?.postMessage(JSON.stringify(message)); }
 
@@ -114,9 +115,12 @@ class LocalHubClient {
     this.role = role;
     this.ownAddress = null;
     if (!this.checkTimer) this.checkTimer = setInterval(() => void this.check(), 60_000);
+    if (!this.healTimer) this.healTimer = setInterval(() => this.heal(), 20_000);
     // The app keeps its hub running across page loads and stays silent when asked for what it is already
-    // doing. Stopping it once per page load makes it start afresh and say what state the link is in.
-    let restarted = false;
+    // doing. A screen or station stops it once per page load so it connects afresh and says what state the
+    // link is in. The main POS never does: restarting its hub disconnects every other tablet, and a screen
+    // knocked off that way could stay stuck "connecting" (store 2, 2026-10-16: off from 8:37 PM on).
+    let restarted = role === "pos";
     const apply = (s: HubSettings | null) => {
       if (!s) return;
       if (!restarted) { restarted = true; this.post({ type: "HUB_STOP" }); }
@@ -135,6 +139,19 @@ class LocalHubClient {
       localStorage.setItem(settingsKey(storeId), JSON.stringify(next));
       apply(next);
     } catch { /* keeps what it has */ }
+  }
+
+  /**
+   * A screen or station that is not connected to the main POS starts a fresh connection, with or without
+   * internet (from the address it saved). A connection attempt that never gets an answer otherwise never ends.
+   */
+  private heal() {
+    const storeId = this.storeId;
+    if (storeId == null || !this.role || this.role === "pos" || this.status === "connected") return;
+    const s = readSaved(storeId);
+    if (!s?.address) return;
+    this.post({ type: "HUB_STOP" });
+    this.post({ type: "HUB_JOIN", host: s.address, token: s.token });
   }
 
   /**
