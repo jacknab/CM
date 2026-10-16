@@ -25,6 +25,18 @@
 .nail-app .empty-ticket p { font-size: 13px; max-width: 220px; line-height: 1.5; margin: 0; }
 .nail-app .empty-ticket svg { color: #3b424c; }
 .nail-app .ticket-item { height: 73px; padding: 12px 14px; display: grid; grid-template-columns: minmax(0,1fr) 64px 17px; align-items: center; gap: 8px; border-bottom: 1px solid #3b424c; }
+/* Group Pay: one cart per ticket inside the ticket panel (CheckoutMode). */
+.nail-app .group-cart { margin: 10px 10px 0; border: 1px solid #3b424c; border-radius: 8px; overflow: hidden; background: #2a2e36; }
+.nail-app .group-cart:last-child { margin-bottom: 10px; }
+.nail-app .group-cart-head { display: grid; grid-template-columns: minmax(0,1fr) auto 17px; align-items: center; gap: 8px; padding: 10px 12px; background: #232830; border-bottom: 1px solid #3b424c; }
+.nail-app .group-cart-who { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.nail-app .group-cart-who strong { font-size: 13px; color: #eef3fb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .group-cart-who span { font-size: 11px; color: #a7afb9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .group-cart-total { font-size: 13px; color: #eef3fb; font-variant-numeric: tabular-nums; }
+.nail-app .group-cart-line { display: grid; grid-template-columns: minmax(0,1fr) auto 17px; align-items: center; gap: 8px; padding: 9px 12px; font-size: 12px; }
+.nail-app .group-cart-line + .group-cart-line { border-top: 1px solid #333943; }
+.nail-app .group-cart-line span { color: #d5dae1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nail-app .group-cart-line strong { color: #e8eaed; font-variant-numeric: tabular-nums; }
 .nail-app .item-copy { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .nail-app .item-copy strong, .nail-app .item-price strong { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #e8eaed; }
 .nail-app .item-copy span { color: #a7afb9; font-size: 12px; }

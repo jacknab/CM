@@ -1043,24 +1043,52 @@ export function CheckoutMode(p: Props) {
           </div>
         </div>
         <div className="ticket-items">
-          <div className="ticket-item"><div className="item-copy"><strong>{ticket.service.name}</strong><span>{ticket.staff?.name ?? "Service"}</span></div><div className="item-price"><strong>{money(ticket.service.price)}</strong></div><span /></div>
-          {ticket.addons.map((a) => <div className="ticket-item" key={`a${a.id}`}><div className="item-copy"><strong>+ {a.name}</strong><span>Add-on</span></div><div className="item-price"><strong>{money(a.price)}</strong></div><span /></div>)}
-          {(ticket.nail?.lines ?? []).map((l) => <div className="ticket-item" key={l.label}><div className="item-copy"><strong>{l.label}</strong><span>Nail option</span></div><div className="item-price"><strong>{money(l.price)}</strong></div><span /></div>)}
-          {ticket.customLines.map((l, i) => <div className="ticket-item" key={`c${i}`}><div className="item-copy"><strong>{l.label}</strong><span>Custom charge</span></div><div className="item-price"><strong>{money(l.price)}</strong></div><span /></div>)}
-          {extras.map((e) => (
-            <div className="ticket-item" key={e.id} data-testid={`nail-pay-extra-${e.kind}`}>
-              <div className="item-copy"><strong>{e.label}</strong><span>{e.kind === "retail" ? "Retail" : "Added at checkout"}</span></div>
-              <div className="item-price"><strong>{money(e.price)}</strong></div>
-              <button type="button" className="remove-item" onClick={() => setExtras((cur) => cur.filter((x) => x.id !== e.id))} aria-label={`Remove ${e.label}`}><X size={16} /></button>
-            </div>
-          ))}
-          {linked.map((t) => (
-            <div className="ticket-item" key={`l${t.id}`} data-testid="nail-pay-linked">
-              <div className="item-copy"><strong>{t.client.name}</strong><span>{t.service.name} · paid together</span></div>
-              <div className="item-price"><strong>{money(t.total)}</strong></div>
-              <button type="button" className="remove-item" onClick={() => setLinkedIds((cur) => cur.filter((x) => x !== t.id))} aria-label={`Remove ${t.client.name}`}><X size={16} /></button>
-            </div>
-          ))}
+          {linked.length === 0 ? (
+            <>
+            <div className="ticket-item"><div className="item-copy"><strong>{ticket.service.name}</strong><span>{ticket.staff?.name ?? "Service"}</span></div><div className="item-price"><strong>{money(ticket.service.price)}</strong></div><span /></div>
+            {ticket.addons.map((a) => <div className="ticket-item" key={`a${a.id}`}><div className="item-copy"><strong>+ {a.name}</strong><span>Add-on</span></div><div className="item-price"><strong>{money(a.price)}</strong></div><span /></div>)}
+            {(ticket.nail?.lines ?? []).map((l) => <div className="ticket-item" key={l.label}><div className="item-copy"><strong>{l.label}</strong><span>Nail option</span></div><div className="item-price"><strong>{money(l.price)}</strong></div><span /></div>)}
+            {ticket.customLines.map((l, i) => <div className="ticket-item" key={`c${i}`}><div className="item-copy"><strong>{l.label}</strong><span>Custom charge</span></div><div className="item-price"><strong>{money(l.price)}</strong></div><span /></div>)}
+            {extras.map((e) => (
+              <div className="ticket-item" key={e.id} data-testid={`nail-pay-extra-${e.kind}`}>
+                <div className="item-copy"><strong>{e.label}</strong><span>{e.kind === "retail" ? "Retail" : "Added at checkout"}</span></div>
+                <div className="item-price"><strong>{money(e.price)}</strong></div>
+                <button type="button" className="remove-item" onClick={() => setExtras((cur) => cur.filter((x) => x.id !== e.id))} aria-label={`Remove ${e.label}`}><X size={16} /></button>
+              </div>
+            ))}
+            </>
+          ) : (
+            // Group Pay: one cart per ticket — its client, technician and number, then its own lines (as on the
+            // calendar's checkout). Extras added here belong to this ticket's cart.
+            [ticket, ...linked].map((t) => {
+              const own = t.id === ticket.id;
+              const cartTotal = own ? t.total + extras.reduce((sum, e) => sum + e.price, 0) : t.total;
+              return (
+                <div className="group-cart" key={`g${t.id}`} data-testid={own ? "nail-pay-cart-own" : "nail-pay-linked"}>
+                  <div className="group-cart-head">
+                    <div className="group-cart-who">
+                      <strong>{t.client.name}</strong>
+                      <span>{t.staff?.name ?? "No technician"} · #{t.ticketNumber ?? t.id}</span>
+                    </div>
+                    <strong className="group-cart-total">{money(cartTotal)}</strong>
+                    {own ? <span /> : (
+                      <button type="button" className="remove-item" onClick={() => setLinkedIds((cur) => cur.filter((x) => x !== t.id))} aria-label={`Remove ${t.client.name}`}><X size={16} /></button>
+                    )}
+                  </div>
+                  <div className="group-cart-line"><span>{t.service.name}</span><strong>{money(t.service.price)}</strong><span /></div>
+                  {t.addons.map((a) => <div className="group-cart-line" key={`a${a.id}`}><span>+ {a.name}</span><strong>{money(a.price)}</strong><span /></div>)}
+                  {(t.nail?.lines ?? []).map((l) => <div className="group-cart-line" key={`n${l.label}`}><span>{l.label}</span><strong>{money(l.price)}</strong><span /></div>)}
+                  {t.customLines.map((l, i) => <div className="group-cart-line" key={`c${i}`}><span>{l.label}</span><strong>{money(l.price)}</strong><span /></div>)}
+                  {own && extras.map((e) => (
+                    <div className="group-cart-line" key={e.id} data-testid={`nail-pay-extra-${e.kind}`}>
+                      <span>{e.label}</span><strong>{money(e.price)}</strong>
+                      <button type="button" className="remove-item" onClick={() => setExtras((cur) => cur.filter((x) => x.id !== e.id))} aria-label={`Remove ${e.label}`}><X size={14} /></button>
+                    </div>
+                  ))}
+                </div>
+              );
+            })
+          )}
         </div>
 
         <div className="ticket-total">
