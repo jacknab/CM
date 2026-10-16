@@ -140,6 +140,11 @@ export function useNightlyRestart(isBusy: () => boolean, lastActivityAt: () => n
   }, [isBusy, lastActivityAt]);
 }
 
+/** Close the app completely and start it again fresh (the manager menu's Hard reset). False without the native module. */
+export function restartApp(): boolean {
+  try { if (!native) return false; native.restart(); return true; } catch { return false; }
+}
+
 /** Can this build download and install its own update (Android app 1.0.4 and later)? */
 export function canInstallApk(): boolean {
   return typeof native?.installLatestApk === 'function';

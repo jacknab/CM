@@ -575,14 +575,22 @@ export default function FrontDeskDisplay() {
   }, [clearPosOverlay]);
 
   useEffect(() => { posCheckoutRef.current = posCheckout; }, [posCheckout]);
-  // Safety net: an order that has sat on screen with nothing from the POS for six minutes is abandoned (the
-  // POS locks and closes its side after five) — go back to the welcome page. Never while a card is being taken.
+  // Safety net for an order whose POS has gone (closed, crashed, lost its connection): after six quiet minutes
+  // ask the POS whether the checkout is still open, and go back to the welcome page only if nothing answers.
+  // Staff taking their time is not a reason to leave the order — the POS answers with the cart. Never while
+  // a card is being taken.
+  const syncAskedAtRef = useRef(0);
   useEffect(() => {
     const iv = setInterval(() => {
-      if (posCheckoutRef.current === "cart" && !activePaymentRef.current && Date.now() - lastPosMsgRef.current > 6 * 60_000) clearPosOverlay();
-    }, 30_000);
+      if (posCheckoutRef.current !== "cart" || activePaymentRef.current || Date.now() - lastPosMsgRef.current < 6 * 60_000) {
+        syncAskedAtRef.current = 0;
+        return;
+      }
+      if (!syncAskedAtRef.current) { syncAskedAtRef.current = Date.now(); sendWs("kiosk_checkout_sync_request"); return; }
+      if (Date.now() - syncAskedAtRef.current >= 20_000) { syncAskedAtRef.current = 0; clearPosOverlay(); }
+    }, 10_000);
     return () => clearInterval(iv);
-  }, [clearPosOverlay]);
+  }, [clearPosOverlay, sendWs]);
   useEffect(() => { posApptIdRef.current = posApptId; }, [posApptId]);
   useEffect(() => { bookingPhoneModeRef.current = bookingPhoneMode; }, [bookingPhoneMode]);
 

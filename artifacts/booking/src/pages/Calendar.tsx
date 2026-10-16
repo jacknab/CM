@@ -5736,6 +5736,9 @@ export function CheckoutPOSPanel({
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
+        // The customer screen asks whether this checkout is still open (it reconnected, or the order has sat
+        // quiet for a while): answer with the cart, so it stays on the order.
+        if (msg.type === "kiosk_checkout_sync_request") { resendCartRef.current(); return; }
         if (msg.type === "kiosk_checkout_tip_selected") {
           const tipFromKiosk = Number(msg.tipAmount) || 0;
           setTipMode("custom");
@@ -5916,7 +5919,8 @@ export function CheckoutPOSPanel({
     (appointment as any).customer?.fullName || appointment.customer?.name ||
     (appointment as any).customerName || (appointment as any).clientName || tPOS.walkIn;
   const mirrorKey = JSON.stringify({ mirrorItems, discount, tip, tax, grandTotal, mirrorIsWalkIn, name: mirrorCustomerName, points: customerLoyaltyPoints });
-  useEffect(() => {
+  const resendCartRef = useRef<() => void>(() => {});
+  resendCartRef.current = () => {
     if (!dualScreenEnabled) return;
     broadcastToKiosk("kiosk_checkout_cart", {
       items: mirrorItems,
@@ -5926,6 +5930,9 @@ export function CheckoutPOSPanel({
       appointmentId: appointment?.id ?? 0,
       loyaltyPoints: mirrorIsWalkIn ? undefined : customerLoyaltyPoints,
     });
+  };
+  useEffect(() => {
+    resendCartRef.current();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dualScreenEnabled, mirrorKey]);
 

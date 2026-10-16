@@ -1,7 +1,7 @@
 /**
  * ManagerMenu — what a manager can do on the tablet after entering the manager PIN (the 3-second hold):
- * change the Wi-Fi, set up this tablet's receipt printer, install the latest version of the app, or leave
- * the app for Android's Settings. Each opens the app's own native screen (WifiSetupScreen, PrinterSetupModal);
+ * change the Wi-Fi, set up this tablet's receipt printer, install the latest version of the app, hard-reset a
+ * customer screen (clear its saved web files and restart the app), or leave the app for Android's Settings. Each opens the app's own native screen (WifiSetupScreen, PrinterSetupModal);
  * the app update downloads and installs in place (lib/appRestart.ts installLatestApk).
  */
 import React, { useEffect, useState } from 'react';
@@ -18,13 +18,15 @@ interface Props {
   exitLabel: string;
   onWifi: () => void;
   onPrinter: () => void;
+  /** Customer screen: start the screen and the app afresh. */
+  onHardReset?: () => void;
   onExit: () => void;
   onClose: () => void;
 }
 
 type UpdateState = { busy: boolean; text: string; tone: 'info' | 'error' };
 
-export function ManagerMenu({ visible, apkUrl, exitLabel, onWifi, onPrinter, onExit, onClose }: Props) {
+export function ManagerMenu({ visible, apkUrl, exitLabel, onWifi, onPrinter, onHardReset, onExit, onClose }: Props) {
   const [update, setUpdate] = useState<UpdateState>({ busy: false, text: '', tone: 'info' });
 
   // Opening the menu after an update that failed says why.
@@ -63,6 +65,7 @@ export function ManagerMenu({ visible, apkUrl, exitLabel, onWifi, onPrinter, onE
             {row('Wi-Fi', onWifi, update.busy)}
             {row('Receipt printer', onPrinter, update.busy)}
             {canInstallApk() && row('Install the latest app', () => void installUpdate(), update.busy)}
+            {onHardReset && row('Hard reset', onHardReset, update.busy)}
             {row(exitLabel, onExit, update.busy)}
           </View>
           {update.text ? (

@@ -42,7 +42,7 @@ import { WifiSetupScreen } from '@/components/onboarding/WifiSetupScreen';
 import { ManagerMenu } from '@/components/ManagerMenu';
 import { wifiSetupSupported } from '@/lib/wifi';
 import { useIdleSleep } from '@/lib/idleSleep';
-import { useNightlyRestart, isDefaultHomeApp, openDeviceSettings, isKioskManaged, exitKioskToSettings, followSensorOrientation, prepareCardReader } from '@/lib/appRestart';
+import { useNightlyRestart, isDefaultHomeApp, openDeviceSettings, isKioskManaged, exitKioskToSettings, followSensorOrientation, prepareCardReader, restartApp } from '@/lib/appRestart';
 import { KioskExitPinModal } from '@/components/KioskExitPinModal';
 import { POSModal, type POSData } from '@/components/POSModal';
 import { viewportLockJs } from '@/lib/viewportLock';
@@ -997,6 +997,12 @@ export default function PortalScreen() {
         exitLabel={isKioskManaged() || isDefaultHomeApp() ? 'Exit to Android Settings' : 'Exit app'}
         onWifi={() => { setManagerMenuVisible(false); setWifiVisible(true); }}
         onPrinter={() => { setManagerMenuVisible(false); setPrinterSetupVisible(true); }}
+        // Customer screen: clear what the screen has saved (pages, scripts) and start the app afresh.
+        onHardReset={deviceRole === 'frontdesk' ? () => {
+          setManagerMenuVisible(false);
+          try { (webViewRef.current as any)?.clearCache?.(true); } catch { /* restarting is enough */ }
+          if (!restartApp()) webViewRef.current?.reload();
+        } : undefined}
         onExit={() => {
           setManagerMenuVisible(false);
           if (isKioskManaged()) exitKioskToSettings(10);
