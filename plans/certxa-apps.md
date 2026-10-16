@@ -94,4 +94,9 @@ These are needed by Phases 3–5, not Phase 1.
 
 ## Progress
 
-- 2026-10-16: plan written. Phase 1 started.
+- 2026-10-16: plan written.
+- 2026-10-16: Phase 1 done in code (commit `4809dc3d`), live after the next booking deploy:
+  - The six staff-screen pieces moved to `components/staff-screen/`; `Calendar.tsx` went from 11,488 to 8,946 lines.
+  - The browser uses `shared/apiPaths.ts`.
+  - The core bundle is 2.08 MB → 1.63 MB, and /nail no longer loads the 242 KB calendar file. About 650 KB less to open /nail.
+  - Old assets: none are older than 14 days. The 24,032 files (826 MB) come from deploy frequency (about 480 files per deploy). Suggestion for the owner: keep 3 days instead of 14.
