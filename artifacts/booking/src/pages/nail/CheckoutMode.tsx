@@ -182,7 +182,16 @@ export function CheckoutMode(p: Props) {
     groupSeeded.current = true;
     setLinkedIds((cur) => Array.from(new Set([...cur, ...ids])));
   }, [p.otherTickets, p.ticket.groupId]);
-  const linked = useMemo(() => p.otherTickets.filter((t) => linkedIds.includes(t.id)), [p.otherTickets, linkedIds]);
+  // Once the sale is saved the paid tickets leave the board, but the checkout stays open for the receipt: keep the
+  // last copy of each ticket paid together, or the screen falls back to this ticket alone (a "change due" of the
+  // others' price, and a cart on the customer's screen without them). Before then a ticket that leaves the board
+  // (paid or cancelled at another station) leaves this sale too.
+  const lastLinked = useRef(new Map<number, BoardTicket>());
+  const linked = useMemo(() => {
+    const now = p.otherTickets.filter((t) => linkedIds.includes(t.id));
+    if (!(p.paid || p.finalizing)) { lastLinked.current = new Map(now.map((t) => [t.id, t])); return now; }
+    return linkedIds.map((id) => now.find((t) => t.id === id) ?? lastLinked.current.get(id)).filter((t): t is BoardTicket => !!t);
+  }, [p.otherTickets, linkedIds, p.paid, p.finalizing]);
   // ── The tip per technician, when the client says who gets what ──
   // Every ticket of this checkout, with its technician. With two or more technicians staff can enter each
   // one's tip; otherwise the tip is shared by service time as before.

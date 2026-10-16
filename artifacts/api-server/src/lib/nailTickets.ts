@@ -1522,7 +1522,12 @@ export interface ArchivedTicket {
  */
 export async function ticketArchivePage(storeId: number, opts: { afterId: number; changedSince: Date | null; limit: number }): Promise<{ tickets: ArchivedTicket[]; lastId: number | null; more: boolean }> {
   const { rows } = await pool.query(
-    `SELECT a.id, a.ticket_number, a.status, a.date, a.total_paid, a.receipt_snapshot,
+    // A ticket paid with others (Group Pay) shows the sale's receipt, kept on the ticket the checkout was opened from.
+    `SELECT a.id, a.ticket_number, a.status, a.date, a.total_paid,
+            COALESCE(a.receipt_snapshot, (SELECT m.receipt_snapshot FROM nail_checkout_operations o
+               JOIN appointments m ON m.id = (o.result->'appointmentIds'->>0)::int AND m.store_id = o.store_id
+              WHERE o.store_id = a.store_id AND o.result->'appointmentIds' @> jsonb_build_array(a.id)
+              ORDER BY o.created_at DESC LIMIT 1)) AS receipt_snapshot,
             COALESCE(c.full_name, (SELECT kc.client_name FROM kiosk_checkins kc WHERE kc.appointment_id = a.id ORDER BY kc.id DESC LIMIT 1)) AS client_name,
             s.name AS service_name, st.name AS staff_name
        FROM appointments a

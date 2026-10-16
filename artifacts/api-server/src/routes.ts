@@ -23135,6 +23135,17 @@ or
 
     const totalPaid = (appointment as any).totalPaid;
     const isPaid = appointment.status === "completed" && totalPaid != null;
+    // A ticket paid together with others (Group Pay) has no receipt of its own: the sale's receipt is kept
+    // on the ticket the checkout was opened from, the first one the sale record lists.
+    let manageToken: string | null = isPaid ? (appointment as any).manageToken ?? null : null;
+    if (isPaid && !manageToken) {
+      const { rows } = await pool.query(
+        `SELECT m.manage_token FROM nail_checkout_operations o
+           JOIN appointments m ON m.id = (o.result->'appointmentIds'->>0)::int AND m.store_id = o.store_id
+          WHERE o.store_id = $1 AND o.result->'appointmentIds' @> jsonb_build_array($2::int)
+          ORDER BY o.created_at DESC LIMIT 1`, [appointment.storeId, appointment.id]).catch(() => ({ rows: [] as any[] }));
+      manageToken = rows[0]?.manage_token ?? null;
+    }
 
     return {
       found: true,
@@ -23149,7 +23160,7 @@ or
       isPaid,
       // Only meaningful once paid — the same token PublicReceipt.tsx / the "text me a receipt"
       // link already use, so a paid scan can open the identical read-only receipt view.
-      manageToken: isPaid ? (appointment as any).manageToken ?? null : null,
+      manageToken,
     };
   }
 
