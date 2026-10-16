@@ -44,7 +44,8 @@ export function normalizeClientAddress(raw: unknown): ClientAddress | null {
   const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
   const address: ClientAddress = {
     line1: text(r.line1, 200), line2: text(r.line2, 100) || undefined,
-    city: text(r.city, 100), state: text(r.state, 2).toUpperCase(), postcode: text(r.postcode, 10),
+    // Checked whole, never cut short: "California" must not become "CA".
+    city: text(r.city, 100), state: text(r.state, 20).toUpperCase(), postcode: text(r.postcode, 20),
   };
   if (!address.line1 || !address.city || !/^[A-Z]{2}$/.test(address.state) || !/^\d{5}(-\d{4})?$/.test(address.postcode)) return null;
   return address;
