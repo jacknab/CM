@@ -14,6 +14,8 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Camera, Loader2, Wand2, Image, Plus, Trash2, Star, GripVertical, ImagePlus, Sparkles } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
+import { useSelectedStore } from "@/hooks/use-store";
+import { apiRequest } from "@/lib/queryClient";
 
 type ServiceOptionDraft = {
   id?: number;
@@ -44,6 +46,14 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
   const { mutateAsync: updateOption } = useUpdateServiceOption();
   const { mutateAsync: deleteOption } = useDeleteServiceOption();
   const { toast } = useToast();
+  // Solo plan with its own place and house calls: each service says where it's done.
+  const { selectedStore } = useSelectedStore();
+  const { data: workPlaces } = useQuery<{ eligible?: boolean; ownPlace?: string; houseCalls?: boolean }>({
+    queryKey: ["/api/work-places", selectedStore?.id],
+    queryFn: async () => (await apiRequest("GET", "/api/work-places")).json(),
+    enabled: !!selectedStore?.id,
+  });
+  const offersBoth = !!(workPlaces?.eligible && workPlaces.houseCalls && workPlaces.ownPlace !== "none");
 
   const formSchema = insertServiceSchema.extend({
     duration: z.coerce.number().min(1, "Duration must be at least 1 minute"),
@@ -68,12 +78,14 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
       depositRequired: initialData.depositRequired || false,
       depositAmount: initialData.depositAmount ? Number(initialData.depositAmount) : null,
       hiddenFromPublic: initialData.hiddenFromPublic || false,
+      offeredAt: initialData.offeredAt ?? "any",
     } : {
       depositRequired: false,
       depositAmount: null,
       category: initialCategoryName,
       hiddenFromPublic: false,
       longevity: "",
+      offeredAt: "any",
     }
   });
 
@@ -129,6 +141,7 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
         depositRequired: initialData.depositRequired || false,
         depositAmount: initialData.depositAmount ? Number(initialData.depositAmount) : null,
         hiddenFromPublic: initialData.hiddenFromPublic || false,
+      offeredAt: initialData.offeredAt ?? "any",
       });
       if (initialData?.options && initialData.options.length > 0) {
         setOptions(initialData.options.map((o: any) => ({
@@ -287,6 +300,7 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
       illustrationCategoryId: initialData?.illustrationCategoryId ?? null,
       autoAssigned: false,
       categoryId,
+      offeredAt: offersBoth ? (data.offeredAt ?? "any") : undefined,
     };
 
     if (initialData) {
@@ -391,6 +405,20 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
           {errors.price && <span className="text-xs text-destructive">{errors.price.message}</span>}
         </div>
       </div>
+
+      {offersBoth && (
+        <div className="space-y-2">
+          <Label>Where you do it</Label>
+          <Select value={watch("offeredAt") ?? "any"} onValueChange={(v) => setValue("offeredAt", v as "place" | "client" | "any")}>
+            <SelectTrigger data-testid="select-service-offered-at"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="any">At my place or as a house call</SelectItem>
+              <SelectItem value="place">At my place only</SelectItem>
+              <SelectItem value="client">House call only</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       <div className="space-y-2">
         <Label htmlFor="longevity">Service Longevity</Label>

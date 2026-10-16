@@ -24,6 +24,7 @@ import { formatInTz, getNowInTimezone } from "@/lib/timezone";
 import { apiRequest } from "@/lib/queryClient";
 import { addDays, subDays, isSameDay } from "date-fns";
 import { StoreData, ServiceData, ServiceOptionData, CategoryData, TimeSlot, AddonData, ServiceAddonData } from "./types";
+import { useHouseCall, HouseCallFields } from "./houseCall";
 import { bookingServiceFields, canAddService, extraServiceQuery, technicianLine } from "./twoServices";
 import { detectBrowserLang, BOOKING_STRINGS } from "@/lib/bookingTranslations";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
@@ -264,8 +265,10 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
     return addons.filter(a => addonIds.has(a.id));
   };
 
+  const hc = useHouseCall(store, slug, selectedServices);
+
   const totalPrice = useMemo(() => {
-    let total = selectedServices.reduce((sum, s) => sum + Number(s.price), 0);
+    let total = selectedServices.reduce((sum, s) => sum + Number(s.price), 0) + hc.travelFee;
     Object.entries(selectedAddons).forEach(([svcId, addonIds]) => {
       addonIds.forEach(id => {
         const addon = addons.find(a => a.id === id);
@@ -273,7 +276,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
       });
     });
     return total;
-  }, [selectedServices, selectedAddons, addons]);
+  }, [selectedServices, selectedAddons, addons, hc.travelFee]);
 
   const totalDuration = useMemo(() => {
     let total = selectedServices.reduce((sum, s) => sum + s.duration, 0);
@@ -293,7 +296,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
     : null;
 
   const { data: slots, isLoading: slotsLoading } = useQuery<TimeSlot[]>({
-    queryKey: ["/api/public/store", slug, "availability", primaryService?.id, selectedServices[1]?.id, dateString, totalDuration, preselectedStaffId],
+    queryKey: ["/api/public/store", slug, "availability", primaryService?.id, selectedServices[1]?.id, dateString, totalDuration, preselectedStaffId, hc.timesKey],
     queryFn: async () => {
       const params = new URLSearchParams({
         serviceId: String(primaryService!.id),
@@ -302,11 +305,12 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
         ...extraServiceQuery(selectedServices),
       });
       if (preselectedStaffId) params.set("staffId", String(preselectedStaffId));
+      hc.applyParams(params);
       const res = await fetch(`/api/public/store/${slug}/availability?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch availability");
       return res.json();
     },
-    enabled: !!slug && !!primaryService && !!dateString && totalDuration > 0,
+    enabled: !!slug && !!primaryService && !!dateString && totalDuration > 0 && hc.ready,
   });
 
   useMemo(() => {
@@ -485,9 +489,10 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
       addonIds: allAddonIds,
       smsOptIn,
       cancellationPolicyAccepted: cancellationAccepted,
+      ...hc.bookFields,
       ...paymentInfo,
     });
-  }, [primaryService, selectedSlot, selectedAddons, selectedServices, customerName, customerEmail, customerPhone, smsOptIn, cancellationAccepted, bookMutation]);
+  }, [primaryService, selectedSlot, selectedAddons, selectedServices, customerName, customerEmail, customerPhone, smsOptIn, cancellationAccepted, bookMutation, hc.bookFields]);
 
   // ── Calculate deposit in cents ─────────────────────────────────────────────
   const calculateDepositCents = useCallback((totalPriceDollars: number): number => {
@@ -854,6 +859,9 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
               <h2 className="font-semibold text-lg">Choose Time</h2>
             </div>
 
+            <HouseCallFields hc={hc} className="px-4 pt-4" />
+            <div className={hc.ready ? "" : "hidden"}>
+
             {/* Calendar card */}
             <div className="px-4 pt-4 pb-2">
               <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
@@ -941,6 +949,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
                   ))}
                 </div>
               )}
+            </div>
             </div>
           </div>
         )}

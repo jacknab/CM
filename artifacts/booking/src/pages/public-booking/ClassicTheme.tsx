@@ -27,6 +27,7 @@ import { formatInTz, getNowInTimezone } from "@/lib/timezone";
 import { apiRequest } from "@/lib/queryClient";
 import { addDays, subDays, isSameDay } from "date-fns";
 import { StoreData, ServiceData, CategoryData, TimeSlot } from "./types";
+import { useHouseCall, HouseCallFields } from "./houseCall";
 import { bookingServiceFields, canAddService, extraServiceQuery, technicianLine } from "./twoServices";
 
 type Step = "client" | "services" | "time" | "confirm";
@@ -91,7 +92,8 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
   const categories = servicesData?.categories || [];
   const showPrices = publicStoreData?.showPrices ?? true;
 
-  const totalPrice = selectedServices.reduce((sum, s) => sum + Number(s.price), 0);
+  const hc = useHouseCall(store, slug, selectedServices);
+  const totalPrice = selectedServices.reduce((sum, s) => sum + Number(s.price), 0) + hc.travelFee;
   const totalDuration = selectedServices.reduce((sum, s) => sum + s.duration, 0);
   const primaryService = selectedServices[0];
 
@@ -112,6 +114,7 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
       dateString,
       totalDuration,
       preselectedStaffId,
+      hc.timesKey,
     ],
     queryFn: async () => {
       const params = new URLSearchParams({
@@ -121,6 +124,7 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
         ...extraServiceQuery(selectedServices),
       });
       if (preselectedStaffId) params.set("staffId", String(preselectedStaffId));
+      hc.applyParams(params);
       const res = await fetch(
         `/api/public/store/${slug}/availability?${params}`,
         { credentials: "include" }
@@ -129,7 +133,7 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
       return res.json();
     },
     enabled:
-      !!slug && !!primaryService && !!dateString && totalDuration > 0,
+      !!slug && !!primaryService && !!dateString && totalDuration > 0 && hc.ready,
   });
 
   useMemo(() => {
@@ -246,6 +250,7 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
       customerEmail: customerEmail.trim() || undefined,
       customerPhone: customerPhone.trim() || undefined,
       cancellationPolicyAccepted: cancellationAccepted,
+      ...hc.bookFields,
     });
   };
 
@@ -465,6 +470,9 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
               <h2 className="font-semibold text-lg">Choose Time</h2>
             </div>
 
+            <HouseCallFields hc={hc} className="px-4 pt-4" />
+            <div className={hc.ready ? "" : "hidden"}>
+
             {/* Calendar — week strip with nav arrows on each side */}
             <div className="px-4 pt-4 pb-2">
               <div className="flex items-center gap-2">
@@ -563,6 +571,7 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
                 <Plus className="w-4 h-4" />
                 Add another service
               </button>
+            </div>
             </div>
           </div>
         )}

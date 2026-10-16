@@ -48,6 +48,8 @@ export interface ServiceData {
   imageUrl?: string | null;
   depositRequired?: boolean;
   depositAmount?: string | null;
+  /** Solo house calls: done at the professional's place, at the client's, or either. */
+  offeredAt?: string | null;
   options: ServiceOptionData[];
 }
 

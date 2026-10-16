@@ -1519,7 +1519,10 @@ export const googleReviewResponsesRelations = relations(googleReviewResponses, (
 
 export const insertLocationSchema = createInsertSchema(locations).omit({ id: true });
 export const insertServiceCategorySchema = createInsertSchema(serviceCategories).omit({ id: true });
-export const insertServiceSchema = createInsertSchema(services).omit({ id: true });
+export const insertServiceSchema = createInsertSchema(services).omit({ id: true }).extend({
+  // Solo plan house calls: done at the professional's place, at the client's, or either.
+  offeredAt: z.enum(["place", "client", "any"]).optional(),
+});
 export const insertServiceOptionSchema = createInsertSchema(serviceOptions).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertAddonSchema = createInsertSchema(addons).omit({ id: true });
 export const insertServiceAddonSchema = createInsertSchema(serviceAddons).omit({ id: true });

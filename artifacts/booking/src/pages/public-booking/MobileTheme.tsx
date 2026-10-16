@@ -30,6 +30,7 @@ import { formatInTz, getNowInTimezone } from "@/lib/timezone";
 import { apiRequest } from "@/lib/queryClient";
 import { addDays, subDays, isSameDay } from "date-fns";
 import { StoreData, ServiceData, CategoryData, TimeSlot, AddonData, ServiceAddonData } from "./types";
+import { useHouseCall, HouseCallFields } from "./houseCall";
 
 interface MobileThemeProps {
   store: StoreData;
@@ -98,7 +99,9 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
   const serviceAddons = servicesData?.serviceAddons || [];
   const showPrices = publicStoreData?.showPrices ?? true;
 
-  const totalPrice = selectedServices.reduce((sum, s) => {
+  const hc = useHouseCall(store, slug, selectedServices);
+
+  const totalPrice = hc.travelFee + selectedServices.reduce((sum, s) => {
     let price = Number(s.price);
     const sAddons = selectedAddons[s.id] || [];
     sAddons.forEach(addonId => {
@@ -131,7 +134,7 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
     : null;
 
   const { data: slots, isLoading: slotsLoading } = useQuery<TimeSlot[]>({
-    queryKey: ["/api/public/store", slug, "availability", primaryService?.id, dateString, totalDuration, preselectedStaffId],
+    queryKey: ["/api/public/store", slug, "availability", primaryService?.id, dateString, totalDuration, preselectedStaffId, hc.timesKey],
     queryFn: async () => {
       const params = new URLSearchParams({
         serviceId: String(primaryService!.id),
@@ -139,11 +142,12 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
         duration: String(totalDuration),
       });
       if (preselectedStaffId) params.set("staffId", String(preselectedStaffId));
+      hc.applyParams(params);
       const res = await fetch(`/api/public/store/${slug}/availability?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch availability");
       return res.json();
     },
-    enabled: !!slug && !!primaryService && !!dateString && totalDuration > 0,
+    enabled: !!slug && !!primaryService && !!dateString && totalDuration > 0 && hc.ready,
   });
 
   useMemo(() => {
@@ -317,6 +321,7 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
       customerPhone: customerPhone.trim(),
       addonIds,
       cancellationPolicyAccepted: cancellationAccepted,
+      ...hc.bookFields,
     });
   };
 
@@ -499,6 +504,9 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
                     <h2 className="text-xl font-bold text-gray-800">Select Time</h2>
                 </div>
 
+                <HouseCallFields hc={hc} className="mb-5" />
+                <div className={hc.ready ? "" : "hidden"}>
+
                 {/* Calendar card */}
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-5">
                     <div className="flex items-center justify-between px-3 pt-3 pb-1">
@@ -561,6 +569,7 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
                         ))}
                     </div>
                 )}
+                </div>
             </div>
         )}
 

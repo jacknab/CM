@@ -34,6 +34,7 @@ import { formatInTz } from "@/lib/timezone";
 import { useCancellationPolicy } from "@/hooks/use-public-booking";
 import { CancellationPolicyConsent } from "./CancellationPolicyConsent";
 import type { StoreData } from "./types";
+import { useHouseCall, HouseCallFields } from "./houseCall";
 
 // ── Color tokens (mapped from nail-salon-bloom tailwind.config.js) ─────────────
 const C = {
@@ -67,6 +68,7 @@ interface ServiceEntry {
   category?: string;
   categoryId?: number;
   imageUrl?: string | null;
+  offeredAt?: string | null;
 }
 
 interface ServiceCategoryEntry {
@@ -278,6 +280,7 @@ function StarRow({ rating, size = 14 }: { rating: number; size?: number }) {
 interface BookingPanelProps {
   isOpen: boolean;
   onClose: () => void;
+  store: StoreData;
   slug: string;
   preselectedServiceId?: number | null;
   preselectedStaffId?: number;
@@ -287,6 +290,7 @@ interface BookingPanelProps {
 function BookingPanel({
   isOpen,
   onClose,
+  store,
   slug,
   preselectedServiceId,
   preselectedStaffId,
@@ -296,6 +300,7 @@ function BookingPanel({
   const [services, setServices]         = useState<ServiceEntry[]>([]);
   const [servicesLoading, setServicesLoading] = useState(false);
   const [selectedService, setSelectedService] = useState<ServiceEntry | null>(null);
+  const hc = useHouseCall(store, slug, selectedService ? [selectedService] : []);
   const [weekOffset, setWeekOffset]     = useState(0);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [slots, setSlots]               = useState<TimeSlot[]>([]);
@@ -377,7 +382,7 @@ function BookingPanel({
 
   // Fetch slots when date selected
   useEffect(() => {
-    if (!selectedDate || !selectedService || !slug) return;
+    if (!selectedDate || !selectedService || !slug || !hc.ready) return;
     setSlotsLoading(true); setSlotsError(null); setSlots([]); setSelectedSlot(null);
     const params = new URLSearchParams({
       serviceId: String(selectedService.id),
@@ -385,12 +390,14 @@ function BookingPanel({
       duration: String(selectedService.duration ?? 60),
     });
     if (preselectedStaffId) params.set("staffId", String(preselectedStaffId));
+    hc.applyParams(params);
     fetch(`/api/public/store/${slug}/availability?${params}`)
       .then((r) => r.ok ? r.json() : Promise.reject("error"))
       .then((d) => { setSlots(Array.isArray(d) ? d : []); })
       .catch(() => setSlotsError("Could not load availability. Please try another date."))
       .finally(() => setSlotsLoading(false));
-  }, [selectedDate, selectedService, slug, preselectedStaffId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate, selectedService, slug, preselectedStaffId, hc.ready, hc.timesKey]);
 
   const handleBook = useCallback(async () => {
     if (!selectedService || !selectedSlot || !name.trim() || !phone.trim()) return;
@@ -409,6 +416,7 @@ function BookingPanel({
           customerPhone: phone.trim(),
           customerEmail: email.trim() || undefined,
           cancellationPolicyAccepted: cancellationAccepted,
+          ...hc.bookFields,
         }),
       });
       if (!res.ok) {
@@ -421,7 +429,7 @@ function BookingPanel({
     } finally {
       setSubmitting(false);
     }
-  }, [selectedService, selectedSlot, name, phone, email, slug, cancellationAccepted]);
+  }, [selectedService, selectedSlot, name, phone, email, slug, cancellationAccepted, hc.bookFields]);
 
   const weekStart = getWeekStart(weekOffset);
   const weekDays  = getWeekDays(weekStart);
@@ -478,7 +486,7 @@ function BookingPanel({
               </h2>
               {selectedService && step !== "success" && (
                 <p className="mt-0.5 max-w-[200px] truncate text-xs" style={{ color: C.ink500 }}>
-                  {selectedService.name} · {formatPrice(selectedService.price)}
+                  {selectedService.name} · {formatPrice(Number(selectedService.price) + hc.travelFee)}
                 </p>
               )}
             </div>
@@ -577,6 +585,8 @@ function BookingPanel({
                 <Calendar className="h-4 w-4" style={{ color: C.gold700 }} />
                 Pick a Date
               </h3>
+              <HouseCallFields hc={hc} className="mb-5" />
+              <div className={hc.ready ? "" : "hidden"}>
               <div className="mb-2 flex items-center justify-between">
                 <button
                   type="button"
@@ -709,6 +719,7 @@ function BookingPanel({
               {slotsError && (
                 <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{slotsError}</p>
               )}
+              </div>
             </div>
           )}
 
@@ -1048,6 +1059,7 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
       <BookingPanel
         isOpen={bookingOpen}
         onClose={() => setBookingOpen(false)}
+        store={store}
         slug={slug}
         preselectedServiceId={bookingPreselectedId}
         preselectedStaffId={preselectedStaffId}

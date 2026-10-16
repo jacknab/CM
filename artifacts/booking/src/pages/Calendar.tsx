@@ -4619,7 +4619,26 @@ function AppointmentDetailsPanel({
               ))}
             </div>
           )}
+
+          {(appointment as any).visitAt === "client" && (
+            <div className="flex items-center justify-between gap-2" data-testid="detail-house-call">
+              <span className="text-sm font-medium" style={{ color: "#e5e5e7" }}>House call · travel fee</span>
+              {showPrices && <span className="text-sm font-semibold" style={{ color: "#e5e5e7" }}>${Number((appointment as any).travelFee ?? 0).toFixed(2)}</span>}
+            </div>
+          )}
         </div>
+
+        {(appointment as any).visitAt === "client" && (appointment as any).clientAddress && (() => {
+          const a = (appointment as any).clientAddress as { line1?: string; line2?: string; city?: string; state?: string; postcode?: string };
+          const line = [a.line1, a.line2, a.city, [a.state, a.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+          return (
+            <div className="rounded-xl p-3.5 space-y-1" style={{ backgroundColor: "#232325", border: "1px solid #333338" }} data-testid="detail-client-address">
+              <p className="text-xs" style={{ color: "#8e8e93" }}>Client's address</p>
+              <p className="text-sm" style={{ color: "#e5e5e7" }}>{line}</p>
+              <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(line)}`} target="_blank" rel="noreferrer" className="text-xs font-semibold underline" style={{ color: "#e5e5e7" }}>Open in Maps</a>
+            </div>
+          );
+        })()}
 
         {availableTimeData && (
           <AvailableTimeBanner availableMinutes={availableTimeData.availableMinutes} />
