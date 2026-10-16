@@ -405,6 +405,119 @@ router.post("/stripe/payouts", async (req: Request, res: Response) => {
 // Session refresh is handled by connect-js automatically so external callers
 // should never need to call this more than once per page load.
 
+/**
+ * The store's Stripe account for card payments: its connected account when it has one, otherwise a new
+ * platform-owned Express account, pre-filled with what Certxa already knows. A store with a Standard account
+ * (connected by OAuth) that is disconnected can't be onboarded this way: it reconnects by OAuth.
+ * Used by the web app's embedded onboarding (account-session) and the Certxa Pro app's setup (onboarding-link).
+ */
+async function ensurePaymentAccountId(storeId: number): Promise<{ accountId: string } | { reconnectByOAuth: true }> {
+  const account = await getPaymentAccount(storeId);
+  const stripe = getStripe();
+  if (account && account.status !== "disconnected") return { accountId: account.providerAccountId };
+  if (account && account.accountType === "standard") return { reconnectByOAuth: true };
+  const [store] = await db.select().from(locations).where(eq(locations.id, storeId)).limit(1);
+  // The store's own contact email is often never filled in — fall back
+  // to the owner's real Certxa login email so Stripe's account-holder
+  // authentication step has a real email to work with instead of asking
+  // the owner to type one in from scratch.
+  let owner: { email: string | null; firstName: string | null; lastName: string | null; phone: string | null } | undefined;
+  if (store?.userId) {
+    [owner] = await db
+      .select({ email: users.email, firstName: users.firstName, lastName: users.lastName, phone: users.phone })
+      .from(users)
+      .where(eq(users.id, store.userId))
+      .limit(1);
+  }
+  const ownerEmail = owner?.email ?? undefined;
+
+  // Prefill every field we already collected at Certxa signup/onboarding
+  // so Stripe's embedded onboarding form skips asking for it again —
+  // Stripe explicitly excludes any prefilled field from what it asks
+  // the connected account to fill in. Deliberately NOT prefilling the
+  // individual's own home address (individual.address) — we only have
+  // the business location on file, and that can legitimately differ
+  // from where the owner actually lives, which would risk a KYC mismatch.
+  const newAccount = await stripe.accounts.create({
+    type: "express",
+    email: store?.email ?? ownerEmail,
+    business_type: "individual",
+    individual: {
+      first_name: owner?.firstName ?? undefined,
+      last_name: owner?.lastName ?? undefined,
+      email: store?.email ?? ownerEmail,
+      phone: owner?.phone ?? undefined,
+    },
+    business_profile: {
+      name: store?.name ?? undefined,
+      support_email: store?.email ?? ownerEmail,
+      support_phone: store?.phone ?? undefined,
+      support_address: store?.address
+        ? {
+            line1: store.address,
+            city: store.city ?? undefined,
+            state: store.state ?? undefined,
+            postal_code: store.postcode ?? undefined,
+            country: "US",
+          }
+        : undefined,
+      // Real business website if they gave one; otherwise every store
+      // already has its own Certxa booking page, which is a genuine,
+      // real, working URL for the business rather than leaving this
+      // required field blank.
+      url: store?.website || (store?.bookingSlug ? `https://certxa.com/book/${store.bookingSlug}` : undefined),
+      // Every Certxa business is a personal-care service business —
+      // this is Stripe's standard merchant category code for that
+      // (Barber & Beauty Shops), removing business_profile.mcc from
+      // what onboarding would otherwise always ask for.
+      mcc: "7230",
+    },
+    metadata: { storeId: String(storeId), source: "certxa_store_onboarding" },
+  });
+  await upsertPaymentAccount(storeId, newAccount.id, {
+    accountType: "express",
+    chargesEnabled: newAccount.charges_enabled ?? false,
+    payoutsEnabled: newAccount.payouts_enabled ?? false,
+    detailsSubmitted: newAccount.details_submitted ?? false,
+    displayName: store?.name ?? null,
+    email: store?.email ?? null,
+  });
+  console.log(`[stripeConnect] Created new Express account ${newAccount.id} for storeId=${storeId}`);
+  return { accountId: newAccount.id };
+}
+
+// ─── POST /api/payments/stripe/onboarding-link ───────────────────────────────
+// The Certxa Pro app's "Get paid" step: a link to Stripe's own hosted setup for this store's account,
+// which the app opens in an in-app browser. Stripe sends the browser back to /stripe/app-return
+// (public, routes.ts), which hands control back to the app. The account is created on first use,
+// pre-filled the same way as the web app's embedded onboarding.
+router.post("/stripe/onboarding-link", async (req: Request, res: Response) => {
+  if (!await requireOwnerOrAdmin(req, res)) return;
+  if (!isStripeConfigured()) return res.status(503).json({ error: "Card payments aren't available right now. Please try again later." });
+  try {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(400).json({ error: "No store found" });
+    const ensured = await ensurePaymentAccountId(storeId);
+    if ("reconnectByOAuth" in ensured) {
+      return res.status(409).json({ error: "This business's Stripe account was disconnected. Reconnect it at certxa.com under Payments." });
+    }
+    const base = getReturnBaseUrl(req);
+    const link = await getStripe().accountLinks.create({
+      account: ensured.accountId,
+      type: "account_onboarding",
+      // Ask for everything Stripe will need now, so payouts aren't held back for details later.
+      collection_options: { fields: "eventually_due" },
+      refresh_url: `${base}/api/payments/stripe/app-return?result=refresh`,
+      return_url: `${base}/api/payments/stripe/app-return?result=return`,
+    });
+    console.log(`[stripeConnect/onboarding-link] storeId=${storeId} account=${ensured.accountId}`);
+    return res.json({ url: link.url });
+  } catch (err: any) {
+    console.error("[stripeConnect/onboarding-link]", err?.message);
+    return res.status(500).json({ error: "We couldn't open payment setup. Please try again." });
+  }
+});
+
 router.post("/stripe/account-session", async (req: Request, res: Response) => {
   if (!await requireOwnerOrAdmin(req, res)) return;
 
@@ -416,95 +529,15 @@ router.post("/stripe/account-session", async (req: Request, res: Response) => {
     const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(400).json({ error: "No store found" });
 
-    const account = await getPaymentAccount(storeId);
-    const stripe = getStripe();
-
-    let connectedAccountId: string;
-    if (account && account.status !== "disconnected") {
-      // Already connected (Standard or Express) — use as-is.
-      connectedAccountId = account.providerAccountId;
-    } else if (account && account.accountType === "standard") {
-      // A Standard account exists but is disconnected — that's an OAuth
-      // re-authorization, not something embedded onboarding can do (Standard
-      // accounts aren't platform-created). Frontend falls back to the OAuth
-      // button when it sees accountType:"standard" on GET /stripe/status.
-      return res.status(400).json({
-        error: "No connected Stripe account. Complete the Connect flow first.",
-      });
-    } else {
-      // No account at all, or a disconnected 'express' row — create (or
-      // this store's first-ever) a platform-owned Express account so the
-      // embedded onboarding component below has something to onboard.
-      // Mirrors the working contractor pattern at routes.ts (stripe-connect-session).
-      const [store] = await db.select().from(locations).where(eq(locations.id, storeId)).limit(1);
-      // The store's own contact email is often never filled in — fall back
-      // to the owner's real Certxa login email so Stripe's account-holder
-      // authentication step has a real email to work with instead of asking
-      // the owner to type one in from scratch.
-      let owner: { email: string | null; firstName: string | null; lastName: string | null; phone: string | null } | undefined;
-      if (store?.userId) {
-        [owner] = await db
-          .select({ email: users.email, firstName: users.firstName, lastName: users.lastName, phone: users.phone })
-          .from(users)
-          .where(eq(users.id, store.userId))
-          .limit(1);
-      }
-      const ownerEmail = owner?.email ?? undefined;
-
-      // Prefill every field we already collected at Certxa signup/onboarding
-      // so Stripe's embedded onboarding form skips asking for it again —
-      // Stripe explicitly excludes any prefilled field from what it asks
-      // the connected account to fill in. Deliberately NOT prefilling the
-      // individual's own home address (individual.address) — we only have
-      // the business location on file, and that can legitimately differ
-      // from where the owner actually lives, which would risk a KYC mismatch.
-      const newAccount = await stripe.accounts.create({
-        type: "express",
-        email: store?.email ?? ownerEmail,
-        business_type: "individual",
-        individual: {
-          first_name: owner?.firstName ?? undefined,
-          last_name: owner?.lastName ?? undefined,
-          email: store?.email ?? ownerEmail,
-          phone: owner?.phone ?? undefined,
-        },
-        business_profile: {
-          name: store?.name ?? undefined,
-          support_email: store?.email ?? ownerEmail,
-          support_phone: store?.phone ?? undefined,
-          support_address: store?.address
-            ? {
-                line1: store.address,
-                city: store.city ?? undefined,
-                state: store.state ?? undefined,
-                postal_code: store.postcode ?? undefined,
-                country: "US",
-              }
-            : undefined,
-          // Real business website if they gave one; otherwise every store
-          // already has its own Certxa booking page, which is a genuine,
-          // real, working URL for the business rather than leaving this
-          // required field blank.
-          url: store?.website || (store?.bookingSlug ? `https://certxa.com/book/${store.bookingSlug}` : undefined),
-          // Every Certxa business is a personal-care service business —
-          // this is Stripe's standard merchant category code for that
-          // (Barber & Beauty Shops), removing business_profile.mcc from
-          // what onboarding would otherwise always ask for.
-          mcc: "7230",
-        },
-        metadata: { storeId: String(storeId), source: "certxa_store_onboarding" },
-      });
-      await upsertPaymentAccount(storeId, newAccount.id, {
-        accountType: "express",
-        chargesEnabled: newAccount.charges_enabled ?? false,
-        payoutsEnabled: newAccount.payouts_enabled ?? false,
-        detailsSubmitted: newAccount.details_submitted ?? false,
-        displayName: store?.name ?? null,
-        email: store?.email ?? null,
-      });
-      connectedAccountId = newAccount.id;
-      console.log(`[stripeConnect/account-session] Created new Express account ${newAccount.id} for storeId=${storeId}`);
+    const ensured = await ensurePaymentAccountId(storeId);
+    if ("reconnectByOAuth" in ensured) {
+      // A Standard account exists but is disconnected — that's an OAuth re-authorization, not something
+      // embedded onboarding can do. Frontend falls back to the OAuth button when it sees
+      // accountType:"standard" on GET /stripe/status.
+      return res.status(400).json({ error: "No connected Stripe account. Complete the Connect flow first." });
     }
+    const connectedAccountId = ensured.accountId;
+    const stripe = getStripe();
 
     const session = await stripe.accountSessions.create({
       account: connectedAccountId,

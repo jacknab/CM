@@ -22624,6 +22624,23 @@ or
     const paymentsAuth = (req: any, res: any, next: any) =>
       isAuthenticated(req, res, next);
 
+    // Where Stripe's hosted setup sends the browser when the Certxa Pro app's "Get paid" step ends
+    // (POST /api/payments/stripe/onboarding-link). Public: Stripe's browser carries no sign-in. It only
+    // hands control back to the app, which then asks the server for the account's status itself.
+    // result=refresh means Stripe's link expired; the app asks for a new one.
+    app.get("/api/payments/stripe/app-return", (req, res) => {
+      const result = req.query.result === "refresh" ? "refresh" : "return";
+      const target = `certxa-pro://payments-setup?result=${result}`;
+      res.set("Cache-Control", "no-store");
+      res.status(200).type("html").send(
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">`
+        + `<meta name="robots" content="noindex"><meta http-equiv="refresh" content="0;url=${target}"><title>Back to Certxa Pro</title></head>`
+        + `<body style="font-family:system-ui,sans-serif;text-align:center;padding:48px 20px">`
+        + `<p>Taking you back to the Certxa Pro app…</p><p><a href="${target}">Open Certxa Pro</a></p>`
+        + `<script>location.replace(${JSON.stringify(target)})</script></body></html>`,
+      );
+    });
+
     app.use("/api/payments", paymentsAuth, stripeConnectRouter);
     console.log("[stripeConnect] Payment routes mounted at /api/payments");
   } catch (err: any) {
