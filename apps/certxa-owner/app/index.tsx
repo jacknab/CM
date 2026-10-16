@@ -16,6 +16,7 @@
  *    appointment complete and dispatches a custom DOM event.
  */
 
+import Constants from 'expo-constants';
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import {
   View, ActivityIndicator, StyleSheet, useWindowDimensions,
@@ -57,10 +58,19 @@ const PORTAL_URL = process.env.EXPO_PUBLIC_PORTAL_URL ?? 'https://certxa.com/app
 const PORTAL_ORIGIN = (() => { try { return new URL(PORTAL_URL).origin; } catch { return 'https://certxa.com'; } })();
 /** Customer NFC payments require an authenticated Stripe Terminal session. The
  * frontdesk role signs in once, then redirects to its device-local frontdesk setup. */
+/** Which Certxa app this build is (app.config.js / plans/certxa-apps.md); null for the full Certxa app. */
+const APP_PROFILE: string | null = (() => {
+  const id = (Constants.expoConfig?.extra as any)?.appProfile;
+  return typeof id === 'string' && /^[a-z][a-z0-9-]*$/.test(id) ? id : null;
+})();
+/** The web app limits itself to the profile's screens once it sees ?app=<id> (it remembers it after that). */
+const withAppProfile = (url: string) => (APP_PROFILE ? `${url}${url.includes('?') ? '&' : '?'}app=${APP_PROFILE}` : url);
+/** Set on every page before it loads, so the web app knows the profile even on a page opened without ?app. */
+const APP_PROFILE_JS = APP_PROFILE ? `window.__CERTXA_APP_PROFILE__ = ${JSON.stringify(APP_PROFILE)};` : '';
 const ROLE_URL: Record<DeviceRole, string> = {
-  pos: PORTAL_URL,
-  frontdesk: `${PORTAL_ORIGIN}/app-login?redirect=%2Ffrontdesk`,
-  kiosk: `${PORTAL_ORIGIN}/kiosk`,
+  pos: withAppProfile(PORTAL_URL),
+  frontdesk: withAppProfile(`${PORTAL_ORIGIN}/app-login?redirect=%2Ffrontdesk`),
+  kiosk: withAppProfile(`${PORTAL_ORIGIN}/kiosk`),
 };
 const TABLET_WIDTH = 768;
 
@@ -885,7 +895,7 @@ export default function PortalScreen() {
           : ROLE_URL.pos }}
         style={styles.webview}
         injectedJavaScript={BRIDGE_JS}
-        injectedJavaScriptBeforeContentLoaded={BRIDGE_JS + viewportLockJs(width)}
+        injectedJavaScriptBeforeContentLoaded={APP_PROFILE_JS + BRIDGE_JS + viewportLockJs(width)}
         onNavigationStateChange={onNavigationStateChange}
         onLoadStart={() => { setLoading(true); setNavError(null); }}
         onLoad={() => {

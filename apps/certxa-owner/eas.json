@@ -42,6 +42,22 @@
         "EXPO_PUBLIC_PORTAL_URL": "https://certxa.com/app-login"
       },
       "channel": "production"
+    },
+    "nail-preview": {
+      "extends": "preview",
+      "channel": "nail-preview",
+      "env": {
+        "EXPO_PUBLIC_PORTAL_URL": "https://certxa.com/app-login",
+        "APP_PROFILE": "nail"
+      }
+    },
+    "nail-production": {
+      "extends": "production",
+      "channel": "nail-production",
+      "env": {
+        "EXPO_PUBLIC_PORTAL_URL": "https://certxa.com/app-login",
+        "APP_PROFILE": "nail"
+      }
     }
   },
   "submit": {

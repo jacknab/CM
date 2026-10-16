@@ -1,4 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { AppScreenGuard, AppBusinessGate } from "@/components/AppProfileGate";
+import { currentAppProfile } from "@/lib/appProfile";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { resumeOrSignIn, UNAUTHORIZED_EVENT } from "@/lib/resumeSignIn";
 import { Loader2 } from "lucide-react";
@@ -175,6 +177,8 @@ const BarberHome = lazy(() => import("@/pages/barber/BarberHome"));
 
 
 const authenticatedPaths = [
+  // The Certxa apps' own pages (Settings, Reports, Messages — plans/certxa-apps.md).
+  "/app",
   "/onboarding",
   "/overview",
   "/salon-dashboard",
@@ -451,7 +455,9 @@ function AppRoutes() {
     location.pathname === path || location.pathname.startsWith(path + "/")
   ) && !isPublicConfirmation;
 
+  const inApp = !!currentAppProfile();
   const routes = (
+    <AppScreenGuard>
     <Suspense fallback={<main className="h-screen w-full flex items-center justify-center" role="status"><Loader2 className="w-7 h-7 animate-spin" /><span className="sr-only">Loading page</span></main>}>
     <ProAccountRedirect />
     <Routes>
@@ -721,6 +727,7 @@ function AppRoutes() {
       <Route path="*" element={<NotFound />} />
     </Routes>
     </Suspense>
+    </AppScreenGuard>
   );
 
   if (isAuthenticatedRoute) {
@@ -733,16 +740,17 @@ function AppRoutes() {
           {/* Reports this signed-in user to isTeam → Live Visitors → Booking App Users */}
           <BookingPresenceBeacon />
           {/* Global mobile sticky header — fixed top-0, visible on every authenticated page */}
-          <GlobalMobileHeader />
+          {/* Inside a Certxa app the full platform's menus are never shown. */}
+          {!inApp && <GlobalMobileHeader />}
           <AccountStatusGate>
-            {routes}
+            <AppBusinessGate>{routes}</AppBusinessGate>
           </AccountStatusGate>
           {/* No offline badge on the salon screens: /nail shows its connection in its footer; the kiosk and the
               customer screen never show the system's state to clients. */}
           {location.pathname !== "/calendar" && !/^\/(nail|kiosk|frontdesk)(\/|$)/.test(location.pathname) && <OfflineStatusBanner />}
           {!/^\/(kiosk|frontdesk)(\/|$)/.test(location.pathname) && <SyncConflictPanel />}
           {/* Global mobile bottom nav — fixed bottom-0, visible on every authenticated page */}
-          <MobileBottomNav />
+          {!inApp && <MobileBottomNav />}
         </SnapshotProvider>
         </StaffPortalGuard>
       </StoreProvider>

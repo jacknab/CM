@@ -100,3 +100,10 @@ These are needed by Phases 3–5, not Phase 1.
   - The browser uses `shared/apiPaths.ts`.
   - The core bundle is 2.08 MB → 1.63 MB, and /nail no longer loads the 242 KB calendar file. About 650 KB less to open /nail.
   - Old assets: none are older than 14 days. The 24,032 files (826 MB) come from deploy frequency (about 480 files per deploy). Suggestion for the owner: keep 3 days instead of 14.
+- 2026-10-16: Phase 2 done in code:
+  - `shared/appProfiles.ts` (nail profile) and `artifacts/booking/src/lib/appProfile.ts` (detection: the shell's `window.__CERTXA_APP_PROFILE__`, or `?app=<id>`; `?app=none` turns it off).
+  - `components/AppProfileGate.tsx`: the screen guard, plus the "this app is for nail salons" check. Sign-in lands on the profile's home screen, and the full platform's mobile header and bottom menu are hidden inside an app.
+  - The /nail and /barber buttons for Settings, Reports, Messages and Retail Sale go through `appPage()`. Inside an app they open `/app/settings`, `/app/reports`, `/app/messages` and `/app/retail`, which Phase 3 builds.
+  - Android: `apps/certxa-owner/app.config.js` (APP_PROFILE) and the `nail-preview` / `nail-production` EAS profiles with their own update channels. The shell passes the profile to the page.
+  - Tests: `appProfiles.test.ts`.
+
