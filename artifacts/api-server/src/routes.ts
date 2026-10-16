@@ -1281,7 +1281,8 @@ function broadcastTurnEligibilityChanged(storeId: number | null | undefined, opt
  * not clocked in is clocked in, and someone on break is put back to available. A technician who is
  * busy with a client stays busy. Does nothing when they are already clocked in and not on break.
  */
-async function clockInAndMakeAvailable(storeId: number, staffId: number): Promise<{ clockedIn: boolean; resumed: boolean }> {
+/** Opens today's time-clock record for a staff member unless one is open already. True when it opened one. */
+async function openTimeclock(storeId: number, staffId: number): Promise<boolean> {
   const [tzRow] = await db.select({ timezone: locations.timezone }).from(locations).where(eq(locations.id, storeId)).limit(1);
   const localNow = toZonedTime(new Date(), (tzRow as any)?.timezone ?? "UTC");
   const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -1300,6 +1301,21 @@ async function clockInAndMakeAvailable(storeId: number, staffId: number): Promis
     [staffId, storeId, calendarToday, turnDay],
   );
   const clockedIn = (opened.rowCount ?? 0) > 0;
+  if (clockedIn) {
+    void db.select({ name: staff.name }).from(staff).where(eq(staff.id, staffId)).limit(1)
+      .then(([s]) => logActivityEvent({
+        storeId,
+        eventType: "staff_clocked_in",
+        message: s?.name ? `${s.name} clocked in` : "Staff member clocked in",
+        metadata: { staffId, staffName: s?.name ?? null, workDate: calendarToday },
+      }))
+      .catch(() => {});
+  }
+  return clockedIn;
+}
+
+async function clockInAndMakeAvailable(storeId: number, staffId: number): Promise<{ clockedIn: boolean; resumed: boolean }> {
+  const clockedIn = await openTimeclock(storeId, staffId);
 
   let resumed = false;
   await mutateTurnPreferences(storeId, (turn) => {
@@ -1320,17 +1336,7 @@ async function clockInAndMakeAvailable(storeId: number, staffId: number): Promis
   // Screens only: the sign-in route looks for a waiting client itself, straight away, so the answer
   // it sends back already has that client.
   if (clockedIn || resumed) broadcastTurnEligibilityChanged(storeId, { matchWaiting: false });
-  if (clockedIn) {
-    void db.select({ name: staff.name }).from(staff).where(eq(staff.id, staffId)).limit(1)
-      .then(([s]) => logActivityEvent({
-        storeId,
-        eventType: "staff_clocked_in",
-        message: s?.name ? `${s.name} clocked in` : "Staff member clocked in",
-        metadata: { staffId, staffName: s?.name ?? null, workDate: calendarToday },
-      }))
-      .catch(() => {});
-    triggerDashboardBroadcast(storeId);
-  }
+  if (clockedIn) triggerDashboardBroadcast(storeId);
   return { clockedIn, resumed };
 }
 
@@ -18975,8 +18981,10 @@ or
       const signInOpts = { includeWaiting: !req.originalUrl?.startsWith("/api/barber/") };
       const result = await nailTickets.identifyBarber(storeId, Number(req.body?.barberId), signInOpts);
       if (!result.ok) return res.status(result.status).json({ message: result.message });
-      // Technicians and barbers only: a receptionist's ID (90–99) is not on the time clock or in the turn line here.
-      if (!result.data.staff.frontDesk) {
+      // Front desk (IDs 90–99) is clocked in on sign-in but never joins the turn line.
+      if (result.data.staff.frontDesk) {
+        if (await openTimeclock(storeId, result.data.staff.id)) triggerDashboardBroadcast(storeId);
+      } else {
         try {
           await clockInAndMakeAvailable(storeId, result.data.staff.id);
           // Now that they are in the line, hand waiting clients to whoever is free, in turn order. If
