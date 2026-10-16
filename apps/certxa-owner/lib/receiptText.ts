@@ -22,6 +22,10 @@ export interface ReceiptItem {
   name:      string;
   price:     number;
   duration?: string;   // e.g. "75 min" — shown in grey below item name
+  /** Group Pay: the technician heading this line goes under. Absent on a one-ticket receipt. */
+  section?:  string;
+  /** 'product' for retail (printed "P 1"), 'tip' for the ticket's share of the tip ("Tip"), otherwise a service ("S 1"). */
+  kind?:     'service' | 'product' | 'tip';
 }
 
 export interface ReceiptData {
@@ -46,6 +50,8 @@ export interface ReceiptData {
   tip?:          number;
   grandTotal:    number;
   paymentMethod: string;
+  /** Each payment with its amount, printed as "Cash  $25.00" / "Card  $100.00" so staff see how much went on each. */
+  tenders?:      { method: string; amount: number }[];
   amountPaid?:   number;
   changeDue?:    number;
   cardDetails?:  CardDetails;
@@ -160,8 +166,25 @@ export function buildReceiptText(data: ReceiptData, copy: ReceiptCopy): string {
   // ── Line items ───────────────────────────────────────────────────────────────
   // No ITEM/PRICE header row on either copy — it's a label for columns the prices below it
   // already make obvious, and skipping it saves a line on every single receipt printed.
+  // Group Pay: every ticket paid together, each under its technician's name —
+  //   --- -- CINDY LANE -------------
+  //   S 1 French Pedicure      $45.00
+  // (the same layout the web receipt shows, booking lib/receiptSections.ts).
+  const grouped = data.items.some((item) => !!item.section);
+  let heading: string | null = null;
   for (const item of data.items) {
     const priceStr = $$(item.price);
+    if (grouped) {
+      const title = item.section ?? '';
+      if (title !== heading) {
+        heading = title;
+        const head = `--- -- ${title.slice(0, COL_W - 8)} `;
+        lines.push(`[L]${head}${'-'.repeat(Math.max(0, COL_W - head.length))}`);
+      }
+      const label = item.kind === 'tip' ? '    Tip' : `${item.kind === 'product' ? 'P' : 'S'} 1 ${item.name.replace(/^\+\s*/, '')}`;
+      lines.push(`[L]${twoCol(fitName(label, priceStr), priceStr)}`);
+      continue;
+    }
     lines.push(`[L]${twoCol(fitName(item.name, priceStr), priceStr)}`);
     if (item.duration) lines.push(`[L]  ${item.duration}`);
   }
@@ -190,6 +213,9 @@ export function buildReceiptText(data: ReceiptData, copy: ReceiptCopy): string {
     lines.push(`[L]${twoCol('Tip:', $$(data.tip as number))}`);
   }
   lines.push(`[L]<b>${twoCol('TOTAL:', $$(data.grandTotal))}</b>`);
+  for (const t of data.tenders ?? []) {
+    if (t.amount > 0) lines.push(`[L]${twoCol(`${t.method}:`, $$(t.amount))}`);
+  }
   lines.push(`[L]${twoCol('Amount Paid:', $$(data.amountPaid ?? data.grandTotal))}`);
   if ((data.changeDue ?? 0) > 0) {
     lines.push(`[L]${twoCol('Change:', $$(data.changeDue as number))}`);

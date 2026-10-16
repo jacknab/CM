@@ -12,7 +12,7 @@ export interface ReceiptPayloadInput {
   dateIso: string;
   clientName?: string;
   staffName?: string;
-  items: { label: string; price: number }[];
+  items: { label: string; price: number; section?: string; kind?: "service" | "product" | "tip" }[];
   subtotal: number;
   discount: number;
   tax: number;
@@ -42,7 +42,12 @@ export function buildNativeReceiptPayload(i: ReceiptPayloadInput) {
     date: i.dateIso,
     clientName: i.clientName || undefined,
     staffName: i.staffName || undefined,
-    items: i.items.map((x) => ({ name: String(x.label).slice(0, 40), price: r2(x.price) })),
+    // `section` / `kind`: a Group Pay receipt's technician headings (lib/receiptSections.ts). An app without
+    // that layout ignores them and prints the lines one after another.
+    items: i.items.map((x) => ({ name: String(x.label).slice(0, 40), price: r2(x.price),
+      ...(x.section ? { section: String(x.section).slice(0, 30) } : {}), ...(x.kind === "product" || x.kind === "tip" ? { kind: x.kind } : {}) })),
+    // Each payment with its amount ("Cash $25.00", "Card $100.00").
+    tenders: i.tenders.map((t) => ({ method: tenderLabel(t.method), amount: r2(t.amount) })),
     subtotal: r2(i.subtotal),
     discount: r2(i.discount),
     tax: r2(i.tax),

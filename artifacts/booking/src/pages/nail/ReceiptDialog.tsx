@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { receiptSections, sectionLineLabel, type ReceiptLine } from "@/lib/receiptSections";
 
 interface CardDetails {
   brand?: string;
@@ -17,7 +18,7 @@ interface ReceiptSnapshot {
   dateIso: string;
   clientName?: string;
   staffName?: string;
-  items: { label: string; price: number }[];
+  items: ReceiptLine[];
   subtotal: number;
   discount: number;
   tax?: number;
@@ -97,10 +98,16 @@ export function ReceiptDialog({ token, snapshot, onClose }: { token: string | nu
               <div>Txn: #{r.ticketNumber}</div>
               <div style={{ whiteSpace: "pre", opacity: 0.5, margin: "8px 0" }}>{DASH}</div>
 
-              {r.items.map((it, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between", opacity: it.label.startsWith("+") ? 0.75 : 1 }}>
-                  <span>{it.label}</span>
-                  <span>{money(it.price)}</span>
+              {receiptSections(r.items).map((sec, si) => (
+                <div key={si}>
+                  {/* Group Pay: each ticket under its technician's name. */}
+                  {sec.title && <div style={{ whiteSpace: "pre", overflow: "hidden" }}>{`--- -- ${sec.title} ${"-".repeat(40)}`}</div>}
+                  {sec.lines.map((it, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", opacity: !sec.title && it.label.startsWith("+") ? 0.75 : 1 }}>
+                      <span>{sec.title ? sectionLineLabel(it) : it.label}</span>
+                      <span>{money(it.price)}</span>
+                    </div>
+                  ))}
                 </div>
               ))}
               <div style={{ whiteSpace: "pre", opacity: 0.5, margin: "8px 0" }}>{DASH}</div>
@@ -108,7 +115,7 @@ export function ReceiptDialog({ token, snapshot, onClose }: { token: string | nu
               {r.tenders.length > 0 && (
                 <>
                   {r.tenders.map((t, i) => (
-                    <div key={i}>{paymentLabel(t.method)}</div>
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between" }}><span>{paymentLabel(t.method)}</span><span>{money(t.amount)}</span></div>
                   ))}
                   {r.cardDetails?.brand && (
                     <div>{fmtBrand(r.cardDetails.brand)}{r.cardDetails.last4 ? ` ****${r.cardDetails.last4}` : ""}</div>

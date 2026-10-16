@@ -19,6 +19,7 @@ import {
   type DiscountInput, type Extra, type ExtraKind, type SalesTaxSettings, type Tender,
 } from "@shared/nailCheckout";
 import { buildCheckoutReceipt } from "@/lib/thermalPrinter";
+import type { ReceiptLine } from "@/lib/receiptSections";
 import { buildNativeReceiptPayload } from "@/lib/receiptPayload";
 import { openCashDrawerHardware, recordNoSale } from "@/lib/cashDrawer";
 import { checkoutRequestKey, lookupGiftCard, queueReceiptText, type BoardTicket, type FinalizeData, type GiftCardInfo } from "./nailApi";
@@ -312,6 +313,44 @@ export function CheckoutMode(p: Props) {
     ...extras.map((e) => ({ label: e.label, price: e.price })),
     ...linked.map((t) => ({ label: `${t.client.name} — ${t.service.name}`, price: t.total })),
   ];
+  // Group Pay: what each ticket of the sale takes — its share of the tip (as entered per technician, otherwise by
+  // service time), discount and payment. The sale is saved with these, and the receipt shows each ticket's tip.
+  const groupShares = (methods: string) => {
+    const ownBase = ticket.total + extras.reduce((s, e) => s + e.price, 0);
+    return splitGroup(
+      [{ appointmentId: ticket.id, base: ownBase, duration: ticket.duration, serviceRevenue: totals.serviceRevenue, productRevenue: totals.productRevenue },
+        // A linked ticket's own customLines can carry a Retail-marked line too (rung up on that
+        // ticket before it was ever pulled into this group) — split its base the same way,
+        // instead of always crediting the whole thing to service revenue.
+        ...linked.map((t) => {
+          const retail = r2(t.customLines.filter((l) => l.isRetail).reduce((s, l) => s + l.price, 0));
+          return { appointmentId: t.id, base: t.total, duration: t.duration, serviceRevenue: r2(t.total - retail), productRevenue: retail };
+        })],
+      { tip: totals.tip, discount: totals.discount, totalPaid: totals.totalPaid }, methods, tipByTicket);
+  };
+  // The lines of the printed / saved / texted receipt. A Group Pay sale lists every ticket's own lines under its
+  // technician's name (lib/receiptSections.ts); a one-ticket sale is the same as the cart.
+  const receiptItems = (): ReceiptLine[] => {
+    if (linked.length === 0) return cartItems();
+    const lines = (t: BoardTicket): ReceiptLine[] => [
+      { label: t.service.name, price: t.service.price },
+      ...t.addons.map((a) => ({ label: a.name, price: a.price })),
+      ...(t.nail?.lines ?? []).map((l) => ({ label: l.label, price: l.price })),
+      ...t.customLines.map((l) => ({ label: l.label, price: l.price, ...(l.isRetail ? { kind: "product" as const } : {}) })),
+    ];
+    const heading = (t: BoardTicket) => (t.staff?.name ?? "No technician").toUpperCase();
+    // Each ticket's own share of the tip, as a line of its section (the whole tip stays in the totals).
+    const tips = new Map(groupShares(paymentMethodSummary(tenders)).map((s) => [s.appointmentId, s.tip]));
+    const tipLine = (t: BoardTicket): ReceiptLine[] => {
+      const tip = tips.get(t.id) ?? 0;
+      return tip > 0 ? [{ label: "Tip", price: tip, kind: "tip" }] : [];
+    };
+    return [
+      ...[...lines(ticket), ...extras.map((e) => ({ label: e.label, price: e.price, ...(e.kind === "retail" ? { kind: "product" as const } : {}) })), ...tipLine(ticket)]
+        .map((l) => ({ ...l, section: heading(ticket) })),
+      ...linked.flatMap((t) => [...lines(t), ...tipLine(t)].map((l) => ({ ...l, section: heading(t) }))),
+    ];
+  };
   // The client's number on file. The customer's screen is only told THAT there is one (and its last 4) so it can skip asking — never the number itself.
   const phoneOnFile = (ticket.client.phone ?? "").replace(/\D/g, "").slice(-10);
   const mirrorCart = () => {
@@ -436,7 +475,7 @@ export function CheckoutMode(p: Props) {
     if (digits.length !== 10) { say("NO PHONE NUMBER FOR THIS CLIENT — RECEIPT NOT TEXTED", "error"); return reply(false); }
     say("TEXTING RECEIPT…", "info");
     const snapshot = {
-      items: cartItems(), dateIso: new Date().toISOString(), clientName: ticket.client.name,
+      items: receiptItems(), dateIso: new Date().toISOString(), clientName: ticket.client.name,
       subtotal: totals.subtotal, discount: totals.discount, tax: totals.tax, tip: totals.tip, total: totals.total,
       tenders: tenders.map((t) => ({ method: tenderLabel(t), amount: t.amount })),
     };
@@ -758,20 +797,7 @@ export function CheckoutMode(p: Props) {
     const methods = paymentMethodSummary(tenders);
     const giftByCard = new Map<string, number>();
     for (const t of tenders) if (t.method === "gift" && t.code) giftByCard.set(t.code, r2((giftByCard.get(t.code) ?? 0) + t.amount));
-    const ownBase = ticket.total + extras.reduce((s, e) => s + e.price, 0);
-    let groupTickets: FinalizeData["groupTickets"];
-    if (linked.length > 0) {
-      groupTickets = splitGroup(
-        [{ appointmentId: ticket.id, base: ownBase, duration: ticket.duration, serviceRevenue: totals.serviceRevenue, productRevenue: totals.productRevenue },
-          // A linked ticket's own customLines can carry a Retail-marked line too (rung up on that
-          // ticket before it was ever pulled into this group) — split its base the same way,
-          // instead of always crediting the whole thing to service revenue.
-          ...linked.map((t) => {
-            const retail = r2(t.customLines.filter((l) => l.isRetail).reduce((s, l) => s + l.price, 0));
-            return { appointmentId: t.id, base: t.total, duration: t.duration, serviceRevenue: r2(t.total - retail), productRevenue: retail };
-          })],
-        { tip: totals.tip, discount: totals.discount, totalPaid: totals.totalPaid }, methods, tipByTicket);
-    }
+    const groupTickets: FinalizeData["groupTickets"] = linked.length > 0 ? groupShares(methods) : undefined;
     // Don't close the customer's screen here: every tender already told it the sale is paid, and it now
     // offers the customer Print / Text / No Receipt. Sending kiosk_checkout_cancel at this point reset it
     // to its welcome screen before they could choose. The screen is closed when this checkout closes.
@@ -845,7 +871,7 @@ export function CheckoutMode(p: Props) {
         dateIso: new Date().toISOString(),
         clientName: ticket.client.name,
         staffName: ticket.staff?.name,
-        items: cartItems(),
+        items: receiptItems(),
         subtotal: totals.subtotal, discount: totals.discount, tax: totals.tax, tip: totals.tip, grandTotal: totals.total,
         tenders: tenders.map((t) => ({ method: t.method, amount: t.amount })),
         changeDue: totals.changeDue,
@@ -936,7 +962,7 @@ export function CheckoutMode(p: Props) {
       body: JSON.stringify({
         appointmentId: ticket.id,
         snapshot: {
-          clientName: ticket.client.name, staffName: ticket.staff?.name, items: cartItems(), dateIso: new Date().toISOString(),
+          clientName: ticket.client.name, staffName: ticket.staff?.name, items: receiptItems(), dateIso: new Date().toISOString(),
           subtotal: totals.subtotal, discount: totals.discount, tax: totals.tax, tip: totals.tip, total: totals.total,
           tenders: tenders.map((t) => ({ method: tenderLabel(t), amount: t.amount })),
           cardDetails: lastCardDetails.current ?? undefined,
@@ -954,7 +980,7 @@ export function CheckoutMode(p: Props) {
     setReceiptBusy("text");
     say("TEXTING RECEIPT…", "info");
     const snapshot = {
-      clientName: ticket.client.name, items: cartItems(), dateIso: new Date().toISOString(),
+      clientName: ticket.client.name, items: receiptItems(), dateIso: new Date().toISOString(),
       subtotal: totals.subtotal, discount: totals.discount, tax: totals.tax, tip: totals.tip, total: totals.total,
       tenders: tenders.map((t) => ({ method: tenderLabel(t), amount: t.amount })),
     };

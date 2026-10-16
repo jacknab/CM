@@ -21265,7 +21265,10 @@ or
       dateIso: typeof snap.dateIso === "string" ? snap.dateIso : new Date().toISOString(),
       clientName: typeof snap.clientName === "string" ? snap.clientName.slice(0, 80) : undefined,
       staffName: typeof snap.staffName === "string" ? snap.staffName.slice(0, 80) : undefined,
-      items: snap.items.slice(0, 40).map((i: any) => ({ label: String(i?.label ?? "Item").slice(0, 60), price: money(i?.price) })),
+      // `section` / `kind`: a Group Pay receipt lists each ticket under its technician (booking lib/receiptSections.ts).
+      items: snap.items.slice(0, 60).map((i: any) => ({ label: String(i?.label ?? "Item").slice(0, 60), price: money(i?.price),
+        ...(typeof i?.section === "string" && i.section.trim() ? { section: i.section.trim().slice(0, 40) } : {}),
+        ...(i?.kind === "product" || i?.kind === "tip" ? { kind: i.kind } : {}) })),
       subtotal: money(snap.subtotal), discount: money(snap.discount), tip: money(snap.tip), total: money(snap.total),
       tenders: Array.isArray(snap.tenders) ? snap.tenders.slice(0, 10).map((t: any) => ({ method: String(t?.method ?? "Payment").slice(0, 30), amount: money(t?.amount) })) : [],
       // Card brand/entry-method/approval code — only ever known at the moment of capture (the

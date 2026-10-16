@@ -1,6 +1,7 @@
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
+import { receiptSections, sectionLineLabel, type ReceiptLine } from "@/lib/receiptSections";
 import { XCircle, Receipt as ReceiptIcon } from "lucide-react";
 
 interface ReceiptSnapshot {
@@ -10,7 +11,7 @@ interface ReceiptSnapshot {
   ticketNumber: number | string;
   dateIso: string;
   clientName?: string;
-  items: { label: string; price: number }[];
+  items: ReceiptLine[];
   subtotal: number;
   discount: number;
   tax?: number;
@@ -85,10 +86,16 @@ export default function PublicReceipt() {
           {r.clientName && <p className="text-sm font-medium mb-3">{r.clientName}</p>}
 
           <div className="divide-y">
-            {r.items.map((it, i) => (
-              <div key={i} className="flex justify-between py-2 text-sm">
-                <span className={it.label.startsWith("+") ? "text-muted-foreground" : "font-medium"}>{it.label}</span>
-                <span className="font-medium tabular-nums">{money(it.price)}</span>
+            {receiptSections(r.items).map((sec, si) => (
+              <div key={si}>
+                {/* Group Pay: each ticket under its technician's name. */}
+                {sec.title && <p className="pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{sec.title}</p>}
+                {sec.lines.map((it, i) => (
+                  <div key={i} className="flex justify-between py-2 text-sm">
+                    <span className={!sec.title && it.label.startsWith("+") ? "text-muted-foreground" : "font-medium"}>{sec.title ? sectionLineLabel(it) : it.label}</span>
+                    <span className="font-medium tabular-nums">{money(it.price)}</span>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
