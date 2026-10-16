@@ -27,6 +27,9 @@ interface NativeAppRestart {
   exitKioskToSettings(minutes: number): void;
   followSensorOrientation?(): void;
   prepareCardReader?(): boolean;
+  /** 1.0.4+: the manager menu's "Install the latest app" (native ApkUpdate.kt). */
+  installLatestApk?(url: string): Promise<'installing' | 'up_to_date'>;
+  apkUpdateLastResult?(): { state: '' | 'installing' | 'failed'; message: string; at: number };
 }
 
 const native = Platform.OS === 'android' ? requireOptionalNativeModule<NativeAppRestart>('CertxaAppRestart') : null;
@@ -135,4 +138,20 @@ export function useNightlyRestart(isBusy: () => boolean, lastActivityAt: () => n
     const iv = setInterval(() => { void tick(); }, 60_000);
     return () => clearInterval(iv);
   }, [isBusy, lastActivityAt]);
+}
+
+/** Can this build download and install its own update (Android app 1.0.4 and later)? */
+export function canInstallApk(): boolean {
+  return typeof native?.installLatestApk === 'function';
+}
+
+/** Download the latest APK from `url` and install it over this app. Rejects with a message staff can read. */
+export async function installLatestApk(url: string): Promise<'installing' | 'up_to_date'> {
+  if (!native?.installLatestApk) throw new Error('This version of the app cannot update itself. Install the new app from certxa.com/app.');
+  return native.installLatestApk(url);
+}
+
+/** What the last update attempt came to (a failure is shown the next time the manager menu opens). */
+export function apkUpdateLastResult(): { state: string; message: string } | null {
+  try { return native?.apkUpdateLastResult?.() ?? null; } catch { return null; }
 }

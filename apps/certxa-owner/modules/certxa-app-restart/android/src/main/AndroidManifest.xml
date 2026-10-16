@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- "Install the latest app" in the manager menu (ApkUpdate.kt). A device-owner tablet installs with no prompt;
+       on others Android asks the person to confirm. -->
+  <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
   <application>
     <!-- Lets a tablet make Certxa its device owner (one-time provisioning), which is what allows
          Android's full kiosk lock (Lock Task mode) without a prompt on every launch. -->
@@ -11,6 +14,15 @@
       <meta-data android:name="android.app.device_admin" android:resource="@xml/certxa_device_admin" />
       <intent-filter>
         <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+      </intent-filter>
+    </receiver>
+    <!-- The installer's answer, and reopening the app once Android has replaced it with the update. -->
+    <receiver android:name="expo.modules.certxaapprestart.ApkUpdateReceiver" android:exported="false">
+      <intent-filter>
+        <action android:name="expo.modules.certxaapprestart.APK_INSTALL_STATUS" />
+      </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
       </intent-filter>
     </receiver>
   </application>

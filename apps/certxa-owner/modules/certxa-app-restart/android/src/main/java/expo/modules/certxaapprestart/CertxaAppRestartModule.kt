@@ -79,6 +79,13 @@ class CertxaAppRestartModule : Module() {
       WifiSetup.connect(context, ssid, password, security, hidden)
     }
 
+    /** Manager menu → Install the latest app: download it from `url` and install it over this app (ApkUpdate.kt).
+     *  Resolves "installing" (the app closes and reopens on the new version) or "up_to_date". */
+    AsyncFunction("installLatestApk") { url: String -> ApkUpdate.downloadAndInstall(context.applicationContext, url) }
+
+    /** What the last update attempt came to: { state: "" | "installing" | "failed", message, at }. */
+    Function("apkUpdateLastResult") { ApkUpdate.lastResult(context) }
+
     /** Android's own Wi-Fi settings — for tablets where Certxa is not allowed to change Wi-Fi itself. */
     Function("openWifiSettings") {
       context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

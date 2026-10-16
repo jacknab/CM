@@ -42,7 +42,7 @@ export function KioskExitPinModal({ visible, onCancel, onUnlock }: Props) {
       <View style={S.backdrop}>
         <View style={S.card}>
           <Text style={S.title}>Manager PIN</Text>
-          <Text style={[S.sub, error && S.error]}>{error ? 'Incorrect PIN' : 'Enter the PIN to exit kiosk mode'}</Text>
+          <Text style={[S.sub, error && S.error]}>{error ? 'Incorrect PIN' : 'Enter the manager PIN'}</Text>
           <View style={S.dots}>
             {[0, 1, 2, 3].map((i) => <View key={i} style={[S.dot, i < digits.length && S.dotOn]} />)}
           </View>

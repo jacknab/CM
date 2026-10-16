@@ -20,7 +20,7 @@ import Constants from 'expo-constants';
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import {
   View, ActivityIndicator, StyleSheet, useWindowDimensions,
-  Platform, Text, TouchableOpacity, BackHandler, Alert,
+  Platform, Text, TouchableOpacity, BackHandler,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { runLocalDb, type LocalDbRequest } from '../lib/localDb';
@@ -39,13 +39,14 @@ import { apiCaller, notifySessionReady, isSessionReady } from '@/lib/terminalBri
 import { deviceQualifiesForSetup, getStoredDeviceRole, setStoredDeviceRole, type DeviceRole } from '@/lib/deviceRole';
 import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
 import { WifiSetupScreen } from '@/components/onboarding/WifiSetupScreen';
+import { ManagerMenu } from '@/components/ManagerMenu';
 import { wifiSetupSupported } from '@/lib/wifi';
 import { useIdleSleep } from '@/lib/idleSleep';
 import { useNightlyRestart, isDefaultHomeApp, openDeviceSettings, isKioskManaged, exitKioskToSettings, followSensorOrientation, prepareCardReader } from '@/lib/appRestart';
 import { KioskExitPinModal } from '@/components/KioskExitPinModal';
 import { POSModal, type POSData } from '@/components/POSModal';
 import { viewportLockJs } from '@/lib/viewportLock';
-import { getSavedPrinter, printReceipt, printReceiptCopies, openCashDrawer, printCheckinTicket, printZReport, printText, type ReceiptData, type CheckinTicketData, type ZReportPrintData } from '@/lib/printer';
+import { printReceipt, printReceiptCopies, openCashDrawer, printCheckinTicket, printZReport, printText, type ReceiptData, type CheckinTicketData, type ZReportPrintData } from '@/lib/printer';
 import { QrCapture } from '@/components/QrCapture';
 import { NumberBarCapture } from '@/components/NumberBarCapture';
 import { PrinterSetupModal } from '@/components/PrinterSetupModal';
@@ -293,18 +294,12 @@ export default function PortalScreen() {
   const [printerSetupVisible, setPrinterSetupVisible] = useState(false);
   // Manager PIN step before a kiosk-locked tablet lets staff out.
   const [kioskPinVisible, setKioskPinVisible] = useState(false);
+  // After the manager PIN: Wi-Fi, receipt printer, app update, exit (components/ManagerMenu.tsx).
+  const [managerMenuVisible, setManagerMenuVisible] = useState(false);
   const [printerStoreName, setPrinterStoreName]       = useState('Receipt');
   const completedSetupHereRef = useRef(false);
-  // Existing customer-facing installations skipped the one-time printer wizard.
-  // Prompt for a local printer on their next launch; a saved printer never prompts again.
-  useEffect(() => {
-    if ((deviceRole !== 'frontdesk' && deviceRole !== 'kiosk') || completedSetupHereRef.current) return;
-    let active = true;
-    getSavedPrinter().then((printer) => {
-      if (active && !printer) setPrinterSetupVisible(true);
-    });
-    return () => { active = false; };
-  }, [deviceRole]);
+  // A customer screen or kiosk sets up its own receipt printer from the manager menu (it used to be asked
+  // on every start until one was saved).
   // Card details from the reader, by PaymentIntent id, so a receipt printed later can show the card block.
   const cardDetailsByPi = useRef<Map<string, unknown>>(new Map());
   const [m2PayData, setM2PayData]         = useState<M2PayData | null>(null);
@@ -522,7 +517,7 @@ export default function PortalScreen() {
 
   // ── Nightly self-restart (3 AM, only when nothing is in progress — see lib/appRestart.ts) ──
   const busyRef = useRef<() => boolean>(() => false);
-  busyRef.current = () => terminalBusyRef.current || m2PayVisible || posVisible || printerSetupVisible
+  busyRef.current = () => terminalBusyRef.current || m2PayVisible || posVisible || printerSetupVisible || managerMenuVisible || kioskPinVisible
     || tapSetupVisible || !!pendingQr || !!pendingNumberBar;
   const isBusyNow = useCallback(() => busyRef.current(), []);
   const lastActivityAt = useCallback(() => lastActivityRef.current, []);
@@ -772,19 +767,9 @@ export default function PortalScreen() {
           break;
         }
         case 'KIOSK_LONG_PRESS': {
-          // Kiosk-locked tablet (Certxa is device owner): the manager PIN first — see KioskExitPinModal.
-          if (isKioskManaged()) { setKioskPinVisible(true); break; }
-          // When Certxa is this tablet's Home app, closing it just reopens it — Exit opens Android's
-          // Settings instead, so staff can still get out (e.g. to change the Home app).
-          const isHome = isDefaultHomeApp();
-          Alert.alert(
-            'Exit Certxa',
-            'Do you wish to exit the app?',
-            [
-              { text: 'Stay', style: 'cancel' },
-              { text: 'Exit', style: 'destructive', onPress: () => (isHome ? openDeviceSettings() : BackHandler.exitApp()) },
-            ],
-          );
+          // The 3-second hold: the manager PIN (KioskExitPinModal), then the manager menu (Wi-Fi, printer,
+          // app update, exit) — on every tablet, kiosk-locked or not.
+          setKioskPinVisible(true);
           break;
         }
         default:
@@ -1001,7 +986,24 @@ export default function PortalScreen() {
       <KioskExitPinModal
         visible={kioskPinVisible}
         onCancel={() => setKioskPinVisible(false)}
-        onUnlock={() => { setKioskPinVisible(false); exitKioskToSettings(10); }}
+        onUnlock={() => { setKioskPinVisible(false); setManagerMenuVisible(true); }}
+      />
+
+      {/* Manager menu, after the PIN. Exit: a kiosk-locked tablet leaves the lock for 10 minutes and opens Android's
+          Settings; when Certxa is the Home app, closing it just reopens it, so Exit opens Settings there too. */}
+      <ManagerMenu
+        visible={managerMenuVisible}
+        apkUrl={`${PORTAL_ORIGIN}/app${APP_PROFILE ? `?app=${APP_PROFILE}` : ''}`}
+        exitLabel={isKioskManaged() || isDefaultHomeApp() ? 'Exit to Android Settings' : 'Exit app'}
+        onWifi={() => { setManagerMenuVisible(false); setWifiVisible(true); }}
+        onPrinter={() => { setManagerMenuVisible(false); setPrinterSetupVisible(true); }}
+        onExit={() => {
+          setManagerMenuVisible(false);
+          if (isKioskManaged()) exitKioskToSettings(10);
+          else if (isDefaultHomeApp()) openDeviceSettings();
+          else BackHandler.exitApp();
+        }}
+        onClose={() => setManagerMenuVisible(false)}
       />
 
       {/* Receipt printer setup — opened by SETUP_PRINTER from the web checkout */}

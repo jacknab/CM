@@ -639,7 +639,10 @@ app.get("/app", (req: Request, res: Response) => {
   // Set in /etc/certxa.env — EAS build artifact links expire, so this must be updated
   // (and the process restarted with `pm2 restart certxa-api --update-env`) after every
   // new owner-app build. No hardcoded fallback: a stale literal here is how this broke last time.
-  const APK_URL = process.env.OWNER_APK_URL;
+  // ?app=<profile>: a Certxa app other than the full one (plans/certxa-apps.md) — its own APK, e.g. NAIL_APK_URL.
+  // The tablets' manager menu downloads from here to update themselves (apps/certxa-owner ApkUpdate.kt).
+  const profile = typeof req.query.app === "string" && /^[a-z][a-z0-9-]{0,20}$/.test(req.query.app) ? req.query.app : null;
+  const APK_URL = profile ? process.env[`${profile.toUpperCase().replace(/-/g, "_")}_APK_URL`] : process.env.OWNER_APK_URL;
 
   if (!APK_URL) {
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
