@@ -44,6 +44,8 @@ export const clients = pgTable(
     totalSpentCents: integer("total_spent_cents").notNull().default(0),
     lastVisitAt: timestamp("last_visit_at"),
     nextAppointmentAt: timestamp("next_appointment_at"),
+    /** The client's address, kept for their next house call: { line1, line2?, city, state, postcode, lat?, lng? }. */
+    address: jsonb("address"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     archivedAt: timestamp("archived_at"),

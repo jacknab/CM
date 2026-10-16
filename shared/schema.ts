@@ -254,6 +254,14 @@ export const locations = pgTable("locations", {
   depositValue:         decimal("deposit_value", { precision: 10, scale: 2 }),
   // ── Online booking controls ─────────────────────────────────────────────
   onlineBookingMode:            text("online_booking_mode").notNull().default("all"), // 'all' | 'existing' | 'off'
+  // Solo plan: where the professional sees clients, and booking approval (plans/solo-work-places-and-approval.md).
+  ownPlace:                     text("own_place").notNull().default("salon"), // 'salon' (public address) | 'home' (private) | 'none'
+  houseCalls:                   boolean("house_calls").notNull().default(false),
+  houseCallRadiusMiles:         integer("house_call_radius_miles").notNull().default(15),
+  houseCallFee:                 decimal("house_call_fee", { precision: 10, scale: 2 }).notNull().default("0"),
+  houseCallTravelMinutes:       integer("house_call_travel_minutes").notNull().default(15),
+  bookingApproval:              text("booking_approval").notNull().default("auto"), // 'auto' | 'manual'
+  bookingRequestExpiryHours:    integer("booking_request_expiry_hours").notNull().default(48),
   advanceBookingEnabled:        boolean("advance_booking_enabled").notNull().default(false),
   advanceBookingMonths:         integer("advance_booking_months").notNull().default(3),
   onlineWaitlistEnabled:        boolean("online_waitlist_enabled").notNull().default(false),
@@ -337,6 +345,8 @@ export const services = pgTable("services", {
   autoAssigned: boolean("auto_assigned").default(false),
   isActive: boolean("is_active").notNull().default(true),
   hiddenFromPublic: boolean("hidden_from_public").default(false),
+  /** Solo plan: where the service is offered — at the professional's place, at the client's, or either. */
+  offeredAt: text("offered_at").notNull().default("any"),
 });
 
 export const serviceOptions = pgTable("service_options", {
@@ -598,6 +608,10 @@ export const appointments = pgTable("appointments", {
   startedAt: timestamp("started_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   checkedInAt: timestamp("checked_in_at", { withTimezone: true }),
+  /** Where the visit happens ('place' | 'client'); for a house call, the client's address and the travel fee. */
+  visitAt: text("visit_at").notNull().default("place"),
+  clientAddress: jsonb("client_address"),
+  travelFee: decimal("travel_fee", { precision: 10, scale: 2 }),
   serviceId: integer("service_id").references(() => services.id),
   staffId: integer("staff_id").references(() => staff.id),
   customerId: integer("customer_id"),

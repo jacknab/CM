@@ -71,5 +71,6 @@ export default defineConfig({
     "!service_import_jobs",
     "!directory_listings",
     "!directory_removal_requests",
+    "!booking_requests",
   ],
 });
