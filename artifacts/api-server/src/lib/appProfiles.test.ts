@@ -39,3 +39,11 @@ describe("app settings (Phase 3)", () => {
     expect(appSettingsPathFor(nail, "/settings/online-booking")).toBeNull();
   });
 });
+
+describe("sign-up in an app (Phase 4)", () => {
+  it("opens the onboarding and gives the new business the app's type", () => {
+    expect(appAllowsPath(APP_PROFILES.nail, "/onboarding")).toBe(true);
+    expect(APP_PROFILES.nail.businessType).toBe("Nail Salon");
+    expect(appFitsBusiness(APP_PROFILES.nail, APP_PROFILES.nail.businessType)).toBe(true);
+  });
+});

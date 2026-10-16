@@ -14,6 +14,8 @@ export interface AppProfile {
   audience: string;
   /** Which business types (locations.category) this app is for. */
   businessTypes: RegExp;
+  /** The business type a new business signing up in this app gets; sign-up doesn't ask for it. */
+  businessType: string;
   /** Where the app opens after sign-in. */
   home: string;
   /**
@@ -23,13 +25,15 @@ export interface AppProfile {
   screens: string[];
   /** The sections the app's own Settings page shows, in order (keys of APP_SETTINGS_SECTIONS). */
   settings: string[];
-  /** The first-run flow for a new business (Phase 4). */
-  signup: string;
+  /** The sign-up's opening line, in place of "what type of business do you run?". */
+  signupWelcome: string;
 }
 
 /** Screens every app needs, whatever its business type. */
 export const APP_SCREENS_ALWAYS = [
   "/auth", "/app-login", "/forgot-password", "/reset-password", "/staff-auth", "/accept-invite", "/app",
+  // Sign-up for a new business: the same onboarding as the full app, without the business-type question.
+  "/onboarding",
 ];
 
 export const APP_PROFILES: Record<string, AppProfile> = {
@@ -38,12 +42,13 @@ export const APP_PROFILES: Record<string, AppProfile> = {
     name: "Certxa Nail", // placeholder until the owner chooses the name
     audience: "nail salons",
     businessTypes: /nail/i,
+    businessType: "Nail Salon",
     home: "/nail",
     // Reports (the hub's own pages included), Messages and Support open in the app's frame.
     screens: ["/nail", "/kiosk", "/frontdesk", "/reports", "/salon-earnings", "/register-reports", "/commission-report", "/sms-inbox", "/support",
       "/manage/billing/credits-topup"],
     settings: ["services", "staff", "turns", "checkout", "giftCards", "loyalty", "hours", "business", "kiosk", "stations", "drawers", "payouts", "language", "plan"],
-    signup: "nail",
+    signupWelcome: "Welcome to Certxa Nail! 👋 Let's get your salon set up in just a few minutes. What's your nail salon called?",
   },
 };
 

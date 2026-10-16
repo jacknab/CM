@@ -50,7 +50,7 @@ These are built once and shown per profile, not rebuilt for every app:
 
 ### 5. Sign-up per business type
 
-A short first-run flow for each app, driven by the profile's `signup` setting. For nail: salon name and address, technicians and Tech IDs, services and prices, and card reader setup. The business type is set by the app, never asked.
+The same onboarding as the full Certxa app (owner's decision 2026-10-16), with one difference: the app sets the business type (the profile's `businessType`), so the business-type question is never asked. The chat opens on the salon's name with the profile's `signupWelcome`.
 
 ## Order of work
 
@@ -113,4 +113,8 @@ These are needed by Phases 3–5, not Phase 1.
   - **Links:** a `/settings/<slug>` link inside a page opens the app's copy.
   - **Retail Sale** is hidden inside an app until the owner decides what it becomes.
   - **Not yet tried** on a tablet with a signed-in nail salon.
+- 2026-10-16: Phase 4 (sign-up) done in code:
+  - The owner chose to keep the same onboarding, only without the business-type question.
+  - Inside an app, a new session starts at `salon_name` with `businessType` preset from the profile (`firstStepId()`, `makeDefault`), and the opening line is the profile's `signupWelcome`. `/onboarding` is allowed in every app.
+  - The roles offered come from the business type (shared/staffRoles.ts).
 

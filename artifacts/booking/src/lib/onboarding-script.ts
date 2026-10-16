@@ -10,6 +10,7 @@
  * AI extension point: the `message` field can be made dynamic (fn that receives
  * answers) to generate personalised text via GPT-4o-mini without changing the UI.
  */
+import { currentAppProfile } from "@/lib/appProfile";
 
 export type InputType =
   | "chips"                // button chip grid
@@ -209,6 +210,9 @@ export const ONBOARDING_STEPS: StepDefinition[] = [
     answerKey: "businessName",
     phase: "Business",
     message: (a) => {
+      // Inside a Certxa app this is the first question: the app set the business type (shared/appProfiles.ts).
+      const app = currentAppProfile();
+      if (app) return app.signupWelcome;
       switch (a.businessType) {
         case "Nail Salon":
           return "Love it! Michelangelo had ceilings—you've got fingernails. 😄 What's your nail salon called?";
@@ -599,6 +603,14 @@ export function getStepIndex(id: string): number {
 }
 
 export const FIRST_STEP_ID = ONBOARDING_STEPS[0].id;
+
+/**
+ * Where a new sign-up starts. Inside a Certxa app the business type is already known, so it starts at the
+ * salon's name and never shows the business-type question (Back only returns to questions answered).
+ */
+export function firstStepId(): string {
+  return currentAppProfile() ? "salon_name" : FIRST_STEP_ID;
+}
 
 // All steps that are "required" for the final submission check
 export const REQUIRED_STEP_IDS = ["business_type", "salon_name", "timezone", "website_name", "website_template_pick"];

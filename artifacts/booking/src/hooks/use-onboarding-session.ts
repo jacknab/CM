@@ -5,11 +5,12 @@
  * change so users resume exactly where they left off, and drives API submission.
  */
 
+import { currentAppProfile } from "@/lib/appProfile";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ONBOARDING_STEPS,
-  FIRST_STEP_ID,
+  firstStepId,
   REQUIRED_STEP_IDS,
   getStepById,
   getStepIndex,
@@ -39,12 +40,15 @@ interface OnboardingSession {
 }
 
 function makeDefault(userId: string): OnboardingSession {
+  // Inside a Certxa app the business type comes from the app (shared/appProfiles.ts), not a question.
+  const app = currentAppProfile();
   return {
     userId,
     version: 1,
-    currentStepId: FIRST_STEP_ID,
+    currentStepId: firstStepId(),
     completedStepIds: [],
     answers: {
+      ...(app ? { businessType: app.businessType } : {}),
       timezone: detectBrowserTimezone(),
       teamMembers: [],
       services: [],
@@ -541,7 +545,8 @@ export function useOnboardingSession(userId: string): OnboardingSessionHook {
     initialized.current = false;
 
     // Re-add first AI message
-    const firstStep = getStepById(FIRST_STEP_ID);
+    const firstId = firstStepId();
+    const firstStep = getStepById(firstId);
     if (firstStep) {
       const msg =
         typeof firstStep.message === "function"
@@ -549,8 +554,8 @@ export function useOnboardingSession(userId: string): OnboardingSessionHook {
           : firstStep.message;
       setChatHistory([
         {
-          id: `ai-${FIRST_STEP_ID}-init`,
-          stepId: FIRST_STEP_ID,
+          id: `ai-${firstId}-init`,
+          stepId: firstId,
           type: "ai",
           content: msg,
           timestamp: Date.now(),
