@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { isAccountStopped } from "./lib/accountSuspension";
 import type { AppointmentWithDetails } from "@shared/schema";
 import { formatInTimeZone } from "date-fns-tz";
 import { db } from "./db";
@@ -175,6 +176,13 @@ export async function sendSms(
   customerId?: number,
   options?: SendSmsOptions
 ): Promise<{ success: boolean; sid?: string; error?: string; skipped?: boolean }> {
+  // A suspended or closed account sends no texts at all — reminders, confirmations, receipts, campaigns
+  // (lib/accountSuspension.ts). The owner's sign-in codes go through sendTwilioSms, not here.
+  if (await isAccountStopped(storeId)) {
+    console.log(`[SMS] Not sent — store ${storeId}'s account is suspended (messageType=${messageType})`);
+    return { success: false, skipped: true, error: "Account suspended" };
+  }
+
   // Normalize to E.164 — Twilio requires this format for the `to` field.
   // If the input can't be normalized (e.g. empty, too short) we bail early.
   const e164Phone = toE164US(phone);

@@ -5,11 +5,10 @@
  * applies the appropriate restriction:
  *
  *   locked      → Full block (AccountLocked page) — sub canceled, past grace
- *   suspended   → Only a small allowlist of pages remain reachable (clients,
- *                 categories/services/addons/products, reports, account/billing)
- *                 so the owner can keep serving clients and pay to restore
- *                 service. Everything else (calendar, POS, marketing, staff,
- *                 settings, etc.) shows the AccountSuspended screen instead.
+ *   suspended   → The account and its data stay open; only /nail and /calendar
+ *                 show the suspended screen. Server-side the salon's online
+ *                 booking, Autumn and all its SMS stop too (api-server
+ *                 lib/accountSuspension.ts).
  *   inGracePeriod → Full access with a warning banner (trial ended, 7-day window)
  *   trialExpired → Full block (TrialExpired page) — grace period also over
  *   active      → Children rendered normally
@@ -28,25 +27,11 @@ interface AccountStatusGateProps {
   children: React.ReactNode;
 }
 
-/**
- * The only pages reachable while an account is suspended. Everything not
- * listed here (calendar, POS, marketing, team, most settings, etc.) shows
- * the AccountSuspended screen instead.
- */
-const SUSPENDED_ALLOWED_PATHS = [
-  // Clients
-  "/customers", "/client-lookup", "/client", "/clients",
-  // Catalog — categories, services, add-ons, products (+ legacy redirect paths)
-  "/catalog/categories", "/catalog/services", "/catalog/addons", "/catalog/products",
-  "/services", "/addons", "/products",
-  // Reports
-  "/reports",
-  // Account / billing — so the owner can pay to restore service
-  "/account", "/billing",
-];
+/** The pages that stop while an account is suspended; everything else in the account stays open. */
+const SUSPENDED_BLOCKED_PATHS = ["/nail", "/calendar"];
 
-function isSuspendedAllowedPath(pathname: string): boolean {
-  return SUSPENDED_ALLOWED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
+function isSuspendedBlockedPath(pathname: string): boolean {
+  return SUSPENDED_BLOCKED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
 
 function GracePeriodBanner({ graceEndsAt, onDismiss }: { graceEndsAt: string | null; onDismiss: () => void }) {
@@ -92,7 +77,7 @@ function SuspendedAccessScreen() {
           This page isn't available while your account is suspended. Pay any outstanding balance on your billing page to restore full access.
         </p>
         <p className="text-zinc-500 text-sm">
-          You can still manage clients, services, add-ons, products, and reports.
+          The rest of your account is still open.
         </p>
         <div className="flex flex-col gap-2 pt-2">
           <a
@@ -214,12 +199,10 @@ export function AccountStatusGate({ children }: AccountStatusGateProps) {
     return <AccountLocked />;
   }
 
-  // ── Suspended — only clients/catalog/reports/billing remain reachable ─────
+  // ── Suspended — only /nail and /calendar stop; the rest of the account stays open ─────
   if (data.accountStatus === "suspended") {
-    if (isSuspendedAllowedPath(location.pathname)) {
-      return <>{children}</>;
-    }
-    return <SuspendedAccessScreen />;
+    if (isSuspendedBlockedPath(location.pathname)) return <SuspendedAccessScreen />;
+    return <>{children}</>;
   }
 
   // ── Trial ended but still within 7-day grace period ───────────────────────

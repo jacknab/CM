@@ -2090,6 +2090,8 @@ export async function registerRoutes(
       // Everything else passes through so users can still log in, access settings,
       // clients, and export their records while suspended.
       const SUSPENDED_BLOCKED_PREFIXES = [
+        // The /nail POS (lib/accountSuspension.ts: /nail and /calendar stop while suspended)
+        "/api/nail",
         // Calendar & appointments
         "/api/calendar",
         "/api/appointments",
@@ -2106,7 +2108,10 @@ export async function registerRoutes(
         "/api/packages",
         "/api/deals",
       ];
-      const isSuspendedBlocked = SUSPENDED_BLOCKED_PREFIXES.some((p) => req.originalUrl.startsWith(p));
+      // The account's data stays readable (a client's visit history comes from /api/appointments): only /nail is
+      // blocked outright; for the calendar's endpoints only making and changing things is.
+      const isSuspendedBlocked = SUSPENDED_BLOCKED_PREFIXES.some((p) => req.originalUrl.startsWith(p))
+        && (req.method !== "GET" || req.originalUrl.startsWith("/api/nail"));
 
       if (userId) {
         // Resolve the store for this owner session (cheapest: grab first store).

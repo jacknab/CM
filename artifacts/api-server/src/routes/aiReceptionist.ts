@@ -61,6 +61,7 @@
  */
 
 import { addressIsPrivate } from "../lib/publicStore";
+import { isAccountStopped } from "../lib/accountSuspension";
 import type { Express, Request, Response } from "express";
 import type { Server as HttpServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
@@ -5478,6 +5479,11 @@ export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express):
     const receptionistEnabled = await getReceptionistEnabled(storeId);
     if (!receptionistEnabled) {
       console.log(`[AI Receptionist] Incoming call rejected — receptionist disabled for store ${storeId}`);
+      return res.status(200).type("text/xml").send(twimlDisabledBusy());
+    }
+    // A suspended account: Autumn doesn't answer, the same as when she is switched off (lib/accountSuspension.ts).
+    if (await isAccountStopped(storeId)) {
+      console.log(`[AI Receptionist] Incoming call not answered — store ${storeId}'s account is suspended`);
       return res.status(200).type("text/xml").send(twimlDisabledBusy());
     }
 
