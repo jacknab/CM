@@ -59,4 +59,11 @@ archive, offline work waiting to be sent), and each offline feature needed its o
   - Web (`booking/src/lib/salon-mirror.ts`): first copy (resumable), changes, resync, deleted parents take their
     children; runs on /nail and /barber every minute and on reconnect. Tests: `salon-mirror.test.ts`.
   - Phase 3: the Clients sheet reads the copy offline (profile, email, points, allergies, visits).
-  - **Next in phase 3:** the board, catalogue, staff/turns and bookings offline from the copy.
+- 2026-10-17: **Phase 3.** Finding: every /nail read already keeps the server's last answer on the tablet, and
+  the board, catalogue and turn line are re-kept on every refresh, so offline they are as fresh as the copy —
+  moving them gains nothing. The gaps were reads never made while online. `pages/nail/mirrorAnswers.ts` builds
+  those from the copy, in the server's shape, when there is no kept answer: a client (with points), a
+  service's nail options, the upcoming list; phone lookups use the copy first (synced every minute, not 30).
+  Tests: `mirrorAnswers.test.ts`.
+- **Phase 4 waits** until every tablet has the app update with the copy: the old pieces (snapshot, phone
+  cache, ticket archive) are what tablets without it use.

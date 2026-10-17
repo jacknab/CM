@@ -14,6 +14,7 @@ import { foreignTurnEvents } from "@/lib/nail-offline/turnShare";
 import { snapshotDB } from "@/lib/snapshot-db";
 import type { OfflineBookingData } from "./offlineBooking";
 import { estimateWait, type WaitTech } from "@shared/waitEstimate";
+import { answerFromMirror, mirrorClient } from "./mirrorAnswers";
 import { actionQueueDB } from "@/lib/action-queue-db";
 
 export const boardKey = (storeId: number) => ["/api/nail/board", storeId] as const;
@@ -175,8 +176,12 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
   const storeId = nailOfflineStore();
   const fromDevice = async (): Promise<{ data: T } | undefined> => {
     const kept = isRead && storeId != null ? await nailOffline.recall<T>(storeId, url).catch(() => undefined) : undefined;
-    if (kept) answeredFromDevice.set(url, kept.at);
-    return kept;
+    if (kept) { answeredFromDevice.set(url, kept.at); return kept; }
+    // Never read while online: built from the salon's full copy on the tablet, when it has one (mirrorAnswers.ts).
+    const built = isRead && storeId != null ? await answerFromMirror(storeId, url) : undefined;
+    if (built === undefined) return undefined;
+    answeredFromDevice.set(url, new Date().toISOString());
+    return { data: built as T };
   };
   // Known to be offline: answer from the device at once instead of waiting for a request to time out.
   if (isRead && syncEngine.isOffline()) {
@@ -429,6 +434,9 @@ export async function clientOnDevice(id: number): Promise<ClientSummary | null> 
     const rec = (await nailOffline.records(storeId).catch(() => [])).find((r) => r.kind === "client" && r.id === id);
     return rec && rec.kind === "client" ? { id, name: rec.name, phone: rec.phone, loyaltyPoints: 0 } : null;
   }
+  // The salon's full copy (with points) when the tablet has one, else the saved name and number.
+  const full = await mirrorClient(storeId, id).catch(() => null);
+  if (full) return { id, name: full.name, phone: full.phone, loyaltyPoints: full.loyaltyPoints };
   const kept = await clientPhoneCacheDB.getById(storeId, id).catch(() => null);
   return kept ? { id, name: kept.name, phone: kept.phone10 ?? kept.phone ?? null, loyaltyPoints: 0 } : null;
 }

@@ -19,23 +19,14 @@ import { findClientId } from "@/pages/nail/clientLookup";
 import { clientOnDevice } from "@/pages/nail/nailApi";
 import { snapshotDB } from "@/lib/snapshot-db";
 import { archivedVisitsOfClient } from "@/pages/nail/ticketArchive";
-import { hasSalonMirror, mirrorAll, mirrorFind, mirrorGet } from "@/lib/salon-mirror";
+import { hasSalonMirror, mirrorFind, mirrorGet } from "@/lib/salon-mirror";
+import { mirrorClient, mirrorClientIdByPhone } from "@/pages/nail/mirrorAnswers";
 
-const digits10 = (v: unknown) => String(v ?? "").replace(/\D/g, "").slice(-10);
-
-/** The client with this number in the salon's full copy on the tablet (lib/salon-mirror.ts), shaped like the online lookup. */
+/** The client with this number in the salon's full copy on the tablet, shaped like the online lookup. */
 async function clientFromMirror(storeId: number, phone: string): Promise<any | null> {
-  const phones = await mirrorAll(storeId, "client_phones");
-  for (const p of phones) {
-    if (digits10(p.phone_number_e164) !== phone && digits10(p.display_phone) !== phone) continue;
-    const c = await mirrorGet(storeId, "clients", p.client_id);
-    if (!c || c.archived_at) continue;
-    const emails = await mirrorFind(storeId, "client_emails", "client_id", Number(c.id));
-    const email = emails.find((e) => e.is_primary) ?? emails[0];
-    return { id: Number(c.id), name: c.full_name, phone: p.display_phone ?? p.phone_number_e164 ?? null, email: email?.email_address ?? null,
-      loyaltyPoints: c.loyalty_points ?? null, allergies: c.allergies ?? null, birthday: c.date_of_birth ?? null, offline: true };
-  }
-  return null;
+  const id = await mirrorClientIdByPhone(storeId, phone);
+  const c = id != null ? await mirrorClient(storeId, id) : null;
+  return c ? { ...c, offline: true } : null;
 }
 
 /** A client's visits from the salon's full copy, shaped like /api/appointments rows. */
