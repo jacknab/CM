@@ -39,6 +39,7 @@ import { apiCaller, notifySessionReady, isSessionReady } from '@/lib/terminalBri
 import { deviceQualifiesForSetup, getStoredDeviceRole, setStoredDeviceRole, type DeviceRole } from '@/lib/deviceRole';
 import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
 import { WifiSetupScreen } from '@/components/onboarding/WifiSetupScreen';
+import { APP_BUILD_LABEL } from '@/lib/buildInfo';
 import { ManagerMenu } from '@/components/ManagerMenu';
 import { wifiSetupSupported } from '@/lib/wifi';
 import { useIdleSleep } from '@/lib/idleSleep';
@@ -101,6 +102,8 @@ const BRIDGE_JS = `
   if (window.__certxaBridgeInstalled) return;
   window.__certxaBridgeInstalled = true;
   window.CERTXA_NATIVE_APP = true;
+  // Which APK this is, for the corner of /nail, /frontdesk and /kiosk (lib/buildInfo.ts).
+  window.CERTXA_APP_BUILD = ${JSON.stringify(APP_BUILD_LABEL)};
   // This build keeps the salon's offline data in an encrypted SQLite file (lib/localDb.ts).
   // 2: also keeps the salon's account copied (lib/localDb.ts mirror*, plans/salon-local-database.md).
   window.CERTXA_NATIVE_LOCAL_DB = 2;

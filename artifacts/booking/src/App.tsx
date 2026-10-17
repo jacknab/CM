@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { AppBuildCorner } from "@/components/AppBuildTag";
 import { AppScreenGuard, AppBusinessGate } from "@/components/AppProfileGate";
 import { currentAppProfile } from "@/lib/appProfile";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -440,6 +441,8 @@ function App() {
                 Signed-in users are reported to isTeam via <BookingPresenceBeacon/>
                 (mounted in AppRoutes); kiosk / front-desk screens via this one. */}
             <DevicePresenceBeacon />
+            {/* The Certxa app's version and build, bottom right of /nail, /frontdesk and /kiosk. */}
+            <AppBuildCorner />
           </BrowserRouter>
         </ErrorBoundary>
       </TooltipProvider>
