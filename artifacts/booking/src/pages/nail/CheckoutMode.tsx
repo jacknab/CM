@@ -1096,8 +1096,9 @@ export function CheckoutMode(p: Props) {
             <div className="key-grid">
               {KEYS.map((k) => (
                 <button key={k} type="button" data-testid={`nail-pay-key-${k}`} onClick={() => pressKey(k)}
-                  className={k === "ENTER" ? "enter-key" : k === "ERC" ? "undo-key" : ""}>
-                  {k === "ERC" && guided !== null ? "EXIT" : k}
+                  className={k === "ENTER" ? "enter-key" : k === "ERC" ? "undo-key" : ""} aria-label={k === "ERC" ? "Error correct" : undefined}>
+                  {/* Error Correct shows the same ↶ as on the ticket builder's keypad. */}
+                  {k === "ERC" ? (guided !== null ? "EXIT" : "↶") : k}
                 </button>
               ))}
             </div>
