@@ -378,20 +378,6 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0 }
           <div className="flex-1 flex flex-col min-h-0">
             <div className="flex-1 overflow-y-auto">
 
-              {/* A shift is everything since the drawer was last closed. Say so when that is more than a day:
-                  the cash to count then covers every one of those days, not just today. */}
-              {(() => {
-                const openedAt = openSession?.openedAt ? new Date(openSession.openedAt as any) : null;
-                const days = openedAt ? (Date.now() - openedAt.getTime()) / 86_400_000 : 0;
-                if (!openedAt || days < 1.25) return null;
-                return (
-                  <div role="status" className="mx-5 mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-testid="day-close-long-shift">
-                    <p className="font-semibold">This shift has been open since {openedAt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}.</p>
-                    <p className="mt-0.5">The last Day Close did not go through, so this one covers {Math.ceil(days)} days of sales. Count all the cash taken since then.</p>
-                  </div>
-                );
-              })()}
-
               {/* Card transactions — auto-populated */}
               <div className="px-5 pt-4 pb-3">
                 <div className="flex items-center gap-1.5 mb-2.5">
