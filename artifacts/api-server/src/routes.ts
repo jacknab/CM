@@ -23185,6 +23185,16 @@ or
     };
   }
 
+  /** A check-in without a ticket counts as someone still waiting only as the board shows them: waiting or
+   *  called, and from the last CHECKIN_MARKER_HOURS. */
+  const checkinStillOpen = (c: { status?: string | null; created_at?: Date | string | null }) =>
+    ["waiting", "called"].includes(String(c.status)) && !!c.created_at
+      && Date.now() - new Date(c.created_at).getTime() < nailTickets.CHECKIN_MARKER_HOURS * 3_600_000;
+  const closedCheckinAnswer = (c: any) => ({
+    found: true, type: "checkin_closed", checkinId: c.id, clientName: c.client_name ?? "Guest", ticketNumber: c.ticket_number ?? null,
+    date: c.created_at ? new Date(c.created_at).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "",
+  });
+
   app.post("/api/qr/lookup", isAuthenticated, async (req: any, res: any) => {
     try {
       const { qrToken } = req.body ?? {};
@@ -23221,11 +23231,14 @@ or
       const checkinMatch = raw.match(/^CI[:\-]?(.+)$/i);
       if (checkinMatch) {
         const row = await pool.query(
-          `SELECT id, client_id, client_name, appointment_id FROM kiosk_checkins WHERE token = $1 LIMIT 1`,
+          `SELECT id, client_id, client_name, appointment_id, status, created_at, ticket_number FROM kiosk_checkins WHERE token = $1 LIMIT 1`,
           [checkinMatch[1]]
         ).catch(() => null);
         const checkin = row?.rows?.[0];
         if (!checkin) return res.status(404).json({ error: "Check-in not found" });
+        // A check-in that never got a ticket and is no longer waiting (expired, or from an earlier day):
+        // shown as such, never opened in the POS to start a ticket for a visit that is over.
+        if (!checkin.appointment_id && !checkinStillOpen(checkin)) return res.json(closedCheckinAnswer(checkin));
         if (!checkin.appointment_id) {
           return res.json({
             found: true,
@@ -23292,12 +23305,14 @@ or
       // same as the QR's "CI:" code does.
       const { rows } = await pool.query(
         // The number on the slip: the check-in's own, or the one printed offline before the server renumbered it.
-        `SELECT id, client_id, client_name, appointment_id FROM kiosk_checkins
+        `SELECT id, client_id, client_name, appointment_id, status, created_at, ticket_number FROM kiosk_checkins
          WHERE store_id = $1 AND (ticket_number = $2 OR printed_ticket_number = $2)
          ORDER BY (ticket_number = $2) DESC, created_at DESC LIMIT 1`,
         [storeId, ticketNumber],
       );
       const checkin = rows[0];
+      // No ticket and no longer waiting (expired, or from an earlier day): shown, never opened in the POS.
+      if (checkin && !checkin.appointment_id && !checkinStillOpen(checkin)) return res.json(closedCheckinAnswer(checkin));
       if (checkin && !checkin.appointment_id) {
         return res.json({ found: true, type: "checkin", checkinId: checkin.id, clientId: checkin.client_id, clientName: checkin.client_name ?? "Guest" });
       }

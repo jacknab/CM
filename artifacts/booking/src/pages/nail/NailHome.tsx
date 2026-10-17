@@ -1068,6 +1068,13 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // as if the ticket number didn't exist.
   const [lookupStatus, setLookupStatus] = useState<LookupTicketStatus | null>(null);
   const applyLookupResult = useCallback(async (data: any) => {
+    // A check-in that never got a ticket and is no longer waiting: shown read-only. Opening it in the POS
+    // would start a ticket for a visit that is over (and a ticket left without a service drops off the queue).
+    if (data.type === "checkin_closed") {
+      setLookupStatus({ appointmentId: 0, ticketNumber: data.ticketNumber ?? null, clientName: data.clientName,
+        service: "Checked in — no service was started", date: data.date, status: "checkin_expired", isPaid: false });
+      return;
+    }
     if (data.type === "checkin") {
       await pickClient(data.clientId, data.checkinId);
       return;
