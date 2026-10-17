@@ -1544,10 +1544,13 @@ router.get("/terminal/verify-payment-intent", async (req: Request, res: Response
     const account = await getPaymentAccount(storeId);
     if (!account || account.status === "disconnected") return res.status(400).json({ error: "Store has no connected Stripe account" });
     const pi = await retrieveTerminalPaymentIntent(account.providerAccountId, paymentIntentId);
-    if (pi.status !== "succeeded" || pi.metadata?.store_id !== String(storeId) || pi.metadata?.appointment_id !== String(appointmentId)) {
+    // A ticket checkout's card is authorized when it is taken and charged when the sale is saved: an
+    // authorization still open on this ticket counts as its payment (lib/nailCheckoutSettlement.ts).
+    const authorized = pi.status === "requires_capture" && pi.metadata?.source === "nail_checkout";
+    if ((pi.status !== "succeeded" && !authorized) || pi.metadata?.store_id !== String(storeId) || pi.metadata?.appointment_id !== String(appointmentId)) {
       return res.status(409).json({ error: "No captured payment for this ticket" });
     }
-    return res.json({ amountCents: pi.amount, paymentIntentId: pi.id });
+    return res.json({ amountCents: pi.amount, paymentIntentId: pi.id, authorized });
   } catch (err: any) {
     console.error("[terminal/verify]", err?.message);
     return res.status(502).json({ error: "Could not verify payment with Stripe" });
@@ -1584,9 +1587,13 @@ router.post("/terminal/capture-payment-intent", async (req: Request, res: Respon
       }
     }
 
-    if (pi.status === "requires_capture") {
+    // A ticket checkout (/nail, /barber) keeps the card as an authorization: it is charged when the whole sale is
+    // saved, and voided (never charged) when staff take the payment off or leave the ticket — a client who
+    // changes their mind about paying by card is not charged (owner, 2026-10-17). Everything else is charged now.
+    const holdOnly = pi.metadata?.source === "nail_checkout";
+    if (pi.status === "requires_capture" && !holdOnly) {
       pi = await captureTerminalPaymentIntent(account.providerAccountId, paymentIntentId);
-    } else if (pi.status !== "succeeded") {
+    } else if (pi.status !== "succeeded" && !(holdOnly && pi.status === "requires_capture")) {
       return res.status(409).json({ error: `Payment is ${pi.status} and cannot be captured` });
     }
 
@@ -1598,10 +1605,41 @@ router.post("/terminal/capture-payment-intent", async (req: Request, res: Respon
       paymentIntentId:  pi.id,
       status:           pi.status,
       amount:           pi.amount,
+      authorized:       pi.status === "requires_capture",
     });
   } catch (err: any) {
     console.error("[terminal/capture]", err?.message);
     return res.status(500).json({ error: err?.message ?? "Failed to capture payment" });
+  }
+});
+
+// ─── POST /api/payments/terminal/void-payment-intent ─────────────────────────
+// A ticket checkout's card authorization that won't be used (the payment was taken off, or staff left the
+// ticket): cancelled, so the client's card is never charged. A card already charged can't be voided here.
+// body: { paymentIntentId }
+router.post("/terminal/void-payment-intent", async (req: Request, res: Response) => {
+  try {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(400).json({ error: "No store found" });
+    const { paymentIntentId } = req.body ?? {};
+    if (typeof paymentIntentId !== "string" || !/^pi_[a-zA-Z0-9]+$/.test(paymentIntentId)) {
+      return res.status(400).json({ error: "paymentIntentId is required" });
+    }
+    const account = await getPaymentAccount(storeId);
+    if (!account || account.status === "disconnected") return res.status(400).json({ error: "Store has no connected Stripe account" });
+    const pi = await retrieveTerminalPaymentIntent(account.providerAccountId, paymentIntentId);
+    if (pi.metadata?.store_id !== String(storeId)) return res.status(403).json({ error: "Payment does not belong to this store" });
+    if (pi.status === "succeeded") {
+      return res.status(409).json({ error: "This card was already charged, so it can't be voided. Refund it instead." });
+    }
+    if (pi.status !== "canceled") await cancelTerminalPaymentIntent(account.providerAccountId, paymentIntentId);
+    // No longer a payment waiting on this ticket (the checkout's recovery only brings back 'pending' ones).
+    await pool.query(`UPDATE nail_checkout_card_intents SET idempotency_key = 'voided'
+      WHERE payment_intent_id = $1 AND store_id = $2 AND idempotency_key = 'pending'`, [paymentIntentId, storeId]);
+    return res.json({ success: true, paymentIntentId, status: "canceled" });
+  } catch (err: any) {
+    console.error("[terminal/void]", err?.message);
+    return res.status(502).json({ error: "Could not void the card payment. Check Stripe before trying again." });
   }
 });
 

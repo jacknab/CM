@@ -20,6 +20,7 @@ import { openCashDrawerHardware, recordNoSale } from "@/lib/cashDrawer";
 import { barberUrl, checkoutRequestKey, lookupGiftCard, type BoardTicket, type FinalizeData, type GiftCardInfo } from "./barberApi";
 import { bridgeState, isNativeApp, useCardPayments } from "./useCardPayments";
 import { frontdeskReaderMethod, readNailCardMethod, type NailCardMethod } from "./cardMethod";
+import { confirm } from "@/lib/confirm";
 import { verifyCardCharge } from "../frontdesk/verifyCardCharge";
 
 interface Props {
@@ -690,6 +691,48 @@ export function CheckoutMode(p: Props) {
 
   const guidedPrompt = guided !== null ? `${QUICK_TICKET_STEPS[guided].prompt.toUpperCase()} · STEP ${guided + 1}/${QUICK_TICKET_STEPS.length} — ENTER TO ADD / SKIP` : null;
 
+  // ── A card is only authorized when it is taken; the sale charges it when it is saved ──
+  // Taking a card payment off, or leaving the ticket with payments on it, voids the authorization so the
+  // client's card is never charged (owner, 2026-10-17). Same as /nail (pages/nail/CheckoutMode.tsx).
+  const isCardHold = (t: Tender) => (t.method === "m2" || t.method === "tap") && !!t.paymentIntentId;
+  const voidCard = async (t: Tender): Promise<boolean> => {
+    if (!t.paymentIntentId) { setTenders((cur) => cur.filter((x) => x.id !== t.id)); return true; }
+    try {
+      const r = await fetch("/api/payments/terminal/void-payment-intent", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentIntentId: t.paymentIntentId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { say(String(d.error || "Could not void the card payment").toUpperCase(), "error"); return false; }
+    } catch {
+      say("NO CONNECTION — THE CARD PAYMENT COULD NOT BE VOIDED. TRY AGAIN.", "error");
+      return false;
+    }
+    try {
+      const saved = JSON.parse(localStorage.getItem(cardRecoveryKey) || "[]") as Tender[];
+      localStorage.setItem(cardRecoveryKey, JSON.stringify(saved.filter((x) => x.paymentIntentId !== t.paymentIntentId)));
+    } catch { /* private storage */ }
+    setTenders((cur) => cur.filter((x) => x.id !== t.id));
+    return true;
+  };
+  const removeTender = async (t: Tender) => {
+    if (!isCardHold(t)) { setTenders((cur) => cur.filter((x) => x.id !== t.id)); return; }
+    if (!(await confirm(`Void the ${money(t.amount)} card payment? The client's card won't be charged.`, { title: "Void card payment", confirmLabel: "Void", destructive: true }))) return;
+    if (await voidCard(t)) say(`CARD PAYMENT VOIDED · ${money(t.amount)}`, "success");
+  };
+  const closeCheckout = async () => {
+    if (!p.paid && tenders.length > 0) {
+      const holds = tenders.filter(isCardHold);
+      const cash = tenders.some((t) => t.method === "cash");
+      const message = [holds.length ? `${holds.length === 1 ? "The card payment" : "The card payments"} (${money(holds.reduce((n, t) => n + t.amount, 0))}) will be voided — the client's card won't be charged.` : "",
+        cash ? "Give back any cash taken." : ""].filter(Boolean).join(" ");
+      if (!(await confirm(message || "Remove the payments on this ticket?", { title: "Leave this payment?", confirmLabel: "Void and leave", destructive: true }))) return;
+      for (const t of holds) if (!(await voidCard(t))) return;
+      setTenders([]);
+    }
+    p.onClose();
+  };
+
   return (
     <>
       {/* ── ticket panel ─────────────────────────────────────────────────── */}
@@ -744,7 +787,7 @@ export function CheckoutMode(p: Props) {
           )}
           <div className="grand-total"><span>TOTAL</span><strong data-testid="barber-pay-total">{money(totals.total)}</strong></div>
           {tenders.map((t) => (
-            <div key={t.id} data-testid={`barber-pay-tender-${t.method}`}><span>{tenderLabel(t)}</span><strong>−{money(t.amount)} {t.method !== "m2" && t.method !== "tap" && <button type="button" className="row-x" aria-label="Remove payment" onClick={() => setTenders((cur) => cur.filter((x) => x.id !== t.id))}>×</button>}</strong></div>
+            <div key={t.id} data-testid={`barber-pay-tender-${t.method}`}><span>{tenderLabel(t)}</span><strong>−{money(t.amount)} {!p.paid && !p.finalizing && <button type="button" className="row-x" aria-label={isCardHold(t) ? "Void card payment" : "Remove payment"} onClick={() => void removeTender(t)}>×</button>}</strong></div>
           ))}
           {tenders.length > 0 && (
             <div className="balance-row" data-testid="barber-pay-balance">
@@ -753,7 +796,7 @@ export function CheckoutMode(p: Props) {
             </div>
           )}
           <div className="checkout-row">
-            <button type="button" className="checkout-clr" onClick={p.onClose} data-testid="barber-pay-back">BACK</button>
+            <button type="button" className="checkout-clr" onClick={() => void closeCheckout()} data-testid="barber-pay-back">BACK</button>
             <button type="button" className={`checkout ${p.finalizing || p.paid || (!totals.settled && cardBusy) ? "disabled" : ""}`} disabled={p.finalizing || p.paid || (!totals.settled && cardBusy)} onClick={payCheckout} data-testid="barber-pay-finish">
               {p.paid ? "PAID ✓" : p.finalizing ? "SAVING…" : "PAY / CHECKOUT"}
             </button>

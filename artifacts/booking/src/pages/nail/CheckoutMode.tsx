@@ -28,6 +28,7 @@ import { frontdeskReaderMethod, readNailCardMethod, type NailCardMethod } from "
 import { verifyCardCharge } from "../frontdesk/verifyCardCharge";
 import { calcTipAmount } from "../frontdesk/tipOptions";
 import { useTipPresets } from "@/hooks/use-tip-presets";
+import { confirm } from "@/lib/confirm";
 import { CatalogPanel, type CatalogGroup, type CatalogService } from "./CatalogPanel";
 
 interface Props {
@@ -603,9 +604,57 @@ export function CheckoutMode(p: Props) {
       say("WAITING FOR CLIENT TO SELECT TIP", "info");
     }
   };
+  // ── A card is only authorized when it is taken; the sale charges it when it is saved ──
+  // Taking a card payment off, or leaving the ticket with payments on it, voids the authorization so the
+  // client's card is never charged (owner, 2026-10-17: a client who gives up on a card and pays cash).
+  const forgetSavedCard = (paymentIntentId?: string) => {
+    if (!paymentIntentId) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(cardRecoveryKey) || "[]") as Tender[];
+      localStorage.setItem(cardRecoveryKey, JSON.stringify(saved.filter((t) => t.paymentIntentId !== paymentIntentId)));
+    } catch { /* private storage: the server's recovery list is updated by the void too */ }
+  };
+  const voidCard = async (t: Tender): Promise<boolean> => {
+    if (!t.paymentIntentId) { setTenders((cur) => cur.filter((x) => x.id !== t.id)); return true; }
+    try {
+      const r = await fetch("/api/payments/terminal/void-payment-intent", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentIntentId: t.paymentIntentId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { say(String(d.error || "Could not void the card payment").toUpperCase(), "error"); return false; }
+    } catch {
+      say("NO CONNECTION — THE CARD PAYMENT COULD NOT BE VOIDED. TRY AGAIN.", "error");
+      return false;
+    }
+    forgetSavedCard(t.paymentIntentId);
+    setTenders((cur) => cur.filter((x) => x.id !== t.id));
+    return true;
+  };
+  const isCardHold = (t: Tender) => (t.method === "m2" || t.method === "tap") && !!t.paymentIntentId;
+  const removeTender = async (t: Tender) => {
+    if (!isCardHold(t)) { setTenders((cur) => cur.filter((x) => x.id !== t.id)); return; }
+    if (!(await confirm(`Void the ${money(t.amount)} card payment? The client's card won't be charged.`, { title: "Void card payment", confirmLabel: "Void", destructive: true }))) return;
+    if (await voidCard(t)) say(`CARD PAYMENT VOIDED · ${money(t.amount)}`, "success");
+  };
+  /** Leaving with payments on the ticket: card authorizations are voided, cash is handed back. False to stay. */
+  const releasePayments = async (): Promise<boolean> => {
+    if (p.paid || tenders.length === 0) return true;
+    const holds = tenders.filter(isCardHold);
+    const cash = tenders.some((t) => t.method === "cash");
+    const message = [holds.length ? `${holds.length === 1 ? "The card payment" : "The card payments"} (${money(holds.reduce((n, t) => n + t.amount, 0))}) will be voided — the client's card won't be charged.` : "",
+      cash ? "Give back any cash taken." : ""].filter(Boolean).join(" ");
+    if (!(await confirm(message || "Remove the payments on this ticket?", { title: "Leave this payment?", confirmLabel: "Void and leave", destructive: true }))) return false;
+    for (const t of holds) if (!(await voidCard(t))) return false;
+    setTenders([]);
+    return true;
+  };
+  const closeCheckout = async () => { if (await releasePayments()) p.onClose(); };
+
   // EXIT: back from the payment step to the ticket as it was before PAY / CHECKOUT.
-  const exitPaying = () => {
-    if (tenders.length > 0 || cardBusy) return;
+  const exitPaying = async () => {
+    if (cardBusy) return;
+    if (!(await releasePayments())) return;
     setPaying(false);
     setPayType("cash");
     setCents("");
@@ -1067,7 +1116,7 @@ export function CheckoutMode(p: Props) {
           )}
           <div className="grand-total"><span>{tx("total")}</span><strong data-testid="nail-pay-total">{money(totals.total)}</strong></div>
           {tenders.map((t) => (
-            <div key={t.id} data-testid={`nail-pay-tender-${t.method}`}><span>{tenderLabel(t)}</span><strong>−{money(t.amount)} {t.method !== "m2" && t.method !== "tap" && <button type="button" className="row-x" aria-label="Remove payment" onClick={() => setTenders((cur) => cur.filter((x) => x.id !== t.id))}>×</button>}</strong></div>
+            <div key={t.id} data-testid={`nail-pay-tender-${t.method}`}><span>{tenderLabel(t)}</span><strong>−{money(t.amount)} {!p.paid && !p.finalizing && <button type="button" className="row-x" aria-label={isCardHold(t) ? "Void card payment" : "Remove payment"} onClick={() => void removeTender(t)}>×</button>}</strong></div>
           ))}
           {tenders.length > 0 && (
             <div className="balance-row" data-testid="nail-pay-balance">
@@ -1078,7 +1127,7 @@ export function CheckoutMode(p: Props) {
           {/* Once PAY / CHECKOUT has been pressed these two go away: the payment types take over, and the sale closes itself when it is paid. */}
           {(!paying || totals.settled || p.paid || p.finalizing) && (
           <div className="checkout-row">
-            <button type="button" className="checkout-clr" onClick={p.onClose} data-testid="nail-pay-back">{tx("back")}</button>
+            <button type="button" className="checkout-clr" onClick={() => void closeCheckout()} data-testid="nail-pay-back">{tx("back")}</button>
             <button type="button" className={`checkout ${p.finalizing || p.paid || (!totals.settled && cardBusy) ? "disabled" : ""}`} disabled={p.finalizing || p.paid || (!totals.settled && cardBusy)} onClick={payCheckout} data-testid="nail-pay-finish">
               {p.paid ? tx("paid") : p.finalizing ? tx("saving") : tx("payCheckout")}
             </button>
@@ -1159,8 +1208,8 @@ export function CheckoutMode(p: Props) {
                   </button>
                   <button type="button" className="pay-gift" onClick={() => openGift("pay")} data-testid="nail-pay-gift"><Gift size={26} /><span>{tx("giftCard")}</span></button>
                   {/* EXIT leaves the payment step (not the POS): the service keys come back on the right and CLR /
-                      PAY / CHECKOUT under the cart. Only before any payment is recorded — BACK would drop it. */}
-                  <button type="button" className="pay-gift" disabled={cardBusy || p.finalizing || tenders.length > 0} onClick={exitPaying} data-testid="nail-pay-exit"><Hand size={26} /><span>{tx("exit")}</span></button>
+                      PAY / CHECKOUT under the cart. Payments already taken are voided first (asked). */}
+                  <button type="button" className="pay-gift" disabled={cardBusy || p.finalizing} onClick={() => void exitPaying()} data-testid="nail-pay-exit"><Hand size={26} /><span>{tx("exit")}</span></button>
                 </div>
                 )}
                 {(awaitingTip || cards.awaitingFrontdesk) && (

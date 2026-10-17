@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { db } from "../db";
-import { getPaymentAccount, retrieveTerminalPaymentIntent } from "./stripeConnect";
+import { captureTerminalPaymentIntent, getPaymentAccount, retrieveTerminalPaymentIntent } from "./stripeConnect";
 import { applyLoyaltyDeltaTx } from "./loyaltyAward";
 import { NO_SALES_TAX, salesTaxCents, type SalesTaxSettings } from "@shared/nailCheckout";
 
@@ -29,6 +29,25 @@ export class NailCheckoutError extends Error {
 }
 const cents = (value: number) => Math.round(value * 100);
 const validMoney = (v: number) => Number.isFinite(v) && v >= 0 && v <= 100000 && cents(v) / 100 === v;
+
+/**
+ * The sale's card payments, before anything is saved. Each was only authorized when it was taken (see the
+ * capture route in routes/stripeConnect.ts): it must still be this ticket's, for this amount, and is charged
+ * now. A voided or expired authorization stops the sale instead of saving it unpaid.
+ */
+export async function chargeCardTenders(a: Pick<NailCheckoutInput, "storeId" | "appointmentId">, cards: NailTender[]): Promise<void> {
+  const account = await getPaymentAccount(a.storeId);
+  if (!account || account.status === "disconnected") throw new NailCheckoutError("Stripe account is unavailable");
+  for (const card of cards) {
+    let pi = await retrieveTerminalPaymentIntent(account.providerAccountId, card.paymentIntentId!);
+    const matches = pi.currency === "usd" && pi.amount === cents(card.amount) &&
+      pi.metadata?.store_id === String(a.storeId) && pi.metadata?.appointment_id === String(a.appointmentId);
+    if (!matches) throw new NailCheckoutError("Card payment does not match this ticket. Check Stripe before retrying.");
+    if (pi.status === "requires_capture") pi = await captureTerminalPaymentIntent(account.providerAccountId, pi.id);
+    if (pi.status === "canceled") throw new NailCheckoutError("A card payment on this ticket was voided or has expired. Take it off and charge the card again.");
+    if (pi.status !== "succeeded") throw new NailCheckoutError("A card payment on this ticket did not go through. Check Stripe before retrying.");
+  }
+}
 
 export function validateNailCheckoutInput(a: NailCheckoutInput): void {
   if (!/^[a-zA-Z0-9_-]{16,100}$/.test(a.idempotencyKey)) throw new NailCheckoutError("Invalid checkout key", 400);
@@ -75,16 +94,7 @@ export async function settleNailCheckout(a: NailCheckoutInput, salesTax: SalesTa
     totalPaid: a.totalPaid, serviceRevenue: a.serviceRevenue, productRevenue: a.productRevenue, paymentMethod: a.paymentMethod }];
   // Stripe verification before locks: no network request while holding DB rows.
   const cards = a.tenders.filter((t) => t.method === "m2" || t.method === "tap");
-  if (cards.length) {
-    const account = await getPaymentAccount(a.storeId);
-    if (!account || account.status === "disconnected") throw new NailCheckoutError("Stripe account is unavailable");
-    for (const card of cards) {
-      const pi = await retrieveTerminalPaymentIntent(account.providerAccountId, card.paymentIntentId!);
-      if (pi.status !== "succeeded" || pi.currency !== "usd" || pi.amount !== cents(card.amount) ||
-          pi.metadata?.store_id !== String(a.storeId) || pi.metadata?.appointment_id !== String(a.appointmentId))
-        throw new NailCheckoutError("Captured card charge does not match this ticket. Check Stripe before retrying.");
-    }
-  }
+  if (cards.length) await chargeCardTenders(a, cards);
   return db.transaction(async (tx) => {
     // The key's unique index serializes identical attempts; all other locks have
     // a stable order to prevent a group checkout deadlocking another register.
