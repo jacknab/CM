@@ -14,6 +14,9 @@ import { cn } from "@/lib/utils";
 import { isValidNanpPrefix } from "@/lib/phone-validation";
 import { useShake } from "@/hooks/use-shake";
 import { useFeatureFlags } from "@/hooks/use-features";
+import { syncEngine } from "@/lib/sync-engine";
+import { findClientId } from "@/pages/nail/clientLookup";
+import { clientOnDevice } from "@/pages/nail/nailApi";
 
 // ── Deposits tab rendered inside the client lookup sheet ────────────────────
 export function ClientDepositsTab({ clientId, appointments }: { clientId: number; appointments: any[] }) {
@@ -232,24 +235,33 @@ export function ClientLookupSheet({ onClose }: { onClose: () => void }) {
     if (phoneDigits.length === 10 && !searchDone && selectedStore) {
       setIsSearching(true);
       setNotFound(false);
-      fetch(`/api/customers/search?phone=${encodeURIComponent(phoneDigits)}&storeId=${selectedStore.id}`, {
+      const storeId = selectedStore.id;
+      const show = (customer: any) => {
+        setIsSearching(false);
+        setSearchDone(true);
+        if (customer && customer.id) {
+          setFoundClient(customer);
+          setActiveSection("overview");
+        } else {
+          setNotFound(true);
+        }
+      };
+      // No internet: the clients kept on this tablet (name and number only — points, notes and visits come
+      // from the server), the same search the rest of the POS uses offline.
+      const onDevice = async () => {
+        const id = await findClientId(storeId, phoneDigits).catch(() => null);
+        const c = id != null ? await clientOnDevice(id).catch(() => null) : null;
+        show(c ? { ...c, offline: true } : null);
+      };
+      if (syncEngine.isOffline()) { void onDevice(); return; }
+      fetch(`/api/customers/search?phone=${encodeURIComponent(phoneDigits)}&storeId=${storeId}`, {
         credentials: "include",
       })
         .then(res => res.json())
-        .then((customer: any) => {
-          setIsSearching(false);
-          setSearchDone(true);
-          if (customer && customer.id) {
-            setFoundClient(customer);
-            setActiveSection("overview");
-          } else {
-            setNotFound(true);
-          }
-        })
+        .then(show)
         .catch(() => {
-          setIsSearching(false);
-          setSearchDone(true);
-          setNotFound(true);
+          syncEngine.noteUnreachable();
+          void onDevice();
         });
     }
   }, [phoneDigits, searchDone, selectedStore]);
@@ -467,7 +479,7 @@ export function ClientLookupSheet({ onClose }: { onClose: () => void }) {
                     <Phone className="w-3.5 h-3.5" />{foundClient.phone}
                   </p>
                 )}
-                {featureFlags.rewardPoints && (foundClient.loyaltyPoints ?? 0) >= 0 && (
+                {featureFlags.rewardPoints && !foundClient.offline && (foundClient.loyaltyPoints ?? 0) >= 0 && (
                   <p className="text-sm font-medium text-amber-600 mt-1.5">
                     ⭐ {foundClient.loyaltyPoints ?? 0} pts
                   </p>
