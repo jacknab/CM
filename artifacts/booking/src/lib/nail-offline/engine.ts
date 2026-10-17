@@ -162,15 +162,41 @@ export class NailOffline {
     const known = (await this.kv.get<number>("meta", key)) ?? 0;
     if (highestUsed > known) await this.kv.batch([{ store: "meta", key, value: highestUsed }]);
   }
-  /** The next ticket number for a client served on this device, or null when the salon's numbering has
-   *  never been seen here (a tablet that has not been online since numbering was added). */
-  private async takeTicketNumber(storeId: number, writes: Write[]): Promise<number | null> {
-    const key = `ticketNumber:${storeId}`;
-    const known = await this.kv.get<number>("meta", key);
-    if (known == null) return null;
-    const n = known + 1;
-    writes.push({ store: "meta", key, value: n });
-    return n;
+  /**
+   * Ticket numbers given while the internet is down are printed on the client's slip and receipt, so each one
+   * must be the ticket's number for good: unique across the salon's tablets, and never one the server gives
+   * out meanwhile (online bookings keep taking numbers during an outage).
+   *  - One tablet gives them out: the main POS (the hub). Other POS stations ask it over the salon's Wi-Fi
+   *    (`setTicketNumberSource`); with no answer a ticket gets no number until it is sent.
+   *  - They start OFFLINE_NUMBER_GAP above the last number the server was seen to use, leaving room for that
+   *    many online bookings during the outage; the server keeps the number it is sent (claimTicketNumber).
+   */
+  static readonly OFFLINE_NUMBER_GAP = 50;
+  private numberSource: ((storeId: number) => Promise<number | null>) | null = null;
+  private numberLock: Promise<unknown> = Promise.resolve();
+  /** A POS station that is not the main one: its offline numbers come from the main POS. Null: this tablet gives them out. */
+  setTicketNumberSource(source: ((storeId: number) => Promise<number | null>) | null): void { this.numberSource = source; }
+  /**
+   * The main POS: the next offline ticket number, for this tablet or one asking over the hub. Null when the
+   * salon's numbering has never been seen here. One at a time, saved at once, so two requests never share one.
+   */
+  issueTicketNumber(storeId: number): Promise<number | null> {
+    const run = this.numberLock.then(async () => {
+      const known = await this.kv.get<number>("meta", `ticketNumber:${storeId}`);
+      if (known == null) return null;
+      const lastKey = `ticketNumberOffline:${storeId}`;
+      const last = (await this.kv.get<number>("meta", lastKey)) ?? 0;
+      const n = Math.max(last + 1, known + NailOffline.OFFLINE_NUMBER_GAP);
+      await this.kv.batch([{ store: "meta", key: lastKey, value: n }]);
+      return n;
+    });
+    this.numberLock = run.catch(() => undefined);
+    return run;
+  }
+  /** The next ticket number for a client served on this device while offline (see above). */
+  private async takeTicketNumber(storeId: number, _writes: Write[]): Promise<number | null> {
+    if (this.numberSource) return this.numberSource(storeId).catch(() => null);
+    return this.issueTicketNumber(storeId);
   }
 
   onChange(fn: () => void): () => void { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; }

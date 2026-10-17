@@ -45,6 +45,9 @@ function ask<T>(type: string, body: Record<string, unknown>): Promise<T | null> 
 export const hubKioskLookup = (phone: string) => ask<KioskLookupAnswer>("hub_kiosk_lookup", { phone });
 export const hubKioskCheckin = (req: KioskCheckinRequest) => ask<KioskCheckinAnswer>("hub_kiosk_checkin", { ...req });
 export const hubKioskWait = () => ask<KioskWaitAnswer>("hub_kiosk_wait", {});
+/** Another POS station, offline: the next ticket number, from the main POS (the one tablet that gives them out). */
+export const hubTicketNumber = () => ask<{ ticketNumber: number | null }>("hub_ticket_number", {}).then((a) =>
+  a && Number.isInteger(a.ticketNumber) && (a.ticketNumber as number) > 0 ? (a.ticketNumber as number) : null);
 
 const ids = (v: unknown): number[] => (Array.isArray(v) ? v.map(Number).filter((n) => Number.isInteger(n) && n > 0) : []);
 const idOrNull = (v: unknown): number | null => (v != null && Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : null);
@@ -54,6 +57,8 @@ export function serveKioskOverHub(handlers: {
   lookup: (phone: string) => Promise<KioskLookupAnswer>;
   checkin: (req: KioskCheckinRequest) => Promise<KioskCheckinAnswer>;
   wait: () => Promise<KioskWaitAnswer>;
+  /** The next offline ticket number, for another POS station (lib/nail-offline issueTicketNumber). */
+  ticketNumber?: () => Promise<number | null>;
 }): () => void {
   return localHub.onMessage((m: any) => {
     if (typeof m?.requestId !== "string") return;
@@ -70,6 +75,9 @@ export function serveKioskOverHub(handlers: {
         staffId: idOrNull(m.staffId),
       }).catch((err) => ({ success: false, error: (err as Error)?.message ?? "Check-in failed" }))
         .then((answer) => reply("hub_kiosk_checkin_result", answer));
+    } else if (m.type === "hub_ticket_number" && handlers.ticketNumber) {
+      void handlers.ticketNumber().catch(() => null)
+        .then((ticketNumber) => reply("hub_ticket_number_result", { ticketNumber }));
     } else if (m.type === "hub_kiosk_wait") {
       void handlers.wait().catch(() => ({ hasAvailableStaff: true, estimatedWaitMinutes: null }))
         .then((answer) => reply("hub_kiosk_wait_result", answer));

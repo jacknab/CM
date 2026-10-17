@@ -31,7 +31,7 @@ import { useStoreNetworkReport } from "@/hooks/use-store-network-report";
 import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
 import { hardRefresh } from "@/lib/hard-refresh";
 import { installRequestDeadline } from "@/lib/request-deadline";
-import { serveKioskOverHub } from "@/lib/kiosk-hub";
+import { serveKioskOverHub, hubTicketNumber } from "@/lib/kiosk-hub";
 import { clearForeignTurnEvents, startTurnSharing } from "@/lib/nail-offline/turnShare";
 import { getDeviceId } from "@/lib/device-id";
 import { findClientId } from "./clientLookup";
@@ -605,7 +605,15 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       return { success: true, ticketNumber: made.ticketNumber ?? null, clientName: client.name, staffName: made.staffName ?? null };
     },
     wait: () => waitOnDevice(storeId),
+    // The one tablet that gives out ticket numbers while the internet is down.
+    ticketNumber: () => nailOffline.issueTicketNumber(storeId),
   }), [storeId, timezone, queryClient, hubRole]);
+  // Another POS station takes its offline ticket numbers from the main POS, so no two tickets share one
+  // (they are printed, so they can't be fixed later). The main POS gives them out itself.
+  useEffect(() => {
+    nailOffline.setTicketNumberSource(hubRole === "station" ? () => hubTicketNumber() : null);
+    return () => nailOffline.setTicketNumberSource(null);
+  }, [hubRole]);
   const { data: linkedAddons } = useAddonsForService(service?.id ?? null);
   const suggestedAddons = useMemo(() => {
     const linked = ((linkedAddons ?? []) as any[]).filter((a) => a.isActive !== false);

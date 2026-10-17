@@ -65,7 +65,9 @@ export function TicketPopup(p: Props) {
             <div className="checkin-client">
               <div className="checkin-card-name-row">
                 <strong id="nail-ticket-title">{t.client.name}</strong>
-                <span className="checkin-ticket-num">{t.offline ? "NOT SENT YET" : `#${t.ticketNumber ?? t.id}`}</span>
+                {/* A ticket made offline has its number already (it is the one printed); a POS station that could not
+                    reach the main POS gets one when the ticket is sent. */}
+                <span className="checkin-ticket-num">{t.ticketNumber != null ? `#${t.ticketNumber}` : t.offline ? "NUMBER PENDING" : `#${t.id}`}</span>
               </div>
               <span><Phone size={13} /> {t.client.phone ?? "No phone"}</span>
             </div>

@@ -10,37 +10,64 @@ const ticket = (clientId: number, walkinId: number | null = null) => ({
 });
 
 describe("ticket numbers given while offline", () => {
-  it("carry on from the highest number the server was seen to use", async () => {
+  const GAP = NailOffline.OFFLINE_NUMBER_GAP;
+
+  it("start well above the server's last number, leaving room for online bookings made meanwhile", async () => {
     const engine = new NailOffline(memoryKV());
     await engine.noteTicketNumbers(STORE, 41);
-    expect((await engine.createTicket(ticket(1))).ticketNumber).toBe(42);
-    expect((await engine.createTicket(ticket(2))).ticketNumber).toBe(43);
+    expect((await engine.createTicket(ticket(1))).ticketNumber).toBe(41 + GAP);
+    expect((await engine.createTicket(ticket(2))).ticketNumber).toBe(42 + GAP);
   });
 
-  it("never go backwards when an older board is seen again", async () => {
+  it("never repeat, even when an older board is seen again", async () => {
     const engine = new NailOffline(memoryKV());
     await engine.noteTicketNumbers(STORE, 41);
-    await engine.createTicket(ticket(1)); // 42
+    await engine.createTicket(ticket(1)); // 41 + GAP
     await engine.noteTicketNumbers(STORE, 40);
-    expect((await engine.createTicket(ticket(2))).ticketNumber).toBe(43);
+    expect((await engine.createTicket(ticket(2))).ticketNumber).toBe(42 + GAP);
+  });
+
+  it("start a new run above the server's number after the next outage", async () => {
+    const engine = new NailOffline(memoryKV());
+    await engine.noteTicketNumbers(STORE, 41);
+    await engine.createTicket(ticket(1)); // 91
+    await engine.noteTicketNumbers(STORE, 100); // back online: the server has moved on
+    expect((await engine.createTicket(ticket(2))).ticketNumber).toBe(100 + GAP);
+  });
+
+  it("are never the same for two requests at once (the main POS answering other tablets)", async () => {
+    const engine = new NailOffline(memoryKV());
+    await engine.noteTicketNumbers(STORE, 10);
+    const got = await Promise.all([1, 2, 3, 4, 5].map(() => engine.issueTicketNumber(STORE)));
+    expect(new Set(got).size).toBe(5);
+    expect([...got].sort((a, b) => a! - b!)).toEqual([10 + GAP, 11 + GAP, 12 + GAP, 13 + GAP, 14 + GAP]);
+  });
+
+  it("come from the main POS on another station, and stay empty when it can't be reached", async () => {
+    const engine = new NailOffline(memoryKV());
+    await engine.noteTicketNumbers(STORE, 10);
+    engine.setTicketNumberSource(async () => 777);
+    expect((await engine.createTicket(ticket(1))).ticketNumber).toBe(777);
+    engine.setTicketNumberSource(async () => null);
+    expect((await engine.createTicket(ticket(2))).ticketNumber).toBeNull();
   });
 
   it("give a check-in its number and keep it on the ticket made from it", async () => {
     const engine = new NailOffline(memoryKV());
     await engine.noteTicketNumbers(STORE, 10);
     const { walkin } = await engine.checkIn(STORE, { id: 5, name: "Bea", phone: null });
-    expect(walkin.ticketNumber).toBe(11);
-    expect((await engine.createTicket(ticket(5, walkin.id))).ticketNumber).toBe(11);
+    expect(walkin.ticketNumber).toBe(10 + GAP);
+    expect((await engine.createTicket(ticket(5, walkin.id))).ticketNumber).toBe(10 + GAP);
     // The next client still gets the next number.
-    expect((await engine.createTicket(ticket(6))).ticketNumber).toBe(12);
+    expect((await engine.createTicket(ticket(6))).ticketNumber).toBe(11 + GAP);
   });
 
   it("are kept separate for each salon", async () => {
     const engine = new NailOffline(memoryKV());
     await engine.noteTicketNumbers(STORE, 10);
     await engine.noteTicketNumbers(8, 500);
-    expect((await engine.createTicket(ticket(1))).ticketNumber).toBe(11);
-    expect((await engine.createTicket({ ...ticket(1), storeId: 8 })).ticketNumber).toBe(501);
+    expect((await engine.createTicket(ticket(1))).ticketNumber).toBe(10 + GAP);
+    expect((await engine.createTicket({ ...ticket(1), storeId: 8 })).ticketNumber).toBe(500 + GAP);
   });
 
   it("are left empty on a tablet that has never seen the salon's numbering", async () => {
@@ -48,22 +75,19 @@ describe("ticket numbers given while offline", () => {
     expect((await engine.createTicket(ticket(1))).ticketNumber).toBeNull();
   });
 
-  it("are sent to the server, and the server's answer wins when it gives a different one", async () => {
+  it("are sent to the server", async () => {
     const engine = new NailOffline(memoryKV());
     await engine.noteTicketNumbers(STORE, 41);
-    const made = await engine.createTicket(ticket(1));
+    await engine.createTicket(ticket(1));
     const sent: any[] = [];
     const transport: Transport = {
       async send(method, url, body): Promise<Reply> {
         sent.push({ method, url, body });
-        // Another tablet already used 42, so the server hands out 44.
-        return { status: 201, body: { appointmentId: 900, ticketNumber: 44, staffId: null, staffName: null } };
+        return { status: 201, body: { appointmentId: 900, ticketNumber: 41 + GAP, staffId: null, staffName: null } };
       },
     };
     await engine.sync(transport, STORE);
-    expect(sent[0].body.ticketNumber).toBe(42);
-    const after = (await engine.records(STORE)).find((r) => r.kind === "ticket" && r.id === made.id) as any;
-    expect(after.ticketNumber).toBe(44);
+    expect(sent[0].body.ticketNumber).toBe(41 + GAP);
   });
 });
 

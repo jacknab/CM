@@ -690,6 +690,11 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
     if (addonIds.length) await tx.insert(appointmentAddons).values(addonIds.map((addonId) => ({ appointmentId, addonId })));
     if (hasNail(input.nail)) await nailConfig.setAppointmentNailSelection(appointmentId, input.nail!, tx);
     if (customLines.length) await tx.update(appointments).set({ customLines }).where(eq(appointments.id, appointmentId));
+    // A number given while offline that another ticket already has: the ticket gets a new one, and the one
+    // printed on the client's slip is kept so a lookup by it still finds this ticket.
+    if (input.checkinId == null && input.ticketNumber && offlineNumber == null) {
+      await tx.update(appointments).set({ printedTicketNumber: Number(input.ticketNumber) }).where(eq(appointments.id, appointmentId));
+    }
     if (input.checkinId != null) {
       await tx.execute(sql`UPDATE kiosk_checkins SET appointment_id = ${appointmentId}, staff_id = ${staffId},
         assigned_staff_name = ${staffName}, status = ${immediate && startOnAssign ? "serving" : "waiting"}

@@ -23273,8 +23273,10 @@ or
       // appointment_id is set and this falls through to the same appointment resolution below,
       // same as the QR's "CI:" code does.
       const { rows } = await pool.query(
+        // The number on the slip: the check-in's own, or the one printed offline before the server renumbered it.
         `SELECT id, client_id, client_name, appointment_id FROM kiosk_checkins
-         WHERE store_id = $1 AND ticket_number = $2 ORDER BY created_at DESC LIMIT 1`,
+         WHERE store_id = $1 AND (ticket_number = $2 OR printed_ticket_number = $2)
+         ORDER BY (ticket_number = $2) DESC, created_at DESC LIMIT 1`,
         [storeId, ticketNumber],
       );
       const checkin = rows[0];
@@ -23285,7 +23287,8 @@ or
       let appointmentId: number | null = checkin?.appointment_id ? Number(checkin.appointment_id) : null;
       if (!appointmentId) {
         const { rows: apptRows } = await pool.query(
-          `SELECT id FROM appointments WHERE store_id = $1 AND ticket_number = $2 LIMIT 1`,
+          `SELECT id FROM appointments WHERE store_id = $1 AND (ticket_number = $2 OR printed_ticket_number = $2)
+            ORDER BY (ticket_number = $2) DESC, created_at DESC LIMIT 1`,
           [storeId, ticketNumber],
         );
         appointmentId = apptRows[0]?.id ? Number(apptRows[0].id) : null;
@@ -23890,10 +23893,12 @@ or
     const ticketNumber = wantedTicketNumber && (await storage.claimTicketNumber(storeId, wantedTicketNumber))
       ? wantedTicketNumber
       : await storage.getNextTicketNumber(storeId);
+    // Given offline and already taken: the slip printed with it still finds this check-in (migration 0248).
+    const printedTicketNumber = wantedTicketNumber && wantedTicketNumber !== ticketNumber ? wantedTicketNumber : null;
     const { rows: inserted } = await pool.query(
-      `INSERT INTO kiosk_checkins (store_id, client_id, phone, client_name, token, status, ticket_number)
-       VALUES ($1, $2, $3, $4, $5, 'waiting', $6) RETURNING id`,
-      [storeId, clientId, digits, clientName, token, ticketNumber]
+      `INSERT INTO kiosk_checkins (store_id, client_id, phone, client_name, token, status, ticket_number, printed_ticket_number)
+       VALUES ($1, $2, $3, $4, $5, 'waiting', $6, $7) RETURNING id`,
+      [storeId, clientId, digits, clientName, token, ticketNumber, printedTicketNumber]
     );
     void logActivityEvent({
       storeId,

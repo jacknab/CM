@@ -593,6 +593,9 @@ export const appointments = pgTable("appointments", {
   // storage.getNextTicketNumber) — null on every row created before this
   // column existed; display logic falls back to `id` for those, unchanged.
   ticketNumber: integer("ticket_number"),
+  /** The number printed on the client's slip while the salon was offline, when the server had to give the
+   *  ticket a different one (migration 0248). A lookup by it still finds the ticket. */
+  printedTicketNumber: integer("printed_ticket_number"),
   // TIMESTAMPTZ — all appointment times are stored in UTC.
   // The API always converts salon-local input via fromZonedTime() before storage,
   // and returns UTC ISO-8601 strings. Display conversion is done client-side
