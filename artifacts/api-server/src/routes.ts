@@ -18173,6 +18173,9 @@ or
           phone: sql<string>`(SELECT COALESCE(display_phone, phone_number_e164) FROM client_phones WHERE client_id = clients.id ORDER BY is_primary DESC, id ASC LIMIT 1)`,
           email: sql<string>`(SELECT email_address FROM client_emails WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
           loyaltyPoints: clients.loyaltyPoints,
+          // What the client lookup shows online, so the tablet can show the same with no internet.
+          allergies: clients.allergies,
+          birthday: clients.dateOfBirth,
           storeId: clients.storeId,
         }).from(clients).where(and(eq(clients.storeId, storeId), isNull(clients.archivedAt))).orderBy(asc(clients.fullName)),
 

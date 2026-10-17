@@ -53,6 +53,8 @@ export type SnapshotCustomer = {
   email?: string | null;
   notes?: string | null;
   loyaltyPoints?: number | null;
+  allergies?: string | null;
+  birthday?: string | null;
   storeId?: number | null;
 };
 

@@ -7,6 +7,9 @@
  * made since, plus everything made or closed in the last 7 days again (a ticket can be paid, cancelled or
  * refunded after it was made). One entry per ticket number, under `<storeId>:archive:<n>` in the cache, so a
  * sign-out removes it with the rest of what was read from the server.
+ *
+ * Each ticket also says whose visit it was, and a per-client index (`<storeId>:archive-client:<id>`) lists a
+ * client's ticket numbers, so the client lookup can show their visits with no internet.
  */
 import { nailOffline } from "@/lib/nail-offline";
 
@@ -20,11 +23,15 @@ export interface ArchivedTicket {
   staffName: string | null;
   isPaid: boolean;
   receipt: unknown | null;
+  clientId?: number | null;
+  price?: number | null;
 }
 interface Page { tickets: ArchivedTicket[]; lastId: number | null; more: boolean }
 interface State { lastId: number; complete: boolean; refreshedAt: number }
 
-const STATE = "archive-state";
+// v2: tickets carry their client. A tablet with the older copy takes the whole archive again, once.
+const STATE = "archive-state-v2";
+const clientIndex = (clientId: number) => `archive-client:${clientId}`;
 const entry = (n: number) => `archive:${n}`;
 const RECHECK_DAYS = 7;
 const PAGE = 500;
@@ -45,10 +52,31 @@ async function pull(storeId: number, afterId: number, changedSince: string | nul
     const page = await fetchPage(cursor, changedSince);
     if (page.tickets.length) {
       await nailOffline.rememberMany(storeId, page.tickets.map((t) => ({ url: entry(t.ticketNumber), data: t })));
+      await indexByClient(storeId, page.tickets);
     }
     if (page.lastId != null) { cursor = page.lastId; await onPage?.(cursor); }
     if (!page.more || page.lastId == null) return cursor;
   }
+}
+
+/** Adds a page's tickets to each client's list of ticket numbers. */
+async function indexByClient(storeId: number, tickets: ArchivedTicket[]): Promise<void> {
+  const byClient = new Map<number, number[]>();
+  for (const t of tickets) if (t.clientId) byClient.set(t.clientId, [...(byClient.get(t.clientId) ?? []), t.ticketNumber]);
+  if (!byClient.size) return;
+  const entries = await Promise.all([...byClient].map(async ([clientId, numbers]) => {
+    const had = (await nailOffline.recall<number[]>(storeId, clientIndex(clientId)).catch(() => undefined))?.data ?? [];
+    return { url: clientIndex(clientId), data: Array.from(new Set([...had, ...numbers])) };
+  }));
+  await nailOffline.rememberMany(storeId, entries);
+}
+
+/** A client's visits (past and booked) from this tablet's copy, newest first. */
+export async function archivedVisitsOfClient(storeId: number, clientId: number): Promise<ArchivedTicket[]> {
+  const numbers = (await nailOffline.recall<number[]>(storeId, clientIndex(clientId)).catch(() => undefined))?.data ?? [];
+  const tickets = await Promise.all(numbers.map((n) => archivedTicket(storeId, n)));
+  return tickets.filter((t): t is ArchivedTicket => !!t && t.clientId === clientId)
+    .sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
 }
 
 let running: Promise<void> | null = null;

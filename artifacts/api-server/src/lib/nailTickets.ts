@@ -1518,6 +1518,9 @@ export interface ArchivedTicket {
   isPaid: boolean;
   /** The receipt as it was printed (appointments.receipt_snapshot), for a paid ticket that has one. */
   receipt: unknown | null;
+  /** Whose visit it was, and the service's price: the client lookup lists a client's visits offline from these. */
+  clientId: number | null;
+  price: number | null;
 }
 
 /**
@@ -1528,7 +1531,7 @@ export interface ArchivedTicket {
 export async function ticketArchivePage(storeId: number, opts: { afterId: number; changedSince: Date | null; limit: number }): Promise<{ tickets: ArchivedTicket[]; lastId: number | null; more: boolean }> {
   const { rows } = await pool.query(
     // A ticket paid with others (Group Pay) shows the sale's receipt, kept on the ticket the checkout was opened from.
-    `SELECT a.id, a.ticket_number, a.status, a.date, a.total_paid,
+    `SELECT a.id, a.ticket_number, a.status, a.date, a.total_paid, a.customer_id, s.price AS service_price,
             COALESCE(a.receipt_snapshot, (SELECT m.receipt_snapshot FROM nail_checkout_operations o
                JOIN appointments m ON m.id = (o.result->'appointmentIds'->>0)::int AND m.store_id = o.store_id
               WHERE o.store_id = a.store_id AND o.result->'appointmentIds' @> jsonb_build_array(a.id)
@@ -1559,6 +1562,8 @@ export async function ticketArchivePage(storeId: number, opts: { afterId: number
       staffName: r.staff_name ?? null,
       isPaid,
       receipt: isPaid ? r.receipt_snapshot ?? null : null,
+      clientId: r.customer_id != null ? Number(r.customer_id) : null,
+      price: r.service_price != null ? Number(r.service_price) : null,
     };
   });
   return { tickets, lastId: page.length ? Number(page[page.length - 1].id) : null, more };

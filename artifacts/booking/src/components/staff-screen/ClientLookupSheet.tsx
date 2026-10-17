@@ -17,6 +17,25 @@ import { useFeatureFlags } from "@/hooks/use-features";
 import { syncEngine } from "@/lib/sync-engine";
 import { findClientId } from "@/pages/nail/clientLookup";
 import { clientOnDevice } from "@/pages/nail/nailApi";
+import { snapshotDB } from "@/lib/snapshot-db";
+import { archivedVisitsOfClient } from "@/pages/nail/ticketArchive";
+
+/** A client as the tablet holds them (the salon's copy in its database), shaped like the online lookup. */
+async function clientProfileOnDevice(storeId: number, id: number): Promise<any | null> {
+  const snap = await snapshotDB.load(storeId).catch(() => null);
+  const c = snap?.customers?.find((x) => Number(x.id) === id);
+  if (c) return { id, name: c.name, phone: c.phone ?? null, email: c.email ?? null, loyaltyPoints: c.loyaltyPoints ?? null,
+    allergies: c.allergies ?? null, birthday: c.birthday ?? null, offline: true };
+  const kept = await clientOnDevice(id).catch(() => null);
+  return kept ? { ...kept, loyaltyPoints: null, offline: true } : null;
+}
+
+/** A client's visits from the tablet's ticket archive, shaped like /api/appointments rows. */
+async function visitsOnDevice(storeId: number, clientId: number): Promise<any[]> {
+  const visits = await archivedVisitsOfClient(storeId, clientId).catch(() => []);
+  return visits.map((t) => ({ id: t.id, date: t.date, status: t.status, ticketNumber: t.ticketNumber,
+    service: { name: t.service, price: t.price ?? 0 }, staff: t.staffName ? { name: t.staffName } : null }));
+}
 
 // ── Deposits tab rendered inside the client lookup sheet ────────────────────
 export function ClientDepositsTab({ clientId, appointments }: { clientId: number; appointments: any[] }) {
@@ -148,12 +167,19 @@ export function ClientLookupSheet({ onClose }: { onClose: () => void }) {
   const clientId = foundClient?.id;
   const storeId = selectedStore?.id;
 
+  const foundOffline = !!foundClient?.offline;
   const { data: allAppointments = EMPTY_ARRAY } = useQuery<any[]>({
-    queryKey: [`/api/appointments`, clientId, storeId, "client-profile-sheet"],
+    queryKey: [`/api/appointments`, clientId, storeId, "client-profile-sheet", foundOffline],
     queryFn: async () => {
-      const res = await fetch(`/api/appointments?customerId=${clientId}&storeId=${storeId}`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
+      // No internet: the visits kept on this tablet (its ticket archive).
+      if (foundOffline || syncEngine.isOffline()) return visitsOnDevice(storeId!, clientId);
+      try {
+        const res = await fetch(`/api/appointments?customerId=${clientId}&storeId=${storeId}`, { credentials: "include" });
+        if (!res.ok) return [];
+        return res.json();
+      } catch {
+        return visitsOnDevice(storeId!, clientId);
+      }
     },
     enabled: !!clientId && !!storeId,
   });
@@ -246,12 +272,11 @@ export function ClientLookupSheet({ onClose }: { onClose: () => void }) {
           setNotFound(true);
         }
       };
-      // No internet: the clients kept on this tablet (name and number only — points, notes and visits come
-      // from the server), the same search the rest of the POS uses offline.
+      // No internet: the client from the salon's copy on this tablet (the same search the rest of the POS uses
+      // offline), with their points and allergies as of the last copy, and their visits from the ticket archive.
       const onDevice = async () => {
         const id = await findClientId(storeId, phoneDigits).catch(() => null);
-        const c = id != null ? await clientOnDevice(id).catch(() => null) : null;
-        show(c ? { ...c, offline: true } : null);
+        show(id != null ? await clientProfileOnDevice(storeId, id).catch(() => null) : null);
       };
       if (syncEngine.isOffline()) { void onDevice(); return; }
       fetch(`/api/customers/search?phone=${encodeURIComponent(phoneDigits)}&storeId=${storeId}`, {
@@ -479,7 +504,7 @@ export function ClientLookupSheet({ onClose }: { onClose: () => void }) {
                     <Phone className="w-3.5 h-3.5" />{foundClient.phone}
                   </p>
                 )}
-                {featureFlags.rewardPoints && !foundClient.offline && (foundClient.loyaltyPoints ?? 0) >= 0 && (
+                {featureFlags.rewardPoints && foundClient.loyaltyPoints != null && (
                   <p className="text-sm font-medium text-amber-600 mt-1.5">
                     ⭐ {foundClient.loyaltyPoints ?? 0} pts
                   </p>
