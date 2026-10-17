@@ -1333,7 +1333,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     if (editing) update.mutate();
     else create.mutate();
   };
-  // `fn`: the checkout function to open on (Group Pay / Tip Adjust / Discount); a plain PAY NOW opens on Payment.
+  // `fn`: the checkout function to open on (Group Pay / Tip Adjust / Discount, from the keypad).
   const checkoutStart = useRef<CheckoutFn | null>(null);
   const payNow = (fn: CheckoutFn | null = null) => {
     if (!canSubmit || editing) return;
@@ -1505,7 +1505,6 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
               onSubmit={!booking ? submit : booking.step === "services"
                 ? () => { if (extraServices.length > 1) { say("A booking can have up to 2 services"); return; } setBooking({ step: "time", slot: null }); }
                 : () => bookVisit.mutate()}
-              onPayNow={booking || editing || !service ? undefined : () => payNow()}
             />
             <section className="work-area">
               <div className="sale-area">

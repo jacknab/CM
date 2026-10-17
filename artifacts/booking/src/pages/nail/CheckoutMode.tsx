@@ -1,6 +1,6 @@
 /**
  * The POS tab in CHECKOUT mode — the Nail POS's own screen (ticket panel · keypad · payment panel, in the wrapper
- * design), not the calendar's sheet. A ticket from In Service (or PAY NOW) is loaded here and paid with:
+ * design), not the calendar's sheet. A ticket from In Service is loaded here and paid with:
  *   keypad (cents) · Quick Ticket / Group Pay / Retail / Gift Card and Tip Adjust / Discount / No Sale / Reprint rows
  *   (Discount and Gift Card swap their options into the payment panel) · Cash / Card tenders (split payments, change due)
  *   · the customer-facing /frontdesk screen.

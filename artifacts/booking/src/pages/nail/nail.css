@@ -542,8 +542,6 @@
 
 /* ===== Checkout inside the POS tab ===== */
 
-.nail-app .checkout-row .checkout-paynow { background: #0d9bd1 !important; font-size: 12px !important; flex: 0 0 96px; }
-.nail-app .checkout-row .checkout-paynow.disabled { background: #3b424c !important; }
 
 .nail-app .arrived-row-wrap { position: relative; }
 .nail-app .arrived-row-wrap .arrived-row { padding-right: 46px; }

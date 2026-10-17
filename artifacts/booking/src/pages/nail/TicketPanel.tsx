@@ -16,13 +16,11 @@ interface Props {
   onRemove: (line: TicketLine) => void;
   onClear: () => void;
   onSubmit: () => void;
-  /** Create the ticket AND go straight to paying it (only while building a new ticket). */
-  onPayNow?: () => void;
   /** A booking being made: when and with whom, shown under the services ("Sat, Oct 18 · 10:30 AM · Amy"). */
   appointment?: string | null;
 }
 
-export function TicketPanel({ client, badge, lines, duration, price, submitLabel, canSubmit, busy, editing, onRemove, onClear, onSubmit, onPayNow, appointment }: Props) {
+export function TicketPanel({ client, badge, lines, duration, price, submitLabel, canSubmit, busy, editing, onRemove, onClear, onSubmit, appointment }: Props) {
   return (
     <section className="ticket-panel" data-testid="nail-ticket-panel">
       {client && (
@@ -85,11 +83,6 @@ export function TicketPanel({ client, badge, lines, duration, price, submitLabel
           <button type="button" className="checkout-clr" onClick={onClear} disabled={lines.length === 0 && !editing && !client}>
             {editing ? "CANCEL" : "CLR"}
           </button>
-          {onPayNow && (
-            <button type="button" className={`checkout checkout-paynow ${!canSubmit || busy ? "disabled" : ""}`} onClick={onPayNow} disabled={!canSubmit || busy} data-testid="nail-pay-now">
-              PAY NOW
-            </button>
-          )}
           <button type="button" className={`checkout ${!canSubmit || busy ? "disabled" : ""}`} onClick={onSubmit} disabled={!canSubmit || busy} data-testid="nail-submit-ticket">
             {busy ? "WORKING…" : submitLabel}
           </button>
