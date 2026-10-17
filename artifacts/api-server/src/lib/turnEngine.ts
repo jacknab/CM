@@ -57,7 +57,9 @@ export async function serviceCategory(storeId: number, serviceId: number): Promi
 
 /**
  * When the current turn period began. Scores count from here.
- *   business_day — the start of the salon's turn day (4 AM local; worked out by the caller in the salon's timezone)
+ *   business_day — the start of the salon's turn day (4 AM local; worked out by the caller in the salon's timezone),
+ *                  or the last Day Close when that came later: closing the day starts the turns from 0 again
+ *                  (owner, 2026-10-17), and a salon that forgets to close still starts fresh each morning
  *   day_close    — the last Day Close (the start of the turn day when the drawer has never been closed)
  *   continuous   — never by the clock: only when the salon changes its method or starts the line again
  * In every case a change of method starts a new period (settings.turnPeriodStartedAt), so tickets earned
@@ -65,7 +67,12 @@ export async function serviceCategory(storeId: number, serviceId: number): Promi
  */
 export async function turnPeriodStart(storeId: number, rules: TurnRules, settings: Record<string, any>, dayStartUtc: Date): Promise<Date> {
   let start = dayStartUtc;
-  if (rules.resetPeriod === "day_close") {
+  if (rules.resetPeriod === "business_day") {
+    const { rows } = await pool.query(
+      `SELECT MAX(closed_at AT TIME ZONE 'UTC') AS closed FROM cash_drawer_sessions WHERE store_id = $1 AND status = 'closed'`, [storeId]);
+    const closed = rows[0]?.closed ? new Date(rows[0].closed) : null;
+    if (closed && closed.getTime() > start.getTime() && closed.getTime() <= Date.now() + 60_000) start = closed;
+  } else if (rules.resetPeriod === "day_close") {
     const { rows } = await pool.query(
       `SELECT MAX(closed_at AT TIME ZONE 'UTC') AS closed FROM cash_drawer_sessions WHERE store_id = $1 AND status = 'closed'`, [storeId]);
     if (rows[0]?.closed) start = new Date(rows[0].closed);
