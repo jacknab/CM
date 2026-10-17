@@ -5,21 +5,24 @@ const DOLLAR: TurnRules = { mode: "dollar", dollarsPerTurn: 30, partialTurnValue
 const CLASSIC: TurnRules = { mode: "classic", dollarsPerTurn: 30, partialTurnValue: 0.5 };
 
 describe("turnValue — Dollar-Based Turns ($30 a turn)", () => {
-  it("gives half a turn under $30", () => {
-    expect(turnValue(DOLLAR, 20)).toBe(0.5);
-    expect(turnValue(DOLLAR, 25)).toBe(0.5);
+  // The owner's rule (2026-10-17): up to $30 is ½; over it, one turn per full $30 plus ½ for anything left over.
+  it("matches the owner's examples", () => {
+    const owner: [number, number][] = [[20, 0.5], [30, 0.5], [45, 1.5], [60, 2], [75, 2.5], [88.5, 2.5], [90, 3]];
+    for (const [amount, turns] of owner) expect(turnValue(DOLLAR, amount)).toBe(turns);
+  });
+  it("gives half a turn up to and including $30", () => {
+    expect(turnValue(DOLLAR, 0.01)).toBe(0.5);
     expect(turnValue(DOLLAR, 29.99)).toBe(0.5);
+    expect(turnValue(DOLLAR, 30)).toBe(0.5);
   });
-  it("gives one turn from $30 up to just under $60", () => {
-    expect(turnValue(DOLLAR, 30)).toBe(1);
-    expect(turnValue(DOLLAR, 40)).toBe(1);
-    expect(turnValue(DOLLAR, 45)).toBe(1);
-    expect(turnValue(DOLLAR, 59.99)).toBe(1);
+  it("adds the half turn the moment an amount goes past a full turn", () => {
+    expect(turnValue(DOLLAR, 30.01)).toBe(1.5);
+    expect(turnValue(DOLLAR, 59.99)).toBe(1.5);
+    expect(turnValue(DOLLAR, 60.01)).toBe(2.5);
+    expect(turnValue(DOLLAR, 89.99)).toBe(2.5);
   });
-  it("gives one turn per full $30 above that", () => {
-    expect(turnValue(DOLLAR, 60)).toBe(2);
-    expect(turnValue(DOLLAR, 65)).toBe(2);
-    expect(turnValue(DOLLAR, 90)).toBe(3);
+  it("only ever gives whole and half turns", () => {
+    for (let cents = 1; cents <= 30_000; cents += 7) expect((turnValue(DOLLAR, cents / 100) * 2) % 1).toBe(0);
   });
   it("gives nothing for an unpaid ticket", () => {
     expect(turnValue(DOLLAR, 0)).toBe(0);
@@ -29,8 +32,9 @@ describe("turnValue — Dollar-Based Turns ($30 a turn)", () => {
   it("follows the salon's own dollars-per-turn and partial value", () => {
     const salon: TurnRules = { mode: "dollar", dollarsPerTurn: 40, partialTurnValue: 0.25 };
     expect(turnValue(salon, 35)).toBe(0.25);
-    expect(turnValue(salon, 40)).toBe(1);
-    expect(turnValue(salon, 85)).toBe(2);
+    expect(turnValue(salon, 40)).toBe(0.25);
+    expect(turnValue(salon, 80)).toBe(2);
+    expect(turnValue(salon, 85)).toBe(2.25);
   });
 });
 
@@ -94,7 +98,7 @@ describe("the salon's worked example: Amy, Lisa, Maria, Jenny at $30 a turn", ()
   it("rotates Amy → Lisa → Maria → Jenny on the first four tickets with the totals from the example", () => {
     const { served, totals } = run([20, 45, 25, 65]);
     expect(served).toEqual([AMY, LISA, MARIA, JENNY]);
-    expect([totals.get(AMY), totals.get(LISA), totals.get(MARIA), totals.get(JENNY)]).toEqual([0.5, 1, 0.5, 2]);
+    expect([totals.get(AMY), totals.get(LISA), totals.get(MARIA), totals.get(JENNY)]).toEqual([0.5, 1.5, 0.5, 2.5]);
   });
   it("then sends the next client to a technician on the lowest total, never to Jenny who just finished", () => {
     const { served } = run([20, 45, 25, 65, 40]);
@@ -104,7 +108,7 @@ describe("the salon's worked example: Amy, Lisa, Maria, Jenny at $30 a turn", ()
   });
   it("ends with everyone balanced by turns, not by number of clients", () => {
     const { totals, due } = run([20, 45, 25, 65, 40]);
-    expect(totals.get(AMY)).toBe(1.5);
+    expect(totals.get(AMY)).toBe(2);
     expect(due).toBe(MARIA); // the only technician still on ½
   });
 });

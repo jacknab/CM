@@ -11,8 +11,9 @@
  *   • "client_count" — Equal client count. Every finished, paid walk-in ticket is one client.
  *   • "classic"      — Counted Turns. A ticket at or over the threshold is one turn; a smaller one is a
  *                      "short turn" that earns nothing and returns the technician to the front.
- *   • "dollar"       — Dollar-Based Turns. Under dollars-per-turn is a partial turn (½), from there up
- *                      one turn per full multiple ($30 a turn: $20 → ½, $45 → 1, $65 → 2).
+ *   • "dollar"       — Dollar-Based Turns. Up to dollars-per-turn is a partial turn (½); over it, one turn
+ *                      per full multiple plus the partial turn for anything left over (owner, 2026-10-17;
+ *                      $30 a turn: $20 → ½, $30 → ½, $45 → 1½, $60 → 2, $75 → 2½, $88.50 → 2½, $90 → 3).
  *   • "brackets"     — Dollar brackets. The salon lists amounts and what each earns
  *                      (under $30 → ½, from $30 → 1, from $60 → 2).
  *   • "proportional" — Proportional. Every dollar earns its share of a turn ($30 a turn: $45 → 1.5).
@@ -201,8 +202,12 @@ export function turnUnits(rules: TurnRules, amount: number): number {
     case "round_robin":
     case "client_count":
       return TURN_UNIT;
-    case "dollar":
-      return amountCents < perTurn ? Math.round(rules.partialTurnValue * TURN_UNIT) : Math.floor(amountCents / perTurn) * TURN_UNIT;
+    case "dollar": {
+      // Whole cents and whole turn units, so a ticket earns whole and half turns only — never 2.95.
+      const partial = Math.round(rules.partialTurnValue * TURN_UNIT);
+      if (amountCents <= perTurn) return partial;
+      return Math.floor(amountCents / perTurn) * TURN_UNIT + (amountCents % perTurn > 0 ? partial : 0);
+    }
     case "proportional":
       return Math.round((amountCents * TURN_UNIT) / perTurn);
     case "brackets": {

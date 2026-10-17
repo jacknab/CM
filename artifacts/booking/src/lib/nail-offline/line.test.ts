@@ -64,14 +64,14 @@ describe("the rotation moves on offline", () => {
     expect(names(line(base("dollar"), events, open))).toEqual([]);
   });
   it("Dollar-Based Turns: a paid ticket earns its turns and the technician goes behind those with fewer", () => {
-    // Amy took a $65 ticket (2 turns), Lisa a $20 ticket (½). Everyone is free again.
+    // Amy took a $65 ticket (2½ turns), Lisa a $20 ticket (½). Everyone is free again.
     const events: LineEvent[] = [
       { kind: "assigned", at: 1, staffId: 1 }, { kind: "assigned", at: 2, staffId: 2 },
       { kind: "paid", at: 3, staffId: 1, serviceAmount: 65 }, { kind: "paid", at: 4, staffId: 2, serviceAmount: 20 },
     ];
     const l = line(base("dollar"), events);
     expect(names(l)).toEqual(["Maria", "Lisa", "Amy"]);
-    expect(l.technicians.map((t) => [t.name, t.turnUnits])).toEqual([["Maria", 0], ["Lisa", 500], ["Amy", 2000], ["Jenny", 0]]);
+    expect(l.technicians.map((t) => [t.name, t.turnUnits])).toEqual([["Maria", 0], ["Lisa", 500], ["Amy", 2500], ["Jenny", 0]]);
   });
   it("Counted Turns: a short turn earns nothing and holds the technician at the front", () => {
     const events: LineEvent[] = [{ kind: "assigned", at: 1, staffId: 2 }, { kind: "paid", at: 2, staffId: 2, serviceAmount: 20 }];

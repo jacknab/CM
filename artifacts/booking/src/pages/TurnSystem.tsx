@@ -294,7 +294,7 @@ export default function TurnSystem() {
                 {settings.turnMode === "dollar" && (
                   <div>
                     <label className="mb-2 block text-sm font-medium text-slate-700">
-                      Turn for a smaller ticket <span className="text-slate-500">- what a service under that amount earns</span>
+                      Partial turn <span className="text-slate-500">- what a service up to that amount earns, and what any amount over a full turn adds</span>
                     </label>
                     <select value={String(settings.partialTurnValue)} onChange={(event) => update("partialTurnValue", Number(event.target.value))}
                       className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm" data-testid="turn-partial-value">

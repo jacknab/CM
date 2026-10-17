@@ -43,8 +43,8 @@ describe("proportional ($30 a turn)", () => {
 });
 
 describe("the two original presets are unchanged", () => {
-  it("Dollar-Based Turns", () => {
-    expect(units(rules({ turnMode: "dollar" }))).toEqual([0, 500, 500, 1000, 1000, 1000, 2000, 2000, 166000]);
+  it("Dollar-Based Turns (the owner's rule of 2026-10-17: ½ up to the threshold, then whole turns plus ½ for any rest)", () => {
+    expect(units(rules({ turnMode: "dollar" }))).toEqual([0, 500, 500, 500, 1500, 1500, 2000, 2500, 166500]);
   });
   it("Counted Turns", () => {
     expect(units(rules({ turnMode: "classic" }))).toEqual([0, 0, 0, 1000, 1000, 1000, 1000, 1000, 1000]);
