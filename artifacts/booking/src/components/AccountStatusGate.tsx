@@ -80,28 +80,24 @@ function SuspendedAccessScreen() {
   return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-6">
       <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center space-y-4">
-        <div className="w-14 h-14 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto">
-          <AlertTriangle className="w-7 h-7 text-amber-400" />
-        </div>
-        <h1 className="text-xl font-semibold text-white">Account suspended</h1>
+        {/* Seen in the salon by staff and clients: discreet (owner's wish) — no "suspended", no balance. The owner
+            learns why on the billing page. */}
+        <h1 className="text-xl font-semibold text-white">This page is unavailable</h1>
         <p className="text-zinc-400 text-sm leading-relaxed">
-          This page isn't available while your account is suspended. Pay any outstanding balance on your billing page to restore full access.
-        </p>
-        <p className="text-zinc-500 text-sm">
-          The rest of your account is still open.
+          Please check back later.
         </p>
         <div className="flex flex-col gap-2 pt-2">
           <a
             href="/billing"
             className="w-full py-2.5 px-4 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
           >
-            Go to billing
+            Billing
           </a>
           <a
             href="/customers"
             className="w-full py-2.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-medium transition-colors"
           >
-            Go to clients
+            Clients
           </a>
         </div>
       </div>
