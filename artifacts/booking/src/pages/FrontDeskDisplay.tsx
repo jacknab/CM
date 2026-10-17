@@ -974,8 +974,9 @@ export default function FrontDeskDisplay() {
   }, []);
 
   useEffect(() => {
+    // The "you're checked in" screen shows for 5 seconds, then the screen is ready for the next client (owner, 2026-10-17).
     if (posCheckout === null && (screen === "appointment_confirmed" || screen === "checked_in_generic")) {
-      setCountdown(30);
+      setCountdown(5);
       cdownRef.current = setInterval(() => {
         setCountdown(p => { if (p <= 1) { resetToIdle(); return 0; } return p - 1; });
       }, 1000);
