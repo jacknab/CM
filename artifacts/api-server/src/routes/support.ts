@@ -1,5 +1,6 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
+import { MAX_TRIAL_EXTENSION_DAYS, latestTrialEnd, trialEndRefusal } from "../lib/trialLimit";
 import bcrypt from "bcrypt";
 import { pool, waitForDb } from "../db";
 import { broadcastNotification } from "../notifications";
@@ -1282,7 +1283,10 @@ router.post("/api/support/accounts/:id/unsuspend", requireSupportAuth, async (re
 
 router.post("/api/support/accounts/:id/extend-trial", requireSupportAuth, async (req: Request, res: Response) => {
   const storeId = paramInt(req.params.id);
-  const { days = 14 } = req.body;
+  const days = Number(req.body?.days ?? MAX_TRIAL_EXTENSION_DAYS);
+  if (!Number.isInteger(days) || days < 1 || days > MAX_TRIAL_EXTENSION_DAYS) {
+    return res.status(400).json({ error: `A trial can be extended by 1 to ${MAX_TRIAL_EXTENSION_DAYS} days.` });
+  }
   try {
     const store = await pool.query("SELECT user_id FROM locations WHERE id = $1", [storeId]);
     if (!store.rows[0]) return res.status(404).json({ error: "Account not found" });
@@ -1295,6 +1299,9 @@ router.post("/api/support/accounts/:id/extend-trial", requireSupportAuth, async 
       [days, userId]
     );
     const newTrialEnd: Date = newTrialEndRow.rows[0]?.new_end ?? new Date(Date.now() + days * 86400_000);
+    // Never past 74 days from the trial's start (lib/trialLimit.ts).
+    const refusal = trialEndRefusal(new Date(newTrialEnd), await latestTrialEnd(userId));
+    if (refusal) return res.status(400).json({ error: refusal });
 
     await pool.query(
       `UPDATE users
@@ -2136,6 +2143,9 @@ router.post("/api/support/billing/:accountId/extend-trial", requireSupportAuth, 
     const storeRow = await pool.query("SELECT user_id FROM locations WHERE id = $1", [storeId]);
     if (!storeRow.rows[0]) return res.status(404).json({ error: "Account not found" });
     const userId = storeRow.rows[0].user_id;
+    // Never past 74 days from the trial's start (lib/trialLimit.ts).
+    const refusal = trialEndRefusal(trialDate, await latestTrialEnd(userId));
+    if (refusal) return res.status(400).json({ error: refusal });
     // Reset subscription_status to 'trial' so the AccountStatusGate lifts the
     // expired-trial wall immediately after the extension is saved.
     await pool.query(

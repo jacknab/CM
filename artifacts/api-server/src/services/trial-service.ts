@@ -1,7 +1,11 @@
 import { db } from "../db";
+import { MAX_TRIAL_EXTENSION_DAYS, latestTrialEnd, trialEndRefusal } from "../lib/trialLimit";
 import { users } from "@shared/models/auth";
 import { locations, storeSubscriptions } from "@shared/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
+
+/** An extension past the trial limit: the caller tells the person why. */
+export class TrialLimitError extends Error {}
 
 export interface TrialStatus {
   isActive: boolean;
@@ -165,6 +169,9 @@ export class TrialService {
    * Extend trial for a user (admin function)
    */
   static async extendTrial(userId: string, additionalDays: number): Promise<void> {
+    if (!Number.isInteger(additionalDays) || additionalDays < 1 || additionalDays > MAX_TRIAL_EXTENSION_DAYS) {
+      throw new TrialLimitError(`A trial can be extended by 1 to ${MAX_TRIAL_EXTENSION_DAYS} days.`);
+    }
     const [user] = await db.select()
       .from(users)
       .where(eq(users.id, userId));
@@ -181,6 +188,9 @@ export class TrialService {
       // Start from now
       newTrialEndsAt.setTime(newTrialEndsAt.getTime() + additionalDays * 24 * 60 * 60 * 1000);
     }
+    // Never past 74 days from the trial's start (lib/trialLimit.ts).
+    const refusal = trialEndRefusal(newTrialEndsAt, await latestTrialEnd(userId));
+    if (refusal) throw new TrialLimitError(refusal);
 
     await db.update(users)
       .set({

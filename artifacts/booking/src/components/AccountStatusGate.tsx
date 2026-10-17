@@ -5,8 +5,8 @@
  * applies the appropriate restriction:
  *
  *   locked      → Full block (AccountLocked page) — sub canceled, past grace
- *   suspended   → The account and its data stay open; only /nail and /calendar
- *                 show the suspended screen. Server-side the salon's online
+ *   suspended   → The account and its data stay open; the calendar, every POS,
+ *                 walk-ins, waitlist and turns show the suspended screen. Server-side the salon's online
  *                 booking, Autumn and all its SMS stop too (api-server
  *                 lib/accountSuspension.ts).
  *   inGracePeriod → Full access with a warning banner (trial ended, 7-day window)
@@ -27,8 +27,19 @@ interface AccountStatusGateProps {
   children: React.ReactNode;
 }
 
-/** The pages that stop while an account is suspended; everything else in the account stays open. */
-const SUSPENDED_BLOCKED_PATHS = ["/nail", "/calendar"];
+/**
+ * The pages that stop while an account is suspended: everything that books, checks out or runs the floor —
+ * the calendar wherever it opens, every POS, walk-ins, the waitlist and the turn line. Everything else in the
+ * account (clients, catalogue, team, payroll, reports, settings, marketing, billing) stays open.
+ */
+const SUSPENDED_BLOCKED_PATHS = [
+  // Calendar and booking
+  "/calendar", "/appointments", "/booking/new", "/staff-calendar",
+  // POS and tickets
+  "/nail", "/barber", "/pos", "/staff-pos",
+  // Walk-ins, waitlist, queue and turns
+  "/walk-in-board", "/walkins", "/waitlist", "/dashboard/queue", "/dashboard/turn",
+];
 
 function isSuspendedBlockedPath(pathname: string): boolean {
   return SUSPENDED_BLOCKED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));

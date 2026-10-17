@@ -6026,6 +6026,11 @@ When done, say a warm goodbye and end the call naturally.${salon.ownerInstructio
     if (!receptionistEnabled) {
       return res.status(200).type("text/xml").send(twimlDisabledBusy());
     }
+    // A suspended account: Autumn doesn't answer (lib/accountSuspension.ts).
+    if (await isAccountStopped(storeId)) {
+      console.log(`[Voice] Call not answered — store ${storeId}'s account is suspended`);
+      return res.status(200).type("text/xml").send(twimlDisabledBusy());
+    }
 
     const callSid = (req.body?.CallSid as string | undefined) ?? "";
     const callerPhoneRaw = (req.body?.From as string | undefined) ?? "";

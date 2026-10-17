@@ -80,7 +80,7 @@ export default function CustomerActionsCard({ accountId, store, owner }: Props) 
             <p className="text-xs font-medium text-amber-800">Extend trial period?</p>
             <div className="flex items-center gap-2">
               <label className="text-xs text-amber-700">Days:</label>
-              <input type="number" value={trialDays} onChange={e => setTrialDays(parseInt(e.target.value) || 7)} min={1} max={90}
+              <input type="number" value={trialDays} onChange={e => setTrialDays(Math.min(14, Math.max(1, parseInt(e.target.value) || 14)))} min={1} max={14}
                 className="w-16 text-xs border border-amber-300 rounded px-2 py-1 focus:outline-none bg-white" />
             </div>
             <div className="flex gap-2">

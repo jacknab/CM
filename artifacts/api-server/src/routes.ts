@@ -164,7 +164,7 @@ import {
   clearGBPAuthFailure,
 } from "./google-business-api";
 import { syncReviewsForStore, startGoogleReviewSyncScheduler } from "./google-review-sync";
-import { TrialService } from "./services/trial-service";
+import { TrialService, TrialLimitError } from "./services/trial-service";
 import { requireActiveTrial } from "./middleware/trial-middleware";
 import { isStripeConfigured, getStripe } from "./lib/stripe";
 import { setupNotificationServer, broadcastNotification, broadcastSyncEvent } from "./notifications";
@@ -2104,6 +2104,10 @@ export async function registerRoutes(
         "/api/business-hours",
         // Walk-in queue & turn management
         "/api/turn",
+        "/api/queue",
+        "/api/waitlist",
+        // Checkout (not /api/pos-settings: settings stay open)
+        "/api/pos/",
         // Catalog Packages & marketplace Deals — a suspended store can't manage or sell them
         "/api/packages",
         "/api/deals",
@@ -16325,6 +16329,8 @@ or
       const trialStatus = await TrialService.getTrialStatus(userId);
       return res.json({ message: "Trial extended successfully", trialStatus });
     } catch (error) {
+      // Past the 74-day trial limit, or more than 14 days at once: say why.
+      if (error instanceof TrialLimitError) return res.status(400).json({ message: error.message });
       console.error("Error extending trial:", error);
       return res.status(500).json({ message: "Failed to extend trial" });
     }

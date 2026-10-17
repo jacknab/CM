@@ -6,6 +6,12 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-10-17 — Flaky API test: concurrent identical requests (idempotency)
+
+- **File:** `artifacts/api-server/src/__tests__/idempotency.test.ts` — "durable idempotency > of two identical requests arriving at the same moment, exactly one does the work".
+- **Symptom:** failed once in a full `npx vitest run` (484 tests) while working on the suspended-account change; passed on the next three runs (alone twice, full suite once). Timing-dependent: two requests racing for the same idempotency key.
+- **Why not fixed now:** unrelated to that change and not reproducible on demand; needs a look at whether the test or the claim logic depends on scheduling order.
+
 ## 2026-10-15 — Marketing site: 4 test files from the Airo export fail
 
 - **Files:** `artifacts/marketing/src/lib/__tests__/format-overrides.test.ts`, `format-overrides-plugin.test.ts`, `airo-video-slots-reverse.test.ts` (fail to load), and `src/server/llms-txt.test.ts` ("serves a well-formed file … on a customer host").
