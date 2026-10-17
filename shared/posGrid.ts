@@ -1,12 +1,12 @@
 /**
  * The POS key grid a manager arranges (the right panel of the /nail ticket builder): which key sits in
- * each of the 18 positions of the main grid and of any extra grids they make. No saved layout means the
+ * each of the 12 positions (2 × 6; 3 × 6 until 2026-10-17 — a saved layout keeps its first 12) of the main grid and of any extra grids they make. No saved layout means the
  * grid is filled automatically from the catalog (categories, then each category's services).
  *
  * Shared by the server (what may be saved) and the screen (what is drawn).
  */
 
-export const POS_GRID_COLUMNS = 3;
+export const POS_GRID_COLUMNS = 2;
 export const POS_GRID_SLOTS = POS_GRID_COLUMNS * 6;
 export const POS_GRID_MAIN = "main";
 export const POS_GRID_MAX_GRIDS = 20;

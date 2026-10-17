@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, MoreHorizontal } from "lucide-react";
 import { syncEngine } from "@/lib/sync-engine";
 import { loadOfflineBookingData } from "./nailApi";
+import { POS_GRID_SLOTS } from "@shared/posGrid";
 import { bookingTechs, openDaysOffline, openTimesOffline } from "./offlineBooking";
 
 /** An open time: who takes it, and (two services nobody does both of) who takes the second service. */
 export interface BookingSlot { time: string; staffId: number; staffName: string; extraStaffId?: number; extraStaffName?: string }
 
-const KEYS = 18; // the same 3 × 6 grid as the service keys
-const DAYS_PER_PAGE = 15;
-const TIMES_PER_PAGE = 16;
+const KEYS = POS_GRID_SLOTS; // the same grid as the service keys (2 × 6)
+const DAYS_PER_PAGE = KEYS - 3; // with the back key, Earlier and Later
+const TIMES_PER_PAGE = KEYS - 2; // with the back key and More
 
 /** "2026-10-18" in the salon's time zone. */
 function dayKey(date: Date, timeZone: string) {
@@ -61,6 +62,7 @@ export function BookingPanel(p: {
   const [days, setDays] = useState<{ days: string[]; next: string | null } | null>(null);
   const [day, setDay] = useState<string | null>(null);
   const [timePage, setTimePage] = useState(0);
+  const [techPage, setTechPage] = useState(0);
   const [slots, setSlots] = useState<BookingSlot[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -152,12 +154,17 @@ export function BookingPanel(p: {
 
   let cells: React.ReactNode[] = [];
   let message: string | null = null;
+  // Technicians that don't fit on one grid (Services, Any and More take three keys) go on further pages.
+  const techPages = (techs?.length ?? 0) > KEYS - 2 ? Math.ceil((techs?.length ?? 0) / (KEYS - 3)) : 1;
   if (view === "tech") {
     // Back to services, Any, then each technician who does this service.
     cells = [
       nav("Services", p.onServices, "nail-book-services"),
       key({ id: "nail-book-tech-any", top: "Any", sub: "First free", selected: staffId === null, onClick: () => pickTech(null) }),
-      ...(techs ?? []).slice(0, KEYS - 2).map((t) => key({ id: `nail-book-tech-${t.id}`, top: t.name, selected: staffId === t.id, onClick: () => pickTech(t.id) })),
+      // More technicians than fit: a page at a time, with More cycling round.
+      ...(techPages > 1 ? (techs ?? []).slice((techPage % techPages) * (KEYS - 3), (techPage % techPages) * (KEYS - 3) + KEYS - 3) : (techs ?? []))
+        .map((t) => key({ id: `nail-book-tech-${t.id}`, top: t.name, selected: staffId === t.id, onClick: () => pickTech(t.id) })),
+      ...(techPages > 1 ? [nav("More", () => setTechPage((n) => n + 1), "nail-book-techs-more", "more")] : []),
     ];
     message = error ? error : techs == null ? "Loading technicians…" : techs.length === 0 ? "No technician is set up to do this service." : null;
   } else if (view === "day") {

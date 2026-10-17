@@ -137,7 +137,7 @@ interface Props {
   exit?: { label: string; onClick: () => void };
 }
 
-/** The right panel is a fixed 3 × 6 grid of keys, like a register's — three across so every key is easy to read and
+/** The right panel is a fixed 2 × 6 grid of keys, like a register's — two across so every key is easy to read and
  *  hit on a 10" tablet. It never changes shape. */
 const GRID_COLUMNS = POS_GRID_COLUMNS;
 const GRID_SLOTS = POS_GRID_SLOTS;
@@ -158,7 +158,7 @@ export type GridKey =
 export type GridPlace = { at: "main" } | { at: "category"; key: string } | { at: "grid"; id: string };
 
 /**
- * What sits in each of the 18 positions. The main grid is the catalog's categories; a category key opens
+ * What sits in each of the 12 positions. The main grid is the catalog's categories; a category key opens
  * that category's grid of services, whose last key goes back. Anything that doesn't fit goes to further
  * pages behind a MORE key (the key just before the last), which cycles round to the first page again.
  */
