@@ -19,6 +19,42 @@ import { findClientId } from "@/pages/nail/clientLookup";
 import { clientOnDevice } from "@/pages/nail/nailApi";
 import { snapshotDB } from "@/lib/snapshot-db";
 import { archivedVisitsOfClient } from "@/pages/nail/ticketArchive";
+import { hasSalonMirror, mirrorAll, mirrorFind, mirrorGet } from "@/lib/salon-mirror";
+
+const digits10 = (v: unknown) => String(v ?? "").replace(/\D/g, "").slice(-10);
+
+/** The client with this number in the salon's full copy on the tablet (lib/salon-mirror.ts), shaped like the online lookup. */
+async function clientFromMirror(storeId: number, phone: string): Promise<any | null> {
+  const phones = await mirrorAll(storeId, "client_phones");
+  for (const p of phones) {
+    if (digits10(p.phone_number_e164) !== phone && digits10(p.display_phone) !== phone) continue;
+    const c = await mirrorGet(storeId, "clients", p.client_id);
+    if (!c || c.archived_at) continue;
+    const emails = await mirrorFind(storeId, "client_emails", "client_id", Number(c.id));
+    const email = emails.find((e) => e.is_primary) ?? emails[0];
+    return { id: Number(c.id), name: c.full_name, phone: p.display_phone ?? p.phone_number_e164 ?? null, email: email?.email_address ?? null,
+      loyaltyPoints: c.loyalty_points ?? null, allergies: c.allergies ?? null, birthday: c.date_of_birth ?? null, offline: true };
+  }
+  return null;
+}
+
+/** A client's visits from the salon's full copy, shaped like /api/appointments rows. */
+async function visitsFromMirror(storeId: number, clientId: number): Promise<any[]> {
+  const visits = await mirrorFind(storeId, "appointments", "customer_id", clientId, 5000);
+  const names = new Map<string, any>();
+  const named = async (tbl: string, id: unknown) => {
+    if (id == null) return null;
+    const k = `${tbl}:${id}`;
+    if (!names.has(k)) names.set(k, await mirrorGet(storeId, tbl, id as number).catch(() => null));
+    return names.get(k);
+  };
+  return Promise.all(visits.map(async (a) => {
+    const svc = await named("services", a.service_id);
+    const tech = await named("staff", a.staff_id);
+    return { id: a.id, date: a.date, status: a.status, ticketNumber: a.ticket_number,
+      service: svc ? { name: svc.name, price: Number(svc.price) || 0 } : null, staff: tech ? { name: tech.name } : null };
+  }));
+}
 
 /** A client as the tablet holds them (the salon's copy in its database), shaped like the online lookup. */
 async function clientProfileOnDevice(storeId: number, id: number): Promise<any | null> {
@@ -32,6 +68,7 @@ async function clientProfileOnDevice(storeId: number, id: number): Promise<any |
 
 /** A client's visits from the tablet's ticket archive, shaped like /api/appointments rows. */
 async function visitsOnDevice(storeId: number, clientId: number): Promise<any[]> {
+  if (await hasSalonMirror(storeId)) return visitsFromMirror(storeId, clientId);
   const visits = await archivedVisitsOfClient(storeId, clientId).catch(() => []);
   return visits.map((t) => ({ id: t.id, date: t.date, status: t.status, ticketNumber: t.ticketNumber,
     service: { name: t.service, price: t.price ?? 0 }, staff: t.staffName ? { name: t.staffName } : null }));
@@ -275,6 +312,11 @@ export function ClientLookupSheet({ onClose }: { onClose: () => void }) {
       // No internet: the client from the salon's copy on this tablet (the same search the rest of the POS uses
       // offline), with their points and allergies as of the last copy, and their visits from the ticket archive.
       const onDevice = async () => {
+        // The salon's full copy on this tablet when it has one; otherwise the older saved pieces.
+        if (await hasSalonMirror(storeId).catch(() => false)) {
+          show(await clientFromMirror(storeId, phoneDigits).catch(() => null));
+          return;
+        }
         const id = await findClientId(storeId, phoneDigits).catch(() => null);
         show(id != null ? await clientProfileOnDevice(storeId, id).catch(() => null) : null);
       };

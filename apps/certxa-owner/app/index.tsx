@@ -102,7 +102,8 @@ const BRIDGE_JS = `
   window.__certxaBridgeInstalled = true;
   window.CERTXA_NATIVE_APP = true;
   // This build keeps the salon's offline data in an encrypted SQLite file (lib/localDb.ts).
-  window.CERTXA_NATIVE_LOCAL_DB = 1;
+  // 2: also keeps the salon's account copied (lib/localDb.ts mirror*, plans/salon-local-database.md).
+  window.CERTXA_NATIVE_LOCAL_DB = 2;
   // This build can link the salon's tablets over its own Wi-Fi (lib/localHub.ts).
   window.CERTXA_NATIVE_HUB = 1;
   // This build can print receipts on the thermal printer (PRINT_RECEIPT) — the web checkout checks this flag.

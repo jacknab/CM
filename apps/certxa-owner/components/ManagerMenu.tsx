@@ -9,6 +9,7 @@ import { Modal, View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } fr
 import Constants from 'expo-constants';
 import { Colors } from '@/constants/colors';
 import { apkUpdateLastResult, canInstallApk, installLatestApk } from '@/lib/appRestart';
+import { mirrorSummary } from '@/lib/localDb';
 
 interface Props {
   visible: boolean;
@@ -28,6 +29,16 @@ type UpdateState = { busy: boolean; text: string; tone: 'info' | 'error' };
 
 export function ManagerMenu({ visible, apkUrl, exitLabel, onWifi, onPrinter, onHardReset, onExit, onClose }: Props) {
   const [update, setUpdate] = useState<UpdateState>({ busy: false, text: '', tone: 'info' });
+  // The salon's account copied to this tablet for working offline (plans/salon-local-database.md).
+  const [copy, setCopy] = useState<string>('');
+  useEffect(() => {
+    if (!visible) return;
+    void mirrorSummary().then((m) => {
+      if (!m) { setCopy('Salon data on this tablet: not copied yet'); return; }
+      const ago = m.syncedAt ? Math.max(0, Math.round((Date.now() - Date.parse(m.syncedAt)) / 60_000)) : null;
+      setCopy(`Salon data on this tablet: ${m.rows.toLocaleString()} records${!m.complete ? ' (copying…)' : ago == null ? '' : ago < 1 ? ' · synced just now' : ` · synced ${ago} min ago`}`);
+    });
+  }, [visible]);
 
   // Opening the menu after an update that failed says why.
   useEffect(() => {
@@ -61,6 +72,7 @@ export function ManagerMenu({ visible, apkUrl, exitLabel, onWifi, onPrinter, onH
         <View style={S.card}>
           <Text style={S.title}>Manager menu</Text>
           <Text style={S.sub}>App version {Constants.expoConfig?.version ?? ''}</Text>
+          {copy ? <Text style={S.sub}>{copy}</Text> : null}
           <View style={S.list}>
             {row('Wi-Fi', onWifi, update.busy)}
             {row('Receipt printer', onPrinter, update.busy)}

@@ -24,7 +24,12 @@ router.get("/tables", async (req, res) => {
   const storeId = await resolveSessionStoreId(req);
   if (!storeId) return res.status(400).json({ message: "No store found" });
   try {
-    return res.json({ head: await mirrorHead(storeId), historyMonths: MIRROR_HISTORY_MONTHS, tables: MIRROR_TABLES.map((t) => t.table) });
+    return res.json({
+      head: await mirrorHead(storeId), historyMonths: MIRROR_HISTORY_MONTHS, tables: MIRROR_TABLES.map((t) => t.table),
+      // Rows that belong to the salon only through a parent: when the parent is deleted they go too, without a
+      // change of their own (the database removes them with it), so the tablet removes them itself.
+      children: MIRROR_TABLES.flatMap((t) => (typeof t.scope === "object" ? [{ table: t.table, parent: t.scope.parent, fk: t.scope.fk }] : [])),
+    });
   } catch (err: any) {
     console.error("[mirror/tables]", err?.message);
     return res.status(500).json({ message: "Could not read the salon's data" });

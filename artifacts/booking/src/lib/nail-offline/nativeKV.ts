@@ -65,11 +65,20 @@ export function nativeSqliteKV(send: Send = nativeSend()): KV {
   };
 }
 
-let shared: KV | null = null;
+let sharedSend: Send | null = null;
 /** The one connection to the app's database for this page. There must be only one: answers come back
  *  through a single callback, and a second connection would take it over. */
+export function sharedNativeSend(): Send {
+  return (sharedSend ??= nativeSend());
+}
+let shared: KV | null = null;
 export function sharedNativeKV(): KV {
-  return (shared ??= nativeSqliteKV());
+  return (shared ??= nativeSqliteKV(sharedNativeSend()));
+}
+
+/** This app build also keeps the salon's account copied (app 1.0.4 with the update of 2026-10-17 on). */
+export function hasNativeMirror(): boolean {
+  return hasNativeDb() && Number((window as unknown as NativeWindow).CERTXA_NATIVE_LOCAL_DB) >= 2;
 }
 
 const STORES: StoreName[] = ["cache", "records", "ops", "meta"];

@@ -7,6 +7,10 @@
  * offline, the queue of changes still to send, and a few counters — as rows of
  * (store, key, value).
  *
+ * It also keeps the salon's account itself (plans/salon-local-database.md): every table the salon uses, copied
+ * from the server and kept in sync, one row per (store, table, id) in `mirror`, the row as JSON. The web screens
+ * apply the server's changes and read it while offline (`mirror*` requests below).
+ *
  * The file is encrypted with SQLCipher. Its key is 32 random bytes made on first use and kept in
  * the Android Keystore through expo-secure-store; it never leaves the device and is not in the
  * app's code.
@@ -18,6 +22,9 @@ import * as Crypto from 'expo-crypto';
 const DB_FILE = 'certxa-salon.db';
 const KEY_NAME = 'certxa.localdb.key';
 const STORES = new Set(['cache', 'records', 'ops', 'meta']);
+/** Columns of the salon's copied rows that have an index (mirrorFind is fast on these). */
+const MIRROR_INDEXED = ['customer_id', 'client_id', 'appointment_id', 'staff_id', 'service_id'];
+const NAME = /^[a-z_][a-z0-9_]{0,62}$/;
 
 let opening: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -37,7 +44,11 @@ function open(): Promise<SQLite.SQLiteDatabase> {
     await db.execAsync(`PRAGMA key = "x'${await databaseKey()}'";`);
     await db.execAsync(
       'PRAGMA journal_mode = WAL;' +
-        'CREATE TABLE IF NOT EXISTS kv (store TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (store, key)) WITHOUT ROWID;',
+        'CREATE TABLE IF NOT EXISTS kv (store TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (store, key)) WITHOUT ROWID;' +
+        'CREATE TABLE IF NOT EXISTS mirror (store INTEGER NOT NULL, tbl TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (store, tbl, id)) WITHOUT ROWID;' +
+        // The columns screens look rows up by.
+        MIRROR_INDEXED.map((f) => `CREATE INDEX IF NOT EXISTS mirror_by_${f} ON mirror (store, tbl, json_extract(data, '$.${f}'));`).join('') +
+        'CREATE TABLE IF NOT EXISTS mirror_state (store INTEGER PRIMARY KEY, state TEXT NOT NULL);',
     );
     return db;
   })().catch((err) => {
@@ -59,7 +70,25 @@ export type LocalDbRequest =
   | { op: 'get'; store: string; key: string }
   | { op: 'getAll'; store: string }
   | { op: 'keys'; store: string }
-  | { op: 'batch'; writes: LocalDbWrite[] };
+  | { op: 'batch'; writes: LocalDbWrite[] }
+  // The salon's copied account. Rows travel as JSON text.
+  | { op: 'mirrorApply'; store: number; upserts?: { tbl: string; id: string; data: string }[]; deletes?: { tbl: string; id: string }[];
+      deleteWhere?: { tbl: string; field: string; value: string | number }[]; state?: string; clear?: boolean }
+  | { op: 'mirrorGet'; store: number; tbl: string; id: string }
+  | { op: 'mirrorFind'; store: number; tbl: string; field: string; value: string | number; limit?: number }
+  | { op: 'mirrorAll'; store: number; tbl: string }
+  | { op: 'mirrorCount'; store: number }
+  | { op: 'mirrorState'; store: number };
+
+function checkName(name: unknown): string {
+  if (typeof name !== 'string' || !NAME.test(name)) throw new Error('Bad table or column name');
+  return name;
+}
+function checkMirrorStore(store: unknown): number {
+  const n = Number(store);
+  if (!Number.isSafeInteger(n) || n <= 0) throw new Error('Bad salon');
+  return n;
+}
 
 function checkStore(store: unknown): string {
   if (typeof store !== 'string' || !STORES.has(store)) throw new Error('Unknown store');
@@ -99,7 +128,74 @@ export async function runLocalDb(req: LocalDbRequest): Promise<unknown> {
       });
       return null;
     }
+    case 'mirrorApply': {
+      const store = checkMirrorStore(req.store);
+      // One transaction: a page of changes, and where the sync has got to, are kept together or not at all.
+      await db.withExclusiveTransactionAsync(async (tx) => {
+        if (req.clear) await tx.runAsync('DELETE FROM mirror WHERE store = ?', [store]);
+        for (const d of req.deletes ?? []) await tx.runAsync('DELETE FROM mirror WHERE store = ? AND tbl = ? AND id = ?', [store, checkName(d.tbl), String(d.id)]);
+        // Rows that went with a deleted one (a deleted appointment's add-ons, a deleted client's phones).
+        for (const w of req.deleteWhere ?? []) {
+          await tx.runAsync(`DELETE FROM mirror WHERE store = ? AND tbl = ? AND json_extract(data, '$.${checkName(w.field)}') = ?`, [store, checkName(w.tbl), w.value]);
+        }
+        for (const u of req.upserts ?? []) {
+          await tx.runAsync('INSERT INTO mirror (store, tbl, id, data) VALUES (?, ?, ?, ?) ON CONFLICT (store, tbl, id) DO UPDATE SET data = excluded.data',
+            [store, checkName(u.tbl), String(u.id), String(u.data)]);
+        }
+        if (typeof req.state === 'string') {
+          await tx.runAsync('INSERT INTO mirror_state (store, state) VALUES (?, ?) ON CONFLICT (store) DO UPDATE SET state = excluded.state', [store, req.state]);
+        }
+        if (req.clear && typeof req.state !== 'string') await tx.runAsync('DELETE FROM mirror_state WHERE store = ?', [store]);
+      });
+      return null;
+    }
+    case 'mirrorGet': {
+      const row = await db.getFirstAsync<{ data: string }>('SELECT data FROM mirror WHERE store = ? AND tbl = ? AND id = ?',
+        [checkMirrorStore(req.store), checkName(req.tbl), String(req.id)]);
+      return row ? row.data : null;
+    }
+    case 'mirrorFind': {
+      const limit = Math.min(Math.max(Number(req.limit) || 500, 1), 5000);
+      const rows = await db.getAllAsync<{ data: string }>(
+        `SELECT data FROM mirror WHERE store = ? AND tbl = ? AND json_extract(data, '$.${checkName(req.field)}') = ? LIMIT ${limit}`,
+        [checkMirrorStore(req.store), checkName(req.tbl), req.value]);
+      return rows.map((r) => r.data);
+    }
+    case 'mirrorAll': {
+      const rows = await db.getAllAsync<{ data: string }>('SELECT data FROM mirror WHERE store = ? AND tbl = ?', [checkMirrorStore(req.store), checkName(req.tbl)]);
+      return rows.map((r) => r.data);
+    }
+    case 'mirrorCount': {
+      const rows = await db.getAllAsync<{ tbl: string; n: number }>('SELECT tbl, COUNT(*) AS n FROM mirror WHERE store = ? GROUP BY tbl', [checkMirrorStore(req.store)]);
+      return Object.fromEntries(rows.map((r) => [r.tbl, Number(r.n)]));
+    }
+    case 'mirrorState': {
+      const row = await db.getFirstAsync<{ state: string }>('SELECT state FROM mirror_state WHERE store = ?', [checkMirrorStore(req.store)]);
+      return row ? row.state : null;
+    }
     default:
       throw new Error('Unknown request');
+  }
+}
+
+/** For the manager menu: how much of the salon's account this tablet holds, and when it last caught up. */
+export async function mirrorSummary(): Promise<{ rows: number; syncedAt: string | null; complete: boolean } | null> {
+  try {
+    const db = await open();
+    const count = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM mirror');
+    const states = await db.getAllAsync<{ state: string }>('SELECT state FROM mirror_state');
+    if (!states.length) return null;
+    let syncedAt: string | null = null;
+    let complete = true;
+    for (const { state } of states) {
+      try {
+        const st = JSON.parse(state);
+        if (!st.complete) complete = false;
+        if (st.syncedAt && (!syncedAt || st.syncedAt > syncedAt)) syncedAt = st.syncedAt;
+      } catch { /* unreadable: shown as not synced */ }
+    }
+    return { rows: Number(count?.n ?? 0), syncedAt, complete };
+  } catch {
+    return null;
   }
 }

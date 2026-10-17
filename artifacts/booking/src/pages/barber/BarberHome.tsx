@@ -5,6 +5,7 @@
  * choice is the TURN queue, checkout is the POS tab itself (CheckoutMode). This
  * file only owns the screen state and wires the pieces together.
  */
+import { startSalonMirror } from "@/lib/salon-mirror";
 import { appPage } from "@/lib/appProfile";
 import { OfflineLimitLock } from "@/components/offline/OfflineLimitLock";
 import { EMPTY_ARRAY } from "@/lib/empty";
@@ -103,6 +104,8 @@ export default function BarberHome() {
 function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, storePhone, timezone, salesTax }: {
   storeId: number; storeName: string; storeAddress?: string; storeCityStateZip?: string; storePhone?: string; timezone: string; salesTax: SalesTaxSettings;
 }) {
+  // The salon's whole account, copied to this tablet and kept in sync, for working with no internet.
+  useEffect(() => startSalonMirror(storeId), [storeId]);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();

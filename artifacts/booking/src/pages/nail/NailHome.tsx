@@ -32,6 +32,7 @@ import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
 import { hardRefresh } from "@/lib/hard-refresh";
 import { installRequestDeadline } from "@/lib/request-deadline";
 import { serveKioskOverHub, hubTicketNumber } from "@/lib/kiosk-hub";
+import { startSalonMirror } from "@/lib/salon-mirror";
 import { clearForeignTurnEvents, startTurnSharing } from "@/lib/nail-offline/turnShare";
 import { getDeviceId } from "@/lib/device-id";
 import { findClientId } from "./clientLookup";
@@ -288,6 +289,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // This is the salon's main screen: inside the Android app it accepts the customer screen and kiosk over
   // the salon's own Wi-Fi, so they keep working with it when the internet is down.
   useEffect(() => { void localHub.start(storeId, hubRole); }, [storeId, hubRole]);
+  // The salon's whole account, copied to this tablet and kept in sync, for working with no internet.
+  useEffect(() => startSalonMirror(storeId), [storeId]);
   // A waiting client was just given a technician: every POS station says so, over whatever it is showing —
   // the Tech ID keypad included — with Start Service on it. It closes by itself; the screen is left as it was.
   const [waitingAssigned, setWaitingAssigned] = useState<null | { appointmentId: number; ticketNumber: number | null; clientName: string; serviceName: string; staffName: string; started?: boolean }>(null);

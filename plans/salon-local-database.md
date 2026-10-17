@@ -48,4 +48,15 @@ archive, offline work waiting to be sent), and each offline feature needed its o
 
 ## Progress
 
-- 2026-10-17: plan written; waiting on the owner's go and the two decisions above.
+- 2026-10-17: plan written. Owner said yes to both proposals (no secrets or big logs; 12 months of history).
+- 2026-10-17: **Phase 1 done** (`cfc2356a`): `lib/storeMirror.ts` (68 tables, stripped columns), migration 0249
+  applied (store_changes + 68 triggers, dry-run in a rolled-back transaction first), `/api/offline/mirror`
+  (tables/rows/changes), 30-day log trim. Store 2 = 2,762 rows, ~900 KB.
+- 2026-10-17: **Phase 2 done**, phase 3 started:
+  - App (`apps/certxa-owner/lib/localDb.ts`): `mirror` + `mirror_state` tables, indexes on customer_id /
+    client_id / appointment_id / staff_id / service_id, `mirrorApply|Get|Find|All|Count|State`; bridge flag
+    `CERTXA_NATIVE_LOCAL_DB = 2`; manager menu shows records held and last sync. Needs an app update (OTA).
+  - Web (`booking/src/lib/salon-mirror.ts`): first copy (resumable), changes, resync, deleted parents take their
+    children; runs on /nail and /barber every minute and on reconnect. Tests: `salon-mirror.test.ts`.
+  - Phase 3: the Clients sheet reads the copy offline (profile, email, points, allergies, visits).
+  - **Next in phase 3:** the board, catalogue, staff/turns and bookings offline from the copy.
