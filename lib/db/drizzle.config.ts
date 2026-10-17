@@ -72,5 +72,7 @@ export default defineConfig({
     "!directory_listings",
     "!directory_removal_requests",
     "!booking_requests",
+    "!store_changes",
+    "!store_changes_pruned",
   ],
 });

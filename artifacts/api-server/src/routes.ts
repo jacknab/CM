@@ -4277,6 +4277,10 @@ export async function registerRoutes(
   // Solo plan: where the professional sees clients, and booking approval (plans/solo-work-places-and-approval.md).
   const { default: workPlacesRouter } = await import("./routes/workPlaces.js");
   app.use("/api/work-places", isAuthenticated, workPlacesRouter);
+  // The salon's account copied to its tablets and kept in sync (routes/storeMirror.ts).
+  const { default: storeMirrorRouter, startMirrorLogPruning } = await import("./routes/storeMirror.js");
+  app.use("/api/offline/mirror", isAuthenticated, storeMirrorRouter);
+  startMirrorLogPruning();
   app.get(api.services.list.path, isAuthenticated, async (req, res) => {
     const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(403).json({ message: "No store context" });
