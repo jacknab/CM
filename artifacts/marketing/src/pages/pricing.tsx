@@ -43,7 +43,7 @@ function getPlanTier(plan: PublicPricingPlan): (typeof PLAN_ORDER)[number] | nul
 }
 
 async function fetchPricingPlans(): Promise<PublicPricingPlan[]> {
-  const res = await fetch(`${import.meta.env.VITE_API_URL}/public/pricing-plans`);
+  const res = await fetch('/api/public/pricing-plans');
   if (!res.ok) throw new Error('Failed to load pricing plans');
 
   const plans: PublicPricingPlan[] = await res.json();
