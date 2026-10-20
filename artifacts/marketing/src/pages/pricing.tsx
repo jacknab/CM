@@ -5,6 +5,7 @@ import { ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import ShareBar from '@/components/ShareBar';
 import { Check as CheckIcon, X as XIcon } from 'lucide-react';
+import { formatPricingFeatureLimit, formatPricingFeatureName } from '@/lib/pricing-feature-labels';
 
 const SITE = 'https://certxa.com';
 const PAGE_URL = `${SITE}/pricing`;
@@ -120,9 +121,7 @@ export default function PricingPage() {
       cta: 'Start free trial',
       features: plan.features.map((feature) => ({
         id: feature.featureId,
-        text: feature.limitValue === null
-          ? feature.featureName
-          : `${feature.featureName} (up to ${feature.limitValue})`,
+        text: formatPricingFeatureName(feature.featureId, feature.featureName, feature.limitValue),
       })),
     })),
     comparison: {
@@ -659,16 +658,23 @@ export default function PricingPage() {
                               const planFeature = plan.features.find(
                                 (item) => item.featureId === feature.featureId,
                               );
+                              const limit =
+                                planFeature?.limitValue == null
+                                  ? null
+                                  : formatPricingFeatureLimit(
+                                      planFeature.featureId,
+                                      planFeature.limitValue,
+                                    );
                               return (
                                 <td key={plan.code} className="px-4 py-3.5 text-center">
                                   {planFeature ? (
-                                    planFeature.limitValue === null ? (
-                                      <span className="flex justify-center">
-                                        <CheckIcon size={16} className="text-primary" />
+                                    limit ? (
+                                      <span className="text-xs font-medium text-muted-foreground">
+                                        {limit}
                                       </span>
                                     ) : (
-                                      <span className="text-xs font-medium text-muted-foreground">
-                                        Up to {planFeature.limitValue}
+                                      <span className="flex justify-center">
+                                        <CheckIcon size={16} className="text-primary" />
                                       </span>
                                     )
                                   ) : (
