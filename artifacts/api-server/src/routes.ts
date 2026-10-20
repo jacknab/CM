@@ -118,6 +118,8 @@ import {
   staffServices,
   platformCreditTransactions,
   storeSubscriptions,
+  features,
+  planFeatures,
   subscriptionPlans,
   clients,
   clientPhones,
@@ -10876,6 +10878,69 @@ If you have any questions, please contact your administrator.
       return res.json(result);
     } catch (err: any) {
       return res.status(500).json({ error: "Failed to load plan prices" });
+    }
+  });
+
+  app.get("/api/public/pricing-plans", async (_req, res) => {
+    try {
+      const plans = await db
+        .select({
+          id: subscriptionPlans.id,
+          code: subscriptionPlans.code,
+          name: subscriptionPlans.name,
+          description: subscriptionPlans.description,
+          priceMonthly: subscriptionPlans.priceMonthly,
+          priceYearly: subscriptionPlans.priceYearly,
+        })
+        .from(subscriptionPlans)
+        .where(
+          and(
+            eq(subscriptionPlans.isActive, true),
+            eq(subscriptionPlans.isPublic, true),
+          ),
+        )
+        .orderBy(asc(subscriptionPlans.sortOrder), asc(subscriptionPlans.id));
+
+      const featureRows = plans.length
+        ? await db
+            .select({
+              planId: planFeatures.planId,
+              featureId: planFeatures.featureId,
+              featureName: features.name,
+              featureDescription: features.description,
+              featureCategory: features.category,
+              limitValue: planFeatures.limitValue,
+              sortOrder: features.sortOrder,
+            })
+            .from(planFeatures)
+            .innerJoin(features, eq(planFeatures.featureId, features.id))
+            .where(
+              and(
+                inArray(planFeatures.planId, plans.map((plan) => plan.id)),
+                eq(planFeatures.enabled, true),
+                eq(features.isActive, true),
+              ),
+            )
+            .orderBy(asc(features.sortOrder), asc(features.category), asc(features.name))
+        : [];
+
+      const featuresByPlan = new Map<number, typeof featureRows>();
+      for (const feature of featureRows) {
+        const current = featuresByPlan.get(feature.planId) ?? [];
+        current.push(feature);
+        featuresByPlan.set(feature.planId, current);
+      }
+
+      res.setHeader("Cache-Control", "public, max-age=300");
+      return res.json(
+        plans.map((plan) => ({
+          ...plan,
+          features: featuresByPlan.get(plan.id) ?? [],
+        })),
+      );
+    } catch (err) {
+      console.error("[pricing] Failed to load public pricing plans:", err);
+      return res.status(500).json({ error: "Failed to load pricing plans" });
     }
   });
 

@@ -12,12 +12,6 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 - **Symptom:** failed once in a full `npx vitest run` (484 tests) while working on the suspended-account change; passed on the next three runs (alone twice, full suite once). Timing-dependent: two requests racing for the same idempotency key.
 - **Why not fixed now:** unrelated to that change and not reproducible on demand; needs a look at whether the test or the claim logic depends on scheduling order.
 
-## 2026-10-15 — Marketing site: 4 test files from the Airo export fail
-
-- **Files:** `artifacts/marketing/src/lib/__tests__/format-overrides.test.ts`, `format-overrides-plugin.test.ts`, `airo-video-slots-reverse.test.ts` (fail to load), and `src/server/llms-txt.test.ts` ("serves a well-formed file … on a customer host").
-- **Symptom:** `npx vitest run` in `artifacts/marketing` (Node 22): `Failed to resolve import "../../../export-plugins/utils/text-size"` — the export did not include that helper; and `expected '# Certxa …' to contain '# acme.com'` — the llms-txt test still checks the Airo template's placeholder site. 121 other tests pass; the site builds and serves normally.
-- **Why not fixed now:** found while adding the Vietnamese nail salon pages; these are template tests unrelated to that change and to anything certxa.com serves. Either restore/remove the missing helper's tests and update the llms-txt fixture to Certxa, or delete the Airo-only tests.
-
 ## 2026-10-13 — Certxa Pro app: "Notify client" switch does nothing; edit screen offers six fixed times
 
 - **File:** `certxa-pro-replit/staff-app-latest/artifacts/certxa-pro/app/(tabs)/index.tsx` (reschedule dialog, `notifyClient`) and `app/appointment/[id].tsx:11` (`timeSlots`).

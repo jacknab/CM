@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-import type { Plugin } from 'vite';
+import type { Plugin, ViteDevServer } from 'vite';
 
 const SIDECAR_DIRNAME = 'format-overrides';
 export const FORMAT_OVERRIDES_MODULE_ID = 'virtual:format-overrides';
@@ -9,7 +9,15 @@ const RESOLVED_FORMAT_OVERRIDES_MODULE_ID = `\0${FORMAT_OVERRIDES_MODULE_ID}`;
 const EMPTY_SIDECAR = { version: 1, overrides: {} };
 const EMPTY_BUNDLE = { version: 1, scopes: {} };
 
-function readSidecarFile(filePath: string): unknown {
+function warnInvalidSidecar(scope: string, reason: string): void {
+  console.warn(JSON.stringify({
+    event: 'format-overrides.sidecar.invalid',
+    scope,
+    reason,
+  }));
+}
+
+function readSidecarFile(filePath: string, scope: string): unknown {
   try {
     const parsed = JSON.parse(readFileSync(filePath, 'utf-8'));
     if (
@@ -19,10 +27,12 @@ function readSidecarFile(filePath: string): unknown {
       typeof parsed.overrides !== 'object' ||
       Array.isArray(parsed.overrides)
     ) {
+      warnInvalidSidecar(scope, 'unsupported-shape-or-version');
       return EMPTY_SIDECAR;
     }
     return parsed;
-  } catch {
+  } catch (error) {
+    warnInvalidSidecar(scope, error instanceof SyntaxError ? 'invalid-json' : 'read-failed');
     return EMPTY_SIDECAR;
   }
 }
@@ -50,7 +60,7 @@ function readSidecarBundle(root: string): unknown {
       .sort()
       .map((filePath) => {
         const scope = scopeFromFile(sidecarRoot, filePath);
-        return [scope, readSidecarFile(filePath)];
+        return [scope, readSidecarFile(filePath, scope)];
       }),
   );
 
@@ -61,7 +71,7 @@ function buildModule(root: string): string {
   return `export default ${JSON.stringify(readSidecarBundle(root))};`;
 }
 
-/** Standalone build shim for exported projects (no AAB dev-server hooks). */
+/** Loads format overrides for export builds and publishes scoped dev updates. */
 export function formatOverridesPlugin(root: string = process.cwd()): Plugin {
   return {
     name: 'format-overrides',
@@ -70,6 +80,28 @@ export function formatOverridesPlugin(root: string = process.cwd()): Plugin {
     },
     load(id) {
       return id === RESOLVED_FORMAT_OVERRIDES_MODULE_ID ? buildModule(root) : null;
+    },
+    configureServer(server: ViteDevServer) {
+      const sidecarRoot = path.resolve(root, SIDECAR_DIRNAME);
+      server.watcher.add(sidecarRoot);
+
+      const handleSidecarChange = (changedPath: string): void => {
+        const absolutePath = path.resolve(changedPath);
+        if (
+          !absolutePath.startsWith(`${sidecarRoot}${path.sep}`) ||
+          !absolutePath.endsWith('.json')
+        ) {
+          return;
+        }
+
+        const module = server.moduleGraph.getModuleById(RESOLVED_FORMAT_OVERRIDES_MODULE_ID);
+        if (module) server.moduleGraph.invalidateModule(module);
+        server.ws.send('format-overrides:update', readSidecarBundle(root));
+      };
+
+      server.watcher.on('add', handleSidecarChange);
+      server.watcher.on('change', handleSidecarChange);
+      server.watcher.on('unlink', handleSidecarChange);
     },
   };
 }

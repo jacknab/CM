@@ -1,13 +1,70 @@
+import { Fragment, useState, useEffect } from 'react';
 import { Helmet } from '@dr.pogodin/react-helmet';
 import { Link } from 'react-router';
+import { ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
-import { ArrowRight, Check, X } from 'lucide-react';
-import { pricing } from 'virtual:content';
 import ShareBar from '@/components/ShareBar';
+import { Check as CheckIcon, X as XIcon } from 'lucide-react';
 
 const SITE = 'https://certxa.com';
 const PAGE_URL = `${SITE}/pricing`;
 const OG_IMAGE = `${SITE}/og-image.png`;
+
+type PublicPricingPlan = {
+  id: number;
+  code: string;
+  name: string;
+  description: string | null;
+  priceMonthly: number;
+  priceYearly: number;
+  features: Array<{
+    featureId: string;
+    featureName: string;
+    featureDescription: string | null;
+    featureCategory: string;
+    limitValue: number | null;
+    sortOrder: number;
+  }>;
+};
+
+const PLAN_ORDER = ['professional', 'elite', 'enterprise'] as const;
+
+function getPlanTier(plan: PublicPricingPlan): (typeof PLAN_ORDER)[number] | null {
+  const code = plan.code.trim().toLowerCase();
+  if (code === 'professional' || code === 'pro') return 'professional';
+  if (code === 'elite') return 'elite';
+  if (code === 'enterprise') return 'enterprise';
+
+  const name = plan.name.trim().toLowerCase();
+  if (name === 'professional' || name === 'pro') return 'professional';
+  if (name === 'elite') return 'elite';
+  if (name === 'enterprise') return 'enterprise';
+  return null;
+}
+
+async function fetchPricingPlans(): Promise<PublicPricingPlan[]> {
+  const res = await fetch(`${import.meta.env.VITE_API_URL}/public/pricing-plans`);
+  if (!res.ok) throw new Error('Failed to load pricing plans');
+
+  const plans: PublicPricingPlan[] = await res.json();
+  if (!Array.isArray(plans)) throw new Error('Pricing plans response is invalid');
+
+  const selectedPlans = PLAN_ORDER.map((tier) => plans.find((plan) => getPlanTier(plan) === tier));
+  const missingPlans = PLAN_ORDER.filter((_, index) => !selectedPlans[index]);
+  if (missingPlans.length > 0) {
+    throw new Error(`Pricing plans are not configured: ${missingPlans.join(', ')}`);
+  }
+
+  return selectedPlans.filter((plan): plan is PublicPricingPlan => plan !== undefined);
+}
+
+function formatMonthlyPrice(priceInCents: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 2,
+  }).format(priceInCents / 100);
+}
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
@@ -19,65 +76,393 @@ const stagger = {
   visible: { transition: { staggerChildren: 0.1 } },
 };
 
-const jsonLd = {
-  '@context': 'https://schema.org',
-  '@graph': [
-    {
-      '@type': 'WebPage',
-      '@id': `${PAGE_URL}#webpage`,
-      name: 'Salon Software Pricing — Certxa | Free Solo Plan, Teams From $22/mo',
-      url: PAGE_URL,
-      description:
-        'Simple, transparent pricing for Certxa salon software. Solo is free, Professional is $22/mo and Elite is $49/mo. No commissions, no long-term contracts.',
-      isPartOf: { '@id': `${SITE}/#website` },
-      about: { '@id': `${SITE}/#organization` },
-      breadcrumb: {
-        '@type': 'BreadcrumbList',
-        itemListElement: [
-          { '@type': 'ListItem', position: 1, name: 'Home', item: `${SITE}/` },
-          { '@type': 'ListItem', position: 2, name: 'Pricing', item: PAGE_URL },
-        ],
-      },
-    },
-    {
-      '@type': 'FAQPage',
-      '@id': `${PAGE_URL}#faq`,
-      mainEntity: pricing.faq.map((item) => ({
-        '@type': 'Question',
-        name: item.question,
-        acceptedAnswer: { '@type': 'Answer', text: item.answer },
-      })),
-    },
-  ],
-};
-
 export default function PricingPage() {
+  const [pricingPlans, setPricingPlans] = useState<PublicPricingPlan[] | null>(null);
+  const [pricingPlansError, setPricingPlansError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchPricingPlans()
+      .then((plans) => {
+        if (!cancelled) setPricingPlans(plans);
+      })
+      .catch((err: unknown) => {
+        console.error('[pricing] Failed to fetch pricing plans:', err);
+        if (!cancelled) setPricingPlansError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const comparisonCategories = Array.from(
+    (pricingPlans ?? []).reduce((categories, plan) => {
+      for (const feature of plan.features) {
+        const category = categories.get(feature.featureCategory) ?? new Map();
+        category.set(feature.featureId, feature);
+        categories.set(feature.featureCategory, category);
+      }
+      return categories;
+    }, new Map<string, Map<string, PublicPricingPlan['features'][number]>>()),
+  ).map(([name, features]) => ({ name, features: Array.from(features.values()) }));
+
+  const pricing = {
+    hero: {
+      eyebrow: 'Simple, transparent pricing',
+      headline: 'Certxa salon software pricing',
+      subhead: 'Explore Professional, Elite, and Enterprise plans. No commissions, no long-term contracts.',
+    },
+    plans: (pricingPlans ?? []).map((plan) => ({
+      ...plan,
+      price: formatMonthlyPrice(plan.priceMonthly),
+      period: '/ month',
+      featured: getPlanTier(plan) === 'professional',
+      cta: 'Start free trial',
+      features: plan.features.map((feature) => ({
+        id: feature.featureId,
+        text: feature.limitValue === null
+          ? feature.featureName
+          : `${feature.featureName} (up to ${feature.limitValue})`,
+      })),
+    })),
+    comparison: {
+      headline: 'Compare plans',
+      categories: [
+        {
+          id: 'cat-booking',
+          name: 'Booking',
+          rows: [
+            {
+              id: 'r1',
+              feature: 'Online booking page',
+              starter: 'yes',
+              pro: 'yes',
+              enterprise: 'yes',
+            },
+            {
+              id: 'r2',
+              feature: 'Calendars',
+              starter: '1',
+              pro: 'Unlimited',
+              enterprise: 'Unlimited',
+            },
+            {
+              id: 'r3',
+              feature: 'Staff members',
+              starter: '1',
+              pro: 'Unlimited',
+              enterprise: 'Unlimited',
+            },
+            {
+              id: 'r4',
+              feature: 'Waitlist',
+              starter: 'no',
+              pro: 'yes',
+              enterprise: 'yes',
+            },
+            {
+              id: 'r5',
+              feature: 'Google Business Profile booking link',
+              starter: 'no',
+              pro: 'yes',
+              enterprise: 'yes',
+            },
+            {
+              id: 'r6',
+              feature: 'Multi-location booking',
+              starter: 'no',
+              pro: 'no',
+              enterprise: 'yes',
+            },
+            {
+              id: 'r7',
+              feature: 'Deposits and prepayments',
+              starter: 'Coming soon',
+              pro: 'Coming soon',
+              enterprise: 'Coming soon',
+            },
+          ],
+        },
+        {
+          id: 'cat-pos',
+          name: 'Front desk and POS',
+          rows: [
+            {
+              id: 'r1',
+              feature: 'Touch-screen POS',
+              starter: 'yes',
+              pro: 'yes',
+              enterprise: 'yes',
+            },
+            {
+              id: 'r2',
+              feature: 'Card reader support (Stripe M2)',
+              starter: 'yes',
+              pro: 'yes',
+              enterprise: 'yes',
+            },
+            {
+              id: 'r3',
+              feature: 'Gift cards',
+              starter: 'yes',
+              pro: 'yes',
+              enterprise: 'yes',
+            },
+            {
+              id: 'r4',
+              feature: 'Tips and add-ons at checkout',
+              starter: 'yes',
+              pro: 'yes',
+              enterprise: 'yes',
+            },
+            {
+              id: 'r5',
+              feature: 'Self check-in kiosk',
+              starter: 'yes',
+              pro: 'yes',
+              enterprise: 'yes',
+            },
+            {
+              id: 'r6',
+              feature: 'Card processing',
+              starter: '2.7% + $0.05 in person',
+              pro: '2.7% + $0.05 in person',
+              enterprise: '2.7% + $0.05 in person',
+            },
+            {
+              id: 'r7',
+              feature: 'Certxa fee per card transaction',
+              starter: '$0.60',
+              pro: '$0.60',
+              enterprise: '$0.60',
+            },
+          ],
+        },
+        {
+          id: 'cat-clients',
+          name: 'Clients and marketing',
+          rows: [
+            {
+              id: 'r1',
+              feature: 'Client profiles',
+              starter: 'Up to 500',
+              pro: 'Unlimited',
+              enterprise: 'Unlimited',
+            },
+            {
+              id: 'r2',
+              feature: 'Appointment history and notes',
+              starter: 'yes',
+              pro: 'yes',
+              enterprise: 'yes',
+            },
+            {
+              id: 'r3',
+              feature: 'Text and email reminders',
+              starter: '200 a month',
+              pro: 'Unlimited',
+              enterprise: 'Unlimited',
+            },
+            {
+              id: 'r4',
+              feature: 'Client segments and tags',
+              starter: 'no',
+              pro: 'yes',
+              enterprise: 'yes',
+            },
+            {
+              id: 'r5',
+              feature: 'Re-engagement campaigns',
+              starter: 'no',
+              pro: 'yes',
+              enterprise: 'yes',
+            },
+          ],
+        },
+        {
+          id: 'cat-staff',
+          name: 'Staff and payroll',
+          rows: [
+            {
+              id: 'r1',
+              feature: 'Staff commission tracking and payroll',
+              starter: 'no',
+              pro: 'yes',
+              enterprise: 'yes',
+            },
+          ],
+        },
+        {
+          id: 'cat-reviews',
+          name: 'Reviews and growth',
+          rows: [
+            {
+              id: 'r1',
+              feature: 'Automated review requests',
+              starter: 'no',
+              pro: 'yes',
+              enterprise: 'yes',
+            },
+            {
+              id: 'r2',
+              feature: 'Autumn AI receptionist',
+              starter: '20 calls a month',
+              pro: '50 calls a month',
+              enterprise: '100 calls a month',
+            },
+            {
+              id: 'r3',
+              feature: 'Website builder',
+              starter: 'Basic',
+              pro: 'Premium',
+              enterprise: 'Premium',
+            },
+            {
+              id: 'r4',
+              feature: 'Custom domain',
+              starter: 'no',
+              pro: 'yes',
+              enterprise: 'yes',
+            },
+          ],
+        },
+        {
+          id: 'cat-reporting',
+          name: 'Reports',
+          rows: [
+            {
+              id: 'r1',
+              feature: 'Revenue reports',
+              starter: 'no',
+              pro: 'Advanced',
+              enterprise: 'Advanced + export',
+            },
+            {
+              id: 'r2',
+              feature: 'Multi-location dashboard',
+              starter: 'no',
+              pro: 'no',
+              enterprise: 'yes',
+            },
+          ],
+        },
+        {
+          id: 'cat-support',
+          name: 'Support',
+          rows: [
+            {
+              id: 'r1',
+              feature: 'Support',
+              starter: 'Email and chat',
+              pro: 'Priority chat',
+              enterprise: 'Phone + account manager',
+            },
+            {
+              id: 'r2',
+              feature: 'Onboarding session',
+              starter: 'no',
+              pro: 'no',
+              enterprise: 'yes',
+            },
+          ],
+        },
+      ],
+    },
+    faq: [
+      {
+        id: 'faq-1',
+        question: 'How much does Certxa cost?',
+        answer: 'Current plan prices are shown on the pricing cards above.',
+      },
+      {
+        id: 'faq-2',
+        question: 'Is there a free trial?',
+        answer: 'Trial availability and terms are shown during signup for each plan.',
+      },
+      {
+        id: 'faq-3',
+        question: 'Can I change plans later?',
+        answer: 'Yes. You can upgrade, downgrade, or cancel at any time. There are no long-term contracts.',
+      },
+      {
+        id: 'faq-4',
+        question: 'What does card processing cost?',
+        answer: 'Payments run through Stripe. In-person card payments are 2.7% + $0.05 and online payments are 2.9% + $0.30, which is Stripe\'s rate, plus a $0.60 Certxa fee per card transaction.',
+      },
+      {
+        id: 'faq-5',
+        question: 'Is the Autumn AI receptionist included?',
+        answer: 'Autumn AI availability and any plan limits are listed with the features above.',
+      },
+      {
+        id: 'faq-6',
+        question: 'What types of businesses does Certxa support?',
+        answer: 'Certxa is built for nail salons, hair salons, barbershops, spas, massage studios, hair removal studios, and braid and weave salons.',
+      },
+    ],
+    cta: {
+      headline: 'Choose the right Certxa plan.',
+      subhead: 'Compare Professional, Elite, and Enterprise above.',
+      button: 'Get started',
+    },
+  };
+
   return (
     <>
       <Helmet>
-        <title>Salon Software Pricing — Certxa | Free Solo Plan, Teams From $22/mo</title>
+        <title>Salon Software Pricing — Certxa</title>
         <meta
           name="description"
-          content="Certxa's Solo plan is free. Professional is $22/mo and Elite is $49/mo, each with a 60-day free trial. No commissions and no long-term contracts."
+          content="Compare Certxa Professional, Elite, and Enterprise salon software plans. No commissions and no long-term contracts."
         />
         <link rel="canonical" href={PAGE_URL} />
-        <meta property="og:title" content="Salon Software Pricing — Certxa | Free Solo Plan, Teams From $22/mo" />
+        <meta property="og:title" content="Salon Software Pricing — Certxa" />
         <meta
           property="og:description"
-          content="Free Solo plan. Team plans from $22/mo with a 60-day free trial. No commissions, no long-term contracts."
+          content="Compare Certxa Professional, Elite, and Enterprise salon software plans. No commissions and no long-term contracts."
         />
         <meta property="og:image" content={OG_IMAGE} />
         <meta property="og:url" content={PAGE_URL} />
         <meta property="og:type" content="website" />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Salon Software Pricing — Certxa | Free Solo Plan, Teams From $22/mo" />
+        <meta name="twitter:title" content="Salon Software Pricing — Certxa" />
         <meta
           name="twitter:description"
-          content="Free Solo plan. Team plans from $22/mo with a 60-day free trial. No commissions, no long-term contracts."
+          content="Compare Certxa Professional, Elite, and Enterprise salon software plans. No commissions and no long-term contracts."
         />
         <meta name="twitter:image" content={OG_IMAGE} />
         <script type="application/ld+json">
-          {JSON.stringify(jsonLd).replace(/</g, '\\u003c')}
+          {JSON.stringify({
+            '@context': 'https://schema.org',
+            '@graph': [
+              {
+                '@type': 'WebPage',
+                '@id': `${PAGE_URL}#webpage`,
+                name: 'Salon Software Pricing — Certxa',
+                url: PAGE_URL,
+                description:
+                  'Compare Certxa Professional, Elite, and Enterprise salon software plans. No commissions and no long-term contracts.',
+                isPartOf: { '@id': `${SITE}/#website` },
+                about: { '@id': `${SITE}/#organization` },
+                breadcrumb: {
+                  '@type': 'BreadcrumbList',
+                  itemListElement: [
+                    { '@type': 'ListItem', position: 1, name: 'Home', item: `${SITE}/` },
+                    { '@type': 'ListItem', position: 2, name: 'Pricing', item: PAGE_URL },
+                  ],
+                },
+              },
+              {
+                '@type': 'FAQPage',
+                '@id': `${PAGE_URL}#faq`,
+                mainEntity: pricing.faq.map((item) => ({
+                  '@type': 'Question',
+                  name: item.question,
+                  acceptedAnswer: { '@type': 'Answer', text: item.answer },
+                })),
+              },
+            ],
+          }).replace(/</g, '\\u003c')}
         </script>
       </Helmet>
 
@@ -98,23 +483,23 @@ export default function PricingPage() {
                 {pricing.hero.eyebrow}
               </motion.span>
               <h1
-                className="text-4xl md:text-5xl font-extrabold leading-tight tracking-tight text-foreground max-w-2xl"
+                className="text-5xl font-extrabold tracking-tight"
                 style={{ fontFamily: 'var(--font-heading)' }}
               >
                 {pricing.hero.headline}
               </h1>
-              <motion.p
-                variants={fadeUp}
-                className="text-lg text-muted-foreground max-w-xl"
+              <p
+                className="text-lg text-muted-foreground"
+                style={{ maxWidth: 'ch', margin: '0 auto' }}
               >
                 {pricing.hero.subhead}
-              </motion.p>
+              </p>
             </motion.div>
           </div>
         </section>
 
-        {/* ── PLAN CARDS ── */}
-        <section className="pb-xxl bg-background" aria-label="Pricing plans">
+        {/* ── PLANS GRID ── */}
+        <section className="py-xxl bg-background" aria-label="Pricing plans">
           <div className="max-w-7xl mx-auto px-6 md:px-10">
             <motion.div
               variants={stagger}
@@ -123,32 +508,43 @@ export default function PricingPage() {
               viewport={{ once: true }}
               className="grid grid-cols-1 md:grid-cols-3 gap-6"
             >
-              {pricing.plans.map((plan) => (
+              {pricingPlansError ? (
+                <p role="alert" className="md:col-span-3 text-center text-muted-foreground">
+                  Pricing plans are temporarily unavailable.
+                </p>
+              ) : !pricingPlans ? (
+                <p role="status" className="md:col-span-3 text-center text-muted-foreground">
+                  Loading pricing plans…
+                </p>
+              ) : pricing.plans.map((plan) => (
                 <motion.div
                   key={plan.id}
                   variants={fadeUp}
-                  className={`relative rounded-2xl p-8 flex flex-col gap-6 border transition-transform duration-300 hover:-translate-y-1 ${
-                    plan.featured
-                      ? 'bg-primary text-primary-foreground border-primary shadow-2xl scale-[1.02]'
-                      : 'bg-card border-border'
-                  }`}
+                  initial="hidden"
+                  whileInView="visible"
+                  viewport={{ once: true }}
+                  className={`p-6 rounded-xl border border-border bg-card hover:bg-primary/5 transition-all duration-300 ${plan.featured ? 'bg-primary/10' : ''}`}
                 >
-                  {plan.featured && (
-                    <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 text-xs font-semibold bg-foreground text-background px-4 py-1.5 rounded-full whitespace-nowrap">
-                      Most popular
-                    </span>
-                  )}
+                  <div className="flex flex-col gap-4">
+                    {/* Featured badge */}
+                    {plan.featured && (
+                      <span
+                        className="absolute top-4 right-4 text-xs font-semibold text-primary-foreground/90"
+                      >
+                        Most popular
+                      </span>
+                    )}
 
-                  {/* Plan name & price */}
-                  <div className="flex flex-col gap-2">
-                    <p
-                      className={`text-sm font-semibold ${
-                        plan.featured ? 'text-primary-foreground/80' : 'text-muted-foreground'
-                      }`}
+                    {/* Plan name */}
+                    <h2
+                      className="text-2xl font-bold text-foreground text-center"
+                      style={{ fontFamily: 'var(--font-heading)' }}
                     >
                       {plan.name}
-                    </p>
-                    <div className="flex items-baseline gap-1">
+                    </h2>
+
+                    {/* Price */}
+                    <div className="flex items-baseline gap-1 text-center">
                       <span
                         className="text-5xl font-extrabold tracking-tight"
                         style={{ fontFamily: 'var(--font-heading)' }}
@@ -163,6 +559,8 @@ export default function PricingPage() {
                         {plan.period}
                       </span>
                     </div>
+
+                    {/* Description */}
                     <p
                       className={`text-sm leading-relaxed ${
                         plan.featured ? 'text-primary-foreground/80' : 'text-muted-foreground'
@@ -170,59 +568,46 @@ export default function PricingPage() {
                     >
                       {plan.description}
                     </p>
+
+                    {/* CTA */}
+                    <Link
+                      to={`/auth?mode=register&plan=${encodeURIComponent(plan.code)}`}
+                      className={`text-center text-sm font-semibold px-5 py-3 rounded-lg transition-all duration-200 hover:opacity-90 ${
+                        plan.featured
+                          ? 'bg-primary-foreground text-primary'
+                          : 'bg-primary text-primary-foreground'
+                      }`}
+                    >
+                      {plan.cta}
+                    </Link>
+
+                    {/* Feature list */}
+                    <ul className="flex flex-col gap-3 pt-2 border-t border-current/10">
+                      {plan.features.map((f) => (
+                        <li key={f.id} className="flex items-start gap-3 text-sm">
+                          <span
+                            className={`flex-shrink-0 mt-0.5 w-4 h-4 rounded-full flex items-center justify-center ${
+                              plan.featured
+                                ? 'bg-primary-foreground/20'
+                                : 'bg-primary/10'
+                            }`}
+                          >
+                            <CheckIcon size={10} className={plan.featured ? 'text-primary-foreground' : 'text-primary'} />
+                          </span>
+                          <span
+                            className={
+                              plan.featured ? 'text-primary-foreground/90' : 'text-foreground'
+                            }
+                          >
+                            {f.text}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-
-                  {/* CTA */}
-                  <Link
-                    to={`/auth?mode=register&plan=${plan.id === 'plan-starter' ? 'solo' : plan.id === 'plan-pro' ? 'professional' : 'elite'}`}
-                    className={`text-center text-sm font-semibold px-5 py-3 rounded-lg transition-all duration-200 hover:opacity-90 ${
-                      plan.featured
-                        ? 'bg-primary-foreground text-primary'
-                        : 'bg-primary text-primary-foreground'
-                    }`}
-                  >
-                    {plan.cta}
-                  </Link>
-
-                  {/* Feature list */}
-                  <ul className="flex flex-col gap-3 pt-2 border-t border-current/10">
-                    {plan.features.map((f) => (
-                      <li key={f.id} className="flex items-start gap-3 text-sm">
-                        <span
-                          className={`flex-shrink-0 mt-0.5 w-4 h-4 rounded-full flex items-center justify-center ${
-                            plan.featured
-                              ? 'bg-primary-foreground/20'
-                              : 'bg-primary/10'
-                          }`}
-                        >
-                          <Check
-                            size={10}
-                            className={plan.featured ? 'text-primary-foreground' : 'text-primary'}
-                          />
-                        </span>
-                        <span
-                          className={
-                            plan.featured ? 'text-primary-foreground/90' : 'text-foreground'
-                          }
-                        >
-                          {f.text}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
                 </motion.div>
               ))}
             </motion.div>
-
-            <motion.p
-              variants={fadeUp}
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true }}
-              className="text-center text-sm text-muted-foreground mt-8"
-            >
-              Professional and Elite include a 60-day free trial · Cancel anytime
-            </motion.p>
           </div>
         </section>
 
@@ -264,57 +649,51 @@ export default function PricingPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {pricing.comparison.categories.map((cat) => (
-                      <>
-                        <tr key={cat.id} className="bg-muted/50">
+                    {comparisonCategories.map((cat) => (
+                      <Fragment key={cat.name}>
+                        <tr className="bg-muted/50">
                           <td
-                            colSpan={4}
+                            colSpan={pricing.plans.length + 1}
                             className="px-6 py-2.5 text-xs font-semibold uppercase tracking-widest text-muted-foreground"
                           >
-                            {cat.name}
+                            {cat.name.replace(/_/g, ' ')}
                           </td>
                         </tr>
-                        {cat.rows.map((row, ri) => (
+                        {cat.features.map((feature, ri) => (
                           <tr
-                            key={row.id}
+                            key={feature.featureId}
                             className={`border-t border-border/50 ${
                               ri % 2 === 0 ? '' : 'bg-muted/20'
                             }`}
                           >
-                            <td className="px-6 py-3.5 text-foreground">{row.feature}</td>
-                            {/* Starter */}
-                            <td className="px-4 py-3.5">
-                              {row.starter === 'yes' ? (
-                                <span className="flex justify-center"><Check size={16} className="text-primary" /></span>
-                              ) : row.starter === 'no' ? (
-                                <span className="flex justify-center"><X size={14} className="text-muted-foreground opacity-40" /></span>
-                              ) : (
-                                <span className="text-xs font-medium text-muted-foreground text-center block">{row.starter}</span>
-                              )}
-                            </td>
-                            {/* Pro */}
-                            <td className="px-4 py-3.5">
-                              {row.pro === 'yes' ? (
-                                <span className="flex justify-center"><Check size={16} className="text-primary" /></span>
-                              ) : row.pro === 'no' ? (
-                                <span className="flex justify-center"><X size={14} className="text-muted-foreground opacity-40" /></span>
-                              ) : (
-                                <span className="text-xs font-medium text-muted-foreground text-center block">{row.pro}</span>
-                              )}
-                            </td>
-                            {/* Enterprise */}
-                            <td className="px-4 py-3.5">
-                              {row.enterprise === 'yes' ? (
-                                <span className="flex justify-center"><Check size={16} className="text-primary" /></span>
-                              ) : row.enterprise === 'no' ? (
-                                <span className="flex justify-center"><X size={14} className="text-muted-foreground opacity-40" /></span>
-                              ) : (
-                                <span className="text-xs font-medium text-muted-foreground text-center block">{row.enterprise}</span>
-                              )}
-                            </td>
+                            <td className="px-6 py-3.5 text-foreground">{feature.featureName}</td>
+                            {(pricingPlans ?? []).map((plan) => {
+                              const planFeature = plan.features.find(
+                                (item) => item.featureId === feature.featureId,
+                              );
+                              return (
+                                <td key={plan.code} className="px-4 py-3.5 text-center">
+                                  {planFeature ? (
+                                    planFeature.limitValue === null ? (
+                                      <span className="flex justify-center">
+                                        <CheckIcon size={16} className="text-primary" />
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs font-medium text-muted-foreground">
+                                        Up to {planFeature.limitValue}
+                                      </span>
+                                    )
+                                  ) : (
+                                    <span className="flex justify-center">
+                                      <XIcon size={14} className="text-muted-foreground opacity-40" />
+                                    </span>
+                                  )}
+                                </td>
+                              );
+                            })}
                           </tr>
                         ))}
-                      </>
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -425,7 +804,7 @@ export default function PricingPage() {
               <motion.div variants={fadeUp}>
                 <ShareBar
                   url={PAGE_URL}
-                  title="Certxa salon software — free Solo plan, team plans from $22/mo, no commissions"
+                  title="Certxa salon software pricing — compare plans, no commissions"
                   label="Share pricing"
                 />
               </motion.div>
