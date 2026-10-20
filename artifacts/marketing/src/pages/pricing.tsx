@@ -529,7 +529,7 @@ export default function PricingPage() {
                     {/* Featured badge */}
                     {plan.featured && (
                       <span
-                        className="absolute top-4 right-4 text-xs font-semibold text-primary-foreground/90"
+                        className="absolute top-4 right-4 text-xs font-semibold text-primary"
                       >
                         Most popular
                       </span>
@@ -552,9 +552,7 @@ export default function PricingPage() {
                         {plan.price}
                       </span>
                       <span
-                        className={`text-sm ${
-                          plan.featured ? 'text-primary-foreground/70' : 'text-muted-foreground'
-                        }`}
+                        className="text-sm text-foreground"
                       >
                         {plan.period}
                       </span>
@@ -562,9 +560,7 @@ export default function PricingPage() {
 
                     {/* Description */}
                     <p
-                      className={`text-sm leading-relaxed ${
-                        plan.featured ? 'text-primary-foreground/80' : 'text-muted-foreground'
-                      }`}
+                      className="text-sm leading-relaxed text-foreground"
                     >
                       {plan.description}
                     </p>
@@ -586,19 +582,11 @@ export default function PricingPage() {
                       {plan.features.map((f) => (
                         <li key={f.id} className="flex items-start gap-3 text-sm">
                           <span
-                            className={`flex-shrink-0 mt-0.5 w-4 h-4 rounded-full flex items-center justify-center ${
-                              plan.featured
-                                ? 'bg-primary-foreground/20'
-                                : 'bg-primary/10'
-                            }`}
+                            className="flex-shrink-0 mt-0.5 w-4 h-4 rounded-full bg-primary/10 flex items-center justify-center"
                           >
-                            <CheckIcon size={10} className={plan.featured ? 'text-primary-foreground' : 'text-primary'} />
+                            <CheckIcon size={10} className="text-primary" />
                           </span>
-                          <span
-                            className={
-                              plan.featured ? 'text-primary-foreground/90' : 'text-foreground'
-                            }
-                          >
+                          <span className="text-foreground">
                             {f.text}
                           </span>
                         </li>
