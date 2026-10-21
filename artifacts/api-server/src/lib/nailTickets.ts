@@ -571,6 +571,21 @@ export async function appendServiceLine(storeId: number, appointmentId: number, 
   });
 }
 
+/** Takes a keypad line (a checkout extra or retail item — not a service or package line) at `index` off a saved ticket. */
+export async function removeCustomLine(storeId: number, appointmentId: number, index: number): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const row = (await tx.execute(sql`SELECT custom_lines, status FROM appointments
+      WHERE id = ${appointmentId} AND store_id = ${storeId} FOR UPDATE`)).rows[0] as any;
+    if (!row || !["confirmed", "started"].includes(String(row.status))) return false;
+    const lines = sanitizeCustomLines(row.custom_lines, true);
+    const line = lines[index];
+    if (!line || line.serviceId || line.packageId) return false;
+    lines.splice(index, 1);
+    await tx.update(appointments).set({ customLines: lines.length ? lines : null }).where(eq(appointments.id, appointmentId));
+    return true;
+  });
+}
+
 /** Takes the service line at `index` off a saved ticket (only a service line), with its time. */
 export async function removeServiceLine(storeId: number, appointmentId: number, index: number): Promise<boolean> {
   return db.transaction(async (tx) => {

@@ -453,7 +453,44 @@ export function CheckoutMode(p: Props) {
   };
 
   // ── lines ─────────────────────────────────────────────────────────────────
-  const addExtra = (label: string, price: number, kind: ExtraKind) => setExtras((cur) => [...cur, { id: nextId.current++, label, price, kind }]);
+  // A combined sale: the ticket extras go to (tap a tech's cart to choose it). null = the ticket this checkout was
+  // opened on. An extra for another ticket is saved on that ticket, so its technician earns the commission on it.
+  const [extraTo, setExtraTo] = useState<number | null>(null);
+  const extraTarget = extraTo != null ? linked.find((t) => t.id === extraTo) ?? null : null;
+  const addExtra = (label: string, price: number, kind: ExtraKind) => {
+    if (!extraTarget) { setExtras((cur) => [...cur, { id: nextId.current++, label, price, kind }]); return; }
+    void addLineTo(extraTarget, label, price, kind === "retail");
+  };
+  const addLineTo = async (t: BoardTicket, label: string, price: number, isRetail: boolean) => {
+    if (syncEngine.isOffline()) { say("ADDING TO ANOTHER TECHNICIAN'S TICKET NEEDS THE CONNECTION", "error"); return; }
+    try {
+      const r = await fetch(`/api/nail/tickets/${t.id}/lines`, {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label, price, isRetail }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { say(String(d.message || "Could not add it").toUpperCase(), "error"); return; }
+      say(`${label.toUpperCase()} · ${money(price)} ADDED TO ${(t.staff?.name ?? `#${t.ticketNumber ?? t.id}`).toUpperCase()}`, "success");
+      void refreshBoard();
+    } catch {
+      say("NO CONNECTION — IT WAS NOT ADDED", "error");
+    }
+  };
+  // An extra or retail line on another ticket of the sale (not a service) can be taken off again.
+  const removeLinkedLine = async (t: BoardTicket, index: number) => {
+    const line = t.customLines[index];
+    if (!line || line.serviceId || line.packageId || p.paid || p.finalizing) return;
+    try {
+      const r = await fetch(`/api/nail/tickets/${t.id}/lines/remove`, {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ index }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { say(String(d.message || "Could not remove it").toUpperCase(), "error"); return; }
+      say(`${line.label.toUpperCase()} REMOVED`, "success");
+      void refreshBoard();
+    } catch {
+      say("NO CONNECTION — IT WAS NOT REMOVED", "error");
+    }
+  };
   const needAmount = () => { say("MUST ENTER AMOUNT FIRST", "error"); };
 
   const pressKey = (k: string) => {
@@ -1122,8 +1159,10 @@ export function CheckoutMode(p: Props) {
               const cartTotal = own ? t.total + extras.reduce((sum, e) => sum + e.price, 0) : t.total;
               const cartTip = tipOf.get(t.id) ?? 0;
               return (
-                <div className="group-cart-wrap" key={`g${t.id}`}>
-                <div className="group-cart-tech">{t.staff?.name ?? "No technician"} · #{t.ticketNumber ?? t.id}</div>
+                <div className={`group-cart-wrap ${(own ? extraTo == null : extraTo === t.id) ? "group-cart-extras" : ""}`} key={`g${t.id}`}
+                  onClick={p.paid || p.finalizing ? undefined : () => setExtraTo(own ? null : t.id)} data-testid={`nail-pay-cart-pick-${t.id}`}>
+                <div className="group-cart-tech">{t.staff?.name ?? "No technician"} · #{t.ticketNumber ?? t.id}
+                  {(own ? extraTo == null : extraTo === t.id) && !p.paid && <span className="group-cart-extras-tag"> · EXTRAS GO HERE</span>}</div>
                 <div className="group-cart" data-testid={own ? "nail-pay-cart-own" : "nail-pay-linked"}>
                   <div className="group-cart-head">
                     <div className="group-cart-who">
@@ -1138,7 +1177,9 @@ export function CheckoutMode(p: Props) {
                   {t.addons.map((a) => <div className="group-cart-line" key={`a${a.id}`}><span>+ {a.name}</span><strong>{money(a.price)}</strong><span /></div>)}
                   {(t.nail?.lines ?? []).map((l) => <div className="group-cart-line" key={`n${l.label}`}><span>{l.label}</span><strong>{money(l.price)}</strong><span /></div>)}
                   {t.customLines.map((l, i) => <div className="group-cart-line" key={`c${i}`}><span>{l.label}</span><strong>{money(l.price)}</strong>
-                    {l.serviceId && !p.paid && !p.finalizing ? <button type="button" className="remove-item" onClick={() => void removeTicketService(t, i)} aria-label={`Remove ${l.label}`}><X size={14} /></button> : <span />}</div>)}
+                    {l.serviceId && !p.paid && !p.finalizing ? <button type="button" className="remove-item" onClick={(ev) => { ev.stopPropagation(); void removeTicketService(t, i); }} aria-label={`Remove ${l.label}`}><X size={14} /></button>
+                      : !own && !l.packageId && !p.paid && !p.finalizing ? <button type="button" className="remove-item" onClick={(ev) => { ev.stopPropagation(); void removeLinkedLine(t, i); }} aria-label={`Remove ${l.label}`}><X size={14} /></button>
+                      : <span />}</div>)}
                   {own && extras.map((e) => (
                     <div className="group-cart-line" key={e.id} data-testid={`nail-pay-extra-${e.kind}`}>
                       <span>{e.label}</span><strong>{money(e.price)}</strong>

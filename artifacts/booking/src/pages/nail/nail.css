@@ -26,7 +26,10 @@
 .nail-app .empty-ticket svg { color: #3b424c; }
 .nail-app .ticket-item { height: 73px; padding: 12px 14px; display: grid; grid-template-columns: minmax(0,1fr) 64px 17px; align-items: center; gap: 8px; border-bottom: 1px solid #3b424c; }
 /* Group Pay: one cart per ticket inside the ticket panel (CheckoutMode). */
-.nail-app .group-cart-wrap { margin: 10px 10px 0; }
+.nail-app .group-cart-wrap { margin: 10px 10px 0; cursor: pointer; }
+/* The ticket extras typed now go to (a combined sale): outlined. */
+.nail-app .group-cart-wrap.group-cart-extras .group-cart { outline: 2px solid #0d9bd1; outline-offset: 0; }
+.nail-app .group-cart-extras-tag { color: #0d9bd1; font-weight: 800; }
 .nail-app .group-cart-wrap:last-child { margin-bottom: 10px; }
 .nail-app .group-cart-tech { text-align: center; font-size: 12px; font-weight: 600; color: #a7afb9; margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nail-app .group-cart { border: 1px solid #3b424c; border-radius: 8px; overflow: hidden; background: #2a2e36; }

@@ -19213,6 +19213,40 @@ or
     }
   });
 
+  // POST /api/nail/tickets/:id/lines — an extra or retail item rung up at checkout for THIS ticket's technician (a
+  // combined sale's other ticket), so its commission is theirs (owner, 2026-10-21). Kept on the ticket like a
+  // keypad line. POST /api/nail/tickets/:id/lines/remove {index} takes one off again.
+  app.post("/api/nail/tickets/:id/lines", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const appointmentId = Number(req.params.id);
+      const [line] = nailTickets.sanitizeCustomLines([{ label: req.body?.label, price: req.body?.price, isRetail: req.body?.isRetail === true }]);
+      if (!Number.isSafeInteger(appointmentId) || !line) return res.status(400).json({ message: "Invalid line" });
+      if (!(await nailTickets.appendServiceLine(storeId, appointmentId, line))) return res.status(409).json({ message: "This ticket is no longer open." });
+      broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["services"] });
+      return res.status(201).json({ ok: true });
+    } catch (err) {
+      console.error("[nail/tickets add line]", err);
+      return res.status(500).json({ message: "Could not add the line" });
+    }
+  });
+  app.post("/api/nail/tickets/:id/lines/remove", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const appointmentId = Number(req.params.id);
+      const index = Number(req.body?.index);
+      if (!Number.isSafeInteger(appointmentId) || !Number.isSafeInteger(index) || index < 0) return res.status(400).json({ message: "Invalid line" });
+      if (!(await nailTickets.removeCustomLine(storeId, appointmentId, index))) return res.status(409).json({ message: "That line is no longer on this ticket." });
+      broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["services"] });
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[nail/tickets remove line]", err);
+      return res.status(500).json({ message: "Could not remove the line" });
+    }
+  });
+
   // POST /api/nail/tickets/:id/split — Split Ticket: the service line at `index` becomes its own ticket for the
   // same client, linked to the visit, waiting with no technician until this ticket is done (nailTickets.splitServiceLine).
   app.post("/api/nail/tickets/:id/split", isAuthenticated, async (req, res) => {
