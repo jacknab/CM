@@ -762,6 +762,11 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     try {
       setClient(await fetchClient(clientId));
       setCheckinId(marker ?? null);
+      // The grid opens on the category the client picked at check-in, so the tech knows what they came for.
+      const m = marker != null ? markers.find((x) => x.id === marker) : undefined;
+      const wanted = m && (groups.find((g) => m.requestedCategoryId != null && g.key === `cat:${m.requestedCategoryId}`)
+        ?? groups.find((g) => !!m.requestedCategory && g.name.trim().toLowerCase() === m.requestedCategory.trim().toLowerCase()));
+      if (wanted) setActiveGroup(wanted.key);
       setTab("pos");
     } catch (err: any) {
       toast({ title: "Couldn't load that client", description: err?.message, variant: "destructive" });

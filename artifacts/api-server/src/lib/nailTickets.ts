@@ -1078,6 +1078,8 @@ export interface BoardWaitingMarker {
   staffName: string | null;
   /** What the client said they came for at the front desk (a catalog category), when they said. */
   requestedCategory: string | null;
+  /** The catalog category id behind requestedCategory, so the POS can open its grid there. */
+  requestedCategoryId: number | null;
 }
 
 export interface BoardDayBooking {
@@ -1245,7 +1247,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
 
   // Kiosk check-ins that don't have a ticket yet (phone not recognised, etc.).
   const markerRows = await pool.query(
-    `SELECT id, ticket_number, client_id, client_name, phone, created_at, status, staff_id, assigned_staff_name, requested_category FROM kiosk_checkins
+    `SELECT id, ticket_number, client_id, client_name, phone, created_at, status, staff_id, assigned_staff_name, requested_category, requested_category_id FROM kiosk_checkins
       WHERE store_id = $1 AND appointment_id IS NULL AND status IN ('waiting','called')
         AND created_at > NOW() - INTERVAL '${CHECKIN_MARKER_HOURS} hours'
       ORDER BY created_at ASC`,
@@ -1257,6 +1259,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
     staffId: m.status === "called" && m.staff_id != null ? Number(m.staff_id) : null,
     staffName: m.status === "called" ? m.assigned_staff_name ?? null : null,
     requestedCategory: m.requested_category ?? null,
+    requestedCategoryId: m.requested_category_id != null ? Number(m.requested_category_id) : null,
   }));
 
   // Every customer record represented by the four detail tiles. Keep the walk-in classification on

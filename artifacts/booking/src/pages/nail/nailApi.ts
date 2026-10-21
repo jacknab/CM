@@ -61,6 +61,7 @@ export interface BoardMarker {
   staffName?: string | null;
   /** What the client said they came for at the front desk (a catalog category). */
   requestedCategory?: string | null;
+  requestedCategoryId?: number | null;
   /** Checked in on this device while the server was out of reach and not sent yet. */
   offline?: boolean;
 }
