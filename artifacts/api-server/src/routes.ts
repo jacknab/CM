@@ -18725,30 +18725,34 @@ or
       const access = await assertStoreAccess(userId, sessionStaffId, storeId);
       if (!access) return res.status(403).json({ error: "Unauthorized" });
 
-      const rows = await db
-        .select({
-          id: appointments.id,
-          date: appointments.date,
-          status: appointments.status,
-          totalPaid: appointments.totalPaid,
-          serviceName: services.name,
-        })
-        .from(appointments)
-        .leftJoin(services, eq(appointments.serviceId, services.id))
-        .where(and(
-          eq(appointments.storeId, storeId),
-          eq(appointments.staffId, staffId),
-          sql`${appointments.status} = 'completed'`,
-          sql`date_trunc('day', ${appointments.date}) = current_date`
-        ))
-        .orderBy(asc(appointments.date));
-
-      return res.json(rows.map((row, index) => ({
-        turnNumber: index + 1,
-        serviceName: row.serviceName ?? "Service",
-        amount: parseFloat(row.totalPaid ?? "0"),
-        timestamp: row.date,
-      })));
+      // The technician's tickets that counted in the turn line this turn period (since the last Day Close or method
+      // change — the same period the line counts), each with the turns it earned, and any turns staff adjusted by hand.
+      const line: any = await getTurnEligibility(storeId, null);
+      const since = line?.turnPeriodStart ? new Date(line.turnPeriodStart) : new Date(Date.now() - 24 * 3600_000);
+      const { rows } = await pool.query(
+        `SELECT e.kind, e.at, e.amount_cents, e.turn_units, e.reason, a.ticket_number, a.custom_lines, s.name AS service_name
+           FROM turn_events e
+           LEFT JOIN appointments a ON a.id = e.appointment_id
+           LEFT JOIN services s ON s.id = a.service_id
+          WHERE e.store_id = $1 AND e.staff_id = $2 AND e.kind IN ('credited', 'adjusted') AND e.at >= $3
+          ORDER BY e.at ASC, e.id ASC`,
+        [storeId, staffId, since]);
+      let n = 0;
+      return res.json(rows.map((r: any) => {
+        const isTicket = r.kind === "credited";
+        // The ticket's other services (service lines) are part of what it was counted on.
+        const more = isTicket && Array.isArray(r.custom_lines) ? r.custom_lines.filter((l: any) => l?.serviceId).map((l: any) => String(l.label)) : [];
+        return {
+          turnNumber: ++n,
+          kind: isTicket ? "ticket" : "adjustment",
+          ticketNumber: r.ticket_number ?? null,
+          serviceName: isTicket ? [r.service_name ?? "Service", ...more].join(" + ") : (r.reason ? `Adjusted: ${r.reason}` : "Adjusted by staff"),
+          amount: isTicket ? (Number(r.amount_cents) || 0) / 100 : 0,
+          /** Turns this row added, in thousandths of a turn (shared/turnRules TURN_UNIT). */
+          turnUnits: Number(r.turn_units) || 0,
+          timestamp: r.at,
+        };
+      }));
     } catch (err) {
       console.error("[turn] Failed to get staff history:", err);
       return res.status(500).json({ error: "Failed to get staff history" });

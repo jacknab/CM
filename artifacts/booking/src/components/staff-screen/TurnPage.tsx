@@ -5,7 +5,8 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { formatInTz, isOnStoreDate } from "@/lib/timezone";
-import { X, Clock, Loader2, Receipt, Send, HelpCircle } from "lucide-react";
+import { X, Clock, Loader2, Receipt, Send, HelpCircle, BookOpen } from "lucide-react";
+import { TechTurnGuide } from "./TechTurnGuide";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -157,6 +158,7 @@ export function TurnPageModal({
   const queryClient = useQueryClient();
 
   const t = {
+    guideButton:    pick({ en: "How turns work",                     vi: "Cách tính lượt",                          es: "Cómo funcionan los turnos",               fr: "How turns work" }),
     whyButton:      pick({ en: "Why this order?",                    vi: "Tại sao thứ tự này?",                     es: "¿Por qué este orden?",                    fr: "Pourquoi cet ordre?" }),
     inOut:          pick({ en: "In/Out",                             vi: "Vào/Ra",                                  es: "Entrada/Salida",                          fr: "Entrée/Sortie" }),
     sheetTitle:     pick({ en: "Why is the queue in this order?",   vi: "Tại sao hàng đợi theo thứ tự này?",       es: "¿Por qué la cola está en este orden?",    fr: "Pourquoi la file est dans cet ordre?" }),
@@ -229,6 +231,7 @@ export function TurnPageModal({
   };
   const [showTimeClock, setShowTimeClock] = useState(false);
   const [showWhySheet, setShowWhySheet] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
   const [selectedTech, setSelectedTech] = useState<{ id: number; name: string; color?: string | null } | null>(null);
   // Use the salon's timezone for the kiosk clock — never the browser's locale.
   const [nowTime, setNowTime] = useState(() =>
@@ -243,7 +246,8 @@ export function TurnPageModal({
   const turnByStaff = new Map((turnEligibility?.technicians ?? []).map((tech) => [tech.id, tech]));
   const threshold: number = (turnEligibility as any)?.settings?.turnValueThreshold ?? 25;
 
-  type TechHistoryRow = { turnNumber: number; serviceName: string; amount: number; timestamp: string };
+  /** A ticket that counted in the turn line this period (with the turns it earned), or a turn adjustment by staff. */
+  type TechHistoryRow = { turnNumber: number; kind?: "ticket" | "adjustment"; ticketNumber?: number | null; serviceName: string; amount: number; turnUnits?: number; timestamp: string };
   const { data: techHistory, isLoading: historyLoading } = useQuery<TechHistoryRow[]>({
     queryKey: ["/api/turn/staff-history", storeId, selectedTech?.id],
     queryFn: async () => {
@@ -321,6 +325,17 @@ export function TurnPageModal({
             <span className="hidden sm:block text-xs font-semibold text-white/90">{nowTime}</span>
           </div>
           <div className="flex items-center gap-2">
+            {/* For technicians: the salon's turn method, explained in plain words. */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 rounded bg-white/10 px-2 text-[11px] font-semibold text-white hover:bg-white/20"
+              onClick={() => setShowGuide(true)}
+              data-testid="button-turn-guide"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              {t.guideButton}
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -464,25 +479,12 @@ export function TurnPageModal({
               </div>
             </div>
 
-            {/* Clock In / Out button */}
-            <div className="flex flex-1 items-center justify-center">
-              <button
-                type="button"
-                onClick={() => setShowTimeClock(true)}
-                className="flex w-full flex-col items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-5 text-white shadow-md transition-colors hover:bg-slate-700 active:scale-[0.97]"
-              >
-                <Clock className="h-7 w-7" />
-                <span className="text-[11px] font-bold uppercase tracking-widest leading-tight text-center">
-                  {t.inOut}
-                </span>
-              </button>
-            </div>
-
           </div>
         </div>
 
         {/* ── Why This Order? bottom sheet ─────────────────────────────── */}
         <AnimatePresence>
+          <TechTurnGuide open={showGuide} settings={(turnEligibility as any)?.settings} onClose={() => setShowGuide(false)} />
           {showWhySheet && (
             <>
               <motion.div
@@ -688,7 +690,7 @@ export function TurnPageModal({
                 />
 
                 <div className="flex-1 overflow-y-auto px-5 pb-6">
-                  <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Completed Turns Today</p>
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Turns This Period</p>
                   {historyLoading ? (
                     <div className="flex items-center justify-center py-10 text-slate-400">
                       <Loader2 className="h-5 w-5 animate-spin" />
@@ -700,23 +702,28 @@ export function TurnPageModal({
                     </div>
                   ) : (
                     <div className="overflow-hidden rounded-xl border border-slate-100">
-                      <div className="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 border-b border-slate-100 bg-slate-50 px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                      <div className="grid grid-cols-[auto_1fr_auto_auto_auto] gap-x-3 border-b border-slate-100 bg-slate-50 px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
                         <span>#</span>
                         <span>Service</span>
                         <span className="text-right">Amount</span>
+                        <span className="text-right">Turns</span>
                         <span className="text-right">Time</span>
                       </div>
                       {techHistory.map((row) => (
                         <div
                           key={row.turnNumber}
-                          className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-x-3 border-b border-slate-50 px-4 py-3 last:border-0"
+                          className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-x-3 border-b border-slate-50 px-4 py-3 last:border-0"
                         >
                           <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 text-[10px] font-bold text-blue-700">
                             {row.turnNumber}
                           </span>
                           <span className="truncate text-sm font-medium text-slate-700">{row.serviceName}</span>
                           <span className="text-right text-sm font-semibold text-emerald-600">
-                            ${row.amount % 1 === 0 ? row.amount.toFixed(0) : row.amount.toFixed(2)}
+                            {row.kind === "adjustment" ? "—" : `$${row.amount % 1 === 0 ? row.amount.toFixed(0) : row.amount.toFixed(2)}`}
+                          </span>
+                          {/* The turns this service earned (or the adjustment added / took away). */}
+                          <span className="text-right text-sm font-bold text-blue-700" data-testid={`turn-history-turns-${row.turnNumber}`}>
+                            {row.turnUnits == null ? "—" : `${row.turnUnits < 0 ? "−" : row.kind === "adjustment" ? "+" : ""}${formatTurns(Math.abs(row.turnUnits))}`}
                           </span>
                           <span className="text-right text-xs text-slate-400">
                             {new Date(row.timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
@@ -727,6 +734,7 @@ export function TurnPageModal({
                         <span className="text-xs font-bold text-slate-500">Total</span>
                         <span className="text-sm font-bold text-slate-800">
                           ${techHistory.reduce((s, r) => s + r.amount, 0).toFixed(2)}
+                          <span className="ml-3 text-blue-700">{formatTurns(techHistory.reduce((s, r) => s + (r.turnUnits ?? 0), 0))} turns</span>
                         </span>
                       </div>
                     </div>
