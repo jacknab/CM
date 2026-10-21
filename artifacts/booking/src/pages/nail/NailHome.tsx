@@ -55,7 +55,7 @@ import {
   ApiError, boardKey, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchCalendarBoardBookings, fetchClient, fetchUpcoming,
   clockInTech, clockOutTech, textClientReady, fetchNailConfig, fetchPosGrid, fetchScreenSettings, fetchTurn, reassignTicket, savePosGrid, saveScreenSettings, removeMarker, resolveMarkerClient, startTicket, updateTicket,
   type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData, type TechSignIn, type TurnEarned, type TurnTech,
- keptOnDevice, keepNailConfig, queueBooking, clientOnDevice, todaysBookingOnDevice, waitOnDevice, ownTurnEvents,} from "./nailApi";
+ keptOnDevice, keepNailConfig, queueBooking, clientOnDevice, todaysBookingOnDevice, waitOnDevice, ownTurnEvents, splitTicketService,} from "./nailApi";
 import { defaultPick, draftTotals, EMPTY_PICK, type DraftCustomLine, type NailPick, type TicketLine } from "./ticketDraft";
 import { useNailRealtime } from "./useNailRealtime";
 import { TicketPanel } from "./TicketPanel";
@@ -221,6 +221,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // A Catalog package on the new ticket: its first service is `service`, the rest are in `extraServices`, its
   // add-ons in `addonIds` and its price line in `customs`. Taking any part of it off takes the package off.
   const [pkg, setPkg] = useState<{ id: number; name: string; serviceIds: number[]; addonIds: number[] } | null>(null);
+  // The service line chosen for Split Ticket (its key in the ticket panel).
+  const [splitKey, setSplitKey] = useState<string | null>(null);
   // The category the grid opens on for this ticket (the one the client picked at check-in).
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [activeGroup, setActiveGroup] = useState("");
@@ -675,6 +677,49 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     if (h.current) h.past = [...h.past.slice(-49), h.current];
     h.current = now;
   }, [service, extraServices, addonIds, pick, customs, pkg, client?.id, editing?.id]);
+  // ── Split Ticket: a further service of a saved ticket comes off onto a ticket of its own, which waits in the Queue
+  // with no technician until this ticket is done (server: nailTickets.splitServiceLine). ──
+  const splittable = (line: TicketLine) => {
+    if (line.kind === "service") return line.serviceId != null && line.key.startsWith("service-");
+    const c = line.customId != null ? customs.find((x) => x.id === line.customId) : undefined;
+    return !!c?.serviceId && !c.packageId;
+  };
+  /** The ticket on screen still matches the saved one (a split acts on the saved ticket). */
+  const editUnchanged = (t: BoardTicket) => {
+    const ids = (a: number[]) => JSON.stringify([...a].sort((x, y) => x - y));
+    const lines = (l: { label: string; price: number; serviceId?: number; packageId?: number; isRetail?: boolean }[]) =>
+      JSON.stringify(l.map((c) => [c.label, c.price, c.serviceId ?? null, c.packageId ?? null, !!c.isRetail]));
+    return service?.id === t.service.id && ids(addonIds) === ids(t.addons.map((a) => a.id)) && lines(customs) === lines(t.customLines)
+      && extraServices.length === 0
+      && (pick.size ?? null) === (t.nail?.sizeId ?? null) && (pick.shape ?? null) === (t.nail?.shapeId ?? null)
+      && (pick.application ?? null) === (t.nail?.applicationId ?? null) && (pick.effect ?? null) === (t.nail?.effectId ?? null);
+  };
+  const [splitting, setSplitting] = useState(false);
+  const splitSelected = async () => {
+    if (splitting) return;
+    const line = splitKey ? draft.lines.find((l) => l.key === splitKey) : undefined;
+    if (!line) { say("Tap the service to split off, then tap Split Ticket"); return; }
+    if (!editing) { say("Save the ticket first, then open it to split it"); return; }
+    const c = line.customId != null ? customs.find((x) => x.id === line.customId) : undefined;
+    if (!c?.serviceId) { say("Choose one of the other services on the ticket"); return; }
+    if (!editUnchanged(editing)) { say("Update the ticket first, then split it"); return; }
+    const index = customs.indexOf(c);
+    setSplitting(true);
+    try {
+      const r = await splitTicketService(editing.id, index);
+      // Keep this edit in step with the saved ticket, which no longer has the service.
+      setCustoms((cur) => cur.filter((x) => x.id !== c.id));
+      setEditing((e) => (e ? { ...e, customLines: e.customLines.filter((_, i) => i !== index), duration: Math.max(1, e.duration - (Number(c.duration) || 0)) } : e));
+      draftHistory.current.owner = "";
+      setSplitKey(null);
+      invalidateBoard();
+      say(`Split · #${r.ticketNumber} ${r.serviceName} waits until #${editing.ticketNumber ?? editing.id} is done`);
+    } catch (err: any) {
+      toast({ title: "Couldn't split the ticket", description: err?.message, variant: "destructive" });
+    } finally {
+      setSplitting(false);
+    }
+  };
   const undoDraft = () => {
     const h = draftHistory.current;
     const prev = h.past[h.past.length - 1];
@@ -722,7 +767,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   // ── ticket building ───────────────────────────────────────────────────────
   const resetDraft = useCallback(() => {
-    setClient(null); setCheckinId(null); setService(null); setExtraServices([]); setAddonIds([]); setPick(EMPTY_PICK); setCustoms([]); setPkg(null); setOpenGroup(null);
+    setClient(null); setCheckinId(null); setService(null); setExtraServices([]); setAddonIds([]); setPick(EMPTY_PICK); setCustoms([]); setPkg(null); setOpenGroup(null); setSplitKey(null);
     setEditing(null); pickSeededFor.current = null; setMoreAddons(false); setBooking(null);
   }, []);
 
@@ -870,6 +915,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       ...(c.serviceId ? { serviceId: c.serviceId, duration: c.duration } : {}), ...(c.packageId ? { packageId: c.packageId } : {}) })));
     setPick({ size: t.nail?.sizeId ?? null, shape: t.nail?.shapeId ?? null, application: t.nail?.applicationId ?? null, effect: t.nail?.effectId ?? null });
     setEditing(t);
+    setSplitKey(null);
     setActiveGroup(groups.find((g) => g.services.some((s) => s.id === svc.id))?.key ?? activeGroup);
     setTab("pos");
   };
@@ -1604,7 +1650,9 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
               busy={booking ? bookVisit.isPending : busy}
               appointment={booking?.slot ? bookingLabel(booking.slot) : null}
               editing={!!editing}
-              onRemove={removeLine}
+              onRemove={(l) => { if (l.key === splitKey) setSplitKey(null); removeLine(l); }}
+              selectedKey={splitKey}
+              onSelect={booking ? undefined : (l) => setSplitKey((k) => (k === l.key || !splittable(l) ? null : l.key))}
               onClear={clearDraft}
               onSubmit={!booking ? submit : booking.step === "services"
                 ? () => { if (extraServices.length > 1) { say("A booking can have up to 2 services"); return; } setBooking({ step: "time", slot: null }); }
@@ -1612,7 +1660,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
             />
             <section className="work-area">
               <div className="sale-area">
-                <Keypad locked={!client} onEnter={addCustom} onUndo={undoDraft} onGiftCard={() => setShowGift(true)} onCheckoutFn={payNowWith} onNotice={say}
+                <Keypad locked={!client} onEnter={addCustom} onUndo={undoDraft} onSplit={() => void splitSelected()} onGiftCard={() => setShowGift(true)} onCheckoutFn={payNowWith} onNotice={say}
                   onNoSale={() => { void openCashDrawerHardware({ onThermalPrint: thermalPrinter.isConnected ? thermalPrinter.print : undefined }); recordNoSale({ drawerId, performedBy: tech?.name }); say("Cash drawer opened"); }} />
                 {booking?.step === "time" && service ? (
                   <BookingPanel

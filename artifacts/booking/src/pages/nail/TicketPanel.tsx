@@ -18,9 +18,12 @@ interface Props {
   onSubmit: () => void;
   /** A booking being made: when and with whom, shown under the services ("Sat, Oct 18 · 10:30 AM · Amy"). */
   appointment?: string | null;
+  /** The line chosen for Split Ticket, and how a line is chosen (only lines that can be split are offered). */
+  selectedKey?: string | null;
+  onSelect?: (line: TicketLine) => void;
 }
 
-export function TicketPanel({ client, badge, lines, duration, price, submitLabel, canSubmit, busy, editing, onRemove, onClear, onSubmit, appointment }: Props) {
+export function TicketPanel({ client, badge, lines, duration, price, submitLabel, canSubmit, busy, editing, onRemove, onClear, onSubmit, appointment, selectedKey, onSelect }: Props) {
   return (
     <section className="ticket-panel" data-testid="nail-ticket-panel">
       {client && (
@@ -41,7 +44,8 @@ export function TicketPanel({ client, badge, lines, duration, price, submitLabel
           </div>
         ) : (
           lines.map((line) => (
-            <div className="ticket-item" key={line.key} data-testid={`nail-line-${line.kind}`}>
+            <div className={`ticket-item ${selectedKey === line.key ? "ticket-item-selected" : ""}`} key={line.key} data-testid={`nail-line-${line.kind}`}
+              onClick={onSelect ? () => onSelect(line) : undefined} aria-selected={selectedKey === line.key || undefined}>
               <div className="item-copy">
                 <strong>{line.label}</strong>
                 <span className={line.note ? "note" : undefined}>
@@ -52,7 +56,7 @@ export function TicketPanel({ client, badge, lines, duration, price, submitLabel
                 <strong>{line.price < 0 ? "-" : ""}${Math.abs(line.price).toFixed(2)}</strong>
               </div>
               {line.kind !== "service" || line.removable ? (
-                <button type="button" className="remove-item" onClick={() => onRemove(line)} aria-label={`Remove ${line.label}`}>
+                <button type="button" className="remove-item" onClick={(e) => { e.stopPropagation(); onRemove(line); }} aria-label={`Remove ${line.label}`}>
                   <X size={16} />
                 </button>
               ) : <span />}

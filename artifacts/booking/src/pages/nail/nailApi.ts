@@ -597,6 +597,15 @@ async function offlineAssignProblem(storeId: number, serviceId: number, staffId:
   return null;
 }
 
+/** Split Ticket: the service line at `index` (its place among the saved ticket's lines) becomes its own ticket,
+ *  waiting with no technician until this one is done. Needs the server. */
+export const splitTicketService = (ticketId: number, index: number) => {
+  if (syncEngine.isOffline() || isLocalId(ticketId)) return Promise.reject(new ApiError("Splitting a ticket needs the connection.", 503));
+  return call<{ appointmentId: number; ticketNumber: number; serviceName: string }>(`/api/nail/tickets/${ticketId}/split`, {
+    method: "POST", body: JSON.stringify({ index }),
+  });
+};
+
 const createTicketOnServer = (body: NewTicketBody, key: string) =>
   call<CreatedTicket>("/api/nail/tickets", {
     method: "POST",

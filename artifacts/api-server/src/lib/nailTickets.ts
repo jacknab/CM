@@ -660,6 +660,44 @@ export async function createNailTicketGroup(
 }
 
 /**
+ * Split Ticket (owner, 2026-10-21): one of a ticket's further services (a service line, by its place among the
+ * ticket's lines) comes off it onto a ticket of its own for the same client. That ticket is linked to the visit
+ * (ticket_group_id, so checkout takes them together) and waits with nobody on it for this ticket to be done
+ * (waits_for_appointment_id; releaseFollowOnTickets then gives it to whoever is next in turn).
+ */
+export async function splitServiceLine(
+  deps: TicketDeps,
+  args: { storeId: number; appointmentId: number; index: number; bookedByUserId?: number | null },
+): Promise<TicketResult<{ appointmentId: number; ticketNumber: number; serviceName: string }>> {
+  const { storeId, appointmentId, index } = args;
+  return withTurnLock(storeId, async () => {
+    const row = (await pool.query(`SELECT customer_id, status, custom_lines, ticket_group_id, ticket_number FROM appointments WHERE id = $1 AND store_id = $2`,
+      [appointmentId, storeId])).rows[0];
+    if (!row || !["confirmed", "started"].includes(String(row.status))) return fail(409, "This ticket is no longer open.");
+    const line = sanitizeCustomLines(row.custom_lines, true)[index];
+    if (!line?.serviceId) return fail(400, "Choose one of the other services on the ticket to split off.");
+    if (line.packageId != null) return fail(400, "A package's services stay together.");
+    if (!row.customer_id) return fail(409, "Add a client to this ticket before splitting it.");
+    if (!(await removeServiceLine(storeId, appointmentId, index))) return fail(409, "That service is no longer on this ticket.");
+    const own = await createNailTicketLocked(deps, {
+      storeId, clientId: Number(row.customer_id), serviceId: line.serviceId, leaveUnassigned: true, startOnAssign: false,
+      idempotencyKey: null, bookedByUserId: args.bookedByUserId ?? null,
+    });
+    if (!own.ok) {
+      // Put the service back where it was, so nothing is lost.
+      await appendServiceLine(storeId, appointmentId, line);
+      return fail(own.status, own.message);
+    }
+    const groupId = row.ticket_group_id != null ? Number(row.ticket_group_id) : appointmentId;
+    await pool.query(`UPDATE appointments SET ticket_group_id = $1 WHERE store_id = $2 AND id = ANY($3::int[])`,
+      [groupId, storeId, [appointmentId, own.data.appointmentId]]);
+    await pool.query(`UPDATE appointments SET waits_for_appointment_id = $1 WHERE id = $2 AND store_id = $3`, [appointmentId, own.data.appointmentId, storeId]);
+    deps.notify(storeId, { appointmentId, kind: "updated" });
+    return { ok: true as const, data: { appointmentId: own.data.appointmentId, ticketNumber: own.data.ticketNumber, serviceName: line.label } };
+  });
+}
+
+/**
  * A ticket waiting for the visit's first ticket (createNailTicketGroup) is ready once that ticket is done: its
  * service time has run out after START, or it is checked out (or otherwise closed). It then stops waiting and goes
  * to whoever TURN says is next, is free now and does every service on it; nobody free → it waits unassigned like

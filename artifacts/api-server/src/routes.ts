@@ -19117,6 +19117,26 @@ or
     }
   });
 
+  // POST /api/nail/tickets/:id/split — Split Ticket: the service line at `index` becomes its own ticket for the
+  // same client, linked to the visit, waiting with no technician until this ticket is done (nailTickets.splitServiceLine).
+  app.post("/api/nail/tickets/:id/split", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const appointmentId = Number(req.params.id);
+      const index = Number(req.body?.index);
+      if (!Number.isSafeInteger(appointmentId) || !Number.isSafeInteger(index) || index < 0) return res.status(400).json({ message: "Invalid line" });
+      const userId = Number((req.session as any)?.userId);
+      const result = await nailTickets.splitServiceLine(nailDeps, { storeId, appointmentId, index, bookedByUserId: Number.isFinite(userId) ? userId : null });
+      if (!result.ok) return res.status(result.status).json({ message: result.message });
+      broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["services"] });
+      return res.status(201).json(result.data);
+    } catch (err) {
+      console.error("[nail/tickets split]", err);
+      return res.status(500).json({ message: "Could not split the ticket" });
+    }
+  });
+
   // POST /api/nail/tickets/:id/services/remove — takes a service line (by its place among the ticket's lines) off.
   app.post("/api/nail/tickets/:id/services/remove", isAuthenticated, async (req, res) => {
     try {

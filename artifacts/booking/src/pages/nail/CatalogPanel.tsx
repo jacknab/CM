@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { ArrowLeft, DoorOpen, LayoutGrid, Footprints, Gift, Hand, HandCoins, MoreHorizontal, Package, Percent, Plus, Printer, ShoppingBag, Sparkles, UserRound, Users, WalletCards, Zap } from "lucide-react";
+import { ArrowLeft, DoorOpen, LayoutGrid, Footprints, Gift, Hand, HandCoins, MoreHorizontal, Package, Percent, Plus, ShoppingBag, Split, Sparkles, UserRound, Users, WalletCards, Zap } from "lucide-react";
 import { QUICK_TICKET_STEPS } from "@shared/nailCheckout";
 import { formatDuration, parseKeypadAmount } from "./ticketDraft";
 import { POS_GRID_COLUMNS, POS_GRID_MAIN, POS_GRID_SLOTS, type PosGrid, type PosGridConfig } from "@shared/posGrid";
@@ -38,10 +38,12 @@ const KEYS = ["7", "8", "9", "⌫", "4", "5", "6", "↶", "1", "2", "3", "X", "0
 /** The functions under the keypad that belong to paying a ticket: the ticket is saved and its checkout opens on that function. */
 export type CheckoutFn = "group" | "tip" | "discount";
 
-export function Keypad({ locked, onEnter, onUndo, onGiftCard, onCheckoutFn, onNoSale, onNotice }: {
+export function Keypad({ locked, onEnter, onUndo, onSplit, onGiftCard, onCheckoutFn, onNoSale, onNotice }: {
   locked: boolean; onEnter: (amount: number, qty: number, label?: string, isRetail?: boolean) => void;
   /** ↶ with nothing typed: undo the last change to the ticket. */
-  onUndo?: () => void; onGiftCard?: () => void;
+  onUndo?: () => void;
+  /** Split Ticket: the service chosen on the ticket comes off onto a ticket of its own. */
+  onSplit?: () => void; onGiftCard?: () => void;
   onCheckoutFn?: (fn: CheckoutFn) => void; onNoSale?: () => void; onNotice?: (text: string) => void;
 }) {
   const [display, setDisplay] = useState("");
@@ -119,7 +121,7 @@ export function Keypad({ locked, onEnter, onUndo, onGiftCard, onCheckoutFn, onNo
         <button type="button" disabled={locked} onClick={() => onCheckoutFn?.("tip")} data-testid="nail-fn-tip"><HandCoins size={20} /><span>Tip Adjust</span></button>
         <button type="button" disabled={locked} onClick={() => onCheckoutFn?.("discount")} data-testid="nail-fn-discount"><Percent size={20} /><span>Discount</span></button>
         <button type="button" disabled={locked} onClick={onNoSale} data-testid="nail-fn-nosale"><DoorOpen size={20} /><span>No Sale</span></button>
-        <button type="button" disabled={locked} onClick={() => onNotice?.("Reprint — coming soon")} data-testid="nail-fn-reprint"><Printer size={20} /><span>Reprint</span></button>
+        <button type="button" disabled={locked || !onSplit} onClick={onSplit} data-testid="nail-fn-split"><Split size={20} /><span>Split Ticket</span></button>
       </div>
     </div>
   );
