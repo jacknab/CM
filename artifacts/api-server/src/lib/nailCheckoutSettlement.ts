@@ -49,6 +49,24 @@ export async function chargeCardTenders(a: Pick<NailCheckoutInput, "storeId" | "
   }
 }
 
+/**
+ * The tickets of one visit (ticket_group_id: a service another technician does, or one split off) are paid in
+ * one checkout, so none is left unpaid at the end of the day. Refuses a checkout that leaves one of them open.
+ */
+async function requireWholeVisit(conn: { execute: typeof db.execute }, storeId: number, ids: number[]): Promise<void> {
+  const left: any[] = (await conn.execute(sql`SELECT o.ticket_number FROM appointments o
+    WHERE o.store_id = ${storeId} AND o.status IN ('confirmed', 'started')
+      AND o.id NOT IN ${sql`(${sql.join(ids.map((id) => sql`${id}`), sql`,`)})`}
+      AND o.ticket_group_id IN (SELECT g.ticket_group_id FROM appointments g
+        WHERE g.store_id = ${storeId} AND g.ticket_group_id IS NOT NULL
+          AND g.id IN ${sql`(${sql.join(ids.map((id) => sql`${id}`), sql`,`)})`})
+    ORDER BY o.ticket_number`)).rows as any[];
+  if (left.length) {
+    const list = left.map((r) => `#${r.ticket_number}`).join(", ");
+    throw new NailCheckoutError(`Ticket ${list} is part of this visit. Pay the visit's tickets together in Group Pay, or cancel ${left.length > 1 ? "those tickets" : "that ticket"} first.`);
+  }
+}
+
 export function validateNailCheckoutInput(a: NailCheckoutInput): void {
   if (!/^[a-zA-Z0-9_-]{16,100}$/.test(a.idempotencyKey)) throw new NailCheckoutError("Invalid checkout key", 400);
   if (!Number.isSafeInteger(a.appointmentId) || a.appointmentId <= 0 || !Array.isArray(a.tenders) || a.tenders.length > 30 ||
@@ -92,6 +110,9 @@ export async function settleNailCheckout(a: NailCheckoutInput, salesTax: SalesTa
   }
   const shares = a.groupTickets?.length ? a.groupTickets : [{ appointmentId: a.appointmentId, tip: a.tip, discount: a.discount,
     totalPaid: a.totalPaid, serviceRevenue: a.serviceRevenue, productRevenue: a.productRevenue, paymentMethod: a.paymentMethod }];
+  // Every open ticket of the visit is paid together (owner, 2026-10-21), checked before any card is charged.
+  // A sale a tablet took while offline is recorded as it happened.
+  if (!collectedAt) await requireWholeVisit(db, a.storeId, shares.map((s) => s.appointmentId));
   // Stripe verification before locks: no network request while holding DB rows.
   const cards = a.tenders.filter((t) => t.method === "m2" || t.method === "tap");
   if (cards.length) await chargeCardTenders(a, cards);
@@ -113,6 +134,7 @@ export async function settleNailCheckout(a: NailCheckoutInput, salesTax: SalesTa
     if (rows.length !== ids.length) throw new NailCheckoutError("A group ticket is no longer in this salon");
     const byId = new Map(rows.map((r) => [Number(r.id), r]));
     const primary = byId.get(a.appointmentId)!;
+    if (!collectedAt) await requireWholeVisit(tx, a.storeId, ids);
     for (const row of rows) {
       if (!["confirmed", "started", "completed"].includes(row.status) ||
           (row.status === "completed" && (Number(row.id) !== a.appointmentId || cards.length === 0)))

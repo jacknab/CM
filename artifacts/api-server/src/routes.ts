@@ -772,6 +772,8 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
       // their tech does NOT make the tech busy here — the Consideration Lock
       // (lockedStaffIds, applied at check-in / walk-in assignment) covers that.
       sql`${appointments.status} = 'started'`,
+      // A technician who pressed DONE is free, though the client hasn't paid yet.
+      sql`service_done_at IS NULL`,
       gte(appointments.date, todayStartUtc),
       sql`${appointments.date} <= ${todayEndUtc}`,
       isNotNull(appointments.staffId)
@@ -793,6 +795,7 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
       .where(and(
         eq(appointments.storeId, storeId),
         sql`${appointments.status} IN ('started', 'confirmed')`,
+        sql`service_done_at IS NULL`,
         gte(appointments.date, todayStartUtc),
         sql`${appointments.date} <= ${todayEndUtc}`,
         isNotNull(appointments.staffId)
@@ -1102,6 +1105,12 @@ async function handleTurnCheckout(
         [appointmentId, storeId],
       );
       firstReport = (claimed.rowCount ?? 0) > 0;
+      // Already handled when the technician pressed DONE (they were freed and put back in line then). Releasing
+      // them again here could take the hold off a client they have been given since.
+      if (!firstReport) {
+        const done = await pool.query(`SELECT 1 FROM appointments WHERE id = $1 AND store_id = $2 AND service_done_at IS NOT NULL`, [appointmentId, storeId]);
+        if ((done.rowCount ?? 0) > 0) { broadcastTurnEligibilityChanged(storeId, { matchWaiting: matchWaitingClient }); return; }
+      }
       const { rows } = await pool.query(
         `SELECT service_revenue, product_revenue, total_paid, tip_amount, discount_amount FROM appointments WHERE id = $1 AND store_id = $2`,
         [appointmentId, storeId],
@@ -19114,6 +19123,47 @@ or
     } catch (err) {
       console.error("[nail/tickets add service]", err);
       return res.status(500).json({ message: "Could not add the service" });
+    }
+  });
+
+  // POST /api/nail/tickets/:id/done — DONE (owner, 2026-10-21): the technician has finished their service. The
+  // ticket stays open until it is paid, but the technician is free: their turn is counted now and they go back
+  // in line (the same as a checkout does — checkout later doesn't do it again), and a ticket of the same visit
+  // waiting for this one goes to whoever is next in turn for it. Nothing is started.
+  app.post("/api/nail/tickets/:id/done", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const appointmentId = Number(req.params.id);
+      if (!Number.isSafeInteger(appointmentId)) return res.status(400).json({ message: "Invalid ticket" });
+      const { rows } = await pool.query(
+        `SELECT a.status, a.staff_id, a.service_done_at, a.custom_lines,
+                COALESCE(s.price, 0) AS service_price,
+                COALESCE((SELECT SUM(ad.price) FROM appointment_addons aa JOIN addons ad ON ad.id = aa.addon_id WHERE aa.appointment_id = a.id), 0) AS addon_price,
+                COALESCE(ns.length_price_adj_snapshot, 0) + COALESCE(ns.shape_price_adj_snapshot, 0) + COALESCE(ns.art_price_adj_snapshot, 0) AS nail_price
+           FROM appointments a LEFT JOIN services s ON s.id = a.service_id
+           LEFT JOIN appointment_nail_selection ns ON ns.appointment_id = a.id
+          WHERE a.id = $1 AND a.store_id = $2`, [appointmentId, storeId]);
+      const t = rows[0];
+      if (!t) return res.status(404).json({ message: "Ticket not found" });
+      if (t.service_done_at) return res.json({ ok: true, already: true });
+      if (t.status !== "started" || t.staff_id == null) return res.status(409).json({ message: "Only a ticket in service can be marked done." });
+      const claimed = await pool.query(
+        `UPDATE appointments SET service_done_at = NOW() WHERE id = $1 AND store_id = $2 AND status = 'started' AND service_done_at IS NULL RETURNING id`,
+        [appointmentId, storeId]);
+      if ((claimed.rowCount ?? 0) === 0) return res.json({ ok: true, already: true });
+      // What the service comes to (retail lines aside) — what the turn is counted on, as at checkout.
+      const lines = Array.isArray(t.custom_lines) ? t.custom_lines : [];
+      const serviceAmount = Number(t.service_price) + Number(t.addon_price) + Number(t.nail_price) +
+        lines.filter((l: any) => l?.isRetail !== true).reduce((n: number, l: any) => n + (Number(l?.price) || 0), 0);
+      await handleTurnCheckout(storeId, Number(t.staff_id), { appointmentId, totalPaid: Math.max(0, serviceAmount), tipAmount: 0 }, false);
+      await nailTickets.releaseFollowOnTickets(nailDeps).catch((err) => console.error("[nail done] follow-on", err?.message));
+      broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["status"] });
+      broadcastTurnEligibilityChanged(storeId, { matchWaiting: true });
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[nail/tickets done]", err);
+      return res.status(500).json({ message: "Could not mark the ticket done" });
     }
   });
 

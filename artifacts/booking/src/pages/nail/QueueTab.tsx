@@ -173,7 +173,8 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
       if (t.status === "started") {
         return {
           key: `t${t.id}`, state: "service", since: t.startedAt ?? t.date, name: fullName(t.client.name), ticketNumber: t.ticketNumber ?? null,
-          service, sub: "IN SERVICE", subKind: "service", tech: t.staff?.name ?? null,
+          // DONE: the service is finished and the technician is free; the visit waits to be paid.
+          service, sub: t.doneAt ? "DONE · READY TO PAY" : "IN SERVICE", subKind: "service", tech: t.staff?.name ?? null,
           open: () => (onTicketTap ?? onTicket)(t), testId: `nail-queue-service-${t.id}`, provisional: t.offline === true,
         };
       }
@@ -202,7 +203,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
   // "Avg Wait" tile — same estimate the Techs tab shows, worked out from the board + turn data this
   // screen already has (see shared/waitEstimate.ts).
   const waitLabel = useMemo(() => {
-    const started = tickets.filter((t) => t.status === "started");
+    const started = tickets.filter((t) => t.status === "started" && !t.doneAt);
     const waitingTickets = tickets.filter((t) => t.status === "confirmed");
     const known = [...started, ...waitingTickets].map((t) => t.duration).filter((d) => d > 0);
     const defaultServiceMin = known.length ? Math.round(known.reduce((a, b) => a + b, 0) / known.length) : DEFAULT_SERVICE_MIN;

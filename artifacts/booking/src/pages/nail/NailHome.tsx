@@ -55,7 +55,7 @@ import {
   ApiError, boardKey, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchCalendarBoardBookings, fetchClient, fetchUpcoming,
   clockInTech, clockOutTech, textClientReady, fetchNailConfig, fetchPosGrid, fetchScreenSettings, fetchTurn, reassignTicket, savePosGrid, saveScreenSettings, removeMarker, resolveMarkerClient, startTicket, updateTicket,
   type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData, type TechSignIn, type TurnEarned, type TurnTech,
- keptOnDevice, keepNailConfig, queueBooking, clientOnDevice, todaysBookingOnDevice, waitOnDevice, ownTurnEvents, splitTicketService,} from "./nailApi";
+ keptOnDevice, keepNailConfig, queueBooking, clientOnDevice, todaysBookingOnDevice, waitOnDevice, ownTurnEvents, splitTicketService, markTicketDone,} from "./nailApi";
 import { defaultPick, draftTotals, EMPTY_PICK, type DraftCustomLine, type NailPick, type TicketLine } from "./ticketDraft";
 import { useNailRealtime } from "./useNailRealtime";
 import { TicketPanel } from "./TicketPanel";
@@ -1542,6 +1542,9 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       act.mutate(() => startTicket(t.id, t.client.name));
     },
     onCheckout: (t: BoardTicket) => { checkoutStart.current = null; requestCheckout(t); },
+    onDone: (t: BoardTicket) => act.mutate(() => markTicketDone(t.id), {
+      onSuccess: () => { setPopupId(null); say(`#${t.ticketNumber ?? t.id} done${t.staff ? ` · ${t.staff.name.split(" ")[0]} is free` : ""} · ready to pay`); },
+    }),
     onReassign: (t: BoardTicket) => { setAssignError(null); setAssigning({ mode: t.staff ? "reassign" : "assign", ticket: t }); },
     onEdit: startEdit,
     // "Amy is ready for you" by text. Needs the server; a ticket that only exists on this tablet cannot be texted yet.

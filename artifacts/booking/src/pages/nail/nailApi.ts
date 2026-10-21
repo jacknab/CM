@@ -26,6 +26,8 @@ export interface BoardTicket {
   groupId?: number | null;
   /** Waiting for the visit's first ticket (this number) to be done before a technician is given it. */
   waitsForTicket?: number;
+  /** The technician pressed DONE: their service is finished and they are free; the ticket waits to be paid. */
+  doneAt?: string;
   status: "confirmed" | "started";
   date: string;
   checkedInAt: string | null;
@@ -596,6 +598,13 @@ async function offlineAssignProblem(storeId: number, serviceId: number, staffId:
   if (!tech.supportsService) return `${tech.name} doesn't perform this service.`;
   return null;
 }
+
+/** DONE: the technician has finished their service. They are free again and back in line; the ticket stays
+ *  open until it is paid, and a ticket of the same visit waiting for it goes to the next technician. Needs the server. */
+export const markTicketDone = (ticketId: number) => {
+  if (syncEngine.isOffline() || isLocalId(ticketId)) return Promise.reject(new ApiError("Marking a ticket done needs the connection. Check it out instead.", 503));
+  return call<{ ok: boolean }>(`/api/nail/tickets/${ticketId}/done`, { method: "POST", body: "{}" });
+};
 
 /** Split Ticket: the service line at `index` (its place among the saved ticket's lines) becomes its own ticket,
  *  waiting with no technician until this one is done. Needs the server. */

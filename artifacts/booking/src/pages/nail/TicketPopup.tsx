@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Ban, CalendarDays, Clock, Hand, Phone, Play, Receipt, ShoppingBag, UserRound, X, MessageSquare } from "lucide-react";
+import { Ban, CalendarDays, Check, Clock, Hand, Phone, Play, Receipt, ShoppingBag, UserRound, X, MessageSquare } from "lucide-react";
 import { useNailText } from "./i18n";
 import { formatDuration, formatElapsed } from "./ticketDraft";
 import type { BoardTicket } from "./nailApi";
@@ -9,6 +9,8 @@ interface Props {
   busy: boolean;
   onStart: (t: BoardTicket) => void;
   onCheckout: (t: BoardTicket) => void;
+  /** DONE: the technician has finished; they are freed and the ticket waits to be paid. */
+  onDone?: (t: BoardTicket) => void;
   onReassign: (t: BoardTicket) => void;
   onEdit: (t: BoardTicket) => void;
   onCancel: (t: BoardTicket) => void;
@@ -49,7 +51,8 @@ export function TicketPopup(p: Props) {
         { icon: Ban, id: "CANCEL", label: tr("cancel"), action: () => p.onCancel(t), danger: true },
       ]
     : [
-        { icon: ShoppingBag, id: "CHECKOUT", label: tr("checkout"), action: () => p.onCheckout(t), primary: true },
+        ...(!t.doneAt && p.onDone ? [{ icon: Check, id: "DONE", label: tr("done"), action: () => p.onDone!(t), primary: true }] : []),
+        { icon: ShoppingBag, id: "CHECKOUT", label: tr("checkout"), action: () => p.onCheckout(t), primary: !!t.doneAt || !p.onDone },
         { icon: UserRound, id: "REASSIGN", label: tr("reassign"), action: () => p.onReassign(t) },
         { icon: Receipt, id: "TICKET", label: tr("ticket"), action: () => p.onEdit(t) },
         { icon: Ban, id: "CANCEL", label: tr("cancel"), action: () => p.onCancel(t), danger: true },

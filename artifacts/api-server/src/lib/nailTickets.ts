@@ -280,7 +280,8 @@ async function unlockTechToFront(deps: TicketDeps, storeId: number, staffId: num
 async function busyBlocksFor(storeId: number, staffId: number, excludeAppointmentId?: number): Promise<BusyBlock[]> {
   const buffer = await getBufferMinutes(storeId);
   const { rows } = await pool.query(
-    `SELECT id, date, duration, status, completed_at FROM appointments
+    `SELECT id, date, duration, CASE WHEN service_done_at IS NOT NULL THEN 'completed' ELSE status END AS status,
+            COALESCE(completed_at, service_done_at) AS completed_at FROM appointments
       WHERE store_id = $1 AND staff_id = $2 AND status <> 'cancelled'
         AND date >= NOW() - INTERVAL '12 hours' AND date <= NOW() + INTERVAL '24 hours'
         ${excludeAppointmentId ? "AND id <> $3" : ""}`,
@@ -699,7 +700,7 @@ export async function splitServiceLine(
 
 /**
  * A ticket waiting for the visit's first ticket (createNailTicketGroup) is ready once that ticket is done: its
- * service time has run out after START, or it is checked out (or otherwise closed). It then stops waiting and goes
+ * technician pressed DONE, or it is checked out (or otherwise closed). It then stops waiting and goes
  * to whoever TURN says is next, is free now and does every service on it; nobody free → it waits unassigned like
  * any other ticket, for the next technician to finish a client (matchWaitingNailTicketForTechnician).
  * Runs on a timer (routes.ts); every server process may run it — each ticket is claimed once.
@@ -712,8 +713,7 @@ export async function releaseFollowOnTickets(deps: TicketDeps): Promise<number> 
       WHERE f.waits_for_appointment_id IS NOT NULL
         AND (f.status <> 'confirmed' OR f.staff_id IS NOT NULL OR p.id IS NULL
           OR p.status NOT IN ('confirmed','started')
-          OR (p.status = 'started' AND p.started_at IS NOT NULL
-              AND p.started_at + make_interval(mins => COALESCE(p.duration, 0)) <= NOW()))
+          OR p.service_done_at IS NOT NULL)
       LIMIT 50`,
   );
   let released = 0;
@@ -1223,6 +1223,8 @@ export interface BoardTicket {
   ticketNumber: number | null;
   /** A ticket waiting for the visit's first ticket to be done (createNailTicketGroup): that ticket's number. */
   waitsForTicket?: number;
+  /** The technician pressed DONE: the service is finished and they are free; the ticket waits to be paid. */
+  doneAt?: string;
   status: "confirmed" | "started";
   date: string;
   checkedInAt: string | null;
@@ -1353,7 +1355,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
 
   const { rows } = await pool.query(
     `SELECT a.id, a.ticket_number, a.ticket_group_id, a.status,
-            (SELECT w.ticket_number FROM appointments w WHERE w.id = a.waits_for_appointment_id) AS waits_for_number, a.date, a.duration, a.checked_in_at, a.started_at, a.staff_id,
+            (SELECT w.ticket_number FROM appointments w WHERE w.id = a.waits_for_appointment_id) AS waits_for_number, a.service_done_at, a.date, a.duration, a.checked_in_at, a.started_at, a.staff_id,
             ${walkInSQL("a")} AS walk_in, a.customer_id, a.custom_lines, c.full_name AS client_name, COALESCE(c.loyalty_points, 0) AS loyalty_points,
             (SELECT COALESCE(p.display_phone, p.phone_number_e164) FROM client_phones p
                WHERE p.client_id = c.id ORDER BY p.is_primary DESC, p.id LIMIT 1) AS client_phone,
@@ -1405,6 +1407,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
       ticketNumber: r.ticket_number ?? null,
       groupId: r.ticket_group_id ?? null,
       ...(r.waits_for_number != null ? { waitsForTicket: Number(r.waits_for_number) } : {}),
+      ...(r.service_done_at ? { doneAt: new Date(r.service_done_at).toISOString() } : {}),
       status: r.status,
       date: new Date(r.date).toISOString(),
       checkedInAt: r.checked_in_at ? new Date(r.checked_in_at).toISOString() : null,

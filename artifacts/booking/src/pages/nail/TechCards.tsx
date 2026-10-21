@@ -92,7 +92,8 @@ export function TechCards({ techs, tickets, markers, glance, stats, loading, clo
   // Keep this strip numerically identical to Queue: both tabs use the same board records,
   // TURN availability, optimistic clock-ins, and shared wait estimator.
   const waitingTickets = useMemo(() => tickets.filter((t) => t.status === "confirmed"), [tickets]);
-  const startedTickets = useMemo(() => tickets.filter((t) => t.status === "started"), [tickets]);
+  // A ticket marked DONE no longer keeps its technician in the chair.
+  const startedTickets = useMemo(() => tickets.filter((t) => t.status === "started" && !t.doneAt), [tickets]);
   const waitLabel = useMemo(() => {
     const known = [...startedTickets, ...waitingTickets].map((t) => t.duration).filter((d) => d > 0);
     const defaultServiceMin = known.length ? Math.round(known.reduce((a, b) => a + b, 0) / known.length) : DEFAULT_SERVICE_MIN;
@@ -127,7 +128,7 @@ export function TechCards({ techs, tickets, markers, glance, stats, loading, clo
     return techs
       .map((t) => {
         const mine = tickets.filter((x) => x.staff?.id === t.id);
-        const current = mine.find((x) => x.status === "started");
+        const current = mine.find((x) => x.status === "started" && !x.doneAt);
         const queue = mine.filter((x) => x.status === "confirmed").sort((a, b) => +new Date(a.date) - +new Date(b.date));
         const st = stats.find((s) => s.staffId === t.id);
         // Held for a waiting ticket (or a front-desk check-in) that hasn't started. A ticket merely queued behind

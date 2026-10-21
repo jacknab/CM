@@ -53,6 +53,7 @@ const T = {
   clockedInTab: { en: "Clocked In", vi: "Đang trong ca", es: "En turno" },
   // ticket buttons
   start: { en: "START", vi: "BẮT ĐẦU", es: "INICIAR" },
+  done: { en: "DONE", vi: "XONG", es: "LISTO" },
   assign: { en: "ASSIGN", vi: "GIAO THỢ", es: "ASIGNAR" },
   checkout: { en: "CHECKOUT", vi: "TÍNH TIỀN", es: "COBRAR" },
   reassign: { en: "REASSIGN", vi: "ĐỔI THỢ", es: "REASIGNAR" },
