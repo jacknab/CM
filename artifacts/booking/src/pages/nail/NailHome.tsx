@@ -12,7 +12,7 @@ import { EMPTY_ARRAY } from "@/lib/empty";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BarChart3, Bell, Clock, CreditCard, RefreshCw, Gift, KeyRound, Languages, LayoutGrid, Loader2, Lock, LockKeyhole, Printer, Receipt, Search, Settings, ShoppingBag, CalendarPlus, Wallet } from "lucide-react";
+import { BarChart3, Bell, Clock, RotateCcw, CreditCard, RefreshCw, Gift, KeyRound, Languages, LayoutGrid, Loader2, Lock, LockKeyhole, Printer, Receipt, Search, Settings, ShoppingBag, CalendarPlus, Wallet } from "lucide-react";
 import { useNailText, type NailLang } from "./i18n";
 import { SlipTechIdSheet, TechSlipSheet } from "./TechSlipSheet";
 import { useSelectedStore } from "@/hooks/use-store";
@@ -79,6 +79,7 @@ import { TechIdGate } from "./TechIdGate";
 import { OfflineQueueSheet } from "./OfflineQueueSheet";
 import { TurnEarnedPopup } from "./TurnEarnedPopup";
 import { ChangeManagerPinSheet } from "./ChangeManagerPinSheet";
+import { TurnRotationSheet } from "./TurnRotationSheet";
 import { BookingPanel, type BookingSlot } from "./BookingPanel";
 import { GridEditor } from "./GridEditor";
 import { RegisterPicker } from "./RegisterPicker";
@@ -248,7 +249,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   useEffect(() => () => { if (typingTimer.current) clearTimeout(typingTimer.current); }, []);
   // Every time the Check-In page opens or closes, start from "not typing" — never inherit a stale overlay.
   useEffect(() => { onFrontdeskTyping(false); }, [showCheckIn, onFrontdeskTyping]);
-  const [sheet, setSheet] = useState<null | "voucher" | "timeclock" | "dayclose" | "clients" | "manager">(null);
+  const [sheet, setSheet] = useState<null | "voucher" | "timeclock" | "dayclose" | "clients" | "manager" | "turns">(null);
   const [assigning, setAssigning] = useState<Assigning>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assignNeedsReason, setAssignNeedsReason] = useState(false);
@@ -1262,6 +1263,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     ...(posEnabled ? [{ key: "register", label: "Cash Drawer", sub: openDrawerSession ? "Open" : "Closed", icon: Wallet, run: () => setShowOpenRegister(true) }] : []),
     { key: "messages", label: "Messages", icon: Bell, run: () => navigate(appPage("/sms-inbox")!) },
     { key: "keygrid", label: "Key Grid", sub: "Arrange the POS keys", icon: LayoutGrid, run: () => setGridEditor("open") },
+    { key: "turnrotation", label: "Turn Rotation", sub: "How turns are counted", icon: RotateCcw, run: () => setSheet("turns") },
     { key: "managerpin", label: "Manager PIN", sub: "Change the PIN for this menu", icon: KeyRound, run: () => { setShowMore(false); setPinChange(true); } },
     { key: "lockscreen", label: "Lock Screen", sub: saveLock.isPending ? "Saving…" : lockEnabled ? "On · Tech ID to use the POS" : "Off · no sign-in", icon: Lock, keepOpen: true,
       run: () => { if (!saveLock.isPending) saveLock.mutate(!lockEnabled); } },
@@ -1606,6 +1608,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
         />
       )}
       {sheet === "clients" && <ClientLookupSheet onClose={() => setSheet(null)} />}
+      {sheet === "turns" && <TurnRotationSheet storeId={storeId} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); say("Turn rotation saved"); }} />}
       {sheet === "voucher" && (
         <VoucherRedeemSheet onClose={() => setSheet(null)} onRedeemed={(appointmentId) => { setSheet(null); void openTicketById(appointmentId); }} />
       )}
