@@ -681,6 +681,8 @@
 .nail-app .pay-keypad .pay-fn-row-stacked { margin-top: 6px; }
 .nail-app .pay-fn-row button:disabled { cursor: default; }
 .nail-app .pay-fn-row button:active { background: #3d444e; }
+/* Every POS button label in capitals, like a register's keys (owner, 2026-10-21). */
+.nail-app .pay-fn-row button span, .nail-app .fn-cell span { text-transform: uppercase; letter-spacing: .03em; }
 .nail-app .pay-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 16px 4px; }
 .nail-app .pay-methods { display: flex; flex-direction: column; gap: 12px; margin: auto 0; }
 .nail-app .pay-methods button { width: 100%; height: 72px; font-size: 18px; font-weight: 800; letter-spacing: .06em; color: #fff; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 12px; }
