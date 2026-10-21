@@ -28,7 +28,7 @@ const featureImages = [
 ];
 
 const SITE = 'https://certxa.com';
-const OG_IMAGE = `${SITE}/og-image.png`;
+const OG_IMAGE = `${SITE}/assets/images/og-image.jpg`;
 
 const jsonLd = {
   '@context': 'https://schema.org',
@@ -79,17 +79,24 @@ const jsonLd = {
         },
         {
           '@type': 'Offer',
-          name: 'Professional',
-          price: '22',
+          name: 'Starter',
+          price: '29',
           priceCurrency: 'USD',
-          description: 'Unlimited staff and calendars, payroll, review requests and 50 Autumn calls a month.',
+          description: 'Up to 3 staff, all features for small teams, and 50 Autumn calls a month.',
         },
         {
           '@type': 'Offer',
-          name: 'Elite',
-          price: '49',
+          name: 'Professional',
+          price: '99',
           priceCurrency: 'USD',
-          description: 'Everything in Professional for up to 5 locations, with a multi-location dashboard, API access and 100 Autumn calls a month.',
+          description: 'Up to 8 staff, all features for medium-size teams, and 100 Autumn calls a month.',
+        },
+        {
+          '@type': 'Offer',
+          name: 'Enterprise',
+          price: '179',
+          priceCurrency: 'USD',
+          description: 'Built for large teams or several locations.',
         },
       ],
     },
@@ -101,7 +108,7 @@ const jsonLd = {
       isPartOf: { '@id': `${SITE}/#website` },
       about: { '@id': `${SITE}/#organization` },
       datePublished: '2026-02-01',
-      dateModified: '2026-10-12',
+      dateModified: '2026-10-21',
     },
   ],
 };
@@ -113,13 +120,13 @@ export default function HomePage() {
         <title>Certxa — Salon Booking Software & POS System for Beauty Businesses</title>
         <meta
           name="description"
-          content="Salon booking software and POS for nail salons and spas: online booking, check-in kiosk, turn rotation, AI receptionist. Free Solo plan; teams from $22/mo."
+          content="Salon booking software and POS for nail salons and spas: online booking, check-in kiosk, turn rotation, AI receptionist. Free Solo plan; teams from $29/mo."
         />
         <link rel="canonical" href={`${SITE}/`} />
         <meta property="og:title" content="Certxa — Salon Booking Software & POS System for Beauty Businesses" />
         <meta
           property="og:description"
-          content="Online booking, salon POS, self check-in kiosk, loyalty programs, and AI receptionist — built for nail salons, hair salons, barbershops, spas, and more. Free Solo plan; teams from $22/mo."
+          content="Online booking, salon POS, self check-in kiosk, loyalty programs, and AI receptionist — built for nail salons, hair salons, barbershops, spas, and more. Free Solo plan; teams from $29/mo."
         />
         <meta property="og:image" content={OG_IMAGE} />
         <meta property="og:type" content="website" />

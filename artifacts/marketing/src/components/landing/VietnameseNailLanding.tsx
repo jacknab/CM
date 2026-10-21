@@ -49,11 +49,11 @@ const COPY: Record<Lang, Copy> = {
   en: {
     metaTitle: 'Vietnamese Nail Salon Software | Certxa POS, Turns & Tech Payroll',
     metaDescription:
-      'Nail salon software for Vietnamese-owned salons: a POS in Vietnamese, turn rotation, tips per tech, pay slips, check-in kiosk. Free to start; $22/mo.',
+      'Nail salon software for Vietnamese-owned salons: a POS in Vietnamese, turn rotation, tips per tech, pay slips, check-in kiosk. Free to start; teams from $29/mo.',
     eyebrow: 'Vietnamese nail salon software',
     h1: 'Nail salon software built for Vietnamese-owned salons',
     answer:
-      'Certxa is salon software made for the way Vietnamese-owned nail salons work in the United States. Technicians can use the POS in Vietnamese, the turn list follows the rules your front desk already uses, and check-in, booking, checkout, tips, payroll and an AI phone receptionist are one system, from $22 a month with no setup fee.',
+      'Certxa is salon software made for the way Vietnamese-owned nail salons work in the United States. Technicians can use the POS in Vietnamese, the turn list follows the rules your front desk already uses, and check-in, booking, checkout, tips, payroll and an AI phone receptionist are one system, from $29 a month with no setup fee.',
     ctaStart: 'Start free',
     ctaPricing: 'See pricing',
     otherLangLabel: 'Đọc bằng tiếng Việt',
@@ -80,8 +80,9 @@ const COPY: Record<Lang, Copy> = {
     priceHeading: 'Simple pricing',
     prices: [
       { plan: 'Solo', price: 'Free', note: 'One technician working on their own' },
-      { plan: 'Professional', price: '$22 a month', note: 'Unlimited technicians; $18 a month billed yearly' },
-      { plan: 'Elite', price: '$49 a month', note: 'Up to 5 locations; $39 a month billed yearly' },
+      { plan: 'Starter', price: '$29 a month', note: 'Up to 3 staff; $290 a year billed yearly' },
+      { plan: 'Professional', price: '$99 a month', note: 'Up to 8 staff; $990 a year billed yearly' },
+      { plan: 'Enterprise', price: '$179 a month', note: 'Large teams or several locations; $1,790 a year billed yearly' },
     ],
     priceNote: 'Card payments and Autumn call allowances are listed on the pricing page.',
     faqHeading: 'Questions salon owners ask',
@@ -91,7 +92,7 @@ const COPY: Record<Lang, Copy> = {
       { q: 'Can technicians see their own pay?', a: 'Yes. Each technician can print their own pay slip for the day, the week or the pay period from the POS, without the front desk printing slips for everyone. Owners can pay part by check and part in cash and print paychecks.' },
       { q: 'What happens if the internet goes down?', a: 'The salon keeps working. Tickets, check-ins and cash sales are saved on the tablet and sent to the server when the connection comes back. Card payments need the internet.' },
       { q: 'Can the AI receptionist speak Vietnamese?', a: 'Autumn answers in English and can continue the call in Vietnamese or Spanish when the caller speaks it. She books, moves and cancels appointments and knows each technician’s schedule.' },
-      { q: 'How much does Certxa cost for a nail salon?', a: 'Certxa is free for one technician working alone. A salon with a team uses the Professional plan at $22 a month ($18 a month billed yearly), with unlimited technicians and no setup fee.' },
+      { q: 'How much does Certxa cost for a nail salon?', a: 'Certxa is free for one technician working alone. A salon with a team uses Starter at $29 a month for up to 3 staff, Professional at $99 a month for up to 8, or Enterprise at $179 a month for larger salons, with no setup fee.' },
       { q: 'What do I need to run it?', a: 'Certxa runs on touchscreen tablets and computers you may already have. It works with the Stripe M2 card reader and with USB, Bluetooth and network receipt printers.' },
     ],
     compareText: 'Comparing options?',
@@ -103,11 +104,11 @@ const COPY: Record<Lang, Copy> = {
   vi: {
     metaTitle: 'Phần mềm tiệm nail cho chủ tiệm người Việt | Certxa',
     metaDescription:
-      'Certxa là phần mềm tiệm nail cho tiệm của người Việt: máy POS thợ đọc được bằng tiếng Việt, xếp lượt (turn), phiếu, chia tip cho từng thợ, phiếu lương, máy check-in và lễ tân AI nghe điện thoại. Bắt đầu miễn phí; $22 một tháng cho tiệm.',
+      'Certxa là phần mềm tiệm nail cho tiệm của người Việt: máy POS thợ đọc được bằng tiếng Việt, xếp lượt (turn), phiếu, chia tip cho từng thợ, phiếu lương, máy check-in và lễ tân AI nghe điện thoại. Bắt đầu miễn phí; từ $29 một tháng cho tiệm.',
     eyebrow: 'Phần mềm tiệm nail',
     h1: 'Phần mềm tiệm nail dành cho tiệm của người Việt',
     answer:
-      'Certxa là phần mềm làm theo đúng cách các tiệm nail của người Việt ở Mỹ đang làm việc. Thợ có thể dùng máy POS bằng tiếng Việt, danh sách lượt theo đúng quy tắc tiệm bạn đang dùng, và check-in, đặt hẹn, tính tiền, tip, lương thợ cùng lễ tân AI nghe điện thoại đều nằm trong một hệ thống, từ $22 một tháng, không tốn phí cài đặt.',
+      'Certxa là phần mềm làm theo đúng cách các tiệm nail của người Việt ở Mỹ đang làm việc. Thợ có thể dùng máy POS bằng tiếng Việt, danh sách lượt theo đúng quy tắc tiệm bạn đang dùng, và check-in, đặt hẹn, tính tiền, tip, lương thợ cùng lễ tân AI nghe điện thoại đều nằm trong một hệ thống, từ $29 một tháng, không tốn phí cài đặt.',
     ctaStart: 'Dùng thử miễn phí',
     ctaPricing: 'Xem giá',
     otherLangLabel: 'Read in English',
@@ -134,8 +135,9 @@ const COPY: Record<Lang, Copy> = {
     priceHeading: 'Giá đơn giản',
     prices: [
       { plan: 'Solo', price: 'Miễn phí', note: 'Một thợ làm riêng' },
-      { plan: 'Professional', price: '$22 một tháng', note: 'Không giới hạn số thợ; $18 một tháng nếu trả theo năm' },
-      { plan: 'Elite', price: '$49 một tháng', note: 'Tối đa 5 tiệm; $39 một tháng nếu trả theo năm' },
+      { plan: 'Starter', price: '$29 một tháng', note: 'Tối đa 3 nhân viên; $290 một năm nếu trả theo năm' },
+      { plan: 'Professional', price: '$99 một tháng', note: 'Tối đa 8 nhân viên; $990 một năm nếu trả theo năm' },
+      { plan: 'Enterprise', price: '$179 một tháng', note: 'Tiệm lớn hoặc nhiều tiệm; $1,790 một năm nếu trả theo năm' },
     ],
     priceNote: 'Phí thẻ và số cuộc gọi Autumn có sẵn được ghi trên trang giá.',
     faqHeading: 'Câu hỏi chủ tiệm hay hỏi',
@@ -145,7 +147,7 @@ const COPY: Record<Lang, Copy> = {
       { q: 'Thợ có tự xem lương của mình được không?', a: 'Được. Mỗi thợ tự in phiếu lương theo ngày, theo tuần hoặc theo kỳ lương ngay trên máy POS, không cần quầy in cho từng người. Chủ tiệm có thể trả một phần bằng check, một phần tiền mặt và in check lương.' },
       { q: 'Mất internet thì sao?', a: 'Tiệm vẫn làm việc bình thường. Phiếu, check-in và tiền mặt được lưu trên máy và gửi lên khi có mạng lại. Quẹt thẻ thì cần có internet.' },
       { q: 'Lễ tân AI có nói tiếng Việt không?', a: 'Autumn trả lời bằng tiếng Anh và có thể nói tiếp bằng tiếng Việt hoặc tiếng Tây Ban Nha khi khách gọi nói tiếng đó. Cô ấy đặt, dời và hủy hẹn và biết lịch làm của từng thợ.' },
-      { q: 'Certxa giá bao nhiêu cho tiệm nail?', a: 'Certxa miễn phí cho một thợ làm riêng. Tiệm có nhiều thợ dùng gói Professional giá $22 một tháng ($18 một tháng nếu trả theo năm), không giới hạn số thợ và không có phí cài đặt.' },
+      { q: 'Certxa giá bao nhiêu cho tiệm nail?', a: 'Certxa miễn phí cho một thợ làm riêng. Tiệm có nhiều thợ dùng gói Starter $29 một tháng cho tối đa 3 nhân viên, Professional $99 một tháng cho tối đa 8 người, hoặc Enterprise $179 một tháng cho tiệm lớn, không có phí cài đặt.' },
       { q: 'Cần những gì để dùng?', a: 'Certxa chạy trên máy tính bảng cảm ứng và máy tính bạn có thể đã có sẵn. Dùng được với máy quẹt thẻ Stripe M2 và máy in hóa đơn USB, Bluetooth hoặc qua mạng.' },
     ],
     compareText: 'Đang so sánh?',
@@ -161,7 +163,7 @@ export default function VietnameseNailLanding({ lang }: { lang: Lang }) {
   const path = lang === 'en' ? EN_PATH : VI_PATH;
   const pageUrl = `${SITE}${path}`;
   const otherPath = lang === 'en' ? VI_PATH : EN_PATH;
-  const ogImage = `${SITE}/og-image.png`;
+  const ogImage = `${SITE}/assets/images/og-image.jpg`;
 
   const jsonLd = {
     '@context': 'https://schema.org',

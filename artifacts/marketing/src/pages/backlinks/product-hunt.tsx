@@ -59,7 +59,7 @@ So I built Certxa.
 The feature I'm most excited about is **Autumn**, our AI receptionist. She answers every call in under 2 seconds, around the clock. While your salon is open she sees your live board, so she can tell callers the real wait time. After hours she keeps booking without implying anyone is in the building. Salons that miss 30–40% of their calls get all of them back.
 
 A few things I'd genuinely love your feedback on:
-1. Is the pricing clear? (Free Solo / $22 Professional / $49 Elite, Autumn included in every plan)
+1. Is the pricing clear? (Free Solo / $29 Starter / $99 Professional / $179 Enterprise, Autumn calls included)
 2. Does the Autumn credit model (pay-per-minute balance) make sense?
 3. What feature would make you switch from your current salon software?
 
@@ -176,7 +176,7 @@ const submissionChecklist: ChecklistItem[] = [
   },
   {
     id: 'sub-pricing',
-    task: 'Set pricing: Freemium (Solo free; team plans from $22/mo with a 60-day free trial)',
+    task: 'Set pricing: Freemium (Solo free; team plans from $29/mo with a 60-day free trial)',
     detail: 'Be accurate. "Free trial" is a separate checkbox — check it.',
   },
 ];
@@ -209,7 +209,7 @@ const screenshotGuide = [
   {
     slot: '5 — Pricing / CTA',
     subject: 'Pricing cards',
-    copy: 'Solo free · Professional $22 · Elite $49 · 60-day free trial on team plans',
+    copy: 'Solo free · Starter $29 · Professional $99 · Enterprise $179 · 60-day free trial on team plans',
     note: 'Ends the gallery with a clear next step.',
   },
 ];
@@ -297,7 +297,7 @@ The feature I'm most proud of is Autumn, our AI receptionist. She answers every 
 
 We're live on Product Hunt today: [YOUR PH LINK]
 
-Would love any feedback from other founders, especially on pricing clarity (free Solo plan, $22 Professional, $49 Elite, Autumn included).`,
+Would love any feedback from other founders, especially on pricing clarity (free Solo plan, $29 Starter, $99 Professional, $179 Enterprise, Autumn included).`,
   },
   {
     name: 'r/smallbusiness',
@@ -355,7 +355,7 @@ The core product: online booking, a Stripe-powered POS, self check-in kiosk (5 l
 
 The differentiating feature is Autumn, an AI receptionist that answers every inbound call in under 2 seconds, 24/7. She books appointments, handles rescheduling and cancellations, answers questions about services and pricing, and checks the live wait board so callers get accurate wait times. Most salons miss 30–40% of their calls — Autumn routes all of them.
 
-Autumn is included in every plan (20 calls a month on Solo, 50 on Professional, 100 on Elite), then $0.50 per call. We chose per-call pricing over a flat fee because call volume varies enormously between a 2-chair nail salon and a 12-chair hair salon.
+Autumn is included in every plan (20 calls a month on Solo, 50 on Starter, 100 on Professional), then $0.50 per call. We chose per-call pricing over a flat fee because call volume varies enormously between a 2-chair nail salon and a 12-chair hair salon.
 
 Built with React, Express, and a custom telephony layer. Happy to answer technical questions.
 

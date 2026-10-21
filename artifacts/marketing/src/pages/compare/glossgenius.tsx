@@ -4,7 +4,7 @@ import ComparisonLayout, { ComparisonData } from './ComparisonLayout';
 
 const SITE = 'https://certxa.com';
 const PAGE_URL = `${SITE}/compare/certxa-vs-glossgenius`;
-const OG_IMAGE = `${SITE}/og-image.png`;
+const OG_IMAGE = `${SITE}/assets/images/og-image.jpg`;
 
 const data = comparisons.find((c) => c.id === 'glossgenius')! as unknown as ComparisonData;
 

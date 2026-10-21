@@ -136,6 +136,8 @@ if ($uri === '/launchsite') {
 }
 
 if (strpos($uri, '/launchsite/') === 0) {
+    // The address as requested, before the rewrite below — the page's canonical tag is built from it.
+    $_SERVER['CX_ORIGINAL_URI'] = $uri;
     $launch_uri  = preg_replace('#^/launchsite/?#', '/', $uri);
     if ($launch_uri === '') $launch_uri = '/';
 

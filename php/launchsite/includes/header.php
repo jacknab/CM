@@ -10,7 +10,13 @@ $is_preview   = ($current_page === 'preview.php');
 // (template iframes, meant to be embedded, not indexed) stay noindex/bare.
 $page_title       = $page_title       ?? 'Launchit by Certxa';
 $page_description = $page_description ?? 'Launchit is Certxa\'s salon and beauty website builder — pick a professionally designed template, connect your domain, and go live today. Hosting and SSL included.';
-$page_canonical   = 'https://certxa.com' . strtok($_SERVER['REQUEST_URI'], '?');
+// router.php rewrites /launchsite/<page> to /<page> for the scripts here; the canonical is the address as
+// requested. The catalogue at /launchsite/ is the same page as /launchsite.
+$_cx_path         = strtok($_SERVER['CX_ORIGINAL_URI'] ?? $_SERVER['REQUEST_URI'], '?');
+if ($_cx_path === '/launchsite/') $_cx_path = '/launchsite';
+$page_canonical   = 'https://certxa.com' . $_cx_path;
+// A catalogue with no templates in it is kept out of search results until it has some.
+$_cx_empty_catalog = isset($active_categories) && array_sum(array_column($active_categories, 'count')) === 0;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -22,7 +28,7 @@ $page_canonical   = 'https://certxa.com' . strtok($_SERVER['REQUEST_URI'], '?');
     <meta name="robots" content="noindex, nofollow">
     <?php else: ?>
     <meta name="description" content="<?php echo htmlspecialchars($page_description); ?>">
-    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
+    <meta name="robots" content="<?php echo $_cx_empty_catalog ? 'noindex, follow' : 'index, follow, max-snippet:-1, max-image-preview:large'; ?>">
     <link rel="canonical" href="<?php echo htmlspecialchars($page_canonical); ?>">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Certxa">
@@ -61,7 +67,7 @@ $page_canonical   = 'https://certxa.com' . strtok($_SERVER['REQUEST_URI'], '?');
             </a>
             <div class="nav-links">
                 <a href="/features" class="nav-link">SalonOS</a>
-                <a href="/launchsite/" class="nav-link nav-link--active">Launchit</a>
+                <a href="/launchsite" class="nav-link nav-link--active">Launchit</a>
                 <a href="/#how-it-works" class="nav-link">How It Works</a>
                 <a href="/pricing" class="nav-link">Pricing</a>
             </div>
@@ -72,7 +78,7 @@ $page_canonical   = 'https://certxa.com' . strtok($_SERVER['REQUEST_URI'], '?');
         </nav>
         <div class="mobile-menu" id="mobileMenu">
             <a href="/features" class="mobile-nav-link">SalonOS</a>
-            <a href="/launchsite/" class="mobile-nav-link">Launchit</a>
+            <a href="/launchsite" class="mobile-nav-link">Launchit</a>
             <a href="/#how-it-works" class="mobile-nav-link">How It Works</a>
             <a href="/pricing" class="mobile-nav-link">Pricing</a>
             <a href="/auth" class="mobile-nav-link">Log In</a>

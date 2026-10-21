@@ -7,7 +7,7 @@ import ShareBar from '@/components/ShareBar';
 
 const SITE = 'https://certxa.com';
 const PAGE_URL = `${SITE}/booking`;
-const OG_IMAGE = `${SITE}/og-image.png`;
+const OG_IMAGE = `${SITE}/assets/images/og-image.jpg`;
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },

@@ -159,7 +159,7 @@
       {
         "id": "d1",
         "title": "Transparent flat pricing",
-        "certxa": "One flat monthly price. No add-on fees for text reminders, email marketing, or advanced features. Solo is free, Professional is $22/mo and Elite is $49/mo.",
+        "certxa": "One flat monthly price. No add-on fees for text reminders, email marketing, or advanced features. Solo is free; Starter is $29/mo, Professional $99/mo and Enterprise $179/mo.",
         "competitor": "Base subscription plus paid add-ons for text notifications, email marketing, and other features. Costs can add up quickly."
       },
       {
@@ -271,7 +271,7 @@
       {
         "id": "f1",
         "question": "Is Certxa cheaper than Vagaro?",
-        "answer": "Certxa's Solo plan is free, Professional is $22/mo and Elite is $49/mo — the paid plans include features that Vagaro charges as add-ons (text reminders, email marketing, advanced reporting). For most multi-staff businesses, the total cost of Certxa is lower."
+        "answer": "Certxa's Solo plan is free; Starter is $29/mo, Professional $99/mo and Enterprise $179/mo — the paid plans include features that Vagaro charges as add-ons (text reminders, email marketing, advanced reporting). For most multi-staff businesses, the total cost of Certxa is lower."
       },
       {
         "id": "f2",
@@ -424,7 +424,7 @@
       {
         "id": "f3",
         "question": "Does Certxa charge commissions on bookings?",
-        "answer": "No. Certxa charges a flat monthly subscription — Solo is free, Professional is $22/mo and Elite is $49/mo. There are zero commissions on any bookings, new client or returning."
+        "answer": "No. Certxa charges a flat monthly subscription — Solo is free; Starter is $29/mo, Professional $99/mo and Enterprise $179/mo. There are zero commissions on any bookings, new client or returning."
       }
     ]
   },

@@ -13,17 +13,44 @@ header('Cache-Control: public, max-age=3600');
 $root  = rtrim($_SERVER['DOCUMENT_ROOT'] ?: dirname(__DIR__) . '/php', '/');
 $today = date('Y-m-d');
 
-/** mtime of the page template for a given URL path, YYYY-MM-DD, or today. */
-function page_lastmod(string $path, string $root, string $today): string {
+/**
+ * When a page last changed, YYYY-MM-DD: the newest of the files that make it — the React marketing app's page
+ * and content files for the pages it serves, otherwise the PHP template. Null when none is found, and the URL
+ * then has no <lastmod> (a date that is always "today" tells search engines nothing).
+ */
+function page_lastmod(string $path, string $root, string $today): ?string {
     $slug = trim($path, '/');
-    if ($slug === '') $slug = 'overview'; // homepage renders php/overview/default.php
-    foreach (["$root/$slug/default.php", "$root/$slug/index.php", "$root/$slug.php"] as $f) {
-        if (is_file($f)) {
-            $t = @filemtime($f);
-            if ($t) return date('Y-m-d', $t);
+    $mk   = dirname($root) . '/artifacts/marketing/src';
+    $marketing = [
+        ''                               => ["pages/index.tsx", "content/pages/home.json"],
+        'vietnamese-nail-salon-software' => ["pages/vietnamese-nail-salon-software.tsx", "components/landing/VietnameseNailLanding.tsx"],
+        'vi/phan-mem-tiem-nail'          => ["components/landing/VietnameseNailLanding.tsx"],
+    ];
+    if (isset($marketing[$slug])) $files = array_map(fn($f) => "$mk/$f", $marketing[$slug]);
+    elseif (strpos($slug, 'compare/') === 0) $files = ["$mk/pages/compare/ComparisonLayout.tsx", "$mk/content/data/comparisons.json"];
+    else $files = ["$mk/pages/$slug.tsx", "$mk/content/pages/$slug.json"];
+    $newest = 0;
+    foreach ($files as $f) if (is_file($f)) $newest = max($newest, (int) @filemtime($f));
+    if (!$newest) {
+        foreach (["$root/$slug/default.php", "$root/$slug/index.php", "$root/$slug.php"] as $f) {
+            if (is_file($f)) { $newest = (int) @filemtime($f); break; }
         }
     }
-    return $today;
+    return $newest ? date('Y-m-d', $newest) : null;
+}
+
+/** Whether the Launchit template catalogue has any templates (an empty one is noindex, so not listed). */
+function launchsite_has_templates(): bool {
+    try {
+        ob_start();
+        require __DIR__ . '/launchsite/config.php';
+        require __DIR__ . '/launchsite/includes/categories.php';
+        ob_end_clean();
+        return array_sum(array_column($active_categories ?? [], 'count')) > 0;
+    } catch (Throwable $e) {
+        if (ob_get_level()) ob_end_clean();
+        return true;
+    }
 }
 
 // Curated marketing URL list (path => priority). Order = priority order.
@@ -50,7 +77,9 @@ $PAGES = [
     '/google-data-policy'        => '0.62',
     '/privacy'                   => '0.60',
     '/terms'                     => '0.60',
+    '/sms-terms'                 => '0.40',
 ];
+if (!launchsite_has_templates()) unset($PAGES['/launchsite']);
 
 $which = $_GET['sitemap_kind'] ?? 'index';
 
@@ -62,7 +91,8 @@ if ($which === 'pages') {
         $loc  = htmlspecialchars('https://certxa.com' . ($path === '/' ? '/' : $path), ENT_XML1, 'UTF-8');
         $lm   = page_lastmod($path, $root, $today);
         $freq = ($path === '/' || $path === '/pricing') ? 'weekly' : 'monthly';
-        echo "  <url><loc>{$loc}</loc><lastmod>{$lm}</lastmod><changefreq>{$freq}</changefreq><priority>{$priority}</priority></url>\n";
+        $lmTag = $lm ? "<lastmod>{$lm}</lastmod>" : '';
+        echo "  <url><loc>{$loc}</loc>{$lmTag}<changefreq>{$freq}</changefreq><priority>{$priority}</priority></url>\n";
     }
     echo '</urlset>';
     exit;

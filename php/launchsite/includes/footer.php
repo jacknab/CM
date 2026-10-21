@@ -11,7 +11,7 @@
             <div class="footer-col">
                 <h4>Product</h4>
                 <ul>
-                    <li><a href="/launchsite/">Launchit</a></li>
+                    <li><a href="/launchsite">Launchit</a></li>
                     <li><a href="/features">SalonOS</a></li>
                     <li><a href="/pricing">Pricing</a></li>
                 </ul>

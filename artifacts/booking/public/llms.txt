@@ -1,6 +1,6 @@
 # Certxa — Salon & Spa Management Software
 
-> All-in-one salon and nail studio software: online booking, POS, staff management, payroll, client management, and an AI receptionist. The Solo plan is free; team plans start at $22/month.
+> All-in-one salon and nail studio software: online booking, POS, staff management, payroll, client management, and an AI receptionist. The Solo plan is free; team plans start at $29/month.
 
 ## Product
 
@@ -8,9 +8,9 @@
 - [Vietnamese Nail Salon Software](https://certxa.com/vietnamese-nail-salon-software): Nail salon software for Vietnamese-owned salons in the US. The POS switches per tablet between English, Vietnamese and Spanish; the owner dashboard has a Vietnamese setting; the check-in kiosk offers English, Spanish, Vietnamese, Chinese and Korean. Six turn-rotation methods (dollar-based, counted turns with half turns), tickets with Tech ID sign-in, tip split per technician, cash price, payroll paid part by check and part in cash, technician pay slips, offline tickets and cash sales, and the Autumn AI receptionist. Vietnamese version: [Phần mềm tiệm nail](https://certxa.com/vi/phan-mem-tiem-nail).
 - [Features](https://certxa.com/features): Every feature in detail: booking, front desk POS, check-in kiosk, waitlist and turn rotation, client records, loyalty, staff commissions and payroll, review requests, reports.
 - [Online Booking](https://certxa.com/booking): 24/7 client self-booking with provider selection, reminders and a waitlist. Deposits at booking are still in development.
-- [Autumn AI Receptionist](https://certxa.com/autumn): Automated phone and booking assistant powered by AI. Included in every plan (20 calls a month on Solo, 50 on Professional, 100 on Elite), then $0.50 per call. One-time $15 activation fee for the dedicated phone number, no monthly number fee; included calls start once a paid plan begins.
+- [Autumn AI Receptionist](https://certxa.com/autumn): Automated phone and booking assistant powered by AI. Included calls on Solo (20 a month), Starter (50) and Professional (100), then $0.50 per call. One-time $15 activation fee for the dedicated phone number, no monthly number fee; included calls start once a paid plan begins.
 - [Hardware](https://certxa.com/products): Certxa Station, Certxa Kiosk, wireless card reader and accessories, with prices.
-- [Pricing](https://certxa.com/pricing): Solo plan is free; Professional $22/month and Elite $49/month with a 60-day free trial.
+- [Pricing](https://certxa.com/pricing): Solo plan is free; Starter $29/month (up to 3 staff), Professional $99/month (up to 8 staff) and Enterprise $179/month, each with a 60-day free trial.
 - [Launchit Templates](https://certxa.com/launchsite): Gallery of salon website templates available through the website builder.
 - [Data Transfer](https://certxa.com/data-transfer): Free migration from GlossGenius, Vagaro, Square Appointments and others.
 - [Changelog](https://certxa.com/changelog): Release notes.
@@ -36,13 +36,13 @@
 
 ## Marketplace
 
-- The root URL (`https://certxa.com/`) is the SaaS platform homepage (see "Product" above), not the salon directory. Certxa also runs a consumer-facing directory of licensed nail salons at [certxa.com/salons](https://certxa.com/salons): state pages (`/salons/{state}`), city pages (`/salons/{state}/{city}`) and salon pages (`/salons/{state}/{city}/{salon}`). How it works: [certxa.com/salons/about](https://certxa.com/salons/about).
+- The root URL (`https://certxa.com/`) is the SaaS platform homepage (see "Product" above), not the salon directory. Certxa also runs, on its own subdomain, a consumer-facing directory of licensed nail salons at [salons.certxa.com](https://salons.certxa.com/salons): state pages (`/salons/{state}`), city pages (`/salons/{state}/{city}`) and salon pages (`/salons/{state}/{city}/{salon}`). How it works: [salons.certxa.com/salons/about](https://salons.certxa.com/salons/about).
 
 ## Key Facts
 
 - Founded February 2026 in Phoenix, Arizona by Thanh Lam, a Vietnamese nail salon owner
 - Built specifically for nail studios and nail technicians, from solo booth renters to multi-location salons
-- The Solo plan is free; team plans start at $22/month with a free trial; no long-term contracts
+- The Solo plan is free; team plans start at $29/month with a free trial; no long-term contracts
 - Free data migration from GlossGenius, Vagaro, Square Appointments, Booksy, and Fresha
 
 ## Contact

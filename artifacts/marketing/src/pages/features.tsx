@@ -6,7 +6,7 @@ import { features } from 'virtual:content';
 
 const SITE = 'https://certxa.com';
 const PAGE_URL = `${SITE}/features`;
-const OG_IMAGE = `${SITE}/og-image.png`;
+const OG_IMAGE = `${SITE}/assets/images/og-image.jpg`;
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },

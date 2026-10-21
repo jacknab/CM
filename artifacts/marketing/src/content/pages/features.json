@@ -428,7 +428,7 @@
       "body": [
         {
           "id": "p1",
-          "text": "After every visit, Certxa automatically texts the client asking for a review. Happy clients are sent straight to your Google review page. Unhappy clients can reach you privately first, so you can fix problems before they go public."
+          "text": "After every visit, Certxa automatically texts the client asking for a review, with a link straight to your Google review page. Every client gets the same link, so your reviews reflect every visit."
         },
         {
           "id": "p2",
@@ -446,7 +446,7 @@
         },
         {
           "id": "b3",
-          "text": "Private feedback channel for unhappy clients"
+          "text": "One review link for every client, as Google requires"
         },
         {
           "id": "b4",
@@ -504,7 +504,7 @@
         },
         {
           "id": "b7",
-          "text": "No extra subscription — pay only for active call minutes"
+          "text": "Calls included with your plan, then $0.50 per call — no extra subscription"
         }
       ],
       "autumnLink": true

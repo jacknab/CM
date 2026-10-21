@@ -91,13 +91,13 @@ export default function ComparisonLayout({ data, pageUrl }: Props) {
         <link rel="canonical" href={pageUrl} />
         <meta property="og:title" content={data.metaTitle} />
         <meta property="og:description" content={data.metaDescription} />
-        <meta property="og:image" content="https://certxa.com/og-image.png" />
+        <meta property="og:image" content="https://certxa.com/assets/images/og-image.jpg" />
         <meta property="og:url" content={pageUrl} />
         <meta property="og:type" content="website" />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content={data.metaTitle} />
         <meta name="twitter:description" content={data.metaDescription} />
-        <meta name="twitter:image" content="https://certxa.com/og-image.png" />
+        <meta name="twitter:image" content="https://certxa.com/assets/images/og-image.jpg" />
       </Helmet>
 
       {/* ── HERO ── */}
@@ -263,22 +263,27 @@ export default function ComparisonLayout({ data, pageUrl }: Props) {
                       <td className="py-4 px-6 text-center">
                         {row.certxa ? (
                           <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-primary/10 mx-auto">
-                            <Check className="h-3.5 w-3.5 text-primary" />
+                            <Check className="h-3.5 w-3.5 text-primary" aria-hidden />
+                            {/* The answer in words, for screen readers and for search engines / AI tools reading the table. */}
+                            <span className="sr-only">Yes</span>
                           </span>
                         ) : (
                           <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-muted mx-auto">
-                            <X className="h-3.5 w-3.5 text-muted-foreground" />
+                            <X className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                            <span className="sr-only">No</span>
                           </span>
                         )}
                       </td>
                       <td className="py-4 px-6 text-center">
                         {row.competitor ? (
                           <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-muted mx-auto">
-                            <Check className="h-3.5 w-3.5 text-muted-foreground" />
+                            <Check className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                            <span className="sr-only">Yes</span>
                           </span>
                         ) : (
                           <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-muted mx-auto">
-                            <X className="h-3.5 w-3.5 text-muted-foreground" />
+                            <X className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                            <span className="sr-only">No</span>
                           </span>
                         )}
                       </td>

@@ -47,7 +47,7 @@ $_base_schema = [
     'publisher' => ['@id' => SITE_URL . '/#organization'],
     'potentialAction' => [
       '@type'       => 'SearchAction',
-      'target'      => ['@type' => 'EntryPoint', 'urlTemplate' => SITE_URL . '/search?q={search_term_string}'],
+      'target'      => ['@type' => 'EntryPoint', 'urlTemplate' => SITE_URL . '/blog?q={search_term_string}'],
       'query-input' => 'required name=search_term_string',
     ],
   ],
@@ -158,12 +158,13 @@ $_base_schema = [
       '@type'      => 'AggregateOffer',
       'priceCurrency' => 'USD',
       'lowPrice'   => 0,
-      'highPrice'  => 49,
-      'offerCount' => 3,
+      'highPrice'  => 179,
+      'offerCount' => 4,
       'offers' => [
-        ['@type' => 'Offer', 'name' => 'Solo Plan',         'price' => 0,  'priceCurrency' => 'USD', 'priceSpecification' => ['@type' => 'UnitPriceSpecification', 'price' => 0,  'priceCurrency' => 'USD', 'billingDuration' => ['@type' => 'QuantitativeValue', 'value' => 1, 'unitCode' => 'MON']], 'url' => SITE_URL . '/pricing'],
-        ['@type' => 'Offer', 'name' => 'Professional Plan', 'price' => 22, 'priceCurrency' => 'USD', 'priceSpecification' => ['@type' => 'UnitPriceSpecification', 'price' => 22, 'priceCurrency' => 'USD', 'billingDuration' => ['@type' => 'QuantitativeValue', 'value' => 1, 'unitCode' => 'MON']], 'url' => SITE_URL . '/pricing'],
-        ['@type' => 'Offer', 'name' => 'Elite Plan',        'price' => 49, 'priceCurrency' => 'USD', 'priceSpecification' => ['@type' => 'UnitPriceSpecification', 'price' => 49, 'priceCurrency' => 'USD', 'billingDuration' => ['@type' => 'QuantitativeValue', 'value' => 1, 'unitCode' => 'MON']], 'url' => SITE_URL . '/pricing'],
+        ['@type' => 'Offer', 'name' => 'Solo Plan', 'price' => 0, 'priceCurrency' => 'USD', 'priceSpecification' => ['@type' => 'UnitPriceSpecification', 'price' => 0, 'priceCurrency' => 'USD', 'billingDuration' => ['@type' => 'QuantitativeValue', 'value' => 1, 'unitCode' => 'MON']], 'url' => SITE_URL . '/pricing'],
+        ['@type' => 'Offer', 'name' => 'Starter Plan', 'price' => 29, 'priceCurrency' => 'USD', 'priceSpecification' => ['@type' => 'UnitPriceSpecification', 'price' => 29, 'priceCurrency' => 'USD', 'billingDuration' => ['@type' => 'QuantitativeValue', 'value' => 1, 'unitCode' => 'MON']], 'url' => SITE_URL . '/pricing'],
+        ['@type' => 'Offer', 'name' => 'Professional Plan', 'price' => 99, 'priceCurrency' => 'USD', 'priceSpecification' => ['@type' => 'UnitPriceSpecification', 'price' => 99, 'priceCurrency' => 'USD', 'billingDuration' => ['@type' => 'QuantitativeValue', 'value' => 1, 'unitCode' => 'MON']], 'url' => SITE_URL . '/pricing'],
+        ['@type' => 'Offer', 'name' => 'Enterprise Plan', 'price' => 179, 'priceCurrency' => 'USD', 'priceSpecification' => ['@type' => 'UnitPriceSpecification', 'price' => 179, 'priceCurrency' => 'USD', 'billingDuration' => ['@type' => 'QuantitativeValue', 'value' => 1, 'unitCode' => 'MON']], 'url' => SITE_URL . '/pricing'],
       ],
     ],
     'featureList' => [

@@ -7,7 +7,7 @@ import { products } from 'virtual:content';
 
 const SITE = 'https://certxa.com';
 const PAGE_URL = `${SITE}/products`;
-const OG_IMAGE = `${SITE}/og-image.png`;
+const OG_IMAGE = `${SITE}/assets/images/og-image.jpg`;
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
@@ -64,7 +64,9 @@ const jsonLd = {
             '@type': 'Product',
             name: 'Certxa Station',
             description: 'All-in-one 15" HD touchscreen POS terminal for salon front desks.',
-            offers: { '@type': 'Offer', price: '799', priceCurrency: 'USD', availability: 'https://schema.org/InStock' },
+            image: `${SITE}${mainProductImages[0]}`,
+            brand: { '@type': 'Brand', name: 'Certxa' },
+            offers: { '@type': 'Offer', price: '799', priceCurrency: 'USD', url: PAGE_URL },
           },
         },
         {
@@ -74,7 +76,9 @@ const jsonLd = {
             '@type': 'Product',
             name: 'Certxa Kiosk',
             description: 'Self check-in kiosk and customer-facing checkout screen for salons.',
-            offers: { '@type': 'Offer', price: '399', priceCurrency: 'USD', availability: 'https://schema.org/InStock' },
+            image: `${SITE}${mainProductImages[1]}`,
+            brand: { '@type': 'Brand', name: 'Certxa' },
+            offers: { '@type': 'Offer', price: '399', priceCurrency: 'USD', url: PAGE_URL },
           },
         },
         {
@@ -83,8 +87,11 @@ const jsonLd = {
           item: {
             '@type': 'Product',
             name: 'Wireless Card Reader',
-            description: 'Stripe-powered wireless card reader. Chip, tap, and swipe. Free with the Professional plan.',
-            offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD', availability: 'https://schema.org/InStock' },
+            // $149 on its own, as the page shows; free with the Professional plan.
+            description: 'Stripe-powered wireless card reader. Chip, tap, and swipe. $149 on its own; free with the Professional plan.',
+            image: `${SITE}${mainProductImages[2]}`,
+            brand: { '@type': 'Brand', name: 'Certxa' },
+            offers: { '@type': 'Offer', price: '149', priceCurrency: 'USD', url: PAGE_URL },
           },
         },
       ],

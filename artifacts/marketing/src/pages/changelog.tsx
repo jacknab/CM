@@ -4,7 +4,7 @@ import { changelog } from 'virtual:content';
 
 const SITE = 'https://certxa.com';
 const PAGE_URL = `${SITE}/changelog`;
-const OG_IMAGE = `${SITE}/og-image.png`;
+const OG_IMAGE = `${SITE}/assets/images/og-image.jpg`;
 
 const jsonLd = {
   '@context': 'https://schema.org',

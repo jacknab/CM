@@ -9,7 +9,7 @@ import { formatPricingFeatureLimit, formatPricingFeatureName } from '@/lib/prici
 
 const SITE = 'https://certxa.com';
 const PAGE_URL = `${SITE}/pricing`;
-const OG_IMAGE = `${SITE}/og-image.png`;
+const OG_IMAGE = `${SITE}/assets/images/og-image.jpg`;
 
 type PublicPricingPlan = {
   id: number;
@@ -43,13 +43,9 @@ function getPlanTier(plan: PublicPricingPlan): (typeof PLAN_ORDER)[number] | nul
   return null;
 }
 
-async function fetchPricingPlans(): Promise<PublicPricingPlan[]> {
-  const res = await fetch('/api/public/pricing-plans');
-  if (!res.ok) throw new Error('Failed to load pricing plans');
-
-  const plans: PublicPricingPlan[] = await res.json();
+/** The plans the page shows, in order, from the admin's plan list. Throws when one is missing. */
+function selectPlans(plans: PublicPricingPlan[]): PublicPricingPlan[] {
   if (!Array.isArray(plans)) throw new Error('Pricing plans response is invalid');
-
   const selectedPlans = PLAN_ORDER.map((tier) => plans.find((plan) => getPlanTier(plan) === tier));
   const missingPlans = PLAN_ORDER.filter((_, index) => !selectedPlans[index]);
   if (missingPlans.length > 0) {
@@ -57,6 +53,26 @@ async function fetchPricingPlans(): Promise<PublicPricingPlan[]> {
   }
 
   return selectedPlans.filter((plan): plan is PublicPricingPlan => plan !== undefined);
+}
+
+async function fetchPricingPlans(): Promise<PublicPricingPlan[]> {
+  const res = await fetch('/api/public/pricing-plans');
+  if (!res.ok) throw new Error('Failed to load pricing plans');
+  return selectPlans(await res.json());
+}
+
+/**
+ * The plans the server put in the page (marketing-site.ts sets them before rendering /pricing and repeats them
+ * in the page as window.__CERTXA_PRICING_PLANS__), so the cards and prices are in the HTML search engines and
+ * AI crawlers read, and the first render in the browser matches it. Null when there are none.
+ */
+function preloadedPlans(): PublicPricingPlan[] | null {
+  try {
+    const raw = (globalThis as { __CERTXA_PRICING_PLANS__?: PublicPricingPlan[] }).__CERTXA_PRICING_PLANS__;
+    return raw ? selectPlans(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
 function formatMonthlyPrice(priceInCents: number): string {
@@ -78,7 +94,7 @@ const stagger = {
 };
 
 export default function PricingPage() {
-  const [pricingPlans, setPricingPlans] = useState<PublicPricingPlan[] | null>(null);
+  const [pricingPlans, setPricingPlans] = useState<PublicPricingPlan[] | null>(preloadedPlans);
   const [pricingPlansError, setPricingPlansError] = useState(false);
 
   useEffect(() => {
@@ -111,7 +127,7 @@ export default function PricingPage() {
     hero: {
       eyebrow: 'Simple, transparent pricing',
       headline: 'Certxa salon software pricing',
-      subhead: 'Explore Professional, Elite, and Enterprise plans. No commissions, no long-term contracts.',
+      subhead: 'Starter $29, Professional $99 and Enterprise $179 a month, or Solo free for one professional. No commissions, no long-term contracts.',
     },
     plans: (pricingPlans ?? []).map((plan) => ({
       ...plan,
@@ -371,12 +387,12 @@ export default function PricingPage() {
       {
         id: 'faq-1',
         question: 'How much does Certxa cost?',
-        answer: 'Current plan prices are shown on the pricing cards above.',
+        answer: 'Starter is $29 a month for up to 3 staff, Professional is $99 a month for up to 8 staff, and Enterprise is $179 a month for large teams or several locations. Paying yearly costs ten months instead of twelve: $290, $990 or $1,790. The Solo plan, for one independent professional, is free.',
       },
       {
         id: 'faq-2',
         question: 'Is there a free trial?',
-        answer: 'Trial availability and terms are shown during signup for each plan.',
+        answer: 'Yes. Starter, Professional and Enterprise start with a 60-day free trial. A credit card is required to start a paid plan, but you are not charged until the trial ends. Solo is free with no trial needed.',
       },
       {
         id: 'faq-3',
@@ -391,7 +407,7 @@ export default function PricingPage() {
       {
         id: 'faq-5',
         question: 'Is the Autumn AI receptionist included?',
-        answer: 'Autumn AI availability and any plan limits are listed with the features above.',
+        answer: 'Yes. Autumn answers calls on every plan: 20 calls a month are included on Solo, 50 on Starter and 100 on Professional. Additional calls are $0.50 each, and calls of 30 seconds or less are free. There is a one-time $15 fee to set up Autumn\'s phone number.',
       },
       {
         id: 'faq-6',
@@ -401,7 +417,7 @@ export default function PricingPage() {
     ],
     cta: {
       headline: 'Choose the right Certxa plan.',
-      subhead: 'Compare Professional, Elite, and Enterprise above.',
+      subhead: 'Compare Starter, Professional and Enterprise above.',
       button: 'Get started',
     },
   };
@@ -412,13 +428,13 @@ export default function PricingPage() {
         <title>Salon Software Pricing — Certxa</title>
         <meta
           name="description"
-          content="Compare Certxa Professional, Elite, and Enterprise salon software plans. No commissions and no long-term contracts."
+          content="Certxa salon software pricing: Starter $29, Professional $99, Enterprise $179 a month; Solo is free. 60-day free trial, no commissions, no contracts."
         />
         <link rel="canonical" href={PAGE_URL} />
         <meta property="og:title" content="Salon Software Pricing — Certxa" />
         <meta
           property="og:description"
-          content="Compare Certxa Professional, Elite, and Enterprise salon software plans. No commissions and no long-term contracts."
+          content="Certxa salon software pricing: Starter $29, Professional $99, Enterprise $179 a month; Solo is free. 60-day free trial, no commissions, no contracts."
         />
         <meta property="og:image" content={OG_IMAGE} />
         <meta property="og:url" content={PAGE_URL} />
@@ -427,7 +443,7 @@ export default function PricingPage() {
         <meta name="twitter:title" content="Salon Software Pricing — Certxa" />
         <meta
           name="twitter:description"
-          content="Compare Certxa Professional, Elite, and Enterprise salon software plans. No commissions and no long-term contracts."
+          content="Certxa salon software pricing: Starter $29, Professional $99, Enterprise $179 a month; Solo is free. 60-day free trial, no commissions, no contracts."
         />
         <meta name="twitter:image" content={OG_IMAGE} />
         <script type="application/ld+json">
@@ -440,7 +456,7 @@ export default function PricingPage() {
                 name: 'Salon Software Pricing — Certxa',
                 url: PAGE_URL,
                 description:
-                  'Compare Certxa Professional, Elite, and Enterprise salon software plans. No commissions and no long-term contracts.',
+                  'Certxa salon software pricing: Starter $29, Professional $99, Enterprise $179 a month; Solo is free. 60-day free trial, no commissions, no contracts.',
                 isPartOf: { '@id': `${SITE}/#website` },
                 about: { '@id': `${SITE}/#organization` },
                 breadcrumb: {

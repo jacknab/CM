@@ -77,7 +77,7 @@ const MOVED: Record<string, string> = {
   "/best-free-salon-booking-system": "/pricing",
   "/card-reader-pos": "/products",
   "/case-studies": "/about",
-  "/vietnamese-salon-software": "/",
+  "/vietnamese-salon-software": "/vietnamese-nail-salon-software",
   "/certxa-vs-glossgenius": "/compare/certxa-vs-glossgenius",
   "/certxa-vs-vagaro": "/compare/certxa-vs-vagaro",
   "/certxa-vs-fresha": "/compare/certxa-vs-fresha",
@@ -268,7 +268,10 @@ export function createMarketingSite(): Router {
     try {
       if (source && IMAGE_HOSTS.has(new URL(source).hostname)) {
         res.set("Cache-Control", "public, max-age=3600");
-        return res.redirect(302, source);
+        // Stock photos (img1.wsimg.com/isteam/getty/…) are sent at most 1280 px wide: GoDaddy resizes them on
+        // its side, a fraction of the original's size. Logos and anything already resized are sent as they are.
+        const sized = /^https:\/\/img1\.wsimg\.com\/isteam\/getty\/[^/]+$/.test(source) ? `${source}/:/rs=w:1280,m` : source;
+        return res.redirect(302, sized);
       }
     } catch {
       /* not an absolute URL */
@@ -283,6 +286,11 @@ export function createMarketingSite(): Router {
     if (moved) return res.redirect(301, moved);
     if (!owned.has(pagePath)) return next();
     try {
+      // /pricing shows the admin's plans; they go into the page itself so the prices are in its HTML.
+      const plans = pagePath === "/pricing" ? await pricingPlans() : null;
+      // Left in place between requests (only /pricing reads it, and the plans are the same for everyone), so two
+      // pages rendering at once can't take it away from each other.
+      if (plans) (globalThis as any).__CERTXA_PRICING_PLANS__ = plans;
       const result = await render(pagePath, SITE_ORIGIN);
       if (result.redirect || !result.html) return next();
       // Pages set their own canonical tag; add one only for a page that doesn't,
@@ -298,7 +306,8 @@ export function createMarketingSite(): Router {
         // Sections fade in on scroll and are rendered hidden until the script
         // runs; without JavaScript they must simply be visible.
         `<noscript><style>[style*="opacity:0"]{opacity:1!important;transform:none!important}</style></noscript>` +
-        `<script>window.__SITE_PATHS__=${JSON.stringify([...owned])}</script>`;
+        `<script>window.__SITE_PATHS__=${JSON.stringify([...owned])}</script>` +
+        (plans ? `<script>window.__CERTXA_PRICING_PLANS__=${JSON.stringify(plans).replace(/</g, "\\u003c")}</script>` : "");
       const page = template
         .replace("<!--app-head-->", () => head)
         .replace("<!--app-html-->", () => applyInterimLinks(result.html, owned))
@@ -316,6 +325,22 @@ export function createMarketingSite(): Router {
   });
 
   return router;
+}
+
+/** The public plan list (/api/public/pricing-plans), kept for five minutes. Null when it can't be had. */
+let plansCache: { at: number; plans: unknown[] } | null = null;
+async function pricingPlans(): Promise<unknown[] | null> {
+  if (plansCache && Date.now() - plansCache.at < 300_000) return plansCache.plans;
+  try {
+    const res = await fetch(`http://127.0.0.1:${process.env.PORT || "5000"}/api/public/pricing-plans`, { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) return plansCache?.plans ?? null;
+    const plans = await res.json();
+    if (!Array.isArray(plans)) return plansCache?.plans ?? null;
+    plansCache = { at: Date.now(), plans };
+    return plans;
+  } catch {
+    return plansCache?.plans ?? null;
+  }
 }
 
 /**
