@@ -19144,6 +19144,34 @@ or
     }
   });
 
+  // GET /api/nail/service-times?days=1|7|30 — how long services really take (START to DONE, or to checkout),
+  // against the time planned for them, per technician and per service (owner, 2026-10-21). Per-service figures use
+  // tickets of one service only, so a visit's several services don't blur them.
+  app.get("/api/nail/service-times", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const days = [1, 7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 7;
+      const base = `FROM appointments a
+        WHERE a.store_id = $1 AND a.actual_minutes IS NOT NULL AND a.status IN ('started', 'completed')
+          AND COALESCE(a.service_done_at, a.completed_at) >= NOW() - make_interval(days => $2)`;
+      const byTech = await pool.query(
+        `SELECT a.staff_id AS id, st.name, COUNT(*)::int AS count, ROUND(AVG(a.actual_minutes))::int AS actual, ROUND(AVG(a.duration))::int AS planned,
+                SUM(a.actual_minutes)::int AS total_actual
+           ${base.replace("FROM appointments a", "FROM appointments a JOIN staff st ON st.id = a.staff_id")}
+          GROUP BY a.staff_id, st.name ORDER BY st.name`, [storeId, days]);
+      const byService = await pool.query(
+        `SELECT a.service_id AS id, sv.name, COUNT(*)::int AS count, ROUND(AVG(a.actual_minutes))::int AS actual, ROUND(AVG(a.duration))::int AS planned
+           ${base.replace("FROM appointments a", "FROM appointments a JOIN services sv ON sv.id = a.service_id")}
+            AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(a.custom_lines, '[]'::jsonb)) l WHERE l ? 'serviceId')
+          GROUP BY a.service_id, sv.name ORDER BY COUNT(*) DESC, sv.name LIMIT 60`, [storeId, days]);
+      return res.json({ days, byTech: byTech.rows, byService: byService.rows });
+    } catch (err) {
+      console.error("[nail/service-times]", err);
+      return res.status(500).json({ message: "Could not load service times" });
+    }
+  });
+
   // POST /api/nail/tickets/:id/done — DONE (owner, 2026-10-21): the technician has finished their service. The
   // ticket stays open until it is paid, but the technician is free: their turn is counted now and they go back
   // in line (the same as a checkout does — checkout later doesn't do it again), and a ticket of the same visit

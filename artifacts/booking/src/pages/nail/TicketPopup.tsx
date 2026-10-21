@@ -96,6 +96,13 @@ export function TicketPopup(p: Props) {
               <UserRound size={18} />
               <div><small>Technician</small><strong>{t.staff?.name ?? "Not assigned"}</strong></div>
             </div>
+            {t.actualMinutes != null && (
+              // DONE: how long the service really took, against the time planned for it.
+              <div className="checkin-modal-detail" data-testid="nail-popup-service-time">
+                <Clock size={18} />
+                <div><small>Service time</small><strong>{formatDuration(t.actualMinutes)} · planned {formatDuration(t.duration)}</strong></div>
+              </div>
+            )}
             <div className="checkin-modal-detail">
               <Clock size={18} />
               <div><small>{t.status === "started" ? "In chair since" : "Duration"}</small><strong>{t.status === "started" ? `${fmtTime(t.startedAt ?? t.date)} · ${formatElapsed(t.startedAt ?? t.date, now)}` : formatDuration(t.duration)}</strong></div>

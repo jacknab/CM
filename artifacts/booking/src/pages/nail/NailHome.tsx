@@ -81,6 +81,7 @@ import { OfflineQueueSheet } from "./OfflineQueueSheet";
 import { TurnEarnedPopup } from "./TurnEarnedPopup";
 import { ChangeManagerPinSheet } from "./ChangeManagerPinSheet";
 import { TurnRotationSheet } from "./TurnRotationSheet";
+import { ServiceTimesSheet } from "./ServiceTimesSheet";
 import { BookingPanel, type BookingSlot } from "./BookingPanel";
 import { GridEditor } from "./GridEditor";
 import { RegisterPicker } from "./RegisterPicker";
@@ -257,7 +258,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   useEffect(() => () => { if (typingTimer.current) clearTimeout(typingTimer.current); }, []);
   // Every time the Check-In page opens or closes, start from "not typing" — never inherit a stale overlay.
   useEffect(() => { onFrontdeskTyping(false); }, [showCheckIn, onFrontdeskTyping]);
-  const [sheet, setSheet] = useState<null | "voucher" | "timeclock" | "dayclose" | "clients" | "manager" | "turns">(null);
+  const [sheet, setSheet] = useState<null | "voucher" | "timeclock" | "dayclose" | "clients" | "manager" | "turns" | "servicetimes">(null);
   const [assigning, setAssigning] = useState<Assigning>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assignNeedsReason, setAssignNeedsReason] = useState(false);
@@ -1412,6 +1413,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     { key: "messages", label: "Messages", icon: Bell, run: () => navigate(appPage("/sms-inbox")!) },
     { key: "keygrid", label: "Key Grid", sub: "Arrange the POS keys", icon: LayoutGrid, run: () => setGridEditor("open") },
     { key: "turnrotation", label: "Turn Rotation", sub: "How turns are counted", icon: RotateCcw, run: () => setSheet("turns") },
+    { key: "servicetimes", label: "Service Times", sub: "Actual vs planned", icon: Clock, run: () => setSheet("servicetimes") },
     { key: "managerpin", label: "Manager PIN", sub: "Change the PIN for this menu", icon: KeyRound, run: () => { setShowMore(false); setPinChange(true); } },
     { key: "lockscreen", label: "Lock Screen", sub: saveLock.isPending ? "Saving…" : lockEnabled ? "On · Tech ID to use the POS" : "Off · no sign-in", icon: Lock, keepOpen: true,
       run: () => { if (!saveLock.isPending) saveLock.mutate(!lockEnabled); } },
@@ -1770,6 +1772,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
         />
       )}
       {sheet === "clients" && <ClientLookupSheet onClose={() => setSheet(null)} />}
+      {sheet === "servicetimes" && <ServiceTimesSheet onClose={() => setSheet(null)} />}
       {sheet === "turns" && <TurnRotationSheet storeId={storeId} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); say("Turn rotation saved"); }} />}
       {sheet === "voucher" && (
         <VoucherRedeemSheet onClose={() => setSheet(null)} onRedeemed={(appointmentId) => { setSheet(null); void openTicketById(appointmentId); }} />

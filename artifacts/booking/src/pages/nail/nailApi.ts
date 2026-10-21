@@ -28,6 +28,8 @@ export interface BoardTicket {
   waitsForTicket?: number;
   /** The technician pressed DONE: their service is finished and they are free; the ticket waits to be paid. */
   doneAt?: string;
+  /** How long the service really took, START to DONE, in minutes. */
+  actualMinutes?: number;
   status: "confirmed" | "started";
   date: string;
   checkedInAt: string | null;
@@ -598,6 +600,11 @@ async function offlineAssignProblem(storeId: number, serviceId: number, staffId:
   if (!tech.supportsService) return `${tech.name} doesn't perform this service.`;
   return null;
 }
+
+/** How long services really take against the time planned, per technician and per service, over the last `days`. */
+export interface ServiceTimeRow { id: number; name: string; count: number; actual: number; planned: number; total_actual?: number }
+export const fetchServiceTimes = (days: number) =>
+  call<{ days: number; byTech: ServiceTimeRow[]; byService: ServiceTimeRow[] }>(`/api/nail/service-times?days=${days}`);
 
 /** DONE: the technician has finished their service. They are free again and back in line; the ticket stays
  *  open until it is paid, and a ticket of the same visit waiting for it goes to the next technician. Needs the server. */
