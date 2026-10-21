@@ -78,6 +78,12 @@
   }).catch(function(){});
 })();
 </script>
+<?php
+// Live chat is staffed every day 10am–9pm US Eastern; the launcher shows only then, as on the new site
+// (artifacts/marketing/src/lib/live-chat-hours.ts).
+$_cx_chat_hour = (int) (new DateTime('now', new DateTimeZone('America/New_York')))->format('G');
+if ($_cx_chat_hour >= 10 && $_cx_chat_hour < 21): ?>
 <script src="/assets/js/livechat-widget.js?v=<?= @filemtime($_SERVER['DOCUMENT_ROOT'].'/assets/js/livechat-widget.js') ?: '1' ?>" defer></script>
+<?php endif; ?>
 </body>
 </html>

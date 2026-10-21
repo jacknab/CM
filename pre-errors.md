@@ -6,12 +6,6 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
-## 2026-10-17 — Flaky API test: concurrent identical requests (idempotency)
-
-- **File:** `artifacts/api-server/src/__tests__/idempotency.test.ts` — "durable idempotency > of two identical requests arriving at the same moment, exactly one does the work".
-- **Symptom:** failed once in a full `npx vitest run` (484 tests) while working on the suspended-account change; passed on the next three runs (alone twice, full suite once). Timing-dependent: two requests racing for the same idempotency key.
-- **Why not fixed now:** unrelated to that change and not reproducible on demand; needs a look at whether the test or the claim logic depends on scheduling order.
-
 ## 2026-10-13 — Certxa Pro app: "Notify client" switch does nothing; edit screen offers six fixed times
 
 - **File:** `certxa-pro-replit/staff-app-latest/artifacts/certxa-pro/app/(tabs)/index.tsx` (reschedule dialog, `notifyClient`) and `app/appointment/[id].tsx:11` (`timeSlots`).
@@ -20,48 +14,22 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 - **Context:** found while fixing the day view and overlap check. The server has no "reschedule and notify" option on `PATCH /api/appointments/:id` today, so symptom 1 needs a decision on what the client should be sent (SMS, e-mail, both).
 - **Why not fixed now:** both are product decisions rather than defects in what was asked for.
 
-## 2026-10-12 — Support ticket closure emails are failing to send
+## 2026-10-12 — Marketing site move: what is still open (updated 2026-10-21)
 
-**Where:** server error log (`/root/.pm2/logs/certxa-api-error*.log`), lines `[AutoClose] Could not send closure email for ticket #TK-…: Invalid login: 454 4.7.0 Account is temporarily unavailable.`
+1. **Hardware shop is built but closed.** Cart, UPS Ground quote, Stripe checkout (card + Affirm, no tax), order table and the admin Fulfillment queue exist (`artifacts/api-server/src/lib/shop.ts`). It stays closed until the server has UPS credentials (`UPS_CLIENT_ID`, `UPS_CLIENT_SECRET`, `UPS_SHIPPER_NUMBER`), a ship-from address (`SHOP_SHIP_FROM_*`) and a boxed weight for every product in `shared/shopCatalog.ts`. The UPS call and a real payment have never been run; Affirm must be enabled in the Stripe dashboard; no email goes out on a new order. /products still shows "Buy now" while the shop is closed, and says the card reader is "free with every Professional plan" — owner to confirm both.
+2. **Stock photographs** (Getty images) are not hosted here; `/airo-assets/images/<slot>` redirects to GoDaddy's CDN (since 2026-10-21 at 1280 px). They disappear if the Airo site is cancelled.
+3. **Logo.** Header uses the owner's logo file ("cirtXa", at the owner's instruction); the dark footer still uses the text wordmark (`BrandWordmark.tsx`) because no light-on-dark logo exists. The home page's Autumn screenshot (`media/pages__autumn__new-screenshot`) still shows the older "sirtXa" logo.
+4. **/data-transfer** (PHP, `php/data-transfer/default.php` ~line 512) shows "24h average transfer time · 0 data lost · 7+ platforms" and a GDPR claim. Keep only if true — owner to confirm.
+5. **Launchit template catalogue is empty** (`launchsite_templates` has 0 rows). Since 2026-10-21 the empty page is `noindex` and out of the sitemap until templates are added. Owner: add templates or retire the page.
+6. **nginx sends some security headers twice** (`/etc/nginx/conf.d/certxa.conf` lines 77–80 repeat what `artifacts/api-server/src/index.ts` sets; `X-XSS-Protection` goes out as both `0` and `1; mode=block`). Server change for the owner: delete those lines, `nginx -t && systemctl reload nginx`.
 
-**Symptom:** when the support system auto-closes a ticket, the email telling the customer fails because the mail account's sign-in is refused by the provider ("account temporarily unavailable"). The ticket still closes; the customer is not told.
-
-**Context:** seen while checking logs after an unrelated /nail deploy. The same mailbox may be the one the support inbox reads from, so inbound support mail could be affected too — not checked.
-
-**Why not fixed:** it is a mail-account problem at the provider (credentials or a lock on the account), not code; needs the owner to check that mailbox's sign-in.
-
----
-
-## 2026-10-12 — Marketing site move: what is still open
-
-The new site (`artifacts/marketing`) now serves `/`, `/pricing`, `/features`, `/booking`, `/autumn`, `/about`, `/contact`, `/careers`, `/changelog`, `/roadmap`. Still to do, each needing the owner or more work:
-
-1. **Old contact form never sent anything.** `php/contact/default.php:259` (`handleContactForm`) only showed "Message received!" after a timer; every message typed into it was discarded. Not fixed in PHP because `/contact` now comes from the new app, whose form posts to `POST /api/contact-form` (`artifacts/api-server/src/marketing-site.ts`) and emails support@certxa.com. Live chat on the new site (launcher on every page plus a button on Contact) appears only 10am–9pm Eastern, every day (`artifacts/marketing/src/lib/live-chat-hours.ts`); the PHP pages still load the chat launcher at all hours (`php/includes/footer.php:79`).
-2. **Changelog and Roadmap** were rewritten on 2026-10-13 from the real release history and the real state of the product (no version numbers beyond date stamps, no vote counts). Keep them current by hand: `artifacts/marketing/src/content/pages/changelog.json` and `roadmap.json`.
-3. **Hardware shop is built but closed.** Cart, UPS Ground quote, Stripe checkout (card + Affirm, no tax), order table and the admin Fulfillment queue exist (see `artifacts/api-server/src/lib/shop.ts`). It stays closed, and Buy buttons keep going to the contact page, until the server has UPS credentials (`UPS_CLIENT_ID`, `UPS_CLIENT_SECRET`, `UPS_SHIPPER_NUMBER`), a ship-from address (`SHOP_SHIP_FROM_*`), and a boxed weight for every product in `shared/shopCatalog.ts`. The UPS call and a real payment have never been run. Affirm must be enabled in the Stripe dashboard. No email goes out on a new order. Two statements on the Hardware page carry a cost or a conflict: the card reader is "free with every Professional plan", and processing is quoted as 2.7% + 10¢ there but 2.7% + $0.05 on `/pricing`. **Still on PHP:** `/privacy` and `/terms` (owner decided: keep the current legal text — port it into the new design before PHP is removed, do not use Airo's text), `/blog` (new page is a static list; real posts are in the database).
-4. **Stock photographs** (23 Getty images) are not hosted here; `/airo-assets/images/<slot>` redirects to GoDaddy's CDN. They disappear if the Airo site is cancelled.
-5. **Logo.** The owner's logo file (reads "cirtXa") is in every page header at the owner's instruction (`artifacts/marketing/public/logo.png`, also used by `php/includes/nav.php`). The dark footer still uses the text wordmark `BrandWordmark.tsx` ("certXa") because no light-on-dark version of the logo exists, so header and footer spell the name differently. The home page's Autumn screenshot (`media/pages__autumn__new-screenshot`) still shows the older "sirtXa" logo.
-6. **Redirects from old addresses are temporary (302)** (`MOVED` in `marketing-site.ts`); make them 301 once the owner has approved where each lands.
-7. `artifacts/booking/public/llms-full.txt` was rebuilt from the live site on 2026-10-13 (`scripts/gen-llms-full.py`); re-run the script after changing marketing pages.
----
-
-## 2026-10-12 — Open items from the GEO audit, and two Autumn fee questions
-
-The four cross-page conflicts found by the audit (Autumn price, deposits, support hours, native apps) were settled by the owner and fixed the same day.
-
-**Autumn fees (settled by the owner 2026-10-12).** Call billing follows `artifacts/api-server/src/lib/autumnCallBilling.ts`: Solo 20, Professional 50, Elite 100 handled calls per calendar month, then $0.50 per call; calls of 30 s or less free. The $15 one-time activation fee for the dedicated phone number still applies (`routes/aiReceptionist.ts`); there is no monthly number fee (the $2/month shown on the in-app fee card was never charged and was removed). The 60-day trial gets no free calls ($0.50 each), which is what the code does. Still open: the `enterprise` plan has no stated allowance (0 included). The pricing and Autumn pages now state the $15 activation fee and that included calls start with the paid plan.
-
-Also open from the same audit, all listed in `GEO-AUDIT-REPORT.md` (2026-10-12): the home page FAQ markup (`php/overview/default.php:40-70`) is hand-written separately from the visible accordion (~line 815) and four answers differ; the React directory pages emit no Organization node (`artifacts/marketplace/src/entry-server.tsx`); salon profile JSON-LD puts the whole address in `streetAddress` with no `postalCode`; `/sitemap-listings.xml` stamps every URL with the generation date as `lastmod`; unsupported guarantees on `/pricing`, `/contact` and the home page. `artifacts/booking/public/llms-full.txt` is a hand-maintained snapshot of page text with no generator, so it goes stale whenever a marketing page changes (it still had the $9 Solo price until today).
+Fixed 2026-10-21: the PHP pages now show the chat launcher only 10am–9pm Eastern (`php/includes/footer.php`); /products card fees match /pricing and the code (Stripe's rate + $0.60 Certxa fee); all old-address redirects are 301; `llms-full.txt` regenerated (`scripts/gen-llms-full.py`, run after changing marketing pages).
 
 ---
 
-## 2026-10-10 — The production API is restarted by pm2 for memory 6 to 22 times an hour
+## 2026-10-12 — Autumn on the Enterprise plan (updated 2026-10-21)
 
-**Where:** pm2 app `certxa-api`, `max_memory_restart` = 1000 MB. `/root/.pm2/pm2.log`: "Process 9 restarted because it exceeds --max-memory-restart value (current_memory≈1.08 GB)" — 2,637 times in the log, 149 times on 2026-10-09 alone (6–22 an hour, sometimes every 30 seconds for several minutes). The process sits at about 985 MB when idle, so it is at the limit as soon as it starts.
-
-**Why it matters:** every restart is a few seconds when the server does not answer. Since the offline work (Phase 2), a /nail tablet that gets no answer shows OFFLINE and saves to its own queue until the server is back — safe, but staff will see the offline pill come and go many times an hour. Each restart also applies whatever migration files are on disk: migration 0237 reached production this way on 2026-10-09 16:29 UTC without any deploy.
-
-**Limit raised 2026-10-10:** `ecosystem.config.js` already said 2000 MB but pm2 had never been given it; it was applied with the Phase 4/5 deploy (`pm2 reload ecosystem.config.js --only certxa-api --update-env`). **Still open:** the server uses about 1 GB as soon as it starts and grows from there (the config file's own comment points at the unbounded `_enrichmentCache` in `artifacts/api-server/src/lib/salonData.ts`); if it reaches 2 GB the restarts come back. Checked 2026-10-13: no memory restart in `pm2.log` since the limit was raised; the process was at about 1 GB.
+Call billing (`artifacts/api-server/src/lib/autumnCallBilling.ts`) includes 20 handled calls on Solo, 50 on `professional` (shown as Starter) and 100 on `elite` (shown as Professional), then $0.50 a call. The `enterprise` plan has no entry, so it includes **0** calls — fewer than Starter. The website says nothing about Enterprise's calls until the owner decides.
 
 ---
 
@@ -79,7 +47,7 @@ Solo is free (migration 0234; billing activates it without a checkout; site and 
 
 ## Still to build or decide
 
-**1. Professional and Elite: three different prices.** The site, the in-app billing page and `billing_plans` say $22 and $49 a month; `subscription_plans` says $45.95 and $79.00, and those are the Stripe prices actually charged (`price_1TtGbtRDJayCN7TT53D0FErP`, `price_1TtSdNRDJayCN7TTWqMAEqxr`, read 2026-10-09). A salon choosing Professional is shown $22 and charged $45.95. Needs the right numbers from the owner.
+**1. The prices charged are not the prices shown (re-checked 2026-10-21).** The owner set the prices on 2026-10-21: Solo free, Starter $29, Professional $99, Enterprise $179 a month (admin plans, `subscription_plans`; the website, schema and llms files now say this). But the Stripe prices those plans point at charge something else: Starter (`price_1TtGbtRDJayCN7TT53D0FErP`) **$45.95/mo**, yearly `price_1TtSbSRDJayCN7TTfR2jWKTU` $468; Professional (`price_1TtSdNRDJayCN7TTWqMAEqxr`) **$79/mo**, yearly `price_1TtSdqRDJayCN7TTiI2Gjuxm` $875; Enterprise has **no Stripe price**, so it can't be bought. The in-app billing pages (`pages/manage/BillingPage.tsx`, `pages/DashboardBilling.tsx` — hardcoded `PLANS`) still show Professional $22 / Elite $49 and have no Enterprise, and `billing_plans` names the plans Professional/Elite. Fix: new Stripe prices for $29/$99/$179 (monthly and yearly), their ids into `subscription_plans`, and the billing pages reading the admin plans. Needs the owner's go-ahead (live Stripe account, and existing subscribers keep their old price unless moved).
 
 **2. Buttons that still only say "COMING SOON"** (to be built, decided 2026-10-09): Sell Gift Card on /nail (`GiftCardSheet.tsx`, `CheckoutMode.tsx`), and Gift Card (Sell / Redeem / Check Balance), Membership and Reprint on the calendar checkout sheet (`Calendar.tsx`, `handlePosAction`). Selling a gift card is a sale: it needs to be paid for (cash and card), counted in Day Close, and kept out of commission, tips and turns. "Membership" has nothing behind it yet — what a membership is has to be defined first.
 
@@ -96,7 +64,7 @@ Solo is free (migration 0234; billing activates it without a checkout; site and 
 `Calendar.tsx` `ticketSubtotal`: a linked appointment has no field for retail lines, only the ticket being checked out does (`posExtraItems`). Fixing it means giving every linked ticket its own lines.
 
 **8. Day Close.**
-(a) An assigned, unpaid ticket that was never started does not block the close and stays on the next day's board. (b) A close cannot be undone, and the drawer is locked for 12 hours afterwards, even after a mistaken count. (c) The count is blind by design: the expected cash is not shown to the person closing. (d) Store 38 (Floyd's 99 Barbershop) has had one shift open since 2026-10-03; someone there has to run Day Close.
+(a) An assigned, unpaid ticket that was never started does not block the close and stays on the next day's board. (A ticket marked DONE but not paid does block it, and since 2026-10-21 the sheet lists it as "Done, waiting for payment".) (b) A close cannot be undone, and the drawer is locked for 12 hours afterwards, even after a mistaken count. (c) The count is blind by design: the expected cash is not shown to the person closing. (d) Store 38 (Floyd's 99 Barbershop) has had one shift open since 2026-10-03; someone there has to run Day Close.
 
 **9. `/ws/notifications` has no authentication** — left as is at the user's request (2026-10-06). Because of it the server also cannot hold a customer screen to its paired station.
 

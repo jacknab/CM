@@ -14,7 +14,7 @@ All-in-one salon software
 Certxa brings online booking, a salon POS, client management, waitlist, staff payroll, and review tools into one platform — built for nail salons, hair salons, barbershops, spas, massage studios, hair removal studios, and braid and weave salons.
 Start free trial See how it works
 Free Solo plan · 60-day trial on team plans
-As seen on Product Hunt Capterra G2 Online booking
+Find us on Product Hunt Capterra G2 Online booking
 
 ## Your business's own booking webpage.
 Every business on Certxa gets a dedicated booking page clients can visit anytime — from your website, a direct link, Google, or Instagram. They pick their service, provider, and time. Automated reminders cut no-shows before they happen.
@@ -45,22 +45,22 @@ Autumn answers every call — in under 2 seconds, around the clock. She books ne
 Meet Autumn Start free trial < 2 sec Answer time 24 / 7 Always on 0 Missed calls 12:00 incoming call FN Fabulous Nails +1 (619) 604-6886 Decline Accept Fabulous Nails 0:00 M mute # keypad 🔊 speaker ➕ add 📹 video 👤 contacts A Autumn is answering… A 👤 Reviews and growth
 
 ## More five-star reviews, on autopilot.
-After every visit, Certxa automatically texts the client asking for a review. Happy clients are sent straight to your Google review page. Unhappy clients can reach you privately first — so you fix problems before they go public.
+After every visit, Certxa automatically texts the client asking for a review, with a link straight to your Google review page. Every client gets the same link, so your reviews reflect every visit.
 Learn more
 
 ## Simple, transparent pricing.
 No hidden fees. Cancel anytime.
-Solo
-$0 / mo
-Free for one independent professional: online booking, POS, kiosk and 20 Autumn calls a month.
-Get started free Most popular
+Starter
+$29 / mo
+Up to 3 staff, all features for small teams, and 50 Autumn calls a month.
+Start free trial Most popular
 Professional
-$22 / mo
-Unlimited staff and calendars, payroll, review requests and 50 Autumn calls a month.
+$99 / mo
+Up to 8 staff, all features for medium-size teams, and 100 Autumn calls a month.
 Start free trial
-Elite
-$49 / mo
-Up to 5 locations, multi-location reporting, API access and 100 Autumn calls a month.
+Enterprise
+$179 / mo
+Built for large teams or several locations.
 Start free trial See full pricing details
 
 ## Your salon, running itself.
@@ -78,7 +78,7 @@ Source: https://certxa.com/vietnamese-nail-salon-software
 Vietnamese nail salon software Đọc bằng tiếng Việt
 
 # Nail salon software built for Vietnamese-owned salons
-Certxa is salon software made for the way Vietnamese-owned nail salons work in the United States. Technicians can use the POS in Vietnamese, the turn list follows the rules your front desk already uses, and check-in, booking, checkout, tips, payroll and an AI phone receptionist are one system, from $22 a month with no setup fee.
+Certxa is salon software made for the way Vietnamese-owned nail salons work in the United States. Technicians can use the POS in Vietnamese, the turn list follows the rules your front desk already uses, and check-in, booking, checkout, tips, payroll and an AI phone receptionist are one system, from $29 a month with no setup fee.
 Start free See pricing
 
 ## Built around how a nail salon really runs
@@ -115,7 +115,7 @@ Many nail salons pay for check-in, booking, the POS and card processing as separ
 - Support every day, 10 am to 9 pm Eastern
 
 ## Simple pricing
-Solo Free One technician working on their own Professional $22 a month Unlimited technicians; $18 a month billed yearly Elite $49 a month Up to 5 locations; $39 a month billed yearly
+Solo Free One technician working on their own Starter $29 a month Up to 3 staff; $290 a year billed yearly Professional $99 a month Up to 8 staff; $990 a year billed yearly Enterprise $179 a month Large teams or several locations; $1,790 a year billed yearly
 Card payments and Autumn call allowances are listed on the pricing page. See pricing
 Comparing options? Best POS systems for Vietnamese nail salons (2026)
 
@@ -137,7 +137,7 @@ The salon keeps working. Tickets, check-ins and cash sales are saved on the tabl
 Autumn answers in English and can continue the call in Vietnamese or Spanish when the caller speaks it. She books, moves and cancels appointments and knows each technician’s schedule.
 
 ### How much does Certxa cost for a nail salon?
-Certxa is free for one technician working alone. A salon with a team uses the Professional plan at $22 a month ($18 a month billed yearly), with unlimited technicians and no setup fee.
+Certxa is free for one technician working alone. A salon with a team uses Starter at $29 a month for up to 3 staff, Professional at $99 a month for up to 8, or Enterprise at $179 a month for larger salons, with no setup fee.
 
 ### What do I need to run it?
 Certxa runs on touchscreen tablets and computers you may already have. It works with the Stripe M2 card reader and with USB, Bluetooth and network receipt printers.
@@ -155,7 +155,7 @@ Source: https://certxa.com/vi/phan-mem-tiem-nail
 Phần mềm tiệm nail Read in English
 
 # Phần mềm tiệm nail dành cho tiệm của người Việt
-Certxa là phần mềm làm theo đúng cách các tiệm nail của người Việt ở Mỹ đang làm việc. Thợ có thể dùng máy POS bằng tiếng Việt, danh sách lượt theo đúng quy tắc tiệm bạn đang dùng, và check-in, đặt hẹn, tính tiền, tip, lương thợ cùng lễ tân AI nghe điện thoại đều nằm trong một hệ thống, từ $22 một tháng, không tốn phí cài đặt.
+Certxa là phần mềm làm theo đúng cách các tiệm nail của người Việt ở Mỹ đang làm việc. Thợ có thể dùng máy POS bằng tiếng Việt, danh sách lượt theo đúng quy tắc tiệm bạn đang dùng, và check-in, đặt hẹn, tính tiền, tip, lương thợ cùng lễ tân AI nghe điện thoại đều nằm trong một hệ thống, từ $29 một tháng, không tốn phí cài đặt.
 Dùng thử miễn phí Xem giá
 
 ## Làm theo đúng cách tiệm nail chạy mỗi ngày
@@ -192,7 +192,7 @@ Nhiều tiệm nail đang trả riêng cho check-in, đặt hẹn, máy POS và 
 - Hỗ trợ mỗi ngày, 10 giờ sáng đến 9 giờ tối giờ miền Đông
 
 ## Giá đơn giản
-Solo Miễn phí Một thợ làm riêng Professional $22 một tháng Không giới hạn số thợ; $18 một tháng nếu trả theo năm Elite $49 một tháng Tối đa 5 tiệm; $39 một tháng nếu trả theo năm
+Solo Miễn phí Một thợ làm riêng Starter $29 một tháng Tối đa 3 nhân viên; $290 một năm nếu trả theo năm Professional $99 một tháng Tối đa 8 nhân viên; $990 một năm nếu trả theo năm Enterprise $179 một tháng Tiệm lớn hoặc nhiều tiệm; $1,790 một năm nếu trả theo năm
 Phí thẻ và số cuộc gọi Autumn có sẵn được ghi trên trang giá. Xem giá
 Đang so sánh? Các máy POS tốt nhất cho tiệm nail của người Việt (2026, tiếng Anh)
 
@@ -214,7 +214,7 @@ Tiệm vẫn làm việc bình thường. Phiếu, check-in và tiền mặt đ�
 Autumn trả lời bằng tiếng Anh và có thể nói tiếp bằng tiếng Việt hoặc tiếng Tây Ban Nha khi khách gọi nói tiếng đó. Cô ấy đặt, dời và hủy hẹn và biết lịch làm của từng thợ.
 
 ### Certxa giá bao nhiêu cho tiệm nail?
-Certxa miễn phí cho một thợ làm riêng. Tiệm có nhiều thợ dùng gói Professional giá $22 một tháng ($18 một tháng nếu trả theo năm), không giới hạn số thợ và không có phí cài đặt.
+Certxa miễn phí cho một thợ làm riêng. Tiệm có nhiều thợ dùng gói Starter $29 một tháng cho tối đa 3 nhân viên, Professional $99 một tháng cho tối đa 8 người, hoặc Enterprise $179 một tháng cho tiệm lớn, không có phí cài đặt.
 
 ### Cần những gì để dùng?
 Certxa chạy trên máy tính bảng cảm ứng và máy tính bạn có thể đã có sẵn. Dùng được với máy quẹt thẻ Stripe M2 và máy in hóa đơn USB, Bluetooth hoặc qua mạng.
@@ -345,11 +345,11 @@ See which time slots are consistently underbooked, which staff members have the 
 Review management
 
 ## More five-star reviews, on autopilot.
-After every visit, Certxa automatically texts the client asking for a review. Happy clients are sent straight to your Google review page. Unhappy clients can reach you privately first, so you can fix problems before they go public.
+After every visit, Certxa automatically texts the client asking for a review, with a link straight to your Google review page. Every client gets the same link, so your reviews reflect every visit.
 See all your Google reviews in one place, get alerts for new ones, reply from inside Certxa, and keep your Google Business Profile up to date — including your booking link.
 - Automatic post-visit review request by text
 - Happy clients directed to Google review page
-- Private feedback channel for unhappy clients
+- One review link for every client, as Google requires
 - All Google reviews in one place with alerts
 - Reply to reviews from inside Certxa
 - Google Business Profile kept up to date
@@ -364,7 +364,7 @@ While your salon is open, Autumn sees your live board: who is clocked in, who is
 - Upsells add-ons and premium services on every call
 - Recognises returning clients by name and history
 - After-hours answering — keeps booking when the salon is closed
-- No extra subscription — pay only for active call minutes
+- Calls included with your plan, then $0.50 per call — no extra subscription
 Meet Autumn — full feature details
 
 ## See how Certxa compares
@@ -565,13 +565,13 @@ Your plan covers 20, 50 or 100 calls a month. After that, each call is $0.50 fro
 
 ### Auto top-up (optional)
 Set a low-balance threshold and Certxa will top up your account automatically — so Autumn never stops mid-day.
-Included in every Certxa plan — 20 calls a month on Solo, 50 on Professional and 100 on Elite. Additional calls are $0.50 each. There is a one-time $15 activation fee for your dedicated phone number, and included calls start once your paid plan begins.
+Included on Certxa plans — 20 calls a month on Solo, 50 on Starter and 100 on Professional. Additional calls are $0.50 each. There is a one-time $15 activation fee for your dedicated phone number. Free trials don't include calls; a trial's calls are $0.50 each.
 FAQ
 
 ## Common questions about Autumn
 
 ### Do I need a separate subscription for Autumn?
-No. Autumn is included in every Certxa plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite. After that, each additional call is $0.50. There is a one-time $15 activation fee for your dedicated phone number, and included calls start once your paid plan begins.
+No. Autumn comes with your Certxa plan: 20 calls a month on Solo, 50 on Starter and 100 on Professional. After that, each additional call is $0.50. There is a one-time $15 activation fee for your dedicated phone number. Free trials don't include calls; a trial's calls are $0.50 each.
 
 ### How does the credit balance work?
 Your plan's included calls are used first. Once they are used up, each additional call is $0.50, taken from the credit balance you top up inside your Certxa dashboard. You can set a low-balance auto top-up so she never goes offline mid-day.
@@ -707,103 +707,115 @@ Contact us Start free trial ×
 
 ---
 
-## Salon Software Pricing — Certxa | Free Solo Plan, Teams From $22/mo
+## Salon Software Pricing — Certxa
 Source: https://certxa.com/pricing
 
-Pricing
+Simple, transparent pricing
 
-# Simple pricing that scales with you.
-Start free on Solo. No hidden fees, no long-term contracts. Upgrade when your team grows.
-Solo
-$0 / month
-Free for one independent professional. No credit card needed.
-Get started free
-- Online booking page
-- 1 calendar, 1 staff member (you)
-- Up to 500 client profiles
-- Text and email reminders (200 a month)
-- Front desk POS and card reader
-- Self check-in kiosk
-- Basic website builder
-- Autumn AI receptionist (20 calls a month)
+# Certxa salon software pricing
+Starter $29, Professional $99 and Enterprise $179 a month, or Solo free for one professional. No commissions, no long-term contracts.
 Most popular
-Professional
-$22 / month
-Everything, unlimited, for any salon size. $18 a month billed annually.
+
+## Starter
+$29.00 / month
+Up to 3 staff, all features for small size teams.
 Start free trial
-- Everything in Solo
-- Unlimited calendars and staff
-- Unlimited text and email reminders
-- Staff commissions and payroll
-- Automated review requests
-- Client re-engagement campaigns
-- Google Business Profile booking link
-- Premium website builder and custom domain
-- Advanced revenue reports
-- Autumn AI receptionist (50 calls a month)
-- Priority support
-Elite
-$49 / month
-For multi-location businesses and salon groups. $39 a month billed annually.
+- Staff Members (up to 3)
+- Calendars (up to 3)
+- SMS Notifications (500 SMS credits)
+- Online Booking Page
+- Custom Domain
+- Waitlist
+- Commission Tracking
+- Earnings Dashboard
+- Advanced Reporting
+- Phone Support Calls (up to 5)
+- Contractor Management
+- Loyalty Rewards
+- Point of Sale
+
+## Professional
+$99.00 / month
+Up to 8 staff, all features for medium size teams.
 Start free trial
-- Everything in Professional
-- Up to 5 locations included
-- Multi-location dashboard and reporting
-- API access for integrations
-- Autumn AI receptionist (100 calls a month)
-- Phone support and account manager
-- Onboarding session
-All plans include a 60-day free trial · Cancel anytime
+- Staff Members (up to 8)
+- Calendars (up to 8)
+- SMS Notifications (1500 SMS credits)
+- Online Booking Page
+- Custom Domain
+- Waitlist
+- Check-in Queue
+- Commission Tracking
+- Earnings Dashboard
+- Advanced Reporting
+- Phone Support Calls
+- Contractor Management
+- AI Receptionist (100 calls)
+- Loyalty Rewards
+- Point of Sale
+- Locations (up to 1)
+
+## Enterprise
+$179.00 / month
+Built for large teams or multiple locations.
+Start free trial
+- Staff Members
+- Calendars
+- SMS Notifications (5000 SMS credits)
+- Online Booking Page
+- Custom Domain
+- Waitlist
+- Check-in Queue
+- Commission Tracking
+- Earnings Dashboard
+- Advanced Reporting
+- Phone Support Calls
+- Contractor Management
+- AI Receptionist (200 calls)
+- Loyalty Rewards
+- Point of Sale
+- Locations (up to 3)
 
 ## Compare plans
-| Feature | Solo | Professional | Elite
-| Booking
-| Online booking page | | |
-| Calendars | 1 | Unlimited | Unlimited
-| Staff members | 1 | Unlimited | Unlimited
+| Feature | Starter | Professional | Enterprise
+| staff
+| Staff Members | Up to 3 | Up to 8 |
+| Commission Tracking | | |
+| Contractor Management | | |
+| booking
+| Calendars | Up to 3 | Up to 8 |
+| Online Booking Page | | |
 | Waitlist | | |
-| Google Business Profile booking link | | |
-| Multi-location booking | | |
-| Deposits and prepayments | Coming soon | Coming soon | Coming soon
-| Front desk and POS
-| Touch-screen POS | | |
-| Card reader support (Stripe M2) | | |
-| Gift cards | | |
-| Tips and add-ons at checkout | | |
-| Self check-in kiosk | | |
-| Card processing | 2.7% + $0.05 in person | 2.7% + $0.05 in person | 2.7% + $0.05 in person
-| Certxa fee per card transaction | $0.60 | $0.60 | $0.60
-| Clients and marketing
-| Client profiles | Up to 500 | Unlimited | Unlimited
-| Appointment history and notes | | |
-| Text and email reminders | 200 a month | Unlimited | Unlimited
-| Client segments and tags | | |
-| Re-engagement campaigns | | |
-| Staff and payroll
-| Staff commission tracking and payroll | | |
-| Reviews and growth
-| Automated review requests | | |
-| Autumn AI receptionist | 20 calls a month | 50 calls a month | 100 calls a month
-| Website builder | Basic | Premium | Premium
-| Custom domain | | |
-| Reports
-| Revenue reports | | Advanced | Advanced + export
-| Multi-location dashboard | | |
-| Support
-| Support | Email and chat | Priority chat | Phone + account manager
-| Onboarding session | | |
+| Check-in Queue | | |
+| messaging
+| SMS Notifications | 500 SMS credits | 1500 SMS credits | 5000 SMS credits
+| website
+| Custom Domain | | |
+| reporting
+| Earnings Dashboard | | |
+| Advanced Reporting | | |
+| support
+| Phone Support Calls | Up to 5 | |
+| marketing
+| Loyalty Rewards | | |
+| pos
+| Point of Sale | | |
+| ai
+| AI Receptionist | | 100 calls | 200 calls
+| general
+| Locations | | Up to 1 | Up to 3
 
 ## Frequently asked questions
 How much does Certxa cost?
-The Solo plan, for one independent professional, is free with no credit card needed. Professional is $22 a month and Elite is $49 a month, or $18 and $39 a month when billed annually.
+Starter is $29 a month for up to 3 staff, Professional is $99 a month for up to 8 staff, and Enterprise is $179 a month for large teams or several locations. Paying yearly costs ten months instead of twelve: $290, $990 or $1,790. The Solo plan, for one independent professional, is free.
 Is there a free trial?
-Yes. Professional and Elite start with a 60-day free trial. A credit card is required to start a paid plan, but you are not charged until the trial ends. Solo is free and needs no trial.
+Yes. Starter, Professional and Enterprise start with a 60-day free trial. A credit card is required to start a paid plan, but you are not charged until the trial ends. Solo is free with no trial needed.
 Can I change plans later?
 Yes. You can upgrade, downgrade, or cancel at any time. There are no long-term contracts.
 What does card processing cost?
 Payments run through Stripe. In-person card payments are 2.7% + $0.05 and online payments are 2.9% + $0.30, which is Stripe's rate, plus a $0.60 Certxa fee per card transaction.
 Is the Autumn AI receptionist included?
-Yes. Every plan includes Autumn: 20 calls a month on Solo, 50 on Professional and 100 on Elite. Additional calls are $0.50 each. There is a one-time $15 activation fee for your dedicated phone number, and included calls start once your paid plan begins.
+Yes. Autumn answers calls on every plan: 20 calls a month are included on Solo, 50 on Starter and 100 on Professional. Additional calls are $0.50 each, and calls of 30 seconds or less are free. There is a one-time $15 fee to set up Autumn's phone number.
 What types of businesses does Certxa support?
 Certxa is built for nail salons, hair salons, barbershops, spas, massage studios, hair removal studios, and braid and weave salons.
 
@@ -815,9 +827,9 @@ Share this pricing page so everyone's looking at the same numbers.
 Share pricing
 LinkedIn Facebook X
 
-## Start free on Solo.
-Or try Professional or Elite free for 60 days. Cancel anytime.
-Get started free ×
+## Choose the right Certxa plan.
+Compare Starter, Professional and Enterprise above.
+Get started ×
 
 
 ---
@@ -1035,7 +1047,6 @@ Submit an idea
 ## Certxa vs GlossGenius — Salon Software Comparison (2026)
 Source: https://certxa.com/compare/certxa-vs-glossgenius
 
-# More than booking. A complete business platform.
 Certxa vs GlossGenius
 
 # More than booking. A complete business platform.
@@ -1090,27 +1101,30 @@ No turn rotation system for walk-in queue management.
 ## Feature-by-feature comparison
 Certxa vs GlossGenius — side by side.
 | Feature | Certxa | GlossGenius
-| Online booking | |
-| Walk-in waitlist management | |
-| Self check-in kiosk | |
-| Turn rotation | |
-| Built-in POS with offline mode | |
-| Team payroll and commissions | |
-| Loyalty programs | |
-| Revenue intelligence | |
-| AI receptionist (24/7 calls) | |
-| Multi-language kiosk | |
-| No long-term contracts | |
-| 60-day free trial | |
+| Online booking | Yes | Yes
+| Walk-in waitlist management | Yes | No
+| Self check-in kiosk | Yes | No
+| Turn rotation | Yes | No
+| Built-in POS with offline mode | Yes | Yes
+| Team payroll and commissions | Yes | No
+| Loyalty programs | Yes | No
+| Revenue intelligence | Yes | No
+| AI receptionist (24/7 calls) | Yes | No
+| Multi-language kiosk | Yes | No
+| No long-term contracts | Yes | Yes
+| 60-day free trial | Yes | No
 
 ## Frequently asked questions
+For nail salons with walk-in traffic, multiple staff members, and a need for turn rotation and waitlist management, Certxa is a significantly more complete platform. GlossGenius is better suited to solo stylists who primarily take appointments.
+Yes. Certxa's onboarding team can help you migrate your client list and service menu. The 60-day free trial lets you run both in parallel before committing.
+Yes. Certxa is built for nail salons, hair salons, barbershops, spas, massage studios, hair removal studios, and braid and weave salons. Every feature adapts to the services your business offers.
 Found this comparison helpful?
 Share it with a colleague who's evaluating salon software.
 Share this page
 LinkedIn Facebook X
 
 ## Ready to make the switch?
-Start free on Solo, or try Professional or Elite free for 60 days.
+Start free on Solo, or try Starter, Professional or Enterprise free for 60 days.
 Start free trial Talk to us
 
 
@@ -1119,7 +1133,6 @@ Start free trial Talk to us
 ## Certxa vs Vagaro — Salon & Spa Software Comparison (2026)
 Source: https://certxa.com/compare/certxa-vs-vagaro
 
-# All the power. None of the complexity.
 Certxa vs Vagaro
 
 # All the power. None of the complexity.
@@ -1137,7 +1150,7 @@ The features that matter most to nail salons, hair salons, barbershops, spas, an
 
 ### Transparent flat pricing
 Certxa
-One flat monthly price. No add-on fees for text reminders, email marketing, or advanced features. Solo is free, Professional is $22/mo and Elite is $49/mo.
+One flat monthly price. No add-on fees for text reminders, email marketing, or advanced features. Solo is free; Starter is $29/mo, Professional $99/mo and Enterprise $179/mo.
 Vagaro
 Base subscription plus paid add-ons for text notifications, email marketing, and other features. Costs can add up quickly.
 
@@ -1174,27 +1187,30 @@ Vagaro operates a consumer marketplace where your business competes alongside ot
 ## Feature-by-feature comparison
 Certxa vs Vagaro — side by side.
 | Feature | Certxa | Vagaro
-| Online booking | |
-| Walk-in waitlist management | |
-| Self check-in kiosk | |
-| Turn rotation | |
-| Built-in POS with offline mode | |
-| Team payroll and commissions | |
-| Loyalty programs | |
-| Revenue intelligence | |
-| AI receptionist (24/7 calls) | |
-| Flat pricing — no add-on fees | |
-| No marketplace competition | |
-| 60-day free trial | |
+| Online booking | Yes | Yes
+| Walk-in waitlist management | Yes | No
+| Self check-in kiosk | Yes | Yes
+| Turn rotation | Yes | No
+| Built-in POS with offline mode | Yes | Yes
+| Team payroll and commissions | Yes | Yes
+| Loyalty programs | Yes | Yes
+| Revenue intelligence | Yes | No
+| AI receptionist (24/7 calls) | Yes | No
+| Flat pricing — no add-on fees | Yes | No
+| No marketplace competition | Yes | No
+| 60-day free trial | Yes | Yes
 
 ## Frequently asked questions
+Certxa's Solo plan is free; Starter is $29/mo, Professional $99/mo and Enterprise $179/mo — the paid plans include features that Vagaro charges as add-ons (text reminders, email marketing, advanced reporting). For most multi-staff businesses, the total cost of Certxa is lower.
+Yes. Certxa's onboarding team can help you migrate your client list and service menu. The 60-day free trial lets you run both in parallel before committing.
+No. Certxa does not operate a consumer marketplace. Your booking page is your own — clients book directly with your business, and you are never listed alongside competitors.
 Found this comparison helpful?
 Share it with a colleague who's evaluating salon software.
 Share this page
 LinkedIn Facebook X
 
 ## Ready to make the switch?
-Start free on Solo, or try Professional or Elite free for 60 days.
+Start free on Solo, or try Starter, Professional or Enterprise free for 60 days.
 Start free trial Talk to us
 
 
@@ -1203,7 +1219,6 @@ Start free trial Talk to us
 ## Certxa vs Fresha — Salon Software Comparison (2026)
 Source: https://certxa.com/compare/certxa-vs-fresha
 
-# No commissions. No surprises. Just software.
 Certxa vs Fresha
 
 # No commissions. No surprises. Just software.
@@ -1258,27 +1273,30 @@ Costs scale with new client volume. A busy month means a larger commission bill.
 ## Feature-by-feature comparison
 Certxa vs Fresha — side by side.
 | Feature | Certxa | Fresha
-| Online booking | |
-| Walk-in waitlist management | |
-| Self check-in kiosk | |
-| Turn rotation | |
-| Built-in POS with offline mode | |
-| Team payroll and commissions | |
-| Loyalty programs | |
-| Revenue intelligence | |
-| AI receptionist (24/7 calls) | |
-| Zero commissions on bookings | |
-| Flat monthly pricing | |
-| 60-day free trial | |
+| Online booking | Yes | Yes
+| Walk-in waitlist management | Yes | No
+| Self check-in kiosk | Yes | No
+| Turn rotation | Yes | No
+| Built-in POS with offline mode | Yes | Yes
+| Team payroll and commissions | Yes | No
+| Loyalty programs | Yes | Yes
+| Revenue intelligence | Yes | No
+| AI receptionist (24/7 calls) | Yes | No
+| Zero commissions on bookings | Yes | No
+| Flat monthly pricing | Yes | No
+| 60-day free trial | Yes | No
 
 ## Frequently asked questions
+Fresha's software is free, but it charges a 20% commission on every new client booking made through its marketplace. For a busy salon, those commissions can easily exceed the cost of a flat-rate subscription like Certxa.
+Yes. Certxa's onboarding team can help you migrate your client list and service menu. The 60-day free trial lets you run both in parallel before committing.
+No. Certxa charges a flat monthly subscription — Solo is free; Starter is $29/mo, Professional $99/mo and Enterprise $179/mo. There are zero commissions on any bookings, new client or returning.
 Found this comparison helpful?
 Share it with a colleague who's evaluating salon software.
 Share this page
 LinkedIn Facebook X
 
 ## Ready to make the switch?
-Start free on Solo, or try Professional or Elite free for 60 days.
+Start free on Solo, or try Starter, Professional or Enterprise free for 60 days.
 Start free trial Talk to us
 
 
@@ -1287,7 +1305,6 @@ Start free trial Talk to us
 ## Certxa vs Square for Beauty — Salon Software Comparison (2026)
 Source: https://certxa.com/compare/certxa-vs-square
 
-# Built for beauty. Not bolted on.
 Certxa vs Square for Beauty
 
 # Built for beauty. Not bolted on.
@@ -1342,27 +1359,30 @@ Square for Beauty is Square's general POS adapted for salons. Core infrastructur
 ## Feature-by-feature comparison
 Certxa vs Square for Beauty — side by side.
 | Feature | Certxa | Square for Beauty
-| Online booking | |
-| Walk-in waitlist management | |
-| Self check-in kiosk | |
-| Turn rotation | |
-| Built-in POS with offline mode | |
-| Commission-based payroll (built in) | |
-| Loyalty programs | |
-| Revenue intelligence | |
-| AI receptionist (24/7 calls) | |
-| Multi-language kiosk | |
-| No long-term contracts | |
-| 60-day free trial | |
+| Online booking | Yes | Yes
+| Walk-in waitlist management | Yes | No
+| Self check-in kiosk | Yes | No
+| Turn rotation | Yes | No
+| Built-in POS with offline mode | Yes | Yes
+| Commission-based payroll (built in) | Yes | No
+| Loyalty programs | Yes | Yes
+| Revenue intelligence | Yes | No
+| AI receptionist (24/7 calls) | Yes | No
+| Multi-language kiosk | Yes | No
+| No long-term contracts | Yes | Yes
+| 60-day free trial | Yes | No
 
 ## Frequently asked questions
+For nail salons with walk-in traffic, Certxa is significantly more capable. Square for Beauty lacks turn rotation, a walk-in waitlist, a self check-in kiosk, and revenue intelligence — all features that nail salons rely on daily.
+Yes. Certxa's onboarding team can help you migrate your client list and service menu. The 60-day free trial lets you run both in parallel before committing.
+Certxa uses its own hardware ecosystem — the Certxa Station, Certxa Kiosk, and Stripe-powered card readers. Square hardware is not compatible with Certxa.
 Found this comparison helpful?
 Share it with a colleague who's evaluating salon software.
 Share this page
 LinkedIn Facebook X
 
 ## Ready to make the switch?
-Start free on Solo, or try Professional or Elite free for 60 days.
+Start free on Solo, or try Starter, Professional or Enterprise free for 60 days.
 Start free trial Talk to us
 
 
@@ -1454,7 +1474,7 @@ A general salon app is built around appointments. Most Vietnamese-owned nail sal
 
 ## The six systems at a glance
 | System | Vietnamese screens | Turns | Payroll / commission | Check-in | AI phone receptionist | Published price
-| Certxa | Yes: POS, owner dashboard, kiosk | Six methods, half turns | Yes, check and cash split, tech pay slips | Yes, 5 client languages | Included (20 to 100 calls a month) | Free solo; $22 or $49 a month
+| Certxa | Yes: POS, owner dashboard, kiosk | Six methods, half turns | Yes, check and cash split, tech pay slips | Yes, 5 client languages | Included (20 to 100 calls a month) | Free solo; $29, $99 or $179 a month
 | Go POS (Fastboy / GoCheckin) | Not stated on the pages reviewed | Turn suggestions | Yes, payroll and time keeping | Yes, Go Check In (separate product) | Not listed | $50 to $149 a month, plus separate products
 | Tilavon | Yes: every screen, including client booking | Walk-in turn queue | Commission tracking, payroll export | Not mentioned | Add-on from $69 a month | $19 to $89 a month (founder pricing)
 | Zota POS | Bilingual interface (reported) | Yes (reported) | Tip splitting (reported) | Not confirmed | Not confirmed | Not published
@@ -1466,7 +1486,7 @@ A general salon app is built around appointments. Most Vietnamese-owned nail sal
 Certxa is one system for check-in, booking, the POS, payroll and marketing, built around how nail salons work. Each POS tablet switches between English, Vietnamese and Spanish, so the front desk and the technicians can each read it in their own language. The owner dashboard has a Vietnamese setting, and the check-in kiosk lets clients choose English, Spanish, Vietnamese, Chinese or Korean.
 - Strengths: six turn methods, including dollar-based turns and counted turns with half turns; walk-in tickets with Tech ID sign-in; tips split per technician; cash price; payroll with supply-fee deductions and part check, part cash; technicians print their own pay slips. Tickets, check-ins and cash sales keep working when the internet drops. Autumn, the AI receptionist, is included in every plan.
 - Watch-outs: Certxa is a newer company with fewer salons using it than the older brands. Card payments go through Stripe at 2.7% + 5¢ in person, plus a $0.60 Certxa fee on each card payment, which adds up for a busy salon.
-- Price: free for one technician working alone; Professional $22 a month ($18 billed yearly) with unlimited technicians; Elite $49 a month for up to five locations. No setup fee.
+- Price: free for one technician working alone; Starter $29 a month for up to 3 staff; Professional $99 a month for up to 8 staff; Enterprise $179 a month for large teams or several locations. No setup fee.
 More detail: Certxa for Vietnamese nail salons ( tiếng Việt).
 
 ## Go POS from Fastboy (GoCheckin)
@@ -1600,6 +1620,18 @@ August 25, 2026 Read → 💳 Business 5 min read
 
 ### What Nail Salons Actually Need From a Payment System
 Most POS pitches lead with hardware. The things that actually matter for a nail salon are deposits, payout spe…
+August 25, 2026 Read → 📱 Operations 5 min read
+
+### Why Nail Salons Are Switching to Self-Service Check-In Kiosks
+Walk-ins are good for revenue and bad for focus — every one interrupts whoever's mid-service to go greet the…
+August 25, 2026 Read → 📅 Software 5 min read
+
+### How 24/7 Online Booking Actually Fills a Nail Salon's Calendar
+Online booking isn't just a convenience feature — it captures a specific kind of demand that phone-only book…
+August 25, 2026 Read → ⏰ Operations 6 min read
+
+### How to Reduce No-Shows at a Nail Salon (Without Being Annoying About It)
+No-shows are a math problem before they're a manners problem. Here's what actually moves the number, in order …
 August 25, 2026 Read → Newsletter
 
 ## Salon growth tips, every week.
@@ -1928,7 +1960,7 @@ Questions about how Certxa uses your Google data?
 - Support: support@certxa.com
 - Full Privacy Policy: certxa.com/privacy
 - Terms of Service: certxa.com/terms
-Last updated: October 15, 2026 · © 2026 Certxa. All rights reserved. Certxa is not affiliated with or endorsed by Google LLC.
+Last updated: October 21, 2026 · © 2026 Certxa. All rights reserved. Certxa is not affiliated with or endorsed by Google LLC.
 
 
 ---
@@ -2787,7 +2819,7 @@ By the time a regular client is obviously gone — hasn't booked in six months, 
 Every salon has a slow day or a slow hour — usually predictable once you actually look at the data instead of relying on a general sense of "Tuesdays are slower." The problem is most salons never formally look; they just feel like some days drag without quantifying by how much, or trying anything specifically aimed at that dead time. A weekly view of exactly which slots run chronically under capacity turns a vague feeling into something you can actually act on — a targeted promotion, a schedule adjustment, or simply staffing appropriately for the day rather than guessing.
 
 ## No-shows are a number, not a vibe
-"We get a lot of no-shows" and "we lose 11% of Friday afternoon bookings to no-shows, worth about $340 a week" are very different starting points for actually fixing the problem. Certxa's no-show prediction flags high-risk appointments each morning based on patterns — new clients booking long, high-value services with no deposit, historically, carry more risk — so the deposit conversation or reminder timing can be targeted at exactly the bookings that need it, rather than applied as a blunt policy across every appointment.
+"We get a lot of no-shows" and "we lose 11% of Friday afternoon bookings to no-shows, worth about $340 a week" are very different starting points for actually fixing the problem. The patterns are predictable — new clients booking long, high-value services with no deposit carry more risk — so the deposit conversation or reminder timing can be targeted at exactly the bookings that need it, rather than applied as a blunt policy across every appointment.
 
 ## Cancelled appointments that never get refilled
 A cancellation two hours before an appointment is often treated as simply lost — the slot goes empty because there wasn't time to fill it. But a waitlist of clients who'd take a same-day opening if they knew about it can turn some of those cancellations into filled slots instead of dead time, if there's a system actually watching for the cancellation and reaching out immediately rather than relying on someone remembering to check.
@@ -2937,7 +2969,7 @@ Talk to enough salon owners about payments and the conversation almost never sta
 A payment system for a nail salon needs to solve those problems specifically, not just process a card.
 
 ## Deposits are a payments feature, not a policy
-The strongest lever against no-shows on high-value services isn't a stricter cancellation policy — it's requiring a deposit at the moment of booking, before the slot is even locked in. That only works if deposits are actually built into the booking-and-payment flow, not a separate manual step someone has to remember to invoice for. Certxa's payment system lets you require a deposit at booking time on the services where a no-show actually costs you — a full set with nail art, not necessarily a quick polish change.
+The strongest lever against no-shows on high-value services isn't a stricter cancellation policy — it's requiring a deposit at the moment of booking, before the slot is even locked in. That only works if deposits are actually built into the booking-and-payment flow, not a separate manual step someone has to remember to invoice for. Deposits at booking are on Certxa's roadmap and aren't available yet. Whatever system you use, check that it can require one on the services where a no-show actually costs you — a full set with nail art, not necessarily a quick polish change.
 
 ## The fee number that gets quoted is rarely the fee number you pay
 "2.9%" sounds simple until a statement shows something different, because the advertised rate is usually the card-network rate alone, before whatever markup or per-transaction add-on the platform layers on top. Certxa's structure is Stripe's actual processing rate — 2.7% + $0.05 per transaction in person, 2.9% + $0.30 online — plus a flat $0.60 connection fee that's the only thing Certxa adds. No separate markup buried in the percentage. It's worth doing this math against whatever you're currently paying, because the difference between "2.9% flat" and "2.9% plus an undisclosed markup" is real money over a year of transactions.
@@ -3025,7 +3057,7 @@ The failure mode of a lot of "online booking" is that it's really just a contact
 A confirmed booking with no reminder is a booking that's more likely to become a no-show three weeks later (see: automated reminders). The booking flow and the reminder flow aren't separate problems — a booking made online at 11pm should trigger the same reminder sequence as one made over the phone, without a staff member having to manually enter it anywhere.
 
 ## What this looks like for a real salon
-A one-tech studio doesn't need the same booking setup as a six-chair salon coordinating multiple technicians' schedules — but the core mechanic is identical: real-time availability, wherever the client already is, with zero manual re-entry. Certxa's online booking handles both, synced with deposits at booking time and automatic reminders after, so the appointment that got booked at 11pm on a Tuesday shows up on the calendar exactly the same as one booked in person.
+A one-tech studio doesn't need the same booking setup as a six-chair salon coordinating multiple technicians' schedules — but the core mechanic is identical: real-time availability, wherever the client already is, with zero manual re-entry. Certxa's online booking handles both, with automatic reminders after, so the appointment that got booked at 11pm on a Tuesday shows up on the calendar exactly the same as one booked in person.
 Start a free trial or see how it fits your specific setup on the nail salon software page.
 Tags: Software Nail Salon Found this helpful? Share it with your network. 𝕏 Share LinkedIn Facebook
 
@@ -3072,11 +3104,11 @@ A single reminder the morning of an appointment is better than nothing, but it's
 This is the part most salons get backwards. If a client's only options are "show up" or "no-show," a chunk of them will pick no-show every time — not because they don't care, but because calling to cancel feels like a bigger interruption than just not going. Reminder messages that let someone confirm or request a new time directly cut this off before it becomes a no-show at all. It's a smaller ask than a phone call, so more people actually take it.
 
 ## Deposits — where they help and where they backfire
-Deposits work best on your highest-risk bookings, not applied blanket across every appointment. A $65 fill set with a client who's booked six times before is low risk; a $180 full set with nail art booked by a first-time client through your online booking page at 11pm is a different risk profile entirely. Certxa lets you require a deposit at booking time rather than forcing it on every appointment — so you're not adding friction to your regulars while still protecting the bookings most likely to fall through. New clients booking longer, higher-value services are exactly where a deposit earns its keep.
+Deposits work best on your highest-risk bookings, not applied blanket across every appointment. A $65 fill set with a client who's booked six times before is low risk; a $180 full set with nail art booked by a first-time client through your online booking page at 11pm is a different risk profile entirely. Deposits at booking are on Certxa's roadmap and aren't available yet, but the principle holds with any system: protect the bookings most likely to fall through without adding friction for your regulars. New clients booking longer, higher-value services are exactly where a deposit earns its keep.
 
 ## What this looks like put together
-None of this is one silver bullet — it's a sequence: a 72-hour reminder that catches real conflicts early, a 24-hour reminder that re-anchors the appointment, an easy way to reschedule instead of ghosting, and a deposit on the bookings where the cost of a no-show is highest. Salons using this combination inside Certxa report meaningfully fewer no-shows within the first month — not because clients suddenly became more considerate, but because the appointment became harder to forget and easier to change instead of skip.
-If you're currently doing manual reminders — a group text the night before, a sticky note to call people — Certxa's automated reminders do this on autopilot, timed per-appointment instead of batched, with deposits available where you actually need them. See plans or start a free trial.
+None of this is one silver bullet — it's a sequence: a 72-hour reminder that catches real conflicts early, a 24-hour reminder that re-anchors the appointment, an easy way to reschedule instead of ghosting, and a deposit on the bookings where the cost of a no-show is highest. It works not because clients suddenly become more considerate, but because the appointment becomes harder to forget and easier to change instead of skip.
+If you're currently doing manual reminders — a group text the night before, a sticky note to call people — Certxa's automated reminders do this on autopilot, timed per-appointment instead of batched. See plans or start a free trial.
 Tags: Operations Nail Salon Found this helpful? Share it with your network. 𝕏 Share LinkedIn Facebook
 
 ## More in Operations

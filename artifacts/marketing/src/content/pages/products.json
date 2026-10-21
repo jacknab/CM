@@ -130,18 +130,18 @@
   ],
   "payments": {
     "headline": "Transparent processing rates. No hidden fees.",
-    "subhead": "Certxa Payments is powered by Stripe Connect. One flat rate — no monthly fee, no surprises.",
+    "subhead": "Certxa Payments is powered by Stripe Connect. Stripe's rate plus a $0.60 Certxa fee per card payment — no monthly fee.",
     "tiers": [
       {
         "id": "tier-standard",
         "name": "Standard rate",
         "volume": "All merchants",
-        "rate": "2.7% + 10¢",
-        "rateNote": "per dip and tap",
+        "rate": "2.7% + 5¢",
+        "rateNote": "per in-person card payment (Stripe's rate), plus a $0.60 Certxa fee",
         "monthly": "No monthly fee"
       }
     ],
-    "note": "Keyed-in transactions: 3.5% + 15¢. Rates apply to all Certxa hardware via Stripe Connect."
+    "note": "Online card payments are 2.9% + 30¢ (Stripe's rate), plus the same $0.60 Certxa fee per card payment. Payments run through Stripe Connect."
   },
   "faq": [
     {

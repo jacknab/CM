@@ -124,6 +124,9 @@ describe("durable idempotency", () => {
     let made = 0;
     const slowCreate = (res: any) => { made += 1; setTimeout(() => res.status(201).json({ appointmentId: 801 }), 5); };
     const [a, b] = await Promise.all([send(store, "key-together1", 2, slowCreate), send(store, "key-together1", 2, slowCreate)]);
+    // send() stops waiting after 20 ms; on a busy machine the 5 ms "slow" answer can come later than that
+    // (this failed once in a full run). Wait for both answers before looking at them.
+    await Promise.all([a.res.done, b.res.done]);
     expect(made).toBe(1);
     expect([a.res.statusCode, b.res.statusCode].sort()).toEqual([201, 409]);
     // The one that was told to wait asks again and gets the same ticket.
