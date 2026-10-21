@@ -1596,6 +1596,9 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   if (onBoard) lastLiveCheckout.current = onBoard;
   const liveCheckout = onBoard ?? (checkout && lastLiveCheckout.current?.id === checkout.id ? lastLiveCheckout.current : null);
   liveCheckoutRef.current = liveCheckout ?? checkout;
+  // Gone from the board while this station was not paying it: paid or cancelled on another station.
+  // Only a ticket this checkout has seen on the board counts (one just made may not be on it yet).
+  const checkoutClosedElsewhere = !!checkout && !onBoard && lastLiveCheckout.current?.id === checkout.id && !ticketPaid && !finalize.isPending;
 
   return (
     <div className="dark cx-cal nail-app h-app w-full" data-testid="nail-home">
@@ -1613,6 +1616,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
             <Suspense fallback={<div className="nail-route-loading" role="status"><Loader2 className="animate-spin" /> Loading checkout…</div>}><CheckoutMode
               key={checkout.id}
               ticket={liveCheckout ?? checkout}
+              closedElsewhere={checkoutClosedElsewhere}
               salesTax={salesTax}
               cashDiscountPct={cashDiscountPct}
               storeId={storeId}
@@ -1635,7 +1639,10 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
               groups={groups}
               layout={posGrid?.config ?? null}
               onChangeService={changeCheckoutService}
-              onClose={() => { setCheckout(null); setTab("queue"); }}
+              onClose={() => {
+                if (checkoutClosedElsewhere) say(`Ticket #${checkout.ticketNumber ?? checkout.id} was paid or closed on another station`);
+                setCheckout(null); setTab("queue");
+              }}
             /></Suspense>
           </div>
         )}

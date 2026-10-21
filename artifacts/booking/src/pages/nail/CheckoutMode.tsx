@@ -53,6 +53,9 @@ interface Props {
   finalizing: boolean;
   /** The ticket has been completed server-side — the payment buttons are replaced by Print/Text/No Receipt. */
   paid: boolean;
+  /** The ticket left the board without being paid here: paid or cancelled on another station. The checkout
+   *  lets go of any card it was holding and closes. */
+  closedElsewhere?: boolean;
   /** The latest customer-screen event (tip picked / card result) — a new object each time one arrives. */
   socketEvent: { type: string; [k: string]: unknown } | null;
   onFinalize: (data: FinalizeData) => void;
@@ -692,6 +695,18 @@ export function CheckoutMode(p: Props) {
     return true;
   };
   const closeCheckout = async () => { if (await releasePayments()) p.onClose(); };
+  // Paid or cancelled on another station: nothing is left to collect here. A card this screen authorised is
+  // voided (the client must not be charged twice), then the checkout closes.
+  const closingElsewhere = useRef(false);
+  useEffect(() => {
+    if (!p.closedElsewhere || p.paid || p.finalizing || closingElsewhere.current) return;
+    closingElsewhere.current = true;
+    void (async () => {
+      for (const t of tenders.filter(isCardHold)) await voidCard(t);
+      p.onClose();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.closedElsewhere, p.paid, p.finalizing]);
 
   // EXIT: back from the payment step to the ticket as it was before PAY / CHECKOUT.
   const exitPaying = async () => {

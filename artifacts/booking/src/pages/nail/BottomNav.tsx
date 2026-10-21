@@ -34,9 +34,12 @@ export function BottomNav({ tab, onTab, onCheckIn, onMore, onLookupByNumber, wai
     <nav className="bottom-nav" data-testid="nail-bottom-nav">
       {items.map(({ id, label, icon: Icon, active, run, badgeCount }) => (
         <button key={id} type="button" onClick={run} className={active ? "active" : ""} data-testid={`nail-nav-${id.toLowerCase().replace(/\s+/g, "-")}`}>
-          <Icon size={28} />
+          {/* The count sits on the icon itself, large enough to read from across the desk. */}
+          <span className="nav-icon">
+            <Icon size={28} />
+            {!!badgeCount && <i className="nav-badge-service">{badgeCount}</i>}
+          </span>
           <span>{label}</span>
-          {!!badgeCount && <i className="nav-badge-service">{badgeCount}</i>}
         </button>
       ))}
       <button type="button" className="connection" data-testid="nail-live" data-ok={status.ok} onClick={onStatus}
