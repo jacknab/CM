@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { formatInTz, isOnStoreDate } from "@/lib/timezone";
 import { X, Clock, Loader2, Receipt, Send, HelpCircle, BookOpen } from "lucide-react";
 import { TechTurnGuide } from "./TechTurnGuide";
+import { TurnAssignmentHistory } from "./TurnAssignmentHistory";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -581,6 +582,9 @@ export function TurnPageModal({
                       );
                     })
                   )}
+
+                  {/* Every client given out today: who got them, why, and who was passed over (and for what). */}
+                  <TurnAssignmentHistory storeId={storeId} open={showWhySheet} />
 
                   {/* How the system works */}
                   <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">

@@ -222,11 +222,13 @@ export async function listTurnEvents(storeId: number, from: Date, to: Date, limi
     `SELECT e.id, e.at, e.kind, e.staff_id AS "staffId", s.name AS "staffName", e.appointment_id AS "appointmentId",
             a.ticket_number AS "ticketNumber", e.category, e.amount_cents AS "amountCents", e.turn_units AS "turnUnits",
             e.method, e.config_version AS "configVersion", e.automatic, e.reason, e.actor_staff_id AS "actorStaffId",
-            actor.name AS "actorName", e.explanation, e.details
+            actor.name AS "actorName", e.explanation, e.details, sv.name AS "serviceName",
+            (SELECT c.full_name FROM clients c WHERE c.id = a.customer_id) AS "clientName"
        FROM turn_events e
        LEFT JOIN staff s ON s.id = e.staff_id
        LEFT JOIN staff actor ON actor.id = e.actor_staff_id
        LEFT JOIN appointments a ON a.id = e.appointment_id
+       LEFT JOIN services sv ON sv.id = a.service_id
       WHERE e.store_id = $1 AND e.at >= $2 AND e.at < $3
       ORDER BY e.at DESC, e.id DESC LIMIT $4`,
     [storeId, from, to, Math.min(Math.max(limit, 1), 1000)],

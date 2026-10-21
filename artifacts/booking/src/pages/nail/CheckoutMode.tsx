@@ -13,7 +13,7 @@ import { localHub, relayCheckoutEvent } from "@/lib/local-hub";
 import { syncEngine } from "@/lib/sync-engine";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Ban, Banknote, BadgePercent, Calculator, Check, CreditCard, DoorOpen, Gift, Hand, HandCoins, Loader2, MessageSquare, Percent, Printer, Settings, ShoppingBag, Users, X, Zap } from "lucide-react";
+import { ArrowLeft, Ban, Banknote, BadgePercent, Calculator, Check, CreditCard, DoorOpen, Gift, Hand, HandCoins, Loader2, MessageSquare, Percent, Printer, Settings, ShoppingBag, Split, Users, X, Zap } from "lucide-react";
 import {
   centsToDollars, computeCheckout, paymentMethodSummary, pushKeypadDigits, QUICK_TICKET_STEPS, r2, splitGroup,
   type DiscountInput, type Extra, type ExtraKind, type SalesTaxSettings, type Tender,
@@ -22,7 +22,7 @@ import { buildCheckoutReceipt } from "@/lib/thermalPrinter";
 import type { ReceiptLine } from "@/lib/receiptSections";
 import { buildNativeReceiptPayload } from "@/lib/receiptPayload";
 import { openCashDrawerHardware, recordNoSale } from "@/lib/cashDrawer";
-import { boardKey, checkoutRequestKey, lookupGiftCard, queueReceiptText, type BoardTicket, type FinalizeData, type GiftCardInfo } from "./nailApi";
+import { boardKey, checkoutRequestKey, lookupGiftCard, queueReceiptText, splitTicketService, type BoardTicket, type FinalizeData, type GiftCardInfo } from "./nailApi";
 import { bridgeState, isNativeApp, useCardPayments } from "./useCardPayments";
 import { frontdeskReaderMethod, readNailCardMethod, type NailCardMethod } from "./cardMethod";
 import { verifyCardCharge } from "../frontdesk/verifyCardCharge";
@@ -597,6 +597,23 @@ export function CheckoutMode(p: Props) {
     }
   };
   const comingSoon = (label: string) => say(`${label.toUpperCase()} — COMING SOON`);
+  // Split Ticket at checkout: the service chosen on this ticket (tap its line) comes off onto its own ticket for the
+  // same client, linked to the visit and waiting for a technician (as on the ticket builder; nailTickets.splitServiceLine).
+  const [splitIdx, setSplitIdx] = useState<number | null>(null);
+  const splitHere = async () => {
+    if (p.paid || p.finalizing) return;
+    const line = splitIdx != null ? ticket.customLines[splitIdx] : undefined;
+    if (!line?.serviceId) { say("TAP ONE OF THE OTHER SERVICES ON THE TICKET, THEN SPLIT TICKET", "error"); return; }
+    if (tenders.length > 0) { say("TAKE THE PAYMENTS OFF BEFORE SPLITTING THE TICKET", "error"); return; }
+    try {
+      const r = await splitTicketService(ticket.id, splitIdx!);
+      setSplitIdx(null);
+      say(`SPLIT · #${r.ticketNumber} ${r.serviceName.toUpperCase()} WAITS FOR A TECHNICIAN`, "success");
+      void refreshBoard();
+    } catch (err: any) {
+      say(String(err?.message || "The ticket could not be split").toUpperCase(), "error");
+    }
+  };
 
   const tipButton = () => {
     if (amount > 0) { applyTip(amount); setCents(""); return; }
@@ -1138,7 +1155,8 @@ export function CheckoutMode(p: Props) {
             <div className="ticket-item"><div className="item-copy"><strong>{ticket.service.name}</strong><span>{ticket.staff?.name ?? "Service"}</span></div><div className="item-price"><strong>{money(ticket.service.price)}</strong></div><span /></div>
             {ticket.addons.map((a) => <div className="ticket-item" key={`a${a.id}`}><div className="item-copy"><strong>+ {a.name}</strong><span>Add-on</span></div><div className="item-price"><strong>{money(a.price)}</strong></div><span /></div>)}
             {(ticket.nail?.lines ?? []).map((l) => <div className="ticket-item" key={l.label}><div className="item-copy"><strong>{l.label}</strong><span>Nail option</span></div><div className="item-price"><strong>{money(l.price)}</strong></div><span /></div>)}
-            {ticket.customLines.map((l, i) => <div className="ticket-item" key={`c${i}`}><div className="item-copy"><strong>{l.label}</strong><span>{l.serviceId ? (ticket.staff?.name ?? "Service") : "Custom charge"}</span></div><div className="item-price"><strong>{money(l.price)}</strong></div>
+            {ticket.customLines.map((l, i) => <div className={`ticket-item ${splitIdx === i ? "ticket-item-selected" : ""}`} key={`c${i}`}
+              onClick={l.serviceId && !l.packageId && !p.paid && !p.finalizing ? () => setSplitIdx((cur) => (cur === i ? null : i)) : undefined}><div className="item-copy"><strong>{l.label}</strong><span>{l.serviceId ? (ticket.staff?.name ?? "Service") : "Custom charge"}</span></div><div className="item-price"><strong>{money(l.price)}</strong></div>
               {l.serviceId && !p.paid && !p.finalizing ? <button type="button" className="remove-item" onClick={() => void removeTicketService(ticket, i)} aria-label={`Remove ${l.label}`}><X size={16} /></button> : <span />}</div>)}
             {extras.map((e) => (
               <div className="ticket-item" key={e.id} data-testid={`nail-pay-extra-${e.kind}`}>
@@ -1262,7 +1280,8 @@ export function CheckoutMode(p: Props) {
               <button type="button" onClick={tipButton} data-testid="nail-pay-fn-tip"><HandCoins size={20} /><span>Tip Adjust</span></button>
               <button type="button" onClick={() => { setMenu("discount"); setRightTab("functions"); }} data-testid="nail-pay-fn-discount"><Percent size={20} /><span>Discount</span></button>
               <button type="button" onClick={() => { openDrawer(); recordNoSale({ performedBy: ticket.staff?.name }); say("CASH DRAWER OPENED"); }} data-testid="nail-pay-fn-nosale"><DoorOpen size={20} /><span>No Sale</span></button>
-              <button type="button" onClick={() => void reprintLast()} data-testid="nail-pay-fn-reprint"><Printer size={20} /><span>Reprint</span></button>
+              {/* The same keys as the ticket builder's: Split Ticket where Reprint was (a receipt can be printed again from Ticket #). */}
+              <button type="button" onClick={() => void splitHere()} data-testid="nail-pay-fn-split"><Split size={20} /><span>Split Ticket</span></button>
             </div>
           </div>
 

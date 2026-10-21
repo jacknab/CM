@@ -820,7 +820,7 @@ export function CheckoutMode(p: Props) {
             </div>
             <div className="money-grid pay-fn-row" data-testid="barber-pay-fn-row-top">
               <button type="button" onClick={() => runFn("quick")} data-testid="barber-pay-fn-quick"><Zap size={20} /><span>{guided !== null ? "Exit Quick Ticket" : "Quick Ticket"}</span></button>
-              <button type="button" onClick={() => runFn("group")} data-testid="barber-pay-fn-group"><Users size={20} /><span>Group Pay</span></button>
+              <button type="button" onClick={() => runFn("group")} data-testid="barber-pay-fn-group"><Users size={20} /><span>Combine</span></button>
               <button type="button" onClick={() => runFn("retail")} data-testid="barber-pay-fn-retail"><ShoppingBag size={20} /><span>Retail</span></button>
               <button type="button" onClick={() => runFn("gift")} data-testid="barber-pay-fn-gift"><Gift size={20} /><span>Gift Card</span></button>
             </div>
