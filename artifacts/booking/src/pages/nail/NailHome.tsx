@@ -1714,6 +1714,10 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       {showGift && <GiftCardSheet onClose={() => setShowGift(false)} onSay={say} />}
 
       {popupTicket && <TicketPopup ticket={popupTicket} busy={act.isPending} {...ticketActions}
+        // DONE is for the first ticket of a visit another technician carries on: only while a linked ticket of the
+        // same visit is still waiting. The visit's last ticket is checked out as normal.
+        onDone={popupTicket.groupId != null && tickets.some((x) => x.id !== popupTicket.id && x.groupId === popupTicket.groupId && x.status === "confirmed")
+          ? ticketActions.onDone : undefined}
         inChairOn={popupTicket.client.id != null ? tickets.find((x) => x.id !== popupTicket.id && x.client.id === popupTicket.client.id && x.status === "started" && !x.doneAt)?.ticketNumber ?? null : null} clockOffsetMs={clockOffsetMs} onClose={() => setPopupId(null)} />}
       {receiptToken && <ReceiptDialog token={receiptToken} onClose={() => setReceiptToken(null)} />}
       {receiptSnapshot != null && <ReceiptDialog token={null} snapshot={receiptSnapshot} onClose={() => setReceiptSnapshot(null)} />}
