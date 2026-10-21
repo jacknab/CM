@@ -11,6 +11,8 @@ interface Props {
   onCheckout: (t: BoardTicket) => void;
   /** DONE: the technician has finished; they are freed and the ticket waits to be paid. */
   onDone?: (t: BoardTicket) => void;
+  /** The client is in service on this other ticket: this one can't be assigned or started until that is done. */
+  inChairOn?: number | null;
   onReassign: (t: BoardTicket) => void;
   onEdit: (t: BoardTicket) => void;
   onCancel: (t: BoardTicket) => void;
@@ -42,10 +44,10 @@ export function TicketPopup(p: Props) {
   const dock: { icon: typeof Play; id: string; label: string; action: () => void; primary?: boolean; danger?: boolean; disabled?: boolean }[] = t.status === "confirmed"
     ? [
         t.staff
-          ? { icon: Play, id: "START", label: tr("start"), action: () => p.onStart(t), primary: true }
-          : { icon: UserRound, id: "ASSIGN", label: tr("assign"), action: () => p.onReassign(t), primary: true },
+          ? { icon: Play, id: "START", label: tr("start"), action: () => p.onStart(t), primary: true, disabled: p.inChairOn != null }
+          : { icon: UserRound, id: "ASSIGN", label: tr("assign"), action: () => p.onReassign(t), primary: true, disabled: p.inChairOn != null },
         ...(t.staff ? [{ icon: ShoppingBag, id: "CHECKOUT", label: tr("checkout"), action: () => p.onCheckout(t) }] : []),
-        { icon: UserRound, id: "REASSIGN", label: tr("reassign"), action: () => p.onReassign(t), disabled: !t.staff },
+        { icon: UserRound, id: "REASSIGN", label: tr("reassign"), action: () => p.onReassign(t), disabled: !t.staff || p.inChairOn != null },
         { icon: Receipt, id: "TICKET", label: tr("ticket"), action: () => p.onEdit(t) },
         ...(t.staff && t.client.phone && p.onTextReady ? [{ icon: MessageSquare, id: "TEXT READY", label: tr("textReady"), action: () => p.onTextReady!(t) }] : []),
         { icon: Ban, id: "CANCEL", label: tr("cancel"), action: () => p.onCancel(t), danger: true },
@@ -105,6 +107,11 @@ export function TicketPopup(p: Props) {
           </div>
         </div>
 
+        {t.status === "confirmed" && p.inChairOn != null && (
+          <p className="assign-create-hint" style={{ margin: "0 22px 10px" }} data-testid="nail-popup-in-chair">
+            {t.client.name} is in service on #{p.inChairOn}. This ticket can be assigned and started once that service is done.
+          </p>
+        )}
         <div className="checkin-dock" onClick={(e) => e.stopPropagation()}>
           {dock.map((b) => (
             <button key={b.id} type="button" disabled={p.busy || b.disabled} onClick={() => { b.action(); p.onClose(); }} data-testid={`nail-dock-${b.id.toLowerCase()}`}

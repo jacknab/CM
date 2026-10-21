@@ -6478,6 +6478,12 @@ If you have any questions, please contact your administrator.
         const now = existingAppointment.status === "completed" ? "has already been checked out" : existingAppointment.status === "cancelled" ? "was cancelled" : `is now ${existingAppointment.status}`;
         return res.status(409).json({ code: "STATUS_CONFLICT", message: `This ticket ${now} on another device.`, currentStatus: existingAppointment.status });
       }
+      // A ticket (checked in at the desk) can't start while the same client is in service on another one.
+      if (input.status === "started" && existingAppointment.status !== "started" && (existingAppointment as any).checkedInAt
+          && nailTickets.isNailSalonCategory((await storage.getStore(existingAppointment.storeId!) as any)?.category)) {
+        const busy = await nailTickets.clientInServiceTicket(existingAppointment.storeId!, existingAppointment.customerId, existingAppointment.id);
+        if (busy != null) return res.status(409).json({ code: "CLIENT_IN_SERVICE", message: nailTickets.inServiceMessage(busy) });
+      }
       if (existingAppointment.status === "cancelled" && input.status && input.status !== "cancelled") {
         return res.status(409).json({ error: "Cancelled appointments cannot be restored or checked out" });
       }

@@ -39,6 +39,10 @@ type ClientRow = {
   assign?: () => void; /** waiting with a technician: start the service */ start?: () => void; testId: string; markerId?: number; remove?: () => void;
   /** Made or changed on this tablet while offline and not confirmed by the server yet: its place and technician are not final. */
   provisional?: boolean;
+  /** The visit this ticket belongs to (tickets split off one visit sit together, joined by a yellow bar). */
+  groupId?: number | null;
+  /** The client is in service on this other ticket, so this one can't be assigned or started yet. */
+  blockedBy?: number | null;
 };
 
 const PER_PAGE = 16;
@@ -168,27 +172,39 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
       open: () => onMarker(m), testId: `nail-queue-wait-marker-${m.id}`, markerId: m.id, provisional: m.offline === true,
       remove: onMarkerRemove ? () => onMarkerRemove(m) : undefined,
     }));
+    // One service at a time: a client in a chair (started, DONE not pressed) holds back their other tickets.
+    const inChairByClient = new Map<number, number>();
+    for (const t of tickets) if (t.status === "started" && !t.doneAt && t.client.id != null) inChairByClient.set(t.client.id, t.ticketNumber ?? 0);
     const fromTickets = tickets.map<ClientRow>((t) => {
       const service = `${t.service.name}${t.addons.length > 0 ? ` +${t.addons.length}` : ""}`;
+      const groupId = t.groupId ?? null;
       if (t.status === "started") {
-        return {
+        return { groupId,
           key: `t${t.id}`, state: "service", since: t.startedAt ?? t.date, name: fullName(t.client.name), ticketNumber: t.ticketNumber ?? null,
           // DONE: the service is finished and the technician is free; the visit waits to be paid.
           service, sub: t.doneAt ? "DONE · READY TO PAY" : "IN SERVICE", subKind: "service", tech: t.staff?.name ?? null,
           open: () => (onTicketTap ?? onTicket)(t), testId: `nail-queue-service-${t.id}`, provisional: t.offline === true,
         };
       }
+      const blockedBy = t.client.id != null && inChairByClient.has(t.client.id) ? inChairByClient.get(t.client.id)! : null;
       return {
         key: `t${t.id}`, state: "waiting", since: t.checkedInAt ?? t.date, name: fullName(t.client.name), ticketNumber: t.ticketNumber ?? null,
-        // A visit's second ticket waits for its first to be done before anyone is given it.
-        service, sub: t.staff ? `WITH ${firstName(t.staff.name).toUpperCase()}` : t.waitsForTicket != null ? `AFTER #${t.waitsForTicket}` : "UNASSIGNED",
+        // A visit's second ticket waits for its first to be done before anyone is given it; and nothing starts
+        // for a client who is in a chair on another ticket.
+        service, sub: blockedBy != null ? `IN CHAIR ON #${blockedBy}` : t.staff ? `WITH ${firstName(t.staff.name).toUpperCase()}` : t.waitsForTicket != null ? `AFTER #${t.waitsForTicket}` : "UNASSIGNED",
         subKind: t.staff ? "assigned" : "unassigned", tech: t.staff?.name ?? null,
-        provisional: t.offline === true,
-        open: () => onTicket(t), assign: t.staff ? undefined : () => onAssignTicket(t),
-        start: t.staff && onStartTicket ? () => onStartTicket(t) : undefined, testId: `nail-queue-wait-${t.id}`,
+        provisional: t.offline === true, groupId, blockedBy,
+        open: () => onTicket(t), assign: t.staff || blockedBy != null ? undefined : () => onAssignTicket(t),
+        start: t.staff && onStartTicket && blockedBy == null ? () => onStartTicket(t) : undefined, testId: `nail-queue-wait-${t.id}`,
       };
     });
+    // A visit's tickets sit together, where its first ticket is.
+    const anchor = new Map<number, number>();
+    for (const r of fromTickets) if (r.groupId != null && r.ticketNumber != null) anchor.set(r.groupId, Math.min(anchor.get(r.groupId) ?? Infinity, r.ticketNumber));
+    const place = (r: ClientRow) => (r.groupId != null && anchor.has(r.groupId) ? anchor.get(r.groupId)! : r.ticketNumber);
     return [...fromMarkers, ...fromTickets].sort((a, b) => {
+      const pa = place(a), pb = place(b);
+      if (pa != null && pb != null && pa !== pb) return pa - pb;
       if (a.ticketNumber != null && b.ticketNumber != null) return a.ticketNumber - b.ticketNumber;
       if (a.ticketNumber != null) return -1;
       if (b.ticketNumber != null) return 1;
@@ -198,7 +214,13 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
   const waitingCount = clientRows.filter((r) => r.state === "waiting").length;
   const inServiceCount = clientRows.length - waitingCount;
   // Up next = the lowest-numbered client still waiting, wherever their card sits.
-  const upNextKey = clientRows.find((r) => r.state === "waiting")?.key ?? null;
+  const upNextKey = clientRows.find((r) => r.state === "waiting" && r.blockedBy == null)?.key ?? null;
+  // Visits with more than one ticket on screen: those cards carry the yellow bar that joins them.
+  const linkedGroups = useMemo(() => {
+    const n = new Map<number, number>();
+    for (const r of clientRows) if (r.groupId != null) n.set(r.groupId, (n.get(r.groupId) ?? 0) + 1);
+    return new Set([...n].filter(([, c]) => c > 1).map(([g]) => g));
+  }, [clientRows]);
 
   // "Avg Wait" tile — same estimate the Techs tab shows, worked out from the board + turn data this
   // screen already has (see shared/waitEstimate.ts).
@@ -301,7 +323,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
         const upNext = r.key === upNextKey;
         const inChair = r.state === "service";
         return (
-          <div key={r.key} className={`q-booking-card q-unified-card q-wait-card ${upNext ? "q-up-next" : ""}`} data-testid={r.testId} data-state={r.state} role="button" tabIndex={0} aria-label={`Open ticket for ${r.name}`} onKeyDown={(event) => activateOnKeyboard(event, r.open)} onClick={r.open}>
+          <div key={r.key} className={`q-booking-card q-unified-card q-wait-card ${upNext ? "q-up-next" : ""} ${r.groupId != null && linkedGroups.has(r.groupId) ? "q-visit-linked" : ""}`} data-testid={r.testId} data-state={r.state} role="button" tabIndex={0} aria-label={`Open ticket for ${r.name}`} onKeyDown={(event) => activateOnKeyboard(event, r.open)} onClick={r.open}>
             {r.remove && (
               <button type="button" className="q-card-remove" aria-label={`Remove ${r.name} from the waiting list`} data-testid={`${r.testId}-remove`}
                 onClick={(e) => { e.stopPropagation(); if (window.confirm(`Take ${r.name} off the waiting list?`)) r.remove?.(); }}>

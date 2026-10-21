@@ -254,6 +254,26 @@ export function findEarliestCompatibleWaitingClient<T extends WaitingServiceCand
   return null;
 }
 
+// ── One service at a time per client (owner, 2026-10-21) ────────────────────
+
+/**
+ * The ticket number of another of this client's tickets that is in service right now (started, DONE not yet
+ * pressed), or null. While there is one, the client's other tickets are not assigned or started — they are in
+ * one chair at a time. A ticket with no client on it is never held back.
+ */
+export async function clientInServiceTicket(storeId: number, customerId: number | null | undefined, exceptAppointmentId?: number | null): Promise<number | null> {
+  if (customerId == null) return null;
+  const { rows } = await pool.query(
+    `SELECT ticket_number FROM appointments
+      WHERE store_id = $1 AND customer_id = $2 AND id <> $3 AND status = 'started' AND service_done_at IS NULL
+        AND COALESCE(started_at, date) > NOW() - INTERVAL '48 hours'
+      ORDER BY started_at LIMIT 1`,
+    [storeId, customerId, exceptAppointmentId ?? 0]);
+  return rows[0] ? Number(rows[0].ticket_number ?? 0) || -1 : null;
+}
+export const inServiceMessage = (ticketNumber: number) =>
+  `This client is in service on ${ticketNumber > 0 ? `ticket #${ticketNumber}` : "another ticket"}. Their next service can be assigned and started once that one is done.`;
+
 // ── Turn lock helpers (same primitives the calendar's start/cancel use) ─────
 
 async function lockTech(deps: TicketDeps, storeId: number, staffId: number) {
@@ -333,6 +353,9 @@ export async function matchWaitingNailTicketForTechnician(
         AND staff_id IS NULL
         AND service_id IS NOT NULL
         AND waits_for_appointment_id IS NULL
+        -- One service at a time: not while the same client is in a chair on another ticket.
+        AND NOT EXISTS (SELECT 1 FROM appointments b WHERE b.store_id = appointments.store_id AND b.customer_id = appointments.customer_id
+          AND b.id <> appointments.id AND b.status = 'started' AND b.service_done_at IS NULL)
       ORDER BY checked_in_at ASC, date ASC, id ASC`,
     [args.storeId],
   );
@@ -736,8 +759,10 @@ export async function releaseFollowOnTickets(deps: TicketDeps): Promise<number> 
 }
 
 async function assignReleasedTicket(deps: TicketDeps, storeId: number, appointmentId: number, serviceId: number): Promise<void> {
-  const row = (await pool.query(`SELECT duration, custom_lines, status, staff_id FROM appointments WHERE id = $1 AND store_id = $2`, [appointmentId, storeId])).rows[0];
+  const row = (await pool.query(`SELECT duration, custom_lines, status, staff_id, customer_id FROM appointments WHERE id = $1 AND store_id = $2`, [appointmentId, storeId])).rows[0];
   if (!row || row.status !== "confirmed" || row.staff_id != null) return;
+  // The client is in another chair: it waits, and goes out when that service is done (the queue matcher).
+  if ((await clientInServiceTicket(storeId, row.customer_id, appointmentId)) != null) return;
   const eligibility: any = await deps.getTurnEligibility(storeId, serviceId);
   if (eligibility.settings?.turnEnabled === false) return;
   const lineIds = sanitizeCustomLines(row.custom_lines, true).filter((l) => l.serviceId).map((l) => l.serviceId!);
@@ -875,6 +900,9 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
       });
     }
   }
+
+  // The client is in service on another ticket: TURN doesn't hand this one out yet (it waits unassigned).
+  if (autoAssign && staffId != null && (await clientInServiceTicket(storeId, client.id)) != null) { staffId = null; staffName = null; }
 
   // ── When: right now if the tech is free, otherwise right after their current client ──
   const now = new Date();
@@ -1114,6 +1142,10 @@ export async function reassignNailTicket(
     return fail(409, current ? `This ticket was given to ${current.name} on another device.` : "This ticket's technician was changed on another device.");
   }
   if (!appt.serviceId) return fail(400, "This ticket has no service.");
+  if (appt.status === "confirmed") {
+    const busy = await clientInServiceTicket(args.storeId, appt.customerId, appt.id);
+    if (busy != null) return fail(409, inServiceMessage(busy), { code: "CLIENT_IN_SERVICE" });
+  }
 
   const member = await storage.getStaffMember(args.staffId);
   if (!member || member.storeId !== args.storeId || ["removed", "deactivated"].includes(String(member.status))) {

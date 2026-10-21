@@ -1711,7 +1711,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
       {showGift && <GiftCardSheet onClose={() => setShowGift(false)} onSay={say} />}
 
-      {popupTicket && <TicketPopup ticket={popupTicket} busy={act.isPending} {...ticketActions} clockOffsetMs={clockOffsetMs} onClose={() => setPopupId(null)} />}
+      {popupTicket && <TicketPopup ticket={popupTicket} busy={act.isPending} {...ticketActions}
+        inChairOn={popupTicket.client.id != null ? tickets.find((x) => x.id !== popupTicket.id && x.client.id === popupTicket.client.id && x.status === "started" && !x.doneAt)?.ticketNumber ?? null : null} clockOffsetMs={clockOffsetMs} onClose={() => setPopupId(null)} />}
       {receiptToken && <ReceiptDialog token={receiptToken} onClose={() => setReceiptToken(null)} />}
       {receiptSnapshot != null && <ReceiptDialog token={null} snapshot={receiptSnapshot} onClose={() => setReceiptSnapshot(null)} />}
       {lookupStatus && <TicketStatusDialog ticket={lookupStatus} onClose={() => setLookupStatus(null)} />}

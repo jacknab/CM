@@ -900,6 +900,9 @@
 .nail-app .q-unified-footer b.q-missing { display: block; width: 34px; height: 3px; margin: 8px 0 5px; border-radius: 2px; background: #dc2626; font-size: 0; }
 .nail-app .q-wait-card.q-up-next { border-color: #1f6fe0; box-shadow: inset 3px 0 0 #1f6fe0, 0 6px 16px rgba(30, 60, 110, .10); }
 .nail-app .q-up-next .q-unified-pill { background: #eaf3ff; color: #1266d8; }
+/* Tickets of one visit (split off or done by different technicians) sit together, joined by a yellow bar. */
+.nail-app .q-wait-card.q-visit-linked { box-shadow: inset 5px 0 0 #facc15, 0 6px 16px rgba(30, 60, 110, .10); }
+.nail-app .q-wait-card.q-visit-linked:not(.q-up-next) { border-color: #facc15; }
 .nail-app .q-wait-card .q-booking-client-top { padding-right: 15px; }
 .nail-app .q-wait-card .q-card-remove { top: 5px; right: 5px; }
 .nail-app .q-wait-actions { padding: 3px 5px; display: flex; flex-direction: column; gap: 3px; }
