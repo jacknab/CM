@@ -22,7 +22,7 @@ const fmtTime = (ms: number, timeZone?: string) => new Date(ms).toLocaleTimeStri
  * own copy here (rather than a shared import) so this file has no dependency on TechCards.tsx.
  */
 /** Counts up from `since`; with `until`, counts down to it instead, and past it shows the time over ("+00:04:10"). */
-function LiveTimer({ since, until, offsetMs, testId }: { since: number | null; until?: number | null; offsetMs: number; testId?: string }) {
+function LiveTimer({ since, until, stoppedAt, offsetMs, testId }: { since: number | null; until?: number | null; /** Stopped: the time from `since` to here, standing still. */ stoppedAt?: number | null; offsetMs: number; testId?: string }) {
   const [now, setNow] = useState(() => Date.now() + offsetMs);
   useEffect(() => {
     const tick = () => setNow(Date.now() + offsetMs);
@@ -39,7 +39,7 @@ function LiveTimer({ since, until, offsetMs, testId }: { since: number | null; u
     return <span className={`tt-timer ${left < 0 ? "tt-timer-over" : "tt-timer-countdown"}`} data-testid={testId} data-seconds={left}>{text}</span>;
   }
   if (since == null) return <span className="tt-timer tt-timer-unknown" data-testid={testId}>--:--:--</span>;
-  const secs = Math.max(0, Math.floor((now - since) / 1000));
+  const secs = Math.max(0, Math.floor(((stoppedAt ?? now) - since) / 1000));
   return <span className="tt-timer" data-testid={testId} data-seconds={secs}>{pad(Math.floor(secs / 3600))}:{pad(Math.floor((secs % 3600) / 60))}:{pad(secs % 60)}</span>;
 }
 
@@ -56,6 +56,8 @@ type ClientRow = {
   blockedBy?: number | null;
   /** In the chair: when the service should be finished (its time plus 15 minutes), for the countdown. */
   endsAt?: number | null;
+  /** The technician pressed DONE at this time: the clock stops there and the card says COMPLETED. */
+  doneAt?: number | null;
 };
 
 const PER_PAGE = 16;
@@ -196,7 +198,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
       if (t.status === "started") {
         // The chair timer counts down the service's time plus 15 minutes; DONE stops it.
         const endsAt = !t.doneAt && t.startedAt ? +new Date(t.startedAt) + ((Number(t.duration) || 0) + SERVICE_PADDING_MIN) * 60_000 : null;
-        return { groupId, endsAt,
+        return { groupId, endsAt, doneAt: t.doneAt ? +new Date(t.doneAt) : null,
           key: `t${t.id}`, state: "service", since: t.startedAt ?? t.date, name: fullName(t.client.name), ticketNumber: t.ticketNumber ?? null,
           // DONE: the service is finished and the technician is free; the visit waits to be paid.
           service, sub: t.doneAt ? "DONE · READY TO PAY" : "IN SERVICE", subKind: "service", tech: t.staff?.name ?? null,
@@ -366,8 +368,9 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
                   // The client is in another chair on a linked ticket: this one is on standby, no waiting clock.
                   <div data-testid={`${r.testId}-standby`}><small>AFTER #{r.blockedBy}</small><b className="q-standby">STANDBY</b></div>
                 ) : (
-                  <div><small>{inChair ? (r.endsAt != null ? "TIME LEFT" : "IN CHAIR") : "WAITING"}</small>
-                    <LiveTimer since={+new Date(r.since)} until={inChair ? r.endsAt : null} offsetMs={clockOffsetMs} testId={`${r.testId}-timer`} /></div>
+                  <div><small>{inChair ? (r.doneAt != null ? "COMPLETED" : r.endsAt != null ? "TIME LEFT" : "IN CHAIR") : "WAITING"}</small>
+                    <LiveTimer since={+new Date(r.since)} until={inChair && r.doneAt == null ? r.endsAt : null} stoppedAt={inChair ? r.doneAt : null}
+                      offsetMs={clockOffsetMs} testId={`${r.testId}-timer`} /></div>
                 )}
               </div>
               {upNext ? (
