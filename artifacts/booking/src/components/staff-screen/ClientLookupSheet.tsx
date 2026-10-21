@@ -21,6 +21,8 @@ import { snapshotDB } from "@/lib/snapshot-db";
 import { archivedVisitsOfClient } from "@/pages/nail/ticketArchive";
 import { hasSalonMirror, mirrorFind, mirrorGet } from "@/lib/salon-mirror";
 import { mirrorClient, mirrorClientIdByPhone } from "@/pages/nail/mirrorAnswers";
+import { QuickAreaCodes } from "@/pages/nail/QuickAreaCodes";
+import { useQuickAreaCodes } from "@/pages/nail/useQuickAreaCodes";
 
 /** The client with this number in the salon's full copy on the tablet, shaped like the online lookup. */
 async function clientFromMirror(storeId: number, phone: string): Promise<any | null> {
@@ -64,6 +66,10 @@ async function visitsOnDevice(storeId: number, clientId: number): Promise<any[]>
   return visits.map((t) => ({ id: t.id, date: t.date, status: t.status, ticketNumber: t.ticketNumber,
     service: { name: t.service, price: t.price ?? 0 }, staff: t.staffName ? { name: t.staffName } : null }));
 }
+
+// The same keys as the front-desk Check-In screen (pages/nail/CheckInLookup.tsx).
+const LOOKUP_NUM_ROWS = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]];
+const LOOKUP_NUM_KEY = "w-[clamp(84px,9vw,124px)] h-[clamp(52px,9.5vh,84px)] rounded-lg border bg-card text-[clamp(24px,4vh,36px)] font-semibold hover-elevate active-elevate-2";
 
 // ── Deposits tab rendered inside the client lookup sheet ────────────────────
 export function ClientDepositsTab({ clientId, appointments }: { clientId: number; appointments: any[] }) {
@@ -284,6 +290,17 @@ export function ClientLookupSheet({ onClose }: { onClose: () => void }) {
     setNotFound(false);
     setInvalidNumber(false);
   }, []);
+  const quickCodes = useQuickAreaCodes(storeId ?? 0);
+  // A quick area code key types its three digits (stopping at one that can't start a real number).
+  const appendCode = (code: string) => {
+    let next = phoneDigits;
+    for (const d of code) {
+      if (next.length >= 10) break;
+      if (!isValidNanpPrefix(next + d)) { shake(); break; }
+      next += d;
+    }
+    if (next !== phoneDigits) { setSearchDone(false); setNotFound(false); setInvalidNumber(false); setPhoneDigits(next); }
+  };
 
   useEffect(() => {
     if (phoneDigits.length === 10 && !searchDone && selectedStore) {
@@ -674,90 +691,49 @@ export function ClientLookupSheet({ onClose }: { onClose: () => void }) {
     );
   }
 
+  // The phone step looks and works like the front-desk Check-In screen (pages/nail/CheckInLookup.tsx), so staff
+  // meet the same keypad whichever they open (owner, 2026-10-21).
   return (
-    <div className="dark cx-cal fixed inset-0 z-50 text-foreground" data-testid="client-lookup-sheet">
-      <button
-        type="button"
-        aria-label="Close client lookup"
-        className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]"
-        onClick={onClose}
-      />
-      <div className="absolute right-0 top-0 h-full w-full sm:w-[380px] bg-[#161618] flex flex-col shadow-[-8px_0_24px_rgba(0,0,0,0.12)] border-l">
-        {/* Header */}
-        <div className="px-4 py-4 flex items-center justify-between gap-2 bg-white border-b border-gray-200">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={onClose} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100">
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
-            <span className="font-semibold text-base text-gray-900">Client Lookup</span>
-          </div>
-          <Button variant="ghost" size="icon" onClick={onClose} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100">
-            <X className="w-4 h-4" />
+    <div className="dark cx-cal fixed inset-0 z-[320] flex flex-col bg-background text-foreground" data-testid="client-lookup-sheet">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" className="h-12 w-12" onClick={onClose} aria-label="Back">
+            <ArrowLeft className="w-6 h-6" />
           </Button>
+          <span className="text-lg font-semibold">Client Lookup</span>
         </div>
+        <Button variant="ghost" size="icon" className="h-12 w-12" onClick={onClose} aria-label="Close client lookup">
+          <X className="w-6 h-6" />
+        </Button>
+      </div>
 
-        {/* Content */}
-        <div
-          className="flex-1 flex flex-col px-4 pt-5 min-h-0 bg-[#161618] md:pb-4"
-          style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 72px)" }}
-        >
-          {/* Phone number display */}
-          <div className={`w-full rounded-2xl bg-white border border-gray-200 shadow-sm py-6 px-4 mb-5 text-center ${shakeClass}`} onAnimationEnd={onShakeEnd}>
-            {phoneDigits.length > 0 ? (
-              <p className="text-4xl font-bold tracking-widest text-primary">
-                {formatPhone(phoneDigits)}
-              </p>
-            ) : (
-              <p className="text-2xl font-medium text-muted-foreground/40">Enter Phone Number</p>
-            )}
-            {isSearching && (
-              <p className="text-sm text-muted-foreground mt-2 animate-pulse">Searching...</p>
-            )}
-            {notFound && !isSearching && (
-              <p className="text-sm text-red-500 mt-2 font-medium">No client found with this number</p>
-            )}
-            {invalidNumber && (
-              <p className="text-sm text-red-500 mt-2 font-medium">Not a valid North America phone number</p>
-            )}
-          </div>
-
-          {/* Numpad */}
-          <div className={`flex-1 flex flex-col gap-2 justify-end ${shakeClass}`} onAnimationEnd={onShakeEnd}>
-            {numKeys.map((row, ri) => (
-              <div key={ri} className="grid grid-cols-3 gap-2">
-                {row.map((key) => {
-                  if (key === "blank") {
-                    return <div key="blank" />;
-                  }
-                  if (key === "backspace") {
-                    return (
-                      <button
-                        key="backspace"
-                        type="button"
-                        onPointerDown={e => e.preventDefault()}
-                        onClick={handleBackspace}
-                        className="h-[68px] rounded-2xl bg-white border border-gray-200 shadow-sm text-muted-foreground flex items-center justify-center hover:bg-gray-50 active:scale-95 transition-transform"
-                      >
-                        <Delete className="w-5 h-5" />
-                      </button>
-                    );
-                  }
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      onPointerDown={e => e.preventDefault()}
-                      onClick={() => handleDigit(key)}
-                      className="h-[68px] rounded-2xl bg-white border border-gray-200 shadow-sm text-2xl font-semibold text-foreground flex items-center justify-center hover:bg-gray-50 active:scale-95 transition-transform"
-                    >
-                      {key}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
+      <div className={cn("flex-1 min-h-0 flex flex-col items-center justify-center px-4", shakeClass)} onAnimationEnd={onShakeEnd}>
+        <div className="text-[clamp(30px,6vh,48px)] font-mono tracking-wider mb-[1vh] min-h-[48px] flex items-center" data-testid="client-lookup-phone">
+          {phoneDigits.length > 0 ? formatPhone(phoneDigits) : <span className="text-muted-foreground/40">(___) ___-____</span>}
+        </div>
+        <div className="min-h-[24px] mb-[1.5vh] text-center">
+          {isSearching && <p className="text-base text-muted-foreground animate-pulse">Searching…</p>}
+          {notFound && !isSearching && <p className="text-base text-red-500 font-medium">No client found with this number</p>}
+          {invalidNumber && <p className="text-base text-red-500 font-medium">Not a valid North America phone number</p>}
+        </div>
+        <div className="space-y-[1.2vh]">
+          {LOOKUP_NUM_ROWS.map((row, ri) => (
+            <div key={ri} className="flex justify-center gap-2">
+              {row.map((d) => (
+                <button key={d} type="button" onPointerDown={(e) => e.preventDefault()} onClick={() => handleDigit(d)} className={LOOKUP_NUM_KEY} data-testid={`client-lookup-key-${d}`}>{d}</button>
+              ))}
+            </div>
+          ))}
+          <div className="flex justify-center gap-2">
+            <button type="button" onClick={() => { setPhoneDigits(""); setSearchDone(false); setNotFound(false); setInvalidNumber(false); }}
+              className={cn(LOOKUP_NUM_KEY, "text-[clamp(16px,2.6vh,22px)] text-destructive")} data-testid="client-lookup-clear">Clear</button>
+            <button type="button" onPointerDown={(e) => e.preventDefault()} onClick={() => handleDigit("0")} className={LOOKUP_NUM_KEY} data-testid="client-lookup-key-0">0</button>
+            <button type="button" onPointerDown={(e) => e.preventDefault()} onClick={handleBackspace} className={cn(LOOKUP_NUM_KEY, "flex items-center justify-center")} aria-label="Delete last digit" data-testid="client-lookup-backspace">
+              <Delete className="w-7 h-7" />
+            </button>
           </div>
         </div>
+        {storeId != null && <QuickAreaCodes codes={quickCodes} onPick={appendCode} variant="page" />}
       </div>
     </div>
   );
