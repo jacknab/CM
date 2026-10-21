@@ -21,7 +21,8 @@ const fmtTime = (ms: number, timeZone?: string) => new Date(ms).toLocaleTimeStri
  * HH:MM:SS since a moment the SERVER recorded — identical to the Techs tab's timer, kept as its
  * own copy here (rather than a shared import) so this file has no dependency on TechCards.tsx.
  */
-function LiveTimer({ since, offsetMs, testId }: { since: number | null; offsetMs: number; testId?: string }) {
+/** Counts up from `since`; with `until`, counts down to it instead, and past it shows the time over ("+00:04:10"). */
+function LiveTimer({ since, until, offsetMs, testId }: { since: number | null; until?: number | null; offsetMs: number; testId?: string }) {
   const [now, setNow] = useState(() => Date.now() + offsetMs);
   useEffect(() => {
     const tick = () => setNow(Date.now() + offsetMs);
@@ -30,9 +31,15 @@ function LiveTimer({ since, offsetMs, testId }: { since: number | null; offsetMs
     document.addEventListener("visibilitychange", tick);
     return () => { clearInterval(iv); document.removeEventListener("visibilitychange", tick); };
   }, [offsetMs]);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  if (until != null) {
+    const left = Math.floor((until - now) / 1000);
+    const s = Math.abs(left);
+    const text = `${left < 0 ? "+" : ""}${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
+    return <span className={`tt-timer ${left < 0 ? "tt-timer-over" : "tt-timer-countdown"}`} data-testid={testId} data-seconds={left}>{text}</span>;
+  }
   if (since == null) return <span className="tt-timer tt-timer-unknown" data-testid={testId}>--:--:--</span>;
   const secs = Math.max(0, Math.floor((now - since) / 1000));
-  const pad = (n: number) => String(n).padStart(2, "0");
   return <span className="tt-timer" data-testid={testId} data-seconds={secs}>{pad(Math.floor(secs / 3600))}:{pad(Math.floor((secs % 3600) / 60))}:{pad(secs % 60)}</span>;
 }
 
@@ -47,9 +54,13 @@ type ClientRow = {
   groupId?: number | null;
   /** The client is in service on this other ticket, so this one can't be assigned or started yet. */
   blockedBy?: number | null;
+  /** In the chair: when the service should be finished (its time plus 15 minutes), for the countdown. */
+  endsAt?: number | null;
 };
 
 const PER_PAGE = 16;
+/** Minutes added to a service's time for the in-chair countdown. */
+const SERVICE_PADDING_MIN = 15;
 
 const GLANCE_ICON = { "avg-wait": Clock, "checked-in": Users, "in-service": Armchair, "clocked-in": UserCheck, "walk-ins": PersonStanding, appointments: CalendarDays, "no-shows": EyeOff, "avg-ticket": Ticket } as const;
 
@@ -183,7 +194,9 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
       const service = `${t.service.name}${t.addons.length > 0 ? ` +${t.addons.length}` : ""}`;
       const groupId = t.groupId ?? null;
       if (t.status === "started") {
-        return { groupId,
+        // The chair timer counts down the service's time plus 15 minutes; DONE stops it.
+        const endsAt = !t.doneAt && t.startedAt ? +new Date(t.startedAt) + ((Number(t.duration) || 0) + SERVICE_PADDING_MIN) * 60_000 : null;
+        return { groupId, endsAt,
           key: `t${t.id}`, state: "service", since: t.startedAt ?? t.date, name: fullName(t.client.name), ticketNumber: t.ticketNumber ?? null,
           // DONE: the service is finished and the technician is free; the visit waits to be paid.
           service, sub: t.doneAt ? "DONE · READY TO PAY" : "IN SERVICE", subKind: "service", tech: t.staff?.name ?? null,
@@ -342,14 +355,20 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
               </button>
             )}
             <div className="q-booking-client q-booking-client-top q-unified-head">
-              {r.provisional ? <span data-testid="nail-queue-not-sent">NOT SENT</span> : r.ticketNumber != null && <span>#{r.ticketNumber}</span>}
+              {r.provisional ? <span data-testid="nail-queue-not-sent">NOT SENT</span> : r.ticketNumber != null && <span className="q-ticket-no">{r.ticketNumber}</span>}
               <strong>{r.name}</strong>
               <em className="q-unified-pill" data-kind={r.subKind}>{upNext ? "UP NEXT" : r.sub}</em>
             </div>
             <div className="q-unified-main">
               <div className="q-unified-clock">
                 <Clock size={25} strokeWidth={1.8} />
-                <div><small>{inChair ? "IN CHAIR" : "WAITING"}</small><LiveTimer since={+new Date(r.since)} offsetMs={clockOffsetMs} testId={`${r.testId}-timer`} /></div>
+                {r.blockedBy != null ? (
+                  // The client is in another chair on a linked ticket: this one is on standby, no waiting clock.
+                  <div data-testid={`${r.testId}-standby`}><small>AFTER #{r.blockedBy}</small><b className="q-standby">STANDBY</b></div>
+                ) : (
+                  <div><small>{inChair ? (r.endsAt != null ? "TIME LEFT" : "IN CHAIR") : "WAITING"}</small>
+                    <LiveTimer since={+new Date(r.since)} until={inChair ? r.endsAt : null} offsetMs={clockOffsetMs} testId={`${r.testId}-timer`} /></div>
+                )}
               </div>
               {upNext ? (
                 <div className="q-unified-side q-wait-actions">
