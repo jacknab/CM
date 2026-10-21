@@ -72,13 +72,25 @@ async function storeByCustomer(customerId: string): Promise<number | null> {
   return sub?.storeId ?? null;
 }
 
+/**
+ * Prices the plans used before 2026-10-21, when the owner's prices (Starter $29, Professional $99, Enterprise $179)
+ * got their own Stripe prices. A subscription still on one of these belongs to the same plan.
+ */
+const LEGACY_PRICE_PLANS: Record<string, string> = {
+  price_1TtGbtRDJayCN7TT53D0FErP: "professional", price_1TtSbSRDJayCN7TTfR2jWKTU: "professional", // $45.95 / $468
+  price_1TtSdNRDJayCN7TTWqMAEqxr: "elite", price_1TtSdqRDJayCN7TTiI2Gjuxm: "elite",               // $79 / $875
+};
+
 /** Resolve a plan from its Stripe price ID. */
 async function planByPriceId(priceId: string): Promise<{ id: number; code: string; name: string } | null> {
-  const rows = await db.select({ id: subscriptionPlans.id, code: subscriptionPlans.code, name: subscriptionPlans.name }).from(subscriptionPlans);
-  const match = rows.find(
-    (p) => (p as any).stripePriceIdMonthly === priceId || (p as any).stripePriceIdYearly === priceId
-  );
-  return match ?? null;
+  // The price ids have to be read to be compared (they were left out of this select, so no price ever matched).
+  const rows = await db.select({
+    id: subscriptionPlans.id, code: subscriptionPlans.code, name: subscriptionPlans.name,
+    stripePriceIdMonthly: subscriptionPlans.stripePriceIdMonthly, stripePriceIdYearly: subscriptionPlans.stripePriceIdYearly,
+  }).from(subscriptionPlans);
+  const match = rows.find((p) => p.stripePriceIdMonthly === priceId || p.stripePriceIdYearly === priceId)
+    ?? rows.find((p) => p.code === LEGACY_PRICE_PLANS[priceId]);
+  return match ? { id: match.id, code: match.code, name: match.name } : null;
 }
 
 /**

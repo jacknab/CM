@@ -1,4 +1,5 @@
 import { EMPTY_ARRAY } from "@/lib/empty";
+import { useBillingPlans, TOP_PLAN } from "@/lib/billingPlans";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, Link } from "react-router-dom";
@@ -16,39 +17,9 @@ import { cn } from "@/lib/utils";
 import { SubscriptionPaymentModal, type SubscriptionPaymentSession } from "@/components/billing/SubscriptionPaymentModal";
 
 // ─── Plans ────────────────────────────────────────────────────────────────────
-/** "Free" for a plan that costs nothing, otherwise "$22/mo". */
+/** "Free" for a plan that costs nothing, otherwise "$29/mo". */
 const planPrice = (p?: { price: number } | null, per = "/mo") => (!p ? "" : p.price === 0 ? "Free" : `$${p.price}${per}`);
 
-const PLANS = [
-  {
-    code: "solo",
-    name: "Solo",
-    price: 0, // Solo is free for now (2026-10-09)
-    tagline: "For independent stylists & booth renters",
-    highlight: "1 calendar · 1 staff · 200 SMS/mo",
-    features: ["1 calendar", "1 staff member", "Online booking page", "200 SMS/mo"],
-    notIncluded: ["Payments & card reader"],
-  },
-  {
-    code: "professional",
-    name: "Professional",
-    price: 22,
-    tagline: "Everything you need, for any salon size",
-    highlight: "Unlimited calendars · staff · payments · SMS",
-    features: ["Unlimited calendars", "Unlimited staff", "Online booking page", "Payments & card reader", "Unlimited SMS", "Google Business Profile sync", "Advanced reporting", "Priority support"],
-    notIncluded: [],
-    popular: true,
-  },
-  {
-    code: "elite",
-    name: "Elite",
-    price: 49,
-    tagline: "Full API access for custom integrations",
-    highlight: "50K SMS · Webhooks · API access · 99.9% SLA",
-    features: ["Everything in Professional", "Unlimited API keys", "50,000 SMS credits/mo", "Webhooks & real-time events", "Priority support (4 h SLA)"],
-    notIncluded: [],
-  },
-];
 
 const CANCEL_REASONS = [
   "Too expensive for my business",
@@ -158,6 +129,8 @@ function Divider() {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function DashboardBilling() {
+  // The admin's plans (shared with the other billing page and the website's /pricing).
+  const PLANS = useBillingPlans();
   const { selectedStore } = useSelectedStore();
   const salonId = selectedStore?.id;
   const { toast } = useToast();
@@ -582,7 +555,7 @@ export default function DashboardBilling() {
               <div className="space-y-3">
                 {PLANS.map((plan) => {
                   const isCurrent = currentPlan != null && currentPlan.code === plan.code;
-                  const isElite = plan.code === "elite";
+                  const isElite = plan.code === TOP_PLAN;
                   return (
                     <div
                       key={plan.code}

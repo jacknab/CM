@@ -8,8 +8,12 @@ import { bookingsForDetail, walkInState, type DetailKind } from "./boardView";
 const money = (n: number) => `$${n.toFixed(n % 1 === 0 ? 0 : 2)}`;
 
 const firstName = (n: string | null | undefined) => (n ?? "").trim().split(/\s+/)[0] || "Guest";
-/** The client's whole name as it's on file — every card shows the same thing, waiting or in the chair. */
-const fullName = (n: string | null | undefined) => (n ?? "").trim().replace(/\s+/g, " ") || "Guest";
+/** The client as the queue cards show them: first name and the first letter of the last name ("Toby B."). */
+const fullName = (n: string | null | undefined) => {
+  const parts = (n ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "Guest";
+  return parts.length === 1 ? parts[0] : `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.`;
+};
 /** A time of day in the salon's time zone (not the device's), like the day shown next to it. */
 const fmtTime = (ms: number, timeZone?: string) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone });
 
@@ -216,10 +220,17 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
   // Up next = the lowest-numbered client still waiting, wherever their card sits.
   const upNextKey = clientRows.find((r) => r.state === "waiting" && r.blockedBy == null)?.key ?? null;
   // Visits with more than one ticket on screen: those cards carry the yellow bar that joins them.
-  const linkedGroups = useMemo(() => {
-    const n = new Map<number, number>();
-    for (const r of clientRows) if (r.groupId != null) n.set(r.groupId, (n.get(r.groupId) ?? 0) + 1);
-    return new Set([...n].filter(([, c]) => c > 1).map(([g]) => g));
+  // Where each linked card sits in its visit: the bar is on the side that faces the next card of the same
+  // visit (the first card's right edge, the last card's left edge, both for one in the middle).
+  const linkSide = useMemo(() => {
+    const byGroup = new Map<number, string[]>();
+    for (const r of clientRows) if (r.groupId != null) byGroup.set(r.groupId, [...(byGroup.get(r.groupId) ?? []), r.key]);
+    const side = new Map<string, "first" | "middle" | "last">();
+    for (const keys of byGroup.values()) {
+      if (keys.length < 2) continue;
+      keys.forEach((k, i) => side.set(k, i === 0 ? "first" : i === keys.length - 1 ? "last" : "middle"));
+    }
+    return side;
   }, [clientRows]);
 
   // "Avg Wait" tile — same estimate the Techs tab shows, worked out from the board + turn data this
@@ -323,7 +334,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
         const upNext = r.key === upNextKey;
         const inChair = r.state === "service";
         return (
-          <div key={r.key} className={`q-booking-card q-unified-card q-wait-card ${upNext ? "q-up-next" : ""} ${r.groupId != null && linkedGroups.has(r.groupId) ? "q-visit-linked" : ""}`} data-testid={r.testId} data-state={r.state} role="button" tabIndex={0} aria-label={`Open ticket for ${r.name}`} onKeyDown={(event) => activateOnKeyboard(event, r.open)} onClick={r.open}>
+          <div key={r.key} className={`q-booking-card q-unified-card q-wait-card ${upNext ? "q-up-next" : ""} ${linkSide.has(r.key) ? `q-visit-linked q-visit-${linkSide.get(r.key)}` : ""}`} data-testid={r.testId} data-state={r.state} role="button" tabIndex={0} aria-label={`Open ticket for ${r.name}`} onKeyDown={(event) => activateOnKeyboard(event, r.open)} onClick={r.open}>
             {r.remove && (
               <button type="button" className="q-card-remove" aria-label={`Remove ${r.name} from the waiting list`} data-testid={`${r.testId}-remove`}
                 onClick={(e) => { e.stopPropagation(); if (window.confirm(`Take ${r.name} off the waiting list?`)) r.remove?.(); }}>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useBillingPlans, TOP_PLAN } from "@/lib/billingPlans";
 import AutoRefillCard from "./AutoRefillCard";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -17,40 +18,8 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
 // ─── Plans ────────────────────────────────────────────────────────────────────
-/** "Free" for a plan that costs nothing, otherwise "$22/mo". */
+/** "Free" for a plan that costs nothing, otherwise "$29/mo". */
 const planPrice = (p?: { price: number } | null, per = "/mo") => (!p ? "" : p.price === 0 ? "Free" : `$${p.price}${per}`);
-
-const PLANS = [
-  {
-    code: "solo",
-    name: "Solo",
-    // Free for now (decided 2026-10-09; to be revisited in about a year).
-    price: 0,
-    tagline: "For independent stylists & booth renters",
-    highlight: "1 calendar · 1 staff",
-    features: ["1 calendar", "1 staff member", "Online booking page", "200 SMS/mo"],
-    notIncluded: ["Payments & card reader"],
-    apiDocs: false,
-  },
-  {
-    code: "professional",
-    name: "Professional",
-    price: 22,
-    tagline: "Everything, unlimited — any salon size",
-    highlight: "Unlimited calendars & staff",
-    features: ["Unlimited calendars", "Unlimited staff", "Online booking page", "Payments & card reader", "Unlimited SMS", "Google Business Profile sync", "Advanced reporting", "Priority support"],
-    apiDocs: false,
-  },
-  {
-    code: "elite",
-    name: "Elite",
-    price: 49,
-    tagline: "Full API access for custom integrations",
-    highlight: "Unlimited API · 50K SMS · Webhooks",
-    features: ["Everything in Professional", "Unlimited API keys", "50,000 SMS credits/mo", "Chatbot & Dialer API", "Webhooks & real-time events", "1,000 API requests/min", "99.9% uptime SLA", "Priority support (4 h)"],
-    apiDocs: true,
-  },
-];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface BillingData {
@@ -211,6 +180,8 @@ export default function BillingPage({ salonId }: { salonId: number }) {
     queryKey: ["public-plans"],
     queryFn: () => apiFetch("/api/plans/public-plans"),
   });
+  // The admin's plans: names, prices and what each includes (the website's /pricing reads the same list).
+  const PLANS = useBillingPlans();
 
   const { data: smsStatus, isLoading: smsLoading } = useQuery<{
     smsAllowance: number;
@@ -573,7 +544,7 @@ export default function BillingPage({ salonId }: { salonId: number }) {
         <CardContent className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
           {PLANS.map((plan) => {
             const isCurrent = currentPlan != null && currentPlan.code === plan.code;
-            const isElite = plan.code === "elite";
+            const isElite = plan.code === TOP_PLAN;
             return (
               <div
                 key={plan.code}
@@ -624,29 +595,14 @@ export default function BillingPage({ salonId }: { salonId: number }) {
                     </li>
                   ))}
                 </ul>
-                {plan.apiDocs && (
-                  <Link
-                    to="/elite-api-docs"
-                    className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 transition-colors mb-3"
-                  >
-                    <Code2 className="w-3.5 h-3.5" />
-                    View API Integration Documentation →
-                  </Link>
-                )}
                 {isElite && !isCurrent && (
                   <div className="space-y-2 mt-1">
-                    <Link
-                      to="/elite-details"
-                      className="flex items-center justify-center gap-1.5 w-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 hover:border-amber-400/50 text-amber-300 hover:text-amber-200 text-xs font-medium py-2 px-3 rounded-lg transition-all"
-                    >
-                      See Details <ChevronRight className="w-3.5 h-3.5" />
-                    </Link>
                     {stripeConfigured ? (
                       isActive ? (
                         <Button size="sm" variant="outline"
                           className="w-full border-amber-500/40 text-amber-300 hover:bg-amber-500/10 text-xs"
                           onClick={() => { setSwitchingTo(plan.code); setShowPlanConfirm(true); }}>
-                          Switch to Elite
+                          Switch to {plan.name}
                         </Button>
                       ) : (
                         <Button size="sm"
@@ -664,7 +620,7 @@ export default function BillingPage({ salonId }: { salonId: number }) {
                         disabled={selectPlanMutation.isPending && switchingTo === plan.code}>
                         {selectPlanMutation.isPending && switchingTo === plan.code
                           ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
-                        Select Elite Plan
+                        Select {plan.name}
                       </Button>
                     )}
                   </div>
