@@ -109,7 +109,7 @@ $competitor_name = $competitor_name ?? 'the competition';
 
     <!-- CTA row -->
     <div style="text-align:center;margin-top:44px;">
-      <a href="/revenue-intelligence" class="ri-spotlight-link-btn">See how Revenue Intelligence works →</a>
+      <a href="/features" class="ri-spotlight-link-btn">See how Revenue Intelligence works →</a>
       <p style="font-size:.75rem;color:rgba(255,255,255,.35);margin-top:14px;">Included in every SalonOS plan &middot; No setup &middot; No add-on fees</p>
     </div>
 

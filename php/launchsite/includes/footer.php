@@ -12,23 +12,23 @@
                 <h4>Product</h4>
                 <ul>
                     <li><a href="/launchsite/">Launchit</a></li>
-                    <li><a href="/salonos.php">SalonOS</a></li>
-                    <li><a href="/pricing.php">Pricing</a></li>
+                    <li><a href="/features">SalonOS</a></li>
+                    <li><a href="/pricing">Pricing</a></li>
                 </ul>
             </div>
             <div class="footer-col">
                 <h4>Designs</h4>
                 <ul>
-                    <li><a href="/launchsite/hair-salons">Hair Salons</a></li>
-                    <li><a href="/launchsite/barbershops">Barbershops</a></li>
-                    <li><a href="/launchsite/nail-salons">Nail Salons</a></li>
+                    <li><a href="/launchsite">Hair Salons</a></li>
+                    <li><a href="/launchsite">Barbershops</a></li>
+                    <li><a href="/launchsite">Nail Salons</a></li>
                 </ul>
             </div>
             <div class="footer-col">
                 <h4>Company</h4>
                 <ul>
                     <li><a href="/about">About</a></li>
-                    <li><a href="/contact.php">Contact</a></li>
+                    <li><a href="/contact">Contact</a></li>
                     <li><a href="/privacy">Privacy Policy</a></li>
                     <li><a href="/terms">Terms of Service</a></li>
                 </ul>

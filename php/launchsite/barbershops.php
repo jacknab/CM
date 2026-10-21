@@ -113,7 +113,7 @@ require_once __DIR__ . '/includes/header.php';
         <h2>Ready to put your barbershop online?</h2>
         <p>Start your free trial, pick a template, and go live with your own domain today.</p>
         <div class="cta-banner-actions">
-            <a href="https://certxa.com/signup" class="btn btn--primary btn--lg">Start Free Trial</a>
+            <a href="/auth?mode=register" class="btn btn--primary btn--lg">Start Free Trial</a>
             <a href="<?php echo BASE_PATH; ?>/" class="btn btn--ghost btn--lg">Browse All Templates</a>
         </div>
     </div>

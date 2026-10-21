@@ -11,17 +11,17 @@
           <div class="dropdown">
             <div class="dropdown-section">Client Experience</div>
             <a href="/"><span class="nav-dot"></span>Platform Overview</a>
-            <a href="/online-booking"><span class="nav-dot"></span>Online Booking</a>
-            <a href="/client-management"><span class="nav-dot"></span>Client Management</a>
-            <a href="/client-notifications"><span class="nav-dot"></span>Client Notifications</a>
-            <a href="/checkin-kiosk"><span class="nav-dot" style="background:#10b981;"></span>Self-Service Check-in Kiosk</a>
+            <a href="/booking"><span class="nav-dot"></span>Online Booking</a>
+            <a href="/features"><span class="nav-dot"></span>Client Management</a>
+            <a href="/features"><span class="nav-dot"></span>Client Notifications</a>
+            <a href="/features"><span class="nav-dot" style="background:#10b981;"></span>Self-Service Check-in Kiosk</a>
             <div class="dropdown-section" style="margin-top:10px;">Revenue &amp; Intelligence</div>
-            <a href="/revenue-intelligence" style="font-weight:600;"><span class="nav-dot" style="background:#a78bfa;"></span>Revenue Intelligence</a>
+            <a href="/features" style="font-weight:600;"><span class="nav-dot" style="background:#a78bfa;"></span>Revenue Intelligence</a>
             <div class="dropdown-section" style="margin-top:10px;">AI Features</div>
             <a href="/autumn" style="font-weight:600;"><span class="nav-dot" style="background:#f59e0b;"></span>Autumn AI Receptionist</a>
             <div class="dropdown-section" style="margin-top:10px;">Build Your Brand</div>
-            <a href="/google-business-profile"><span class="nav-dot"></span>Google Business Profile</a>
-            <a href="/client-reviews"><span class="nav-dot"></span>Client Reviews</a>
+            <a href="/features"><span class="nav-dot"></span>Google Business Profile</a>
+            <a href="/features"><span class="nav-dot"></span>Client Reviews</a>
             <a href="/launchsite"><span class="nav-dot"></span>Launchit! Builder</a>
           </div>
         </li>
@@ -30,7 +30,7 @@
           <a href="/pricing">Pricing</a>
           <div class="dropdown">
             <a href="/pricing"><span class="nav-dot"></span>Pricing Plans</a>
-            <a href="/payments"><span class="nav-dot" style="background:#635bff;"></span>Payments &amp; Billing</a>
+            <a href="/pricing"><span class="nav-dot" style="background:#635bff;"></span>Payments &amp; Billing</a>
           </div>
         </li>
 
@@ -43,7 +43,7 @@
           </div>
         </li>
 
-        <li><a href="/tools">Tools</a></li>
+        <li><a href="/features">Tools</a></li>
 
         <!-- Mobile-only: Login + Start Free Trial (hidden on desktop) -->
         <li class="mobile-nav-cta">

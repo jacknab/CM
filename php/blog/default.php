@@ -29,7 +29,7 @@ try {
          FROM blog_posts
          WHERE status='published'" . ($featured ? " AND id != :fid" : "") . "
          ORDER BY published_at DESC NULLS LAST
-         LIMIT 12"
+         LIMIT 60"
     );
     if ($featured) $art_stmt->bindValue(':fid', $featured['id'], PDO::PARAM_INT);
     $art_stmt->execute();

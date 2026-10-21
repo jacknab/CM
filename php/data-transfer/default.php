@@ -389,13 +389,13 @@ require 'includes/nav.php';
     <div class="platforms-grid">
       <?php
       $platforms = [
-        ['name'=>'Vagaro',           'emoji'=>'V',  'bg'=>'#7B3F9E', 'url'=>'/certxa-vs-vagaro'],
-        ['name'=>'GlossGenius',      'emoji'=>'GG', 'bg'=>'#E0477B', 'url'=>'/certxa-vs-glossgenius'],
+        ['name'=>'Vagaro',           'emoji'=>'V',  'bg'=>'#7B3F9E', 'url'=>'/compare/certxa-vs-vagaro'],
+        ['name'=>'GlossGenius',      'emoji'=>'GG', 'bg'=>'#E0477B', 'url'=>'/compare/certxa-vs-glossgenius'],
         ['name'=>'Square Appts',     'emoji'=>'■',  'bg'=>'#00B386'],
         ['name'=>'Mindbody',         'emoji'=>'M',  'bg'=>'#0078D7'],
-        ['name'=>'Fresha',           'emoji'=>'F',  'bg'=>'#FF6B35', 'url'=>'/certxa-vs-fresha'],
+        ['name'=>'Fresha',           'emoji'=>'F',  'bg'=>'#FF6B35', 'url'=>'/compare/certxa-vs-fresha'],
         ['name'=>'Booksy',           'emoji'=>'B',  'bg'=>'#0A0A0A'],
-        ['name'=>'GoCheckIn',        'emoji'=>'GC', 'bg'=>'#1E293B', 'url'=>'/certxa-vs-gocheckin'],
+        ['name'=>'GoCheckIn',        'emoji'=>'GC', 'bg'=>'#1E293B', 'url'=>'/pricing'],
         ['name'=>'Google Contacts',  'emoji'=>'G',  'bg'=>'#4285F4'],
         ['name'=>'CSV / Excel',      'emoji'=>'📋', 'bg'=>'#059669'],
       ];
@@ -561,7 +561,7 @@ require 'includes/nav.php';
     <p class="cta-text">Switch to the nail salon platform built to keep every client record safe and searchable from day one.</p>
     <div class="cta-actions">
       <a href="/auth" class="btn btn-gold">Start Free Trial</a>
-      <a href="/salonos" class="btn btn-outline-white">Explore All Features</a>
+      <a href="/features" class="btn btn-outline-white">Explore All Features</a>
     </div>
     <p class="cta-note">Credit card required · No charge until trial ends &middot; <?= TRIAL_DAYS ?>-day free trial &middot; Cancel anytime</p>
   </div>

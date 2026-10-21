@@ -20,6 +20,8 @@ const footerLinks: Record<string, { label: string; href: string | null }[]> = {
   Legal: [
     { label: 'Privacy Policy', href: '/privacy' },
     { label: 'Terms of Service', href: '/terms' },
+    { label: 'Google Data Policy', href: '/google-data-policy' },
+    { label: 'Data Transfer', href: '/data-transfer' },
   ],
 };
 

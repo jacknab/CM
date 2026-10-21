@@ -201,7 +201,7 @@ $chip_styles = array_keys($style_counts);
         <h2>Ready to launch your salon's website?</h2>
         <p>Pick a design, connect your domain, and go live today.</p>
         <div class="cta-banner-actions">
-            <a href="https://certxa.com/signup" class="btn btn--primary btn--lg">Get Started Free</a>
+            <a href="/auth?mode=register" class="btn btn--primary btn--lg">Get Started Free</a>
             <a href="https://certxa.com/pricing" class="btn btn--ghost btn--lg">View Pricing</a>
         </div>
     </div>

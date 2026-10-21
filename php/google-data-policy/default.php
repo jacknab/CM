@@ -367,7 +367,7 @@ require 'includes/nav.php';
       <h3>Disconnect in one click</h3>
       <p>You can revoke Certxa's access to your Google Business Profile at any time. Disconnecting immediately revokes our OAuth token and stops all further data retrieval. You can also revoke directly from your Google Account settings — both methods work instantly.</p>
       <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;">
-        <a href="/google-business-profile" class="btn-revoke">Disconnect from Certxa Dashboard</a>
+        <a href="/features" class="btn-revoke">Disconnect from Certxa Dashboard</a>
         <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer" class="btn-dash">Revoke via Google Account →</a>
       </div>
     </div>

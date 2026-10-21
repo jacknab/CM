@@ -14,15 +14,15 @@
       <div>
         <p class="footer-col-title">Product</p>
         <ul class="footer-col-links">
-          <li><a href="/online-booking">Online Booking</a></li>
-          <li><a href="/checkin-kiosk">Self-Service Kiosk</a></li>
-          <li><a href="/salonos#loyalty">Loyalty Rewards</a></li>
-          <li><a href="/salonos#waitlist">Waitlist</a></li>
+          <li><a href="/booking">Online Booking</a></li>
+          <li><a href="/features">Self-Service Kiosk</a></li>
+          <li><a href="/features#loyalty">Loyalty Rewards</a></li>
+          <li><a href="/features#waitlist">Waitlist</a></li>
           <li><a href="/autumn">AI Receptionist</a></li>
-          <li><a href="/salonos#pos">POS</a></li>
+          <li><a href="/features#pos">POS</a></li>
           <li><a href="/launchsite">Website Builder</a></li>
-          <li><a href="/get-more-reviews">Review Monitoring &amp; Engagement</a></li>
-          <li><a href="/vietnamese-salon-software">Tiếng Việt 🇻🇳</a></li>
+          <li><a href="/features">Review Monitoring &amp; Engagement</a></li>
+          <li><a href="/">Tiếng Việt 🇻🇳</a></li>
         </ul>
       </div>
 
@@ -36,16 +36,16 @@
         </ul>
         <p class="footer-col-title" style="margin-top:20px;">Tools</p>
         <ul class="footer-col-links">
-          <li><a href="/tools">Free Salon Calculators</a></li>
+          <li><a href="/features">Free Salon Calculators</a></li>
           <li><a href="/">Nail Salon Directory</a></li>
         </ul>
         <p class="footer-col-title" style="margin-top:20px;">Compare</p>
         <ul class="footer-col-links">
-          <li><a href="/certxa-vs-glossgenius">vs GlossGenius</a></li>
-          <li><a href="/certxa-vs-vagaro">vs Vagaro</a></li>
-          <li><a href="/certxa-vs-fresha">vs Fresha</a></li>
-          <li><a href="/certxa-vs-gocheckin">vs GoCheckIn</a></li>
-          <li><a href="/best-free-salon-booking-system">Best Free Booking System</a></li>
+          <li><a href="/compare/certxa-vs-glossgenius">vs GlossGenius</a></li>
+          <li><a href="/compare/certxa-vs-vagaro">vs Vagaro</a></li>
+          <li><a href="/compare/certxa-vs-fresha">vs Fresha</a></li>
+          <li><a href="/pricing">vs GoCheckIn</a></li>
+          <li><a href="/pricing">Best Free Booking System</a></li>
         </ul>
         <p class="footer-col-title" style="margin-top:20px;">Login</p>
         <ul class="footer-col-links">
@@ -62,6 +62,8 @@
         <a href="/privacy">Privacy Policy</a>
         <a href="/terms">Terms of Service</a>
         <a href="/sms-terms">SMS Terms</a>
+        <a href="/google-data-policy">Google Data Policy</a>
+        <a href="/data-transfer">Data Transfer</a>
       </div>
     </div>
   </div>

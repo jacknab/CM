@@ -72,6 +72,5 @@ if ($which === 'pages') {
 echo '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
 echo "  <sitemap><loc>https://certxa.com/sitemap-pages.xml</loc><lastmod>{$today}</lastmod></sitemap>\n";
 echo "  <sitemap><loc>https://certxa.com/blog/sitemap.xml</loc><lastmod>{$today}</lastmod></sitemap>\n";
-echo "  <sitemap><loc>https://certxa.com/sitemap-salons.xml</loc><lastmod>{$today}</lastmod></sitemap>\n";
-echo "  <sitemap><loc>https://certxa.com/sitemap-listings.xml</loc><lastmod>{$today}</lastmod></sitemap>\n";
+// The salon directory lives at salons.certxa.com, which serves its own sitemap.xml (routes/salonDirectory.ts).
 echo '</sitemapindex>';
