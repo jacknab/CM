@@ -38,8 +38,10 @@ const KEYS = ["7", "8", "9", "⌫", "4", "5", "6", "↶", "1", "2", "3", "X", "0
 /** The functions under the keypad that belong to paying a ticket: the ticket is saved and its checkout opens on that function. */
 export type CheckoutFn = "group" | "tip" | "discount";
 
-export function Keypad({ locked, onEnter, onGiftCard, onCheckoutFn, onNoSale, onNotice }: {
-  locked: boolean; onEnter: (amount: number, qty: number, label?: string, isRetail?: boolean) => void; onGiftCard?: () => void;
+export function Keypad({ locked, onEnter, onUndo, onGiftCard, onCheckoutFn, onNoSale, onNotice }: {
+  locked: boolean; onEnter: (amount: number, qty: number, label?: string, isRetail?: boolean) => void;
+  /** ↶ with nothing typed: undo the last change to the ticket. */
+  onUndo?: () => void; onGiftCard?: () => void;
   onCheckoutFn?: (fn: CheckoutFn) => void; onNoSale?: () => void; onNotice?: (text: string) => void;
 }) {
   const [display, setDisplay] = useState("");
@@ -50,7 +52,12 @@ export function Keypad({ locked, onEnter, onGiftCard, onCheckoutFn, onNoSale, on
   const press = (key: string) => {
     if (locked) return;
     if (key === "⌫") { setDisplay((d) => d.slice(0, -1)); return; }
-    if (key === "↶") { setDisplay(""); setQty(1); setGuided(null); return; }
+    // ↶ first clears what is being typed (and leaves Quick Ticket); with nothing typed it undoes the last change to the ticket.
+    if (key === "↶") {
+      if (display !== "" || qty !== 1 || guided !== null) { setDisplay(""); setQty(1); setGuided(null); return; }
+      onUndo?.();
+      return;
+    }
     if (key === "X") {
       if (guided !== null) return; // Quick Ticket adds one of each step
       // "3 X" then the price = three of them.

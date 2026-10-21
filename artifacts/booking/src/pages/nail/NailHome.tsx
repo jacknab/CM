@@ -655,8 +655,38 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   useEffect(() => {
     if (!service || nailLoading || pickSeededFor.current === service.id) return;
     pickSeededFor.current = service.id;
+    // The default options belong to choosing the service: one undo takes both off.
+    draftHistory.current.mergeNext = true;
     setPick(defaultPick(nailCfg));
   }, [service, nailCfg, nailLoading]);
+
+  // ── Undo (the ↶ key under the keypad): each change to the ticket being built is kept, and ↶ puts the
+  // ticket back the way it was before the last one. A new client or ticket starts a fresh history. ──
+  type DraftSnapshot = { service: CatalogService | null; extraServices: CatalogService[]; addonIds: number[]; pick: NailPick; customs: DraftCustomLine[]; pkg: typeof pkg };
+  const draftHistory = useRef<{ past: DraftSnapshot[]; current: DraftSnapshot | null; restoring: boolean; mergeNext: boolean; owner: string }>(
+    { past: [], current: null, restoring: false, mergeNext: false, owner: "" });
+  useEffect(() => {
+    const h = draftHistory.current;
+    const now: DraftSnapshot = { service, extraServices, addonIds, pick, customs, pkg };
+    const owner = `${client?.id ?? ""}:${editing?.id ?? ""}`;
+    if (owner !== h.owner) { h.owner = owner; h.past = []; h.current = now; h.mergeNext = false; h.restoring = false; return; }
+    if (h.restoring) { h.restoring = false; h.current = now; return; }
+    if (h.mergeNext) { h.mergeNext = false; h.current = now; return; }
+    if (h.current) h.past = [...h.past.slice(-49), h.current];
+    h.current = now;
+  }, [service, extraServices, addonIds, pick, customs, pkg, client?.id, editing?.id]);
+  const undoDraft = () => {
+    const h = draftHistory.current;
+    const prev = h.past[h.past.length - 1];
+    if (!prev) { say("Nothing to undo"); return; }
+    h.past = h.past.slice(0, -1);
+    h.restoring = true;
+    // The options come back as they were; they are not filled in again for the service.
+    pickSeededFor.current = prev.service?.id ?? null;
+    setService(prev.service); setExtraServices(prev.extraServices); setAddonIds(prev.addonIds); setPick(prev.pick);
+    setCustoms(prev.customs); setPkg(prev.pkg);
+    say("Undone");
+  };
 
   const totals = useMemo(
     () => draftTotals(service, addonIds, activeAddons, nailCfg, pick, customs),
@@ -1582,7 +1612,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
             />
             <section className="work-area">
               <div className="sale-area">
-                <Keypad locked={!client} onEnter={addCustom} onGiftCard={() => setShowGift(true)} onCheckoutFn={payNowWith} onNotice={say}
+                <Keypad locked={!client} onEnter={addCustom} onUndo={undoDraft} onGiftCard={() => setShowGift(true)} onCheckoutFn={payNowWith} onNotice={say}
                   onNoSale={() => { void openCashDrawerHardware({ onThermalPrint: thermalPrinter.isConnected ? thermalPrinter.print : undefined }); recordNoSale({ drawerId, performedBy: tech?.name }); say("Cash drawer opened"); }} />
                 {booking?.step === "time" && service ? (
                   <BookingPanel
