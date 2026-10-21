@@ -7227,12 +7227,18 @@ If you have any questions, please contact your administrator.
         gte(sql<Date>`COALESCE(${appointments.startedAt}, ${appointments.date})`, since)),
       with: { customer: true, staff: true, service: true },
     });
+    // A ticket whose technician pressed DONE is finished but not paid; Day Close names it as such.
+    const done = rows.length
+      ? new Set((await pool.query(`SELECT id FROM appointments WHERE id = ANY($1::int[]) AND service_done_at IS NOT NULL`, [rows.map((r: any) => r.id)])).rows.map((r: any) => Number(r.id)))
+      : new Set<number>();
     return rows.map((apt: any) => ({
       id: apt.id,
+      ticketNumber: apt.ticketNumber ?? null,
       customerName: apt.customer?.name ?? null,
       staffName: apt.staff?.name ?? null,
       serviceName: apt.service?.name ?? null,
       startedAt: apt.startedAt ?? apt.date,
+      done: done.has(Number(apt.id)),
     }));
   }
 
@@ -7286,7 +7292,9 @@ If you have any questions, please contact your administrator.
       if (!storeId) return res.status(403).json({ message: "No store context" });
       const drawerId = req.query.drawerId ? Number(req.query.drawerId) || null : null;
       const devices = await otherDevices(storeId, typeof req.query.deviceId === "string" ? req.query.deviceId : null).catch(() => ({ holdingCash: [], quiet: [] }));
-      return res.json({ lockedUntil: dayCloseLockedUntil(await getLastDayCloseAt(storeId, drawerId)), devices });
+      // The tickets that would stop the close, so the sheet can list them before anyone counts the drawer.
+      const unpaidTickets = await findUnpaidTickets(storeId).catch(() => null);
+      return res.json({ lockedUntil: dayCloseLockedUntil(await getLastDayCloseAt(storeId, drawerId)), devices, unpaidTickets });
     } catch (error) {
       console.error("[day-close-status]", error);
       return res.status(500).json({ message: "Could not load Day Close status" });

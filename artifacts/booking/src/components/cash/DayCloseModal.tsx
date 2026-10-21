@@ -21,6 +21,9 @@ interface DayCloseModalProps {
 
 interface OpenTicket {
   id: number;
+  ticketNumber?: number | null;
+  /** The technician pressed DONE: the service is finished and only the payment is missing. */
+  done?: boolean;
   customerName?: string | null;
   staffName?: string | null;
   serviceName?: string | null;
@@ -111,7 +114,7 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0 }
   });
 
   const closeStatusKey = `/api/cash-drawer/day-close-status?drawerId=${drawerId}&deviceId=${encodeURIComponent(getDeviceId())}`;
-  const { data: closeStatus, isLoading: lockLoading } = useQuery<{ lockedUntil: string | null; devices?: { holdingCash: { device: string; count: number; amount: number }[]; quiet: { device: string; lastSeenAt: string }[] } }>({
+  const { data: closeStatus, isLoading: lockLoading } = useQuery<{ lockedUntil: string | null; unpaidTickets?: OpenTicket[] | null; devices?: { holdingCash: { device: string; count: number; amount: number }[]; quiet: { device: string; lastSeenAt: string }[] } }>({
     queryKey: [closeStatusKey],
     enabled: open && !!storeId,
     refetchOnMount: "always",
@@ -144,7 +147,10 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0 }
       startedAt: apt.startedAt ?? apt.date ?? null,
     }));
 
-  const blockedTickets = serverBlockedTickets.length > 0 ? serverBlockedTickets : openTickets;
+  // The server's list (with ticket numbers and which are DONE) when it has one; otherwise the same rule worked out here.
+  const blockedTickets = serverBlockedTickets.length > 0 ? serverBlockedTickets
+    : closeStatus?.unpaidTickets ? closeStatus.unpaidTickets : openTickets;
+  const doneUnpaid = blockedTickets.filter((t) => t.done).length;
   const isBlocked = blockedTickets.length > 0;
 
   // Card / non-cash rows from the Z-report (auto-populated)
@@ -349,7 +355,9 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0 }
                   {blockedTickets.length} open ticket{blockedTickets.length === 1 ? "" : "s"} must be checked out first
                 </p>
                 <p className="text-red-700 text-xs">
-                  Check out all in-progress bookings before closing the day.
+                  {doneUnpaid > 0
+                    ? `${doneUnpaid === blockedTickets.length ? "" : `${doneUnpaid} of them `}${doneUnpaid === 1 ? "is" : "are"} done and waiting for payment. Check out every ticket before closing the day.`
+                    : "Check out all in-progress bookings before closing the day."}
                 </p>
               </div>
             </div>
@@ -359,12 +367,13 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0 }
                   <Clock className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
                   <div className="text-xs leading-snug">
                     <p className="font-medium text-gray-900">
+                      {ticket.ticketNumber != null ? `#${ticket.ticketNumber} · ` : ""}
                       {ticket.customerName ?? "Walk-in"}
                       {ticket.serviceName ? ` — ${ticket.serviceName}` : ""}
                     </p>
-                    {ticket.staffName && (
-                      <p className="text-gray-500">with {ticket.staffName}</p>
-                    )}
+                    <p className="text-gray-500">
+                      {ticket.staffName ? `with ${ticket.staffName} · ` : ""}{ticket.done ? "Done, waiting for payment" : "In service"}
+                    </p>
                   </div>
                 </li>
               ))}
