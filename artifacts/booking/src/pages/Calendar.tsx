@@ -37,6 +37,7 @@ import { buildCheckinTicket, buildCheckoutReceipt } from "@/lib/thermalPrinter";
 import { buildNativeReceiptPayload } from "@/lib/receiptPayload";
 import { openCashDrawerHardware, recordNoSale } from "@/lib/cashDrawer";
 import { cn } from "@/lib/utils";
+import { formatTurns, TURN_UNIT } from "@shared/turnRules";
 
 import { getPosLayout, getMobilePosActions, resolvePosIcon, type PosButton } from "@/lib/pos";
 import { POS_BUTTON_TX, POS_GUIDED_TX, POS_MISC_TX } from "@/lib/pos/labels";
@@ -3965,18 +3966,15 @@ function InlineTurnQueuePanel({
 
   const statusLine = (tech: TurnTechnician) => {
     if (tech.currentStatus === "busy") {
-      return tech.shortTurnProtected
-        ? pick({ en: "Busy - Requested - Retaining spot", vi: "Bận - Đã yêu cầu - Giữ vị trí", es: "Ocupado - Solicitado - Reteniendo turno", fr: "Occupé - Demandé - Conserve sa place" })
-        : pick({ en: "Busy - With a client", vi: "Bận - Đang phục vụ khách", es: "Ocupado - Con un cliente", fr: "Occupé - Avec un client" });
+      return pick({ en: "Busy - With a client", vi: "Bận - Đang phục vụ khách", es: "Ocupado - Con un cliente", fr: "Occupé - Avec un client" });
     }
     if (tech.currentStatus === "on_break") return pick({ en: "On Break", vi: "Đang nghỉ", es: "En descanso", fr: "En pause" });
     const tc = tech.turnCount ?? 0;
+    const turns = formatTurns(Math.round(tc * TURN_UNIT));
     const base = tc > 0
-      ? pick({ en: `Available - ${tc} turn${tc !== 1 ? "s" : ""} today`, vi: `Sẵn sàng - ${tc} lượt hôm nay`, es: `Disponible - ${tc} turno${tc !== 1 ? "s" : ""} hoy`, fr: `Disponible - ${tc} tour${tc !== 1 ? "s" : ""} aujourd'hui` })
+      ? pick({ en: `Available - ${turns} turn${tc !== 1 ? "s" : ""} today`, vi: `Sẵn sàng - ${turns} lượt hôm nay`, es: `Disponible - ${turns} turno${tc !== 1 ? "s" : ""} hoy`, fr: `Disponible - ${turns} tour${tc !== 1 ? "s" : ""} aujourd'hui` })
       : pick({ en: "Available", vi: "Sẵn sàng", es: "Disponible", fr: "Disponible" });
-    return tech.shortTurnProtected
-      ? `${base} - ${pick({ en: "Retaining spot", vi: "Giữ vị trí", es: "Reteniendo turno", fr: "Conserve sa place" })}`
-      : base;
+    return base;
   };
 
   // Busy check takes priority — a busy staff in spot #1 always shows pink, not green

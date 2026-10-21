@@ -33,7 +33,7 @@ describe("two POS tablets offline share one turn line", () => {
       { kind: "paid", at: 3000, staffId: 1, serviceAmount: 30, ticketId: -5 },
     ]);
     expect(next(l)).toEqual(["Lisa", "Maria", "Amy"]);
-    expect(l.technicians.find((t) => t.name === "Amy")!.turnUnits).toBe(500); // $30 at $30 a turn is ½
+    expect(l.technicians.find((t) => t.name === "Amy")!.turnUnits).toBe(500); // $30 at $30 a turn is 1/2
   });
 
   it("a server ticket tablet A paid is no longer open on tablet B, even though B's copy of the board still shows it", () => {
@@ -95,6 +95,13 @@ describe("turns earned, shown after a sale paid offline", () => {
   it("a walk-in: the service part only, under the same rules the server uses ($45 at $30 a turn is 1½)", () => {
     expect(turnsEarnedOffline({ base, tickets: [sale] })).toEqual([
       { appointmentId: -3, ticketNumber: 12, staffName: "Amy", mode: "dollar", earned: 1.5, serviceAmount: 45 },
+    ]);
+  });
+
+  it("a paid Counted Turns checkout under the threshold earns 1/2", () => {
+    const classicBase = { ...base, turnRules: { mode: "classic" as const, dollarsPerTurn: 30, partialTurnValue: 0.5 } };
+    expect(turnsEarnedOffline({ base: classicBase, tickets: [{ ...sale, serviceRevenue: 20 }] })).toEqual([
+      { appointmentId: -3, ticketNumber: 12, staffName: "Amy", mode: "classic", earned: 0.5, serviceAmount: 20 },
     ]);
   });
 

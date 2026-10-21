@@ -1,6 +1,6 @@
 // Moved out of pages/Calendar.tsx so the /nail and /barber staff screens don't load the whole calendar.
 import { useState, useEffect } from "react";
-import { formatTurns } from "@shared/turnRules";
+import { formatTurns, TURN_UNIT } from "@shared/turnRules";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,6 @@ export type TurnTechnician = {
   exclusionReasons?: string[];
   turnCount?: number;
   currentStatus?: "available" | "busy" | "on_break";
-  shortTurnProtected?: boolean;
 };
 
 export function TurnTechCard({
@@ -62,7 +61,7 @@ export function TurnTechCard({
         : "#d9eac6";
 
   const metrics = [
-    { label: pick({ en: "Turn Count",        vi: "Số lượt",          es: "Turnos",           fr: "Nombre de tours" }),         value: row.turnCount },
+    { label: pick({ en: "Turn Count",        vi: "Số lượt",          es: "Turnos",           fr: "Nombre de tours" }),         value: formatTurns(Math.round((Number(row.turnCount) || 0) * TURN_UNIT)) },
     { label: pick({ en: "Daily Processing",  vi: "Đang xử lý",       es: "En proceso",       fr: "En traitement" }),           value: row.dailyProcessingOrders },
     { label: pick({ en: "Daily Done Income", vi: "Thu nhập xong",     es: "Ingresos hechos",  fr: "Revenus terminés" }),        value: `$${Math.round(row.dailyDoneIncome)}` },
     { label: pick({ en: "Daily Processing",  vi: "Thu nhập đang TT",  es: "Ingresos proceso", fr: "Revenus en cours" }),        value: `$${Math.round(row.dailyProcessingIncome)}` },
@@ -108,11 +107,6 @@ export function TurnTechCard({
           >
             {sc.label}
           </span>
-          {row.shortTurnProtected && (
-            <span className="inline-flex self-start items-center gap-0.5 rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-600">
-              {pick({ en: "Kept Turn", vi: "Giữ lượt", es: "Turno conservado", fr: "Tour conservé" })}
-            </span>
-          )}
         </div>
       </div>
 
@@ -177,74 +171,60 @@ export function TurnPageModal({
     howRules: (thresh: number) => pick({
       en: [
         `• <strong>Clock-in order</strong> sets the starting line-up — first in, first up.`,
-        `• After a completed checkout <strong>above $${thresh}</strong>, that technician moves to the back of the line.`,
-        `• Checkouts <strong>below $${thresh}</strong> (short turns) don't move the technician — they keep their spot for one more turn.`,
+        `• Each paid checkout adds the turns it earns; below $${thresh}, that is <strong>1/2 turn</strong>.`,
+        `• After checkout, the line is ordered by accumulated turns, with the fewest first.`,
         `• A technician on break or with an upcoming appointment is <strong>skipped</strong> for walk-ins until they're available again.`,
         `• Managers can manually reorder the queue if needed.`,
       ],
       vi: [
         `• <strong>Thứ tự bấm giờ vào ca</strong> xác định hàng đợi ban đầu — ai vào trước, phục vụ trước.`,
-        `• Sau khi thanh toán hoàn tất <strong>trên $${thresh}</strong>, nhân viên đó chuyển xuống cuối hàng đợi.`,
-        `• Thanh toán <strong>dưới $${thresh}</strong> (lượt ngắn) không di chuyển nhân viên — họ giữ vị trí thêm một lượt nữa.`,
+        `• Mỗi lần thanh toán cộng số lượt kiếm được; dưới $${thresh} là <strong>1/2 lượt</strong>.`,
+        `• Sau thanh toán, hàng đợi xếp theo tổng lượt tích lũy, ít nhất đứng trước.`,
         `• Nhân viên đang nghỉ hoặc có lịch hẹn sắp tới sẽ bị <strong>bỏ qua</strong> cho khách vãng lai cho đến khi họ sẵn sàng.`,
         `• Quản lý có thể sắp xếp lại hàng đợi thủ công khi cần.`,
       ],
       es: [
         `• El <strong>orden de registro</strong> establece la fila inicial — el primero en entrar es el primero en atender.`,
-        `• Tras un cobro completado <strong>por encima de $${thresh}</strong>, ese técnico pasa al final de la fila.`,
-        `• Los cobros <strong>por debajo de $${thresh}</strong> (turnos cortos) no mueven al técnico — conservan su lugar un turno más.`,
+        `• Cada cobro pagado suma los turnos obtenidos; por debajo de $${thresh}, suma <strong>1/2 turno</strong>.`,
+        `• Después del cobro, la fila se ordena por turnos acumulados, de menor a mayor.`,
         `• Un técnico en descanso o con una cita próxima es <strong>omitido</strong> para sin cita hasta que esté disponible.`,
         `• Los gerentes pueden reordenar la cola manualmente si es necesario.`,
       ],
       fr: [
         `• <strong>L'ordre de connexion</strong> établit la file de départ — premier arrivé, premier servi.`,
-        `• Après un encaissement complété <strong>au-dessus de $${thresh}</strong>, ce technicien passe en fin de file.`,
-        `• Les encaissements <strong>en dessous de $${thresh}</strong> (tours courts) ne déplacent pas le technicien — il garde sa place pour un tour de plus.`,
+        `• Chaque paiement ajoute les tours gagnés ; sous $${thresh}, cela ajoute <strong>1/2 tour</strong>.`,
+        `• Après le paiement, la file est classée par total de tours accumulés, du plus faible au plus élevé.`,
         `• Un technicien en pause ou avec un rendez-vous à venir est <strong>ignoré</strong> pour les sans-rendez-vous jusqu'à ce qu'il soit disponible.`,
         `• Les responsables peuvent réorganiser la file manuellement si nécessaire.`,
       ],
     }),
-    headline0Short: (name: string) => pick({ en: `${name} kept their spot`, vi: `${name} giữ vị trí của mình`, es: `${name} conservó su lugar`, fr: `${name} a conservé sa place` }),
-    detail0Short: (name: string, thresh: number) => pick({
-      en: `${name}'s last ticket was below the $${thresh} minimum turn amount (a "short turn"). The system protected their position to give them another chance to complete a qualifying turn before moving to the back of the line.`,
-      vi: `Khách hàng cuối của ${name} thanh toán dưới mức tối thiểu $${thresh} (lượt ngắn). Hệ thống bảo vệ vị trí của họ để họ có cơ hội hoàn thành một lượt đủ điều kiện trước khi chuyển xuống cuối hàng.`,
-      es: `El último ticket de ${name} estuvo por debajo del mínimo de $${thresh} (un "turno corto"). El sistema protegió su posición para darle otra oportunidad antes de pasar al final.`,
-      fr: `Le dernier ticket de ${name} était en dessous du minimum de $${thresh} (un "tour court"). Le système a protégé sa position pour lui donner une autre chance avant de passer en fin de file.`,
-    }),
     headline0First: (name: string) => pick({ en: `${name} is up first`, vi: `${name} phục vụ đầu tiên`, es: `${name} es el primero`, fr: `${name} est le premier` }),
-    detail0First: (name: string, thresh: number) => pick({
-      en: `${name} hasn't completed a qualifying turn yet today and holds the earliest position in the queue based on clock-in order. They'll move to the back once they complete a checkout above $${thresh}.`,
-      vi: `${name} chưa hoàn thành lượt đủ điều kiện nào hôm nay và đang giữ vị trí sớm nhất trong hàng đợi theo thứ tự bấm giờ vào ca. Họ sẽ chuyển xuống cuối sau khi hoàn thành thanh toán trên $${thresh}.`,
-      es: `${name} aún no ha completado un turno calificado hoy y ocupa la posición más temprana según el orden de registro. Pasará al final tras completar un cobro por encima de $${thresh}.`,
-      fr: `${name} n'a pas encore complété de tour qualifié aujourd'hui et occupe la position la plus avancée selon l'ordre de connexion. Il passera en fin de file après un encaissement au-dessus de $${thresh}.`,
+    detail0First: (name: string) => pick({
+      en: `${name} has earned no turns yet today and is first because they have the lowest total; ties follow the salon's queue order.`,
+      vi: `${name} chưa kiếm được lượt nào hôm nay và đang đứng đầu vì có tổng lượt thấp nhất; nếu bằng nhau, thứ tự hàng đợi của salon sẽ được dùng.`,
+      es: `${name} aún no ha obtenido turnos hoy y está primero porque tiene el total más bajo; los empates siguen el orden de la fila del salón.`,
+      fr: `${name} n'a encore gagné aucun tour aujourd'hui et est en tête car son total est le plus bas ; les égalités suivent l'ordre de la file du salon.`,
     }),
     headline0Next: (name: string) => pick({ en: `${name} is up next`, vi: `${name} phục vụ tiếp theo`, es: `${name} es el siguiente`, fr: `${name} est le suivant` }),
-    detail0Next: (name: string, turns: number, income: number, thresh: number) => pick({
-      en: `${name} has completed ${turns} qualifying turn${turns !== 1 ? "s" : ""} today ($${income} total done income). After their last checkout they moved to the back of the line, but have since advanced as other technicians completed their own turns.`,
-      vi: `${name} đã hoàn thành ${turns} lượt đủ điều kiện hôm nay (tổng thu nhập đã hoàn thành: $${income}). Sau lần thanh toán cuối, họ chuyển xuống cuối hàng nhưng đã tiến lên khi các kỹ thuật viên khác hoàn thành lượt của mình.`,
-      es: `${name} ha completado ${turns} turno${turns !== 1 ? "s" : ""} calificado${turns !== 1 ? "s" : ""} hoy ($${income} de ingresos). Tras su último cobro pasó al final, pero ha avanzado conforme otros técnicos completaron sus turnos.`,
-      fr: `${name} a complété ${turns} tour${turns !== 1 ? "s" : ""} qualifié${turns !== 1 ? "s" : ""} aujourd'hui ($${income} de revenus). Après son dernier encaissement il est passé en fin de file, mais a avancé à mesure que d'autres techniciens complétaient leurs tours.`,
-    }),
-    headlineNShort: (name: string, pos: number) => pick({ en: `${name} is #${pos} — short-turn hold`, vi: `${name} là #${pos} — giữ lượt ngắn`, es: `${name} es #${pos} — turno corto`, fr: `${name} est #${pos} — tour court` }),
-    detailNShort: (name: string, thresh: number, prev: string | null) => pick({
-      en: `${name}'s last ticket was below the $${thresh} minimum, so they're being given another turn before cycling to the back. They're currently behind ${prev}.`,
-      vi: `Khách hàng cuối của ${name} thanh toán dưới $${thresh} nên họ được thêm một lượt trước khi chuyển xuống cuối. Hiện tại họ đứng sau ${prev}.`,
-      es: `El último ticket de ${name} estuvo por debajo de $${thresh}, así que se le da otro turno antes de pasar al final. Actualmente está detrás de ${prev}.`,
-      fr: `Le dernier ticket de ${name} était en dessous de $${thresh}, il bénéficie donc d'un tour supplémentaire avant de passer en fin de file. Il est actuellement derrière ${prev}.`,
+    detail0Next: (name: string, turns: string, income: number, _thresh: number) => pick({
+      en: `${name} has earned ${turns} turn${turns !== "1" ? "s" : ""} today ($${income} total done income). They are next because their accumulated turn total is lowest.`,
+      vi: `${name} đã kiếm được ${turns} lượt hôm nay (tổng thu nhập đã hoàn thành: $${income}). Họ đứng tiếp theo vì tổng lượt tích lũy thấp nhất.`,
+      es: `${name} ha obtenido ${turns} turno${turns !== "1" ? "s" : ""} hoy ($${income} de ingresos). Está en primer lugar porque su total acumulado es el más bajo.`,
+      fr: `${name} a gagné ${turns} tour${turns !== "1" ? "s" : ""} aujourd'hui ($${income} de revenus). Il est le prochain car son total accumulé est le plus bas.`,
     }),
     headlineNFirst: (name: string, pos: number) => pick({ en: `${name} is #${pos} in line`, vi: `${name} xếp hàng #${pos}`, es: `${name} es #${pos} en la cola`, fr: `${name} est #${pos} dans la file` }),
     detailNFirst: (name: string, prev: string | null) => pick({
-      en: `${name} hasn't completed a qualifying turn yet today. They're positioned after ${prev} based on their clock-in time relative to the others in front of them.`,
-      vi: `${name} chưa hoàn thành lượt đủ điều kiện nào hôm nay. Họ đứng sau ${prev} dựa trên thời gian bấm giờ vào ca so với những người đứng trước.`,
-      es: `${name} aún no ha completado un turno calificado hoy. Está posicionado después de ${prev} según su hora de registro.`,
-      fr: `${name} n'a pas encore complété de tour qualifié aujourd'hui. Il est positionné après ${prev} selon son heure de connexion.`,
+      en: `${name} has earned no turns yet today and is behind ${prev} because of the current turn totals or queue tie-break.`,
+      vi: `${name} chưa kiếm được lượt nào hôm nay và đứng sau ${prev} theo tổng lượt hiện tại hoặc quy tắc phá hòa.`,
+      es: `${name} aún no ha obtenido turnos hoy y está detrás de ${prev} por los totales actuales o el desempate de la fila.`,
+      fr: `${name} n'a encore gagné aucun tour aujourd'hui et se trouve derrière ${prev} selon les totaux ou le départage de la file.`,
     }),
     headlineNNext: (name: string, pos: number) => pick({ en: `${name} is #${pos} in line`, vi: `${name} xếp hàng #${pos}`, es: `${name} es #${pos} en la cola`, fr: `${name} est #${pos} dans la file` }),
-    detailNNext: (name: string, turns: number, income: number, thresh: number, prev: string | null) => pick({
-      en: `${name} has completed ${turns} qualifying turn${turns !== 1 ? "s" : ""} today ($${income} total). Each time a technician finishes a checkout above $${thresh}, they move to the back of the line. ${name} most recently cycled to the back after ${prev} — who is ahead because they either clocked in later or cycled back more recently.`,
-      vi: `${name} đã hoàn thành ${turns} lượt đủ điều kiện hôm nay (tổng: $${income}). Mỗi khi nhân viên hoàn thành thanh toán trên $${thresh}, họ chuyển xuống cuối hàng. ${name} gần đây nhất chuyển xuống sau ${prev} — người đứng trước vì đã bấm giờ muộn hơn hoặc chuyển về phía sau gần đây hơn.`,
-      es: `${name} ha completado ${turns} turno${turns !== 1 ? "s" : ""} hoy ($${income} en total). Cada vez que un técnico completa un cobro por encima de $${thresh}, pasa al final. ${name} pasó al final más recientemente después de ${prev}, quien está adelante por haberse registrado más tarde o haber rotado al final más recientemente.`,
-      fr: `${name} a complété ${turns} tour${turns !== 1 ? "s" : ""} aujourd'hui ($${income} au total). Chaque fois qu'un technicien finit un encaissement au-dessus de $${thresh}, il passe en fin de file. ${name} a le plus récemment roté après ${prev}, qui est devant parce qu'il s'est connecté plus tard ou a tourné en fin de file plus récemment.`,
+    detailNNext: (name: string, turns: string, income: number, prev: string | null) => pick({
+      en: `${name} has earned ${turns} turn${turns !== "1" ? "s" : ""} today ($${income} total). They are behind ${prev} because that technician has a lower accumulated turn total or wins the queue tie-break.`,
+      vi: `${name} đã kiếm được ${turns} lượt hôm nay (tổng: $${income}). Họ đứng sau ${prev} vì nhân viên đó có tổng lượt tích lũy thấp hơn hoặc thắng quy tắc phá hòa.`,
+      es: `${name} ha obtenido ${turns} turno${turns !== "1" ? "s" : ""} hoy ($${income} en total). Está detrás de ${prev} porque tiene un total acumulado menor o gana el desempate.`,
+      fr: `${name} a gagné ${turns} tour${turns !== "1" ? "s" : ""} aujourd'hui ($${income} au total). Il est derrière ${prev} car ce technicien a un total plus faible ou remporte le départage.`,
     }),
   };
   const [showTimeClock, setShowTimeClock] = useState(false);
@@ -321,7 +301,6 @@ export function TurnPageModal({
         dailyProcessingOrders: meta.dailyProcessingOrders,
         clockedIn: true,
         currentStatus: tech.currentStatus ?? "available",
-        shortTurnProtected: tech.shortTurnProtected ?? false,
       };
     });
   const rightTotal = clockedInRows.reduce(
@@ -547,6 +526,7 @@ export function TurnPageModal({
                     clockedInRows.map((row, index) => {
                       const pos = index + 1;
                       const turns = row.turnCount ?? 0;
+                      const turnsText = formatTurns(Math.round(turns * TURN_UNIT));
                       const income = Math.round(row.dailyDoneIncome ?? 0);
                       const prevName = index > 0 ? clockedInRows[index - 1].name : null;
 
@@ -554,26 +534,20 @@ export function TurnPageModal({
                       let detail = "";
 
                       if (index === 0) {
-                        if (row.shortTurnProtected) {
-                          headline = t.headline0Short(row.name);
-                          detail = t.detail0Short(row.name, threshold);
-                        } else if (turns === 0) {
+                        if (turns === 0) {
                           headline = t.headline0First(row.name);
-                          detail = t.detail0First(row.name, threshold);
+                          detail = t.detail0First(row.name);
                         } else {
                           headline = t.headline0Next(row.name);
-                          detail = t.detail0Next(row.name, turns, income, threshold);
+                          detail = t.detail0Next(row.name, turnsText, income, threshold);
                         }
                       } else {
-                        if (row.shortTurnProtected) {
-                          headline = t.headlineNShort(row.name, pos);
-                          detail = t.detailNShort(row.name, threshold, prevName);
-                        } else if (turns === 0) {
+                        if (turns === 0) {
                           headline = t.headlineNFirst(row.name, pos);
                           detail = t.detailNFirst(row.name, prevName);
                         } else {
                           headline = t.headlineNNext(row.name, pos);
-                          detail = t.detailNNext(row.name, turns, income, threshold, prevName);
+                          detail = t.detailNNext(row.name, turnsText, income, prevName);
                         }
                       }
 
@@ -785,7 +759,7 @@ export function TurnAdjustPanel({ storeId, staffId, name, fixedOrder, onDone }: 
   const [saving, setSaving] = useState(false);
   const first = name.split(" ")[0];
   const choices = fixedOrder ? [{ units: 1000, label: "Send to back" }] : [
-    { units: -1000, label: "−1" }, { units: -500, label: "−½" }, { units: 500, label: "+½" }, { units: 1000, label: "+1" },
+    { units: -1000, label: "−1" }, { units: -500, label: "−1/2" }, { units: 500, label: "+1/2" }, { units: 1000, label: "+1" },
   ];
   const save = async (managerPin: string) => {
     setAskPin(false);

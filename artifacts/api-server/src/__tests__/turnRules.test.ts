@@ -36,11 +36,17 @@ describe("turnValue — Dollar-Based Turns ($30 a turn)", () => {
     expect(turnValue(salon, 80)).toBe(2);
     expect(turnValue(salon, 85)).toBe(2.25);
   });
+  it("gives 1/2 turn when a positive paid ticket would otherwise earn zero", () => {
+    const noPartial: TurnRules = { mode: "dollar", dollarsPerTurn: 30, partialTurnValue: 0 };
+    expect(turnValue(noPartial, 20)).toBe(0.5);
+  });
 });
 
 describe("turnValue — Counted Turns", () => {
-  it("counts one turn at or over the threshold and none under it", () => {
-    expect(turnValue(CLASSIC, 29.99)).toBe(0);
+  it("counts half a turn below the threshold and a full turn at or over it", () => {
+    expect(turnValue(CLASSIC, 0.01)).toBe(0.5);
+    expect(turnValue(CLASSIC, 15)).toBe(0.5);
+    expect(turnValue(CLASSIC, 29.99)).toBe(0.5);
     expect(turnValue(CLASSIC, 30)).toBe(1);
     expect(turnValue(CLASSIC, 200)).toBe(1);
     expect(turnValue(CLASSIC, 0)).toBe(0);
@@ -67,9 +73,9 @@ describe("orderTurnLine", () => {
     expect(orderTurnLine([1, 2, 3, 4], totals)).toEqual([2, 3, 1, 4]);
     expect(orderTurnLine([4, 3, 2, 1], totals)).toEqual([3, 2, 1, 4]);
   });
-  it("holds every short-turn technician at the front, in the order they earned it", () => {
+  it("orders technicians by total turns, with queue order breaking ties", () => {
     const totals = new Map([[1, 0], [2, 3], [3, 2]]);
-    expect(orderTurnLine([1, 2, 3], totals, [3, 2])).toEqual([3, 2, 1]);
+    expect(orderTurnLine([1, 2, 3], totals)).toEqual([1, 3, 2]);
   });
   it("does not change the line it was given", () => {
     const line = [3, 1, 2];
@@ -102,14 +108,14 @@ describe("the salon's worked example: Amy, Lisa, Maria, Jenny at $30 a turn", ()
   });
   it("then sends the next client to a technician on the lowest total, never to Jenny who just finished", () => {
     const { served } = run([20, 45, 25, 65, 40]);
-    // Amy and Maria are level on ½; Amy has waited longer, so she is due first.
+    // Amy and Maria are level on 1/2; Amy has waited longer, so she is due first.
     expect(served[4]).toBe(AMY);
     expect(served[4]).not.toBe(JENNY);
   });
   it("ends with everyone balanced by turns, not by number of clients", () => {
     const { totals, due } = run([20, 45, 25, 65, 40]);
     expect(totals.get(AMY)).toBe(2);
-    expect(due).toBe(MARIA); // the only technician still on ½
+    expect(due).toBe(MARIA); // the only technician still on 1/2
   });
 });
 

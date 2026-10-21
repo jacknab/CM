@@ -9,20 +9,20 @@
  *   • "round_robin"  — Fixed order. The score is when the technician last took a turn: whoever took one
  *                      longest ago is next. Ticket price never matters.
  *   • "client_count" — Equal client count. Every finished, paid walk-in ticket is one client.
- *   • "classic"      — Counted Turns. A ticket at or over the threshold is one turn; a smaller one is a
- *                      "short turn" that earns nothing and returns the technician to the front.
- *   • "dollar"       — Dollar-Based Turns. Up to dollars-per-turn is a partial turn (½); over it, one turn
+ *   • "classic"      — Counted Turns. A ticket at or over the threshold is one turn; a smaller paid ticket
+ *                      earns 1/2. The line is ranked by each technician's accumulated turns.
+ *   • "dollar"       — Dollar-Based Turns. Up to dollars-per-turn is a partial turn (1/2); over it, one turn
  *                      per full multiple plus the partial turn for anything left over (owner, 2026-10-17;
- *                      $30 a turn: $20 → ½, $30 → ½, $45 → 1½, $60 → 2, $75 → 2½, $88.50 → 2½, $90 → 3).
+ *                      $30 a turn: $20 → 1/2, $30 → 1/2, $45 → 1 1/2, $60 → 2, $75 → 2 1/2, $88.50 → 2 1/2, $90 → 3).
  *   • "brackets"     — Dollar brackets. The salon lists amounts and what each earns
- *                      (under $30 → ½, from $30 → 1, from $60 → 2).
- *   • "proportional" — Proportional. Every dollar earns its share of a turn ($30 a turn: $45 → 1.5).
+ *                      (under $30 → 1/2, from $30 → 1, from $60 → 2).
+ *   • "proportional" — Proportional. Every dollar earns its share of a turn ($30 a turn: $45 → 1 1/2).
  *
  * Who CAN take the client (clocked in, not busy, not on break, performs the service) is never a method of
  * its own: it is applied on top of whichever method the salon runs.
  *
  * Turns are whole numbers of TURN UNITS (a thousandth of a turn), and money is whole cents, so no total
- * is ever a rounded fraction: ½ + ½ is exactly 1.
+ * is ever a rounded fraction: 1/2 + 1/2 is exactly 1.
  *
  * Pure functions only — no database, no browser — so the server, the tablets (offline) and the tests all
  * run exactly the same rules.
@@ -78,7 +78,7 @@ export const TURN_PRESETS: Record<TurnMode, { label: string; description: string
   },
   classic: {
     label: "Counted Turns",
-    description: "Each ticket over the threshold is one turn. A smaller ticket keeps the technician at the front.",
+    description: "A paid ticket under the threshold earns 1/2 turn. The technician with the fewest accumulated turns is next.",
   },
   dollar: {
     label: "Dollar-Based Turns",
@@ -102,7 +102,7 @@ export const SKIP_REASON_LABEL: Record<SkipReason, string> = {
   service_not_supported: "doesn't perform this service",
 };
 
-/** The brackets a salon starts from when it first picks dollar brackets: under $30 → ½, $30 → 1, $60 → 2. */
+/** The brackets a salon starts from when it first picks dollar brackets: under $30 → 1/2, $30 → 1, $60 → 2. */
 export const DEFAULT_BRACKETS: TurnBracket[] = [
   { fromCents: 0, units: 500 },
   { fromCents: 3000, units: 1000 },
@@ -198,7 +198,8 @@ export function turnUnits(rules: TurnRules, amount: number): number {
   const amountCents = Math.round(amount * 100);
   if (amountCents <= 0) return 0;
   const perTurn = Math.max(1, Math.round(rules.dollarsPerTurn * 100));
-  switch (rules.mode) {
+  const units = (() => {
+    switch (rules.mode) {
     case "round_robin":
     case "client_count":
       return TURN_UNIT;
@@ -220,9 +221,15 @@ export function turnUnits(rules: TurnRules, amount: number): number {
       }
       return units;
     }
+    case "classic":
+      // Counted Turns: a full turn at or over the threshold, half a turn below it.
+      return amountCents >= perTurn ? TURN_UNIT : TURN_UNIT / 2;
     default:
-      return amountCents >= perTurn ? TURN_UNIT : 0;
-  }
+      return amountCents >= perTurn ? TURN_UNIT : TURN_UNIT / 2;
+    }
+  })();
+  // A paid ticket never earns nothing: if the method's own numbers say zero, it is worth half a turn.
+  return units === 0 ? TURN_UNIT / 2 : units;
 }
 
 /** Turns one finished ticket of this service amount is worth (turnUnits, as a number of turns). */
@@ -230,35 +237,26 @@ export function turnValue(rules: TurnRules, amount: number): number {
   return turnUnits(rules, amount) / TURN_UNIT;
 }
 
-/** Turn units written the way staff say them: "½", "1", "1½", "2.17". */
+/** Turn units written the way staff ask to see them: "1/2", "1", "1 1/2", "2.17". */
 export function formatTurns(units: number): string {
   const sign = units < 0 ? "−" : "";
   const u = Math.abs(Math.round(units));
   const whole = Math.floor(u / TURN_UNIT);
   const rest = u % TURN_UNIT;
   if (rest === 0) return `${sign}${whole}`;
-  if (rest === 500) return `${sign}${whole === 0 ? "" : whole}½`;
+  if (rest === 500) return `${sign}${whole === 0 ? "" : `${whole} `}1/2`;
   return `${sign}${(u / TURN_UNIT).toFixed(2).replace(/0$/, "")}`;
 }
 
 /**
  * The line: lowest score first. Technicians level on score keep the order they are already in (`line`
- * is the standing first-come order — whoever has waited longest is earlier), so nothing but the score
- * ever moves a technician past another. Classic mode's short-turn technicians are held at the very
- * front, in the order they earned it.
+ * is the standing first-come order — whoever has waited longest is earlier), unless a different tie-break
+ * is configured.
  */
-export function orderTurnLine(line: readonly number[], totals: ReadonlyMap<number, number>, pinnedFront: readonly number[] = []): number[] {
-  const pinRank = new Map(pinnedFront.map((id, i) => [id, i]));
+export function orderTurnLine(line: readonly number[], totals: ReadonlyMap<number, number>): number[] {
   return line
     .map((id, index) => ({ id, index }))
-    .sort((a, b) => {
-      const pa = pinRank.get(a.id), pb = pinRank.get(b.id);
-      if (pa != null || pb != null) {
-        if (pa != null && pb != null) return pa - pb;
-        return pa != null ? -1 : 1;
-      }
-      return (totals.get(a.id) ?? 0) - (totals.get(b.id) ?? 0) || a.index - b.index;
-    })
+    .sort((a, b) => (totals.get(a.id) ?? 0) - (totals.get(b.id) ?? 0) || a.index - b.index)
     .map((x) => x.id);
 }
 
@@ -270,18 +268,17 @@ export function orderTurnLine(line: readonly number[], totals: ReadonlyMap<numbe
 export function rankTurnLine(opts: {
   line: readonly number[];
   scores: ReadonlyMap<number, number>;
-  pinnedFront?: readonly number[];
   tieBreak?: TurnRules["tieBreak"];
   /** staff id → position by clock-in time (0 = first in). */
   clockInOrder?: ReadonlyMap<number, number>;
 }): number[] {
-  const { line, scores, pinnedFront = [], tieBreak = "longest_waiting", clockInOrder } = opts;
-  if (tieBreak !== "clock_in_order" || !clockInOrder) return orderTurnLine(line, scores, pinnedFront);
+  const { line, scores, tieBreak = "longest_waiting", clockInOrder } = opts;
+  if (tieBreak !== "clock_in_order" || !clockInOrder) return orderTurnLine(line, scores);
   const byClockIn = line
     .map((id, index) => ({ id, index }))
     .sort((a, b) => (clockInOrder.get(a.id) ?? 1e9) - (clockInOrder.get(b.id) ?? 1e9) || a.index - b.index)
     .map((x) => x.id);
-  return orderTurnLine(byClockIn, scores, pinnedFront);
+  return orderTurnLine(byClockIn, scores);
 }
 
 /** One technician as the rotation saw them when a client was assigned. */
@@ -360,9 +357,7 @@ export function describeCredit(rules: TurnRules, amount: number, units: number):
   if (rules.mode === "round_robin") return "Turn taken. You go to the back of the order.";
   if (rules.mode === "client_count") return units > 0 ? "1 client counted." : "No client counted — nothing was paid.";
   if (units <= 0) {
-    return rules.mode === "classic" && amount > 0
-      ? `Service ${dollars}: a short turn. No turn counted, and you stay at the front.`
-      : `Service ${dollars}: no turn counted.`;
+    return `Service ${dollars}: no turn counted.`;
   }
   return `Service ${dollars}: ${formatTurns(units)} ${units === TURN_UNIT ? "turn" : "turns"} earned.`;
 }

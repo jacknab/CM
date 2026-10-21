@@ -53,7 +53,7 @@ export interface SalonRecord {
   pi: string; // place_id
   ab: string; // always "" — generated about text is no longer published (plans/salon-directory.md)
   lm: string; // last_seen_at, as YYYY-MM-DD — real per-record sitemap <lastmod>, not a wholesale today's-date stamp
-  ls: string; // license source: tx_tdlr | ca_bbc | fl_dbpr
+  ls: string; // source key for the state license board, or certxa for a store-only listing
   ln: string; // license number
   lst: string; // license status, as the state reports it
   lx: string; // license expiry, YYYY-MM-DD
@@ -443,6 +443,21 @@ export function salonPath(r: SalonRecord): string {
 
 /** Who licenses each source's salons, and where anyone can check a license. */
 export const LICENSE_SOURCES: Record<string, { board: string; short: string; verifyUrl: string }> = {
+  co_dora: {
+    board: "Colorado Department of Regulatory Agencies, Division of Professions and Occupations",
+    short: "Colorado DORA",
+    verifyUrl: "https://dpo.colorado.gov/Verify",
+  },
+  de_dpr: {
+    board: "Delaware Division of Professional Regulation",
+    short: "Delaware DPR",
+    verifyUrl: "https://dpr.delaware.gov/boards/cosmetology/",
+  },
+  ny_dos: {
+    board: "New York State Department of State",
+    short: "NYS DOS",
+    verifyUrl: "https://dos.ny.gov/licensee-search",
+  },
   tx_tdlr: {
     board: "Texas Department of Licensing and Regulation",
     short: "TDLR",
@@ -457,6 +472,11 @@ export const LICENSE_SOURCES: Record<string, { board: string; short: string; ver
     board: "Florida Department of Business and Professional Regulation",
     short: "DBPR",
     verifyUrl: "https://www.myfloridalicense.com/wl11.asp",
+  },
+  il_idfpr: {
+    board: "Illinois Department of Financial and Professional Regulation",
+    short: "Illinois IDFPR",
+    verifyUrl: "https://idfpr.illinois.gov/checklicense.html",
   },
 };
 

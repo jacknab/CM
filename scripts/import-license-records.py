@@ -4,10 +4,14 @@ Imports nail salons into directory_listings from state license records
 (plans/salon-directory.md). The public directory is built from these records,
 not from Google Places.
 
-Sources (all public, refreshed by the states):
+Sources (public state license records; refresh schedules vary):
   tx_tdlr  Texas TDLR "Barbering & Cosmetology Establishments", daily CSV
   ca_bbc   California DCA licensee data, Board of Barbering and Cosmetology, monthly
   fl_dbpr  Florida DBPR cosmetology licenses (CE = cosmetology establishment)
+  ny_dos   New York DOS active Appearance Enhancement business licenses, state open data
+  de_dpr   Delaware DPR active Cosmetology/Barbering Establishment licenses, state open data
+  co_dora  Colorado DORA active Barber/Cosmetology Shop Registrations, state open data
+  il_idfpr Illinois IDFPR active salon/shop registrations, state open data
 
 A licensed establishment counts as a nail salon when
   - its name says so (nails, manicure, pedicure, ...)            nail_reason = 'name'
@@ -24,7 +28,7 @@ domain, 10,000 addresses per batch).
 
 Run:
   set -a; . /etc/certxa.env; set +a
-  python3 scripts/import-license-records.py --work /path/to/download/dir [--states tx,ca,fl] [--no-download] [--no-geocode] [--dry]
+  python3 scripts/import-license-records.py --work /path/to/download/dir [--states tx,ca,fl,ny,de,co,il] [--no-download] [--no-geocode] [--dry]
 """
 import argparse
 import csv
@@ -47,6 +51,18 @@ SOURCES = {
         ("ca00.xls", "https://app.box.com/index.php?rm=box_download_shared_file&shared_name=oss6hf8jys2bmgxqd2gdz7w4oepm2il9&file_id=f_2500009736881"),
         ("ca01.xls", "https://app.box.com/index.php?rm=box_download_shared_file&shared_name=oss6hf8jys2bmgxqd2gdz7w4oepm2il9&file_id=f_2500007767178"),
     ],
+    # Official NYS DOS open-data rows, restricted to active Appearance
+    # Enhancement Business licenses (not individual professionals or barbers).
+    "ny": [("ny_dos.csv", "https://data.ny.gov/resource/y3u4-jbgh.csv?%24where=license_type%3D%27DOSAEBUSINESS%27&%24limit=50000")],
+    # Official Delaware DPR open data, restricted to active establishment
+    # licenses. The feed publishes city and ZIP, but not street addresses.
+    "de": [("de_dpr.csv", "https://data.delaware.gov/resource/pjnv-eaih.csv?%24where=profession_id%3D%27Cosmetology%20and%20Barbering%27%20AND%20license_type%3D%27Cosmetology%2FBarbering%20Establishment%27%20AND%20license_status%3D%27Active%27%20AND%20state%3D%27DE%27&%24limit=50000")],
+    # Official Colorado DORA open data, restricted to active business-level
+    # Barber/Cosmetology Shop Registrations (REG), not individual licenses.
+    "co": [("co_dora.csv", "https://data.colorado.gov/resource/7s5z-vewr.csv?%24where=licensetype%3D%27REG%27%20AND%20licensestatusdescription%3D%27Active%27%20AND%20state%3D%27CO%27&%24limit=50000")],
+    # Official Illinois IDFPR open data, restricted to active business-level
+    # Salon/Shop Registrations, not individual cosmetology or nail licenses.
+    "il": [("il_idfpr.csv", "https://data.illinois.gov/resource/pzzh-kp68.csv?%24where=license_type%3D%27COSMO%27%20AND%20description%3D%27BCENT%20SALON%2FSHOP%20REGISTRATION%27%20AND%20license_status%3D%27ACTIVE%27%20AND%20business%3D%27Y%27%20AND%20state%3D%27IL%27&%24limit=50000")],
 }
 
 NAIL = re.compile(r"\bnails?\b|manicur|pedicur|\bnail\w*|\bpolish\b|\blacquer", re.I)
@@ -107,6 +123,9 @@ def short_id(source, number):
 
 def date_iso(s):
     s = (s or "").strip()
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})(?:T|$)", s)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
     for pat in (r"(\d{2})/(\d{2})/(\d{4})", r"(\d{2})-(\d{2})-(\d{4})"):
         m = re.fullmatch(pat, s)
         if m:
@@ -148,6 +167,98 @@ def parse_ca(paths):
             yield dict(source="ca_bbc", number=x["License Number"].strip(), type="Establishment", subtype="",
                        name=x["Org/Last Name"], street=x["Address Line 1"], city=x["City"], state="CA",
                        zip=(x["Zip"] or "")[:5], phone="", status="Current", expires=date_iso(x["Expiration Date"]))
+
+
+def parse_ny(path):
+    # NYS DOS publishes only currently active business licenses in this
+    # dataset; individual practitioner and barber-shop licenses are excluded.
+    for x in csv.DictReader(open(path, encoding="utf-8-sig")):
+        if x.get("license_type") != "DOSAEBUSINESS" or (x.get("business_state") or "").upper() != "NY":
+            continue
+        number = (x.get("license_number") or "").strip()
+        name = (x.get("business_name") or "").strip()
+        city = (x.get("business_city") or "").strip()
+        if not number or not name or not city:
+            continue
+        street = " ".join(part.strip() for part in
+                          (x.get("business_address_1") or "", x.get("business_address_2") or "") if part.strip())
+        zip_match = re.match(r"\d{5}", x.get("business_zip") or "")
+        yield dict(source="ny_dos", number=number, type="Appearance Enhancement Business",
+                   subtype="DOSAEBUSINESS", name=name, street=street,
+                   city=city, state="NY",
+                   zip=zip_match.group(0) if zip_match else "",
+                   phone="", status="Active", expires=date_iso(x.get("license_expiration_date", "")))
+
+
+def parse_de(path):
+    for x in csv.DictReader(open(path, encoding="utf-8-sig")):
+        if (x.get("profession_id") != "Cosmetology and Barbering"
+                or x.get("license_type") != "Cosmetology/Barbering Establishment"
+                or x.get("license_status") != "Active"
+                or (x.get("state") or "").upper() != "DE"):
+            continue
+        number = (x.get("license_no") or "").strip()
+        name = (x.get("combined_name") or x.get("last_name") or "").strip()
+        city = (x.get("city") or "").strip()
+        if not number or not name or not city:
+            continue
+        zip_match = re.match(r"\d{5}", x.get("zip_code") or "")
+        yield dict(source="de_dpr", number=number, type="Cosmetology/Barbering Establishment",
+                   subtype="", name=name, street="", city=city, state="DE",
+                   zip=zip_match.group(0) if zip_match else "", phone="", status="Active",
+                   expires=date_iso(x.get("expiration_date", "")))
+
+
+def parse_co(path):
+    seen = {}
+    for x in csv.DictReader(open(path, encoding="utf-8-sig")):
+        if ((x.get("licensetype") or "").upper() != "REG"
+                or x.get("licensestatusdescription") != "Active"
+                or (x.get("state") or "").upper() != "CO"):
+            continue
+        number = (x.get("licensenumber") or "").strip()
+        name = (x.get("entityname") or "").strip()
+        city = (x.get("city") or "").strip()
+        if not number or not name or not city:
+            continue
+        zip_match = re.match(r"\d{5}", x.get("mailzipcode") or "")
+        record = dict(source="co_dora", number=number, type="Shop Registration",
+                      subtype="REG", name=name, street="", city=city, state="CO",
+                      zip=zip_match.group(0) if zip_match else "", phone="",
+                      status="Active", expires=date_iso(x.get("licenseexpirationdate", "")))
+        if number in seen:
+            if seen[number] != record:
+                raise ValueError(f"conflicting Colorado records for shop license {number}")
+            continue
+        seen[number] = record
+        yield record
+
+
+def parse_il(path):
+    seen = {}
+    for x in csv.DictReader(open(path, encoding="utf-8-sig")):
+        if ((x.get("license_type") or "").upper() != "COSMO"
+                or x.get("description") != "BCENT SALON/SHOP REGISTRATION"
+                or x.get("license_status") != "ACTIVE"
+                or (x.get("business") or "").upper() != "Y"
+                or (x.get("state") or "").upper() != "IL"):
+            continue
+        number = (x.get("license_number") or "").strip()
+        name = (x.get("businessdba") or x.get("business_name") or "").strip()
+        city = (x.get("city") or "").strip()
+        if not number or not name or not city:
+            continue
+        zip_match = re.match(r"\d{5}", x.get("zip") or "")
+        record = dict(source="il_idfpr", number=number, type="Salon/Shop Registration",
+                      subtype="BCENT SALON/SHOP REGISTRATION", name=name, street="",
+                      city=city, state="IL", zip=zip_match.group(0) if zip_match else "",
+                      phone="", status="Active", expires=date_iso(x.get("expiration_date", "")))
+        if number in seen:
+            if seen[number] != record:
+                raise ValueError(f"conflicting Illinois records for salon/shop license {number}")
+            continue
+        seen[number] = record
+        yield record
 
 
 # ── Database helpers (psql, so the script needs nothing beyond Python) ────────
@@ -213,7 +324,7 @@ def census_geocode(rows):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--work", required=True, help="directory for the downloaded files")
-    ap.add_argument("--states", default="tx,ca,fl")
+    ap.add_argument("--states", default="tx,ca,fl,ny,de,co,il")
     ap.add_argument("--no-download", action="store_true")
     ap.add_argument("--no-geocode", action="store_true")
     ap.add_argument("--dry", action="store_true")
@@ -236,6 +347,14 @@ def main():
         licenses += parse_fl(os.path.join(a.work, "fl_lic.csv"))
     if "ca" in states:
         licenses += parse_ca([os.path.join(a.work, f) for f, _ in SOURCES["ca"]])
+    if "ny" in states:
+        licenses += parse_ny(os.path.join(a.work, "ny_dos.csv"))
+    if "de" in states:
+        licenses += parse_de(os.path.join(a.work, "de_dpr.csv"))
+    if "co" in states:
+        licenses += parse_co(os.path.join(a.work, "co_dora.csv"))
+    if "il" in states:
+        licenses += parse_il(os.path.join(a.work, "il_idfpr.csv"))
     print(f"{len(licenses)} active establishment licenses", flush=True)
 
     # Existing directory rows (Google's nail-salon category) to match against.

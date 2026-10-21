@@ -41,10 +41,10 @@ type TurnSettings = {
 const METHOD_HELP: Record<TurnMode, string> = {
   round_robin: "Technicians take walk-ins one after another, always in the same order. A $15 ticket and a $90 ticket both use one turn.",
   client_count: "Every finished, paid ticket counts as one client, whatever it cost. The technician who has served the fewest clients is next.",
-  classic: "Each ticket at or over the turn value is one turn. A smaller ticket earns nothing and keeps the technician at the front of the line.",
+  classic: "Each paid ticket below the turn value earns 1/2. After checkout, the line is ordered by each technician's accumulated turns, fewest first.",
   dollar: "Each ticket earns turns by its service amount. The technician with the lowest total is next — nobody gets the next client just for finishing first.",
   brackets: "You list the amounts and what each one earns, for example under $30 is half a turn, $30 is one turn, $60 is two. The technician with the lowest total is next.",
-  proportional: "Every dollar earns its share of a turn. At $30 a turn, a $45 ticket earns 1½ turns. The technician with the lowest total is next.",
+  proportional: "Every dollar earns its share of a turn. At $30 a turn, a $45 ticket earns 1 1/2 turns. The technician with the lowest total is next.",
 };
 
 /** Reasons a technician can be passed over while still in the line. */
@@ -299,7 +299,7 @@ export default function TurnSystem() {
                     <select value={String(settings.partialTurnValue)} onChange={(event) => update("partialTurnValue", Number(event.target.value))}
                       className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm" data-testid="turn-partial-value">
                       <option value="0.25">¼ turn</option>
-                      <option value="0.5">½ turn</option>
+                      <option value="0.5">1/2 turn</option>
                       <option value="0.75">¾ turn</option>
                       <option value="1">1 turn</option>
                     </select>

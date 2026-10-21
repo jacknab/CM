@@ -7,6 +7,7 @@
  * and is changed only through mutateTurnPreferences / withTurnLock in routes.ts.
  */
 import { pool } from "../db";
+import { getLastDayCloseAt } from "./dayCloseBoundary";
 import { walkInSQL } from "./nailTickets";
 import { TURN_UNIT, isDollarMode, turnAmount, turnUnits, type TurnRules } from "@shared/turnRules";
 
@@ -57,25 +58,17 @@ export async function serviceCategory(storeId: number, serviceId: number): Promi
 
 /**
  * When the current turn period began. Scores count from here.
- *   business_day — the start of the salon's turn day (4 AM local; worked out by the caller in the salon's timezone),
- *                  or the last Day Close when that came later: closing the day starts the turns from 0 again
- *                  (owner, 2026-10-17), and a salon that forgets to close still starts fresh each morning
- *   day_close    — the last Day Close (the start of the turn day when the drawer has never been closed)
+ *   business_day — the last Day Close, or the turn-day start before the first Day Close
+ *   day_close    — the last Day Close, or the turn-day start before the first Day Close
  *   continuous   — never by the clock: only when the salon changes its method or starts the line again
  * In every case a change of method starts a new period (settings.turnPeriodStartedAt), so tickets earned
  * under the old method are never re-counted under the new one.
  */
 export async function turnPeriodStart(storeId: number, rules: TurnRules, settings: Record<string, any>, dayStartUtc: Date): Promise<Date> {
   let start = dayStartUtc;
-  if (rules.resetPeriod === "business_day") {
-    const { rows } = await pool.query(
-      `SELECT MAX(closed_at AT TIME ZONE 'UTC') AS closed FROM cash_drawer_sessions WHERE store_id = $1 AND status = 'closed'`, [storeId]);
-    const closed = rows[0]?.closed ? new Date(rows[0].closed) : null;
-    if (closed && closed.getTime() > start.getTime() && closed.getTime() <= Date.now() + 60_000) start = closed;
-  } else if (rules.resetPeriod === "day_close") {
-    const { rows } = await pool.query(
-      `SELECT MAX(closed_at AT TIME ZONE 'UTC') AS closed FROM cash_drawer_sessions WHERE store_id = $1 AND status = 'closed'`, [storeId]);
-    if (rows[0]?.closed) start = new Date(rows[0].closed);
+  if (rules.resetPeriod === "business_day" || rules.resetPeriod === "day_close") {
+    const closed = await getLastDayCloseAt(storeId);
+    if (closed) start = closed;
   } else if (rules.resetPeriod === "continuous") {
     // far enough back to be "always", near enough to stay a quick query
     start = new Date(Date.now() - 370 * 24 * 60 * 60_000);
@@ -90,6 +83,13 @@ export interface TurnScores {
   scores: Map<number, number>;
   /** staff id → what to show as "turns" / "clients" this period, in turn units. */
   shown: Map<number, number>;
+}
+
+/** Restore a missing credit recorded by older checkout code without changing deliberate zero-client credits. */
+export function creditedUnitsForScore(recordedUnits: number, amount: number, rules: TurnRules): number {
+  if (recordedUnits !== 0 || amount <= 0 || rules.mode === "client_count") return recordedUnits;
+  const recalculated = turnUnits(rules, amount);
+  return recalculated > 0 ? recalculated : TURN_UNIT / 2;
 }
 
 /**
@@ -143,7 +143,7 @@ export async function loadTurnScores(opts: { storeId: number; rules: TurnRules; 
     const amount = turnAmount({ serviceRevenue: row.service_revenue, productRevenue: row.product_revenue, totalPaid: row.total_paid, tipAmount: row.tip_amount, discountAmount: row.discount_amount }, rules.amountBasis);
     let units: number;
     if (row.credited_units != null && row.credited_method === rules.mode) {
-      units = Number(row.credited_units);
+      units = creditedUnitsForScore(Number(row.credited_units), amount, rules);
     } else if (rules.mode === "client_count") {
       // one client per visit: a visit saved as several tickets for the same technician counts once
       const visit = `${staffId}:${row.ticket_group_id ?? row.id}`;

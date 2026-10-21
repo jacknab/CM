@@ -21,8 +21,12 @@ describe("dollar brackets (under $30 → ½, from $30 → 1, from $60 → 2)", (
   it("gives every amount an answer even when the salon's first bracket starts above $0", () => {
     const r = rules({ turnMode: "brackets", turnBrackets: [{ fromCents: 2000, units: 1000 }] });
     expect(r.brackets![0]).toEqual({ fromCents: 0, units: 0 });
-    expect(turnUnits(r, 10)).toBe(0);
+    expect(turnUnits(r, 10)).toBe(500);
     expect(turnUnits(r, 20)).toBe(1000);
+  });
+  it("gives 1/2 turn when a positive ticket's configured method would otherwise earn zero", () => {
+    expect(turnUnits(rules({ turnMode: "dollar", partialTurnValue: 0 }), 20)).toBe(500);
+    expect(turnUnits(rules({ turnMode: "brackets", turnBrackets: [{ fromCents: 0, units: 0 }] }), 20)).toBe(500);
   });
   it("keeps one bracket per amount, sorted, and drops nonsense", () => {
     const r = rules({ turnMode: "brackets", turnBrackets: [{ fromCents: 6000, units: 2000 }, { fromCents: 0, units: 500 }, { fromCents: -5, units: 1 }, { fromCents: 6000, units: 3000 }, "x"] });
@@ -47,7 +51,7 @@ describe("the two original presets are unchanged", () => {
     expect(units(rules({ turnMode: "dollar" }))).toEqual([0, 500, 500, 500, 1500, 1500, 2000, 2500, 166500]);
   });
   it("Counted Turns", () => {
-    expect(units(rules({ turnMode: "classic" }))).toEqual([0, 0, 0, 1000, 1000, 1000, 1000, 1000, 1000]);
+    expect(units(rules({ turnMode: "classic" }))).toEqual([0, 500, 500, 1000, 1000, 1000, 1000, 1000, 1000]);
     expect(rules({}).mode).toBe("classic");
   });
 });
@@ -66,10 +70,10 @@ describe("whole-number turn units", () => {
     let total = 0;
     for (let i = 0; i < 7; i++) total += turnUnits(r, 20);
     expect(total).toBe(3500);
-    expect(formatTurns(total)).toBe("3½");
+    expect(formatTurns(total)).toBe("3 1/2");
   });
   it("writes turns the way staff say them", () => {
-    expect([0, 500, 1000, 1500, 2167, 250].map(formatTurns)).toEqual(["0", "½", "1", "1½", "2.17", "0.25"]);
+    expect([0, 500, 1000, 1500, 2167, 250].map(formatTurns)).toEqual(["0", "1/2", "1", "1 1/2", "2.17", "0.25"]);
   });
 });
 
@@ -131,8 +135,8 @@ describe("the line", () => {
     }
     expect(served).toEqual([2, 1, 3, 4, 2]);
   });
-  it("holds Counted Turns' short-turn technicians at the front, in the order they earned it", () => {
-    expect(rankTurnLine({ line, scores: new Map([[1, 0], [2, 3000], [3, 2000], [4, 0]]), pinnedFront: [3, 2] })).toEqual([3, 2, 1, 4]);
+  it("orders technicians by accumulated turns, using queue order to break ties", () => {
+    expect(rankTurnLine({ line, scores: new Map([[1, 0], [2, 3000], [3, 2000], [4, 0]]) })).toEqual([1, 4, 3, 2]);
   });
 });
 

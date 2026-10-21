@@ -1,4 +1,5 @@
 import { commissionAmount, commissionBasis } from "@shared/commissionBasis";
+import { formatTurns, TURN_UNIT } from "@shared/turnRules";
 import { EMPTY_ARRAY } from "@/lib/empty";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -240,7 +241,6 @@ type TurnTechnician = {
   clockedIn?: boolean;
   turnCount?: number;
   currentStatus?: "available" | "busy" | "on_break";
-  shortTurnProtected?: boolean;
   turnPosition?: number | null;
 };
 
@@ -261,7 +261,7 @@ function StaffTurnPanel({
     if (tech.currentStatus === "busy")     return "Serving";
     if (tech.currentStatus === "on_break") return "On Break";
     const tc = tech.turnCount ?? 0;
-    return tc > 0 ? `${tc} turn${tc !== 1 ? "s" : ""}` : "Ready";
+    return tc > 0 ? `${formatTurns(Math.round(tc * TURN_UNIT))} turn${tc !== 1 ? "s" : ""}` : "Ready";
   };
 
   return (

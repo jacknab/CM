@@ -24,8 +24,28 @@ import { requestIp, resolveVisitorCity } from "../lib/geoLookup";
 import {
   ensureLoaded, getCityData, getClaimedSalonList, getIndexableHubs, getSalonMap, getSalonRedirectSlug, getStateBySlug, getStateIndex,
   isRetiredSalonSlug, salonPath, statePath, cityPath,
-  CERTXA_DOMAIN, SITEMAP_PAGE_SIZE,
+  SITEMAP_PAGE_SIZE,
 } from "../lib/salonData";
+
+const SALON_DIRECTORY_ORIGIN = "https://salons.certxa.com";
+const SALON_DIRECTORY_HOST = "salons.certxa.com";
+
+function requestHost(req: Request): string {
+  const forwardedHost = req.headers["x-forwarded-host"];
+  const rawHost = Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost || req.headers.host || "";
+  return rawHost.split(",")[0].trim().split(":")[0].toLowerCase();
+}
+
+function directoryUrl(path: string): string {
+  return `${SALON_DIRECTORY_ORIGIN}${path}`;
+}
+
+function redirectPrimaryDirectoryRequest(req: Request, res: Response): boolean {
+  const host = requestHost(req);
+  if (host !== "certxa.com" && host !== "www.certxa.com") return false;
+  res.redirect(301, directoryUrl(req.originalUrl));
+  return true;
+}
 
 function xmlEsc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -44,7 +64,8 @@ async function serveSsrPage(req: Request, res: Response, opts: { withGeo?: boole
     // never be cached publicly/shared, or one visitor's detected city could
     // be served to a visitor elsewhere.
     const geo = opts.withGeo ? resolveVisitorCity(requestIp(req)) : null;
-    const page = await renderMarketplacePage(req.originalUrl, internalApiOrigin, geo);
+    const publicOrigin = requestHost(req) === SALON_DIRECTORY_HOST ? SALON_DIRECTORY_ORIGIN : undefined;
+    const page = await renderMarketplacePage(req.originalUrl, internalApiOrigin, geo, publicOrigin);
     if (!page) {
       res.status(503).send("Marketplace unavailable — SSR bundle not built. Run `pnpm --filter @workspace/marketplace run build && run build:ssr`.");
       return;
@@ -127,7 +148,7 @@ router.get("/sitemap-salons.xml", sitemapRateLimit, async (_req: Request, res: R
 
     if (totalPages <= 1) {
       const entries = list.map(r =>
-        `  <url><loc>${xmlEsc(`${CERTXA_DOMAIN}${salonPath(r)}`)}</loc><lastmod>${r.lm}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`
+        `  <url><loc>${xmlEsc(`${SALON_DIRECTORY_ORIGIN}${salonPath(r)}`)}</loc><lastmod>${r.lm}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`
       ).join("\n");
       res.setHeader("Content-Type", "application/xml; charset=utf-8");
       res.setHeader("Cache-Control", "public, max-age=86400");
@@ -135,7 +156,7 @@ router.get("/sitemap-salons.xml", sitemapRateLimit, async (_req: Request, res: R
     }
 
     const sitemapEntries = Array.from({ length: totalPages }, (_, i) =>
-      `  <sitemap><loc>${xmlEsc(`${CERTXA_DOMAIN}/sitemap-salons-${i + 1}.xml`)}</loc><lastmod>${lastmod}</lastmod></sitemap>`
+      `  <sitemap><loc>${xmlEsc(`${SALON_DIRECTORY_ORIGIN}/sitemap-salons-${i + 1}.xml`)}</loc><lastmod>${lastmod}</lastmod></sitemap>`
     ).join("\n");
     res.setHeader("Content-Type", "application/xml; charset=utf-8");
     res.setHeader("Cache-Control", "public, max-age=86400");
@@ -156,7 +177,7 @@ router.get("/sitemap-salons-:page.xml", sitemapRateLimit, async (req: Request, r
     if (slice.length === 0) { res.status(404).send("Not found"); return; }
 
     const entries = slice.map(r =>
-      `  <url><loc>${xmlEsc(`${CERTXA_DOMAIN}${salonPath(r)}`)}</loc><lastmod>${r.lm}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`
+      `  <url><loc>${xmlEsc(`${SALON_DIRECTORY_ORIGIN}${salonPath(r)}`)}</loc><lastmod>${r.lm}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`
     ).join("\n");
     res.setHeader("Content-Type", "application/xml; charset=utf-8");
     res.setHeader("Cache-Control", "public, max-age=86400");
@@ -164,6 +185,32 @@ router.get("/sitemap-salons-:page.xml", sitemapRateLimit, async (req: Request, r
   } catch {
     res.status(503).send("Salon data unavailable");
   }
+});
+
+router.get("/sitemap.xml", (req: Request, res: Response, next) => {
+  if (requestHost(req) !== SALON_DIRECTORY_HOST) { next(); return; }
+  res.type("application/xml; charset=utf-8").send(
+    `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`
+    + `  <sitemap><loc>${SALON_DIRECTORY_ORIGIN}/sitemap-salons.xml</loc></sitemap>\n`
+    + `  <sitemap><loc>${SALON_DIRECTORY_ORIGIN}/sitemap-listings.xml</loc></sitemap>\n`
+    + `</sitemapindex>`,
+  );
+});
+
+router.get("/robots.txt", (req: Request, res: Response, next) => {
+  if (requestHost(req) !== SALON_DIRECTORY_HOST) { next(); return; }
+  res.type("text/plain; charset=utf-8").send(
+    "User-agent: *\nAllow: /\n\n"
+    + "User-agent: AhrefsBot\nDisallow: /\n"
+    + "User-agent: SemrushBot\nDisallow: /\n"
+    + "User-agent: MJ12bot\nDisallow: /\n"
+    + "User-agent: DotBot\nDisallow: /\n"
+    + "User-agent: BLEXBot\nDisallow: /\n"
+    + "User-agent: DataForSeoBot\nDisallow: /\n"
+    + "User-agent: PetalBot\nDisallow: /\n"
+    + "User-agent: Bytespider\nDisallow: /\n\n"
+    + `Sitemap: ${SALON_DIRECTORY_ORIGIN}/sitemap.xml\n`,
+  );
 });
 
 // State and city hub pages (e.g. /listings/arizona, /listings/tucson--arizona)
@@ -178,12 +225,12 @@ router.get("/sitemap-listings.xml", sitemapRateLimit, async (_req: Request, res:
     // Only hub pages that pass getIndexableHubs() — the same rule that sets
     // their robots tag — so the sitemap never lists a noindex page.
     const hubs = await getIndexableHubs();
-    const urls: string[] = hubs.states.size ? [`${CERTXA_DOMAIN}/salons`] : [];
+    const urls: string[] = hubs.states.size ? [directoryUrl("/salons")] : [];
     for (const state of getStateIndex()) {
       if (!hubs.states.has(state.code)) continue;
-      urls.push(`${CERTXA_DOMAIN}${statePath(state.code)}`);
+      urls.push(directoryUrl(statePath(state.code)));
       for (const city of state.cities) {
-        if (hubs.cities.has(`${state.code}:${city.slug}`)) urls.push(`${CERTXA_DOMAIN}${cityPath(state.code, city.slug)}`);
+        if (hubs.cities.has(`${state.code}:${city.slug}`)) urls.push(directoryUrl(cityPath(state.code, city.slug)));
       }
     }
     const entries = urls.map(u =>
@@ -206,10 +253,21 @@ router.get("/sitemap-listings.xml", sitemapRateLimit, async (_req: Request, res:
 
 // The directory: /salons, /salons/about, /salons/{state}, /salons/{state}/{city},
 // /salons/{state}/{city}/{salon}. Which one is decided inside the SSR entry.
-router.get("/salons", (req: Request, res: Response) => serveSsrPage(req, res));
-router.get("/salons/:a", (req: Request, res: Response) => serveSsrPage(req, res));
-router.get("/salons/:a/:b", (req: Request, res: Response) => serveSsrPage(req, res));
-router.get("/salons/:a/:b/:c", (req: Request, res: Response) => serveSsrPage(req, res));
+router.get("/", (req: Request, res: Response, next) => {
+  if (requestHost(req) === SALON_DIRECTORY_HOST) {
+    res.redirect(301, "/salons");
+    return;
+  }
+  next();
+});
+
+const serveDirectoryPage = (req: Request, res: Response): void => {
+  if (!redirectPrimaryDirectoryRequest(req, res)) void serveSsrPage(req, res);
+};
+router.get("/salons", serveDirectoryPage);
+router.get("/salons/:a", serveDirectoryPage);
+router.get("/salons/:a/:b", serveDirectoryPage);
+router.get("/salons/:a/:b/:c", serveDirectoryPage);
 
 // Hub pages' earlier addresses: /listings/{state} and /listings/{city}--{state}.
 router.get("/listings/:param", async (req: Request, res: Response, next) => {
@@ -219,10 +277,10 @@ router.get("/listings/:param", async (req: Request, res: Response, next) => {
     const sep = param.lastIndexOf("--");
     const state = getStateBySlug(sep === -1 ? param : param.slice(sep + 2));
     if (state && sep !== -1 && getCityData(state.code, param.slice(0, sep))) {
-      res.redirect(301, cityPath(state.code, param.slice(0, sep)));
+      res.redirect(301, directoryUrl(cityPath(state.code, param.slice(0, sep))));
       return;
     }
-    if (state) { res.redirect(301, statePath(state.code)); return; }
+    if (state) { res.redirect(301, directoryUrl(statePath(state.code))); return; }
   } catch (err) {
     logger.warn({ err }, "[salonDirectory] old /listings/ address lookup failed");
     next();
@@ -248,7 +306,7 @@ function gone(res: Response): void {
 router.get("/salon/:slug", async (req: Request, res: Response, next) => {
   try {
     const target = await currentSalonPath(String(req.params.slug));
-    if (target) { res.redirect(301, target); return; }
+    if (target) { res.redirect(301, directoryUrl(target)); return; }
   } catch (err) {
     logger.warn({ err }, "[salonDirectory] old /salon/ address lookup failed");
     next(); // the lookup itself failed: say nothing permanent
@@ -263,14 +321,14 @@ async function currentSalonPath(slug: string): Promise<string | null> {
   const rec = getSalonMap().get(slug) ?? getSalonMap().get((await getSalonRedirectSlug(slug)) ?? "");
   return rec ? salonPath(rec) : null;
 }
-router.get("/nail-salons", (_req: Request, res: Response) => res.redirect(301, "/salons"));
+router.get("/nail-salons", (_req: Request, res: Response) => res.redirect(301, directoryUrl("/salons")));
 // Only to a page that exists: an old address whose state or city isn't in the directory stays a plain 404
 // (a redirect that lands on "not found" reads as a soft 404).
 router.get("/nail-salons/:state", async (req: Request, res: Response, next) => {
   try {
     await ensureLoaded();
     const state = getStateBySlug(String(req.params.state));
-    if (state) { res.redirect(301, statePath(state.code)); return; }
+    if (state) { res.redirect(301, directoryUrl(statePath(state.code))); return; }
   } catch (err) {
     logger.warn({ err }, "[salonDirectory] old /nail-salons/ address lookup failed");
     next();
@@ -283,8 +341,8 @@ router.get("/nail-salons/:state/:city", async (req: Request, res: Response, next
     await ensureLoaded();
     const state = getStateBySlug(String(req.params.state));
     const citySlug = String(req.params.city);
-    if (state && getCityData(state.code, citySlug)) { res.redirect(301, cityPath(state.code, citySlug)); return; }
-    if (state) { res.redirect(301, statePath(state.code)); return; }
+    if (state && getCityData(state.code, citySlug)) { res.redirect(301, directoryUrl(cityPath(state.code, citySlug))); return; }
+    if (state) { res.redirect(301, directoryUrl(statePath(state.code))); return; }
   } catch (err) {
     logger.warn({ err }, "[salonDirectory] old /nail-salons/ address lookup failed");
     next();
@@ -320,7 +378,7 @@ salonSlugFallbackRouter.get("/:slug", async (req: Request, res: Response, next) 
   // Anything else isn't a salon address at all: let the request carry on.
   try {
     const target = await currentSalonPath(slug);
-    if (target) { res.redirect(301, target); return; }
+    if (target) { res.redirect(301, directoryUrl(target)); return; }
     if (await isRetiredSalonSlug(slug)) { gone(res); return; }
   } catch (err) {
     logger.warn({ err, slug }, "[salonDirectory] old salon address lookup failed");

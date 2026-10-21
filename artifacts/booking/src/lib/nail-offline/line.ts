@@ -9,8 +9,8 @@
  *
  *   • a client only goes to a technician who is clocked in, not on a break, not already with a client,
  *     and who performs the service;
- *   • a technician who takes a client leaves the line and comes back when the ticket is paid — at the
- *     back, with the turns the ticket earned (or held at the front after a Counted Turns short turn);
+ *   • a technician who takes a client leaves the line and comes back when the ticket is paid; paid
+ *     tickets add their earned turns, and the line is ranked by lowest total first;
  *   • the next client goes to whoever is now due, not to whoever was first when the connection dropped.
  *
  * POS tablets offline at the same time hear each other's events over the salon hub (turnShare.ts) and fold
@@ -141,7 +141,6 @@ export function computeOfflineLine(input: OfflineLineInput): OfflineLine {
   const clockInOrder = new Map<number, number>(
     [...base.technicians].sort((a, b) => (a.turnPosition ?? OUT_OF_LINE) - (b.turnPosition ?? OUT_OF_LINE) || a.id - b.id).map((t, i) => [t.id, i]),
   );
-  let pinned = base.technicians.filter((t) => t.shortTurnProtected === true && line.includes(t.id)).map((t) => t.id);
   const known = new Set(base.technicians.map((t) => t.id));
 
   // ── What has happened on this device since, in the order it happened ──
@@ -162,11 +161,9 @@ export function computeOfflineLine(input: OfflineLineInput): OfflineLine {
     } else if (e.kind === "clock_out") {
       clockedIn.set(id, false);
       line = line.filter((x) => x !== id);
-      pinned = pinned.filter((x) => x !== id);
     } else if (e.kind === "assigned") {
       // Taken from the line until the ticket is closed. In fixed order this is the moment the turn is used.
       line = line.filter((x) => x !== id);
-      pinned = pinned.filter((x) => x !== id);
       if (fixedOrder) {
         const highest = Math.max(0, ...score.values());
         score.set(id, Number.isFinite(periodStart) ? Math.max(highest + 1, e.at - periodStart + 1) : highest + 1);
@@ -182,13 +179,8 @@ export function computeOfflineLine(input: OfflineLineInput): OfflineLine {
       if (e.serviceAmount <= 0) {
         // Nothing was collected: no turn, no penalty — back to the front.
         line = [id, ...rest];
-      } else if (rules.mode === "classic" && earned < TURN_UNIT) {
-        // Counted Turns short turn: nothing earned, and held at the front.
-        line = [id, ...rest];
-        pinned = [...pinned.filter((x) => x !== id), id];
       } else {
         line = [...rest, id];
-        pinned = pinned.filter((x) => x !== id);
       }
     } else if (e.kind === "released") {
       if (!line.includes(id)) line = [id, ...line];
@@ -199,7 +191,6 @@ export function computeOfflineLine(input: OfflineLineInput): OfflineLine {
         score.set(id, Number.isFinite(periodStart) ? Math.max(highest + 1, e.at - periodStart + 1) : highest + 1);
         shown.set(id, (shown.get(id) ?? 0) + TURN_UNIT);
         if (line.includes(id)) line = [...line.filter((x) => x !== id), id];
-        pinned = pinned.filter((x) => x !== id);
       } else {
         score.set(id, (score.get(id) ?? 0) + e.units);
         shown.set(id, (shown.get(id) ?? 0) + e.units);
@@ -222,7 +213,7 @@ export function computeOfflineLine(input: OfflineLineInput): OfflineLine {
   }
   line = line.filter((id) => clockedIn.get(id));
 
-  const ranked = rankTurnLine({ line, scores: score, pinnedFront: pinned.filter((id) => line.includes(id)), tieBreak: rules.tieBreak, clockInOrder });
+  const ranked = rankTurnLine({ line, scores: score, tieBreak: rules.tieBreak, clockInOrder });
   const position = new Map(ranked.map((id, i) => [id, i]));
 
   const technicians: OfflineLineTech[] = base.technicians.map((t) => {
@@ -249,7 +240,7 @@ export function computeOfflineLine(input: OfflineLineInput): OfflineLine {
       turnCount: units / TURN_UNIT, turnUnits: units, turnScore: score.get(t.id) ?? 0,
       currentStatus, inService: inService.has(t.id),
       availabilityState: (!isIn ? "off" : paused ? "break" : busy ? "busy" : "available") as OfflineLineTech["availabilityState"],
-      shortTurnProtected: pinned.includes(t.id),
+      shortTurnProtected: false,
       lineMessage: "",
     };
   }).sort((a, b) => a.turnPosition - b.turnPosition || a.id - b.id);
@@ -375,6 +366,13 @@ export function turnsEarnedOffline(input: {
     if (!t.staffName || !t.walkIn) return [];
     const serviceAmount = turnAmount({ serviceRevenue: t.serviceRevenue, productRevenue: t.productRevenue, totalPaid: t.totalPaid, tipAmount: t.tip });
     if (serviceAmount <= 0) return [];
-    return [{ appointmentId: t.appointmentId, ticketNumber: t.ticketNumber, staffName: t.staffName, mode: rules.mode, earned: turnValue(rules, serviceAmount), serviceAmount }];
+    return [{
+      appointmentId: t.appointmentId,
+      ticketNumber: t.ticketNumber,
+      staffName: t.staffName,
+      mode: rules.mode,
+      earned: turnValue(rules, serviceAmount),
+      serviceAmount,
+    }];
   });
 }

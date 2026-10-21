@@ -18,6 +18,7 @@ import { atomicCreateBooking, occupiedMinutes } from "../bookingEngine";
 import { autoAssignResource } from "../services/resource-assignment";
 import { getRequiredResourceType } from "@shared/resourceMatching";
 import { withTurnLock } from "./turnLock";
+import { getLastDayCloseAt } from "./dayCloseBoundary";
 import * as nailConfig from "./nailConfig";
 import { getBufferMinutes } from "./appointmentBuffer";
 
@@ -1095,13 +1096,8 @@ export async function getNailUpcoming(storeId: number): Promise<BoardDayBooking[
 export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTicket[]; markers: BoardWaitingMarker[]; dayBookings: BoardDayBooking[]; techStats: TechDayStats[]; glance: SalonGlance; now: string; nextTicketNumber: number | null }> {
   const store = await storage.getStore(storeId);
   const tz = (store as any)?.timezone || "UTC";
-  // Closing a shift starts a new operational day even when the local calendar date (or 4 AM
-  // business-day boundary) has not changed. Keep old appointments in the database for reports.
-  const { rows: closeRows } = await pool.query<{ closed_at: Date }>(
-    "SELECT closed_at AT TIME ZONE 'UTC' AS closed_at FROM cash_drawer_sessions WHERE store_id = $1 AND status = 'closed' AND closed_at IS NOT NULL ORDER BY closed_at DESC LIMIT 1",
-    [storeId],
-  );
-  const shiftStart = closeRows[0]?.closed_at ?? null;
+  // Day Close starts a new operational shift for the board's shift-level counts and bookings.
+  const shiftStart = await getLastDayCloseAt(storeId);
 
   const { rows } = await pool.query(
     `SELECT a.id, a.ticket_number, a.ticket_group_id, a.status, a.date, a.duration, a.checked_in_at, a.started_at, a.staff_id,
@@ -1287,9 +1283,18 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
       SELECT COUNT(*) FILTER (WHERE status::text IN ('pending', 'confirmed') AND checked_in_at IS NULL AND NOT walkin)::int AS appointments,
              COUNT(*) FILTER (WHERE status <> 'cancelled' AND walkin)::int AS walkins,
              COUNT(*) FILTER (WHERE status IN ('no_show', 'no-show'))::int AS no_shows,
-             COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
-             AVG(total_paid - COALESCE(tip_amount, 0)) FILTER (WHERE status = 'completed' AND total_paid IS NOT NULL) AS avg_ticket
+             COUNT(*) FILTER (WHERE status = 'completed')::int AS completed
        FROM t`,
+    [storeId, tz, shiftStart],
+  );
+  // Average Ticket starts at Day Close; ordinary drawer closes do not end the operating day.
+  const avgTicketRow = await pool.query(
+    `SELECT AVG(a.total_paid - COALESCE(a.tip_amount, 0)) AS avg_ticket
+       FROM appointments a
+      WHERE a.store_id = $1
+        AND ($3::timestamptz IS NOT NULL OR ${bizDayOf("a.date")} = ${BIZ_TODAY})
+        AND ${boardAfterCloseSQL("a")}
+        AND a.status = 'completed' AND a.total_paid IS NOT NULL`,
     [storeId, tz, shiftStart],
   );
   const kioskOnly = await pool.query(
@@ -1304,7 +1309,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
     walkIns: (Number(gr.walkins) || 0) + (Number(kioskOnly.rows[0]?.n) || 0),
     noShows: Number(gr.no_shows) || 0,
     completed: Number(gr.completed) || 0,
-    avgTicket: gr.avg_ticket != null ? Math.round(Number(gr.avg_ticket) * 100) / 100 : null,
+    avgTicket: avgTicketRow.rows[0]?.avg_ticket != null ? Math.round(Number(avgTicketRow.rows[0].avg_ticket) * 100) / 100 : null,
   };
 
   // `now` lets every POS station measure "waiting 12 min" against the SERVER clock, so two tablets with different clocks agree.

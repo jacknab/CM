@@ -934,7 +934,7 @@ export interface TurnEarned {
   appointmentId: number;
   ticketNumber: number | null;
   staffName: string | null;
-  /** "dollar" = Dollar-Based Turns, "classic" = Counted Turns (under the threshold is a short turn, earned 0). */
+  /** "dollar" = Dollar-Based Turns, "classic" = Counted Turns (a paid service under the threshold earns 1/2). */
   mode: "dollar" | "classic";
   earned: number;
   serviceAmount: number;

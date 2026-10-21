@@ -175,10 +175,7 @@ export async function computeOfflineTurnEligibility(
     .filter((id) => !filteredDeque.includes(id))
     .sort((a, b) => (clockInOrder.get(a) ?? 999) - (clockInOrder.get(b) ?? 999));
   const merged = [...filteredDeque, ...newlyClockedIn];
-  // Counted Turns holds its short-turn technicians at the front (there can be several); no other method has such a hold.
-  const savedPins: number[] = Array.isArray((settings as any).shortTurnProtectedIds) ? (settings as any).shortTurnProtectedIds.map(Number).filter(Number.isFinite) : [];
-  const pins = rules.mode !== "classic" ? [] : [...new Set([...savedPins, ...(typeof settings.shortTurnProtectedId === "number" ? [settings.shortTurnProtectedId] : [])])];
-  const syncedDeque = rankTurnLine({ line: merged, scores: turnCountMap, pinnedFront: pins, tieBreak: rules.tieBreak, clockInOrder });
+  const syncedDeque = rankTurnLine({ line: merged, scores: turnCountMap, tieBreak: rules.tieBreak, clockInOrder });
   const dequePos = new Map<number, number>(syncedDeque.map((id, pos) => [id, pos]));
 
   // ── Busy right now: appointment status started today ──

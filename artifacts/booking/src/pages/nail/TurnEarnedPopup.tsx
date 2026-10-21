@@ -3,20 +3,29 @@ import type { TurnEarned } from "./nailApi";
 
 const RING = 2 * Math.PI * 54;
 
-/** ½ for a half, "1", "2"… — the number drawn inside the ring. */
+/** A completed paid ticket with service revenue must never display as zero turns. */
+type TurnSummary = Pick<TurnEarned, "mode" | "earned" | "serviceAmount">;
+function earnedTurns(t: TurnSummary): number {
+  if (Number.isFinite(t.earned) && t.earned > 0) return t.earned;
+  if (t.serviceAmount > 0) return 0.5;
+  return 0;
+}
+
+/** "1/2" for a half, "1", "2"… — the number drawn inside the ring. */
 function turnFigure(earned: number): string {
-  if (earned === 0.5) return "½";
+  if (earned === 0.5) return "1/2";
   if (earned === 0.25) return "¼";
   if (earned === 0.75) return "¾";
   return String(Math.round(earned * 100) / 100);
 }
 
-export function turnTitle(t: Pick<TurnEarned, "mode" | "earned">): string {
-  if (t.earned <= 0) return "SHORT TURN";
-  if (t.earned === 0.5) return "HALF TURN";
-  if (t.earned < 1) return "PARTIAL TURN";
-  if (t.earned === 1) return "FULL TURN";
-  return `${turnFigure(t.earned)} TURNS`;
+export function turnTitle(t: TurnSummary): string {
+  const earned = earnedTurns(t);
+  if (earned <= 0) return "SHORT TURN";
+  if (earned === 0.5) return "HALF TURN";
+  if (earned < 1) return "PARTIAL TURN";
+  if (earned === 1) return "FULL TURN";
+  return `${turnFigure(earned)} TURNS`;
 }
 
 /**
@@ -34,9 +43,10 @@ export function TurnEarnedPopup({ turns, onDone, seconds = 5 }: { turns: TurnEar
       <div className="nl-turn-card">
         <div className="nl-turn-row">
           {turns.map((t) => {
-            const filled = Math.min(1, Math.max(0, t.earned));
+            const earned = earnedTurns(t);
+            const filled = Math.min(1, Math.max(0, earned));
             return (
-              <div key={t.appointmentId} className="nl-turn-item" data-testid={`nail-turn-${t.appointmentId}`} data-earned={t.earned}>
+              <div key={t.appointmentId} className="nl-turn-item" data-testid={`nail-turn-${t.appointmentId}`} data-earned={earned}>
                 {t.staffName && <p className="nl-turn-eyebrow">{t.staffName}</p>}
                 <div className="nl-turn-ring">
                   <svg viewBox="0 0 120 120" aria-hidden>
@@ -44,13 +54,13 @@ export function TurnEarnedPopup({ turns, onDone, seconds = 5 }: { turns: TurnEar
                     <circle className="nl-turn-fill" cx="60" cy="60" r="54" strokeDasharray={RING}
                       style={{ ["--nl-turn-from" as string]: RING, ["--nl-turn-to" as string]: RING * (1 - filled) }} />
                   </svg>
-                  <span className="nl-turn-figure">{t.earned > 0 ? turnFigure(t.earned) : "0"}</span>
+                  <span className="nl-turn-figure">{earned > 0 ? turnFigure(earned) : "0"}</span>
                 </div>
                 <strong className="nl-turn-title">{turnTitle(t)}</strong>
                 <p className="nl-turn-sub">
                   {t.ticketNumber != null ? `Ticket #${t.ticketNumber} · ` : ""}${t.serviceAmount.toFixed(2)} in services
                 </p>
-                {t.earned <= 0 && <p className="nl-turn-note">You keep your place at the front of the line.</p>}
+                {earned <= 0 && <p className="nl-turn-note">You keep your place at the front of the line.</p>}
               </div>
             );
           })}

@@ -21,6 +21,7 @@ import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { useDashboardWs } from "@/hooks/use-dashboard-ws";
 import type { DashboardData } from "@/lib/dashboardTypes";
 import { useLanguage } from "@/hooks/use-language";
+import { formatTurns, TURN_UNIT } from "@shared/turnRules";
 
 type Pick4 = (m: { en: string; vi: string; es: string; fr: string }) => string;
 
@@ -58,7 +59,7 @@ function buildT(pick: Pick4) {
     noneClockedIn:     pick({ en: "No team members clocked in", vi: "Chưa có nhân viên chấm công", es: "Ningún miembro ha marcado entrada", fr: "Aucun membre pointé" }),
     noneOnFloor:       pick({ en: "No team members on the floor today", vi: "Không có nhân viên nào hôm nay", es: "Nadie en el salón hoy", fr: "Personne sur le plancher aujourd'hui" }),
     turnSuffix:        pick({ en: "turn", vi: "lượt", es: "turno", fr: "tour" }),
-    completedSuffix:   (n: number) => pick({ en: `${n} completed`, vi: `${n} đã hoàn thành`, es: `${n} completado${n !== 1 ? "s" : ""}`, fr: `${n} terminé${n !== 1 ? "s" : ""}` }),
+    completedSuffix:   (n: string) => pick({ en: `${n} completed`, vi: `${n} đã hoàn thành`, es: `${n} completado${n !== "1" ? "s" : ""}`, fr: `${n} terminé${n !== "1" ? "s" : ""}` }),
     busyCount:         (n: number) => pick({ en: `${n} busy`, vi: `${n} bận`, es: `${n} ocupado${n !== 1 ? "s" : ""}`, fr: `${n} occupé${n !== 1 ? "s" : ""}` }),
     availCount:        (n: number) => pick({ en: `${n} available`, vi: `${n} sẵn sàng`, es: `${n} disponible${n !== 1 ? "s" : ""}`, fr: `${n} disponible${n !== 1 ? "s" : ""}` }),
     breakCount:        (n: number) => pick({ en: `${n} on break`, vi: `${n} đang nghỉ`, es: `${n} en descanso`, fr: `${n} en pause` }),
@@ -724,7 +725,7 @@ function TeamMemberStatus({
                     )}
                     {(entry.turnCount ?? 0) > 0 && (
                       <span className="text-[10px] text-muted-foreground leading-none">
-                        {t.completedSuffix(entry.turnCount ?? 0)}
+                        {t.completedSuffix(formatTurns(Math.round((entry.turnCount ?? 0) * TURN_UNIT)))}
                       </span>
                     )}
                   </div>

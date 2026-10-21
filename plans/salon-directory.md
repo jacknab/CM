@@ -107,16 +107,19 @@ A single folder makes the directory a clear section: easy to measure in Search C
 - Remove Google ratings from page schema and display.
 - Apply the hub-page gate using today's data: noindex hubs with fewer than 3 claimed or Certxa salons, and drop them from the sitemap. In practice that's nearly all of them for now. Indexed pages fall sharply at first; that's intended.
 
-**Status 2026-10-15: Phases 1 and 2 are built** (live after the deploy step). The summary:
-- `directory_listings` holds 25,406 salons: 10,314 TX, 8,637 CA and 6,454 FL from license records, plus TLuxxe from its Certxa store. 89% are geocoded by the US Census geocoder.
-- The importer is `scripts/import-license-records.py`.
+**Status 2026-10-17: Phases 1 and 2 are built.** The public directory is hosted at `salons.certxa.com`; the old `certxa.com/salons/...` URLs redirect there. The directory's existing SSR bundle must be rebuilt when directory frontend source changes. The importer supports CA, CO, DE, FL, IL, NY and TX state records. Summary:
+- `directory_listings` holds 32,683 salons: 10,314 TX, 8,637 CA, 6,454 FL, 5,063 NY, 1,163 IL, 877 CO and 174 DE from license records, plus TLuxxe from its Certxa store. About 84% are geocoded by the US Census Geocoder; Delaware, Colorado and Illinois' sources do not provide street addresses.
+- The importer is `scripts/import-license-records.py`; its NY source is the NYS Department of State's public active Appearance Enhancement Business dataset. The NY import matched 79 license records to existing listings and added 4,984 from nail-related business names.
+- Delaware is available from the [Division of Professional Regulation's active Cosmetology/Barbering Establishment dataset](https://data.delaware.gov/d/pjnv-eaih). It publishes city and ZIP but not street addresses; only active records with nail-related names are included. The import added 174 listings.
+- Colorado is available from DORA's [Professional and Occupational Licenses dataset](https://data.colorado.gov/Regulations/Professional-and-Occupational-Licenses-in-Colorado/7s5z-vewr), limited to active business-level Shop Registration licenses (`REG`), not individual cosmetology or nail-technician licenses. The feed publishes mailing city and ZIP but not street addresses; deduplicating repeated source rows and filtering to nail-related names added 877 listings.
+- Illinois is available from IDFPR's [Professional Licensing dataset](https://data.illinois.gov/d/pzzh-kp68), limited to active business-level `BCENT SALON/SHOP REGISTRATION` records, not individual professionals or schools. The feed publishes city and ZIP but not street addresses; filtering to nail-related business/DBA names added 1,163 listings.
 - The public pages read only `directory_listings` (`lib/salonData.ts`).
-- Pages live at `/salons/...`. `/listings/*`, `/:slug` and `/salon/*` 301 there, or answer 410 when the salon isn't listed.
+- Pages live at `https://salons.certxa.com/salons/...`. The subdomain root redirects to `/salons`; the old `certxa.com/salons/...`, `/listings/*`, `/:slug` and `/salon/*` URLs redirect there, or answer 410 when the salon isn't listed.
 - `/salons/about` and the removal form (`POST /api/directory/:slug/removal`) are live.
 - No Google ratings, reviews, hours, attributes or generated text are published.
 - Not done yet:
   - the weekly import schedule (needs the owner's go-ahead)
-  - the remaining 46 states' license data
+  - the remaining states' license data
   - price ranges per city
   - verified-review collection
 

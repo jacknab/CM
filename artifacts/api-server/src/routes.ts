@@ -25,6 +25,7 @@ import { smartCheckinFor, recordOffers } from "./lib/smartCheckin";
 import { sanitizeTipPresets } from "@shared/tipPresets";
 import { idempotent, startIdempotencyCleanup } from "./lib/idempotency";
 import { cashShortageCents, dayCloseLockedUntil, denominationTotal, parseDrawerAmount } from "./lib/dayClose";
+import { getLastDayCloseAt } from "./lib/dayCloseBoundary";
 import { allocateTenders } from "./lib/tenderAllocation";
 import { summarizeDeductionYtd, summarizePayrollYtd } from "@shared/payrollYtd";
 import { sanitizePosGridConfig } from "@shared/posGrid";
@@ -391,9 +392,6 @@ const DEFAULT_TURN_SETTINGS = {
   appointmentExclusionWindowMinutes: 20,
   dequeOrder: [] as number[],
   lockedStaffIds: [] as number[],
-  shortTurnProtectedId: null as number | null,
-  /** Counted Turns: every technician currently held at the front after a short turn, oldest first. */
-  shortTurnProtectedIds: [] as number[],
   /** Which pre-configured turn system the salon runs (lib/turnRules.ts). */
   turnMode: "classic" as "classic" | "dollar",
   /** Dollar-Based Turns: what a ticket under the dollars-per-turn amount earns. */
@@ -405,13 +403,6 @@ const DEFAULT_TURN_SETTINGS = {
   /** Staff must say why when they give a client to someone other than the next technician. */
   turnOverrideReasonRequired: false,
 };
-
-/** The short-turn holders, including a value saved before there could be more than one. */
-function shortTurnPins(settings: Record<string, any>): number[] {
-  const list = Array.isArray(settings.shortTurnProtectedIds) ? settings.shortTurnProtectedIds.map(Number).filter(Number.isFinite) : [];
-  const legacy = typeof settings.shortTurnProtectedId === "number" ? [settings.shortTurnProtectedId] : [];
-  return [...new Set<number>([...list, ...legacy])];
-}
 
 function safeParsePreferences(raw: string | null | undefined): Record<string, any> {
   if (!raw) return {};
@@ -710,8 +701,7 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
   //      so the tech who has done less work today is always first in line.
   //      Ties are broken by the existing deque position (FIFO — whoever
   //      has been waiting longest among equally-loaded techs goes first).
-  //      Exception: a short-turn-protected tech is pinned to position 0
-  //      regardless of turn count (they didn't earn a full turn).
+  //      Paid checkouts add their earned turns, including half turns below the classic threshold.
   const savedDeque: number[] = Array.isArray(settings.dequeOrder)
     ? (settings.dequeOrder as any[]).map(Number).filter(Number.isFinite)
     : [];
@@ -748,16 +738,13 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
   };
   const turnCountMap = scopedScores.shown;
 
-  // Lowest turn total first; technicians level on turns keep their first-come order. Counted Turns
-  // also holds its short-turn technicians at the very front (Dollar-Based Turns has no such hold —
-  // the partial turn is what a small ticket costs).
-  const shortTurnHeld = rules.mode === "classic" ? shortTurnPins(settings).filter((id) => clockedInToday.has(id)) : [];
+  // Lowest turn total first; technicians level on turns use the salon's configured tie-break.
   const lineScores = withOffsets(overallScores.scores);
-  const syncedDeque = rankTurnLine({ line: merged, scores: lineScores, pinnedFront: shortTurnHeld, tieBreak: rules.tieBreak, clockInOrder });
+  const syncedDeque = rankTurnLine({ line: merged, scores: lineScores, tieBreak: rules.tieBreak, clockInOrder });
   // The order asked about: the salon's line, or this category's own rotation.
   const scopedLineScores = turnCategory ? withOffsets(scopedScores.scores) : lineScores;
   const scopedOrder = turnCategory
-    ? rankTurnLine({ line: syncedDeque, scores: scopedLineScores, pinnedFront: shortTurnHeld, tieBreak: rules.tieBreak, clockInOrder })
+    ? rankTurnLine({ line: syncedDeque, scores: scopedLineScores, tieBreak: rules.tieBreak, clockInOrder })
     : syncedDeque;
 
   // Persist the cleaned+sorted line if it changed — but only over the exact line this was worked
@@ -849,8 +836,6 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
       ? (settings.lockedStaffIds as any[]).map(Number).filter(Number.isFinite)
       : []
   );
-  const shortTurnHeldSet = new Set<number>(shortTurnHeld);
-
   const technicians = storeStaff
     .filter((member) => member.status !== "removed" && member.status !== "deactivated" && turnStaffIds.has(member.id))
     .map((member) => {
@@ -902,7 +887,7 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
           (member as any).availabilitySince && (member as any).availabilityState === techStateOf({ clockedIn: isClockedIn, paused, currentStatus })
             ? new Date((member as any).availabilitySince).toISOString()
             : null,
-        shortTurnProtected: shortTurnHeldSet.has(member.id),
+        shortTurnProtected: false,
       };
     })
     .sort((a, b) => Number(a.turnPosition) - Number(b.turnPosition) || Number(a.id) - Number(b.id));
@@ -1006,8 +991,6 @@ async function assignAppointmentViaTurn(opts: {
     const updates: Record<string, any> = { lockedStaffIds: [...new Set([...lockedIds, selected.id])] };
     if (!isRequestBypass) {
       updates.dequeOrder = deque.filter((id) => id !== selected.id);
-      updates.shortTurnProtectedIds = shortTurnPins(turn).filter((id) => id !== selected.id);
-      updates.shortTurnProtectedId = null;
     }
     return updates;
   });
@@ -1094,7 +1077,7 @@ async function assignAppointmentViaTurn(opts: {
 // according to the salon's turn system (lib/turnRules.ts):
 //   • Dollar-Based Turns — they go to the back of the standing order; the turns the ticket earned
 //     (worked out from its service amount in getTurnEligibility) decide where they really stand.
-//   • Counted Turns — a full turn goes to the back; a short turn is held at the front.
+//   • A paid ticket earns its turns and the line is ranked by accumulated turns, lowest first.
 //   • An unpaid ticket (completed with nothing collected, auto-completed) earns nothing and moves
 //     nobody: the technician simply gets their place back.
 //   • An advance booking is the same: only walk-ins earn turns.
@@ -1154,23 +1137,20 @@ async function handleTurnCheckout(
       const earned = creditedUnits != null ? creditedUnits / TURN_UNIT : turnValue(rules, amount);
       const lockedIds: number[] = Array.isArray(turn.lockedStaffIds) ? (turn.lockedStaffIds as any[]).map(Number).filter(Number.isFinite) : [];
       const deque: number[] = Array.isArray(turn.dequeOrder) ? (turn.dequeOrder as any[]).map(Number).filter(Number.isFinite) : [];
-      const pins = shortTurnPins(turn);
-      const updates: Record<string, any> = { lockedStaffIds: lockedIds.filter((id) => id !== staffId), shortTurnProtectedId: null };
-      if (!firstReport) return { ...updates, shortTurnProtectedIds: pins };
+      const updates: Record<string, any> = {
+        lockedStaffIds: lockedIds.filter((id) => id !== staffId),
+        shortTurnProtectedId: null,
+        shortTurnProtectedIds: [],
+      };
+      if (!firstReport) return updates;
       const rest = deque.filter((id) => id !== staffId);
       if (amount <= 0) {
         // Nothing was collected: no turn, no penalty — back to where they stood (the front, if they
         // had been taken out of the line for this client).
         updates.dequeOrder = deque.includes(staffId) ? deque : [staffId, ...rest];
-        updates.shortTurnProtectedIds = pins;
         console.log(`[turn] ${isBooking ? "Booking" : "Unpaid completion"} for staff ${staffId} — hold released, place kept`);
-      } else if (rules.mode === "classic" && earned < 1) {
-        updates.dequeOrder = [staffId, ...rest];
-        updates.shortTurnProtectedIds = [...pins.filter((id) => id !== staffId), staffId];
-        console.log(`[turn] Short turn for staff ${staffId} (service $${amount} < $${rules.dollarsPerTurn}) — held at the front`);
       } else {
         updates.dequeOrder = [...rest, staffId];
-        updates.shortTurnProtectedIds = pins.filter((id) => id !== staffId);
         console.log(`[turn] Staff ${staffId} earned ${earned} turn(s) on $${amount} of service (${rules.mode}) — to the back of the standing order`);
       }
       return updates;
@@ -6789,8 +6769,7 @@ If you have any questions, please contact your administrator.
         // === FIX: Release Consideration Lock on cancellation or no-show ===
         // If an appointment was marked 'started' (tech got locked) and is then cancelled
         // or no-showed, the tech would remain trapped in lockedStaffIds indefinitely.
-        // Release them and re-insert at the front of the deque (no revenue = short-turn
-        // style — they didn't complete a full service, so they get their spot back).
+        // Release them and restore their place in the deque; no checkout was completed.
         if (
           (input.status === "cancelled" || input.status === "no-show" || input.status === "no_show") &&
           appointment.staffId
@@ -6806,7 +6785,7 @@ If you have any questions, please contact your administrator.
                 : [];
               await saveTurnPreferences(appointment.storeId, {
                 lockedStaffIds: lockedIds.filter((id) => id !== appointment.staffId),
-                // Re-insert at front: no pay was collected, treat as short turn
+                // Re-insert at front: no pay was collected, so no turn was used.
                 dequeOrder: [appointment.staffId!, ...deque.filter((id) => id !== appointment.staffId!)],
               });
               console.log(`[turn] Calendar cancel/no-show: Lock released for staff ${appointment.staffId}, restored to front of deque`);
@@ -6888,7 +6867,7 @@ If you have any questions, please contact your administrator.
             : [];
           await saveTurnPreferences(appointment.storeId, {
             lockedStaffIds: lockedIds.filter((id) => id !== appointment.staffId),
-            // Re-insert at front: appointment was never completed, treat as short turn
+            // Re-insert at front: appointment was never completed, so no turn was used.
             dequeOrder: [appointment.staffId!, ...deque.filter((id) => id !== appointment.staffId!)],
           });
           console.log(`[turn] Appointment deleted: lock released for staff ${appointment.staffId}, restored to front of deque`);
@@ -7248,17 +7227,6 @@ If you have any questions, please contact your administrator.
     }));
   }
 
-  // The most recent close of this drawer (each register has its own 12-hour Day Close lock).
-  async function lastDrawerCloseAt(storeId: number, drawerId: number | null): Promise<Date | undefined> {
-    const { rows } = await pool.query<{ closed_at: Date }>(
-      `SELECT closed_at FROM cash_drawer_sessions
-        WHERE store_id = $1 AND drawer_id IS NOT DISTINCT FROM $2 AND status = 'closed' AND closed_at IS NOT NULL
-        ORDER BY closed_at DESC LIMIT 1`,
-      [storeId, drawerId],
-    );
-    return rows[0]?.closed_at;
-  }
-
   // ── What each POS tablet says about its own offline queue (migration 0236) ──
   // A tablet tells the server how much it still has to send whenever it can reach it. Day Close uses that:
   // it refuses while any OTHER tablet has said it holds unsent cash, and lists tablets that were in use
@@ -7309,7 +7277,7 @@ If you have any questions, please contact your administrator.
       if (!storeId) return res.status(403).json({ message: "No store context" });
       const drawerId = req.query.drawerId ? Number(req.query.drawerId) || null : null;
       const devices = await otherDevices(storeId, typeof req.query.deviceId === "string" ? req.query.deviceId : null).catch(() => ({ holdingCash: [], quiet: [] }));
-      return res.json({ lockedUntil: dayCloseLockedUntil(await lastDrawerCloseAt(storeId, drawerId)), devices });
+      return res.json({ lockedUntil: dayCloseLockedUntil(await getLastDayCloseAt(storeId, drawerId)), devices });
     } catch (error) {
       console.error("[day-close-status]", error);
       return res.status(500).json({ message: "Could not load Day Close status" });
@@ -7454,7 +7422,7 @@ If you have any questions, please contact your administrator.
       try {
       await closeLock.query("SELECT pg_advisory_lock($1, $2)", [84201, sessionStoreId]);
       if (input.autoOpenNext) {
-        const lockedUntil = dayCloseLockedUntil(await lastDrawerCloseAt(sessionStoreId, sessionDrawerId));
+        const lockedUntil = dayCloseLockedUntil(await getLastDayCloseAt(sessionStoreId, sessionDrawerId));
         if (lockedUntil) return res.status(409).json({ code: "DAY_CLOSE_LOCKED", message: "Day Close can only run once every 12 hours.", lockedUntil });
       }
 
@@ -7523,7 +7491,7 @@ If you have any questions, please contact your administrator.
         await tx.insert(drawerActions).values({
           sessionId: id,
           type: "close_drawer",
-          reason: input.notes || "Day Close",
+          reason: input.autoOpenNext ? "Day Close" : input.notes || "Drawer closed",
           performedBy: input.closedBy || null,
           performedAt: now,
         });

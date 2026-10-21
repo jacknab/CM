@@ -6,7 +6,7 @@
  * is automatically clocked out at the store's configured close time.
  *
  * This prevents staff from showing as "clocked in" the next business day.
- * The turn-system deque is also fully reset so the next day starts fresh.
+ * The turn-system deque resets only when the owner performs Day Close.
  *
  * Registered in index.ts → startAutoClockOutScheduler().
  */
@@ -94,7 +94,7 @@ function buildCloseTimestamp(dateStr: string, closeTime: string, tz: string): Da
   return new Date(approx.getTime() + diffMs);
 }
 
-// ─── Turn system reset ────────────────────────────────────────────────────────
+// ─── Day Close turn reset ────────────────────────────────────────────────────
 
 /**
  * Clears all end-of-day turn state so the next business day starts fresh:
@@ -245,9 +245,6 @@ async function runAutoClockOut(): Promise<void> {
           .set({ clockOut: clockOutTime })
           .where(eq(timeclock.id, record.id));
       }
-
-      // 9. Reset the turn system so tomorrow starts clean.
-      await resetTurnSystemForStore(storeId);
 
       processedOnDate.set(storeId, todayUtc);
 

@@ -172,6 +172,7 @@ export async function renderMarketplacePage(
   originalUrl: string,
   internalApiOrigin: string,
   geo: GeoCity | null = null,
+  publicOrigin = "https://certxa.com",
 ): Promise<RenderedPage | null> {
   const ssr = await loadSsrModule();
   const assets = loadClientAssets();
@@ -182,7 +183,7 @@ export async function renderMarketplacePage(
   const safeAssets = assetsExistOnDisk(assets) ? assets : loadClientAssets(true);
   if (!safeAssets) return null;
 
-  const result = await ssr.render(originalUrl, internalApiOrigin, "https://certxa.com", geo);
+  const result = await ssr.render(originalUrl, internalApiOrigin, publicOrigin, geo);
 
   if (result.redirectTo) {
     return { html: "", statusCode: result.statusCode || 302, redirectTo: result.redirectTo };

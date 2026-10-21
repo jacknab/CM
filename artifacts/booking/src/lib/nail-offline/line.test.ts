@@ -64,7 +64,7 @@ describe("the rotation moves on offline", () => {
     expect(names(line(base("dollar"), events, open))).toEqual([]);
   });
   it("Dollar-Based Turns: a paid ticket earns its turns and the technician goes behind those with fewer", () => {
-    // Amy took a $65 ticket (2½ turns), Lisa a $20 ticket (½). Everyone is free again.
+    // Amy took a $65 ticket (2 1/2 turns), Lisa a $20 ticket (1/2). Everyone is free again.
     const events: LineEvent[] = [
       { kind: "assigned", at: 1, staffId: 1 }, { kind: "assigned", at: 2, staffId: 2 },
       { kind: "paid", at: 3, staffId: 1, serviceAmount: 65 }, { kind: "paid", at: 4, staffId: 2, serviceAmount: 20 },
@@ -73,11 +73,14 @@ describe("the rotation moves on offline", () => {
     expect(names(l)).toEqual(["Maria", "Lisa", "Amy"]);
     expect(l.technicians.map((t) => [t.name, t.turnUnits])).toEqual([["Maria", 0], ["Lisa", 500], ["Amy", 2500], ["Jenny", 0]]);
   });
-  it("Counted Turns: a short turn earns nothing and holds the technician at the front", () => {
+  it("Counted Turns: a short turn earns 1/2 and the line puts lower turn totals first", () => {
+    const b = base("classic");
+    b.technicians[1].shortTurnProtected = true;
+    b.settings = { turnEnabled: true, shortTurnProtectedIds: [2], shortTurnProtectedId: 2 };
     const events: LineEvent[] = [{ kind: "assigned", at: 1, staffId: 2 }, { kind: "paid", at: 2, staffId: 2, serviceAmount: 20 }];
-    const l = line(base("classic"), events);
-    expect(names(l)[0]).toBe("Lisa");
-    expect(l.technicians[0]).toMatchObject({ name: "Lisa", shortTurnProtected: true, turnUnits: 0 });
+    const l = line(b, events);
+    expect(names(l)).toEqual(["Amy", "Maria", "Lisa"]);
+    expect(l.technicians.find((t) => t.name === "Lisa")).toMatchObject({ shortTurnProtected: false, turnUnits: 500, turnCount: 0.5 });
   });
   it("Counted Turns: a full turn sends the technician to the back", () => {
     const l = line(base("classic"), [{ kind: "assigned", at: 1, staffId: 1 }, { kind: "paid", at: 2, staffId: 1, serviceAmount: 45 }]);

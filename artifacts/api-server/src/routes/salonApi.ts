@@ -502,7 +502,7 @@ router.get("/api/listings", async (_req: Request, res: Response) => {
 
 /** Which board licenses a state's salons, for the state and city pages. */
 function stateLicenseNote(stateCode: string): { board: string; verifyUrl: string } | undefined {
-  const source = { TX: "tx_tdlr", CA: "ca_bbc", FL: "fl_dbpr" }[stateCode];
+  const source = { CA: "ca_bbc", CO: "co_dora", DE: "de_dpr", FL: "fl_dbpr", IL: "il_idfpr", NY: "ny_dos", TX: "tx_tdlr" }[stateCode];
   const board = source ? LICENSE_SOURCES[source] : undefined;
   return board ? { board: board.board, verifyUrl: board.verifyUrl } : undefined;
 }

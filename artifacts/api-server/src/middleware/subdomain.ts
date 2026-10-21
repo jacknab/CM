@@ -28,6 +28,7 @@ const RESERVED_SUBDOMAINS = new Set([
   'test', 'demo', 'staging', 'dev', 'secure',
   'manage', // unified subscriber hub — handled by Express/React, not a user site
   'rentals', // Certxa Rentals product — handled by Express/React, not a user site
+  'salons', // public salon directory — handled by Express/React, not a user site
 ]);
 
 // ── Jaro-Winkler similarity ──────────────────────────────────────────────────

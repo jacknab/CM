@@ -97,7 +97,9 @@ function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-[#f7f3ed]" data-testid="header-site">
       <div className="mx-auto flex h-[68px] max-w-[1320px] items-center gap-5 px-5 lg:px-10">
-        <Link href="/" className="group flex shrink-0 items-baseline gap-2 focus-ring" data-testid="link-logo"><Wordmark className="text-[32px] leading-none text-foreground" /></Link>
+        <Link href="/" className="group flex shrink-0 items-center focus-ring" data-testid="link-logo">
+          <img src="/mp-assets/logo.png" alt="Certxa" width={679} height={144} className="block h-9 w-auto" />
+        </Link>
         <div className="hidden max-w-md flex-1 md:block">{searchField}</div>
         <nav className="ml-auto hidden items-center gap-5 text-[15px] font-bold md:flex" data-testid="nav-primary">
           <Link href="/deals" className="text-muted-foreground transition hover:text-primary focus-ring" data-testid="link-deals">Deals</Link>

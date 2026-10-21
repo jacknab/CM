@@ -115,7 +115,7 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
                   <li key={t.id} data-status={t.status} data-testid="tech-id-turn-row">
                     <span>{t.position ?? "–"}</span>
                     <strong>{t.name}</strong>
-                    {/* How many turns they have, halves included: "½ turn", "1 turn", "1½ turns". */}
+                    {/* How many turns they have, halves included: "1/2 turn", "1 turn", "1 1/2 turns". */}
                     <em data-testid="tech-id-turn-count">{formatTurns(t.turnUnits)} {t.turnUnits > 0 && t.turnUnits <= TURN_UNIT ? tx("turn") : tx("turns")}</em>
                   </li>
                 ))}
