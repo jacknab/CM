@@ -63,7 +63,7 @@ async function requireWholeVisit(conn: { execute: typeof db.execute }, storeId: 
     ORDER BY o.ticket_number`)).rows as any[];
   if (left.length) {
     const list = left.map((r) => `#${r.ticket_number}`).join(", ");
-    throw new NailCheckoutError(`Ticket ${list} is part of this visit. Pay the visit's tickets together in Group Pay, or cancel ${left.length > 1 ? "those tickets" : "that ticket"} first.`);
+    throw new NailCheckoutError(`Ticket ${list} is part of this visit. Pay the visit's tickets together with Combine, or cancel ${left.length > 1 ? "those tickets" : "that ticket"} first.`);
   }
 }
 

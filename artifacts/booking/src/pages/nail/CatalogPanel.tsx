@@ -108,7 +108,7 @@ export function Keypad({ locked, onEnter, onUndo, onSplit, onGiftCard, onCheckou
         <button type="button" disabled={locked} onClick={() => { setDisplay(""); setQty(1); setGuided((g) => (g === null ? 0 : null)); }} data-testid="nail-quick-ticket">
           <Zap size={20} /><span>{guided !== null ? "Exit Quick Ticket" : "Quick Ticket"}</span>
         </button>
-        <button type="button" disabled={locked} onClick={() => onCheckoutFn?.("group")} data-testid="nail-fn-group"><Users size={20} /><span>Group Pay</span></button>
+        <button type="button" disabled={locked} onClick={() => onCheckoutFn?.("group")} data-testid="nail-fn-group"><Users size={20} /><span>Combine</span></button>
         <button type="button" disabled={locked} className={retail ? "fn-btn-active" : ""}
           onClick={() => setRetail((v) => !v)} data-testid="nail-retail-toggle" aria-pressed={retail}>
           <ShoppingBag size={20} /><span>{retail ? "Retail ✓" : "Retail"}</span>

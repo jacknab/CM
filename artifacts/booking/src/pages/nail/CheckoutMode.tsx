@@ -1212,7 +1212,7 @@ export function CheckoutMode(p: Props) {
             </div>
             <div className="money-grid pay-fn-row" data-testid="nail-pay-fn-row-top">
               <button type="button" onClick={() => runFn("quick")} data-testid="nail-pay-fn-quick"><Zap size={20} /><span>{guided !== null ? "Exit Quick Ticket" : "Quick Ticket"}</span></button>
-              <button type="button" onClick={() => runFn("group")} data-testid="nail-pay-fn-group"><Users size={20} /><span>Group Pay</span></button>
+              <button type="button" onClick={() => runFn("group")} data-testid="nail-pay-fn-group"><Users size={20} /><span>Combine</span></button>
               <button type="button" onClick={() => runFn("retail")} data-testid="nail-pay-fn-retail"><ShoppingBag size={20} /><span>Retail</span></button>
               <button type="button" onClick={() => runFn("gift")} data-testid="nail-pay-fn-gift"><Gift size={20} /><span>Gift Card</span></button>
             </div>
@@ -1310,7 +1310,7 @@ export function CheckoutMode(p: Props) {
           <div className="assign-create-modal" data-testid={`nail-pay-popup-${popup}`}>
             <div className="assign-create-header">
               <div>
-                <h2>{popup === "tip" ? "Tip" : popup === "settings" ? "POS settings" : popup === "gift" ? (gift.mode === "balance" ? "Gift card balance" : "Pay with gift card") : "Group pay"}</h2>
+                <h2>{popup === "tip" ? "Tip" : popup === "settings" ? "POS settings" : popup === "gift" ? (gift.mode === "balance" ? "Gift card balance" : "Pay with gift card") : "Combine"}</h2>
                 <p>{popup === "group" ? "Pay these tickets together" : popup === "settings" ? "Saved to this device" : popup === "gift" ? "Type or scan the card code" : ticket.client.name}</p>
               </div>
               <button type="button" className="assign-create-close" onClick={() => setPopup(null)} aria-label="Close"><X size={16} /></button>
