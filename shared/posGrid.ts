@@ -21,7 +21,7 @@ interface KeyLook {
 export type PosKey =
   /** Opens that catalog category's services. `groupKey` is the catalog group's key ("cat:12"). */
   | ({ type: "category"; groupKey: string } & KeyLook)
-  /** Puts that service on the ticket. */
+  /** Puts that service on the ticket. A negative id is a Catalog package (its id, negated). */
   | ({ type: "service"; serviceId: number } & KeyLook)
   /** Opens another grid the manager made. */
   | ({ type: "grid"; gridId: string } & KeyLook)
@@ -63,7 +63,7 @@ export function sanitizePosGridConfig(raw: unknown): PosGridConfig | null {
     for (let i = 0; i < POS_GRID_SLOTS; i++) {
       const k: any = grid.keys[i];
       if (k?.type === "category" && typeof k.groupKey === "string" && k.groupKey.length > 0 && k.groupKey.length <= 120) keys.push({ type: "category", groupKey: k.groupKey, ...look(k) });
-      else if (k?.type === "service" && Number.isSafeInteger(Number(k.serviceId)) && Number(k.serviceId) > 0) keys.push({ type: "service", serviceId: Number(k.serviceId), ...look(k) });
+      else if (k?.type === "service" && Number.isSafeInteger(Number(k.serviceId)) && Number(k.serviceId) !== 0) keys.push({ type: "service", serviceId: Number(k.serviceId), ...look(k) });
       else if (k?.type === "grid" && typeof k.gridId === "string" && ids.has(k.gridId) && k.gridId !== grid.id && k.gridId !== POS_GRID_MAIN) keys.push({ type: "grid", gridId: k.gridId, ...look(k) });
       else if (k?.type === "back" && grid.id !== POS_GRID_MAIN) keys.push({ type: "back", ...look(k) });
       else keys.push(null);

@@ -39,3 +39,22 @@ describe("whether the visit's technician can also do another service", () => {
     expect(await can(null)).toBe(false);
   });
 });
+
+// A Catalog package on a ticket (owner, 2026-10-21): its price line may be below zero, and only the server keeps one.
+describe("a package's price line", () => {
+  const lines = [
+    { label: "Mani-Pedi package", price: -10, packageId: 4 },
+    { label: "Custom Amount", price: 5 },
+  ];
+  it("is dropped from what a tablet sends", () => {
+    expect(sanitizeCustomLines(lines)).toEqual([{ label: "Custom Amount", price: 5 }]);
+  });
+  it("is kept, with its sign, where the server saved it", () => {
+    expect(sanitizeCustomLines(lines, true)).toEqual(lines);
+  });
+  it("brings the ticket to the package price", () => {
+    // Pedicure $40 (the ticket's service) + Manicure $25 (service line) − $10 → Mani-Pedi $55.
+    const p = priceTicket({ serviceDuration: 45, servicePrice: 40, addons: [], customPrice: 25 - 10, customDuration: 30 });
+    expect(p).toEqual({ duration: 75, price: 55 });
+  });
+});

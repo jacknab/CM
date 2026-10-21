@@ -28,7 +28,7 @@ interface ReceiptSnapshot {
   cardDetails?: CardDetails;
 }
 
-const money = (n: number) => `$${(Number(n) || 0).toFixed(2)}`;
+const money = (n: number) => `${Number(n) < 0 ? "-" : ""}$${Math.abs(Number(n) || 0).toFixed(2)}`;
 const DASH = "-".repeat(40);
 
 const BRAND_LABEL: Record<string, string> = {

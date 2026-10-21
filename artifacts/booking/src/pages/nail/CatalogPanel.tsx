@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { ArrowLeft, DoorOpen, LayoutGrid, Footprints, Gift, Hand, HandCoins, MoreHorizontal, Package, Percent, Plus, Printer, ShoppingBag, Sparkles, UserRound, Users, WalletCards, Zap } from "lucide-react";
 import { QUICK_TICKET_STEPS } from "@shared/nailCheckout";
 import { formatDuration, parseKeypadAmount } from "./ticketDraft";
@@ -125,6 +125,8 @@ interface Props {
   groups: CatalogGroup[];
   activeGroup: string;
   onGroup: (key: string) => void;
+  /** Open on this category (the one the client picked at check-in) when the ticket has no service yet. */
+  openGroup?: string | null;
   serviceId: number | null;
   onService: (svc: CatalogService) => void;
   addons: CatalogAddon[];
@@ -244,9 +246,18 @@ export function CatalogPanel(p: Props) {
   // The way here: the main grid first, then whatever was opened from it. Back takes one step off.
   // A ticket that already has its service (editing one) opens on that service's category.
   const [trail, setTrail] = useState<GridPlace[]>(() => {
-    const group = p.serviceId != null ? p.groups.find((g) => g.services.some((s) => s.id === p.serviceId)) : undefined;
+    const group = p.serviceId != null ? p.groups.find((g) => g.services.some((s) => s.id === p.serviceId))
+      : p.openGroup ? p.groups.find((g) => g.key === p.openGroup) : undefined;
     return group ? [{ at: "main" }, { at: "category", key: group.key }] : [{ at: "main" }];
   });
+  // A check-in opened while the grid is already on screen: go to its category.
+  useEffect(() => {
+    if (p.openGroup && p.serviceId == null && p.groups.some((g) => g.key === p.openGroup)) {
+      setTrail([{ at: "main" }, { at: "category", key: p.openGroup }]); setPage(0);
+    }
+    // Only when the category to open changes — not on every catalog refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.openGroup]);
   const [page, setPage] = useState(0);
   const place = trail[trail.length - 1];
   const open = (next: GridPlace) => { setTrail((t) => [...t, next]); setPage(0); if (next.at === "category") p.onGroup(next.key); };

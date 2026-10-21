@@ -18813,6 +18813,11 @@ or
       triggerDashboardBroadcast(storeId);
     },
   };
+  // A visit's second ticket waits for its first one to be done, then goes to whoever is next in turn
+  // (nailTickets.releaseFollowOnTickets). Checked every 30 seconds; each ticket is released once.
+  setInterval(() => {
+    void nailTickets.releaseFollowOnTickets(nailDeps).catch((err) => console.error("[nail follow-on]", err?.message));
+  }, 30_000).unref?.();
 
   // Reuse the same ticket engine for walk-in barbershops without opening the
   // nail endpoints to other store categories. originalUrl survives this rewrite
@@ -19013,7 +19018,7 @@ or
         // serviceId/duration: another service of the visit on this ticket — sent by a tablet that saved the ticket
         // offline (online, the further services come as extraServiceIds and the server makes the lines itself).
         customLines: z.array(z.object({ label: z.string().max(60), price: z.number(), isRetail: z.boolean().optional(),
-          serviceId: z.number().int().optional(), duration: z.number().optional() })).max(20).optional(),
+          serviceId: z.number().int().optional(), duration: z.number().optional(), packageId: z.number().int().optional() })).max(20).optional(),
         staffId: z.number().int().nullable().optional(),
         leaveUnassigned: z.boolean().optional(),
         autoAssign: z.boolean().optional(),
@@ -19022,6 +19027,8 @@ or
         // Further services of the same visit: on this ticket when its technician can do them, otherwise each on
         // its own linked ticket (nailTickets.createNailTicketGroup).
         extraServiceIds: z.array(z.number().int()).max(8).optional(),
+        // A Catalog package rung up as the ticket: its services, add-ons and price come from the catalog.
+        packageId: z.number().int().positive().nullable().optional(),
         // The number a tablet gave the ticket while offline.
         ticketNumber: z.number().int().positive().nullable().optional(),
       }).safeParse(req.body);
@@ -19054,11 +19061,12 @@ or
         addonIds: z.array(z.number().int()),
         nail: nailSelectionInput.nullable().optional(),
         // A line with serviceId is another service of the visit (nailTickets.CustomLine); its time travels with it.
+        // packageId: the package's price line, kept only as the server saved it (nailTickets.updateNailTicketItems).
         customLines: z.array(z.object({ label: z.string().max(60), price: z.number(), isRetail: z.boolean().optional(),
-          serviceId: z.number().int().optional(), duration: z.number().optional() })).max(20).optional(),
+          serviceId: z.number().int().optional(), duration: z.number().optional(), packageId: z.number().int().optional() })).max(20).optional(),
         expected: z.object({ serviceId: z.number().int().nullable(), duration: z.number(), addonIds: z.array(z.number().int()),
           nail: nailSelectionInput.nullable(), customLines: z.array(z.object({ label: z.string(), price: z.number(), isRetail: z.boolean().optional(),
-            serviceId: z.number().int().optional(), duration: z.number().optional() })) }),
+            serviceId: z.number().int().optional(), duration: z.number().optional(), packageId: z.number().int().optional() })) }),
       }).safeParse(req.body);
       const appointmentId = Number(req.params.id);
       if (!body.success || !Number.isFinite(appointmentId)) return res.status(400).json({ message: "Invalid ticket" });

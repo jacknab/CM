@@ -79,7 +79,7 @@ const CARD_METHOD_KEY = "certxa.nail.cardMethod";
 const tenderLabel = (t: Tender) => (t.method === "gift" ? `GIFT CARD${t.code ? ` ·${t.code.slice(-4)}` : ""}` : t.method === "tap" ? "TAP TO PAY" : t.method === "cash" ? "CASH" : "CARD");
 type Reward = { id: number; name: string; pointsCost: number; dollarValue: number; isActive?: boolean };
 
-const money = (n: number) => `$${n.toFixed(2)}`;
+const money = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
 const KEYS = ["7", "8", "9", "⌫", "4", "5", "6", "CLEAR", "1", "2", "3", "ERC", "00", "0", "ENTER"];
 
 // ── The last receipt printed from this device, for Reprint ────────────────────

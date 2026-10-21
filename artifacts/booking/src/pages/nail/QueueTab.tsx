@@ -179,7 +179,8 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
       }
       return {
         key: `t${t.id}`, state: "waiting", since: t.checkedInAt ?? t.date, name: fullName(t.client.name), ticketNumber: t.ticketNumber ?? null,
-        service, sub: t.staff ? `WITH ${firstName(t.staff.name).toUpperCase()}` : "UNASSIGNED",
+        // A visit's second ticket waits for its first to be done before anyone is given it.
+        service, sub: t.staff ? `WITH ${firstName(t.staff.name).toUpperCase()}` : t.waitsForTicket != null ? `AFTER #${t.waitsForTicket}` : "UNASSIGNED",
         subKind: t.staff ? "assigned" : "unassigned", tech: t.staff?.name ?? null,
         provisional: t.offline === true,
         open: () => onTicket(t), assign: t.staff ? undefined : () => onAssignTicket(t),

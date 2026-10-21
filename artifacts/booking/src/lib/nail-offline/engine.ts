@@ -38,7 +38,7 @@ export interface TicketRecord {
   addons: TicketLine[];
   /** The nail choice as the server takes it, plus what to show for it. */
   nail: Record<string, number | null> | null; nailLines: { label: string; price: number }[]; nailPriceAdjustment: number;
-  customLines: { label: string; price: number; isRetail?: boolean; serviceId?: number; duration?: number }[];
+  customLines: { label: string; price: number; isRetail?: boolean; serviceId?: number; duration?: number; packageId?: number }[];
   staff: { id: number; name: string; color: string | null } | null;
   status: "confirmed" | "started";
   startedAt: string | null;

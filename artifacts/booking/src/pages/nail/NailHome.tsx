@@ -18,6 +18,7 @@ import { SlipTechIdSheet, TechSlipSheet } from "./TechSlipSheet";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useAuth } from "@/hooks/use-auth";
 import { useServices } from "@/hooks/use-services";
+import { usePackages } from "@/hooks/use-packages";
 import { useAddons, useAddonsForService, useServiceCategories } from "@/hooks/use-addons";
 import { useActiveRegisterId } from "@/hooks/use-registers";
 import { useActiveDrawerId } from "@/hooks/use-cash-drawers";
@@ -217,6 +218,11 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const [pick, setPick] = useState<NailPick>(EMPTY_PICK);
   const [customs, setCustoms] = useState<DraftCustomLine[]>([]);
   const customSeq = useRef(0);
+  // A Catalog package on the new ticket: its first service is `service`, the rest are in `extraServices`, its
+  // add-ons in `addonIds` and its price line in `customs`. Taking any part of it off takes the package off.
+  const [pkg, setPkg] = useState<{ id: number; name: string; serviceIds: number[]; addonIds: number[] } | null>(null);
+  // The category the grid opens on for this ticket (the one the client picked at check-in).
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [activeGroup, setActiveGroup] = useState("");
   const [moreAddons, setMoreAddons] = useState(false);
   const [editing, setEditing] = useState<BoardTicket | null>(null);
@@ -490,6 +496,18 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   useEffect(() => {
     if (groups.length > 0 && !groups.some((g) => g.key === activeGroup)) setActiveGroup(groups[0].key);
   }, [groups, activeGroup]);
+  // Catalog packages as one more category of the POS grid. A package key carries the package's id as a negative
+  // number, so it is never taken for a service; only the grid (and its editor) see this group.
+  const { data: packageList } = usePackages();
+  const PACKAGES_GROUP = "packages";
+  const gridGroups = useMemo<CatalogGroup[]>(() => {
+    const known = new Set(groups.flatMap((g) => g.services.map((x) => x.id)));
+    const keys = ((packageList ?? []) as any[])
+      .filter((p) => p.isActive !== false && (p.items ?? []).some((i: any) => i.itemType === "service")
+        && (p.items ?? []).every((i: any) => i.itemType !== "service" || known.has(Number(i.serviceId))))
+      .map((p) => ({ id: -Number(p.id), name: String(p.name), duration: Number(p.duration) || 0, price: Number(p.price) || 0 }));
+    return keys.length ? [...groups, { key: PACKAGES_GROUP, name: "Packages", services: keys }] : groups;
+  }, [groups, packageList]);
   // Have every service's nail options on this tablet before they are needed, so any service can be rung
   // up with no connection — not only the ones someone happened to open while online. One at a time, and
   // only the ones this tablet does not hold yet.
@@ -674,7 +692,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   // ── ticket building ───────────────────────────────────────────────────────
   const resetDraft = useCallback(() => {
-    setClient(null); setCheckinId(null); setService(null); setExtraServices([]); setAddonIds([]); setPick(EMPTY_PICK); setCustoms([]);
+    setClient(null); setCheckinId(null); setService(null); setExtraServices([]); setAddonIds([]); setPick(EMPTY_PICK); setCustoms([]); setPkg(null); setOpenGroup(null);
     setEditing(null); pickSeededFor.current = null; setMoreAddons(false); setBooking(null);
   }, []);
 
@@ -722,7 +740,40 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     return () => clearTimeout(timer);
   }, [assignedNotice, lock]);
 
+  const choosePackage = (packageId: number) => {
+    if (editing) { say("A package goes on a new ticket"); return; }
+    const p = ((packageList ?? []) as any[]).find((x) => Number(x.id) === packageId);
+    const all = groups.flatMap((g) => g.services);
+    const svcIds: number[] = (p?.items ?? []).filter((i: any) => i.itemType === "service").map((i: any) => Number(i.serviceId));
+    const parts = svcIds.map((id) => all.find((x) => x.id === id));
+    if (!p || parts.length === 0 || parts.some((x) => !x)) { say("That package isn't in the catalog any more"); return; }
+    const pkgAddons: number[] = (p.items ?? []).filter((i: any) => i.itemType === "addon").map((i: any) => Number(i.addonId));
+    // Whatever was on the ticket stays on it, after the package; a package already on it is replaced.
+    const keepExtras = [...(pkg ? [] : service ? [service] : []), ...extraServices.filter((x) => !pkg?.serviceIds.includes(x.id))]
+      .filter((x) => !svcIds.includes(x.id));
+    setService(parts[0]!);
+    setExtraServices([...parts.slice(1) as CatalogService[], ...keepExtras]);
+    setAddonIds((cur) => [...new Set([...cur.filter((id) => !pkg?.addonIds.includes(id)), ...pkgAddons])]);
+    setPick(EMPTY_PICK); pickSeededFor.current = null;
+    const difference = Math.round((Number(p.price) - Number(p.listPrice)) * 100) / 100;
+    customSeq.current += 1;
+    const priceLine: DraftCustomLine[] = difference !== 0 ? [{ id: customSeq.current, label: `${p.name} package`, price: difference, packageId }] : [];
+    setCustoms((cur) => [...cur.filter((c) => !c.packageId), ...priceLine]);
+    setPkg({ id: packageId, name: String(p.name), serviceIds: svcIds, addonIds: pkgAddons });
+  };
+  // Taking off any part of the package takes the whole package off; what was added besides it stays.
+  const dropPackage = () => {
+    if (!pkg) return;
+    const rest = extraServices.filter((x) => !pkg.serviceIds.includes(x.id));
+    const [next, ...others] = rest;
+    setService(next ?? null); setExtraServices(others);
+    setAddonIds((cur) => cur.filter((id) => !pkg.addonIds.includes(id)));
+    setCustoms((cur) => cur.filter((c) => !c.packageId));
+    setPick(EMPTY_PICK); pickSeededFor.current = null;
+    setPkg(null);
+  };
   const chooseService = (svc: CatalogService) => {
+    if (svc.id < 0) { choosePackage(-svc.id); return; }
     if (service?.id === svc.id) return;
     // A new ticket that already has a service gains another one; a saved ticket being edited holds one
     // service, so picking there still swaps it.
@@ -745,6 +796,9 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     }]);
   };
   const removeLine = (line: TicketLine) => {
+    if (pkg && ((line.kind === "service" && line.serviceId != null && pkg.serviceIds.includes(line.serviceId))
+      || (line.addonId != null && pkg.addonIds.includes(line.addonId))
+      || (line.customId != null && customs.some((c) => c.id === line.customId && c.packageId)))) { dropPackage(); return; }
     if (line.kind === "service" && line.serviceId != null) {
       if (extraServices.some((s) => s.id === line.serviceId)) { setExtraServices((cur) => cur.filter((s) => s.id !== line.serviceId)); return; }
       // Taking off the first service: the next one takes its place, with its own add-ons and nail options to choose.
@@ -766,6 +820,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       const m = marker != null ? markers.find((x) => x.id === marker) : undefined;
       const wanted = m && (groups.find((g) => m.requestedCategoryId != null && g.key === `cat:${m.requestedCategoryId}`)
         ?? groups.find((g) => !!m.requestedCategory && g.name.trim().toLowerCase() === m.requestedCategory.trim().toLowerCase()));
+      setOpenGroup(wanted?.key ?? null);
       if (wanted) setActiveGroup(wanted.key);
       setTab("pos");
     } catch (err: any) {
@@ -782,7 +837,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     setAddonIds(t.addons.map((a) => a.id));
     // A service line (another service of the visit) keeps its service and time through the edit.
     setCustoms(t.customLines.map((c) => ({ id: ++customSeq.current, label: c.label, price: c.price, isRetail: c.isRetail,
-      ...(c.serviceId ? { serviceId: c.serviceId, duration: c.duration } : {}) })));
+      ...(c.serviceId ? { serviceId: c.serviceId, duration: c.duration } : {}), ...(c.packageId ? { packageId: c.packageId } : {}) })));
     setPick({ size: t.nail?.sizeId ?? null, shape: t.nail?.shapeId ?? null, application: t.nail?.applicationId ?? null, effect: t.nail?.effectId ?? null });
     setEditing(t);
     setActiveGroup(groups.find((g) => g.services.some((s) => s.id === svc.id))?.key ?? activeGroup);
@@ -796,8 +851,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   };
 
   // ── mutations ─────────────────────────────────────────────────────────────
-  const customLines = useMemo(() => customs.map(({ label, price, isRetail, serviceId, duration }) => ({ label, price, isRetail,
-    ...(serviceId ? { serviceId, duration } : {}) })), [customs]);
+  const customLines = useMemo(() => customs.map(({ label, price, isRetail, serviceId, duration, packageId }) => ({ label, price, isRetail,
+    ...(serviceId ? { serviceId, duration } : {}), ...(packageId ? { packageId } : {}) })), [customs]);
   // Saving a ticket hands it to TURN: the next technician in line who can do the service gets it. It waits with
   // them until START is pressed. Nobody free → it waits, unassigned, and the next tech to finish a client picks it up.
   const checkinStaffId = checkinId != null ? markers.find((m) => m.id === checkinId)?.staffId ?? null : null;
@@ -807,6 +862,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     mutationFn: async () => {
       if (!client || !service || !booking?.slot) throw new Error("Pick a time first");
       if (extraServices.length > 1) throw new Error("A booking can have up to 2 services.");
+      if (pkg) throw new Error("A package can't be booked from here. Choose its services one by one.");
       const body = { clientId: client.id, serviceId: service.id, extraServiceId: extraServices[0]?.id ?? null, addonIds,
         staffId: booking.slot.staffId, extraStaffId: booking.slot.extraStaffId ?? null, date: booking.slot.time };
       // No connection (or a client made offline): kept on this tablet and sent when the connection is back.
@@ -852,10 +908,17 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       const held = checkinStaffId != null ? techList.find((t) => t.id === checkinStaffId) : undefined;
       // A client the front desk check-in already handed to a technician stays with that technician;
       // everyone else goes to the next technician in turn, as before.
-      return createTicket({ clientId: client!.id, serviceId: service!.id, addonIds, pick, customLines,
+      // A package: the server makes its further services and its price line from the catalog; the same lines made
+      // here are only for a ticket saved on this tablet. Services added besides the package travel as usual.
+      const pkgExtras = pkg ? extraServices.filter((x) => pkg.serviceIds.includes(x.id)) : [];
+      const otherExtras = pkg ? extraServices.filter((x) => !pkg.serviceIds.includes(x.id)) : extraServices;
+      const pkgPriceLines = customLines.filter((c) => c.packageId);
+      const packageLines = pkg ? [...pkgExtras.map((x) => ({ label: x.name, price: Number(x.price) || 0, serviceId: x.id, duration: Number(x.duration) || 0 })), ...pkgPriceLines] : undefined;
+      return createTicket({ clientId: client!.id, serviceId: service!.id, addonIds, pick, customLines: pkg ? customLines.filter((c) => !c.packageId) : customLines,
         staffId: checkinStaffId, autoAssign: checkinStaffId == null, checkinId,
-        ...(extraServices.length > 0 && { extraServiceIds: extraServices.map((s) => s.id) }) }, {
-        extras: extraServices.map((s) => ({ id: s.id, name: s.name, price: Number(s.price) || 0, duration: Number(s.duration) || 0 })),
+        ...(pkg && { packageId: pkg.id, packageLines }),
+        ...(otherExtras.length > 0 && { extraServiceIds: otherExtras.map((s) => s.id) }) }, {
+        extras: otherExtras.map((s) => ({ id: s.id, name: s.name, price: Number(s.price) || 0, duration: Number(s.duration) || 0 })),
         storeId,
         client: { name: client!.name, phone: client!.phone },
         service: { name: service!.name, price: Number(service!.price) || 0, duration: Number(service!.duration) || 0 },
@@ -864,7 +927,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
         nailLines: nail.lines.map((l) => ({ label: l.label, price: l.price })),
         nailPriceAdjustment: nail.lines.reduce((sum, l) => sum + l.price, 0),
         staff: held ? { id: held.id, name: held.name, color: held.color ?? null } : null,
-        total: draft.firstPrice, duration: draft.firstDuration,
+        // The package's price line is in packageLines, not in this ticket's own amount.
+        total: Math.round((draft.firstPrice - pkgPriceLines.reduce((n, c) => n + c.price, 0)) * 100) / 100, duration: draft.firstDuration,
       });
     },
     onSuccess: (r) => {
@@ -1531,10 +1595,11 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
                 <CatalogPanel
                   layout={posGrid?.config ?? null}
                   locked={!client}
-                  groups={groups}
+                  groups={gridGroups}
+                  openGroup={openGroup}
                   activeGroup={activeGroup}
                   onGroup={setActiveGroup}
-                  serviceId={service?.id ?? null}
+                  serviceId={pkg ? -pkg.id : service?.id ?? null}
                   onService={chooseService}
                   addons={shownAddons}
                   moreAddons={moreAddons}
@@ -1622,7 +1687,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       )}
       {sheet === "timeclock" && <TimeClockSheet storeId={storeId} onClose={() => { setSheet(null); invalidateBoard(); }} />}
       {gridEditor === "open" && (
-        <GridEditor groups={groups} config={posGrid?.config ?? null} saving={saveGrid.isPending} onSave={(config) => saveGrid.mutate(config)} onClose={() => setGridEditor(null)} />
+        <GridEditor groups={gridGroups} config={posGrid?.config ?? null} saving={saveGrid.isPending} onSave={(config) => saveGrid.mutate(config)} onClose={() => setGridEditor(null)} />
       )}
       {pinChange && <ChangeManagerPinSheet onClose={() => setPinChange(false)} onDone={() => { setPinChange(false); say("Manager PIN changed"); }} />}
       {sheet === "manager" && <ManagerPinSheet onClose={() => setSheet(null)} onSuccess={() => { setSheet(null); setShowMore("manager"); }} />}

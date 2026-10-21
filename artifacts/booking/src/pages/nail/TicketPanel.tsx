@@ -49,7 +49,7 @@ export function TicketPanel({ client, badge, lines, duration, price, submitLabel
                 </span>
               </div>
               <div className="item-price">
-                <strong>${line.price.toFixed(2)}</strong>
+                <strong>{line.price < 0 ? "-" : ""}${Math.abs(line.price).toFixed(2)}</strong>
               </div>
               {line.kind !== "service" || line.removable ? (
                 <button type="button" className="remove-item" onClick={() => onRemove(line)} aria-label={`Remove ${line.label}`}>

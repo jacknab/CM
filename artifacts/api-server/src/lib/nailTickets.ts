@@ -21,6 +21,7 @@ import { withTurnLock } from "./turnLock";
 import { getLastDayCloseAt } from "./dayCloseBoundary";
 import * as nailConfig from "./nailConfig";
 import { getBufferMinutes } from "./appointmentBuffer";
+import { resolvePackageForBooking } from "./packageResolver";
 
 /**
  * A check-in is a record that STAYS until someone resolves it (ticket made, client removed, checked out) — nothing here
@@ -113,14 +114,28 @@ export interface TicketPricing {
  * service of the same visit (owner, 2026-10-21: one ticket holds every service, done by one technician).
  * A service line carries the catalog's price and its time; the server sets both, never the tablet.
  */
-export interface CustomLine { label: string; price: number; isRetail?: boolean; serviceId?: number; duration?: number }
+export interface CustomLine {
+  label: string; price: number; isRetail?: boolean; serviceId?: number; duration?: number;
+  /** A Catalog package's price line: the package price less its parts at catalog price (owner, 2026-10-21).
+   *  Only the server writes one; it may be below zero (the package saving). */
+  packageId?: number;
+}
 
-/** Keypad lines from the client: trimmed labels, 0 < price <= 9999.99 to the cent, at most 20. */
-export function sanitizeCustomLines(raw: unknown): CustomLine[] {
+/** Keypad lines from the client: trimmed labels, 0 < price <= 9999.99 to the cent, at most 20.
+ *  `withPackage` keeps package price lines — only for lines the server itself saved. */
+export function sanitizeCustomLines(raw: unknown, withPackage = false): CustomLine[] {
   if (!Array.isArray(raw)) return [];
   const out: CustomLine[] = [];
   for (const r of raw) {
     const price = Math.round(Number((r as any)?.price) * 100) / 100;
+    const packageId = Number((r as any)?.packageId);
+    if (Number.isSafeInteger(packageId) && packageId > 0) {
+      if (withPackage && Number.isFinite(price) && price !== 0 && Math.abs(price) <= 9999.99) {
+        out.push({ label: String((r as any)?.label ?? "").trim().slice(0, 60) || "Package", price, packageId });
+        if (out.length >= 20) break;
+      }
+      continue;
+    }
     // A service line may be free; a keypad amount must be more than nothing.
     const isService = Number.isSafeInteger(Number((r as any)?.serviceId)) && Number((r as any)?.serviceId) > 0;
     if (!Number.isFinite(price) || price < 0 || (!isService && price === 0) || price > 9999.99) continue;
@@ -309,20 +324,22 @@ export async function matchWaitingNailTicketForTechnician(
   if (capabilityIds.size === 0) return null;
 
   const { rows } = await pool.query(
-    `SELECT id, service_id, staff_id
+    `SELECT id, service_id, staff_id, custom_lines
        FROM appointments
       WHERE store_id = $1
         AND status = 'confirmed'
         AND checked_in_at IS NOT NULL
         AND staff_id IS NULL
         AND service_id IS NOT NULL
+        AND waits_for_appointment_id IS NULL
       ORDER BY checked_in_at ASC, date ASC, id ASC`,
     [args.storeId],
   );
 
   const remaining = rows.map((row: any) => ({
     id: Number(row.id),
-    requiredServiceIds: [Number(row.service_id)],
+    // The technician must do every service on the ticket (its further services are service lines).
+    requiredServiceIds: [Number(row.service_id), ...sanitizeCustomLines(row.custom_lines, true).filter((l) => l.serviceId).map((l) => l.serviceId!)],
     assignedStaffId: row.staff_id == null ? null : Number(row.staff_id),
   }));
 
@@ -465,6 +482,10 @@ export interface CreateTicketInput {
    *  the ticket, so a retry after a crash finds the ticket instead of making a second one (lib/idempotency.ts). */
   idempotencyKey?: string | null;
   bookedByUserId?: number | null;
+  /** A Catalog package rung up as the ticket (createNailTicketGroup resolves it into the lines below). */
+  packageId?: number | null;
+  /** Lines the server built for the package — its further services and its price line. Never from a tablet. */
+  packageLines?: CustomLine[];
 }
 
 export interface CreatedTicket {
@@ -519,7 +540,7 @@ export async function appendServiceLine(storeId: number, appointmentId: number, 
     const row = (await tx.execute(sql`SELECT custom_lines, duration, status FROM appointments
       WHERE id = ${appointmentId} AND store_id = ${storeId} FOR UPDATE`)).rows[0] as any;
     if (!row || !["confirmed", "started"].includes(String(row.status))) return false;
-    const lines = [...sanitizeCustomLines(row.custom_lines), line];
+    const lines = [...sanitizeCustomLines(row.custom_lines, true), line];
     await tx.update(appointments).set({ customLines: lines, duration: (Number(row.duration) || 0) + (Number(line.duration) || 0) })
       .where(eq(appointments.id, appointmentId));
     return true;
@@ -532,7 +553,7 @@ export async function removeServiceLine(storeId: number, appointmentId: number, 
     const row = (await tx.execute(sql`SELECT custom_lines, duration, status FROM appointments
       WHERE id = ${appointmentId} AND store_id = ${storeId} FOR UPDATE`)).rows[0] as any;
     if (!row || !["confirmed", "started"].includes(String(row.status))) return false;
-    const lines = sanitizeCustomLines(row.custom_lines);
+    const lines = sanitizeCustomLines(row.custom_lines, true);
     const line = lines[index];
     if (!line?.serviceId) return false;
     lines.splice(index, 1);
@@ -546,14 +567,41 @@ export async function removeServiceLine(storeId: number, appointmentId: number, 
  * A visit with several services (owner, 2026-10-21). Every service the visit's technician can do goes on ONE
  * ticket — the first service is the ticket's own (with its add-ons and nail options), each further one a service
  * line on it. A service that technician can't do (doesn't perform it, isn't available for it) becomes its own
- * ticket for the next technician in turn who can, linked to the visit (ticket_group_id), so checkout takes the
- * visit's tickets together (Group Pay) and each technician's commission is on their own ticket.
- * When TURN decides, someone who can do every service is preferred. Nothing is started.
+ * ticket, linked to the visit (ticket_group_id), so checkout takes the visit's tickets together (Group Pay) and
+ * each technician's commission is on their own ticket.
+ *
+ * That ticket waits, with nobody on it, until the client is done with the first technician (owner, 2026-10-21:
+ * a technician should not be handed a client who is still in another chair): `waits_for_appointment_id` points at
+ * the first ticket, and releaseFollowOnTickets gives it to whoever is next in turn once that ticket's service time
+ * is up after START, or it is checked out. Staff can still assign it by hand any time before.
+ *
+ * A Catalog package (`packageId`) is one item done by one technician: all of its services and add-ons go on the
+ * one ticket, with a price line making the ticket come to the package's price, and only a technician who does
+ * every one of its services is given it. When TURN decides, someone who can do every service is preferred.
+ * Nothing is started.
  */
 export async function createNailTicketGroup(
   deps: TicketDeps,
   input: CreateTicketInput & { extraServiceIds: number[] },
 ): Promise<TicketResult<CreatedTicketGroup>> {
+  let base: CreateTicketInput = input;
+  let packageName: string | null = null;
+  if (input.packageId) {
+    let pkg: Awaited<ReturnType<typeof resolvePackageForBooking>>;
+    try { pkg = await resolvePackageForBooking(Number(input.packageId), input.storeId); }
+    catch { return { ok: false as const, status: 400, message: "That package is no longer in the catalog." }; }
+    const packageLines: CustomLine[] = [];
+    for (const id of pkg.serviceIds.slice(1)) {
+      const line = await serviceLine(input.storeId, id);
+      if (!line) return { ok: false as const, status: 400, message: "One of the package's services is no longer in the catalog." };
+      packageLines.push(line);
+    }
+    packageName = pkg.name;
+    const difference = Math.round((pkg.price - pkg.listPrice) * 100) / 100;
+    if (difference !== 0) packageLines.push({ label: `${pkg.name} package`.slice(0, 60), price: difference, packageId: pkg.packageId });
+    base = { ...input, serviceId: pkg.primaryServiceId, packageId: pkg.packageId, packageLines,
+      addonIds: [...new Set([...(input.addonIds ?? []), ...pkg.addonIds])] };
+  }
   const extraIds = input.extraServiceIds;
   const lines = new Map<number, CustomLine>();
   for (const id of extraIds) {
@@ -562,24 +610,25 @@ export async function createNailTicketGroup(
     lines.set(id, line);
   }
   return withTurnLock(input.storeId, async () => {
-    const first = await storage.getService(input.serviceId);
+    const first = await storage.getService(base.serviceId);
     if (!first || first.storeId !== input.storeId) return { ok: false as const, status: 400, message: "One of the services is no longer in the catalog." };
     const turnDecides = input.autoAssign === true && !input.staffId && !input.leaveUnassigned;
     let common: number | null = null;
-    if (turnDecides && extraIds.length > 0) {
+    const allIds = [base.serviceId, ...(base.packageLines ?? []).filter((l) => l.serviceId).map((l) => l.serviceId!), ...extraIds];
+    if (turnDecides && allIds.length > 1) {
       const lists: number[][] = [];
       let turnOn = true;
-      for (const id of [input.serviceId, ...extraIds]) {
+      for (const id of allIds) {
         const e: any = await deps.getTurnEligibility(input.storeId, id);
         if (e.settings?.turnEnabled === false) turnOn = false;
         lists.push(e.eligibleTechnicians.map((t: any) => Number(t.id)));
       }
       common = turnOn ? commonTechnician(lists) : null;
     }
-    const made = await createNailTicketLocked(deps, { ...input, preferStaffId: common });
+    const made = await createNailTicketLocked(deps, { ...base, preferStaffId: common });
     if (!made.ok) return made;
     const visitTech = made.data.staffId;
-    const names = [first.name];
+    const names = [packageName ?? first.name];
     const others: CreatedTicketGroup["tickets"] = [];
     for (const id of extraIds) {
       const line = lines.get(id)!;
@@ -591,21 +640,89 @@ export async function createNailTicketGroup(
         names.push(line.label);
         continue;
       }
-      // Someone else does this service: its own ticket, next in turn for it, linked to the visit.
+      // Someone else does this service: its own ticket, linked to the visit, waiting for the first one to be done.
       const own = await createNailTicketLocked(deps, {
         storeId: input.storeId, clientId: input.clientId, serviceId: id, bookedByUserId: input.bookedByUserId ?? null,
-        startOnAssign: false, idempotencyKey: null, autoAssign: !input.leaveUnassigned, leaveUnassigned: input.leaveUnassigned,
+        startOnAssign: false, idempotencyKey: null, leaveUnassigned: true,
       });
       if (!own.ok) return { ok: false as const, status: own.status, message: `Ticket #${made.data.ticketNumber} was saved, but ${line.label} could not be given its own ticket: ${own.message}` };
+      await pool.query(`UPDATE appointments SET waits_for_appointment_id = $1 WHERE id = $2 AND store_id = $3`,
+        [made.data.appointmentId, own.data.appointmentId, input.storeId]);
       others.push({ ...own.data, serviceId: id, serviceName: line.label });
     }
     if (others.length) {
       await pool.query(`UPDATE appointments SET ticket_group_id = $1 WHERE store_id = $2 AND id = ANY($3::int[])`,
         [made.data.appointmentId, input.storeId, [made.data.appointmentId, ...others.map((t) => t.appointmentId)]]);
     }
-    const ticket = { ...made.data, serviceId: input.serviceId, serviceName: names.join(" + ") };
+    const ticket = { ...made.data, serviceId: base.serviceId, serviceName: names.join(" + ") };
     return { ok: true as const, data: { ...made.data, tickets: [ticket, ...others] } };
   });
+}
+
+/**
+ * A ticket waiting for the visit's first ticket (createNailTicketGroup) is ready once that ticket is done: its
+ * service time has run out after START, or it is checked out (or otherwise closed). It then stops waiting and goes
+ * to whoever TURN says is next, is free now and does every service on it; nobody free → it waits unassigned like
+ * any other ticket, for the next technician to finish a client (matchWaitingNailTicketForTechnician).
+ * Runs on a timer (routes.ts); every server process may run it — each ticket is claimed once.
+ */
+export async function releaseFollowOnTickets(deps: TicketDeps): Promise<number> {
+  const { rows } = await pool.query(
+    `SELECT f.id, f.store_id, f.service_id, f.staff_id
+       FROM appointments f
+       LEFT JOIN appointments p ON p.id = f.waits_for_appointment_id
+      WHERE f.waits_for_appointment_id IS NOT NULL
+        AND (f.status <> 'confirmed' OR f.staff_id IS NOT NULL OR p.id IS NULL
+          OR p.status NOT IN ('confirmed','started')
+          OR (p.status = 'started' AND p.started_at IS NOT NULL
+              AND p.started_at + make_interval(mins => COALESCE(p.duration, 0)) <= NOW()))
+      LIMIT 50`,
+  );
+  let released = 0;
+  for (const r of rows as any[]) {
+    const claimed = await pool.query(
+      `UPDATE appointments SET waits_for_appointment_id = NULL WHERE id = $1 AND waits_for_appointment_id IS NOT NULL RETURNING id`, [r.id]);
+    if (claimed.rowCount === 0) continue;
+    released++;
+    // Assigned by hand meanwhile, or no longer open: it simply stops waiting.
+    if (r.staff_id != null || r.service_id == null) continue;
+    const storeId = Number(r.store_id);
+    try {
+      await withTurnLock(storeId, () => assignReleasedTicket(deps, storeId, Number(r.id), Number(r.service_id)));
+    } catch (err: any) {
+      console.error("[nail-ticket] follow-on assign failed:", err?.message);
+    }
+    deps.notify(storeId, { appointmentId: Number(r.id), kind: "updated" });
+  }
+  return released;
+}
+
+async function assignReleasedTicket(deps: TicketDeps, storeId: number, appointmentId: number, serviceId: number): Promise<void> {
+  const row = (await pool.query(`SELECT duration, custom_lines, status, staff_id FROM appointments WHERE id = $1 AND store_id = $2`, [appointmentId, storeId])).rows[0];
+  if (!row || row.status !== "confirmed" || row.staff_id != null) return;
+  const eligibility: any = await deps.getTurnEligibility(storeId, serviceId);
+  if (eligibility.settings?.turnEnabled === false) return;
+  const lineIds = sanitizeCustomLines(row.custom_lines, true).filter((l) => l.serviceId).map((l) => l.serviceId!);
+  const buffer = await getBufferMinutes(storeId);
+  const now = new Date();
+  for (const t of eligibility.eligibleTechnicians ?? []) {
+    const staffId = Number(t.id);
+    let ok = true;
+    for (const id of lineIds) if (!(await techCanDo(staffId, id))) { ok = false; break; }
+    if (!ok) continue;
+    const slot = nextFreeStart(await busyBlocksFor(storeId, staffId, appointmentId), now, (Number(row.duration) || 0) + buffer);
+    if (slot.getTime() - now.getTime() >= 60_000) continue;
+    const claimed = await pool.query(`UPDATE appointments SET staff_id = $1 WHERE id = $2 AND store_id = $3 AND staff_id IS NULL AND status = 'confirmed' RETURNING id`,
+      [staffId, appointmentId, storeId]);
+    if (claimed.rowCount === 0) return;
+    await deps.assignAppointmentViaTurn({ storeId, serviceId, appointmentId, requestedStaffId: staffId, writeStaffId: true, consumeTurn: true, source: "nail_follow_on" })
+      .catch((e: any) => console.error("[nail-ticket] follow-on turn bookkeeping failed:", e?.message));
+    await pool.query(`UPDATE kiosk_checkins SET staff_id = $1, assigned_staff_name = $2 WHERE appointment_id = $3 AND store_id = $4`,
+      [staffId, String(t.name ?? ""), appointmentId, storeId]).catch(() => {});
+    await lockTech(deps, storeId, staffId).catch((e) => console.error("[nail-ticket] lock failed:", e?.message));
+    deps.notify(storeId, { appointmentId, kind: "assigned" });
+    return;
+  }
 }
 
 export async function createNailTicket(deps: TicketDeps, input: CreateTicketInput): Promise<TicketResult<CreatedTicket>> {
@@ -640,7 +757,15 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
     nailAdj = await nailConfig.resolveNailSelection(service.id, input.nail!);
   }
 
-  const customLines = sanitizeCustomLines(input.customLines);
+  // A package price line from a tablet (a ticket it saved offline) stays only when it is exactly what the
+  // catalog says that package comes to; otherwise the services are charged at catalog price.
+  const tabletLines: CustomLine[] = [];
+  for (const line of sanitizeCustomLines(input.customLines, true)) {
+    if (!line.packageId) { tabletLines.push(line); continue; }
+    const pkg = await resolvePackageForBooking(line.packageId, storeId).catch(() => null);
+    if (pkg && pkg.primaryServiceId === service.id && Math.round((pkg.price - pkg.listPrice) * 100) / 100 === line.price) tabletLines.push(line);
+  }
+  const customLines = [...(input.packageLines ?? []), ...tabletLines];
   const pricing = priceTicket({
     serviceDuration: service.duration,
     servicePrice: Number(service.price),
@@ -650,6 +775,12 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
     customPrice: sumCustom(customLines),
     customDuration: customDuration(customLines),
   });
+  // Every service on the ticket, so its technician is someone who does all of them.
+  const ticketServiceIds = [service.id, ...customLines.filter((l) => l.serviceId).map((l) => l.serviceId!)];
+  const canDoAll = async (staffId: number) => {
+    for (const id of ticketServiceIds) if (!(await techCanDo(staffId, id))) return false;
+    return true;
+  };
 
   // ── Technician ─────────────────────────────────────────────────────────────
   const leaveUnassigned = input.leaveUnassigned === true;
@@ -673,7 +804,7 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
     if (!member || member.storeId !== storeId || ["removed", "deactivated"].includes(String(member.status))) {
       return fail(400, "That technician isn't available.");
     }
-    if (!(await techCanDo(requested, service.id))) return fail(400, `${member.name} doesn't perform this service.`);
+    if (!(await canDoAll(requested))) return fail(400, `${member.name} doesn't perform ${ticketServiceIds.length > 1 ? "every service on this ticket" : "this service"}.`);
     staffId = member.id;
     staffName = member.name;
   } else if (sameTech) {
@@ -690,7 +821,13 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
     const preferred = input.preferStaffId != null
       ? eligibility.eligibleTechnicians.find((t: any) => Number(t.id) === Number(input.preferStaffId))
       : undefined;
-    const next = (eligibility as any).settings?.turnEnabled === false ? undefined : (preferred ?? eligibility.eligibleTechnicians[0]);
+    // A ticket holding several services (a package's) goes only to someone who does them all.
+    let first = eligibility.eligibleTechnicians[0];
+    if (!preferred && ticketServiceIds.length > 1) {
+      first = undefined;
+      for (const t of eligibility.eligibleTechnicians) if (await canDoAll(Number(t.id))) { first = t; break; }
+    }
+    const next = (eligibility as any).settings?.turnEnabled === false ? undefined : (preferred ?? first);
     if (next) {
       staffId = Number(next.id);
       staffName = String(next.name);
@@ -752,7 +889,7 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
       durationMinutes: pricing.duration - nailAdj.durationAdjustment,
       staffId, serviceId: service.id, customerId: client.id, status: "confirmed",
       notes: input.notes ?? null, checkedInAt: now, clientRequestedStaff: false,
-      resourceId, ticketNumberOverride,
+      resourceId, ticketNumberOverride, packageId: input.packageId ?? null,
     }, tx);
     if (!created.ok) return { ok: false as const, message: created.error.message };
     const appointmentId = created.data.id;
@@ -870,7 +1007,10 @@ export async function updateNailTicketItems(deps: TicketDeps, input: UpdateItems
     nailAdj = await nailConfig.resolveNailSelection(service.id, input.nail!);
   }
 
-  const customLines = sanitizeCustomLines(input.customLines);
+  // A package price line stays only as the server saved it; the tablet can keep it or drop it, never make one.
+  const savedPackageLines = sanitizeCustomLines((appt as any).customLines, true).filter((l) => l.packageId);
+  const customLines = sanitizeCustomLines(input.customLines, true)
+    .filter((l) => !l.packageId || savedPackageLines.some((s) => s.packageId === l.packageId && s.price === l.price));
   const pricing = priceTicket({
     serviceDuration: service.duration,
     servicePrice: Number(service.price),
@@ -899,7 +1039,7 @@ export async function updateNailTicketItems(deps: TicketDeps, input: UpdateItems
       const n = input.expected.nail;
       if (locked.service_id !== input.expected.serviceId || locked.duration !== input.expected.duration ||
           !sameIds(currentAddons.map((a) => a.id), input.expected.addonIds) ||
-          JSON.stringify(sanitizeCustomLines(locked.custom_lines)) !== JSON.stringify(sanitizeCustomLines(input.expected.customLines)) ||
+          JSON.stringify(sanitizeCustomLines(locked.custom_lines, true)) !== JSON.stringify(sanitizeCustomLines(input.expected.customLines, true)) ||
           (currentNail?.nailSizeId ?? null) !== (n?.nailSizeId ?? null) ||
           (currentNail?.nailShapeId ?? null) !== (n?.nailShapeId ?? null) ||
           (currentNail?.nailArtApplicationId ?? null) !== (n?.nailArtApplicationId ?? null) ||
@@ -1043,6 +1183,8 @@ export async function reassignNailTicket(
 export interface BoardTicket {
   id: number;
   ticketNumber: number | null;
+  /** A ticket waiting for the visit's first ticket to be done (createNailTicketGroup): that ticket's number. */
+  waitsForTicket?: number;
   status: "confirmed" | "started";
   date: string;
   checkedInAt: string | null;
@@ -1172,7 +1314,8 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
   const shiftStart = await getLastDayCloseAt(storeId);
 
   const { rows } = await pool.query(
-    `SELECT a.id, a.ticket_number, a.ticket_group_id, a.status, a.date, a.duration, a.checked_in_at, a.started_at, a.staff_id,
+    `SELECT a.id, a.ticket_number, a.ticket_group_id, a.status,
+            (SELECT w.ticket_number FROM appointments w WHERE w.id = a.waits_for_appointment_id) AS waits_for_number, a.date, a.duration, a.checked_in_at, a.started_at, a.staff_id,
             ${walkInSQL("a")} AS walk_in, a.customer_id, a.custom_lines, c.full_name AS client_name, COALESCE(c.loyalty_points, 0) AS loyalty_points,
             (SELECT COALESCE(p.display_phone, p.phone_number_e164) FROM client_phones p
                WHERE p.client_id = c.id ORDER BY p.is_primary DESC, p.id LIMIT 1) AS client_phone,
@@ -1218,11 +1361,12 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
       if (art) nailLines.push({ label: `Art: ${art}`, price: Number(r.art_adj) || 0 });
     }
     const nailAdj = nailLines.reduce((sum, l) => sum + l.price, 0);
-    const customLines = sanitizeCustomLines(r.custom_lines);
+    const customLines = sanitizeCustomLines(r.custom_lines, true);
     return {
       id: r.id,
       ticketNumber: r.ticket_number ?? null,
       groupId: r.ticket_group_id ?? null,
+      ...(r.waits_for_number != null ? { waitsForTicket: Number(r.waits_for_number) } : {}),
       status: r.status,
       date: new Date(r.date).toISOString(),
       checkedInAt: r.checked_in_at ? new Date(r.checked_in_at).toISOString() : null,

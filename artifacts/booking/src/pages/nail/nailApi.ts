@@ -24,6 +24,8 @@ export interface BoardTicket {
   ticketNumber: number | null;
   /** Set on tickets saved together as one visit of several services — the id of the first one. */
   groupId?: number | null;
+  /** Waiting for the visit's first ticket (this number) to be done before a technician is given it. */
+  waitsForTicket?: number;
   status: "confirmed" | "started";
   date: string;
   checkedInAt: string | null;
@@ -40,7 +42,7 @@ export interface BoardTicket {
     priceAdjustment: number;
     lines: { label: string; price: number }[];
   } | null;
-  customLines: { label: string; price: number; isRetail?: boolean; serviceId?: number; duration?: number }[];
+  customLines: { label: string; price: number; isRetail?: boolean; serviceId?: number; duration?: number; packageId?: number }[];
   staff: { id: number; name: string; color: string | null } | null;
   total: number;
   /** Made at the desk (a walk-in), not an advance booking: only walk-ins count in the turn rotation. */
@@ -468,7 +470,7 @@ export interface TicketBody {
   serviceId: number;
   addonIds: number[];
   pick: NailPick;
-  customLines: { label: string; price: number; isRetail?: boolean; serviceId?: number; duration?: number }[];
+  customLines: { label: string; price: number; isRetail?: boolean; serviceId?: number; duration?: number; packageId?: number }[];
 }
 
 /** What a ticket saved on the device needs to be shown and sent later (the server works these out itself when online). */
@@ -486,6 +488,14 @@ export interface TicketOfflineContext {
   extras?: { id: number; name: string; price: number; duration: number }[];
 }
 
+type NewTicketBody = TicketBody & {
+  clientId: number; staffId?: number | null; checkinId?: number | null; leaveUnassigned?: boolean; autoAssign?: boolean; extraServiceIds?: number[];
+  /** A Catalog package as the ticket. Online the server makes its lines from the catalog; `packageLines` are the
+   *  same lines made on this tablet (its further services and its price line), used only when the ticket is saved offline. */
+  packageId?: number | null;
+  packageLines?: TicketBody["customLines"];
+};
+
 /**
  * `autoAssign`: TURN gives it to the next tech in line who can do the service (it waits with them until START); nobody free → saved waiting, unassigned.
  *
@@ -494,7 +504,7 @@ export interface TicketOfflineContext {
  * whichever way it travels, so a request that reached the server but whose reply was lost is not made twice.
  */
 export async function createTicket(
-  body: TicketBody & { clientId: number; staffId?: number | null; checkinId?: number | null; leaveUnassigned?: boolean; autoAssign?: boolean; extraServiceIds?: number[] },
+  body: NewTicketBody,
   offline?: TicketOfflineContext,
 ): Promise<CreatedTicket & { offline?: boolean }> {
   const key = newIdempotencyKey("ticket.create");
@@ -513,10 +523,13 @@ export async function createTicket(
     }
     // One technician for the whole visit when one person can take every service of it.
     let visitTech: OfflineLineTech | null = null;
+    const packageLines = body.packageLines ?? [];
+    const pkgIds = packageLines.filter((l) => l.serviceId).map((l) => l.serviceId!);
     if (!staff && body.autoAssign && !body.leaveUnassigned) {
-      if (extras.length > 0) {
-        const lines = (await Promise.all([body.serviceId, ...extras.map((e) => e.id)].map((id) => offlineTurnLine(offline.storeId, id)))).filter((l): l is OfflineLine => !!l);
-        if (lines.length === extras.length + 1) visitTech = commonOfflineTech(lines);
+      if (extras.length > 0 || pkgIds.length > 0) {
+        const ids = [body.serviceId, ...pkgIds, ...extras.map((e) => e.id)];
+        const lines = (await Promise.all(ids.map((id) => offlineTurnLine(offline.storeId, id)))).filter((l): l is OfflineLine => !!l);
+        if (lines.length === ids.length) visitTech = commonOfflineTech(lines);
       }
       const next = visitTech ?? await offlineTurnPick(offline.storeId, body.serviceId);
       if (next) { staff = asStaff(next); assignedOffline = true; }
@@ -534,12 +547,15 @@ export async function createTicket(
       storeId: offline.storeId, clientId: body.clientId, clientName: offline.client.name, phone: offline.client.phone, walkinId: body.checkinId ?? null,
       service: { id: body.serviceId, ...offline.service }, addons: offline.addons,
       nail: toNailBody(body.pick), nailLines: offline.nailLines, nailPriceAdjustment: offline.nailPriceAdjustment,
-      customLines: [...serviceLines, ...body.customLines], staff, assignedOffline,
-      total: offline.total + serviceLines.reduce((n, l) => n + l.price, 0), duration: offline.duration + serviceLines.reduce((n, l) => n + l.duration, 0),
+      // A package's own lines first: its further services and its price line, all with this ticket's technician.
+      customLines: [...packageLines, ...serviceLines, ...body.customLines], staff, assignedOffline,
+      total: offline.total + [...packageLines, ...serviceLines].reduce((n, l) => n + l.price, 0),
+      duration: offline.duration + [...packageLines, ...serviceLines].reduce((n, l) => n + (l.serviceId ? Number(l.duration) || 0 : 0), 0),
     }, key);
     for (const extra of ownTickets) {
-      let extraStaff: TicketRecord["staff"] = null;
-      if (body.autoAssign && !body.leaveUnassigned) { const next = await offlineTurnPick(offline.storeId, extra.id); extraStaff = next ? asStaff(next) : null; }
+      // Saved with nobody on it, as online: the client is still with the first technician. Staff assign it when
+      // the client is ready for it.
+      const extraStaff: TicketRecord["staff"] = null;
       await nailOffline.createTicket({
         storeId: offline.storeId, clientId: body.clientId, clientName: offline.client.name, phone: offline.client.phone, walkinId: null,
         service: extra, addons: [], nail: toNailBody(EMPTY_PICK), nailLines: [], nailPriceAdjustment: 0,
@@ -581,7 +597,7 @@ async function offlineAssignProblem(storeId: number, serviceId: number, staffId:
   return null;
 }
 
-const createTicketOnServer = (body: TicketBody & { clientId: number; staffId?: number | null; checkinId?: number | null; leaveUnassigned?: boolean; autoAssign?: boolean }, key: string) =>
+const createTicketOnServer = (body: NewTicketBody, key: string) =>
   call<CreatedTicket>("/api/nail/tickets", {
     method: "POST",
     headers: { "X-Idempotency-Key": key },
@@ -595,6 +611,9 @@ const createTicketOnServer = (body: TicketBody & { clientId: number; staffId?: n
       leaveUnassigned: body.leaveUnassigned === true,
       autoAssign: body.autoAssign === true,
       checkinId: body.checkinId ?? null,
+      // The visit's further services (on this ticket, or their own when its technician can't do them) and a package.
+      ...(body.extraServiceIds?.length ? { extraServiceIds: body.extraServiceIds } : {}),
+      ...(body.packageId ? { packageId: body.packageId } : {}),
     }),
   });
 

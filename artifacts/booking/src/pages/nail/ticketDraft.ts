@@ -170,6 +170,8 @@ export interface DraftCustomLine {
   /** Another service of the visit, saved as a line on the ticket: its catalog id and time. */
   serviceId?: number;
   duration?: number;
+  /** A Catalog package's price line (the package price less its parts); may be below zero. */
+  packageId?: number;
 }
 
 export function draftTotals(
