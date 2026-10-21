@@ -108,7 +108,12 @@ export interface TicketPricing {
 
 /** `isRetail` marks a product sale rung up as a custom line — commissioned at the product rate,
  *  not the service rate, when this ticket is later paid (alone or as a Group Pay member). */
-export interface CustomLine { label: string; price: number; isRetail?: boolean }
+/**
+ * A line on the ticket beyond its first service: a keypad "Custom Amount", or — with `serviceId` — another
+ * service of the same visit (owner, 2026-10-21: one ticket holds every service, done by one technician).
+ * A service line carries the catalog's price and its time; the server sets both, never the tablet.
+ */
+export interface CustomLine { label: string; price: number; isRetail?: boolean; serviceId?: number; duration?: number }
 
 /** Keypad lines from the client: trimmed labels, 0 < price <= 9999.99 to the cent, at most 20. */
 export function sanitizeCustomLines(raw: unknown): CustomLine[] {
@@ -116,10 +121,18 @@ export function sanitizeCustomLines(raw: unknown): CustomLine[] {
   const out: CustomLine[] = [];
   for (const r of raw) {
     const price = Math.round(Number((r as any)?.price) * 100) / 100;
-    if (!Number.isFinite(price) || price <= 0 || price > 9999.99) continue;
+    // A service line may be free; a keypad amount must be more than nothing.
+    const isService = Number.isSafeInteger(Number((r as any)?.serviceId)) && Number((r as any)?.serviceId) > 0;
+    if (!Number.isFinite(price) || price < 0 || (!isService && price === 0) || price > 9999.99) continue;
     const label = String((r as any)?.label ?? "").trim().slice(0, 60) || "Custom Amount";
     const line: CustomLine = { label, price };
     if ((r as any)?.isRetail === true) line.isRetail = true;
+    const serviceId = Number((r as any)?.serviceId);
+    if (Number.isSafeInteger(serviceId) && serviceId > 0) {
+      line.serviceId = serviceId;
+      const duration = Math.round(Number((r as any)?.duration));
+      if (Number.isFinite(duration) && duration > 0 && duration <= 600) line.duration = duration;
+    }
     out.push(line);
     if (out.length >= 20) break;
   }
@@ -127,6 +140,17 @@ export function sanitizeCustomLines(raw: unknown): CustomLine[] {
 }
 
 const sumCustom = (lines: CustomLine[]) => Math.round(lines.reduce((s, l) => s + l.price, 0) * 100) / 100;
+/** The time the visit's further services take. */
+const customDuration = (lines: CustomLine[]) => lines.reduce((s, l) => s + (l.serviceId ? Number(l.duration) || 0 : 0), 0);
+
+/** A further service of the visit as a ticket line, priced and timed from the catalog. Null when it can't be added. */
+export async function serviceLine(storeId: number, serviceId: number): Promise<CustomLine | null> {
+  const svc = await storage.getService(serviceId);
+  if (!svc || svc.storeId !== storeId || svc.isActive === false) return null;
+  const price = Math.round(Number(svc.price) * 100) / 100;
+  if (!Number.isFinite(price) || price < 0) return null;
+  return { label: String(svc.name).slice(0, 60), price, serviceId: svc.id, ...(Number(svc.duration) > 0 ? { duration: Number(svc.duration) } : {}) };
+}
 
 /** Duration + price of a service with its add-ons and nail adjustments. */
 export function priceTicket(args: {
@@ -135,13 +159,15 @@ export function priceTicket(args: {
   addons: { duration: number | null; price: number | string }[];
   nailPriceAdj?: number;
   nailDurationAdj?: number;
-  /** Keypad "Custom Amount" lines — money only, no time. */
+  /** Keypad "Custom Amount" lines and the visit's further services — their money. */
   customPrice?: number;
+  /** The further services' time (keypad lines take none). */
+  customDuration?: number;
 }): TicketPricing {
   const addonDuration = args.addons.reduce((s, a) => s + (Number(a.duration) || 0), 0);
   const addonPrice = args.addons.reduce((s, a) => s + (Number(a.price) || 0), 0);
   return {
-    duration: Math.max(1, Number(args.serviceDuration) + addonDuration + (args.nailDurationAdj ?? 0)),
+    duration: Math.max(1, Number(args.serviceDuration) + addonDuration + (args.nailDurationAdj ?? 0) + (args.customDuration ?? 0)),
     price: Number(args.servicePrice) + addonPrice + (args.nailPriceAdj ?? 0) + (args.customPrice ?? 0),
   };
 }
@@ -475,68 +501,110 @@ export function commonTechnician(eligibleByService: number[][]): number | null {
   return first.find((id) => sets.every((set) => set.has(id))) ?? null;
 }
 
+/** Reasons a technician can't take on another service of the visit. Being busy (with this same client) is fine. */
+const CANNOT_ADD = ["service_not_supported", "not_clocked_in", "paused", "appointment_within_exclusion_window"];
+
+/** Can this technician do this service now: clocked in, performs it, not on break, no appointment coming up? */
+export async function technicianCanDo(deps: TicketDeps, storeId: number, staffId: number, serviceId: number): Promise<boolean> {
+  const e: any = await deps.getTurnEligibility(storeId, serviceId);
+  const t = (e.technicians ?? []).find((x: any) => Number(x.id) === staffId);
+  if (!t || t.clockedIn !== true) return false;
+  const reasons: string[] = Array.isArray(t.exclusionReasons) ? t.exclusionReasons : Array.isArray(t.reasons) ? t.reasons : [];
+  return !reasons.some((r) => CANNOT_ADD.includes(r));
+}
+
+/** Adds a service line to a saved ticket: its price and time join the ticket's. */
+export async function appendServiceLine(storeId: number, appointmentId: number, line: CustomLine): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const row = (await tx.execute(sql`SELECT custom_lines, duration, status FROM appointments
+      WHERE id = ${appointmentId} AND store_id = ${storeId} FOR UPDATE`)).rows[0] as any;
+    if (!row || !["confirmed", "started"].includes(String(row.status))) return false;
+    const lines = [...sanitizeCustomLines(row.custom_lines), line];
+    await tx.update(appointments).set({ customLines: lines, duration: (Number(row.duration) || 0) + (Number(line.duration) || 0) })
+      .where(eq(appointments.id, appointmentId));
+    return true;
+  });
+}
+
+/** Takes the service line at `index` off a saved ticket (only a service line), with its time. */
+export async function removeServiceLine(storeId: number, appointmentId: number, index: number): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const row = (await tx.execute(sql`SELECT custom_lines, duration, status FROM appointments
+      WHERE id = ${appointmentId} AND store_id = ${storeId} FOR UPDATE`)).rows[0] as any;
+    if (!row || !["confirmed", "started"].includes(String(row.status))) return false;
+    const lines = sanitizeCustomLines(row.custom_lines);
+    const line = lines[index];
+    if (!line?.serviceId) return false;
+    lines.splice(index, 1);
+    await tx.update(appointments).set({ customLines: lines.length ? lines : null, duration: Math.max(1, (Number(row.duration) || 0) - (Number(line.duration) || 0)) })
+      .where(eq(appointments.id, appointmentId));
+    return true;
+  });
+}
+
 /**
- * A visit of several services: one ticket per service, saved together.
- *
- * One technician takes all of them when TURN has someone eligible for every service; otherwise each
- * service goes to the next technician in turn who can do it. Nothing is started here.
- * Add-ons, nail options, custom lines and the check-in marker belong to the first service.
+ * A visit with several services (owner, 2026-10-21). Every service the visit's technician can do goes on ONE
+ * ticket — the first service is the ticket's own (with its add-ons and nail options), each further one a service
+ * line on it. A service that technician can't do (doesn't perform it, isn't available for it) becomes its own
+ * ticket for the next technician in turn who can, linked to the visit (ticket_group_id), so checkout takes the
+ * visit's tickets together (Group Pay) and each technician's commission is on their own ticket.
+ * When TURN decides, someone who can do every service is preferred. Nothing is started.
  */
 export async function createNailTicketGroup(
   deps: TicketDeps,
   input: CreateTicketInput & { extraServiceIds: number[] },
 ): Promise<TicketResult<CreatedTicketGroup>> {
-  const serviceIds = [input.serviceId, ...input.extraServiceIds];
+  const extraIds = input.extraServiceIds;
+  const lines = new Map<number, CustomLine>();
+  for (const id of extraIds) {
+    const line = await serviceLine(input.storeId, id);
+    if (!line) return { ok: false as const, status: 400, message: "One of the services is no longer in the catalog." };
+    lines.set(id, line);
+  }
   return withTurnLock(input.storeId, async () => {
-    const names = new Map<number, string>();
-    for (const id of serviceIds) {
-      const svc = await storage.getService(id);
-      if (!svc || svc.storeId !== input.storeId) return { ok: false as const, status: 400, message: "One of the services is no longer in the catalog." };
-      names.set(id, svc.name);
-    }
-
-    // Staff picking a technician, or a check-in already handed to one, decides the first service as before.
+    const first = await storage.getService(input.serviceId);
+    if (!first || first.storeId !== input.storeId) return { ok: false as const, status: 400, message: "One of the services is no longer in the catalog." };
     const turnDecides = input.autoAssign === true && !input.staffId && !input.leaveUnassigned;
     let common: number | null = null;
-    if (turnDecides && serviceIds.length > 1) {
+    if (turnDecides && extraIds.length > 0) {
       const lists: number[][] = [];
       let turnOn = true;
-      for (const id of serviceIds) {
+      for (const id of [input.serviceId, ...extraIds]) {
         const e: any = await deps.getTurnEligibility(input.storeId, id);
         if (e.settings?.turnEnabled === false) turnOn = false;
         lists.push(e.eligibleTechnicians.map((t: any) => Number(t.id)));
       }
       common = turnOn ? commonTechnician(lists) : null;
     }
-
-    const first = await createNailTicket(deps, { ...input, preferStaffId: common });
-    if (!first.ok) return first;
-    const tickets: CreatedTicketGroup["tickets"] = [
-      { ...first.data, serviceId: input.serviceId, serviceName: names.get(input.serviceId)! },
-    ];
-    // The whole visit stays with the first service's technician when that was the plan (TURN found one
-    // person for everything) or when staff or the check-in chose them and they can do the service.
-    const keepWith = common != null && first.data.staffId === common ? common : input.staffId ? first.data.staffId : null;
-
-    for (const serviceId of input.extraServiceIds) {
-      const base: CreateTicketInput = {
-        storeId: input.storeId, clientId: input.clientId, serviceId, bookedByUserId: input.bookedByUserId ?? null,
-        startOnAssign: false, idempotencyKey: null,
-      };
-      let made = keepWith != null ? await createNailTicket(deps, { ...base, sameTechStaffId: keepWith }) : null;
-      if (!made || !made.ok) made = await createNailTicket(deps, { ...base, autoAssign: !input.leaveUnassigned, leaveUnassigned: input.leaveUnassigned });
-      if (!made.ok) {
-        // The first service is already saved; say what happened instead of leaving a half-made visit unexplained.
-        return { ok: false as const, status: made.status, message: `Ticket #${first.data.ticketNumber} was saved, but ${names.get(serviceId)} could not be added: ${made.message}` };
+    const made = await createNailTicketLocked(deps, { ...input, preferStaffId: common });
+    if (!made.ok) return made;
+    const visitTech = made.data.staffId;
+    const names = [first.name];
+    const others: CreatedTicketGroup["tickets"] = [];
+    for (const id of extraIds) {
+      const line = lines.get(id)!;
+      // The visit's technician does it when they can; a ticket nobody has yet keeps the whole visit together.
+      if (visitTech == null || await technicianCanDo(deps, input.storeId, visitTech, id)) {
+        if (!(await appendServiceLine(input.storeId, made.data.appointmentId, line))) {
+          return { ok: false as const, status: 409, message: `Ticket #${made.data.ticketNumber} was saved, but ${line.label} could not be added to it.` };
+        }
+        names.push(line.label);
+        continue;
       }
-      tickets.push({ ...made.data, serviceId, serviceName: names.get(serviceId)! });
+      // Someone else does this service: its own ticket, next in turn for it, linked to the visit.
+      const own = await createNailTicketLocked(deps, {
+        storeId: input.storeId, clientId: input.clientId, serviceId: id, bookedByUserId: input.bookedByUserId ?? null,
+        startOnAssign: false, idempotencyKey: null, autoAssign: !input.leaveUnassigned, leaveUnassigned: input.leaveUnassigned,
+      });
+      if (!own.ok) return { ok: false as const, status: own.status, message: `Ticket #${made.data.ticketNumber} was saved, but ${line.label} could not be given its own ticket: ${own.message}` };
+      others.push({ ...own.data, serviceId: id, serviceName: line.label });
     }
-
-    if (tickets.length > 1) {
+    if (others.length) {
       await pool.query(`UPDATE appointments SET ticket_group_id = $1 WHERE store_id = $2 AND id = ANY($3::int[])`,
-        [first.data.appointmentId, input.storeId, tickets.map((t) => t.appointmentId)]);
+        [made.data.appointmentId, input.storeId, [made.data.appointmentId, ...others.map((t) => t.appointmentId)]]);
     }
-    return { ok: true as const, data: { ...first.data, tickets } };
+    const ticket = { ...made.data, serviceId: input.serviceId, serviceName: names.join(" + ") };
+    return { ok: true as const, data: { ...made.data, tickets: [ticket, ...others] } };
   });
 }
 
@@ -580,6 +648,7 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
     nailPriceAdj: nailAdj.priceAdjustment,
     nailDurationAdj: nailAdj.durationAdjustment,
     customPrice: sumCustom(customLines),
+    customDuration: customDuration(customLines),
   });
 
   // ── Technician ─────────────────────────────────────────────────────────────
@@ -809,6 +878,7 @@ export async function updateNailTicketItems(deps: TicketDeps, input: UpdateItems
     nailPriceAdj: nailAdj.priceAdjustment,
     nailDurationAdj: nailAdj.durationAdjustment,
     customPrice: sumCustom(customLines),
+    customDuration: customDuration(customLines),
   });
 
   // Every write (including the snapshot helper) must use the same connection. A failed

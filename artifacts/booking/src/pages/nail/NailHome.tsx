@@ -775,7 +775,9 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     setService(svc);
     pickSeededFor.current = svc.id;
     setAddonIds(t.addons.map((a) => a.id));
-    setCustoms(t.customLines.map((c) => ({ id: ++customSeq.current, label: c.label, price: c.price, isRetail: c.isRetail })));
+    // A service line (another service of the visit) keeps its service and time through the edit.
+    setCustoms(t.customLines.map((c) => ({ id: ++customSeq.current, label: c.label, price: c.price, isRetail: c.isRetail,
+      ...(c.serviceId ? { serviceId: c.serviceId, duration: c.duration } : {}) })));
     setPick({ size: t.nail?.sizeId ?? null, shape: t.nail?.shapeId ?? null, application: t.nail?.applicationId ?? null, effect: t.nail?.effectId ?? null });
     setEditing(t);
     setActiveGroup(groups.find((g) => g.services.some((s) => s.id === svc.id))?.key ?? activeGroup);
@@ -789,7 +791,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   };
 
   // ── mutations ─────────────────────────────────────────────────────────────
-  const customLines = useMemo(() => customs.map(({ label, price, isRetail }) => ({ label, price, isRetail })), [customs]);
+  const customLines = useMemo(() => customs.map(({ label, price, isRetail, serviceId, duration }) => ({ label, price, isRetail,
+    ...(serviceId ? { serviceId, duration } : {}) })), [customs]);
   // Saving a ticket hands it to TURN: the next technician in line who can do the service gets it. It waits with
   // them until START is pressed. Nobody free → it waits, unassigned, and the next tech to finish a client picks it up.
   const checkinStaffId = checkinId != null ? markers.find((m) => m.id === checkinId)?.staffId ?? null : null;

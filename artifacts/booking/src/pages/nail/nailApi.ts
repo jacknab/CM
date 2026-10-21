@@ -40,7 +40,7 @@ export interface BoardTicket {
     priceAdjustment: number;
     lines: { label: string; price: number }[];
   } | null;
-  customLines: { label: string; price: number; isRetail?: boolean }[];
+  customLines: { label: string; price: number; isRetail?: boolean; serviceId?: number; duration?: number }[];
   staff: { id: number; name: string; color: string | null } | null;
   total: number;
   /** Made at the desk (a walk-in), not an advance booking: only walk-ins count in the turn rotation. */
@@ -467,7 +467,7 @@ export interface TicketBody {
   serviceId: number;
   addonIds: number[];
   pick: NailPick;
-  customLines: { label: string; price: number; isRetail?: boolean }[];
+  customLines: { label: string; price: number; isRetail?: boolean; serviceId?: number; duration?: number }[];
 }
 
 /** What a ticket saved on the device needs to be shown and sent later (the server works these out itself when online). */
@@ -520,20 +520,25 @@ export async function createTicket(
       const next = visitTech ?? await offlineTurnPick(offline.storeId, body.serviceId);
       if (next) { staff = asStaff(next); assignedOffline = true; }
     }
+    // Every further service the visit's technician can do goes on this ticket as a service line (as online,
+    // nailTickets.createNailTicketGroup); one they can't do becomes its own ticket for whoever is next for it.
+    const onTicket: typeof extras = [];
+    const ownTickets: typeof extras = [];
+    for (const extra of extras) {
+      if (!staff || visitTech || !(await offlineAssignProblem(offline.storeId, extra.id, staff.id))) onTicket.push(extra);
+      else ownTickets.push(extra);
+    }
+    const serviceLines = onTicket.map((e) => ({ label: e.name, price: e.price, serviceId: e.id, duration: e.duration }));
     const rec = await nailOffline.createTicket({
       storeId: offline.storeId, clientId: body.clientId, clientName: offline.client.name, phone: offline.client.phone, walkinId: body.checkinId ?? null,
       service: { id: body.serviceId, ...offline.service }, addons: offline.addons,
       nail: toNailBody(body.pick), nailLines: offline.nailLines, nailPriceAdjustment: offline.nailPriceAdjustment,
-      customLines: body.customLines, staff, assignedOffline, total: offline.total, duration: offline.duration,
+      customLines: [...serviceLines, ...body.customLines], staff, assignedOffline,
+      total: offline.total + serviceLines.reduce((n, l) => n + l.price, 0), duration: offline.duration + serviceLines.reduce((n, l) => n + l.duration, 0),
     }, key);
-    // Each further service of the visit is a ticket of its own. It stays with the first service's technician
-    // when they perform it; otherwise it goes to whoever is next in line for it, or waits unassigned.
-    for (const extra of extras) {
+    for (const extra of ownTickets) {
       let extraStaff: TicketRecord["staff"] = null;
-      if (staff && !body.leaveUnassigned) {
-        if (visitTech || !(await offlineAssignProblem(offline.storeId, extra.id, staff.id))) extraStaff = staff;
-        else if (body.autoAssign) { const next = await offlineTurnPick(offline.storeId, extra.id); extraStaff = next ? asStaff(next) : null; }
-      }
+      if (body.autoAssign && !body.leaveUnassigned) { const next = await offlineTurnPick(offline.storeId, extra.id); extraStaff = next ? asStaff(next) : null; }
       await nailOffline.createTicket({
         storeId: offline.storeId, clientId: body.clientId, clientName: offline.client.name, phone: offline.client.phone, walkinId: null,
         service: extra, addons: [], nail: toNailBody(EMPTY_PICK), nailLines: [], nailPriceAdjustment: 0,

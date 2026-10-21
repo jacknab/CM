@@ -22,7 +22,7 @@ import { buildCheckoutReceipt } from "@/lib/thermalPrinter";
 import type { ReceiptLine } from "@/lib/receiptSections";
 import { buildNativeReceiptPayload } from "@/lib/receiptPayload";
 import { openCashDrawerHardware, recordNoSale } from "@/lib/cashDrawer";
-import { checkoutRequestKey, lookupGiftCard, queueReceiptText, type BoardTicket, type FinalizeData, type GiftCardInfo } from "./nailApi";
+import { boardKey, checkoutRequestKey, lookupGiftCard, queueReceiptText, type BoardTicket, type FinalizeData, type GiftCardInfo } from "./nailApi";
 import { bridgeState, isNativeApp, useCardPayments } from "./useCardPayments";
 import { frontdeskReaderMethod, readNailCardMethod, type NailCardMethod } from "./cardMethod";
 import { verifyCardCharge } from "../frontdesk/verifyCardCharge";
@@ -507,11 +507,53 @@ export function CheckoutMode(p: Props) {
   // Until PAY / CHECKOUT is pressed the checkout works like the ticket screen: the right panel is the key grid
   // and a service picked there is added to the bill as another line (ERC takes the last one off). The lines
   // are part of the sale when it is closed.
-  const addServiceLine = (svc: CatalogService) => {
-    if (p.paid || p.finalizing) return;
+  // A service picked in checkout is saved onto the ticket (owner, 2026-10-21): the ticket's technician does it
+  // when they can, otherwise it becomes its own ticket for the next technician in turn and joins this sale
+  // (Group Pay), so each technician's commission is on their own ticket. With no connection, or a ticket only
+  // on this tablet, it stays a line of this sale, as before.
+  const [addingService, setAddingService] = useState(false);
+  const refreshBoard = () => queryClient.invalidateQueries({ queryKey: boardKey(p.storeId) });
+  const addServiceLine = async (svc: CatalogService) => {
+    if (p.paid || p.finalizing || addingService) return;
     const price = Number(svc.price) || 0;
-    addExtra(svc.name, price, "custom");
-    say(`${svc.name.toUpperCase()} ADDED · ${money(price)}`, "success");
+    const onSaleOnly = () => { addExtra(svc.name, price, "custom"); say(`${svc.name.toUpperCase()} ADDED · ${money(price)}`, "success"); };
+    if (ticket.id <= 0 || syncEngine.isOffline()) { onSaleOnly(); return; }
+    setAddingService(true);
+    try {
+      const r = await fetch(`/api/nail/tickets/${ticket.id}/services`, {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ serviceId: svc.id }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { say(String(d.message || "Could not add the service").toUpperCase(), "error"); return; }
+      if (d.added === "own_ticket") {
+        setLinkedIds((cur) => (cur.includes(Number(d.appointmentId)) ? cur : [...cur, Number(d.appointmentId)]));
+        say(`${svc.name.toUpperCase()} → TICKET #${d.ticketNumber}${d.staffName ? ` · ${String(d.staffName).toUpperCase()}` : ""} · PAID WITH THIS SALE`, "success");
+      } else {
+        say(`${svc.name.toUpperCase()} ADDED TO THE TICKET · ${money(price)}`, "success");
+      }
+      void refreshBoard();
+    } catch {
+      onSaleOnly();
+    } finally {
+      setAddingService(false);
+    }
+  };
+  /** Takes a service saved on the ticket (one of its lines) back off. */
+  const removeTicketService = async (t: BoardTicket, index: number) => {
+    const line = t.customLines[index];
+    if (!line?.serviceId || p.paid || p.finalizing) return;
+    if (!(await confirm(`Take ${line.label} off ticket #${t.ticketNumber ?? t.id}?`, { title: "Remove service", confirmLabel: "Remove", destructive: true }))) return;
+    try {
+      const r = await fetch(`/api/nail/tickets/${t.id}/services/remove`, {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ index }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { say(String(d.message || "Could not remove the service").toUpperCase(), "error"); return; }
+      say(`${line.label.toUpperCase()} REMOVED`, "success");
+      void refreshBoard();
+    } catch {
+      say("NO CONNECTION — THE SERVICE COULD NOT BE REMOVED", "error");
+    }
   };
   const comingSoon = (label: string) => say(`${label.toUpperCase()} — COMING SOON`);
 
@@ -1043,7 +1085,8 @@ export function CheckoutMode(p: Props) {
             <div className="ticket-item"><div className="item-copy"><strong>{ticket.service.name}</strong><span>{ticket.staff?.name ?? "Service"}</span></div><div className="item-price"><strong>{money(ticket.service.price)}</strong></div><span /></div>
             {ticket.addons.map((a) => <div className="ticket-item" key={`a${a.id}`}><div className="item-copy"><strong>+ {a.name}</strong><span>Add-on</span></div><div className="item-price"><strong>{money(a.price)}</strong></div><span /></div>)}
             {(ticket.nail?.lines ?? []).map((l) => <div className="ticket-item" key={l.label}><div className="item-copy"><strong>{l.label}</strong><span>Nail option</span></div><div className="item-price"><strong>{money(l.price)}</strong></div><span /></div>)}
-            {ticket.customLines.map((l, i) => <div className="ticket-item" key={`c${i}`}><div className="item-copy"><strong>{l.label}</strong><span>Custom charge</span></div><div className="item-price"><strong>{money(l.price)}</strong></div><span /></div>)}
+            {ticket.customLines.map((l, i) => <div className="ticket-item" key={`c${i}`}><div className="item-copy"><strong>{l.label}</strong><span>{l.serviceId ? (ticket.staff?.name ?? "Service") : "Custom charge"}</span></div><div className="item-price"><strong>{money(l.price)}</strong></div>
+              {l.serviceId && !p.paid && !p.finalizing ? <button type="button" className="remove-item" onClick={() => void removeTicketService(ticket, i)} aria-label={`Remove ${l.label}`}><X size={16} /></button> : <span />}</div>)}
             {extras.map((e) => (
               <div className="ticket-item" key={e.id} data-testid={`nail-pay-extra-${e.kind}`}>
                 <div className="item-copy"><strong>{e.label}</strong><span>{e.kind === "retail" ? "Retail" : "Added at checkout"}</span></div>
@@ -1078,7 +1121,8 @@ export function CheckoutMode(p: Props) {
                   <div className="group-cart-line"><span>{t.service.name}</span><strong>{money(t.service.price)}</strong><span /></div>
                   {t.addons.map((a) => <div className="group-cart-line" key={`a${a.id}`}><span>+ {a.name}</span><strong>{money(a.price)}</strong><span /></div>)}
                   {(t.nail?.lines ?? []).map((l) => <div className="group-cart-line" key={`n${l.label}`}><span>{l.label}</span><strong>{money(l.price)}</strong><span /></div>)}
-                  {t.customLines.map((l, i) => <div className="group-cart-line" key={`c${i}`}><span>{l.label}</span><strong>{money(l.price)}</strong><span /></div>)}
+                  {t.customLines.map((l, i) => <div className="group-cart-line" key={`c${i}`}><span>{l.label}</span><strong>{money(l.price)}</strong>
+                    {l.serviceId && !p.paid && !p.finalizing ? <button type="button" className="remove-item" onClick={() => void removeTicketService(t, i)} aria-label={`Remove ${l.label}`}><X size={14} /></button> : <span />}</div>)}
                   {own && extras.map((e) => (
                     <div className="group-cart-line" key={e.id} data-testid={`nail-pay-extra-${e.kind}`}>
                       <span>{e.label}</span><strong>{money(e.price)}</strong>

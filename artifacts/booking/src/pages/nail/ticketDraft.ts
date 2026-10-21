@@ -167,6 +167,9 @@ export interface DraftCustomLine {
   /** A product sale rung up as a custom line (commissioned at the product rate, not service) — the
    *  only way to mark retail on a ticket that isn't the one currently open at Checkout. */
   isRetail?: boolean;
+  /** Another service of the visit, saved as a line on the ticket: its catalog id and time. */
+  serviceId?: number;
+  duration?: number;
 }
 
 export function draftTotals(
@@ -190,7 +193,8 @@ export function draftTotals(
     dropped = nail.dropped;
   }
   for (const c of custom) {
-    lines.push({ key: `custom-${c.id}`, kind: "custom", label: c.label, duration: 0, price: c.price, customId: c.id });
+    // Another service of the visit takes its time; a keypad amount takes none.
+    lines.push({ key: `custom-${c.id}`, kind: "custom", label: c.label, duration: c.serviceId ? Number(c.duration) || 0 : 0, price: c.price, customId: c.id });
   }
   return {
     lines,

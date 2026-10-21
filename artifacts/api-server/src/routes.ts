@@ -19010,13 +19010,17 @@ or
         serviceId: z.number().int(),
         addonIds: z.array(z.number().int()).optional(),
         nail: nailSelectionInput.nullable().optional(),
-        customLines: z.array(z.object({ label: z.string().max(60), price: z.number(), isRetail: z.boolean().optional() })).max(20).optional(),
+        // serviceId/duration: another service of the visit on this ticket — sent by a tablet that saved the ticket
+        // offline (online, the further services come as extraServiceIds and the server makes the lines itself).
+        customLines: z.array(z.object({ label: z.string().max(60), price: z.number(), isRetail: z.boolean().optional(),
+          serviceId: z.number().int().optional(), duration: z.number().optional() })).max(20).optional(),
         staffId: z.number().int().nullable().optional(),
         leaveUnassigned: z.boolean().optional(),
         autoAssign: z.boolean().optional(),
         notes: z.string().max(500).nullable().optional(),
         checkinId: z.number().int().nullable().optional(),
-        // Further services of the same visit: each becomes its own ticket, saved with this one.
+        // Further services of the same visit: on this ticket when its technician can do them, otherwise each on
+        // its own linked ticket (nailTickets.createNailTicketGroup).
         extraServiceIds: z.array(z.number().int()).max(8).optional(),
         // The number a tablet gave the ticket while offline.
         ticketNumber: z.number().int().positive().nullable().optional(),
@@ -19049,9 +19053,12 @@ or
         serviceId: z.number().int().optional(),
         addonIds: z.array(z.number().int()),
         nail: nailSelectionInput.nullable().optional(),
-        customLines: z.array(z.object({ label: z.string().max(60), price: z.number(), isRetail: z.boolean().optional() })).max(20).optional(),
+        // A line with serviceId is another service of the visit (nailTickets.CustomLine); its time travels with it.
+        customLines: z.array(z.object({ label: z.string().max(60), price: z.number(), isRetail: z.boolean().optional(),
+          serviceId: z.number().int().optional(), duration: z.number().optional() })).max(20).optional(),
         expected: z.object({ serviceId: z.number().int().nullable(), duration: z.number(), addonIds: z.array(z.number().int()),
-          nail: nailSelectionInput.nullable(), customLines: z.array(z.object({ label: z.string(), price: z.number(), isRetail: z.boolean().optional() })) }),
+          nail: nailSelectionInput.nullable(), customLines: z.array(z.object({ label: z.string(), price: z.number(), isRetail: z.boolean().optional(),
+            serviceId: z.number().int().optional(), duration: z.number().optional() })) }),
       }).safeParse(req.body);
       const appointmentId = Number(req.params.id);
       if (!body.success || !Number.isFinite(appointmentId)) return res.status(400).json({ message: "Invalid ticket" });
@@ -19061,6 +19068,61 @@ or
     } catch (err) {
       console.error("[nail/tickets update]", err);
       return res.status(500).json({ message: "Could not update the ticket" });
+    }
+  });
+
+  // POST /api/nail/tickets/:id/services — a service added in checkout, saved onto the ticket (owner, 2026-10-21).
+  // The ticket's technician does it when they can (performs it, clocked in, not on break, no appointment coming
+  // up); otherwise it becomes its own ticket for the next technician in turn who can, linked to the visit, so the
+  // checkout takes both (Group Pay) and each technician's commission is on their own ticket.
+  app.post("/api/nail/tickets/:id/services", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const appointmentId = Number(req.params.id);
+      const serviceId = Number(req.body?.serviceId);
+      if (!Number.isSafeInteger(appointmentId) || !Number.isSafeInteger(serviceId) || serviceId <= 0) return res.status(400).json({ message: "Invalid service" });
+      const { rows } = await pool.query(`SELECT id, staff_id, customer_id, status, ticket_group_id FROM appointments WHERE id = $1 AND store_id = $2`, [appointmentId, storeId]);
+      const ticket = rows[0];
+      if (!ticket || !["confirmed", "started"].includes(String(ticket.status))) return res.status(409).json({ message: "This ticket is no longer open." });
+      const line = await nailTickets.serviceLine(storeId, serviceId);
+      if (!line) return res.status(400).json({ message: "That service is no longer in the catalog." });
+      const tech = ticket.staff_id != null ? Number(ticket.staff_id) : null;
+      if (tech == null || await nailTickets.technicianCanDo(nailDeps, storeId, tech, serviceId)) {
+        if (!(await nailTickets.appendServiceLine(storeId, appointmentId, line))) return res.status(409).json({ message: "This ticket is no longer open." });
+        broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["services"] });
+        return res.json({ added: "ticket", appointmentId });
+      }
+      if (!ticket.customer_id) return res.status(409).json({ message: "Add a client to this ticket before adding a service another technician does." });
+      const own = await nailTickets.createNailTicket(nailDeps, {
+        storeId, clientId: Number(ticket.customer_id), serviceId, autoAssign: true, startOnAssign: false, idempotencyKey: null,
+        bookedByUserId: Number.isFinite(Number((req.session as any)?.userId)) ? Number((req.session as any).userId) : null,
+      });
+      if (!own.ok) return res.status(own.status).json({ message: own.message });
+      const groupId = ticket.ticket_group_id != null ? Number(ticket.ticket_group_id) : appointmentId;
+      await pool.query(`UPDATE appointments SET ticket_group_id = $1 WHERE store_id = $2 AND id = ANY($3::int[])`, [groupId, storeId, [appointmentId, own.data.appointmentId]]);
+      broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["services"] });
+      return res.status(201).json({ added: "own_ticket", appointmentId: own.data.appointmentId, ticketNumber: own.data.ticketNumber, staffName: own.data.staffName });
+    } catch (err) {
+      console.error("[nail/tickets add service]", err);
+      return res.status(500).json({ message: "Could not add the service" });
+    }
+  });
+
+  // POST /api/nail/tickets/:id/services/remove — takes a service line (by its place among the ticket's lines) off.
+  app.post("/api/nail/tickets/:id/services/remove", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const appointmentId = Number(req.params.id);
+      const index = Number(req.body?.index);
+      if (!Number.isSafeInteger(appointmentId) || !Number.isSafeInteger(index) || index < 0) return res.status(400).json({ message: "Invalid line" });
+      if (!(await nailTickets.removeServiceLine(storeId, appointmentId, index))) return res.status(409).json({ message: "That service is no longer on this ticket." });
+      broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["services"] });
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[nail/tickets remove service]", err);
+      return res.status(500).json({ message: "Could not remove the service" });
     }
   });
 

@@ -84,7 +84,7 @@ export function TicketPopup(p: Props) {
               <div className="checkin-modal-lines">
                 {t.addons.map((a) => <div key={`a${a.id}`}><span>+ {a.name}</span><span>${a.price.toFixed(2)}</span></div>)}
                 {t.nail?.lines.map((l) => <div key={l.label}><span>+ {l.label}</span><span>${l.price.toFixed(2)}</span></div>)}
-                {t.customLines.map((l, i) => <div key={`c${i}`}><span>+ {l.label}</span><span>${l.price.toFixed(2)}</span></div>)}
+                {t.customLines.map((l, i) => <div key={`c${i}`}><span>{l.serviceId ? l.label : `+ ${l.label}`}</span><span>${l.price.toFixed(2)}</span></div>)}
               </div>
             )}
             <div className="checkin-modal-detail">
