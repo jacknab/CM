@@ -260,7 +260,8 @@ export function CheckoutMode(p: Props) {
     ...(ticket.nail?.lines ?? []).map((l) => ({ label: l.label, price: l.price })),
     ...ticket.customLines.map((l) => ({ label: l.label, price: l.price })),
     ...extras.map((e) => ({ label: e.label, price: e.price })),
-    ...linked.map((t) => ({ label: `${t.client.name} — ${t.service.name}`, price: t.total })),
+    // A combined ticket shows as its services only (its own and any further ones), not the client's name.
+    ...linked.map((t) => ({ label: [t.service.name, ...t.customLines.filter((l) => l.serviceId).map((l) => l.label)].join(" + "), price: t.total })),
   ];
   // Group Pay: what each ticket of the sale takes — its share of the tip (as entered per technician, otherwise by
   // service time), discount and payment. The sale is saved with these, and the receipt shows each ticket's tip.
