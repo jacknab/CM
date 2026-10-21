@@ -366,7 +366,7 @@ app.use((req, res, next) => {
   // flows — deliberately not bundled into the header-hygiene cleanup.
   res.setHeader(
     "Content-Security-Policy",
-    `default-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com${_appUrl ? ` ${_appUrl}` : ""}; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://js.stripe.com https://connect-js.stripe.com https://unpkg.com${_appUrl ? ` ${_appUrl}` : ""}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; media-src 'self' https:; ${cspConnectSrc} frame-src 'self' https://js.stripe.com https://connect-js.stripe.com https://hooks.stripe.com https://www.google.com https://maps.google.com${_appUrl ? ` ${_appUrl}` : ""};`
+    `default-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com${_appUrl ? ` ${_appUrl}` : ""}; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://analytics.ahrefs.com https://js.stripe.com https://connect-js.stripe.com https://unpkg.com${_appUrl ? ` ${_appUrl}` : ""}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; media-src 'self' https:; ${cspConnectSrc} frame-src 'self' https://js.stripe.com https://connect-js.stripe.com https://hooks.stripe.com https://www.google.com https://maps.google.com${_appUrl ? ` ${_appUrl}` : ""};`
   );
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   next();

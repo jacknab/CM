@@ -280,6 +280,8 @@ $_schema_output = json_encode(['@context' => 'https://schema.org', '@graph' => $
 
   <!-- ── JSON-LD Structured Data ───────────────── -->
   <script type="application/ld+json"><?= $_schema_output ?></script>
+  <!-- ── Ahrefs Web Analytics ─────────────────── -->
+  <script src="https://analytics.ahrefs.com/analytics.js" data-key="wi/hHR0iz476PiY7czcEgg" async></script>
 </head>
 <body>
 <a href="#main-content" class="skip-to-content">Skip to main content</a>
