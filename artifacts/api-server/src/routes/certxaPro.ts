@@ -92,6 +92,10 @@ const TAKEN = { error: "Another appointment is already booked at that time.", co
 const appointmentSelect = `SELECT a.id, a.date, a.duration, a.status, a.notes, a.staff_id AS "staffId",
   a.visit_at AS "visitAt", a.client_address AS "clientAddress", a.travel_fee::float8 AS "travelFee",
   a.cancellation_reason AS "cancellationReason", a.cancelled_at AS "cancelledAt",
+  -- Further services on the visit and its add-ons: the app adds them to the price it charges.
+  a.custom_lines AS "customLines",
+  (SELECT COALESCE(json_agg(json_build_object('addon', json_build_object('id', ad.id, 'name', ad.name, 'price', ad.price::float8)) ORDER BY aa.id), '[]'::json)
+    FROM appointment_addons aa JOIN addons ad ON ad.id=aa.addon_id WHERE aa.appointment_id=a.id) AS "appointmentAddons",
   json_build_object('id', c.id, 'name', c.full_name,
     'phone', (SELECT COALESCE(p.display_phone, p.phone_number_e164) FROM client_phones p WHERE p.client_id=c.id ORDER BY p.is_primary DESC, p.id LIMIT 1),
     'email', (SELECT e.email_address FROM client_emails e WHERE e.client_id=c.id ORDER BY e.is_primary DESC, e.id LIMIT 1)) AS customer,
@@ -185,7 +189,7 @@ router.post("/customers", async (req, res) => {
 router.get("/services", async (req, res) => {
   try {
     const storeId = await store(req, res); if (!storeId) return;
-    const rows = await pool.query(`SELECT id,name,duration,price::float8 AS price FROM services WHERE store_id=$1 AND is_active=true ORDER BY name,id`, [storeId]);
+    const rows = await pool.query(`SELECT id,name,duration,price::float8 AS price,offered_at AS "offeredAt" FROM services WHERE store_id=$1 AND is_active=true ORDER BY name,id`, [storeId]);
     return res.json(rows.rows);
   } catch (error) { return unexpected(res, error); }
 });
