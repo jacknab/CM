@@ -206,6 +206,9 @@ const ONBOARDING_RESERVED_SLUGS = new Set([
   "www", "api", "admin", "app", "mail", "smtp", "ftp", "ns1", "ns2",
   "dev", "staging", "production", "support", "help", "blog", "status",
   "static", "assets", "cdn", "media", "img", "images",
+  // Subdomains Certxa itself uses (middleware/subdomain.ts RESERVED_SUBDOMAINS): a business with one of these
+  // as its link would get /book/<slug> but never <slug>.certxa.com.
+  "certxa", "launchit", "shop", "store", "test", "demo", "secure", "manage", "rentals", "salons",
 ]);
 
 async function isOnboardingSlugAvailable(slug: string, storeId?: number): Promise<boolean> {
@@ -2667,6 +2670,15 @@ export async function registerRoutes(
       // which checks the values and that the business is on the Solo plan.
       for (const key of ["ownPlace", "addressPrivate", "houseCalls", "houseCallRadiusMiles", "houseCallFee", "houseCallTravelMinutes", "bookingApproval", "bookingRequestExpiryHours"]) {
         delete (input as Record<string, unknown>)[key];
+      }
+      // The booking link (certxa.com/book/<slug>, <slug>.certxa.com) follows the same rules as at sign-up:
+      // format, reserved words, and not used by another business or website.
+      if ((input as any).bookingSlug !== undefined && (input as any).bookingSlug !== store.bookingSlug) {
+        const slug = String((input as any).bookingSlug ?? "").trim().toLowerCase();
+        if (!(await isOnboardingSlugAvailable(slug, id))) {
+          return res.status(400).json({ message: "That booking link is taken or not allowed. Use 3 or more lowercase letters, numbers and hyphens." });
+        }
+        (input as any).bookingSlug = slug;
       }
       // A time zone must be a real IANA name: every date the business shows is formatted with it.
       if ((input as any).timezone !== undefined) {
