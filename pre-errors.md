@@ -6,6 +6,16 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-10-22 — Certxa Pro app: checkout and appointment defects found in the GlossGenius audit
+
+Full list with context: `plans/certxa-pro-glossgenius-audit.md`, section 3 (B1–B11). The ones that are defects rather than missing features:
+- **Sales tax not charged** (`app/(tabs)/checkout.native.tsx`). Settings → Sales tax says "Tax added at checkout"; checkout never adds it. Needs a decision on taxing services.
+- **Mark as paid records no amount or method** (`app/appointment/[id].tsx`, `markPaid`), so cash income never reaches reports. The "gift card / record manually" checkout screen is unreachable dead code (the second `return` after `TipCheckout`) and saves nothing to the server.
+- **Notes row opens an edit screen with no notes field** (`app/appointment/[id].tsx`).
+- **Drag starts on touch, not press-and-hold** (`DraggableAppointment` in `app/(tabs)/index.tsx`, `onStartShouldSetPanResponder: () => true`), so scrolling over a booking moves it. Needs device testing.
+- **Client list uses the name as the React key** (`app/(tabs)/clients.tsx`), so two clients with the same name collide; visits/spend are hard-coded placeholders.
+- **Why not fixed now:** the user asked for an audit; these need product decisions or a device to test on. Fixed the same day: add-ons/extra services missing from the charged amount, `offeredAt` missing, sample clients on empty days, Week/Month views, Text/Call/Email (main `947a002b`, Pro `b855cee`).
+
 ## 2026-10-13 — Certxa Pro app: "Notify client" switch does nothing; edit screen offers six fixed times
 
 - **File:** `certxa-pro-replit/staff-app-latest/artifacts/certxa-pro/app/(tabs)/index.tsx` (reschedule dialog, `notifyClient`) and `app/appointment/[id].tsx:11` (`timeSlots`).
