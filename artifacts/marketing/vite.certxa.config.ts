@@ -12,13 +12,15 @@ import baseConfig from "./vite.config";
 
 export default defineConfig((env: ConfigEnv) => {
   const base = (baseConfig as (e: ConfigEnv) => UserConfig)(env);
-  if (!env.isSsrBuild) return mergeConfig(base, { base: "/_site/" });
+  // The previous build's files are kept (not emptied): a page the server rendered just before a rebuild still
+  // finds its script, and the server picks the new build up by itself (marketing-site.ts).
+  if (!env.isSsrBuild) return mergeConfig(base, { base: "/_site/", build: { emptyOutDir: false } });
   return {
     ...base,
     base: "/_site/",
     build: {
       outDir: "dist/render",
-      emptyOutDir: true,
+      emptyOutDir: false,
       copyPublicDir: false,
       ssr: "src/entry-server.tsx",
       rollupOptions: {

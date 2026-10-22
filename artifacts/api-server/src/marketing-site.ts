@@ -233,13 +233,36 @@ export function createMarketingSite(): Router {
   pingChangedPages(clientDir, owned);
 
   let render: Render | null = null;
-  import(pathToFileURL(path.join(siteDir, "dist", "render", "entry-server.mjs")).href).then(
-    (mod) => {
-      render = mod.render as Render;
-      console.log(`[marketing-site] serving ${[...owned].join(", ")}`);
-    },
-    (err) => console.error("[marketing-site] renderer failed to load; PHP serves every page:", err?.message),
-  );
+  const loadRenderer = (version: string) =>
+    import(`${pathToFileURL(path.join(siteDir, "dist", "render", "entry-server.mjs")).href}?v=${version}`).then(
+      (mod) => {
+        render = mod.render as Render;
+        console.log(`[marketing-site] serving ${[...owned].join(", ")} (build ${version})`);
+      },
+      (err) => console.error("[marketing-site] renderer failed to load; PHP serves every page:", err?.message),
+    );
+  // A rebuild of the marketing app is picked up without a server restart: the page template and the renderer are
+  // loaded again when dist/client/index.html changes (checked at most every 5 seconds). Serving the old template
+  // after a rebuild pointed every page at script files that were gone, and the pages stayed blank.
+  const indexPath = path.join(clientDir, "index.html");
+  let builtAt = String(fs.statSync(indexPath).mtimeMs);
+  let checkedAt = Date.now();
+  void loadRenderer(builtAt);
+  const refreshBuild = () => {
+    if (Date.now() - checkedAt < 5000) return;
+    checkedAt = Date.now();
+    try {
+      const now = String(fs.statSync(indexPath).mtimeMs);
+      if (now === builtAt) return;
+      const next = fs.readFileSync(indexPath, "utf-8");
+      if (!next.includes("<!--app-head-->") || !next.includes("<!--app-html-->")) return; // mid-build: try again later
+      builtAt = now;
+      template = next;
+      void loadRenderer(now);
+    } catch {
+      /* mid-build: keep serving what is loaded */
+    }
+  };
 
   router.use(
     "/_site",
@@ -281,6 +304,7 @@ export function createMarketingSite(): Router {
 
   router.get(/.*/, async (req: Request, res: Response, next: NextFunction) => {
     const pagePath = req.path.replace(/\/+$/, "") || "/";
+    refreshBuild();
     if (!render || !APEX_HOSTS.has(req.hostname)) return next();
     const moved = movedTo(pagePath, owned);
     if (moved) return res.redirect(301, moved);
