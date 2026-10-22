@@ -6,6 +6,12 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-10-22 — FIXED: `/api/pos/email-receipt` trusted the request's storeId and storeName
+
+- **File:** `artifacts/api-server/src/routes.ts` (`/api/pos/email-receipt`), `mail.ts` (`sendPOSReceiptEmail`).
+- **Symptom:** any signed-in account could send a receipt e-mail as any store, with any store name and unescaped HTML in the names.
+- **Fix:** the store now comes from `resolveSessionStoreId`, which only honours a storeId the user owns, and the name from the store record; all text is HTML-escaped. Fixed the same day it was found.
+
 ## 2026-10-22 — Certxa Pro app: checkout and appointment defects found in the GlossGenius audit
 
 Full list with context: `plans/certxa-pro-glossgenius-audit.md`, section 3 (B1–B11). The ones that are defects rather than missing features:

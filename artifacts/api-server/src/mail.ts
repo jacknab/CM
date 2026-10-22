@@ -345,6 +345,8 @@ export async function sendPOSReceiptEmail(
     items: { name: string; price: number; addons?: { name: string; price: number }[] }[];
     subtotal: number;
     tipAmount: number;
+    taxAmount?: number;
+    discountAmount?: number;
     grandTotal: number;
     paymentMethod: string;
     transactionId: string;
@@ -352,11 +354,16 @@ export async function sendPOSReceiptEmail(
     timeStr: string;
   }
 ): Promise<{ success: boolean; error?: string }> {
-  const itemRows = opts.items.map(item => {
-    const addonRows = (item.addons || []).map(a =>
-      `<tr><td style="padding:4px 0 4px 16px;color:#666;font-size:13px;">+ ${a.name}</td><td style="padding:4px 0;text-align:right;color:#666;font-size:13px;">$${a.price.toFixed(2)}</td></tr>`
+  // Everything here can come from the request, so it is escaped before it goes into the HTML.
+  const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+  const amt = (v: unknown) => (Number(v) || 0).toFixed(2);
+  opts = { ...opts, storeName: esc(opts.storeName), clientName: esc(opts.clientName), paymentMethod: esc(opts.paymentMethod),
+    transactionId: esc(opts.transactionId), dateStr: esc(opts.dateStr), timeStr: esc(opts.timeStr) };
+  const itemRows = (Array.isArray(opts.items) ? opts.items : []).map(item => {
+    const addonRows = (Array.isArray(item?.addons) ? item.addons : []).map(a =>
+      `<tr><td style="padding:4px 0 4px 16px;color:#666;font-size:13px;">+ ${esc(a?.name)}</td><td style="padding:4px 0;text-align:right;color:#666;font-size:13px;">$${amt(a?.price)}</td></tr>`
     ).join("");
-    return `<tr><td style="padding:6px 0;font-size:14px;">${item.name}</td><td style="padding:6px 0;text-align:right;font-size:14px;font-weight:600;">$${item.price.toFixed(2)}</td></tr>${addonRows}`;
+    return `<tr><td style="padding:6px 0;font-size:14px;">${esc(item?.name)}</td><td style="padding:6px 0;text-align:right;font-size:14px;font-weight:600;">$${amt(item?.price)}</td></tr>${addonRows}`;
   }).join("");
 
   const html = `
@@ -379,6 +386,8 @@ export async function sendPOSReceiptEmail(
             <td style="padding:8px 0;font-size:13px;color:#666;">Subtotal</td>
             <td style="padding:8px 0;text-align:right;font-size:13px;color:#666;">$${opts.subtotal.toFixed(2)}</td>
           </tr>
+          ${(opts.discountAmount ?? 0) > 0 ? `<tr><td style="padding:4px 0;font-size:13px;color:#666;">Discount</td><td style="padding:4px 0;text-align:right;font-size:13px;color:#666;">-$${amt(opts.discountAmount)}</td></tr>` : ""}
+          ${(opts.taxAmount ?? 0) > 0 ? `<tr><td style="padding:4px 0;font-size:13px;color:#666;">Tax</td><td style="padding:4px 0;text-align:right;font-size:13px;color:#666;">$${amt(opts.taxAmount)}</td></tr>` : ""}
           ${opts.tipAmount > 0 ? `<tr><td style="padding:4px 0;font-size:13px;color:#666;">Tip</td><td style="padding:4px 0;text-align:right;font-size:13px;color:#666;">$${opts.tipAmount.toFixed(2)}</td></tr>` : ""}
           <tr style="border-top:2px solid #111;">
             <td style="padding:10px 0;font-size:16px;font-weight:700;">Total</td>

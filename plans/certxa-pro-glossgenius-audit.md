@@ -139,10 +139,17 @@ Ordered by what makes money for Certxa (card volume), then what a solo pro notic
 9. **Marketing:** automated birthday and win-back messages, then campaigns.
 10. **Website editing** in the app, then Reserve with Google.
 
-## 6. Questions for you
+## 6. Decisions (owner, 2026-10-22)
 
-1. **Sales tax:** add tax at checkout on services? Many states don't tax services, so it could be off by default.
-2. **Cash:** should the app record cash payments? It's free money for the pro but earns Certxa nothing.
-3. **No-show and late-cancel fees:** charge the card on file automatically, or only when the pro taps "Charge fee"?
-4. **Autumn in the app:** offer it as a paid add-on to free Solo users?
-5. **Dead screens (B10):** remove Business AI, the old Availability entry and `ai.tsx`, or keep them as placeholders?
+1. **Sales tax:** off by default. It's already off for new accounts (rate 0, tax on services off). Checkout adds tax only when the pro turns on tax on services in Settings → Sales tax.
+2. **Cash:** not recorded. The cash goes straight to the pro, so "Mark as paid" is the cash button. B2 is closed as intended; the unreachable manual-payment screen stays unused.
+3. **No-show and late-cancel fees:** charged only when the pro taps a button, never automatically.
+4. **Autumn:** a paid add-on in the app.
+5. **Placeholder screens (B10):** kept. Business AI, Availability and `ai.tsx` will be made real soon.
+
+## 7. Progress
+
+- **2026-10-22, step 1 (checkout):**
+  - Done: the sales tax line (only when turned on), the pro's own tip presets (Certxa default 15/18/20/25) and text or e-mail receipts after a card payment (Pro repo).
+  - The e-mail receipt endpoint now uses the signed-in store and its real name, and escapes everything it puts into the e-mail. Before this, any signed-in account could send a receipt e-mail under another business's name with its own HTML.
+  - Still to do in step 1: refunds. There's no Terminal refund endpoint yet.

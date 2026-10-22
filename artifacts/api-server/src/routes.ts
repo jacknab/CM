@@ -21635,15 +21635,22 @@ or
 
   app.post("/api/pos/email-receipt", isAuthenticated, async (req, res) => {
     try {
-      const { storeId, email, storeName, clientName, items, subtotal, tipAmount, grandTotal, paymentMethod, transactionId, dateStr, timeStr } = req.body;
-      if (!email || !storeId) return res.status(400).json({ message: "email and storeId required" });
+      const { email, clientName, items, subtotal, tipAmount, taxAmount, discountAmount, grandTotal, paymentMethod, transactionId, dateStr, timeStr } = req.body ?? {};
+      // The store is the signed-in one (a body storeId is only honoured when this user owns it), and its
+      // name comes from the record - never from the request - so a receipt can't be sent as another business.
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email))) return res.status(400).json({ message: "A valid e-mail address is required" });
+      const store = await storage.getStore(storeId);
       const { sendPOSReceiptEmail } = await import("./mail");
-      const result = await sendPOSReceiptEmail(Number(storeId), email, {
-        storeName: storeName || "Your Salon",
+      const result = await sendPOSReceiptEmail(storeId, String(email), {
+        storeName: String(store?.name ?? "Your salon"),
         clientName: clientName || "there",
-        items: items || [],
+        items: Array.isArray(items) ? items.slice(0, 30) : [],
         subtotal: Number(subtotal) || 0,
         tipAmount: Number(tipAmount) || 0,
+        taxAmount: Number(taxAmount) || 0,
+        discountAmount: Number(discountAmount) || 0,
         grandTotal: Number(grandTotal) || 0,
         paymentMethod: paymentMethod || "Card",
         transactionId: transactionId || "",
