@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatInTz, getNowInTimezone } from "@/lib/timezone";
+import { TimeZoneNote } from "./TimeZoneNote";
 import { apiRequest } from "@/lib/queryClient";
 import { addDays, subDays, isSameDay } from "date-fns";
 import { StoreData, ServiceData, ServiceOptionData, CategoryData, TimeSlot, AddonData, ServiceAddonData } from "./types";
@@ -926,6 +927,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
               <h3 className="text-center font-bold text-gray-900 text-base mb-1">
                 What time works?
               </h3>
+              <TimeZoneNote timezone={timezone} at={slots?.[0]?.time} />
               {slotsLoading ? (
                 <div className="flex items-center justify-center h-28">
                   <Loader2 className="w-6 h-6 animate-spin text-gray-400" />

@@ -2668,6 +2668,11 @@ export async function registerRoutes(
       for (const key of ["ownPlace", "addressPrivate", "houseCalls", "houseCallRadiusMiles", "houseCallFee", "houseCallTravelMinutes", "bookingApproval", "bookingRequestExpiryHours"]) {
         delete (input as Record<string, unknown>)[key];
       }
+      // A time zone must be a real IANA name: every date the business shows is formatted with it.
+      if ((input as any).timezone !== undefined) {
+        try { new Intl.DateTimeFormat("en-US", { timeZone: String((input as any).timezone) }); }
+        catch { return res.status(400).json({ message: "Unknown time zone" }); }
+      }
 
       // Auto-resolve timezone whenever address fields change
       if (hasAddressChange(input as Record<string, unknown>)) {

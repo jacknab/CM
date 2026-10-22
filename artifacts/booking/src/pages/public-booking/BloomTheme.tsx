@@ -31,6 +31,7 @@ import {
   ZoomIn,
 } from "lucide-react";
 import { formatInTz } from "@/lib/timezone";
+import { TimeZoneNote } from "./TimeZoneNote";
 import { useCancellationPolicy } from "@/hooks/use-public-booking";
 import { CancellationPolicyConsent } from "./CancellationPolicyConsent";
 import type { StoreData } from "./types";
@@ -645,6 +646,7 @@ function BookingPanel({
                       <p className="mt-1 text-xs" style={{ color: C.ink500 }}>
                         Select a time slot
                       </p>
+                      <TimeZoneNote timezone={timezone} at={slots[0]?.time} className="mt-1 text-xs" style={{ color: C.ink500 }} />
                     </div>
                     <button
                       type="button"

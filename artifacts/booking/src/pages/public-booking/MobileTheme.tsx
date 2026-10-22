@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatInTz, getNowInTimezone } from "@/lib/timezone";
+import { TimeZoneNote } from "./TimeZoneNote";
 import { apiRequest } from "@/lib/queryClient";
 import { addDays, subDays, isSameDay } from "date-fns";
 import { StoreData, ServiceData, CategoryData, TimeSlot, AddonData, ServiceAddonData } from "./types";
@@ -552,6 +553,7 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
 
                 {/* Time slots */}
                 <h3 className="text-center font-bold text-gray-900 text-base mb-3">What time works?</h3>
+                <TimeZoneNote timezone={timezone} at={slots?.[0]?.time} className="text-center text-xs text-gray-500 -mt-2 mb-3" />
                 {slotsLoading ? (
                     <div className="flex justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-gray-400" /></div>
                 ) : !slots || slots.length === 0 ? (

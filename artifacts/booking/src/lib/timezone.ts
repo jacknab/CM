@@ -266,3 +266,32 @@ export const COMMON_TIMEZONES = [
   "Australia/Melbourne",
   "Pacific/Auckland",
 ];
+
+// ── "Times are in …" note on the booking page ───────────────────────────────
+
+/**
+ * The note shown above a booking page's times when the visitor's own time zone is different from the
+ * business's on that date, e.g. "Times are in Mountain Time (Denver)." Null when they match, so most
+ * clients never see it.
+ */
+export function visitorTimeZoneNote(storeTimezone: string, at: Date = new Date()): string | null {
+  try {
+    const visitor = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!visitor || visitor === storeTimezone) return null;
+    const offset = (tz: string) => new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "longOffset" })
+      .formatToParts(at).find((p) => p.type === "timeZoneName")?.value ?? tz;
+    if (offset(visitor) === offset(storeTimezone)) return null;
+    let name = "";
+    for (const style of ["longGeneric", "long"] as const) {
+      try {
+        name = new Intl.DateTimeFormat("en-US", { timeZone: storeTimezone, timeZoneName: style as any })
+          .formatToParts(at).find((p) => p.type === "timeZoneName")?.value ?? "";
+      } catch { name = ""; }
+      if (name) break;
+    }
+    const city = storeTimezone.split("/").pop()?.replace(/_/g, " ") ?? storeTimezone;
+    return name && !name.includes(city) ? `Times are in ${name} (${city}).` : `Times are in ${name || city} time.`;
+  } catch {
+    return null;
+  }
+}
