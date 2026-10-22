@@ -101,7 +101,7 @@ export async function sendBookingConfirmationEmail(
       timezone,
       "MMMM dd, yyyy"
     ),
-    appointmentTime: formatInTimeZone(appointment.date, timezone, "HH:mm a"),
+    appointmentTime: formatInTimeZone(appointment.date, timezone, "h:mm a"),
     serviceName: appointment.service?.name || "your service",
   });
 
@@ -130,7 +130,7 @@ export async function sendBookingConfirmationEmail(
         timezone,
         "MMMM dd, yyyy"
       ),
-      appointmentTime: formatInTimeZone(appointment.date, timezone, "HH:mm a"),
+      appointmentTime: formatInTimeZone(appointment.date, timezone, "h:mm a"),
       serviceName: appointment.service?.name || "your service",
     }
   );
@@ -167,7 +167,7 @@ export async function sendReminderEmail(
       timezone,
       "MMMM dd, yyyy"
     ),
-    appointmentTime: formatInTimeZone(appointment.date, timezone, "HH:mm a"),
+    appointmentTime: formatInTimeZone(appointment.date, timezone, "h:mm a"),
     serviceName: appointment.service?.name || "your service",
   });
 
@@ -183,7 +183,7 @@ export async function sendReminderEmail(
         timezone,
         "MMMM dd, yyyy"
       ),
-      appointmentTime: formatInTimeZone(appointment.date, timezone, "HH:mm a"),
+      appointmentTime: formatInTimeZone(appointment.date, timezone, "h:mm a"),
       serviceName: appointment.service?.name || "your service",
     }
   );
