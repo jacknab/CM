@@ -1246,7 +1246,8 @@ export function CheckoutMode(p: Props) {
           {/* Once PAY / CHECKOUT has been pressed these two go away: the payment types take over, and the sale closes itself when it is paid. */}
           {(!paying || totals.settled || p.paid || p.finalizing) && (
           <div className="checkout-row">
-            <button type="button" className="checkout-clr" onClick={() => void closeCheckout()} data-testid="nail-pay-back">{tx("back")}</button>
+            {/* Paid: the receipt is all that's left, so there is no BACK out of the sale. */}
+            {!p.paid && <button type="button" className="checkout-clr" onClick={() => void closeCheckout()} data-testid="nail-pay-back">{tx("back")}</button>}
             <button type="button" className={`checkout ${p.finalizing || p.paid || (!totals.settled && cardBusy) ? "disabled" : ""}`} disabled={p.finalizing || p.paid || (!totals.settled && cardBusy)} onClick={payCheckout} data-testid="nail-pay-finish">
               {p.paid ? tx("paid") : p.finalizing ? tx("saving") : tx("payCheckout")}
             </button>
