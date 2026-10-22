@@ -21,6 +21,9 @@ const fmtTime = (ms: number, timeZone?: string) => new Date(ms).toLocaleTimeStri
  * HH:MM:SS since a moment the SERVER recorded — identical to the Techs tab's timer, kept as its
  * own copy here (rather than a shared import) so this file has no dependency on TechCards.tsx.
  */
+/** The furthest the in-chair countdown runs past zero (30 minutes); it stops and flashes there. */
+const OVERTIME_CAP_SEC = 30 * 60;
+
 /** Counts up from `since`; with `until`, counts down to it instead, and past it shows the time over ("+00:04:10"). */
 function LiveTimer({ since, until, stoppedAt, offsetMs, testId }: { since: number | null; until?: number | null; /** Stopped: the time from `since` to here, standing still. */ stoppedAt?: number | null; offsetMs: number; testId?: string }) {
   const [now, setNow] = useState(() => Date.now() + offsetMs);
@@ -33,10 +36,13 @@ function LiveTimer({ since, until, stoppedAt, offsetMs, testId }: { since: numbe
   }, [offsetMs]);
   const pad = (n: number) => String(n).padStart(2, "0");
   if (until != null) {
-    const left = Math.floor((until - now) / 1000);
+    // Past the end it runs below zero in red ("-00:04:10"); at 30 minutes over it stops there and flashes, so
+    // the staff notice a service that has run long.
+    const left = Math.max(Math.floor((until - now) / 1000), -OVERTIME_CAP_SEC);
     const s = Math.abs(left);
-    const text = `${left < 0 ? "+" : ""}${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
-    return <span className={`tt-timer ${left < 0 ? "tt-timer-over" : "tt-timer-countdown"}`} data-testid={testId} data-seconds={left}>{text}</span>;
+    const capped = left <= -OVERTIME_CAP_SEC;
+    const text = `${left < 0 ? "-" : ""}${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
+    return <span className={`tt-timer ${left < 0 ? "tt-timer-over" : "tt-timer-countdown"} ${capped ? "tt-timer-capped" : ""}`} data-testid={testId} data-seconds={left}>{text}</span>;
   }
   if (since == null) return <span className="tt-timer tt-timer-unknown" data-testid={testId}>--:--:--</span>;
   const secs = Math.max(0, Math.floor(((stoppedAt ?? now) - since) / 1000));
