@@ -586,15 +586,7 @@ export function TurnPageModal({
                   {/* Every client given out today: who got them, why, and who was passed over (and for what). */}
                   <TurnAssignmentHistory storeId={storeId} open={showWhySheet} />
 
-                  {/* How the system works */}
-                  <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
-                    <p className="mb-2 text-xs font-bold uppercase tracking-wide text-blue-700">{t.howTitle}</p>
-                    <ul className="space-y-1.5 text-xs leading-5 text-blue-800">
-                      {t.howRules(threshold).map((rule, i) => (
-                        <li key={i} dangerouslySetInnerHTML={{ __html: rule }} />
-                      ))}
-                    </ul>
-                  </div>
+
                 </div>
               </motion.div>
             </>
