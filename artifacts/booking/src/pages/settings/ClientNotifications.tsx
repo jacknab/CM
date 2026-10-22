@@ -44,6 +44,8 @@ interface ChannelSettings {
 
 interface SmsSettings extends ChannelSettings {
   smsCancellationEnabled: boolean;
+  /** Text the review request every this-many visits, counted from the last one the client was sent (1 = every visit). */
+  reviewRequestEveryVisits: number;
 }
 
 interface PhoneTypeSummary {
@@ -79,7 +81,18 @@ const SMS_DEFAULTS: SmsSettings = {
   reviewTemplate:
     "Hi {customerName}, thank you for visiting {storeName}! We'd love your feedback. Leave us a review: {reviewUrl}",
   smsCancellationEnabled: true,
+  reviewRequestEveryVisits: 3,
 };
+
+const REVIEW_FREQUENCY = [
+  { value: 1, label: "After every visit" },
+  { value: 2, label: "Every 2nd visit" },
+  { value: 3, label: "Every 3rd visit" },
+  { value: 4, label: "Every 4th visit" },
+  { value: 5, label: "Every 5th visit" },
+  { value: 6, label: "Every 6th visit" },
+  { value: 10, label: "Every 10th visit" },
+];
 
 const MAIL_DEFAULTS: ChannelSettings = {
   bookingConfirmationEnabled: false,
@@ -541,6 +554,24 @@ export default function ClientNotifications() {
                   onChange={(v) => setMail((m) => ({ ...m, reviewRequestEnabled: v }))}
                 />
               </div>
+              {sms.reviewRequestEnabled && (
+                <div>
+                  <label className="mb-1 block text-[13px] font-medium" htmlFor="review-frequency">How often to text</label>
+                  <select
+                    id="review-frequency"
+                    value={sms.reviewRequestEveryVisits}
+                    onChange={(e) => setSms((s) => ({ ...s, reviewRequestEveryVisits: Number(e.target.value) }))}
+                    className="h-9 w-full rounded-md border bg-background px-3 text-[14px]"
+                    data-testid="select-review-frequency"
+                  >
+                    {REVIEW_FREQUENCY.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                  <p className="mt-1 text-[12px] text-muted-foreground">
+                    A new client is asked after their first visit. After that, a client is asked again only once this many
+                    visits have passed since the last review text, so regulars aren't asked every time.
+                  </p>
+                </div>
+              )}
               {(sms.reviewRequestEnabled || mail.reviewRequestEnabled) && (
                 <div>
                   <label className="mb-1 block text-[13px] font-medium">Google review link</label>

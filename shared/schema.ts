@@ -795,6 +795,8 @@ export const smsSettings = pgTable("sms_settings", {
   reminderEnabled: boolean("reminder_enabled").notNull().default(false),
   reminderHoursBefore: integer("reminder_hours_before").notNull().default(24),
   reviewRequestEnabled: boolean("review_request_enabled").notNull().default(false),
+  /** Text a client a review request every this-many visits, counted from the last one sent (1 = every visit). */
+  reviewRequestEveryVisits: integer("review_request_every_visits").notNull().default(3),
   googleReviewUrl: text("google_review_url"),
   confirmationTemplate: text("confirmation_template").default("Hi {customerName}, your appointment at {storeName} is confirmed for {appointmentDate} at {appointmentTime}. See you then!"),
   reminderTemplate: text("reminder_template").default("Hi {customerName}, this is a reminder of your appointment at {storeName} tomorrow at {appointmentTime}. Reply STOP to opt out."),

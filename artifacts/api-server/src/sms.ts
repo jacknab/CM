@@ -2,7 +2,7 @@ import { storage } from "./storage";
 import { isAccountStopped } from "./lib/accountSuspension";
 import type { AppointmentWithDetails } from "@shared/schema";
 import { formatInTimeZone } from "date-fns-tz";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { locations } from "@shared/schema";
 import { eq, and, gt, sql } from "drizzle-orm";
 import { toE164US } from "./lib/phoneUtils";
@@ -570,7 +570,9 @@ export async function sendAppointmentReminder(
 }
 
 export async function sendReviewRequest(
-  appointment: AppointmentWithDetails
+  appointment: AppointmentWithDetails,
+  /** manual: sent by staff from the appointment, not the automatic after-visit text — the frequency rule is skipped. */
+  opts: { manual?: boolean } = {},
 ): Promise<{ sent: boolean; reason?: string }> {
   if (!appointment.storeId) return { sent: false, reason: "no store" };
   const customerPhone = await appointmentCustomerPhone(appointment);
@@ -589,6 +591,28 @@ export async function sendReviewRequest(
     "review_request"
   );
   if (existing) return { sent: false, reason: "already sent for this appointment" };
+
+  // The salon's frequency (owner, 2026-10-22): a client is texted again only once this many visits have passed
+  // since the last review text they were sent. A visit of several tickets (one ticket_group_id) is one visit.
+  const everyVisits = Math.max(1, Number((settings as any).reviewRequestEveryVisits) || 1);
+  if (!opts.manual && everyVisits > 1 && appointment.customer?.id) {
+    const { rows } = await pool.query(
+      `SELECT COUNT(DISTINCT COALESCE(a.ticket_group_id, a.id))::int AS visits
+         FROM appointments a
+        WHERE a.store_id = $1 AND a.customer_id = $2 AND a.status = 'completed'
+          AND COALESCE(a.completed_at, a.date) > (
+            SELECT MAX(l.sent_at) FROM sms_log l
+             WHERE l.store_id = $1 AND l.customer_id = $2 AND l.message_type = 'review_request' AND l.status = 'sent')`,
+      [appointment.storeId, appointment.customer.id]);
+    const sinceLast = rows[0]?.visits;
+    // No review text sent before: the subquery is null and nothing counts — ask now (their first visit with us).
+    const askedBefore = (await pool.query(
+      `SELECT 1 FROM sms_log WHERE store_id = $1 AND customer_id = $2 AND message_type = 'review_request' AND status = 'sent' LIMIT 1`,
+      [appointment.storeId, appointment.customer.id])).rowCount;
+    if (askedBefore && (Number(sinceLast) || 0) < everyVisits) {
+      return { sent: false, reason: `asked ${sinceLast ?? 0} visit(s) ago; this salon asks every ${everyVisits} visits` };
+    }
+  }
 
   // Send a per-customer certxa.com/review/<token> link — the destination is
   // resolved at click time in routes/reviewGating.ts: a store with a real

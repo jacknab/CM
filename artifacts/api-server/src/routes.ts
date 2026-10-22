@@ -4865,7 +4865,8 @@ export async function registerRoutes(
     }
     try {
       const { sendReviewRequest } = await import("./sms");
-      const result = await sendReviewRequest(appointment as any);
+      // Sent by staff on purpose: the salon's every-Nth-visit rule doesn't hold it back.
+      const result = await sendReviewRequest(appointment as any, { manual: true });
       if (!result.sent) {
         return res.status(400).json({ error: `Not sent — ${result.reason}` });
       }
@@ -11148,6 +11149,7 @@ If you have any questions, please contact your administrator.
         reminderEnabled: z.boolean().optional(),
         reminderHoursBefore: z.number().min(1).max(72).optional(),
         reviewRequestEnabled: z.boolean().optional(),
+        reviewRequestEveryVisits: z.number().int().min(1).max(12).optional(),
         googleReviewUrl: z.string().optional().nullable(),
         confirmationTemplate: z.string().optional().nullable(),
         reminderTemplate: z.string().optional().nullable(),
