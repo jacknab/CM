@@ -286,8 +286,9 @@ export function createMarketingSite(): Router {
     if (moved) return res.redirect(301, moved);
     if (!owned.has(pagePath)) return next();
     try {
-      // /pricing shows the admin's plans; they go into the page itself so the prices are in its HTML.
-      const plans = pagePath === "/pricing" ? await pricingPlans() : null;
+      // /pricing and the home page show the admin's plans; they go into the page itself so the prices are in its HTML.
+      // The home page's pricing cards read the same plans.
+      const plans = pagePath === "/pricing" || pagePath === "/" ? await pricingPlans() : null;
       // Left in place between requests (only /pricing reads it, and the plans are the same for everyone), so two
       // pages rendering at once can't take it away from each other.
       if (plans) (globalThis as any).__CERTXA_PRICING_PLANS__ = plans;

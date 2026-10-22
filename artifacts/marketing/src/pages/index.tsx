@@ -1,3 +1,4 @@
+import { useLivePlans, planPrice } from '@/lib/live-plans';
 import { Helmet } from '@dr.pogodin/react-helmet';
 import AutumnCallIllustration from '@/components/AutumnCallIllustration';
 import { Link } from 'react-router';
@@ -29,6 +30,9 @@ const featureImages = [
 
 const SITE = 'https://certxa.com';
 const OG_IMAGE = `${SITE}/assets/images/og-image.jpg`;
+
+/** The home page's cards, in order, and the admin plan each one shows. */
+const CARD_PLAN: Record<string, string> = { 'plan-starter': 'professional', 'plan-pro': 'elite', 'plan-enterprise': 'enterprise' };
 
 const jsonLd = {
   '@context': 'https://schema.org',
@@ -89,7 +93,7 @@ const jsonLd = {
           name: 'Professional',
           price: '99',
           priceCurrency: 'USD',
-          description: 'Up to 8 staff, all features for medium-size teams, and 100 Autumn calls a month.',
+          description: 'Up to 12 staff, all features for medium-size teams, and 100 Autumn calls a month.',
         },
         {
           '@type': 'Offer',
@@ -114,6 +118,23 @@ const jsonLd = {
 };
 
 export default function HomePage() {
+  // The pricing cards (and the structured data's plan offers) show the plans as they are in the admin.
+  const plans = useLivePlans();
+  const planFor = (cardId: string) => plans?.find((p) => p.code === CARD_PLAN[cardId]) ?? null;
+  const cards = home.pricing.map((card) => {
+    const p = planFor(card.id);
+    return p ? { ...card, name: p.name, price: planPrice(p.priceMonthly), description: p.description || card.description, code: p.code }
+      : { ...card, code: CARD_PLAN[card.id] };
+  });
+  const offers = plans
+    ? plans.filter((p) => ['solo', ...Object.values(CARD_PLAN)].includes(p.code)).map((p) => ({
+        '@type': 'Offer', name: p.name, price: String((Number(p.priceMonthly) || 0) / 100), priceCurrency: 'USD',
+        ...(p.description ? { description: p.description } : {}),
+      }))
+    : null;
+  const pageJsonLd = offers
+    ? { ...jsonLd, '@graph': jsonLd['@graph'].map((n: any) => (n['@type'] === 'SoftwareApplication' ? { ...n, offers } : n)) }
+    : jsonLd;
   return (
     <>
       <Helmet>
@@ -139,7 +160,7 @@ export default function HomePage() {
         />
         <meta name="twitter:image" content={OG_IMAGE} />
         <script type="application/ld+json">
-          {JSON.stringify(jsonLd).replace(/</g, '\\u003c')}
+          {JSON.stringify(pageJsonLd).replace(/</g, '\\u003c')}
         </script>
       </Helmet>
 
@@ -476,7 +497,7 @@ export default function HomePage() {
               </motion.div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {home.pricing.map((plan) => (
+                {cards.map((plan) => (
                   <motion.div
                     key={plan.id}
                     variants={fadeUp}
@@ -523,7 +544,7 @@ export default function HomePage() {
                       {plan.description}
                     </p>
                     <Link
-                      to={`/auth?mode=register&plan=${plan.id === 'plan-starter' ? 'solo' : plan.id === 'plan-pro' ? 'professional' : 'elite'}`}
+                      to={`/auth?mode=register&plan=${plan.code}`}
                       className={`mt-auto text-center text-sm font-semibold px-5 py-3 rounded-lg transition-all duration-200 hover:opacity-90 ${
                         plan.featured
                           ? 'bg-primary-foreground text-primary'

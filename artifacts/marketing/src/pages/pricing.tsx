@@ -387,7 +387,10 @@ export default function PricingPage() {
       {
         id: 'faq-1',
         question: 'How much does Certxa cost?',
-        answer: 'Starter is $29 a month for up to 3 staff, Professional is $99 a month for up to 8 staff, and Enterprise is $179 a month for large teams or several locations. Paying yearly costs ten months instead of twelve: $290, $990 or $1,790. The Solo plan, for one independent professional, is free.',
+        // From the admin's plans when they are here (name, price, staff count), so it always matches the cards.
+        answer: pricingPlans
+          ? `${pricingPlans.map((pl) => `${pl.name} is ${formatMonthlyPrice(pl.priceMonthly)} a month${pl.description ? ` (${pl.description.replace(/\.$/, '')})` : ''}`).join('; ')}. Paying yearly costs ten months instead of twelve. The Solo plan, for one independent professional, is free.`
+          : 'Starter is $29 a month for up to 3 staff, Professional is $99 a month for up to 12 staff, and Enterprise is $179 a month for large teams or several locations. Paying yearly costs ten months instead of twelve: $290, $990 or $1,790. The Solo plan, for one independent professional, is free.',
       },
       {
         id: 'faq-2',

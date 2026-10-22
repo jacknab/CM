@@ -10,7 +10,7 @@
 - [Online Booking](https://certxa.com/booking): 24/7 client self-booking with provider selection, reminders and a waitlist. Deposits at booking are still in development.
 - [Autumn AI Receptionist](https://certxa.com/autumn): Automated phone and booking assistant powered by AI. Included calls on Solo (20 a month), Starter (50) and Professional (100), then $0.50 per call. One-time $15 activation fee for the dedicated phone number, no monthly number fee; included calls start once a paid plan begins.
 - [Hardware](https://certxa.com/products): Certxa Station, Certxa Kiosk, wireless card reader and accessories, with prices.
-- [Pricing](https://certxa.com/pricing): Solo plan is free; Starter $29/month (up to 3 staff), Professional $99/month (up to 8 staff) and Enterprise $179/month, each with a 60-day free trial.
+- [Pricing](https://certxa.com/pricing): Solo plan is free; Starter $29/month (up to 3 staff), Professional $99/month (up to 12 staff) and Enterprise $179/month, each with a 60-day free trial.
 - [Launchit Templates](https://certxa.com/launchsite): Gallery of salon website templates available through the website builder.
 - [Data Transfer](https://certxa.com/data-transfer): Free migration from GlossGenius, Vagaro, Square Appointments and others.
 - [Changelog](https://certxa.com/changelog): Release notes.

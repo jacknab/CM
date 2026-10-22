@@ -14,7 +14,7 @@ export type BillingPlan = {
 export const PLAN_BASE: BillingPlan[] = [
   { code: "solo", name: "Solo", price: 0, tagline: "For independent stylists and booth renters. 1 calendar, 1 staff member.", highlight: "1 calendar · 1 staff", features: [], notIncluded: [] },
   { code: "professional", name: "Starter", price: 29, tagline: "Up to 3 staff, all features for small teams.", highlight: "Up to 3 staff", features: [], notIncluded: [], popular: true },
-  { code: "elite", name: "Professional", price: 99, tagline: "Up to 8 staff, all features for medium-size teams.", highlight: "Up to 8 staff", features: [], notIncluded: [] },
+  { code: "elite", name: "Professional", price: 99, tagline: "Up to 12 staff, all features for medium-size teams.", highlight: "Up to 12 staff", features: [], notIncluded: [] },
   { code: "enterprise", name: "Enterprise", price: 179, tagline: "Built for large teams or multiple locations.", highlight: "Large teams or several locations", features: [], notIncluded: [] },
 ];
 
