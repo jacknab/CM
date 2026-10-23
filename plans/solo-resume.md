@@ -10,7 +10,11 @@ Written 2026-10-16. The design and full history are in `plans/solo-work-places-a
 
 ---
 
-## Step 5: booking approval (not started)
+## Step 5: booking approval: BUILT 2026-10-23
+
+Done: main `0d00f589`, `dcfac2ca`; Pro `94c64a1`. Owner added: offer links stay open N days (`locations.booking_offer_valid_days`, migration 0256, default 3, 2-7 in the app). The client's link is `<slug>.certxa.com/?offer=<token>`. My calls (not yet confirmed by the owner): requests take no deposit/card, Autumn phone bookings book directly, requests list is app-only, no requests shown on the calendar itself (a banner instead). Tested end to end on store 41 with a 555 number; texts not delivered because Twilio is down (pre-errors.md).
+
+### Original plan
 
 **What the owner asked for:** a setting with two choices, auto-approve or manual approval.
 

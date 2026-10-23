@@ -6,6 +6,17 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-10-23 — ALL texts failing: Twilio account "not active" (needs the account owner)
+
+- **Symptom:** every `sendSms` since between 21:58 and 22:15 server time on 2026-10-23 fails with `authentication failed, account AC311f…(masked) with status 4 is not active` (see `sms_log.error_message`). Texts at 21:58 (store 2, cancellation_recovery) still went out; the first failure was store 2's winback at 22:15:06. `twilioLookup` fails the same way.
+- **Impact:** booking confirmations, reminders, receipts, booking-request texts, and probably sign-in codes. Nothing the code can fix.
+- **Next:** someone with access to that Twilio account checks why it is suspended/closed (billing, compliance review), reactivates it or puts new credentials in `/etc/certxa.env`, then `export` them and `pm2 restart certxa-api --update-env` (see owner-apk-url-env-gotcha in memory).
+- **Not caused by** the booking-request test: that test's first text was at 22:15:22, after the first failure.
+
+## 2026-10-23 — FIXED: deleting an appointment failed once any text about it was logged
+
+- `storage.deleteAppointment` hit `sms_log_appointment_id_appointments_id_fk`, so the app's and website's Delete returned 500 ("Failed query: delete from appointments") for any booking with a logged confirmation text. Now the SMS and AI-call log rows are unlinked (kept) first. Payment, loyalty and gift-card rows still block a delete on purpose (main `0d00f589`).
+
 ## 2026-10-22 — FIXED: `/api/pos/email-receipt` trusted the request's storeId and storeName
 
 - **File:** `artifacts/api-server/src/routes.ts` (`/api/pos/email-receipt`), `mail.ts` (`sendPOSReceiptEmail`).
