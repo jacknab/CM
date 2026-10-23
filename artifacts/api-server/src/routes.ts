@@ -201,6 +201,7 @@ import { checkOAuthRateLimit, syncCooldowns, SYNC_COOLDOWN_MS, getRateLimitSnaps
 import { db as websiteDb, websitesTable, templatesTable } from "@workspace/db";
 import { IS_SCHEDULER_INSTANCE } from "./lib/clusterInfo";
 import { bookingSlugAvailable, changeBookingSlug } from "./lib/bookingSlug";
+import { createBookingRequest, setPublicBookHandler, startBookingRequestSweeper } from "./lib/bookingRequests";
 
 const BLOOM_TEMPLATE_NAME = "Nail Salon — Bloom";
 /** The booking-link rules live in lib/bookingSlug.ts (format, reserved words, other businesses' current and old links). */
@@ -4270,6 +4271,9 @@ export async function registerRoutes(
   app.use("/api/work-places", isAuthenticated, workPlacesRouter);
   const { default: bookingSiteRouter } = await import("./routes/bookingSite.js");
   app.use("/api/booking-site", isAuthenticated, bookingSiteRouter);
+  const { ownerRouter: bookingRequestsRouter, publicRouter: bookingOfferRouter } = await import("./routes/bookingRequests.js");
+  app.use("/api/booking-requests", isAuthenticated, bookingRequestsRouter);
+  app.use("/api/public/booking-offer", bookingOfferRouter);
   // The salon's account copied to its tablets and kept in sync (routes/storeMirror.ts).
   const { default: storeMirrorRouter, startMirrorLogPruning } = await import("./routes/storeMirror.js");
   app.use("/api/offline/mirror", isAuthenticated, storeMirrorRouter);
@@ -9362,7 +9366,8 @@ If you have any questions, please contact your administrator.
     }
   });
 
-  app.post("/api/public/store/:slug/book", async (req, res) => {
+  // Named so booking requests can book through exactly the same path (lib/bookingRequests.ts).
+  const handlePublicBook = async (req: any, res: any) => {
     try {
       const store = await storage.getStoreBySlug(req.params.slug);
       if (!store) return res.status(404).json({ message: "Store not found" });
@@ -9409,6 +9414,11 @@ If you have any questions, please contact your administrator.
       });
 
       const parsed = bookingSchema.parse(req.body);
+      // Made from a booking request: approved by the professional, or an offered time the client picked.
+      const fromRequest = Number(req.__bookingRequestId) || 0;
+      // "Review each booking first" (Solo plan): this booking becomes a request instead (lib/bookingRequests.ts).
+      // A paid deal voucher always books straight away.
+      const asRequest = !fromRequest && !parsed.voucherCode && (store as any).bookingApproval === "manual";
 
       // A package books as ONE appointment: its primary service anchors
       // serviceId, its summed duration is the appointment duration, and its
@@ -9518,7 +9528,8 @@ If you have any questions, please contact your administrator.
       // A voucher-backed booking is already fully paid for — never demand a
       // second deposit/card-on-file on top of it, regardless of the store's
       // normal policy.
-      const effectivePolicy = voucherRow ? "none" : (stripeConnected ? (storePolicy?.bookingPaymentPolicy ?? "none") : "none");
+      // Requests take no deposit or card; neither does the booking a request becomes.
+      const effectivePolicy = (voucherRow || fromRequest || asRequest) ? "none" : (stripeConnected ? (storePolicy?.bookingPaymentPolicy ?? "none") : "none");
 
       // Compute authoritative service total from DB prices (never from client).
       // For a package, the effective price (fixed override or component sum) is
@@ -9656,6 +9667,19 @@ If you have any questions, please contact your administrator.
         }
       }
 
+      // The request is saved, the client is texted that it was received and the professional's phone is told.
+      if (asRequest) {
+        const addonRows = input.addonIds.length ? await Promise.all(input.addonIds.map((id) => storage.getAddon(id))) : [];
+        const visitMinutes = input.duration + addonRows.reduce((sum, a) => sum + (Number(a?.duration) || 0), 0) + (Number(extraService?.duration) || 0);
+        const created = await createBookingRequest({
+          storeId: store.id, customerId: customer.id, customerName: customer.name || input.customerName, phoneE164: e164CustomerPhone,
+          email: input.customerEmail || null, body: req.body, startsAt: new Date(input.date), duration: visitMinutes,
+          staffId: input.staffId, serviceIds: [input.serviceId], visitAt: houseCall ? "client" : "place",
+          clientAddress: houseCall?.address ?? null, travelFee: houseCall?.travelFee ?? null, notes: input.notes || null,
+        });
+        return res.status(202).json({ requested: true, requestId: created.id });
+      }
+
       // === RESOURCE ASSIGNMENT (pedicure chairs / nail stations) ===
       // Same rule as the staff-facing booking route: pedicure services need a
       // pedicure chair, other nail services need a nail station. Waxing/
@@ -9726,7 +9750,8 @@ If you have any questions, please contact your administrator.
           message: `${customer.name || "New client"} booked${svc ? ` ${svc.name}` : ""} online`,
         });
         // Tell the owner's phone (Certxa Pro app).
-        void pushBookingEvent(store.id, appointmentId, "booked_online");
+        // Not when the professional approved it themselves.
+        if (!req.__quietPush) void pushBookingEvent(store.id, appointmentId, "booked_online");
       })();
 
       // Save add-ons and extend appointment duration if any were selected
@@ -9887,7 +9912,9 @@ If you have any questions, please contact your administrator.
       console.error("Public booking error:", error);
       return res.status(400).json({ message: "Failed to create booking" });
     }
-  });
+  };
+  app.post("/api/public/store/:slug/book", handlePublicBook);
+  setPublicBookHandler(handlePublicBook);
 
   // POST /api/public/store/:slug/waitlist — online waitlist registration
   // (Booking Controls → "Enable online waitlist registration"). A client who
@@ -22713,6 +22740,8 @@ or
   const { default: crewMobileRouter, startOvertimeDetector } = await import("./routes/crew-mobile.js");
   app.use("/api/crew", crewMobileRouter);
   if (IS_SCHEDULER_INSTANCE) startOvertimeDetector();
+  // Booking requests nobody answered, and offered times nobody picked, expire (lib/bookingRequests.ts).
+  if (IS_SCHEDULER_INSTANCE) startBookingRequestSweeper();
 
   // ── Certxa Solo Mobile API (login only — every other endpoint the app uses
   //    is the same isAuthenticated-gated API the web app calls) ─────────────────

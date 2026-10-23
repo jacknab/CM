@@ -93,6 +93,7 @@ publicBookingPaymentRouter.get("/booking-payment-policy/:slug", async (req, res)
         depositValue: locations.depositValue,
         cancellationPolicyRequired: locations.cancellationPolicyRequired,
         cancellationPolicyText: locations.cancellationPolicyText,
+        bookingApproval: locations.bookingApproval,
       })
       .from(locations)
       .where(eq(locations.bookingSlug, slug))
@@ -104,7 +105,8 @@ publicBookingPaymentRouter.get("/booking-payment-policy/:slug", async (req, res)
     const stripeEnabled = !!connectedAccountId && !!process.env.STRIPE_SECRET_KEY;
 
     // If Stripe isn't connected, effective policy is always 'none'
-    let effectivePolicy = stripeEnabled ? (store.bookingPaymentPolicy ?? "none") : "none";
+    // A business that reviews each booking first takes requests, and requests take no payment (lib/bookingRequests.ts).
+    let effectivePolicy = stripeEnabled && store.bookingApproval !== "manual" ? (store.bookingPaymentPolicy ?? "none") : "none";
 
     // Deposit policy is only valid when depositValue is actually configured;
     // a misconfigured deposit (value null/0) falls back to 'none' so the booking

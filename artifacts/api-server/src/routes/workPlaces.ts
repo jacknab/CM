@@ -35,6 +35,7 @@ export const WORK_PLACE_FIELDS = {
   houseCallTravelMinutes: locations.houseCallTravelMinutes,
   bookingApproval: locations.bookingApproval,
   bookingRequestExpiryHours: locations.bookingRequestExpiryHours,
+  bookingOfferValidDays: locations.bookingOfferValidDays,
 } as const;
 
 const input = z.object({
@@ -47,6 +48,8 @@ const input = z.object({
   houseCallTravelMinutes: z.number().int().min(0).max(120),
   bookingApproval: z.enum(["auto", "manual"]),
   bookingRequestExpiryHours: z.number().int().min(1).max(168),
+  // How long a link with other times offered to a client stays open.
+  bookingOfferValidDays: z.number().int().min(1).max(14),
 }).partial();
 
 async function read(storeId: number) {
@@ -75,6 +78,8 @@ router.put("/", async (req, res) => {
     const message = field === "houseCallRadiusMiles" ? "Choose a distance from 1 to 100 miles."
       : field === "houseCallFee" ? "Enter a travel fee from $0 to $500."
       : field === "houseCallTravelMinutes" ? "Choose travel time from 0 to 120 minutes."
+      : field === "bookingOfferValidDays" ? "Choose from 1 to 14 days."
+      : field === "bookingRequestExpiryHours" ? "Choose from 1 hour to 7 days."
       : "Please check your choices.";
     return res.status(400).json({ message });
   }

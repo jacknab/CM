@@ -1150,6 +1150,11 @@ export class DatabaseStorage implements IStorage {
     // this delete outright.
     await db.update(dealVouchers).set({ appointmentId: null, status: "pending_booking" }).where(eq(dealVouchers.appointmentId, id));
     await db.delete(appointmentAddons).where(eq(appointmentAddons.appointmentId, id));
+    // Texts and calls about it stay in their logs, no longer tied to it. Without this, any booking whose
+    // confirmation text was logged could not be deleted (FK violation). Payment, loyalty and gift-card records
+    // still block a delete on purpose: such a booking is cancelled, not deleted.
+    await db.update(smsLog).set({ appointmentId: null }).where(eq(smsLog.appointmentId, id));
+    await db.update(aiCallLog).set({ appointmentId: null }).where(eq(aiCallLog.appointmentId, id));
     await db.delete(appointments).where(eq(appointments.id, id));
   }
 

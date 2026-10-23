@@ -73,7 +73,7 @@ async function ownStaff(req: Request, storeId: number): Promise<number | null> {
 }
 
 /** Is that time already taken on this calendar? The salon's gap between appointments is held on both sides. */
-async function timeTaken(storeId: number, staffId: number | null, start: string | Date, minutes: number, exceptId: number | null, visitAt?: string | null) {
+export async function timeTaken(storeId: number, staffId: number | null, start: string | Date, minutes: number, exceptId: number | null, visitAt?: string | null) {
   const buffer = await getBufferMinutes(storeId);
   // A house call holds its travel time on both sides; a house call being booked needs its own free too.
   const travel = await getHouseCallTravelMinutes(storeId);

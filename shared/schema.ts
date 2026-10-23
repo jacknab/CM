@@ -267,6 +267,8 @@ export const locations = pgTable("locations", {
   houseCallTravelMinutes:       integer("house_call_travel_minutes").notNull().default(15),
   bookingApproval:              text("booking_approval").notNull().default("auto"), // 'auto' | 'manual'
   bookingRequestExpiryHours:    integer("booking_request_expiry_hours").notNull().default(48),
+  // Days a link with other times offered to a client stays open (migration 0256).
+  bookingOfferValidDays:        integer("booking_offer_valid_days").notNull().default(3),
   advanceBookingEnabled:        boolean("advance_booking_enabled").notNull().default(false),
   advanceBookingMonths:         integer("advance_booking_months").notNull().default(3),
   onlineWaitlistEnabled:        boolean("online_waitlist_enabled").notNull().default(false),

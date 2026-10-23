@@ -26,7 +26,7 @@ export function isExpoPushToken(value: unknown): value is string {
   return typeof value === "string" && TOKEN_RE.test(value);
 }
 
-function whenLabel(date: Date, timeZone: string): string {
+export function whenLabel(date: Date, timeZone: string): string {
   try {
     return date.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone });
   } catch {
@@ -84,6 +84,35 @@ export async function pushBookingEvent(storeId: number, appointmentId: number, k
       if (dead.length) await pool.query(`DELETE FROM owner_push_devices WHERE token = ANY($1::text[])`, [dead]);
       const failed = tickets.filter((t) => t?.status === "error").length;
       console.log(`[owner-push] store=${storeId} appointment=${appointmentId} ${kind}: sent=${batch.length - failed} failed=${failed}`);
+    }
+  } catch (err: any) {
+    console.warn("[owner-push] not sent:", err?.message ?? err);
+  }
+}
+
+
+/**
+ * Any other message for the owner's phone (Certxa Pro app), e.g. a booking request waiting for an answer.
+ * `data.type` tells the app what to open when it is tapped.
+ */
+export async function pushOwnerMessage(storeId: number, message: { title: string; body: string; data: Record<string, unknown> }): Promise<void> {
+  try {
+    const devices = await pool.query<{ token: string }>(`SELECT token FROM owner_push_devices WHERE store_id = $1`, [storeId]);
+    if (devices.rows.length === 0) return;
+    const batch = devices.rows.map((d) => ({
+      to: d.token, title: message.title, body: message.body, sound: PUSH_SOUND, channelId: PUSH_CHANNEL, priority: "high", data: message.data,
+    }));
+    for (let i = 0; i < batch.length; i += 100) {
+      const part = batch.slice(i, i + 100);
+      const res = await fetch(EXPO_PUSH_URL, {
+        method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(part), signal: AbortSignal.timeout(10_000),
+      });
+      const json: any = await res.json().catch(() => null);
+      const tickets: any[] = Array.isArray(json?.data) ? json.data : [];
+      const dead = part.filter((_, n) => tickets[n]?.status === "error" && tickets[n]?.details?.error === "DeviceNotRegistered").map((m) => m.to);
+      if (dead.length) await pool.query(`DELETE FROM owner_push_devices WHERE token = ANY($1::text[])`, [dead]);
+      console.log(`[owner-push] store=${storeId} ${String(message.data.type ?? "message")}: sent=${part.length - tickets.filter((t) => t?.status === "error").length}`);
     }
   } catch (err: any) {
     console.warn("[owner-push] not sent:", err?.message ?? err);
