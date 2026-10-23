@@ -198,6 +198,9 @@ export const locations = pgTable("locations", {
   postcode: text("postcode"),
   bookingSlug: text("booking_slug").unique(),
   bookingTheme: text("booking_theme").default("simple"),
+  // The booking page's look beyond the theme (migration 0255): accent, coverImage, logoImage, about, instagram.
+  // Set only through PUT /api/booking-site, which checks every value.
+  bookingSite: jsonb("booking_site").$type<{ accent?: string; coverImage?: string; logoImage?: string; about?: string; instagram?: string }>().notNull().default({}),
   // 12-digit device-pairing code for the implicit default station (registerId 0) — one code
   // works for setting up EITHER a POS tablet or a /frontdesk or self-serve kiosk tablet (which
   // role it pairs as depends on which app screen it's entered into, not the code itself), so

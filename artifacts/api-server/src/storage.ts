@@ -35,7 +35,7 @@ import {
 import { users, type User, type UpsertUser } from "@shared/models/auth";
 import { getDealAvailability, dealDiscountPercent } from "./lib/dealAvailability";
 import { DEAL_COMMISSION_RATE } from "./lib/dealVoucherPayouts";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { eq, and, gte, lte, inArray, desc, isNotNull, ne, isNull, sql } from "drizzle-orm";
 import { toE164US, displayPhone as formatDisplayPhone } from "./lib/phoneUtils";
 import { claimStaffColor } from "./lib/staffColorUtils";
@@ -188,7 +188,13 @@ export class DatabaseStorage implements IStorage {
   }
   async getStoreBySlug(slug: string): Promise<Store | undefined> {
     const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
-    return store;
+    if (store) return store;
+    // A link the business has since changed still leads to it (lib/bookingSlug.ts, migration 0255).
+    const old = await pool.query<{ store_id: number }>("SELECT store_id FROM booking_slug_history WHERE old_slug = $1", [slug]).catch(() => null);
+    const storeId = old?.rows[0]?.store_id;
+    if (!storeId) return undefined;
+    const [moved] = await db.select().from(locations).where(eq(locations.id, storeId));
+    return moved;
   }
   async createStore(insertStore: InsertStore): Promise<Store> {
     const [store] = await db.insert(locations).values(insertStore).returning();

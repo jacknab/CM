@@ -200,40 +200,12 @@ import { toE164US } from "./lib/phoneUtils";
 import { checkOAuthRateLimit, syncCooldowns, SYNC_COOLDOWN_MS, getRateLimitSnapshot, clearRateLimitEntry, clearAllRateLimits, type RateLimitCategory } from "./rate-limits";
 import { db as websiteDb, websitesTable, templatesTable } from "@workspace/db";
 import { IS_SCHEDULER_INSTANCE } from "./lib/clusterInfo";
+import { bookingSlugAvailable, changeBookingSlug } from "./lib/bookingSlug";
 
 const BLOOM_TEMPLATE_NAME = "Nail Salon — Bloom";
-const ONBOARDING_RESERVED_SLUGS = new Set([
-  "www", "api", "admin", "app", "mail", "smtp", "ftp", "ns1", "ns2",
-  "dev", "staging", "production", "support", "help", "blog", "status",
-  "static", "assets", "cdn", "media", "img", "images",
-  // Subdomains Certxa itself uses (middleware/subdomain.ts RESERVED_SUBDOMAINS): a business with one of these
-  // as its link would get /book/<slug> but never <slug>.certxa.com.
-  "certxa", "launchit", "shop", "store", "test", "demo", "secure", "manage", "rentals", "salons",
-]);
-
+/** The booking-link rules live in lib/bookingSlug.ts (format, reserved words, other businesses' current and old links). */
 async function isOnboardingSlugAvailable(slug: string, storeId?: number): Promise<boolean> {
-  if (
-    !/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$|^[a-z0-9]{2,63}$/.test(slug)
-    || ONBOARDING_RESERVED_SLUGS.has(slug)
-  ) {
-    return false;
-  }
-
-  const [storeConflict, websiteConflict] = await Promise.all([
-    db
-      .select({ id: locations.id })
-      .from(locations)
-      .where(eq(locations.bookingSlug, slug))
-      .limit(1),
-    websiteDb
-      .select({ id: websitesTable.id })
-      .from(websitesTable)
-      .where(eq(websitesTable.slug, slug))
-      .limit(1),
-  ]);
-
-  const storeTaken = Boolean(storeConflict[0] && storeConflict[0].id !== storeId);
-  return !storeTaken && websiteConflict.length === 0;
+  return bookingSlugAvailable(slug, storeId);
 }
 
 async function chooseOnboardingSlug(baseValue: string, storeId?: number): Promise<string> {
@@ -2668,7 +2640,7 @@ export async function registerRoutes(
       const input = insertLocationSchema.partial().parse(req.body);
       // Where the business sees clients and booking approval change only through /api/work-places,
       // which checks the values and that the business is on the Solo plan.
-      for (const key of ["ownPlace", "addressPrivate", "houseCalls", "houseCallRadiusMiles", "houseCallFee", "houseCallTravelMinutes", "bookingApproval", "bookingRequestExpiryHours"]) {
+      for (const key of ["bookingSite", "ownPlace", "addressPrivate", "houseCalls", "houseCallRadiusMiles", "houseCallFee", "houseCallTravelMinutes", "bookingApproval", "bookingRequestExpiryHours"]) {
         delete (input as Record<string, unknown>)[key];
       }
       // The booking link (certxa.com/book/<slug>, <slug>.certxa.com) follows the same rules as at sign-up:
@@ -2678,8 +2650,10 @@ export async function registerRoutes(
         if (!(await isOnboardingSlugAvailable(slug, id))) {
           return res.status(400).json({ message: "That booking link is taken or not allowed. Use 3 or more lowercase letters, numbers and hyphens." });
         }
-        (input as any).bookingSlug = slug;
+        // The old link is kept: it leads to the new one and nobody else can take it.
+        await changeBookingSlug(id, slug);
       }
+      delete (input as any).bookingSlug;
       // A time zone must be a real IANA name: every date the business shows is formatted with it.
       if ((input as any).timezone !== undefined) {
         try { new Intl.DateTimeFormat("en-US", { timeZone: String((input as any).timezone) }); }
@@ -4294,6 +4268,8 @@ export async function registerRoutes(
   // Solo plan: where the professional sees clients, and booking approval (plans/solo-work-places-and-approval.md).
   const { default: workPlacesRouter } = await import("./routes/workPlaces.js");
   app.use("/api/work-places", isAuthenticated, workPlacesRouter);
+  const { default: bookingSiteRouter } = await import("./routes/bookingSite.js");
+  app.use("/api/booking-site", isAuthenticated, bookingSiteRouter);
   // The salon's account copied to its tablets and kept in sync (routes/storeMirror.ts).
   const { default: storeMirrorRouter, startMirrorLogPruning } = await import("./routes/storeMirror.js");
   app.use("/api/offline/mirror", isAuthenticated, storeMirrorRouter);

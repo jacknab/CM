@@ -72,6 +72,8 @@ export default defineConfig({
     "!directory_listings",
     "!directory_removal_requests",
     "!booking_requests",
+    // Links a business has given up; they redirect to its current link (migration 0255).
+    "!booking_slug_history",
     "!store_changes",
     "!store_changes_pruned",
   ],

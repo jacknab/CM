@@ -389,6 +389,21 @@ export async function subdomainMiddleware(req: Request, res: Response, next: Nex
       }
     }
 
+    // 2b. A link the business has since changed: send the visitor to its current one (lib/bookingSlug.ts).
+    if (!isCustomDomain) {
+      try {
+        const moved = await db.execute(sql`SELECT l.booking_slug FROM booking_slug_history h JOIN locations l ON l.id = h.store_id
+          WHERE h.old_slug = ${subdomain} AND l.booking_slug IS NOT NULL LIMIT 1`);
+        const current = (moved as any).rows?.[0]?.booking_slug as string | undefined;
+        if (current && current !== subdomain) {
+          const target = host.toLowerCase().replace(/^[^.]+\./, `${current}.`);
+          return res.redirect(301, `https://${target}${(req as any).originalUrl || "/"}`);
+        }
+      } catch {
+        // booking_slug_history may not exist yet — continue
+      }
+    }
+
     // 2. Check if this is a launchsite user subdomain (subdomain.certxa.com)
     let row: any = null;
     if (!isCustomDomain) {
