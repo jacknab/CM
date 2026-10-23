@@ -7,6 +7,11 @@ export interface StoreData {
   timezone: string;
   bookingSlug?: string;
   bookingTheme?: string;
+  /** The page's look beyond the theme (set in the Certxa Pro app's website setup). */
+  bookingSite?: BookingSiteLook | null;
+  city?: string | null;
+  category?: string | null;
+  state?: string | null;
   googleRating?: number | null;
   googleReviewCount?: number;
   /** Rating to actually display — Google's if connected, else Certxa's own
@@ -82,4 +87,12 @@ export interface TimeSlot {
   /** Two services that no one technician performs both of: who takes the second, straight after the first. */
   extraStaffId?: number;
   extraStaffName?: string;
+}
+
+export interface BookingSiteLook {
+  accent?: string;
+  coverImage?: string;
+  logoImage?: string;
+  about?: string;
+  instagram?: string;
 }

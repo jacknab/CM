@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatInTz, getNowInTimezone } from "@/lib/timezone";
+import { SiteHeader, siteStyle } from "./SiteLook";
 import { TimeZoneNote } from "./TimeZoneNote";
 import { apiRequest } from "@/lib/queryClient";
 import { addDays, subDays, isSameDay } from "date-fns";
@@ -389,11 +390,12 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
   }
 
   // Header Background Color - using a rich red gradient
-  const headerBg = "bg-gradient-to-b from-[#D32F2F] to-[#B71C1C]";
+  const headerBg = "bg-gradient-to-b from-[color:var(--site-accent,#D32F2F)] to-[color:var(--site-accent-dark,#B71C1C)]";
   const isPhoneValid = customerPhone.replace(/\D/g, "").length === 10;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col font-sans relative pb-20">
+    <div className="min-h-screen bg-gray-50 flex flex-col font-sans relative pb-20" style={siteStyle(store.bookingSite)}>
+      {view === "home" && <SiteHeader store={store} />}
 
       <main className="flex-1 px-4 -mt-2 z-20 overflow-y-auto">
         {preselectedStaff && (
@@ -431,17 +433,16 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
                         <h2 className="text-lg font-bold text-gray-800">Services</h2>
                         <div className="h-[1px] bg-gray-200 flex-1 ml-2"></div>
                     </div>
+                    {/* The business's real rating (Google, or Certxa reviews), only when it has one. */}
+                    {typeof store.displayRating === "number" && (store.displayReviewCount ?? 0) > 0 ? (
                     <div className="flex items-center gap-1 text-sm text-gray-600 mb-4">
                         <div className="flex text-yellow-400">
-                            <Star className="w-5 h-5 fill-current" />
-                            <Star className="w-5 h-5 fill-current" />
-                            <Star className="w-5 h-5 fill-current" />
-                            <Star className="w-5 h-5 fill-current" />
-                            <Star className="w-5 h-5 fill-current" />
+                            {[1, 2, 3, 4, 5].map((n) => <Star key={n} className={cn("w-5 h-5", n <= Math.round(store.displayRating ?? 0) ? "fill-current" : "")} />)}
                         </div>
-                        <span className="font-semibold ml-1 text-lg">5.0</span>
-                        <span className="text-gray-400 text-base">(120 reviews)</span>
+                        <span className="font-semibold ml-1 text-lg">{store.displayRating.toFixed(1)}</span>
+                        <span className="text-gray-400 text-base">({store.displayReviewCount} {store.displayReviewCount === 1 ? "review" : "reviews"})</span>
                     </div>
+                    ) : null}
 
                     <div className="grid grid-cols-2 gap-4">
                         {categoriesList.map(category => (
@@ -486,7 +487,7 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
                             </div>
                             <div className="flex items-center gap-3">
                                 {showPrices && <span className="font-bold text-gray-900">${Number(service.price).toFixed(2)}</span>}
-                                <Button size="sm" className="rounded-full px-4 bg-[#D32F2F] hover:bg-[#B71C1C]" onClick={() => handleServiceSelect(service)}>
+                                <Button size="sm" className="rounded-full px-4 bg-[color:var(--site-accent,#D32F2F)] hover:bg-[color:var(--site-accent-dark,#B71C1C)]" onClick={() => handleServiceSelect(service)}>
                                     Book
                                 </Button>
                             </div>
@@ -537,9 +538,9 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
                                     <span className="text-[11px] font-medium text-gray-400 mb-1">{dayAbbrev}</span>
                                     <span className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${
                                         isSelected
-                                            ? 'bg-[#D32F2F] text-white shadow-sm'
+                                            ? 'bg-[color:var(--site-accent,#D32F2F)] text-white shadow-sm'
                                             : isToday
-                                                ? 'border-2 border-[#D32F2F] text-[#D32F2F]'
+                                                ? 'border-2 border-[color:var(--site-accent,#D32F2F)] text-[color:var(--site-accent,#D32F2F)]'
                                                 : 'text-gray-800 hover:bg-gray-50'
                                     }`}>
                                         {dayNum}
@@ -564,7 +565,7 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
                             <button
                                 key={slot.time}
                                 onClick={() => handleSelectSlot(slot)}
-                                className="py-3 px-2 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-[#D32F2F] hover:text-[#D32F2F] active:bg-[#D32F2F] active:text-white transition-all"
+                                className="py-3 px-2 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-[color:var(--site-accent,#D32F2F)] hover:text-[color:var(--site-accent,#D32F2F)] active:bg-[color:var(--site-accent,#D32F2F)] active:text-white transition-all"
                             >
                                 {formatInTz(slot.time, timezone, "h:mm a")}
                             </button>
@@ -587,7 +588,7 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-6">
                     <div className="flex items-start gap-4 border-b border-gray-100 pb-4 mb-4">
                         <div className="w-16 h-16 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <Scissors className="w-8 h-8 text-[#D32F2F]" />
+                            <Scissors className="w-8 h-8 text-[color:var(--site-accent,#D32F2F)]" />
                         </div>
                         <div>
                             <h3 className="font-bold text-lg text-gray-900">{primaryService?.name}</h3>
@@ -662,7 +663,7 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
                 <Button
                     onClick={handleConfirmBooking}
                   disabled={bookMutation.isPending || !customerName.trim() || !isPhoneValid || (cancelAckNeeded && !cancellationAccepted)}
-                    className="w-full h-14 text-lg rounded-xl bg-[#D32F2F] hover:bg-[#B71C1C] shadow-lg shadow-red-200"
+                    className="w-full h-14 text-lg rounded-xl bg-[color:var(--site-accent,#D32F2F)] hover:bg-[color:var(--site-accent-dark,#B71C1C)] shadow-lg shadow-red-200"
                 >
                     {bookMutation.isPending ? <Loader2 className="animate-spin mr-2" /> : "Confirm Booking"}
                 </Button>
@@ -769,7 +770,7 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
       {/* Bottom Nav */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-6 py-2 flex justify-between items-center z-50 pb-safe">
         <button 
-            className={`flex flex-col items-center gap-1 ${view === 'home' || view === 'category' ? 'text-[#D32F2F]' : 'text-gray-400'}`}
+            className={`flex flex-col items-center gap-1 ${view === 'home' || view === 'category' ? 'text-[color:var(--site-accent,#D32F2F)]' : 'text-gray-400'}`}
             onClick={() => setView('home')}
         >
             <Home className="w-6 h-6" />
@@ -777,12 +778,12 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
         </button>
         
         <button className="flex flex-col items-center gap-1 text-gray-400 relative">
-            <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#D32F2F] rounded-full text-[10px] text-white flex items-center justify-center border-2 border-white">0</div>
+            <div className="absolute -top-1 -right-1 w-4 h-4 bg-[color:var(--site-accent,#D32F2F)] rounded-full text-[10px] text-white flex items-center justify-center border-2 border-white">0</div>
             <ShoppingBag className="w-6 h-6" />
             <span className="text-[10px] font-medium">Cart</span>
         </button>
 
-        <button className={cn("flex flex-col items-center gap-1", view === "profile" ? "text-[#D32F2F]" : "text-gray-400")} onClick={() => setView("profile")}>
+        <button className={cn("flex flex-col items-center gap-1", view === "profile" ? "text-[color:var(--site-accent,#D32F2F)]" : "text-gray-400")} onClick={() => setView("profile")}>
             <User className="w-6 h-6" />
             <span className="text-[10px] font-medium">Profile</span>
         </button>

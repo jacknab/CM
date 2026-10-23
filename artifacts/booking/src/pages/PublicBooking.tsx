@@ -52,7 +52,11 @@ export default function PublicBooking() {
   // For subdomain-based access, use the slug from the store's bookingSlug field
   const effectiveSlug = slug || effectiveStore.bookingSlug;
 
-  switch (effectiveStore.bookingTheme) {
+  // ?previewTheme=<theme> shows the page in another design without saving it (the Certxa Pro app's "Preview").
+  const previewTheme = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("previewTheme") : null;
+  const theme = previewTheme && ["bloom", "simple", "classic", "mobile"].includes(previewTheme) ? previewTheme : effectiveStore.bookingTheme;
+
+  switch (theme) {
     case "classic":
       return (
         <ClassicTheme

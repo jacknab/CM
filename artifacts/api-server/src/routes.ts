@@ -8575,6 +8575,18 @@ If you have any questions, please contact your administrator.
   // === SUBDOMAIN BOOKING ROUTES (accessed via subdomain) ===
 
   app.get("/api/store/by-subdomain", async (req, res) => {
+    // The subdomain middleware passes /api/ calls straight through, so the business is found from the host here:
+    // <slug>.certxa.com (an old link of the business works too - storage.getStoreBySlug).
+    if (!(req as any).store) {
+      const forwarded = req.headers["x-forwarded-host"];
+      const host = String((Array.isArray(forwarded) ? forwarded[0] : forwarded) || req.headers.host || "").split(":")[0].toLowerCase();
+      const match = /^([a-z0-9-]+)\.certxa\.com$/.exec(host);
+      if (match && !["www", "app", "manage", "rentals", "salons", "api"].includes(match[1])) {
+        const found = await storage.getStoreBySlug(match[1]);
+        const status = String((found as any)?.accountStatus ?? "active").toLowerCase();
+        if (found && !["suspended", "canceled", "cancelled"].includes(status)) (req as any).store = found;
+      }
+    }
     if ((req as any).store) {
       const store = (req as any).store;
       // Public (a salon's own subdomain): no internal fields, no private street address (lib/publicStore.ts).

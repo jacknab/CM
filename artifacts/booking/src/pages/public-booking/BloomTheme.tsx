@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { formatInTz } from "@/lib/timezone";
 import { TimeZoneNote } from "./TimeZoneNote";
+import { instagramUrl, siteStyle } from "./SiteLook";
 import { useCancellationPolicy } from "@/hooks/use-public-booking";
 import { CancellationPolicyConsent } from "./CancellationPolicyConsent";
 import type { StoreData } from "./types";
@@ -39,8 +40,9 @@ import { useHouseCall, HouseCallFields } from "./houseCall";
 
 // ── Color tokens (mapped from nail-salon-bloom tailwind.config.js) ─────────────
 const C = {
-  gold700: "#B45309",
-  gold600: "#D97706",
+  // The business's accent colour when it picked one (SiteLook.tsx siteStyle), else Bloom's gold.
+  gold700: "var(--site-accent, #B45309)",
+  gold600: "var(--site-accent, #D97706)",
   gold50:  "#FFFBEB",
   rose600: "#f39aad",
   rose700: "#e9839d",
@@ -1055,7 +1057,7 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
   }
 
   return (
-    <div className="min-h-screen" style={{ background: C.cream50, color: C.ink900 }}>
+    <div className="min-h-screen" style={{ ...siteStyle(store.bookingSite), background: C.cream50, color: C.ink900 }}>
 
       {/* ── BOOKING PANEL ─────────────────────────────────────────────────── */}
       <BookingPanel
@@ -1088,7 +1090,10 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
             style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}
             aria-label={`${salonName} — home`}
           >
-            {salonName}
+            <span className="inline-flex items-center gap-2.5">
+              {store.bookingSite?.logoImage ? <img src={store.bookingSite.logoImage} alt="" className="h-9 w-9 rounded-full object-cover" /> : null}
+              {salonName}
+            </span>
           </a>
 
           {/* Desktop nav */}
@@ -1229,6 +1234,11 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
               </div>
             )}
 
+            {/* The business's cover photo on phones (the desktop layout shows it beside the text). */}
+            {store.bookingSite?.coverImage && (
+              <img src={store.bookingSite.coverImage} alt="" className="mb-6 aspect-[4/3] w-full rounded-2xl object-cover lg:hidden" />
+            )}
+
             {/* Salon name + city */}
             <h1
               className="text-balance text-[2.4rem] font-semibold leading-[1.05] sm:text-5xl lg:text-6xl"
@@ -1240,13 +1250,13 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
                   className="mt-1 block text-[1.6rem] font-normal leading-snug sm:text-3xl lg:text-[2rem]"
                   style={{ color: C.ink400 }}
                 >
-                  Nail Salon in {city}
+                  {store.category || "Nail Salon"} in {city}
                 </span>
               )}
             </h1>
 
             <p className="mt-4 max-w-lg text-base leading-relaxed sm:mt-5 sm:text-lg" style={{ color: C.ink600 }}>
-              Luxury nail services crafted by master technicians. See real client results below and book your appointment in seconds — no account needed.
+              {store.bookingSite?.about || "Luxury nail services crafted by master technicians. See real client results below and book your appointment in seconds — no account needed."}
             </p>
 
             {/* Contact CTA */}
@@ -1275,6 +1285,19 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
                   Directions
                 </a>
               )}
+              {instagramUrl(store.bookingSite) && (
+                <a
+                  href={instagramUrl(store.bookingSite)!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 rounded-full border bg-white px-6 py-3.5 text-base font-semibold shadow-sm transition-all"
+                  style={{ borderColor: C.cream300, color: C.ink800 }}
+                  aria-label={`Instagram @${store.bookingSite?.instagram}`}
+                >
+                  <Instagram className="h-4 w-4" aria-hidden="true" />
+                  Instagram
+                </a>
+              )}
             </div>
 
             {/* Quick stats */}
@@ -1286,12 +1309,15 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
                 <dt className="text-xs font-semibold uppercase tracking-widest" style={{ color: C.gold700 }}>Same-Day</dt>
                 <dd className="mt-1 text-2xl font-semibold" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}>Booking</dd>
               </div>
+              {/* Only a business that has reviews shows a count; none never shows as five stars. */}
+              {reviewCount > 0 && (
               <div>
                 <dt className="text-xs font-semibold uppercase tracking-widest" style={{ color: C.gold700 }}>Reviews</dt>
                 <dd className="mt-1 text-2xl font-semibold" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}>
-                  {reviewCount > 0 ? `${reviewCount}+` : "★★★★★"}
+                  {`${reviewCount}+`}
                 </dd>
               </div>
+              )}
               {avgRating > 0 && (
                 <div>
                   <dt className="text-xs font-semibold uppercase tracking-widest" style={{ color: C.gold700 }}>Rating</dt>
@@ -1305,7 +1331,7 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
           <div className="relative hidden lg:block" aria-hidden="true">
             <div className="relative overflow-hidden rounded-3xl shadow-2xl">
               <img
-                src={HERO_IMAGE}
+                src={store.bookingSite?.coverImage || HERO_IMAGE}
                 alt={`Professional nail technician at ${salonName}`}
                 className="h-[520px] w-full object-cover"
                 width={640}

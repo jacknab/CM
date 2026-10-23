@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatInTz, getNowInTimezone } from "@/lib/timezone";
+import { SiteHeader, siteStyle } from "./SiteLook";
 import { TimeZoneNote } from "./TimeZoneNote";
 import { apiRequest } from "@/lib/queryClient";
 import { addDays, subDays, isSameDay } from "date-fns";
@@ -573,7 +574,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
       ? `${window.location.origin}/booking/${confirmationDigits}?slug=${encodeURIComponent(slug)}`
       : null;
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
+      <div className="min-h-screen bg-white flex items-center justify-center" style={siteStyle(store.bookingSite)}>
         <div className="text-center max-w-md px-6">
           <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-6">
             <CheckCircle2 className="w-10 h-10 text-primary" />
@@ -625,7 +626,8 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
   }
 
   return (
-    <div className="min-h-screen bg-white text-gray-900">
+    <div className="min-h-screen bg-white text-gray-900" style={siteStyle(store.bookingSite)}>
+      {step === "services" && <SiteHeader store={store} />}
 
       {preselectedStaff && (
         <div className="border-b bg-primary/5">

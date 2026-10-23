@@ -325,19 +325,6 @@ function isLikelyTenantHost(hostname: string): boolean {
   return !reserved.has(parts[0]);
 }
 
-function TenantWebsiteNotFound() {
-  return (
-    <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center px-6">
-      <div className="max-w-md text-center">
-        <h1 className="text-2xl font-bold mb-3">No website found</h1>
-        <p className="text-zinc-400 leading-relaxed">
-          This domain is not connected to a published website.
-        </p>
-      </div>
-    </div>
-  );
-}
-
 function RootRedirect() {
   if (typeof window !== "undefined") {
     // rentals.certxa.com's root is the public marketing homepage (Phase 7) —
@@ -347,8 +334,10 @@ function RootRedirect() {
     if (window.location.hostname === "rentals.certxa.com") {
       return <RentalsMarketingHome />;
     }
+    // <slug>.certxa.com: the server sends the booking app for a business's link, but the address stays "/".
+    // PublicBooking finds the business from the host (/api/store/by-subdomain) and says so when there is none.
     if (isLikelyTenantHost(window.location.hostname)) {
-      return <TenantWebsiteNotFound />;
+      return <PublicBooking />;
     }
   }
   return <Navigate to="/auth" replace />;
