@@ -6,7 +6,7 @@
  * and a request does not hold its time. The professional then, in the Certxa Pro app:
  *   - approves it: the booking is made through the normal booking path (the public /book handler, so every
  *     check, add-on, house call and confirmation text is the same) and the client gets the usual confirmation;
- *   - offers other times: the client is texted a link (<slug>.certxa.com/offer/<token>) showing only those times
+ *   - offers other times: the client is texted a link (<slug>.certxa.com/?offer=<token>) showing only those times
  *     that are still free; picking one books it straight away. The link stays open for
  *     locations.booking_offer_valid_days days;
  *   - declines it: the client is told and given the booking link.
@@ -182,7 +182,8 @@ export async function offerTimes(storeId: number, id: number, times: string[]) {
     `UPDATE booking_requests SET status = 'offered', offered_times = $2::jsonb, offer_token = $3, decided_at = now(),
        expires_at = now() + make_interval(days => $4) WHERE id = $1`,
     [id, JSON.stringify(clean), token, days]);
-  const link = `${siteUrl(store)}/offer/${token}`;
+  // The business's own link opens the offer page (PublicBooking reads ?offer=).
+  const link = `${siteUrl(store)}/?offer=${token}`;
   const until = formatInTimeZone(new Date(Date.now() + days * 86_400_000), store.timezone || "UTC", "EEE, MMM d");
   void textClient(request, `Hi ${firstName(request.client_name)}, ${store.name} can't do ${when(request.starts_at, store.timezone)}, but has other times for you. Pick one here: ${link} (open until ${until})`);
   return getRequest(storeId, id);

@@ -485,7 +485,7 @@ function BookingPanel({
                 className="text-lg font-semibold leading-tight"
                 style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}
               >
-                {step === "success" ? "You're booked!" : "Book an Appointment"}
+                {step === "success" ? (store.bookingApproval === "manual" ? "Request sent" : "You're booked!") : "Book an Appointment"}
               </h2>
               {selectedService && step !== "success" && (
                 <p className="mt-0.5 max-w-[200px] truncate text-xs" style={{ color: C.ink500 }}>
@@ -827,11 +827,14 @@ function BookingPanel({
                 className="text-2xl font-semibold"
                 style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}
               >
-                You're all set!
+                {store.bookingApproval === "manual" ? "Request sent" : "You're all set!"}
               </h3>
               <p className="mt-3 max-w-xs text-sm leading-relaxed" style={{ color: C.ink600 }}>
-                Your appointment has been confirmed.
-                {email.trim() && " A confirmation has been sent to your email."}
+                {store.bookingApproval === "manual" ? (
+                  <>{store.name} reviews each booking and will reply by text. Your time isn't booked until they confirm.</>
+                ) : (
+                  <>Your appointment has been confirmed.{email.trim() && " A confirmation has been sent to your email."}</>
+                )}
               </p>
 
               {selectedService && selectedSlot && selectedDate && (

@@ -6,6 +6,7 @@ import BloomTheme from "./public-booking/BloomTheme";
 import ClassicTheme from "./public-booking/ClassicTheme";
 import MobileTheme from "./public-booking/MobileTheme";
 import SimpleTheme from "./public-booking/SimpleTheme";
+import OfferPage from "./public-booking/OfferPage";
 
 export default function PublicBooking() {
   const { slug } = useParams<{ slug?: string }>();
@@ -28,6 +29,9 @@ export default function PublicBooking() {
   });
 
   const effectiveStore = slug ? slugStore : subdomainStore;
+  // ?offer=<token>: the times the professional offered instead of the one the client asked for.
+  const offerToken = searchParams.get("offer");
+  if (offerToken) return <OfferPage token={offerToken} />;
   const isLoading = slug ? slugLoading : subdomainLoading;
 
   if (isLoading) {

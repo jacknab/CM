@@ -358,9 +358,11 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
           <div className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6 shadow-lg">
             <CheckCircle2 className="w-12 h-12 text-green-600" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Booking Confirmed!</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">{store.bookingApproval === "manual" ? "Request sent" : "Booking Confirmed!"}</h2>
           <p className="text-gray-500 mb-6">
-            Your appointment at {store.name} has been booked successfully.
+            {store.bookingApproval === "manual"
+              ? `${store.name} reviews each booking and will reply by text. Your time isn't booked until they confirm.`
+              : `Your appointment at ${store.name} has been booked successfully.`}
           </p>
           {selectedSlot && (
             <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">

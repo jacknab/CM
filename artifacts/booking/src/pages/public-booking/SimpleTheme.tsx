@@ -579,9 +579,11 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
           <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-6">
             <CheckCircle2 className="w-10 h-10 text-primary" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Booking Confirmed!</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">{store.bookingApproval === "manual" ? "Request sent" : "Booking Confirmed!"}</h2>
           <p className="text-gray-500 mb-4">
-            Your appointment at {store.name} has been booked successfully.
+            {store.bookingApproval === "manual"
+              ? `${store.name} reviews each booking and will reply by text. Your time isn't booked until they confirm.`
+              : `Your appointment at ${store.name} has been booked successfully.`}
           </p>
           {selectedSlot && (
             <p className="text-gray-700 font-medium mb-4">

@@ -7,6 +7,8 @@ export interface StoreData {
   timezone: string;
   bookingSlug?: string;
   bookingTheme?: string;
+  /** 'manual': the business reviews each booking first, so a booking is sent as a request. */
+  bookingApproval?: string | null;
   /** The page's look beyond the theme (set in the Certxa Pro app's website setup). */
   bookingSite?: BookingSiteLook | null;
   city?: string | null;
