@@ -66,8 +66,9 @@ export default function OnlineBooking() {
   // savedSlug = what is persisted in the DB (drives live URL, QR, embed, copy actions)
   // slug = draft input state (what the owner is currently typing)
   const savedSlug = selectedStore?.bookingSlug ?? "";
-  const savedSubdomainUrl = savedSlug ? `https://www.certxa.com/book/${savedSlug}` : "";
-  const savedDisplayDomain = savedSlug ? `certxa.com/book/${savedSlug}` : "";
+  // The link to share is <slug>.certxa.com (certxa.com/book/<slug> keeps working too).
+  const savedSubdomainUrl = savedSlug ? `https://${savedSlug}.certxa.com` : "";
+  const savedDisplayDomain = savedSlug ? `${savedSlug}.certxa.com` : "";
 
   const embedSnippet = useMemo(() => {
     if (!staffList || !savedSlug) return "";
@@ -220,14 +221,14 @@ ${cards}
             <label className="text-sm font-medium text-foreground">Your booking URL handle</label>
             <div className="flex items-center gap-2">
               <div className="flex items-center border rounded-md bg-background overflow-hidden flex-1 max-w-md focus-within:ring-2 focus-within:ring-ring focus-within:border-ring">
-                <span className="text-sm text-muted-foreground pl-3 pr-1 whitespace-nowrap select-none">certxa.com/book/</span>
                 <Input
                   value={slug}
                   onChange={(e) => handleSlugChange(e.target.value)}
-                  className="border-0 focus-visible:ring-0 shadow-none flex-1 min-w-0 px-1"
+                  className="border-0 focus-visible:ring-0 shadow-none flex-1 min-w-0 pl-3 pr-1 text-right"
                   placeholder="joes-nail-salon"
                   data-testid="input-booking-slug"
                 />
+                <span className="text-sm text-muted-foreground pr-3 whitespace-nowrap select-none">.certxa.com</span>
               </div>
               <Button
                 onClick={handleSave}
