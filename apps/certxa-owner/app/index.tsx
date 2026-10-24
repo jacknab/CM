@@ -97,6 +97,15 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 // ── Bridge JS injected into every page load ────────────────────────────────────
+/** Why a print failed, in words: the printer library often rejects with a plain string (or nothing), not an Error. */
+function printFailure(e: unknown, fallback: string): string {
+  if (typeof e === 'string' && e.trim()) return e;
+  const m = (e as any)?.message;
+  if (typeof m === 'string' && m.trim()) return m;
+  try { const j = JSON.stringify(e); if (j && j !== '{}' && j !== 'null') return `${fallback}: ${j}`; } catch { /* not serialisable */ }
+  return fallback;
+}
+
 const BRIDGE_JS = `
 (function() {
   if (window.__certxaBridgeInstalled) return;
@@ -652,7 +661,7 @@ export default function PortalScreen() {
               else await printReceiptCopies(data);
               reply(true);
             } catch (e: any) {
-              reply(false, e?.message ?? 'Could not print the receipt');
+              reply(false, printFailure(e, 'Could not print the receipt'));
             }
           })();
           break;
@@ -675,7 +684,7 @@ export default function PortalScreen() {
               await printZReport(report as ZReportPrintData);
               reply(true);
             } catch (e: any) {
-              reply(false, e?.message ?? 'Could not print the Z Report');
+              reply(false, printFailure(e, 'Could not print the Z Report'));
             }
           })();
           break;
@@ -695,7 +704,7 @@ export default function PortalScreen() {
               await printText(typeof text === 'string' ? text : '');
               reply(true);
             } catch (e: any) {
-              reply(false, e?.message ?? 'Could not print');
+              reply(false, printFailure(e, 'Could not print'));
             }
           })();
           break;
@@ -724,7 +733,7 @@ export default function PortalScreen() {
               reply(true);
             } catch (e: any) {
               console.error('[Printer] Check-in ticket failed', e?.message ?? e);
-              reply(false, e?.message ?? 'Could not print the check-in ticket');
+              reply(false, printFailure(e, 'Could not print the check-in ticket'));
             }
           })();
           break;

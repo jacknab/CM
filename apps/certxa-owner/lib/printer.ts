@@ -243,6 +243,24 @@ async function ensureUsbReady(device: PrinterDevice): Promise<void> {
   }
 }
 
+/**
+ * Connect to a network printer. The library first pings the printer (ICMP) and gives up if the ping goes
+ * unanswered — which some printers and networks never answer, though the printer itself is reachable on its
+ * print port. If that fails, connect to the print port directly, without the ping.
+ */
+async function connectNet(device: PrinterDevice): Promise<void> {
+  const port = Number(device.port) || DEFAULT_NET_PORT;
+  try {
+    await _NET.connectPrinter(device.address, port, 8000);
+  } catch (first) {
+    const native = (NativeModules as any).RNNetPrinter;
+    if (!native?.connectPrinter) throw first;
+    await new Promise<void>((resolve, reject) => {
+      native.connectPrinter(device.address, port, () => resolve(), (err: unknown) => reject(err ?? first));
+    });
+  }
+}
+
 async function getActivePrinterModule(device: PrinterDevice): Promise<any> {
   loadNative();
   if (device.type === 'bluetooth') {
@@ -261,7 +279,7 @@ async function getActivePrinterModule(device: PrinterDevice): Promise<any> {
     // host and port must reach the native bridge as their real types (a string port here would hit the
     // same JS-string-into-Java-Integer bridge crash fixed for USB above).
     try {
-      await _NET.connectPrinter(device.address, Number(device.port) || DEFAULT_NET_PORT, 8000);
+      await connectNet(device);
     } catch (e: any) {
       throw new Error(`Could not reach the printer at ${device.address}: ${typeof e === 'string' ? e : e?.message ?? 'no answer'}`);
     }
@@ -409,7 +427,7 @@ export async function openCashDrawer(): Promise<void> {
     if (!_NET) throw new Error('Network printer module not available');
     await _NET.init();
     await _NET.closeConn().catch(() => {});
-    await _NET.connectPrinter(printer.address, Number(printer.port) || DEFAULT_NET_PORT, 8000);
+    await connectNet(printer);
     native = (NativeModules as any).RNNetPrinter;
   } else {
     loadNative();
