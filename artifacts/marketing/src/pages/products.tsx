@@ -26,7 +26,7 @@ const mainProductImages = [
 ];
 
 const accessoryImages = [
-  '/airo-assets/images/products/customer-screen',
+  '/_site/images/products/certxa-check-in-tablet.webp', // customer-facing check-in tablet (owner, 2026-10-24)
   '/_site/images/products/certxa-thermal-printer.webp', // matte black thermal printer (owner, 2026-10-24)
   '/_site/images/products/certxa-cash-drawer.webp', // Certxa cash drawer (owner, 2026-10-24)
   '/airo-assets/images/products/barcode-scanner',
