@@ -20,7 +20,7 @@ import Constants from 'expo-constants';
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import {
   View, ActivityIndicator, StyleSheet, useWindowDimensions,
-  Platform, Text, TouchableOpacity, BackHandler,
+  Platform, Text, TouchableOpacity, BackHandler, AppState,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { runLocalDb, type LocalDbRequest } from '../lib/localDb';
@@ -42,7 +42,7 @@ import { WifiSetupScreen } from '@/components/onboarding/WifiSetupScreen';
 import { APP_BUILD_LABEL } from '@/lib/buildInfo';
 import { ManagerMenu } from '@/components/ManagerMenu';
 import { wifiSetupSupported } from '@/lib/wifi';
-import { useIdleSleep } from '@/lib/idleSleep';
+import { IDLE_SLEEP_MS, useIdleSleep } from '@/lib/idleSleep';
 import { useNightlyRestart, isDefaultHomeApp, openDeviceSettings, isKioskManaged, exitKioskToSettings, followSensorOrientation, prepareCardReader, restartApp } from '@/lib/appRestart';
 import { KioskExitPinModal } from '@/components/KioskExitPinModal';
 import { POSModal, type POSData } from '@/components/POSModal';
@@ -340,7 +340,9 @@ export default function PortalScreen() {
   // These POS tablets are deliberately kept from ever really sleeping (below) — most tablets
   // have no reliable hardware tap-to-wake, and a real OS sleep would risk a PIN-lock screen
   // mid-shift. Instead the app dims itself after IDLE_SLEEP_MS idle; see lib/idleSleep.ts.
-  const { asleep, recordActivity: recordIdleActivity, wake } = useIdleSleep();
+  // Never asleep while a native pop-up is open: its window is above the sleep overlay, so it couldn't be woken.
+  const nativePopupOpen = posVisible || m2PayVisible || kioskPinVisible || managerMenuVisible || printerSetupVisible || readerStatusVisible || tapSetupVisible;
+  const { asleep, recordActivity: recordIdleActivity, wake } = useIdleSleep(IDLE_SLEEP_MS, nativePopupOpen);
   // When the screen was last touched — the nightly restart waits for a quiet screen.
   const lastActivityRef = useRef(Date.now());
   const recordActivity = useCallback(() => {
@@ -367,7 +369,12 @@ export default function PortalScreen() {
   }, []);
   useEffect(() => {
     asleepNow.current = asleep;
-    if (!asleep) { void restoreBrightness(); return; }
+    if (!asleep) {
+      void restoreBrightness();
+      // Again a moment later: a dim still being applied on the native side can land after the first restore.
+      const again = setTimeout(() => { if (!asleepNow.current) void restoreBrightness(); }, 700);
+      return () => clearTimeout(again);
+    }
     (async () => {
       try {
         // Read the current level BEFORE dimming (not concurrently) so a slow read can never
@@ -382,6 +389,12 @@ export default function PortalScreen() {
       } catch {}
     })();
   }, [asleep, restoreBrightness]);
+
+  // Back in front (screen turned on again, after the PIN or another app): the window's brightness is the tablet's again.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => { if (state === 'active' && !asleepNow.current) void restoreBrightness(); });
+    return () => sub.remove();
+  }, [restoreBrightness]);
 
   // Card reader: at every launch, have Bluetooth + Location on (kiosk-managed tablets only).
   useEffect(() => { prepareCardReader(); }, []);

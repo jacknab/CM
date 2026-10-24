@@ -14,7 +14,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 export const IDLE_SLEEP_MS = 2 * 60 * 1000;
 
-export function useIdleSleep(idleMs: number = IDLE_SLEEP_MS) {
+/** `paused`: a native pop-up (payment, PIN, printer setup…) is open. It sits in its own window above the sleep
+ *  overlay, so a tap there could never wake the screen — the tablet stayed dim (owner, 2026-10-24). While paused the
+ *  tablet never sleeps, and it wakes if it already was. */
+export function useIdleSleep(idleMs: number = IDLE_SLEEP_MS, paused = false) {
   const [asleep, setAsleep] = useState(false);
   const asleepRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -40,9 +43,15 @@ export function useIdleSleep(idleMs: number = IDLE_SLEEP_MS) {
   }, [arm]);
 
   useEffect(() => {
+    if (paused) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = null;
+      if (asleepRef.current) { asleepRef.current = false; setAsleep(false); }
+      return;
+    }
     arm();
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [arm]);
+  }, [arm, paused]);
 
   return { asleep, recordActivity, wake };
 }
