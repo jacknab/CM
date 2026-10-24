@@ -24,7 +24,7 @@ const stagger = {
 const mainProductImages: Record<string, string> = {
   'prod-station': '/_site/images/products/certxa-station.webp', // Certxa Station — SalonOS scheduling terminal (owner, 2026-10-24)
   'prod-kiosk': '/airo-assets/images/products/tablet-stand',
-  'prod-reader': '/airo-assets/images/products/card-reader',
+  'prod-reader': '/_site/images/products/stripe-m2-reader.webp', // Stripe M2 card reader (owner, 2026-10-24)
 };
 // The Certxa Station, large, at the top of the page (owner, 2026-10-24: the main POS front and centre).
 const HERO_IMAGE = '/_site/images/products/certxa-station-hero.webp';
