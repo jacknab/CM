@@ -13,12 +13,12 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, Modal, TouchableOpacity, FlatList, TextInput,
-  StyleSheet, ActivityIndicator, Alert,
+  StyleSheet, ActivityIndicator, Alert, Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   scanForPrinters, getSavedPrinter, savePrinter, clearSavedPrinter,
-  printTestPage, isValidIPv4, type PrinterDevice,
+  printTestPage, printSrp275iiiComparison, isValidIPv4, isSrp275iii, type PrinterDevice,
 } from '@/lib/printer';
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -57,6 +57,8 @@ export function PrinterSetupModal({ visible, storeName, onClose }: Props) {
   const [usbDevices, setUsbDevices] = useState<PrinterDevice[]>([]);
   const [saved, setSaved]           = useState<PrinterDevice | null>(null);
   const [netIp, setNetIp]           = useState('');
+  const [netSrp, setNetSrp]         = useState(false);  // BIXOLON SRP-275III (dot-matrix)
+  const [netDouble, setNetDouble]   = useState(false);  // SRP-275III double-strike
 
   // Load saved printer on open
   useEffect(() => {
@@ -65,6 +67,8 @@ export function PrinterSetupModal({ visible, storeName, onClose }: Props) {
       setSaved(d);
       if (d?.type === 'net') {
         setNetIp(d.address);
+        setNetSrp(isSrp275iii(d));
+        setNetDouble(!!d.doubleStrike);
         setTab('network');
       }
     }).catch(() => {});
@@ -109,8 +113,34 @@ export function PrinterSetupModal({ visible, storeName, onClose }: Props) {
       setErrorMsg('Enter a valid IP address, e.g. 192.168.0.128');
       return;
     }
-    await handleConnect({ type: 'net', address: ip, port: 9100, name: `Network Printer (${ip})` });
-  }, [netIp, handleConnect]);
+    await handleConnect({
+      type: 'net', address: ip, port: 9100, name: `Network Printer (${ip})`,
+      ...(netSrp ? { model: 'bixolon-srp275iii' as const, doubleStrike: netDouble } : {}),
+    });
+  }, [netIp, netSrp, netDouble, handleConnect]);
+
+  // ── Printer model (network) — saved straight onto the saved network printer when there is one ───────────────
+  const applyNetModel = useCallback(async (srp: boolean, dbl: boolean) => {
+    setNetSrp(srp);
+    setNetDouble(dbl);
+    if (saved?.type !== 'net') return;
+    const { model: _m, doubleStrike: _d, ...base } = saved;
+    const next: PrinterDevice = srp ? { ...base, model: 'bixolon-srp275iii', doubleStrike: dbl } : base;
+    try { await savePrinter(next); setSaved(next); } catch { /* kept on screen; saved with Connect & Save */ }
+  }, [saved]);
+
+  // ── SRP-275III comparison page (A normal · B Font B + emphasized · C + double-strike) ───────────────────────
+  const handleComparePrint = useCallback(async () => {
+    setPhase('testing');
+    setErrorMsg('');
+    try {
+      await printSrp275iiiComparison(storeName);
+      setPhase('done');
+    } catch (e: any) {
+      setPhase('error');
+      setErrorMsg(e?.message ?? 'Comparison print failed');
+    }
+  }, [storeName]);
 
   // ── Test print ───────────────────────────────────────────────────────────────
   const handleTestPrint = useCallback(async () => {
@@ -286,6 +316,40 @@ export function PrinterSetupModal({ visible, storeName, onClose }: Props) {
                 )}
                 <Text style={S.scanBtnTxt}>Connect & Save</Text>
               </TouchableOpacity>
+
+              <Text style={[S.netLabel, { marginTop: 18 }]}>Printer model</Text>
+              <View style={S.modelRow}>
+                {([false, true] as const).map((srp) => (
+                  <TouchableOpacity
+                    key={String(srp)}
+                    style={[S.modelBtn, netSrp === srp && S.modelBtnActive]}
+                    onPress={() => applyNetModel(srp, netDouble)}
+                    disabled={isBusy}
+                  >
+                    <Text style={[S.modelTxt, netSrp === srp && S.modelTxtActive]}>
+                      {srp ? 'BIXOLON SRP-275III (dot-matrix)' : 'Standard (thermal)'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {netSrp && (
+                <>
+                  <View style={S.switchRow}>
+                    <Text style={S.switchTxt}>Double-strike (darker, slower)</Text>
+                    <Switch value={netDouble} onValueChange={(v) => applyNetModel(true, v)} disabled={isBusy} />
+                  </View>
+                  {saved?.type === 'net' && (
+                    <TouchableOpacity
+                      style={[S.scanBtn, { marginHorizontal: 0, marginTop: 10 }, isBusy && S.scanBtnDim]}
+                      onPress={handleComparePrint}
+                      disabled={isBusy}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={S.scanBtnTxt}>Print comparison (A / B / C)</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
             </View>
           ) : currentDevices.length === 0 && phase === 'idle' ? (
             <View style={S.emptyState}>
@@ -433,6 +497,15 @@ const S = StyleSheet.create({
     backgroundColor: C.card, borderWidth: 1, borderColor: C.border, borderRadius: 10,
     paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, color: C.text,
   },
+
+  // Printer model (network)
+  modelRow:       { flexDirection: 'row', gap: 8 },
+  modelBtn:       { flex: 1, backgroundColor: C.card, borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 8, alignItems: 'center' },
+  modelBtnActive: { borderColor: C.blue, backgroundColor: C.blue + '12' },
+  modelTxt:       { fontSize: 12, fontWeight: '700', color: C.textSub, textAlign: 'center' },
+  modelTxtActive: { color: C.blue },
+  switchRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
+  switchTxt:      { fontSize: 13, fontWeight: '600', color: C.text },
 
   // Device list
   list: { maxHeight: 280, marginTop: 10, paddingHorizontal: 20 },

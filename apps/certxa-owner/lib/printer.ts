@@ -44,7 +44,14 @@ export interface PrinterDevice {
   productId?: string;
   /** TCP port for 'net' devices — every ESC/POS network printer listens on 9100 unless reconfigured. */
   port?: number;
+  /** Set only for a BIXOLON SRP-275III (impact dot-matrix, 76 mm paper). Its jobs are sent as our own ESC/POS
+   *  (Font B + emphasized) instead of through the library's text formatter; every other printer is unchanged. */
+  model?: 'bixolon-srp275iii';
+  /** SRP-275III only: also print in double-strike mode (ESC G). Darker, slower. */
+  doubleStrike?: boolean;
 }
+
+export const isSrp275iii = (d: PrinterDevice | null | undefined) => d?.model === 'bixolon-srp275iii';
 
 const DEFAULT_NET_PORT = 9100;
 
@@ -316,6 +323,71 @@ function toPrinterTags(text: string): string {
     .replace(/<\/b>/g, '</B>');
 }
 
+/** Hand tagged text to the printer: an SRP-275III gets our own Font B + emphasized bytes; every other printer
+ *  goes through the library's formatter exactly as before. */
+async function printTagged(printer: PrinterDevice, mod: any, text: string): Promise<void> {
+  if (isSrp275iii(printer)) await sendRaw(printer, srp275iiiBytesBase64(text, !!printer.doubleStrike));
+  else await mod.printBill(toPrinterTags(text));
+}
+
+/** Write raw ESC/POS (base64) to the already-connected printer. The library calls back only on failure, at once. */
+async function sendRaw(printer: PrinterDevice, b64: string): Promise<void> {
+  const native = printer.type === 'net' ? (NativeModules as any).RNNetPrinter
+    : printer.type === 'bluetooth' ? (NativeModules as any).RNBLEPrinter : (NativeModules as any).RNUSBPrinter;
+  if (!native?.printRawData) throw new Error('This printer connection cannot print.');
+  await new Promise<void>((resolve, reject) => {
+    let failure: string | null = null;
+    try { native.printRawData(b64, (e: unknown) => { failure = String(e ?? 'The printer did not accept the job'); }); }
+    catch (e: any) { failure = e?.message ?? 'The printer did not accept the job'; }
+    setTimeout(() => (failure ? reject(new Error(failure)) : resolve()), 300);
+  });
+}
+
+/**
+ * BIXOLON SRP-275III bytes (owner, 2026-10-24: smaller and darker on the dot-matrix printer). Only commands in the
+ * SRP-275III command manual are used — ESC @, ESC a, ESC !, ESC G, LF, ESC i — and no GS ! or FS ! (not supported).
+ * ESC ! sets the font and emphasis together (bit 0 = Font B, bit 3 = emphasized, bits 4/5 = double height/width),
+ * and it cancels ESC G, so all of it is sent again at the start of every line. The layout ([C]/[L]/[R], <b> lines
+ * double size, 32 columns) is the receipt's own and is not changed. Ends with ESC @ so the next job starts from
+ * the printer's defaults.
+ */
+export function srp275iiiBytesBase64(text: string, doubleStrike: boolean): string {
+  const out: number[] = [27, 64];
+  srpLines(out, text, { fontB: true, emphasized: true, doubleStrike });
+  srpEnd(out);
+  return toBase64(out);
+}
+
+function srpLines(out: number[], text: string, o: { fontB: boolean; emphasized: boolean; doubleStrike: boolean }) {
+  for (const raw of text.split('\n')) {
+    const m = /^\[(L|C|R)\](.*)$/.exec(raw);
+    const align = m ? ({ L: 0, C: 1, R: 2 } as const)[m[1] as 'L' | 'C' | 'R'] : 0;
+    let body = m ? m[2] : raw;
+    const big = /<b>/i.test(body);
+    body = body.replace(/<\/?b>/gi, '');
+    out.push(27, 97, align);
+    out.push(27, 33, (o.fontB ? 1 : 0) | (o.emphasized ? 8 : 0) | (big ? 48 : 0));
+    out.push(27, 71, o.doubleStrike ? 1 : 0);
+    for (const c of asciiOnly(body)) out.push(c);
+    out.push(10);
+  }
+}
+
+function srpEnd(out: number[]) {
+  out.push(27, 33, 0, 27, 71, 0, 27, 97, 0);
+  out.push(10, 10, 10, 10, 10, 27, 105); // feed, then cut (as the library's printBill ends)
+  out.push(27, 64); // back to the printer's defaults
+}
+
+/** The printer's character table is plain ASCII: accents are dropped (Nguyễn → Nguyen), anything else prints "?". */
+function asciiOnly(s: string): number[] {
+  let t = s.replace(/[đĐ]/g, (c) => (c === 'đ' ? 'd' : 'D'));
+  try { t = t.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch { /* no normalize: keep as is */ }
+  const codes: number[] = [];
+  for (let i = 0; i < t.length; i++) { const c = t.charCodeAt(i); codes.push(c >= 32 && c < 127 ? c : 63); }
+  return codes;
+}
+
 /** Print a single copy of the receipt (used for the REPRINT/duplicate-copy button — not the
  *  two-copy sequence a successful payment triggers, see printReceiptCopies() below). Throws
  *  with a human-readable reason if it cannot. */
@@ -323,7 +395,7 @@ export async function printReceipt(data: ReceiptData, copy: 'salon' | 'customer'
   const printer = await resolvePrinter();
   const mod  = await getActivePrinterModule(printer);
   const text = buildReceiptText(data, copy);
-  await mod.printBill(toPrinterTags(text));
+  await printTagged(printer, mod, text);
   await finishJob(printer);
 }
 
@@ -341,9 +413,9 @@ export async function printReceipt(data: ReceiptData, copy: 'salon' | 'customer'
 export async function printReceiptCopies(data: ReceiptData): Promise<void> {
   const printer = await resolvePrinter();
   const mod = await getActivePrinterModule(printer);
-  await mod.printBill(toPrinterTags(buildReceiptText(data, 'salon')));
+  await printTagged(printer, mod, buildReceiptText(data, 'salon'));
   await new Promise((r) => setTimeout(r, 400));
-  await mod.printBill(toPrinterTags(buildReceiptText(data, 'customer')));
+  await printTagged(printer, mod, buildReceiptText(data, 'customer'));
   await finishJob(printer);
 }
 
@@ -383,7 +455,7 @@ export async function printText(text: string): Promise<void> {
   const native = printer.type === 'net' ? (NativeModules as any).RNNetPrinter
     : printer.type === 'bluetooth' ? (NativeModules as any).RNBLEPrinter : (NativeModules as any).RNUSBPrinter;
   if (!native?.printRawData) throw new Error('This printer connection cannot print text.');
-  const data = slipBytesBase64(text);
+  const data = isSrp275iii(printer) ? srp275iiiBytesBase64(text, !!printer.doubleStrike) : slipBytesBase64(text);
   await new Promise<void>((resolve, reject) => {
     let failure: string | null = null;
     try { native.printRawData(data, (e: unknown) => { failure = String(e ?? 'The printer did not accept the slip'); }); }
@@ -434,7 +506,7 @@ function toBase64(bytes: number[]): string {
 export async function printZReport(data: ZReportPrintData): Promise<void> {
   const printer = await resolvePrinter();
   const mod = await getActivePrinterModule(printer);
-  await mod.printBill(toPrinterTags(buildZReportText(data)));
+  await printTagged(printer, mod, buildZReportText(data));
   await finishJob(printer);
 }
 
@@ -457,7 +529,35 @@ export async function printTestPage(storeName: string, device?: PrinterDevice): 
     `[C]<b>Print test OK</b>`,
     `\n\n\n`,
   ].join('\n');
-  await mod.printBill(toPrinterTags(lines));
+  await printTagged(printer, mod, lines);
+  await finishJob(printer);
+}
+
+/**
+ * SRP-275III only: one page with the same sample printed three ways, to compare on the paper —
+ *   A  the printer's normal mode (Font A, not emphasized: how it printed before)
+ *   B  Font B + emphasized
+ *   C  Font B + emphasized + double-strike
+ */
+export async function printSrp275iiiComparison(storeName: string, device?: PrinterDevice): Promise<void> {
+  const printer = device ?? await resolvePrinter();
+  await getActivePrinterModule(printer);
+  const sample = (label: string) => [
+    `[C]${label}`,
+    `[C]<b>${storeName}</b>`,
+    `[C]${divLine()}`,
+    `[L]${twoCol('Gel Manicure', '$35.00')}`,
+    `[L]${twoCol('Subtotal', '$35.00')}`,
+    `[L]<b>${twoCol('TOTAL:', '$35.00', 16)}</b>`,
+    `[C]${divLine()}`,
+    '',
+  ].join('\n');
+  const out: number[] = [27, 64];
+  srpLines(out, sample('A - NORMAL (AS BEFORE)'), { fontB: false, emphasized: false, doubleStrike: false });
+  srpLines(out, sample('B - FONT B + EMPHASIZED'), { fontB: true, emphasized: true, doubleStrike: false });
+  srpLines(out, sample('C - B + DOUBLE-STRIKE'), { fontB: true, emphasized: true, doubleStrike: true });
+  srpEnd(out);
+  await sendRaw(printer, toBase64(out));
   await finishJob(printer);
 }
 
