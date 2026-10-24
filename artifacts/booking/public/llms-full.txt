@@ -52,15 +52,15 @@ Learn more
 No hidden fees. Cancel anytime.
 Starter
 $29 / mo
-Up to 3 staff, all features for small teams, and 50 Autumn calls a month.
+Up to 3 staff, all features for small size teams.
 Start free trial Most popular
 Professional
 $99 / mo
-Up to 8 staff, all features for medium-size teams, and 100 Autumn calls a month.
+Up to 12 staff, all features for medium size teams.
 Start free trial
 Enterprise
 $179 / mo
-Built for large teams or several locations.
+Built for large teams or multiple locations.
 Start free trial See full pricing details
 
 ## Your salon, running itself.
@@ -115,7 +115,7 @@ Many nail salons pay for check-in, booking, the POS and card processing as separ
 - Support every day, 10 am to 9 pm Eastern
 
 ## Simple pricing
-Solo Free One technician working on their own Starter $29 a month Up to 3 staff; $290 a year billed yearly Professional $99 a month Up to 8 staff; $990 a year billed yearly Enterprise $179 a month Large teams or several locations; $1,790 a year billed yearly
+Solo Free One technician working on their own Starter $29 a month Up to 3 staff; $290 a year billed yearly Professional $99 a month Up to 12 staff; $990 a year billed yearly Enterprise $179 a month Large teams or several locations; $1,790 a year billed yearly
 Card payments and Autumn call allowances are listed on the pricing page. See pricing
 Comparing options? Best POS systems for Vietnamese nail salons (2026)
 
@@ -137,7 +137,7 @@ The salon keeps working. Tickets, check-ins and cash sales are saved on the tabl
 Autumn answers in English and can continue the call in Vietnamese or Spanish when the caller speaks it. She books, moves and cancels appointments and knows each technician’s schedule.
 
 ### How much does Certxa cost for a nail salon?
-Certxa is free for one technician working alone. A salon with a team uses Starter at $29 a month for up to 3 staff, Professional at $99 a month for up to 8, or Enterprise at $179 a month for larger salons, with no setup fee.
+Certxa is free for one technician working alone. A salon with a team uses Starter at $29 a month for up to 3 staff, Professional at $99 a month for up to 12, or Enterprise at $179 a month for larger salons, with no setup fee.
 
 ### What do I need to run it?
 Certxa runs on touchscreen tablets and computers you may already have. It works with the Stripe M2 card reader and with USB, Bluetooth and network receipt printers.
@@ -192,7 +192,7 @@ Nhiều tiệm nail đang trả riêng cho check-in, đặt hẹn, máy POS và 
 - Hỗ trợ mỗi ngày, 10 giờ sáng đến 9 giờ tối giờ miền Đông
 
 ## Giá đơn giản
-Solo Miễn phí Một thợ làm riêng Starter $29 một tháng Tối đa 3 nhân viên; $290 một năm nếu trả theo năm Professional $99 một tháng Tối đa 8 nhân viên; $990 một năm nếu trả theo năm Enterprise $179 một tháng Tiệm lớn hoặc nhiều tiệm; $1,790 một năm nếu trả theo năm
+Solo Miễn phí Một thợ làm riêng Starter $29 một tháng Tối đa 3 nhân viên; $290 một năm nếu trả theo năm Professional $99 một tháng Tối đa 12 nhân viên; $990 một năm nếu trả theo năm Enterprise $179 một tháng Tiệm lớn hoặc nhiều tiệm; $1,790 một năm nếu trả theo năm
 Phí thẻ và số cuộc gọi Autumn có sẵn được ghi trên trang giá. Xem giá
 Đang so sánh? Các máy POS tốt nhất cho tiệm nail của người Việt (2026, tiếng Anh)
 
@@ -214,7 +214,7 @@ Tiệm vẫn làm việc bình thường. Phiếu, check-in và tiền mặt đ�
 Autumn trả lời bằng tiếng Anh và có thể nói tiếp bằng tiếng Việt hoặc tiếng Tây Ban Nha khi khách gọi nói tiếng đó. Cô ấy đặt, dời và hủy hẹn và biết lịch làm của từng thợ.
 
 ### Certxa giá bao nhiêu cho tiệm nail?
-Certxa miễn phí cho một thợ làm riêng. Tiệm có nhiều thợ dùng gói Starter $29 một tháng cho tối đa 3 nhân viên, Professional $99 một tháng cho tối đa 8 người, hoặc Enterprise $179 một tháng cho tiệm lớn, không có phí cài đặt.
+Certxa miễn phí cho một thợ làm riêng. Tiệm có nhiều thợ dùng gói Starter $29 một tháng cho tối đa 3 nhân viên, Professional $99 một tháng cho tối đa 12 người, hoặc Enterprise $179 một tháng cho tiệm lớn, không có phí cài đặt.
 
 ### Cần những gì để dùng?
 Certxa chạy trên máy tính bảng cảm ứng và máy tính bạn có thể đã có sẵn. Dùng được với máy quẹt thẻ Stripe M2 và máy in hóa đơn USB, Bluetooth hoặc qua mạng.
@@ -642,7 +642,7 @@ Buy now Free on Professional
 Fast, wireless payments anywhere.
 
 ### Wireless Card Reader
-A compact wireless card reader powered by Stripe that connects to any device running Certxa. Accept chip, tap, and swipe payments at the chair, the front desk, or anywhere in the salon. Included free with every Pro plan.
+A compact wireless card reader powered by Stripe that connects to any device running Certxa. Accept chip, tap, and swipe payments at the chair, the front desk, or anywhere in the salon. Included free with every Professional plan.
 - Chip, tap, and swipe
 - Apple Pay, Google Pay, and Samsung Pay
 - Wireless — connects via Bluetooth
@@ -676,12 +676,12 @@ Compatible with Certxa Station
 $89 Order
 
 ## Transparent processing rates. No hidden fees.
-Certxa Payments is powered by Stripe Connect. One flat rate — no monthly fee, no surprises.
+Certxa Payments is powered by Stripe Connect. Stripe's rate plus a $0.60 Certxa fee per card payment — no monthly fee.
 Standard rate
 All merchants
-2.7% + 10¢ per dip and tap
+2.7% + 5¢ per in-person card payment (Stripe's rate), plus a $0.60 Certxa fee
 No monthly fee
-Keyed-in transactions: 3.5% + 15¢. Rates apply to all Certxa hardware via Stripe Connect.
+Online card payments are 2.9% + 30¢ (Stripe's rate), plus the same $0.60 Certxa fee per card payment. Payments run through Stripe Connect.
 
 ## Hardware FAQ.
 
@@ -736,10 +736,10 @@ Start free trial
 
 ## Professional
 $99.00 / month
-Up to 8 staff, all features for medium size teams.
+Up to 12 staff, all features for medium size teams.
 Start free trial
-- Staff Members (up to 8)
-- Calendars (up to 8)
+- Staff Members (up to 12)
+- Calendars (up to 12)
 - SMS Notifications (1500 SMS credits)
 - Online Booking Page
 - Custom Domain
@@ -779,11 +779,11 @@ Start free trial
 ## Compare plans
 | Feature | Starter | Professional | Enterprise
 | staff
-| Staff Members | Up to 3 | Up to 8 |
+| Staff Members | Up to 3 | Up to 12 |
 | Commission Tracking | | |
 | Contractor Management | | |
 | booking
-| Calendars | Up to 3 | Up to 8 |
+| Calendars | Up to 3 | Up to 12 |
 | Online Booking Page | | |
 | Waitlist | | |
 | Check-in Queue | | |
@@ -807,7 +807,7 @@ Start free trial
 
 ## Frequently asked questions
 How much does Certxa cost?
-Starter is $29 a month for up to 3 staff, Professional is $99 a month for up to 8 staff, and Enterprise is $179 a month for large teams or several locations. Paying yearly costs ten months instead of twelve: $290, $990 or $1,790. The Solo plan, for one independent professional, is free.
+Starter is $29.00 a month (Up to 3 staff, all features for small size teams); Professional is $99.00 a month (Up to 12 staff, all features for medium size teams); Enterprise is $179.00 a month (Built for large teams or multiple locations). Paying yearly costs ten months instead of twelve. The Solo plan, for one independent professional, is free.
 Is there a free trial?
 Yes. Starter, Professional and Enterprise start with a 60-day free trial. A credit card is required to start a paid plan, but you are not charged until the trial ends. Solo is free with no trial needed.
 Can I change plans later?
@@ -938,7 +938,7 @@ What we've released, newest first.
 2026.10.12 October 12, 2026 New Improved Fixed New
 A ticket can now hold more than one service. One technician takes the whole visit when someone in the turn line can do every service; otherwise each service goes to the next technician who can.
 New
-Autumn, the AI receptionist, is now included in every plan: 20 calls a month on Solo, 50 on Professional and 100 on Elite.
+Autumn, the AI receptionist, is now included in every plan: 20 calls a month on Solo, 50 on Starter and 100 on Professional.
 New
 Salons that use their own card terminal can set the CARD button to Own Provider, so the POS records the card payment without charging it.
 Improved
@@ -1486,7 +1486,7 @@ A general salon app is built around appointments. Most Vietnamese-owned nail sal
 Certxa is one system for check-in, booking, the POS, payroll and marketing, built around how nail salons work. Each POS tablet switches between English, Vietnamese and Spanish, so the front desk and the technicians can each read it in their own language. The owner dashboard has a Vietnamese setting, and the check-in kiosk lets clients choose English, Spanish, Vietnamese, Chinese or Korean.
 - Strengths: six turn methods, including dollar-based turns and counted turns with half turns; walk-in tickets with Tech ID sign-in; tips split per technician; cash price; payroll with supply-fee deductions and part check, part cash; technicians print their own pay slips. Tickets, check-ins and cash sales keep working when the internet drops. Autumn, the AI receptionist, is included in every plan.
 - Watch-outs: Certxa is a newer company with fewer salons using it than the older brands. Card payments go through Stripe at 2.7% + 5¢ in person, plus a $0.60 Certxa fee on each card payment, which adds up for a busy salon.
-- Price: free for one technician working alone; Starter $29 a month for up to 3 staff; Professional $99 a month for up to 8 staff; Enterprise $179 a month for large teams or several locations. No setup fee.
+- Price: free for one technician working alone; Starter $29 a month for up to 3 staff; Professional $99 a month for up to 12 staff; Enterprise $179 a month for large teams or several locations. No setup fee.
 More detail: Certxa for Vietnamese nail salons ( tiếng Việt).
 
 ## Go POS from Fastboy (GoCheckin)
@@ -1960,7 +1960,7 @@ Questions about how Certxa uses your Google data?
 - Support: support@certxa.com
 - Full Privacy Policy: certxa.com/privacy
 - Terms of Service: certxa.com/terms
-Last updated: October 21, 2026 · © 2026 Certxa. All rights reserved. Certxa is not affiliated with or endorsed by Google LLC.
+Last updated: October 24, 2026 · © 2026 Certxa. All rights reserved. Certxa is not affiliated with or endorsed by Google LLC.
 
 
 ---

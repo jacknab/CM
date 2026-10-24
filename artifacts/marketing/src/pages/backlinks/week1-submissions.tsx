@@ -45,7 +45,7 @@ Core features:
 • Review automation — post-visit review requests sent automatically to grow your Google rating.
 • Autumn AI receptionist — answers every call in under 2 seconds, 24/7. Books appointments, handles rescheduling and cancellations, answers questions about services and pricing, checks the live wait board, and upsells add-ons. Salons that miss 30–40% of their calls get all of them back.
 
-Pricing starts at $29/month (Starter) and $79/month (Pro, includes Autumn). 60-day free trial.`;
+Solo is free for one professional. Team plans: Starter $29/month (up to 3 staff), Professional $99/month (up to 12 staff), Enterprise $179/month. Autumn is included on every plan. 60-day free trial on team plans.`;
 
 const TAGLINE = 'All-in-one salon software with a 24/7 AI receptionist';
 
@@ -129,7 +129,7 @@ const platforms: Platform[] = [
       },
       {
         action: 'Set pricing tiers',
-        detail: 'Add both plans: Starter ($29/mo) and Pro ($79/mo). Mark "Free Trial" as available. Do NOT mark "Free Plan" — Certxa doesn\'t have one.',
+        detail: 'Add the plans: Solo (free), Starter ($29/mo), Professional ($99/mo) and Enterprise ($179/mo). Mark "Free Plan" (Solo) and "Free Trial" (60 days on team plans) as available.',
       },
       {
         action: 'Submit and wait for review',

@@ -51,9 +51,9 @@
     {
       "id": "plan-pro",
       "name": "Professional",
-      "price": "$22",
+      "price": "$99",
       "period": "/ month",
-      "description": "Everything, unlimited, for any salon size. $18 a month billed annually.",
+      "description": "Up to 12 staff, all features for medium-size teams. $990 a year billed yearly.",
       "featured": true,
       "cta": "Start free trial",
       "features": [
@@ -105,10 +105,10 @@
     },
     {
       "id": "plan-enterprise",
-      "name": "Elite",
-      "price": "$49",
+      "name": "Enterprise",
+      "price": "$179",
       "period": "/ month",
-      "description": "For multi-location businesses and salon groups. $39 a month billed annually.",
+      "description": "Built for large teams or several locations. $1,790 a year billed yearly.",
       "featured": false,
       "cta": "Start free trial",
       "features": [
@@ -390,12 +390,12 @@
     {
       "id": "faq-1",
       "question": "How much does Certxa cost?",
-      "answer": "The Solo plan, for one independent professional, is free with no credit card needed. Professional is $22 a month and Elite is $49 a month, or $18 and $39 a month when billed annually."
+      "answer": "Starter is $29 a month for up to 3 staff, Professional is $99 a month for up to 12 staff, and Enterprise is $179 a month for large teams or several locations. Paying yearly costs ten months instead of twelve: $290, $990 or $1,790. The Solo plan, for one independent professional, is free."
     },
     {
       "id": "faq-2",
       "question": "Is there a free trial?",
-      "answer": "Yes. Professional and Elite start with a 60-day free trial. A credit card is required to start a paid plan, but you are not charged until the trial ends. Solo is free and needs no trial."
+      "answer": "Yes. Starter, Professional and Enterprise start with a 60-day free trial. A credit card is required to start a paid plan, but you are not charged until the trial ends. Solo is free and needs no trial."
     },
     {
       "id": "faq-3",
@@ -410,7 +410,7 @@
     {
       "id": "faq-5",
       "question": "Is the Autumn AI receptionist included?",
-      "answer": "Yes. Every plan includes Autumn: 20 calls a month on Solo, 50 on Professional and 100 on Elite. Additional calls are $0.50 each. There is a one-time $15 activation fee for your dedicated phone number. Free trials don't include calls; a trial's calls are $0.50 each."
+      "answer": "Yes. Every plan includes Autumn: 20 calls a month on Solo, 50 on Starter and 100 on Professional. Additional calls are $0.50 each. There is a one-time $15 activation fee for your dedicated phone number. Free trials don't include calls; a trial's calls are $0.50 each."
     },
     {
       "id": "faq-6",
@@ -420,7 +420,7 @@
   ],
   "cta": {
     "headline": "Start free on Solo.",
-    "subhead": "Or try Professional or Elite free for 60 days. Cancel anytime.",
+    "subhead": "Or try Starter, Professional or Enterprise free for 60 days. Cancel anytime.",
     "button": "Get started free"
   }
 }

@@ -71,7 +71,7 @@ I wanted to flag Certxa (certxa.com) for potential inclusion. We're an all-in-on
 
 A few things that might be useful for your readers:
 - Starter plan from $29/month — no contracts
-- Free hardware bundle with the Pro plan
+- Free card reader with the Professional plan
 - Built specifically for nail salons, hair salons, barbershops, and spas
 
 We also have a detailed comparison page that might be useful as a reference: certxa.com/compare/certxa-vs-vagaro (and similar pages for GlossGenius, Fresha, and Square).
