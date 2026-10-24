@@ -1376,16 +1376,6 @@ export default function Intelligence() {
                       <Zap className="h-3 w-3" />
                       Auto-pilot on
                     </Badge>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => winbackCampaignMutation.mutate()}
-                      disabled={winbackCampaignMutation.isPending}
-                      className="gap-2"
-                    >
-                      <Send className="h-4 w-4" />
-                      {winbackCampaignMutation.isPending ? "Sending..." : "Run Now"}
-                    </Button>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -1406,24 +1396,6 @@ export default function Intelligence() {
                         </div>
                         <div className="flex items-center gap-2">
                           <ChurnBadge label={client.churnRiskLabel} />
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-8 w-8 p-0"
-                                  onClick={() => winbackMutation.mutate(client.customerId)}
-                                  disabled={winbackMutation.isPending || !client.marketingOptIn}
-                                >
-                                  <Send className="h-3.5 w-3.5" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                {client.marketingOptIn ? "Send win-back message" : "Client opted out of marketing"}
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
                         </div>
                       </div>
                     ))}
@@ -1474,16 +1446,6 @@ export default function Intelligence() {
                     <Download className="h-4 w-4" />
                     Export CSV
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => winbackCampaignMutation.mutate()}
-                    disabled={winbackCampaignMutation.isPending}
-                    className="gap-2"
-                  >
-                    <Send className="h-4 w-4" />
-                    {winbackCampaignMutation.isPending ? "Sending..." : "Run Now"}
-                  </Button>
                 </div>
               </CardHeader>
               <CardContent>
@@ -1518,16 +1480,6 @@ export default function Intelligence() {
                             )}
                           </div>
                         </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="gap-1.5 flex-shrink-0"
-                          onClick={() => winbackMutation.mutate(client.customerId)}
-                          disabled={winbackMutation.isPending || !client.marketingOptIn}
-                        >
-                          <Send className="h-3.5 w-3.5" />
-                          Win-Back
-                        </Button>
                       </div>
                     ))}
                   </div>
@@ -1836,8 +1788,6 @@ export default function Intelligence() {
                     {noShowData.risks?.length > 0 ? (
                       <div className="space-y-2">
                         {noShowData.risks.filter((r: any) => r.noShowRiskLabel !== "low").map((risk: any) => {
-                          const reminded = sentReminders.has(risk.appointmentId);
-                          const isSending = sendReminderMutation.isPending && sendReminderMutation.variables?.appointmentId === risk.appointmentId;
                           return (
                           <div key={risk.appointmentId} className="flex items-center gap-3 p-3 rounded-xl border">
                             <div className={`w-2 h-2 rounded-full flex-shrink-0 ${risk.noShowRiskLabel === "high" ? "bg-red-500" : "bg-amber-400"}`} />
@@ -1856,37 +1806,6 @@ export default function Intelligence() {
                                 <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">{risk.riskFactors[0]}</p>
                               )}
                             </div>
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    size="sm"
-                                    variant={reminded ? "secondary" : "outline"}
-                                    className={`gap-1.5 flex-shrink-0 ${reminded ? "text-emerald-600 border-emerald-200" : ""}`}
-                                    disabled={reminded || isSending || !risk.customerPhone}
-                                    onClick={() => sendReminderMutation.mutate({ appointmentId: risk.appointmentId, customerId: risk.customerId })}
-                                  >
-                                    {isSending ? (
-                                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                                    ) : reminded ? (
-                                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                                    ) : (
-                                      <Send className="h-3.5 w-3.5" />
-                                    )}
-                                    <span className="hidden sm:inline text-xs">
-                                      {isSending ? "Sending…" : reminded ? "Sent" : "Remind"}
-                                    </span>
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent side="left">
-                                  {!risk.customerPhone
-                                    ? "No phone number on file"
-                                    : reminded
-                                    ? "Reminder already sent this session"
-                                    : "Send an SMS reminder for this appointment"}
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
                           </div>
                           );
                         })}
@@ -2660,7 +2579,7 @@ export default function Intelligence() {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Target className="h-4 w-4 text-violet-600" />
-                    Price Optimization Suggestions
+                    Suggestions
                   </CardTitle>
                   <CardDescription>AI-powered pricing recommendations based on demand and no-show patterns</CardDescription>
                 </CardHeader>
