@@ -728,7 +728,7 @@ export default function PortalScreen() {
               console.log('[Printer] Check-in ticket requested', { requestId, ticketNumber: ticket.ticketNumber, todayCount });
               const numberBarBase64 = await captureNumberBarBase64(Number(todayCount) || 0);
               const qrBase64 = await captureQrBase64(String(qrValue));
-              await printCheckinTicket(ticket as CheckinTicketData, numberBarBase64, qrBase64);
+              await printCheckinTicket(ticket as CheckinTicketData, numberBarBase64, qrBase64, { qrValue: String(qrValue), todayCount: Number(todayCount) || 0 });
               console.log('[Printer] Check-in ticket sent successfully', { requestId });
               reply(true);
             } catch (e: any) {

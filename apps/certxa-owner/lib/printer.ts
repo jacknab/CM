@@ -27,6 +27,7 @@ import {
   type CardDetails, type ReceiptItem, type ReceiptData, type CheckinTicketData,
 } from './receiptText';
 import { buildZReportText, type ZReportPrintData } from './zReportText';
+import { code128Modules } from './code128';
 
 export { buildReceiptText, buildZReportText };
 export type { CardDetails, ReceiptItem, ReceiptData, CheckinTicketData, ZReportPrintData };
@@ -383,6 +384,42 @@ function srpEnd(out: number[]) {
   out.push(27, 64); // back to the printer's defaults
 }
 
+/** What the check-in slip's barcode holds: the QR's code, except a walk-in's long check-in code ("CI:" + 48
+ *  characters, too wide as a barcode on 76 mm paper) becomes its ticket number — /nail opens a slip from "TN:<n>". */
+export function checkinBarcodeValue(qrValue: string, ticketNumber: number): string {
+  return qrValue.startsWith('CI:') || qrValue.length > 16 ? `TN:${ticketNumber}` : qrValue;
+}
+
+/**
+ * The check-in slip for the SRP-275III: the day's check-in number large, then a Code 128 barcode drawn with ESC *
+ * (8-dot double density: 160 dots per inch across, 72 down), its text under it, then the usual name / date / services
+ * rows. Thermal printers keep the number-bar and QR images.
+ */
+export function srpCheckinSlipBase64(data: CheckinTicketData, qrValue: string, todayCount: number, doubleStrike: boolean): string {
+  const out: number[] = [27, 64];
+  if (todayCount > 0) srpLines(out, `[C]<b>${todayCount}</b>`, { fontB: false, emphasized: true, doubleStrike, boldAs: 'big' });
+  out.push(10);
+  const code = checkinBarcodeValue(qrValue, data.ticketNumber);
+  const modules = code128Modules(code);
+  // Widest bars that fit: 3 dots a module when the code is short, else 2 (0.32 mm — well above what scanners need).
+  const MAX_DOTS = 380;
+  const dotsPer = (modules.length + 20) * 3 <= MAX_DOTS ? 3 : 2;
+  const quiet = 10 * dotsPer;
+  const columns: number[] = [];
+  for (let q = 0; q < quiet; q++) columns.push(0);
+  for (const bar of modules) for (let k = 0; k < dotsPer; k++) columns.push(bar ? 0xff : 0);
+  for (let q = 0; q < quiet; q++) columns.push(0);
+  out.push(27, 97, 1);           // centred
+  out.push(27, 51, 16);          // line spacing = 16/144" = exactly one 8-dot band, so the bands touch
+  for (let band = 0; band < 5; band++) { // 5 bands ≈ 14 mm tall
+    out.push(27, 42, 1, columns.length & 0xff, (columns.length >> 8) & 0xff, ...columns, 10);
+  }
+  out.push(27, 50);              // default line spacing again
+  srpLines(out, `[C]${code}\n\n${buildCheckinTicketFooter(data)}`, { fontB: true, emphasized: true, doubleStrike });
+  srpEnd(out);
+  return toBase64(out);
+}
+
 /** The printer's character table is plain ASCII: accents are dropped (Nguyễn → Nguyen), anything else prints "?". */
 function asciiOnly(s: string): number[] {
   let t = s.replace(/[đĐ]/g, (c) => (c === 'đ' ? 'd' : 'D'));
@@ -436,9 +473,16 @@ const stripDataUriPrefix = (b64: string) => b64.replace(/^data:image\/\w+;base64
  * since this printer library can only print bold/aligned text or raster images, nothing in
  * between (no inverted/white-on-black text, no native QR command).
  */
-export async function printCheckinTicket(data: CheckinTicketData, numberBarBase64: string, qrBase64: string): Promise<void> {
+export async function printCheckinTicket(data: CheckinTicketData, numberBarBase64: string, qrBase64: string,
+  codes?: { qrValue: string; todayCount: number }): Promise<void> {
   const printer = await resolvePrinter();
   const mod = await getActivePrinterModule(printer);
+  // BIXOLON SRP-275III: no image or QR support worth using — a barcode slip instead (owner, 2026-10-24).
+  if (isSrp275iii(printer) && codes) {
+    await sendRaw(printer, srpCheckinSlipBase64(data, codes.qrValue, codes.todayCount, !!printer.doubleStrike));
+    await finishJob(printer);
+    return;
+  }
   await mod.printImageBase64(stripDataUriPrefix(numberBarBase64), { imageWidth: CHECKIN_IMAGE_PRINT_WIDTH });
   await mod.printImageBase64(stripDataUriPrefix(qrBase64), { imageWidth: CHECKIN_IMAGE_PRINT_WIDTH });
   await mod.printBill(toPrinterTags(buildCheckinTicketFooter(data)));
