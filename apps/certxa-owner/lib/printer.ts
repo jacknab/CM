@@ -370,13 +370,63 @@ export async function printCheckinTicket(data: CheckinTicketData, numberBarBase6
 }
 
 /** Print text the web app has already laid out for the paper (a technician's pay slip). Uses the same
- *  [C]/[L]/<b> tags as the receipt templates; one copy. */
+ *  [C]/[L]/<b> tags as the receipt templates; one copy.
+ *
+ *  Sent as ESC/POS of our own rather than through the library's text formatter, so the whole slip prints in
+ *  the printer's emphasized (bold) mode — the same size, darker on printers that print thin (owner, 2026-10-24).
+ *  The library has no plain-bold tag: its <B> is double width and height. A <b> line keeps that larger size here,
+ *  as before (the salon's name, Total Pay). */
 export async function printText(text: string): Promise<void> {
   if (!text.trim()) throw new Error('Nothing to print');
   const printer = await resolvePrinter();
-  const mod = await getActivePrinterModule(printer);
-  await mod.printBill(toPrinterTags(text));
+  await getActivePrinterModule(printer); // connects (and for USB, opens) the printer
+  const native = printer.type === 'net' ? (NativeModules as any).RNNetPrinter
+    : printer.type === 'bluetooth' ? (NativeModules as any).RNBLEPrinter : (NativeModules as any).RNUSBPrinter;
+  if (!native?.printRawData) throw new Error('This printer connection cannot print text.');
+  const data = slipBytesBase64(text);
+  await new Promise<void>((resolve, reject) => {
+    let failure: string | null = null;
+    try { native.printRawData(data, (e: unknown) => { failure = String(e ?? 'The printer did not accept the slip'); }); }
+    catch (e: any) { failure = e?.message ?? 'The printer did not accept the slip'; }
+    // The library calls back only on failure, and does so at once.
+    setTimeout(() => (failure ? reject(new Error(failure)) : resolve()), 300);
+  });
   await finishJob(printer);
+}
+
+/** The slip as ESC/POS bytes (base64): every line emphasized; [C]/[L]/[R] alignment; a <b> line double size. */
+function slipBytesBase64(text: string): string {
+  const out: number[] = [27, 64]; // initialise
+  for (const raw of text.split('\n')) {
+    const m = /^\[(L|C|R)\](.*)$/.exec(raw);
+    const align = m ? ({ L: 0, C: 1, R: 2 } as const)[m[1] as 'L' | 'C' | 'R'] : 0;
+    let body = m ? m[2] : raw;
+    const big = /<b>/i.test(body);
+    body = body.replace(/<\/?b>/gi, '');
+    out.push(27, 97, align);
+    // ESC ! n: 8 = emphasized; 56 = emphasized + double height + double width. FS ! for the double-byte font too.
+    if (big) out.push(27, 33, 56, 28, 33, 12); else out.push(27, 33, 8, 28, 33, 0);
+    out.push(27, 69, 1); // emphasized on (for printers that ignore it in ESC !)
+    for (let i = 0; i < body.length; i++) {
+      const c = body.charCodeAt(i);
+      out.push(c < 128 ? c : 63); // plain ASCII; anything else prints as "?"
+    }
+    out.push(10);
+  }
+  out.push(27, 33, 0, 28, 33, 0, 27, 69, 0, 27, 97, 0);
+  out.push(10, 10, 10, 10, 10, 27, 105); // feed, then cut (as the library's printBill ends)
+  return toBase64(out);
+}
+
+function toBase64(bytes: number[]): string {
+  const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i], b = bytes[i + 1], c = bytes[i + 2];
+    const n = (a << 16) | ((b ?? 0) << 8) | (c ?? 0);
+    s += abc[(n >> 18) & 63] + abc[(n >> 12) & 63] + (b === undefined ? '=' : abc[(n >> 6) & 63]) + (c === undefined ? '=' : abc[n & 63]);
+  }
+  return s;
 }
 
 /** Print the Day Close / Z Report — a single copy (it's a register document, not something
