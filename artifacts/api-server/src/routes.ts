@@ -16531,6 +16531,25 @@ or
     }
   });
 
+  // Hardware Prices page: the price of each product on certxa.com/products, the cart and checkout.
+  app.get("/api/admin/shop/prices", async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    const { shopPricesForAdmin } = await import("./lib/shop");
+    return res.json({ data: await shopPricesForAdmin() });
+  });
+
+  app.put("/api/admin/shop/prices", async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    const { setShopPrices, ShopError } = await import("./lib/shop");
+    try {
+      return res.json({ data: await setShopPrices(req.body?.prices, String((req.session as any)?.userId ?? "") || null) });
+    } catch (err: any) {
+      if (err instanceof ShopError) return res.status(err.status).json({ message: err.message });
+      console.error("[shop] save prices failed:", err);
+      return res.status(500).json({ message: "Could not save the prices" });
+    }
+  });
+
   app.post("/api/admin/fulfillment/buy-label", async (req, res) => {
     if (!(await requireAdmin(req, res))) return;
     return res.status(501).json({ message: "Shipping label purchasing is not configured" });

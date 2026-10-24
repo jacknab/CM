@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Helmet } from '@dr.pogodin/react-helmet';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { Minus, Plus, Trash2 } from 'lucide-react';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
 import { formatCents, MAX_QTY, useCart, useShopStatus } from '@/lib/cart';
 
 const US_STATES =
@@ -16,6 +18,57 @@ interface Quote {
   totalCents: number;
 }
 
+/** The order being paid on this page (owner, 2026-10-24: payment on certxa.com, not Stripe's page). */
+interface Payment {
+  clientSecret: string;
+  orderNumber: string;
+  totalCents: number;
+}
+
+/** Stripe's card fields and the Pay button. After the card is taken the server is asked to mark the order paid. */
+function PayForm({ payment, onBack }: { payment: Payment; onBack: () => void }) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const pay = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setBusy(true);
+    setError('');
+    const confirmed = `/order-confirmed?order=${encodeURIComponent(payment.orderNumber)}`;
+    // A card that needs its bank's check (3D Secure) may leave the page and come back to the confirmation page.
+    const { error: failed } = await stripe.confirmPayment({
+      elements,
+      confirmParams: { return_url: `${window.location.origin}${confirmed}` },
+      redirect: 'if_required',
+    });
+    if (failed) {
+      setError(failed.message || 'Your card was not charged. Please check the details and try again.');
+      setBusy(false);
+      return;
+    }
+    navigate(confirmed);
+  };
+
+  return (
+    <form onSubmit={pay} className="flex flex-col gap-4">
+      <h2 className="text-lg font-bold text-foreground">Payment</h2>
+      <PaymentElement options={{ layout: 'tabs' }} />
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      <button type="submit" disabled={busy || !stripe || !elements} className="px-5 py-3 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 disabled:opacity-60">
+        {busy ? 'Paying…' : `Pay ${formatCents(payment.totalCents)}`}
+      </button>
+      <button type="button" disabled={busy} onClick={onBack} className="text-sm text-muted-foreground hover:text-foreground">
+        Change the cart or address
+      </button>
+      <p className="text-xs text-muted-foreground">Order {payment.orderNumber}. Your card is processed securely by Stripe.</p>
+    </form>
+  );
+}
+
 const field =
   'w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30';
 
@@ -27,6 +80,9 @@ export default function CartPage() {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [payment, setPayment] = useState<Payment | null>(null);
+  // Stripe loads only in the browser, once the shop says it's open.
+  const stripePromise = useMemo(() => (status?.publishableKey ? loadStripe(status.publishableKey) : null), [status?.publishableKey]);
 
   const priceOf = (sku: string) => status?.products.find((p) => p.sku === sku);
   const subtotal = lines.reduce((sum, l) => sum + (priceOf(l.sku)?.priceCents ?? 0) * l.qty, 0);
@@ -72,10 +128,10 @@ export default function CartPage() {
     setBusy(true);
     setError('');
     try {
-      const { url } = await call('/api/shop/checkout');
-      window.location.assign(url);
+      setPayment(await call('/api/shop/checkout'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.');
+    } finally {
       setBusy(false);
     }
   };
@@ -117,7 +173,7 @@ export default function CartPage() {
                         type="button"
                         aria-label={`One fewer ${product.name}`}
                         className="w-8 h-8 rounded-lg border border-border flex items-center justify-center disabled:opacity-40"
-                        disabled={line.qty <= 1}
+                        disabled={line.qty <= 1 || !!payment}
                         onClick={() => { setQty(line.sku, line.qty - 1); setQuote(null); }}
                       >
                         <Minus size={14} />
@@ -127,7 +183,7 @@ export default function CartPage() {
                         type="button"
                         aria-label={`One more ${product.name}`}
                         className="w-8 h-8 rounded-lg border border-border flex items-center justify-center disabled:opacity-40"
-                        disabled={line.qty >= MAX_QTY}
+                        disabled={line.qty >= MAX_QTY || !!payment}
                         onClick={() => { setQty(line.sku, line.qty + 1); setQuote(null); }}
                       >
                         <Plus size={14} />
@@ -135,7 +191,8 @@ export default function CartPage() {
                       <button
                         type="button"
                         aria-label={`Remove ${product.name}`}
-                        className="w-8 h-8 rounded-lg text-muted-foreground hover:text-destructive flex items-center justify-center"
+                        className="w-8 h-8 rounded-lg text-muted-foreground hover:text-destructive flex items-center justify-center disabled:opacity-40"
+                        disabled={!!payment}
                         onClick={() => { remove(line.sku); setQuote(null); }}
                       >
                         <Trash2 size={15} />
@@ -157,6 +214,11 @@ export default function CartPage() {
               </div>
             </div>
 
+            {payment && stripePromise ? (
+              <Elements stripe={stripePromise} options={{ clientSecret: payment.clientSecret, appearance: { theme: 'stripe' } }}>
+                <PayForm payment={payment} onBack={() => setPayment(null)} />
+              </Elements>
+            ) : (
             <form onSubmit={getQuote} className="flex flex-col gap-3">
               <h2 className="text-lg font-bold text-foreground">Delivery address</h2>
               <p className="text-xs text-muted-foreground -mt-2">
@@ -164,7 +226,7 @@ export default function CartPage() {
               </p>
               <input className={field} placeholder="Full name" required value={form.name} onChange={(e) => update({ name: e.target.value })} autoComplete="name" />
               <input className={field} placeholder="Email" type="email" required value={form.email} onChange={(e) => update({ email: e.target.value })} autoComplete="email" />
-              <input className={field} placeholder="Phone (optional)" type="tel" value={form.phone} onChange={(e) => update({ phone: e.target.value })} autoComplete="tel" />
+              <input className={field} placeholder="Phone" type="tel" required value={form.phone} onChange={(e) => update({ phone: e.target.value })} autoComplete="tel" />
               <input className={field} placeholder="Street address" required value={form.line1} onChange={(e) => update({ line1: e.target.value })} autoComplete="address-line1" />
               <input className={field} placeholder="Suite, unit (optional)" value={form.line2} onChange={(e) => update({ line2: e.target.value })} autoComplete="address-line2" />
               <div className="grid grid-cols-6 gap-3">
@@ -180,7 +242,7 @@ export default function CartPage() {
 
               {quote ? (
                 <button type="button" disabled={busy} onClick={checkout} className="mt-2 px-5 py-3 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 disabled:opacity-60">
-                  {busy ? 'Starting checkout…' : `Pay ${formatCents(quote.totalCents)}`}
+                  {busy ? 'One moment…' : 'Continue to payment'}
                 </button>
               ) : (
                 <button type="submit" disabled={busy} className="mt-2 px-5 py-3 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 disabled:opacity-60">
@@ -188,9 +250,10 @@ export default function CartPage() {
                 </button>
               )}
               <p className="text-xs text-muted-foreground">
-                Pay by card, or over time with Affirm, on the next screen.
+                Pay by card on the next step.
               </p>
             </form>
+            )}
           </div>
         )}
       </section>

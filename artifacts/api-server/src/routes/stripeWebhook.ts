@@ -220,6 +220,9 @@ router.post(
         // ── Payment intent ────────────────────────────────────────────────
         case "payment_intent.succeeded": {
           const pi = event.data.object as Stripe.PaymentIntent;
+          // A hardware order paid on certxa.com/cart is its own flow.
+          const { markShopIntentPaid } = await import("../lib/shop");
+          if (await markShopIntentPaid(pi)) break;
           await handlePaymentIntentSucceeded(pi);
           break;
         }

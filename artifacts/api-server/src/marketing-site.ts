@@ -321,6 +321,9 @@ export function createMarketingSite(): Router {
       // Left in place between requests (only /pricing reads it, and the plans are the same for everyone), so two
       // pages rendering at once can't take it away from each other.
       if (plans) (globalThis as any).__CERTXA_PRICING_PLANS__ = plans;
+      // The hardware page and the cart show the prices set on the admin Hardware Prices page ({ sku: cents }).
+      const shopPrices = pagePath === "/products" || pagePath === "/cart" ? await shopPricesBySku() : null;
+      if (shopPrices) (globalThis as any).__CERTXA_SHOP_PRICES__ = shopPrices;
       const result = await render(pagePath, SITE_ORIGIN);
       if (result.redirect || !result.html) return next();
       // Pages set their own canonical tag; add one only for a page that doesn't,
@@ -337,7 +340,8 @@ export function createMarketingSite(): Router {
         // runs; without JavaScript they must simply be visible.
         `<noscript><style>[style*="opacity:0"]{opacity:1!important;transform:none!important}</style></noscript>` +
         `<script>window.__SITE_PATHS__=${JSON.stringify([...owned])}</script>` +
-        (plans ? `<script>window.__CERTXA_PRICING_PLANS__=${JSON.stringify(plans).replace(/</g, "\\u003c")}</script>` : "");
+        (plans ? `<script>window.__CERTXA_PRICING_PLANS__=${JSON.stringify(plans).replace(/</g, "\\u003c")}</script>` : "") +
+        (shopPrices ? `<script>window.__CERTXA_SHOP_PRICES__=${JSON.stringify(shopPrices)}</script>` : "");
       const page = template
         .replace("<!--app-head-->", () => head)
         .replace("<!--app-html-->", () => applyInterimLinks(result.html, owned))
@@ -355,6 +359,17 @@ export function createMarketingSite(): Router {
   });
 
   return router;
+}
+
+/** Hardware prices by SKU (lib/shop.ts, the admin's prices). Null when they can't be had: the page shows its own. */
+async function shopPricesBySku(): Promise<Record<string, number> | null> {
+  try {
+    const { shopCatalogNow } = await import("./lib/shop");
+    return Object.fromEntries((await shopCatalogNow()).map((p) => [p.sku, p.priceCents]));
+  } catch (err: any) {
+    console.error("[marketing-site] shop prices unavailable:", err?.message);
+    return null;
+  }
 }
 
 /** The public plan list (/api/public/pricing-plans), kept for five minutes. Null when it can't be had. */

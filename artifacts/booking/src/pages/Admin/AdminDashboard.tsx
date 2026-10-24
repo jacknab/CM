@@ -5,6 +5,7 @@ import { StockItemManager } from './StockItemManager';
 import { StoreDatabaseEntry } from './StoreDatabaseEntry';
 import { UnifiedServiceManager } from './UnifiedServiceManager';
 import { FulfillmentManager } from './FulfillmentManager';
+import { HardwarePricesManager } from './HardwarePricesManager';
 import { UsersManager } from './UsersManager';
 import { SettingsManager } from './SettingsManager';
 import { InvoicesManager } from './InvoicesManager';
@@ -255,6 +256,7 @@ function AdminDashboardContent({
         <Route path="/store-entry/:storeNumber" element={<StoreDatabaseEntry />} />
         <Route path="/services"              element={<UnifiedServiceManager storeId={storeId} businessType={businessType} />} />
         <Route path="/fulfillment"           element={<FulfillmentManager />} />
+        <Route path="/hardware-prices"       element={<HardwarePricesManager />} />
         <Route path="/platform-settings"     element={<PlatformSettingsManager />} />
         <Route path="/stores"                element={<StoreManager />} />
         <Route path="/users"                 element={<UsersManager />} />

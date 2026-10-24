@@ -1,7 +1,8 @@
 /**
  * Hardware sold on certxa.com/products.
  *
- * The server prices every order from this list; the page only displays it.
+ * The server prices every order from this list, with any price set on the /isAdmin Hardware Prices page in its
+ * place (table shop_prices); the page only displays it.
  * `weightLb` and `dimsIn` are the BOXED shipping weight and size of one unit.
  * UPS rates cannot be requested for a product until they are filled in.
  */
@@ -16,11 +17,10 @@ export interface ShopProduct {
 export const SHOP_CATALOG: ShopProduct[] = [
   { sku: "station", name: "Certxa Station", priceCents: 79900, weightLb: null, dimsIn: null },
   { sku: "kiosk", name: "Certxa Kiosk", priceCents: 39900, weightLb: null, dimsIn: null },
-  { sku: "card-reader", name: "Wireless Card Reader", priceCents: 6900, weightLb: null, dimsIn: null },
+  { sku: "card-reader", name: "Stripe M2 Card Reader", priceCents: 6900, weightLb: null, dimsIn: null },
   { sku: "customer-screen", name: "T-Mobile REVVL TAB 2 5G | 64GB 10.1\" Tablet", priceCents: 9900, weightLb: null, dimsIn: null },
   { sku: "receipt-printer", name: "IP Thermal Receipt Printer", priceCents: 19900, weightLb: null, dimsIn: null },
   { sku: "cash-drawer", name: "Cash Drawer", priceCents: 9900, weightLb: null, dimsIn: null },
-  { sku: "barcode-scanner", name: "Barcode Scanner", priceCents: 8900, weightLb: null, dimsIn: null },
 ];
 
 export const SHOP_MAX_QTY = 10;
@@ -67,13 +67,14 @@ export interface ShopCartLine {
   qty: number;
 }
 
-/** Prices a cart from the catalog. Returns null if any line is not a real product or quantity. */
-export function priceShopCart(lines: ShopCartLine[]): { items: { sku: string; name: string; qty: number; unitCents: number }[]; subtotalCents: number } | null {
+/** Prices a cart from the catalog (by default this file's; the server passes the one with the admin's prices).
+ *  Returns null if any line is not a real product or quantity. */
+export function priceShopCart(lines: ShopCartLine[], catalog: ShopProduct[] = SHOP_CATALOG): { items: { sku: string; name: string; qty: number; unitCents: number }[]; subtotalCents: number } | null {
   if (!Array.isArray(lines) || lines.length === 0) return null;
   const items = [];
   let subtotalCents = 0;
   for (const line of lines) {
-    const product = findShopProduct(String(line?.sku));
+    const product = catalog.find((p) => p.sku === String(line?.sku));
     const qty = Number(line?.qty);
     if (!product || !Number.isInteger(qty) || qty < 1 || qty > SHOP_MAX_QTY) return null;
     items.push({ sku: product.sku, name: product.name, qty, unitCents: product.priceCents });

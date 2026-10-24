@@ -5,6 +5,7 @@ import { Link } from 'react-router';
 import { motion } from 'motion/react';
 import { ArrowRight, Check, Zap } from 'lucide-react';
 import { products } from 'virtual:content';
+import { livePriceCents, priceLabel } from '@/lib/cart';
 
 const SITE = 'https://certxa.com';
 const PAGE_URL = `${SITE}/products`;
@@ -24,7 +25,6 @@ const stagger = {
 const mainProductImages: Record<string, string> = {
   'prod-station': '/_site/images/products/certxa-station.webp', // Certxa Station — SalonOS scheduling terminal (owner, 2026-10-24)
   'prod-kiosk': '/airo-assets/images/products/tablet-stand',
-  'prod-reader': '/_site/images/products/stripe-m2-reader.webp', // Stripe M2 card reader (owner, 2026-10-24)
 };
 // The Certxa Station, large, at the top of the page (owner, 2026-10-24: the main POS front and centre).
 const HERO_IMAGE = '/_site/images/products/certxa-station-hero.webp';
@@ -46,10 +46,11 @@ const accessoryImages = [
   '/_site/images/products/certxa-check-in-tablet.webp', // customer-facing check-in tablet (owner, 2026-10-24)
   '/_site/images/products/certxa-thermal-printer.webp', // matte black thermal printer (owner, 2026-10-24)
   '/_site/images/products/certxa-cash-drawer.webp', // Certxa cash drawer (owner, 2026-10-24)
-  '/airo-assets/images/products/barcode-scanner',
+  '/_site/images/products/stripe-m2-reader.webp', // Stripe M2 card reader, in the barcode scanner's place (owner, 2026-10-24)
 ];
 
-const jsonLd = {
+/** Built when the page renders, so the offers carry the admin's prices. */
+const jsonLd = () => ({
   '@context': 'https://schema.org',
   '@graph': [
     {
@@ -83,7 +84,7 @@ const jsonLd = {
             description: 'All-in-one 15" HD touchscreen POS terminal for salon front desks.',
             image: `${SITE}${mainProductImages['prod-station']}`,
             brand: { '@type': 'Brand', name: 'Certxa' },
-            offers: { '@type': 'Offer', price: '799', priceCurrency: 'USD', url: PAGE_URL },
+            offers: { '@type': 'Offer', price: String((livePriceCents('Certxa Station') ?? 79900) / 100), priceCurrency: 'USD', url: PAGE_URL },
           },
         },
         {
@@ -91,17 +92,17 @@ const jsonLd = {
           position: 2,
           item: {
             '@type': 'Product',
-            name: 'Wireless Card Reader',
+            name: 'Stripe M2 Card Reader',
             description: 'Stripe M2 wireless card reader. Chip, tap, and swipe.',
-            image: `${SITE}${mainProductImages['prod-reader']}`,
+            image: `${SITE}/_site/images/products/stripe-m2-reader.webp`,
             brand: { '@type': 'Brand', name: 'Certxa' },
-            offers: { '@type': 'Offer', price: '69', priceCurrency: 'USD', url: PAGE_URL },
+            offers: { '@type': 'Offer', price: String((livePriceCents('Stripe M2 Card Reader') ?? 6900) / 100), priceCurrency: 'USD', url: PAGE_URL },
           },
         },
       ],
     },
   ],
-};
+});
 
 export default function ProductsPage() {
   const nailSalon = useNailSalonVisitor();
@@ -133,7 +134,7 @@ export default function ProductsPage() {
         />
         <meta name="twitter:image" content={OG_IMAGE} />
         <script type="application/ld+json">
-          {JSON.stringify(jsonLd).replace(/</g, '\\u003c')}
+          {JSON.stringify(jsonLd()).replace(/</g, '\\u003c')}
         </script>
       </Helmet>
 
@@ -186,7 +187,7 @@ export default function ProductsPage() {
                   ))}
                 </motion.ul>
                 <motion.div variants={fadeUp} className="flex flex-col items-center gap-4 pt-2">
-                  <span className="text-4xl font-extrabold text-foreground" style={{ fontFamily: 'var(--font-heading)' }}>{station.price}</span>
+                  <span className="text-4xl font-extrabold text-foreground" style={{ fontFamily: 'var(--font-heading)' }}>{priceLabel(station.name, station.price)}</span>
                   <div className="flex flex-wrap justify-center gap-4">
                     <BuyButton
                       productName={station.name}
@@ -209,6 +210,7 @@ export default function ProductsPage() {
         </section>
 
         {/* ── MAIN PRODUCTS ── */}
+        {setup.length > 0 && (
         <section className="py-xxl bg-background border-t border-border" aria-label="Main hardware products">
           <div className="max-w-7xl mx-auto px-6 md:px-10">
             <motion.div
@@ -292,7 +294,7 @@ export default function ProductsPage() {
                           className="text-3xl font-extrabold text-foreground"
                           style={{ fontFamily: 'var(--font-heading)' }}
                         >
-                          {prod.price}
+                          {priceLabel(prod.name, prod.price)}
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground mb-4">{prod.financing}</p>
@@ -321,6 +323,7 @@ export default function ProductsPage() {
             </div>
           </div>
         </section>
+        )}
 
         {/* ── ACCESSORIES ── */}
         <section className="py-xxl bg-muted" aria-label="Accessories">
@@ -374,7 +377,7 @@ export default function ProductsPage() {
                     <p className="text-xs text-muted-foreground">{acc.compatible}</p>
                     <div className="flex items-center justify-between pt-3 border-t border-border">
                       <span className="text-xl font-extrabold text-foreground" style={{ fontFamily: 'var(--font-heading)' }}>
-                        {acc.price}
+                        {priceLabel(acc.name, acc.price)}
                       </span>
                       <BuyButton
                         productName={acc.name}

@@ -13,11 +13,10 @@ export const MAX_QTY = 10;
 export const SKU_BY_NAME: Record<string, string> = {
   'Certxa Station': 'station',
   'Certxa Kiosk': 'kiosk',
-  'Wireless Card Reader': 'card-reader',
+  'Stripe M2 Card Reader': 'card-reader',
   'T-Mobile REVVL TAB 2 5G | 64GB 10.1" Tablet': 'customer-screen', // the customer facing screen (owner, 2026-10-24)
   'IP Thermal Receipt Printer': 'receipt-printer',
   'Cash Drawer': 'cash-drawer',
-  'Barcode Scanner': 'barcode-scanner',
 };
 
 interface CartState {
@@ -53,6 +52,8 @@ export const useCart = create<CartState>()(
 
 export interface ShopStatus {
   open: boolean;
+  /** Stripe's publishable key, for the card fields at checkout (only when the shop is open). */
+  publishableKey?: string | null;
   products: { sku: string; name: string; priceCents: number }[];
 }
 
@@ -86,3 +87,24 @@ export function useShopStatus(): ShopStatus | undefined {
 }
 
 export const formatCents = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+/** "$69", "$1,299", "$149.99". */
+export const formatPrice = (cents: number) =>
+  cents % 100 === 0 ? `$${(cents / 100).toLocaleString('en-US')}` : `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+
+/**
+ * A product's price as set on the /isAdmin Hardware Prices page, in cents: the server puts every price in the page
+ * (window.__CERTXA_SHOP_PRICES__, by SKU; on the server, the same global) so it's in the HTML. Null when it isn't.
+ */
+export function livePriceCents(productName: string): number | null {
+  const sku = SKU_BY_NAME[productName];
+  if (!sku) return null;
+  const prices = (typeof window !== 'undefined' ? (window as any).__CERTXA_SHOP_PRICES__ : (globalThis as any).__CERTXA_SHOP_PRICES__) as Record<string, number> | undefined;
+  const cents = prices?.[sku];
+  return typeof cents === 'number' ? cents : null;
+}
+
+/** The price to show for a product: the admin's, or the one written on the page when there is none. */
+export function priceLabel(productName: string, fallback: string): string {
+  const cents = livePriceCents(productName);
+  return cents == null ? fallback : formatPrice(cents);
+}

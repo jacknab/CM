@@ -64,34 +64,6 @@
           "text": "Pairs with Certxa Station or runs standalone"
         }
       ]
-    },
-    {
-      "id": "prod-reader",
-      "badge": "",
-      "name": "Wireless Card Reader",
-      "tagline": "Fast, wireless payments anywhere.",
-      "description": "A compact wireless card reader powered by Stripe that connects to any device running Certxa. Accept chip, tap, and swipe payments at the chair, the front desk, or anywhere in the salon.",
-      "price": "$69",
-      "financing": "",
-      "cta": "Buy now",
-      "highlights": [
-        {
-          "id": "h1",
-          "text": "Chip, tap, and swipe"
-        },
-        {
-          "id": "h2",
-          "text": "Apple Pay, Google Pay, and Samsung Pay"
-        },
-        {
-          "id": "h3",
-          "text": "Wireless — connects via Bluetooth"
-        },
-        {
-          "id": "h4",
-          "text": "Works with any device running Certxa"
-        }
-      ]
     }
   ],
   "accessories": [
@@ -117,11 +89,11 @@
       "compatible": "Compatible with Certxa Station"
     },
     {
-      "id": "acc-scanner",
-      "name": "Barcode Scanner",
-      "description": "Handheld USB barcode scanner for scanning product barcodes at checkout. Speeds up retail sales and inventory lookups.",
-      "price": "$89",
-      "compatible": "Compatible with Certxa Station"
+      "id": "acc-reader",
+      "name": "Stripe M2 Card Reader",
+      "description": "A compact wireless card reader powered by Stripe. Accept chip, tap, and swipe payments, plus Apple Pay, Google Pay, and Samsung Pay, at the chair or the front desk.",
+      "price": "$69",
+      "compatible": "Works with any device running Certxa"
     }
   ],
   "payments": {
@@ -143,12 +115,12 @@
     {
       "id": "faq-1",
       "question": "What hardware does Certxa offer?",
-      "answer": "Certxa offers two main devices — Certxa Station (the full front desk terminal) and the Wireless Card Reader (powered by Stripe). Accessories include a customer facing screen, IP thermal receipt printer, cash drawer, and barcode scanner."
+      "answer": "Certxa's main device is the Certxa Station (the full front desk terminal). Accessories include a customer facing screen, IP thermal receipt printer, cash drawer, and the Stripe M2 card reader."
     },
     {
       "id": "faq-2",
       "question": "How much is the card reader?",
-      "answer": "The Wireless Card Reader (Stripe M2) is $69. It works with every Certxa plan, and there is no minimum processing volume."
+      "answer": "The Stripe M2 Card Reader is $69. It works with every Certxa plan, and there is no minimum processing volume."
     },
     {
       "id": "faq-3",
