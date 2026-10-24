@@ -6,7 +6,7 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
-## 2026-10-23 — ALL texts failing: Twilio account "not active" (needs the account owner)
+## 2026-10-23 — RESOLVED 2026-10-24 ~00:11 UTC (texts sending again): ALL texts failing: Twilio account "not active"
 
 - **Symptom:** every `sendSms` since between 21:58 and 22:15 server time on 2026-10-23 fails with `authentication failed, account AC311f…(masked) with status 4 is not active` (see `sms_log.error_message`). Texts at 21:58 (store 2, cancellation_recovery) still went out; the first failure was store 2's winback at 22:15:06. `twilioLookup` fails the same way.
 - **Impact:** booking confirmations, reminders, receipts, booking-request texts, and probably sign-in codes. Nothing the code can fix.
