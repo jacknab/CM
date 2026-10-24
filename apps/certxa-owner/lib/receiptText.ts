@@ -212,7 +212,8 @@ export function buildReceiptText(data: ReceiptData, copy: ReceiptCopy): string {
   if ((data.tip ?? 0) > 0) {
     lines.push(`[L]${twoCol('Tip:', $$(data.tip as number))}`);
   }
-  lines.push(`[L]<b>${twoCol('TOTAL:', $$(data.grandTotal))}</b>`);
+  // <b> prints double width: a bold line has room for half the characters, or it runs onto a second line.
+  lines.push(`[L]<b>${twoCol('TOTAL:', $$(data.grandTotal), COL_W / 2)}</b>`);
   for (const t of data.tenders ?? []) {
     if (t.amount > 0) lines.push(`[L]${twoCol(`${t.method}:`, $$(t.amount))}`);
   }
@@ -224,7 +225,8 @@ export function buildReceiptText(data: ReceiptData, copy: ReceiptCopy): string {
 
   // ── Signature (salon copy only — this is the copy the customer signs) ──────────────────────
   if (copy === 'salon') {
-    lines.push(`[C]<b>CUSTOMER SIGNATURE</b>`);
+    // Normal size: at double width "CUSTOMER SIGNATURE" doesn't fit one line.
+    lines.push(`[C]CUSTOMER SIGNATURE`);
     lines.push('');
     lines.push(`[C]${divLine('_')}`);
     lines.push('');
@@ -277,7 +279,8 @@ export function buildCheckinTicketFooter(data: CheckinTicketData): string {
     }
   } catch {}
 
-  lines.push(`[L]<b>${twoCol(data.clientName, `# ${data.ticketNumber}`)}</b>`);
+  const ticketTag = `# ${data.ticketNumber}`;
+  lines.push(`[L]<b>${twoCol(String(data.clientName ?? '').slice(0, Math.max(1, COL_W / 2 - ticketTag.length - 1)), ticketTag, COL_W / 2)}</b>`);
   lines.push(`[L]${twoCol(`DATE: ${dateStr}`, `TIME: ${timeStr}`)}`);
   const services = (data.services ?? []).map((s) => String(s).trim()).filter(Boolean);
   if (services.length) {

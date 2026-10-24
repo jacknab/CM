@@ -60,7 +60,7 @@ export function buildTechSlipText(s: TechSlip, timeZone?: string): string {
   lines.push(`[L]${two("Total Commission", money(s.totals.commission))}`);
   lines.push(`[L]${two("+Non-Cash Tips", money(s.totals.ncTips))}`);
   lines.push(`[L]${" ".repeat(SLIP_WIDTH - 12)}${"-".repeat(12)}`);
-  lines.push(`[L]<b>${two("Total Pay", money(s.totals.pay))}</b>`);
+  lines.push(`[L]${two("Total Pay", money(s.totals.pay))}`);
   if (s.totals.cashTips > 0) lines.push(`[L]${two("Cash tips (kept)", money(s.totals.cashTips))}`);
   if (!s.commissionOn) lines.push(`[L]No commission rate is set.`);
 
@@ -78,7 +78,7 @@ export function buildTechSlipText(s: TechSlip, timeZone?: string): string {
     lines.push(`[L]${row("Day", "Total", "Comm", "NC Tips")}`);
     for (const d of s.days) lines.push(`[L]${row(dayLabel(d.date), money(d.sale), money(d.commission), money(d.ncTips))}`);
   }
-  lines.push(`[L]${" ".repeat(7)}${"-".repeat(SLIP_WIDTH - 7)}`);
+  lines.push(`[L]${"-".repeat(SLIP_WIDTH)}`);
   lines.push(`[L]${row("", money(s.totals.sale), money(s.totals.commission), money(s.totals.ncTips))}`);
   lines.push("[L]");
   return lines.join("\n");
