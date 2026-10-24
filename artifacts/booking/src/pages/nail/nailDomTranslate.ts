@@ -37,6 +37,9 @@ function lookup(english: string, lang: "vi" | "es"): string | null {
   lowerIndex ??= new Map(Object.entries(phrases.NAIL_PHRASES).map(([k, v]) => [k.toLowerCase(), v]));
   const loose = lowerIndex.get(english.toLowerCase());
   if (loose) return english === english.toUpperCase() && /[A-Z]/.test(english) ? loose[i].toLocaleUpperCase(lang) : loose[i];
+  // The same label shown without its colon ("Daily Total" for "Daily Total:"), or with one.
+  if (!english.endsWith(":")) { const withColon = phrases.NAIL_PHRASES[`${english}:`]; if (withColon) return withColon[i].replace(/\s*:\s*$/, ""); }
+  else { const bare = phrases.NAIL_PHRASES[english.slice(0, -1).trim()]; if (bare) return `${bare[i]}:`; }
   compiled ??= phrases.NAIL_PATTERNS.map(([en, vi, es]) => ({
     re: new RegExp("^" + en.replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\{(\d)\}/g, "(?<p$1>.+?)") + "$"),
     vi, es,

@@ -95,8 +95,38 @@ function checkStore(store: unknown): string {
   return store;
 }
 
+/**
+ * A transaction on the one open (unlocked) connection. Not expo-sqlite's withExclusiveTransactionAsync: that opens a
+ * NEW connection to the file, which never gets the SQLCipher key, so every write failed with "file is not a database"
+ * (owner bug 2026-10-24: "Salon data on this tablet: not copied yet" — the copy's first write failed every minute, and
+ * the offline store fell back to browser storage). Requests run one at a time (runLocalDb), so nothing else can run
+ * inside a transaction.
+ */
+async function inTransaction(db: SQLite.SQLiteDatabase, task: (tx: SQLite.SQLiteDatabase) => Promise<void>): Promise<void> {
+  await db.execAsync('BEGIN IMMEDIATE');
+  try {
+    await task(db);
+    await db.execAsync('COMMIT');
+  } catch (err) {
+    await db.execAsync('ROLLBACK').catch(() => {});
+    throw err;
+  }
+}
+
+let queue: Promise<unknown> = Promise.resolve();
+/** One request at a time on the shared connection, in the order they arrive. */
+function oneAtATime<T>(fn: () => Promise<T>): Promise<T> {
+  const run = queue.then(fn, fn);
+  queue = run.catch(() => {});
+  return run;
+}
+
 /** Runs one request from the web screens. Values travel as JSON text and are stored as they are. */
-export async function runLocalDb(req: LocalDbRequest): Promise<unknown> {
+export function runLocalDb(req: LocalDbRequest): Promise<unknown> {
+  return oneAtATime(() => runLocalDbNow(req));
+}
+
+async function runLocalDbNow(req: LocalDbRequest): Promise<unknown> {
   const db = await open();
   switch (req.op) {
     case 'hello':
@@ -120,7 +150,7 @@ export async function runLocalDb(req: LocalDbRequest): Promise<unknown> {
       if (!Array.isArray(req.writes)) throw new Error('Bad batch');
       const writes = req.writes.map((w) => ({ store: checkStore(w.store), key: String(w.key), value: w.value }));
       // All the writes happen together or not at all.
-      await db.withExclusiveTransactionAsync(async (tx) => {
+      await inTransaction(db, async (tx) => {
         for (const w of writes) {
           if (w.value === null) await tx.runAsync('DELETE FROM kv WHERE store = ? AND key = ?', [w.store, w.key]);
           else await tx.runAsync('INSERT INTO kv (store, key, value) VALUES (?, ?, ?) ON CONFLICT (store, key) DO UPDATE SET value = excluded.value', [w.store, w.key, w.value]);
@@ -131,7 +161,7 @@ export async function runLocalDb(req: LocalDbRequest): Promise<unknown> {
     case 'mirrorApply': {
       const store = checkMirrorStore(req.store);
       // One transaction: a page of changes, and where the sync has got to, are kept together or not at all.
-      await db.withExclusiveTransactionAsync(async (tx) => {
+      await inTransaction(db, async (tx) => {
         if (req.clear) await tx.runAsync('DELETE FROM mirror WHERE store = ?', [store]);
         for (const d of req.deletes ?? []) await tx.runAsync('DELETE FROM mirror WHERE store = ? AND tbl = ? AND id = ?', [store, checkName(d.tbl), String(d.id)]);
         // Rows that went with a deleted one (a deleted appointment's add-ons, a deleted client's phones).

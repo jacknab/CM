@@ -14,9 +14,49 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "— NHẤN ENTER ĐỂ THÊM / BỎ QUA",
   "— PRESIONA ENTER PARA AGREGAR / OMITIR"
  ],
+ "— không tính tip, không tính sản phẩm.": [
+  "— không tính tiền tip, không tính sản phẩm.",
+  ": no propinas ni productos."
+ ],
+ "— not tips, not products.": [
+  "— không tính tiền tip, không tính sản phẩm.",
+  ": no propinas ni productos."
+ ],
+ ", after any discount": [
+  ", sau giảm giá",
+  ", después de descuentos"
+ ],
+ ", any amount left over earns another": [
+  ", phần tiền dư được thêm",
+  ", lo que sobre gana otro"
+ ],
  ", cela ajoute <strong>1/2 tour</strong>.": [
   "là <strong>1/2 lượt</strong>.",
   ", suma <strong>1/2 turno</strong>."
+ ],
+ ", chuyển từ": [
+  ", chuyển từ",
+  ", movido de"
+ ],
+ ", después de descuentos": [
+  ", sau giảm giá",
+  ", después de descuentos"
+ ],
+ ", lo que sobre gana otro": [
+  ", phần tiền dư được thêm",
+  ", lo que sobre gana otro"
+ ],
+ ", moved from": [
+  ", chuyển từ",
+  ", movido de"
+ ],
+ ", movido de": [
+  ", chuyển từ",
+  ", movido de"
+ ],
+ ", phần tiền dư được thêm": [
+  ", phần tiền dư được thêm",
+  ", lo que sobre gana otro"
  ],
  ", screen": [
   ", màn hình",
@@ -33,6 +73,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  ", then": [
   ", sau đó",
   ", luego"
+ ],
+ ": no propinas ni productos.": [
+  "— không tính tiền tip, không tính sản phẩm.",
+  ": no propinas ni productos."
  ],
  "?storeId=": [
   "?storeId=",
@@ -106,6 +150,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "\"? Các phím mở nó trở nên trống.",
   "\"? Las teclas que lo abren se vuelven vacías."
  ],
+ "\"><span class=\"lbl\">": [
+  "\"><span class=\"lbl\">",
+  "\"><span class=\"lbl\">"
+ ],
+ "\"><span>": [
+  "\"><span>",
+  "\"><span>"
+ ],
  "(12 hours after the last close).": [
   "(12 giờ sau lần đóng cuối cùng).",
   "(12 horas después del último cierre)."
@@ -130,6 +182,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "/booking/new?clientId=",
   "/booking/new?clientId="
  ],
+ "&amp;": [
+  "&",
+  "&"
+ ],
  "&deviceId=": [
   "&deviceId=",
   "&deviceId="
@@ -137,6 +193,18 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "&drawerId=": [
   "&drawerId=",
   "&drawerId="
+ ],
+ "&gt;": [
+  ">",
+  ">"
+ ],
+ "&lt;": [
+  "<",
+  "<"
+ ],
+ "&quot;": [
+  "\"",
+  "\""
  ],
  "&staffId=": [
   "&staffId=",
@@ -149,6 +217,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "% DISCOUNT APPLIED": [
   "% GIẢM GIÁ ĐÃ ÁP DỤNG",
   "% DESCUENTO APLICADO"
+ ],
+ "%</span><span class=\"v\">": [
+  "%</span><span class=\"v\">",
+  "%</span><span class=\"v\">"
  ],
  "• <strong>Clock-in order</strong> sets the starting line-up — first in, first up.": [
   "• <strong>Thứ tự bấm giờ vào ca</strong> xác định hàng đợi ban đầu — ai vào trước, phục vụ trước.",
@@ -238,6 +310,82 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "+Dịch vụ thêm",
   "+Extra"
  ],
+ "<!DOCTYPE html> <html> <head> <meta charset=\"utf-8\" /> <title>Z Report —": [
+  "<!DOCTYPE html> <html> <head> <meta charset=\"utf-8\" /> <title>Báo Cáo Z —",
+  "<!DOCTYPE html> <html> <head> <meta charset=\"utf-8\" /> <title>Informe Z —"
+ ],
+ "</body> </html>": [
+  "</body> </html>",
+  "</body> </html>"
+ ],
+ "</div>": [
+  "</div>",
+  "</div>"
+ ],
+ "</span></div>": [
+  "</span></div>",
+  "</span></div>"
+ ],
+ "</span><span class=\"v\">": [
+  "</span><span class=\"v\">",
+  "</span><span class=\"v\">"
+ ],
+ "</span><span>": [
+  "</span><span>",
+  "</span><span>"
+ ],
+ "<div class=\"bold\">SALON EARNINGS / OPEN HOUR</div>": [
+  "<div class=\"bold\">THU NHẬP TIỆM / GIỜ MỞ CỬA</div>",
+  "<div class=\"bold\">GANANCIAS DEL SALÓN / HORA ABIERTA</div>"
+ ],
+ "<div class=\"center\"> <div class=\"brand\">CERTXA</div> <div class=\"salon-name\">": [
+  "<div class=\"center\"> <div class=\"brand\">CERTXA</div> <div class=\"salon-name\">",
+  "<div class=\"center\"> <div class=\"brand\">CERTXA</div> <div class=\"salon-name\">"
+ ],
+ "<div class=\"dashed\"></div>": [
+  "<div class=\"dashed\"></div>",
+  "<div class=\"dashed\"></div>"
+ ],
+ "<div class=\"row": [
+  "<div class=\"row",
+  "<div class=\"row"
+ ],
+ "<div class=\"row3": [
+  "<div class=\"row3",
+  "<div class=\"row3"
+ ],
+ "<div class=\"row4 bold small\"><span class=\"lbl\">TECH</span><span class=\"v\">RATE</span><span class=\"v\">TODAY</span><span class=\"v\">YTD</span></div>": [
+  "<div class=\"row4 bold small\"><span class=\"lbl\">THỢ</span><span class=\"v\">TỶ LỆ</span><span class=\"v\">HÔM NAY</span><span class=\"v\">TỪ ĐẦU NĂM</span></div>",
+  "<div class=\"row4 bold small\"><span class=\"lbl\">TÉCNICO</span><span class=\"v\">TASA</span><span class=\"v\">HOY</span><span class=\"v\">AÑO</span></div>"
+ ],
+ "<div class=\"row4 bold small\"><span class=\"lbl\">TECH</span><span class=\"v\">TICKETS</span><span class=\"v\">SERVICE</span><span class=\"v\">TIPS</span></div>": [
+  "<div class=\"row4 bold small\"><span class=\"lbl\">THỢ</span><span class=\"v\">PHIẾU</span><span class=\"v\">DỊCH VỤ</span><span class=\"v\">TIỀN TIP</span></div>",
+  "<div class=\"row4 bold small\"><span class=\"lbl\">TÉCNICO</span><span class=\"v\">TICKETS</span><span class=\"v\">SERVICIO</span><span class=\"v\">PROPINAS</span></div>"
+ ],
+ "<div class=\"row4 bold small\"><span class=\"lbl\">TOTAL</span><span class=\"v\"></span><span class=\"v\">": [
+  "<div class=\"row4 bold small\"><span class=\"lbl\">TỔNG</span><span class=\"v\"></span><span class=\"v\">",
+  "<div class=\"row4 bold small\"><span class=\"lbl\">TOTAL</span><span class=\"v\"></span><span class=\"v\">"
+ ],
+ "<div class=\"row4 small\"><span class=\"lbl\">": [
+  "<div class=\"row4 small\"><span class=\"lbl\">",
+  "<div class=\"row4 small\"><span class=\"lbl\">"
+ ],
+ "<div class=\"section-header\">": [
+  "<div class=\"section-header\">",
+  "<div class=\"section-header\">"
+ ],
+ "<div class=\"small\">Actual Cash Counted: pending count</div>": [
+  "<div class=\"small\">Tiền Mặt Đếm Thực Tế: đang đếm</div>",
+  "<div class=\"small\">Efectivo Contado Real: conteo pendiente</div>"
+ ],
+ "<div class=\"solid\"></div>": [
+  "<div class=\"solid\"></div>",
+  "<div class=\"solid\"></div>"
+ ],
+ "<div class=\"spacer\"></div>": [
+  "<div class=\"spacer\"></div>",
+  "<div class=\"spacer\"></div>"
+ ],
  "10% Off": [
   "Giảm 10%",
   "10% de Descuento"
@@ -266,6 +414,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Phiên ngăn kéo tiền đã mở. Không cần hành động.",
   "Ya hay una sesión de caja abierta. No se necesita acción."
  ],
+ "A client has one service at a time: their next service waits until the one in the chair is done.": [
+  "Mỗi khách chỉ làm một dịch vụ một lúc: dịch vụ kế tiếp chờ cho đến khi dịch vụ đang làm xong.",
+  "Un cliente recibe un servicio a la vez: el siguiente espera hasta que termine el que está en la silla."
+ ],
  "A full breakdown of today's line-up": [
   "Phân tích đầy đủ danh sách hôm nay",
   "Un desglose completo de la lista de hoy"
@@ -293,6 +445,22 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "a POS station": [
   "một trạm POS",
   "una estación POS"
+ ],
+ "A ticket of": [
+  "Phiếu từ",
+  "Un ticket de"
+ ],
+ "A ticket under": [
+  "Phiếu dưới",
+  "Un ticket de menos de"
+ ],
+ "Actual Cash Counted": [
+  "Tiền Mặt Đếm Thực Tế",
+  "Efectivo Contado Real"
+ ],
+ "Actual Cash:": [
+  "Tiền Mặt Thực Tế:",
+  "Efectivo Real:"
  ],
  "Actual vs planned": [
   "Thực tế so với kế hoạch",
@@ -358,6 +526,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Điều chỉnh lượt",
   "Ajustar turnos"
  ],
+ "ADJUSTMENTS": [
+  "ĐIỀU CHỈNH",
+  "AJUSTES"
+ ],
  "AFTER #": [
   "SAU SỐ #",
   "DESPUÉS DE #"
@@ -369,6 +541,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "After a service or add-on on this grid": [
   "Sau một dịch vụ hoặc dịch vụ thêm trên lưới này",
   "Después de un servicio o extra en esta cuadrícula"
+ ],
+ "Ai được khách kế tiếp": [
+  "Ai được khách kế tiếp",
+  "Quién va siguiente"
  ],
  "Already checked in": [
   "Đã nhận khách",
@@ -566,6 +742,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "vì nhân viên đó có tổng lượt tích lũy thấp hơn hoặc thắng quy tắc phá hòa.",
   "porque tiene un total acumulado menor o gana el desempate."
  ],
+ "Bị bỏ qua": [
+  "Bị bỏ qua",
+  "Saltados"
+ ],
  "BOOK": [
   "ĐẶT",
   "RESERVAR"
@@ -590,6 +770,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Đang tìm...",
   "Buscando..."
  ],
+ "Business Date:": [
+  "Ngày Kinh Doanh:",
+  "Fecha de Negocio:"
+ ],
+ "Business Open:": [
+  "Giờ Mở Cửa:",
+  "Negocio Abierto:"
+ ],
  "BUSY": [
   "BẬN",
   "OCUPADO"
@@ -602,9 +790,29 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "THEO THỢ",
   "POR TÉCNICO"
  ],
+ "Cách bạn được lượt": [
+  "Cách bạn được lượt",
+  "Cómo ganas turnos"
+ ],
  "Cách tính lượt": [
   "Cách tính lượt",
   "Cómo funcionan los turnos"
+ ],
+ "Cách tính lượt ở tiệm": [
+  "Cách tính lượt ở tiệm",
+  "Cómo funcionan los turnos aquí"
+ ],
+ "Cada": [
+  "Mỗi",
+  "Cada"
+ ],
+ "Cada categoría de servicio tiene su propia fila.": [
+  "Mỗi loại dịch vụ có hàng lượt riêng.",
+  "Cada categoría de servicio tiene su propia fila."
+ ],
+ "Cada ticket sin cita pagado cuenta como 1 cliente, cueste lo que cueste.": [
+  "Mỗi phiếu khách vãng lai tính tiền được tính là 1 khách, bất kể giá bao nhiêu.",
+  "Cada ticket sin cita pagado cuenta como 1 cliente, cueste lo que cueste."
  ],
  "Cancel": [
   "Hủy",
@@ -654,6 +862,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Thẻ · Tap to Pay",
   "Tarjeta · Tap to Pay"
  ],
+ "Card (M2)": [
+  "Thẻ (M2)",
+  "Tarjeta (M2)"
+ ],
  "Card (Stripe)": [
   "Thẻ (Stripe)",
   "Tarjeta (Stripe)"
@@ -693,6 +905,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Card Saved": [
   "Đã Lưu Thẻ",
   "Tarjeta Guardada"
+ ],
+ "Card Tips": [
+  "Tiền Tip Thẻ",
+  "Propinas con Tarjeta"
  ],
  "Card Total": [
   "Tổng Thẻ",
@@ -738,6 +954,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Ngăn Kéo Tiền",
   "Caja"
  ],
+ "CASH DRAWER": [
+  "NGĂN KÉO TIỀN",
+  "CAJA"
+ ],
  "Cash drawer opened": [
   "Ngăn kéo tiền đã mở",
   "Caja abierta"
@@ -754,6 +974,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Tiền Mặt Trong Ngăn Kéo",
   "Efectivo en Caja"
  ],
+ "Cash Paid In": [
+  "Tiền Mặt Nộp Vào",
+  "Efectivo Ingresado"
+ ],
+ "Cash Paid Out": [
+  "Tiền Mặt Chi Ra",
+  "Efectivo Pagado"
+ ],
  "Cash payment": [
   "Thanh toán tiền mặt",
   "Pago en efectivo"
@@ -766,9 +994,25 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Tiền mặt đã ghi trên máy này · bán hàng sẽ gửi khi có kết nối lại",
   "Efectivo registrado en esta tableta · la venta se enviará cuando vuelva la conexión"
  ],
+ "Cash Refunds": [
+  "Hoàn Tiền Mặt",
+  "Reembolsos en Efectivo"
+ ],
+ "Cash Remaining / Deposit": [
+  "Tiền Mặt Còn Lại / Gửi Ngân Hàng",
+  "Efectivo Restante / Depósito"
+ ],
+ "Cash Sales": [
+  "Doanh Thu Tiền Mặt",
+  "Ventas en Efectivo"
+ ],
  "Cash taken on this tablet and not yet confirmed by the server: $": [
   "Tiền mặt đã lấy trên máy tính bảng này và chưa được máy chủ xác nhận: $",
   "Efectivo tomado en esta tableta y no confirmado por el servidor: $"
+ ],
+ "Cash Tips": [
+  "Tiền Tip Mặt",
+  "Propinas en Efectivo"
  ],
  "Cash, or a card on your own terminal": [
   "Tiền mặt, hoặc thẻ trên thiết bị của bạn",
@@ -930,6 +1174,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Không thể xác nhận tính tiền",
   "No se pudo confirmar el cobro"
  ],
+ "Chỉ phiếu walk-in mới tính. Khách hẹn trước không được lượt. Lượt tính trên tiền dịch vụ": [
+  "Chỉ phiếu khách vãng lai mới tính. Khách hẹn trước không được lượt. Lượt tính trên tiền dịch vụ",
+  "Solo cuentan los tickets sin cita. Las citas reservadas no ganan turnos. Los turnos se cuentan solo sobre los servicios"
+ ],
  "Choisir un client": [
   "Chọn khách hàng",
   "Elegir un cliente"
@@ -974,6 +1222,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "chưa kiếm được lượt nào hôm nay và đứng sau",
   "aún no ha obtenido turnos hoy y está detrás de"
  ],
+ "chưa vào ca": [
+  "chưa vào ca",
+  "no había marcado entrada"
+ ],
  "Clear": [
   "Xóa",
   "Borrar"
@@ -1013,6 +1265,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Client:": [
   "Khách:",
   "Cliente:"
+ ],
+ "Clientes iguales": [
+  "Đếm số khách",
+  "Clientes iguales"
  ],
  "Clients": [
   "Khách",
@@ -1070,6 +1326,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Đóng đồng hồ thời gian",
   "Cerrar reloj de tiempo"
  ],
+ "Close Time:": [
+  "Thời Gian Đóng:",
+  "Hora de Cierre:"
+ ],
  "Close Today's Shift": [
   "Đóng Ca Hôm Nay",
   "Cerrar Turno de Hoy"
@@ -1085,6 +1345,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Closed": [
   "Đóng",
   "Cerrado"
+ ],
+ "Closed By:": [
+  "Đóng Bởi:",
+  "Cerrado Por:"
+ ],
+ "Closed:": [
+  "Đã Đóng:",
+  "Cerrado:"
  ],
  "Closing in": [
   "Đóng sau",
@@ -1117,6 +1385,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Cómo funcionan los turnos": [
   "Cách tính lượt",
   "Cómo funcionan los turnos"
+ ],
+ "Cómo funcionan los turnos aquí": [
+  "Cách tính lượt ở tiệm",
+  "Cómo funcionan los turnos aquí"
+ ],
+ "Cómo ganas turnos": [
+  "Cách bạn được lượt",
+  "Cómo ganas turnos"
  ],
  "Completed": [
   "Hoàn thành",
@@ -1214,9 +1490,17 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Không tải được thợ. Cần có kết nối.",
   "No se pudieron cargar los técnicos. Se necesita conexión."
  ],
+ "Could not load the turn history": [
+  "Không thể tải lịch sử lượt",
+  "No se pudo cargar el historial de turnos"
+ ],
  "Could not load the turn settings": [
   "Không thể tải cài đặt lượt",
   "No se pudieron cargar los ajustes de turno"
+ ],
+ "Could not load the Z Report.": [
+  "Không thể tải Báo Cáo Z.",
+  "No se pudo cargar el Informe Z."
  ],
  "Could not open register": [
   "Không thể mở sổ đăng ký",
@@ -1350,6 +1634,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Đếm tiền mặt trong ngăn kéo và nhập tổng số.",
   "Cuenta el efectivo en la caja e ingresa el total."
  ],
+ "Counted Turns": [
+  "Đếm Lượt",
+  "Turnos contados"
+ ],
  "Creando...": [
   "Đang tạo...",
   "Creando..."
@@ -1373,6 +1661,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Credit Card": [
   "Thẻ Tín Dụng",
   "Tarjeta de Crédito"
+ ],
+ "Credit/Debit": [
+  "Thẻ Tín Dụng/Ghi Nợ",
+  "Crédito/Débito"
  ],
  "Current manager PIN": [
   "Mã quản lý hiện tại",
@@ -1430,6 +1722,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Tổng ngày:",
   "Total del día:"
  ],
+ "đang làm khách": [
+  "đang làm khách",
+  "atendiendo cliente"
+ ],
+ "đang nghỉ": [
+  "đang nghỉ",
+  "en descanso"
+ ],
  "Đang nghỉ / tạm dừng": [
   "Đang nghỉ / tạm dừng",
   "En descanso / pausado"
@@ -1466,6 +1766,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "dấu cách",
   "dấu cách"
  ],
+ "DAY CLOSE": [
+  "ĐÓNG NGÀY",
+  "CIERRE DEL DÍA"
+ ],
  "Day Close was already run. It can be run again after": [
   "Đã đóng ngày. Có thể chạy lại sau",
   "El cierre del día ya se realizó. Se puede ejecutar nuevamente después de"
@@ -1474,13 +1778,37 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Đã Đóng Ngày",
   "Día Cerrado"
  ],
+ "DAY CLOSED": [
+  "ĐÃ ĐÓNG NGÀY",
+  "DÍA CERRADO"
+ ],
+ "Đây là dịch vụ kế tiếp của khách, được giao khi dịch vụ trước xong.": [
+  "Đây là dịch vụ kế tiếp của khách, được giao khi dịch vụ trước xong.",
+  "Era el siguiente servicio de la visita, asignado al terminar el primero."
+ ],
  "de ingresos). Está en primer lugar porque su total acumulado es el más bajo.": [
   "doanh thu). Đứng đầu vì tổng tích lũy thấp nhất.",
   "de ingresos). Está en primer lugar porque su total acumulado es el más bajo."
  ],
+ "Để nhận khách, bạn phải đã vào ca, không nghỉ, không đang làm khách, và làm được dịch vụ đó.": [
+  "Để nhận khách, bạn phải đã vào ca, không nghỉ, không đang làm khách, và làm được dịch vụ đó.",
+  "Para recibir un cliente debes haber marcado entrada, no estar en descanso ni con un cliente, y hacer ese servicio."
+ ],
  "de revenus). Il est le prochain car son total accumulé est le plus bas.": [
   "doanh thu). Đứng tiếp theo vì tổng tích lũy thấp nhất.",
   "de ingresos). Está en primer lugar porque su total acumulado es el más bajo."
+ ],
+ "de servicio gana 1 turno, y una parte de": [
+  "tiền dịch vụ được 1 lượt, và một phần của",
+  "de servicio gana 1 turno, y una parte de"
+ ],
+ "de servicio gana 1 turno: un ticket de": [
+  "tiền dịch vụ được 1 lượt — phiếu đúng",
+  "de servicio gana 1 turno: un ticket de"
+ ],
+ "Debit": [
+  "Thẻ Ghi Nợ",
+  "Débito"
  ],
  "Debit Card": [
   "Thẻ Ghi Nợ",
@@ -1501,6 +1829,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Delete last digit": [
   "Xóa chữ số cuối",
   "Borrar último dígito"
+ ],
+ "Đếm số khách": [
+  "Đếm số khách",
+  "Clientes iguales"
  ],
  "Deposit History": [
   "Lịch Sử Tiền Cọc",
@@ -1526,6 +1858,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "NGHỈ",
   "DESCANSO"
  ],
+ "Desde": [
+  "Từ",
+  "Desde"
+ ],
+ "dịch vụ này": [
+  "dịch vụ này",
+  "este servicio"
+ ],
  "Difference": [
   "Khác biệt",
   "Diferencia"
@@ -1550,6 +1890,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Giảm giá:",
   "Descuento:"
  ],
+ "Discounts": [
+  "Giảm Giá",
+  "Descuentos"
+ ],
  "Discover": [
   "Discover",
   "Discover"
@@ -1558,9 +1902,21 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "DISPONIBLE",
   "DISPONIBLE"
  ],
+ "doesn't do": [
+  "không làm",
+  "no hace"
+ ],
  "Doesn't perform this service": [
   "Không thực hiện dịch vụ này",
   "No realiza este servicio"
+ ],
+ "Dollar brackets": [
+  "Lượt theo mức tiền",
+  "Turnos por rangos de dólares"
+ ],
+ "Dollar-Based Turns": [
+  "Lượt theo số tiền",
+  "Turnos por dólares"
  ],
  "Dollars per turn": [
   "Đô la mỗi lượt",
@@ -1602,6 +1958,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Dùng mã PIN khác",
   "Dùng mã PIN khác"
  ],
+ "được một phần lượt.": [
+  "được một phần lượt.",
+  "gana parte de un turno."
+ ],
  "Duration": [
   "Thời gian",
   "Duración"
@@ -1610,13 +1970,53 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "THỜI LƯỢNG",
   "DURACIÓN"
  ],
+ "Each service category has its own line.": [
+  "Mỗi loại dịch vụ có hàng lượt riêng.",
+  "Cada categoría de servicio tiene su propia fila."
+ ],
  "Earlier": [
   "Sớm hơn",
   "Más temprano"
  ],
+ "earns 1/2 turn.": [
+  "được 1/2 lượt.",
+  "gana 1/2 turno."
+ ],
+ "earns part of a turn.": [
+  "được một phần lượt.",
+  "gana parte de un turno."
+ ],
  "EEEE, MMMM d": [
   "EEEE, MMMM d",
   "EEEE, MMMM d"
+ ],
+ "Ejemplos": [
+  "Ví dụ",
+  "Ejemplos"
+ ],
+ "El cliente esperaba y fue al primer técnico libre que hace el servicio.": [
+  "Khách đang chờ và được giao cho thợ đầu tiên rảnh và làm được dịch vụ.",
+  "El cliente esperaba y fue al primer técnico libre que hace el servicio."
+ ],
+ "El personal": [
+  "Nhân viên",
+  "El personal"
+ ],
+ "El precio del servicio no importa.": [
+  "Giá dịch vụ không ảnh hưởng.",
+  "El precio del servicio no importa."
+ ],
+ "El salón fija lo que gana cada monto:": [
+  "Tiệm đặt số lượt cho từng mức tiền:",
+  "El salón fija lo que gana cada monto:"
+ ],
+ "El técnico con el total más bajo va siguiente.": [
+  "Thợ có tổng thấp nhất sẽ được khách kế tiếp.",
+  "El técnico con el total más bajo va siguiente."
+ ],
+ "El técnico con menos clientes es el siguiente.": [
+  "Thợ có ít khách nhất sẽ được khách kế tiếp.",
+  "El técnico con menos clientes es el siguiente."
  ],
  "Elegir un cliente": [
   "Chọn khách hàng",
@@ -1726,6 +2126,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Entrada/Salida",
   "Entrada/Salida"
  ],
+ "entre los técnicos que podían atender a este cliente.": [
+  "trong số thợ có thể nhận khách này.",
+  "entre los técnicos que podían atender a este cliente."
+ ],
  "Entrée/Sortie": [
   "Entrée/Sortie",
   "Entrée/Sortie"
@@ -1741,6 +2145,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Entrer le PIN": [
   "Entrer le PIN",
   "Entrer le PIN"
+ ],
+ "Equal clients": [
+  "Đếm số khách",
+  "Clientes iguales"
+ ],
+ "Era el siguiente servicio de la visita, asignado al terminar el primero.": [
+  "Đây là dịch vụ kế tiếp của khách, được giao khi dịch vụ trước xong.",
+  "Era el siguiente servicio de la visita, asignado al terminar el primero."
  ],
  "ERC": [
   "ERC",
@@ -1774,9 +2186,29 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "THỜI GIAN ƯỚC TÍNH",
   "TIEMPO ESTIMADO"
  ],
+ "Este salón usa": [
+  "Tiệm dùng cách",
+  "Este salón usa"
+ ],
+ "Every": [
+  "Mỗi",
+  "Cada"
+ ],
+ "Every paid walk-in ticket counts as 1 client, whatever it costs.": [
+  "Mỗi phiếu walk-in đã tính tiền được tính là 1 khách, dù giá bao nhiêu.",
+  "Cada ticket sin cita pagado cuenta como 1 cliente, sin importar el costo."
+ ],
  "Every station is marked in use. If one of them is this tablet (for example after reinstalling the app), take it over below.": [
   "Mỗi trạm đều được đánh dấu đang sử dụng. Nếu một trong số đó là máy tính bảng này (ví dụ sau khi cài đặt lại ứng dụng), tiếp quản bên dưới.",
   "Cada estación está marcada en uso. Si una de ellas es esta tableta (por ejemplo, después de reinstalar la aplicación), tómala a continuación."
+ ],
+ "Everyone starts again at 0 after Day Close.": [
+  "Mọi người bắt đầu lại từ 0 sau khi Đóng Ngày.",
+  "Todos empiezan de nuevo en 0 después del Cierre del Día."
+ ],
+ "Everyone starts again at 0 each business day.": [
+  "Mọi người bắt đầu lại từ 0 mỗi ngày làm việc.",
+  "Todos empiezan de nuevo en 0 cada día de trabajo."
  ],
  "Everything has been sent.": [
   "Mọi thứ đã được gửi.",
@@ -1786,6 +2218,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Mọi thứ đã lưu trên máy tính bảng này đều an toàn. Nó sẽ được gửi đi, và màn hình này sẽ mở lại ngay khi máy tính bảng trực tuyến trở lại.",
   "Todo lo guardado en esta tableta está seguro. Se enviará, y esta pantalla se abrirá de nuevo, tan pronto como la tableta vuelva a estar en línea."
  ],
+ "exactos es 1 turno completo.": [
+  "là 1 lượt đầy đủ.",
+  "exactos es 1 turno completo."
+ ],
+ "Examples": [
+  "Ví dụ",
+  "Ejemplos"
+ ],
  "EXIT": [
   "THOÁT",
   "SALIR"
@@ -1793,6 +2233,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Exit Quick Ticket": [
   "Thoát Phiếu Nhanh",
   "Salir de Ticket Rápido"
+ ],
+ "Expected Cash": [
+  "Tiền Mặt Dự Kiến",
+  "Efectivo Esperado"
+ ],
+ "Expected Cash:": [
+  "Tiền Mặt Dự Kiến:",
+  "Efectivo Esperado:"
  ],
  "Expires": [
   "Hết Hạn",
@@ -1822,6 +2270,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Fermeture dans",
   "Fermeture dans"
  ],
+ "FINANCIAL SUMMARY": [
+  "TÓM TẮT TÀI CHÍNH",
+  "RESUMEN FINANCIERO"
+ ],
  "Finding open days…": [
   "Đang tìm ngày mở…",
   "Buscando días disponibles…"
@@ -1838,9 +2290,17 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Sửa trang không tải được",
   "Arreglar una página que no carga"
  ],
+ "Fixed order": [
+  "Theo thứ tự cố định",
+  "Orden fijo"
+ ],
  "FREE": [
   "RẢNH",
   "LIBRE"
+ ],
+ "From": [
+  "Từ",
+  "Desde"
  ],
  "Front Desk M2 Reader": [
   "Đầu đọc M2 tại Quầy lễ tân",
@@ -1858,6 +2318,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Chức năng",
   "Función"
  ],
+ "gana 1/2 turno.": [
+  "được 1/2 lượt.",
+  "gana 1/2 turno."
+ ],
+ "gana una parte de turno.": [
+  "kiếm một phần lượt.",
+  "gana una parte de turno."
+ ],
  "Gave": [
   "Đã cho",
   "Dio"
@@ -1865,6 +2333,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "GC-XXXXXXXX": [
   "GC-XXXXXXXX",
   "GC-XXXXXXXX"
+ ],
+ "Giá dịch vụ không ảnh hưởng.": [
+  "Giá dịch vụ không ảnh hưởng.",
+  "El precio del servicio no importa."
  ],
  "Gift card": [
   "Thẻ quà",
@@ -1894,6 +2366,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "ĐÃ BÁN THẺ QUÀ ·",
   "TARJETA DE REGALO VENDIDA ·"
  ],
+ "GIFT CARDS": [
+  "THẺ QUÀ",
+  "TARJETAS DE REGALO"
+ ],
  "GIỮ CHỖ": [
   "GIỮ CHỖ",
   "EN ESPERA"
@@ -1901,6 +2377,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Give back any cash taken.": [
   "Trả lại bất kỳ tiền mặt nào đã lấy.",
   "Devuelve cualquier efectivo tomado."
+ ],
+ "Given to": [
+  "Giao cho",
+  "Asignado a"
  ],
  "Go back and check out": [
   "Quay lại và tính tiền",
@@ -1929,6 +2409,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Grids": [
   "Lưới",
   "Cuadrículas"
+ ],
+ "Gross Sales": [
+  "Tổng Doanh Thu",
+  "Ventas Brutas"
  ],
  "Guest": [
   "Khách",
@@ -1978,9 +2462,25 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Cách tính lượt",
   "Cómo funcionan los turnos"
  ],
+ "How turns work here": [
+  "Cách tính lượt ở tiệm",
+  "Cómo funcionan los turnos aquí"
+ ],
+ "How you earn turns": [
+  "Cách bạn được lượt",
+  "Cómo ganas turnos"
+ ],
  "hoy ($": [
   "hôm nay ($",
   "hoy ($"
+ ],
+ "If two technicians are level, the one who clocked in first goes first.": [
+  "Nếu hai thợ bằng nhau, ai vào ca trước được trước.",
+  "Si dos técnicos están empatados, va primero quien marcó entrada antes."
+ ],
+ "If two technicians are level, the one who has waited longest goes first.": [
+  "Nếu hai thợ bằng nhau, ai chờ lâu hơn được trước.",
+  "Si dos técnicos están empatados, va primero quien lleva más tiempo esperando."
  ],
  "In / Out": [
   "Vào / Ra",
@@ -2074,6 +2574,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "là #",
   "es #"
  ],
+ "is 1 full turn.": [
+  "là 1 lượt đầy đủ.",
+  "exactos es 1 turno completo."
+ ],
  "is in service on #": [
   "đang dịch vụ trên #",
   "está en servicio en #"
@@ -2106,13 +2610,37 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Lưới Phím",
   "Cuadrícula de Teclas"
  ],
+ "Khách đang chờ và được giao cho thợ đầu tiên rảnh và làm được dịch vụ.": [
+  "Khách đang chờ và được giao cho thợ đầu tiên rảnh và làm được dịch vụ.",
+  "El cliente esperaba y fue al primer técnico libre que hace el servicio."
+ ],
+ "Khách hôm nay được giao cho ai": [
+  "Khách hôm nay được giao cho ai",
+  "Quién atendió a cada cliente hoy"
+ ],
  "Khách mới ·": [
   "Khách mới ·",
   "Nuevo cliente ·"
  ],
+ "Khách walk-in được chia cho từng thợ theo thứ tự. Khi bạn nhận khách, bạn xuống cuối hàng.": [
+  "Khách walk-in được chia cho từng thợ theo thứ tự. Khi bạn nhận khách, bạn xuống cuối hàng.",
+  "Los clientes sin cita van a cada técnico en orden. Cuando atiendes a un cliente, pasas al final de la fila."
+ ],
+ "không được chọn": [
+  "không được chọn",
+  "no seleccionado"
+ ],
+ "không làm": [
+  "không làm",
+  "no trabaja"
+ ],
  "là <strong>1/2 lượt</strong>.": [
   "là <strong>1/2 lượt</strong>.",
   ", suma <strong>1/2 turno</strong>."
+ ],
+ "là người kế tiếp": [
+  "là người kế tiếp",
+  "es el siguiente"
  ],
  "Language": [
   "Ngôn Ngữ",
@@ -2170,6 +2698,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Đang tải thợ…",
   "Cargando técnicos…"
  ],
+ "Loading Z Report…": [
+  "Đang Tải Báo Cáo Z…",
+  "Cargando Informe Z…"
+ ],
  "Loading…": [
   "Đang tải…",
   "Cargando…"
@@ -2206,9 +2738,29 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Đang tra cứu…",
   "Buscando…"
  ],
+ "Los clientes sin cita van a cada técnico en orden. Cuando atiendes a un cliente, pasas al final de la fila.": [
+  "Khách walk-in được chia cho từng thợ theo thứ tự. Khi bạn nhận khách, bạn xuống cuối hàng.",
+  "Los clientes sin cita van a cada técnico en orden. Cuando atiendes a un cliente, pasas al final de la fila."
+ ],
+ "Los turnos se siguen sumando; no se reinician cada día.": [
+  "Lượt được cộng dồn, không làm lại mỗi ngày.",
+  "Los turnos se siguen sumando; no se reinician cada día."
+ ],
+ "LOYALTY": [
+  "TRUNG THÀNH",
+  "FIDELIDAD"
+ ],
  "Loyalty Points": [
   "Điểm Thưởng",
   "Puntos de Lealtad"
+ ],
+ "Lượt của bạn được tính khi bạn bấm XONG, hoặc khi phiếu được tính tiền.": [
+  "Lượt của bạn được tính khi bạn bấm XONG, hoặc khi phiếu được tính tiền.",
+  "Tu turno se cuenta cuando presionas LISTO, o cuando se paga el ticket."
+ ],
+ "Lượt được cộng dồn, không làm lại mỗi ngày.": [
+  "Lượt được cộng dồn, không làm lại mỗi ngày.",
+  "Los turnos se siguen sumando; no se reinician cada día."
  ],
  "lượt hôm nay (tổng thu nhập đã hoàn thành: $": [
   "lượt hôm nay (tổng thu nhập đã hoàn thành: $",
@@ -2217,6 +2769,26 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "lượt hôm nay (tổng: $": [
   "lượt hôm nay (tổng: $",
   "turnos hoy (total: $"
+ ],
+ "Lượt theo mức tiền": [
+  "Lượt theo mức tiền",
+  "Turnos por rangos de dólares"
+ ],
+ "Lượt theo số tiền": [
+  "Lượt theo số tiền",
+  "Turnos por dólares"
+ ],
+ "Lượt theo tỷ lệ giá": [
+  "Lượt theo tỷ lệ giá",
+  "Proporcional al precio"
+ ],
+ "lượt. Trên": [
+  "lượt. Trên",
+  "turno. Por encima de"
+ ],
+ "Lý do:": [
+  "Lý do:",
+  "Motivo:"
  ],
  "M2 Reader — POS Device": [
   "Đầu đọc M2 — Thiết bị POS",
@@ -2258,6 +2830,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Thành Viên",
   "Membresías"
  ],
+ "Menos de": [
+  "Dưới",
+  "Menos de"
+ ],
  "Messages": [
   "Tin Nhắn",
   "Mensajes"
@@ -2266,6 +2842,26 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "BỎ LỠ",
   "PERDIDO"
  ],
+ "Mỗi khách chỉ làm một dịch vụ một lúc: dịch vụ kế tiếp chờ cho đến khi dịch vụ đang làm xong.": [
+  "Mỗi khách chỉ làm một dịch vụ một lúc: dịch vụ kế tiếp chờ cho đến khi dịch vụ đang làm xong.",
+  "Un cliente recibe un servicio a la vez: el siguiente espera hasta que termine el que está en la silla."
+ ],
+ "Mỗi loại dịch vụ có hàng lượt riêng.": [
+  "Mỗi loại dịch vụ có hàng lượt riêng.",
+  "Cada categoría de servicio tiene su propia fila."
+ ],
+ "Mọi người bắt đầu lại từ 0 mỗi ngày làm việc.": [
+  "Mọi người bắt đầu lại từ 0 mỗi ngày làm việc.",
+  "Todos empiezan de nuevo en 0 cada día de trabajo."
+ ],
+ "Mọi người bắt đầu lại từ 0 sau khi Đóng Ngày.": [
+  "Mọi người bắt đầu lại từ 0 sau khi Đóng Ngày.",
+  "Todos empiezan de nuevo en 0 después del Cierre del Día."
+ ],
+ "Mỗi phiếu walk-in đã tính tiền được tính là 1 khách, dù giá bao nhiêu.": [
+  "Mỗi phiếu walk-in đã tính tiền được tính là 1 khách, dù giá bao nhiêu.",
+  "Cada ticket sin cita pagado cuenta como 1 cliente, sin importar el costo."
+ ],
  "More": [
   "Thêm",
   "Más"
@@ -2273,6 +2869,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "More clients — swipe left": [
   "Thêm khách — vuốt trái",
   "Más clientes — desliza a la izquierda"
+ ],
+ "Motivo:": [
+  "Lý do:",
+  "Motivo:"
  ],
  "MOVE TO": [
   "CHUYỂN ĐẾN",
@@ -2326,6 +2926,22 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Cần xem lại",
   "Requiere atención"
  ],
+ "NET SALES": [
+  "DOANH THU RÒNG",
+  "VENTAS NETAS"
+ ],
+ "Net Service Revenue": [
+  "Doanh Thu Dịch Vụ Ròng",
+  "Ingresos Netos de Servicio"
+ ],
+ "Nếu hai thợ bằng nhau, ai chờ lâu hơn được trước.": [
+  "Nếu hai thợ bằng nhau, ai chờ lâu hơn được trước.",
+  "Si dos técnicos están empatados, va primero quien lleva más tiempo esperando."
+ ],
+ "Nếu hai thợ bằng nhau, ai vào ca trước được trước.": [
+  "Nếu hai thợ bằng nhau, ai vào ca trước được trước.",
+  "Si dos técnicos están empatados, va primero quien marcó entrada antes."
+ ],
  "NEW": [
   "MỚI",
   "NUEVO"
@@ -2373,6 +2989,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Nhấn vào biểu tượng để đặt không cần tên": [
   "Nhấn vào biểu tượng để đặt không cần tên",
   "Toca para sin cita"
+ ],
+ "Nhân viên": [
+  "Nhân viên",
+  "El personal"
  ],
  "nhân viên chưa bấm giờ vào ca": [
   "nhân viên chưa bấm giờ vào ca",
@@ -2469,6 +3089,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "No finished services in this period.": [
   "Không có dịch vụ hoàn thành trong giai đoạn này.",
   "No hay servicios terminados en este período."
+ ],
+ "no había marcado entrada": [
+  "chưa vào ca",
+  "no había marcado entrada"
  ],
  "No notes": [
   "Không có ghi chú",
@@ -2654,6 +3278,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Chưa gửi — phiếu này vẫn trên máy này",
   "No enviado aún — este ticket sigue en esta tableta"
  ],
+ "Not yet closed": [
+  "Chưa đóng",
+  "Aún no cerrado"
+ ],
  "Notes": [
   "Ghi Chú",
   "Notas"
@@ -2690,6 +3318,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "SỐ ĐANG CHỜ",
   "NÚMERO PENDIENTE"
  ],
+ "o más gana 1 turno.": [
+  "trở lên được 1 lượt.",
+  "o más gana 1 turno."
+ ],
  "OCCUPÉ": [
   "ĐANG BẬN",
   "OCUPADO"
@@ -2697,6 +3329,18 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "OCUPADO": [
   "ĐANG BẬN",
   "OCUPADO"
+ ],
+ "of service earns 1 turn — a ticket of exactly": [
+  "tiền dịch vụ được 1 lượt — phiếu đúng",
+  "de servicio gana 1 turno: un ticket de"
+ ],
+ "of service earns 1 turn, and part of": [
+  "tiền dịch vụ được 1 lượt, và một phần của",
+  "de servicio gana 1 turno, y una parte de"
+ ],
+ "of the technicians who could take this client.": [
+  "trong số thợ có thể nhận khách này.",
+  "entre los técnicos que podían atender a este cliente."
  ],
  "OFF": [
   "TẮT",
@@ -2758,6 +3402,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Chỉ chủ tiệm hoặc quản lý có thể in Báo Cáo Z — in từ ngăn kéo tiền.",
   "Solo un propietario o gerente puede imprimir el Informe Z — imprímalo desde la caja."
  ],
+ "Only walk-in tickets count. Booked appointments earn no turns. Turns are counted on the services only": [
+  "Chỉ phiếu khách vãng lai mới tính. Khách hẹn trước không được lượt. Lượt tính trên tiền dịch vụ",
+  "Solo cuentan los tickets sin cita. Las citas reservadas no ganan turnos. Los turnos se cuentan solo sobre los servicios"
+ ],
  "Open": [
   "Mở",
   "Abrir"
@@ -2782,6 +3430,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Số Tiền Mở Đầu",
   "Monto de Apertura"
  ],
+ "Opening Cash": [
+  "Tiền Mở Đầu",
+  "Efectivo Inicial"
+ ],
  "Opening…": [
   "Đang mở…",
   "Abriendo…"
@@ -2790,9 +3442,17 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Mở",
   "Abre"
  ],
+ "or more earns 1 turn.": [
+  "trở lên được 1 lượt.",
+  "o más gana 1 turno."
+ ],
  "Or type a dollar amount on the keypad and tap Tip Adjust.": [
   "Hoặc nhập số tiền đô la trên bàn phím và nhấn Điều chỉnh tiền tip.",
   "O escriba una cantidad en dólares en el teclado y toque Ajustar propina."
+ ],
+ "Orden fijo": [
+  "Theo thứ tự cố định",
+  "Orden fijo"
  ],
  "Other amount": [
   "Số tiền khác",
@@ -2850,6 +3510,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Đang ghép đôi…",
   "Emparejando…"
  ],
+ "Para recibir un cliente debes haber marcado entrada, no estar en descanso ni con un cliente, y hacer ese servicio.": [
+  "Để nhận khách, bạn phải đã vào ca, không nghỉ, không đang làm khách, và làm được dịch vụ đó.",
+  "Para recibir un cliente debes haber marcado entrada, no estar en descanso ni con un cliente, y hacer ese servicio."
+ ],
  "Partial turn": [
   "Lượt phần",
   "Turno parcial"
@@ -2857,6 +3521,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "PARTIAL TURN": [
   "LƯỢT PHẦN",
   "TURNO PARCIAL"
+ ],
+ "Passed over": [
+  "Bị bỏ qua",
+  "Saltados"
  ],
  "Past Appointments": [
   "Cuộc Hẹn Trước",
@@ -2886,6 +3554,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Phương Thức Thanh Toán",
   "Método de Pago"
  ],
+ "PAYMENT SUMMARY": [
+  "TÓM TẮT THANH TOÁN",
+  "RESUMEN DE PAGOS"
+ ],
+ "PER OPEN HOUR": [
+  "MỖI GIỜ MỞ CỬA",
+  "POR HORA ABIERTA"
+ ],
  "personnel connecté": [
   "Nhân viên đã vào ca",
   "Personal registrado"
@@ -2893,6 +3569,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Phân tích đầy đủ danh sách hôm nay": [
   "Phân tích đầy đủ danh sách hôm nay",
   "Un desglose completo de la lista de hoy"
+ ],
+ "Phiếu dưới": [
+  "Phiếu dưới",
+  "Un ticket de menos de"
+ ],
+ "Phiếu từ": [
+  "Phiếu từ",
+  "Un ticket de"
  ],
  "phục vụ đầu tiên": [
   "phục vụ đầu tiên",
@@ -2930,6 +3614,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Dự kiến",
   "Planificado"
  ],
+ "Points Earned Today": [
+  "Điểm Tích Lũy Hôm Nay",
+  "Puntos Ganados Hoy"
+ ],
+ "Points Redeemed Today": [
+  "Điểm Đổi Hôm Nay",
+  "Puntos Canjeados Hoy"
+ ],
  "por los totales actuales o el desempate de la fila.": [
   "theo tổng lượt hiện tại hoặc quy tắc phá hòa.",
   "por los totales actuales o el desempate de la fila."
@@ -2954,9 +3646,17 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Tại sao hàng đợi theo thứ tự này?",
   "¿Por qué la cola está en este orden?"
  ],
+ "PREVIEW — DAY NOT YET CLOSED": [
+  "XEM TRƯỚC — CHƯA ĐÓNG NGÀY",
+  "VISTA PREVIA — DÍA NO CERRADO"
+ ],
  "Price": [
   "Giá",
   "Precio"
+ ],
+ "Print": [
+  "In",
+  "Imprimir"
  ],
  "PRINT": [
   "IN",
@@ -3014,6 +3714,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "ĐANG XỬ LÝ…",
   "PROCESANDO…"
  ],
+ "Proporcional al precio": [
+  "Lượt theo tỷ lệ giá",
+  "Proporcional al precio"
+ ],
+ "Proportional to price": [
+  "Lượt theo tỷ lệ giá",
+  "Proporcional al precio"
+ ],
  "Puts": [
   "Đặt",
   "Poner"
@@ -3054,6 +3762,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "ĐÃ THOÁT PHIẾU NHANH",
   "TICKET RÁPIDO SALIDO"
  ],
+ "Quién atendió a cada cliente hoy": [
+  "Khách hôm nay được giao cho ai",
+  "Quién atendió a cada cliente hoy"
+ ],
+ "Quién va siguiente": [
+  "Ai được khách kế tiếp",
+  "Quién va siguiente"
+ ],
  "Reason": [
   "Lý do",
   "Razón"
@@ -3065,6 +3781,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Reason for choosing this technician": [
   "Lý do chọn thợ này",
   "Razón para elegir este técnico"
+ ],
+ "Reason:": [
+  "Lý do:",
+  "Motivo:"
  ],
  "REASSIGN": [
   "ĐỔI THỢ",
@@ -3138,6 +3858,18 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Đổi Voucher",
   "Canjear Vale"
  ],
+ "Redeemed Today": [
+  "Đổi Hôm Nay",
+  "Canjeadas Hoy"
+ ],
+ "Refunded": [
+  "Đã Hoàn Tiền",
+  "Reembolsado"
+ ],
+ "Refunds": [
+  "Hoàn Tiền",
+  "Reembolsos"
+ ],
  "Refused by the server": [
   "Bị máy chủ từ chối",
   "Rechazado por el servidor"
@@ -3145,6 +3877,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Register opened": [
   "Đã mở sổ đăng ký",
   "Registro abierto"
+ ],
+ "Register:": [
+  "Đăng Ký:",
+  "Registrar:"
  ],
  "Remove": [
   "Xóa",
@@ -3242,13 +3978,41 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "PHẦN THƯỞNG ĐÃ ĐỔI ·",
   "RECOMPENSA CANJEADA ·"
  ],
+ "Reward Value Redeemed": [
+  "Giá Trị Phần Thưởng Đổi",
+  "Valor de Recompensa Canjeado"
+ ],
  "Row colour": [
   "Màu hàng",
   "Color de fila"
  ],
+ "Sales Tax": [
+  "Thuế Bán Hàng",
+  "Impuesto de Ventas"
+ ],
+ "SALON EARNINGS": [
+  "THU NHẬP TIỆM",
+  "GANANCIAS DEL SALÓN"
+ ],
+ "Salon Earnings:": [
+  "Thu Nhập Tiệm:",
+  "Ganancias del Salón:"
+ ],
+ "Saltados": [
+  "Bị bỏ qua",
+  "Saltados"
+ ],
  "SẴN SÀNG": [
   "SẴN SÀNG",
   "DISPONIBLE"
+ ],
+ "sắp có khách hẹn": [
+  "sắp có khách hẹn",
+  "tenía una cita pronto"
+ ],
+ "sau giảm giá": [
+  "sau giảm giá",
+  "después de descuentos"
  ],
  "Save": [
   "Lưu",
@@ -3354,6 +4118,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Dịch vụ",
   "Servicio"
  ],
+ "SERVICE SALES": [
+  "DOANH SỐ DỊCH VỤ",
+  "VENTAS DE SERVICIO"
+ ],
  "Service Started": [
   "Dịch vụ đã bắt đầu",
   "Servicio iniciado"
@@ -3398,6 +4166,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "LƯỢT NGẮN",
   "TURNO CORTO"
  ],
+ "Si dos técnicos están empatados, va primero quien lleva más tiempo esperando.": [
+  "Nếu hai thợ bằng nhau, ai chờ lâu hơn được trước.",
+  "Si dos técnicos están empatados, va primero quien lleva más tiempo esperando."
+ ],
+ "Si dos técnicos están empatados, va primero quien marcó entrada antes.": [
+  "Nếu hai thợ bằng nhau, ai vào ca trước được trước.",
+  "Si dos técnicos están empatados, va primero quien marcó entrada antes."
+ ],
  "Sign in needed": [
   "Cần đăng nhập",
   "Inicie sesión"
@@ -3413,6 +4189,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Skip to main content": [
   "Bỏ qua nội dung chính",
   "Saltar al contenido principal"
+ ],
+ "Sold Today": [
+  "Bán Hôm Nay",
+  "Vendidas Hoy"
+ ],
+ "Solo cuentan los tickets sin cita. Las citas reservadas no ganan turnos. Los turnos se cuentan solo sobre los servicios": [
+  "Chỉ phiếu khách vãng lai mới tính. Khách hẹn trước không được lượt. Lượt tính trên tiền dịch vụ",
+  "Solo cuentan los tickets sin cita. Las citas reservadas no ganan turnos. Los turnos se cuentan solo sobre los servicios"
  ],
  "SPACE": [
   "KHOẢNG CÁCH",
@@ -3574,6 +4358,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Chạm để kết nối",
   "Toca para conectar"
  ],
+ "Tap to Pay": [
+  "Tap to Pay",
+  "Tap to Pay"
+ ],
  "TAP TO PAY": [
   "TAP TO PAY",
   "TAP TO PAY"
@@ -3598,6 +4386,18 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Thay đổi thợ",
   "Cambio de técnico"
  ],
+ "Technician Commissions": [
+  "Hoa Hồng Thợ",
+  "Comisiones de Técnico"
+ ],
+ "TECHNICIAN COMMISSIONS": [
+  "HOA HỒNG THỢ",
+  "COMISIONES DE TÉCNICO"
+ ],
+ "TECHNICIAN SALES": [
+  "DOANH SỐ THỢ",
+  "VENTAS DE TÉCNICO"
+ ],
  "Technicians": [
   "Thợ",
   "Técnicos"
@@ -3605,6 +4405,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Techs": [
   "Thợ",
   "Técnicos"
+ ],
+ "tenía una cita pronto": [
+  "sắp có khách hẹn",
+  "tenía una cita pronto"
  ],
  "Terminé": [
   "Xong",
@@ -3678,6 +4482,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Khách không có cuộc hẹn",
   "El cliente no tiene citas"
  ],
+ "The client was waiting and went to the first technician who became free and does the service.": [
+  "Khách đang chờ và được giao cho thợ đầu tiên rảnh và làm được dịch vụ.",
+  "El cliente esperaba y fue al primer técnico libre que hace el servicio."
+ ],
  "The day was NOT closed": [
   "Ngày chưa được đóng",
   "El día NO fue cerrado"
@@ -3693,6 +4501,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "the M2 reader connected to this POS device": [
   "đầu đọc M2 kết nối với thiết bị POS này",
   "el lector M2 conectado a este dispositivo POS"
+ ],
+ "The price of the service does not matter.": [
+  "Giá dịch vụ không ảnh hưởng.",
+  "El precio del servicio no importa."
  ],
  "The printer did not respond.": [
   "Máy in không phản hồi.",
@@ -3714,6 +4526,18 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Bán hàng đã hoàn tất. Chọn cách",
   "La venta está completa. Elija cómo"
  ],
+ "The salon sets what each amount earns:": [
+  "Tiệm đặt số lượt cho từng mức tiền:",
+  "El salón fija lo que gana cada monto:"
+ ],
+ "The technician with the fewest clients is next.": [
+  "Thợ có ít khách nhất sẽ được khách kế tiếp.",
+  "El técnico con menos clientes es el siguiente."
+ ],
+ "The technician with the lowest total goes next.": [
+  "Thợ có tổng thấp nhất sẽ được khách kế tiếp.",
+  "El técnico con el total más bajo va siguiente."
+ ],
  "The text was not sent": [
   "Tin nhắn chưa được gửi",
   "El mensaje no fue enviado"
@@ -3726,9 +4550,17 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Hai mã mới không khớp. Nhập lại mã mới.",
   "Los dos nuevos PIN no coinciden. Escriba el nuevo PIN nuevamente."
  ],
+ "The Z Report can't be generated while any booking is still in progress and unpaid.": [
+  "Báo Cáo Z không thể tạo khi còn dịch vụ chưa hoàn tất và chưa thanh toán.",
+  "El Informe Z no se puede generar mientras haya reservas en progreso y sin pagar."
+ ],
  "The Z Report didn't print:": [
   "Báo Cáo Z không in được:",
   "El Informe Z no se imprimió:"
+ ],
+ "Theo thứ tự cố định": [
+  "Theo thứ tự cố định",
+  "Orden fijo"
  ],
  "theo tổng lượt hiện tại hoặc quy tắc phá hòa.": [
   "theo tổng lượt hiện tại hoặc quy tắc phá hòa.",
@@ -3762,6 +4594,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Tiệm này có nhiều trạm tính tiền. Chọn trạm mà thiết bị này là — bạn sẽ không bị hỏi lại trên thiết bị này.",
   "Este salón tiene múltiples estaciones de cobro. Elige cuál es este terminal — no se te volverá a preguntar en este dispositivo."
  ],
+ "This salon uses": [
+  "Tiệm dùng cách",
+  "Este salón usa"
+ ],
  "This tablet cannot save right now.": [
   "Máy tính bảng này không thể lưu ngay bây giờ.",
   "Esta tableta no puede guardar ahora mismo."
@@ -3794,9 +4630,21 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Bộ nhớ của máy tính bảng này đã đầy.",
   "El almacenamiento de esta tableta está lleno."
  ],
+ "This was the visit's next service, given out when the first one was done.": [
+  "Đây là dịch vụ kế tiếp của khách, được giao khi dịch vụ trước xong.",
+  "Era el siguiente servicio de la visita, asignado al terminar el primero."
+ ],
  "This Week": [
   "Tuần Này",
   "Esta Semana"
+ ],
+ "Thợ có ít khách nhất sẽ được khách kế tiếp.": [
+  "Thợ có ít khách nhất sẽ được khách kế tiếp.",
+  "El técnico con menos clientes es el siguiente."
+ ],
+ "Thợ có tổng thấp nhất sẽ được khách kế tiếp.": [
+  "Thợ có tổng thấp nhất sẽ được khách kế tiếp.",
+  "El técnico con el total más bajo va siguiente."
  ],
  "Thu nhập đang TT": [
   "Thu nhập đang TT",
@@ -3846,6 +4694,26 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Số phiếu",
   "Ticket#"
  ],
+ "Tickets": [
+  "Phiếu",
+  "Tickets"
+ ],
+ "Tiệm đặt số lượt cho từng mức tiền:": [
+  "Tiệm đặt số lượt cho từng mức tiền:",
+  "El salón fija lo que gana cada monto:"
+ ],
+ "Tiệm dùng cách": [
+  "Tiệm dùng cách",
+  "Este salón usa"
+ ],
+ "tiền dịch vụ được 1 lượt — phiếu đúng": [
+  "tiền dịch vụ được 1 lượt — phiếu đúng",
+  "de servicio gana 1 turno: un ticket de"
+ ],
+ "tiền dịch vụ được 1 lượt, và một phần của": [
+  "tiền dịch vụ được 1 lượt, và một phần của",
+  "de servicio gana 1 turno, y una parte de"
+ ],
  "Tiếng Việt": [
   "Tiếng Việt",
   "Vietnamita"
@@ -3894,9 +4762,25 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Tiền tip:",
   "Propina:"
  ],
+ "Tips": [
+  "Tiền Tip",
+  "Propinas"
+ ],
+ "TIPS": [
+  "TIỀN TIP",
+  "PROPINAS"
+ ],
+ "Tips Collected": [
+  "Tiền Tip Thu Được",
+  "Propinas Recogidas"
+ ],
  "to another salon and will be sent when that salon signs in on this tablet.": [
   "đến tiệm khác và sẽ được gửi khi tiệm đó đăng nhập trên máy tính bảng này.",
   "a otro salón y se enviará cuando ese salón inicie sesión en esta tableta."
+ ],
+ "To get a client you must be clocked in, not on break, not with a client, and do that service.": [
+  "Để nhận khách, bạn phải đã vào ca, không nghỉ, không đang làm khách, và làm được dịch vụ đó.",
+  "Para recibir un cliente debes haber marcado entrada, no estar en descanso ni con un cliente, y hacer ese servicio."
  ],
  "To pay with this card, press PAY / CHECKOUT and use GIFT CARD on the payment screen.": [
   "Để thanh toán bằng thẻ này, nhấn PAY / TÍNH TIỀN và sử dụng THẺ QUÀ trên màn hình thanh toán.",
@@ -3917,6 +4801,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "today ($": [
   "hôm nay ($",
   "hoy ($"
+ ],
+ "Todos empiezan de nuevo en 0 cada día de trabajo.": [
+  "Mọi người bắt đầu lại từ 0 mỗi ngày làm việc.",
+  "Todos empiezan de nuevo en 0 cada día de trabajo."
+ ],
+ "Todos empiezan de nuevo en 0 después del Cierre del Día.": [
+  "Mọi người bắt đầu lại từ 0 sau khi Đóng Ngày.",
+  "Todos empiezan de nuevo en 0 después del Cierre del Día."
  ],
  "Tomorrow": [
   "Ngày mai",
@@ -3946,6 +4838,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "TỔNG CỘNG",
   "TOTAL"
  ],
+ "TOTAL COLLECTED": [
+  "TỔNG THU",
+  "TOTAL RECAUDADO"
+ ],
  "Total del día:": [
   "Tổng của ngày:",
   "Total del día:"
@@ -3957,6 +4853,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Total du jour:": [
   "Tổng của ngày:",
   "Total del día:"
+ ],
+ "Total Open Hours:": [
+  "Tổng Giờ Mở Cửa:",
+  "Total de Horas Abiertas:"
  ],
  "Total Paid": [
   "Tổng Đã Thanh Toán",
@@ -3982,9 +4882,21 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "tổng cộng $",
   "totalizando $"
  ],
+ "TRANSACTIONS": [
+  "GIAO DỊCH",
+  "TRANSACCIONES"
+ ],
  "translateX(calc(": [
   "translateX(calc(",
   "translateX(calc("
+ ],
+ "trở lên được 1 lượt.": [
+  "trở lên được 1 lượt.",
+  "o más gana 1 turno."
+ ],
+ "trong số thợ có thể nhận khách này.": [
+  "trong số thợ có thể nhận khách này.",
+  "entre los técnicos que podían atender a este cliente."
  ],
  "Try again": [
   "Thử lại",
@@ -3997,6 +4909,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Try again.": [
   "Thử lại.",
   "Inténtalo de nuevo."
+ ],
+ "Tu turno se cuenta cuando presionas LISTO, o cuando se paga el ticket.": [
+  "Lượt của bạn được tính khi bạn bấm XONG, hoặc khi phiếu được tính tiền.",
+  "Tu turno se cuenta cuando presionas LISTO, o cuando se paga el ticket."
  ],
  "turn": [
   "lượt",
@@ -4030,9 +4946,29 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Giá trị lượt ($)",
   "Valor del turno ($)"
  ],
+ "turn. Over": [
+  "lượt. Trên",
+  "turno. Por encima de"
+ ],
+ "turno. Por encima de": [
+  "lượt. Trên",
+  "turno. Por encima de"
+ ],
  "Turnos": [
   "Lượt",
   "Turnos"
+ ],
+ "Turnos contados": [
+  "Đếm Lượt",
+  "Turnos contados"
+ ],
+ "Turnos por dólares": [
+  "Lượt theo số tiền",
+  "Turnos por dólares"
+ ],
+ "Turnos por rangos de dólares": [
+  "Lượt theo mức tiền",
+  "Turnos por rangos de dólares"
  ],
  "turns": [
   "lượt",
@@ -4045,6 +4981,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "TURNS": [
   "LƯỢT",
   "TURNOS"
+ ],
+ "Turns keep adding up; they are not reset each day.": [
+  "Lượt được cộng dồn, không làm lại mỗi ngày.",
+  "Los turnos se siguen sumando; no se reinician cada día."
  ],
  "Turns This Period": [
   "Lượt trong kỳ này",
@@ -4082,9 +5022,21 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Phân tích đầy đủ danh sách hôm nay",
   "Un desglose completo de la lista de hoy"
  ],
+ "Un cliente recibe un servicio a la vez: el siguiente espera hasta que termine el que está en la silla.": [
+  "Mỗi khách chỉ làm một dịch vụ một lúc: dịch vụ kế tiếp chờ cho đến khi dịch vụ đang làm xong.",
+  "Un cliente recibe un servicio a la vez: el siguiente espera hasta que termine el que está en la silla."
+ ],
  "Un desglose completo de la lista de hoy": [
   "Phân tích đầy đủ danh sách hôm nay",
   "Un desglose completo de la lista de hoy"
+ ],
+ "Un ticket de": [
+  "Phiếu từ",
+  "Un ticket de"
+ ],
+ "Un ticket de menos de": [
+  "Phiếu dưới",
+  "Un ticket de menos de"
  ],
  "Unassigned": [
   "Chưa phân công",
@@ -4097,6 +5049,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Unavailable": [
   "Không có sẵn",
   "No disponible"
+ ],
+ "Under": [
+  "Dưới",
+  "Menos de"
  ],
  "UNDID ·": [
   "ĐÃ HOÀN TÁC ·",
@@ -4165,6 +5121,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "var(--card, #1a1a1a)": [
   "var(--card, #1a1a1a)",
   "var(--card, #1a1a1a)"
+ ],
+ "VARIANCE": [
+  "CHÊNH LỆCH",
+  "VARIACIÓN"
+ ],
+ "Variance:": [
+  "Chênh Lệch:",
+  "Diferencia:"
  ],
  "Venmo": [
   "Venmo",
@@ -4278,6 +5242,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Khách vãng lai",
   "Sin cita"
  ],
+ "Walk-ins go to each technician in order. When you take a client, you go to the end of the line.": [
+  "Khách walk-in được chia cho từng thợ theo thứ tự. Khi bạn nhận khách, bạn xuống cuối hàng.",
+  "Los clientes sin cita van a cada técnico en orden. Cuando atiendes a un cliente, pasas al final de la fila."
+ ],
  "WALKED IN": [
   "KHÁCH VÃNG LAI",
   "SIN CITA"
@@ -4285,6 +5253,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "was removed from the catalog — reselect it or the price won't include it.": [
   "đã bị xóa khỏi danh mục — chọn lại hoặc giá sẽ không bao gồm nó.",
   "fue eliminado del catálogo — vuelva a seleccionarlo o el precio no lo incluirá."
+ ],
+ "wasn't clocked in": [
+  "chưa vào ca",
+  "no había marcado entrada"
  ],
  "Web browser — the M2 reader only works in the Certxa Android app.": [
   "Trình duyệt web — đầu đọc M2 chỉ hoạt động trong ứng dụng Certxa Android.",
@@ -4297,6 +5269,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Which register is this?": [
   "Đây là máy tính tiền nào?",
   "¿Qué registro es este?"
+ ],
+ "Who goes next": [
+  "Ai được khách kế tiếp",
+  "Quién va siguiente"
+ ],
+ "Who got each client today": [
+  "Khách hôm nay được giao cho ai",
+  "Quién atendió a cada cliente hoy"
  ],
  "Who it is for (optional)": [
   "Dành cho ai (tùy chọn)",
@@ -4354,6 +5334,30 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Thiết bị thẻ riêng của bạn. Không M2, không Tap to Pay, không thanh toán thẻ trên màn hình khách hàng. THẺ ghi nhận thanh toán. Áp dụng cho mọi trạm POS.",
   "Su propio terminal de tarjeta. Sin M2, sin Tap to Pay, sin pago con tarjeta en la pantalla del cliente. TARJETA registra el pago. Se aplica a cada estación POS."
  ],
+ "Your turn is counted when you press DONE, or when the ticket is paid.": [
+  "Lượt của bạn được tính khi bạn bấm XONG, hoặc khi phiếu được tính tiền.",
+  "Tu turno se cuenta cuando presionas LISTO, o cuando se paga el ticket."
+ ],
+ "YTD": [
+  "Tính Đến Nay",
+  "Año Hasta la Fecha"
+ ],
+ "YTD Redeemed": [
+  "Đổi Từ Đầu Năm",
+  "Canjeadas Año"
+ ],
+ "YTD Sold": [
+  "Bán Từ Đầu Năm",
+  "Vendidas Año"
+ ],
+ "Z Report": [
+  "Báo Cáo Z",
+  "Informe Z"
+ ],
+ "Z Report Preview": [
+  "Xem Trước Báo Cáo Z",
+  "Vista Previa del Informe Z"
+ ],
  "Z Report printed.": [
   "Đã in Báo Cáo Z.",
   "Informe Z impreso."
@@ -4366,6 +5370,21 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
 
 /** Sentences built around data: English pattern → [Vietnamese, Spanish] */
 export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
+ [
+  ", chuyển từ {0}",
+  ", chuyển từ {0}",
+  ", movido de {0}"
+ ],
+ [
+  ", moved from {0}",
+  ", chuyển từ {0}",
+  ", movido de {0}"
+ ],
+ [
+  ", movido de {0}",
+  ", chuyển từ {0}",
+  ", movido de {0}"
+ ],
  [
   "· {0} is free",
   "· {0} đang rảnh",
@@ -4400,6 +5419,16 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "{0} → TICKET #{1}{2} · PAID WITH THIS SALE",
   "{0} → PHIẾU #{1}{2} · ĐÃ THANH TOÁN VỚI BÁN HÀNG NÀY",
   "{0} → TICKET #{1}{2} · PAGADO CON ESTA VENTA"
+ ],
+ [
+  "{0} <div class=\"bold\">SALON EARNINGS / OPEN HOUR</div> {1} {2} {3} {4}",
+  "{0} <div class=\"bold\">THU NHẬP TIỆM / GIỜ MỞ CỬA</div> {1} {2} {3} {4}",
+  "{0} <div class=\"bold\">GANANCIAS DEL SALÓN / HORA ABIERTA</div> {1} {2} {3} {4}"
+ ],
+ [
+  "{0} <div class=\"row4 bold small\"><span class=\"lbl\">TECH</span><span class=\"v\">TICKETS</span><span class=\"v\">SERVICE</span><span class=\"v\">TIPS</span></div> {1} {2}",
+  "{0} <div class=\"row4 bold small\"><span class=\"lbl\">THỢ</span><span class=\"v\">PHIẾU</span><span class=\"v\">DỊCH VỤ</span><span class=\"v\">TIỀN TIP</span></div> {1} {2}",
+  "{0} <div class=\"row4 bold small\"><span class=\"lbl\">TÉCNICO</span><span class=\"v\">TICKETS</span><span class=\"v\">SERVICIO</span><span class=\"v\">PROPINAS</span></div> {1} {2}"
  ],
  [
   "{0} ADDED · {1}",
@@ -4447,6 +5476,11 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "DESCUENTO DE {0} APLICADO"
  ],
  [
+  "{0} era el siguiente{1} entre los técnicos que podían atender a este cliente.{2}",
+  "{0} là người kế tiếp{1} trong số thợ có thể nhận khách này.{2}",
+  "{0} era el siguiente{1} entre los técnicos que podían atender a este cliente.{2}"
+ ],
+ [
   "{0} es #{1} en la cola",
   "{0} là #{1} trong hàng",
   "{0} es #{1} en la cola"
@@ -4480,6 +5514,11 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "{0} is marked in use on another device. Take it over only if that device is this tablet's old install or is retired — two tablets on the same station will cross-talk. Continue?",
   "{0} đang được sử dụng trên thiết bị khác. Chỉ tiếp quản nếu thiết bị đó là cài đặt cũ của máy tính bảng này hoặc đã ngừng sử dụng — hai máy tính bảng trên cùng một trạm sẽ giao thoa. Tiếp tục?",
   "{0} está marcado en uso en otro dispositivo. Tómalo solo si ese dispositivo es la instalación antigua de esta tableta o está retirado — dos tabletas en la misma estación se cruzarán. ¿Continuar?"
+ ],
+ [
+  "{0} là người kế tiếp{1} trong số thợ có thể nhận khách này.{2}",
+  "{0} là người kế tiếp{1} trong số thợ có thể nhận khách này.{2}",
+  "{0} era el siguiente{1} entre los técnicos que podían atender a este cliente.{2}"
  ],
  [
   "{0} membre{1} non connecté{2}",
@@ -4522,6 +5561,11 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "{0} TURNOS"
  ],
  [
+  "{0} was next{1} of the technicians who could take this client.{2}",
+  "{0} là người kế tiếp{1} trong số thợ có thể nhận khách này.{2}",
+  "{0} era el siguiente{1} entre los técnicos que podían atender a este cliente.{2}"
+ ],
+ [
   "{0} was removed from the catalog — reselect it or the price won't include it.",
   "{0} đã bị xóa khỏi danh mục — chọn lại nó hoặc giá sẽ không bao gồm nó.",
   "{0} fue eliminado del catálogo — vuelva a seleccionarlo o el precio no lo incluirá."
@@ -4555,6 +5599,46 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "#{0} done{1} · ready to pay",
   "#{0} đã xong{1} · sẵn sàng thanh toán",
   "#{0} terminado{1} · listo para pagar"
+ ],
+ [
+  "<div class=\"row{0}\"><span>{1}</span><span>{2}</span></div>",
+  "<div class=\"row{0}\"><span>{1}</span><span>{2}</span></div>",
+  "<div class=\"row{0}\"><span>{1}</span><span>{2}</span></div>"
+ ],
+ [
+  "<div class=\"row3{0}\"><span class=\"lbl\">{1}</span><span class=\"v\">{2}</span><span class=\"v\">{3}</span></div>",
+  "<div class=\"row3{0}\"><span class=\"lbl\">{1}</span><span class=\"v\">{2}</span><span class=\"v\">{3}</span></div>",
+  "<div class=\"row3{0}\"><span class=\"lbl\">{1}</span><span class=\"v\">{2}</span><span class=\"v\">{3}</span></div>"
+ ],
+ [
+  "<div class=\"row4 small\"><span class=\"lbl\">{0}</span><span class=\"v\">{1}%</span><span class=\"v\">{2}</span><span class=\"v\">{3}</span></div>",
+  "<div class=\"row4 small\"><span class=\"lbl\">{0}</span><span class=\"v\">{1}%</span><span class=\"v\">{2}</span><span class=\"v\">{3}</span></div>",
+  "<div class=\"row4 small\"><span class=\"lbl\">{0}</span><span class=\"v\">{1}%</span><span class=\"v\">{2}</span><span class=\"v\">{3}</span></div>"
+ ],
+ [
+  "<div class=\"row4 small\"><span class=\"lbl\">{0}</span><span class=\"v\">{1}</span><span class=\"v\">{2}</span><span class=\"v\">{3}</span></div>",
+  "<div class=\"row4 small\"><span class=\"lbl\">{0}</span><span class=\"v\">{1}</span><span class=\"v\">{2}</span><span class=\"v\">{3}</span></div>",
+  "<div class=\"row4 small\"><span class=\"lbl\">{0}</span><span class=\"v\">{1}</span><span class=\"v\">{2}</span><span class=\"v\">{3}</span></div>"
+ ],
+ [
+  "<div class=\"section-header\">{0}</div>",
+  "<div class=\"section-header\">{0}</div>",
+  "<div class=\"section-header\">{0}</div>"
+ ],
+ [
+  "A ticket of {0} or more earns 1 turn.",
+  "Phiếu từ {0} trở lên được 1 lượt.",
+  "Un ticket de {0} o más gana 1 turno."
+ ],
+ [
+  "A ticket under {0} earns {1} turn. Over {2}, any amount left over earns another {3} turn.",
+  "Phiếu dưới {0} được {1} lượt. Trên {2}, phần tiền dư được thêm {3} lượt.",
+  "Un ticket de menos de {0} gana {1} turno. Por encima de {2}, lo que sobre gana otro {3} turno."
+ ],
+ [
+  "A ticket under {0} earns 1/2 turn.",
+  "Phiếu dưới {0} được 1/2 lượt.",
+  "Un ticket de menos de {0} gana 1/2 turno."
  ],
  [
   "AFTER #{0}",
@@ -4597,6 +5681,16 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "Reservado {0} · {1}{2}"
  ],
  [
+  "Cada {0} de servicio gana 1 turno, y una parte de {1} gana una parte de turno.",
+  "Mỗi {0} dịch vụ được 1 lượt, và một phần của {1} được một phần lượt.",
+  "Cada {0} de servicio gana 1 turno, y una parte de {1} gana una parte de turno."
+ ],
+ [
+  "Cada {0} de servicio gana 1 turno: un ticket de {1} exactos es 1 turno completo.",
+  "Mỗi {0} tiền dịch vụ được 1 lượt — phiếu đúng {1} là 1 lượt.",
+  "Cada {0} de servicio gana 1 turno: un ticket de {1} exactos es 1 turno completo."
+ ],
+ [
   "Cancel {0}'s ticket?",
   "Hủy phiếu của {0}?",
   "¿Cancelar el ticket de {0}?"
@@ -4630,6 +5724,11 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "Cerrando en {0}s…",
   "Đóng sau {0}s…",
   "Cerrando en {0}s…"
+ ],
+ [
+  "Chỉ phiếu walk-in mới tính. Khách hẹn trước không được lượt. Lượt tính trên tiền dịch vụ{0} — không tính tip, không tính sản phẩm.",
+  "Chỉ phiếu khách vãng lai mới tính. Khách hẹn trước không được lượt. Lượt tính trên tiền dịch vụ{0} — không tính tiền tip, không tính sản phẩm.",
+  "Solo cuentan los tickets sin cita. Las citas reservadas no ganan turnos. Los turnos se cuentan solo sobre los servicios{0}: no propinas ni productos."
  ],
  [
   "Clients, screen {0} of {1}",
@@ -4667,14 +5766,34 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "¿Eliminar la cuadrícula \"{0}\"? Las teclas que la abren quedarán vacías."
  ],
  [
+  "doesn't do {0}",
+  "không làm {0}",
+  "no hace {0}"
+ ],
+ [
   "Đóng sau {0}s…",
   "Đóng sau {0}s…",
   "Cerrando en {0}s…"
  ],
  [
+  "El personal{0} se lo dio a {1}{2}.{3}",
+  "Nhân viên{0} đã đưa nó cho {1}{2}.{3}",
+  "El personal{0} se lo dio a {1}{2}.{3}"
+ ],
+ [
   "Empty position {0}",
   "Vị trí trống {0}",
   "Posición vacía {0}"
+ ],
+ [
+  "Every {0} of service earns 1 turn — a ticket of exactly {1} is 1 full turn.",
+  "Mỗi {0} tiền dịch vụ được 1 lượt — phiếu đúng {1} là 1 lượt.",
+  "Cada {0} de servicio gana 1 turno: un ticket de {1} exactos es 1 turno completo."
+ ],
+ [
+  "Every {0} of service earns 1 turn, and part of {1} earns part of a turn.",
+  "Mỗi {0} tiền dịch vụ được 1 lượt, và phần của {1} được phần của lượt.",
+  "Cada {0} de servicio gana 1 turno, y una parte de {1} gana una parte de turno."
  ],
  [
   "EXTRA ADDED · {0}",
@@ -4702,6 +5821,11 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "TARJETA DE REGALO{0}"
  ],
  [
+  "Given to {0} by staff{1}{2}.{3}",
+  "Nhân viên{1} giao cho {0}{2}.{3}",
+  "Dado a {0} por el personal{1}{2}.{3}"
+ ],
+ [
   "IN CHAIR ON #{0}",
   "TRÊN GHẾ TẠI #{0}",
   "EN SILLA EN #{0}"
@@ -4722,6 +5846,16 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "ALINEARSE DETRÁS DE {0}"
  ],
  [
+  "Mỗi {0} tiền dịch vụ được 1 lượt — phiếu đúng {1} là 1 lượt.",
+  "Mỗi {0} tiền dịch vụ được 1 lượt — phiếu đúng {1} là 1 lượt.",
+  "Cada {0} de servicio gana 1 turno: un ticket de {1} exactos es 1 turno completo."
+ ],
+ [
+  "Motivo: {0}",
+  "Lý do: {0}",
+  "Motivo: {0}"
+ ],
+ [
   "MOVE TO {0}",
   "CHUYỂN ĐẾN {0}",
   "MOVER A {0}"
@@ -4732,14 +5866,44 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "Movido a {0}"
  ],
  [
+  "Nhân viên{0} giao cho {1}{2}.{3}",
+  "Nhân viên{0} giao cho {1}{2}.{3}",
+  "El personal{0} entregó a {1}{2}.{3}"
+ ],
+ [
   "No ticket found with # {0}.",
   "Không tìm thấy phiếu với # {0}.",
   "No se encontró ticket con # {0}."
  ],
  [
+  "Only walk-in tickets count. Booked appointments earn no turns. Turns are counted on the services only{0} — not tips, not products.",
+  "Chỉ phiếu khách vãng lai mới tính. Khách hẹn trước không được lượt. Lượt tính trên tiền dịch vụ{0} — không tính tiền tip, không tính sản phẩm.",
+  "Solo cuentan los tickets sin cita. Las citas reservadas no ganan turnos. Los turnos se cuentan solo sobre los servicios{0}: no propinas ni productos."
+ ],
+ [
   "Open ticket for {0}",
   "Mở PHIẾU cho {0}",
   "Abrir ticket para {0}"
+ ],
+ [
+  "Phiếu dưới {0} được {1} lượt. Trên {2}, phần tiền dư được thêm {3} lượt.",
+  "Phiếu dưới {0} được {1} lượt. Trên {2}, phần tiền dư được thêm {3} lượt.",
+  "Un ticket de menos de {0} gana {1} turno. Por encima de {2}, lo que sobre gana otro {3} turno."
+ ],
+ [
+  "Phiếu dưới {0} được 1/2 lượt.",
+  "Phiếu dưới {0} được 1/2 lượt.",
+  "Un ticket de menos de {0} gana 1/2 turno."
+ ],
+ [
+  "Phiếu từ {0} trở lên được 1 lượt.",
+  "Phiếu từ {0} trở lên được 1 lượt.",
+  "Un ticket de {0} o más gana 1 turno."
+ ],
+ [
+  "Reason: {0}",
+  "Lý do: {0}",
+  "Razón: {0}"
  ],
  [
   "RECEIPT DID NOT PRINT — {0}",
@@ -4775,6 +5939,11 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "Set {0} in",
   "Đặt {0} vào",
   "Configurar {0} en"
+ ],
+ [
+  "Solo cuentan los tickets sin cita. Las citas reservadas no ganan turnos. Los turnos se cuentan solo sobre los servicios{0}: no propinas ni productos.",
+  "Chỉ phiếu khách vãng lai mới tính. Khách hẹn trước không được lượt. Lượt tính trên tiền dịch vụ{0} — không tính tiền tip, không tính sản phẩm.",
+  "Solo cuentan los tickets sin cita. Las citas reservadas no ganan turnos. Los turnos se cuentan solo sobre los servicios{0}: no propinas ni productos."
  ],
  [
   "SPLIT · #{0} {1} WAITS FOR A TECHNICIAN",
@@ -4845,6 +6014,21 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "TIP SET · {0}",
   "TIỀN TIP ĐÃ ĐẶT · {0}",
   "PROPINA ESTABLECIDA · {0}"
+ ],
+ [
+  "Un ticket de {0} o más gana 1 turno.",
+  "Phiếu từ {0} trở lên được 1 lượt.",
+  "Un ticket de {0} o más gana 1 turno."
+ ],
+ [
+  "Un ticket de menos de {0} gana {1} turno. Por encima de {2}, lo que sobre gana otro {3} turno.",
+  "Phiếu dưới {0} được {1} lượt. Trên {2}, phần tiền dư được thêm {3} lượt.",
+  "Un ticket de menos de {0} gana {1} turno. Por encima de {2}, lo que sobre gana otro {3} turno."
+ ],
+ [
+  "Un ticket de menos de {0} gana 1/2 turno.",
+  "Phiếu dưới {0} được 1/2 lượt.",
+  "Un ticket de menos de {0} gana 1/2 turno."
  ],
  [
   "UNDID · {0}",
