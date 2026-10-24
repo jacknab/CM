@@ -17,6 +17,8 @@ interface DayCloseModalProps {
   userName: string;
   /** Which cash drawer to close — 0/undefined = the store's default/shared drawer. */
   drawerId?: number;
+  /** Opened by itself because the salon has closed for the day: it can't be dismissed until the day is closed. */
+  required?: boolean;
 }
 
 interface OpenTicket {
@@ -66,7 +68,7 @@ const CASH_KEYS: (string | "backspace")[][] = [
   [".", "0", "backspace"],
 ];
 
-export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0 }: DayCloseModalProps) {
+export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0, required = false }: DayCloseModalProps) {
   const { toast } = useToast();
   const [cashInput, setCashInput] = useState("");
   const [cashConfirmed, setCashConfirmed] = useState(false);
@@ -274,7 +276,7 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0 }
   // ── Success screen ──────────────────────────────────────────────────────────
   if (successData) {
     return (
-      <div className="fixed inset-0 z-50 text-foreground" data-testid="day-close-panel">
+      <div className={`fixed inset-0 ${required ? "z-[400]" : "z-50"} text-foreground`} data-testid="day-close-panel">
         <button type="button" aria-label="Close" className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]" onClick={handleClose} />
         <div className="absolute right-0 top-0 h-full w-full sm:w-[420px] bg-white flex flex-col shadow-[-8px_0_24px_rgba(0,0,0,0.12)] border-l">
           <div className="px-4 py-4 flex items-center justify-between gap-2 bg-white border-b border-gray-200">
@@ -312,15 +314,15 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0 }
 
   // ── Main sheet ───────────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-50 text-foreground" data-testid="day-close-panel">
-      <button type="button" aria-label="Close" className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]" onClick={handleClose} />
+    <div className={`fixed inset-0 ${required ? "z-[400]" : "z-50"} text-foreground`} data-testid="day-close-panel">
+      <button type="button" aria-label="Close" className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]" onClick={required ? undefined : handleClose} />
       <div className="absolute right-0 top-0 h-full w-full sm:w-[420px] bg-white flex flex-col shadow-[-8px_0_24px_rgba(0,0,0,0.12)] border-l">
         <div className="px-4 py-4 flex items-center justify-between gap-2 bg-white border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-gray-400" />
             <span className="font-semibold text-base text-gray-900">Close Today's Shift</span>
           </div>
-          <Button variant="ghost" size="icon" onClick={handleClose} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100" data-testid="button-close-day-close">
+          <Button variant="ghost" size="icon" onClick={handleClose} className={`text-gray-500 hover:text-gray-900 hover:bg-gray-100 ${required ? "invisible" : ""}`} disabled={required} data-testid="button-close-day-close">
             <X className="w-4 h-4" />
           </Button>
         </div>
@@ -473,14 +475,15 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0 }
 
             {/* Footer */}
             <div className="border-t border-gray-200 px-5 py-3 flex gap-3 bg-white flex-shrink-0" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)" }}>
-              <Button
+              {/* Opened by itself after closing time: the day has to be closed, so there is no Cancel. */}
+              {!required && <Button
                 variant="outline"
                 className="flex-1 h-11 rounded-xl"
                 onClick={handleClose}
                 disabled={closeDrawerMutation.isPending}
               >
                 Cancel
-              </Button>
+              </Button>}
               <Button
                 className="flex-1 h-11 rounded-xl bg-[#1A0333] hover:bg-[#2b0554] text-white flex items-center justify-center gap-1.5"
                 onClick={() => closeDrawerMutation.mutate()}

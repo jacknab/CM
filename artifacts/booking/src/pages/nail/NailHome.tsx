@@ -28,6 +28,7 @@ import { useThermalPrinter } from "@/hooks/use-thermal-printer";
 import { useToast } from "@/hooks/use-toast";
 import { OpenRegisterModal } from "@/components/cash/OpenRegisterModal";
 import { DayCloseModal } from "@/components/cash/DayCloseModal";
+import { dayCloseDue, type DayHours } from "@/lib/autoDayClose";
 import { useStoreNetworkReport } from "@/hooks/use-store-network-report";
 import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
 import { hardRefresh } from "@/lib/hard-refresh";
@@ -1090,11 +1091,27 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   // ── checkout ──────────────────────────────────────────────────────────────
   const posEnabled = features.pos !== false;
+  // ── Day Close opens by itself (owner, 2026-10-24): once the salon's closing time has passed, nothing is open or
+  // waiting, and Day Close hasn't run since closing — it can't be dismissed until the day is closed. A ticket or a
+  // check-in arriving puts it away again. (lib/autoDayClose.ts)
+  const { data: storeHours } = useQuery<DayHours[]>({ queryKey: ["/api/business-hours"], staleTime: 10 * 60_000, enabled: posEnabled });
+  const dayCloseStatusKey = [`/api/cash-drawer/day-close-status?drawerId=${drawerId}`];
+  const { data: dayCloseStatus } = useQuery<{ lastClosedAt: string | null; lockedUntil: string | null }>({ queryKey: dayCloseStatusKey, refetchInterval: 5 * 60_000, enabled: posEnabled });
+  const [clockTick, setClockTick] = useState(() => Date.now());
+  useEffect(() => { const iv = setInterval(() => setClockTick(Date.now()), 30_000); return () => clearInterval(iv); }, []);
+
   const { data: openDrawerSession } = useQuery({
     queryKey: [`/api/cash-drawer/open?storeId=${storeId}&drawerId=${drawerId}`],
     enabled: posEnabled,
     staleTime: 60_000,
   });
+  const autoDayClose = posEnabled && !!openDrawerSession && !!board && !syncEngine.isOffline() && !checkout
+    && tickets.length === 0 && markers.length === 0 && !!storeHours?.length && dayCloseStatus !== undefined
+    // An older server doesn't say when Day Close last ran: without that, never open it by guesswork.
+    && "lastClosedAt" in dayCloseStatus
+    // Day Close can't run again within 12 hours of the last one (it said so and offered only Close — a loop).
+    && !(dayCloseStatus.lockedUntil && Date.parse(dayCloseStatus.lockedUntil) > clockTick)
+    && dayCloseDue(storeHours, timezone, new Date(clockTick), dayCloseStatus.lastClosedAt ? new Date(dayCloseStatus.lastClosedAt) : null);
 
   // Paying a ticket happens right here: the POS tab switches from the ticket builder to that ticket's checkout.
   const openCheckout = useCallback((t: BoardTicket) => {
@@ -1422,7 +1439,6 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       sub: thermalPrinter.isConnected ? `${thermalPrinter.deviceName?.split(" ")[0] ?? "Printer"} · connected` : thermalPrinter.status === "connecting" ? "Connecting…" : thermalPrinter.status === "error" ? "Error · retry" : "Tap to connect",
       run: () => { void (thermalPrinter.isConnected ? thermalPrinter.disconnect() : thermalPrinter.connect()); },
     }] : []),
-    ...(posEnabled ? [{ key: "dayclose", label: "Day Close", icon: LockKeyhole, run: () => setSheet("dayclose") }] : []),
     { key: "reports", label: "Reports", icon: BarChart3, run: () => navigate(appPage("/reports")!) },
   ];
 
@@ -1788,7 +1804,12 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       {pinChange && <ChangeManagerPinSheet onClose={() => setPinChange(false)} onDone={() => { setPinChange(false); say("Manager PIN changed"); }} />}
       {sheet === "manager" && <ManagerPinSheet onClose={() => setSheet(null)} onSuccess={() => { setSheet(null); setShowMore("manager"); }} />}
       {posEnabled && (
-        <DayCloseModal open={sheet === "dayclose"} onClose={() => setSheet(null)} storeId={storeId}
+        <DayCloseModal open={sheet === "dayclose" || autoDayClose} required={autoDayClose && sheet !== "dayclose"}
+          onClose={() => {
+            // Closed: say so at once, so the popup doesn't open again while the status is fetched.
+            if (autoDayClose) queryClient.setQueryData(dayCloseStatusKey, { lastClosedAt: new Date().toISOString(), lockedUntil: new Date(Date.now() + 12 * 3600_000).toISOString() });
+            setSheet(null); void queryClient.invalidateQueries({ queryKey: dayCloseStatusKey });
+          }} storeId={storeId}
           userName={(user as any)?.firstName || (user as any)?.email || "Staff"} drawerId={drawerId} />
       )}
 

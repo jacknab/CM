@@ -7299,7 +7299,10 @@ If you have any questions, please contact your administrator.
       const devices = await otherDevices(storeId, typeof req.query.deviceId === "string" ? req.query.deviceId : null).catch(() => ({ holdingCash: [], quiet: [] }));
       // The tickets that would stop the close, so the sheet can list them before anyone counts the drawer.
       const unpaidTickets = await findUnpaidTickets(storeId).catch(() => null);
-      return res.json({ lockedUntil: dayCloseLockedUntil(await getLastDayCloseAt(storeId, drawerId)), devices, unpaidTickets });
+      const lastClosedAt = await getLastDayCloseAt(storeId, drawerId);
+      // lastClosedAt: when Day Close last ran for this drawer — /nail compares it with the salon's closing time to
+      // open Day Close by itself once the salon has closed (and not again once it has run).
+      return res.json({ lockedUntil: dayCloseLockedUntil(lastClosedAt), lastClosedAt: lastClosedAt ? new Date(lastClosedAt).toISOString() : null, devices, unpaidTickets });
     } catch (error) {
       console.error("[day-close-status]", error);
       return res.status(500).json({ message: "Could not load Day Close status" });
