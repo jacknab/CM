@@ -19599,9 +19599,22 @@ or
       // The day this pay period is paid (from the salon's pay schedule); none without a schedule.
       let payDate: string | null = null;
       if (period === "week") {
-        // Monday to Sunday, this week.
-        const dow = new Date(`${today}T12:00:00Z`).getUTCDay();
-        firstDay = addDays(today, -((dow + 6) % 7)); lastDay = addDays(firstDay, 6);
+        // The salon's pay week (owner bug 2026-10-24: this was always Monday–Sunday, so a salon paid Saturday–Friday
+        // saw a week that matched no paycheck). With a pay schedule: the 7 days ending on the weekday its pay periods
+        // end, that contain today. Without one: the week from the calendar's "start of week" setting.
+        const dowOf = (day: string) => new Date(`${day}T12:00:00Z`).getUTCDay();
+        const { paySchedules, calendarSettings } = await import("@shared/schema");
+        const [sched] = await db.select().from(paySchedules).where(eq(paySchedules.storeId, storeId));
+        if (sched) {
+          const { currentPayrollPeriod } = await import("./lib/payrollPeriods");
+          const p = currentPayrollPeriod(sched.frequency, sched.anchorDate as unknown as string, sched.periodEndOffsetDays, today);
+          lastDay = addDays(today, (dowOf(p.periodEnd) - dowOf(today) + 7) % 7);
+          firstDay = addDays(lastDay, -6);
+        } else {
+          const [cal] = await db.select({ startOfWeek: calendarSettings.startOfWeek }).from(calendarSettings).where(eq(calendarSettings.storeId, storeId)).limit(1);
+          const startDow = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"].indexOf(String(cal?.startOfWeek ?? "monday").toLowerCase());
+          firstDay = addDays(today, -((dowOf(today) - (startDow < 0 ? 1 : startDow) + 7) % 7)); lastDay = addDays(firstDay, 6);
+        }
       } else if (period === "pay") {
         const { paySchedules } = await import("@shared/schema");
         const [sched] = await db.select().from(paySchedules).where(eq(paySchedules.storeId, storeId));
