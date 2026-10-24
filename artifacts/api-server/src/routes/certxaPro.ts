@@ -94,6 +94,8 @@ const appointmentSelect = `SELECT a.id, a.date, a.duration, a.status, a.notes, a
   a.cancellation_reason AS "cancellationReason", a.cancelled_at AS "cancelledAt",
   -- A booking held until its deposit is paid (lib/bookingPaymentLinks.ts): shown in the app as "deposit due".
   a.payment_status AS "paymentStatus", a.calendar_hidden AS "calendarHidden",
+  -- A deposit already paid comes off what checkout charges.
+  a.deposit_collected::float8 AS "depositCollected",
   -- Further services on the visit and its add-ons: the app adds them to the price it charges.
   a.custom_lines AS "customLines",
   (SELECT COALESCE(json_agg(json_build_object('addon', json_build_object('id', ad.id, 'name', ad.name, 'price', ad.price::float8)) ORDER BY aa.id), '[]'::json)
