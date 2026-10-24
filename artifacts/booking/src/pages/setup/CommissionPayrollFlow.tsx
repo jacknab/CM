@@ -4,7 +4,7 @@
  * This flow intentionally uses the modern contractor-payouts system. It does
  * not configure employee withholding, W-2s, or the legacy payroll settings.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -56,6 +56,27 @@ const SCOPE_OPTIONS: Array<{ id: Scope; title: string; description: string; icon
   { id: "tracking", title: "Commission tracking only", description: "Track earnings now and decide on payout timing after your team is set up.", icon: Banknote },
 ];
 
+/** How long after a pay period closes its payday is (the schedule's periodEndOffsetDays). */
+const PAYDAY_OFFSETS = [
+  { value: 0, label: "The day the period ends" },
+  { value: 1, label: "1 day after the period ends" },
+  { value: 3, label: "3 days after the period ends" },
+  { value: 7, label: "1 week after the period ends" },
+  { value: 14, label: "2 weeks after the period ends" },
+];
+const fmtDay = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+const shiftDay = (iso: string, days: number) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
+/** "Your first payday, Fri, Nov 6, pays the week of Sat, Oct 24 – Fri, Oct 30." */
+function periodHint(frequency: string, payDate: string, offset: number): string {
+  const end = shiftDay(payDate, -offset);
+  if (frequency === "semimonthly") return `Pay periods are the 1st–15th and the 16th–end of each month; each is paid ${offset ? `${offset} day${offset === 1 ? "" : "s"} after it ends` : "the day it ends"}.`;
+  // Monthly: from the day after the previous month's period ended (the same day of the month, or its last day).
+  const prevMonthPay = (() => { const [y, m, d] = payDate.split("-").map(Number); const last = new Date(Date.UTC(y, m - 1, 0)).getUTCDate();
+    return `${m === 1 ? y - 1 : y}-${String(m === 1 ? 12 : m - 1).padStart(2, "0")}-${String(Math.min(d, last)).padStart(2, "0")}`; })();
+  const start = frequency === "monthly" ? shiftDay(shiftDay(prevMonthPay, -offset), 1) : shiftDay(end, frequency === "biweekly" ? -13 : -6);
+  return `Your first payday, ${fmtDay(payDate)}, pays the period ${fmtDay(start)} – ${fmtDay(end)}.`;
+}
+
 const FREQUENCIES = [
   { value: "weekly", label: "Weekly" },
   { value: "biweekly", label: "Every two weeks" },
@@ -83,7 +104,25 @@ export default function CommissionPayrollFlow() {
   const [newContractor, setNewContractor] = useState({ firstName: "", lastName: "", email: "", role: "stylist", payoutMethod: "ach" });
   const [structure, setStructure] = useState({ name: "Standard Commission", employeePercent: "60", appliesTo: "contractor" });
   const [deductions, setDeductions] = useState<DeductionDraft[]>([]);
-  const [schedule, setSchedule] = useState({ enabled: true, frequency: "biweekly", anchorDate: "", autoApproveDelayHours: 48 });
+  // anchorDate is the FIRST PAY DATE and periodEndOffsetDays how long after a period closes it is paid — the salon's
+  // pay schedule that payroll and the technicians' slips use (PUT /api/payroll/schedule). Audit 2026-10-24: this
+  // step used to save only a contractor-payout reminder setting that payroll never read.
+  const [schedule, setSchedule] = useState({ enabled: true, frequency: "biweekly", anchorDate: "", periodEndOffsetDays: 7, autoApproveDelayHours: 48 });
+  const { data: savedPaySchedule } = useQuery<{ frequency: string; anchorDate: string; periodEndOffsetDays: number } | null>({
+    queryKey: ["/api/payroll/schedule", storeId],
+    queryFn: async () => {
+      const r = await fetch(`/api/payroll/schedule?storeId=${storeId}`, { credentials: "include" });
+      return r.ok ? r.json() : null;
+    },
+    enabled: !!storeId,
+  });
+  const prefilled = useRef(false);
+  useEffect(() => {
+    if (prefilled.current || !savedPaySchedule?.anchorDate) return;
+    prefilled.current = true;
+    setSchedule((cur) => ({ ...cur, frequency: savedPaySchedule.frequency, anchorDate: String(savedPaySchedule.anchorDate).slice(0, 10),
+      periodEndOffsetDays: Number(savedPaySchedule.periodEndOffsetDays) || 0 }));
+  }, [savedPaySchedule]);
   const [preview, setPreview] = useState<{ id: number; totalNet: string; contractorCount: number } | null>(null);
   const [invitingId, setInvitingId] = useState<number | null>(null);
 
@@ -202,14 +241,19 @@ export default function CommissionPayrollFlow() {
   };
 
   const saveSchedule = async () => {
-    if ((schedule.frequency === "weekly" || schedule.frequency === "biweekly") && !schedule.anchorDate) {
-      throw new Error("Choose the first day of your payout cycle.");
-    }
+    if (!schedule.anchorDate) throw new Error("Choose your first pay date.");
+    // The salon's pay schedule: what payroll runs and the technicians' slips count their pay periods from.
+    await readJson(await fetch("/api/payroll/schedule", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ storeId, frequency: schedule.frequency, anchorDate: schedule.anchorDate, periodEndOffsetDays: schedule.periodEndOffsetDays }),
+    }));
     await readJson(await fetch("/api/contractor-payouts/payroll-schedule", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ storeId, ...schedule }),
+      body: JSON.stringify({ storeId, enabled: schedule.enabled, frequency: schedule.frequency, anchorDate: schedule.anchorDate, autoApproveDelayHours: schedule.autoApproveDelayHours }),
     }));
     await refetch();
   };
@@ -348,7 +392,8 @@ export default function CommissionPayrollFlow() {
   const renderSchedule = () => (
     <StepIntro icon={Clock3} color="bg-indigo-100 text-indigo-700" title="Choose a payout schedule" description="The review window gives you time to inspect a draft payout run before any funds move.">
       <label className="flex items-center gap-3 rounded-xl border border-slate-200 p-4"><input type="checkbox" checked={schedule.enabled} onChange={(e) => setSchedule({ ...schedule, enabled: e.target.checked })} className="h-4 w-4 accent-[#1A0333]" /><span><span className="block text-sm font-semibold text-slate-800">Enable scheduled payout reminders</span><span className="block text-xs text-slate-500">You still review every draft before approval.</span></span></label>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2"><Field label="Pay frequency"><select value={schedule.frequency} onChange={(e) => setSchedule({ ...schedule, frequency: e.target.value })} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm">{FREQUENCIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>{(schedule.frequency === "weekly" || schedule.frequency === "biweekly") && <Field label="First cycle starts"><Input type="date" value={schedule.anchorDate} onChange={(e) => setSchedule({ ...schedule, anchorDate: e.target.value })} /></Field>}<Field label="Review window"><select value={schedule.autoApproveDelayHours} onChange={(e) => setSchedule({ ...schedule, autoApproveDelayHours: Number(e.target.value) })} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"><option value={24}>24 hours</option><option value={48}>48 hours</option><option value={72}>72 hours</option><option value={0}>Manual approval only</option></select></Field></div>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2"><Field label="Pay frequency"><select value={schedule.frequency} onChange={(e) => setSchedule({ ...schedule, frequency: e.target.value })} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm">{FREQUENCIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field><Field label="First pay date"><Input type="date" value={schedule.anchorDate} onChange={(e) => setSchedule({ ...schedule, anchorDate: e.target.value })} data-testid="input-first-pay-date" /></Field><Field label="Payday is"><select value={schedule.periodEndOffsetDays} onChange={(e) => setSchedule({ ...schedule, periodEndOffsetDays: Number(e.target.value) })} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm" data-testid="select-payday-offset">{PAYDAY_OFFSETS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></Field><Field label="Review window"><select value={schedule.autoApproveDelayHours} onChange={(e) => setSchedule({ ...schedule, autoApproveDelayHours: Number(e.target.value) })} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"><option value={24}>24 hours</option><option value={48}>48 hours</option><option value={72}>72 hours</option><option value={0}>Manual approval only</option></select></Field></div>
+      {schedule.anchorDate && <InfoNote>{periodHint(schedule.frequency, schedule.anchorDate, schedule.periodEndOffsetDays)}</InfoNote>}
       <InfoNote>Nothing is sent automatically from this wizard. A payout run is created as a draft, and approval remains a separate owner action.</InfoNote>
     </StepIntro>
   );
