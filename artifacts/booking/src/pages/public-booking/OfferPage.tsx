@@ -68,6 +68,8 @@ export default function OfferPage({ token }: { token: string }) {
         load();
         return;
       }
+      // A deposit is due on this booking: pay it now (the link was texted too).
+      if (body?.paymentUrl) { window.location.assign(body.paymentUrl); return; }
       setBookedTime(picked);
     } finally {
       setSaving(false);

@@ -190,7 +190,9 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
       const res = await apiRequest("POST", `/api/public/store/${slug}/book`, body);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
+      // A deposit is due (the business takes one and this page can't): go straight to paying it.
+      if (data?.depositHold?.paymentUrl) { window.location.assign(data.depositHold.paymentUrl); return; }
       setBookingSuccess(true);
       if (customerPhone) {
         localStorage.setItem(`booking_user_phone_${slug}`, customerPhone);

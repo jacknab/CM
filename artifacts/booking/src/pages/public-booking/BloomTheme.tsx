@@ -426,6 +426,9 @@ function BookingPanel({
         const body = await res.json().catch(() => ({}));
         throw new Error((body as any)?.message ?? "Booking failed. Please try again.");
       }
+      // A deposit is due (the business takes one and this page can't): go straight to paying it.
+      const booked = await res.json().catch(() => null);
+      if (booked?.depositHold?.paymentUrl) { window.location.assign(booked.depositHold.paymentUrl); return; }
       setStep("success");
     } catch (err: any) {
       setSubmitError(err.message ?? "Something went wrong. Please try again.");

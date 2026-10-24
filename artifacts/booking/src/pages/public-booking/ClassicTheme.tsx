@@ -154,7 +154,9 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
       );
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
+      // A deposit is due (the business takes one and this page can't): go straight to paying it.
+      if (data?.depositHold?.paymentUrl) { window.location.assign(data.depositHold.paymentUrl); return; }
       setBookingSuccess(true);
     },
   });
