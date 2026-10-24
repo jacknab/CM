@@ -97,4 +97,5 @@ export interface BookingSiteLook {
   logoImage?: string;
   about?: string;
   instagram?: string;
+  facebook?: string;
 }

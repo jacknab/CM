@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { formatInTz } from "@/lib/timezone";
 import { TimeZoneNote } from "./TimeZoneNote";
-import { instagramUrl, siteStyle } from "./SiteLook";
+import { facebookUrl, instagramUrl, siteStyle } from "./SiteLook";
 import { useCancellationPolicy } from "@/hooks/use-public-booking";
 import { CancellationPolicyConsent } from "./CancellationPolicyConsent";
 import type { StoreData } from "./types";
@@ -1302,6 +1302,19 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
                 >
                   <Instagram className="h-4 w-4" aria-hidden="true" />
                   Instagram
+                </a>
+              )}
+              {facebookUrl(store.bookingSite) && (
+                <a
+                  href={facebookUrl(store.bookingSite)!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 rounded-full border bg-white px-6 py-3.5 text-base font-semibold shadow-sm transition-all"
+                  style={{ borderColor: C.cream300, color: C.ink800 }}
+                  aria-label="Facebook"
+                >
+                  <Facebook className="h-4 w-4" aria-hidden="true" />
+                  Facebook
                 </a>
               )}
             </div>

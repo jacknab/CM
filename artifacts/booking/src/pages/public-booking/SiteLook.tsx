@@ -1,12 +1,12 @@
 /**
  * The business's own look on its booking page (<slug>.certxa.com), set in the Certxa Pro app's website setup:
- * accent colour, cover photo, profile photo or logo, about text and Instagram. Every theme uses these:
+ * accent colour, cover photo, profile photo or logo, about text, Instagram and Facebook. Every theme uses these:
  *  - siteStyle(): CSS variables on the theme's root. --primary recolours the Tailwind primary colour (Simple,
  *    Classic); --site-accent / --site-accent-dark are used where a theme has its own colours (Bloom, Mobile).
  *  - <SiteHeader>: cover, photo, name, about and Instagram for the themes that have no header of their own.
  */
 import type { CSSProperties } from "react";
-import { Instagram } from "lucide-react";
+import { Facebook, Instagram } from "lucide-react";
 import type { BookingSiteLook, StoreData } from "./types";
 
 function hexToRgb(hex: string): [number, number, number] | null {
@@ -46,6 +46,12 @@ export function siteStyle(site: BookingSiteLook | null | undefined): CSSProperti
   };
 }
 
+export function facebookUrl(site: BookingSiteLook | null | undefined): string | null {
+  // Saved as a page name or "profile.php?id=123" (routes/bookingSite.ts checks it).
+  const page = site?.facebook ?? "";
+  return /^[A-Za-z0-9.\-]{1,80}$/.test(page) || /^profile\.php\?id=\d{1,30}$/.test(page) ? `https://facebook.com/${page}` : null;
+}
+
 export function instagramUrl(site: BookingSiteLook | null | undefined): string | null {
   return site?.instagram ? `https://instagram.com/${encodeURIComponent(site.instagram)}` : null;
 }
@@ -55,6 +61,7 @@ export function SiteHeader({ store }: { store: StoreData }) {
   const site = store.bookingSite ?? {};
   const place = [store.city, store.state].filter(Boolean).join(", ");
   const insta = instagramUrl(site);
+  const fb = facebookUrl(site);
   const initials = (store.name || "").split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
   return (
     <header data-testid="site-header" className="bg-white">
@@ -78,6 +85,11 @@ export function SiteHeader({ store }: { store: StoreData }) {
         {insta ? (
           <a href={insta} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
             <Instagram className="h-4 w-4" />@{site.instagram}
+          </a>
+        ) : null}
+        {fb ? (
+          <a href={fb} target="_blank" rel="noopener noreferrer" className="mt-2 ml-4 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+            <Facebook className="h-4 w-4" />Facebook
           </a>
         ) : null}
       </div>

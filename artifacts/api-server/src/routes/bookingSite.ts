@@ -10,6 +10,7 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { pool } from "../db";
+import { uploadToR2 } from "../lib/r2";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import { bookingSlugAvailable, changeBookingSlug, slugFormatProblem, slugFromText, suggestBookingSlugs } from "../lib/bookingSlug";
 
@@ -30,6 +31,9 @@ const siteInput = z.object({
   // "@studio.name", "studio.name" or an instagram.com link → "studio.name".
   instagram: z.string().trim().max(120).transform((value) => value.replace(/^https?:\/\/(www\.)?instagram\.com\//i, "").replace(/^@/, "").replace(/\/.*$/, ""))
     .refine((value) => value === "" || /^[A-Za-z0-9._]{1,30}$/.test(value), "Enter your Instagram name, like @yourstudio.").optional(),
+  // "yourstudio", "@yourstudio" or a facebook.com link → "yourstudio" (or "profile.php?id=123" for a personal profile).
+  facebook: z.string().trim().max(200).transform((value) => value.replace(/^https?:\/\/((www|m|web)\.)?(facebook|fb)\.com\//i, "").replace(/^@/, "").replace(/[/#].*$/, "").replace(/\?(?!id=).*$/, "").replace(/&.*$/, ""))
+    .refine((value) => value === "" || /^[A-Za-z0-9.\-]{1,80}$/.test(value) || /^profile\.php\?id=\d{1,30}$/.test(value), "Enter your Facebook page name, like yourstudio, or paste its link.").optional(),
 }).strict();
 const updateInput = z.object({ theme: z.enum(BOOKING_THEMES, { message: "Choose one of the designs." }).optional(), site: siteInput.optional() }).strict()
   .refine((value) => value.theme !== undefined || value.site !== undefined, "Nothing to save.");
@@ -100,6 +104,27 @@ router.put("/slug", async (req, res) => {
     if ((error as { code?: string })?.code === "23505") return res.status(409).json({ message: "That link was just taken. Try another." });
     console.error("[booking-site slug]", error instanceof Error ? error.message : error);
     return res.status(500).json({ message: "Could not change the link." });
+  }
+});
+
+/** A cover photo or logo picked in the Certxa Pro app, sent as base64 (the phone's file upload proved unreliable);
+ *  stored in R2 like every other upload. Returns its address for PUT / to save. */
+const photoInput = z.object({
+  data: z.string().min(100).max(9_000_000),
+  mimeType: z.enum(["image/jpeg", "image/png", "image/heic", "image/heif", "image/webp"]).default("image/jpeg"),
+}).strict();
+router.post("/photo", async (req, res) => {
+  const parsed = photoInput.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ message: "That photo couldn't be read. Try another one." });
+  try {
+    const storeId = await ownerStore(req, res); if (!storeId) return;
+    const buffer = Buffer.from(parsed.data.data.replace(/^data:[^,]*,/, ""), "base64");
+    if (buffer.length < 100) return res.status(400).json({ message: "That photo couldn't be read. Try another one." });
+    const url = await uploadToR2(buffer, "images", `site-${storeId}.${parsed.data.mimeType.split("/")[1]}`, parsed.data.mimeType);
+    return res.json({ url });
+  } catch (error) {
+    console.error("[booking-site photo]", error instanceof Error ? error.message : error);
+    return res.status(500).json({ message: "Could not save the photo. Try again." });
   }
 });
 
