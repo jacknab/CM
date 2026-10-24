@@ -52,6 +52,20 @@ export interface KioskStrings {
   recUsual: (service: string) => string;
   recChoice: string;
   suggestedForYou: string;
+  // Smart Check-In welcome screen (2026-10-24 design)
+  /** "Welcome back, Tom!" */
+  welcomeBack: (name: string) => string;
+  welcomeBackSub: string;
+  yourLastVisit: string;
+  /** "21 days ago" / "Today" / "Yesterday" */
+  daysAgoShort: (days: number) => string;
+  ourSuggestion: string;
+  whatToday: string;
+  recommendedForYou: string;
+  /** "Last visit: 21 days ago" */
+  lastVisitPill: (days: number) => string;
+  notSureAllServices: string;
+  moreServices: string;
   hadBefore: string;
   reviewTitle: string;
   reviewSub: string;
@@ -193,6 +207,16 @@ const en: KioskStrings = {
   recUsual: service => `You usually have ${service}. Would you like it today?`,
   recChoice: "Would you like a fill or a new set today?",
   suggestedForYou: "Suggested for you",
+  welcomeBack: (n) => `Welcome back, ${n}!`,
+  welcomeBackSub: "We're so glad to see you. It's great to have you with us again!",
+  yourLastVisit: "Your last visit",
+  daysAgoShort: (d) => d <= 0 ? "Today" : d === 1 ? "Yesterday" : `${d} days ago`,
+  ourSuggestion: "Our suggestion",
+  whatToday: "What would you like today?",
+  recommendedForYou: "Recommended for you",
+  lastVisitPill: (d) => d <= 0 ? "Last visit: today" : d === 1 ? "Last visit: yesterday" : `Last visit: ${d} days ago`,
+  notSureAllServices: "Not sure? See all our services",
+  moreServices: "More services",
   hadBefore: "You've had this before",
   reviewTitle: "Here's your visit",
   reviewSub: "Please check everything is right.",
@@ -314,6 +338,16 @@ const es: KioskStrings = {
   recUsual: service => `Normalmente elige ${service}. ¿Lo desea hoy?`,
   recChoice: "¿Desea un relleno o un juego nuevo hoy?",
   suggestedForYou: "Sugerido para usted",
+  welcomeBack: (n) => `¡Bienvenido de nuevo, ${n}!`,
+  welcomeBackSub: "Nos alegra mucho verle. ¡Qué gusto tenerle de vuelta!",
+  yourLastVisit: "Su última visita",
+  daysAgoShort: (d) => d <= 0 ? "Hoy" : d === 1 ? "Ayer" : `Hace ${d} días`,
+  ourSuggestion: "Nuestra sugerencia",
+  whatToday: "¿Qué le gustaría hoy?",
+  recommendedForYou: "Recomendado para usted",
+  lastVisitPill: (d) => d <= 0 ? "Última visita: hoy" : d === 1 ? "Última visita: ayer" : `Última visita: hace ${d} días`,
+  notSureAllServices: "¿No está seguro? Vea todos los servicios",
+  moreServices: "Más servicios",
   hadBefore: "Ya lo ha elegido antes",
   reviewTitle: "Su visita",
   reviewSub: "Por favor, compruebe que todo esté correcto.",
@@ -435,6 +469,16 @@ const vi: KioskStrings = {
   recUsual: service => `Bạn thường làm ${service}. Hôm nay bạn có muốn làm không?`,
   recChoice: "Hôm nay bạn muốn dặm lại hay làm bộ mới?",
   suggestedForYou: "Gợi ý cho bạn",
+  welcomeBack: (n) => `Chào mừng ${n} quay lại!`,
+  welcomeBackSub: "Rất vui được gặp lại bạn. Cảm ơn bạn đã quay lại với chúng tôi!",
+  yourLastVisit: "Lần gần nhất bạn đến",
+  daysAgoShort: (d) => d <= 0 ? "Hôm nay" : d === 1 ? "Hôm qua" : `${d} ngày trước`,
+  ourSuggestion: "Gợi ý cho bạn",
+  whatToday: "Hôm nay bạn muốn làm gì?",
+  recommendedForYou: "Đề xuất cho bạn",
+  lastVisitPill: (d) => d <= 0 ? "Lần gần nhất: hôm nay" : d === 1 ? "Lần gần nhất: hôm qua" : `Lần gần nhất: ${d} ngày trước`,
+  notSureAllServices: "Chưa chắc? Xem tất cả dịch vụ",
+  moreServices: "Dịch vụ khác",
   hadBefore: "Bạn đã từng chọn",
   reviewTitle: "Dịch vụ hôm nay của bạn",
   reviewSub: "Vui lòng kiểm tra lại thông tin.",
@@ -556,6 +600,16 @@ const zh: KioskStrings = {
   recUsual: service => `您通常选择${service}。今天也要吗？`,
   recChoice: "今天想补甲还是做全新一套？",
   suggestedForYou: "为您推荐",
+  welcomeBack: (n) => `${n}，欢迎回来！`,
+  welcomeBackSub: "很高兴再次见到您，欢迎回来！",
+  yourLastVisit: "您上次到店",
+  daysAgoShort: (d) => d <= 0 ? "今天" : d === 1 ? "昨天" : `${d} 天前`,
+  ourSuggestion: "我们的建议",
+  whatToday: "您今天想做什么？",
+  recommendedForYou: "为您推荐",
+  lastVisitPill: (d) => d <= 0 ? "上次到店：今天" : d === 1 ? "上次到店：昨天" : `上次到店：${d} 天前`,
+  notSureAllServices: "还没想好？查看全部服务",
+  moreServices: "更多服务",
   hadBefore: "您以前选过",
   reviewTitle: "您今天的服务",
   reviewSub: "请确认以下信息无误。",
@@ -677,6 +731,16 @@ const ko: KioskStrings = {
   recUsual: service => `보통 ${service}을(를) 받으셨어요. 오늘도 하시겠어요?`,
   recChoice: "오늘은 리필과 새 세트 중 어느 것을 원하세요?",
   suggestedForYou: "추천 서비스",
+  welcomeBack: (n) => `${n}님, 다시 오신 것을 환영해요!`,
+  welcomeBackSub: "다시 만나서 정말 반가워요. 다시 찾아 주셔서 감사합니다!",
+  yourLastVisit: "마지막 방문",
+  daysAgoShort: (d) => d <= 0 ? "오늘" : d === 1 ? "어제" : `${d}일 전`,
+  ourSuggestion: "추천",
+  whatToday: "오늘은 어떤 서비스를 원하세요?",
+  recommendedForYou: "고객님께 추천",
+  lastVisitPill: (d) => d <= 0 ? "마지막 방문: 오늘" : d === 1 ? "마지막 방문: 어제" : `마지막 방문: ${d}일 전`,
+  notSureAllServices: "잘 모르시겠어요? 전체 서비스 보기",
+  moreServices: "다른 서비스",
   hadBefore: "이전에 선택하신 항목",
   reviewTitle: "오늘의 방문 내용",
   reviewSub: "내용이 맞는지 확인해 주세요.",

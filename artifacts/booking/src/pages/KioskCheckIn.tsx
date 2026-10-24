@@ -620,12 +620,14 @@ function KioskCheckInScreens() {
   };
 
   // Check real-time availability and route accordingly
-  const checkAvailabilityAndRoute = useCallback(async () => {
+  // `then`: where to go when someone is free — the category cards, or (a category picked on the welcome screen)
+  // that category's services.
+  const checkAvailabilityAndRoute = useCallback(async (then: "service_type" | "services" = "service_type") => {
     try {
       const r = await fetch(`/api/public/kiosk/${slug}/availability`);
       const d = await r.json();
       if (d.hasAvailableStaff || d.error) {
-        setScreen("service_type");
+        setScreen(then);
       } else {
         const mins: number = d.estimatedWaitMinutes ?? 30;
         setWaitInfo({ estimatedMinutes: mins });
@@ -635,7 +637,7 @@ function KioskCheckInScreens() {
     } catch {
       // No internet: the POS tablet works out the wait from its own board. No answer: fail open, as before.
       const d = await hubKioskWait();
-      if (!d || d.hasAvailableStaff) { setScreen("service_type"); return; }
+      if (!d || d.hasAvailableStaff) { setScreen(then); return; }
       const mins = d.estimatedWaitMinutes ?? 30;
       setWaitInfo({ estimatedMinutes: mins });
       setScreen(mins > 60 ? "fully_booked" : "wait_confirm");
@@ -1267,6 +1269,48 @@ function KioskCheckInScreens() {
     </div>
   );
 
+  // One card per real service category (in the order categories first appear in the service list); each one
+  // filters the service list to that category. Used by the category screen and the Smart Check-In welcome.
+  const categoryGroups = () => {
+    const catSlug = (c: string) => (c ?? "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    const catOrder: string[] = [];
+    const byCat = new Map<string, ServiceItem[]>();
+    for (const s of allServices) {
+      const raw = (s.category ?? "").trim();
+      const key = raw || t.otherServices;
+      if (!byCat.has(key)) { byCat.set(key, []); catOrder.push(key); }
+      byCat.get(key)!.push(s);
+    }
+
+    let groups = catOrder.map(cat => {
+      const svcs = byCat.get(cat)!;
+      const { emoji } = getCat(cat);
+      return {
+        key: catSlug(cat) || "all",
+        label: cat,
+        // Preview the first few service names as bullets — same slot the fixed
+        // groups used for their descriptions.
+        bullets: svcs.slice(0, 3).map(s => s.name)
+          .concat(svcs.length > 3 ? [t.andMore(svcs.length - 3)] : []),
+        fallbackEmoji: emoji,
+        svcs,
+      };
+    });
+
+    // Fallback: no categories at all — a single "All services" card.
+    if (groups.length === 0 && allServices.length > 0) {
+      groups = [{
+        key: "all",
+        label: t.allServices,
+        bullets: allServices.slice(0, 3).map(s => s.name),
+        fallbackEmoji: "✨",
+        svcs: allServices,
+      }];
+    }
+
+    return groups;
+  };
+
   // ── WELCOME ─────────────────────────────────────────────────────────────────
   // Smart Check-In: the welcome screen with a suggestion on it. Same greeting; the suggested service is the
   // obvious first choice, and "Other services" is always right beside it.
@@ -1279,43 +1323,123 @@ function KioskCheckInScreens() {
     const question = rec.kind === "choice" && suggestedServices.length > 1 ? t.recChoice : rec.kind === "usual" ? t.recUsual(first.name) : t.recAsk(first.name);
     const money = (n: number) => `$${n % 1 === 0 ? n : n.toFixed(2)}`;
     const panel = NAIL_LOOK ? "" : "rounded-3xl";
+    const cardShadow = NAIL_LOOK ? "none" : SHADOW_LG;
+    const catImgs = kioskConfig?.categoryImages ?? {};
+    const days = rec.basedOn.daysAgo;
+    // The suggested service's picture: its own, else its category's.
+    const pictureOf = (sv: ServiceItem) => sv.imageUrl || catImgs[sv.category] || null;
+    const heroImage = pictureOf(first);
+    // The other categories as a 2 × 2 grid under the suggestion; more than four → three and "More services".
+    const groups = categoryGroups();
+    const gridGroups = groups.length > 4 ? groups.slice(0, 3) : groups;
+    const openCategory = (svcs: ServiceItem[]) => {
+      kick();
+      setFilteredServices(svcs.length ? svcs : null);
+      setSvcPage(0);
+      setScreen("loading");
+      void checkAvailabilityAndRoute("services");
+    };
+    const allServicesNow = () => { kick(); setScreen("loading"); void checkAvailabilityAndRoute(); };
+    const small = { fontSize: "clamp(12px, 1.4vw, 15px)", letterSpacing: ".18em" } as const;
     return (
       <div className="fixed inset-0 flex flex-col select-none" onContextMenu={e => e.preventDefault()} style={{ ...NO_SELECT, background: BG }} data-testid="kiosk-smart-welcome">
-        <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-8 text-center" style={{ gap: "clamp(14px, 2.6vh, 28px)" }}>
-          <h2 className="font-black" style={{ color: TEXT, fontSize: "clamp(40px, 6vw, 72px)", lineHeight: 1.08 }}>
-            Welcome back, {clientFirst}!
-          </h2>
-          {(clientInfo?.loyaltyPoints ?? 0) > 0 && (
-            <div className="inline-flex items-center gap-3 px-6 py-2.5 rounded-full text-xl font-semibold"
-              style={{ background: PILL_BG, border: `1.5px solid ${PILL_BORDER}`, color: PILL_TEXT }}>
-              <span>{t.loyaltyPoints(clientInfo!.loyaltyPoints)}</span>
+        <div className="flex-1 min-h-0 overflow-y-auto" style={{ padding: "clamp(20px, 3.4vh, 44px) clamp(20px, 5vw, 64px)" }}>
+          <div className="mx-auto w-full flex flex-col" style={{ maxWidth: 1100, gap: "clamp(14px, 2.4vh, 30px)" }}>
+            {/* Greeting */}
+            <div>
+              {storeConfig?.name && <p className="font-semibold uppercase" style={{ ...small, color: PRIMARY }}>{storeConfig.name}</p>}
+              <h2 className="font-black" style={{ color: TEXT, fontSize: "clamp(40px, 6.4vw, 78px)", lineHeight: 1.06, marginTop: 6 }}>
+                {t.welcomeBack(clientFirst)}
+              </h2>
+              <p style={{ color: MUTED, fontSize: "clamp(17px, 2.1vw, 24px)", marginTop: 8 }}>{t.welcomeBackSub}</p>
+              {(clientInfo?.loyaltyPoints ?? 0) > 0 && (
+                <div className="inline-flex items-center gap-3 px-5 py-2 mt-3 text-lg font-semibold"
+                  style={{ background: PILL_BG, border: `1.5px solid ${PILL_BORDER}`, color: PILL_TEXT, borderRadius: NAIL_LOOK ? 0 : 999 }}>
+                  <span>{t.loyaltyPoints(clientInfo!.loyaltyPoints)}</span>
+                </div>
+              )}
             </div>
-          )}
-          <div>
-            <p style={{ color: MUTED, fontSize: "clamp(18px, 2.2vw, 26px)" }}>{t.lastVisitLine(rec.basedOn.daysAgo, rec.basedOn.serviceName)}</p>
-            <p className="font-bold" style={{ color: TEXT, fontSize: "clamp(22px, 2.8vw, 34px)", marginTop: 6 }}>{question}</p>
-          </div>
-          <div className="w-full flex items-stretch justify-center" style={{ gap: "clamp(10px, 1.4vw, 18px)", maxWidth: 980 }}>
-            {suggestedServices.map((sv, i) => (
-              <button key={sv.id} type="button" data-testid={`kiosk-smart-suggest-${sv.id}`}
-                onPointerDown={e => { e.preventDefault(); chooseSuggested(sv); }}
-                className={`${panel} flex-1 text-left transition-transform duration-150 active:scale-[0.98]`}
-                style={{ maxWidth: 520, padding: "clamp(16px, 2.4vh, 26px) clamp(18px, 2.2vw, 30px)", background: i === 0 ? PRIMARY_S : SURFACE,
-                  border: `${i === 0 ? 2 : 1}px solid ${i === 0 ? PRIMARY : BORDER}`, boxShadow: NAIL_LOOK ? "none" : SHADOW_LG }}>
-                {i === 0 && <p className="font-bold uppercase" style={{ color: PRIMARY, fontSize: 13, letterSpacing: ".2em" }}>{t.suggestedForYou}</p>}
-                <h3 className="font-black" style={{ color: TEXT, fontSize: "clamp(24px, 3vw, 38px)", lineHeight: 1.15, marginTop: i === 0 ? 4 : 0 }}>{sv.name}</h3>
-                {(showPrice || showDuration) && (
-                  <p className="font-semibold" style={{ color: MUTED, fontSize: "clamp(16px, 1.8vw, 22px)", marginTop: 6 }}>
-                    {showPrice && money(sv.price)}{showPrice && showDuration && " · "}{showDuration && `${sv.duration} min`}
-                  </p>
-                )}
-              </button>
-            ))}
+
+            {/* Last visit | our suggestion — with the suggested service's picture fading in on the right */}
+            <div className={`${panel} relative overflow-hidden`} style={{ background: SURFACE, border: `1px solid ${BORDER}`, boxShadow: cardShadow }} data-testid="kiosk-smart-panel">
+              {heroImage && (
+                <img src={heroImage} alt="" aria-hidden className="absolute inset-y-0 right-0 h-full object-cover"
+                  style={{ width: "34%", WebkitMaskImage: "linear-gradient(to right, transparent, #000 45%)", maskImage: "linear-gradient(to right, transparent, #000 45%)" }} />
+              )}
+              <div className="relative flex items-stretch" style={{ padding: "clamp(18px, 2.6vh, 32px) clamp(18px, 2.6vw, 34px)", paddingRight: heroImage ? "30%" : undefined }}>
+                <div className="flex flex-col justify-center" style={{ minWidth: "28%" }}>
+                  <p className="font-semibold uppercase" style={{ ...small, color: MUTED }}>{t.yourLastVisit}</p>
+                  <p className="font-black" style={{ color: TEXT, fontSize: "clamp(26px, 3.4vw, 40px)", lineHeight: 1.15, marginTop: 4 }}>{t.daysAgoShort(days)}</p>
+                  <p style={{ color: MUTED, fontSize: "clamp(16px, 1.9vw, 22px)", marginTop: 2 }}>{rec.basedOn.serviceName}</p>
+                </div>
+                <div style={{ width: 1, background: BORDER, margin: "0 clamp(16px, 2.4vw, 32px)" }} />
+                <div className="flex flex-col justify-center min-w-0">
+                  <p className="font-bold uppercase" style={{ ...small, color: PRIMARY }}>{t.ourSuggestion}</p>
+                  <p className="font-bold" style={{ color: TEXT, fontSize: "clamp(20px, 2.7vw, 32px)", lineHeight: 1.25, marginTop: 6 }}>{question}</p>
+                </div>
+              </div>
+            </div>
+
+            <h3 className="font-black text-center" style={{ color: TEXT, fontSize: "clamp(24px, 3.2vw, 38px)", marginTop: "clamp(4px, 1vh, 12px)" }}>{t.whatToday}</h3>
+
+            {/* The suggestion: one large card each */}
+            {suggestedServices.map((sv) => {
+              const img = pictureOf(sv);
+              return (
+                <button key={sv.id} type="button" data-testid={`kiosk-smart-suggest-${sv.id}`}
+                  onPointerDown={e => { e.preventDefault(); chooseSuggested(sv); }}
+                  className={`${panel} w-full flex items-stretch overflow-hidden text-left transition-transform duration-150 active:scale-[0.99]`}
+                  style={{ background: PRIMARY_S, border: `2px solid ${PRIMARY}`, boxShadow: cardShadow, minHeight: "clamp(150px, 20vh, 260px)" }}>
+                  {img && <img src={img} alt="" className="object-cover shrink-0" style={{ width: "42%" }} />}
+                  <div className="flex-1 flex flex-col items-center justify-center text-center" style={{ padding: "clamp(16px, 2.4vh, 30px) clamp(16px, 2vw, 28px)", gap: "clamp(6px, 1vh, 12px)" }}>
+                    <span className="font-black" style={{ color: TEXT, fontSize: "clamp(28px, 4vw, 48px)", lineHeight: 1.1 }}>{sv.name}</span>
+                    <span className="font-semibold" style={{ color: PRIMARY, fontSize: "clamp(18px, 2.2vw, 26px)" }}>{t.recommendedForYou}</span>
+                    {(showPrice || showDuration) && (
+                      <span className="font-semibold" style={{ color: MUTED, fontSize: "clamp(15px, 1.8vw, 20px)" }}>
+                        {showPrice && money(sv.price)}{showPrice && showDuration && " · "}{showDuration && `${sv.duration} min`}
+                      </span>
+                    )}
+                    <span className="font-semibold" style={{ color: PRIMARY, background: SURFACE, border: `1px solid ${PRIMARY}55`, borderRadius: NAIL_LOOK ? 0 : 999,
+                      padding: "6px 16px", fontSize: "clamp(14px, 1.6vw, 18px)" }}>{t.lastVisitPill(days)}</span>
+                  </div>
+                </button>
+              );
+            })}
+
+            {/* Everything else: the categories, two by two */}
+            <div className="grid grid-cols-2" style={{ gap: "clamp(10px, 1.6vw, 20px)" }} data-testid="kiosk-smart-categories">
+              {gridGroups.map((g) => {
+                const img = catImgs[g.label] ?? catImgs[g.key];
+                return (
+                  <button key={g.key} type="button" data-testid={`kiosk-smart-category-${g.key}`}
+                    onPointerDown={e => { e.preventDefault(); openCategory(g.svcs); }}
+                    className={`${panel} flex flex-col overflow-hidden text-center transition-transform duration-150 active:scale-[0.98]`}
+                    style={{ background: SURFACE, border: `1px solid ${BORDER}`, boxShadow: cardShadow }}>
+                    {img && <img src={img} alt="" className="w-full object-cover" style={{ height: "clamp(110px, 13vh, 190px)" }} />}
+                    <div className="flex-1 flex flex-col items-center justify-center" style={{ padding: "clamp(14px, 2vh, 24px) 14px", gap: 6 }}>
+                      <span className="font-black" style={{ color: TEXT, fontSize: "clamp(20px, 2.6vw, 30px)", lineHeight: 1.15 }}>{g.label}</span>
+                      <span style={{ color: MUTED, fontSize: "clamp(14px, 1.6vw, 18px)" }}>{g.svcs.slice(0, 2).map((x) => x.name).join(" · ")}</span>
+                    </div>
+                  </button>
+                );
+              })}
+              {groups.length > 4 && (
+                <button type="button" data-testid="kiosk-smart-more" onPointerDown={e => { e.preventDefault(); allServicesNow(); }}
+                  className={`${panel} flex items-center justify-center text-center transition-transform duration-150 active:scale-[0.98]`}
+                  style={{ background: SURFACE, border: `1px solid ${BORDER}`, boxShadow: cardShadow, minHeight: "clamp(110px, 13vh, 190px)" }}>
+                  <span className="font-black" style={{ color: TEXT, fontSize: "clamp(20px, 2.6vw, 30px)" }}>{t.moreServices}</span>
+                </button>
+              )}
+            </div>
+
+            <button type="button" onPointerDown={e => { e.preventDefault(); allServicesNow(); }} data-testid="kiosk-smart-all"
+              className="mx-auto font-semibold" style={{ color: MUTED, fontSize: "clamp(15px, 1.8vw, 20px)", padding: "8px 16px" }}>
+              {t.notSureAllServices}
+            </button>
           </div>
         </div>
         <div className="shrink-0 px-6 py-4 flex items-center justify-between" style={{ background: SURFACE, borderTop: `2px solid ${BORDER}` }}>
           <GhostBtn onPress={resetToIdle} size="sm">{t.startOver}</GhostBtn>
-          <GhostBtn onPress={() => { kick(); setScreen("loading"); checkAvailabilityAndRoute(); }}>{t.otherServices}</GhostBtn>
         </div>
       </div>
     );
@@ -1806,41 +1930,7 @@ function KioskCheckInScreens() {
     // One card per real service category in the store's catalogue (in the
     // order categories first appear in the service list). Each card filters the
     // service list to that category.
-    const catSlug = (c: string) => (c ?? "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-    const catOrder: string[] = [];
-    const byCat = new Map<string, ServiceItem[]>();
-    for (const s of allServices) {
-      const raw = (s.category ?? "").trim();
-      const key = raw || t.otherServices;
-      if (!byCat.has(key)) { byCat.set(key, []); catOrder.push(key); }
-      byCat.get(key)!.push(s);
-    }
-
-    let groups = catOrder.map(cat => {
-      const svcs = byCat.get(cat)!;
-      const { emoji } = getCat(cat);
-      return {
-        key: catSlug(cat) || "all",
-        label: cat,
-        // Preview the first few service names as bullets — same slot the fixed
-        // groups used for their descriptions.
-        bullets: svcs.slice(0, 3).map(s => s.name)
-          .concat(svcs.length > 3 ? [t.andMore(svcs.length - 3)] : []),
-        fallbackEmoji: emoji,
-        svcs,
-      };
-    });
-
-    // Fallback: no categories at all — a single "All services" card.
-    if (groups.length === 0 && allServices.length > 0) {
-      groups = [{
-        key: "all",
-        label: t.allServices,
-        bullets: allServices.slice(0, 3).map(s => s.name),
-        fallbackEmoji: "✨",
-        svcs: allServices,
-      }];
-    }
+    let groups = categoryGroups();
 
     const catImgs = kioskConfig?.categoryImages ?? {};
     // Grid density: keep 3-up for a handful of categories, tighten to fit more.
