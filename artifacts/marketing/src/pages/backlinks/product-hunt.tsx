@@ -355,7 +355,7 @@ The core product: online booking, a Stripe-powered POS, self check-in kiosk (5 l
 
 The differentiating feature is Autumn, an AI receptionist that answers every inbound call in under 2 seconds, 24/7. She books appointments, handles rescheduling and cancellations, answers questions about services and pricing, and checks the live wait board so callers get accurate wait times. Most salons miss 30–40% of their calls — Autumn routes all of them.
 
-Autumn is included in every plan (20 calls a month on Solo, 50 on Starter, 100 on Professional), then $0.50 per call. We chose per-call pricing over a flat fee because call volume varies enormously between a 2-chair nail salon and a 12-chair hair salon.
+Autumn is included on the paid plans (20 calls a month on Starter, 50 on Professional, 100 on Enterprise), then $0.50 per call. We chose per-call pricing over a flat fee because call volume varies enormously between a 2-chair nail salon and a 12-chair hair salon.
 
 Built with React, Express, and a custom telephony layer. Happy to answer technical questions.
 

@@ -373,7 +373,7 @@ require 'includes/nav.php';
       <a href="/pricing" class="btn btn-secondary">See Pricing</a>
     </div>
     <p class="dt-hero-note">
-      Credit card required · No charge until trial ends
+      No credit card needed
       <span>&middot;</span>
       <?= TRIAL_DAYS ?>-day free trial
       <span>&middot;</span>
@@ -422,7 +422,7 @@ require 'includes/nav.php';
     <div class="steps-grid">
       <?php
       $steps = [
-        ['num'=>'1','title'=>'Start your free trial','text'=>'Sign up for Certxa — takes less than 2 minutes. A credit card is required to subscribe, but you won\'t be charged for ' . TRIAL_DAYS . ' days. Cancel before the trial ends and you owe nothing.'],
+        ['num'=>'1','title'=>'Start your free trial','text'=>'Sign up for Certxa — takes less than 2 minutes. No credit card is needed for the ' . TRIAL_DAYS . '-day free trial.'],
         ['num'=>'2','title'=>'Share your export file','text'=>'Export your data from your current software (we\'ll show you exactly how), then upload it securely in your Certxa dashboard.'],
         ['num'=>'3','title'=>'We handle the rest','text'=>'Our import engine normalises your data, detects duplicates, and maps everything to the right fields. Your data is ready within 24 hours.'],
       ];
@@ -563,7 +563,7 @@ require 'includes/nav.php';
       <a href="/auth" class="btn btn-gold">Start Free Trial</a>
       <a href="/features" class="btn btn-outline-white">Explore All Features</a>
     </div>
-    <p class="cta-note">Credit card required · No charge until trial ends &middot; <?= TRIAL_DAYS ?>-day free trial &middot; Cancel anytime</p>
+    <p class="cta-note">No credit card needed &middot; <?= TRIAL_DAYS ?>-day free trial &middot; Cancel anytime</p>
   </div>
 </section>
 

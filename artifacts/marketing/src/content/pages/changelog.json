@@ -6,6 +6,21 @@
   },
   "releases": [
     {
+      "id": "rel-2026-10-24",
+      "version": "2026.10.24",
+      "date": "October 24, 2026",
+      "tags": [
+        "improvement"
+      ],
+      "items": [
+        {
+          "id": "i1",
+          "type": "improvement",
+          "text": "Autumn's included calls: 20 a month on Starter, 50 on Professional and 100 on Enterprise. Additional calls are still $0.50 each."
+        }
+      ]
+    },
+    {
       "id": "rel1",
       "version": "2026.10.12",
       "date": "October 12, 2026",
@@ -23,7 +38,7 @@
         {
           "id": "i2",
           "type": "feature",
-          "text": "Autumn, the AI receptionist, is now included in every plan: 20 calls a month on Solo, 50 on Starter and 100 on Professional."
+          "text": "Autumn, the AI receptionist, is now included in every plan: 20 calls a month on Solo, 50 on Starter and 100 on Professional (changed on October 24, 2026: 20 on Starter, 50 on Professional and 100 on Enterprise)."
         },
         {
           "id": "i3",

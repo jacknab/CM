@@ -13,10 +13,12 @@ export const AUTUMN_CALL_FEE_USD = 0.5;
 /** A call must last longer than this to count as handled. */
 export const AUTUMN_FREE_CALL_SECONDS = 30;
 
+// Owner, 2026-10-24: Starter (code "professional") 20, Professional (code "elite") 50, Enterprise 100; Solo none.
+// The admin Plans page shows the same numbers (plan_features.ai_receptionist limit_value).
 const INCLUDED_CALLS_BY_PLAN: Record<string, number> = {
-  solo: 20,
-  professional: 50,
-  elite: 100,
+  professional: 20,
+  elite: 50,
+  enterprise: 100,
 };
 
 /** Handled calls included per calendar month for a plan code. */

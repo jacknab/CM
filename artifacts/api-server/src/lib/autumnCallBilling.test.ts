@@ -3,10 +3,11 @@ import { autumnCallCharge, includedCallsForPlan, isHandledCall } from "./autumnC
 
 describe("Autumn call billing", () => {
   it("gives each plan its monthly allowance", () => {
-    expect(includedCallsForPlan("solo")).toBe(20);
-    expect(includedCallsForPlan("professional")).toBe(50);
-    expect(includedCallsForPlan("elite")).toBe(100);
-    expect(includedCallsForPlan("Solo")).toBe(20);
+    expect(includedCallsForPlan("solo")).toBe(0);
+    expect(includedCallsForPlan("professional")).toBe(20);
+    expect(includedCallsForPlan("elite")).toBe(50);
+    expect(includedCallsForPlan("enterprise")).toBe(100);
+    expect(includedCallsForPlan("Elite")).toBe(50);
   });
 
   it("includes nothing for a plan with no stated allowance", () => {

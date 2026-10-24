@@ -565,13 +565,13 @@ Your plan covers 20, 50 or 100 calls a month. After that, each call is $0.50 fro
 
 ### Auto top-up (optional)
 Set a low-balance threshold and Certxa will top up your account automatically — so Autumn never stops mid-day.
-Included on Certxa plans — 20 calls a month on Solo, 50 on Starter and 100 on Professional. Additional calls are $0.50 each. There is a one-time $15 activation fee for your dedicated phone number. Free trials don't include calls; a trial's calls are $0.50 each.
+Included on Certxa's paid plans — 20 calls a month on Starter, 50 on Professional and 100 on Enterprise. Additional calls are $0.50 each. There is a one-time $15 activation fee for your dedicated phone number. Free trials don't include calls; a trial's calls are $0.50 each.
 FAQ
 
 ## Common questions about Autumn
 
 ### Do I need a separate subscription for Autumn?
-No. Autumn comes with your Certxa plan: 20 calls a month on Solo, 50 on Starter and 100 on Professional. After that, each additional call is $0.50. There is a one-time $15 activation fee for your dedicated phone number. Free trials don't include calls; a trial's calls are $0.50 each.
+No. Autumn comes with Certxa's paid plans: 20 calls a month on Starter, 50 on Professional and 100 on Enterprise. After that, each additional call is $0.50. There is a one-time $15 activation fee for your dedicated phone number. Free trials don't include calls; a trial's calls are $0.50 each.
 
 ### How does the credit balance work?
 Your plan's included calls are used first. Once they are used up, each additional call is $0.50, taken from the credit balance you top up inside your Certxa dashboard. You can set a low-balance auto top-up so she never goes offline mid-day.
@@ -684,7 +684,6 @@ Simple, transparent pricing
 
 # Certxa salon software pricing
 Starter $29, Professional $99 and Enterprise $179 a month, or Solo free for one professional. No commissions, no long-term contracts.
-Most popular
 
 ## Starter
 $29.00 / month
@@ -701,8 +700,10 @@ Start free trial
 - Advanced Reporting
 - Phone Support Calls (up to 5)
 - Contractor Management
+- AI Receptionist (20 calls)
 - Loyalty Rewards
 - Point of Sale
+Most popular
 
 ## Professional
 $99.00 / month
@@ -720,7 +721,7 @@ Start free trial
 - Advanced Reporting
 - Phone Support Calls
 - Contractor Management
-- AI Receptionist (100 calls)
+- AI Receptionist (50 calls)
 - Loyalty Rewards
 - Point of Sale
 - Locations (up to 1)
@@ -741,7 +742,7 @@ Start free trial
 - Advanced Reporting
 - Phone Support Calls
 - Contractor Management
-- AI Receptionist (200 calls)
+- AI Receptionist (100 calls)
 - Loyalty Rewards
 - Point of Sale
 - Locations (up to 3)
@@ -766,12 +767,12 @@ Start free trial
 | Advanced Reporting | | |
 | support
 | Phone Support Calls | Up to 5 | |
+| ai
+| AI Receptionist | 20 calls | 50 calls | 100 calls
 | marketing
 | Loyalty Rewards | | |
 | pos
 | Point of Sale | | |
-| ai
-| AI Receptionist | | 100 calls | 200 calls
 | general
 | Locations | | Up to 1 | Up to 3
 
@@ -779,13 +780,13 @@ Start free trial
 How much does Certxa cost?
 Starter is $29.00 a month (Up to 3 staff, all features for small size teams); Professional is $99.00 a month (Up to 12 staff, all features for medium size teams); Enterprise is $179.00 a month (Built for large teams or multiple locations). Paying yearly costs ten months instead of twelve. The Solo plan, for one independent professional, is free.
 Is there a free trial?
-Yes. Starter, Professional and Enterprise start with a 60-day free trial. A credit card is required to start a paid plan, but you are not charged until the trial ends. Solo is free with no trial needed.
+Yes. Starter, Professional and Enterprise start with a 60-day free trial. No credit card is needed to start the trial. Solo is free with no trial needed.
 Can I change plans later?
 Yes. You can upgrade, downgrade, or cancel at any time. There are no long-term contracts.
 What does card processing cost?
 Payments run through Stripe. In-person card payments are 2.7% + $0.05 and online payments are 2.9% + $0.30, which is Stripe's rate, plus a $0.60 Certxa fee per card transaction.
 Is the Autumn AI receptionist included?
-Yes. Autumn answers calls on every plan: 20 calls a month are included on Solo, 50 on Starter and 100 on Professional. Additional calls are $0.50 each, and calls of 30 seconds or less are free. There is a one-time $15 fee to set up Autumn's phone number.
+Yes. Autumn is included on the paid plans: 20 calls a month on Starter, 50 on Professional and 100 on Enterprise. Additional calls are $0.50 each, and calls of 30 seconds or less are free. There is a one-time $15 fee to set up Autumn's phone number.
 What types of businesses does Certxa support?
 Certxa is built for nail salons, hair salons, barbershops, spas, massage studios, hair removal studios, and braid and weave salons.
 
@@ -845,14 +846,14 @@ Skip to main content Free Data Transfer
 # Switching to Certxa has never been easier
 Sign up for our free data transfer service, and we'll import all of your appointments, services, inventory, and client lists for you.
 Get your free data transfer See Pricing
-Credit card required · No charge until trial ends · 60-day free trial · Transfer completed in 24 hours
+No credit card needed · 60-day free trial · Transfer completed in 24 hours
 We import from any platform, including
 V Vagaro GG GlossGenius ■ Square Appts M Mindbody F Fresha B Booksy GC GoCheckIn G Google Contacts 📋 CSV / Excel How It Works
 
 ## Up and running in three steps
 Our team handles the heavy lifting. You focus on running your salon.
 1 Start your free trial
-Sign up for Certxa — takes less than 2 minutes. A credit card is required to subscribe, but you won't be charged for 60 days. Cancel before the trial ends and you owe nothing.
+Sign up for Certxa — takes less than 2 minutes. No credit card is needed for the 60-day free trial.
 2 Share your export file
 Export your data from your current software (we'll show you exactly how), then upload it securely in your Certxa dashboard.
 3 We handle the rest
@@ -893,7 +894,7 @@ Is the data transfer really free? Yes, completely. We include free data migratio
 ## Your data. Your clients. Ready in 24 hours.
 Switch to the nail salon platform built to keep every client record safe and searchable from day one.
 Start Free Trial Explore All Features
-Credit card required · No charge until trial ends · 60-day free trial · Cancel anytime
+No credit card needed · 60-day free trial · Cancel anytime
 
 
 ---
@@ -905,10 +906,12 @@ Changelog
 
 # What's new in Certxa.
 What we've released, newest first.
+2026.10.24 October 24, 2026 Improved Improved
+Autumn's included calls: 20 a month on Starter, 50 on Professional and 100 on Enterprise. Additional calls are still $0.50 each.
 2026.10.12 October 12, 2026 New Improved Fixed New
 A ticket can now hold more than one service. One technician takes the whole visit when someone in the turn line can do every service; otherwise each service goes to the next technician who can.
 New
-Autumn, the AI receptionist, is now included in every plan: 20 calls a month on Solo, 50 on Starter and 100 on Professional.
+Autumn, the AI receptionist, is now included in every plan: 20 calls a month on Solo, 50 on Starter and 100 on Professional (changed on October 24, 2026: 20 on Starter, 50 on Professional and 100 on Enterprise).
 New
 Salons that use their own card terminal can set the CARD button to Own Provider, so the POS records the card payment without charging it.
 Improved

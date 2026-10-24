@@ -113,7 +113,7 @@
       "name": "Starter",
       "price": "$29",
       "period": "/ mo",
-      "description": "Up to 3 staff, all features for small teams, and 50 Autumn calls a month.",
+      "description": "Up to 3 staff, all features for small teams, and 20 Autumn calls a month.",
       "cta": "Start free trial",
       "featured": false
     },
@@ -122,7 +122,7 @@
       "name": "Professional",
       "price": "$99",
       "period": "/ mo",
-      "description": "Up to 12 staff, all features for medium-size teams, and 100 Autumn calls a month.",
+      "description": "Up to 12 staff, all features for medium-size teams, and 50 Autumn calls a month.",
       "cta": "Start free trial",
       "featured": true
     },
@@ -131,7 +131,7 @@
       "name": "Enterprise",
       "price": "$179",
       "period": "/ mo",
-      "description": "Built for large teams or several locations.",
+      "description": "Built for large teams or several locations, with 100 Autumn calls a month.",
       "cta": "Start free trial",
       "featured": false
     }

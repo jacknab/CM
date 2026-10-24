@@ -133,7 +133,8 @@ export default function PricingPage() {
       ...plan,
       price: formatMonthlyPrice(plan.priceMonthly),
       period: '/ month',
-      featured: getPlanTier(plan) === 'professional',
+      // "Most popular" is the Professional plan (code elite) — owner, 2026-10-24.
+      featured: getPlanTier(plan) === 'elite',
       cta: 'Start free trial',
       features: plan.features.map((feature) => ({
         id: feature.featureId,
@@ -395,7 +396,7 @@ export default function PricingPage() {
       {
         id: 'faq-2',
         question: 'Is there a free trial?',
-        answer: 'Yes. Starter, Professional and Enterprise start with a 60-day free trial. A credit card is required to start a paid plan, but you are not charged until the trial ends. Solo is free with no trial needed.',
+        answer: 'Yes. Starter, Professional and Enterprise start with a 60-day free trial. No credit card is needed to start the trial. Solo is free with no trial needed.',
       },
       {
         id: 'faq-3',
@@ -410,7 +411,7 @@ export default function PricingPage() {
       {
         id: 'faq-5',
         question: 'Is the Autumn AI receptionist included?',
-        answer: 'Yes. Autumn answers calls on every plan: 20 calls a month are included on Solo, 50 on Starter and 100 on Professional. Additional calls are $0.50 each, and calls of 30 seconds or less are free. There is a one-time $15 fee to set up Autumn\'s phone number.',
+        answer: 'Yes. Autumn is included on the paid plans: 20 calls a month on Starter, 50 on Professional and 100 on Enterprise. Additional calls are $0.50 each, and calls of 30 seconds or less are free. There is a one-time $15 fee to set up Autumn\'s phone number.',
       },
       {
         id: 'faq-6',
