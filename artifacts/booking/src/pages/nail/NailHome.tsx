@@ -946,17 +946,33 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       if (!client || !service || !booking?.slot) throw new Error("Pick a time first");
       if (!pkg && extraServices.length > 1) throw new Error("A booking can have up to 2 services.");
       // A package: its services (and any added with it) go to the technicians the open time named, one each;
-      // the server makes a ticket per technician, linked to the visit. It needs a connection.
+      // the server makes a ticket per technician, linked to the visit. With no connection it is kept on this
+      // tablet and sent when the connection is back, like any booking.
       if (pkg) {
         const slot = booking.slot;
         const ids = [service.id, ...extraServices.map((x) => x.id)];
         if (!slot.legs || slot.legs.length !== ids.length) throw new Error("Pick the time again.");
-        if (syncEngine.isOffline() || isLocalId(client.id)) throw new Error("Booking a package needs a connection.");
-        const res = await fetch("/api/nail/bookings", {
-          method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-Idempotency-Key": bookingKey.current },
-          body: JSON.stringify({ clientId: client.id, serviceId: service.id, packageId: pkg.id, serviceIds: ids, staffIds: slot.legs.map((l) => l.staffId),
-            addonIds: addonIds.filter((id) => !pkg.addonIds.includes(id)), staffId: slot.staffId, date: slot.time }),
-        });
+        const pkgBody = { clientId: client.id, serviceId: service.id, packageId: pkg.id, serviceIds: ids, staffIds: slot.legs.map((l) => l.staffId),
+          addonIds: addonIds.filter((id) => !pkg.addonIds.includes(id)), staffId: slot.staffId, date: slot.time };
+        const onDevicePkg = async () => {
+          // Each technician's part, so the tablet's own open times see them busy until the server has it.
+          const later = extraServices.map((x) => Number(x.duration) || 30);
+          const minutes = [Math.max(5, draft.duration - later.reduce((a, b) => a + b, 0)), ...later];
+          await queueBooking(storeId, pkgBody, { duration: draft.duration, extraDuration: 0, legs: slot.legs!.map((l, i) => ({ staffId: l.staffId, minutes: minutes[i] })) },
+            `${client.name} · ${bookingLabel(slot)}`, bookingKey.current);
+          return { offline: true };
+        };
+        if (syncEngine.isOffline() || isLocalId(client.id)) return onDevicePkg();
+        let res: Response;
+        try {
+          res = await fetch("/api/nail/bookings", {
+            method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-Idempotency-Key": bookingKey.current },
+            body: JSON.stringify(pkgBody),
+          });
+        } catch (err) {
+          if (isNetworkFailure(err)) return onDevicePkg();
+          throw err;
+        }
         const data = await res.json().catch(() => null);
         if (!res.ok) throw new Error(data?.message || "Could not save the booking");
         return data;

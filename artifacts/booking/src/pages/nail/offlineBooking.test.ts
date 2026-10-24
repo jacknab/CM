@@ -11,6 +11,7 @@ const base = (): OfflineBookingData => ({
   staff: [{ id: 1, name: "Amy" }, { id: 2, name: "Bo" }],
   skills: new Map([[1, new Set([10, 20])], [2, new Set([10])]]),
   busy: [],
+  serviceMinutes: new Map([[10, 30], [20, 30], [30, 30]]),
 });
 const now = at("2026-10-14T08:00:00");
 
@@ -42,5 +43,26 @@ describe("booking a future visit with no connection", () => {
   test("days: a closed day and a technician's days off are left out", () => {
     const days = openDaysOffline(base(), { from: "2026-10-19", limit: 3, serviceId: 10, extraServiceId: null, duration: 60, extraDuration: 0, staffId: 1, now }).days;
     expect(days).toEqual(["2026-10-19", "2026-10-26", "2026-11-02"]);
+  });
+
+  test("a package: the chosen technician does what they do, the rest goes to someone free straight after", () => {
+    // Bo does 10 only; the package is 10 then 20 (Amy does both, but Bo was chosen).
+    const d = { ...base(), rules: [] };
+    const [slot] = openTimesOffline(d, { date: "2026-10-20", serviceId: 10, extraServiceId: 20, serviceIds: [10, 20], duration: 60, extraDuration: 30, staffId: 2, now });
+    expect(slot.legs?.map((l) => l.staffName)).toEqual(["Bo", "Amy"]);
+    expect(slot.time).toBe(new Date(at("2026-10-20T09:00:00")).toISOString());
+  });
+
+  test("a package with Any: one technician does it all when someone does every service", () => {
+    const d = { ...base(), rules: [] };
+    const [slot] = openTimesOffline(d, { date: "2026-10-20", serviceId: 10, extraServiceId: 20, serviceIds: [10, 20], duration: 60, extraDuration: 30, now });
+    expect(slot.legs?.map((l) => l.staffName)).toEqual(["Amy", "Amy"]);
+  });
+
+  test("a package: a chosen technician who is busy for their part means that time is not offered", () => {
+    const d = { ...base(), rules: [], busy: [{ staffId: 2, start: at("2026-10-20T09:00:00"), end: at("2026-10-20T09:30:00") }] };
+    const slots = openTimesOffline(d, { date: "2026-10-20", serviceId: 10, extraServiceId: 20, serviceIds: [10, 20], duration: 60, extraDuration: 30, staffId: 2, now });
+    expect(slots[0].time).toBe(new Date(at("2026-10-20T09:30:00")).toISOString());
+    expect(bookingTechs(d, 10, 20, [10, 20]).map((s) => s.name)).toEqual(["Amy", "Bo"]);
   });
 });

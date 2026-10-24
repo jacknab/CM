@@ -825,6 +825,11 @@ export async function loadOfflineBookingData(storeId: number, timezone: string, 
     ...(upcoming?.data ?? []).flatMap((b) => span(b.staffName ? byName.get(b.staffName) : null, b.date, b.duration)),
     ...pending.filter((a) => a.type === "NAIL_BOOKING" && Number((a.payload as any)?.storeId) === storeId).flatMap((a) => {
       const p = a.payload as any;
+      // A package booked offline: each technician's part of the visit, in order.
+      if (Array.isArray(p.legs)) {
+        let t = Date.parse(p.date);
+        return (p.legs as { staffId: number; minutes: number }[]).flatMap((l) => { const at = t; t += (Number(l.minutes) || 0) * 60_000; return span(l.staffId, new Date(at).toISOString(), l.minutes); });
+      }
       const firstMinutes = p.extraStaffId ? Number(p.duration) - Number(p.extraDuration) : Number(p.duration);
       return [...span(p.staffId, p.date, firstMinutes),
         ...(p.extraStaffId ? span(p.extraStaffId, new Date(Date.parse(p.date) + firstMinutes * 60_000).toISOString(), Number(p.extraDuration)) : [])];
@@ -832,7 +837,8 @@ export async function loadOfflineBookingData(storeId: number, timezone: string, 
   ];
   const extraDuration = extraServiceId ? Number((snapshot.services ?? []).find((x) => x.id === extraServiceId)?.duration ?? 0) || 0 : 0;
   return {
-    data: { timezone: snapshot.timezone || timezone, hours: snapshot.storeHours, rules: snapshot.staffAvailability ?? [], staff, skills, busy },
+    data: { timezone: snapshot.timezone || timezone, hours: snapshot.storeHours, rules: snapshot.staffAvailability ?? [], staff, skills, busy,
+      serviceMinutes: new Map((snapshot.services ?? []).map((x) => [x.id, Number(x.duration) || 0])) },
     extraDuration,
   };
 }
@@ -842,8 +848,9 @@ export async function loadOfflineBookingData(storeId: number, timezone: string, 
  * key) when the connection is back. The server checks the time again then; if it was taken meanwhile the front
  * desk is told. `duration` is the whole visit, `extraDuration` the second service's part.
  */
-export async function queueBooking(storeId: number, body: { clientId: number; serviceId: number; extraServiceId: number | null; addonIds: number[]; staffId: number; extraStaffId: number | null; date: string },
-  times: { duration: number; extraDuration: number }, label: string, key: string = newIdempotencyKey("nail.booking")): Promise<void> {
+export async function queueBooking(storeId: number, body: { clientId: number; serviceId: number; extraServiceId?: number | null; addonIds: number[]; staffId: number; extraStaffId?: number | null; date: string;
+  packageId?: number; serviceIds?: number[]; staffIds?: number[] },
+  times: { duration: number; extraDuration: number; legs?: { staffId: number; minutes: number }[] }, label: string, key: string = newIdempotencyKey("nail.booking")): Promise<void> {
   const now = Date.now();
   await actionQueueDB.add({
     type: "NAIL_BOOKING", entity_temp_id: `booking_${now}`, timestamp: now,

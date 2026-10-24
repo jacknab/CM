@@ -51,7 +51,7 @@ export function BookingPanel(p: {
   timezone: string;
   serviceId: number;
   extraServiceId: number | null;
-  /** A package: every service of the visit in order (the first is `serviceId`). Needs a connection. */
+  /** A package: every service of the visit in order (the first is `serviceId`). */
   serviceIds?: number[] | null;
   /** The whole visit in minutes: every service and add-on. */
   duration: number;
@@ -83,7 +83,6 @@ export function BookingPanel(p: {
   }, [p.storeId, p.timezone, p.extraServiceId]);
   const fromServerOr = async <T,>(url: string, fallbackMsg: string, onDevice: (d: NonNullable<Awaited<ReturnType<typeof loadOfflineBookingData>>>) => T): Promise<T> => {
     const local = async () => {
-      if (p.serviceIds) throw new Error("Booking a package needs a connection.");
       const d = await offlineData();
       if (!d) throw new Error("No connection, and this tablet does not have the salon's booking data yet.");
       setOffline(true);
@@ -105,7 +104,7 @@ export function BookingPanel(p: {
   useEffect(() => {
     let cancelled = false;
     setTechs(null); setError(null);
-    fromServerOr(`/api/nail/booking-techs?${visit}`, "Could not load the technicians", (d) => bookingTechs(d.data, p.serviceId, p.extraServiceId))
+    fromServerOr(`/api/nail/booking-techs?${visit}`, "Could not load the technicians", (d) => bookingTechs(d.data, p.serviceId, p.extraServiceId, p.serviceIds))
       .then((list) => { if (!cancelled) setTechs(list); })
       .catch((err) => { if (!cancelled) setError(err?.message || "Could not load the technicians. It needs a connection."); });
     return () => { cancelled = true; };
@@ -122,7 +121,7 @@ export function BookingPanel(p: {
     if (staffId) q.set("staffId", String(staffId));
     fromServerOr(`/api/nail/booking-days?${q}`, "Could not load the open days", (d) => openDaysOffline(d.data, {
       from: dayStart, limit: DAYS_PER_PAGE, serviceId: p.serviceId, extraServiceId: p.extraServiceId,
-      duration: Math.max(5, p.duration), extraDuration: d.extraDuration, staffId, now: Date.now(),
+      duration: Math.max(5, p.duration), extraDuration: d.extraDuration, staffId, now: Date.now(), serviceIds: p.serviceIds,
     }))
       .then((d) => { if (!cancelled) setDays(d); })
       .catch((err) => { if (!cancelled) setError(err?.message || "Could not load the open days. It needs a connection."); });
@@ -140,7 +139,7 @@ export function BookingPanel(p: {
     if (staffId) q.set("staffId", String(staffId));
     fromServerOr<BookingSlot[]>(`/api/public/store/${encodeURIComponent(p.slug)}/availability?${q}`, "Could not load the open times", (d) => openTimesOffline(d.data, {
       date: day, serviceId: p.serviceId, extraServiceId: p.extraServiceId, duration: Math.max(5, p.duration),
-      extraDuration: d.extraDuration, staffId, now: Date.now(),
+      extraDuration: d.extraDuration, staffId, now: Date.now(), serviceIds: p.serviceIds,
     }))
       .then((data) => { if (!cancelled) setSlots(Array.isArray(data) ? data : []); })
       .catch((err) => { if (!cancelled) setError(err?.message || "Could not load the open times. It needs a connection."); });

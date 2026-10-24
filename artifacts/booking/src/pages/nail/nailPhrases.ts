@@ -430,10 +430,6 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Một lưới không có phím Quay lại sẽ có một phím ở vị trí cuối cùng trên POS.",
   "Una cuadrícula sin tecla Atrás obtiene una en su última posición en el POS."
  ],
- "Booking a package needs a connection.": [
-  "Đặt lịch một gói cần có kết nối mạng.",
-  "Reservar un paquete necesita conexión."
- ],
  "Pick the time again.": [
   "Chọn lại giờ.",
   "Elija la hora de nuevo."
