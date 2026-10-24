@@ -1,67 +1,62 @@
 # GEO Audit — certxa.com
 
-**Date:** 2026-10-21 · **Previous:** 2026-10-15 (53/100) · **Business type:** SaaS (nail-salon POS and booking software)
+**Date:** 2026-10-24 · **Previous:** 2026-10-21 (58/100) · **Business type:** SaaS (nail-salon POS, booking and the Autumn AI receptionist) · **Pages analyzed:** 39 sitemap URLs + 11 extra paths
 
-## GEO Score: 58/100
+## GEO Score: 60/100 (Fair)
 
-| Category | Weight | Score | 10-15 |
-|---|---|---|---|
-| AI Citability & Visibility | 25% | 82/100 | 70 |
-| Brand Authority | 20% | 13/100 | 13 |
-| Content Quality & E-E-A-T | 20% | 47/100 | 44 |
-| Technical Foundations | 15% | 80/100 | 82 |
-| Structured Data | 10% | 80/100 | 73 |
-| Platform Optimization | 10% | 53/100 | 46 |
+| Category | Weight | Score | 10-21 | Weighted |
+|---|---|---|---|---|
+| AI Citability | 25% | 84/100 | 82 | 21.0 |
+| Brand Authority | 20% | 12/100 | 13 | 2.4 |
+| Content E-E-A-T | 20% | 50/100 | 47 | 10.0 |
+| Technical GEO | 15% | 84/100 | 80 | 12.6 |
+| Schema & Structured Data | 10% | 83/100 | 80 | 8.3 |
+| Platform Optimization | 10% | 57/100 | 53 | 5.7 |
+| **Overall** | | | | **60.0** |
 
-Crawler access 100/100 (every AI crawler allowed). llms.txt 85/100.
-Platform scores: Bing Copilot 65, ChatGPT 61, Google AI Overviews 56, Perplexity 48, Gemini 35.
+Platforms: Bing Copilot 70, ChatGPT 66, Google AI Overviews 62, Perplexity 52, Gemini 36. Crawler access 100/100 (every AI and search crawler gets 200). llms.txt 85/100.
 
-Detail reports from the five checks: `geo-reports/certxa.com/2026-10-21/` (AI visibility, platforms, technical, content, schema).
+The 10-21 fixes held: one price list everywhere (Solo free, Starter $29, Professional $99, Enterprise $179), /pricing server-rendered, compare tables have text, share image works. Brand authority (12) is still the single biggest drag and still needs the owner. Most new problems came from today's /products redesign and were fixed the same day.
 
-## Biggest finding: three different price lists were live
+Detail reports: `GEO-AI-VISIBILITY.md`, `GEO-PLATFORM-OPTIMIZATION.md`, `GEO-TECHNICAL-AUDIT.md`, `GEO-CONTENT-ANALYSIS.md`, `GEO-SCHEMA-REPORT.md` in this folder.
 
-The /pricing page reads the admin plans (Solo free, Starter $29, Professional $99, Enterprise $179). The home page, its structured data, the compare and Vietnamese pages, llms.txt and a blog post still said Professional $22 / Elite $49. The /pricing page also showed crawlers only "Loading pricing plans…", and its FAQ answered "How much does Certxa cost?" with "prices are shown on the cards above". The owner confirmed the admin prices on 2026-10-21.
-
-## Fixed on 2026-10-21
+## Fixed on 2026-10-24 (live)
 
 | # | Fix | Where |
 |---|---|---|
-| 1 | Owner's prices on every page, in the home and site-wide schema offers, llms.txt and the comparison blog post | marketing app, `php/includes/header.php`, `artifacts/booking/public/llms.txt`, `blog_posts` |
-| 2 | /pricing plan cards and prices rendered in the HTML (server puts the plans into the page); FAQ states prices, yearly prices, 60-day trial, Autumn calls | `pages/pricing.tsx`, `api-server/src/marketing-site.ts` |
-| 3 | Share image was a 404 on 17 pages → the existing 1200×630 image | 18 files in `artifacts/marketing/src` |
-| 4 | /products schema: image, brand, url; card reader price 149 (was 0) | `pages/products.tsx` |
-| 5 | Comparison tables: hidden Yes/No text in every icon cell | `pages/compare/ComparisonLayout.tsx` |
-| 6 | Review copy described sentiment gating (Google forbids it; the product no longer does it) | `home.json`, `features.json` |
-| 7 | Autumn "pay for call minutes" → per-call wording | `features.json` |
-| 8 | City pages claimed deposits (not built) | four `*-salons.html` / `dallas-tx-booking.html` |
-| 9 | /launchsite/ canonical pointed at the home page; empty template catalogue now noindex and out of the sitemap until it has templates | `php/router.php`, `php/launchsite/includes/*` , `php/sitemap.php` |
-| 10 | Sitemap dates were "today" for 13 pages → real file dates; /sms-terms added | `php/sitemap.php` |
-| 11 | WebSite search target `/search?q=` (404) → `/blog?q=` | `php/includes/header.php` |
-| 12 | Stock photos redirect to GoDaddy's 1280 px resize (≈60% smaller) | `marketing-site.ts` |
-| 13 | `/vietnamese-salon-software` → Vietnamese page (was home) | `marketing-site.ts` |
-| 14 | "As seen on" (self-made listings) → "Find us on" | `home.json` |
-| 15 | llms.txt points at the directory's new address, salons.certxa.com | `llms.txt` |
+| 1 | Placeholder "V3" favicon on every marketing page → the real Certxa icon (.ico + .svg) | `artifacts/marketing/public/favicon.*`, `index.html` |
+| 2 | Largest image hidden until JavaScript ran (opacity 0) on /products hero, home hero and About founder photo → visible in the server HTML | `pages/products.tsx`, `pages/index.tsx`, `pages/about.tsx` |
+| 3 | /products schema listed 2 of 5 products and gave the Stripe M2 the brand "Certxa" → all 5 products (Station, REVVL tablet = T-Mobile, printer, cash drawer, M2 = Stripe) with the admin's prices; FAQPage added for the visible Hardware FAQ | `pages/products.tsx` |
+| 4 | Hidden Certxa Kiosk still advertised → removed from /products title/description, llms.txt, compare-vs-Square answer; "same-day ready" removed (shop is closed) | `products.tsx`, `llms.txt`, `comparisons.json` |
+| 5 | /products FAQ said all hardware takes cards, and offline means "no lost sales" → the M2 takes cards; offline covers tickets, check-ins and cash sales, card payments need internet; Station spec no longer says "USB hub for printer" (printer is IP) | `content/pages/products.json` |
+| 6 | Blog said "unlimited staff on the Professional plan" → up to 12 on Professional, unlimited on Enterprise | `blog_posts` id 12 |
+| 7 | /autumn "enable Autumn from day one" (trial) → adds that trial calls are $0.50 each | `content/pages/autumn.json` |
+| 8 | Compare-page breadcrumbs pointed at /compare/ (404) → Home › Certxa vs X | `pages/compare/*.tsx` |
+| 9 | llms-full.txt / llms.txt regenerated for the new hardware line-up and deployed | `artifacts/booking/public/` → `api-server/dist/public/` |
 
-Earlier the same day (Ahrefs site-audit pass): every internal link now goes straight to a live page (no 301 hops), /data-transfer and /google-data-policy linked from the footers, /blog lists every post, the moved salon directory removed from the certxa.com sitemap.
+## Needs the owner
 
-**Goes live with `pm2 reload certxa-api`** (marketing pages, /pricing server render, image resize, redirect). PHP pages, the sitemap, llms.txt and the city pages are live already.
+1. **Autumn calls on the /pricing plan cards.** The admin Plans page gives Professional "100 calls", Enterprise "200 calls" and Starter none; billing (`autumnCallBilling.ts`) and every other page say Solo 20 / Starter 50 / Professional 100, and Enterprise gets 0 in code. Decide Enterprise's number, then make the admin plan lines and billing match (Starter should show 50).
+2. **Brand authority (12/100).** No Wikipedia/Wikidata entry, no YouTube channel, LinkedIn 4 followers ("Founded 2025" vs the site's Feb 2026), Product Hunt 1 upvote, Capterra/G2 snippets reportedly still say "$9 flat rate" (unverified — pages return 403 to the checker). Update Capterra/G2 pricing, collect reviews, fix the LinkedIn founding year.
+3. **/terms** says no payment information is needed during the trial; /pricing and /data-transfer say a card is required. No hardware warranty/returns section. Legal text — owner/lawyer.
+4. **/data-transfer stats** ("0 data lost", "24h average", "end-to-end encryption… GDPR") are unsupported and /terms disclaims data loss.
+5. **"Most popular"** is Professional on the home page but Starter on /pricing — pick one.
+6. **/nail-salon-software 301s to the Vietnamese-salon page** (since 10-15) — is the broad keyword meant to land there?
+7. **Founder's LinkedIn URL** for the Person schema `sameAs`, and confirm all 16 blog posts are by Thanh Lam.
 
-## Still open
+## Still open (technical / content, not fixed today)
 
-### Needs the owner
-1. **Brand authority (13/100, flat in every audit).** Capterra has 1 review, Product Hunt 1 upvote, no Wikidata item, no YouTube channel, no community threads found by the tools. This is the largest lever: a review drive (10+ on Capterra/G2), a Wikidata item, 2–3 short demo videos.
-2. **Autumn on Enterprise:** the billing code includes 0 Autumn calls on Enterprise (Solo 20, Starter 50, Professional 100). The site says nothing about Enterprise's calls until this is decided.
-3. **/data-transfer stats** ("24h average transfer time · 0 data lost · 7+ platforms") and a GDPR claim — keep only if true.
-4. **/products** "Buy now" while the hardware shop is closed, and card fees there ("2.7% + 10¢") differ from /pricing ("2.7% + $0.05 plus a $0.60 Certxa fee").
-5. **Launchit catalogue is empty** (0 templates) — add templates or retire the page.
-6. **In-app billing pages** (`BillingPage.tsx`, `DashboardBilling.tsx`) still show $22/$49 to signed-in owners.
+- One 1.28 MB (364 KB gzip) JavaScript bundle on every marketing page; home hero is a 2560 px JPEG with no smaller/WebP version.
+- Compare pages cite no sources and carry no date; Vagaro page says Vagaro has a "60-day free trial" (unsourced, likely wrong) and contradicts itself on waitlists.
+- /pricing "Compare plans" table cells are icons with no text; Solo (free) has no card.
+- `#software` has two different shapes (marketing vs PHP header); /pricing has no Offer schema; WebSite SearchAction `/blog?q=` doesn't filter.
+- Duplicate security headers from nginx (`certxa.conf:77-80`); sitemap index lastmod always today.
+- No author bios / first-hand experience in founder-bylined posts; changelog stops at 10-12 (six turn methods not listed).
 
-### Content (next pass)
-- Blog posts: one real story or Certxa number in 3–4 posts, sources for stats, shorter sentences, visible "Updated" dates, a featured image per post.
-- Question-style headings with 40–60-word answers on / and /features.
-- Founder photo and LinkedIn on /about; one shared founder and `#software` schema node across PHP and the marketing app.
+## Quick wins for this week
 
-### Technical
-- Duplicate security headers from nginx (`/etc/nginx/conf.d/certxa.conf` lines 77–80 repeat what the app sets) — server change for the owner.
-- Single 1.26 MB JS bundle; hero images fade in after hydration (slow LCP).
-- `regenerate llms-full.txt` after the reload: `python3 scripts/gen-llms-full.py`.
+1. Settle the Enterprise Autumn number and fix the plan cards (owner + 5 minutes of admin edits).
+2. Update Capterra and G2 pricing to the current plans and ask five customers for reviews.
+3. Add an "Updated <date>" line and a short sources list to the four /compare pages.
+4. Add a changelog entry for the six turn-rotation methods and today's hardware changes.
+5. Give the founder Person schema a LinkedIn `sameAs` once the URL is known.

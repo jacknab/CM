@@ -600,13 +600,13 @@ Know a salon owner who'd love this?
 LinkedIn Facebook X
 
 ## Your phone is ringing. Is Autumn there?
-Start your free 60-day trial and enable Autumn from day one.
+Start your free 60-day trial and turn Autumn on from day one. Calls during the trial are $0.50 each.
 Enable for my salon View pricing
 
 
 ---
 
-## Salon POS Hardware — Certxa | Terminals, Kiosks & Card Readers
+## Salon POS Hardware — Certxa | POS Terminal, Card Reader & Accessories
 Source: https://certxa.com/products
 
 POS hardware
@@ -617,10 +617,10 @@ Every piece of Certxa hardware is designed to work seamlessly with your software
 ## Certxa Station
 The full front desk, all in one.
 - 15" HD touchscreen display
-- USB hub for printer and cash drawer
-- Offline mode — keeps working without internet
+- Runs the receipt printer and cash drawer
+- Offline mode for tickets, check-ins and cash sales
 - Available in black
-$799 Buy now Talk to sales
+$499 Buy now Talk to sales
 
 ## Accessories and add-ons.
 Complete your setup with hardware that connects directly to your Certxa devices.
@@ -633,12 +633,12 @@ $99 Order
 ### IP Thermal Receipt Printer
 80mm thermal printer with network (IP) connectivity. Fast, quiet, and reliable — prints receipts, check-in slips, and end-of-day reports.
 Compatible with Certxa Station
-$199 Order
+$89 Order
 
 ### Cash Drawer
 Sturdy steel cash drawer that connects directly to the Certxa Station via USB. Auto-opens on cash transactions.
 Compatible with Certxa Station
-$99 Order
+$59 Order
 
 ### Stripe M2 Card Reader
 A compact wireless card reader powered by Stripe. Accept chip, tap, and swipe payments, plus Apple Pay, Google Pay, and Samsung Pay, at the chair or the front desk.
@@ -665,10 +665,10 @@ The Stripe M2 Card Reader is $69. It works with every Certxa plan, and there is 
 No. All Certxa hardware is plug-and-play. Connect it to your Certxa account and you're ready to go — most salons are up and running the same day their hardware arrives.
 
 ### What payment types are accepted?
-All Certxa hardware supports chip (EMV), contactless tap-to-pay (NFC), and major digital wallets including Apple Pay, Google Pay, and Samsung Pay. Swipe and keyed-in transactions are also supported.
+The Stripe M2 card reader takes chip (EMV), contactless tap-to-pay (NFC), and digital wallets including Apple Pay, Google Pay, and Samsung Pay. It also takes swiped cards, and card numbers can be keyed in at the front desk.
 
 ### Does the hardware work if the internet goes down?
-Yes. Certxa Station includes offline mode — tickets are saved locally and synced automatically when your connection is restored. No lost sales, no interruptions.
+Mostly. The Certxa Station keeps working offline: tickets, check-ins and cash sales are saved on the device and sync automatically when your connection is back. Card payments need the internet.
 
 ## Not sure which setup is right for you?
 Talk to us and we'll help you pick the right hardware for your salon size and workflow.
@@ -1345,7 +1345,7 @@ Certxa vs Square for Beauty — side by side.
 ## Frequently asked questions
 For nail salons with walk-in traffic, Certxa is significantly more capable. Square for Beauty lacks turn rotation, a walk-in waitlist, a self check-in kiosk, and revenue intelligence — all features that nail salons rely on daily.
 Yes. Certxa's onboarding team can help you migrate your client list and service menu. The 60-day free trial lets you run both in parallel before committing.
-Certxa uses its own hardware ecosystem — the Certxa Station, Certxa Kiosk, and Stripe-powered card readers. Square hardware is not compatible with Certxa.
+Certxa uses its own hardware — the Certxa Station POS terminal and the Stripe M2 card reader. Square hardware is not compatible with Certxa.
 Found this comparison helpful?
 Share it with a colleague who's evaluating salon software.
 Share this page
@@ -2627,7 +2627,7 @@ Switching software with years of client history feels risky, and that risk is le
 A demo with sample data always looks clean. The real test is your actual client list, your actual service menu, your actual busy Saturday — which is exactly why a genuine free trial with no immediate charge matters more than a polished sales call. If a platform is confident in its product, a real trial period should be an easy yes.
 
 ## Where Certxa fits into this
-We'd rather you ask these exact questions of us too: flat monthly pricing with no per-seat markup up to unlimited staff on the Professional plan and above, no marketplace commission — just a flat $0.60 connection fee per transaction on top of Stripe's own rate, no contract, and free migration from GlossGenius, Vagaro, Square Appointments, Booksy, and Fresha. See the honest, numbers-based breakdowns on our GlossGenius, Vagaro, and Fresha comparison pages — including where those platforms do things well.
+We'd rather you ask these exact questions of us too: flat monthly pricing with no per-seat charge (up to 12 staff on Professional, unlimited on Enterprise), no marketplace commission — just a flat $0.60 connection fee per transaction on top of Stripe's own rate, no contract, and free migration from GlossGenius, Vagaro, Square Appointments, Booksy, and Fresha. See the honest, numbers-based breakdowns on our GlossGenius, Vagaro, and Fresha comparison pages — including where those platforms do things well.
 See Certxa's pricing or start a free trial and bring your real data.
 Tags: Guides Nail Salon Found this helpful? Share it with your network. 𝕏 Share LinkedIn Facebook
 

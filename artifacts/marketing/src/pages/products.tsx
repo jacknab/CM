@@ -50,16 +50,20 @@ const accessoryImages = [
 ];
 
 /** Built when the page renders, so the offers carry the admin's prices. */
+// Who makes each accessory (the page's own devices are Certxa's).
+const ACCESSORY_BRAND: Record<string, string> = { 'acc-customer-screen': 'T-Mobile', 'acc-reader': 'Stripe' };
+const station = products.mainProducts.find((p) => p.id === 'prod-station');
+
 const jsonLd = () => ({
   '@context': 'https://schema.org',
   '@graph': [
     {
       '@type': 'WebPage',
       '@id': `${PAGE_URL}#webpage`,
-      name: 'Salon POS Hardware — Certxa | Terminals, Kiosks & Card Readers',
+      name: 'Salon POS Hardware — Certxa | POS Terminal, Card Reader & Accessories',
       url: PAGE_URL,
       description:
-        'Shop Certxa POS hardware for salons and beauty businesses — terminals, wireless card readers, receipt printers, cash drawers, and more. Plug-and-play, same-day ready.',
+        'Shop Certxa POS hardware for salons and beauty businesses — terminals, wireless card readers, receipt printers, cash drawers, and more. Plug-and-play.',
       isPartOf: { '@id': `${SITE}/#website` },
       about: { '@id': `${SITE}/#organization` },
       breadcrumb: {
@@ -74,32 +78,36 @@ const jsonLd = () => ({
       '@type': 'ItemList',
       '@id': `${PAGE_URL}#products`,
       name: 'Certxa Salon POS Hardware',
+      // Everything the page shows to every visitor (the Certxa Kiosk is left out: only nail salons see it).
       itemListElement: [
-        {
-          '@type': 'ListItem',
-          position: 1,
-          item: {
-            '@type': 'Product',
-            name: 'Certxa Station',
-            description: 'All-in-one 15" HD touchscreen POS terminal for salon front desks.',
-            image: `${SITE}${mainProductImages['prod-station']}`,
-            brand: { '@type': 'Brand', name: 'Certxa' },
-            offers: { '@type': 'Offer', price: String((livePriceCents('Certxa Station') ?? 79900) / 100), priceCurrency: 'USD', url: PAGE_URL },
+        ...(station ? [{ name: station.name, description: station.description, image: mainProductImages[station.id], price: station.price, brand: 'Certxa' }] : []),
+        ...products.accessories.map((acc, i) => ({ name: acc.name, description: acc.description, image: accessoryImages[i], price: acc.price, brand: ACCESSORY_BRAND[acc.id] ?? 'Certxa' })),
+      ].map((p, i) => ({
+        '@type': 'ListItem',
+        position: i + 1,
+        item: {
+          '@type': 'Product',
+          name: p.name,
+          description: p.description,
+          image: `${SITE}${p.image}`,
+          brand: { '@type': 'Brand', name: p.brand },
+          offers: {
+            '@type': 'Offer',
+            price: String(((livePriceCents(p.name) ?? Math.round(Number(p.price.replace(/[^\d.]/g, '')) * 100)) / 100)),
+            priceCurrency: 'USD',
+            url: PAGE_URL,
           },
         },
-        {
-          '@type': 'ListItem',
-          position: 2,
-          item: {
-            '@type': 'Product',
-            name: 'Stripe M2 Card Reader',
-            description: 'Stripe M2 wireless card reader. Chip, tap, and swipe.',
-            image: `${SITE}/_site/images/products/stripe-m2-reader.webp`,
-            brand: { '@type': 'Brand', name: 'Certxa' },
-            offers: { '@type': 'Offer', price: String((livePriceCents('Stripe M2 Card Reader') ?? 6900) / 100), priceCurrency: 'USD', url: PAGE_URL },
-          },
-        },
-      ],
+      })),
+    },
+    {
+      '@type': 'FAQPage',
+      '@id': `${PAGE_URL}#faq`,
+      mainEntity: products.faq.map((f) => ({
+        '@type': 'Question',
+        name: f.question,
+        acceptedAnswer: { '@type': 'Answer', text: f.answer },
+      })),
     },
   ],
 });
@@ -112,13 +120,13 @@ export default function ProductsPage() {
   return (
     <>
       <Helmet>
-        <title>Salon POS Hardware — Certxa | Terminals, Kiosks & Card Readers</title>
+        <title>Salon POS Hardware — Certxa | POS Terminal, Card Reader & Accessories</title>
         <meta
           name="description"
-          content="Shop Certxa POS hardware for nail salons, hair salons, barbershops, spas, and more — all-in-one terminals, self check-in kiosks, wireless card readers, receipt printers, and cash drawers. Plug-and-play, same-day ready."
+          content="Shop Certxa POS hardware for nail salons, hair salons, barbershops, spas, and more — the all-in-one Certxa Station terminal, the Stripe M2 card reader, customer-facing tablets, receipt printers, and cash drawers. Plug-and-play."
         />
         <link rel="canonical" href={PAGE_URL} />
-        <meta property="og:title" content="Salon POS Hardware — Certxa | Terminals, Kiosks & Card Readers" />
+        <meta property="og:title" content="Salon POS Hardware — Certxa | POS Terminal, Card Reader & Accessories" />
         <meta
           property="og:description"
           content="Certxa Station, customer check-in screens, and wireless card readers built for nail salons, hair salons, barbershops, spas, and more. Plug-and-play hardware that works with your Certxa account from day one."
@@ -127,7 +135,7 @@ export default function ProductsPage() {
         <meta property="og:url" content={PAGE_URL} />
         <meta property="og:type" content="website" />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Salon POS Hardware — Certxa | Terminals, Kiosks & Card Readers" />
+        <meta name="twitter:title" content="Salon POS Hardware — Certxa | POS Terminal, Card Reader & Accessories" />
         <meta
           name="twitter:description"
           content="Certxa Station, customer check-in screens, and wireless card readers built for nail salons, hair salons, barbershops, spas, and more."
@@ -156,9 +164,9 @@ export default function ProductsPage() {
             </motion.div>
 
             <motion.div
-              initial={{ opacity: 0, y: 32 }}
+              // Visible in the server-rendered HTML (no fade-in): the largest image on the page.
+              initial={false}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, ease: 'easeOut', delay: 0.15 }}
               className="mt-10 md:mt-12 max-w-6xl mx-auto"
             >
               <img

@@ -225,9 +225,9 @@ export default function HomePage() {
 
           {/* Right: image */}
           <motion.div
-            initial={{ opacity: 0, scale: 1.03 }}
+            // Visible in the server-rendered HTML (no fade-in): the largest image on the page.
+            initial={false}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.8, ease: 'easeOut' as const, delay: 0.2 }}
             className="relative hidden lg:block"
           >
             <img

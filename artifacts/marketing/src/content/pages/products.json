@@ -21,11 +21,11 @@
         },
         {
           "id": "h2",
-          "text": "USB hub for printer and cash drawer"
+          "text": "Runs the receipt printer and cash drawer"
         },
         {
           "id": "h3",
-          "text": "Offline mode — keeps working without internet"
+          "text": "Offline mode for tickets, check-ins and cash sales"
         },
         {
           "id": "h4",
@@ -130,12 +130,12 @@
     {
       "id": "faq-4",
       "question": "What payment types are accepted?",
-      "answer": "All Certxa hardware supports chip (EMV), contactless tap-to-pay (NFC), and major digital wallets including Apple Pay, Google Pay, and Samsung Pay. Swipe and keyed-in transactions are also supported."
+      "answer": "The Stripe M2 card reader takes chip (EMV), contactless tap-to-pay (NFC), and digital wallets including Apple Pay, Google Pay, and Samsung Pay. It also takes swiped cards, and card numbers can be keyed in at the front desk."
     },
     {
       "id": "faq-5",
       "question": "Does the hardware work if the internet goes down?",
-      "answer": "Yes. Certxa Station includes offline mode — tickets are saved locally and synced automatically when your connection is restored. No lost sales, no interruptions."
+      "answer": "Mostly. The Certxa Station keeps working offline: tickets, check-ins and cash sales are saved on the device and sync automatically when your connection is back. Card payments need the internet."
     }
   ],
   "cta": {

@@ -80,9 +80,9 @@ export default function AboutPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 min-h-[92vh]">
               {/* Photo — left column, full bleed height */}
               <motion.div
-                initial={{ opacity: 0, x: -24 }}
+                // Visible in the server-rendered HTML (no fade-in): the largest image on the page.
+                initial={false}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.6, ease: 'easeOut' }}
                 className="relative w-full h-[420px] lg:h-auto lg:-ml-6 xl:-ml-10 order-2 lg:order-1"
               >
                 <img

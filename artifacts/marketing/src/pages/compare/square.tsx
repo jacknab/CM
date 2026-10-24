@@ -23,8 +23,7 @@ const jsonLd = {
         '@type': 'BreadcrumbList',
         itemListElement: [
           { '@type': 'ListItem', position: 1, name: 'Home', item: `${SITE}/` },
-          { '@type': 'ListItem', position: 2, name: 'Compare', item: `${SITE}/compare/` },
-          { '@type': 'ListItem', position: 3, name: 'Certxa vs Square', item: PAGE_URL },
+          { '@type': 'ListItem', position: 2, name: 'Certxa vs Square', item: PAGE_URL },
         ],
       },
     },

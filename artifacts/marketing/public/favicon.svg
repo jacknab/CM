@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Plum background -->
+  <rect width="64" height="64" rx="14" fill="#3B0764"/>
+
+  <!-- Subtle inner gradient shine -->
+  <rect width="64" height="64" rx="14" fill="url(#shine)" opacity=".18"/>
+
+  <!-- "C" letter — large, italic serif -->
+  <text
+    x="35" y="48"
+    text-anchor="middle"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="46"
+    font-weight="700"
+    font-style="italic"
+    fill="#ffffff"
+    letter-spacing="-2"
+  >C</text>
+
+  <!-- Gold dot — echoes the Certxa. wordmark period -->
+  <circle cx="52" cy="46" r="5.5" fill="#F59E0B"/>
+
+  <defs>
+    <linearGradient id="shine" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </linearGradient>
+  </defs>
+</svg>

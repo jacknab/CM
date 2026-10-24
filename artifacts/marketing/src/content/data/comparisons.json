@@ -567,7 +567,7 @@
       {
         "id": "f3",
         "question": "Does Certxa work with Square hardware?",
-        "answer": "Certxa uses its own hardware ecosystem — the Certxa Station, Certxa Kiosk, and Stripe-powered card readers. Square hardware is not compatible with Certxa."
+        "answer": "Certxa uses its own hardware — the Certxa Station POS terminal and the Stripe M2 card reader. Square hardware is not compatible with Certxa."
       }
     ]
   }
