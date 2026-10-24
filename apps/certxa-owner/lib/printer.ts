@@ -351,14 +351,16 @@ async function sendRaw(printer: PrinterDevice, b64: string): Promise<void> {
  * double size, 32 columns) is the receipt's own and is not changed. Ends with ESC @ so the next job starts from
  * the printer's defaults.
  */
-export function srp275iiiBytesBase64(text: string, doubleStrike: boolean): string {
+export function srp275iiiBytesBase64(text: string, doubleStrike: boolean, boldAs: 'big' | 'underline' = 'big'): string {
   const out: number[] = [27, 64];
-  srpLines(out, text, { fontB: true, emphasized: true, doubleStrike });
+  srpLines(out, text, { fontB: true, emphasized: true, doubleStrike, boldAs });
   srpEnd(out);
   return toBase64(out);
 }
 
-function srpLines(out: number[], text: string, o: { fontB: boolean; emphasized: boolean; doubleStrike: boolean }) {
+/** `boldAs`: how a <b> line prints — 'big' (double width and height, as on receipts) or 'underline' (normal size,
+ *  underlined: the Day Close report, whose many bold lines printed far too large — owner, 2026-10-24). */
+function srpLines(out: number[], text: string, o: { fontB: boolean; emphasized: boolean; doubleStrike: boolean; boldAs?: 'big' | 'underline' }) {
   for (const raw of text.split('\n')) {
     const m = /^\[(L|C|R)\](.*)$/.exec(raw);
     const align = m ? ({ L: 0, C: 1, R: 2 } as const)[m[1] as 'L' | 'C' | 'R'] : 0;
@@ -366,7 +368,9 @@ function srpLines(out: number[], text: string, o: { fontB: boolean; emphasized: 
     const big = /<b>/i.test(body);
     body = body.replace(/<\/?b>/gi, '');
     out.push(27, 97, align);
-    out.push(27, 33, (o.fontB ? 1 : 0) | (o.emphasized ? 8 : 0) | (big ? 48 : 0));
+    // ESC ! bits: 1 Font B, 8 emphasized, 16+32 double height+width, 128 underline (SRP-275III manual, ESC ! / ESC -).
+    const boldBits = !big ? 0 : o.boldAs === 'underline' ? 128 : 48;
+    out.push(27, 33, (o.fontB ? 1 : 0) | (o.emphasized ? 8 : 0) | boldBits);
     out.push(27, 71, o.doubleStrike ? 1 : 0);
     for (const c of asciiOnly(body)) out.push(c);
     out.push(10);
@@ -506,7 +510,11 @@ function toBase64(bytes: number[]): string {
 export async function printZReport(data: ZReportPrintData): Promise<void> {
   const printer = await resolvePrinter();
   const mod = await getActivePrinterModule(printer);
-  await printTagged(printer, mod, buildZReportText(data));
+  const text = buildZReportText(data);
+  // BIXOLON SRP-275III: the report's bold lines at normal size, underlined (they printed double size, far too large).
+  // Every other printer: exactly as before.
+  if (isSrp275iii(printer)) await sendRaw(printer, srp275iiiBytesBase64(text, !!printer.doubleStrike, 'underline'));
+  else await printTagged(printer, mod, text);
   await finishJob(printer);
 }
 
