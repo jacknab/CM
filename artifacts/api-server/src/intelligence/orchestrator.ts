@@ -9,6 +9,7 @@ import { computeRebookingRates } from "./rebooking-rates";
 import { computeGrowthScore } from "./growth-score";
 import { runDriftRecovery } from "./drift-recovery";
 import { sendSms } from "../sms";
+import { isGoodTimeToText, sendOutcome } from "./sms-guard";
 import { eq, and, sql, gte, lte, isNotNull, inArray } from "drizzle-orm";
 
 export async function runIntelligenceForStore(storeId: number): Promise<void> {
@@ -290,19 +291,20 @@ async function runRebookingNudges(storeId: number): Promise<void> {
         const firstName = String(customer.name || "").split(" ")[0] || "there";
         const message = `Hi ${firstName}! It's almost time for your next visit at ${storeName}. Ready to book? ${bookingLink}\n\nReply STOP to opt out.`;
 
-        await sendSms(storeId, customer.phone, message, "rebooking_nudge", undefined, client.customerId);
-
+        const result = await sendSms(storeId, customer.phone, message, "rebooking_nudge", undefined, client.customerId);
+        // Logged as what really happened, so the page never counts a text that did not go out.
+        const outcome = sendOutcome(result);
         await db.insert(intelligenceInterventions).values({
           storeId,
           customerId: client.customerId,
           interventionType: "rebooking_nudge",
           channel: "sms",
           messageBody: message,
-          status: "sent",
+          status: outcome,
           triggeredBy: "auto",
         });
 
-        console.log(`[intelligence] Rebooking nudge sent to customer ${client.customerId}`);
+        console.log(`[intelligence] Rebooking nudge ${outcome} for customer ${client.customerId}`);
       } catch (err) {
         console.error(`[intelligence] Rebooking nudge error for customer ${client.customerId}:`, err);
       }
@@ -364,17 +366,19 @@ async function runAutoLeakageRecovery(storeId: number): Promise<void> {
         const firstName = String(customer.name || "").split(" ")[0] || "there";
         const message = `Hi ${firstName}! We missed you at ${storeName}. We'd love to have you back — book your next visit here: ${bookingLink}\n\nReply STOP to opt out.`;
 
-        await sendSms(storeId, customer.phone, message, "winback", undefined, customerId);
-
+        const result = await sendSms(storeId, customer.phone, message, "winback", undefined, customerId);
+        const outcome = sendOutcome(result);
         await db.insert(intelligenceInterventions).values({
           storeId,
           customerId,
           interventionType: "winback",
           channel: "sms",
           messageBody: message,
-          status: "sent",
+          status: outcome,
           triggeredBy: "auto",
+          metadata: { reason: "recent_no_show_or_cancellation" },
         });
+        if (outcome !== "sent") continue;
 
         // Update last winback timestamp in client intelligence if the record exists
         await db
@@ -430,8 +434,24 @@ export async function runIntelligenceForAllStores(): Promise<void> {
     const stores = await db.execute(sql`SELECT DISTINCT id FROM locations`);
     const storeIds = (stores.rows as any[]).map((r) => r.id as number);
     console.log(`[intelligence] Running for ${storeIds.length} stores`);
+    for (const storeId of storeIds) await runIntelligenceForStore(storeId);
+  } catch (err) {
+    console.error(`[intelligence] Fatal error running all stores:`, err);
+  }
+}
+
+/**
+ * The automatic texts (booking nudges, "we miss you" texts, texts after a recent no-show or cancellation). Checked every
+ * hour and sent only inside the salon's texting window (9 AM–8 PM, and the salon is open) — before 2026-10-24 they ran
+ * with the 6-hour engine run, at whatever hour that landed, and many went out in the middle of the night. Every send
+ * keeps its own cooldown, so an hourly check never texts anyone twice.
+ */
+export async function runAutomaticOutreach(): Promise<void> {
+  try {
+    const stores = await db.execute(sql`SELECT DISTINCT id FROM locations`);
+    const storeIds = (stores.rows as any[]).map((r) => r.id as number);
     for (const storeId of storeIds) {
-      await runIntelligenceForStore(storeId);
+      if (!(await isGoodTimeToText(storeId))) continue;
 
       // Automated outreach — only runs when the owner has Autonomous Mode enabled
       const autoEngaged = await isAutoEngageEnabled(storeId);
@@ -455,11 +475,12 @@ export async function runIntelligenceForAllStores(): Promise<void> {
       await runAutoLeakageRecovery(storeId);
     }
   } catch (err) {
-    console.error(`[intelligence] Fatal error running all stores:`, err);
+    console.error(`[intelligence] Automatic outreach error:`, err);
   }
 }
 
 let schedulerInterval: NodeJS.Timeout | null = null;
+let outreachInterval: NodeJS.Timeout | null = null;
 
 export function startIntelligenceScheduler(): void {
   if (schedulerInterval) return;
@@ -467,5 +488,8 @@ export function startIntelligenceScheduler(): void {
   setTimeout(() => runIntelligenceForAllStores(), 15000);
   // Then run every 6 hours
   schedulerInterval = setInterval(() => runIntelligenceForAllStores(), 6 * 60 * 60 * 1000);
+  // The automatic texts: every hour, each salon only inside its texting window.
+  setTimeout(() => runAutomaticOutreach(), 5 * 60 * 1000);
+  outreachInterval = setInterval(() => runAutomaticOutreach(), 60 * 60 * 1000);
   console.log("[intelligence] Scheduler started (runs every 6 hours)");
 }

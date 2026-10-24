@@ -159,6 +159,26 @@ const DEMO_EMAILS = [
   "barber-demo@certxa.com",
 ];
 
+/** What Certxa's last text to a client did (Client Retention says what was done, owner 2026-10-24). */
+const TEXT_DONE: Record<string, string> = {
+  winback: "invited them back",
+  rebooking_nudge: "reminded them to book",
+  no_show_winback: "invited them to rebook after a missed visit",
+  cancellation_recovery: "offered them an open time",
+  no_show_reminder: "sent an appointment reminder",
+};
+function textedLine(c: any): { done: boolean; text: string } {
+  const n = Number(c.textsSent) || 0;
+  if (n > 0 && c.lastTextAt) {
+    const when = new Date(c.lastTextAt).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return { done: true, text: `Certxa texted ${when} — ${TEXT_DONE[c.lastTextType] ?? "sent a text"}${n > 1 ? ` · ${n} texts so far` : ""}` };
+  }
+  if (!c.customerPhone) return { done: false, text: "No mobile number — Certxa can't text this client" };
+  if (!c.marketingOptIn) return { done: false, text: "Opted out of texts" };
+  if ((Number(c.totalVisits) || 0) <= 1) return { done: false, text: "One visit so far — Certxa texts clients after their second visit" };
+  return { done: false, text: "Not texted yet — Certxa texts between 9 AM and 8 PM" };
+}
+
 function AICoachingBanner({
   storeId,
   tab,
@@ -954,7 +974,7 @@ export default function Intelligence() {
               <p className="text-2xl font-bold">{summary?.totalClients ?? "—"}</p>
               <p className="text-xs text-muted-foreground mt-1">
                 <span className="text-amber-600 font-medium">{summary?.driftingClients ?? 0}</span>{" "}
-                {autoEngageEnabled ? "may not return · Certxa is texting them" : "may not return"}
+                {autoEngageEnabled ? `may not return · ${dashboard?.atRiskTexted30d ?? 0} texted by Certxa (30 days)` : "may not return"}
               </p>
             </CardContent>
           </Card>
@@ -963,7 +983,7 @@ export default function Intelligence() {
               <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">At Risk</p>
               <p className="text-2xl font-bold text-orange-600">{summary?.atRiskClients ?? "—"}</p>
               <p className="text-xs text-muted-foreground mt-1">
-                {autoEngageEnabled ? "Certxa is texting them invites to book" : "Clients who may not return"}
+                {autoEngageEnabled ? `${dashboard?.atRiskTexted30d ?? 0} texted an invite back (30 days)` : "Clients who may not return"}
               </p>
             </CardContent>
           </Card>
@@ -1150,7 +1170,7 @@ export default function Intelligence() {
                 wins.push({
                   icon: <Users className="h-4 w-4 text-orange-500" />,
                   color: "border-orange-200 bg-orange-50/50 dark:bg-orange-950/10",
-                  action: `${dashboard.atRiskClients.length} clients may not return — Certxa is texting them invites to book`,
+                  action: `${dashboard.atRiskClients.length} clients may not return — Certxa has texted ${dashboard.atRiskTexted30d ?? 0} of them an invite back (30 days)`,
                   value: `~$${Math.round(dashboard.atRiskClients.reduce((s: number, c: any) => s + parseFloat(c.ltv12Month || "0"), 0) * 0.4).toLocaleString()} Certxa is working to win back`,
                   tab: "clients",
                 });
@@ -1369,7 +1389,7 @@ export default function Intelligence() {
                       <Users className="h-5 w-5 text-orange-500" />
                       Clients Certxa Is Winning Back
                     </CardTitle>
-                    <CardDescription>{dashboard.atRiskClients.length} clients may not return — Certxa texts them invites to book</CardDescription>
+                    <CardDescription>{dashboard.atRiskClients.length} clients may not return — Certxa has texted {dashboard.atRiskTexted30d ?? 0} of them an invite back in the last 30 days</CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="gap-1.5 border-emerald-300 text-emerald-700 bg-emerald-50 text-xs">
@@ -1393,6 +1413,7 @@ export default function Intelligence() {
                               ? ` · $${parseFloat(client.ltv12Month).toFixed(0)} LTV`
                               : ""}
                           </p>
+                          {(() => { const t = textedLine(client); return <p className={`text-xs mt-0.5 ${t.done ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"}`}>{t.text}</p>; })()}
                         </div>
                         <div className="flex items-center gap-2">
                           <ChurnBadge label={client.churnRiskLabel} />
@@ -1435,7 +1456,7 @@ export default function Intelligence() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge variant="outline" className="gap-1.5 border-emerald-300 text-emerald-700 bg-emerald-50 text-xs">
                     <Zap className="h-3 w-3" />
-                    Auto-pilot on · runs every 6h
+                    Auto-pilot on · texts 9 AM–8 PM
                   </Badge>
                   <Button
                     size="sm"
@@ -1465,6 +1486,7 @@ export default function Intelligence() {
                             <p className="text-sm font-medium truncate">{client.customerName}</p>
                             <p className="text-xs text-muted-foreground">{client.customerPhone || "No phone"}</p>
                           </div>
+                          {(() => { const t = textedLine(client); return <p className={`col-span-2 md:col-span-4 order-last text-xs ${t.done ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"}`} data-testid="intel-client-texted">{t.text}</p>; })()}
                           <div>
                             <p className="text-xs text-muted-foreground">LTV (12mo)</p>
                             <p className="text-sm font-medium">${parseFloat(client.ltv12Month || "0").toFixed(0)}</p>
@@ -1567,8 +1589,11 @@ export default function Intelligence() {
                           <p className="font-medium">No-show & cancellation win-backs</p>
                           <p className="text-muted-foreground text-xs mt-0.5">
                             {autoEngageEnabled
-                              ? "Within 7 days of a no-show or cancellation, opted-in clients automatically receive a personalised message with a direct booking link. Rate-limited to once every 30 days per client."
-                              : "Win-back SMS would be sent within 7 days of a no-show or cancellation, with a direct booking link."}
+                              ? "Within 7 days of a no-show or cancellation, opted-in clients get a text with a direct booking link. Once every 30 days per client."
+                              : "Texts after a no-show or cancellation are paused for this salon."}
+                          </p>
+                          <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 mt-1">
+                            Last 30 days: {dashboard?.textsSent30d?.no_show_winback ?? 0} texted after a missed visit · {dashboard?.textsSent30d?.cancellation_recovery ?? 0} open times offered
                           </p>
                         </div>
                       </div>
@@ -1583,8 +1608,11 @@ export default function Intelligence() {
                           <p className="font-medium">Reaching out to clients who may not return</p>
                           <p className="text-muted-foreground text-xs mt-0.5">
                             {autoEngageEnabled
-                              ? "Clients who are overdue for a visit are automatically identified and texted — before they drift away and become hard to win back."
-                              : "Clients overdue for a visit would be automatically identified and texted before they fully lapse."}
+                              ? "Clients who are overdue for a visit, or at risk of not coming back, get a text inviting them back."
+                              : "Texts to clients who may not return are paused for this salon."}
+                          </p>
+                          <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 mt-1">
+                            Last 30 days: {dashboard?.textsSent30d?.winback ?? 0} invites back sent
                           </p>
                         </div>
                       </div>
@@ -1596,11 +1624,14 @@ export default function Intelligence() {
                           }
                         </div>
                         <div>
-                          <p className="font-medium">Appointment reminders for clients due soon</p>
+                          <p className="font-medium">Booking reminders for clients due soon</p>
                           <p className="text-muted-foreground text-xs mt-0.5">
                             {autoEngageEnabled
-                              ? "Clients whose next expected visit is 3–7 days away and have no upcoming appointment automatically receive a friendly text with a booking link."
-                              : "Clients due in 3–7 days with no upcoming booking would automatically receive a friendly text with a booking link."}
+                              ? "Clients whose next visit is due in 3–7 days, with nothing booked, get a text with a booking link."
+                              : "Booking reminders are paused for this salon."}
+                          </p>
+                          <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 mt-1">
+                            Last 30 days: {dashboard?.textsSent30d?.rebooking_nudge ?? 0} booking reminders sent
                           </p>
                         </div>
                       </div>
@@ -1970,7 +2001,7 @@ export default function Intelligence() {
                         <p className="text-sm text-muted-foreground mt-1">
                           {autoEngageEnabled ? (
                             <>
-                              Certxa is texting clients who may not return, working to bring back{" "}
+                              Certxa has texted {dashboard?.atRiskTexted30d ?? 0} clients who may not return in the last 30 days, working to bring back{" "}
                               <span className="font-bold text-emerald-600">${forecastData.recoveryAddon.toLocaleString()}/month</span>{" "}
                               in revenue from lapsed clients.
                             </>
@@ -2458,7 +2489,7 @@ export default function Intelligence() {
                 <div className="space-y-3">
                   {[
                     {
-                      label: "Appointment Reminders",
+                      label: "Booking Reminders",
                       color: "bg-violet-100 text-violet-700",
                       when: "3–7 days before a client's expected next visit",
                       msg: "Sent to clients whose next appointment window is coming up but haven't booked yet. Uses each client's personal visit pattern to know the right time to send.",
@@ -2466,8 +2497,8 @@ export default function Intelligence() {
                     {
                       label: "Re-engagement (Overdue Clients)",
                       color: "bg-amber-100 text-amber-700",
-                      when: "When a client is 20%+ overdue for their usual visit",
-                      msg: "Sent to clients who are overdue based on their personal visit history. Only sent to clients with 2+ visits — one visit doesn't establish a pattern. Max once per 30 days.",
+                      when: "When a client is overdue for their usual visit, or at risk of not coming back",
+                      msg: "Sent to clients who are overdue based on their own visit history. Only clients with 2+ visits — one visit doesn't set a pattern. At most once every 30 days.",
                     },
                     {
                       label: "No-Show & Cancellation Recovery",
@@ -2487,7 +2518,7 @@ export default function Intelligence() {
                     </div>
                   ))}
                   <p className="text-xs text-muted-foreground pt-1">
-                    All automated messages are only sent to clients who have opted in to marketing and have a phone number. SMS credits are consumed per message sent.
+                    Automatic texts go only to clients who have agreed to texts and have a mobile number, between 9 AM and 8 PM salon time.
                   </p>
                 </div>
               </CardContent>

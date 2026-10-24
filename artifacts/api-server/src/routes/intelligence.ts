@@ -14,6 +14,7 @@ import {
 } from "../../shared/schema/intelligence";
 import { eq, and, desc, gte, sql, inArray, lte, isNotNull } from "drizzle-orm";
 import { runIntelligenceForStore } from "../intelligence/orchestrator";
+import { sendOutcome } from "../intelligence/sms-guard";
 import { computeDeadSeats } from "../intelligence/dead-seats";
 import { computeNoShowRisks, getNoShowStats } from "../intelligence/no-show";
 import { computeRebookingRates } from "../intelligence/rebooking-rates";
@@ -96,6 +97,11 @@ router.get("/dashboard", async (req, res) => {
         isDrifting: clientIntelligence.isDrifting,
         isAtRisk: clientIntelligence.isAtRisk,
         marketingOptIn: sql<boolean>`(SELECT sms_opt_in FROM client_phones WHERE client_id = ${clientIntelligence.customerId} AND is_primary = true LIMIT 1)`,
+        totalVisits: clientIntelligence.totalVisits,
+        // The last text Certxa really sent this client (Client Retention says what was done, owner 2026-10-24).
+        lastTextAt: sql<string | null>`(SELECT ii.sent_at FROM intelligence_interventions ii WHERE ii.store_id = ${storeId} AND ii.customer_id = ${clientIntelligence.customerId} AND ii.status = 'sent' ORDER BY ii.sent_at DESC LIMIT 1)`,
+        lastTextType: sql<string | null>`(SELECT ii.intervention_type FROM intelligence_interventions ii WHERE ii.store_id = ${storeId} AND ii.customer_id = ${clientIntelligence.customerId} AND ii.status = 'sent' ORDER BY ii.sent_at DESC LIMIT 1)`,
+        textsSent: sql<number>`(SELECT COUNT(*)::int FROM intelligence_interventions ii WHERE ii.store_id = ${storeId} AND ii.customer_id = ${clientIntelligence.customerId} AND ii.status = 'sent')`,
       })
       .from(clientIntelligence)
       .leftJoin(clients, eq(clientIntelligence.customerId, clients.id))
@@ -152,11 +158,25 @@ router.get("/dashboard", async (req, res) => {
       .from(clientIntelligence)
       .where(eq(clientIntelligence.storeId, storeId));
 
+    // What Certxa really sent in the last 30 days, by kind, and how many of the clients who may not return it texted.
+    const sentRows = await pool.query(
+      `SELECT intervention_type AS type, COUNT(*)::int AS n FROM intelligence_interventions
+        WHERE store_id = $1 AND status = 'sent' AND sent_at > NOW() - INTERVAL '30 days' GROUP BY intervention_type`, [storeId]);
+    const textsSent30d: Record<string, number> = {};
+    for (const r of sentRows.rows as any[]) textsSent30d[r.type] = Number(r.n) || 0;
+    const textedRow = await pool.query(
+      `SELECT COUNT(DISTINCT ci.customer_id)::int AS n FROM client_intelligence ci
+         JOIN intelligence_interventions ii ON ii.store_id = ci.store_id AND ii.customer_id = ci.customer_id
+          AND ii.status = 'sent' AND ii.sent_at > NOW() - INTERVAL '30 days'
+        WHERE ci.store_id = $1 AND (ci.is_drifting OR ci.churn_risk_score >= 25)`, [storeId]);
+
     res.json({
       latestScore: latestScore || null,
       atRiskClients,
       scoreHistory,
       recentInterventions,
+      textsSent30d,
+      atRiskTexted30d: Number((textedRow.rows[0] as any)?.n) || 0,
       summary: {
         totalClients: Number(clientStats?.total || 0),
         driftingClients: Number(clientStats?.drifting || 0),
@@ -1152,20 +1172,20 @@ router.post("/send-noshow-reminder", async (req, res) => {
 
     const message = `Hi ${firstName}! Just a reminder — you have an appointment${serviceStr}${staffStr} at ${storeName} tomorrow at ${timeStr}. We look forward to seeing you! Need to reschedule? ${bookingLink}\n\nReply STOP to opt out.`;
 
-    await sendSms(storeId, customer.phone, message, "no_show_reminder", appointmentId, customerId);
-
-    // Log the intervention
+    const sent = await sendSms(storeId, customer.phone, message, "no_show_reminder", appointmentId, customerId);
+    const outcome = sendOutcome(sent);
     await db.insert(intelligenceInterventions).values({
       storeId,
       customerId,
       interventionType: "no_show_reminder",
       channel: "sms",
       messageBody: message,
-      status: "sent",
+      status: outcome,
       triggeredBy: "manual",
       appointmentId,
     });
 
+    if (outcome !== "sent") return res.json({ success: false, error: sent.error ?? "The reminder did not go out" });
     return res.json({ success: true });
   } catch (err: any) {
     console.error("[intelligence] send-noshow-reminder error:", err);

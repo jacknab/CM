@@ -135,3 +135,30 @@ export async function isWithinStoreBusinessHours(storeId: number): Promise<boole
     return hour >= 9 && hour < 18;
   }
 }
+
+/** Automatic client texts go out only from 9 AM to before 8 PM in the salon's own time zone (owner audit, 2026-10-24:
+ *  texts were going out between midnight and 5 AM). */
+export const TEXT_WINDOW_START_HOUR = 9;
+export const TEXT_WINDOW_END_HOUR = 20;
+
+export async function isInTextingWindow(storeId: number, now = new Date()): Promise<boolean> {
+  try {
+    const [location] = await db.select({ timezone: locations.timezone }).from(locations).where(eq(locations.id, storeId)).limit(1);
+    const hour = parseInt(formatInTimeZone(now, location?.timezone || "America/New_York", "H"), 10);
+    return hour >= TEXT_WINDOW_START_HOUR && hour < TEXT_WINDOW_END_HOUR;
+  } catch {
+    return false; // never text at an unknown hour
+  }
+}
+
+/** A good time to send an automatic client text: inside 9 AM–8 PM salon time, and the salon is open. */
+export async function isGoodTimeToText(storeId: number): Promise<boolean> {
+  return (await isInTextingWindow(storeId)) && (await isWithinStoreBusinessHours(storeId));
+}
+
+/** What really happened to a text, for the intelligence log: only "sent" is counted as sent on the page. */
+export function sendOutcome(r: { success: boolean; skipped?: boolean } | undefined | null): "sent" | "skipped" | "failed" {
+  if (!r) return "failed";
+  if (r.skipped) return "skipped";
+  return r.success ? "sent" : "failed";
+}

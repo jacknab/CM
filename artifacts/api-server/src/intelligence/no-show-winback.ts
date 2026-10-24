@@ -2,6 +2,7 @@ import { db } from "../db";
 import { smsSettings, locations } from "@shared/schema";
 import { clientIntelligence, intelligenceInterventions } from "../../shared/schema/intelligence";
 import { sendSms } from "../sms";
+import { isInTextingWindow, sendOutcome } from "./sms-guard";
 import { eq, and, sql } from "drizzle-orm";
 
 const APP_URL = process.env.APP_URL || "https://certxa.com";
@@ -18,6 +19,8 @@ export async function sendNoShowWinback(
   if (!customer) return { success: false, error: "Customer not found" };
   if (!customer.phone) return { success: false, error: "No phone number on file" };
   if (!customer.marketing_opt_in) return { success: false, error: "Customer opted out of marketing" };
+  // Outside 9 AM–8 PM salon time: not now. The hourly outreach texts recent no-shows within the window instead.
+  if (!(await isInTextingWindow(storeId))) return { success: false, error: "Outside the texting window" };
 
   // Check if we already sent a no-show winback in the last 7 days
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -39,7 +42,7 @@ export async function sendNoShowWinback(
   }
 
   const [locationRow] = await db
-    .select({ name: sql<string>`name`, slug: sql<string>`slug` })
+    .select({ name: sql<string>`name`, slug: sql<string>`booking_slug` })
     .from(locations)
     .where(eq(locations.id, storeId))
     .limit(1);
@@ -52,18 +55,19 @@ export async function sendNoShowWinback(
   const message = `Hi ${firstName}, we noticed you missed your appointment at ${storeName}. No worries — life happens! Ready to rebook? We'd love to see you: ${bookingLink}\n\nReply STOP to opt out.`;
 
   try {
-    await sendSms(storeId, customer.phone, message, "no_show_winback", appointmentId, customerId);
-
+    const sent = await sendSms(storeId, customer.phone, message, "no_show_winback", appointmentId, customerId);
+    const outcome = sendOutcome(sent);
     await db.insert(intelligenceInterventions).values({
       storeId,
       customerId,
       interventionType: "no_show_winback",
       channel: "sms",
       messageBody: message,
-      status: "sent",
+      status: outcome,
       triggeredBy: "auto",
       appointmentId,
     });
+    if (outcome !== "sent") return { success: false, error: sent.error ?? "The text did not go out" };
 
     // Update intelligence record if exists
     await db

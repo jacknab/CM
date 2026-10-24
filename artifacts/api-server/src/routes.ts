@@ -6714,6 +6714,9 @@ If you have any questions, please contact your administrator.
           setImmediate(async () => {
             try {
               const { getCancellationRecoveryCandidates, sendCancellationRecoverySms } = await import("./intelligence/cancellation-recovery");
+              // Only 9 AM–8 PM salon time: an open time is offered while it can still be filled, never at night.
+              const { isInTextingWindow } = await import("./intelligence/sms-guard");
+              if (!(await isInTextingWindow(appointment.storeId!))) return;
               const candidates = await getCancellationRecoveryCandidates(appointment.storeId!, appointment.id);
               const topCandidate = candidates.find((c) => c.customerPhone && c.priority === "high") || candidates[0];
               if (topCandidate?.customerPhone) {
@@ -10415,10 +10418,14 @@ If you have any questions, please contact your administrator.
                   setImmediate(async () => {
                     try {
                       const { getCancellationRecoveryCandidates, sendCancellationRecoverySms } = await import("./intelligence/cancellation-recovery");
+                      // Only 9 AM–8 PM salon time: an open time is offered while it can still be filled, never at night.
+                      const { isInTextingWindow } = await import("./intelligence/sms-guard");
+                      if (await isInTextingWindow(resolvedStoreId!)) {
                       const candidates = await getCancellationRecoveryCandidates(resolvedStoreId!, upcomingAppt.id);
                       const topCandidate = candidates.find((c) => c.customerPhone && c.priority === "high") || candidates[0];
                       if (topCandidate?.customerPhone) {
                         await sendCancellationRecoverySms(resolvedStoreId!, topCandidate.customerId, topCandidate.suggestedMessage, upcomingAppt.id);
+                      }
                       }
                     } catch (fillErr: any) {
                       console.error(`[${provider}Webhook] CANCEL auto-fill error:`, fillErr.message);

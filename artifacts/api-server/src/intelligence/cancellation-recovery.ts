@@ -3,6 +3,7 @@ import { appointments, services, staff, locations } from "@shared/schema";
 import { clients } from "@shared/schema/clients";
 import { intelligenceInterventions } from "../../shared/schema/intelligence";
 import { sendSms } from "../sms";
+import { sendOutcome } from "./sms-guard";
 import { eq, and, gte, lte, inArray, sql, desc } from "drizzle-orm";
 
 const APP_URL = process.env.APP_URL || "https://certxa.com";
@@ -162,18 +163,19 @@ export async function sendCancellationRecoverySms(
   if (!customer.marketing_opt_in) return { success: false, error: "Customer opted out" };
 
   try {
-    await sendSms(storeId, customer.phone, message, "cancellation_recovery", cancelledAppointmentId, customerId);
-
+    const sent = await sendSms(storeId, customer.phone, message, "cancellation_recovery", cancelledAppointmentId, customerId);
+    const outcome = sendOutcome(sent);
     await db.insert(intelligenceInterventions).values({
       storeId,
       customerId,
       interventionType: "cancellation_recovery",
       channel: "sms",
       messageBody: message,
-      status: "sent",
+      status: outcome,
       triggeredBy: "manual",
       appointmentId: cancelledAppointmentId,
     });
+    if (outcome !== "sent") return { success: false, error: sent.error ?? "The text did not go out" };
 
     return { success: true };
   } catch (err: any) {

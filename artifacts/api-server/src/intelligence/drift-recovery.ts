@@ -3,7 +3,7 @@ import { appointments, smsSettings, locations } from "@shared/schema";
 import { clientIntelligence, intelligenceInterventions } from "../../shared/schema/intelligence";
 import { sendSms } from "../sms";
 import { eq, and, gte, isNotNull, sql, lte } from "drizzle-orm";
-import { isWithinStoreBusinessHours, shouldSendReengagementSms } from "./sms-guard";
+import { isWithinStoreBusinessHours, sendOutcome, shouldSendReengagementSms } from "./sms-guard";
 
 const APP_URL = process.env.APP_URL || "https://certxa.com";
 
@@ -89,7 +89,9 @@ export async function runDriftRecovery(
     .where(
       and(
         eq(clientIntelligence.storeId, storeId),
-        eq(clientIntelligence.isDrifting, true),
+        // Every client the Client Retention list shows — drifting, or a churn risk score of 25+ (audit 2026-10-24:
+        // only drifting clients were texted, though the page said all of them were).
+        sql`(is_drifting = true OR is_at_risk = true OR churn_risk_score >= 25)`,
         sql`(last_winback_sent_at IS NULL OR last_winback_sent_at < ${thirtyDaysAgo.toISOString()})`,
         sql`COALESCE(total_visits, 0) > 1`
       )
@@ -143,18 +145,25 @@ export async function runDriftRecovery(
     }
 
     try {
-      await sendSms(storeId, customer.phone, message, "winback", undefined, client.customerId);
+      const sent = await sendSms(storeId, customer.phone, message, "winback", undefined, client.customerId);
+      const outcome = sendOutcome(sent);
 
-      // Log the intervention
+      // Log the intervention as what really happened
       await db.insert(intelligenceInterventions).values({
         storeId,
         customerId: client.customerId,
         interventionType: "winback",
         channel: "sms",
         messageBody: message,
-        status: "sent",
+        status: outcome,
         triggeredBy: "auto",
+        metadata: { reason: "may_not_return" },
       });
+      if (outcome !== "sent") {
+        result.skipped++;
+        result.details.push({ customerId: client.customerId, customerName: customer.name, status: "skipped", reason: sent.error ?? outcome });
+        continue;
+      }
 
       // Update last winback sent
       await db
@@ -213,17 +222,18 @@ export async function sendManualWinback(
   );
 
   try {
-    await sendSms(storeId, customer.phone, message, "winback", undefined, customerId);
-
+    const sent = await sendSms(storeId, customer.phone, message, "winback", undefined, customerId);
+    const outcome = sendOutcome(sent);
     await db.insert(intelligenceInterventions).values({
       storeId,
       customerId,
       interventionType: "winback",
       channel: "sms",
       messageBody: message,
-      status: "sent",
+      status: outcome,
       triggeredBy: "manual",
     });
+    if (outcome !== "sent") return { success: false, error: sent.error ?? "The text did not go out" };
 
     if (intel) {
       await db
