@@ -1,4 +1,5 @@
 import { EMPTY_ARRAY } from "@/lib/empty";
+import { postalPlain, postalStreet } from "@/lib/postalAddress";
 import { useState, useRef, useCallback, lazy, Suspense, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { createPortal } from "react-dom";
@@ -502,9 +503,10 @@ export function CheckFace({
           identically and the lower #10 envelope window is always populated.
           Window-safe X: 0.65" (lower envelope window area: X:0.65", Y:2.05") */}
       <div style={{ position: "absolute", left: "0.65in", top: "calc(2.08in - 20px)", fontSize: "10pt", fontWeight: 700, color: "#111827", lineHeight: 1.4 }}>
-        <div>{payee.toUpperCase()}</div>
-        <div style={{ minHeight: "1.2em" }}>{payeeStreet?.toUpperCase() ?? "\u00A0"}</div>
-        <div style={{ minHeight: "1.2em" }}>{payeeCityStateZip?.toUpperCase() ?? "\u00A0"}</div>
+        {/* Written the USPS way for the envelope window: capitals, no punctuation, standard abbreviations. */}
+        <div>{postalPlain(payee)}</div>
+        <div style={{ minHeight: "1.2em" }}>{postalStreet(payeeStreet) || "\u00A0"}</div>
+        <div style={{ minHeight: "1.2em" }}>{postalPlain(payeeCityStateZip) || "\u00A0"}</div>
       </div>
 
       {/* Authorized signature — sits on the line (its ink dips just below it, like a pen signature), centred

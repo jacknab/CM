@@ -10,6 +10,7 @@
  * optional GnuMICR OTF file may not be installed.  Install micr-e13b.otf in
  * public/fonts/ and re-enable Font.register() when ready for bank scanning.
  */
+import { postalPlain, postalStreet } from "@/lib/postalAddress";
 import { Document, Page, View, Text, Image, StyleSheet, Font } from "@react-pdf/renderer";
 import type { PayrollYtd } from "@shared/payrollYtd";
 import type { ViewProps } from "@react-pdf/renderer";
@@ -449,13 +450,13 @@ function CheckFacePDF({
       {/* Employee name and address — one block like the on-screen check (owner, 2026-10-24): 10pt bold, capitals,
           one line apart (10pt × 1.4 = 0.194"), no gap between the name and the address. Window-safe X:0.65", Y:2.13". */}
       <Text style={{ ...abs(0.65, 2.13), fontFamily: "Helvetica-Bold", fontSize: 10, color: "#111827" }}>
-        {payee.toUpperCase()}
+        {postalPlain(payee)}
       </Text>
       <Text style={{ ...abs(0.65, 2.13 + PAYEE_LINE_IN), fontFamily: "Helvetica-Bold", fontSize: 10, color: "#111827" }}>
-        {payeeStreet?.toUpperCase() || " "}
+        {postalStreet(payeeStreet) || " "}
       </Text>
       <Text style={{ ...abs(0.65, 2.13 + 2 * PAYEE_LINE_IN), fontFamily: "Helvetica-Bold", fontSize: 10, color: "#111827" }}>
-        {payeeCityStateZip?.toUpperCase() || " "}
+        {postalPlain(payeeCityStateZip) || " "}
       </Text>
 
       {/* Authorized signature — same rule as the printed check: fitted inside a 2.2" × 0.56" box (× the
