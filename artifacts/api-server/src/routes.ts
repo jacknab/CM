@@ -22973,6 +22973,9 @@ or
   if (IS_SCHEDULER_INSTANCE) {
     const { startIntelligenceScheduler } = await import("./intelligence/orchestrator.js");
     startIntelligenceScheduler();
+    // 1099s sent to the IRS: check their status every hour until accepted or rejected.
+    const { startTaxFilingStatusSync } = await import("./lib/tax1099.js");
+    startTaxFilingStatusSync();
   }
 
   // ── Enterprise Sync Engine ───────────────────────────────────────────────────

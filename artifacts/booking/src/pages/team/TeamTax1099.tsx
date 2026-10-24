@@ -27,7 +27,7 @@ interface Payer {
   storageReady: boolean; legalName: string; einLast4: string | null; address1: string; address2: string; city: string; state: string; zip: string;
   contactFirstName: string; contactLastName: string; phone: string; email: string;
 }
-interface OrderForm { id: number; staff_id: number; recipient_name: string; amount: string; federal_status: string | null; state_status: string | null; copy_status: string | null; errors: any }
+interface OrderForm { id: number; staff_id: number; recipient_name: string; amount: string; federal_status: string | null; state_status: string | null; copy_status: string | null; errors: any; canRefile: boolean; refile_count: number; status_checked_at: string | null }
 interface Order { id: number; status: string; form_count: number; mail_copies: boolean; total_cents: number; paid_at: string | null; filed_at: string | null; last_error: string | null; forms: OrderForm[] }
 
 const money = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -107,6 +107,15 @@ export default function TeamTax1099() {
       const d = await r.json();
       if (d.url) window.location.href = d.url;
     } catch (e) { toast({ title: errorText(e), variant: "destructive" }); setBuying(false); }
+  };
+  const [refiling, setRefiling] = useState<number | null>(null);
+  const refile = async (formId: number) => {
+    setRefiling(formId);
+    try {
+      const d = await (await apiRequest("POST", `/api/tax-filing/forms/${formId}/refile`)).json();
+      toast({ title: d.federalStatus === "ERROR" ? "Still has a problem — see below" : "Sent again", variant: d.federalStatus === "ERROR" ? "destructive" : undefined });
+      await qc.invalidateQueries({ queryKey: ["/api/tax-filing/orders", year] });
+    } catch (e) { toast({ title: errorText(e), variant: "destructive" }); } finally { setRefiling(null); }
   };
   const refresh = async (orderId: number) => {
     try { await apiRequest("POST", `/api/tax-filing/orders/${orderId}/refresh`); await qc.invalidateQueries({ queryKey: ["/api/tax-filing/orders", year] }); }
@@ -228,16 +237,33 @@ export default function TeamTax1099() {
                     {o.form_count} form{o.form_count === 1 ? "" : "s"} · {money(o.total_cents / 100)}
                     {o.status === "filing" ? " · filing…" : o.status === "failed" ? " · not filed" : ""}
                   </p>
-                  <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => void refresh(o.id)}><RefreshCw className="h-3.5 w-3.5" /> Update status</Button>
+                  <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => void refresh(o.id)} title="Statuses are also checked automatically every hour"><RefreshCw className="h-3.5 w-3.5" /> Update status</Button>
                 </div>
                 {o.last_error && <p className="px-3 pt-2 text-sm text-red-700">{o.last_error}</p>}
                 <div className="divide-y divide-border">
                   {o.forms.map((f) => (
-                    <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
-                      <span>{f.recipient_name} · {money(Number(f.amount))}</span>
-                      <span className={f.federal_status === "ACCEPTED" ? "text-emerald-700" : f.federal_status === "REJECTED" || f.federal_status === "ERROR" ? "text-red-700" : "text-muted-foreground"}>
-                        {statusText(f.federal_status)}{f.copy_status ? ` · copy: ${statusText(f.copy_status)}` : ""}
-                      </span>
+                    <div key={f.id} className="px-3 py-2 text-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span>{f.recipient_name} · {money(Number(f.amount))}</span>
+                        <span className={f.federal_status === "ACCEPTED" ? "text-emerald-700" : f.federal_status === "REJECTED" || f.federal_status === "ERROR" ? "text-red-700" : "text-muted-foreground"}>
+                          {statusText(f.federal_status)}{f.copy_status ? ` · copy: ${statusText(f.copy_status)}` : ""}
+                        </span>
+                      </div>
+                      {/* A rejected form: what was wrong, where to fix it, and send it again (no new charge). */}
+                      {f.canRefile && (
+                        <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-800">
+                          {(Array.isArray(f.errors) ? f.errors : f.errors ? [f.errors] : []).map((e: any, i: number) => (
+                            <p key={i}>{String(e?.Message ?? e?.message ?? e?.Name ?? "There is a problem with this form.")}</p>
+                          ))}
+                          <p className="mt-1">
+                            Fix the details on <button type="button" className="underline" onClick={() => navigate(`/team/${f.staff_id}`)}>{f.recipient_name}'s Payroll &amp; Tax tab</button> or in your salon's details above, then send it again. There's no extra charge.
+                          </p>
+                          <Button size="sm" className="mt-2" onClick={() => void refile(f.id)} disabled={refiling === f.id} data-testid={`tax1099-refile-${f.id}`}>
+                            {refiling === f.id ? "Sending…" : "Send again"}
+                          </Button>
+                        </div>
+                      )}
+                      {f.refile_count > 0 && !f.canRefile && <p className="mt-1 text-xs text-muted-foreground">Sent again {f.refile_count} time{f.refile_count === 1 ? "" : "s"}</p>}
                     </div>
                   ))}
                 </div>

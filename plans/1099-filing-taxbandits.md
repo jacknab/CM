@@ -32,8 +32,14 @@ Stripe webhook hook (`markTaxFilingPaid`), page `/payroll/1099` (TeamTax1099.tsx
 Defaults: $8/form (TAX_1099_PRICE_CENTS), +$3 mailed copy (TAX_1099_MAIL_CENTS); online copy always included.
 Buying is blocked unless Stripe and TaxBandits are both live or both test (Stripe is live; TaxBandits sandbox).
 
-Not yet: state filing (IsState is off — federal only), corrections for rejected forms, automatic status refresh
-(the page has "Update status"), TaxBandits webhooks, live keys.
+Added the same day: **rejected forms** — the form shows the IRS/TaxBandits errors and a "Send again" button (no new
+charge) after the owner fixes the details; `refileForm()` updates the return in place (PUT form1099nec/update) and
+retransmits, or files it as a new return when TaxBandits won't change it (migration 0259: per-form submission_id,
+recipient_id, refile_count). **Automatic status updates** — `startTaxFilingStatusSync()` on the scheduler instance
+checks every form not yet accepted/rejected, hourly, for 120 days.
+
+Not yet: state filing for states that need it (federal only; Arizona doesn't without withholding), TaxBandits
+webhooks (hourly polling covers it), live keys.
 
 ## Phases
 1. **Salon payer details** — legal name + EIN + address in Settings (or Payroll), EIN encrypted.

@@ -7,7 +7,7 @@
  */
 import { pool } from "../db";
 import { decryptTaxValue } from "./staffTaxCrypto";
-import { createNec, transmitNec, necStatus, type CopyDelivery, type Payer, type Recipient } from "./taxbandits";
+import { createNec, transmitNec, necStatus, updateNec, type CopyDelivery, type Payer, type Recipient } from "./taxbandits";
 
 /** The amount from which a contractor needs a 1099-NEC: $2,000 for payments made in 2026 on, $600 before. */
 export const necThreshold = (taxYear: number) => (taxYear >= 2026 ? 2000 : 600);
@@ -119,8 +119,8 @@ export async function fileOrder(orderId: number): Promise<void> {
     }
     for (const rec of created.records) {
       await pool.query(
-        `UPDATE tax_filing_forms SET record_id = $2, federal_status = $3, copy_status = $4, errors = $5, updated_at = NOW() WHERE id = $1`,
-        [Number(rec.sequenceId.slice(1)), rec.recordId, rec.federalStatus, rec.copyStatus, rec.errors ? JSON.stringify(rec.errors) : null],
+        `UPDATE tax_filing_forms SET record_id = $2, federal_status = $3, copy_status = $4, errors = $5, submission_id = $6, recipient_id = $7, updated_at = NOW() WHERE id = $1`,
+        [Number(rec.sequenceId.slice(1)), rec.recordId, rec.federalStatus, rec.copyStatus, rec.errors ? JSON.stringify(rec.errors) : null, created.submissionId, rec.recipientId],
       );
     }
     await pool.query(`UPDATE tax_filing_orders SET submission_id = $2 WHERE id = $1`, [orderId, created.submissionId]);
@@ -141,15 +141,94 @@ export async function fileOrder(orderId: number): Promise<void> {
   }
 }
 
-/** Ask TaxBandits where an order's returns are now, and save it. */
-export async function refreshOrderStatus(orderId: number): Promise<void> {
-  const { rows: [order] } = await pool.query(`SELECT submission_id FROM tax_filing_orders WHERE id = $1`, [orderId]);
-  if (!order?.submission_id) return;
-  for (const s of await necStatus(order.submission_id)) {
+/** Save what TaxBandits says about the returns in one of its submissions. */
+async function saveSubmissionStatus(submissionId: string): Promise<void> {
+  for (const st of await necStatus(submissionId)) {
     await pool.query(
       `UPDATE tax_filing_forms SET federal_status = COALESCE($3, federal_status), state_status = $4, copy_status = COALESCE($5, copy_status),
-              errors = COALESCE($6, errors), updated_at = NOW() WHERE order_id = $1 AND record_id = $2`,
-      [orderId, s.recordId, s.federalStatus, s.stateStatus, s.copyStatus, s.federalErrors ? JSON.stringify(s.federalErrors) : null],
+              errors = CASE WHEN $3 = 'REJECTED' THEN COALESCE($6, errors) WHEN $3 = 'ACCEPTED' THEN NULL ELSE errors END,
+              status_checked_at = NOW(), updated_at = NOW()
+        WHERE submission_id = $1 AND record_id = $2`,
+      [submissionId, st.recordId, st.federalStatus, st.stateStatus, st.copyStatus, st.federalErrors ? JSON.stringify(st.federalErrors) : null],
     );
   }
+}
+
+/** Ask TaxBandits where an order's returns are now, and save it. */
+export async function refreshOrderStatus(orderId: number): Promise<void> {
+  const { rows } = await pool.query(`SELECT DISTINCT submission_id FROM tax_filing_forms WHERE order_id = $1 AND submission_id IS NOT NULL`, [orderId]);
+  for (const r of rows) await saveSubmissionStatus(r.submission_id);
+}
+
+/** A form that can be sent again: rejected by the IRS, or never created because of an error. */
+export const canRefile = (federalStatus: string | null) => federalStatus === "REJECTED" || federalStatus === "ERROR" || federalStatus == null;
+
+/**
+ * Send a rejected (or never-created) 1099 again with the details as they are now — after the owner fixed the
+ * contractor's tax id, name or address on Payroll & Tax, or the salon's details. Same amount; no new charge.
+ * Updates the return in place when TaxBandits allows it, otherwise files it as a new return. Returns the new status.
+ */
+export async function refileForm(formId: number, storeId: number): Promise<{ federalStatus: string | null; errors: unknown }> {
+  const { rows: [f] } = await pool.query(
+    `SELECT f.*, o.tax_year, o.mail_copies, o.status AS order_status FROM tax_filing_forms f JOIN tax_filing_orders o ON o.id = f.order_id
+      WHERE f.id = $1 AND f.store_id = $2`, [formId, storeId]);
+  if (!f) throw new Error("Form not found");
+  if (!["filed", "failed"].includes(f.order_status)) throw new Error("This order hasn't been paid and filed yet.");
+  if (!canRefile(f.federal_status)) throw new Error("Only a rejected form can be sent again.");
+  const payer = await payerFor(storeId);
+  if (!payer) throw new Error("The salon's legal name, EIN, address or contact details are missing.");
+  const recipient = await recipientFor(f.staff_id, Number(f.amount), `f${f.id}`);
+  const delivery: CopyDelivery = f.mail_copies ? "POSTAL_AND_ONLINE" : "ONLINE_ACCESS";
+
+  let submissionId: string | null = f.submission_id;
+  let rec = f.record_id && f.submission_id
+    ? await updateNec(f.tax_year, payer, recipient, delivery, { submissionId: f.submission_id, recordId: f.record_id, recipientId: f.recipient_id })
+    : null;
+  if (!rec) {
+    // TaxBandits would not change it (or it was never created): file it as a new return.
+    const created = await createNec(f.tax_year, payer, [recipient], delivery);
+    rec = created.records[0] ?? null;
+    submissionId = created.submissionId;
+  }
+  if (!rec || !submissionId || !rec.recordId || rec.federalStatus === "ERROR") {
+    const errors = rec?.errors ?? [{ Message: "TaxBandits did not accept the corrected form." }];
+    await pool.query(`UPDATE tax_filing_forms SET federal_status = 'ERROR', errors = $2, updated_at = NOW() WHERE id = $1`, [formId, JSON.stringify(errors)]);
+    return { federalStatus: "ERROR", errors };
+  }
+  const [sent] = await transmitNec(submissionId, [rec.recordId]);
+  const status = sent?.federalStatus ?? rec.federalStatus;
+  await pool.query(
+    `UPDATE tax_filing_forms SET submission_id = $2, record_id = $3, recipient_id = COALESCE($4, recipient_id), federal_status = $5,
+            copy_status = COALESCE($6, copy_status), errors = NULL, recipient_name = $7, refile_count = refile_count + 1, last_refiled_at = NOW(), updated_at = NOW()
+      WHERE id = $1`,
+    [formId, submissionId, rec.recordId, rec.recipientId, status, sent?.copyStatus ?? rec.copyStatus,
+     recipient.businessName ?? `${recipient.firstName ?? ""} ${recipient.lastName ?? ""}`.trim()],
+  );
+  await pool.query(`UPDATE tax_filing_orders SET status = 'filed', last_error = NULL WHERE id = $1 AND status = 'failed'`, [f.order_id]);
+  return { federalStatus: status, errors: null };
+}
+
+/**
+ * Automatic status updates: every form sent to the IRS and not yet accepted or rejected is checked again, at most once
+ * an hour per form, for up to 120 days. Run by the scheduler (startTaxFilingStatusSync).
+ */
+export async function syncFilingStatuses(): Promise<void> {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT submission_id FROM tax_filing_forms
+      WHERE submission_id IS NOT NULL AND COALESCE(federal_status, '') NOT IN ('ACCEPTED', 'REJECTED', 'ERROR')
+        AND (status_checked_at IS NULL OR status_checked_at < NOW() - INTERVAL '1 hour')
+        AND updated_at > NOW() - INTERVAL '120 days'
+      LIMIT 200`);
+  for (const r of rows) {
+    try { await saveSubmissionStatus(r.submission_id); }
+    catch (err: any) { console.error("[tax1099] status check failed:", err?.message); }
+  }
+}
+
+let statusTimer: NodeJS.Timeout | null = null;
+export function startTaxFilingStatusSync(): void {
+  if (statusTimer) return;
+  setTimeout(() => void syncFilingStatuses(), 2 * 60 * 1000);
+  statusTimer = setInterval(() => void syncFilingStatuses(), 60 * 60 * 1000);
+  console.log("[tax1099] Status sync started (hourly)");
 }

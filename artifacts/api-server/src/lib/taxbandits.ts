@@ -7,6 +7,7 @@
  *   create    POST {api}/v2.0.0/Form1099NEC/Create → SubmissionId, BusinessId, Form1099Records.SuccessRecords[].RecordId
  *   transmit  POST {api}/v2.0.0/Form1099/Transmit  { SubmissionId, RecordIds, FormType: "NEC" }
  *   status    GET  {api}/v2.0.0/Form1099/Status?SubmissionId=…&FormType=NEC
+ *   update    PUT  {api}/v2.0.0/form1099nec/update   (POST is 404) — same body + SubmissionId, RecordId, RecipientId
  * Tax ids are sent as plain text only inside these HTTPS requests; nothing here logs a request body.
  */
 import fs from "node:fs";
@@ -53,7 +54,7 @@ async function accessToken(): Promise<string> {
   return token.value;
 }
 
-async function call(method: "GET" | "POST", path: string, body?: unknown): Promise<any> {
+async function call(method: "GET" | "POST" | "PUT", path: string, body?: unknown): Promise<any> {
   const r = await fetch(env().api + path, {
     method,
     headers: { Authorization: await accessToken(), "Content-Type": "application/json" },
@@ -117,7 +118,7 @@ function necBody(taxYear: number, payer: Payer, recipients: Recipient[], deliver
   };
 }
 
-export interface RecordResult { sequenceId: string; recordId: string | null; federalStatus: string | null; copyStatus: string | null; errors: unknown }
+export interface RecordResult { sequenceId: string; recordId: string | null; recipientId: string | null; federalStatus: string | null; copyStatus: string | null; errors: unknown }
 
 /** Problems TaxBandits finds before anything is created: sequence id → messages. Empty when it is all good. */
 export async function validateNec(taxYear: number, payer: Payer, recipients: Recipient[], delivery: CopyDelivery): Promise<Record<string, string[]>> {
@@ -132,13 +133,32 @@ export async function validateNec(taxYear: number, payer: Payer, recipients: Rec
 export async function createNec(taxYear: number, payer: Payer, recipients: Recipient[], delivery: CopyDelivery) {
   const d = await call("POST", "/Form1099NEC/Create", necBody(taxYear, payer, recipients, delivery));
   const ok: RecordResult[] = (d?.Form1099Records?.SuccessRecords ?? []).map((r: any) => ({
-    sequenceId: String(r.SequenceId), recordId: r.RecordId ?? null, federalStatus: r.Federal?.Status ?? null,
+    sequenceId: String(r.SequenceId), recordId: r.RecordId ?? null, recipientId: r.RecipientId ?? null, federalStatus: r.Federal?.Status ?? null,
     copyStatus: r.Distribution?.OnlineAccess?.Status ?? r.Distribution?.Postal?.Status ?? null, errors: null,
   }));
   const bad: RecordResult[] = (d?.Form1099Records?.ErrorRecords ?? []).map((r: any) => ({
-    sequenceId: String(r.SequenceId), recordId: r.RecordId ?? null, federalStatus: "ERROR", copyStatus: null, errors: r.Errors ?? null,
+    sequenceId: String(r.SequenceId), recordId: r.RecordId ?? null, recipientId: null, federalStatus: "ERROR", copyStatus: null, errors: r.Errors ?? null,
   }));
   return { submissionId: d?.SubmissionId ? String(d.SubmissionId) : null, businessId: d?.BusinessId ? String(d.BusinessId) : null, records: [...ok, ...bad], errors: d?.Errors ?? null };
+}
+
+/** Change a return that has not been accepted (a rejected one, or one not sent yet) with the corrected details.
+ *  Returns null when TaxBandits will not change it — the caller then files it as a new return. */
+export async function updateNec(taxYear: number, payer: Payer, recipient: Recipient, delivery: CopyDelivery,
+  ids: { submissionId: string; recordId: string; recipientId?: string | null }): Promise<RecordResult | null> {
+  const body: any = necBody(taxYear, payer, [recipient], delivery);
+  body.SubmissionManifest.SubmissionId = ids.submissionId;
+  body.ReturnData[0].RecordId = ids.recordId;
+  if (ids.recipientId) body.ReturnData[0].Recipient.RecipientId = ids.recipientId;
+  try {
+    const d = await call("PUT", "/form1099nec/update", body);
+    const ok = d?.Form1099Records?.SuccessRecords?.[0];
+    if (!ok) return null;
+    return { sequenceId: recipient.sequenceId, recordId: ok.RecordId ?? ids.recordId, recipientId: ok.RecipientId ?? ids.recipientId ?? null,
+      federalStatus: ok.Federal?.Status ?? null, copyStatus: ok.Distribution?.OnlineAccess?.Status ?? ok.Distribution?.Postal?.Status ?? null, errors: null };
+  } catch {
+    return null;
+  }
 }
 
 /** File the created returns with the IRS. */

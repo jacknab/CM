@@ -18,7 +18,7 @@ import { isAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import { encryptTaxValue, taxStorageReady } from "../lib/staffTaxCrypto";
 import { getStripe, isStripeConfigured } from "../lib/stripe";
-import { contractorsForYear, fileOrder, MAIL_PER_FORM_CENTS, necThreshold, payerFor, PRICE_PER_FORM_CENTS, recipientFor, refreshOrderStatus } from "../lib/tax1099";
+import { canRefile, contractorsForYear, fileOrder, MAIL_PER_FORM_CENTS, necThreshold, payerFor, PRICE_PER_FORM_CENTS, recipientFor, refileForm, refreshOrderStatus } from "../lib/tax1099";
 import { taxBanditsConfigured, taxBanditsSandbox, validateNec } from "../lib/taxbandits";
 
 const router = Router();
@@ -179,10 +179,12 @@ router.get("/orders", isAuthenticated, async (req, res) => {
     `SELECT id, status, form_count, mail_copies, total_cents, paid_at, filed_at, last_error, created_at FROM tax_filing_orders
       WHERE store_id = $1 AND tax_year = $2 AND status <> 'pending_payment' ORDER BY id DESC`, [a.storeId, year]);
   const { rows: forms } = await pool.query(
-    `SELECT f.id, f.order_id, f.staff_id, f.recipient_name, f.amount, f.federal_status, f.state_status, f.copy_status, f.errors, f.updated_at
+    `SELECT f.id, f.order_id, f.staff_id, f.recipient_name, f.amount, f.federal_status, f.state_status, f.copy_status, f.errors, f.updated_at,
+            f.refile_count, f.status_checked_at
        FROM tax_filing_forms f JOIN tax_filing_orders o ON o.id = f.order_id
       WHERE o.store_id = $1 AND o.tax_year = $2 AND o.status <> 'pending_payment' ORDER BY f.id`, [a.storeId, year]);
-  res.json({ orders: orders.map((o: any) => ({ ...o, forms: forms.filter((f: any) => f.order_id === o.id) })) });
+  res.json({ orders: orders.map((o: any) => ({ ...o, forms: forms.filter((f: any) => f.order_id === o.id)
+    .map((f: any) => ({ ...f, canRefile: ["filed", "failed"].includes(o.status) && canRefile(f.federal_status) })) })) });
 });
 
 router.post("/orders/:id/refresh", isAuthenticated, async (req, res) => {
@@ -191,6 +193,16 @@ router.post("/orders/:id/refresh", isAuthenticated, async (req, res) => {
   if (!order) return res.status(404).json({ error: "Order not found" });
   try { await refreshOrderStatus(order.id); res.json({ ok: true }); }
   catch (err: any) { res.status(502).json({ error: "Couldn't reach TaxBandits. Try again shortly." }); }
+});
+
+/** A rejected 1099, sent again with the details as they are now (after fixing them). Same amount, no new charge. */
+router.post("/forms/:id/refile", isAuthenticated, async (req, res) => {
+  const a = await access(req, res); if (!a) return;
+  try {
+    res.json(await refileForm(Number(req.params.id), a.storeId));
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message ?? "Couldn't send the form again." });
+  }
 });
 
 export default router;
