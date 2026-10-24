@@ -5,15 +5,16 @@ const DOLLAR: TurnRules = { mode: "dollar", dollarsPerTurn: 30, partialTurnValue
 const CLASSIC: TurnRules = { mode: "classic", dollarsPerTurn: 30, partialTurnValue: 0.5 };
 
 describe("turnValue — Dollar-Based Turns ($30 a turn)", () => {
-  // The owner's rule (2026-10-17): up to $30 is ½; over it, one turn per full $30 plus ½ for anything left over.
+  // The owner's rule (2026-10-17, corrected 2026-10-24): under $30 is ½; $30 or more, one turn per full $30 plus ½ for
+  // anything left over — so $30 is a full turn.
   it("matches the owner's examples", () => {
-    const owner: [number, number][] = [[20, 0.5], [30, 0.5], [45, 1.5], [60, 2], [75, 2.5], [88.5, 2.5], [90, 3]];
+    const owner: [number, number][] = [[20, 0.5], [30, 1], [45, 1.5], [60, 2], [75, 2.5], [88.5, 2.5], [90, 3]];
     for (const [amount, turns] of owner) expect(turnValue(DOLLAR, amount)).toBe(turns);
   });
-  it("gives half a turn up to and including $30", () => {
+  it("gives half a turn under $30, and a full turn at exactly $30", () => {
     expect(turnValue(DOLLAR, 0.01)).toBe(0.5);
     expect(turnValue(DOLLAR, 29.99)).toBe(0.5);
-    expect(turnValue(DOLLAR, 30)).toBe(0.5);
+    expect(turnValue(DOLLAR, 30)).toBe(1);
   });
   it("adds the half turn the moment an amount goes past a full turn", () => {
     expect(turnValue(DOLLAR, 30.01)).toBe(1.5);
@@ -32,7 +33,7 @@ describe("turnValue — Dollar-Based Turns ($30 a turn)", () => {
   it("follows the salon's own dollars-per-turn and partial value", () => {
     const salon: TurnRules = { mode: "dollar", dollarsPerTurn: 40, partialTurnValue: 0.25 };
     expect(turnValue(salon, 35)).toBe(0.25);
-    expect(turnValue(salon, 40)).toBe(0.25);
+    expect(turnValue(salon, 40)).toBe(1);
     expect(turnValue(salon, 80)).toBe(2);
     expect(turnValue(salon, 85)).toBe(2.25);
   });

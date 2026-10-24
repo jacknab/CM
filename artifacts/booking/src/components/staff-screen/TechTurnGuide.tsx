@@ -58,13 +58,13 @@ function howYouEarn(r: TurnRules, l: Lang): string[] {
       }[l]];
     case "dollar":
       return [{
-        en: `Every ${T} of service earns 1 turn.`,
-        vi: `Mỗi ${T} tiền dịch vụ được 1 lượt.`,
-        es: `Cada ${T} de servicio gana 1 turno.`,
+        en: `Every ${T} of service earns 1 turn — a ticket of exactly ${T} is 1 full turn.`,
+        vi: `Mỗi ${T} tiền dịch vụ được 1 lượt — phiếu đúng ${T} là 1 lượt.`,
+        es: `Cada ${T} de servicio gana 1 turno: un ticket de ${T} exactos es 1 turno completo.`,
       }[l], {
-        en: `A ticket of ${T} or less earns ${half} turn. Over ${T}, any amount left over earns another ${half} turn.`,
-        vi: `Phiếu từ ${T} trở xuống được ${half} lượt. Trên ${T}, phần tiền dư được thêm ${half} lượt.`,
-        es: `Un ticket de ${T} o menos gana ${half} turno. Por encima de ${T}, lo que sobre gana otro ${half} turno.`,
+        en: `A ticket under ${T} earns ${half} turn. Over ${T}, any amount left over earns another ${half} turn.`,
+        vi: `Phiếu dưới ${T} được ${half} lượt. Trên ${T}, phần tiền dư được thêm ${half} lượt.`,
+        es: `Un ticket de menos de ${T} gana ${half} turno. Por encima de ${T}, lo que sobre gana otro ${half} turno.`,
       }[l]];
     case "brackets": {
       const list = (r.brackets ?? []).map((b) => `${b.fromCents === 0 ? { en: "Under", vi: "Dưới", es: "Menos de" }[l] + " " + money((r.brackets?.[1]?.fromCents ?? 0) / 100) : { en: "From", vi: "Từ", es: "Desde" }[l] + " " + money(b.fromCents / 100)}: ${formatTurns(b.units)}`);

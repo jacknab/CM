@@ -33,7 +33,7 @@ describe("two POS tablets offline share one turn line", () => {
       { kind: "paid", at: 3000, staffId: 1, serviceAmount: 30, ticketId: -5 },
     ]);
     expect(next(l)).toEqual(["Lisa", "Maria", "Amy"]);
-    expect(l.technicians.find((t) => t.name === "Amy")!.turnUnits).toBe(500); // $30 at $30 a turn is 1/2
+    expect(l.technicians.find((t) => t.name === "Amy")!.turnUnits).toBe(1000); // $30 at $30 a turn is 1 turn
   });
 
   it("a server ticket tablet A paid is no longer open on tablet B, even though B's copy of the board still shows it", () => {
