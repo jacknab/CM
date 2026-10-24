@@ -366,8 +366,10 @@ function CheckFacePDF({
           {bankAddress}
         </Text>
       ) : null}
+      {/* City, State ZIP: the line under the bank name (under its street, when there is one). It was never passed in
+          before 2026-10-24, so it never printed. */}
       {bankCity ? (
-        <Text style={{ ...abs(3.20, 0.54), fontFamily: "Helvetica", fontSize: 8, color: "#374151" }}>
+        <Text style={{ ...abs(3.20, bankAddress ? 0.54 : 0.42), fontFamily: "Helvetica", fontSize: 8, color: "#374151" }}>
           {bankCity}
         </Text>
       ) : null}
@@ -706,7 +708,7 @@ function CheckStubPDF({
 export function CheckDocumentPDF({
   checkNumber, date, payee, payeeStreet, payeeCityStateZip,
   amount, memo, periodStart, periodEnd, store,
-  routing, account, bankName, bankAddress, bankPhone,
+  routing, account, bankName, bankAddress, bankCity, bankPhone,
   earningsRows, stubCount = "two", dailyBreakdown,
   serviceCommission, tipAmount, appointmentCount, totalRevenue, ytd,
   signature,
@@ -726,7 +728,7 @@ export function CheckDocumentPDF({
           amount={amount}
           periodStart={periodStart} store={store}
           routing={routing} account={account}
-          bankName={bankName} bankAddress={bankAddress}
+          bankName={bankName} bankAddress={bankAddress} bankCity={bankCity}
           signature={signature}
         />
 

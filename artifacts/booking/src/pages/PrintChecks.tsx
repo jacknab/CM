@@ -2131,24 +2131,59 @@ function PayrollChecksTab({ settings, initialRunId }: { settings: PrintSettings;
     enabled: !!selectedRunId,
   });
 
-  // Each paycheck's own number, saved on the server (owner bug 2026-10-24: every check printed as 001001). Numbers are
-  // given once — when the run is approved, or here the first time it is opened — and a reprint keeps its number.
+  // Each paycheck's own number (owner, 2026-10-24): given when the check is printed or sent to the printer, carrying on
+  // from the last number printed, and kept — a reprint is the same check. Until then the preview shows the number it
+  // will get (the salon's next number, in order).
   const [checkNumbers, setCheckNumbers] = useState<Record<number, string>>({});
+  const [nextCheckNo, setNextCheckNo] = useState<number | null>(null);
+  const loadCheckNumbers = useCallback(async (runId: number) => {
+    const r = await fetch(`/api/payroll/runs/${runId}/check-numbers?floor=${settings.startingCheckNumber}`, { credentials: "include" }).catch(() => null);
+    const d = r?.ok ? await r.json() : null;
+    if (d) { setCheckNumbers(d.checkNumbers ?? {}); setNextCheckNo(Number(d.next) || null); }
+  }, [settings.startingCheckNumber]);
   useEffect(() => {
+    setCheckNumbers({}); setNextCheckNo(null);
+    if (checkData?.run?.id) void loadCheckNumbers(checkData.run.id);
+  }, [checkData?.run?.id, loadCheckNumbers]);
+  /** Give the checks being printed their numbers now; returns item id → number, or null when it could not. */
+  const assignCheckNumbersFor = async (itemIds: number[]): Promise<Record<number, string> | null> => {
     const runId = checkData?.run?.id;
-    if (!runId || !["approved", "finalized"].includes(String(checkData.run.status))) return;
-    let cancelled = false;
-    fetch(`/api/payroll/runs/${runId}/check-numbers`, {
+    if (!runId) return null;
+    const r = await fetch(`/api/payroll/runs/${runId}/check-numbers`, {
       method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ floor: settings.startingCheckNumber }),
-    }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (!cancelled && d?.checkNumbers) setCheckNumbers(d.checkNumbers); }).catch(() => {});
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checkData?.run?.id]);
-  const checkNoFor = (item: PayrollCheckItem): string => {
-    const n = checkNumbers[item.id] ?? (item as any).checkNumber;
-    return n ? String(n).padStart(6, "0") : "";
+      body: JSON.stringify({ floor: settings.startingCheckNumber, itemIds }),
+    }).catch(() => null);
+    const d = r?.ok ? await r.json() : null;
+    if (!d?.checkNumbers) { alert("Couldn't give the checks their numbers. Check the connection and try again."); return null; }
+    setCheckNumbers(d.checkNumbers);
+    void loadCheckNumbers(runId);
+    return d.checkNumbers;
   };
+  const checkNoFor = (item: PayrollCheckItem, saved: Record<number, string> = checkNumbers): string => {
+    const n = saved[item.id] ?? (item as any).checkNumber;
+    if (n) return String(n).padStart(6, "0");
+    if (nextCheckNo == null || !checkData) return "";
+    // Not printed yet: the number it will get, counting the run's other unnumbered checks before it.
+    const waiting = checkData.items.filter((i) => Number((i as any).totalPay ?? 0) > 0 && !(saved[i.id] ?? (i as any).checkNumber));
+    const at = waiting.findIndex((i) => i.id === item.id);
+    return at >= 0 ? String(nextCheckNo + at).padStart(6, "0") : "";
+  };
+  /** One check as Send to Printer sends it (no bank details: the salon computer adds those). */
+  const sendCheckFor = (item: PayrollCheckItem) => ({
+    date: runPayDate,
+    payee: item.payeeName || item.staffName,
+    ...payeeAddress(item),
+    amount: item.totalPay,
+    periodStart: checkData!.run.periodStart,
+    periodEnd: checkData!.run.periodEnd,
+    store: storeInfo,
+    routing: "",
+    account: "",
+    earningsRows: buildEarningsRows(item),
+    ytd: item.ytd,
+    stubCount: settings.stubCount,
+    dailyBreakdown: item.dailyBreakdown,
+  });
 
   // "approved" is the new Payroll page's finalized state; "finalized" is the legacy one.
   const finalizedRuns = runs.filter(r => r.status === "finalized" || r.status === "approved");
@@ -2198,10 +2233,12 @@ function PayrollChecksTab({ settings, initialRunId }: { settings: PrintSettings;
     return rows;
   }
 
-  function handlePrint(itemId?: number) {
-    // Never print a check before it has its number.
+  async function handlePrint(itemId?: number) {
+    // The checks being printed get their numbers now, so the system remembers the last one printed.
     const toPrint = itemId != null ? visibleItems.filter((i) => i.id === itemId) : visibleItems;
-    if (toPrint.some((i) => !checkNoFor(i))) { alert("The check numbers are still loading — try again in a moment."); return; }
+    if (toPrint.length === 0) return;
+    if (!(await assignCheckNumbersFor(toPrint.map((i) => i.id)))) return;
+    await new Promise((r) => setTimeout(r, 60)); // let the numbers reach the page before the browser prints it
     if (!checkData) return;
     const item = itemId ? checkData.items.find(i => i.id === itemId) : null;
     const prev = document.title;
@@ -2329,22 +2366,12 @@ function PayrollChecksTab({ settings, initialRunId }: { settings: PrintSettings;
                     <CheckSendToPrinter
                       label={visibleItems.length > 1 ? `Send All ${visibleItems.length} to Printer` : "Send to Printer"}
                       className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
-                      checks={visibleItems.map((item, idx) => ({
-                        checkNumber: checkNoFor(item),
-                        date: runPayDate,
-                        payee: item.payeeName || item.staffName,
-                        ...payeeAddress(item),
-                        amount: item.totalPay,
-                        periodStart: checkData!.run.periodStart,
-                        periodEnd: checkData!.run.periodEnd,
-                        store: storeInfo,
-                        routing: "",
-                        account: "",
-                        earningsRows: buildEarningsRows(item),
-                        ytd: item.ytd,
-                        stubCount: settings.stubCount,
-                        dailyBreakdown: item.dailyBreakdown,
-                      }))}
+                      beforeSend={async () => {
+                        const saved = await assignCheckNumbersFor(visibleItems.map((i) => i.id));
+                        if (!saved) return null;
+                        return visibleItems.map((item) => ({ ...sendCheckFor(item), checkNumber: checkNoFor(item, saved) }));
+                      }}
+                      checks={visibleItems.map((item) => ({ ...sendCheckFor(item), checkNumber: checkNoFor(item) }))}
                     />
                   </Suspense>
                 )}

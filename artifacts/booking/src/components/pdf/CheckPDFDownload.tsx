@@ -133,7 +133,11 @@ function checkWithoutBankDetails(p: CheckPDFProps) {
  * "Send to Printer" for one check or several. Each check is its own transaction; they are sent one
  * after another, in order, so they come out of the printer in check-number order.
  */
-export function CheckSendToPrinter({ checks, label, className }: { checks: CheckPDFProps[]; label?: string; className?: string }) {
+export function CheckSendToPrinter({ checks, label, className, beforeSend }: {
+  checks: CheckPDFProps[]; label?: string; className?: string;
+  /** Right before sending: the checks as they should go out (e.g. with their check numbers given now). null = stop. */
+  beforeSend?: () => Promise<CheckPDFProps[] | null>;
+}) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   // One id per check, made when the dialog opens: a double click or a retry reuses it, so it can never print twice.
@@ -174,17 +178,19 @@ export function CheckSendToPrinter({ checks, label, className }: { checks: Check
   async function send() {
     setSending(true); setError(null);
     try {
+      const list = beforeSend ? await beforeSend() : checks;
+      if (!list) return;
       const ids: (string | null)[] = [];
-      for (let i = 0; i < checks.length; i++) {
+      for (let i = 0; i < list.length; i++) {
         const res = await fetch("/api/print-agent/checks", {
           method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clientRequestId: requestIds[i], check: checkWithoutBankDetails(checks[i]) }),
+          body: JSON.stringify({ clientRequestId: requestIds[i], check: checkWithoutBankDetails(list[i]) }),
         });
         const reply = await res.json().catch(() => null);
         if (!res.ok) throw new Error(reply?.error ?? "Could not send the check to the salon printer.");
         ids.push(reply.id);
         setJobIds([...ids]);
-        if (i === checks.length - 1) break;
+        if (i === list.length - 1) break;
         // Wait for this one to finish before sending the next. Stop the batch if it did not print.
         let finished: PrintJobInfo | null = null;
         for (let waited = 0; waited < 520 && !finished; waited++) {   // up to ~13 min: the printer may be waiting on paper or a jam
@@ -194,7 +200,7 @@ export function CheckSendToPrinter({ checks, label, className }: { checks: Check
           if (job && JOB_DONE.has(job.status)) finished = job;
         }
         if (!finished || finished.status !== "PRINTED") {
-          setError(`Stopped after Check #${checks[i].checkNumber} did not print. The remaining ${checks.length - i - 1} were not sent.`);
+          setError(`Stopped after Check #${list[i].checkNumber} did not print. The remaining ${list.length - i - 1} were not sent.`);
           break;
         }
       }
