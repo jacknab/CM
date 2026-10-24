@@ -67,13 +67,13 @@
     },
     {
       "id": "prod-reader",
-      "badge": "Free on Professional",
+      "badge": "",
       "name": "Wireless Card Reader",
       "tagline": "Fast, wireless payments anywhere.",
-      "description": "A compact wireless card reader powered by Stripe that connects to any device running Certxa. Accept chip, tap, and swipe payments at the chair, the front desk, or anywhere in the salon. Included free with every Professional plan.",
-      "price": "Free",
-      "financing": "included with the Professional plan — or $149 standalone",
-      "cta": "Get started",
+      "description": "A compact wireless card reader powered by Stripe that connects to any device running Certxa. Accept chip, tap, and swipe payments at the chair, the front desk, or anywhere in the salon.",
+      "price": "$69",
+      "financing": "",
+      "cta": "Buy now",
       "highlights": [
         {
           "id": "h1",
@@ -90,10 +90,6 @@
         {
           "id": "h4",
           "text": "Works with any device running Certxa"
-        },
-        {
-          "id": "h5",
-          "text": "Free with every Professional plan"
         }
       ]
     }
@@ -151,8 +147,8 @@
     },
     {
       "id": "faq-2",
-      "question": "Is the card reader really free?",
-      "answer": "Yes. The Wireless Card Reader is included free with every Professional plan. No minimum processing volume required — just sign up for Professional and it ships with your account."
+      "question": "How much is the card reader?",
+      "answer": "The Wireless Card Reader (Stripe M2) is $69. It works with every Certxa plan, and there is no minimum processing volume."
     },
     {
       "id": "faq-3",

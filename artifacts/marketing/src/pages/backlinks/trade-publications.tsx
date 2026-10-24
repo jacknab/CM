@@ -62,7 +62,7 @@ const publications: Publication[] = [
     contact: 'https://www.americansalon.com/contact',
     contactType: 'Contact form',
     section: 'Business Tools Column',
-    angle: 'Free card reader with the Professional plan — a lower upfront cost to modernize your checkout',
+    angle: 'A $69 card reader — a low upfront cost to modernize your checkout',
   },
 ];
 
@@ -73,7 +73,7 @@ Hi [Editor's name],
 
 I'm Thanh Lam, founder of Certxa (certxa.com) — an all-in-one salon management platform I built after running my own nail salon and hitting the same walls every owner does: juggling four different apps, losing clients to missed calls, and spending Sunday nights doing payroll instead of resting.
 
-Certxa brings booking, POS, turn rotation, loyalty programs, and an AI receptionist called Autumn into one platform — with a card reader included on the Professional plan.
+Certxa brings booking, POS, turn rotation, loyalty programs, and an AI receptionist called Autumn into one platform — with a $69 Stripe card reader.
 
 I'd love to share this story with ${pub.name}'s readers. The angle I think fits your ${pub.section} section best: ${pub.angle}.
 

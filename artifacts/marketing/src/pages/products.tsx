@@ -92,11 +92,10 @@ const jsonLd = {
           item: {
             '@type': 'Product',
             name: 'Wireless Card Reader',
-            // $149 on its own, as the page shows; free with the Professional plan.
-            description: 'Stripe-powered wireless card reader. Chip, tap, and swipe. $149 on its own; free with the Professional plan.',
+            description: 'Stripe M2 wireless card reader. Chip, tap, and swipe.',
             image: `${SITE}${mainProductImages['prod-reader']}`,
             brand: { '@type': 'Brand', name: 'Certxa' },
-            offers: { '@type': 'Offer', price: '149', priceCurrency: 'USD', url: PAGE_URL },
+            offers: { '@type': 'Offer', price: '69', priceCurrency: 'USD', url: PAGE_URL },
           },
         },
       ],
