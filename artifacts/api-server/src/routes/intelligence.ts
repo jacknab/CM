@@ -638,227 +638,126 @@ router.get("/daily-digest", async (req, res) => {
     todayEnd.setHours(23, 59, 59, 999);
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    const actions: Array<{ type: string; priority: number; label: string; detail: string; count?: number; revenueAtStake?: number; tab: string; ctaLabel: string }> = [];
+    // What Certxa did for the salon (owner, 2026-10-24: the system is automatic — it reports what it has done,
+    // never asks the owner to do it). Counts come from the log of texts Certxa sent in the last 7 days;
+    // today's watch items say what Certxa does about them.
+    const actions: Array<{ type: string; priority: number; label: string; detail: string; count?: number; revenueAtStake?: number; revenueLabel?: string; tab: string; ctaLabel: string }> = [];
+    const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
-    const in3Days = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
-
-    // Run all count + revenue queries in parallel
-    const digestResults = await Promise.all([
-      // 1a. No-show risk count
-      db.execute(
-        sql`SELECT COUNT(*)::int AS cnt
+    const [noShowRow, noShowRevRow, cancelRow, cancelRevRow, revenueRow, sentRows, cancelOfferTodayRow, reminderRow] = await Promise.all([
+      // Today's appointments with clients who miss 40%+ of the time
+      db.execute(sql`SELECT COUNT(*)::int AS cnt
             FROM appointments a
             JOIN client_intelligence ci ON ci.customer_id = a.customer_id AND ci.store_id = a.store_id
             WHERE a.store_id = ${storeId}
-              AND a.date >= ${todayStart.toISOString()}
-              AND a.date <= ${todayEnd.toISOString()}
+              AND a.date >= ${todayStart.toISOString()} AND a.date <= ${todayEnd.toISOString()}
               AND a.status IN ('pending', 'confirmed')
-              AND CAST(ci.no_show_rate AS DECIMAL) >= 40`
-      ),
-      // 1b. No-show revenue at stake
-      db.execute(
-        sql`SELECT COALESCE(SUM(CAST(s.price AS DECIMAL)), 0)::float AS rev
+              AND CAST(ci.no_show_rate AS DECIMAL) >= 40`),
+      db.execute(sql`SELECT COALESCE(SUM(CAST(s.price AS DECIMAL)), 0)::float AS rev
             FROM appointments a
             JOIN client_intelligence ci ON ci.customer_id = a.customer_id AND ci.store_id = a.store_id
             LEFT JOIN services s ON s.id = a.service_id
             WHERE a.store_id = ${storeId}
-              AND a.date >= ${todayStart.toISOString()}
-              AND a.date <= ${todayEnd.toISOString()}
+              AND a.date >= ${todayStart.toISOString()} AND a.date <= ${todayEnd.toISOString()}
               AND a.status IN ('pending', 'confirmed')
-              AND CAST(ci.no_show_rate AS DECIMAL) >= 40`
-      ),
-      // 2a. Critical churn count
-      db.execute(
-        sql`SELECT COUNT(*)::int AS cnt
-            FROM client_intelligence ci
-            WHERE ci.store_id = ${storeId}
-              AND ci.churn_risk_label = 'critical'
-              AND (ci.last_winback_sent_at IS NULL OR ci.last_winback_sent_at < ${sevenDaysAgo.toISOString()})`
-      ),
-      // 2b. Critical churn LTV at stake (annual value)
-      db.execute(
-        sql`SELECT COALESCE(SUM(ci.ltv_12_month::numeric), 0)::float AS rev
-            FROM client_intelligence ci
-            WHERE ci.store_id = ${storeId}
-              AND ci.churn_risk_label = 'critical'
-              AND (ci.last_winback_sent_at IS NULL OR ci.last_winback_sent_at < ${sevenDaysAgo.toISOString()})`
-      ),
-      // 3a. Cancellations today count
-      db.execute(
-        sql`SELECT COUNT(*)::int AS cnt
-            FROM appointments a
+              AND CAST(ci.no_show_rate AS DECIMAL) >= 40`),
+      // Today's cancellations
+      db.execute(sql`SELECT COUNT(*)::int AS cnt FROM appointments a
             WHERE a.store_id = ${storeId}
-              AND a.date >= ${todayStart.toISOString()}
-              AND a.date <= ${todayEnd.toISOString()}
-              AND a.status = 'cancelled'`
-      ),
-      // 3b. Cancellation revenue at stake
-      db.execute(
-        sql`SELECT COALESCE(SUM(CAST(s.price AS DECIMAL)), 0)::float AS rev
-            FROM appointments a
-            LEFT JOIN services s ON s.id = a.service_id
+              AND a.date >= ${todayStart.toISOString()} AND a.date <= ${todayEnd.toISOString()}
+              AND a.status = 'cancelled'`),
+      db.execute(sql`SELECT COALESCE(SUM(CAST(s.price AS DECIMAL)), 0)::float AS rev
+            FROM appointments a LEFT JOIN services s ON s.id = a.service_id
             WHERE a.store_id = ${storeId}
-              AND a.date >= ${todayStart.toISOString()}
-              AND a.date <= ${todayEnd.toISOString()}
-              AND a.status = 'cancelled'`
-      ),
-      // 4a. Drifting high-LTV count
-      db.execute(
-        sql`SELECT COUNT(*)::int AS cnt
-            FROM client_intelligence ci
-            WHERE ci.store_id = ${storeId}
-              AND ci.is_drifting = true
-              AND ci.ltv_12_month::numeric >= 200
-              AND (ci.last_winback_sent_at IS NULL OR ci.last_winback_sent_at < ${sevenDaysAgo.toISOString()})`
-      ),
-      // 4b. Drifting LTV at stake (annual)
-      db.execute(
-        sql`SELECT COALESCE(SUM(ci.ltv_12_month::numeric), 0)::float AS rev
-            FROM client_intelligence ci
-            WHERE ci.store_id = ${storeId}
-              AND ci.is_drifting = true
-              AND ci.ltv_12_month::numeric >= 200
-              AND (ci.last_winback_sent_at IS NULL OR ci.last_winback_sent_at < ${sevenDaysAgo.toISOString()})`
-      ),
-      // 5a. Rebooking nudge count
-      db.execute(
-        sql`SELECT COUNT(*)::int AS cnt
-            FROM client_intelligence ci
-            WHERE ci.store_id = ${storeId}
-              AND ci.next_expected_visit_date IS NOT NULL
-              AND ci.next_expected_visit_date >= ${now.toISOString()}
-              AND ci.next_expected_visit_date <= ${in3Days.toISOString()}
-              AND NOT EXISTS (
-                SELECT 1 FROM appointments a
-                WHERE a.store_id = ${storeId}
-                  AND a.customer_id = ci.customer_id
-                  AND a.status IN ('pending','confirmed')
-                  AND a.date >= ${now.toISOString()}
-              )`
-      ),
-      // 5b. Rebooking nudge revenue potential (avg ticket × count)
-      db.execute(
-        sql`SELECT COALESCE(AVG(ci.avg_ticket_value::numeric), 0)::float AS avg_ticket
-            FROM client_intelligence ci
-            WHERE ci.store_id = ${storeId}
-              AND ci.next_expected_visit_date IS NOT NULL
-              AND ci.next_expected_visit_date >= ${now.toISOString()}
-              AND ci.next_expected_visit_date <= ${in3Days.toISOString()}
-              AND NOT EXISTS (
-                SELECT 1 FROM appointments a
-                WHERE a.store_id = ${storeId}
-                  AND a.customer_id = ci.customer_id
-                  AND a.status IN ('pending','confirmed')
-                  AND a.date >= ${now.toISOString()}
-              )`
-      ),
+              AND a.date >= ${todayStart.toISOString()} AND a.date <= ${todayEnd.toISOString()}
+              AND a.status = 'cancelled'`),
       // Revenue today (completed + started)
-      db.execute(
-        sql`SELECT COALESCE(SUM(CAST(total_paid AS DECIMAL(10,2))), 0)::float AS rev
+      db.execute(sql`SELECT COALESCE(SUM(CAST(total_paid AS DECIMAL(10,2))), 0)::float AS rev
             FROM appointments
             WHERE store_id = ${storeId}
-              AND date >= ${todayStart.toISOString()}
-              AND date <= ${todayEnd.toISOString()}
-              AND status IN ('completed', 'started')`
-      ),
+              AND date >= ${todayStart.toISOString()} AND date <= ${todayEnd.toISOString()}
+              AND status IN ('completed', 'started')`),
+      // Texts Certxa sent by itself in the last 7 days, by kind. (A cancellation offer is logged as "manual"
+      // even when Certxa sends it on its own, so it is counted either way; staff-sent win-backs and reminders are not.)
+      db.execute(sql`SELECT intervention_type AS type, COUNT(*)::int AS cnt
+            FROM intelligence_interventions
+            WHERE store_id = ${storeId} AND status = 'sent' AND sent_at >= ${sevenDaysAgo.toISOString()}
+              AND (triggered_by <> 'manual' OR intervention_type = 'cancellation_recovery')
+            GROUP BY intervention_type`),
+      db.execute(sql`SELECT COUNT(*)::int AS cnt FROM intelligence_interventions
+            WHERE store_id = ${storeId} AND status = 'sent' AND intervention_type = 'cancellation_recovery'
+              AND sent_at >= ${todayStart.toISOString()}`),
+      db.execute(sql`SELECT reminder_enabled FROM sms_settings WHERE store_id = ${storeId} LIMIT 1`),
     ]);
-    const [
-      noShowRiskToday,
-      noShowRevenueRow,
-      criticalChurnRow,
-      criticalChurnRevenueRow,
-      cancellationRow,
-      cancellationRevenueRow,
-      driftingHighLtv,
-      driftingRevenueRow,
-      nudgeRow,
-      nudgeRevenueRow,
-      todayRevenueRow,
-    ] = digestResults.map((result) => (result as any).rows?.[0] ?? {});
+    const row = (r: any) => (r as any).rows?.[0] ?? {};
+    const sent: Record<string, number> = {};
+    for (const r of ((sentRows as any).rows ?? []) as any[]) sent[r.type] = Number(r.cnt) || 0;
+    const remindersEnabled = row(reminderRow).reminder_enabled !== false;
 
-    const noShowRisk = parseInt((noShowRiskToday as any)?.cnt || "0");
+    const noShowRisk = Number(row(noShowRow).cnt) || 0;
     if (noShowRisk > 0) {
-      const rev = parseFloat((noShowRevenueRow as any)?.rev || "0");
       actions.push({
-        type: "no_show_risk",
-        priority: 1,
-        label: `${noShowRisk} high-risk appointment${noShowRisk > 1 ? "s" : ""} today`,
-        detail: "Clients with a history of no-shows — confirm attendance before they slip away",
-        count: noShowRisk,
-        revenueAtStake: rev,
-        tab: "noshow",
-        ctaLabel: "Review no-show risks",
+        type: "no_show_risk", priority: 1,
+        label: `${noShowRisk} ${plural(noShowRisk, "appointment", "appointments")} today with clients who often miss`,
+        detail: remindersEnabled
+          ? "Certxa sends each of them their appointment reminder before the visit"
+          : "Certxa is watching these appointments on the No-Shows tab",
+        count: noShowRisk, revenueAtStake: Number(row(noShowRevRow).rev) || 0, revenueLabel: "booked",
+        tab: "noshow", ctaLabel: "See who",
       });
     }
 
-    const criticalChurn = parseInt((criticalChurnRow as any)?.cnt || "0");
-    if (criticalChurn > 0) {
-      const rev = parseFloat((criticalChurnRevenueRow as any)?.rev || "0");
-      actions.push({
-        type: "critical_churn",
-        priority: 2,
-        label: `${criticalChurn} critical-risk client${criticalChurn > 1 ? "s" : ""} need outreach`,
-        detail: "High-LTV clients who haven't visited in a long time — act now before they're gone",
-        count: criticalChurn,
-        revenueAtStake: rev,
-        tab: "clients",
-        ctaLabel: "View at-risk clients",
-      });
-    }
-
-    const cancelledToday = parseInt((cancellationRow as any)?.cnt || "0");
+    const cancelledToday = Number(row(cancelRow).cnt) || 0;
     if (cancelledToday > 0) {
-      const rev = parseFloat((cancellationRevenueRow as any)?.rev || "0");
+      const offered = Number(row(cancelOfferTodayRow).cnt) || 0;
       actions.push({
-        type: "cancellation_recovery",
-        priority: 3,
-        label: `${cancelledToday} cancellation${cancelledToday > 1 ? "s" : ""} — open slots today`,
-        detail: "Fill these slots by messaging waitlisted or lapsed clients",
-        count: cancelledToday,
-        revenueAtStake: rev,
-        tab: "seats",
-        ctaLabel: "Find replacements",
+        type: "cancellation_recovery", priority: 2,
+        label: `${cancelledToday} ${plural(cancelledToday, "cancellation", "cancellations")} today`,
+        detail: offered > 0
+          ? `Certxa offered the open time to ${offered} ${plural(offered, "client", "clients")} who fit it`
+          : "Certxa offers each open time to a client who fits it, when it finds one",
+        count: cancelledToday, revenueAtStake: Number(row(cancelRevRow).rev) || 0, revenueLabel: "opened up",
+        tab: "seats", ctaLabel: "See empty time",
       });
     }
 
-    const driftingHighLtvCount = parseInt((driftingHighLtv as any)?.cnt || "0");
-    if (driftingHighLtvCount > 0) {
-      const rev = parseFloat((driftingRevenueRow as any)?.rev || "0");
-      actions.push({
-        type: "high_ltv_drifting",
-        priority: 4,
-        label: `${driftingHighLtvCount} high-value client${driftingHighLtvCount > 1 ? "s" : ""} drifting`,
-        detail: "Top spenders whose visit frequency is slipping — ideal for a win-back campaign",
-        count: driftingHighLtvCount,
-        revenueAtStake: rev,
-        tab: "clients",
-        ctaLabel: "Start win-back campaign",
-      });
-    }
+    const winbacks = sent["winback"] ?? 0;
+    if (winbacks > 0) actions.push({
+      type: "winback", priority: 3,
+      label: `Texted ${winbacks} ${plural(winbacks, "client who hasn't", "clients who haven't")} been back in a while`,
+      detail: "Each got an invite to book, with your booking link (last 7 days)",
+      count: winbacks, tab: "clients", ctaLabel: "See clients",
+    });
+    const noShowTexts = sent["no_show_winback"] ?? 0;
+    if (noShowTexts > 0) actions.push({
+      type: "no_show_winback", priority: 4,
+      label: `Texted ${noShowTexts} ${plural(noShowTexts, "client", "clients")} after a missed appointment`,
+      detail: "Each got an invite to rebook (last 7 days)",
+      count: noShowTexts, tab: "leakage", ctaLabel: "See missing revenue",
+    });
+    const cancelOffers = sent["cancellation_recovery"] ?? 0;
+    if (cancelOffers > 0) actions.push({
+      type: "cancellation_offers", priority: 5,
+      label: `Offered ${cancelOffers} cancelled ${plural(cancelOffers, "time", "times")} to other clients`,
+      detail: "To fill the open time (last 7 days)",
+      count: cancelOffers, tab: "seats", ctaLabel: "See empty time",
+    });
+    const nudges = sent["rebooking_nudge"] ?? 0;
+    if (nudges > 0) actions.push({
+      type: "rebooking_nudge", priority: 6,
+      label: `Sent ${nudges} booking ${plural(nudges, "nudge", "nudges")}`,
+      detail: "To clients due for their next visit with nothing booked (last 7 days)",
+      count: nudges, tab: "campaigns", ctaLabel: "See texts",
+    });
 
-    const nudgeCount = parseInt((nudgeRow as any)?.cnt || "0");
-    if (nudgeCount > 0) {
-      const avgTicket = parseFloat((nudgeRevenueRow as any)?.avg_ticket || "0");
-      actions.push({
-        type: "rebooking_nudge",
-        priority: 5,
-        label: `${nudgeCount} client${nudgeCount > 1 ? "s" : ""} due for a visit soon`,
-        detail: "Their next expected visit is in 1-3 days but nothing is booked yet",
-        count: nudgeCount,
-        revenueAtStake: nudgeCount * avgTicket,
-        tab: "overview",
-        ctaLabel: "Send booking nudges",
-      });
-    }
-
-    const todayRevenue = parseFloat((todayRevenueRow as any)?.rev || "0");
-
+    const todayRevenue = Number(row(revenueRow).rev) || 0;
     actions.sort((a, b) => a.priority - b.priority);
 
     res.json({
-      actions: actions.slice(0, 5),
+      actions: actions.slice(0, 6),
       todayRevenue,
       totalActions: actions.length,
+      remindersEnabled,
     });
   } catch (err: any) {
     console.error("[intelligence] daily-digest error:", err);
@@ -1534,14 +1433,21 @@ router.post("/ai-coaching", async (req, res) => {
     return res.json({ summary: cached.summary });
   }
 
-  const systemPrompt = `You are a plain-English business coach for salon and service-business owners.
-Given key business metrics, write exactly 1-2 short sentences that translate the numbers into a meaningful coaching insight.
-Be specific — use the actual numbers when they're impactful. End with one concrete action the owner can take today.
+  // The intelligence system is automatic (owner, 2026-10-24): the summary says what the numbers mean and what Certxa
+  // is already doing about them — never a task for the owner.
+  const systemPrompt = `You write the summary on Certxa's Business Intelligence page for a salon owner.
+Certxa does the follow-up work on its own. Every 6 hours it texts booking nudges to clients due for their next visit,
+texts clients who may not return an invite to book, and texts clients after a recent no-show or cancellation an invite to rebook.
+When a client cancels, it offers the open time to another client who fits it. Appointment reminders go out before visits.
+Given key business metrics, write exactly 1-2 short sentences: what the numbers mean, and what Certxa is doing about it.
+Be specific — use the actual numbers when they're impactful.
+Never tell the owner to do anything: no advice, no suggestions, no "you should", "try", "consider", "reach out", "send", or "run a campaign".
+Only mention the work Certxa does listed above — never claim anything else.
 Never use jargon. Never say "leverage", "utilize", or "optimize". Write like you're talking to a friend who owns a small salon.
 Keep your entire response under 55 words.`;
 
   const context = _tabContext[tab] || "";
-  const userContent = `${context}\n\nMetrics:\n${JSON.stringify(metrics, null, 2)}\n\nWrite 1-2 coaching sentences.`;
+  const userContent = `${context}\n\nMetrics:\n${JSON.stringify(metrics, null, 2)}\n\nWrite the 1-2 sentences.`;
 
   try {
     const completion = await getCoachingClient().chat.completions.create({

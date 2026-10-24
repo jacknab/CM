@@ -576,6 +576,8 @@ export default function Intelligence() {
     staleTime: 3 * 60 * 1000,
     refetchInterval: 5 * 60 * 1000,
   });
+  // Whether the salon's appointment reminder texts are on (Settings → SMS), so the page only says Certxa sends them when it does.
+  const remindersOn: boolean = dailyDigest?.remindersEnabled ?? true;
 
   const sendReminderMutation = useMutation({
     mutationFn: async ({ appointmentId, customerId }: { appointmentId: number; customerId: number }) => {
@@ -952,16 +954,16 @@ export default function Intelligence() {
               <p className="text-2xl font-bold">{summary?.totalClients ?? "—"}</p>
               <p className="text-xs text-muted-foreground mt-1">
                 <span className="text-amber-600 font-medium">{summary?.driftingClients ?? 0}</span>{" "}
-                {autoEngageEnabled ? "may not return · being messaged" : "may not return · review needed"}
+                {autoEngageEnabled ? "may not return · Certxa is texting them" : "may not return"}
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Needs Attention</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">At Risk</p>
               <p className="text-2xl font-bold text-orange-600">{summary?.atRiskClients ?? "—"}</p>
               <p className="text-xs text-muted-foreground mt-1">
-                {autoEngageEnabled ? "Re-engagement texts sent" : "Ready to reach out"}
+                {autoEngageEnabled ? "Certxa is texting them invites to book" : "Clients who may not return"}
               </p>
             </CardContent>
           </Card>
@@ -1067,12 +1069,10 @@ export default function Intelligence() {
                     <div>
                       <CardTitle className="flex items-center gap-2">
                         <Zap className="h-5 w-5 text-primary" />
-                        Today's Priority Actions
+                        What Certxa Did For You
                       </CardTitle>
                       <CardDescription>
-                        {dailyDigest?.totalActions > 0
-                          ? `${dailyDigest.totalActions} opportunity${dailyDigest.totalActions !== 1 ? "ies" : "y"} identified — here's where to focus`
-                          : "Everything looks great — no urgent actions today"}
+                        Certxa checks your clients every 6 hours and texts the ones who need it — here's what it did
                       </CardDescription>
                     </div>
                     {dailyDigest?.todayRevenue > 0 && (
@@ -1087,7 +1087,7 @@ export default function Intelligence() {
                   {digestLoading ? (
                     <div className="flex items-center gap-2 text-muted-foreground py-4">
                       <RefreshCw className="h-4 w-4 animate-spin" />
-                      <span className="text-sm">Loading today's actions…</span>
+                      <span className="text-sm">Loading…</span>
                     </div>
                   ) : dailyDigest?.actions?.length > 0 ? (
                     <div className="space-y-2">
@@ -1118,7 +1118,7 @@ export default function Intelligence() {
                               <p className="text-xs text-muted-foreground mt-0.5">{action.detail}</p>
                               {action.revenueAtStake > 0 && (
                                 <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 mt-1">
-                                  ${action.revenueAtStake.toLocaleString(undefined, { maximumFractionDigits: 0 })} at stake
+                                  ${action.revenueAtStake.toLocaleString(undefined, { maximumFractionDigits: 0 })} {action.revenueLabel ?? "at stake"}
                                 </p>
                               )}
                             </div>
@@ -1134,8 +1134,8 @@ export default function Intelligence() {
                     <div className="flex items-center gap-3 py-4">
                       <CheckCircle2 className="h-8 w-8 text-emerald-500 flex-shrink-0" />
                       <div>
-                        <p className="text-sm font-medium">You're all caught up</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">No urgent revenue actions needed today. Keep it up!</p>
+                        <p className="text-sm font-medium">Your clients are on track</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">No client needed a text from Certxa in the last 7 days.</p>
                       </div>
                     </div>
                   )}
@@ -1150,8 +1150,8 @@ export default function Intelligence() {
                 wins.push({
                   icon: <Users className="h-4 w-4 text-orange-500" />,
                   color: "border-orange-200 bg-orange-50/50 dark:bg-orange-950/10",
-                  action: `${dashboard.atRiskClients.length} clients need re-engagement`,
-                  value: `~$${Math.round(dashboard.atRiskClients.reduce((s: number, c: any) => s + parseFloat(c.ltv12Month || "0"), 0) * 0.4).toLocaleString()} recoverable`,
+                  action: `${dashboard.atRiskClients.length} clients may not return — Certxa is texting them invites to book`,
+                  value: `~$${Math.round(dashboard.atRiskClients.reduce((s: number, c: any) => s + parseFloat(c.ltv12Month || "0"), 0) * 0.4).toLocaleString()} Certxa is working to win back`,
                   tab: "clients",
                 });
               }
@@ -1159,8 +1159,8 @@ export default function Intelligence() {
                 wins.push({
                   icon: <DollarSign className="h-4 w-4 text-red-500" />,
                   color: "border-red-200 bg-red-50/50 dark:bg-red-950/10",
-                  action: `$${leakageData.totalLeakage.toLocaleString()} in lost revenue (45d)`,
-                  value: `${leakageData.breakdown.noShowCount + leakageData.breakdown.cancellationCount} missed bookings`,
+                  action: `$${leakageData.totalLeakage.toLocaleString()} lost to no-shows and cancellations (45d)`,
+                  value: `${leakageData.breakdown.noShowCount + leakageData.breakdown.cancellationCount} missed bookings · Certxa texts each client an invite to rebook`,
                   tab: "leakage",
                 });
               }
@@ -1170,9 +1170,9 @@ export default function Intelligence() {
                   icon: <AlertCircle className="h-4 w-4 text-amber-500" />,
                   color: "border-amber-200 bg-amber-50/50 dark:bg-amber-950/10",
                   action: `${highRiskCount} high-risk no-shows upcoming`,
-                  value: autoEngageEnabled
-                    ? "System monitoring · confirm slots to eliminate risk"
-                    : "Confirm appointments to reduce losses",
+                  value: remindersOn
+                    ? "Certxa sends each one their appointment reminder"
+                    : "Certxa is watching these appointments",
                   tab: "noshow",
                 });
               }
@@ -1182,10 +1182,10 @@ export default function Intelligence() {
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base flex items-center gap-2">
                       <Zap className="h-4 w-4 text-primary" />
-                      Quick Wins
+                      Where Certxa Is Working
                     </CardTitle>
                     <CardDescription>
-                      {autoEngageEnabled ? "System actions in progress — plus things you can do" : "Highest-impact actions available right now"}
+                      {autoEngageEnabled ? "What Certxa is handling for you right now" : "What Certxa is tracking for you"}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -1262,7 +1262,7 @@ export default function Intelligence() {
                     </div>
                   ) : (
                     <div className="text-center py-8 text-muted-foreground text-sm">
-                      No data yet — click Refresh to run intelligence engine
+                      No data yet — Certxa updates this every 6 hours
                     </div>
                   )}
                 </CardContent>
@@ -1275,7 +1275,7 @@ export default function Intelligence() {
                     <Zap className="h-5 w-5 text-primary" />
                     Recent Actions
                   </CardTitle>
-                  <CardDescription>Automated and manual outreach log</CardDescription>
+                  <CardDescription>Texts Certxa sent to your clients</CardDescription>
                 </CardHeader>
                 <CardContent>
                   {dashLoading ? (
@@ -1299,7 +1299,7 @@ export default function Intelligence() {
                     </div>
                   ) : (
                     <div className="text-center py-8 text-muted-foreground text-sm">
-                      No outreach actions yet
+                      No texts sent yet
                     </div>
                   )}
                 </CardContent>
@@ -1367,9 +1367,9 @@ export default function Intelligence() {
                   <div>
                     <CardTitle className="flex items-center gap-2">
                       <Users className="h-5 w-5 text-orange-500" />
-                      Clients Needing Attention
+                      Clients Certxa Is Winning Back
                     </CardTitle>
-                    <CardDescription>{dashboard.atRiskClients.length} clients with elevated churn risk</CardDescription>
+                    <CardDescription>{dashboard.atRiskClients.length} clients may not return — Certxa texts them invites to book</CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="gap-1.5 border-emerald-300 text-emerald-700 bg-emerald-50 text-xs">
@@ -1429,7 +1429,7 @@ export default function Intelligence() {
                     ))}
                     {dashboard.atRiskClients.length > 5 && (
                       <Button variant="ghost" size="sm" className="w-full gap-1 text-muted-foreground" onClick={() => setActiveTab("clients")}>
-                        View all {dashboard.atRiskClients.length} clients who need attention
+                        View all {dashboard.atRiskClients.length} clients
                         <ChevronRight className="h-4 w-4" />
                       </Button>
                     )}
@@ -1555,39 +1555,6 @@ export default function Intelligence() {
               }}
               enabled={!!leakageData}
             />
-            {/* Auto-pilot banner — always shown */}
-            <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 ${
-              autoEngageEnabled
-                ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/40 dark:bg-emerald-950/20"
-                : "border-amber-200 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/20"
-            }`}>
-              <div className={`flex h-8 w-8 items-center justify-center rounded-full flex-shrink-0 ${
-                autoEngageEnabled ? "bg-emerald-100 dark:bg-emerald-900/40" : "bg-amber-100 dark:bg-amber-900/40"
-              }`}>
-                {autoEngageEnabled
-                  ? <Zap className="h-4 w-4 text-emerald-600" />
-                  : <BotOff className="h-4 w-4 text-amber-600" />
-                }
-              </div>
-              <div className="flex-1 min-w-0">
-                {autoEngageEnabled ? (
-                  <>
-                    <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Auto Client Outreach is on</p>
-                    <p className="text-xs text-emerald-700/70 dark:text-emerald-400/70">
-                      Every 6 hours Certxa scans for no-shows, cancellations, and clients who may not return — and automatically sends personalised texts to anyone who opted in. You don't have to lift a finger.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Auto Client Outreach is paused</p>
-                    <p className="text-xs text-amber-700/70 dark:text-amber-400/70">
-                      Missed revenue is still tracked below — but no automated texts are being sent. Turn on Auto Client Outreach at the top of this page to start recovering it.
-                    </p>
-                  </>
-                )}
-              </div>
-            </div>
-
             {leakageLoading ? (
               <div className="flex items-center justify-center h-40">
                 <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -1627,12 +1594,12 @@ export default function Intelligence() {
                         ? <Zap className="h-4 w-4 text-primary" />
                         : <BotOff className="h-4 w-4 text-muted-foreground" />
                       }
-                      {autoEngageEnabled ? "What Certxa is doing for you automatically" : "What Certxa will do when Auto Client Outreach is on"}
+                      {autoEngageEnabled ? "What Certxa is doing for you automatically" : "What Certxa does automatically"}
                     </CardTitle>
                     <CardDescription>
                       {autoEngageEnabled
-                        ? "No action needed from you — these run every 6 hours in the background"
-                        : "Turn on Auto Client Outreach above to let Certxa start recovering this revenue"}
+                        ? "These run every 6 hours in the background"
+                        : "Automatic texts are paused for this salon"}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -1694,7 +1661,7 @@ export default function Intelligence() {
                   <Card>
                     <CardHeader>
                       <CardTitle className="text-base">No-Shows by Service</CardTitle>
-                      <CardDescription>Where you're losing the most bookings</CardDescription>
+                      <CardDescription>Which services lose the most bookings</CardDescription>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-3">
@@ -1709,26 +1676,6 @@ export default function Intelligence() {
                               <Progress value={Math.min(100, (s.noShowCount / (leakageData.breakdown.noShowCount || 1)) * 100)} className="h-1.5 bg-red-100" />
                             </div>
                             <span className="text-xs text-muted-foreground w-16 text-right">{s.noShowCount} no-shows</span>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* Action items (was Recommendations) */}
-                {leakageData.recommendations?.length > 0 && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">Action Items</CardTitle>
-                      <CardDescription>Things you can do to plug these leaks further</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        {leakageData.recommendations.map((rec: string, i: number) => (
-                          <div key={i} className="flex items-start gap-2 text-sm">
-                            <Target className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                            <span>{rec}</span>
                           </div>
                         ))}
                       </div>
@@ -1796,7 +1743,7 @@ export default function Intelligence() {
                   <Card>
                     <CardHeader>
                       <CardTitle className="text-base">Times With Empty Slots</CardTitle>
-                      <CardDescription>Appointment times below 50% full — sorted by how much extra revenue you could earn</CardDescription>
+                      <CardDescription>Appointment times below 50% full — sorted by the revenue they could bring in</CardDescription>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-2">
@@ -1830,7 +1777,7 @@ export default function Intelligence() {
               </>
             ) : (
               <div className="text-center py-12 text-muted-foreground">
-                <p>Click Refresh to analyze seat utilization</p>
+                <p>Certxa updates this every 6 hours</p>
               </div>
             )}
           </TabsContent>
@@ -1883,7 +1830,7 @@ export default function Intelligence() {
                       <AlertTriangle className="h-5 w-5 text-amber-500" />
                       Tomorrow's Appointments to Watch
                     </CardTitle>
-                    <CardDescription>These clients are more likely to miss their appointment — consider sending a reminder</CardDescription>
+                    <CardDescription>{remindersOn ? "These clients miss appointments more often — Certxa sends each one their appointment reminder" : "These clients miss appointments more often — Certxa is watching these appointments"}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     {noShowData.risks?.length > 0 ? (
@@ -1955,7 +1902,7 @@ export default function Intelligence() {
               </>
             ) : (
               <div className="text-center py-12 text-muted-foreground">
-                <p>Click Refresh to analyze no-show risks</p>
+                <p>Certxa updates this every 6 hours</p>
               </div>
             )}
           </TabsContent>
@@ -2099,20 +2046,20 @@ export default function Intelligence() {
                       </div>
                       <div>
                         <p className="font-semibold text-sm">
-                          {autoEngageEnabled ? "Re-engagement campaign is running" : "Re-engagement revenue opportunity"}
+                          {autoEngageEnabled ? "Certxa is winning back lapsed clients" : "Revenue from lapsed clients"}
                         </p>
                         <p className="text-sm text-muted-foreground mt-1">
                           {autoEngageEnabled ? (
                             <>
-                              The Auto Client Outreach campaign is running for clients who may not return, targeting{" "}
+                              Certxa is texting clients who may not return, working to bring back{" "}
                               <span className="font-bold text-emerald-600">${forecastData.recoveryAddon.toLocaleString()}/month</span>{" "}
-                              in additional revenue by bringing back lapsed clients.
+                              in revenue from lapsed clients.
                             </>
                           ) : (
                             <>
-                              Running a re-engagement campaign for clients who may not return could add{" "}
+                              Clients who may not return are worth about{" "}
                               <span className="font-bold text-emerald-600">${forecastData.recoveryAddon.toLocaleString()}/month</span>{" "}
-                              by winning back roughly 40% of them.
+                              if roughly 40% of them come back.
                             </>
                           )}
                         </p>
@@ -2123,7 +2070,7 @@ export default function Intelligence() {
                           onClick={() => setActiveTab("clients")}
                         >
                           <Users className="h-3.5 w-3.5" />
-                          View Clients Who Need Attention
+                          View These Clients
                         </Button>
                       </div>
                     </CardContent>
@@ -2174,7 +2121,7 @@ export default function Intelligence() {
               </>
             ) : (
               <div className="text-center py-12 text-muted-foreground">
-                <p>Click Refresh to compute revenue forecast</p>
+                <p>Certxa updates this every 6 hours</p>
               </div>
             )}
           </TabsContent>
@@ -2209,8 +2156,8 @@ export default function Intelligence() {
                   const highNoShow = staffPerfData.filter((m: any) => m.noShowRate > 15);
                   const insights: { icon: React.ReactNode; color: string; text: string }[] = [];
                   if (topEarner) insights.push({ icon: <Trophy className="h-4 w-4 text-amber-500" />, color: "bg-amber-50 border-amber-200", text: `${topEarner.staffName} is your top earner — $${topEarner.totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })} in 90 days.` });
-                  if (lowRebook.length > 0) insights.push({ icon: <AlertCircle className="h-4 w-4 text-orange-500" />, color: "bg-orange-50 border-orange-200", text: `${lowRebook.map((m: any) => m.staffName.split(" ")[0]).join(", ")} ${lowRebook.length === 1 ? "has" : "have"} a rebooking rate below 30% — consider a coaching conversation.` });
-                  if (highNoShow.length > 0) insights.push({ icon: <AlertCircle className="h-4 w-4 text-red-500" />, color: "bg-red-50 border-red-200", text: `${highNoShow.map((m: any) => m.staffName.split(" ")[0]).join(", ")} ${highNoShow.length === 1 ? "has" : "have"} above-average no-show rates. Consider requiring deposits for their bookings.` });
+                  if (lowRebook.length > 0) insights.push({ icon: <AlertCircle className="h-4 w-4 text-orange-500" />, color: "bg-orange-50 border-orange-200", text: `${lowRebook.map((m: any) => m.staffName.split(" ")[0]).join(", ")} ${lowRebook.length === 1 ? "has" : "have"} a rebooking rate below 30% — Certxa sends their clients booking nudges when they're due.` });
+                  if (highNoShow.length > 0) insights.push({ icon: <AlertCircle className="h-4 w-4 text-red-500" />, color: "bg-red-50 border-red-200", text: `${highNoShow.map((m: any) => m.staffName.split(" ")[0]).join(", ")} ${highNoShow.length === 1 ? "has" : "have"} above-average no-show rates — Certxa texts those clients after a missed visit to rebook.` });
                   if (insights.length === 0) return null;
                   return (
                     <Card>
@@ -2585,7 +2532,7 @@ export default function Intelligence() {
                   How Automated Campaigns Work
                 </CardTitle>
                 <CardDescription>
-                  What Certxa sends automatically when Auto Client Outreach is on
+                  What Certxa sends to your clients automatically
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -2634,7 +2581,7 @@ export default function Intelligence() {
                   <Activity className="h-4 w-4 text-primary" />
                   Recent SMS Activity
                 </CardTitle>
-                <CardDescription>Last 10 automated and manual messages sent by the system</CardDescription>
+                <CardDescription>The last 10 texts Certxa sent to your clients</CardDescription>
               </CardHeader>
               <CardContent>
                 {dashLoading ? (
@@ -2681,8 +2628,8 @@ export default function Intelligence() {
                     <p className="text-sm font-medium text-muted-foreground">No messages sent yet</p>
                     <p className="text-xs text-muted-foreground max-w-xs">
                       {autoEngageEnabled
-                        ? "The system will start sending automated messages as clients meet the criteria above. Check back after the next engine run."
-                        : "Turn on Autonomous Mode to let the system send win-back, nudge, and recovery messages automatically."}
+                        ? "Certxa sends these texts automatically as clients meet the rules above. They'll show here."
+                        : "Automatic texts are paused for this salon."}
                     </p>
                   </div>
                 )}

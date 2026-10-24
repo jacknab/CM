@@ -272,7 +272,7 @@ export async function sendWeeklyDigest(storeId: number): Promise<{ sent: boolean
 
       <!-- Action items -->
       <tr><td style="background:#fff;padding:24px 32px 0;">
-        <p style="margin:0 0 16px;font-size:13px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.8px;">This week's priorities</p>
+        <p style="margin:0 0 16px;font-size:13px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.8px;">What Certxa is handling for you</p>
         <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:12px;overflow:hidden;border:1px solid #f3f4f6;">
           ${noShowCount > 0 ? `
           <tr>
@@ -281,7 +281,7 @@ export async function sendWeeklyDigest(storeId: number): Promise<{ sent: boolean
                 <td style="font-size:20px;width:32px;">⚠️</td>
                 <td style="padding-left:12px;">
                   <p style="margin:0;font-size:14px;font-weight:700;color:#991b1b;">${noShowCount} high-risk appointment${noShowCount > 1 ? "s" : ""} next 7 days</p>
-                  <p style="margin:2px 0 0;font-size:12px;color:#ef4444;">Send confirmations to reduce no-shows</p>
+                  <p style="margin:2px 0 0;font-size:12px;color:#ef4444;">Clients who often miss — if they do, Certxa texts them to rebook</p>
                 </td>
                 <td style="text-align:right;white-space:nowrap;">
                   <a href="${appUrl}/intelligence?tab=noshow" style="font-size:12px;color:#dc2626;font-weight:600;text-decoration:none;">Review →</a>
@@ -296,10 +296,10 @@ export async function sendWeeklyDigest(storeId: number): Promise<{ sent: boolean
                 <td style="font-size:20px;width:32px;">💜</td>
                 <td style="padding-left:12px;">
                   <p style="margin:0;font-size:14px;font-weight:700;color:#6b21a8;">${driftingCount} high-value client${driftingCount > 1 ? "s" : ""} drifting — $${driftingLtv.toFixed(0)} at stake</p>
-                  <p style="margin:2px 0 0;font-size:12px;color:#7c3aed;">Top spenders whose visit frequency is slipping</p>
+                  <p style="margin:2px 0 0;font-size:12px;color:#7c3aed;">Top spenders visiting less often — Certxa texts them an invite to book</p>
                 </td>
                 <td style="text-align:right;white-space:nowrap;">
-                  <a href="${appUrl}/intelligence?tab=clients" style="font-size:12px;color:#7c3aed;font-weight:600;text-decoration:none;">Win back →</a>
+                  <a href="${appUrl}/intelligence?tab=clients" style="font-size:12px;color:#7c3aed;font-weight:600;text-decoration:none;">See clients →</a>
                 </td>
               </tr></table>
             </td>
@@ -311,10 +311,10 @@ export async function sendWeeklyDigest(storeId: number): Promise<{ sent: boolean
                 <td style="font-size:20px;width:32px;">🪑</td>
                 <td style="padding-left:12px;">
                   <p style="margin:0;font-size:14px;font-weight:700;color:#92400e;">${deadSeatsCount} chronically empty time slot${deadSeatsCount > 1 ? "s" : ""}${deadSeatsLostRev > 0 ? ` — $${deadSeatsLostRev.toFixed(0)} potential` : ""}</p>
-                  <p style="margin:2px 0 0;font-size:12px;color:#d97706;">Recurring gaps in your schedule with fill potential</p>
+                  <p style="margin:2px 0 0;font-size:12px;color:#d97706;">Recurring gaps — Certxa sends booking nudges to clients who are due</p>
                 </td>
                 <td style="text-align:right;white-space:nowrap;">
-                  <a href="${appUrl}/intelligence?tab=seats" style="font-size:12px;color:#d97706;font-weight:600;text-decoration:none;">Fill seats →</a>
+                  <a href="${appUrl}/intelligence?tab=seats" style="font-size:12px;color:#d97706;font-weight:600;text-decoration:none;">See empty time →</a>
                 </td>
               </tr></table>
             </td>

@@ -212,19 +212,19 @@ export async function computeGrowthScore(
   const insights: string[] = [];
   if (driftingClients > 0)
     insights.push(
-      `${driftingClients} client${driftingClients > 1 ? "s are" : " is"} drifting — a win-back campaign could recover revenue`
+      `${driftingClients} client${driftingClients > 1 ? "s are" : " is"} drifting — Certxa texts them an invite to come back`
     );
   if (noShowRate > 0.15)
     insights.push(
-      `${Math.round(noShowRate * 100)}% no-show rate in the last 90 days — SMS reminders can help`
+      `${Math.round(noShowRate * 100)}% no-show rate in the last 90 days — Certxa texts clients after a missed visit to rebook`
     );
   if (utilPct < 50)
     insights.push(
-      `Seat utilization is only ${Math.round(utilPct)}% — filling dead slots could add significant revenue`
+      `Seat utilization is only ${Math.round(utilPct)}% — Certxa sends booking nudges to clients who are due`
     );
   if (avgRebooking < 40)
     insights.push(
-      `Rebooking rate is ${Math.round(avgRebooking)}% — clients are not being retained after appointments`
+      `Rebooking rate is ${Math.round(avgRebooking)}% — Certxa sends booking nudges when clients are due for their next visit`
     );
   const revGrowthPct =
     prevMonthRevenue > 0
@@ -234,7 +234,7 @@ export async function computeGrowthScore(
     insights.push(`Revenue is down ${Math.abs(revGrowthPct)}% from last month`);
   if (atRiskClients > 0)
     insights.push(
-      `${atRiskClients} high-value client${atRiskClients > 1 ? "s are" : " is"} at churn risk`
+      `${atRiskClients} high-value client${atRiskClients > 1 ? "s are" : " is"} at churn risk — Certxa is texting them invites to book`
     );
 
   return {
