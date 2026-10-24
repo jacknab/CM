@@ -24,8 +24,7 @@ describe("technician pay slip", () => {
     expect(lines).toContain("Total Pay               $3234.09");
     expect(lines).toContain("01-FRI  $302.00  $181.20  $32.80");
     expect(lines).toContain("03-SUN    $0.00    $0.00   $0.00");
-    expect(lines).toContain("Payroll Period");
-    expect(lines[lines.indexOf("Payroll Period") + 1]).toBe("05/01/26 - 05/03/26".padStart(SLIP_WIDTH));
+    expect(lines).toContain("Pay Period   05/01/26 - 05/03/26");
     expect(lines).toContain("Pay Date              05/08/2026");
     // The ticket count sits under Total Sales, not at the bottom.
     expect(lines.indexOf("Tickets                       31")).toBe(lines.indexOf("Total Sales             $4564.60") + 1);

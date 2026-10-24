@@ -47,8 +47,8 @@ export function buildTechSlipText(s: TechSlip, timeZone?: string): string {
   lines.push(`[C]<b>${s.storeName.toUpperCase()}</b>`);
   lines.push(`[L]${"-".repeat(SLIP_WIDTH)}`);
   const dates = s.firstDay === s.lastDay ? usDate(s.firstDay) : `${usDate(s.firstDay).slice(0, 6)}${s.firstDay.slice(2, 4)} - ${usDate(s.lastDay).slice(0, 6)}${s.lastDay.slice(2, 4)}`;
-  const datesLabel = s.period === "pay" ? "Payroll Period" : "Payroll Date";
-  // "Payroll Period" and a date range don't fit one 32-character line: the dates go under it, on the right.
+  const datesLabel = s.period === "pay" ? "Pay Period" : "Payroll Date";
+  // A label and a date range too long for one 32-character line: the dates go under it, on the right.
   if (datesLabel.length + 1 + dates.length <= SLIP_WIDTH) lines.push(`[L]${two(datesLabel, dates)}`);
   else { lines.push(`[L]${datesLabel}`); lines.push(`[L]${dates.padStart(SLIP_WIDTH)}`); }
   if (s.period === "pay" && s.payDate) lines.push(`[L]${two("Pay Date", usDate(s.payDate))}`);
