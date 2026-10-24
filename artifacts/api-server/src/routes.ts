@@ -8880,8 +8880,28 @@ If you have any questions, please contact your administrator.
    * booking, so the online-only limits (minimum notice, how far ahead) do not apply. `firstOnly`: stop at
    * the first open time (enough to know the day has room).
    */
-  async function openTimesForDay(store: any, opts: { serviceId: number; date: string; duration: number; specificStaffId?: number; extraServiceId: number | null; staffView: boolean; firstOnly?: boolean; visitAt?: string }): Promise<{ time: string; staffId: number; staffName: string; extraStaffId?: number; extraStaffName?: string }[]> {
+  /** One service of a visit with several (a Catalog package booked at /nail): its minutes on the calendar. */
+  type VisitLeg = { serviceId: number; minutes: number };
+  type VisitLegSlot = { serviceId: number; staffId: number; staffName: string };
+  /**
+   * `serviceIds` ("12,40,7", in visit order) → the visit's services with their minutes. `duration` is the whole
+   * visit; the first service carries what is not the later services' own time (its add-ons).
+   */
+  async function visitLegsFor(storeId: number, serviceIdsParam: unknown, duration: number): Promise<VisitLeg[] | null> {
+    const ids = String(serviceIdsParam ?? "").split(",").map((x) => Number(x.trim())).filter((n) => Number.isSafeInteger(n) && n > 0);
+    if (ids.length < 2 || ids.length > 8) return null;
+    const rows = await Promise.all(ids.map((id) => storage.getService(id)));
+    if (rows.some((r) => !r || r.storeId !== storeId || (r as any).isActive === false)) return null;
+    const later = rows.slice(1).map((r) => Number(r!.duration) || 30);
+    const first = duration - later.reduce((a, b) => a + b, 0);
+    if (first <= 0) return null;
+    return ids.map((serviceId, i) => ({ serviceId, minutes: i === 0 ? first : later[i - 1] }));
+  }
+
+  async function openTimesForDay(store: any, opts: { serviceId: number; date: string; duration: number; specificStaffId?: number; extraServiceId: number | null; staffView: boolean; firstOnly?: boolean; visitAt?: string; legs?: VisitLeg[] }): Promise<{ time: string; staffId: number; staffName: string; extraStaffId?: number; extraStaffName?: string; legs?: VisitLegSlot[] }[]> {
     const { serviceId, date, duration, specificStaffId, extraServiceId, staffView, firstOnly } = opts;
+    // Three or more services, or a package (/nail): each service goes to a technician in turn (see legsSlot below).
+    const legs = opts.legs && opts.legs.length >= 2 ? opts.legs : null;
     // A second service on the same visit (`extraServiceId`). `duration` is then the whole visit: the first
     // service (with its add-ons) followed by the second. One technician does both when one can; when
     // nobody performs both, the second service goes to another technician straight after the first.
@@ -8929,7 +8949,7 @@ If you have any questions, please contact your administrator.
       // Do NOT fall back to all staff — only show staff assigned to this service
     }
 
-    if (candidateStaff.length === 0) return [];
+    if (candidateStaff.length === 0 && !legs) return [];
 
     // Two services: keep only the technicians who perform both. If nobody does, the visit is split —
     // `secondStaff` are the technicians who can take the second service.
@@ -8966,7 +8986,7 @@ If you have any questions, please contact your administrator.
       ? (() => { const d = new Date(nowUtc); d.setMonth(d.getMonth() + Math.max(1, Number((store as any).advanceBookingMonths ?? 3))); return d; })()
       : null;
 
-    type SlotResult = { time: string; staffId: number; staffName: string; extraStaffId?: number; extraStaffName?: string };
+    type SlotResult = { time: string; staffId: number; staffName: string; extraStaffId?: number; extraStaffName?: string; legs?: VisitLegSlot[] };
     const slots: SlotResult[] = [];
 
     const staffLastAppointment: Map<number, Date> = new Map();
@@ -9032,6 +9052,66 @@ If you have any questions, please contact your administrator.
 
           return !hasConflict;
     };
+
+    // A visit of several services (owner, 2026-10-24): the technician the client chose does every service they
+    // perform (and must be free for it); each service they don't goes to another technician free for it, straight
+    // after the one before — preferring whoever did the service before it, then whoever has waited longest. With
+    // Any, one technician does the whole visit when someone performs every service and is free; otherwise it is
+    // split the same way. Each technician's run of services becomes one ticket (POST /api/nail/bookings).
+    if (legs) {
+      const active = (m: any) => m.status !== "removed" && m.status !== "deactivated";
+      const performers = await Promise.all(legs.map(async (leg) => (await storage.getStaffForService(leg.serviceId)).filter(active)));
+      if (performers.some((list) => list.length === 0)) return [];
+      const chosen = specificStaffId ? performers.flat().find((m) => m.id === specificStaffId) ?? null : null;
+      if (specificStaffId && !chosen) return [];
+      const waited = (m: any) => staffLastAppointment.get(m.id)?.getTime() ?? -Infinity;
+      const byWait = (list: any[]) => [...list].sort((a, b) => waited(a) - waited(b));
+      const allDoers = performers[0].filter((m) => performers.every((list) => list.some((x) => x.id === m.id)));
+      const legsSlot = async (slotStart: Date): Promise<VisitLegSlot[] | null> => {
+        const windows: Array<[Date, Date]> = [];
+        let at = slotStart.getTime();
+        for (const leg of legs) { windows.push([new Date(at), new Date(at + leg.minutes * 60000)]); at += leg.minutes * 60000; }
+        if (!chosen) {
+          for (const m of byWait(allDoers)) {
+            if (await isStaffFree(m, windows[0][0], windows[windows.length - 1][1])) return legs.map((leg) => ({ serviceId: leg.serviceId, staffId: m.id, staffName: m.name }));
+          }
+        }
+        const out: VisitLegSlot[] = [];
+        for (let i = 0; i < legs.length; i++) {
+          const [from, to] = windows[i];
+          let pickedTech: any = null;
+          if (chosen && performers[i].some((m) => m.id === chosen.id)) {
+            if (!(await isStaffFree(chosen, from, to))) return null;
+            pickedTech = chosen;
+          } else {
+            const before = out[i - 1]?.staffId;
+            const order = [...performers[i].filter((m) => m.id === before), ...byWait(performers[i].filter((m) => m.id !== before && m.id !== chosen?.id))];
+            for (const m of order) { if (await isStaffFree(m, from, to)) { pickedTech = m; break; } }
+            if (!pickedTech) return null;
+          }
+          out.push({ serviceId: legs[i].serviceId, staffId: pickedTech.id, staffName: pickedTech.name });
+        }
+        return out;
+      };
+      for (let hour = startHour; hour < endHour; hour++) {
+        for (let min = 0; min < 60; min += slotInterval) {
+          const slotStart = fromZonedTime(new Date(`${date}T${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}:00`), tz);
+          const slotEnd = new Date(slotStart.getTime() + duration * 60000);
+          if (slotStart < earliestBookableUtc) continue;
+          if (latestBookableUtc && slotStart > latestBookableUtc) continue;
+          if (slotEnd > businessEndUtc) continue;
+          const assigned = await legsSlot(slotStart);
+          if (!assigned) continue;
+          const other = assigned.find((l) => l.staffId !== assigned[0].staffId);
+          slots.push({
+            time: slotStart.toISOString(), staffId: assigned[0].staffId, staffName: assigned[0].staffName,
+            ...(other ? { extraStaffId: other.staffId, extraStaffName: other.staffName } : {}), legs: assigned,
+          });
+          if (firstOnly) return slots;
+        }
+      }
+      return slots;
+    }
 
     for (let hour = startHour; hour < endHour; hour++) {
       for (let min = 0; min < 60; min += slotInterval) {
@@ -9108,8 +9188,15 @@ If you have any questions, please contact your administrator.
         return res.status(400).json({ message: "serviceId, date, and duration are required" });
       }
       const extraServiceId = req.query.extraServiceId ? Number(req.query.extraServiceId) : null;
+      // ?serviceIds=a,b,c: a visit of several services, booked by the salon's staff at /nail (a package).
+      let legs: VisitLeg[] | undefined;
+      if (req.query.serviceIds !== undefined) {
+        if (!staffView) return res.status(400).json({ message: "Book these services one at a time." });
+        legs = (await visitLegsFor(store.id, req.query.serviceIds, duration)) ?? undefined;
+        if (!legs) return res.status(400).json({ message: "One of these services is no longer in the catalog." });
+      }
       // ?visitAt=client: open times for a house call (its travel time must be free too).
-      return res.json(await openTimesForDay(store, { serviceId, date, duration, specificStaffId, extraServiceId, staffView, visitAt: String(req.query.visitAt ?? "") }));
+      return res.json(await openTimesForDay(store, { serviceId, date, duration, specificStaffId, extraServiceId, staffView, visitAt: String(req.query.visitAt ?? ""), legs }));
     } catch (error) {
       console.error("Public availability error:", error);
       return res.status(500).json({ message: "Internal server error" });
@@ -18980,6 +19067,17 @@ or
       if (!Number.isSafeInteger(serviceId) || serviceId <= 0) return res.status(400).json({ message: "Invalid service" });
       const active = (m: any) => m.storeId === storeId && m.status !== "removed" && m.status !== "deactivated" && m.showOnCalendar !== false;
       let techs = (await storage.getStaffForService(serviceId)).filter(active);
+      // A visit of several services (a package): everyone who does at least one of them; whoever does every one
+      // first. Services the chosen technician doesn't do go to someone else straight after.
+      if (req.query.serviceIds !== undefined) {
+        const ids = String(req.query.serviceIds).split(",").map(Number).filter((n) => Number.isSafeInteger(n) && n > 0).slice(0, 8);
+        const lists = await Promise.all(ids.map(async (id) => (await storage.getStaffForService(id)).filter(active)));
+        const seen = new Map<number, any>();
+        for (const list of lists) for (const m of list) seen.set(m.id, m);
+        const doesAll = (m: any) => lists.every((list) => list.some((x) => x.id === m.id));
+        techs = [...seen.values()].sort((a, b) => Number(doesAll(b)) - Number(doesAll(a)));
+        return res.json(techs.map((m: any) => ({ id: m.id, name: m.name, color: m.color ?? null })));
+      }
       if (extraServiceId) {
         const extra = (await storage.getStaffForService(extraServiceId)).filter(active);
         const both = techs.filter((m) => extra.some((x) => x.id === m.id));
@@ -19002,14 +19100,18 @@ or
       const q = z.object({
         serviceId: z.coerce.number().int().positive(),
         extraServiceId: z.coerce.number().int().positive().optional(),
+        serviceIds: z.string().max(200).optional(),
         staffId: z.coerce.number().int().positive().optional(),
-        duration: z.coerce.number().int().positive().max(MAX_VISIT_MINUTES * 2),
+        duration: z.coerce.number().int().positive().max(720),
         from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         limit: z.coerce.number().int().min(1).max(31).default(15),
       }).safeParse(req.query);
       if (!q.success) return res.status(400).json({ message: "Invalid request" });
       const store: any = await storage.getStore(storeId);
       if (!store) return res.status(404).json({ message: "Store not found" });
+      if (!q.data.serviceIds && q.data.duration > MAX_VISIT_MINUTES * 2) return res.status(400).json({ message: "Invalid request" });
+      const legs = q.data.serviceIds ? await visitLegsFor(storeId, q.data.serviceIds, q.data.duration) : undefined;
+      if (legs === null) return res.status(400).json({ message: "One of these services is no longer in the catalog." });
       const tz = store.timezone || "UTC";
       const today = formatInTimeZone(new Date(), tz, "yyyy-MM-dd");
       const start = q.data.from < today ? today : q.data.from;
@@ -19019,7 +19121,7 @@ or
       while (day <= lastDay && open.length < q.data.limit) {
         const times = await openTimesForDay(store, {
           serviceId: q.data.serviceId, date: day, duration: q.data.duration, specificStaffId: q.data.staffId,
-          extraServiceId: q.data.extraServiceId ?? null, staffView: true, firstOnly: true,
+          extraServiceId: q.data.extraServiceId ?? null, staffView: true, firstOnly: true, legs,
         });
         if (times.length > 0) open.push(day);
         const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + 1); day = d.toISOString().slice(0, 10);
@@ -19731,6 +19833,72 @@ or
     }
   });
 
+  /**
+   * A package booked at /nail (owner, 2026-10-24). The visit is the package's services in order (then any booked
+   * with it), back to back from the chosen time, each with the technician its open time named. Each technician's
+   * run of services is one ticket: its first service is the ticket's own, the rest are service lines on it. The
+   * first ticket also has the package's add-ons and its price line, and every ticket is linked to the visit
+   * (ticket_group_id) so checkout takes them together, the same as a check-in visit split between technicians.
+   */
+  async function bookNailPackageVisit(storeId: number, store: any, client: any, d: {
+    packageId: number; serviceId: number; serviceIds?: number[]; staffIds?: number[]; addonIds?: number[]; staffId: number; date: string; notes?: string | null;
+  }): Promise<{ ok: true; firstId: number; tickets: { appointmentId: number; staffId: number; staffName: string; serviceNames: string[] }[] } | { ok: false; status: number; message: string }> {
+    let pkg: Awaited<ReturnType<typeof resolvePackageForBooking>>;
+    try { pkg = await resolvePackageForBooking(d.packageId, storeId); }
+    catch { return { ok: false, status: 400, message: "That package is no longer in the catalog." }; }
+    const extras = (d.serviceIds ?? []).filter((id) => !pkg.serviceIds.includes(id));
+    const ids = [...pkg.serviceIds, ...extras];
+    if (ids.length > 8) return { ok: false, status: 400, message: "A booking can have up to 8 services." };
+    const staffIds = d.staffIds ?? [];
+    if (staffIds.length !== ids.length) return { ok: false, status: 400, message: "Pick the time again: the technicians for this visit changed." };
+    const services = await Promise.all(ids.map((id) => storage.getService(id)));
+    if (services.some((x) => !x || x.storeId !== storeId || (x as any).isActive === false)) return { ok: false, status: 400, message: "One of the package's services is no longer in the catalog." };
+    const members = await Promise.all(staffIds.map((id) => storage.getStaffMember(id)));
+    for (let i = 0; i < ids.length; i++) {
+      const m: any = members[i];
+      if (!m || m.storeId !== storeId || m.status === "removed" || m.status === "deactivated") return { ok: false, status: 400, message: "One of the technicians is no longer available. Pick the time again." };
+      if (!(await storage.getStaffServices(m.id)).some((x) => x.serviceId === ids[i])) return { ok: false, status: 400, message: `${m.name} doesn't do ${services[i]!.name}. Pick the time again.` };
+    }
+    const addonIds = [...new Set([...pkg.addonIds, ...(d.addonIds ?? [])])];
+    const addonRows = (await Promise.all(addonIds.map((id) => storage.getAddon(id)))).filter((a): a is NonNullable<typeof a> => !!a && (a as any).storeId === storeId);
+    const addonMinutes = addonRows.reduce((sum, a) => sum + (Number(a.duration) || 0), 0);
+    // Runs of services done by one technician, in visit order.
+    const runs: { staffId: number; staffName: string; idx: number[] }[] = [];
+    staffIds.forEach((staffId, i) => {
+      const last = runs[runs.length - 1];
+      if (last && last.staffId === staffId) last.idx.push(i);
+      else runs.push({ staffId, staffName: String((members[i] as any).name ?? ""), idx: [i] });
+    });
+    const difference = Math.round((pkg.price - pkg.listPrice) * 100) / 100;
+    const made: { appointmentId: number; staffId: number; staffName: string; serviceNames: string[] }[] = [];
+    const undo = async () => { for (const t of made) await storage.deleteAppointment(t.appointmentId).catch(() => {}); };
+    let at = new Date(d.date).getTime();
+    for (let r = 0; r < runs.length; r++) {
+      const run = runs[r];
+      const lines: any[] = [];
+      for (const i of run.idx.slice(1)) {
+        const line = await nailTickets.serviceLine(storeId, ids[i]);
+        if (!line) { await undo(); return { ok: false, status: 400, message: "One of the package's services is no longer in the catalog." }; }
+        lines.push(line);
+      }
+      if (r === 0 && difference !== 0) lines.push({ label: `${pkg.name} package`.slice(0, 60), price: difference, packageId: pkg.packageId });
+      const minutes = run.idx.reduce((sum, i) => sum + (Number(services[i]!.duration) || 30), 0) + (r === 0 ? addonMinutes : 0);
+      const result = await atomicCreateBooking({
+        storeId, timezone: store?.timezone ?? "UTC", startTime: new Date(at), durationMinutes: minutes, staffId: run.staffId, serviceId: ids[run.idx[0]],
+        customerId: client.id, notes: d.notes ?? null, status: "pending", resourceId: null, packageId: r === 0 ? pkg.packageId : null,
+      });
+      if (!result.ok) { await undo(); return { ok: false, status: 409, message: "That time was just taken. Pick another time." }; }
+      made.push({ appointmentId: result.data.id, staffId: run.staffId, staffName: run.staffName, serviceNames: run.idx.map((i) => services[i]!.name) });
+      if (lines.length) await pool.query(`UPDATE appointments SET custom_lines = $1::jsonb WHERE id = $2 AND store_id = $3`, [JSON.stringify(lines), result.data.id, storeId]);
+      if (r === 0 && addonRows.length) await storage.setAppointmentAddons(result.data.id, addonRows.map((a) => a.id));
+      at += minutes * 60_000;
+    }
+    if (made.length > 1) {
+      await pool.query(`UPDATE appointments SET ticket_group_id = $1 WHERE id = ANY($2::int[]) AND store_id = $3`, [made[0].appointmentId, made.map((t) => t.appointmentId), storeId]);
+    }
+    return { ok: true, firstId: made[0].appointmentId, tickets: made };
+  }
+
   // POST /api/nail/bookings — a future booking made at the /nail desk, on the same screen as a ticket. One
   // appointment per service, back to back; the second stays with the first technician when they perform it and
   // are free, otherwise goes to the technician the open-times list named (or anyone free who performs it). Not a
@@ -19749,12 +19917,28 @@ or
         extraStaffId: z.number().int().positive().nullable().optional(),
         date: z.string().datetime(),
         notes: z.string().max(500).nullable().optional(),
+        // A Catalog package (owner, 2026-10-24): its services in order, then any booked with it, each with the
+        // technician the open time named (`staffIds`, one per service).
+        packageId: z.number().int().positive().nullable().optional(),
+        serviceIds: z.array(z.number().int().positive()).min(1).max(8).optional(),
+        staffIds: z.array(z.number().int().positive()).min(1).max(8).optional(),
       }).safeParse(req.body);
       if (!body.success) return res.status(400).json({ message: "Invalid booking" });
       const d = body.data;
       const store: any = await storage.getStore(storeId);
       const client = await storage.getCustomer(d.clientId);
       if (!client || (client as any).storeId !== storeId) return res.status(404).json({ message: "Client not found" });
+      if (d.packageId) {
+        const made = await bookNailPackageVisit(storeId, store, client, d as typeof d & { packageId: number });
+        if (!made.ok) return res.status(made.status).json({ message: made.message });
+        const full = await storage.getAppointment(made.firstId);
+        if (full) {
+          sendBookingConfirmation(full).catch(console.error);
+          sendBookingConfirmationEmail(full).catch(console.error);
+        }
+        broadcastSyncEvent({ type: "booking_created", storeId, appointmentId: made.firstId, source: "nail" } as any);
+        return res.status(201).json({ appointmentId: made.firstId, date: d.date, staffId: d.staffId, tickets: made.tickets });
+      }
       const service = await storage.getService(d.serviceId);
       if (!service || service.storeId !== storeId) return res.status(400).json({ message: "That service is no longer in the catalog." });
       const extra = d.extraServiceId ? await storage.getService(d.extraServiceId) : null;

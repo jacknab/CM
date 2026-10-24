@@ -85,7 +85,7 @@ import { TurnEarnedPopup } from "./TurnEarnedPopup";
 import { ChangeManagerPinSheet } from "./ChangeManagerPinSheet";
 import { TurnRotationSheet } from "./TurnRotationSheet";
 import { ServiceTimesSheet } from "./ServiceTimesSheet";
-import { BookingPanel, type BookingSlot } from "./BookingPanel";
+import { BookingPanel, slotStaffNames, type BookingSlot } from "./BookingPanel";
 import { GridEditor } from "./GridEditor";
 import { RegisterPicker } from "./RegisterPicker";
 import { PairCustomerScreenDialog, StationsFullBanner } from "@/components/pos/PairCustomerScreen";
@@ -944,8 +944,23 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const bookVisit = useMutation({
     mutationFn: async () => {
       if (!client || !service || !booking?.slot) throw new Error("Pick a time first");
-      if (extraServices.length > 1) throw new Error("A booking can have up to 2 services.");
-      if (pkg) throw new Error("A package can't be booked from here. Choose its services one by one.");
+      if (!pkg && extraServices.length > 1) throw new Error("A booking can have up to 2 services.");
+      // A package: its services (and any added with it) go to the technicians the open time named, one each;
+      // the server makes a ticket per technician, linked to the visit. It needs a connection.
+      if (pkg) {
+        const slot = booking.slot;
+        const ids = [service.id, ...extraServices.map((x) => x.id)];
+        if (!slot.legs || slot.legs.length !== ids.length) throw new Error("Pick the time again.");
+        if (syncEngine.isOffline() || isLocalId(client.id)) throw new Error("Booking a package needs a connection.");
+        const res = await fetch("/api/nail/bookings", {
+          method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-Idempotency-Key": bookingKey.current },
+          body: JSON.stringify({ clientId: client.id, serviceId: service.id, packageId: pkg.id, serviceIds: ids, staffIds: slot.legs.map((l) => l.staffId),
+            addonIds: addonIds.filter((id) => !pkg.addonIds.includes(id)), staffId: slot.staffId, date: slot.time }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.message || "Could not save the booking");
+        return data;
+      }
       const body = { clientId: client.id, serviceId: service.id, extraServiceId: extraServices[0]?.id ?? null, addonIds,
         staffId: booking.slot.staffId, extraStaffId: booking.slot.extraStaffId ?? null, date: booking.slot.time };
       // No connection (or a client made offline): kept on this tablet and sent when the connection is back.
@@ -980,7 +995,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   /** "Sat, Oct 18 · 10:30 AM · Amy" (and the second technician, when the visit is split). */
   const bookingLabel = (slot: BookingSlot) => {
     const when = new Date(slot.time).toLocaleString("en-US", { timeZone: timezone, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-    return `${when} · ${slot.staffName}${slot.extraStaffName && slot.extraStaffName !== slot.staffName ? ` then ${slot.extraStaffName}` : ""}`;
+    return `${when} · ${slotStaffNames(slot).replace(/, then /g, " then ")}`;
   };
 
   const create = useMutation({
@@ -1689,7 +1704,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
               onSelect={booking ? undefined : (l) => setSplitKey((k) => (k === l.key || !splittable(l) ? null : l.key))}
               onClear={clearDraft}
               onSubmit={!booking ? submit : booking.step === "services"
-                ? () => { if (extraServices.length > 1) { say("A booking can have up to 2 services"); return; } setBooking({ step: "time", slot: null }); }
+                ? () => { if (!pkg && extraServices.length > 1) { say("A booking can have up to 2 services"); return; } setBooking({ step: "time", slot: null }); }
                 : () => bookVisit.mutate()}
             />
             <section className="work-area">
@@ -1699,6 +1714,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
                 {booking?.step === "time" && service ? (
                   <BookingPanel
                     storeId={storeId} slug={bookingSlug} timezone={timezone} serviceId={service.id} extraServiceId={extraServices[0]?.id ?? null}
+                    serviceIds={pkg ? [service.id, ...extraServices.map((x) => x.id)] : null}
                     duration={draft.duration}
                     slot={booking.slot} onSlot={(slot) => setBooking((b) => (b ? { ...b, slot } : b))}
                     onServices={() => setBooking({ step: "services", slot: null })}

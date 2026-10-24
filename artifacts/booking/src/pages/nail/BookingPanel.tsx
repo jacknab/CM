@@ -5,8 +5,15 @@ import { loadOfflineBookingData } from "./nailApi";
 import { POS_GRID_SLOTS } from "@shared/posGrid";
 import { bookingTechs, openDaysOffline, openTimesOffline } from "./offlineBooking";
 
-/** An open time: who takes it, and (two services nobody does both of) who takes the second service. */
-export interface BookingSlot { time: string; staffId: number; staffName: string; extraStaffId?: number; extraStaffName?: string }
+/** An open time: who takes it, and (two services nobody does both of) who takes the second service. A package
+ *  (several services) also names who does each service, in visit order (`legs`). */
+export interface BookingSlot { time: string; staffId: number; staffName: string; extraStaffId?: number; extraStaffName?: string; legs?: { serviceId: number; staffId: number; staffName: string }[] }
+
+/** "Amy" / "Amy, then Lan" — who does the visit, in order. */
+export function slotStaffNames(slot: BookingSlot): string {
+  const names = slot.legs ? slot.legs.map((l) => l.staffName) : [slot.staffName, ...(slot.extraStaffName ? [slot.extraStaffName] : [])];
+  return names.filter((n, i) => n && n !== names[i - 1]).join(", then ");
+}
 
 const KEYS = POS_GRID_SLOTS; // the same grid as the service keys (2 × 6)
 const DAYS_PER_PAGE = KEYS - 3; // with the back key, Earlier and Later
@@ -44,6 +51,8 @@ export function BookingPanel(p: {
   timezone: string;
   serviceId: number;
   extraServiceId: number | null;
+  /** A package: every service of the visit in order (the first is `serviceId`). Needs a connection. */
+  serviceIds?: number[] | null;
   /** The whole visit in minutes: every service and add-on. */
   duration: number;
   slot: BookingSlot | null;
@@ -74,6 +83,7 @@ export function BookingPanel(p: {
   }, [p.storeId, p.timezone, p.extraServiceId]);
   const fromServerOr = async <T,>(url: string, fallbackMsg: string, onDevice: (d: NonNullable<Awaited<ReturnType<typeof loadOfflineBookingData>>>) => T): Promise<T> => {
     const local = async () => {
+      if (p.serviceIds) throw new Error("Booking a package needs a connection.");
       const d = await offlineData();
       if (!d) throw new Error("No connection, and this tablet does not have the salon's booking data yet.");
       setOffline(true);
@@ -86,9 +96,10 @@ export function BookingPanel(p: {
 
   const visit = useMemo(() => {
     const q = new URLSearchParams({ serviceId: String(p.serviceId), duration: String(Math.max(5, p.duration)) });
-    if (p.extraServiceId) q.set("extraServiceId", String(p.extraServiceId));
+    if (p.serviceIds && p.serviceIds.length > 1) q.set("serviceIds", p.serviceIds.join(","));
+    else if (p.extraServiceId) q.set("extraServiceId", String(p.extraServiceId));
     return q;
-  }, [p.serviceId, p.extraServiceId, p.duration]);
+  }, [p.serviceId, p.extraServiceId, p.serviceIds?.join(","), p.duration]);
 
   // The technicians who do this service (both services, when anyone does both).
   useEffect(() => {
@@ -186,7 +197,8 @@ export function BookingPanel(p: {
       nav(`${l.top} ${l.sub}`.trim(), () => setView("day"), "nail-book-day-back"),
       ...page.map((s) => key({
         id: `nail-book-time-${s.time}`, top: fmtTime(s.time),
-        sub: staffId ? undefined : s.extraStaffName && s.extraStaffName !== s.staffName ? `${s.staffName}, then ${s.extraStaffName}` : s.staffName,
+        // Any: who takes it. A chosen technician: only when part of the visit goes to someone else.
+        sub: staffId && slotStaffNames(s) === s.staffName ? undefined : slotStaffNames(s),
         selected: p.slot?.time === s.time && p.slot?.staffId === s.staffId, onClick: () => p.onSlot(s),
       })),
     ];
