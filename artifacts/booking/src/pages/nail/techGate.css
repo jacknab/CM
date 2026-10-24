@@ -57,3 +57,29 @@
 .ng-gate-wait li[data-status="available"]:first-child span { color: #0b0e13; background: #f2f4f7; }
 .ng-gate-wait li:not([data-status="available"]) strong { color: #9aa3b0; }
 .ng-gate-empty { margin: auto 0; padding: 24px 0; text-align: center; font-size: 20px; color: #8b94a3; }
+
+/* ── Background image (owner, 2026-10-24): a soft blush bokeh photo behind the lock screen. The screen was dark with
+      white text; on the light image it is dark text on frosted white cards so everything stays readable. ── */
+.ng-gate { color: #2e1f25; background: #fbe9e6 url("/images/nail/lock-bg.jpg") center / cover no-repeat; }
+.ng-gate-head { border-bottom-color: rgba(120, 60, 72, .12); }
+.ng-gate-clock { color: #3a2830; }
+.ng-gate-card { background: rgba(255, 255, 255, .55); border-color: rgba(255, 255, 255, .75);
+  box-shadow: 0 24px 60px rgba(150, 80, 92, .16), inset 0 1px 0 rgba(255, 255, 255, .8);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.ng-gate-label { color: #8a6a72; }
+.ng-gate-slot { background: rgba(255, 255, 255, .72); border-color: rgba(120, 60, 72, .16); }
+.ng-gate-slot[data-filled="true"] { border-color: rgba(120, 60, 72, .55); }
+.ng-gate-msg { color: #b3263a; }
+.ng-gate-key { background: rgba(255, 255, 255, .72); border-color: rgba(120, 60, 72, .12); }
+.ng-gate-key:active { background: #fff; }
+.ng-gate-key.ghost { background: transparent; border-color: transparent; color: #8a6a72; }
+.ng-gate-enter { color: #fff; background: #3a2830; }
+.ng-gate-turn-btn { color: #3a2830; background: rgba(255, 255, 255, .6); border-color: rgba(120, 60, 72, .16); }
+.ng-gate-turn-btn:active { background: #fff; }
+.ng-gate-wait li { border-top-color: rgba(120, 60, 72, .1); }
+.ng-gate-wait li span { color: #5a4048; background: rgba(255, 255, 255, .72); }
+.ng-gate-wait li em { color: #8a6a72; }
+.ng-gate-wait li[data-status="available"] em { color: #1d7f54; }
+.ng-gate-wait li[data-status="available"]:first-child span { color: #fff; background: #3a2830; }
+.ng-gate-wait li:not([data-status="available"]) strong { color: #9a8288; }
+.ng-gate-empty { color: #8a6a72; }
