@@ -1,5 +1,6 @@
 import { Helmet } from '@dr.pogodin/react-helmet';
 import BuyButton from '@/components/BuyButton';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { motion } from 'motion/react';
 import { ArrowRight, Check, Zap } from 'lucide-react';
@@ -19,11 +20,27 @@ const stagger = {
   visible: { transition: { staggerChildren: 0.1 } },
 };
 
-const mainProductImages = [
-  '/_site/images/products/certxa-station.webp', // Certxa Station — SalonOS scheduling terminal (owner, 2026-10-24)
-  '/airo-assets/images/products/tablet-stand',
-  '/airo-assets/images/products/card-reader',
-];
+// Each main product's picture, by its id in content/pages/products.json.
+const mainProductImages: Record<string, string> = {
+  'prod-station': '/_site/images/products/certxa-station.webp', // Certxa Station — SalonOS scheduling terminal (owner, 2026-10-24)
+  'prod-kiosk': '/airo-assets/images/products/tablet-stand',
+  'prod-reader': '/airo-assets/images/products/card-reader',
+};
+// The Certxa Station, large, at the top of the page (owner, 2026-10-24: the main POS front and centre).
+const HERO_IMAGE = '/_site/images/products/certxa-station-hero.webp';
+
+/**
+ * The Certxa Kiosk is shown only to nail salons (owner, 2026-10-24): signing up as a nail salon sets the
+ * certxa_nail cookie (api-server routes.ts, /api/onboarding). Read after the page loads, so the server-rendered
+ * page never has it.
+ */
+function useNailSalonVisitor(): boolean {
+  const [nail, setNail] = useState(false);
+  useEffect(() => {
+    try { setNail(/(?:^|;\s*)certxa_nail=1(?:;|$)/.test(document.cookie)); } catch { /* no cookies: not shown */ }
+  }, []);
+  return nail;
+}
 
 const accessoryImages = [
   '/_site/images/products/certxa-check-in-tablet.webp', // customer-facing check-in tablet (owner, 2026-10-24)
@@ -64,7 +81,7 @@ const jsonLd = {
             '@type': 'Product',
             name: 'Certxa Station',
             description: 'All-in-one 15" HD touchscreen POS terminal for salon front desks.',
-            image: `${SITE}${mainProductImages[0]}`,
+            image: `${SITE}${mainProductImages['prod-station']}`,
             brand: { '@type': 'Brand', name: 'Certxa' },
             offers: { '@type': 'Offer', price: '799', priceCurrency: 'USD', url: PAGE_URL },
           },
@@ -74,22 +91,10 @@ const jsonLd = {
           position: 2,
           item: {
             '@type': 'Product',
-            name: 'Certxa Kiosk',
-            description: 'Self check-in kiosk and customer-facing checkout screen for salons.',
-            image: `${SITE}${mainProductImages[1]}`,
-            brand: { '@type': 'Brand', name: 'Certxa' },
-            offers: { '@type': 'Offer', price: '399', priceCurrency: 'USD', url: PAGE_URL },
-          },
-        },
-        {
-          '@type': 'ListItem',
-          position: 3,
-          item: {
-            '@type': 'Product',
             name: 'Wireless Card Reader',
             // $149 on its own, as the page shows; free with the Professional plan.
             description: 'Stripe-powered wireless card reader. Chip, tap, and swipe. $149 on its own; free with the Professional plan.',
-            image: `${SITE}${mainProductImages[2]}`,
+            image: `${SITE}${mainProductImages['prod-reader']}`,
             brand: { '@type': 'Brand', name: 'Certxa' },
             offers: { '@type': 'Offer', price: '149', priceCurrency: 'USD', url: PAGE_URL },
           },
@@ -100,6 +105,10 @@ const jsonLd = {
 };
 
 export default function ProductsPage() {
+  const nailSalon = useNailSalonVisitor();
+  const station = products.mainProducts.find((p) => p.id === 'prod-station');
+  // Below the hero: the rest of the main hardware (the kiosk only for nail salons).
+  const setup = products.mainProducts.filter((p) => p.id !== 'prod-station' && (p.id !== 'prod-kiosk' || nailSalon));
   return (
     <>
       <Helmet>
@@ -112,7 +121,7 @@ export default function ProductsPage() {
         <meta property="og:title" content="Salon POS Hardware — Certxa | Terminals, Kiosks & Card Readers" />
         <meta
           property="og:description"
-          content="Certxa Station, Certxa Kiosk, and wireless card readers built for nail salons, hair salons, barbershops, spas, and more. Plug-and-play hardware that works with your Certxa account from day one."
+          content="Certxa Station, customer check-in screens, and wireless card readers built for nail salons, hair salons, barbershops, spas, and more. Plug-and-play hardware that works with your Certxa account from day one."
         />
         <meta property="og:image" content={OG_IMAGE} />
         <meta property="og:url" content={PAGE_URL} />
@@ -121,7 +130,7 @@ export default function ProductsPage() {
         <meta name="twitter:title" content="Salon POS Hardware — Certxa | Terminals, Kiosks & Card Readers" />
         <meta
           name="twitter:description"
-          content="Certxa Station, Certxa Kiosk, and wireless card readers built for nail salons, hair salons, barbershops, spas, and more."
+          content="Certxa Station, customer check-in screens, and wireless card readers built for nail salons, hair salons, barbershops, spas, and more."
         />
         <meta name="twitter:image" content={OG_IMAGE} />
         <script type="application/ld+json">
@@ -131,62 +140,77 @@ export default function ProductsPage() {
 
       <main className="pt-16">
 
-        {/* ── HERO ── */}
-        <section className="relative overflow-hidden bg-foreground py-xxl">
-          <img
-            src="/airo-assets/images/pages/products/hero"
-            alt="Certxa salon front desk hardware setup"
-            className="absolute inset-0 w-full h-full object-cover opacity-20"
-            loading="eager"
-            fetchPriority="high"
-            width={1200}
-            height={500}
-          />
-          <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(to right, hsl(var(--foreground) / 0.95), hsl(var(--foreground) / 0.7))' }} />
+        {/* ── HERO: the Certxa Station, front and centre ── */}
+        <section className="relative overflow-hidden bg-background pt-xl pb-xxl" aria-label="Certxa Station">
           <div className="relative max-w-7xl mx-auto px-6 md:px-10">
-            <motion.div
-              variants={stagger}
-              initial="hidden"
-              animate="visible"
-              className="max-w-2xl flex flex-col gap-6"
-            >
-              <motion.span
-                variants={fadeUp}
-                className="text-xs font-semibold tracking-widest text-primary uppercase"
-              >
+            <motion.div variants={stagger} initial="hidden" animate="visible" className="flex flex-col items-center text-center gap-5 max-w-3xl mx-auto">
+              <motion.span variants={fadeUp} className="text-xs font-semibold tracking-widest text-primary uppercase">
                 {products.hero.eyebrow}
               </motion.span>
-              <h1
-                className="text-4xl md:text-5xl font-extrabold leading-tight tracking-tight text-background"
-                style={{ fontFamily: 'var(--font-heading)' }}
-              >
+              <h1 className="text-4xl md:text-6xl font-extrabold leading-tight tracking-tight text-foreground" style={{ fontFamily: 'var(--font-heading)' }}>
                 {products.hero.headline}
               </h1>
-              <motion.p variants={fadeUp} className="text-lg leading-relaxed" style={{ color: 'hsl(var(--background) / 0.75)' }}>
+              <motion.p variants={fadeUp} className="text-lg text-muted-foreground leading-relaxed max-w-2xl">
                 {products.hero.subhead}
               </motion.p>
-              <motion.div variants={fadeUp} className="flex flex-wrap gap-4 pt-2">
-                <Link
-                  to="/contact"
-                  className="inline-flex items-center gap-2 px-6 py-3.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 hover:-translate-y-px transition-all duration-200"
-                >
-                  Talk to sales
-                  <ArrowRight size={16} />
-                </Link>
-                <Link
-                  to="/pricing"
-                  className="inline-flex items-center gap-2 px-6 py-3.5 rounded-lg border font-semibold text-sm hover:-translate-y-px transition-all duration-200"
-                  style={{ borderColor: 'hsl(var(--background) / 0.3)', color: 'hsl(var(--background))' }}
-                >
-                  See pricing
-                </Link>
-              </motion.div>
             </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 32 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7, ease: 'easeOut', delay: 0.15 }}
+              className="mt-10 md:mt-12 max-w-6xl mx-auto"
+            >
+              <img
+                src={HERO_IMAGE}
+                alt="Certxa Station all-in-one salon POS terminal showing the appointment calendar"
+                className="w-full h-auto rounded-3xl"
+                loading="eager"
+                fetchPriority="high"
+                width={1536}
+                height={1024}
+              />
+            </motion.div>
+
+            {station && (
+              <motion.div variants={stagger} initial="hidden" animate="visible" className="mt-6 flex flex-col items-center text-center gap-5 max-w-3xl mx-auto">
+                <motion.div variants={fadeUp}>
+                  <h2 className="text-3xl md:text-4xl font-bold text-foreground" style={{ fontFamily: 'var(--font-heading)' }}>{station.name}</h2>
+                  <p className="mt-2 text-muted-foreground text-lg">{station.tagline}</p>
+                </motion.div>
+                <motion.ul variants={fadeUp} className="flex flex-wrap justify-center gap-x-6 gap-y-2">
+                  {station.highlights.map((h) => (
+                    <li key={h.id} className="flex items-center gap-2 text-sm text-foreground">
+                      <Check size={14} className="text-primary" />
+                      {h.text}
+                    </li>
+                  ))}
+                </motion.ul>
+                <motion.div variants={fadeUp} className="flex flex-col items-center gap-4 pt-2">
+                  <span className="text-4xl font-extrabold text-foreground" style={{ fontFamily: 'var(--font-heading)' }}>{station.price}</span>
+                  <div className="flex flex-wrap justify-center gap-4">
+                    <BuyButton
+                      productName={station.name}
+                      className="inline-flex items-center gap-2 px-7 py-3.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 hover:-translate-y-px transition-all duration-200"
+                    >
+                      {station.cta}
+                      <ArrowRight size={16} />
+                    </BuyButton>
+                    <Link
+                      to="/contact"
+                      className="inline-flex items-center gap-2 px-7 py-3.5 rounded-lg border border-border text-foreground font-semibold text-sm hover:-translate-y-px transition-all duration-200"
+                    >
+                      Talk to sales
+                    </Link>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
           </div>
         </section>
 
         {/* ── MAIN PRODUCTS ── */}
-        <section className="py-xxl bg-background" aria-label="Main hardware products">
+        <section className="py-xxl bg-background border-t border-border" aria-label="Main hardware products">
           <div className="max-w-7xl mx-auto px-6 md:px-10">
             <motion.div
               variants={stagger}
@@ -207,8 +231,8 @@ export default function ProductsPage() {
               </motion.p>
             </motion.div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {products.mainProducts.map((prod, i) => (
+            <div className={`grid grid-cols-1 gap-8 ${setup.length >= 3 ? 'md:grid-cols-3' : setup.length === 2 ? 'md:grid-cols-2 max-w-5xl' : 'max-w-xl'}`}>
+              {setup.map((prod) => (
                 <motion.div
                   key={prod.id}
                   variants={fadeUp}
@@ -227,7 +251,7 @@ export default function ProductsPage() {
                   {/* Product image */}
                   <div className="relative bg-background flex items-center justify-center p-6 min-h-[280px]">
                     <img
-                      src={mainProductImages[i]}
+                      src={mainProductImages[prod.id]}
                       alt={prod.name}
                       className="w-full h-auto object-contain"
                       loading="lazy"

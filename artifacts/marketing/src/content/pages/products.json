@@ -147,7 +147,7 @@
     {
       "id": "faq-1",
       "question": "What hardware does Certxa offer?",
-      "answer": "Certxa offers three main devices — Certxa Station (the full front desk terminal), Certxa Kiosk (the self check-in and customer-facing screen), and the Wireless Card Reader (powered by Stripe). Accessories include a customer facing screen, IP thermal receipt printer, cash drawer, and barcode scanner."
+      "answer": "Certxa offers two main devices — Certxa Station (the full front desk terminal) and the Wireless Card Reader (powered by Stripe). Accessories include a customer facing screen, IP thermal receipt printer, cash drawer, and barcode scanner."
     },
     {
       "id": "faq-2",

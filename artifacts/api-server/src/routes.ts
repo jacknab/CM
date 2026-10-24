@@ -8025,6 +8025,14 @@ If you have any questions, please contact your administrator.
     next();
   };
 
+  /** A nail salon that signs up sees the Certxa Kiosk on the website's Products page (owner, 2026-10-24): a
+   *  plain cookie the marketing page reads (artifacts/marketing/src/pages/products.tsx). Kept for a year. */
+  const markNailSalonVisitor = (res: any, category: unknown) => {
+    if (/nail/i.test(String(category ?? ""))) {
+      res.cookie("certxa_nail", "1", { maxAge: 365 * 86_400_000, path: "/", sameSite: "lax", secure: process.env.NODE_ENV === "production", httpOnly: false });
+    }
+  };
+
   app.post("/api/onboarding", isAuthenticated, onboardingOneAtATime, async (req, res) => {
     try {
       console.log("Onboarding: Starting process for user:", (req.session as any).userId);
@@ -8046,6 +8054,7 @@ If you have any questions, please contact your administrator.
         const website = existingStore?.bookingSlug
           ? await ensureBloomWebsite(existingStore.id, existingStore.name, existingStore.bookingSlug)
           : null;
+        markNailSalonVisitor(res, (existingStore as any)?.category);
         return res.json({ store: existingStore, user: safeUser, website });
       }
 
@@ -8158,6 +8167,7 @@ If you have any questions, please contact your administrator.
         await db.update(users).set({ onboardingCompleted: true }).where(eq(users.id, userId));
         const [updatedUser] = await db.select().from(users).where(eq(users.id, userId));
         const { password: _, ...safeUser } = updatedUser;
+        markNailSalonVisitor(res, (existingStore as any)?.category);
         return res.json({ store: existingStore, user: safeUser, website: recoveryWebsite });
       }
 
@@ -8483,6 +8493,7 @@ If you have any questions, please contact your administrator.
       }
       // ─────────────────────────────────────────────────────────────────────────
 
+      markNailSalonVisitor(res, (store as any)?.category ?? businessType);
       return res.json({ store, user: safeUser, website: bloomWebsite });
     } catch (error: any) {
       console.error("Onboarding error:", error);
