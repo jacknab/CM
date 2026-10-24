@@ -199,6 +199,11 @@ export function ChatConnectionProvider({ children }: { children: ReactNode }) {
             case "chat_assigned":
               refresh("lc-queue", "lc-active", "lc-stats");
               break;
+            // The visitor ended an ongoing chat or their page went away (or came back): the Active list shows it.
+            case "visitor_left":
+            case "visitor_returned":
+              refresh("lc-active");
+              break;
             case "chat_closed":
             case "chat_transferred":
             case "chat_requeued":

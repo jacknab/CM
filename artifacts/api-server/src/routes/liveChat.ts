@@ -905,7 +905,7 @@ liveChatRouter.get("/api/support/live-chat/active", requireSupportAuth, async (r
       query = `
         SELECT c.id, c.visitor_name, c.visitor_email, c.subject, c.started_at, c.accepted_at,
                sa.first_name || ' ' || sa.last_name AS agent_name, c.agent_id,
-               c.department_id, d.name AS department_name, c.page_url
+               c.department_id, d.name AS department_name, c.page_url, c.visitor_left_at
         FROM live_chats c
         LEFT JOIN support_agents sa ON sa.id = c.agent_id
         LEFT JOIN live_chat_departments d ON d.id = c.department_id
@@ -916,7 +916,7 @@ liveChatRouter.get("/api/support/live-chat/active", requireSupportAuth, async (r
       query = `
         SELECT c.id, c.visitor_name, c.visitor_email, c.subject, c.started_at, c.accepted_at,
                sa.first_name || ' ' || sa.last_name AS agent_name, c.agent_id,
-               c.department_id, d.name AS department_name, c.page_url
+               c.department_id, d.name AS department_name, c.page_url, c.visitor_left_at
         FROM live_chats c
         LEFT JOIN support_agents sa ON sa.id = c.agent_id
         LEFT JOIN live_chat_departments d ON d.id = c.department_id
@@ -1304,6 +1304,62 @@ function touchVisitorPresence(chatIds: string[]) {
   ).catch(() => {});
 }
 
+/** How long a visitor's page can be gone before the agent is told they left (a page change reconnects in seconds). */
+const VISITOR_LEFT_GRACE_MS = 25_000;
+
+/**
+ * The visitor has left an ongoing chat (owner, 2026-10-24): they pressed End chat ("ended"), or their page lost its
+ * connection and nothing reconnected ("left"). Recorded once (visitor_left_at), written into the chat for the
+ * record, and every agent is told. For "left", `goneSince` is when the page dropped: if the visitor has been seen
+ * since (on any server process), they didn't leave.
+ */
+async function markVisitorLeft(chatId: string, how: "ended" | "left", goneSince?: Date) {
+  try {
+    const r = await pool.query<{ visitor_left_at: string }>(
+      `UPDATE live_chats SET visitor_left_at = now()
+        WHERE id::text = $1 AND status = 'active' AND visitor_left_at IS NULL
+          AND ($2::timestamptz IS NULL OR visitor_seen_at IS NULL OR visitor_seen_at < $2::timestamptz)
+        RETURNING visitor_left_at`,
+      [chatId, goneSince ?? null],
+    );
+    if (!r.rowCount) return;
+    await persistMessage(chatId, "system", null, "system", how === "ended" ? "The visitor ended the chat" : "The visitor left the chat");
+    broadcastToAgents({ type: "visitor_left", chatId, how, at: r.rows[0].visitor_left_at });
+  } catch (err) {
+    console.error("[live-chat] visitor left:", (err as Error)?.message);
+  }
+}
+
+/** A visitor who had left an ongoing chat is connected again. */
+async function markVisitorBack(chatId: string) {
+  try {
+    const r = await pool.query(
+      `UPDATE live_chats SET visitor_left_at = NULL WHERE id::text = $1 AND status = 'active' AND visitor_left_at IS NOT NULL RETURNING id`,
+      [chatId],
+    );
+    if (!r.rowCount) return;
+    await persistMessage(chatId, "system", null, "system", "The visitor is back");
+    broadcastToAgents({ type: "visitor_returned", chatId });
+  } catch (err) {
+    console.error("[live-chat] visitor back:", (err as Error)?.message);
+  }
+}
+
+/** Ongoing chats whose visitor hasn't been connected for a while (e.g. after a server restart lost the timers). */
+async function markGoneVisitorsLeft() {
+  try {
+    const r = await pool.query<{ id: string }>(
+      `SELECT id::text FROM live_chats
+        WHERE status = 'active' AND visitor_left_at IS NULL
+          AND COALESCE(visitor_seen_at, accepted_at, started_at) < now() - ($1 || ' seconds')::interval`,
+      [String(VISITOR_GONE_SEC)],
+    );
+    for (const chat of r.rows) await markVisitorLeft(chat.id, "left", new Date(Date.now() - VISITOR_GONE_SEC * 1000));
+  } catch (err) {
+    console.error("[live-chat] gone-visitor sweep failed:", (err as Error)?.message);
+  }
+}
+
 /** Takes chats out of the queue whose visitor is no longer connected. */
 async function missChatsWithNoVisitor() {
   try {
@@ -1334,7 +1390,7 @@ function startAgentPresence() {
     touchVisitorPresence(Array.from(visitorSockets.keys()));
   }, PRESENCE_BEAT_MS);
   // After a restart every agent and visitor has to reconnect: wait before judging anyone gone.
-  setTimeout(() => { setInterval(() => { void requeueAbandonedChats().then(missChatsWithNoVisitor); }, SWEEP_MS); }, 90_000);
+  setTimeout(() => { setInterval(() => { void requeueAbandonedChats().then(missChatsWithNoVisitor).then(markGoneVisitorsLeft); }, SWEEP_MS); }, 90_000);
 }
 
 export function setupLiveChatWS(httpServer: Server): void {
@@ -1370,6 +1426,7 @@ export function setupLiveChatWS(httpServer: Server): void {
       if (!chatId) { ws.close(4001, "chatId required"); return; }
       visitorSockets.set(chatId, ws);
       touchVisitorPresence([chatId]);
+      void markVisitorBack(chatId);
 
       pool.query(
         `SELECT c.status, sa.first_name || ' ' || sa.last_name AS agent_name, c.department_id
@@ -1423,12 +1480,21 @@ export function setupLiveChatWS(httpServer: Server): void {
             if (agId) sendToAgent(agId, { type: "visitor_typing_stop", chatId });
           } else if (msg.type === "ping") {
             sendJson(ws, { type: "pong" });
+          } else if (msg.type === "end") {
+            // The visitor pressed End chat in the widget.
+            await markVisitorLeft(chatId, "ended");
           }
         } catch {}
       });
 
       ws.on("close", () => {
+        // A newer socket for the same chat (a reconnect) has taken over: this one closing means nothing.
+        if (visitorSockets.get(chatId) !== ws) return;
         visitorSockets.delete(chatId);
+        const goneSince = new Date();
+        setTimeout(() => {
+          if (!visitorSockets.has(chatId)) void markVisitorLeft(chatId, "left", goneSince);
+        }, VISITOR_LEFT_GRACE_MS);
         setTimeout(async () => {
           if (!visitorSockets.has(chatId)) {
             const r = await pool.query(

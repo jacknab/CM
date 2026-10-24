@@ -348,7 +348,14 @@
 
   function confirmEnd() {
     if (!confirm("End this chat? You'll have a chance to rate your experience.")) return;
-    if (ws) try { ws.close(); } catch (e) {}
+    // Tell the agent the visitor ended the chat (server: liveChat.ts markVisitorLeft), then disconnect.
+    terminal = true;
+    clearTimeout(reconnectT);
+    if (ws) {
+      try { if (ws.readyState === 1) ws.send(JSON.stringify({ type: "end" })); } catch (e) {}
+      var closing = ws;
+      setTimeout(function () { try { closing.close(); } catch (e) {} }, 300);
+    }
     localStorage.removeItem(LS_KEY);
     step = "rating"; render();
   }

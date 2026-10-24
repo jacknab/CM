@@ -493,7 +493,12 @@ export default function ChatWidget({ onClose, showCloseButton = false, className
   };
 
   const handleClose = () => {
-    wsRef.current?.close();
+    // Tell the agent the visitor ended the chat (api-server liveChat.ts markVisitorLeft), then disconnect.
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      try { ws.send(JSON.stringify({ type: "end" })); } catch { /* closing anyway */ }
+      setTimeout(() => ws.close(), 300);
+    } else ws?.close();
     localStorage.removeItem("certxa_chat");
     setStep("rating");
   };

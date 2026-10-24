@@ -15,6 +15,7 @@ import {
   Loader2, CheckCircle2, Radio, Settings2,
   MessageSquare, Inbox, BarChart2, StickyNote,
   Globe, Bell, BellOff, Circle, Lock, Tag, Users, Ticket,
+  LogOut,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -25,6 +26,8 @@ interface QueuedChat {
 }
 interface ActiveChat extends QueuedChat {
   agent_id: number | null; agent_name: string | null; accepted_at: string | null;
+  /** When the visitor ended the chat or their page went away; null while they're still there. */
+  visitor_left_at?: string | null;
 }
 interface ChatMessage {
   id: string; sender_type: "visitor" | "agent" | "system" | "note";
@@ -137,6 +140,11 @@ function ChatRow({ chat, isSelected, isUnread, isLocked, onClick }: {
             {isLocked && (chat as ActiveChat).agent_name && (
               <span className="text-[10px] text-amber-600 inline-block">
                 → {(chat as ActiveChat).agent_name}
+              </span>
+            )}
+            {(chat as ActiveChat).visitor_left_at && (
+              <span className="text-[10px] bg-slate-200 text-slate-600 rounded px-1 py-0.5 inline-block font-semibold" data-testid={`chat-left-${chat.id}`}>
+                Left {new Date((chat as ActiveChat).visitor_left_at!).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
               </span>
             )}
           </div>
@@ -482,6 +490,12 @@ export default function LiveChatPage() {
       }
       case "note_saved":
         setTimeout(() => refetchMsgs(), 200); break;
+      // The chat now says "The visitor ended / left the chat" (or "is back"): show it.
+      case "visitor_left":
+      case "visitor_returned":
+        if (msg.chatId === selectedRef.current) refetchMsgs();
+        if (msg.type === "visitor_left") setVisitorTyping(prev => ({ ...prev, [msg.chatId]: false }));
+        break;
     }
   }), [conn.subscribe, refetchMsgs]);
 
@@ -1024,6 +1038,12 @@ export default function LiveChatPage() {
                         <div className="flex items-center gap-2">
                           <CheckCircle2 className="w-3 h-3 text-emerald-600 flex-shrink-0" />
                           <span className="text-slate-400">Accepted {new Date((currentChat as ActiveChat).accepted_at!).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                        </div>
+                      )}
+                      {(currentChat as ActiveChat).visitor_left_at && (
+                        <div className="flex items-center gap-2" data-testid="chat-visitor-left">
+                          <LogOut className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                          <span className="text-slate-600 font-semibold">Visitor left {new Date((currentChat as ActiveChat).visitor_left_at!).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                         </div>
                       )}
                     </div>
