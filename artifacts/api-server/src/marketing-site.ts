@@ -244,15 +244,20 @@ export function createMarketingSite(): Router {
   // A rebuild of the marketing app is picked up without a server restart: the page template and the renderer are
   // loaded again when dist/client/index.html changes (checked at most every 5 seconds). Serving the old template
   // after a rebuild pointed every page at script files that were gone, and the pages stayed blank.
+  // The version is the template's AND the renderer's change time: the build writes the template first and the
+  // server renderer seconds later, so watching the template alone loaded the OLD renderer and kept it (2026-10-24:
+  // the products page kept rendering image paths from the build before).
   const indexPath = path.join(clientDir, "index.html");
-  let builtAt = String(fs.statSync(indexPath).mtimeMs);
+  const rendererPath = path.join(siteDir, "dist", "render", "entry-server.mjs");
+  const buildVersion = () => `${fs.statSync(indexPath).mtimeMs}-${fs.existsSync(rendererPath) ? fs.statSync(rendererPath).mtimeMs : 0}`;
+  let builtAt = buildVersion();
   let checkedAt = Date.now();
   void loadRenderer(builtAt);
   const refreshBuild = () => {
     if (Date.now() - checkedAt < 5000) return;
     checkedAt = Date.now();
     try {
-      const now = String(fs.statSync(indexPath).mtimeMs);
+      const now = buildVersion();
       if (now === builtAt) return;
       const next = fs.readFileSync(indexPath, "utf-8");
       if (!next.includes("<!--app-head-->") || !next.includes("<!--app-html-->")) return; // mid-build: try again later

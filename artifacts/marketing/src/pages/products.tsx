@@ -20,14 +20,14 @@ const stagger = {
 };
 
 const mainProductImages = [
-  '/airo-assets/images/products/tablet-stand',
+  '/_site/images/products/certxa-station.webp', // Certxa Station — SalonOS scheduling terminal (owner, 2026-10-24)
   '/airo-assets/images/products/tablet-stand',
   '/airo-assets/images/products/card-reader',
 ];
 
 const accessoryImages = [
   '/airo-assets/images/products/customer-screen',
-  '/airo-assets/images/products/thermal-printer',
+  '/_site/images/products/certxa-thermal-printer.webp', // matte black thermal printer (owner, 2026-10-24)
   '/airo-assets/images/products/cash-drawer-new',
   '/airo-assets/images/products/barcode-scanner',
 ];
