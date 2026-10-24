@@ -445,15 +445,15 @@ function CheckFacePDF({
 
       {/* Employee Name — semibold 9pt, window-safe X:0.65", Y:2.13" */}
       <Text style={{ ...abs(0.65, 2.13), fontFamily: "Helvetica-Bold", fontSize: 9, color: "#111827" }}>
-        {payee}
+        {payee.toUpperCase()}
       </Text>
 
       {/* Employee Address — 2-line block */}
       <Text style={{ ...abs(0.65, 2.38), fontFamily: "Helvetica", fontSize: 8, color: "#4b5563" }}>
-        {payeeStreet || " "}
+        {payeeStreet?.toUpperCase() || " "}
       </Text>
       <Text style={{ ...abs(0.65, 2.51), fontFamily: "Helvetica", fontSize: 8, color: "#4b5563" }}>
-        {payeeCityStateZip || " "}
+        {payeeCityStateZip?.toUpperCase() || " "}
       </Text>
 
       {/* Authorized signature — same rule as the printed check: fitted inside a 2.2" × 0.56" box (× the
@@ -601,9 +601,9 @@ function CheckStubPDF({
           </View>
           {/* Right: employee */}
           <View style={{ flex: 1, alignItems: "flex-end" }}>
-            <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold", color: "#0f172a" }}>{payee}</Text>
-            {payeeStreet ? <Text style={{ fontSize: 8, color: "#64748b", marginTop: 2 }}>{payeeStreet}</Text> : null}
-            {payeeCityStateZip ? <Text style={{ fontSize: 8, color: "#64748b" }}>{payeeCityStateZip}</Text> : null}
+            <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold", color: "#0f172a" }}>{payee.toUpperCase()}</Text>
+            {payeeStreet ? <Text style={{ fontSize: 8, color: "#64748b", marginTop: 2 }}>{payeeStreet.toUpperCase()}</Text> : null}
+            {payeeCityStateZip ? <Text style={{ fontSize: 8, color: "#64748b" }}>{payeeCityStateZip.toUpperCase()}</Text> : null}
           </View>
         </View>
 

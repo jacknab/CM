@@ -895,7 +895,7 @@ export default function Intelligence() {
               <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
               <p className="text-xs text-amber-800 dark:text-amber-300">
                 <span className="font-semibold">{totalSmsCredits} SMS credit{totalSmsCredits === 1 ? "" : "s"} left</span>
-                {" "}— the system will pause automated sends when they run out.
+                {" "}for marketing campaigns. Automatic texts don't use credits.
               </p>
             </div>
             <button

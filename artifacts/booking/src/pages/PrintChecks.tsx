@@ -502,9 +502,9 @@ export function CheckFace({
           identically and the lower #10 envelope window is always populated.
           Window-safe X: 0.65" (lower envelope window area: X:0.65", Y:2.05") */}
       <div style={{ position: "absolute", left: "0.65in", top: "calc(2.08in - 20px)", fontSize: "10pt", fontWeight: 400, color: "#111827", lineHeight: 1.4 }}>
-        <div>{payee}</div>
-        <div style={{ minHeight: "1.2em", color: "#374151" }}>{payeeStreet ?? "\u00A0"}</div>
-        <div style={{ minHeight: "1.2em", color: "#374151" }}>{payeeCityStateZip ?? "\u00A0"}</div>
+        <div>{payee.toUpperCase()}</div>
+        <div style={{ minHeight: "1.2em", color: "#374151" }}>{payeeStreet?.toUpperCase() ?? "\u00A0"}</div>
+        <div style={{ minHeight: "1.2em", color: "#374151" }}>{payeeCityStateZip?.toUpperCase() ?? "\u00A0"}</div>
       </div>
 
       {/* Authorized signature — sits on the line (its ink dips just below it, like a pen signature), centred
@@ -672,9 +672,9 @@ function CheckStub({
         </div>
         {/* Right: employee */}
         <div className="flex flex-col gap-[2px] text-right">
-          <div className="statement-name text-[9.5px] font-bold text-slate-900 leading-tight">{payee}</div>
-          {payeeStreet && <div className="statement-detail text-[7.5px] text-slate-500 leading-tight">{payeeStreet}</div>}
-          {payeeCityStateZip && <div className="statement-detail text-[7.5px] text-slate-500 leading-tight">{payeeCityStateZip}</div>}
+          <div className="statement-name text-[9.5px] font-bold text-slate-900 leading-tight">{payee.toUpperCase()}</div>
+          {payeeStreet && <div className="statement-detail text-[7.5px] text-slate-500 leading-tight">{payeeStreet.toUpperCase()}</div>}
+          {payeeCityStateZip && <div className="statement-detail text-[7.5px] text-slate-500 leading-tight">{payeeCityStateZip.toUpperCase()}</div>}
         </div>
       </div>
 

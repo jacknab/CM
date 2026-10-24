@@ -1533,6 +1533,8 @@ router.get("/checks", isAuthenticated, async (req: Request, res: Response): Prom
       .select({
         check: payoutChecks,
         contractor: { firstName: contractors.firstName, lastName: contractors.lastName },
+        // The legal name from Staff details → Payroll & Tax, printed on the check when there is one.
+        legalName: sql<string | null>`(SELECT se.legal_name FROM staff_employment se WHERE se.staff_id = ${contractors.staffId})`,
         staffMailing: {
           mailingAddress1: staff.mailingAddress1,
           mailingAddress2: staff.mailingAddress2,
@@ -1548,7 +1550,7 @@ router.get("/checks", isAuthenticated, async (req: Request, res: Response): Prom
       .orderBy(desc(payoutChecks.issuedAt));
     res.json(rows.map(r => ({
       ...r.check,
-      contractorName:  `${r.contractor?.firstName ?? ""} ${r.contractor?.lastName ?? ""}`.trim(),
+      contractorName:  (r.legalName ?? "").trim() || `${r.contractor?.firstName ?? ""} ${r.contractor?.lastName ?? ""}`.trim(),
       mailingAddress1: r.staffMailing?.mailingAddress1 ?? null,
       mailingAddress2: r.staffMailing?.mailingAddress2 ?? null,
       mailingCity:     r.staffMailing?.mailingCity     ?? null,

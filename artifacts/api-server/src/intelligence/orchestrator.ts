@@ -398,22 +398,6 @@ async function runAutoLeakageRecovery(storeId: number): Promise<void> {
   }
 }
 
-async function hasSmsCredits(storeId: number): Promise<boolean> {
-  try {
-    const SMS_WALLET_MIN = 0.02;
-    const [row] = await db
-      .select({ smsAllowance: locations.smsAllowance, platformCredits: locations.platformCredits })
-      .from(locations)
-      .where(eq(locations.id, storeId))
-      .limit(1);
-    if (!row) return false;
-    const hasAllowance = (row.smsAllowance ?? 0) > 0;
-    const hasWallet    = parseFloat(row.platformCredits ?? "0") >= SMS_WALLET_MIN;
-    return hasAllowance || hasWallet;
-  } catch {
-    return true; // fail open — never silently block on a DB error
-  }
-}
 
 async function isAutoEngageEnabled(storeId: number): Promise<boolean> {
   try {
@@ -460,14 +444,10 @@ export async function runAutomaticOutreach(): Promise<void> {
         continue;
       }
 
-      // Guard: skip all auto-SMS if the store has zero SMS credits in both buckets
-      const creditsAvailable = await hasSmsCredits(storeId);
-      if (!creditsAvailable) {
-        console.log(`[intelligence] Store ${storeId} has no SMS credits (allowance + purchased = 0) — skipping auto sends`);
-        continue;
-      }
+      // No SMS credit check: these are system texts, sent at Certxa's cost (owner, 2026-10-24). Only marketing
+      // campaigns need credits.
 
-      // Runs every 6 hours, all rate-limited
+      // All rate-limited
       await runRebookingNudges(storeId);
       await runDriftRecovery(storeId).catch((err) =>
         console.error(`[intelligence] Drift recovery error for store ${storeId}:`, err)
