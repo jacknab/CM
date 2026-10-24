@@ -425,6 +425,7 @@ export async function computeDashboard(storeId: number): Promise<DashboardData> 
           SELECT COUNT(*) AS walk_ins
           FROM kiosk_checkins
           WHERE store_id = ${storeId}
+            AND status <> 'removed'
             AND created_at >= ${todayStart.toISOString()}
         `);
       } catch {

@@ -54,3 +54,12 @@ describe("arranged grid — new categories and add-on / function keys (2026-10-2
     expect(keys[11].kind).toBe("empty");
   });
 });
+
+describe("POS key grid — 3 across (2026-10-24)", () => {
+  it("has 18 positions, with Back last inside a category", () => {
+    expect(gridKeys([group("a", 3)], null, 0, false, 3)).toHaveLength(18);
+    const inside = gridKeys([group("a", 3)], "a", 0, false, 3);
+    expect(inside).toHaveLength(18);
+    expect(inside[17].kind).toBe("back");
+  });
+});

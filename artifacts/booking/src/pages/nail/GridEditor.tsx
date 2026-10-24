@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Plus, Trash2, X } from "lucide-react";
-import { POS_FN_LABELS, POS_FNS, POS_GRID_MAIN, POS_GRID_MAX_GRIDS, POS_GRID_SLOTS, type PosAfter, type PosFn, type PosGrid, type PosGridConfig, type PosKey } from "@shared/posGrid";
+import { POS_FN_LABELS, POS_FNS, POS_GRID_MAIN, POS_GRID_MAX_GRIDS, POS_GRID_ROWS, POS_GRID_SLOTS, posGridColumns, posGridSlots, type PosAfter, type PosFn, type PosGrid, type PosGridConfig, type PosKey } from "@shared/posGrid";
 import { arrangedKeys, autoPlacedSlots, PosKeyButton, ROW_BANDS, type CatalogAddon, type CatalogGroup } from "./CatalogPanel";
 
 /** The automatic layout as an arranged one — where a manager starts from the first time: a key per category. */
@@ -43,7 +43,7 @@ export function GridEditor({ groups, addons = [], config, saving, onSave, onClos
   const otherGrids = draft.grids.filter((g) => g.id !== POS_GRID_MAIN && g.id !== grid.id);
 
   const changeGrid = (id: string, change: (g: PosGrid) => PosGrid) =>
-    setDraft((d) => ({ grids: d.grids.map((g) => (g.id === id ? change(g) : g)) }));
+    setDraft((d) => ({ ...d, grids: d.grids.map((g) => (g.id === id ? change(g) : g)) }));
   const setKey = (key: PosKey | null) => {
     if (slot == null) return;
     changeGrid(grid.id, (g) => ({ ...g, keys: g.keys.map((k, i) => (i === slot ? key : k)) }));
@@ -63,12 +63,13 @@ export function GridEditor({ groups, addons = [], config, saving, onSave, onClos
   const addGrid = () => {
     if (draft.grids.length >= POS_GRID_MAX_GRIDS) return;
     const id = `g${Date.now().toString(36)}`;
-    setDraft((d) => ({ grids: [...d.grids, { id, name: "New grid", keys: Array.from({ length: POS_GRID_SLOTS }, () => null) }] }));
+    setDraft((d) => ({ ...d, grids: [...d.grids, { id, name: "New grid", keys: Array.from({ length: posGridSlots(d) }, () => null) }] }));
     setGridId(id); setSlot(null);
   };
   const deleteGrid = () => {
     if (isMain || !window.confirm(`Delete the grid "${grid.name}"? Keys that open it become empty.`)) return;
     setDraft((d) => ({
+      ...d,
       grids: d.grids.filter((g) => g.id !== grid.id).map((g) => ({ ...g, keys: g.keys.map((k) => (k?.type === "grid" && k.gridId === grid.id ? null : k)) })),
     }));
     setGridId(POS_GRID_MAIN); setSlot(null);
@@ -79,6 +80,20 @@ export function GridEditor({ groups, addons = [], config, saving, onSave, onClos
     : current.type === "grid" ? draft.grids.find((g) => g.id === current.gridId)?.name ?? "Grid"
     : current.type === "addon" ? addons.find((a) => a.id === current.addonId)?.name ?? "Add-on"
     : current.type === "fn" ? POS_FN_LABELS[current.fn] : "Back";
+  // Grid size: 2 or 3 keys across, 6 rows (owner, 2026-10-24). Going down to 2 drops the third column's keys, after a warning.
+  const columns = posGridColumns(draft);
+  const setColumns = (next: 2 | 3) => {
+    if (next === columns) return;
+    const slots = next * POS_GRID_ROWS;
+    if (next === 2 && draft.grids.some((g) => g.keys.slice(slots).some((k) => k != null))
+      && !window.confirm("Go to 2 across? Keys in positions 13–18 are taken off.")) return;
+    setDraft((d) => {
+      const { columns: _old, ...rest } = d;
+      const grids = d.grids.map((g) => ({ ...g, keys: Array.from({ length: slots }, (_, i) => g.keys[i] ?? null) }));
+      return next === 3 ? { ...rest, grids, columns: 3 } : { ...rest, grids };
+    });
+    setSlot(null);
+  };
   // After a service or add-on is picked on this grid (or, for the categories' own grids, on any of them).
   const jumpTargets = draft.grids.filter((g) => g.id !== POS_GRID_MAIN);
   const setAfter = (target: "grid" | "categories", next: PosAfter) => {
@@ -136,6 +151,12 @@ export function GridEditor({ groups, addons = [], config, saving, onSave, onClos
             </div>
           )}
           <div className="ge-grid-meta">
+            <p className="ge-label">Grid size</p>
+            <div className="ge-types">
+              {([2, 3] as const).map((c) => (
+                <button key={c} type="button" className={columns === c ? "active" : ""} onClick={() => setColumns(c)} data-testid={`nail-grid-cols-${c}`}>{c} × 6</button>
+              ))}
+            </div>
             <p className="ge-label">After a service or add-on on this grid</p>
             {afterPicker("grid", grid.after, grid.id)}
             <p className="ge-label">After a service in a category</p>
@@ -144,8 +165,8 @@ export function GridEditor({ groups, addons = [], config, saving, onSave, onClos
         </aside>
 
         <section className="ge-preview">
-          <div className="pos-grid">
-            {keys.map((k, i) => <PosKeyButton key={i} k={k} index={i} selected={slot === i} onClick={() => setSlot(i)} testId={`nail-grid-slot-${i}`} />)}
+          <div className="pos-grid" data-cols={columns}>
+            {keys.map((k, i) => <PosKeyButton key={i} k={k} index={i} columns={columns} selected={slot === i} onClick={() => setSlot(i)} testId={`nail-grid-slot-${i}`} />)}
           </div>
         </section>
 

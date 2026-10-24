@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { ArrowLeft, DoorOpen, Printer, LayoutGrid, Footprints, Gift, Hand, HandCoins, MoreHorizontal, Package, Percent, Plus, ShoppingBag, Split, Sparkles, UserRound, Users, WalletCards, Zap } from "lucide-react";
 import { QUICK_TICKET_STEPS } from "@shared/nailCheckout";
 import { formatDuration, parseKeypadAmount } from "./ticketDraft";
-import { POS_FN_LABELS, POS_GRID_COLUMNS, POS_GRID_MAIN, POS_GRID_SLOTS, type PosAfter, type PosFn, type PosGrid, type PosGridConfig } from "@shared/posGrid";
+import { POS_FN_LABELS, POS_GRID_COLUMNS, POS_GRID_MAIN, POS_GRID_ROWS, posGridColumns, type PosAfter, type PosFn, type PosGrid, type PosGridConfig } from "@shared/posGrid";
 
 export interface CatalogService { id: number; name: string; duration: number; price: number | string }
 export interface CatalogAddon { id: number; name: string; price: number | string; duration: number | null }
@@ -157,7 +157,6 @@ interface Props {
 /** The right panel is a fixed 2 × 6 grid of keys, like a register's — two across so every key is easy to read and
  *  hit on a 10" tablet. It never changes shape. */
 const GRID_COLUMNS = POS_GRID_COLUMNS;
-const GRID_SLOTS = POS_GRID_SLOTS;
 /** The band along the bottom of each row of keys, top row first. */
 export const ROW_BANDS = ["#f4d000", "#cfb6ff", "#00c8ff", "#ff8bd4", "#b493ff", "#95d8ff"];
 
@@ -181,7 +180,8 @@ export type GridPlace = { at: "main" } | { at: "category"; key: string } | { at:
  * that category's grid of services, whose last key goes back. Anything that doesn't fit goes to further
  * pages behind a MORE key (the key just before the last), which cycles round to the first page again.
  */
-export function gridKeys(groups: CatalogGroup[], openKey: string | null, page: number, hasExit = false): GridKey[] {
+export function gridKeys(groups: CatalogGroup[], openKey: string | null, page: number, hasExit = false, columns: number = GRID_COLUMNS): GridKey[] {
+  const GRID_SLOTS = columns * POS_GRID_ROWS;
   const open = openKey ? groups.find((g) => g.key === openKey) : undefined;
   const items: GridKey[] = open
     ? open.services.map((service) => ({ kind: "service", service }))
@@ -209,6 +209,7 @@ export function gridKeys(groups: CatalogGroup[], openKey: string | null, page: n
  * `reserveLast`: the last position is taken by something else (the way back to Payment), so nothing is placed there.
  */
 export function arrangedKeys(grid: PosGrid, layout: PosGridConfig, groups: CatalogGroup[], addons: CatalogAddon[] = [], reserveLast = false): GridKey[] {
+  const GRID_SLOTS = posGridColumns(layout) * POS_GRID_ROWS;
   const services = new Map<number, CatalogService>();
   for (const g of groups) for (const svc of g.services) services.set(svc.id, svc);
   const keys = Array.from({ length: GRID_SLOTS }, (_, i): GridKey => {
@@ -248,9 +249,11 @@ export function autoPlacedSlots(layout: PosGridConfig, groups: CatalogGroup[], a
  * ticket is being paid the main grid's last position is the way back to Payment.
  */
 export function placeKeys(layout: PosGridConfig | null | undefined, groups: CatalogGroup[], place: GridPlace, page: number, hasExit = false, addons: CatalogAddon[] = []): GridKey[] {
-  if (place.at === "category" && groups.some((g) => g.key === place.key)) return gridKeys(groups, place.key, page);
+  const columns = posGridColumns(layout);
+  const GRID_SLOTS = columns * POS_GRID_ROWS;
+  if (place.at === "category" && groups.some((g) => g.key === place.key)) return gridKeys(groups, place.key, page, false, columns);
   const grid = layout?.grids.find((g) => g.id === (place.at === "grid" ? place.id : POS_GRID_MAIN));
-  if (!layout || !grid) return gridKeys(groups, null, page, hasExit);
+  if (!layout || !grid) return gridKeys(groups, null, page, hasExit, columns);
   const keys = arrangedKeys(grid, layout, groups, addons, grid.id === POS_GRID_MAIN && hasExit);
   if (grid.id !== POS_GRID_MAIN && !keys.some((k) => k.kind === "back")) keys[GRID_SLOTS - 1] = { kind: "back" };
   if (grid.id === POS_GRID_MAIN && hasExit) keys[GRID_SLOTS - 1] = { kind: "exit" };
@@ -260,11 +263,13 @@ export function placeKeys(layout: PosGridConfig | null | undefined, groups: Cata
 const FN_ICONS: Record<PosFn, typeof Percent> = { discount: Percent, giftcard: Gift, nosale: DoorOpen, reprint: Printer };
 
 /** One key of the grid, drawn the same on the POS and in the manager's editor. */
-export function PosKeyButton({ k, index, onClick, disabled, selected, exitLabel, testId }: {
+export function PosKeyButton({ k, index, onClick, disabled, selected, exitLabel, testId, columns = GRID_COLUMNS }: {
   k: GridKey; index: number; onClick?: () => void; disabled?: boolean; selected?: boolean; exitLabel?: string; testId?: string;
+  /** Keys per row (2 or 3), for the row's band colour. */
+  columns?: number;
 }) {
   const own = k.kind === "category" || k.kind === "service" || k.kind === "grid" || k.kind === "back" || k.kind === "addon" || k.kind === "fn" ? k.color : undefined;
-  const band = { ["--pos-band" as string]: own ?? ROW_BANDS[Math.floor(index / GRID_COLUMNS)] } as CSSProperties;
+  const band = { ["--pos-band" as string]: own ?? ROW_BANDS[Math.floor(index / columns) % ROW_BANDS.length] } as CSSProperties;
   if (k.kind === "empty") {
     return onClick
       ? <button type="button" className={`pos-key pos-key-empty ${selected ? "selected" : ""}`} onClick={onClick} disabled={disabled} data-testid={testId} aria-label={`Empty position ${index + 1}`} />
@@ -319,9 +324,9 @@ export function CatalogPanel(p: Props) {
 
   return (
     <div className={`catalog-panel ${p.locked ? "catalog-locked" : ""}`} data-testid="nail-catalog">
-      <div className="pos-grid" data-testid="nail-pos-grid" data-grid={place.at === "main" ? "main" : place.at === "category" ? place.key : place.id}>
+      <div className="pos-grid" data-cols={posGridColumns(p.layout)} data-testid="nail-pos-grid" data-grid={place.at === "main" ? "main" : place.at === "category" ? place.key : place.id}>
         {keys.map((key, i) => (
-          <PosKeyButton key={i} k={key} index={i} disabled={p.locked || (key.kind === "fn" && !p.onFn)} exitLabel={p.exit?.label}
+          <PosKeyButton key={i} k={key} index={i} columns={posGridColumns(p.layout)} disabled={p.locked || (key.kind === "fn" && !p.onFn)} exitLabel={p.exit?.label}
             selected={(key.kind === "service" && p.serviceId === key.service.id) || (key.kind === "addon" && !p.onAddonKey && p.addonIds.includes(key.addon.id))}
             testId={key.kind === "back" ? "nail-grid-back" : key.kind === "exit" ? "nail-grid-exit" : key.kind === "more" ? "nail-grid-more"
               : key.kind === "category" ? `nail-cat-${key.group.key}` : key.kind === "service" ? `nail-service-${key.service.id}` : key.kind === "grid" ? `nail-grid-open-${key.grid.id}`

@@ -23536,6 +23536,7 @@ or
       && Date.now() - new Date(c.created_at).getTime() < nailTickets.CHECKIN_MARKER_HOURS * 3_600_000;
   const closedCheckinAnswer = (c: any) => ({
     found: true, type: "checkin_closed", checkinId: c.id, clientName: c.client_name ?? "Guest", ticketNumber: c.ticket_number ?? null,
+    removed: c.status === "removed",
     date: c.created_at ? new Date(c.created_at).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "",
   });
 
@@ -24320,7 +24321,7 @@ or
   async function countTodayCheckins(storeId: number, tz: string): Promise<number> {
     const { rows } = await pool.query(
       `SELECT
-         (SELECT COUNT(*) FROM kiosk_checkins WHERE store_id = $1 AND appointment_id IS NULL AND (created_at AT TIME ZONE $2)::date = (NOW() AT TIME ZONE $2)::date)
+         (SELECT COUNT(*) FROM kiosk_checkins WHERE store_id = $1 AND appointment_id IS NULL AND status <> 'removed' AND (created_at AT TIME ZONE $2)::date = (NOW() AT TIME ZONE $2)::date)
          + (SELECT COUNT(*) FROM appointments WHERE store_id = $1 AND checked_in_at IS NOT NULL AND (checked_in_at AT TIME ZONE $2)::date = (NOW() AT TIME ZONE $2)::date)
          AS n`,
       [storeId, tz],
@@ -25421,7 +25422,7 @@ or
          FROM kiosk_checkins kc
          JOIN locations loc ON loc.id = kc.store_id
          LEFT JOIN appointments apt ON apt.id = kc.appointment_id
-         WHERE kc.token = $1 AND kc.expires_at > NOW()
+         WHERE kc.token = $1 AND kc.expires_at > NOW() AND kc.status <> 'removed'
          LIMIT 1`,
         [token]
       );
@@ -25511,7 +25512,7 @@ or
         LEFT JOIN staff s ON s.id = kc.staff_id
         WHERE kc.store_id = $1
           AND (kc.created_at AT TIME ZONE $2)::date = (NOW() AT TIME ZONE $2)::date
-          AND kc.status NOT IN ('completed', 'expired')
+          AND kc.status NOT IN ('completed', 'expired', 'removed')
         ORDER BY
           CASE kc.status
             WHEN 'serving'   THEN 1
@@ -25580,6 +25581,7 @@ or
         LEFT JOIN staff s ON s.id = kc.staff_id
         WHERE kc.store_id = $1
           AND kc.expires_at > NOW()
+          AND kc.status <> 'removed'
           AND (kc.status != 'completed' OR kc.created_at > NOW() - INTERVAL '30 minutes')
         ORDER BY
           CASE kc.status
@@ -25655,8 +25657,10 @@ or
     try {
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(400).json({ error: "No store context" });
+      // Kept, marked removed (owner, 2026-10-24): its ticket # was already handed out, so looking that number up
+      // later says the client was taken off the waiting list instead of finding nothing.
       await pool.query(
-        `DELETE FROM kiosk_checkins WHERE id = $1 AND store_id = $2`,
+        `UPDATE kiosk_checkins SET status = 'removed' WHERE id = $1 AND store_id = $2 AND appointment_id IS NULL`,
         [req.params.id, storeId]
       );
       // Every POS station's waiting list drops this client (same event the list already refreshes on).
@@ -25713,7 +25717,7 @@ or
         SELECT staff_id, COUNT(*) AS cnt
         FROM kiosk_checkins
         WHERE store_id = $1
-          AND status NOT IN ('completed')
+          AND status NOT IN ('completed', 'removed')
           AND (expires_at IS NULL OR expires_at > NOW())
         GROUP BY staff_id
       `, [storeId]);

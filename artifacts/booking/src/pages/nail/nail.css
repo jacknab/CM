@@ -1112,3 +1112,8 @@
 .nail-app .receipt-reprint p { margin: 0; font-size: 13px; text-align: center; }
 .nail-app .receipt-reprint p.ok { color: #34d399; }
 .nail-app .receipt-reprint p.err { color: #f87171; }
+/* Key grid 3 across (owner, 2026-10-24): same 6 rows, a little smaller type so names still fit. */
+.nail-app .pos-grid[data-cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.nail-app .pos-grid[data-cols="3"] .pos-key { padding: 4px 4px 8px; gap: 4px; }
+.nail-app .pos-grid[data-cols="3"] .pos-key strong { font-size: clamp(12px, 1.05vw, 15px); }
+.nail-app .pos-grid[data-cols="3"] .pos-key svg { width: 20px; height: 20px; }

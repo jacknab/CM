@@ -1241,7 +1241,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     // would start a ticket for a visit that is over (and a ticket left without a service drops off the queue).
     if (data.type === "checkin_closed") {
       setLookupStatus({ appointmentId: 0, ticketNumber: data.ticketNumber ?? null, clientName: data.clientName,
-        service: "Checked in — no service was started", date: data.date, status: "checkin_expired", isPaid: false });
+        service: data.removed ? "Taken off the waiting list — no ticket was made" : "Checked in — no service was started", date: data.date, status: "checkin_expired", isPaid: false });
       return;
     }
     if (data.type === "checkin") {

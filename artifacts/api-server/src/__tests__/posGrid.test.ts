@@ -47,3 +47,15 @@ describe("sanitizePosGridConfig — add-on / function keys and after a selection
     expect(c.grids[2].after).toEqual({ to: "main" });
   });
 });
+
+describe("sanitizePosGridConfig — 3 across (2026-10-24)", () => {
+  it("keeps 18 positions per grid when columns is 3, 12 otherwise", () => {
+    const keys = Array.from({ length: 18 }, (_, i) => ({ type: "service", serviceId: i + 1 }));
+    const three = sanitizePosGridConfig({ columns: 3, grids: [{ id: "main", name: "Main", keys }] })!;
+    expect(three.columns).toBe(3);
+    expect(three.grids[0].keys).toHaveLength(18);
+    const two = sanitizePosGridConfig({ columns: 4, grids: [{ id: "main", name: "Main", keys }] })!;
+    expect(two.columns).toBeUndefined();
+    expect(two.grids[0].keys).toHaveLength(12);
+  });
+});

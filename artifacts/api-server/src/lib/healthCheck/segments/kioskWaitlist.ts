@@ -23,7 +23,7 @@ export async function kioskWaitlist(accountId: number, pool: Pool): Promise<Segm
     try {
       const kioskRes = await pool.query(
         `SELECT COUNT(*) AS cnt FROM kiosk_checkins
-         WHERE store_id = $1 AND created_at >= NOW() - INTERVAL '30 days'`,
+         WHERE store_id = $1 AND status <> 'removed' AND created_at >= NOW() - INTERVAL '30 days'`,
         [accountId],
       );
       kioskCheckins30 = Number(kioskRes.rows[0]?.cnt ?? 0);

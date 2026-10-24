@@ -7,7 +7,12 @@
  */
 
 export const POS_GRID_COLUMNS = 2;
-export const POS_GRID_SLOTS = POS_GRID_COLUMNS * 6;
+export const POS_GRID_ROWS = 6;
+export const POS_GRID_SLOTS = POS_GRID_COLUMNS * POS_GRID_ROWS;
+/** A salon may choose 3 across (18 keys) instead of 2 (owner, 2026-10-24). */
+export type PosGridColumns = 2 | 3;
+export const posGridColumns = (config: PosGridConfig | null | undefined): PosGridColumns => (config?.columns === 3 ? 3 : 2);
+export const posGridSlots = (config: PosGridConfig | null | undefined) => posGridColumns(config) * POS_GRID_ROWS;
 export const POS_GRID_MAIN = "main";
 export const POS_GRID_MAX_GRIDS = 20;
 
@@ -42,7 +47,7 @@ export type PosAfter = { to: "stay" } | { to: "main" } | { to: "grid"; gridId: s
 
 export interface PosGrid { id: string; name: string; keys: (PosKey | null)[]; after?: PosAfter }
 /** `grids[0]` is always the main grid. `afterService`: the same for a category's own grid of services. */
-export interface PosGridConfig { grids: PosGrid[]; afterService?: PosAfter }
+export interface PosGridConfig { grids: PosGrid[]; afterService?: PosAfter; /** 3 = three across (18 keys); omitted = two (12). */ columns?: 3 }
 
 const GRID_ID = /^[a-z0-9_-]{1,24}$/;
 const COLOR = /^#[0-9a-f]{6}$/i;
@@ -70,9 +75,11 @@ export function sanitizePosGridConfig(raw: unknown): PosGridConfig | null {
   const main = grids.find((g) => g.id === POS_GRID_MAIN);
   if (!main) return null;
   const ordered = [main, ...grids.filter((g) => g !== main)];
+  const columns: PosGridColumns = (raw as any)?.columns === 3 ? 3 : 2;
+  const slots = columns * POS_GRID_ROWS;
   for (const grid of ordered) {
     const keys: (PosKey | null)[] = [];
-    for (let i = 0; i < POS_GRID_SLOTS; i++) {
+    for (let i = 0; i < slots; i++) {
       const k: any = grid.keys[i];
       if (k?.type === "category" && typeof k.groupKey === "string" && k.groupKey.length > 0 && k.groupKey.length <= 120) keys.push({ type: "category", groupKey: k.groupKey, ...look(k) });
       else if (k?.type === "service" && Number.isSafeInteger(Number(k.serviceId)) && Number(k.serviceId) !== 0) keys.push({ type: "service", serviceId: Number(k.serviceId), ...look(k) });
@@ -87,7 +94,7 @@ export function sanitizePosGridConfig(raw: unknown): PosGridConfig | null {
     if (after) grid.after = after; else delete grid.after;
   }
   const afterService = sanitizeAfter((raw as any)?.afterService, ids, null);
-  return afterService ? { grids: ordered, afterService } : { grids: ordered };
+  return { grids: ordered, ...(afterService ? { afterService } : {}), ...(columns === 3 ? { columns: 3 as const } : {}) };
 }
 
 /** A usable "after a selection" (a grid it jumps to must exist and not be itself); "stay" is the default, so it is dropped. */

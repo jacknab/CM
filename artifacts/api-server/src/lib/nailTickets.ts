@@ -1528,6 +1528,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
          FROM kiosk_checkins k
         WHERE k.store_id = $1
           AND k.appointment_id IS NULL
+          AND k.status <> 'removed'
           AND ${bizDayOf("k.created_at")} = ${BIZ_TODAY}
           AND ($3::timestamptz IS NULL OR k.created_at > $3::timestamptz)
      ) detail_rows
@@ -1607,7 +1608,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
   );
   const kioskOnly = await pool.query(
     `SELECT COUNT(*)::int AS n FROM kiosk_checkins
-      WHERE store_id = $1 AND appointment_id IS NULL AND ${bizDayOf("created_at")} = ${BIZ_TODAY}
+      WHERE store_id = $1 AND appointment_id IS NULL AND status <> 'removed' AND ${bizDayOf("created_at")} = ${BIZ_TODAY}
         AND ($3::timestamptz IS NULL OR created_at > $3::timestamptz)`,
     [storeId, tz, shiftStart],
   );
