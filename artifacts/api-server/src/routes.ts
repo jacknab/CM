@@ -3895,6 +3895,13 @@ export async function registerRoutes(
         }
       }
 
+      // Payee on each check (Staff details → Payroll & Tax): the legal name, else the display name; the mailing address.
+      const payeeRows = staffIds.length ? (await pool.query(
+        `SELECT s.id, se.legal_name, s.mailing_address1, s.mailing_address2, s.mailing_city, s.mailing_state, s.mailing_zip
+           FROM staff s LEFT JOIN staff_employment se ON se.staff_id = s.id WHERE s.id = ANY($1::int[])`, [staffIds],
+      )).rows : [];
+      const payeeByStaff = new Map<number, any>(payeeRows.map((r: any) => [Number(r.id), r]));
+
       const enrichedItems = items.map(item => {
         const staffDailyRaw = dailyRawMap.get(item.staffId) ?? new Map<string, { svcRevenue: number; commission: number; tips: number; count: number }>();
 
@@ -3920,8 +3927,15 @@ export async function registerRoutes(
         // The check is the pay less the part the salon pays in cash (Payroll → schedule, "paid by check").
         const cashPortion = parseFloat(Math.max(0, Number((item as any).cashPortion ?? 0)).toFixed(2));
         const totalPay = parseFloat(Math.max(0, Number((item as any).netPay ?? 0) - cashPortion).toFixed(2));
+        const payee = payeeByStaff.get(item.staffId);
         return {
           ...item,
+          payeeName: (payee?.legal_name || "").trim() || item.staffName,
+          mailingAddress1: payee?.mailing_address1 ?? null,
+          mailingAddress2: payee?.mailing_address2 ?? null,
+          mailingCity: payee?.mailing_city ?? null,
+          mailingState: payee?.mailing_state ?? null,
+          mailingZip: payee?.mailing_zip ?? null,
           tipsAmount:   parseFloat(tipAmt.toFixed(2)),
           hoursWorked:  parseFloat((hoursMap.get(item.staffId) || 0).toFixed(2)),
           boothRent:       parseFloat(Number((item as any).boothRent ?? 0).toFixed(2)),
@@ -22967,6 +22981,10 @@ or
   // ── Payroll — auto pay-period runs + printable paychecks (commission-only) ───
   const { default: payrollRunsRouter } = await import("./routes/payrollRuns.js");
   app.use("/api/payroll", payrollRunsRouter);
+
+  // ── Staff details → Payroll & Tax (legal name, mailing address, dates, W-4 / W-9 / I-9) ───
+  const { default: staffEmploymentRouter } = await import("./routes/staffEmployment.js");
+  app.use("/api/staff-employment", staffEmploymentRouter);
 
   if (IS_SCHEDULER_INSTANCE) {
     const { startReconciliationScheduler, setNoShowSweeper } = await import("./routes/sync-jobs.js");

@@ -93,6 +93,10 @@ type DailyBreakdownEntry = { date: string; commission: number; tips: number; cou
 
 type PayrollCheckItem = {
   id: number; staffId: number; staffName: string; commissionRate: string;
+  /** Printed on the check (Staff details → Payroll & Tax): the legal name, and the mailing address. */
+  payeeName?: string | null;
+  mailingAddress1?: string | null; mailingAddress2?: string | null;
+  mailingCity?: string | null; mailingState?: string | null; mailingZip?: string | null;
   appointmentCount: number; serviceRevenue: string; addonRevenue: string;
   productRevenue: string; totalRevenue: string; commissionAmount: string;
   serviceCommission: string; productCommission: string; tipsAmount: number;
@@ -101,6 +105,15 @@ type PayrollCheckItem = {
   dailyBreakdown?: DailyBreakdownEntry[];
   ytd?: PayrollYtd | null;
 };
+
+/** The two address lines printed under the payee's name on a paycheck. */
+function payeeAddress(item: PayrollCheckItem): { payeeStreet: string | null; payeeCityStateZip: string | null } {
+  const cityLine = [item.mailingCity, [item.mailingState, item.mailingZip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  return {
+    payeeStreet: [item.mailingAddress1, item.mailingAddress2].filter(Boolean).join(", ") || null,
+    payeeCityStateZip: cityLine || null,
+  };
+}
 
 type CheckData = {
   run: PayrollRun;
@@ -2292,7 +2305,8 @@ function PayrollChecksTab({ settings, initialRunId }: { settings: PrintSettings;
                       checks={visibleItems.map((item, idx) => ({
                         checkNumber: String(settings.startingCheckNumber + idx).padStart(6, "0"),
                         date: runPayDate,
-                        payee: item.staffName,
+                        payee: item.payeeName || item.staffName,
+                        ...payeeAddress(item),
                         amount: item.totalPay,
                         periodStart: checkData!.run.periodStart,
                         periodEnd: checkData!.run.periodEnd,
@@ -2324,7 +2338,8 @@ function PayrollChecksTab({ settings, initialRunId }: { settings: PrintSettings;
                     key={item.id}
                     checkNumber={String(settings.startingCheckNumber + idx).padStart(6, "0")}
                     date={runPayDate}
-                    payee={item.staffName}
+                    payee={item.payeeName || item.staffName}
+                    {...payeeAddress(item)}
                     amount={item.totalPay}
                     periodStart={checkData.run.periodStart}
                     periodEnd={checkData.run.periodEnd}
@@ -2360,7 +2375,8 @@ function PayrollChecksTab({ settings, initialRunId }: { settings: PrintSettings;
                     <CheckFace
                       checkNumber={checkNum}
                       date={runPayDate}
-                      payee={item.staffName}
+                      payee={item.payeeName || item.staffName}
+                      {...payeeAddress(item)}
                       amount={item.totalPay}
                       periodStart={checkData.run.periodStart}
                       periodEnd={checkData.run.periodEnd}
@@ -2375,7 +2391,8 @@ function PayrollChecksTab({ settings, initialRunId }: { settings: PrintSettings;
                     />
                     <CheckStub
                       checkNumber={checkNum}
-                      payee={item.staffName}
+                      payee={item.payeeName || item.staffName}
+                      {...payeeAddress(item)}
                       amount={item.totalPay}
                       periodStart={checkData.run.periodStart}
                       periodEnd={checkData.run.periodEnd}
@@ -2397,7 +2414,8 @@ function PayrollChecksTab({ settings, initialRunId }: { settings: PrintSettings;
                           <CheckPDFDownload
                             checkNumber={checkNum}
                             date={runPayDate}
-                            payee={item.staffName}
+                            payee={item.payeeName || item.staffName}
+                            {...payeeAddress(item)}
                             amount={item.totalPay}
                             periodStart={checkData!.run.periodStart}
                             periodEnd={checkData!.run.periodEnd}

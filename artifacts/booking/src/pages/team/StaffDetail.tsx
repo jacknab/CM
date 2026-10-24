@@ -11,6 +11,8 @@ import { useSelectedStore } from "@/hooks/use-store";
 import { apiRequest } from "@/lib/queryClient";
 import { WeeklyScheduleEditor, scheduleHasError, type DayRule } from "@/components/team/WeeklyScheduleEditor";
 import { RoleFields } from "@/components/team/RoleFields";
+import { StaffPayrollTax } from "@/components/team/StaffPayrollTax";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { displayRole } from "@shared/staffRoles";
 import { Camera, ChevronLeft, Loader2 } from "lucide-react";
 
@@ -238,6 +240,13 @@ export default function StaffDetail() {
           )}
         </div>
 
+        <Tabs defaultValue="profile" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="profile">Profile</TabsTrigger>
+            <TabsTrigger value="payroll-tax" data-testid="tab-staff-payroll-tax">Payroll &amp; Tax</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="profile" className="space-y-8 mt-0">
         {/* Profile */}
         <section className="rounded-xl border border-border bg-card p-5 md:p-6 space-y-4">
           <h2 className="text-lg font-semibold tracking-tight">Profile</h2>
@@ -375,6 +384,12 @@ export default function StaffDetail() {
             {busy ? "Saving…" : "Save changes"}
           </Button>
         </div>
+          </TabsContent>
+
+          <TabsContent value="payroll-tax" className="mt-0">
+            <StaffPayrollTax staffId={staffId} />
+          </TabsContent>
+        </Tabs>
       </div>
     </AppLayout>
   );
