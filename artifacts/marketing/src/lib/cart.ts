@@ -14,7 +14,7 @@ export const SKU_BY_NAME: Record<string, string> = {
   'Certxa Station': 'station',
   'Certxa Kiosk': 'kiosk',
   'Wireless Card Reader': 'card-reader',
-  'Customer Facing Screen': 'customer-screen',
+  'T-Mobile REVVL TAB 2 5G | 64GB 10.1" Tablet': 'customer-screen', // the customer facing screen (owner, 2026-10-24)
   'IP Thermal Receipt Printer': 'receipt-printer',
   'Cash Drawer': 'cash-drawer',
   'Barcode Scanner': 'barcode-scanner',

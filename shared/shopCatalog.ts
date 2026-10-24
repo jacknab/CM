@@ -17,7 +17,7 @@ export const SHOP_CATALOG: ShopProduct[] = [
   { sku: "station", name: "Certxa Station", priceCents: 79900, weightLb: null, dimsIn: null },
   { sku: "kiosk", name: "Certxa Kiosk", priceCents: 39900, weightLb: null, dimsIn: null },
   { sku: "card-reader", name: "Wireless Card Reader", priceCents: 6900, weightLb: null, dimsIn: null },
-  { sku: "customer-screen", name: "Customer Facing Screen", priceCents: 14900, weightLb: null, dimsIn: null },
+  { sku: "customer-screen", name: "T-Mobile REVVL TAB 2 5G | 64GB 10.1\" Tablet", priceCents: 9900, weightLb: null, dimsIn: null },
   { sku: "receipt-printer", name: "IP Thermal Receipt Printer", priceCents: 19900, weightLb: null, dimsIn: null },
   { sku: "cash-drawer", name: "Cash Drawer", priceCents: 9900, weightLb: null, dimsIn: null },
   { sku: "barcode-scanner", name: "Barcode Scanner", priceCents: 8900, weightLb: null, dimsIn: null },
