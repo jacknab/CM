@@ -14,6 +14,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BarChart3, Bell, Clock, RotateCcw, CreditCard, RefreshCw, Gift, KeyRound, Languages, LayoutGrid, Loader2, Lock, LockKeyhole, Printer, Receipt, Search, Settings, ShoppingBag, CalendarPlus, Wallet } from "lucide-react";
 import { useNailText, type NailLang } from "./i18n";
+import { useNailDomTranslation } from "./nailDomTranslate";
 import { SlipTechIdSheet, TechSlipSheet } from "./TechSlipSheet";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useAuth } from "@/hooks/use-auth";
@@ -195,6 +196,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const [slipFor, setSlipFor] = useState<{ id: number; name: string } | null>(null);
   const [slipAsk, setSlipAsk] = useState(false);
   const { lang, setLang, t: nailText } = useNailText();
+  // MORE → Language changes every word on the screen, not only the phrases above (nailDomTranslate.ts).
+  useNailDomTranslation(lang);
   // The full Turn page, opened from the top of the lock screen's turn queue.
   const [showTurnPage, setShowTurnPage] = useState(false);
   const { data: turnStaffList } = useStaffList();
