@@ -30,3 +30,20 @@ describe("sanitizePosGridConfig — what a manager's key grid may contain", () =
     expect(c.grids.map((g) => g.id)).toEqual(["main", "g1"]);
   });
 });
+
+describe("sanitizePosGridConfig — add-on / function keys and after a selection (2026-10-24)", () => {
+  it("keeps add-on and function keys, drops unknown functions", () => {
+    const c = sanitizePosGridConfig({ grids: [{ id: "main", name: "Main", keys: [{ type: "addon", addonId: 4 }, { type: "fn", fn: "discount" }, { type: "fn", fn: "format_disk" }] }] })!;
+    expect(c.grids[0].keys.slice(0, 3)).toEqual([{ type: "addon", addonId: 4 }, { type: "fn", fn: "discount" }, null]);
+  });
+  it("keeps a jump to a grid that exists, drops one to a missing grid or to itself", () => {
+    const c = sanitizePosGridConfig({
+      afterService: { to: "grid", gridId: "extras" },
+      grids: [{ id: "main", name: "Main", keys: [], after: { to: "grid", gridId: "nope" } }, { id: "extras", name: "Extras", keys: [], after: { to: "grid", gridId: "extras" } }, { id: "x", name: "X", keys: [], after: { to: "main" } }],
+    })!;
+    expect(c.afterService).toEqual({ to: "grid", gridId: "extras" });
+    expect(c.grids[0].after).toBeUndefined();
+    expect(c.grids[1].after).toBeUndefined();
+    expect(c.grids[2].after).toEqual({ to: "main" });
+  });
+});

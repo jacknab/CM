@@ -42,6 +42,7 @@ import { useNetworkStatus } from "@/hooks/use-network-status";
 import { syncEngine } from "@/lib/sync-engine";
 import { nailOffline, setNailOfflineStore, isLocalId, isNetworkFailure, newIdempotencyKey, type TicketRecord } from "@/lib/nail-offline";
 import { archivedTicket, refreshTicketArchive } from "./ticketArchive";
+import { reprintLastReceipt } from "./receiptReprint";
 import { nailAdjustment } from "./ticketDraft";
 import { buildCheckinTicket } from "@/lib/thermalPrinter";
 import { ChooseClientPanel } from "@/components/staff-screen/ChooseClientPanel";
@@ -862,6 +863,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     pickSeededFor.current = null;
     if (editing === null) setPick(EMPTY_PICK);
   };
+  const noSale = () => { void openCashDrawerHardware({ onThermalPrint: thermalPrinter.isConnected ? thermalPrinter.print : undefined }); recordNoSale({ drawerId, performedBy: tech?.name }); say("Cash drawer opened"); };
   const toggleAddon = (id: number) => setAddonIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
   const addCustom = (amount: number, qty: number, label?: string, isRetail?: boolean) => {
     customSeq.current += 1;
@@ -1633,6 +1635,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
           <div style={{ display: tab === "pos" ? "contents" : "none" }}>
             <Suspense fallback={<div className="nail-route-loading" role="status"><Loader2 className="animate-spin" /> Loading checkout…</div>}><CheckoutMode
               key={checkout.id}
+              storeAddons={activeAddons}
               ticket={liveCheckout ?? checkout}
               closedElsewhere={checkoutClosedElsewhere}
               salesTax={salesTax}
@@ -1689,7 +1692,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
             <section className="work-area">
               <div className="sale-area">
                 <Keypad locked={!client} onEnter={addCustom} onUndo={undoDraft} onSplit={() => void splitSelected()} onGiftCard={() => setShowGift(true)} onCheckoutFn={payNowWith} onNotice={say}
-                  onNoSale={() => { void openCashDrawerHardware({ onThermalPrint: thermalPrinter.isConnected ? thermalPrinter.print : undefined }); recordNoSale({ drawerId, performedBy: tech?.name }); say("Cash drawer opened"); }} />
+                  onNoSale={noSale} />
                 {booking?.step === "time" && service ? (
                   <BookingPanel
                     storeId={storeId} slug={bookingSlug} timezone={timezone} serviceId={service.id} extraServiceId={extraServices[0]?.id ?? null}
@@ -1713,6 +1716,13 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
                   hasMoreAddons={moreAddons || activeAddons.length > Math.min(6, suggestedAddons.length)}
                   addonIds={addonIds}
                   onToggleAddon={toggleAddon}
+                  allAddons={activeAddons}
+                  onFn={(fn) => {
+                    if (fn === "reprint") { void reprintLastReceipt().then((err) => say(err ?? "Receipt reprinted")); return; }
+                    if (fn === "nosale") { noSale(); return; }
+                    if (!client) { say("Open a ticket first"); return; }
+                    if (fn === "discount") payNowWith("discount"); else setShowGift(true);
+                  }}
                 />
                 )}
               </div>
@@ -1799,7 +1809,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       )}
       {sheet === "timeclock" && <TimeClockSheet storeId={storeId} onClose={() => { setSheet(null); invalidateBoard(); }} />}
       {gridEditor === "open" && (
-        <GridEditor groups={gridGroups} config={posGrid?.config ?? null} saving={saveGrid.isPending} onSave={(config) => saveGrid.mutate(config)} onClose={() => setGridEditor(null)} />
+        <GridEditor groups={gridGroups} addons={activeAddons} config={posGrid?.config ?? null} saving={saveGrid.isPending} onSave={(config) => saveGrid.mutate(config)} onClose={() => setGridEditor(null)} />
       )}
       {pinChange && <ChangeManagerPinSheet onClose={() => setPinChange(false)} onDone={() => { setPinChange(false); say("Manager PIN changed"); }} />}
       {sheet === "manager" && <ManagerPinSheet onClose={() => setSheet(null)} onSuccess={() => { setSheet(null); setShowMore("manager"); }} />}

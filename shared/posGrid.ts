@@ -26,11 +26,23 @@ export type PosKey =
   /** Opens another grid the manager made. */
   | ({ type: "grid"; gridId: string } & KeyLook)
   /** Goes back to the grid it was opened from. */
-  | ({ type: "back" } & KeyLook);
+  | ({ type: "back" } & KeyLook)
+  /** Puts that add-on on the ticket (tap again to take it off while building the ticket). */
+  | ({ type: "addon"; addonId: number } & KeyLook)
+  /** Runs a POS function, the same as its button under the keypad. */
+  | ({ type: "fn"; fn: PosFn } & KeyLook);
 
-export interface PosGrid { id: string; name: string; keys: (PosKey | null)[] }
-/** `grids[0]` is always the main grid. */
-export interface PosGridConfig { grids: PosGrid[] }
+/** POS functions a key can run (owner, 2026-10-24). */
+export const POS_FNS = ["discount", "giftcard", "nosale", "reprint"] as const;
+export type PosFn = (typeof POS_FNS)[number];
+export const POS_FN_LABELS: Record<PosFn, string> = { discount: "Discount", giftcard: "Gift Card", nosale: "No Sale", reprint: "Reprint Last" };
+
+/** Where the POS goes after a service or add-on is picked on a grid: stay there, back to the main grid, or open a grid. */
+export type PosAfter = { to: "stay" } | { to: "main" } | { to: "grid"; gridId: string };
+
+export interface PosGrid { id: string; name: string; keys: (PosKey | null)[]; after?: PosAfter }
+/** `grids[0]` is always the main grid. `afterService`: the same for a category's own grid of services. */
+export interface PosGridConfig { grids: PosGrid[]; afterService?: PosAfter }
 
 const GRID_ID = /^[a-z0-9_-]{1,24}$/;
 const COLOR = /^#[0-9a-f]{6}$/i;
@@ -66,9 +78,21 @@ export function sanitizePosGridConfig(raw: unknown): PosGridConfig | null {
       else if (k?.type === "service" && Number.isSafeInteger(Number(k.serviceId)) && Number(k.serviceId) !== 0) keys.push({ type: "service", serviceId: Number(k.serviceId), ...look(k) });
       else if (k?.type === "grid" && typeof k.gridId === "string" && ids.has(k.gridId) && k.gridId !== grid.id && k.gridId !== POS_GRID_MAIN) keys.push({ type: "grid", gridId: k.gridId, ...look(k) });
       else if (k?.type === "back" && grid.id !== POS_GRID_MAIN) keys.push({ type: "back", ...look(k) });
+      else if (k?.type === "addon" && Number.isSafeInteger(Number(k.addonId)) && Number(k.addonId) > 0) keys.push({ type: "addon", addonId: Number(k.addonId), ...look(k) });
+      else if (k?.type === "fn" && (POS_FNS as readonly string[]).includes(k.fn)) keys.push({ type: "fn", fn: k.fn, ...look(k) });
       else keys.push(null);
     }
     grid.keys = keys;
+    const after = sanitizeAfter((list.find((g: any) => g?.id === grid.id) as any)?.after, ids, grid.id);
+    if (after) grid.after = after; else delete grid.after;
   }
-  return { grids: ordered };
+  const afterService = sanitizeAfter((raw as any)?.afterService, ids, null);
+  return afterService ? { grids: ordered, afterService } : { grids: ordered };
+}
+
+/** A usable "after a selection" (a grid it jumps to must exist and not be itself); "stay" is the default, so it is dropped. */
+function sanitizeAfter(raw: any, ids: Set<string>, self: string | null): PosAfter | undefined {
+  if (raw?.to === "main") return { to: "main" };
+  if (raw?.to === "grid" && typeof raw.gridId === "string" && ids.has(raw.gridId) && raw.gridId !== self && raw.gridId !== POS_GRID_MAIN) return { to: "grid", gridId: raw.gridId };
+  return undefined;
 }

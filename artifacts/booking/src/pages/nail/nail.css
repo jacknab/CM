@@ -1100,3 +1100,15 @@
 .nail-app .ticket-popup .checkin-dock-btn:hover { background: #e4ddc6; border-color: #cfc6ab; color: #111; }
 .nail-app .ticket-popup .checkin-dock-btn svg { width: 34px; height: 34px; }
 .nail-app .ticket-popup .checkin-dock-btn span { font-size: 15px; letter-spacing: .5px; }
+/* Grid editor: any-colour swatch (a colour input under a rainbow swatch). */
+.nail-app .ge-swatches .ge-swatch-custom { position: relative; display: inline-block; width: 40px; height: 40px; border: 2px solid #454c56; cursor: pointer;
+  background: conic-gradient(#f44, #fd0, #4d4, #0cf, #48f, #c4f, #f44); }
+.nail-app .ge-swatches .ge-swatch-custom.active { border-color: #fff; }
+.nail-app .ge-swatches .ge-swatch-custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+/* Receipt opened by its ticket #: print it again (owner, 2026-10-24). */
+.nail-app .receipt-reprint { padding: 0 20px 20px; display: flex; flex-direction: column; gap: 8px; }
+.nail-app .receipt-reprint button { width: 100%; padding: 16px; border-radius: 10px; border: 0; background: #0d9bd1; color: #fff; font-size: 16px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; cursor: pointer; }
+.nail-app .receipt-reprint button:disabled { opacity: .6; }
+.nail-app .receipt-reprint p { margin: 0; font-size: 13px; text-align: center; }
+.nail-app .receipt-reprint p.ok { color: #34d399; }
+.nail-app .receipt-reprint p.err { color: #f87171; }

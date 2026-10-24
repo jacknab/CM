@@ -1,8 +1,8 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { ArrowLeft, DoorOpen, LayoutGrid, Footprints, Gift, Hand, HandCoins, MoreHorizontal, Package, Percent, Plus, ShoppingBag, Split, Sparkles, UserRound, Users, WalletCards, Zap } from "lucide-react";
+import { ArrowLeft, DoorOpen, Printer, LayoutGrid, Footprints, Gift, Hand, HandCoins, MoreHorizontal, Package, Percent, Plus, ShoppingBag, Split, Sparkles, UserRound, Users, WalletCards, Zap } from "lucide-react";
 import { QUICK_TICKET_STEPS } from "@shared/nailCheckout";
 import { formatDuration, parseKeypadAmount } from "./ticketDraft";
-import { POS_GRID_COLUMNS, POS_GRID_MAIN, POS_GRID_SLOTS, type PosGrid, type PosGridConfig } from "@shared/posGrid";
+import { POS_FN_LABELS, POS_GRID_COLUMNS, POS_GRID_MAIN, POS_GRID_SLOTS, type PosAfter, type PosFn, type PosGrid, type PosGridConfig } from "@shared/posGrid";
 
 export interface CatalogService { id: number; name: string; duration: number; price: number | string }
 export interface CatalogAddon { id: number; name: string; price: number | string; duration: number | null }
@@ -146,6 +146,12 @@ interface Props {
   onToggleAddon: (id: number) => void;
   /** A way out of the grid, as the last key of the main grid (e.g. back to Payment while a ticket is being paid). */
   exit?: { label: string; onClick: () => void };
+  /** Every active add-on, for add-on keys the manager put on a grid. */
+  allAddons?: CatalogAddon[];
+  /** An add-on key was tapped (without it, add-on keys toggle `onToggleAddon`). */
+  onAddonKey?: (addon: CatalogAddon) => void;
+  /** A function key was tapped. Without a handler the key is greyed out. */
+  onFn?: (fn: PosFn) => void;
 }
 
 /** The right panel is a fixed 2 × 6 grid of keys, like a register's — two across so every key is easy to read and
@@ -160,6 +166,8 @@ export type GridKey =
   | { kind: "category"; group: CatalogGroup; label?: string; color?: string }
   | { kind: "service"; service: CatalogService; label?: string; color?: string }
   | { kind: "grid"; grid: PosGrid; label?: string; color?: string }
+  | { kind: "addon"; addon: CatalogAddon; label?: string; color?: string }
+  | { kind: "fn"; fn: PosFn; label?: string; color?: string }
   | { kind: "more" }
   | { kind: "back"; label?: string; color?: string }
   | { kind: "exit" }
@@ -194,19 +202,43 @@ export function gridKeys(groups: CatalogGroup[], openKey: string | null, page: n
   return keys;
 }
 
-/** One grid the manager arranged, as keys: anything pointing at a category, service or grid that no longer exists is a blank key. */
-export function arrangedKeys(grid: PosGrid, layout: PosGridConfig, groups: CatalogGroup[]): GridKey[] {
+/**
+ * One grid the manager arranged, as keys: anything pointing at a category, service, add-on or grid that no longer exists
+ * is a blank key. On the main grid, a category that is on no grid at all (one added since the grid was arranged) takes
+ * the next empty position, so a new category shows on the POS without editing the grid (owner, 2026-10-24).
+ * `reserveLast`: the last position is taken by something else (the way back to Payment), so nothing is placed there.
+ */
+export function arrangedKeys(grid: PosGrid, layout: PosGridConfig, groups: CatalogGroup[], addons: CatalogAddon[] = [], reserveLast = false): GridKey[] {
   const services = new Map<number, CatalogService>();
   for (const g of groups) for (const svc of g.services) services.set(svc.id, svc);
-  return Array.from({ length: GRID_SLOTS }, (_, i): GridKey => {
+  const keys = Array.from({ length: GRID_SLOTS }, (_, i): GridKey => {
     const k = grid.keys[i];
     if (!k) return { kind: "empty" };
     const look = { label: k.label, color: k.color };
     if (k.type === "category") { const group = groups.find((g) => g.key === k.groupKey); return group ? { kind: "category", group, ...look } : { kind: "empty" }; }
     if (k.type === "service") { const service = services.get(k.serviceId); return service ? { kind: "service", service, ...look } : { kind: "empty" }; }
     if (k.type === "grid") { const target = layout.grids.find((g) => g.id === k.gridId); return target ? { kind: "grid", grid: target, ...look } : { kind: "empty" }; }
+    if (k.type === "addon") { const addon = addons.find((a) => a.id === k.addonId); return addon ? { kind: "addon", addon, ...look } : { kind: "empty" }; }
+    if (k.type === "fn") return { kind: "fn", fn: k.fn, ...look };
     return { kind: "back", ...look };
   });
+  if (grid.id === POS_GRID_MAIN) {
+    const placed = new Set(layout.grids.flatMap((g) => g.keys.flatMap((k) => (k?.type === "category" ? [k.groupKey] : []))));
+    const unplaced = groups.filter((g) => !placed.has(g.key));
+    for (let i = 0; i < keys.length && unplaced.length > 0; i++) {
+      if (reserveLast && i === keys.length - 1) break;
+      if (keys[i].kind === "empty" && !grid.keys[i]) keys[i] = { kind: "category", group: unplaced.shift()! };
+    }
+  }
+  return keys;
+}
+
+/** Positions on the main grid that hold a category only because it is on no grid yet (shown as such in the editor). */
+export function autoPlacedSlots(layout: PosGridConfig, groups: CatalogGroup[], addons: CatalogAddon[] = []): Set<number> {
+  const main = layout.grids.find((g) => g.id === POS_GRID_MAIN);
+  if (!main) return new Set();
+  const keys = arrangedKeys(main, layout, groups, addons);
+  return new Set(keys.flatMap((k, i) => (k.kind === "category" && !main.keys[i] ? [i] : [])));
 }
 
 /**
@@ -215,37 +247,41 @@ export function arrangedKeys(grid: PosGrid, layout: PosGridConfig, groups: Catal
  * A grid of theirs with no Back key gets one in the last position, so nobody is ever stuck in it; while a
  * ticket is being paid the main grid's last position is the way back to Payment.
  */
-export function placeKeys(layout: PosGridConfig | null | undefined, groups: CatalogGroup[], place: GridPlace, page: number, hasExit = false): GridKey[] {
+export function placeKeys(layout: PosGridConfig | null | undefined, groups: CatalogGroup[], place: GridPlace, page: number, hasExit = false, addons: CatalogAddon[] = []): GridKey[] {
   if (place.at === "category" && groups.some((g) => g.key === place.key)) return gridKeys(groups, place.key, page);
   const grid = layout?.grids.find((g) => g.id === (place.at === "grid" ? place.id : POS_GRID_MAIN));
   if (!layout || !grid) return gridKeys(groups, null, page, hasExit);
-  const keys = arrangedKeys(grid, layout, groups);
+  const keys = arrangedKeys(grid, layout, groups, addons, grid.id === POS_GRID_MAIN && hasExit);
   if (grid.id !== POS_GRID_MAIN && !keys.some((k) => k.kind === "back")) keys[GRID_SLOTS - 1] = { kind: "back" };
   if (grid.id === POS_GRID_MAIN && hasExit) keys[GRID_SLOTS - 1] = { kind: "exit" };
   return keys;
 }
 
+const FN_ICONS: Record<PosFn, typeof Percent> = { discount: Percent, giftcard: Gift, nosale: DoorOpen, reprint: Printer };
+
 /** One key of the grid, drawn the same on the POS and in the manager's editor. */
 export function PosKeyButton({ k, index, onClick, disabled, selected, exitLabel, testId }: {
   k: GridKey; index: number; onClick?: () => void; disabled?: boolean; selected?: boolean; exitLabel?: string; testId?: string;
 }) {
-  const own = k.kind === "category" || k.kind === "service" || k.kind === "grid" || k.kind === "back" ? k.color : undefined;
+  const own = k.kind === "category" || k.kind === "service" || k.kind === "grid" || k.kind === "back" || k.kind === "addon" || k.kind === "fn" ? k.color : undefined;
   const band = { ["--pos-band" as string]: own ?? ROW_BANDS[Math.floor(index / GRID_COLUMNS)] } as CSSProperties;
   if (k.kind === "empty") {
     return onClick
       ? <button type="button" className={`pos-key pos-key-empty ${selected ? "selected" : ""}`} onClick={onClick} disabled={disabled} data-testid={testId} aria-label={`Empty position ${index + 1}`} />
       : <div className="pos-key pos-key-empty" aria-hidden />;
   }
-  const cls = `pos-key ${k.kind === "service" ? "pos-key-service" : ""} ${k.kind === "back" || k.kind === "exit" || k.kind === "more" ? "pos-key-nav" : ""} ${selected ? "selected" : ""}`;
+  const cls = `pos-key ${k.kind === "service" || k.kind === "addon" ? "pos-key-service" : ""} ${k.kind === "back" || k.kind === "exit" || k.kind === "more" ? "pos-key-nav" : ""} ${selected ? "selected" : ""}`;
   let face: React.ReactNode;
   if (k.kind === "back") face = <><ArrowLeft size={24} /><strong>{k.label || "Back"}</strong></>;
   else if (k.kind === "exit") face = <><ArrowLeft size={24} /><strong>{exitLabel}</strong></>;
   else if (k.kind === "more") face = <><MoreHorizontal size={24} /><strong>More</strong></>;
   else if (k.kind === "grid") face = <><LayoutGrid size={26} /><strong>{k.label || k.grid.name}</strong></>;
   else if (k.kind === "category") { const Icon = iconFor(k.group.name); face = <><Icon size={26} /><strong>{k.label || k.group.name}</strong></>; }
+  else if (k.kind === "addon") face = <><strong>{k.label || k.addon.name}</strong><span><b>+{money(k.addon.price)}</b><small>Add-on</small></span></>;
+  else if (k.kind === "fn") { const Icon = FN_ICONS[k.fn]; face = <><Icon size={26} /><strong>{k.label || POS_FN_LABELS[k.fn]}</strong></>; }
   else face = <><strong>{k.label || k.service.name}</strong><span><b>{money(k.service.price)}</b><small>{formatDuration(k.service.duration)}</small></span></>;
   return (
-    <button type="button" className={cls} style={band} disabled={disabled} onClick={onClick} data-testid={testId} aria-pressed={k.kind === "service" ? !!selected : undefined}>
+    <button type="button" className={cls} style={band} disabled={disabled} onClick={onClick} data-testid={testId} aria-pressed={k.kind === "service" || k.kind === "addon" ? !!selected : undefined}>
       {face}
     </button>
   );
@@ -271,23 +307,34 @@ export function CatalogPanel(p: Props) {
   const place = trail[trail.length - 1];
   const open = (next: GridPlace) => { setTrail((t) => [...t, next]); setPage(0); if (next.at === "category") p.onGroup(next.key); };
   const back = () => { setTrail((t) => (t.length > 1 ? t.slice(0, -1) : t)); setPage(0); };
-  const keys = placeKeys(p.layout, p.groups, place, page, !!p.exit);
+  const keys = placeKeys(p.layout, p.groups, place, page, !!p.exit, p.allAddons ?? []);
+  // After a service or add-on is picked: what the grid it was on says — stay, back to main, or open a grid.
+  const afterPick = () => {
+    const after: PosAfter | undefined = place.at === "category" ? p.layout?.afterService
+      : p.layout?.grids.find((g) => g.id === (place.at === "grid" ? place.id : POS_GRID_MAIN))?.after;
+    if (!after || after.to === "stay") return;
+    if (after.to === "main") { setTrail([{ at: "main" }]); setPage(0); return; }
+    if (p.layout?.grids.some((g) => g.id === after.gridId)) { setTrail([{ at: "main" }, { at: "grid", id: after.gridId }]); setPage(0); }
+  };
 
   return (
     <div className={`catalog-panel ${p.locked ? "catalog-locked" : ""}`} data-testid="nail-catalog">
       <div className="pos-grid" data-testid="nail-pos-grid" data-grid={place.at === "main" ? "main" : place.at === "category" ? place.key : place.id}>
         {keys.map((key, i) => (
-          <PosKeyButton key={i} k={key} index={i} disabled={p.locked} exitLabel={p.exit?.label}
-            selected={key.kind === "service" && p.serviceId === key.service.id}
+          <PosKeyButton key={i} k={key} index={i} disabled={p.locked || (key.kind === "fn" && !p.onFn)} exitLabel={p.exit?.label}
+            selected={(key.kind === "service" && p.serviceId === key.service.id) || (key.kind === "addon" && !p.onAddonKey && p.addonIds.includes(key.addon.id))}
             testId={key.kind === "back" ? "nail-grid-back" : key.kind === "exit" ? "nail-grid-exit" : key.kind === "more" ? "nail-grid-more"
-              : key.kind === "category" ? `nail-cat-${key.group.key}` : key.kind === "service" ? `nail-service-${key.service.id}` : key.kind === "grid" ? `nail-grid-open-${key.grid.id}` : undefined}
+              : key.kind === "category" ? `nail-cat-${key.group.key}` : key.kind === "service" ? `nail-service-${key.service.id}` : key.kind === "grid" ? `nail-grid-open-${key.grid.id}`
+              : key.kind === "addon" ? `nail-addon-key-${key.addon.id}` : key.kind === "fn" ? `nail-fn-key-${key.fn}` : undefined}
             onClick={key.kind === "empty" ? undefined
               : key.kind === "back" ? back
               : key.kind === "exit" ? p.exit?.onClick
               : key.kind === "more" ? () => setPage((n) => n + 1)
               : key.kind === "category" ? () => open({ at: "category", key: key.group.key })
               : key.kind === "grid" ? () => open({ at: "grid", id: key.grid.id })
-              : () => p.onService(key.service)} />
+              : key.kind === "addon" ? () => { if (p.onAddonKey) p.onAddonKey(key.addon); else p.onToggleAddon(key.addon.id); afterPick(); }
+              : key.kind === "fn" ? (p.onFn ? () => p.onFn!(key.fn) : undefined)
+              : () => { p.onService(key.service); afterPick(); }} />
         ))}
       </div>
 

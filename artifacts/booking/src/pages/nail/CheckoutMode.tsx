@@ -66,6 +66,8 @@ interface Props {
   groups: CatalogGroup[];
   /** The key grid the manager arranged (null = automatic). */
   layout?: import("@shared/posGrid").PosGridConfig | null;
+  /** Every active add-on, for add-on keys on the grid (each adds a line to this sale). */
+  storeAddons?: import("./CatalogPanel").CatalogAddon[];
   /** Put this service on the ticket in place of the one it has. Resolves true when the ticket was changed. */
   onChangeService: (svc: CatalogService) => Promise<boolean>;
   /** Staff are looking at this checkout right now (the POS tab is open and the screen isn't locked). When they
@@ -177,7 +179,8 @@ export function CheckoutMode(p: Props) {
   };
   useEffect(() => () => { if (statusTimer.current) clearTimeout(statusTimer.current); }, []);
 
-  const amount = centsToDollars(cents);
+  // Quick Ticket prices are whole dollars (owner, 2026-10-24): "10 ENTER" is $10. Everywhere else the keypad counts cents.
+  const amount = guided !== null ? (Number(cents) || 0) : centsToDollars(cents);
   // Right after a visit is saved the board may not have its other tickets yet: link them when they arrive, once.
   const groupSeeded = useRef(false);
   useEffect(() => {
@@ -516,7 +519,8 @@ export function CheckoutMode(p: Props) {
       addExtra("+Extra", amount, "custom"); setCents(""); say(`EXTRA ADDED · ${money(amount)}`, "success");
       return;
     }
-    setCents((c) => pushKeypadDigits(c, k));
+    // Quick Ticket: whole dollars, up to $9999.
+    setCents((c) => (guided !== null ? (c + k).replace(/^0+/, "").slice(0, 4) : pushKeypadDigits(c, k)));
   };
 
   // ── functions ─────────────────────────────────────────────────────────────
@@ -1296,6 +1300,14 @@ export function CheckoutMode(p: Props) {
             // The payment buttons appear only once PAY / CHECKOUT has been pressed; before that this is the key grid.
             <CatalogPanel layout={p.layout} locked={p.finalizing} groups={p.groups} activeGroup="" onGroup={() => {}} serviceId={null} onService={addServiceLine}
               addons={[]} moreAddons={false} onToggleMore={() => {}} hasMoreAddons={false} addonIds={[]} onToggleAddon={() => {}}
+              allAddons={p.storeAddons ?? []}
+              onAddonKey={(a) => { if (p.paid || p.finalizing) return; const price = Number(a.price) || 0; addExtra(`+ ${a.name}`, price, "custom"); say(`${a.name.toUpperCase()} ADDED · ${money(price)}`, "success"); }}
+              onFn={(fn) => {
+                if (fn === "discount") { setMenu("discount"); setRightTab("functions"); }
+                else if (fn === "giftcard") runFn("gift");
+                else if (fn === "reprint") void reprintLast();
+                else { openDrawer(); recordNoSale({ performedBy: ticket.staff?.name }); say("CASH DRAWER OPENED"); }
+              }}
               exit={paying ? { label: "Payment", onClick: backToPayment } : undefined} />
           ) : (
           <div className="catalog-panel" data-testid="nail-pay-right">

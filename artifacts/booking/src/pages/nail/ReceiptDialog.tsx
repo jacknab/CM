@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { receiptSections, sectionLineLabel, type ReceiptLine } from "@/lib/receiptSections";
+import { printSavedReceipt } from "./receiptReprint";
 
 interface CardDetails {
   brand?: string;
@@ -51,6 +52,16 @@ const fmtEntry = (m: string) => ENTRY_LABEL[m.toLowerCase()] ?? m.toUpperCase();
 export function ReceiptDialog({ token, snapshot, onClose }: { token: string | null; snapshot?: unknown; onClose: () => void }) {
   const [data, setData] = useState<ReceiptSnapshot | null>((snapshot as ReceiptSnapshot | undefined) ?? null);
   const [error, setError] = useState(false);
+  // Print it again on the receipt printer (owner, 2026-10-24: for when the paper ran out).
+  const [printing, setPrinting] = useState(false);
+  const [printNote, setPrintNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const print = async () => {
+    if (!data || printing) return;
+    setPrinting(true); setPrintNote(null);
+    const err = await printSavedReceipt(data);
+    setPrinting(false);
+    setPrintNote(err ? { ok: false, text: err } : { ok: true, text: "Receipt printed" });
+  };
 
   useEffect(() => {
     if (snapshot || !token) return;
@@ -135,6 +146,12 @@ export function ReceiptDialog({ token, snapshot, onClose }: { token: string | nu
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}><span>TOTAL:</span><span>{money(r.total)}</span></div>
               <div style={{ display: "flex", justifyContent: "space-between" }}><span>Amount Paid:</span><span>{money(r.tenders.reduce((s, t) => s + t.amount, 0) || r.total)}</span></div>
               <div style={{ whiteSpace: "pre", opacity: 0.5, marginTop: 8 }}>{DASH}</div>
+            </div>
+          )}
+          {r && (
+            <div className="receipt-reprint">
+              {printNote && <p className={printNote.ok ? "ok" : "err"} data-testid="nail-receipt-reprint-note">{printNote.text}</p>}
+              <button type="button" onClick={() => void print()} disabled={printing} data-testid="nail-receipt-reprint">{printing ? "Printing…" : "Print receipt"}</button>
             </div>
           )}
         </div>
