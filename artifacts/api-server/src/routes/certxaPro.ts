@@ -193,7 +193,7 @@ router.post("/customers", async (req, res) => {
 router.get("/services", async (req, res) => {
   try {
     const storeId = await store(req, res); if (!storeId) return;
-    const rows = await pool.query(`SELECT id,name,duration,price::float8 AS price,offered_at AS "offeredAt" FROM services WHERE store_id=$1 AND is_active=true ORDER BY name,id`, [storeId]);
+    const rows = await pool.query(`SELECT id,name,duration,price::float8 AS price,offered_at AS "offeredAt",category_id AS "categoryId",category FROM services WHERE store_id=$1 AND is_active=true ORDER BY name,id`, [storeId]);
     return res.json(rows.rows);
   } catch (error) { return unexpected(res, error); }
 });
