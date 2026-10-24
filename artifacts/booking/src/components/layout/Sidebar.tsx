@@ -83,8 +83,9 @@ function buildTopNav(pick: Pick4): TopNavItem[] {
     {
       label: pick({ en: "Dashboard", vi: "Tổng quan", es: "Panel", fr: "Tableau de bord" }),
       icon: LayoutDashboard,
-      to: "/manage/dashboard",
-      matches: ["/manage"],
+      // Opens the Business Intelligence page (owner, 2026-10-24).
+      to: "/intelligence",
+      matches: ["/intelligence", "/manage"],
     },
     {
       label: pick({ en: "Calendar", vi: "Lịch", es: "Calendario", fr: "Calendrier" }),
@@ -134,7 +135,7 @@ function buildInsightsSubnav(pick: Pick4): SubNavItem[] {
 }
 
 const INSIGHTS_MATCHES = [
-  "/salon-dashboard", "/analytics", "/intelligence",
+  "/salon-dashboard", "/analytics",
   "/salon-earnings", "/register-reports", "/reports",
 ];
 
@@ -607,7 +608,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
         {/* Core items — split around Catalog section */}
         {(() => {
           // Routes that appear BEFORE the Catalog section
-          const beforeRoutes = new Set(["/manage/dashboard", "/calendar", "/customers"]);
+          const beforeRoutes = new Set(["/intelligence", "/calendar", "/customers"]);
           const beforeItems = visibleItems.filter((i) => beforeRoutes.has(i.to));
           const afterItems  = visibleItems.filter((i) => !beforeRoutes.has(i.to));
 
