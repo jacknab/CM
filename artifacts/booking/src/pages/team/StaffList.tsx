@@ -17,6 +17,8 @@ interface StaffRow {
   status: string | null;
   avatarThumbUrl: string | null;
   avatarUrl: string | null;
+  /** The ID staff type on the /nail and /barber POS — shown as "Staff ID". */
+  barberNumber?: number | null;
 }
 
 // Stable fallback so memos keyed on `staff` stay referentially stable while the query is idle/loading.
@@ -109,6 +111,9 @@ export default function StaffList() {
                     )}
                   </span>
                   <span className="truncate text-[15px] font-medium">{s.name}</span>
+                  {s.barberNumber != null && (
+                    <span className="shrink-0 text-sm text-muted-foreground" data-testid={`staff-row-id-${s.id}`}>Staff ID {s.barberNumber}</span>
+                  )}
                 </div>
                 <span className="hidden truncate text-sm text-muted-foreground sm:block">{s.email || "—"}</span>
                 <span className="hidden truncate text-sm text-muted-foreground sm:block">{s.phone || "—"}</span>

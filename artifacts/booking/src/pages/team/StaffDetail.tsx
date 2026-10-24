@@ -85,8 +85,6 @@ export default function StaffDetail() {
   const businessType = (selectedStore as any)?.category as string | undefined;
   const [role, setRole] = useState("");
   const [takesTurns, setTakesTurns] = useState(true);
-  // Stores whose staff sign in on the /nail or /barber POS with an ID.
-  const posIdStore = /barber|nail/i.test(businessType ?? "");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [svcRate, setSvcRate] = useState("0");
@@ -234,10 +232,12 @@ export default function StaffDetail() {
           <button onClick={() => navigate("/team")} className="mb-3 flex items-center gap-1 text-sm font-medium text-primary hover:underline">
             <ChevronLeft className="h-4 w-4" /> Staff
           </button>
-          <h1 className="text-2xl font-semibold tracking-tight">{staff.name}</h1>
-          {posIdStore && staff.barberNumber != null && (
-            <p className="mt-1 text-sm text-muted-foreground" data-testid="staff-barber-id">{/barber/i.test((selectedStore as any)?.category ?? "") ? "Barber ID" : "Tech ID"} {staff.barberNumber}</p>
-          )}
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {staff.name}
+            {staff.barberNumber != null && (
+              <span className="ml-3 text-base font-normal text-muted-foreground" data-testid="staff-barber-id">Staff ID {staff.barberNumber}</span>
+            )}
+          </h1>
         </div>
 
         <Tabs defaultValue="profile" className="space-y-6">
