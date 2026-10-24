@@ -19572,6 +19572,8 @@ or
       const addDays = (day: string, n: number) => { const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
       const period = req.query.period === "week" || req.query.period === "pay" ? req.query.period : "today";
       let firstDay = today, lastDay = today, payrollType = "Commission";
+      // The day this pay period is paid (from the salon's pay schedule); none without a schedule.
+      let payDate: string | null = null;
       if (period === "week") {
         // Monday to Sunday, this week.
         const dow = new Date(`${today}T12:00:00Z`).getUTCDay();
@@ -19582,7 +19584,7 @@ or
         if (sched) {
           const { currentPayrollPeriod } = await import("./lib/payrollPeriods");
           const p = currentPayrollPeriod(sched.frequency, sched.anchorDate as unknown as string, sched.periodEndOffsetDays, today);
-          firstDay = p.periodStart; lastDay = p.periodEnd;
+          firstDay = p.periodStart; lastDay = p.periodEnd; payDate = p.payDate;
         } else {
           // No pay schedule set: the 1st–15th or the 16th–end of the month, as most salons pay.
           const [y, m, d] = today.split("-").map(Number);
@@ -19627,7 +19629,7 @@ or
       const sum = (k: "sale" | "commission" | "ncTips") => cents(dayRows.reduce((s, d) => s + d[k], 0)) / 100;
       const totals = { sale: sum("sale"), commission: sum("commission"), ncTips: sum("ncTips"), cashTips: cents(cashTips) / 100, tickets: rows.length };
       return res.json({
-        storeName: (storeRow as any)?.name ?? "", staffName: member.name, period, firstDay, lastDay, payrollType, commissionOn,
+        storeName: (storeRow as any)?.name ?? "", staffName: member.name, period, firstDay, lastDay, payDate, payrollType, commissionOn,
         totals: { ...totals, pay: cents(totals.commission + totals.ncTips) / 100 },
         days: dayRows, tickets: period === "today" ? tickets : [],
       });

@@ -13,6 +13,8 @@ export interface TechSlip {
   period: "today" | "week" | "pay";
   firstDay: string; // YYYY-MM-DD
   lastDay: string;
+  /** The day the pay period is paid (Pay Period tab, from the salon's pay schedule). */
+  payDate?: string | null;
   payrollType: string;
   commissionOn: boolean;
   totals: { sale: number; commission: number; ncTips: number; cashTips: number; pay: number; tickets: number };
@@ -45,11 +47,16 @@ export function buildTechSlipText(s: TechSlip, timeZone?: string): string {
   lines.push(`[C]<b>${s.storeName.toUpperCase()}</b>`);
   lines.push(`[L]${"-".repeat(SLIP_WIDTH)}`);
   const dates = s.firstDay === s.lastDay ? usDate(s.firstDay) : `${usDate(s.firstDay).slice(0, 6)}${s.firstDay.slice(2, 4)} - ${usDate(s.lastDay).slice(0, 6)}${s.lastDay.slice(2, 4)}`;
-  lines.push(`[L]${two("Payroll Date", dates)}`);
+  const datesLabel = s.period === "pay" ? "Payroll Period" : "Payroll Date";
+  // "Payroll Period" and a date range don't fit one 32-character line: the dates go under it, on the right.
+  if (datesLabel.length + 1 + dates.length <= SLIP_WIDTH) lines.push(`[L]${two(datesLabel, dates)}`);
+  else { lines.push(`[L]${datesLabel}`); lines.push(`[L]${dates.padStart(SLIP_WIDTH)}`); }
+  if (s.period === "pay" && s.payDate) lines.push(`[L]${two("Pay Date", usDate(s.payDate))}`);
   lines.push(`[L]${two("Employee Name", s.staffName)}`);
   lines.push(`[L]${two("Payroll Type", s.payrollType)}`);
   lines.push(`[L]${titled("Employee Pay")}`);
-  lines.push(`[L]${two("Total Sale", money(s.totals.sale))}`);
+  lines.push(`[L]${two("Total Sales", money(s.totals.sale))}`);
+  lines.push(`[L]${two("Tickets", String(s.totals.tickets))}`);
   lines.push(`[L]${two("Total Commission", money(s.totals.commission))}`);
   lines.push(`[L]${two("+Non-Cash Tips", money(s.totals.ncTips))}`);
   lines.push(`[L]${" ".repeat(SLIP_WIDTH - 12)}${"-".repeat(12)}`);
@@ -73,7 +80,6 @@ export function buildTechSlipText(s: TechSlip, timeZone?: string): string {
   }
   lines.push(`[L]${" ".repeat(7)}${"-".repeat(SLIP_WIDTH - 7)}`);
   lines.push(`[L]${row("", money(s.totals.sale), money(s.totals.commission), money(s.totals.ncTips))}`);
-  lines.push(`[L]${s.totals.tickets} ${s.totals.tickets === 1 ? "ticket" : "tickets"}`);
   lines.push("[L]");
   return lines.join("\n");
 }
