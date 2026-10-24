@@ -40,13 +40,6 @@ const dayLabel = (day: string) => `${day.slice(8, 10)}-${DAYS[new Date(`${day}T1
 /** One row of the details table: a label and three amounts, right-aligned in fixed columns. */
 const row = (label: string, a: string, b: string, c: string) => label.padEnd(7).slice(0, 7) + a.padStart(8) + b.padStart(9) + c.padStart(8);
 
-/** "[L]text" → "[L]<b>text</b>"; a line already bold, or empty, is left as it is. */
-const boldLine = (line: string) => {
-  const m = /^(\[[LCR]\])(.*)$/.exec(line);
-  if (!m || !m[2].trim() || m[2].includes("<b>")) return line;
-  return `${m[1]}<b>${m[2]}</b>`;
-};
-
 export function buildTechSlipText(s: TechSlip, timeZone?: string): string {
   const lines: string[] = [];
   lines.push(`[C]<b>${s.storeName.toUpperCase()}</b>`);
@@ -82,6 +75,5 @@ export function buildTechSlipText(s: TechSlip, timeZone?: string): string {
   lines.push(`[L]${row("", money(s.totals.sale), money(s.totals.commission), money(s.totals.ncTips))}`);
   lines.push(`[L]${s.totals.tickets} ${s.totals.tickets === 1 ? "ticket" : "tickets"}`);
   lines.push("[L]");
-  // Every line in bold (owner, 2026-10-24): a darker print on thermal printers that print thin.
-  return lines.map(boldLine).join("\n");
+  return lines.join("\n");
 }
