@@ -22993,6 +22993,10 @@ or
   const { default: staffEmploymentRouter } = await import("./routes/staffEmployment.js");
   app.use("/api/staff-employment", staffEmploymentRouter);
 
+  // ── 1099-NEC filing packages through TaxBandits (plans/1099-filing-taxbandits.md) ───
+  const { default: taxFilingRouter } = await import("./routes/taxFiling.js");
+  app.use("/api/tax-filing", taxFilingRouter);
+
   if (IS_SCHEDULER_INSTANCE) {
     const { startReconciliationScheduler, setNoShowSweeper } = await import("./routes/sync-jobs.js");
     setNoShowSweeper(autoMarkNoShowsForStore);

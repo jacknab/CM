@@ -135,6 +135,7 @@ const RentalsFaqPage = lazy(() => import("@/pages/rentalsMarketing/RentalsFaqPag
 const RentalsAuthPage = lazy(() => import("@/pages/rentalsMarketing/RentalsAuthPage"));
 const ContactPage = lazy(() => import("@/pages/ContactPage"));
 const TeamPayroll = lazy(() => import("@/pages/team/TeamPayroll"));
+const TeamTax1099 = lazy(() => import("@/pages/team/TeamTax1099"));
 const StaffList = lazy(() => import("@/pages/team/StaffList"));
 const AddStaffWizard = lazy(() => import("@/pages/team/AddStaffWizard"));
 const StaffDetail = lazy(() => import("@/pages/team/StaffDetail"));
@@ -680,6 +681,7 @@ function AppRoutes() {
           dashboard (/payouts) now redirects here — everything else under
           /payouts/* stays put as a drill-down destination reachable from the hub. */}
       <Route path="/payroll" element={<TeamPayroll />} />
+      <Route path="/payroll/1099" element={<TeamTax1099 />} />
       <Route path="/payroll/employees" element={<Navigate to="/payroll" replace />} />
       <Route path="/payouts" element={<Navigate to="/payroll" replace />} />
       <Route path="/payouts/*" element={<Navigate to="/payroll" replace />} />

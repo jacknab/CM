@@ -24,6 +24,17 @@ Form 1099-NEC through the TaxBandits API on the salon's behalf (federal + state,
 - New tables: `tax_filing_orders` (salon, tax year, forms, price, Stripe payment, status) and `tax_filing_forms`
   (one per contractor: amount, TaxBandits submission/record ids, status, IRS/state status, errors, correction of).
 
+## Progress (2026-10-24)
+Built, sandbox-tested, deployed (needs `pm2 reload certxa-api`): migration 0258 (salon_tax_payer, tax_filing_orders,
+tax_filing_forms), `lib/taxbandits.ts` (auth, validate, create, transmit, status — each checked against the sandbox),
+`lib/tax1099.ts` (yearly totals, readiness, fileOrder, refreshOrderStatus), `routes/taxFiling.ts` (/api/tax-filing),
+Stripe webhook hook (`markTaxFilingPaid`), page `/payroll/1099` (TeamTax1099.tsx) + "1099s" button on Payroll.
+Defaults: $8/form (TAX_1099_PRICE_CENTS), +$3 mailed copy (TAX_1099_MAIL_CENTS); online copy always included.
+Buying is blocked unless Stripe and TaxBandits are both live or both test (Stripe is live; TaxBandits sandbox).
+
+Not yet: state filing (IsState is off — federal only), corrections for rejected forms, automatic status refresh
+(the page has "Update status"), TaxBandits webhooks, live keys.
+
 ## Phases
 1. **Salon payer details** — legal name + EIN + address in Settings (or Payroll), EIN encrypted.
 2. **"1099s for <year>" screen** in Payroll — contractors with their yearly total, over/under $2,000, and what is

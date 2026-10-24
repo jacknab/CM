@@ -171,9 +171,12 @@ function Overview({ storeId, onOpenRun }: { storeId?: number; onOpenRun: (id: nu
               Each pay period is created automatically. Review the earnings, approve, then print the paychecks.
             </p>
           </div>
-          <Button variant="outline" className="gap-2" onClick={() => navigate("/print-checks?tab=payroll")}>
-            <Printer className="h-4 w-4" /> Check printing
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => navigate("/payroll/1099")} data-testid="payroll-1099">1099s</Button>
+            <Button variant="outline" className="gap-2" onClick={() => navigate("/print-checks?tab=payroll")}>
+              <Printer className="h-4 w-4" /> Check printing
+            </Button>
+          </div>
         </header>
 
         {!storeId || isLoading ? (

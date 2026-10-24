@@ -210,6 +210,9 @@ router.post(
           // Hardware shop orders are their own flow and must not reach the subscription handler.
           const { markShopOrderPaid } = await import("../lib/shop");
           if (await markShopOrderPaid(session)) break;
+          // 1099 filing packages: paid → filed through TaxBandits.
+          const { markTaxFilingPaid } = await import("./taxFiling");
+          if (await markTaxFilingPaid(session)) break;
           await handleCheckoutCompleted(session);
           break;
         }
