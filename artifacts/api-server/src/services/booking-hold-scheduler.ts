@@ -22,7 +22,9 @@ import {
   markBookingPaymentTokenReminderSent,
   getExpiredUnusedTokens,
   deleteBookingPaymentToken,
+  holdTimeLeft,
 } from "../lib/bookingPaymentLinks";
+import { pool } from "../db";
 import { broadcastSyncEvent } from "../notifications";
 
 let intervalId: ReturnType<typeof setInterval> | null = null;
@@ -37,8 +39,8 @@ async function processReminders(): Promise<void> {
     }
     const link = `${process.env.APP_URL ?? "https://certxa.com"}/complete-booking/${t.token}`;
     const body = t.requirement === "deposit"
-      ? `Reminder: you have about 40 minutes left to confirm your booking with a $${((t.depositAmountCents ?? 0) / 100).toFixed(2)} deposit, or your reserved time will be released: ${link}`
-      : `Reminder: you have about 40 minutes left to confirm your booking by adding a card on file, or your reserved time will be released: ${link}`;
+      ? `Reminder: you have ${holdTimeLeft(t.expiresAt)} left to confirm your booking with a $${((t.depositAmountCents ?? 0) / 100).toFixed(2)} deposit, or your reserved time will be released: ${link}`
+      : `Reminder: you have ${holdTimeLeft(t.expiresAt)} left to confirm your booking by adding a card on file, or your reserved time will be released: ${link}`;
     try {
       await sendSms(t.storeId, t.customerPhone, body, "booking_payment_reminder", t.appointmentId, t.customerId ?? undefined, {
         skipCreditDeduction: true,
@@ -59,7 +61,20 @@ async function processExpirations(): Promise<void> {
       // deleted first — deleting the appointment while its own token still
       // points at it violates booking_payment_tokens_appointment_id_fkey.
       await deleteBookingPaymentToken(t.id);
+      // A booking the professional approved (lib/bookingRequests.ts) is marked expired, and the client told.
+      const request = await pool.query<{ id: number; booking_slug: string | null; name: string }>(
+        `UPDATE booking_requests r SET status = 'expired', appointment_id = NULL FROM locations l
+          WHERE r.appointment_id = $1 AND l.id = r.store_id RETURNING r.id, l.booking_slug, l.name`, [t.appointmentId]);
+      // The second service of the same visit goes with it.
+      const group = await pool.query<{ id: number }>(`SELECT id FROM appointments WHERE ticket_group_id = $1 AND id <> $1`, [t.appointmentId]);
+      for (const member of group.rows) await storage.deleteAppointmentAndRelated(member.id);
       await storage.deleteAppointmentAndRelated(t.appointmentId);
+      if (request.rows[0] && t.customerPhone) {
+        const r = request.rows[0];
+        void sendSms(t.storeId, t.customerPhone,
+          `Your time with ${r.name} was released because the deposit wasn't paid. You can book again at ${r.booking_slug ? `https://${r.booking_slug}.certxa.com` : "certxa.com"}`,
+          "booking_request", undefined, t.customerId ?? undefined).catch(() => undefined);
+      }
       broadcastSyncEvent({ type: "booking_deleted", storeId: t.storeId, appointmentId: t.appointmentId });
       console.log(`[BookingHold] Expired unpaid hold — deleted appointment ${t.appointmentId} (token ${t.id})`);
     } catch (err) {

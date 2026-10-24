@@ -202,6 +202,7 @@ import { db as websiteDb, websitesTable, templatesTable } from "@workspace/db";
 import { IS_SCHEDULER_INSTANCE } from "./lib/clusterInfo";
 import { bookingSlugAvailable, changeBookingSlug } from "./lib/bookingSlug";
 import { createBookingRequest, setPublicBookHandler, startBookingRequestSweeper } from "./lib/bookingRequests";
+import { createBookingPaymentToken, depositCentsFor, holdTimeLeft } from "./lib/bookingPaymentLinks";
 
 const BLOOM_TEMPLATE_NAME = "Nail Salon — Bloom";
 /** The booking-link rules live in lib/bookingSlug.ts (format, reserved words, other businesses' current and old links). */
@@ -9563,14 +9564,16 @@ If you have any questions, please contact your administrator.
           message: "This salon requires a payment method on file to confirm your booking.",
         });
       }
-      if (effectivePolicy === "deposit" && !input.stripePaymentIntentId) {
-        return res.status(402).json({
-          message: "This salon requires a deposit to confirm your booking.",
-        });
-      }
+      // A deposit not paid on the booking page (Bloom, Classic and Mobile can't take one) is paid by a link
+      // straight after: the booking is held, hidden from the calendar, until it is (lib/bookingPaymentLinks.ts,
+      // services/booking-hold-scheduler.ts). So is the deposit for a booking the professional approved
+      // (lib/bookingRequests.ts), with a day to pay instead of an hour.
+      const payLater = effectivePolicy === "deposit" && !input.stripePaymentIntentId;
+      const holdDepositCents = payLater ? (expectedDepositCents ?? null) : fromRequest ? await depositCentsFor(store.id, serviceTotalCents) : null;
+      const holdForDeposit = !!holdDepositCents && holdDepositCents > 0;
 
       // Override client-declared policy with server's authoritative value
-      input.paymentPolicy = effectivePolicy as "none" | "card_on_file" | "deposit";
+      input.paymentPolicy = (payLater ? "none" : effectivePolicy) as "none" | "card_on_file" | "deposit";
 
       // Where the visit happens. A house call needs the business to offer them, a service that can be done at
       // the client's, and an address inside the travel radius; the travel fee comes with it.
@@ -9720,6 +9723,7 @@ If you have any questions, please contact your administrator.
         resourceId: assignedResourceId,
         packageId: resolvedPackage ? resolvedPackage.packageId : null,
         ...(houseCall ? { visitAt: "client", clientAddress: houseCall.address, travelFee: houseCall.travelFee.toFixed(2) } : {}),
+        ...(holdForDeposit ? { calendarHidden: true, paymentStatus: "awaiting_payment" } : {}),
       });
       if (!createResult.ok) {
         return res.status(409).json({ message: createResult.error.message });
@@ -9751,7 +9755,8 @@ If you have any questions, please contact your administrator.
         });
         // Tell the owner's phone (Certxa Pro app).
         // Not when the professional approved it themselves.
-        if (!req.__quietPush) void pushBookingEvent(store.id, appointmentId, "booked_online");
+        // Nor while it waits for its deposit (the owner is told once it is paid... or sees it in the app as due).
+        if (!req.__quietPush && !holdForDeposit) void pushBookingEvent(store.id, appointmentId, "booked_online");
       })();
 
       // Save add-ons and extend appointment duration if any were selected
@@ -9883,6 +9888,7 @@ If you have any questions, please contact your administrator.
             customerId: customer.id, notes: input.notes || null, status: "pending", resourceId: null, packageId: null,
             // Same visit: at the client's too when it's a house call; the travel fee is charged once, on the first.
             ...(houseCall ? { visitAt: "client", clientAddress: houseCall.address, travelFee: null } : {}),
+            ...(holdForDeposit ? { calendarHidden: true, paymentStatus: "awaiting_payment" } : {}),
           });
           if (second.ok) {
             extraAppointment = { id: second.data.id, serviceName: extraService.name, staffId: member.id, staffName: member.name, date: secondStart.toISOString(), duration: Number(extraService.duration) || 30 };
@@ -9902,6 +9908,25 @@ If you have any questions, please contact your administrator.
       }
 
       const fullAppointment = await storage.getAppointment(appointmentId);
+
+      // Held for its deposit: the client is texted the payment link (and a page that can, sends them straight
+      // there). The usual confirmation goes out once it is paid (booking-payment-link/complete).
+      if (holdForDeposit) {
+        const tokenRow = await createBookingPaymentToken({
+          storeId: store.id, appointmentId, customerId: customer.id, customerPhone: e164CustomerPhone,
+          requirement: "deposit", depositAmountCents: holdDepositCents!, holdMinutes: fromRequest ? 24 * 60 : 60,
+        });
+        const paymentUrl = `${process.env.APP_URL ?? "https://certxa.com"}/complete-booking/${tokenRow.token}`;
+        const when = formatInTimeZone(new Date(input.date), store.timezone ?? "UTC", "EEE, MMM d 'at' h:mm a");
+        const first = String(customer.name || input.customerName || "").trim().split(/\s+/)[0] || "there";
+        void sendSms(store.id, e164CustomerPhone,
+          `Hi ${first}, your ${serviceRecord?.name ?? "appointment"} with ${store.name} on ${when} is held for you. To confirm it, pay the $${(holdDepositCents! / 100).toFixed(2)} deposit within ${holdTimeLeft(tokenRow.expiresAt, "next")}: ${paymentUrl}`,
+          "booking_payment_required", appointmentId, customer.id, { skipCreditDeduction: true, smsSource: "platform" }).catch(() => undefined);
+        return res.status(201).json({
+          ...(fullAppointment ?? { id: appointmentId }), ...(extraAppointment ? { extraAppointment } : {}),
+          depositHold: { amountCents: holdDepositCents, paymentUrl, expiresAt: tokenRow.expiresAt.toISOString() },
+        });
+      }
       if (fullAppointment) {
         sendBookingConfirmation(fullAppointment).catch(console.error);
         sendBookingConfirmationEmail(fullAppointment).catch(console.error);

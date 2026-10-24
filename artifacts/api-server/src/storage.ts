@@ -1155,6 +1155,8 @@ export class DatabaseStorage implements IStorage {
     // still block a delete on purpose: such a booking is cancelled, not deleted.
     await db.update(smsLog).set({ appointmentId: null }).where(eq(smsLog.appointmentId, id));
     await db.update(aiCallLog).set({ appointmentId: null }).where(eq(aiCallLog.appointmentId, id));
+    // A booking held for its deposit has a payment link; the link goes with it.
+    await pool.query("DELETE FROM booking_payment_tokens WHERE appointment_id = $1", [id]);
     await db.delete(appointments).where(eq(appointments.id, id));
   }
 

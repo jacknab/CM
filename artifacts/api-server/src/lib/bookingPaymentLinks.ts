@@ -81,12 +81,16 @@ export async function createBookingPaymentToken(params: {
   customerPhone: string | null;
   requirement: PaymentLinkRequirement;
   depositAmountCents: number | null;
+  /** How long the time is held for payment. Default 60 minutes (AI receptionist, online booking);
+   *  a booking the professional approved gets 24 hours (lib/bookingRequests.ts). */
+  holdMinutes?: number;
 }): Promise<BookingPaymentTokenRow> {
   const token = crypto.randomBytes(24).toString("hex");
+  const holdMinutes = Math.max(5, Math.round(params.holdMinutes ?? HOLD_WINDOW_MINUTES));
   const result = await pool.query(
     `INSERT INTO booking_payment_tokens
        (token, store_id, appointment_id, customer_id, customer_phone, requirement, deposit_amount_cents, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() + INTERVAL '${HOLD_WINDOW_MINUTES} minutes')
+     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() + make_interval(mins => $8))
      RETURNING *`,
     [
       token,
@@ -96,6 +100,7 @@ export async function createBookingPaymentToken(params: {
       params.customerPhone,
       params.requirement,
       params.depositAmountCents,
+      holdMinutes,
     ]
   );
   return mapRow(result.rows[0]);
@@ -111,14 +116,15 @@ export async function markBookingPaymentTokenUsed(tokenId: number): Promise<void
   await pool.query(`UPDATE booking_payment_tokens SET used_at = NOW() WHERE id = $1`, [tokenId]);
 }
 
-/** Unused, unexpired tokens created 20+ minutes ago that haven't had a reminder sent yet. */
+/** Unused, unexpired tokens a third of the way through their hold (20 minutes of an hour, 8 hours of a day)
+ *  that haven't had a reminder sent yet. */
 export async function getTokensNeedingReminder(): Promise<BookingPaymentTokenRow[]> {
   const result = await pool.query(
     `SELECT * FROM booking_payment_tokens
      WHERE used_at IS NULL
        AND reminder_sent_at IS NULL
        AND expires_at > NOW()
-       AND created_at <= NOW() - INTERVAL '20 minutes'`
+       AND created_at <= NOW() - (expires_at - created_at) / 3`
   );
   return result.rows.map(mapRow);
 }
@@ -137,4 +143,31 @@ export async function getExpiredUnusedTokens(): Promise<BookingPaymentTokenRow[]
 
 export async function deleteBookingPaymentToken(tokenId: number): Promise<void> {
   await pool.query(`DELETE FROM booking_payment_tokens WHERE id = $1`, [tokenId]);
+}
+
+
+/** "the next hour", "the next 24 hours", "about 40 minutes", "about 16 hours": what is left of a hold, for texts. */
+export function holdTimeLeft(expiresAt: Date, prefix: "next" | "about" = "about"): string {
+  const minutes = Math.max(1, Math.round((expiresAt.getTime() - Date.now()) / 60_000));
+  if (minutes < 90) return prefix === "next" ? (minutes >= 55 ? "the next hour" : `the next ${minutes} minutes`) : `about ${minutes} minutes`;
+  const hours = Math.round(minutes / 60);
+  return prefix === "next" ? `the next ${hours} hours` : `about ${hours} hours`;
+}
+
+/**
+ * The deposit an online booking owes, in cents, when the business asks for one (POS → Booking payments, or
+ * the Certxa Pro app's Settings → Deposits): a fixed amount or a percentage of the visit, at least Stripe's
+ * 50-cent minimum. Null when the business takes no deposit or can't take cards yet.
+ */
+export async function depositCentsFor(storeId: number, visitTotalCents: number): Promise<number | null> {
+  const row = await pool.query<{ booking_payment_policy: string | null; deposit_type: string | null; deposit_value: string | null; connected: boolean }>(
+    `SELECT l.booking_payment_policy, l.deposit_type, l.deposit_value,
+            EXISTS (SELECT 1 FROM store_payment_accounts p WHERE p.store_id = l.id AND p.provider = 'stripe' AND p.status = 'connected') AS connected
+       FROM locations l WHERE l.id = $1`, [storeId]);
+  const r = row.rows[0];
+  if (!r || r.booking_payment_policy !== "deposit" || !r.connected || !process.env.STRIPE_SECRET_KEY) return null;
+  const value = Number(r.deposit_value);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const cents = r.deposit_type === "percentage" ? Math.round(visitTotalCents * value / 100) : Math.round(value * 100);
+  return Math.max(50, cents);
 }

@@ -537,6 +537,22 @@ publicBookingPaymentRouter.post("/booking-payment-link/complete", async (req, re
 
     await markBookingPaymentTokenUsed(tokenRow.id);
 
+    // Paid: the second service of the same visit shows too, the client gets the usual confirmation, and the
+    // owner's phone hears about it (it said nothing while the booking waited for its deposit).
+    await pool.query(`UPDATE appointments SET calendar_hidden = FALSE WHERE ticket_group_id = $1 AND store_id = $2`, [tokenRow.appointmentId, tokenRow.storeId]);
+    void (async () => {
+      const { storage } = await import("../storage");
+      const { sendBookingConfirmation } = await import("../sms");
+      const { sendBookingConfirmationEmail } = await import("../mail");
+      const { pushBookingEvent } = await import("../lib/ownerPush");
+      const full = await storage.getAppointment(tokenRow.appointmentId);
+      if (full) {
+        await sendBookingConfirmation(full).catch(() => undefined);
+        await sendBookingConfirmationEmail(full).catch(() => undefined);
+      }
+      void pushBookingEvent(tokenRow.storeId, tokenRow.appointmentId, "booked_online");
+    })().catch((e) => console.warn("[bookingPayments/complete] after-payment messages:", e?.message ?? e));
+
     broadcastSyncEvent({
       type: "booking_updated",
       storeId: tokenRow.storeId,

@@ -107,9 +107,14 @@ export async function createBookingRequest(input: {
   return { id };
 }
 
-const LIST_SELECT = `SELECT r.*, s.name AS service_name, l.timezone
+// With the deposit the approved booking is held for, when the business asks for one (lib/bookingPaymentLinks.ts).
+const LIST_SELECT = `SELECT r.*, s.name AS service_name, l.timezone, a.payment_status,
+    t.deposit_amount_cents, t.expires_at AS deposit_due_at, t.used_at AS deposit_paid_at
   FROM booking_requests r JOIN locations l ON l.id = r.store_id
-  LEFT JOIN services s ON s.id = (r.service_ids->>0)::int`;
+  LEFT JOIN services s ON s.id = (r.service_ids->>0)::int
+  LEFT JOIN appointments a ON a.id = r.appointment_id
+  LEFT JOIN LATERAL (SELECT deposit_amount_cents, expires_at, used_at FROM booking_payment_tokens bt
+                      WHERE bt.appointment_id = r.appointment_id ORDER BY bt.id DESC LIMIT 1) t ON true`;
 
 /** Open requests (waiting, or times offered), newest first; or one request. */
 export async function listRequests(storeId: number, which: "open" | "all" = "open") {
@@ -129,6 +134,11 @@ function shape(r: any) {
     travelFee: r.travel_fee == null ? 0 : Number(r.travel_fee), notes: r.notes, offeredTimes: r.offered_times ?? [],
     appointmentId: r.appointment_id, expiresAt: new Date(r.expires_at).toISOString(), createdAt: new Date(r.created_at).toISOString(),
     staffId: r.staff_id,
+    // The deposit the booking waits for: due by when, and whether it's been paid.
+    deposit: r.deposit_amount_cents ? {
+      amountCents: Number(r.deposit_amount_cents), dueBy: r.deposit_due_at ? new Date(r.deposit_due_at).toISOString() : null,
+      paid: !!r.deposit_paid_at || (r.payment_status && r.payment_status !== "awaiting_payment"),
+    } : null,
   };
 }
 
@@ -223,7 +233,8 @@ export async function pickOffer(token: string, time: string) {
     const result = await bookThroughPublicPath(r.booking_slug, { ...r.details, date: picked }, r.id, false);
     if (result.status >= 300) throw new RequestError(result.body?.message ?? "That time was just taken. Please pick another.", 409);
     await pool.query(`UPDATE booking_requests SET status = 'booked', appointment_id = $2, decided_at = now() WHERE id = $1`, [r.id, Number(result.body?.id) || null]);
-    return { booked: true, time: picked };
+    // A deposit is due: the offer page sends the client straight to paying it (they're texted the link too).
+    return { booked: true, time: picked, paymentUrl: result.body?.depositHold?.paymentUrl ?? null, depositCents: result.body?.depositHold?.amountCents ?? null };
   } catch (error) {
     await pool.query(`UPDATE booking_requests SET status = 'offered' WHERE id = $1 AND status = 'booking'`, [r.id]);
     throw error;
