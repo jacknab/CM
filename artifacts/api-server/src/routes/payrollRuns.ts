@@ -288,6 +288,39 @@ async function refreshDraftItems(run: typeof payrollRuns.$inferSelect) {
   return refreshed;
 }
 
+/**
+ * Give every check in a payroll run that has none yet its own number (owner bug, 2026-10-24: every check printed as
+ * 001001). Numbers carry on from the highest check number the salon has used on any payroll run, or from `floor` (the
+ * "next check number" set on Print Checks) when that is higher, so a number is never used twice. A check that already
+ * has a number keeps it, so a reprint is the same check. One allocation per salon at a time (advisory lock).
+ * Returns the run's item id → check number.
+ */
+export async function assignCheckNumbers(storeId: number, runId: number, floor?: number | null): Promise<Record<number, string>> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('payroll-check-numbers'), $1)", [storeId]);
+    const { rows: [mx] } = await client.query(
+      `SELECT COALESCE(MAX(i.check_number::bigint), 0) AS n FROM payroll_run_items i JOIN payroll_runs r ON r.id = i.payroll_run_id
+        WHERE r.store_id = $1 AND i.check_number ~ '^[0-9]{1,12}$'`, [storeId]);
+    let next = Math.max(Number(mx?.n ?? 0) + 1, Number.isFinite(Number(floor)) && Number(floor) > 0 ? Math.floor(Number(floor)) : 1001);
+    const { rows: need } = await client.query(
+      `SELECT id FROM payroll_run_items WHERE payroll_run_id = $1 AND check_number IS NULL AND status = 'paid'
+          AND (net_pay - COALESCE(cash_portion, 0)) > 0 ORDER BY id`, [runId]);
+    for (const r of need) {
+      await client.query(`UPDATE payroll_run_items SET check_number = $2 WHERE id = $1`, [r.id, String(next++)]);
+    }
+    const { rows: all } = await client.query(`SELECT id, check_number FROM payroll_run_items WHERE payroll_run_id = $1 AND check_number IS NOT NULL`, [runId]);
+    await client.query("COMMIT");
+    return Object.fromEntries(all.map((r: any) => [Number(r.id), String(r.check_number)]));
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export async function approvePayrollRunById(runId: number, approvedBy: string | null, startingCheckNumber?: number | null) {
   const [run] = await db.select().from(payrollRuns).where(eq(payrollRuns.id, runId));
   if (!run) throw new Error("Run not found");
@@ -300,7 +333,6 @@ export async function approvePayrollRunById(runId: number, approvedBy: string | 
   }
 
   let net = 0, tips = 0, deductions = 0, commission = 0, checkCount = 0;
-  let checkSequence = startingCheckNumber || null;
   await db.transaction(async (tx) => {
     for (const item of items) {
       const itemNet = Math.max(0, Number(item.netPay));
@@ -310,12 +342,8 @@ export async function approvePayrollRunById(runId: number, approvedBy: string | 
       tips += Number(item.tips);
       commission += Number(item.commissionAmount);
       deductions += Number(item.boothRent) + Number(item.otherDeductions);
-      let checkNumber: string | null = null;
-      if (checkAmount > 0) {
-        checkCount++;
-        if (checkSequence) checkNumber = String(checkSequence++);
-      }
-      await tx.update(payrollRunItems).set({ checkNumber, status: itemNet > 0 ? "paid" : "skipped" }).where(eq(payrollRunItems.id, item.id));
+      if (checkAmount > 0) checkCount++;
+      await tx.update(payrollRunItems).set({ status: itemNet > 0 ? "paid" : "skipped" }).where(eq(payrollRunItems.id, item.id));
     }
     await tx.update(payrollRuns).set({
       status: "approved",
@@ -330,6 +358,8 @@ export async function approvePayrollRunById(runId: number, approvedBy: string | 
       checksPrintedCount: 0,
     }).where(eq(payrollRuns.id, runId));
   });
+  // Each check gets its own number, carrying on from the salon's last one.
+  await assignCheckNumbers(run.storeId, runId, startingCheckNumber).catch((err) => console.error("[payroll] check numbers:", err?.message));
   return { ok: true, checkCount };
 }
 
@@ -479,6 +509,23 @@ router.post("/runs/:id/approve", isAuthenticated, async (req, res) => {
 
   const startCheck = Number(req.body?.startingCheckNumber) || null;
   res.json(await approvePayrollRunById(runId, String((req.session as any)?.userId ?? ""), startCheck));
+});
+
+/** Print Checks: number every check in an approved run that has none yet (runs approved before 2026-10-24 have none).
+ *  `floor`: the "next check number" set on Print Checks, used when it is higher than the salon's last number. */
+router.post("/runs/:id/check-numbers", isAuthenticated, async (req, res) => {
+  const sid = await storeIdFor(req, res);
+  if (!sid) return;
+  const runId = Number(req.params.id);
+  const [run] = await db.select().from(payrollRuns).where(and(eq(payrollRuns.id, runId), eq(payrollRuns.storeId, sid)));
+  if (!run) return res.status(404).json({ error: "Run not found" });
+  if (run.status !== "approved") return res.status(409).json({ error: "Approve the run before printing its checks" });
+  try {
+    res.json({ checkNumbers: await assignCheckNumbers(sid, runId, Number(req.body?.floor) || null) });
+  } catch (err: any) {
+    console.error("[payroll] check-numbers:", err?.message);
+    res.status(500).json({ error: "Couldn't number the checks" });
+  }
 });
 
 router.post("/runs/:id/void", isAuthenticated, async (req, res) => {

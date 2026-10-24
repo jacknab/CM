@@ -567,7 +567,9 @@ function CheckStubPDF({
   const otherYtd = earningsRows.find(r => r.label === "Other Deductions")?.ytd;
   const totalDeductions = boothRent + itemized.reduce((s, r) => s + r.amount, 0) + otherDeductions;
   const ytdAmount = (key: keyof PayrollYtd) => ytd ? fmt$(ytd[key]) : "—";
-  const storeAddr = [store.address, [store.city, store.state, store.postcode].filter(Boolean).join(", ")].filter(Boolean).join(" · ");
+  // Street, then "City, ST ZIP" on the next line (owner, 2026-10-24).
+  const storeStreet = store.address || "";
+  const storeCityLine = [store.city, [store.state, store.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
   const avgTicket = (appointmentCount && appointmentCount > 0 && totalRevenue)
     ? Number(totalRevenue) / appointmentCount : null;
 
@@ -589,7 +591,8 @@ function CheckStubPDF({
           {/* Left: business */}
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold", color: "#0f172a", textTransform: "uppercase" }}>{store.name}</Text>
-            {storeAddr ? <Text style={{ fontSize: 8, color: "#64748b", marginTop: 2 }}>{storeAddr}</Text> : null}
+            {storeStreet ? <Text style={{ fontSize: 8, color: "#64748b", marginTop: 2 }}>{storeStreet}</Text> : null}
+            {storeCityLine ? <Text style={{ fontSize: 8, color: "#64748b" }}>{storeCityLine}</Text> : null}
           </View>
           {/* Center: title */}
           <View style={{ flex: 1, alignItems: "center" }}>

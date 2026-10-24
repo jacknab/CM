@@ -636,8 +636,9 @@ function CheckStub({
     ? Number(totalRevenue) / appointmentCount
     : null;
 
-  const storeAddr = [store.address, [store.city, store.state, store.postcode].filter(Boolean).join(", ")]
-    .filter(Boolean).join(" · ");
+  // The business address on the stub: street, then "City, ST ZIP" on the next line (owner, 2026-10-24).
+  const storeStreet = store.address || "";
+  const storeCityLine = [store.city, [store.state, store.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
 
   return (
     <div
@@ -658,7 +659,8 @@ function CheckStub({
         {/* Left: business */}
         <div className="flex flex-col gap-[2px]" style={{ marginLeft: "-12px" }}>
           <div className="statement-name text-[9.5px] font-bold text-slate-900 uppercase leading-tight tracking-wide">{store.name}</div>
-          {storeAddr && <div className="statement-detail text-[7.5px] text-slate-500 leading-tight">{storeAddr}</div>}
+          {storeStreet && <div className="statement-detail text-[7.5px] text-slate-500 leading-tight">{storeStreet}</div>}
+          {storeCityLine && <div className="statement-detail text-[7.5px] text-slate-500 leading-tight">{storeCityLine}</div>}
         </div>
         {/* Center: title + metadata */}
         <div className="flex flex-col gap-[2px] text-center">
@@ -1881,13 +1883,14 @@ function SettingsPanel({
             />
           </div>
           <div>
-            <SettingsLabel>Starting Check Number</SettingsLabel>
+            <SettingsLabel>Next Check Number</SettingsLabel>
             <Input
               type="number" min={1001}
               value={settings.startingCheckNumber}
               onChange={e => onChange({ ...settings, startingCheckNumber: parseInt(e.target.value) || 1001 })}
               className="h-8 text-sm rounded-xl border-slate-200"
             />
+            <p className="mt-1 text-[11px] text-slate-500">Paychecks carry on from the last check number used. Set a higher number here when you start a new checkbook.</p>
           </div>
         </div>
         <div>
@@ -2126,6 +2129,25 @@ function PayrollChecksTab({ settings, initialRunId }: { settings: PrintSettings;
     enabled: !!selectedRunId,
   });
 
+  // Each paycheck's own number, saved on the server (owner bug 2026-10-24: every check printed as 001001). Numbers are
+  // given once — when the run is approved, or here the first time it is opened — and a reprint keeps its number.
+  const [checkNumbers, setCheckNumbers] = useState<Record<number, string>>({});
+  useEffect(() => {
+    const runId = checkData?.run?.id;
+    if (!runId || !["approved", "finalized"].includes(String(checkData.run.status))) return;
+    let cancelled = false;
+    fetch(`/api/payroll/runs/${runId}/check-numbers`, {
+      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ floor: settings.startingCheckNumber }),
+    }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (!cancelled && d?.checkNumbers) setCheckNumbers(d.checkNumbers); }).catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkData?.run?.id]);
+  const checkNoFor = (item: PayrollCheckItem): string => {
+    const n = checkNumbers[item.id] ?? (item as any).checkNumber;
+    return n ? String(n).padStart(6, "0") : "";
+  };
+
   // "approved" is the new Payroll page's finalized state; "finalized" is the legacy one.
   const finalizedRuns = runs.filter(r => r.status === "finalized" || r.status === "approved");
   const visibleItems = (checkData
@@ -2175,6 +2197,9 @@ function PayrollChecksTab({ settings, initialRunId }: { settings: PrintSettings;
   }
 
   function handlePrint(itemId?: number) {
+    // Never print a check before it has its number.
+    const toPrint = itemId != null ? visibleItems.filter((i) => i.id === itemId) : visibleItems;
+    if (toPrint.some((i) => !checkNoFor(i))) { alert("The check numbers are still loading — try again in a moment."); return; }
     if (!checkData) return;
     const item = itemId ? checkData.items.find(i => i.id === itemId) : null;
     const prev = document.title;
@@ -2273,7 +2298,7 @@ function PayrollChecksTab({ settings, initialRunId }: { settings: PrintSettings;
                 {visibleItems.length === 1 && (
                   <Suspense fallback={null}>
                     <CheckPDFDownload
-                      checkNumber={String(settings.startingCheckNumber).padStart(6, "0")}
+                      checkNumber={checkNoFor(visibleItems[0])}
                       date={runPayDate}
                       payee={visibleItems[0].staffName}
                       amount={visibleItems[0].totalPay}
@@ -2297,13 +2322,13 @@ function PayrollChecksTab({ settings, initialRunId }: { settings: PrintSettings;
                 {/* Prints the check(s) shown here on the salon's printer through the Certxa Print Agent. The bank
                     details are NOT sent from this page — the server gets them from the salon computer for each
                     check (routes/printAgent.ts) — so routing/account are left blank here. */}
-                {visibleItems.length > 0 && (
+                {visibleItems.length > 0 && visibleItems.every((i) => !!checkNoFor(i)) && (
                   <Suspense fallback={null}>
                     <CheckSendToPrinter
                       label={visibleItems.length > 1 ? `Send All ${visibleItems.length} to Printer` : "Send to Printer"}
                       className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
                       checks={visibleItems.map((item, idx) => ({
-                        checkNumber: String(settings.startingCheckNumber + idx).padStart(6, "0"),
+                        checkNumber: checkNoFor(item),
                         date: runPayDate,
                         payee: item.payeeName || item.staffName,
                         ...payeeAddress(item),
@@ -2336,7 +2361,7 @@ function PayrollChecksTab({ settings, initialRunId }: { settings: PrintSettings;
                 {visibleItems.map((item, idx) => (
                   <PrintSheet
                     key={item.id}
-                    checkNumber={String(settings.startingCheckNumber + idx).padStart(6, "0")}
+                    checkNumber={checkNoFor(item)}
                     date={runPayDate}
                     payee={item.payeeName || item.staffName}
                     {...payeeAddress(item)}
@@ -2368,7 +2393,7 @@ function PayrollChecksTab({ settings, initialRunId }: { settings: PrintSettings;
             {/* Screen preview */}
             <div className="space-y-8">
               {visibleItems.map((item, idx) => {
-                const checkNum = String(settings.startingCheckNumber + idx).padStart(6, "0");
+                const checkNum = checkNoFor(item);
                 return (
                   <div key={item.id} className="relative group" style={{ position: "relative" }}>
                     <ScaleToFit widthIn={paperType === "preprinted" ? 8.26 : 8.5}>
