@@ -1074,3 +1074,29 @@
 
 /* The selected payment type on the checkout's payment panel (CASH is a type, not a payment). */
 .nail-app .pay-methods .pay-type-on { box-shadow: inset 0 0 0 3px #fff; }
+
+/* ── Ticket popup (tap a ticket card, owner 2026-10-24): bigger card and buttons; eggshell card, black text so the
+      status badge reads easily. Scoped to .ticket-popup so the other check-in popups keep their look. ── */
+.nail-app .ticket-popup .checkin-modal-card { background: #f0ead6; border-color: #d8d0b8; color: #111; width: 780px; max-width: min(64vw, 840px); border-radius: 16px; }
+.nail-app .ticket-popup .checkin-modal-close { width: 44px; height: 44px; top: 16px; right: 16px; background: #e4ddc6; border-color: #cfc6ab; color: #111; }
+.nail-app .ticket-popup .checkin-modal-close svg { width: 22px; height: 22px; }
+.nail-app .ticket-popup .checkin-card-header-lg { padding: 28px 32px 22px; border-left-width: 6px; }
+.nail-app .ticket-popup .checkin-card-header-lg .checkin-client strong { font-size: 32px; color: #111; }
+.nail-app .ticket-popup .checkin-card-header-lg .checkin-client span { font-size: 18px; color: #333; }
+.nail-app .ticket-popup .checkin-client span svg { width: 18px; height: 18px; }
+.nail-app .ticket-popup .checkin-ticket-num { font-size: 18px; color: #111; background: #e0d8bf; padding: 3px 10px; border-radius: 6px; }
+.nail-app .ticket-popup .checkin-status-pill { font-size: 16px; letter-spacing: .4px; padding: 8px 16px; border-radius: 999px; margin-right: 64px !important; }
+.nail-app .ticket-popup .checkin-status-pill[data-in-service="true"] { background: #d4ecdd; color: #0b4d32; border: 2px solid #0b4d32; }
+.nail-app .ticket-popup .checkin-status-pill[data-in-service="false"] { background: #f7dcdc; color: #8a1518; border: 2px solid #8a1518; }
+.nail-app .ticket-popup .checkin-modal-body { padding: 26px 32px 32px; gap: 24px; }
+.nail-app .ticket-popup .checkin-modal-detail { gap: 18px; }
+.nail-app .ticket-popup .checkin-modal-detail svg { width: 26px; height: 26px; color: #333; }
+.nail-app .ticket-popup .checkin-modal-detail small { font-size: 14px; color: #444; }
+.nail-app .ticket-popup .checkin-modal-detail strong { font-size: 24px; color: #111; }
+.nail-app .ticket-popup .checkin-modal-lines { font-size: 18px; color: #222; padding-left: 44px; margin-top: -10px; gap: 6px; }
+.nail-app .ticket-popup .assign-create-hint { font-size: 16px; color: #f0ead6; border: 0; }
+.nail-app .ticket-popup .checkin-dock { grid-template-columns: repeat(2, 132px); gap: 14px; }
+.nail-app .ticket-popup .checkin-dock-btn { background: #f0ead6; border: 1px solid #d8d0b8; color: #111; border-radius: 14px; padding: 24px 8px; gap: 10px; }
+.nail-app .ticket-popup .checkin-dock-btn:hover { background: #e4ddc6; border-color: #cfc6ab; color: #111; }
+.nail-app .ticket-popup .checkin-dock-btn svg { width: 34px; height: 34px; }
+.nail-app .ticket-popup .checkin-dock-btn span { font-size: 15px; letter-spacing: .5px; }

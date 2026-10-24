@@ -63,7 +63,7 @@ export function TicketPopup(p: Props) {
   return (
     <>
       <div className="checkin-overlay" onClick={() => p.onClose()} />
-      <div className="checkin-modal-wrapper" onClick={() => p.onClose()}>
+      <div className="checkin-modal-wrapper ticket-popup" onClick={() => p.onClose()}>
         <div className="checkin-modal-card" role="dialog" aria-modal="true" aria-labelledby="nail-ticket-title" onClick={(e) => e.stopPropagation()} data-testid="nail-ticket-modal">
           <button type="button" className="checkin-modal-close" onClick={() => p.onClose()} aria-label="Close"><X size={16} /></button>
           <div className="checkin-card-header checkin-card-header-lg" style={{ borderLeftColor: t.staff?.color || NO_COLOR }}>
