@@ -951,6 +951,8 @@ export function CheckoutMode(p: Props) {
   // `copy` picks which physical copy: 'salon' (signature copy, auto-printed right after a card
   // charge settles), 'customer' (the Print Receipt button once the salon copy already went out
   // for a card sale), or 'both' (cash — no signature needed, nothing held back).
+  // Why the last receipt print failed, as the tablet app reported it — shown to staff.
+  const lastPrintError = useRef<string | null>(null);
   const nativePrintReceipt = (copy: 'salon' | 'customer' | 'both', reprint?: LastReceipt): Promise<boolean> => new Promise((resolve) => {
     const requestId = `pr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     let finished = false;
@@ -960,6 +962,7 @@ export function CheckoutMode(p: Props) {
       clearTimeout(timer);
       window.removeEventListener("certxa_native_print_result", onResult);
       if (!ok) console.warn("[receipt print] failed:", error || "The printer did not respond.");
+      lastPrintError.current = ok ? null : error || "The printer did not respond.";
       resolve(ok);
     };
     const onResult = (e: Event) => {
@@ -1003,10 +1006,12 @@ export function CheckoutMode(p: Props) {
         return true;
       } catch (err: any) {
         console.warn("[receipt print] failed:", err?.message || "The printer did not respond.");
+        lastPrintError.current = err?.message || "The printer did not respond.";
         return false;
       }
     }
     console.warn("[receipt print] no receipt printer connected");
+    lastPrintError.current = "No receipt printer is connected to this tablet";
     return false;
   };
   // Reprint: the last receipt printed from this device, again — the customer's copy.
@@ -1036,7 +1041,7 @@ export function CheckoutMode(p: Props) {
     const copy = lastCardPaymentIntentId.current ? "customer" : "both";
     const ok = await printReceiptNow(copy);
     setReceiptBusy(null);
-    if (!ok) return say("RECEIPT DID NOT PRINT — CHECK THE PRINTER AND TRY AGAIN", "error");
+    if (!ok) return say(`RECEIPT DID NOT PRINT — ${(lastPrintError.current || "CHECK THE PRINTER AND TRY AGAIN").toUpperCase()}`, "error");
     say("RECEIPT PRINTED", "success");
     printAfterTimer.current = setTimeout(() => p.onReceiptDone(), 5000);
   };

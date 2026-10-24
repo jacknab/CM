@@ -254,14 +254,30 @@ async function getActivePrinterModule(device: PrinterDevice): Promise<any> {
   if (device.type === 'net') {
     if (!_NET) throw new Error('Network printer module not available');
     await _NET.init();
+    // A fresh connection for every job. The library otherwise reuses the socket from the last print, and a
+    // network printer that has since closed its end (most do after a job or when idle) takes the next job
+    // into a dead connection — the test print worked, the receipt a minute later didn't.
+    await _NET.closeConn().catch(() => {});
     // host and port must reach the native bridge as their real types (a string port here would hit the
     // same JS-string-into-Java-Integer bridge crash fixed for USB above).
-    await _NET.connectPrinter(device.address, Number(device.port) || DEFAULT_NET_PORT, 8000);
+    try {
+      await _NET.connectPrinter(device.address, Number(device.port) || DEFAULT_NET_PORT, 8000);
+    } catch (e: any) {
+      throw new Error(`Could not reach the printer at ${device.address}: ${typeof e === 'string' ? e : e?.message ?? 'no answer'}`);
+    }
     return _NET;
   }
   if (!_USB) throw new Error('USB printer module not available');
   await ensureUsbReady(device);
   return _USB;
+}
+
+/** After a job on a network printer: give the write a moment to leave, then close the connection so the next
+ *  job starts clean (the native write runs on its own thread and reports nothing back). */
+async function finishJob(device: PrinterDevice): Promise<void> {
+  if (device.type !== 'net' || !_NET) return;
+  await new Promise((r) => setTimeout(r, 1500));
+  await _NET.closeConn().catch(() => {});
 }
 
 // ── Public print API ──────────────────────────────────────────────────────────
@@ -290,6 +306,7 @@ export async function printReceipt(data: ReceiptData, copy: 'salon' | 'customer'
   const mod  = await getActivePrinterModule(printer);
   const text = buildReceiptText(data, copy);
   await mod.printBill(toPrinterTags(text));
+  await finishJob(printer);
 }
 
 /**
@@ -309,6 +326,7 @@ export async function printReceiptCopies(data: ReceiptData): Promise<void> {
   await mod.printBill(toPrinterTags(buildReceiptText(data, 'salon')));
   await new Promise((r) => setTimeout(r, 400));
   await mod.printBill(toPrinterTags(buildReceiptText(data, 'customer')));
+  await finishJob(printer);
 }
 
 /** Width both images (number bar + QR) are rendered/printed at — matched to the 58mm-paper column
@@ -330,6 +348,7 @@ export async function printCheckinTicket(data: CheckinTicketData, numberBarBase6
   await mod.printImageBase64(stripDataUriPrefix(numberBarBase64), { imageWidth: CHECKIN_IMAGE_PRINT_WIDTH });
   await mod.printImageBase64(stripDataUriPrefix(qrBase64), { imageWidth: CHECKIN_IMAGE_PRINT_WIDTH });
   await mod.printBill(toPrinterTags(buildCheckinTicketFooter(data)));
+  await finishJob(printer);
 }
 
 /** Print text the web app has already laid out for the paper (a technician's pay slip). Uses the same
@@ -339,6 +358,7 @@ export async function printText(text: string): Promise<void> {
   const printer = await resolvePrinter();
   const mod = await getActivePrinterModule(printer);
   await mod.printBill(toPrinterTags(text));
+  await finishJob(printer);
 }
 
 /** Print the Day Close / Z Report — a single copy (it's a register document, not something
@@ -347,6 +367,7 @@ export async function printZReport(data: ZReportPrintData): Promise<void> {
   const printer = await resolvePrinter();
   const mod = await getActivePrinterModule(printer);
   await mod.printBill(toPrinterTags(buildZReportText(data)));
+  await finishJob(printer);
 }
 
 /** `device` lets a caller test-print against a printer that hasn't been saved yet (e.g. the
@@ -369,6 +390,7 @@ export async function printTestPage(storeName: string, device?: PrinterDevice): 
     `\n\n\n`,
   ].join('\n');
   await mod.printBill(toPrinterTags(lines));
+  await finishJob(printer);
 }
 
 /**
@@ -386,6 +408,7 @@ export async function openCashDrawer(): Promise<void> {
     loadNative();
     if (!_NET) throw new Error('Network printer module not available');
     await _NET.init();
+    await _NET.closeConn().catch(() => {});
     await _NET.connectPrinter(printer.address, Number(printer.port) || DEFAULT_NET_PORT, 8000);
     native = (NativeModules as any).RNNetPrinter;
   } else {
