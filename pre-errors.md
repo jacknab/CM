@@ -6,6 +6,15 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-10-24 — Catalog routes that don't check the store: category reorder, service add-on links
+
+- **Where:** `artifacts/api-server/src/routes.ts:4080` (`POST /api/service-categories/reorder`), `:4662` (`POST /api/service-addons`), `:4672` (`DELETE /api/service-addons/:id`).
+- **Symptom:** reorder sets `sort_order` on every id sent without checking the category belongs to the caller's store (it reads the store id, then ignores it). The two service-add-on routes have no store check at all, so any signed-in account could link/unlink add-ons on another business's services by id. (`POST /api/addons/:id/services`, which the website and the Pro app use, does check the owner.)
+- **Fix sketch:** reorder: `UPDATE service_categories SET sort_order=$1 WHERE id=$2 AND store_id=$3`. Service add-ons: load the service and add-on and require both `storeId` to equal `resolveSessionStoreId(req)`.
+- **Why not fixed now:** found while building the Pro app Catalog (which only reads/uses the owner-checked routes); auth changes on shared web routes deserve their own small task.
+
+---
+
 ## 2026-10-23 — RESOLVED 2026-10-24 ~00:11 UTC (texts sending again): ALL texts failing: Twilio account "not active"
 
 - **Symptom:** every `sendSms` since between 21:58 and 22:15 server time on 2026-10-23 fails with `authentication failed, account AC311f…(masked) with status 4 is not active` (see `sms_log.error_message`). Texts at 21:58 (store 2, cancellation_recovery) still went out; the first failure was store 2's winback at 22:15:06. `twilioLookup` fails the same way.
