@@ -7,8 +7,6 @@ import {
   Star,
   MessageSquareReply,
   Mail,
-  Send,
-  CheckCircle2,
   XCircle,
   Smartphone,
 } from "lucide-react";
@@ -58,15 +56,6 @@ interface PhoneTypeSummary {
   unknown: number;
 }
 
-interface SmsLogEntry {
-  id: number;
-  phone: string;
-  messageType: string;
-  messageBody: string;
-  status: string;
-  errorMessage: string | null;
-  sentAt: string;
-}
 
 const SMS_DEFAULTS: SmsSettings = {
   bookingConfirmationEnabled: true,
@@ -334,16 +323,6 @@ export default function ClientNotifications() {
     }
   };
 
-  const { data: logs } = useQuery<SmsLogEntry[]>({
-    queryKey: ["/api/sms-log", storeId],
-    queryFn: async () => {
-      if (!storeId) return [];
-      const res = await fetch(`/api/sms-log/${storeId}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load text activity");
-      return res.json();
-    },
-    enabled: !!storeId,
-  });
 
   const [sms, setSms] = useState<SmsSettings>(SMS_DEFAULTS);
   const [mail, setMail] = useState<ChannelSettings>(MAIL_DEFAULTS);
@@ -384,26 +363,6 @@ export default function ClientNotifications() {
     onError: () => toast({ title: "Couldn't save notifications", variant: "destructive" }),
   });
 
-  const [testPhone, setTestPhone] = useState("");
-  const [testing, setTesting] = useState(false);
-  const sendTest = async () => {
-    if (!testPhone.trim() || !storeId) return;
-    setTesting(true);
-    try {
-      const res = await apiRequest("POST", `/api/sms-settings/${storeId}/test`, { phone: testPhone.trim() });
-      const result = await res.json();
-      if (result.success) {
-        toast({ title: "Test text sent" });
-        queryClient.invalidateQueries({ queryKey: ["/api/sms-log", storeId] });
-      } else {
-        toast({ title: "Test text failed", variant: "destructive" });
-      }
-    } catch (err: any) {
-      toast({ title: "Test text failed", description: err?.message, variant: "destructive" });
-    } finally {
-      setTesting(false);
-    }
-  };
 
   // per-section "customize" expander state
   const [openCust, setOpenCust] = useState<Record<string, boolean>>({});
@@ -658,56 +617,6 @@ export default function ClientNotifications() {
               )}
             </Section>
 
-            {/* Test + activity */}
-            <details className="rounded-xl border border-border bg-card p-5 md:p-6">
-              <summary className="cursor-pointer text-[15px] font-semibold tracking-tight">
-                Test &amp; recent activity
-              </summary>
-              <div className="mt-4 space-y-4">
-                <div className="flex flex-wrap items-end gap-2">
-                  <div className="flex-1">
-                    <label className="mb-1 block text-[13px] font-medium">Send a test text to</label>
-                    <Input
-                      value={testPhone}
-                      onChange={(e) => setTestPhone(e.target.value)}
-                      placeholder="+1 555 123 4567"
-                      className="text-[14px]"
-                    />
-                  </div>
-                  <Button variant="outline" onClick={sendTest} disabled={testing || !testPhone.trim()}>
-                    {testing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                    Send test
-                  </Button>
-                </div>
-
-                {logs && logs.length > 0 && (
-                  <div className="space-y-2.5">
-                    {logs.slice(0, 15).map((log) => (
-                      <div key={log.id} className="flex items-start gap-2.5 border-b border-border pb-2.5 text-[13px] last:border-0 last:pb-0">
-                        {log.status === "sent" ? (
-                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                        ) : (
-                          <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-x-2 text-muted-foreground">
-                            <span className="font-medium text-foreground">
-                              {log.messageType.replace(/_/g, " ")}
-                            </span>
-                            <span>{log.phone}</span>
-                            <span>{new Date(log.sentAt).toLocaleString()}</span>
-                          </div>
-                          <p className="mt-0.5 truncate text-muted-foreground">{log.messageBody}</p>
-                          {log.errorMessage && (
-                            <p className="mt-0.5 text-[12px] text-destructive">{log.errorMessage}</p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </details>
 
             {/* save */}
             <div className="sticky bottom-0 flex items-center justify-end gap-3 border-t border-border bg-background/95 py-3 backdrop-blur">

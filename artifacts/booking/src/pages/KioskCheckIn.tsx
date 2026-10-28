@@ -1200,12 +1200,6 @@ function KioskCheckInScreens() {
       c={{ BG, SURFACE, TEXT, MUTED, PRIMARY, ACCENT, BORDER, SHADOW_LG }}
       text={t}
       onStart={() => setScreen("phone")}
-      extra={kioskConfig?.loyaltyPromoText ? (
-        <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full text-xl font-semibold"
-          style={{ background: PILL_BG, border: `1.5px solid ${PILL_BORDER}`, color: PILL_TEXT }}>
-          <span>{G("⭐")}</span><span>{kioskConfig.loyaltyPromoText}</span>
-        </div>
-      ) : null}
       footer={(
         <div className="flex items-center justify-center gap-3 flex-wrap px-8">
           {KIOSK_LANGS.map(({ code, label }) => (

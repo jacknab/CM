@@ -6,7 +6,6 @@ import {
   Wifi, RotateCcw, ShieldCheck, ShieldAlert,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useInSettingsShell } from "@/lib/settings-shell-context";
@@ -569,59 +568,6 @@ export default function KioskSettings() {
                   checked={form.kioskEnabled}
                   onCheckedChange={v => setForm(f => ({ ...f, kioskEnabled: v }))}
                 />
-              </div>
-            </div>
-
-            {/* ── Display text ── */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
-              <h2 className="font-semibold text-slate-700">Display Text</h2>
-
-              <div>
-                <label className="text-sm font-medium text-slate-600 block mb-1.5">
-                  Welcome Headline
-                </label>
-                <Input
-                  value={form.welcomeHeadline}
-                  onChange={e => setForm(f => ({ ...f, welcomeHeadline: e.target.value }))}
-                  placeholder={data?.storeName ?? "Check In"}
-                  className="bg-slate-50 border-slate-200"
-                  maxLength={60}
-                />
-                <p className="text-xs text-slate-400 mt-1">
-                  Shown on the idle screen. Leave blank to use your store name.
-                </p>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-slate-600 block mb-1.5">
-                  Welcome Sub-text
-                </label>
-                <Input
-                  value={form.welcomeSubText}
-                  onChange={e => setForm(f => ({ ...f, welcomeSubText: e.target.value }))}
-                  placeholder="Your style journey starts here"
-                  className="bg-slate-50 border-slate-200"
-                  maxLength={80}
-                />
-                <p className="text-xs text-slate-400 mt-1">
-                  Shown beneath the headline on the idle screen. Leave blank to use the default.
-                </p>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-slate-600 block mb-1.5">
-                  Loyalty Promo Text
-                </label>
-                <Input
-                  value={form.loyaltyPromoText}
-                  onChange={e => setForm(f => ({ ...f, loyaltyPromoText: e.target.value }))}
-                  placeholder="Earn points with every visit and redeem them for free services!"
-                  className="bg-slate-50 border-slate-200"
-                  maxLength={120}
-                />
-                <p className="text-xs text-slate-400 mt-1">
-                  Shown in the left panel of the phone entry screen.
-                </p>
               </div>
             </div>
 
