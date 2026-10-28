@@ -2020,7 +2020,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
                   openGroup={openGroup}
                   activeGroup={activeGroup}
                   onGroup={setActiveGroup}
-                  serviceId={pkg ? -pkg.id : service?.id ?? null}
+                  serviceId={null}
                   onService={chooseService}
                   addons={shownAddons}
                   moreAddons={moreAddons}
