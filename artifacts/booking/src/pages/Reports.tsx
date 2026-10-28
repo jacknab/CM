@@ -502,21 +502,46 @@ export default function Reports() {
   }, [customers, appointments]);
 
   const taxMonthlyRows = useMemo(() => {
+    if (!selectedStore) return [];
     const months = eachMonthOfInterval({ start: subMonths(new Date(), 11), end: new Date() });
+    const salesTaxRate = Number(selectedStore.salesTaxRate || "0") / 100; // Convert from percentage to decimal
+    const taxServicesTaxable = selectedStore.taxServicesTaxable === true;
+    const taxProductsTaxable = selectedStore.taxProductsTaxable === true;
+    const taxAddonsTaxable = selectedStore.taxAddonsTaxable === true;
+    const taxGiftCardsTaxable = selectedStore.taxGiftCardsTaxable === true;
+
     return months.map(m => {
       const label = format(m, "MMM yyyy");
       const monthAppts = completedAppts.filter(a => format(new Date(a.date), "MMM yyyy") === label);
       const total = monthAppts.reduce((s, a) => s + parseFloat(a.totalPaid || "0"), 0);
       const tips = monthAppts.reduce((s, a) => s + parseFloat((a as any).tipAmount || "0"), 0);
-      const tax = monthAppts.reduce((s, a) => {
-        const svcPrice = Number(a.service?.price || 0);
-        const addonTotal = (a.appointmentAddons || []).reduce((acc, aa) => acc + Number(aa.addon?.price || 0), 0);
-        const discountAmount = Number((a as any).discountAmount || 0);
-        const tipAmt = Number((a as any).tipAmount || 0);
-        const giftCardAmt = Number((a as any).giftCardAmount || 0);
-        const derived = parseFloat(a.totalPaid || "0") - Math.max(0, svcPrice + addonTotal - discountAmount) - tipAmt - giftCardAmt;
-        return s + Math.max(0, derived);
-      }, 0);
+
+      // Calculate tax based on store settings. When nothing is configured (the default: rate 0, all
+      // taxable flags false) this is 0 — the report shows no tax collected, which is what an unset
+      // tax setting means.
+      let tax = 0;
+      if (salesTaxRate > 0) {
+        tax = monthAppts.reduce((s, a) => {
+          const svcPrice = Number(a.service?.price || 0);
+          const addonTotal = (a.appointmentAddons || []).reduce((acc, aa) => acc + Number(aa.addon?.price || 0), 0);
+          const discountAmount = Number((a as any).discountAmount || 0);
+          const giftCardAmt = Number((a as any).giftCardAmount || 0);
+
+          // Calculate taxable amount based on store settings
+          let taxableAmount = 0;
+          if (taxServicesTaxable) taxableAmount += svcPrice;
+          if (taxAddonsTaxable) taxableAmount += addonTotal;
+          if (taxGiftCardsTaxable) taxableAmount += giftCardAmt;
+
+          // Apply discount to taxable amount
+          taxableAmount = Math.max(0, taxableAmount - discountAmount);
+
+          // Calculate tax on taxable amount
+          const appointmentTax = taxableAmount * salesTaxRate;
+          return s + appointmentTax;
+        }, 0);
+      }
+
       const serviceRev = total - tips - tax;
       return {
         month: label,
@@ -526,7 +551,7 @@ export default function Reports() {
         total: parseFloat(total.toFixed(2)),
       };
     });
-  }, [completedAppts]);
+  }, [completedAppts, selectedStore]);
 
   const newCustomers = useMemo(() =>
     (customers as any[]).filter(c => {

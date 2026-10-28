@@ -15,10 +15,12 @@ import { z } from "zod";
 import { isStripeConfigured, getStripe, getReturnBaseUrl } from "../lib/stripe";
 import {
   ensureContractorAccount,
+  ensureExpressContractorAccount,
+  createContractorOnboardingLink,
   attachExternalBankAccount,
   syncContractorAccountStatus,
 } from "../lib/stripeContractorAccounts";
-import { getPaymentAccount } from "../lib/stripeConnect";
+import { getPaymentAccount, getConnectedAccountBalance } from "../lib/stripeConnect";
 import { sendContractorStripeVerifiedEmail, sendOwnerContractorVerifiedEmail, sendOwnerContractorRestrictedEmail, sendOwnerContractorResolvedEmail, sendContractorResolvedEmail, sendContractorOnboardingInvite } from "../lib/systemEmails";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import { randomBytes } from "crypto";
@@ -366,6 +368,23 @@ export async function approvePayoutRunById(
   const salonAccount = await getPaymentAccount(run.storeId);
   const salonStripeAccountId = salonAccount?.providerAccountId ?? null;
 
+  // ── Pre-calculate total ACH amount for balance check ──────────────────────────
+  // Sum all ACH items that will actually be transferred (have valid accounts & verified banks)
+  let totalAchCents = 0;
+  if (isStripeConfigured() && salonStripeAccountId) {
+    for (const { item, contractor: c } of items) {
+      if (!c || item.status === "skipped") continue;
+      const method = item.payoutMethod ?? c?.payoutMethod ?? "ach";
+      if (method === "ach" && c.stripeAccountId && c.bankVerified) {
+        const amountCents = Math.round(Math.abs(parseFloat(String(item.netAmount))) * 100);
+        if (amountCents >= 50) {
+          totalAchCents += amountCents;
+        }
+      }
+    }
+  }
+  // ────────────────────────────────────────────────────────────────────────────────
+
   let allSucceeded = true;
   const errors: string[] = [];
 
@@ -373,6 +392,9 @@ export async function approvePayoutRunById(
   // We cannot rely on the pre-fetched item.status (it reflects the snapshot
   // BEFORE processing and is never refreshed in-memory after DB updates).
   const paidContractorIds = new Set<number>();
+
+  // Track if we've already done the balance check + top-up for this run
+  let balanceChecked = false;
 
   for (const { item, contractor: c } of items) {
     if (!c || item.status === "skipped") continue;
@@ -424,6 +446,70 @@ export async function approvePayoutRunById(
           // Skipped items don't release reserves — salon owner must fund the account.
         } else {
           const stripe = getStripe();
+          
+          // ── Balance check + top-up logic (run once per payout run) ──────────────────
+          // Before creating transfers, check the salon's Stripe Connect Available Balance.
+          // If the balance is lower than the payroll total, programmatically trigger
+          // a Stripe Top-up (stripe.topups.create) via ACH from the salon's verified
+          // external bank account.
+          if (!balanceChecked && totalAchCents > 0) {
+            const balance = await getConnectedAccountBalance(salonStripeAccountId);
+            const availableUsd = balance.available
+              .filter((b) => b.currency === "usd")
+              .reduce((sum, b) => sum + b.amount, 0);
+            
+            if (availableUsd < totalAchCents) {
+              const deficitCents = totalAchCents - availableUsd;
+              console.log(
+                `[payoutRun/${runId}] Salon balance $${(availableUsd / 100).toFixed(2)} < required $${(totalAchCents / 100).toFixed(2)} — triggering top-up of $${(deficitCents / 100).toFixed(2)}`
+              );
+              
+              // Create a top-up from the salon's verified external bank account
+              // The salon must have a verified external bank account on their connected account
+              const topup = await stripe.topups.create(
+                {
+                  amount: deficitCents,
+                  currency: "usd",
+                  description: `Certxa payout run ${runId} top-up`,
+                  statement_descriptor: "CERTXA PAYOUT",
+                },
+                { stripeAccount: salonStripeAccountId }
+              );
+              
+              console.log(
+                `[payoutRun/${runId}] Top-up created: ${topup.id} (status: ${topup.status})`
+              );
+              
+              // Wait for top-up to complete (succeeded) before proceeding with transfers
+              // Poll with exponential backoff, max 5 minutes
+              let topupStatus = topup.status;
+              let attempts = 0;
+              const maxAttempts = 30; // ~5 minutes with exponential backoff
+              
+              while (topupStatus === "pending" && attempts < maxAttempts) {
+                const delayMs = Math.min(1000 * Math.pow(2, attempts), 30000); // 1s, 2s, 4s... max 30s
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+                
+                // Type assertion needed for stripeAccount parameter in topups.retrieve
+                const updatedTopup = await stripe.topups.retrieve(topup.id, { stripeAccount: salonStripeAccountId } as any);
+                topupStatus = updatedTopup.status;
+                attempts++;
+                
+                console.log(`[payoutRun/${runId}] Top-up ${topup.id} status: ${topupStatus} (attempt ${attempts})`);
+              }
+              
+              if (topupStatus !== "succeeded") {
+                const errorMsg = `Top-up ${topup.id} did not succeed (status: ${topupStatus})`;
+                console.error(`[payoutRun/${runId}] ${errorMsg}`);
+                throw new Error(errorMsg);
+              }
+              
+              console.log(`[payoutRun/${runId}] Top-up ${topup.id} succeeded — proceeding with transfers`);
+            }
+            balanceChecked = true;
+          }
+          // ────────────────────────────────────────────────────────────────────────────
+          
           // stripeAccount = salon's connected Standard account (funds originate there)
           // destination  = contractor's Express account
           const transfer = await stripe.transfers.create(
@@ -443,17 +529,17 @@ export async function approvePayoutRunById(
               stripeAccount:  salonStripeAccountId,
               idempotencyKey: `payout-run-${runId}-item-${item.id}`,
             }
-          );
-          console.log(
-            `[payoutRun/${runId}] Transferred ${(amountCents / 100).toFixed(2)} salon→contractor ${c.id} (${transfer.id})`
-          );
-          // Only mark paid + record in paidContractorIds after transfer is confirmed
-          await db.update(payoutRunItems)
-            .set({ status: "paid", paidAt: now, stripeTransferId: transfer.id })
-            .where(eq(payoutRunItems.id, item.id));
-          paidContractorIds.add(c.id); // ← record successful payment
-        }
-      }
+                );
+                console.log(
+                  `[payoutRun/${runId}] Transferred ${(amountCents / 100).toFixed(2)} salon→contractor ${c.id} (${transfer.id})`
+                );
+                // Only mark paid + record in paidContractorIds after transfer is confirmed
+                await db.update(payoutRunItems)
+                  .set({ status: "paid", paidAt: now, stripeTransferId: transfer.id })
+                  .where(eq(payoutRunItems.id, item.id));
+                paidContractorIds.add(c.id); // ← record successful payment
+              }
+            }
     } catch (err: any) {
       allSucceeded = false;
       errors.push(`${c?.firstName ?? "Contractor"} ${c?.lastName ?? ""}: ${err.message}`);
@@ -820,7 +906,6 @@ router.post("/contractors", isAuthenticated, async (req: Request, res: Response)
       if (!staffMember || staffMember.storeId !== sId) {
         res.status(400).json({ error: "Selected staff member is invalid for this store" }); return;
       }
-    } else {
       // Try to link to existing staff by email before auto-creating.
       if (normalizedEmail) {
         const [existingStaffByEmail] = await db
@@ -1007,7 +1092,51 @@ router.post("/contractors/:id/onboarding-link", isAuthenticated, async (req: Req
   }
 });
 
-// POST /api/contractor-payouts/contractors/:id/sync-stripe
+// POST /api/contractor-payouts/contractors/:id/express-onboarding-link
+// Stripe-hosted Express account onboarding for contractors.
+// Creates an Express account (if missing) and returns a Stripe AccountLink
+// that the contractor can use to complete KYC and bank verification.
+router.post("/contractors/:id/express-onboarding-link", isAuthenticated, async (req: Request, res: Response): Promise<void> => {
+  const id = parseInt(String(req.params.id), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  if (!isStripeConfigured()) {
+    res.status(400).json({ error: "Stripe is not configured on this server" }); return;
+  }
+
+  try {
+    const [contractor] = await db.select().from(contractors).where(eq(contractors.id, id));
+    if (!contractor) { res.status(404).json({ error: "Contractor not found" }); return; }
+
+    const sessionStoreId = await resolveSessionStoreId(req);
+    if (!sessionStoreId || contractor.storeId !== sessionStoreId) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
+
+    // Ensure an Express account exists for this contractor
+    const accountId = await ensureExpressContractorAccount(contractor, req.ip);
+
+    // Generate a Stripe AccountLink for hosted onboarding
+    const baseUrl = getReturnBaseUrl(req);
+    const { url } = await createContractorOnboardingLink(
+      accountId,
+      `${baseUrl}/contractor-onboarding/complete?accountId=${accountId}&mode=refresh`,
+      `${baseUrl}/contractor-onboarding/complete?accountId=${accountId}&mode=return`
+    );
+
+    await audit(contractor.storeId, "stripe_express_onboarding_started", "contractor", id, req, {
+      accountId,
+      mode: "express_link",
+      accountType: "express",
+    });
+
+    res.json({ url, accountId, accountType: "express" });
+  } catch (err) {
+    console.error("[payouts] express-onboarding-link:", err);
+    res.status(500).json({ error: "Failed to create Express onboarding link" });
+  }
+});
+
 router.post("/contractors/:id/sync-stripe", isAuthenticated, async (req: Request, res: Response): Promise<void> => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }

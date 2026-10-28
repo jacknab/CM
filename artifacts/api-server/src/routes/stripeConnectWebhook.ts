@@ -197,6 +197,82 @@ async function handleApplicationDeauthorized(event: Stripe.Event): Promise<void>
   );
 }
 
+/** topup.updated → log top-up status changes for payout run reconciliation. */
+async function handleTopupUpdated(event: Stripe.Event): Promise<void> {
+  const topup = event.data.object as Stripe.Topup;
+  const connectedAccountId = event.account;
+  
+  if (!connectedAccountId) {
+    console.warn("[connect-webhook/topup.updated] Event missing account ID");
+    return;
+  }
+  
+  // Find the store for this connected account
+  const storeId = await storeByConnectedAccount(connectedAccountId);
+  if (!storeId) {
+    console.log(`[connect-webhook/topup.updated] No store for account ${connectedAccountId} — skipping`);
+    return;
+  }
+  
+  console.log(
+    `[connect-webhook/topup.updated] Top-up ${topup.id} status: ${topup.status} ` +
+    `amount: $${(topup.amount / 100).toFixed(2)} ${topup.currency} ` +
+    `storeId: ${storeId} description: ${topup.description ?? "none"}`
+  );
+  
+  // If top-up succeeded, we could trigger any pending transfers here
+  // For now, just log — the payout run polling handles the wait
+  if (topup.status === "succeeded") {
+    console.log(`[connect-webhook/topup.updated] Top-up ${topup.id} succeeded for store ${storeId}`);
+  } else if (topup.status === "failed" || topup.status === "canceled") {
+    console.error(`[connect-webhook/topup.updated] Top-up ${topup.id} ${topup.status} for store ${storeId}: ${topup.failure_message ?? "no failure message"}`);
+  }
+}
+
+/** transfer.created → log successful transfer creation for audit trail. */
+async function handleTransferCreated(event: Stripe.Event): Promise<void> {
+  const transfer = event.data.object as Stripe.Transfer;
+  const connectedAccountId = event.account;
+  
+  if (!connectedAccountId) {
+    console.warn("[connect-webhook/transfer.created] Event missing account ID");
+    return;
+  }
+  
+  // Find the store for this connected account
+  const storeId = await storeByConnectedAccount(connectedAccountId);
+  if (!storeId) {
+    console.log(`[connect-webhook/transfer.created] No store for account ${connectedAccountId} — skipping`);
+    return;
+  }
+  
+  // Check if this is one of our payout run transfers
+  const isPayoutTransfer = transfer.metadata?.source === "certxa_payout_run";
+  
+  console.log(
+    `[connect-webhook/transfer.created] Transfer ${transfer.id} ` +
+    `amount: $${(transfer.amount / 100).toFixed(2)} ${transfer.currency} ` +
+    `destination: ${transfer.destination} ` +
+    `storeId: ${storeId} ` +
+    `payout_run: ${isPayoutTransfer ? "yes" : "no"} ` +
+    `metadata: ${JSON.stringify(transfer.metadata)}`
+  );
+  
+  // If this is a payout run transfer, we could update the payout run item status
+  // But the approvePayoutRunById function already marks items as "paid" immediately
+  // after creating the transfer, so this is primarily for audit/logging
+  if (isPayoutTransfer && transfer.metadata?.payout_run_item_id) {
+    const itemId = parseInt(transfer.metadata.payout_run_item_id, 10);
+    if (!isNaN(itemId)) {
+      // Verify the item exists and log confirmation
+      const [item] = await db.select().from(payoutRunItems).where(eq(payoutRunItems.id, itemId));
+      if (item) {
+        console.log(`[connect-webhook/transfer.created] Confirmed payout_run_item ${itemId} transfer ${transfer.id}`);
+      }
+    }
+  }
+}
+
 // ─── Webhook endpoint ─────────────────────────────────────────────────────────
 
 // Use router.use (not router.post) because app.post() in index.ts does NOT
@@ -263,6 +339,14 @@ router.use(async (req: any, res: Response) => {
 
       case "payment_intent.succeeded":
         await handlePosPaymentSucceeded(event);
+        break;
+
+      case "topup.updated" as string:
+        await handleTopupUpdated(event);
+        break;
+
+      case "transfer.created" as string:
+        await handleTransferCreated(event);
         break;
 
       default:

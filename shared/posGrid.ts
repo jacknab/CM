@@ -47,7 +47,9 @@ export type PosAfter = { to: "stay" } | { to: "main" } | { to: "grid"; gridId: s
 
 export interface PosGrid { id: string; name: string; keys: (PosKey | null)[]; after?: PosAfter }
 /** `grids[0]` is always the main grid. `afterService`: the same for a category's own grid of services. */
-export interface PosGridConfig { grids: PosGrid[]; afterService?: PosAfter; /** 3 = three across (18 keys); omitted = two (12). */ columns?: 3 }
+export interface PosGridConfig { grids: PosGrid[]; afterService?: PosAfter; /** 3 = three across (18 keys); omitted = two (12). */ columns?: 3;
+  /** The automatic Add-ons key (all add-ons) is left off the POS; add-on keys the manager placed still show. */
+  hideAddonsKey?: true }
 
 const GRID_ID = /^[a-z0-9_-]{1,24}$/;
 const COLOR = /^#[0-9a-f]{6}$/i;
@@ -94,7 +96,8 @@ export function sanitizePosGridConfig(raw: unknown): PosGridConfig | null {
     if (after) grid.after = after; else delete grid.after;
   }
   const afterService = sanitizeAfter((raw as any)?.afterService, ids, null);
-  return { grids: ordered, ...(afterService ? { afterService } : {}), ...(columns === 3 ? { columns: 3 as const } : {}) };
+  return { grids: ordered, ...(afterService ? { afterService } : {}), ...(columns === 3 ? { columns: 3 as const } : {}),
+    ...((raw as any)?.hideAddonsKey === true ? { hideAddonsKey: true as const } : {}) };
 }
 
 /** A usable "after a selection" (a grid it jumps to must exist and not be itself); "stay" is the default, so it is dropped. */

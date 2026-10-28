@@ -157,6 +157,7 @@ export function TurnPageModal({
 }) {
   const { pick } = useLanguage();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const t = {
     guideButton:    pick({ en: "How turns work",                     vi: "Cách tính lượt",                          es: "Cómo funcionan los turnos",               fr: "How turns work" }),
@@ -258,6 +259,26 @@ export function TurnPageModal({
     },
     enabled: !!selectedTech && storeId > 0,
   });
+  const staffIds = [...new Set((turnEligibility?.technicians ?? []).map((tech) => tech.id))].sort((a, b) => a - b);
+  const { data: staffIncome, error: staffIncomeError } = useQuery<Array<{ staffId: number; amount: number }>>({
+    queryKey: ["/api/turn/staff-history-summary", storeId, staffIds],
+    queryFn: async () => {
+      const results = await Promise.all(staffIds.map(async (staffId) => {
+        const res = await fetch(`/api/turn/staff-history?storeId=${storeId}&staffId=${staffId}`, { credentials: "include" });
+        if (!res.ok) throw new Error("Could not load technician revenue");
+        const history = await res.json() as TechHistoryRow[];
+        return { staffId, amount: history.reduce((sum, row) => sum + row.amount, 0) };
+      }));
+      return results;
+    },
+    enabled: storeId > 0 && staffIds.length > 0,
+    refetchInterval: 30_000,
+  });
+  useEffect(() => {
+    if (staffIncomeError) {
+      toast({ title: "Couldn't load technician revenue", description: staffIncomeError.message, variant: "destructive" });
+    }
+  }, [staffIncomeError, toast]);
 
   useEffect(() => {
     const id = setInterval(
@@ -276,14 +297,17 @@ export function TurnPageModal({
       if (apt.staffId !== member.id) return false;
       return isOnStoreDate(apt.date, currentDate, timezone);
     });
-    const dailyDoneIncome = dayAppointments
-      .filter((apt: any) => apt.status === "completed")
-      .reduce((sum: number, apt: any) => sum + Number(apt.totalPaid || apt.service?.price || 0), 0);
+    const appointmentDoneIncome = dayAppointments
+      .filter((apt: any) => apt.status === "completed" || apt.completed_at)
+      .reduce((sum: number, apt: any) => sum + Number(apt.totalPaid || apt.servicePrice || apt.service?.price || 0), 0);
+    const dailyDoneIncome = staffIncome
+      ? staffIncome.find((income) => income.staffId === member.id)?.amount ?? 0
+      : appointmentDoneIncome;
     const dailyProcessingIncome = dayAppointments
-      .filter((apt: any) => !["completed", "cancelled", "no-show", "no_show"].includes(String(apt.status)))
-      .reduce((sum: number, apt: any) => sum + Number(apt.totalPaid || apt.service?.price || 0), 0);
+      .filter((apt: any) => !["completed", "cancelled", "no-show", "no_show"].includes(String(apt.status)) && !apt.completed_at)
+      .reduce((sum: number, apt: any) => sum + Number(apt.totalPaid || apt.servicePrice || apt.service?.price || 0), 0);
     const dailyProcessingOrders = dayAppointments
-      .filter((apt: any) => !["completed", "cancelled", "no-show", "no_show"].includes(String(apt.status))).length;
+      .filter((apt: any) => !["completed", "cancelled", "no-show", "no_show"].includes(String(apt.status)) && !apt.completed_at).length;
     return [member.id, { dailyDoneIncome, dailyProcessingIncome, dailyProcessingOrders, color: member.color ?? "#3b82f6", avatarUrl: member.avatarUrl }];
   }));
 

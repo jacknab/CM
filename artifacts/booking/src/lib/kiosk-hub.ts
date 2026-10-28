@@ -84,3 +84,11 @@ export function serveKioskOverHub(handlers: {
     }
   });
 }
+
+/**
+ * Tell the customer screen / kiosk to wake up (come back to the welcome screen).
+ * Fire-and-forget: no reply needed. Goes through the salon hub when the internet is down.
+ */
+export function wakeKioskScreen(registerId: number | null | undefined): boolean {
+  return localHub.send({ type: "kiosk_wake", registerId: registerId ?? 0 });
+}

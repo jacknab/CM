@@ -37,7 +37,7 @@ export default function Header() {
         {/* Logo */}
         <Link to="/" className="shrink-0 flex items-center">
           <img
-            src={`${import.meta.env.BASE_URL}logo.png`}
+            src="/airo-assets/images/brand/header-logo"
             alt="Certxa"
             width={679}
             height={144}

@@ -216,10 +216,11 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
         key: `t${t.id}`, state: "waiting", since: t.checkedInAt ?? t.date, name: fullName(t.client.name), ticketNumber: t.ticketNumber ?? null,
         // A visit's second ticket waits for its first to be done before anyone is given it; and nothing starts
         // for a client who is in a chair on another ticket.
-        service, sub: blockedBy != null ? `IN CHAIR ON #${blockedBy}` : t.staff ? `WITH ${firstName(t.staff.name).toUpperCase()}` : t.waitsForTicket != null ? `AFTER #${t.waitsForTicket}` : "UNASSIGNED",
+        // A visit's tickets share one number (2026-10-28), so a second ticket says it waits for the visit's first service.
+        service, sub: t.ringingUp ? "RINGING UP" : blockedBy != null ? `IN CHAIR ON #${blockedBy}` : t.staff ? `WITH ${firstName(t.staff.name).toUpperCase()}` : t.waitsForTicket != null ? "AFTER FIRST SERVICE" : "UNASSIGNED",
         subKind: t.staff ? "assigned" : "unassigned", tech: t.staff?.name ?? null,
         provisional: t.offline === true, groupId, blockedBy,
-        open: () => onTicket(t), assign: t.staff || blockedBy != null ? undefined : () => onAssignTicket(t),
+        open: () => onTicket(t), assign: t.staff || blockedBy != null || t.ringingUp ? undefined : () => onAssignTicket(t),
         start: t.staff && onStartTicket && blockedBy == null ? () => onStartTicket(t) : undefined, testId: `nail-queue-wait-${t.id}`,
       };
     });

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Ban, CalendarDays, Check, Clock, Hand, Phone, Play, Receipt, ShoppingBag, UserRound, X, MessageSquare } from "lucide-react";
 import { useNailText } from "./i18n";
 import { formatDuration, formatElapsed } from "./ticketDraft";
-import type { BoardTicket } from "./nailApi";
+import { ticketNo, type BoardTicket } from "./nailApi";
 
 interface Props {
   ticket: BoardTicket;
@@ -21,6 +21,8 @@ interface Props {
   onClose: () => void;
   /** Server clock minus this device's clock, so times read the same on every POS station. */
   clockOffsetMs?: number;
+  /** The visit's other tickets (same number, services other technicians do): the whole visit is shown. */
+  visit?: BoardTicket[];
 }
 
 const NO_COLOR = "#454c56";
@@ -72,7 +74,7 @@ export function TicketPopup(p: Props) {
                 <strong id="nail-ticket-title">{t.client.name}</strong>
                 {/* A ticket made offline has its number already (it is the one printed); a POS station that could not
                     reach the main POS gets one when the ticket is sent. */}
-                <span className="checkin-ticket-num">{t.ticketNumber != null ? `#${t.ticketNumber}` : t.offline ? "NUMBER PENDING" : `#${t.id}`}</span>
+                <span className="checkin-ticket-num">{t.ticketNumber != null ? `#${ticketNo(t)}` : t.offline ? "NUMBER PENDING" : `#${t.id}`}</span>
               </div>
               <span><Phone size={13} /> {t.client.phone ?? "No phone"}</span>
             </div>
@@ -96,6 +98,13 @@ export function TicketPopup(p: Props) {
               <UserRound size={18} />
               <div><small>Technician</small><strong>{t.staff?.name ?? "Not assigned"}</strong></div>
             </div>
+            {(p.visit?.length ?? 0) > 0 && (
+              <div className="checkin-modal-lines" data-testid="nail-popup-visit">
+                {p.visit!.map((v) => (
+                  <div key={`v${v.id}`}><span>{v.service.name} · {v.staff?.name ?? "next technician"}{v.doneAt ? " · DONE" : v.status === "started" ? " · in service" : ""}</span><span>${v.total.toFixed(2)}</span></div>
+                ))}
+              </div>
+            )}
             {t.actualMinutes != null && (
               // DONE: how long the service really took, against the time planned for it.
               <div className="checkin-modal-detail" data-testid="nail-popup-service-time">

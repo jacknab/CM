@@ -47,7 +47,7 @@ import { useNightlyRestart, isDefaultHomeApp, openDeviceSettings, isKioskManaged
 import { KioskExitPinModal } from '@/components/KioskExitPinModal';
 import { POSModal, type POSData } from '@/components/POSModal';
 import { viewportLockJs } from '@/lib/viewportLock';
-import { printReceipt, printReceiptCopies, openCashDrawer, printCheckinTicket, printZReport, printText, type ReceiptData, type CheckinTicketData, type ZReportPrintData } from '@/lib/printer';
+import { printReceipt, printReceiptCopies, openCashDrawer, printCheckinTicket, printTechId, printZReport, printText, type ReceiptData, type CheckinTicketData, type ZReportPrintData } from '@/lib/printer';
 import { QrCapture } from '@/components/QrCapture';
 import { NumberBarCapture } from '@/components/NumberBarCapture';
 import { PrinterSetupModal } from '@/components/PrinterSetupModal';
@@ -120,6 +120,8 @@ const BRIDGE_JS = `
   window.CERTXA_NATIVE_HUB = 1;
   // This build can print receipts on the thermal printer (PRINT_RECEIPT) — the web checkout checks this flag.
   window.CERTXA_PRINT_BRIDGE = true;
+  // This build prints technician QR badges for the /nail lock screen.
+  window.CERTXA_TECH_ID_PRINT_BRIDGE = true;
   // ...and can print text the web app has laid out (PRINT_TEXT: technicians' pay slips).
   window.CERTXA_PRINT_TEXT = 1;
   // ...and can pop the cash drawer through the printer (OPEN_DRAWER).
@@ -747,6 +749,26 @@ export default function PortalScreen() {
             } catch (e: any) {
               console.error('[Printer] Check-in ticket failed', e?.message ?? e);
               reply(false, printFailure(e, 'Could not print the check-in ticket'));
+            }
+          })();
+          break;
+        }
+        case 'PRINT_TECH_ID': {
+          const { requestId, tech, qrValue } = msg;
+          const reply = (ok: boolean, error?: string) => {
+            const detail = { requestId: requestId ?? null, ok, error: error ?? null };
+            webViewRef.current?.injectJavaScript(
+              `window.dispatchEvent(new CustomEvent('certxa_native_print_result', { detail: ${JSON.stringify(detail)} })); true;`
+            );
+          };
+          void (async () => {
+            try {
+              if (!tech || !qrValue) throw new Error('Nothing to print');
+              const qrBase64 = await captureQrBase64(String(qrValue));
+              await printTechId({ id: Number(tech.id), name: String(tech.name) }, qrBase64);
+              reply(true);
+            } catch (e: any) {
+              reply(false, printFailure(e, 'Could not print the Tech ID'));
             }
           })();
           break;

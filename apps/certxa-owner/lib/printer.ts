@@ -489,6 +489,15 @@ export async function printCheckinTicket(data: CheckinTicketData, numberBarBase6
   await finishJob(printer);
 }
 
+/** Print a scanner badge containing only the technician QR and their name. */
+export async function printTechId(tech: { id: number; name: string }, qrBase64: string): Promise<void> {
+  const printer = await resolvePrinter();
+  const mod = await getActivePrinterModule(printer);
+  await mod.printImageBase64(stripDataUriPrefix(qrBase64), { imageWidth: CHECKIN_IMAGE_PRINT_WIDTH });
+  await mod.printBill(toPrinterTags(`[C]<B>${tech.name.trim().slice(0, 24)}</B>\n\n\n`));
+  await finishJob(printer);
+}
+
 /** Print text the web app has already laid out for the paper (a technician's pay slip). Uses the same
  *  [C]/[L]/<b> tags as the receipt templates; one copy.
  *

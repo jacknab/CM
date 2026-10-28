@@ -6,6 +6,7 @@
  * file only owns the screen state and wires the pieces together.
  */
 import { appPage } from "@/lib/appProfile";
+import { wakeKioskScreen } from "@/lib/kiosk-hub";
 import { localHub, relayCheckoutEvent } from "@/lib/local-hub";
 import { OfflineLimitLock } from "@/components/offline/OfflineLimitLock";
 import { EMPTY_ARRAY } from "@/lib/empty";
@@ -14,6 +15,8 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BarChart3, Bell, Clock, RotateCcw, CreditCard, RefreshCw, Gift, KeyRound, Languages, LayoutGrid, Loader2, Lock, LockKeyhole, Printer, Receipt, Search, Settings, ShoppingBag, CalendarPlus, Wallet } from "lucide-react";
 import { useNailText, type NailLang } from "./i18n";
+import { confirm } from "@/lib/confirm";
+import { useManagerOverride } from "./useManagerOverride";
 import { useNailDomTranslation } from "./nailDomTranslate";
 import { SlipTechIdSheet, TechSlipSheet } from "./TechSlipSheet";
 import { useSelectedStore } from "@/hooks/use-store";
@@ -37,6 +40,7 @@ import { installRequestDeadline } from "@/lib/request-deadline";
 import { serveKioskOverHub, hubTicketNumber } from "@/lib/kiosk-hub";
 import { startSalonMirror } from "@/lib/salon-mirror";
 import { clearForeignTurnEvents, startTurnSharing } from "@/lib/nail-offline/turnShare";
+import { forwardEngineOverHub, serveEngineOverHub } from "@/lib/nail-offline/remoteEngine";
 import { getDeviceId } from "@/lib/device-id";
 import { findClientId } from "./clientLookup";
 import { useNetworkStatus } from "@/hooks/use-network-status";
@@ -56,10 +60,13 @@ import { useStaffList } from "@/hooks/use-staff";
 import { getNowInTimezone } from "@/lib/timezone";
 import {
   ApiError, boardKey, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchCalendarBoardBookings, fetchClient, fetchUpcoming,
-  clockInTech, clockOutTech, textClientReady, fetchNailConfig, fetchPosGrid, fetchScreenSettings, fetchTurn, reassignTicket, savePosGrid, saveScreenSettings, removeMarker, resolveMarkerClient, startTicket, updateTicket,
+  addTicketAddon, addTicketLine, startRetailSale, addTicketPackage, addTicketService, discardRingingUp, removeTicketAddon, removeTicketLine, removeTicketServiceLine,
+  saveRingingUp, startRingingUp, ticketNo, clockInTech, clockOutTech, textClientReady, fetchNailConfig, fetchPosGrid, fetchScreenSettings, fetchTurn, reassignTicket, savePosGrid, saveScreenSettings, removeMarker, resolveMarkerClient, startTicket, updateTicket,
   type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData, type TechSignIn, type TurnEarned, type TurnTech,
  keptOnDevice, keepNailConfig, queueBooking, clientOnDevice, todaysBookingOnDevice, waitOnDevice, ownTurnEvents, splitTicketService, markTicketDone,} from "./nailApi";
 import { defaultPick, draftTotals, EMPTY_PICK, type DraftCustomLine, type NailPick, type TicketLine } from "./ticketDraft";
+/** A further service on the ticket being built: one line each, so the same service can be on it twice. */
+type ExtraService = CatalogService & { lineId: number };
 import { useNailRealtime } from "./useNailRealtime";
 import { TicketPanel } from "./TicketPanel";
 import { CatalogPanel, Keypad, type CatalogGroup, type CatalogService, type CheckoutFn } from "./CatalogPanel";
@@ -219,7 +226,14 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const [checkinId, setCheckinId] = useState<number | null>(null);
   const [service, setService] = useState<CatalogService | null>(null);
   // Further services on the same ticket. Add-ons and nail options belong to the first service.
-  const [extraServices, setExtraServices] = useState<CatalogService[]>([]);
+  // Each one is its own line (the same service twice = two lines), told apart by `lineId`.
+  const [extraServices, setExtraServices] = useState<ExtraService[]>([]);
+  const extraSeq = useRef(0);
+  const asExtra = (s: CatalogService): ExtraService => ({ ...s, lineId: ++extraSeq.current });
+  // "3 X" on the keypad, then a key on the grid: that key is rung up three times. Back to one after it is used.
+  const [gridQty, setGridQty] = useState(1);
+  const [qtyReset, setQtyReset] = useState(0);
+  const takeGridQty = () => { const n = gridQty; if (n !== 1) { setGridQty(1); setQtyReset((x) => x + 1); } return n; };
   const [addonIds, setAddonIds] = useState<number[]>([]);
   const [pick, setPick] = useState<NailPick>(EMPTY_PICK);
   const [customs, setCustoms] = useState<DraftCustomLine[]>([]);
@@ -458,7 +472,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const screenKey = ["/api/nail/screen-settings", storeId];
   const { data: screenSettings } = useQuery({
     queryKey: screenKey, queryFn: fetchScreenSettings, refetchInterval: settingsPollMs, staleTime: 15_000,
-    placeholderData: () => { try { return localStorage.getItem(lockKey) === "off" ? { lockScreen: false } : undefined; } catch { return undefined; } },
+    placeholderData: () => { try { return localStorage.getItem(lockKey) === "off" ? { lockScreen: false, keypadVisible: true } : undefined; } catch { return undefined; } },
   });
   const lockEnabled = screenSettings?.lockScreen !== false;
   useEffect(() => {
@@ -555,6 +569,14 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     return () => { sharing.stop(); offChange(); offStatus(); };
   }, [storeId, queryClient]);
 
+  // One offline POS for the salon (lib/nail-offline/remoteEngine.ts, owner 2026-10-28): with no internet the main
+  // POS does every station's offline work, so all stations show the same tickets; another station sends its work
+  // there while it is linked to it, and works on its own only when it can't reach it.
+  useEffect(() => (hubRole === "pos"
+    ? serveEngineOverHub(nailOffline)
+    : forwardEngineOverHub(nailOffline, { storeId: () => storeId, active: () => syncEngine.isOffline() && localHub.getStatus() === "connected" })),
+  [hubRole, storeId]);
+
   // Every past ticket kept on this tablet, so a ticket # can be looked up with no internet (ticketArchive.ts):
   // brought up to date on open, every 15 minutes, and when the connection comes back.
   useEffect(() => {
@@ -650,6 +672,15 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     return linked.length > 0 && service ? linked : activeAddons;
   }, [linkedAddons, activeAddons, service]);
   const shownAddons = moreAddons ? activeAddons : suggestedAddons.slice(0, 6);
+  // The POS grid's categories, the same on the ticket screen and at checkout: the catalog's, then Packages, then
+  // an Add-ons key (the add-ons suggested for the ticket's service first).
+  const posGroups = useMemo<CatalogGroup[]>(() => {
+    if (activeAddons.length === 0 || posGrid?.config?.hideAddonsKey) return gridGroups;
+    const first = new Set(((linkedAddons ?? []) as any[]).map((a) => Number(a.id)));
+    const addons = [...activeAddons].sort((a: any, b: any) => Number(first.has(b.id)) - Number(first.has(a.id)))
+      .map((a: any) => ({ id: Number(a.id), name: String(a.name), price: a.price, duration: a.duration ?? null }));
+    return [...gridGroups, { key: "addons", name: "Add-ons", services: [], addons }];
+  }, [gridGroups, activeAddons, linkedAddons, posGrid?.config?.hideAddonsKey]);
 
   const { data: nailCfg = null, isLoading: nailLoading } = useQuery({
     queryKey: ["/api/services", service?.id, "nail-config"],
@@ -670,7 +701,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   // ── Undo (the ↶ key under the keypad): each change to the ticket being built is kept, and ↶ puts the
   // ticket back the way it was before the last one. A new client or ticket starts a fresh history. ──
-  type DraftSnapshot = { service: CatalogService | null; extraServices: CatalogService[]; addonIds: number[]; pick: NailPick; customs: DraftCustomLine[]; pkg: typeof pkg };
+  type DraftSnapshot = { service: CatalogService | null; extraServices: ExtraService[]; addonIds: number[]; pick: NailPick; customs: DraftCustomLine[]; pkg: typeof pkg };
   const draftHistory = useRef<{ past: DraftSnapshot[]; current: DraftSnapshot | null; restoring: boolean; mergeNext: boolean; owner: string }>(
     { past: [], current: null, restoring: false, mergeNext: false, owner: "" });
   useEffect(() => {
@@ -719,7 +750,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       draftHistory.current.owner = "";
       setSplitKey(null);
       invalidateBoard();
-      say(`Split · #${r.ticketNumber} ${r.serviceName} waits until #${editing.ticketNumber ?? editing.id} is done`);
+      say(`Split · ${r.serviceName} waits until #${ticketNo(editing)} is done · same visit, paid together`);
     } catch (err: any) {
       toast({ title: "Couldn't split the ticket", description: err?.message, variant: "destructive" });
     } finally {
@@ -727,6 +758,13 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     }
   };
   const undoDraft = () => {
+    // A ticket on the server: ↶ takes its last line off.
+    if (isLive()) {
+      const last = [...draft.lines].reverse().find((l) => (l.customId != null && !customs.find((c) => c.id === l.customId)?.packageId) || l.addonId != null);
+      if (!last) { say("Nothing to undo"); return; }
+      void removeLive(editing!, last);
+      return;
+    }
     const h = draftHistory.current;
     const prev = h.past[h.past.length - 1];
     if (!prev) { say("Nothing to undo"); return; }
@@ -745,9 +783,9 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   );
   // The ticket as shown: the first service with its add-ons and options, then each further service.
   const draft = useMemo(() => {
-    const several = extraServices.length > 0;
+    const several = extraServices.length > 0 || (!!editing && customs.some((c) => c.serviceId && !c.packageId));
     const extraLines: TicketLine[] = extraServices.map((s) => ({
-      key: `service-${s.id}`, kind: "service", label: s.name, duration: Number(s.duration) || 0, price: Number(s.price) || 0,
+      key: `service-${s.lineId}`, kind: "service", label: s.name, duration: Number(s.duration) || 0, price: Number(s.price) || 0,
       serviceId: s.id, removable: true,
     }));
     const firstLines = totals.lines.map((l) => (l.kind === "service" ? { ...l, serviceId: service?.id, removable: several } : l));
@@ -758,7 +796,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       firstPrice: totals.price,
       firstDuration: totals.duration,
     };
-  }, [totals, extraServices, service]);
+  }, [totals, extraServices, service, editing, customs]);
   // A picked nail option (size/shape/art/effect) can vanish from the catalog mid-build if an admin
   // disables it on another register — draftTotals then silently drops its price/duration. Warn once
   // per occurrence rather than let the charge quietly come up short with no signal to staff.
@@ -830,10 +868,10 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     if (!p || parts.length === 0 || parts.some((x) => !x)) { say("That package isn't in the catalog any more"); return; }
     const pkgAddons: number[] = (p.items ?? []).filter((i: any) => i.itemType === "addon").map((i: any) => Number(i.addonId));
     // Whatever was on the ticket stays on it, after the package; a package already on it is replaced.
-    const keepExtras = [...(pkg ? [] : service ? [service] : []), ...extraServices.filter((x) => !pkg?.serviceIds.includes(x.id))]
+    const keepExtras = [...(pkg ? [] : service ? [asExtra(service)] : []), ...extraServices.filter((x) => !pkg?.serviceIds.includes(x.id))]
       .filter((x) => !svcIds.includes(x.id));
     setService(parts[0]!);
-    setExtraServices([...parts.slice(1) as CatalogService[], ...keepExtras]);
+    setExtraServices([...(parts.slice(1) as CatalogService[]).map(asExtra), ...keepExtras]);
     setAddonIds((cur) => [...new Set([...cur.filter((id) => !pkg?.addonIds.includes(id)), ...pkgAddons])]);
     setPick(EMPTY_PICK); pickSeededFor.current = null;
     const difference = Math.round((Number(p.price) - Number(p.listPrice)) * 100) / 100;
@@ -853,22 +891,189 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     setPick(EMPTY_PICK); pickSeededFor.current = null;
     setPkg(null);
   };
+  // A key on the grid works like a register's: every tap rings up one more (the same service twice = two lines),
+  // and "3 X" first rings it up three times.
   const chooseService = (svc: CatalogService) => {
+    const times = takeGridQty();
+    if (editing) { void addToSavedTicket(editing, svc, times); return; }
+    // The client's first service: the ticket is made on the server now, so every station sees it being rung up.
+    if (!service && !booking && client && !offline && !isLocalId(client.id)) { void startLive(svc, times); return; }
+    chooseLocal(svc, times);
+  };
+  // On this tablet only (offline, a booking, or a draft that already has its service): kept here until SAVE.
+  const chooseLocal = (svc: CatalogService, times: number) => {
     if (svc.id < 0) { choosePackage(-svc.id); return; }
-    if (service?.id === svc.id) return;
-    // A new ticket that already has a service gains another one; a saved ticket being edited holds one
-    // service, so picking there still swaps it.
-    if (service && editing === null) {
-      setExtraServices((cur) => (cur.some((s) => s.id === svc.id) ? cur : [...cur, svc]));
+    let left = times;
+    if (!service) {
+      setService(svc); pickSeededFor.current = null; setPick(EMPTY_PICK);
+      left -= 1;
+    }
+    if (left > 0) setExtraServices((cur) => [...cur, ...Array.from({ length: left }, () => asExtra(svc))]);
+  };
+  // ── One POS on the server (2026-10-28): once a ticket exists on the server every change goes straight to it, and
+  // the screen shows the ticket as the server has it — so every POS station sees the same ticket at once. A ticket
+  // made offline (or edited while offline) keeps the old way: changes are kept here and saved with UPDATE TICKET. ──
+  const { guard, pinSheet } = useManagerOverride();
+  const isLive = (t: BoardTicket | null = editing): t is BoardTicket => !!t && !offline && !isLocalId(t.id);
+  const [liveBusy, setLiveBusy] = useState(false);
+  const reloadTicket = async (id: number) => {
+    const b = await queryClient.fetchQuery({ queryKey: boardKey(storeId), queryFn: fetchBoard, staleTime: 0 });
+    const fresh = b.tickets.find((x) => x.id === id);
+    if (fresh) startEdit(fresh);
+    else { resetDraft(); setTab("queue"); say("That ticket was paid or closed on another station"); }
+  };
+  /** Runs one change on the server ticket (asking for the manager PIN when the service is DONE), then shows the ticket. */
+  const liveChange = async (id: number, fn: () => Promise<unknown>): Promise<boolean> => {
+    if (liveBusy) return false;
+    setLiveBusy(true);
+    try {
+      const ok = await guard(async () => { await fn(); return true; });
+      if (!ok) return false;
+      await reloadTicket(id);
+      return true;
+    } catch (err: any) {
+      toast({ title: "Couldn't change the ticket", description: err?.message, variant: "destructive" });
+      return false;
+    } finally {
+      setLiveBusy(false);
+    }
+  };
+  /** The first service (or package) for a client: the ticket is made on the server, "being rung up". */
+  const startLive = async (svc: CatalogService, times: number) => {
+    if (liveBusy || !client) return;
+    let serviceId = svc.id;
+    let packageId: number | null = null;
+    if (svc.id < 0) {
+      const p = ((packageList ?? []) as any[]).find((x) => Number(x.id) === -svc.id);
+      const first = (p?.items ?? []).find((i: any) => i.itemType === "service");
+      if (!first) { say("That package isn't in the catalog any more"); return; }
+      serviceId = Number(first.serviceId); packageId = -svc.id;
+    }
+    setLiveBusy(true);
+    try {
+      const cfg = packageId ? null : await queryClient.fetchQuery({ queryKey: ["/api/services", serviceId, "nail-config"],
+        queryFn: () => fetchNailConfig(serviceId), staleTime: 60_000 }).catch(() => null);
+      const r = await startRingingUp({ clientId: client.id, serviceId, addonIds: [], pick: defaultPick(cfg), customLines, checkinId, packageId,
+        extraServiceIds: packageId ? [] : Array.from({ length: times - 1 }, () => serviceId) });
+      invalidateBoard();
+      await reloadTicket(r.appointmentId);
+    } catch (err: any) {
+      // No connection after all: ring it up on this tablet, as offline.
+      if (isNetworkFailure(err)) chooseLocal(svc, times);
+      else toast({ title: "Couldn't start the ticket", description: err?.message, variant: "destructive" });
+    } finally {
+      setLiveBusy(false);
+    }
+  };
+  // A ticket on the server: a service or package tapped goes straight onto it (a service its technician doesn't do
+  // becomes its own ticket of the visit, same number, paid together).
+  const addToSavedTicket = async (t: BoardTicket, svc: CatalogService, times: number) => {
+    if (!isLive(t)) {
+      if (svc.id < 0) { say("A package can be added to a saved ticket once the connection is back"); return; }
+      const added = Array.from({ length: times }, () => ({ id: ++customSeq.current, label: svc.name, price: Number(svc.price) || 0,
+        serviceId: svc.id, duration: Number(svc.duration) || 0 }));
+      setCustoms((cur) => [...cur, ...added]);
       return;
     }
-    setService(svc);
-    pickSeededFor.current = null;
-    if (editing === null) setPick(EMPTY_PICK);
+    let note = "";
+    await liveChange(t.id, async () => {
+      if (svc.id < 0) { const r = await addTicketPackage(t.id, -svc.id); note = `${r.name} added`; return; }
+      for (let i = 0; i < times; i++) {
+        const r = await addTicketService(t.id, svc.id);
+        note = r.added === "own_ticket" ? `${svc.name} → ${r.staffName ?? "the next technician"} · same visit, paid together` : `${svc.name} added`;
+      }
+    });
+    if (note) say(note);
+  };
+  /** Takes a line off a ticket on the server. */
+  const removeLive = async (t: BoardTicket, line: TicketLine) => {
+    if (line.key.startsWith("visit-")) {
+      const other = tickets.find((x) => `visit-${x.id}` === line.key);
+      if (!other) return;
+      if (other.status === "started") { say("That service has started — change it from its own ticket"); return; }
+      if (!(await confirm(`Take ${other.service.name}${other.staff ? ` (${other.staff.name})` : ""} off this visit?`, { title: "Remove service", confirmLabel: "Remove", destructive: true }))) return;
+      await liveChange(t.id, () => cancelTicket(other.id, other.client.name));
+      return;
+    }
+    if (line.addonId != null) { await liveChange(t.id, () => removeTicketAddon(t.id, line.addonId!)); return; }
+    if (line.customId != null) {
+      const index = customs.findIndex((c) => c.id === line.customId);
+      const c = customs[index];
+      if (!c) return;
+      if (c.packageId) { say("The package price stays with its services"); return; }
+      await liveChange(t.id, () => (c.serviceId ? removeTicketServiceLine(t.id, index) : removeTicketLine(t.id, index)));
+      return;
+    }
+    const keep = { serviceId: t.service.id ?? service?.id ?? 0, addonIds: t.addons.map((a) => a.id), customLines: t.customLines };
+    if (line.group) { await liveChange(t.id, () => updateTicket(t.id, { ...keep, pick: { ...pick, [line.group!]: null } }, t)); return; }
+    if (line.kind === "service") {
+      // The ticket's own service: the next service on the ticket takes its place (its add-ons went with it).
+      const index = t.customLines.findIndex((c) => c.serviceId && !c.packageId);
+      if (index < 0) { say(t.ringingUp ? "A ticket needs a service — tap CLEAR to start over" : "A ticket needs a service — cancel it from the Queue instead"); return; }
+      const next = t.customLines[index];
+      const cfg = await fetchNailConfig(next.serviceId!).catch(() => null);
+      await liveChange(t.id, () => updateTicket(t.id, { serviceId: next.serviceId!, addonIds: [], pick: defaultPick(cfg),
+        customLines: t.customLines.filter((_, i) => i !== index) }, t));
+    }
+  };
+  /** PAY on a retail-only sale: it is recorded under whoever is signed in (their product commission), then paid. */
+  const sellRetail = async () => {
+    if (liveBusy) return;
+    if (!tech) { say("Sign in with your Tech ID to sell retail"); return; }
+    setLiveBusy(true);
+    try {
+      const r = await startRetailSale(tech.id, customs.map((c) => ({ label: c.label, price: c.price })));
+      resetDraft();
+      invalidateBoard();
+      void openTicketForCheckout(r.appointmentId);
+    } catch (err: any) {
+      toast({ title: "Couldn't start the sale", description: err?.message, variant: "destructive" });
+    } finally {
+      setLiveBusy(false);
+    }
+  };
+  /** SAVE on a ticket being rung up: TURN gets it now. `thenPay`: straight on to its checkout. */
+  const saveLive = async (t: BoardTicket, thenPay = false) => {
+    if (liveBusy) return;
+    setLiveBusy(true);
+    try {
+      const r = await saveRingingUp(t.id, null);
+      invalidateBoard();
+      const savedClient = client?.name;
+      resetDraft();
+      if (thenPay) { void openTicketForCheckout(t.id); return; }
+      say(r.staffName ? `Ticket #${r.ticketNumber ?? t.id} · ${r.staffName}` : `Ticket #${r.ticketNumber ?? t.id} is waiting · no technician free yet`);
+      setStartedNotice(r.tickets.map((x) => ({ ticketNumber: r.ticketNumber ?? t.id, serviceName: x.serviceName, staffName: x.staffName, appointmentId: x.appointmentId, clientName: savedClient })));
+    } catch (err: any) {
+      toast({ title: "Couldn't save the ticket", description: err?.message, variant: "destructive" });
+    } finally {
+      setLiveBusy(false);
+    }
+  };
+  // An add-on key: the add-on joins the ticket's first service (an add-on is on a ticket once).
+  const addAddonKey = (addon: { id: number; name: string }) => {
+    if (!service) { say("Pick a service first, then its add-ons"); return; }
+    if (isLive()) {
+      const t = editing!;
+      takeGridQty();
+      void liveChange(t.id, async () => { const r = await addTicketAddon(t.id, addon.id); if (!r.added) say(`${addon.name} is already on the ticket`); });
+      return;
+    }
+    if (addonIds.includes(addon.id)) { say(`${addon.name} is already on the ticket`); return; }
+    takeGridQty();
+    setAddonIds((cur) => [...cur, addon.id]);
   };
   const noSale = () => { void openCashDrawerHardware({ onThermalPrint: thermalPrinter.isConnected ? thermalPrinter.print : undefined }); recordNoSale({ drawerId, performedBy: tech?.name }); say("Cash drawer opened"); };
   const toggleAddon = (id: number) => setAddonIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
   const addCustom = (amount: number, qty: number, label?: string, isRetail?: boolean) => {
+    // With no client only a product can be sold (tap Retail first); services and amounts need a client.
+    if (!client && !isRetail) { say("Check a client in first — or tap Retail to sell a product"); return; }
+    if (isLive()) {
+      const t = editing!;
+      void liveChange(t.id, () => addTicketLine(t.id, { label: label ?? (qty > 1 ? `Custom Amount ×${qty}` : "Custom Amount"),
+        price: Math.round(amount * qty * 100) / 100, ...(isRetail ? { isRetail: true } : {}) }));
+      return;
+    }
     customSeq.current += 1;
     setCustoms((cur) => [...cur, {
       id: customSeq.current,
@@ -878,12 +1083,22 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     }]);
   };
   const removeLine = (line: TicketLine) => {
+    if (isLive()) { void removeLive(editing!, line); return; }
     if (pkg && ((line.kind === "service" && line.serviceId != null && pkg.serviceIds.includes(line.serviceId))
       || (line.addonId != null && pkg.addonIds.includes(line.addonId))
       || (line.customId != null && customs.some((c) => c.id === line.customId && c.packageId)))) { dropPackage(); return; }
     if (line.kind === "service" && line.serviceId != null) {
-      if (extraServices.some((s) => s.id === line.serviceId)) { setExtraServices((cur) => cur.filter((s) => s.id !== line.serviceId)); return; }
+      if (extraServices.some((s) => `service-${s.lineId}` === line.key)) { setExtraServices((cur) => cur.filter((s) => `service-${s.lineId}` !== line.key)); return; }
       // Taking off the first service: the next one takes its place, with its own add-ons and nail options to choose.
+      // On a saved ticket the other services are its service lines: the first of them takes its place.
+      if (editing && extraServices.length === 0) {
+        const c = customs.find((x) => x.serviceId && !x.packageId);
+        const svc = c ? groups.flatMap((g) => g.services).find((x) => x.id === c.serviceId) : undefined;
+        if (!c || !svc) return;
+        setCustoms((cur) => cur.filter((x) => x.id !== c.id));
+        setService(svc); setAddonIds([]); setPick(EMPTY_PICK); pickSeededFor.current = null;
+        return;
+      }
       const [next, ...rest] = extraServices;
       if (!next) return;
       setService(next); setExtraServices(rest); setAddonIds([]); setPick(EMPTY_PICK); pickSeededFor.current = null;
@@ -910,7 +1125,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     }
   };
 
-  const startEdit = (t: BoardTicket) => {
+  const startEdit = (t: BoardTicket, stay = false) => {
     const svc = groups.flatMap((g) => g.services).find((s) => s.id === t.service.id) ?? null;
     if (!svc) { toast({ title: "That service is no longer in the catalog", variant: "destructive" }); return; }
     setClient({ id: t.client.id ?? 0, name: t.client.name, phone: t.client.phone, loyaltyPoints: t.client.loyaltyPoints });
@@ -922,9 +1137,10 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       ...(c.serviceId ? { serviceId: c.serviceId, duration: c.duration } : {}), ...(c.packageId ? { packageId: c.packageId } : {}) })));
     setPick({ size: t.nail?.sizeId ?? null, shape: t.nail?.shapeId ?? null, application: t.nail?.applicationId ?? null, effect: t.nail?.effectId ?? null });
     setEditing(t);
+    setExtraServices([]); setPkg(null);
     setSplitKey(null);
     setActiveGroup(groups.find((g) => g.services.some((s) => s.id === svc.id))?.key ?? activeGroup);
-    setTab("pos");
+    if (!stay) setTab("pos");
   };
 
   const invalidateBoard = () => {
@@ -1163,12 +1379,24 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     try {
       const b = await queryClient.fetchQuery({ queryKey: boardKey(storeId), queryFn: fetchBoard, staleTime: 0 });
       const t = b.tickets.find((x) => x.id === id);
-      if (t) requestCheckout(t);
+      if (t) void requestCheckout(t);
       else toast({ title: "Ticket created", description: "Open it from the Queue to take payment.", variant: "destructive" });
     } catch { toast({ title: "Ticket created", description: "Open it from the Queue to take payment.", variant: "destructive" }); }
   };
 
-  const requestCheckout = (t: BoardTicket) => {
+  const requestCheckout = async (t: BoardTicket) => {
+    // One visit, one payment (owner, 2026-10-28): opening any ticket of the visit pays all of its tickets together
+    // (CheckoutMode links them). A ticket of the visit nobody has started yet is asked about first; one with no
+    // technician can't be paid yet and stays open.
+    const waiting = t.groupId != null ? tickets.filter((x) => x.id !== t.id && x.groupId === t.groupId && x.status !== "started") : [];
+    if (waiting.length > 0) {
+      const names = waiting.map((x) => `#${ticketNo(x)} ${x.service.name}${x.staff ? "" : " (no technician yet)"}`).join(", ");
+      const unpaid = waiting.filter((x) => !x.staff);
+      const ok = await confirm(`${names} ${waiting.length === 1 ? "hasn't" : "haven't"} been started yet.${unpaid.length
+        ? " A ticket with no technician can't be paid yet and stays open." : ""} Take payment for the visit now?`,
+        { title: "Not every service is done", confirmLabel: "Pay now" });
+      if (!ok) return;
+    }
     // Offline, a ticket can be closed in cash only (recorded on this tablet and sent later). Say so up front.
     if (offline || isLocalId(t.id)) say("Offline: cash only. The sale is saved on this tablet and sent when the connection is back.");
     // A ticket is never paid without its technician — that's who earns the commission and the TURN credit.
@@ -1423,6 +1651,16 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     return () => { void send("kiosk_checkout_phone_cancel"); };
   }, [showBook, dualScreen, registerId]);
 
+  // ── Wake the customer screen when the POS is active ────────────────────────────────────
+  useEffect(() => {
+    if (!dualScreen || !registerId) return;
+    // Wake the customer screen every 30 seconds to keep it from sleeping
+    const interval = setInterval(() => {
+      wakeKioskScreen(registerId);
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [dualScreen, registerId]);
+
   // ── the calendar's other tools, from the More menu ────────────────────────
   const timeclockEnabled = features.timeclock !== false;
   // Offline mode runs from cached files — wiping them there would break it, so no Hard Refresh while offline.
@@ -1531,8 +1769,17 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   // ── submit routing ────────────────────────────────────────────────────────
   const busy = create.isPending || update.isPending;
-  const canSubmit = !!client && !!service;
+  // A retail-only sale (owner, 2026-10-28): no client and no service, only Retail items rung up on the keypad.
+  const retailOnly = !client && !editing && !booking && customs.length > 0 && customs.every((c) => c.isRetail);
+  const canSubmit = (!!client && !!service) || retailOnly;
   const submit = () => {
+    if (retailOnly) { void sellRetail(); return; }
+    // A ticket on the server is already saved line by line: SAVE gives one being rung up to TURN; DONE closes it.
+    if (isLive()) {
+      if (editing!.ringingUp) void saveLive(editing!);
+      else { resetDraft(); setTab("queue"); }
+      return;
+    }
     if (!canSubmit) return;
     if (editing) update.mutate();
     else create.mutate();
@@ -1548,13 +1795,26 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // Group Pay / Tip Adjust / Discount under the keypad belong to paying: the ticket is saved and its checkout
   // opens on that function, so building and paying feel like one screen.
   const payNowWith = (fn: CheckoutFn) => {
-    if (busy) return;
+    if (busy || liveBusy) return;
+    if (isLive()) {
+      const t = editing!;
+      checkoutStart.current = fn;
+      if (t.ringingUp) void saveLive(t, true);
+      else { resetDraft(); void openTicketForCheckout(t.id); }
+      return;
+    }
     if (editing) { say("Update the ticket first, then open it to pay"); return; }
     if (!canSubmit) { say("Add a service first"); return; }
     payNow(fn);
   };
   // Clearing drops the client too, and a ticket can only be built for a client — so go back to the queue.
-  const clearDraft = () => {
+  const clearDraft = async () => {
+    // A ticket being rung up that was never saved goes away, and the client is waiting again.
+    if (isLive() && editing!.ringingUp) {
+      if (!(await confirm("This ticket hasn't been saved. Clear it? The client goes back to waiting.", { title: "Clear ticket", confirmLabel: "Clear", destructive: true }))) return;
+      try { await discardRingingUp(editing!.id); invalidateBoard(); }
+      catch (err: any) { toast({ title: "Couldn't clear the ticket", description: err?.message, variant: "destructive" }); return; }
+    }
     setTab("queue");
     resetDraft();
   };
@@ -1584,6 +1844,21 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   };
   startFromMarkerRef.current = (m) => void startFromMarker(m);
 
+  // Another station changed the ticket on screen: show it as it now is (the screen only mirrors the server).
+  useEffect(() => {
+    if (!isLive() || liveBusy || !board || board.cachedAt) return;
+    const fresh = tickets.find((x) => x.id === editing!.id);
+    if (!fresh) { resetDraft(); setTab("queue"); say("That ticket was paid or closed on another station"); return; }
+    if (JSON.stringify(fresh) !== JSON.stringify(editing)) startEdit(fresh, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [board]);
+  // The visit's other tickets (services other technicians do), shown on this ticket so the whole visit is on one screen.
+  const visitLines: TicketLine[] = editing?.groupId != null
+    ? tickets.filter((x) => x.id !== editing.id && x.groupId === editing.groupId).map((x) => ({
+      key: `visit-${x.id}`, kind: "service" as const, label: x.service.name, duration: x.duration, price: x.total,
+      note: `${x.staff ? x.staff.name : "Next technician in turn"}${x.doneAt ? " · DONE" : x.status === "started" ? " · in service" : ""}`,
+      removable: isLive() && x.status !== "started" }))
+    : [];
   const ticketActions = {
     // Defense in depth: even if another view invokes Start for an unassigned ticket,
     // assignment is required first so the ticket cannot disappear into an invalid started state.
@@ -1595,7 +1870,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       }
       act.mutate(() => startTicket(t.id, t.client.name));
     },
-    onCheckout: (t: BoardTicket) => { checkoutStart.current = null; requestCheckout(t); },
+    onCheckout: (t: BoardTicket) => { checkoutStart.current = null; void requestCheckout(t); },
     onDone: (t: BoardTicket) => act.mutate(() => markTicketDone(t.id), {
       onSuccess: () => { setPopupId(null); say(`#${t.ticketNumber ?? t.id} done${t.staff ? ` · ${t.staff.name.split(" ")[0]} is free` : ""} · ready to pay`); },
     }),
@@ -1691,10 +1966,12 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
               onReceiptDone={finishCheckout}
               initialAction={checkoutStart.current}
               active={tab === "pos" && (tech != null || !lockEnabled)}
-              groups={groups}
+              groups={posGroups}
               layout={posGrid?.config ?? null}
               onChangeService={changeCheckoutService}
               onClose={() => {
+                // A retail-only sale closed without being paid goes away again.
+                if (checkout.service.id == null && !ticketPaid) void discardRingingUp(checkout.id).then(invalidateBoard).catch(() => {});
                 if (checkoutClosedElsewhere) say(`Ticket #${checkout.ticketNumber ?? checkout.id} was paid or closed on another station`);
                 setCheckout(null); setTab("queue");
               }}
@@ -1706,27 +1983,27 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
             <TicketPanel
               client={client}
               badge={booking ? "BOOK" : editing ? `#${editing.ticketNumber ?? editing.id}` : "NEW"}
-              lines={draft.lines}
+              lines={[...draft.lines, ...visitLines]}
               duration={draft.duration}
-              price={draft.price}
+              price={draft.price + visitLines.reduce((n, l) => n + l.price, 0)}
               submitLabel={booking ? (!service ? "ADD A SERVICE FIRST" : booking.step === "services" ? "PICK TIME" : booking.slot ? "BOOK" : "PICK A TIME")
-                : editing ? "UPDATE TICKET" : !client ? "CHOOSE A CLIENT FIRST" : !service ? "ADD A SERVICE FIRST" : "SAVE TICKET"}
-              canSubmit={booking ? canSubmit && (booking.step === "services" || !!booking.slot) : canSubmit}
-              busy={booking ? bookVisit.isPending : busy}
+                : retailOnly ? "PAY" : isLive() ? (editing!.ringingUp ? "SAVE TICKET" : "DONE") : editing ? "UPDATE TICKET" : !client ? "CHOOSE A CLIENT FIRST" : !service ? "ADD A SERVICE FIRST" : "SAVE TICKET"}
+              canSubmit={booking ? canSubmit && (booking.step === "services" || !!booking.slot) : isLive() ? !liveBusy : canSubmit}
+              busy={booking ? bookVisit.isPending : busy || liveBusy}
               appointment={booking?.slot ? bookingLabel(booking.slot) : null}
               editing={!!editing}
               onRemove={(l) => { if (l.key === splitKey) setSplitKey(null); removeLine(l); }}
               selectedKey={splitKey}
               onSelect={booking ? undefined : (l) => setSplitKey((k) => (k === l.key || !splittable(l) ? null : l.key))}
-              onClear={clearDraft}
+              onClear={() => void clearDraft()}
               onSubmit={!booking ? submit : booking.step === "services"
                 ? () => { if (!pkg && extraServices.length > 1) { say("A booking can have up to 2 services"); return; } setBooking({ step: "time", slot: null }); }
                 : () => bookVisit.mutate()}
             />
             <section className="work-area">
               <div className="sale-area">
-                <Keypad locked={!client} onEnter={addCustom} onUndo={undoDraft} onSplit={() => void splitSelected()} onGiftCard={() => setShowGift(true)} onCheckoutFn={payNowWith} onNotice={say}
-                  onNoSale={noSale} />
+                <Keypad locked={false} onEnter={addCustom} onUndo={undoDraft} onSplit={() => void splitSelected()} onGiftCard={() => setShowGift(true)} onCheckoutFn={payNowWith} onNotice={say}
+                  onNoSale={noSale} onQtyChange={setGridQty} qtyReset={qtyReset} />
                 {booking?.step === "time" && service ? (
                   <BookingPanel
                     storeId={storeId} slug={bookingSlug} timezone={timezone} serviceId={service.id} extraServiceId={extraServices[0]?.id ?? null}
@@ -1739,7 +2016,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
                 <CatalogPanel
                   layout={posGrid?.config ?? null}
                   locked={!client}
-                  groups={gridGroups}
+                  groups={posGroups}
                   openGroup={openGroup}
                   activeGroup={activeGroup}
                   onGroup={setActiveGroup}
@@ -1752,6 +2029,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
                   addonIds={addonIds}
                   onToggleAddon={toggleAddon}
                   allAddons={activeAddons}
+                  onAddonKey={addAddonKey}
                   onFn={(fn) => {
                     if (fn === "reprint") { void reprintLastReceipt().then((err) => say(err ?? "Receipt reprinted")); return; }
                     if (fn === "nosale") { noSale(); return; }
@@ -1766,15 +2044,17 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
         ) : tab === "techs" ? (
           <TechCards techs={techList} tickets={tickets} markers={markers} glance={board?.glance} stats={board?.techStats ?? EMPTY_ARRAY} loading={techsLoading} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} onClockedOutTap={setClockInFor} onClockedInTap={setClockOutFor} onTicketTap={(t) => setPopupId(t.id)} onQueueView={(view) => { setQueueView(view); setTab("queue"); }} />
         ) : (
-          <QueueTab techs={techList} tickets={tickets} markers={markers} dayBookings={dayBookings} glance={board?.glance} upcoming={upcoming} appointmentsLoading={upcomingPending || (needsCalendarFallback && calendarFallbackPending)} appointmentsError={(upcomingError && !upcoming) || (needsCalendarFallback && calendarFallbackError)} timezone={timezone} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} initialView={queueView} onMarker={(m) => void startFromMarker(m)} onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))} onTicket={(t) => setPopupId(t.id)} onAssignTicket={(t) => { setAssignError(null); setAssigning({ mode: "assign", ticket: t }); }} onStartTicket={ticketActions.onStart} onTicketTap={(t) => setPopupId(t.id)} onTechs={() => setTab("techs")} />
+          <QueueTab techs={techList} tickets={tickets} markers={markers} dayBookings={dayBookings} glance={board?.glance} upcoming={upcoming} appointmentsLoading={upcomingPending || (needsCalendarFallback && calendarFallbackPending)} appointmentsError={(upcomingError && !upcoming) || (needsCalendarFallback && calendarFallbackError)} timezone={timezone} clockOffsetMs={clockOffsetMs} assumedIn={assumedIn} initialView={queueView} onMarker={(m) => void startFromMarker(m)} onMarkerRemove={(m) => act.mutate(() => removeMarker(m.id))} onTicket={(t) => (t.service.id == null ? void requestCheckout(t) : t.ringingUp ? startEdit(t) : setPopupId(t.id))} onAssignTicket={(t) => { setAssignError(null); setAssigning({ mode: "assign", ticket: t }); }} onStartTicket={ticketActions.onStart} onTicketTap={(t) => setPopupId(t.id)} onTechs={() => setTab("techs")} />
         )}
 
+      {pinSheet}
       <BottomNav tab={tab} onTab={(next) => { setQueueView(null); if (next === "queue" && tab === "queue") { setPopupId(null); setTech(null); } else setTab(next); }} onCheckIn={openCheckIn} onMore={() => setShowMore("more")} onLookupByNumber={() => setShowLookupByNumber(true)} waiting={waitingCount} status={footerStatus} onStatus={() => setShowQueued(true)} />
       </main>
 
       {showGift && <GiftCardSheet onClose={() => setShowGift(false)} onSay={say} />}
 
       {popupTicket && <TicketPopup ticket={popupTicket} busy={act.isPending} {...ticketActions}
+        visit={popupTicket.groupId != null ? tickets.filter((x) => x.id !== popupTicket.id && x.groupId === popupTicket.groupId) : undefined}
         // DONE is for the first ticket of a visit another technician carries on: only while a linked ticket of the
         // same visit is still waiting. The visit's last ticket is checked out as normal.
         onDone={popupTicket.groupId != null && tickets.some((x) => x.id !== popupTicket.id && x.groupId === popupTicket.groupId && x.status === "confirmed")
@@ -1844,7 +2124,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       )}
       {sheet === "timeclock" && <TimeClockSheet storeId={storeId} onClose={() => { setSheet(null); invalidateBoard(); }} />}
       {gridEditor === "open" && (
-        <GridEditor groups={gridGroups} addons={activeAddons} config={posGrid?.config ?? null} saving={saveGrid.isPending} onSave={(config) => saveGrid.mutate(config)} onClose={() => setGridEditor(null)} />
+        <GridEditor groups={posGroups} addons={activeAddons} config={posGrid?.config ?? null} saving={saveGrid.isPending} onSave={(config) => saveGrid.mutate(config)} onClose={() => setGridEditor(null)} />
       )}
       {pinChange && <ChangeManagerPinSheet onClose={() => setPinChange(false)} onDone={() => { setPinChange(false); say("Manager PIN changed"); }} />}
       {sheet === "manager" && <ManagerPinSheet onClose={() => setSheet(null)} onSuccess={() => { setSheet(null); setShowMore("manager"); }} />}

@@ -181,6 +181,21 @@ export function buildCheckinTicket(d: CheckinTicketData): Uint8Array {
   return p.build();
 }
 
+/** A technician badge: only its scanner QR and the technician's name. */
+export function buildTechIdSlip(tech: { id: number; name: string }): Uint8Array {
+  const p = new P();
+  return p.reset()
+    .center()
+    .qr(`TECH:${tech.id}`, 7)
+    .lf(2)
+    .bold(true).size(true, true)
+    .text(tech.name.trim().slice(0, 20))
+    .size(false, false).bold(false)
+    .lf(5)
+    .cut()
+    .build();
+}
+
 export interface CheckoutReceiptData {
   storeName: string;
   clientName?: string;
@@ -227,4 +242,27 @@ export function buildCheckoutReceipt(d: CheckoutReceiptData): Uint8Array {
    .cut();
 
   return p.build();
+}
+
+/** A QR confirmation slip: prints a QR code that must be scanned to confirm a sensitive setting change. */
+export function buildQrConfirmationSlip(data: { storeName: string; token: string; setting: string }): Uint8Array {
+  const p = new P();
+  return p.reset()
+    .center()
+    .bold(true).size(true, true)
+    .text(data.storeName.slice(0, 16)).lf()
+    .size(false, false).bold(false)
+    .lf()
+    .bold(true).text("CONFIRM SETTING CHANGE").lf().bold(false)
+    .text(`Setting: ${data.setting}`).lf()
+    .lf()
+    .text("Scan this QR code to confirm").lf()
+    .lf()
+    .qr(data.token, 6)
+    .lf(2)
+    .text("Or type the code:").lf()
+    .text(data.token).lf()
+    .lf(4)
+    .cut()
+    .build();
 }

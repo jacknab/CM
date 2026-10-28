@@ -18,6 +18,10 @@ import { pathToFileURL } from "url";
 import rateLimit from "express-rate-limit";
 import { sendEmail } from "./mail";
 import { pingIndexNow } from "./lib/indexNow";
+import {
+  MARKETING_IMAGES,
+  resolveMarketingImageOverride,
+} from "./lib/marketingImages";
 
 const SITE_ORIGIN = "https://certxa.com";
 const APEX_HOSTS = new Set(["certxa.com", "www.certxa.com", "localhost", "127.0.0.1"]);
@@ -283,19 +287,31 @@ export function createMarketingSite(): Router {
     }),
   );
 
-  router.get(/^\/airo-assets\/images\/(.+)$/, (req: Request, res: Response, next: NextFunction) => {
+  router.get(/^\/airo-assets\/images\/(.+)$/, async (req: Request, res: Response, next: NextFunction) => {
     const slot = String(req.params[0]).replace(/\/+$/, "");
+    res.set("Cache-Control", "no-store");
+    let replacement: string | null;
+    try {
+      replacement = await resolveMarketingImageOverride(slot);
+    } catch (err) {
+      console.error(`[marketing-site] image override lookup failed for ${slot}:`, err);
+      return res.status(503).type("text/plain").send("Image temporarily unavailable");
+    }
+    if (replacement) {
+      return res.redirect(302, replacement);
+    }
     const entry = media[slot];
     if (entry) {
-      res.set("Cache-Control", "public, max-age=86400");
       return res.type(entry.type).sendFile(path.join(mediaDir, entry.file));
     }
     // Stock photographs are not copied here; send the browser to where the
     // design hosts them, as the original site does.
-    const source = slots[slot]?.currentUrl;
+    const source = slots[slot]?.currentUrl ?? MARKETING_IMAGES.find((item) => item.slot === slot)?.originalUrl;
     try {
+      if (source?.startsWith("/_site/") || source?.startsWith("/images/")) {
+        return res.redirect(302, source);
+      }
       if (source && IMAGE_HOSTS.has(new URL(source).hostname)) {
-        res.set("Cache-Control", "public, max-age=3600");
         // Stock photos (img1.wsimg.com/isteam/getty/…) are sent at most 1280 px wide: GoDaddy resizes them on
         // its side, a fraction of the original's size. Logos and anything already resized are sent as they are.
         const sized = /^https:\/\/img1\.wsimg\.com\/isteam\/getty\/[^/]+$/.test(source) ? `${source}/:/rs=w:1280,m` : source;

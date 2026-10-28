@@ -601,6 +601,8 @@ export const appointments = pgTable("appointments", {
   /** The number printed on the client's slip while the salon was offline, when the server had to give the
    *  ticket a different one (migration 0248). A lookup by it still finds the ticket. */
   printedTicketNumber: integer("printed_ticket_number"),
+  /** /nail: being rung up on a POS — not given to TURN until SAVE (migration 0263). */
+  ringingUpSince: timestamp("ringing_up_since", { withTimezone: true }),
   // TIMESTAMPTZ — all appointment times are stored in UTC.
   // The API always converts salon-local input via fromZonedTime() before storage,
   // and returns UTC ISO-8601 strings. Display conversion is done client-side
@@ -1782,6 +1784,7 @@ export const paySchedules = pgTable("pay_schedules", {
   frequency:           text("frequency").notNull().default("weekly"), // weekly | biweekly | semimonthly | monthly
   anchorDate:          date("anchor_date").notNull(),                 // first pay date; periods roll from here
   periodEndOffsetDays: integer("period_end_offset_days").notNull().default(0),
+  payoutDayOffset: integer("payout_day_offset").notNull().default(0),
   /** Share of each paycheck paid by check (the rest in cash, whole dollars). 100 = all by check. */
   checkPercent: integer("check_percent").notNull().default(100),
   createdAt:           timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

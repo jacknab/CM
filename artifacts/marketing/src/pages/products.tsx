@@ -23,11 +23,11 @@ const stagger = {
 
 // Each main product's picture, by its id in content/pages/products.json.
 const mainProductImages: Record<string, string> = {
-  'prod-station': '/_site/images/products/certxa-station.webp', // Certxa Station — SalonOS scheduling terminal (owner, 2026-10-24)
+  'prod-station': '/airo-assets/images/products/certxa-station', // Certxa Station — SalonOS scheduling terminal (owner, 2026-10-24)
   'prod-kiosk': '/airo-assets/images/products/tablet-stand',
 };
 // The Certxa Station, large, at the top of the page (owner, 2026-10-24: the main POS front and centre).
-const HERO_IMAGE = '/_site/images/products/certxa-station-hero.webp';
+const HERO_IMAGE = '/airo-assets/images/products/certxa-station-hero';
 
 /**
  * The Certxa Kiosk is shown only to nail salons (owner, 2026-10-24): signing up as a nail salon sets the
@@ -43,10 +43,10 @@ function useNailSalonVisitor(): boolean {
 }
 
 const accessoryImages = [
-  '/_site/images/products/certxa-check-in-tablet.webp', // customer-facing check-in tablet (owner, 2026-10-24)
-  '/_site/images/products/certxa-thermal-printer.webp', // matte black thermal printer (owner, 2026-10-24)
-  '/_site/images/products/certxa-cash-drawer.webp', // Certxa cash drawer (owner, 2026-10-24)
-  '/_site/images/products/stripe-m2-reader.webp', // Stripe M2 card reader, in the barcode scanner's place (owner, 2026-10-24)
+  '/airo-assets/images/products/certxa-check-in-tablet', // customer-facing check-in tablet (owner, 2026-10-24)
+  '/airo-assets/images/products/certxa-thermal-printer', // matte black thermal printer (owner, 2026-10-24)
+  '/airo-assets/images/products/certxa-cash-drawer', // Certxa cash drawer (owner, 2026-10-24)
+  '/airo-assets/images/products/stripe-m2-reader', // Stripe M2 card reader, in the barcode scanner's place (owner, 2026-10-24)
 ];
 
 /** Built when the page renders, so the offers carry the admin's prices. */

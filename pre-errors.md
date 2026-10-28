@@ -6,46 +6,48 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
-## 2026-10-24 — Catalog routes that don't check the store: category reorder, service add-on links
+## 2026-10-28 — Worked through (fixed today)
 
-- **Where:** `artifacts/api-server/src/routes.ts:4080` (`POST /api/service-categories/reorder`), `:4662` (`POST /api/service-addons`), `:4672` (`DELETE /api/service-addons/:id`).
-- **Symptom:** reorder sets `sort_order` on every id sent without checking the category belongs to the caller's store (it reads the store id, then ignores it). The two service-add-on routes have no store check at all, so any signed-in account could link/unlink add-ons on another business's services by id. (`POST /api/addons/:id/services`, which the website and the Pro app use, does check the owner.)
-- **Fix sketch:** reorder: `UPDATE service_categories SET sort_order=$1 WHERE id=$2 AND store_id=$3`. Service add-ons: load the service and add-on and require both `storeId` to equal `resolveSessionStoreId(req)`.
-- **Why not fixed now:** found while building the Pro app Catalog (which only reads/uses the owner-checked routes); auth changes on shared web routes deserve their own small task.
+- **Catalog store checks — fixed and live (deployed 2026-10-28):**
+  `POST /api/service-categories/reorder` now only reorders the caller's categories, and every service–add-on link
+  route (`GET /api/service-addons`, `GET …/for-service`, `POST`, `DELETE`) is limited to the caller's store. Tested on
+  the scratch server: another business's service can't be linked, unlinked, listed or reordered.
+- **Texting opt-out on /nail "text client ready"** — the uncommitted edit that removed the `result.skipped` check is
+  undone in the working tree (it was never live).
+- **Duplicate security headers** — removed nginx's copies of X-Frame-Options, X-Content-Type-Options,
+  X-XSS-Protection and Referrer-Policy (`/etc/nginx/conf.d/certxa.conf`, backup `.bak-dupheaders-*`); each header
+  now goes out once (X-XSS-Protection `0`). Live.
+- **Autumn on Enterprise** — already 100 included calls (`autumnCallBilling.ts`, 2026-10-24); entry closed.
+- **Pro app client list** keyed by client id instead of name (same-name clients no longer collide).
+- Removed the entries already marked resolved/fixed (Twilio outage, appointment delete, POS e-mail receipt).
+- **Owner decisions 2026-10-28, tested on the scratch server and deployed 2026-10-28 05:24 UTC** (API backup
+  `dist/index.mjs.bak-1793165060`; the Pro app parts reach staff with the next Pro iOS build):
+  - **Day Close** lists clients still waiting on a ticket nobody started (`waitingTickets` on
+    `/api/cash-drawer/day-close-status`) with one tap "Clear as no-shows" (`POST /api/cash-drawer/day-close/clear-waiting`:
+    no-show with no win-back text, held technician freed, check-in closed). It does not block the close.
+  - **Pro app "Notify client"** on a dragged appointment now texts the new day and time (`sendRescheduleNotice` in
+    sms.ts, sent when PATCH /api/appointments/:id has `notifyClient: true` and the date changed; opt-outs respected).
+  - **Pro app "Mark as paid"** now records a cash sale for the visit total (status completed, payment cash). It used to
+    send status "paid", which the server turns into **pending** — it un-confirmed the booking and recorded nothing.
+    Ships with the next Pro app build.
+  - **Pro app sales tax** was already done (checkout uses the salon's POS tax settings; services taxed only when the
+    salon turns that on).
 
 ---
-
-## 2026-10-23 — RESOLVED 2026-10-24 ~00:11 UTC (texts sending again): ALL texts failing: Twilio account "not active"
-
-- **Symptom:** every `sendSms` since between 21:58 and 22:15 server time on 2026-10-23 fails with `authentication failed, account AC311f…(masked) with status 4 is not active` (see `sms_log.error_message`). Texts at 21:58 (store 2, cancellation_recovery) still went out; the first failure was store 2's winback at 22:15:06. `twilioLookup` fails the same way.
-- **Impact:** booking confirmations, reminders, receipts, booking-request texts, and probably sign-in codes. Nothing the code can fix.
-- **Next:** someone with access to that Twilio account checks why it is suspended/closed (billing, compliance review), reactivates it or puts new credentials in `/etc/certxa.env`, then `export` them and `pm2 restart certxa-api --update-env` (see owner-apk-url-env-gotcha in memory).
-- **Not caused by** the booking-request test: that test's first text was at 22:15:22, after the first failure.
-
-## 2026-10-23 — FIXED: deleting an appointment failed once any text about it was logged
-
-- `storage.deleteAppointment` hit `sms_log_appointment_id_appointments_id_fk`, so the app's and website's Delete returned 500 ("Failed query: delete from appointments") for any booking with a logged confirmation text. Now the SMS and AI-call log rows are unlinked (kept) first. Payment, loyalty and gift-card rows still block a delete on purpose (main `0d00f589`).
-
-## 2026-10-22 — FIXED: `/api/pos/email-receipt` trusted the request's storeId and storeName
-
-- **File:** `artifacts/api-server/src/routes.ts` (`/api/pos/email-receipt`), `mail.ts` (`sendPOSReceiptEmail`).
-- **Symptom:** any signed-in account could send a receipt e-mail as any store, with any store name and unescaped HTML in the names.
-- **Fix:** the store now comes from `resolveSessionStoreId`, which only honours a storeId the user owns, and the name from the store record; all text is HTML-escaped. Fixed the same day it was found.
 
 ## 2026-10-22 — Certxa Pro app: checkout and appointment defects found in the GlossGenius audit
 
 Full list with context: `plans/certxa-pro-glossgenius-audit.md`, section 3 (B1–B11). The ones that are defects rather than missing features:
-- **Sales tax not charged** (`app/(tabs)/checkout.native.tsx`). Settings → Sales tax says "Tax added at checkout"; checkout never adds it. Needs a decision on taxing services.
-- **Mark as paid records no amount or method** (`app/appointment/[id].tsx`, `markPaid`), so cash income never reaches reports. The "gift card / record manually" checkout screen is unreachable dead code (the second `return` after `TipCheckout`) and saves nothing to the server.
+- **The "gift card / record manually" checkout screen** is unreachable dead code (the second `return` after `TipCheckout` in `app/(tabs)/checkout.native.tsx`) and saves nothing to the server. (Sales tax and Mark as paid: see 2026-10-28.)
 - **Notes row opens an edit screen with no notes field** (`app/appointment/[id].tsx`).
 - **Drag starts on touch, not press-and-hold** (`DraggableAppointment` in `app/(tabs)/index.tsx`, `onStartShouldSetPanResponder: () => true`), so scrolling over a booking moves it. Needs device testing.
-- **Client list uses the name as the React key** (`app/(tabs)/clients.tsx`), so two clients with the same name collide; visits/spend are hard-coded placeholders.
+- **Client list visits/spend are hard-coded placeholders** (`app/(tabs)/clients.tsx`; the name-as-key collision was fixed 2026-10-28). Real figures need visit/spend totals from the server.
 - **Why not fixed now:** the user asked for an audit; these need product decisions or a device to test on. Fixed the same day: add-ons/extra services missing from the charged amount, `offeredAt` missing, sample clients on empty days, Week/Month views, Text/Call/Email (main `947a002b`, Pro `b855cee`).
 
 ## 2026-10-13 — Certxa Pro app: "Notify client" switch does nothing; edit screen offers six fixed times
 
 - **File:** `certxa-pro-replit/staff-app-latest/artifacts/certxa-pro/app/(tabs)/index.tsx` (reschedule dialog, `notifyClient`) and `app/appointment/[id].tsx:11` (`timeSlots`).
-- **Symptom 1:** after dragging an appointment, the dialog has a "Notify client" switch. Its value is never sent to the server, so the client gets no message whichever way it is set.
+- **Symptom 1:** fixed 2026-10-28 (see above).
 - **Symptom 2:** the appointment edit screen can only move a booking to one of six hard-coded times (9:00, 10:30, 12:00, 2:00, 3:30, 5:00), not to the times the business is actually open and free.
 - **Context:** found while fixing the day view and overlap check. The server has no "reschedule and notify" option on `PATCH /api/appointments/:id` today, so symptom 1 needs a decision on what the client should be sent (SMS, e-mail, both).
 - **Why not fixed now:** both are product decisions rather than defects in what was asked for.
@@ -57,15 +59,8 @@ Full list with context: `plans/certxa-pro-glossgenius-audit.md`, section 3 (B1�
 3. **Logo.** Header uses the owner's logo file ("cirtXa", at the owner's instruction); the dark footer still uses the text wordmark (`BrandWordmark.tsx`) because no light-on-dark logo exists. The home page's Autumn screenshot (`media/pages__autumn__new-screenshot`) still shows the older "sirtXa" logo.
 4. **/data-transfer** (PHP, `php/data-transfer/default.php` ~line 512) shows "24h average transfer time · 0 data lost · 7+ platforms" and a GDPR claim. Keep only if true — owner to confirm.
 5. **Launchit template catalogue is empty** (`launchsite_templates` has 0 rows). Since 2026-10-21 the empty page is `noindex` and out of the sitemap until templates are added. Owner: add templates or retire the page.
-6. **nginx sends some security headers twice** (`/etc/nginx/conf.d/certxa.conf` lines 77–80 repeat what `artifacts/api-server/src/index.ts` sets; `X-XSS-Protection` goes out as both `0` and `1; mode=block`). Server change for the owner: delete those lines, `nginx -t && systemctl reload nginx`.
 
 Fixed 2026-10-21: the PHP pages now show the chat launcher only 10am–9pm Eastern (`php/includes/footer.php`); /products card fees match /pricing and the code (Stripe's rate + $0.60 Certxa fee); all old-address redirects are 301; `llms-full.txt` regenerated (`scripts/gen-llms-full.py`, run after changing marketing pages).
-
----
-
-## 2026-10-12 — Autumn on the Enterprise plan (updated 2026-10-21)
-
-Call billing (`artifacts/api-server/src/lib/autumnCallBilling.ts`) includes 20 handled calls on Solo, 50 on `professional` (shown as Starter) and 100 on `elite` (shown as Professional), then $0.50 a call. The `enterprise` plan has no entry, so it includes **0** calls — fewer than Starter. The website says nothing about Enterprise's calls until the owner decides.
 
 ---
 
@@ -100,7 +95,7 @@ Solo is free (migration 0234; billing activates it without a checkout; site and 
 `Calendar.tsx` `ticketSubtotal`: a linked appointment has no field for retail lines, only the ticket being checked out does (`posExtraItems`). Fixing it means giving every linked ticket its own lines.
 
 **8. Day Close.**
-(a) An assigned, unpaid ticket that was never started does not block the close and stays on the next day's board. (A ticket marked DONE but not paid does block it, and since 2026-10-21 the sheet lists it as "Done, waiting for payment".) (b) A close cannot be undone, and the drawer is locked for 12 hours afterwards, even after a mistaken count. (c) The count is blind by design: the expected cash is not shown to the person closing. (d) Store 38 (Floyd's 99 Barbershop) has had one shift open since 2026-10-03; someone there has to run Day Close.
+(a) Built 2026-10-28, not yet live: Day Close lists waiting tickets nobody started with "Clear as no-shows" (see top). (A ticket marked DONE but not paid does block it, and since 2026-10-21 the sheet lists it as "Done, waiting for payment".) (b) A close cannot be undone, and the drawer is locked for 12 hours afterwards, even after a mistaken count. (c) The count is blind by design: the expected cash is not shown to the person closing. (d) Store 38 (Floyd's 99 Barbershop) has had one shift open since 2026-10-03; someone there has to run Day Close.
 
 **9. `/ws/notifications` has no authentication** — left as is at the user's request (2026-10-06). Because of it the server also cannot hold a customer screen to its paired station.
 

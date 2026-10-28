@@ -414,7 +414,9 @@ export class NailOffline {
   // ── Looking at what is on the device ──
   async records(storeId: number): Promise<LocalRecord[]> {
     return (await this.kv.getAll<LocalRecord>("records")).filter((r) => r.storeId === storeId).sort((a, b) => b.id - a.id);
-  }
+  }  /** This tablet's own records — never forwarded to the main POS (remoteEngine.ts), e.g. for this tablet's turn events. */
+  localRecords(storeId: number): Promise<LocalRecord[]> { return NailOffline.prototype.records.call(this, storeId); }
+
   async ops(storeId?: number): Promise<Op[]> {
     return (await this.kv.getAll<Op>("ops")).filter((o) => storeId == null || o.storeId === storeId).sort((a, b) => a.seq - b.seq);
   }

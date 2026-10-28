@@ -149,3 +149,79 @@ export async function findContractorByStripeAccount(accountId: string) {
   const [c] = await db.select().from(contractors).where(eq(contractors.stripeAccountId, accountId));
   return c ?? null;
 }
+
+/** Create a recipient-configured Express account for a contractor and persist it on the row.
+ *
+ * Express accounts use Stripe-hosted onboarding (account_links) so the contractor
+ * completes their own KYC/bank setup. Certxa only stores the account id — never
+ * raw bank details or SSNs.
+ */
+export async function createExpressContractorAccount(
+  c: ContractorRow,
+  ip?: string | null,
+): Promise<string> {
+  const stripe = getStripe();
+  const account = await stripe.accounts.create({
+    type: "express",
+    country: (c.country || "US").toUpperCase(),
+    capabilities: { transfers: { requested: true } },
+    business_type: "individual",
+    individual: {
+      first_name: c.firstName || undefined,
+      last_name: c.lastName || undefined,
+      email: c.email || undefined,
+    },
+    tos_acceptance: {
+      service_agreement: "recipient",
+      date: Math.floor(Date.now() / 1000),
+      ip: ip || "0.0.0.0",
+    },
+    metadata: { contractorId: String(c.id), storeId: String(c.storeId) },
+  } as any);
+
+  await db.update(contractors).set({
+    stripeAccountId: account.id,
+    accountType: "express",
+    stripeTosAcceptedAt: new Date(),
+    bankVerified: false,
+    onboardingStatus: "in_progress",
+    updatedAt: new Date(),
+  }).where(eq(contractors.id, c.id));
+
+  return account.id;
+}
+
+/** Return a usable Express account id, (re)creating it if missing. */
+export async function ensureExpressContractorAccount(
+  c: ContractorRow,
+  ip?: string | null,
+): Promise<string> {
+  if (c.stripeAccountId && c.accountType === "express") {
+    try {
+      await getStripe().accounts.retrieve(c.stripeAccountId);
+      return c.stripeAccountId;
+    } catch {
+      // account gone / keys rotated — fall through and recreate
+    }
+  }
+  return createExpressContractorAccount(c, ip);
+}
+
+/** Generate a Stripe AccountLink for contractor Express onboarding.
+ * Returns the hosted onboarding URL the owner hands to the contractor.
+ */
+export async function createContractorOnboardingLink(
+  accountId: string,
+  refreshUrl: string,
+  returnUrl: string,
+): Promise<{ url: string }> {
+  const stripe = getStripe();
+  const link = await stripe.accountLinks.create({
+    account: accountId,
+    type: "account_onboarding",
+    collection_options: { fields: "eventually_due" },
+    refresh_url: refreshUrl,
+    return_url: returnUrl,
+  });
+  return { url: link.url };
+}

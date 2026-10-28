@@ -12,8 +12,33 @@ import { db } from "@workspace/db";
 import { waitForDb } from "../db";
 import { sql } from "drizzle-orm";
 import { memoryUpload, uploadToR2, deleteFromR2 } from "../lib/r2";
+import sharp from "sharp";
+import fs from "node:fs";
+import path from "node:path";
+import {
+  MARKETING_IMAGES,
+  marketingAssetKey,
+} from "../lib/marketingImages";
 
 const router = Router();
+
+function projectRoot(): string {
+  const candidates = [
+    path.resolve(process.cwd(), "../.."),
+    process.cwd(),
+  ];
+  return candidates.find((candidate) => fs.existsSync(path.join(candidate, "artifacts", "booking"))) ?? candidates[0];
+}
+
+function writeNativeAssets(targets: string[] | undefined, buffer: Buffer): void {
+  if (!targets?.length) return;
+  const root = projectRoot();
+  for (const target of targets) {
+    const destination = path.join(root, target);
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.writeFileSync(destination, buffer);
+  }
+}
 
 /** Ensure the table exists before any request uses it. */
 export async function initSiteAssetsTable(): Promise<void> {
@@ -41,6 +66,116 @@ router.get("/admin/site-assets", async (_req: Request, res: Response) => {
   } catch (err: any) {
     console.error("[site-assets] list error:", err?.message);
     return res.status(500).json({ error: "Failed to load site assets" });
+  }
+});
+
+// ─── Marketing website image audit ────────────────────────────────────────────
+router.get("/admin/marketing-images", async (_req: Request, res: Response) => {
+  try {
+    const keys = MARKETING_IMAGES.map((item) => marketingAssetKey(item.slot));
+    const result = keys.length
+      ? await db.execute(sql`
+          SELECT key, r2_url, updated_at
+          FROM site_assets
+          WHERE key IN (${sql.join(keys.map((key) => sql`${key}`), sql`, `)})
+        `)
+      : { rows: [] };
+    const replacements = new Map(result.rows.map((row: any) => [row.key, row]));
+    return res.json({
+      images: MARKETING_IMAGES.map((item) => {
+        const replacement = replacements.get(marketingAssetKey(item.slot)) as any;
+        const { nativeAssetTargets: _nativeAssetTargets, ...publicItem } = item;
+        return {
+          ...publicItem,
+          url: `/airo-assets/images/${item.slot}`,
+          replacementUrl: replacement?.r2_url ?? null,
+          updatedAt: replacement?.updated_at ?? null,
+        };
+      }),
+    });
+  } catch (err: any) {
+    console.error("[marketing-images] list error:", err?.message);
+    return res.status(500).json({ error: "Failed to load marketing images" });
+  }
+});
+
+router.post(
+  "/admin/marketing-images/upload",
+  memoryUpload({ maxSizeMb: 25 }).single("image"),
+  async (req: any, res: Response) => {
+    const slot = String(req.body?.slot || "");
+    const definition = MARKETING_IMAGES.find((item) => item.slot === slot);
+    if (!definition) return res.status(400).json({ error: "Unknown marketing image slot" });
+    if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+
+    const key = marketingAssetKey(slot);
+    try {
+      const metadata = await sharp(req.file.buffer).metadata();
+      if (!metadata.width || !metadata.height) {
+        return res.status(400).json({ error: "The selected file is not a readable image" });
+      }
+
+      // A fixed output canvas plus the slot's cover/contain rule guarantees the
+      // replacement cannot alter the card size or rounded wrapper on the site.
+      const processed = await sharp(req.file.buffer)
+        .rotate()
+        .resize(definition.width, definition.height, {
+          fit: definition.fit,
+          position: "attention",
+          background: { r: 255, g: 255, b: 255, alpha: 0 },
+        })
+        .webp({ quality: 88 })
+        .toBuffer();
+      const nativePng = definition.nativeAssetTargets?.length
+        ? await sharp(req.file.buffer).rotate().resize(1024, 1024, { fit: "cover", position: "attention" }).png().toBuffer()
+        : null;
+
+      const existing = await db.execute(sql`SELECT r2_url FROM site_assets WHERE key = ${key} LIMIT 1`);
+      const oldUrl = (existing.rows[0] as any)?.r2_url;
+      const r2Url = await uploadToR2(processed, "marketing-images", `${slot}.webp`, "image/webp");
+      await db.execute(sql`
+        INSERT INTO site_assets (key, label, r2_url, updated_at)
+        VALUES (${key}, ${definition.label}, ${r2Url}, NOW())
+        ON CONFLICT (key) DO UPDATE SET
+          label = EXCLUDED.label,
+          r2_url = EXCLUDED.r2_url,
+          updated_at = NOW()
+      `);
+      if (oldUrl) await deleteFromR2(oldUrl).catch(() => {});
+      if (nativePng) writeNativeAssets(definition.nativeAssetTargets, nativePng);
+      return res.json({
+        slot,
+        r2Url,
+        width: definition.width,
+        height: definition.height,
+        fit: definition.fit,
+      });
+    } catch (err: any) {
+      console.error("[marketing-images] upload error:", err?.message);
+      return res.status(500).json({ error: "Image replacement failed" });
+    }
+  },
+);
+
+router.delete("/admin/marketing-images", async (req: Request, res: Response) => {
+  const slot = String(req.query.slot || "");
+  if (!MARKETING_IMAGES.some((item) => item.slot === slot)) {
+    return res.status(400).json({ error: "Unknown marketing image slot" });
+  }
+  try {
+    const key = marketingAssetKey(slot);
+    const result = await db.execute(sql`DELETE FROM site_assets WHERE key = ${key} RETURNING r2_url`);
+    const r2Url = (result.rows[0] as any)?.r2_url;
+    if (r2Url) await deleteFromR2(r2Url).catch(() => {});
+    if (MARKETING_IMAGES.find((item) => item.slot === slot)?.nativeAssetTargets?.length) {
+      const definition = MARKETING_IMAGES.find((item) => item.slot === slot)!;
+      const originalPath = definition.originalUrl?.replace(/^\/images\//, "artifacts/booking/public/images/");
+      if (originalPath) writeNativeAssets(definition.nativeAssetTargets, fs.readFileSync(path.join(projectRoot(), originalPath)));
+    }
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("[marketing-images] reset error:", err?.message);
+    return res.status(500).json({ error: "Failed to restore the original image" });
   }
 });
 

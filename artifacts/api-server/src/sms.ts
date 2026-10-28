@@ -512,6 +512,35 @@ export async function sendBookingConfirmation(
   );
 }
 
+/**
+ * The appointment was moved and staff chose "Notify client" (Certxa Pro app, owner 2026-10-28): the client is told
+ * the new day and time. A system text — free to the salon, and not sent to a client who opted out (sendSms).
+ */
+export async function sendRescheduleNotice(appointment: AppointmentWithDetails): Promise<{ sent: boolean; reason?: string }> {
+  if (!appointment.storeId) return { sent: false, reason: "no store" };
+  const customerPhone = await appointmentCustomerPhone(appointment);
+  if (!customerPhone) return { sent: false, reason: "no phone" };
+  const timezone = appointment.store?.timezone || "UTC";
+  let manageUrl = "";
+  try {
+    manageUrl = buildManageUrl(await getOrCreateManageToken(appointment.id));
+  } catch (e: any) {
+    console.error("[SMS] could not build manage link:", e?.message ?? e);
+  }
+  const body = interpolateTemplate(ensureManageUrlPlaceholder(
+    "Hi {customerName}, your {serviceName} at {storeName} has moved to {appointmentDate} at {appointmentTime}."), {
+    customerName: (appointment.customer as any)?.fullName || appointment.customer?.name || "there",
+    storeName: appointment.store?.name || "our salon",
+    appointmentDate: formatInTimeZone(appointment.date, timezone, "EEEE, MMMM d"),
+    appointmentTime: formatInTimeZone(appointment.date, timezone, "h:mm a"),
+    serviceName: appointment.service?.name || "appointment",
+    manageUrl,
+  });
+  const r = await sendSms(appointment.storeId, customerPhone, body, "reschedule_notice", appointment.id, appointment.customer?.id,
+    { skipCreditDeduction: true, smsSource: "platform" });
+  return r.success && !r.skipped ? { sent: true } : { sent: false, reason: r.skipped ? "opted out" : r.error };
+}
+
 export async function sendAppointmentReminder(
   appointment: AppointmentWithDetails
 ): Promise<void> {

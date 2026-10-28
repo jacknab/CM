@@ -22,6 +22,8 @@ export const boardKey = (storeId: number) => ["/api/nail/board", storeId] as con
 export interface BoardTicket {
   id: number;
   ticketNumber: number | null;
+  /** Being rung up on a POS and not saved yet: nobody has it, TURN doesn't see it (2026-10-28). */
+  ringingUp?: boolean;
   /** Set on tickets saved together as one visit of several services — the id of the first one. */
   groupId?: number | null;
   /** Waiting for the visit's first ticket (this number) to be done before a technician is given it. */
@@ -178,6 +180,16 @@ const answeredFromDevice = new Map<string, string>();
 /** When the server last sent this read, if what is on screen came from the device; null when it is fresh. */
 export const cachedSince = (url: string): string | null => answeredFromDevice.get(url) ?? null;
 
+// ── DONE lock (owner, 2026-10-28): a ticket whose technician pressed DONE can't have its services changed without the
+// manager PIN. The server answers 423 DONE_LOCKED; the screen asks for the PIN and repeats the change with it. ──
+let overridePin: string | null = null;
+export const isDoneLocked = (err: unknown) => err instanceof ApiError && err.data?.code === "DONE_LOCKED";
+/** Runs `fn` with the manager PIN sent on its changes (header X-Manager-Pin). */
+export async function withManagerPin<T>(pin: string, fn: () => Promise<T>): Promise<T> {
+  overridePin = pin;
+  try { return await fn(); } finally { overridePin = null; }
+}
+
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
   const isRead = !init?.method || init.method === "GET";
   const storeId = nailOfflineStore();
@@ -200,7 +212,7 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
     res = await fetch(url, {
       credentials: "include",
       ...init,
-      headers: { ...(init?.body ? { "Content-Type": "application/json" } : {}), ...(init?.headers ?? {}) },
+      headers: { ...(init?.body ? { "Content-Type": "application/json" } : {}), ...(overridePin && !isRead ? { "X-Manager-Pin": overridePin } : {}), ...(init?.headers ?? {}) },
     });
   } catch (err) {
     syncEngine.noteUnreachable();
@@ -409,7 +421,8 @@ const pendingTurnAdjustments = (pending: Awaited<ReturnType<typeof actionQueueDB
 /** This tablet's own turn events since its last server line — what it shares with the other POS tablets. */
 export async function ownTurnEvents(storeId: number): Promise<LineEvent[]> {
   const [records, board, pending, kept] = await Promise.all([
-    nailOffline.records(storeId).catch(() => [] as Awaited<ReturnType<typeof nailOffline.records>>),
+    // Only what was done on THIS tablet: a station's work done by the main POS is heard from the main POS.
+    nailOffline.localRecords(storeId).catch(() => [] as Awaited<ReturnType<typeof nailOffline.records>>),
     nailOffline.recall<NailBoard>(storeId, "/api/nail/board").catch(() => undefined),
     actionQueueDB.getPending().catch(() => [] as Awaited<ReturnType<typeof actionQueueDB.getPending>>),
     nailOffline.recall<BaseLine>(storeId, turnUrl(storeId, null)).catch(() => undefined),
@@ -615,6 +628,68 @@ export const markTicketDone = (ticketId: number) => {
 
 /** Split Ticket: the service line at `index` (its place among the saved ticket's lines) becomes its own ticket,
  *  waiting with no technician until this one is done. Needs the server. */
+/** A ticket's number as shown: every ticket of a visit shows the visit's number (owner, 2026-10-28: no "12-2" —
+ *  staff type 12 at lookup and get the whole visit); its id before it has a number. */
+export const ticketNo = (t: { id: number; ticketNumber?: number | null }) => (t.ticketNumber != null ? String(t.ticketNumber) : String(t.id));
+
+// ── Ringing up on the server (2026-10-28): the ticket exists from the first key, so every station sees it. ──
+/** The first service tapped for a client: the ticket is made now, "being rung up" — TURN gets it on SAVE. */
+export const startRingingUp = (body: { clientId: number; serviceId: number; addonIds: number[]; pick: NailPick;
+  customLines: TicketBody["customLines"]; checkinId: number | null; packageId?: number | null; extraServiceIds?: number[] }) =>
+  call<CreatedTicket>("/api/nail/tickets", {
+    method: "POST", headers: { "X-Idempotency-Key": newIdempotencyKey("ticket.ringup") },
+    body: JSON.stringify({ clientId: body.clientId, serviceId: body.serviceId, addonIds: body.addonIds, nail: toNailBody(body.pick),
+      customLines: body.customLines, checkinId: body.checkinId, ringingUp: true,
+      ...(body.packageId ? { packageId: body.packageId } : {}), ...(body.extraServiceIds?.length ? { extraServiceIds: body.extraServiceIds } : {}) }),
+  });
+/** A retail-only sale with no client: recorded under the staff member selling it, then paid at checkout. */
+export const startRetailSale = (staffId: number, lines: { label: string; price: number }[]) =>
+  call<{ appointmentId: number; ticketNumber: number | null }>("/api/nail/retail-sale", { method: "POST", body: JSON.stringify({ staffId, lines }) });
+/** SAVE on a ticket being rung up: TURN gets it (a named technician, else the next one free). */
+export const saveRingingUp = (ticketId: number, staffId: number | null) =>
+  call<{ ticketNumber: number | null; staffName: string | null; waiting: boolean; tickets: { appointmentId: number; serviceName: string; staffName: string | null }[] }>(
+    `/api/nail/tickets/${ticketId}/save`, { method: "POST", body: JSON.stringify({ staffId }) });
+/** CLEAR on a ticket being rung up that was never saved: it goes, and its check-in is waiting again. */
+export const discardRingingUp = (ticketId: number) => call<{ ok: true }>(`/api/nail/tickets/${ticketId}/discard`, { method: "POST" });
+/** A keypad amount (or Quick Ticket step / retail item) on an open ticket. */
+export const addTicketLine = (ticketId: number, line: { label: string; price: number; isRetail?: boolean }) => {
+  if (syncEngine.isOffline() || isLocalId(ticketId)) return Promise.reject(new ApiError("Adding to a saved ticket needs the connection.", 503));
+  return call<{ ok: true }>(`/api/nail/tickets/${ticketId}/lines`, { method: "POST", body: JSON.stringify(line) });
+};
+/** Takes the keypad line at `index` (among the ticket's lines) off an open ticket. */
+export const removeTicketLine = (ticketId: number, index: number) => {
+  if (syncEngine.isOffline() || isLocalId(ticketId)) return Promise.reject(new ApiError("Changing a saved ticket needs the connection.", 503));
+  return call<{ ok: true }>(`/api/nail/tickets/${ticketId}/lines/remove`, { method: "POST", body: JSON.stringify({ index }) });
+};
+
+/** A service key on an open ticket: its technician does it when they can, otherwise it becomes its own ticket of the
+ *  visit for the next technician in turn (server: POST /api/nail/tickets/:id/services). */
+export const addTicketService = (ticketId: number, serviceId: number) => {
+  if (syncEngine.isOffline() || isLocalId(ticketId)) return Promise.reject(new ApiError("Adding a service to a saved ticket needs the connection.", 503));
+  return call<{ added: "ticket" | "own_ticket"; appointmentId: number; ticketNumber?: number; staffName?: string | null }>(
+    `/api/nail/tickets/${ticketId}/services`, { method: "POST", body: JSON.stringify({ serviceId }) });
+};
+/** An add-on key on the POS grid: saved onto the open ticket as a real add-on. `added: false` = it was already on. */
+export const addTicketAddon = (ticketId: number, addonId: number) => {
+  if (syncEngine.isOffline() || isLocalId(ticketId)) return Promise.reject(new ApiError("Adding an add-on to a saved ticket needs the connection.", 503));
+  return call<{ added: boolean }>(`/api/nail/tickets/${ticketId}/addons`, { method: "POST", body: JSON.stringify({ addonId }) });
+};
+export const removeTicketAddon = (ticketId: number, addonId: number) => {
+  if (syncEngine.isOffline() || isLocalId(ticketId)) return Promise.reject(new ApiError("Taking an add-on off a saved ticket needs the connection.", 503));
+  return call<{ ok: true }>(`/api/nail/tickets/${ticketId}/addons/remove`, { method: "POST", body: JSON.stringify({ addonId }) });
+};
+/** A Catalog package key on an open ticket: its services, add-ons and price line join the ticket. */
+export const addTicketPackage = (ticketId: number, packageId: number) => {
+  if (syncEngine.isOffline() || isLocalId(ticketId)) return Promise.reject(new ApiError("Adding a package to a saved ticket needs the connection.", 503));
+  return call<{ ok: true; name: string }>(`/api/nail/tickets/${ticketId}/packages`, { method: "POST", body: JSON.stringify({ packageId }) });
+};
+
+/** Takes the service line at `index` (among the ticket's lines) off an open ticket. */
+export const removeTicketServiceLine = (ticketId: number, index: number) => {
+  if (syncEngine.isOffline() || isLocalId(ticketId)) return Promise.reject(new ApiError("Taking a service off a saved ticket needs the connection.", 503));
+  return call<{ ok: true }>(`/api/nail/tickets/${ticketId}/services/remove`, { method: "POST", body: JSON.stringify({ index }) });
+};
+
 export const splitTicketService = (ticketId: number, index: number) => {
   if (syncEngine.isOffline() || isLocalId(ticketId)) return Promise.reject(new ApiError("Splitting a ticket needs the connection.", 503));
   return call<{ appointmentId: number; ticketNumber: number; serviceName: string }>(`/api/nail/tickets/${ticketId}/split`, {
@@ -943,10 +1018,17 @@ export async function clockOutTech(storeId: number, staffId: number): Promise<vo
 export const resolveMarkerClient = (id: number) =>
   call<{ clientId: number }>(`/api/nail/markers/${id}/client`, { method: "POST" });
 
-/** Salon-wide /nail screen settings. `lockScreen` off = no Tech ID keypad and no idle lock. */
-export const fetchScreenSettings = () => call<{ lockScreen: boolean }>("/api/nail/screen-settings");
-export const saveScreenSettings = (settings: { lockScreen: boolean }) =>
-  call<{ lockScreen: boolean }>("/api/nail/screen-settings", { method: "PUT", body: JSON.stringify(settings) });
+export interface NailScreenSettings {
+  /** Off = no technician sign-in or idle lock. */
+  lockScreen: boolean;
+  /** Off = scanner-only lock screen with no visible numeric keypad. */
+  keypadVisible: boolean;
+}
+
+/** Salon-wide /nail lock-screen settings. */
+export const fetchScreenSettings = () => call<NailScreenSettings>("/api/nail/screen-settings");
+export const saveScreenSettings = (settings: Partial<NailScreenSettings>) =>
+  call<NailScreenSettings>("/api/nail/screen-settings", { method: "PUT", body: JSON.stringify(settings) });
 
 /** The key grid a manager arranged (null = automatic, from the catalog). */
 export const fetchPosGrid = () => call<{ config: import("@shared/posGrid").PosGridConfig | null }>("/api/nail/pos-grid");

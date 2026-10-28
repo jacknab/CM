@@ -63,3 +63,16 @@ describe("POS key grid — 3 across (2026-10-24)", () => {
     expect(inside[17].kind).toBe("back");
   });
 });
+
+describe("Add-ons key (2026-10-28)", () => {
+  it("opens a grid of add-on keys with Back last", () => {
+    const addons: CatalogGroup = { key: "addons", name: "Add-ons", services: [], addons: [
+      { id: 7, name: "Chrome", price: 10, duration: 5 }, { id: 8, name: "French", price: 5, duration: null }] };
+    const main = gridKeys([group("mani", 2), addons], null, 0);
+    expect(main.filter((k) => k.kind === "category")).toHaveLength(2);
+    const open = gridKeys([group("mani", 2), addons], "addons", 0);
+    expect(open.filter((k) => k.kind === "addon").map((k) => (k as any).addon.id)).toEqual([7, 8]);
+    expect(open.filter((k) => k.kind === "service")).toHaveLength(0);
+    expect(open[open.length - 1].kind).toBe("back");
+  });
+});

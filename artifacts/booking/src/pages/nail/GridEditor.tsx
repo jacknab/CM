@@ -21,7 +21,7 @@ const AFTER_OPTIONS: { to: PosAfter["to"]; label: string }[] = [{ to: "stay", la
  * right what that key is — a category (opens its services), one service, another grid, or Back — with an
  * optional name of their own and band colour. Nothing reaches the POS until Save.
  */
-export function GridEditor({ groups, addons = [], config, saving, onSave, onClose }: {
+export function GridEditor({ groups: allGroups, addons = [], config, saving, onSave, onClose }: {
   groups: CatalogGroup[];
   /** Every active add-on, for add-on keys. */
   addons?: CatalogAddon[];
@@ -32,7 +32,9 @@ export function GridEditor({ groups, addons = [], config, saving, onSave, onClos
   onSave: (config: PosGridConfig | null) => void;
   onClose: () => void;
 }) {
-  const [draft, setDraft] = useState<PosGridConfig>(() => config ?? automaticLayout(groups));
+  const [draft, setDraft] = useState<PosGridConfig>(() => config ?? automaticLayout(allGroups));
+  // The automatic Add-ons key can be switched off: it then isn't placed on the grid by itself.
+  const groups = useMemo(() => (draft.hideAddonsKey ? allGroups.filter((g) => g.key !== "addons") : allGroups), [allGroups, draft.hideAddonsKey]);
   const [gridId, setGridId] = useState<string>(POS_GRID_MAIN);
   const [slot, setSlot] = useState<number | null>(null);
   const grid = draft.grids.find((g) => g.id === gridId) ?? draft.grids[0];
@@ -157,6 +159,13 @@ export function GridEditor({ groups, addons = [], config, saving, onSave, onClos
                 <button key={c} type="button" className={columns === c ? "active" : ""} onClick={() => setColumns(c)} data-testid={`nail-grid-cols-${c}`}>{c} × 6</button>
               ))}
             </div>
+            <p className="ge-label">Add-ons key</p>
+            <div className="ge-types">
+              <button type="button" className={!draft.hideAddonsKey ? "active" : ""} data-testid="nail-grid-addons-show"
+                onClick={() => setDraft(({ hideAddonsKey: _h, ...rest }) => rest)}>Show</button>
+              <button type="button" className={draft.hideAddonsKey ? "active" : ""} data-testid="nail-grid-addons-hide"
+                onClick={() => setDraft((d) => ({ ...d, hideAddonsKey: true }))}>Hide</button>
+            </div>
             <p className="ge-label">After a service or add-on on this grid</p>
             {afterPicker("grid", grid.after, grid.id)}
             <p className="ge-label">After a service in a category</p>
@@ -192,7 +201,7 @@ export function GridEditor({ groups, addons = [], config, saving, onSave, onClos
               {current?.type === "service" && (
                 <label className="ge-field"><span>Service</span>
                   <select value={current.serviceId} onChange={(e) => patch({ serviceId: Number(e.target.value) } as Partial<PosKey>)} data-testid="nail-grid-target">
-                    {groups.map((g) => (
+                    {groups.filter((g) => g.services.length > 0).map((g) => (
                       <optgroup key={g.key} label={g.name}>
                         {g.services.map((sv) => <option key={sv.id} value={sv.id}>{sv.name} · ${Number(sv.price).toFixed(2)}</option>)}
                       </optgroup>

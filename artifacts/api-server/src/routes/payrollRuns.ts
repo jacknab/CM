@@ -65,16 +65,17 @@ router.put("/schedule", isAuthenticated, async (req, res) => {
   const frequency = ["weekly", "biweekly", "semimonthly", "monthly"].includes(b.frequency) ? b.frequency : "weekly";
   const anchorDate = typeof b.anchorDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.anchorDate) ? b.anchorDate : null;
   const periodEndOffsetDays = Number.isFinite(+b.periodEndOffsetDays) ? Math.max(0, Math.min(31, +b.periodEndOffsetDays)) : 0;
+  const payoutDayOffset = Number.isFinite(+b.payoutDayOffset) ? Math.max(0, Math.min(30, +b.payoutDayOffset)) : 0;
   // Share paid by check; the rest is paid in cash. Left out = unchanged (100 for a new schedule).
   const checkPercent = b.checkPercent === undefined ? undefined : Math.round(Math.max(0, Math.min(100, Number(b.checkPercent) || 0)));
   if (!anchorDate) return res.status(400).json({ error: "anchorDate (YYYY-MM-DD) required" });
 
   const [row] = await db
     .insert(paySchedules)
-    .values({ storeId: sid, frequency, anchorDate, periodEndOffsetDays, ...(checkPercent !== undefined ? { checkPercent } : {}) })
+    .values({ storeId: sid, frequency, anchorDate, periodEndOffsetDays, payoutDayOffset, ...(checkPercent !== undefined ? { checkPercent } : {}) })
     .onConflictDoUpdate({
       target: paySchedules.storeId,
-      set: { frequency, anchorDate, periodEndOffsetDays, ...(checkPercent !== undefined ? { checkPercent } : {}), updatedAt: new Date() },
+      set: { frequency, anchorDate, periodEndOffsetDays, payoutDayOffset, ...(checkPercent !== undefined ? { checkPercent } : {}), updatedAt: new Date() },
     })
     .returning();
   res.json(row);

@@ -6,7 +6,8 @@ import { POS_FN_LABELS, POS_GRID_COLUMNS, POS_GRID_MAIN, POS_GRID_ROWS, posGridC
 
 export interface CatalogService { id: number; name: string; duration: number; price: number | string }
 export interface CatalogAddon { id: number; name: string; price: number | string; duration: number | null }
-export interface CatalogGroup { key: string; name: string; services: CatalogService[] }
+/** A category of the grid. `addons`: the grid's Add-ons key — its keys are add-ons, not services. */
+export interface CatalogGroup { key: string; name: string; services: CatalogService[]; addons?: CatalogAddon[] }
 
 const money = (v: number | string) => `$${Number(v).toFixed(2)}`;
 
@@ -38,16 +39,21 @@ const KEYS = ["7", "8", "9", "⌫", "4", "5", "6", "↶", "1", "2", "3", "X", "0
 /** The functions under the keypad that belong to paying a ticket: the ticket is saved and its checkout opens on that function. */
 export type CheckoutFn = "group" | "tip" | "discount";
 
-export function Keypad({ locked, onEnter, onUndo, onSplit, onGiftCard, onCheckoutFn, onNoSale, onNotice }: {
+export function Keypad({ locked, onEnter, onUndo, onSplit, onGiftCard, onCheckoutFn, onNoSale, onNotice, onQtyChange, qtyReset }: {
   locked: boolean; onEnter: (amount: number, qty: number, label?: string, isRetail?: boolean) => void;
   /** ↶ with nothing typed: undo the last change to the ticket. */
   onUndo?: () => void;
   /** Split Ticket: the service chosen on the ticket comes off onto a ticket of its own. */
   onSplit?: () => void; onGiftCard?: () => void;
   onCheckoutFn?: (fn: CheckoutFn) => void; onNoSale?: () => void; onNotice?: (text: string) => void;
+  /** Called when QTY changes, so a key on the grid can be rung up that many times ("3 X" then the key). */
+  onQtyChange?: (qty: number) => void;
+  /** Changes when a grid key used the QTY: the keypad goes back to one. */
+  qtyReset?: number;
 }) {
   const [display, setDisplay] = useState("");
   const [qty, setQty] = useState(1);
+  useEffect(() => { if (qtyReset) setQty(1); }, [qtyReset]);
   const [guided, setGuided] = useState<number | null>(null);
   const [retail, setRetail] = useState(false);
 
@@ -56,7 +62,7 @@ export function Keypad({ locked, onEnter, onUndo, onSplit, onGiftCard, onCheckou
     if (key === "⌫") { setDisplay((d) => d.slice(0, -1)); return; }
     // ↶ first clears what is being typed (and leaves Quick Ticket); with nothing typed it undoes the last change to the ticket.
     if (key === "↶") {
-      if (display !== "" || qty !== 1 || guided !== null) { setDisplay(""); setQty(1); setGuided(null); return; }
+      if (display !== "" || qty !== 1 || guided !== null) { setDisplay(""); setQty(1); setGuided(null); onQtyChange?.(1); return; }
       onUndo?.();
       return;
     }
@@ -64,7 +70,7 @@ export function Keypad({ locked, onEnter, onUndo, onSplit, onGiftCard, onCheckou
       if (guided !== null) return; // Quick Ticket adds one of each step
       // "3 X" then the price = three of them.
       const n = Number(display);
-      if (Number.isInteger(n) && n >= 1 && n <= 99) { setQty(n); setDisplay(""); }
+      if (Number.isInteger(n) && n >= 1 && n <= 99) { setQty(n); setDisplay(""); onQtyChange?.(n); }
       return;
     }
     if (key === "ENTER") {
@@ -80,7 +86,7 @@ export function Keypad({ locked, onEnter, onUndo, onSplit, onGiftCard, onCheckou
       // step list ends), nothing here would ever remind staff it's still on, and leaving it stuck
       // "on" silently mislabels the NEXT unrelated custom charge as retail too (wrong commission
       // rate). Ringing up several retail items in a row just means tapping Retail again each time.
-      setDisplay(""); setQty(1); setRetail(false);
+      setDisplay(""); setQty(1); setRetail(false); onQtyChange?.(1);
       return;
     }
     setDisplay((d) => (d + key).slice(0, 7));
@@ -92,7 +98,7 @@ export function Keypad({ locked, onEnter, onUndo, onSplit, onGiftCard, onCheckou
         {guided !== null && <span className="display-prompt" data-testid="nail-quick-prompt">{QUICK_TICKET_STEPS[guided].prompt} · {guided + 1}/{QUICK_TICKET_STEPS.length}</span>}
         {guided === null && retail && <span className="display-prompt" data-testid="nail-retail-prompt">RETAIL ITEM</span>}
         {qty > 1 && <span className="display-qty">{qty} ×</span>}
-        {display ? `$${display}` : ""}
+        {display ? display : ""}
       </div>
       <div className="key-grid">
         {KEYS.map((key) => (
@@ -105,7 +111,7 @@ export function Keypad({ locked, onEnter, onUndo, onSplit, onGiftCard, onCheckou
       </div>
       {/* The same two rows of functions the checkout screen has, in the same places, so building a ticket and paying it are one POS. */}
       <div className="money-grid pay-fn-row" data-testid="nail-fn-row-top">
-        <button type="button" disabled={locked} onClick={() => { setDisplay(""); setQty(1); setGuided((g) => (g === null ? 0 : null)); }} data-testid="nail-quick-ticket">
+        <button type="button" disabled={locked} onClick={() => { setDisplay(""); setQty(1); setGuided((g) => (g === null ? 0 : null)); onQtyChange?.(1); }} data-testid="nail-quick-ticket">
           <Zap size={20} /><span>{guided !== null ? "Exit Quick Ticket" : "Quick Ticket"}</span>
         </button>
         <button type="button" disabled={locked} onClick={() => onCheckoutFn?.("group")} data-testid="nail-fn-group"><Users size={20} /><span>Combine</span></button>
@@ -184,7 +190,7 @@ export function gridKeys(groups: CatalogGroup[], openKey: string | null, page: n
   const GRID_SLOTS = columns * POS_GRID_ROWS;
   const open = openKey ? groups.find((g) => g.key === openKey) : undefined;
   const items: GridKey[] = open
-    ? open.services.map((service) => ({ kind: "service", service }))
+    ? open.addons ? open.addons.map((addon) => ({ kind: "addon", addon })) : open.services.map((service) => ({ kind: "service", service }))
     : groups.map((group) => ({ kind: "category", group }));
   // The last position: Back inside a category; on the main grid, the way out of the grid when there is one
   // (back to Payment, while a ticket is being paid).

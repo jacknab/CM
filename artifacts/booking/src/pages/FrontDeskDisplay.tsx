@@ -514,6 +514,24 @@ export default function FrontDeskDisplay() {
     void localHub.start(storeId, "screen");
     return localHub.onMessage((message) => {
       if (!forRegister(message, registerIdRef.current)) return;
+      if (message.type === "kiosk_wake") {
+        setScreen("idle");
+        setPhone("");
+        setClientInfo(null);
+        setTodayAppointment(null);
+        setNewClientName("");
+        setError("");
+        return;
+      }
+      if (message.type === "kiosk_wake") {
+        setScreen("idle");
+        setPhone("");
+        setClientInfo(null);
+        setTodayAppointment(null);
+        setNewClientName("");
+        setError("");
+        return;
+      }
       hubSinkRef.current?.(new MessageEvent("message", { data: JSON.stringify(message) }));
     });
   }, [storeId]);
@@ -1898,23 +1916,6 @@ export default function FrontDeskDisplay() {
 
   if (screen === "phone") return (
     <div className="fixed inset-0 flex select-none" onContextMenu={e => e.preventDefault()} style={{ ...NO_SELECT, background: BG }}>
-      <div className="w-[36%] flex flex-col items-center justify-center px-10 gap-8" style={{ background: PRIMARY_S, borderRight: `1.5px solid ${BORDER}` }}>
-        <div className="w-24 h-24 rounded-full flex items-center justify-center shadow-xl" style={{ background: `linear-gradient(135deg, ${PRIMARY}, ${ACCENT})` }}>
-          <span className="text-white text-4xl font-black">✓</span>
-        </div>
-        <div className="text-center">
-          <h1 className="text-4xl font-black leading-tight" style={{ color: TEXT }}>{storeConfig?.name ?? "Check In"}</h1>
-          <p className="text-sm mt-2 uppercase tracking-widest font-semibold" style={{ color: SUBTLE }}>Front Desk Check-In</p>
-        </div>
-        {(kioskConfig?.loyaltyPromoText || bookingPhoneMode) && (
-          <div className="w-full max-w-[280px] rounded-2xl p-5 space-y-2" style={{ background: SURFACE, border: `1.5px solid ${BORDER}`, boxShadow: SHADOW }}>
-            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: PRIMARY }}>{t.loyaltyRewards}</p>
-            <p className="text-base leading-relaxed" style={{ color: MUTED }}>
-              {kioskConfig?.loyaltyPromoText || "Earn points with every visit and redeem them for services."}
-            </p>
-          </div>
-        )}
-      </div>
       <div className={`flex-1 flex flex-col items-center justify-center gap-5 px-8 ${shakeClass}`} onAnimationEnd={onShakeEnd} data-testid="fd-phone-shake">
         {bookingPhoneSent ? (
           <div className="flex flex-col items-center gap-6 text-center">
@@ -1948,23 +1949,23 @@ export default function FrontDeskDisplay() {
             {phone ? fmtPhone(phone) : "•••  •••  ••••"}
           </span>
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-4">
           {["1","2","3","4","5","6","7","8","9"].map(d => (
             <button key={d} onPointerDown={e => { e.preventDefault(); handleDigit(d); }}
-              className="w-24 h-24 rounded-2xl text-3xl font-bold transition-all active:scale-90"
+              className="w-32 h-32 rounded-3xl text-4xl font-bold transition-all active:scale-95"
               style={{ background: SURFACE, border: `1.5px solid ${BORDER}`, color: TEXT, boxShadow: SHADOW }}>{d}</button>
           ))}
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-4">
           <button onPointerDown={e => { e.preventDefault(); setPhone(p => p.slice(0, -1)); kick(); }}
-            className="w-24 h-24 rounded-2xl text-2xl transition-all active:scale-90"
+            className="w-32 h-32 rounded-3xl text-3xl transition-all active:scale-95"
             style={{ background: "#fef2f2", border: "1.5px solid #fecaca", color: "#ef4444", boxShadow: SHADOW }}>⌫</button>
           <button onPointerDown={e => { e.preventDefault(); handleDigit("0"); }}
-            className="w-24 h-24 rounded-2xl text-3xl font-bold transition-all active:scale-90"
+            className="w-32 h-32 rounded-3xl text-4xl font-bold transition-all active:scale-95"
             style={{ background: SURFACE, border: `1.5px solid ${BORDER}`, color: TEXT, boxShadow: SHADOW }}>0</button>
           <button onPointerDown={e => { e.preventDefault(); if (phone.length === 10) { bookingPhoneMode ? submitBookingPhone(phone) : doLookup(phone); } }}
             disabled={phone.length < 10}
-            className="w-24 h-24 rounded-2xl text-3xl font-bold text-white transition-all active:scale-90 disabled:opacity-30"
+            className="w-32 h-32 rounded-3xl text-4xl font-bold text-white transition-all active:scale-95 disabled:opacity-30"
             style={{ background: phone.length < 10 ? "#d1d5db" : PRIMARY, boxShadow: phone.length < 10 ? "none" : SHADOW }}>→</button>
         </div>
         <div className="flex gap-3 mt-1">

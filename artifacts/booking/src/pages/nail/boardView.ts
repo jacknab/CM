@@ -24,6 +24,9 @@ export interface CalendarBoardBooking {
   status: string | null;
   createdAt?: string | null;
   checkedInAt?: string | null;
+  completedAt?: string | null;
+  totalPaid?: number | null;
+  servicePrice?: number | null;
   customer?: { fullName?: string | null } | null;
   service?: { name?: string | null } | null;
   staff?: { name?: string | null } | null;

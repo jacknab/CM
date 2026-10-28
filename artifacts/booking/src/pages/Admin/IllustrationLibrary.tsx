@@ -4,7 +4,7 @@ import { confirm, appAlert } from "@/lib/confirm";
 import {
   Image, Upload, Plus, Trash2, Edit2, Check, X, Loader2,
   Grid3X3, AlertTriangle, Tag, RefreshCw, ChevronDown, Globe, ImageIcon,
-  Layers, Search,
+  Layers, Search, ShieldCheck, ExternalLink, Undo2, Crop,
 } from "lucide-react";
 
 const INDUSTRIES = [
@@ -259,6 +259,21 @@ interface SiteAsset {
   label: string;
   r2_url: string;
   updated_at: string;
+}
+
+interface MarketingImage {
+  slot: string;
+  label: string;
+  pages: string[];
+  width: number;
+  height: number;
+  fit: "cover" | "contain";
+  originalUrl?: string;
+  cornerStyle: "rounded" | "none";
+  url: string;
+  replacementUrl: string | null;
+  updatedAt: string | null;
+  note?: string;
 }
 
 async function apiFetch(path: string, opts?: RequestInit) {
@@ -617,8 +632,8 @@ function IllustrationCategoriesTab() {
   );
 }
 
-// ─── Tab: Site Images ──────────────────────────────────────────────────────────
-function SiteImagesTab() {
+// ─── Tab: Salon Images ─────────────────────────────────────────────────────────
+function SalonImagesTab() {
   const qc = useQueryClient();
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
@@ -683,7 +698,7 @@ function SiteImagesTab() {
         <div>
           <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <Globe className="w-5 h-5 text-blue-600" />
-            Site Images
+            Salon Images
           </h2>
           <p className="text-sm text-gray-500 mt-1">
             Upload images to Cloudflare R2. They are served automatically at{" "}
@@ -701,7 +716,7 @@ function SiteImagesTab() {
       {/* Custom slot form */}
       {showCustomForm && (
         <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-5 space-y-3">
-          <h3 className="font-bold text-blue-900 text-sm">Upload a Custom Site Image</h3>
+            <h3 className="font-bold text-blue-900 text-sm">Upload a Custom Salon Image</h3>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Filename (key) *</label>
@@ -843,6 +858,206 @@ function SiteImagesTab() {
         After upload, the site serves them at <code className="bg-gray-100 px-1 rounded">/assets/&lt;filename&gt;</code> via a 302 redirect to the R2 CDN URL.
         The redirect cache refreshes every 60 seconds — no server restart needed.
       </p>
+    </div>
+  );
+}
+
+// ─── Tab: audited marketing website images ────────────────────────────────────
+function MarketingSiteImagesTab() {
+  const qc = useQueryClient();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [pageFilter, setPageFilter] = useState("All pages");
+  const [uploadingSlot, setUploadingSlot] = useState<string | null>(null);
+  const [resettingSlot, setResettingSlot] = useState<string | null>(null);
+
+  const { data, isLoading, isError } = useQuery<{ images: MarketingImage[] }>({
+    queryKey: ["marketing-site-images"],
+    queryFn: () => apiFetch("/api/admin/marketing-images"),
+  });
+
+  const images = data?.images ?? [];
+  const pageNames = useMemo(
+    () => ["All pages", ...Array.from(new Set(images.flatMap(image => image.pages))).sort()],
+    [images],
+  );
+  const filteredImages = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return images.filter(image => {
+      const matchesPage = pageFilter === "All pages" || image.pages.includes(pageFilter);
+      const matchesSearch = !query || `${image.label} ${image.slot} ${image.pages.join(" ")}`.toLowerCase().includes(query);
+      return matchesPage && matchesSearch;
+    });
+  }, [images, pageFilter, searchQuery]);
+
+  const replaceImage = async (image: MarketingImage, file: File) => {
+    setUploadingSlot(image.slot);
+    try {
+      const form = new FormData();
+      form.append("slot", image.slot);
+      form.append("image", file);
+      const response = await fetch("/api/admin/marketing-images/upload", {
+        method: "POST",
+        credentials: "include",
+        body: form,
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || "Image replacement failed");
+      }
+      await qc.invalidateQueries({ queryKey: ["marketing-site-images"] });
+    } catch (error: any) {
+      void appAlert(error?.message || "Image replacement failed", "Error");
+    } finally {
+      setUploadingSlot(null);
+    }
+  };
+
+  const restoreOriginal = async (image: MarketingImage) => {
+    if (!(await confirm(`Restore the original image for “${image.label}”?`))) return;
+    setResettingSlot(image.slot);
+    try {
+      await apiFetch(`/api/admin/marketing-images?slot=${encodeURIComponent(image.slot)}`, { method: "DELETE" });
+      await qc.invalidateQueries({ queryKey: ["marketing-site-images"] });
+    } catch (error: any) {
+      void appAlert(error?.message || "Could not restore the original image", "Error");
+    } finally {
+      setResettingSlot(null);
+    }
+  };
+
+  const replacementCount = images.filter(image => image.replacementUrl).length;
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 p-6 text-white shadow-sm">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">
+              <ShieldCheck className="h-4 w-4" /> Layout-safe image control
+            </div>
+            <h2 className="text-2xl font-bold tracking-tight">Site Images</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              Every marketing image is audited below. Replacements are automatically resized and cropped inside the original frame, so card proportions, rounded corners, and page spacing stay unchanged.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:min-w-[280px]">
+            <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+              <p className="text-2xl font-bold">{images.length}</p>
+              <p className="mt-1 text-xs text-slate-400">audited image slots</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+              <p className="text-2xl font-bold text-cyan-300">{replacementCount}</p>
+              <p className="mt-1 text-xs text-slate-400">custom replacements</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-3 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            value={searchQuery}
+            onChange={event => setSearchQuery(event.target.value)}
+            placeholder="Search images, slots, or pages…"
+            className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+          />
+        </div>
+        <select
+          value={pageFilter}
+          onChange={event => setPageFilter(event.target.value)}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+          aria-label="Filter images by marketing page"
+        >
+          {pageNames.map(page => <option key={page}>{page}</option>)}
+        </select>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-indigo-500" /></div>
+      ) : isError ? (
+        <div className="flex items-center justify-center gap-2 py-20 text-red-600"><AlertTriangle className="h-5 w-5" /> Failed to load the site image audit</div>
+      ) : filteredImages.length === 0 ? (
+        <div className="py-20 text-center text-gray-400"><Search className="mx-auto mb-3 h-10 w-10 opacity-30" /><p>No images match this filter.</p></div>
+      ) : (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          {filteredImages.map(image => {
+            const busy = uploadingSlot === image.slot || resettingSlot === image.slot;
+            return (
+              <article key={image.slot} className="group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+                <div
+                  className={`relative overflow-hidden bg-[linear-gradient(45deg,#f1f5f9_25%,transparent_25%),linear-gradient(-45deg,#f1f5f9_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#f1f5f9_75%),linear-gradient(-45deg,transparent_75%,#f1f5f9_75%)] bg-[length:18px_18px] bg-[position:0_0,0_9px,9px_-9px,-9px_0px] ${image.cornerStyle === "rounded" ? "m-3 mb-0 rounded-xl" : ""}`}
+                  style={{ aspectRatio: `${image.width} / ${image.height}`, maxHeight: 260 }}
+                >
+                  <img
+                    src={`${image.replacementUrl ?? image.url}?v=${encodeURIComponent(image.updatedAt ?? "original")}`}
+                    alt={image.label}
+                    className="h-full w-full"
+                    style={{ objectFit: image.fit }}
+                    loading="lazy"
+                  />
+                  {busy && <div className="absolute inset-0 flex items-center justify-center bg-slate-950/60"><Loader2 className="h-8 w-8 animate-spin text-white" /></div>}
+                  <div className="absolute left-2 top-2 flex gap-1.5">
+                    <span className="rounded-full bg-slate-950/80 px-2 py-1 text-[10px] font-bold text-white backdrop-blur">{image.width} × {image.height}</span>
+                    {image.replacementUrl && <span className="rounded-full bg-cyan-500 px-2 py-1 text-[10px] font-bold text-slate-950">CUSTOM</span>}
+                  </div>
+                </div>
+
+                <div className="space-y-3 p-4">
+                  <div>
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className="font-semibold leading-tight text-gray-900">{image.label}</h3>
+                      <a href={image.url} target="_blank" rel="noreferrer" className="shrink-0 text-gray-300 hover:text-indigo-600" title="Open current image"><ExternalLink className="h-4 w-4" /></a>
+                    </div>
+                    <p className="mt-1 truncate font-mono text-[11px] text-gray-400">{image.slot}</p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {image.pages.map(page => <span key={page} className="rounded-md bg-gray-100 px-2 py-1 text-[10px] font-semibold text-gray-600">{page}</span>)}
+                  </div>
+
+                  <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-2.5 py-2 text-[11px] font-medium text-emerald-800">
+                    <Crop className="h-3.5 w-3.5 shrink-0" />
+                    Frame locked · {image.fit === "cover" ? "smart crop" : "fit without crop"} · corners preserved
+                  </div>
+                  {image.note && (
+                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] font-medium leading-4 text-amber-800">
+                      {image.note}
+                    </p>
+                  )}
+
+                  <div className="flex gap-2 border-t border-gray-100 pt-3">
+                    <label className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-indigo-700 focus-within:ring-2 focus-within:ring-indigo-300 focus-within:ring-offset-2">
+                      <Upload className="h-3.5 w-3.5" /> {image.replacementUrl ? "Replace image" : "Choose replacement"}
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/avif"
+                        className="sr-only"
+                        disabled={busy}
+                        onChange={event => {
+                          const file = event.target.files?.[0];
+                          if (file) void replaceImage(image, file);
+                          event.target.value = "";
+                        }}
+                      />
+                    </label>
+                    {image.replacementUrl && (
+                      <button
+                        onClick={() => void restoreOriginal(image)}
+                        disabled={busy}
+                        className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 hover:border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                        title="Restore original image"
+                      >
+                        <Undo2 className="h-3.5 w-3.5" /> Restore
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -1168,7 +1383,7 @@ function ServiceImagesTab() {
 }
 
 // ─── Main component ────────────────────────────────────────────────────────────
-type Tab = "categories" | "site-images" | "service-images";
+type Tab = "categories" | "salon-images" | "site-images" | "service-images";
 
 export default function IllustrationLibrary() {
   const [activeTab, setActiveTab] = useState<Tab>("categories");
@@ -1191,7 +1406,8 @@ export default function IllustrationLibrary() {
         {([
           { id: "categories",     label: "Illustrations",     icon: Grid3X3 },
           { id: "service-images", label: "Services Images",   icon: Layers  },
-          { id: "site-images",    label: "Site Images (R2)",  icon: Globe   },
+          { id: "salon-images",   label: "Salon Images",      icon: ImageIcon },
+          { id: "site-images",    label: "Site Images",       icon: Globe   },
         ] as { id: Tab; label: string; icon: any }[]).map(tab => {
           const Icon = tab.icon;
           return (
@@ -1214,7 +1430,8 @@ export default function IllustrationLibrary() {
       {/* Tab content */}
       {activeTab === "categories"     && <IllustrationCategoriesTab />}
       {activeTab === "service-images" && <ServiceImagesTab />}
-      {activeTab === "site-images"    && <SiteImagesTab />}
+      {activeTab === "salon-images"   && <SalonImagesTab />}
+      {activeTab === "site-images"    && <MarketingSiteImagesTab />}
     </div>
   );
 }

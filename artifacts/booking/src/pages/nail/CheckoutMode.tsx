@@ -22,7 +22,7 @@ import { buildCheckoutReceipt } from "@/lib/thermalPrinter";
 import type { ReceiptLine } from "@/lib/receiptSections";
 import { buildNativeReceiptPayload } from "@/lib/receiptPayload";
 import { openCashDrawerHardware, recordNoSale } from "@/lib/cashDrawer";
-import { boardKey, checkoutRequestKey, lookupGiftCard, queueReceiptText, splitTicketService, type BoardTicket, type FinalizeData, type GiftCardInfo } from "./nailApi";
+import { ticketNo, addTicketAddon, addTicketPackage, addTicketService, ApiError, removeTicketAddon, removeTicketServiceLine, boardKey, checkoutRequestKey, lookupGiftCard, queueReceiptText, splitTicketService, type BoardTicket, type FinalizeData, type GiftCardInfo } from "./nailApi";
 import { bridgeState, isNativeApp, useCardPayments } from "./useCardPayments";
 import { frontdeskReaderMethod, readNailCardMethod, type NailCardMethod } from "./cardMethod";
 import { verifyCardCharge } from "../frontdesk/verifyCardCharge";
@@ -30,6 +30,7 @@ import { calcTipAmount } from "../frontdesk/tipOptions";
 import { useTipPresets } from "@/hooks/use-tip-presets";
 import { confirm } from "@/lib/confirm";
 import { CatalogPanel, type CatalogGroup, type CatalogService } from "./CatalogPanel";
+import { useManagerOverride } from "./useManagerOverride";
 
 interface Props {
   ticket: BoardTicket;
@@ -85,7 +86,8 @@ const tenderLabel = (t: Tender) => (t.method === "gift" ? `GIFT CARD${t.code ? `
 type Reward = { id: number; name: string; pointsCost: number; dollarValue: number; isActive?: boolean };
 
 const money = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
-const KEYS = ["7", "8", "9", "⌫", "4", "5", "6", "CLEAR", "1", "2", "3", "ERC", "00", "0", "ENTER"];
+// The same keypad as the ticket screen's (CatalogPanel Keypad): ↶ clears what is typed, or undoes the last line; X = QTY.
+const KEYS = ["7", "8", "9", "⌫", "4", "5", "6", "↶", "1", "2", "3", "X", "00", "0", "ENTER"];
 
 // ── The last receipt printed from this device, for Reprint ────────────────────
 type LastReceipt = { receipt: any | null; paymentIntentId: string | null; thermal: any | null };
@@ -98,6 +100,7 @@ function recallReceipt(): LastReceipt | null {
 export function CheckoutMode(p: Props) {
   const { t: tx } = useNailText();
   const { ticket } = p;
+  const { guard, pinSheet } = useManagerOverride();
   const [cents, setCents] = useState("");
   const [extras, setExtras] = useState<Extra[]>([]);
   const nextId = useRef(1);
@@ -180,7 +183,14 @@ export function CheckoutMode(p: Props) {
   useEffect(() => () => { if (statusTimer.current) clearTimeout(statusTimer.current); }, []);
 
   // Quick Ticket prices are whole dollars (owner, 2026-10-24): "10 ENTER" is $10. Everywhere else the keypad counts cents.
-  const amount = guided !== null ? (Number(cents) || 0) : centsToDollars(cents);
+  // Ringing up (owner, 2026-10-28): whole dollars, as salon prices are. Once PAY / CHECKOUT is pressed the amount
+  // tendered is typed in cents ("1550" = $15.50), for cash.
+  const wholeDollars = guided !== null || !paying;
+  const amount = wholeDollars ? (Number(cents) || 0) : centsToDollars(cents);
+  // "3 X": the next amount entered, or the next key tapped on the grid, is rung up three times.
+  const [qty, setQty] = useState(1);
+  // Typed "20" then CASH: the same $20 carries over into the payment keypad, as cents.
+  useEffect(() => { setCents((c) => (paying && c && guided === null ? `${c}00` : "")); setQty(1); }, [paying]); // eslint-disable-line react-hooks/exhaustive-deps
   // Right after a visit is saved the board may not have its other tickets yet: link them when they arrive, once.
   const groupSeeded = useRef(false);
   useEffect(() => {
@@ -258,7 +268,8 @@ export function CheckoutMode(p: Props) {
   const cartKey = JSON.stringify([ticket.id, ticket.service.id, ticket.total, extras.map((e) => [e.label, e.price]), linked.map((t) => t.id), discount, reward?.id, tip, showPoints ? ticket.client.loyaltyPoints : null, tenders.map((t) => [t.method, t.amount])]);
   // The lines of the sale — shown on the customer's screen and on a texted receipt.
   const cartItems = () => [
-    { label: ticket.service.name, price: ticket.service.price },
+    // A retail-only sale has no service line.
+    ...(ticket.service.id != null ? [{ label: ticket.service.name, price: ticket.service.price }] : []),
     ...ticket.addons.map((a) => ({ label: `+ ${a.name}`, price: a.price })),
     ...(ticket.nail?.lines ?? []).map((l) => ({ label: l.label, price: l.price })),
     ...ticket.customLines.map((l) => ({ label: l.label, price: l.price })),
@@ -287,7 +298,7 @@ export function CheckoutMode(p: Props) {
   const receiptItems = (): ReceiptLine[] => {
     if (linked.length === 0) return cartItems();
     const lines = (t: BoardTicket): ReceiptLine[] => [
-      { label: t.service.name, price: t.service.price },
+      ...(t.service.id != null ? [{ label: t.service.name, price: t.service.price }] : []),
       ...t.addons.map((a) => ({ label: a.name, price: a.price })),
       ...(t.nail?.lines ?? []).map((l) => ({ label: l.label, price: l.price })),
       ...t.customLines.map((l) => ({ label: l.label, price: l.price, ...(l.isRetail ? { kind: "product" as const } : {}) })),
@@ -472,7 +483,7 @@ export function CheckoutMode(p: Props) {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { say(String(d.message || "Could not add it").toUpperCase(), "error"); return; }
-      say(`${label.toUpperCase()} · ${money(price)} ADDED TO ${(t.staff?.name ?? `#${t.ticketNumber ?? t.id}`).toUpperCase()}`, "success");
+      say(`${label.toUpperCase()} · ${money(price)} ADDED TO ${(t.staff?.name ?? `#${ticketNo(t)}`).toUpperCase()}`, "success");
       void refreshBoard();
     } catch {
       say("NO CONNECTION — IT WAS NOT ADDED", "error");
@@ -498,9 +509,15 @@ export function CheckoutMode(p: Props) {
 
   const pressKey = (k: string) => {
     if (k === "⌫") { setCents((c) => c.slice(0, -1)); return; }
-    if (k === "CLEAR") { setCents(""); return; }
-    if (k === "ERC") {
+    if (k === "X") {
+      if (guided !== null || paying) return;
+      const n = Number(cents);
+      if (Number.isInteger(n) && n >= 1 && n <= 99) { setQty(n); setCents(""); say(`QTY ${n} ×`); }
+      return;
+    }
+    if (k === "↶") {
       if (guided !== null) { setGuided(null); setCents(""); say("QUICK TICKET EXITED"); return; }
+      if (cents !== "" || qty !== 1) { setCents(""); setQty(1); return; }
       setExtras((cur) => { if (!cur.length) { say("NOTHING TO UNDO"); return cur; } say(`UNDID · ${cur[cur.length - 1].label.toUpperCase()}`); return cur.slice(0, -1); });
       return;
     }
@@ -516,11 +533,12 @@ export function CheckoutMode(p: Props) {
       if (paying && payType === "card") { chargeCard(); return; }
       if (amount <= 0) { say("ENTER AN AMOUNT FIRST", "error"); return; }
       if (paying) { addCash(amount); return; }
-      addExtra("+Extra", amount, "custom"); setCents(""); say(`EXTRA ADDED · ${money(amount)}`, "success");
+      const total = r2(amount * qty);
+      addExtra(qty > 1 ? `+Extra ×${qty}` : "+Extra", total, "custom"); setCents(""); setQty(1); say(`EXTRA ADDED · ${money(total)}`, "success");
       return;
     }
     // Quick Ticket: whole dollars, up to $9999.
-    setCents((c) => (guided !== null ? (c + k).replace(/^0+/, "").slice(0, 4) : pushKeypadDigits(c, k)));
+    setCents((c) => (wholeDollars ? (c + k).replace(/^0+/, "").slice(0, 4) : pushKeypadDigits(c, k)));
   };
 
   // ── functions ─────────────────────────────────────────────────────────────
@@ -565,14 +583,13 @@ export function CheckoutMode(p: Props) {
     if (ticket.id <= 0 || syncEngine.isOffline()) { onSaleOnly(); return; }
     setAddingService(true);
     try {
-      const r = await fetch(`/api/nail/tickets/${ticket.id}/services`, {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ serviceId: svc.id }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) { say(String(d.message || "Could not add the service").toUpperCase(), "error"); return; }
+      let d: Awaited<ReturnType<typeof addTicketService>> | undefined;
+      try { d = await guard(() => addTicketService(ticket.id, svc.id)); }
+      catch (err) { if (err instanceof ApiError) { say(String(err.message || "Could not add the service").toUpperCase(), "error"); return; } throw err; }
+      if (!d) return;
       if (d.added === "own_ticket") {
         setLinkedIds((cur) => (cur.includes(Number(d.appointmentId)) ? cur : [...cur, Number(d.appointmentId)]));
-        say(`${svc.name.toUpperCase()} → TICKET #${d.ticketNumber}${d.staffName ? ` · ${String(d.staffName).toUpperCase()}` : ""} · PAID WITH THIS SALE`, "success");
+        say(`${svc.name.toUpperCase()} → ${d.staffName ? String(d.staffName).toUpperCase() : "NEXT TECHNICIAN"} · SAME VISIT, PAID WITH THIS SALE`, "success");
       } else {
         say(`${svc.name.toUpperCase()} ADDED TO THE TICKET · ${money(price)}`, "success");
       }
@@ -583,21 +600,53 @@ export function CheckoutMode(p: Props) {
       setAddingService(false);
     }
   };
+  // A key on the grid, like a register's: "3 X" first rings it up three times. A package key adds the whole package.
+  const gridService = async (svc: CatalogService) => {
+    const times = qty;
+    setQty(1);
+    if (svc.id < 0) {
+      if (p.paid || p.finalizing) return;
+      try { const r = await guard(() => addTicketPackage(ticket.id, -svc.id)); if (!r) return; say(`${r.name.toUpperCase()} ADDED`, "success"); void refreshBoard(); }
+      catch (err: any) { say(String(err?.message || "Could not add the package").toUpperCase(), "error"); }
+      return;
+    }
+    for (let i = 0; i < times; i++) await addServiceLine(svc);
+  };
+  // An add-on key: a real add-on on the ticket (once). With no connection it is a line of this sale, as before.
+  const gridAddon = async (a: import("./CatalogPanel").CatalogAddon) => {
+    if (p.paid || p.finalizing) return;
+    setQty(1);
+    const price = Number(a.price) || 0;
+    if (a.id && ticket.id > 0 && !syncEngine.isOffline()) {
+      try {
+        const r = await guard(() => addTicketAddon(ticket.id, a.id));
+        if (!r) return;
+        say(r.added ? `${a.name.toUpperCase()} ADDED · ${money(price)}` : `${a.name.toUpperCase()} IS ALREADY ON THE TICKET`, r.added ? "success" : "error");
+        void refreshBoard();
+        return;
+      } catch (err: any) {
+        // The server said no (closed ticket, add-on gone): say so. Only a lost connection falls back to a line of this sale.
+        if (err instanceof ApiError && err.status !== 503) { say(String(err.message || "Could not add it").toUpperCase(), "error"); return; }
+      }
+    }
+    addExtra(`+ ${a.name}`, price, "custom"); say(`${a.name.toUpperCase()} ADDED · ${money(price)}`, "success");
+  };
+  const removeAddon = async (a: { id: number; name: string }) => {
+    if (p.paid || p.finalizing) return;
+    try { if (!(await guard(() => removeTicketAddon(ticket.id, a.id)))) return; say(`${a.name.toUpperCase()} REMOVED`, "success"); void refreshBoard(); }
+    catch (err: any) { say(String(err?.message || "Could not remove it").toUpperCase(), "error"); }
+  };
   /** Takes a service saved on the ticket (one of its lines) back off. */
   const removeTicketService = async (t: BoardTicket, index: number) => {
     const line = t.customLines[index];
     if (!line?.serviceId || p.paid || p.finalizing) return;
-    if (!(await confirm(`Take ${line.label} off ticket #${t.ticketNumber ?? t.id}?`, { title: "Remove service", confirmLabel: "Remove", destructive: true }))) return;
+    if (!(await confirm(`Take ${line.label} off ticket #${ticketNo(t)}?`, { title: "Remove service", confirmLabel: "Remove", destructive: true }))) return;
     try {
-      const r = await fetch(`/api/nail/tickets/${t.id}/services/remove`, {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ index }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) { say(String(d.message || "Could not remove the service").toUpperCase(), "error"); return; }
+      if (!(await guard(() => removeTicketServiceLine(t.id, index)))) return;
       say(`${line.label.toUpperCase()} REMOVED`, "success");
       void refreshBoard();
-    } catch {
-      say("NO CONNECTION — THE SERVICE COULD NOT BE REMOVED", "error");
+    } catch (err) {
+      say(err instanceof ApiError ? String(err.message || "Could not remove the service").toUpperCase() : "NO CONNECTION — THE SERVICE COULD NOT BE REMOVED", "error");
     }
   };
   const comingSoon = (label: string) => say(`${label.toUpperCase()} — COMING SOON`);
@@ -610,9 +659,10 @@ export function CheckoutMode(p: Props) {
     if (!line?.serviceId) { say("TAP ONE OF THE OTHER SERVICES ON THE TICKET, THEN SPLIT TICKET", "error"); return; }
     if (tenders.length > 0) { say("TAKE THE PAYMENTS OFF BEFORE SPLITTING THE TICKET", "error"); return; }
     try {
-      const r = await splitTicketService(ticket.id, splitIdx!);
+      const r = await guard(() => splitTicketService(ticket.id, splitIdx!));
+      if (!r) return;
       setSplitIdx(null);
-      say(`SPLIT · #${r.ticketNumber} ${r.serviceName.toUpperCase()} WAITS FOR A TECHNICIAN`, "success");
+      say(`SPLIT · ${r.serviceName.toUpperCase()} WAITS FOR A TECHNICIAN · SAME VISIT`, "success");
       void refreshBoard();
     } catch (err: any) {
       say(String(err?.message || "The ticket could not be split").toUpperCase(), "error");
@@ -1146,6 +1196,7 @@ export function CheckoutMode(p: Props) {
 
   return (
     <>
+      {pinSheet}
       {/* ── ticket panel ─────────────────────────────────────────────────── */}
       <section className="ticket-panel" data-testid="nail-pay-ticket">
         <div className="ticket-client-header">
@@ -1154,15 +1205,16 @@ export function CheckoutMode(p: Props) {
             <div className="ticket-client-points">{points} pts</div>
           </div>
           <div className="ticket-client-side">
-            <div className="ticket-client-num">#{ticket.ticketNumber ?? ticket.id}</div>
+            <div className="ticket-client-num">#{ticketNo(ticket)}</div>
             <button type="button" className="pos-gear" onClick={() => setPopup("settings")} aria-label="POS settings" title="POS settings" data-testid="nail-pay-settings"><Settings size={18} /></button>
           </div>
         </div>
         <div className="ticket-items">
           {linked.length === 0 ? (
             <>
-            <div className="ticket-item"><div className="item-copy"><strong>{ticket.service.name}</strong><span>{ticket.staff?.name ?? "Service"}</span></div><div className="item-price"><strong>{money(ticket.service.price)}</strong></div><span /></div>
-            {ticket.addons.map((a) => <div className="ticket-item" key={`a${a.id}`}><div className="item-copy"><strong>+ {a.name}</strong><span>Add-on</span></div><div className="item-price"><strong>{money(a.price)}</strong></div><span /></div>)}
+            {ticket.service.id != null && <div className="ticket-item"><div className="item-copy"><strong>{ticket.service.name}</strong><span>{ticket.staff?.name ?? "Service"}</span></div><div className="item-price"><strong>{money(ticket.service.price)}</strong></div><span /></div>}
+            {ticket.addons.map((a) => <div className="ticket-item" key={`a${a.id}`}><div className="item-copy"><strong>+ {a.name}</strong><span>Add-on</span></div><div className="item-price"><strong>{money(a.price)}</strong></div>
+              {!p.paid && !p.finalizing && ticket.id > 0 ? <button type="button" className="remove-item" onClick={() => void removeAddon(a)} aria-label={`Remove ${a.name}`}><X size={16} /></button> : <span />}</div>)}
             {(ticket.nail?.lines ?? []).map((l) => <div className="ticket-item" key={l.label}><div className="item-copy"><strong>{l.label}</strong><span>Nail option</span></div><div className="item-price"><strong>{money(l.price)}</strong></div><span /></div>)}
             {ticket.customLines.map((l, i) => <div className={`ticket-item ${splitIdx === i ? "ticket-item-selected" : ""}`} key={`c${i}`}
               onClick={l.serviceId && !l.packageId && !p.paid && !p.finalizing ? () => setSplitIdx((cur) => (cur === i ? null : i)) : undefined}><div className="item-copy"><strong>{l.label}</strong><span>{l.serviceId ? (ticket.staff?.name ?? "Service") : "Custom charge"}</span></div><div className="item-price"><strong>{money(l.price)}</strong></div>
@@ -1188,7 +1240,7 @@ export function CheckoutMode(p: Props) {
               return (
                 <div className={`group-cart-wrap ${(own ? extraTo == null : extraTo === t.id) ? "group-cart-extras" : ""}`} key={`g${t.id}`}
                   onClick={p.paid || p.finalizing ? undefined : () => setExtraTo(own ? null : t.id)} data-testid={`nail-pay-cart-pick-${t.id}`}>
-                <div className="group-cart-tech">{t.staff?.name ?? "No technician"} · #{t.ticketNumber ?? t.id}
+                <div className="group-cart-tech">{t.staff?.name ?? "No technician"} · #{ticketNo(t)}
                   {(own ? extraTo == null : extraTo === t.id) && !p.paid && <span className="group-cart-extras-tag"> · EXTRAS GO HERE</span>}</div>
                 <div className="group-cart" data-testid={own ? "nail-pay-cart-own" : "nail-pay-linked"}>
                   <div className="group-cart-head">
@@ -1270,13 +1322,17 @@ export function CheckoutMode(p: Props) {
         <div className="sale-area">
           <div className="keypad pay-keypad" data-testid="nail-pay-keypad">
             <div className={`pos-status ${status ? `pos-status-${status.tone}` : ""} ${guidedPrompt ? "pos-status-guided" : ""}`} data-testid="nail-pay-status"><span>{guidedPrompt ?? status?.text ?? " "}</span></div>
-            <div className="calculator-display" data-testid="nail-pay-display">{cents ? money(amount) : ""}</div>
+            <div className="calculator-display" data-testid="nail-pay-display">
+              {qty > 1 && <span className="display-qty">{qty} ×</span>}
+              {cents ? (wholeDollars ? `$${amount}` : money(amount)) : ""}
+            </div>
             <div className="key-grid">
               {KEYS.map((k) => (
                 <button key={k} type="button" data-testid={`nail-pay-key-${k}`} onClick={() => pressKey(k)}
-                  className={k === "ENTER" ? "enter-key" : k === "ERC" ? "undo-key" : ""} aria-label={k === "ERC" ? "Error correct" : undefined}>
-                  {/* Error Correct shows the same ↶ as on the ticket builder's keypad. */}
-                  {k === "ERC" ? (guided !== null ? "EXIT" : "↶") : k}
+                  className={k === "ENTER" ? "enter-key" : k === "↶" ? "undo-key" : k === "X" ? "qty-key" : ""} aria-label={k === "↶" ? "Undo" : k === "X" ? "Quantity" : undefined}
+                  disabled={k === "X" && paying}>
+                  {k === "↶" && guided !== null ? "EXIT" : k}
+                  {k === "X" && <small>Qty</small>}
                 </button>
               ))}
             </div>
@@ -1298,10 +1354,10 @@ export function CheckoutMode(p: Props) {
           {/* ── functions / payment ──────────────────────────────────────── */}
           {!p.paid && (rightTab === "services" || (rightTab === "payment" && !paying)) ? (
             // The payment buttons appear only once PAY / CHECKOUT has been pressed; before that this is the key grid.
-            <CatalogPanel layout={p.layout} locked={p.finalizing} groups={p.groups} activeGroup="" onGroup={() => {}} serviceId={null} onService={addServiceLine}
+            <CatalogPanel layout={p.layout} locked={p.finalizing} groups={p.groups} activeGroup="" onGroup={() => {}} serviceId={null} onService={(svc) => void gridService(svc)}
               addons={[]} moreAddons={false} onToggleMore={() => {}} hasMoreAddons={false} addonIds={[]} onToggleAddon={() => {}}
               allAddons={p.storeAddons ?? []}
-              onAddonKey={(a) => { if (p.paid || p.finalizing) return; const price = Number(a.price) || 0; addExtra(`+ ${a.name}`, price, "custom"); say(`${a.name.toUpperCase()} ADDED · ${money(price)}`, "success"); }}
+              onAddonKey={(a) => void gridAddon(a)}
               onFn={(fn) => {
                 if (fn === "discount") { setMenu("discount"); setRightTab("functions"); }
                 else if (fn === "giftcard") runFn("gift");

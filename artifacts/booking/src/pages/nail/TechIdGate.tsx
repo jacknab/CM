@@ -5,6 +5,7 @@ import { TURN_UNIT, formatTurns } from "@shared/turnRules";
 import { useShake } from "@/hooks/use-shake";
 import { ApiError, identifyTech, type TechSignIn } from "./nailApi";
 import { resumeOrSignIn } from "@/lib/resumeSignIn";
+import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
 import "./techGate.css";
 
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
@@ -13,12 +14,14 @@ const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
  * The lock in front of the nail POS (a copy of the barber screen's BarberIdGate): whoever walks up
  * types their Tech ID (1–2 digits) first. The screen comes back here after each saved ticket or checkout.
  */
-export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onSignedIn }: {
+export function TechIdGate({ storeName, timezone, turnQueue, keypadVisible = true, onOpenTurnPage, onSignedIn }: {
   storeName: string;
   /** The shop's timezone, so the clock reads shop time whatever the tablet is set to. */
   timezone: string;
   /** Clocked-in technicians in turn order: the free ones first (numbered — 1 is next up), then those busy or on break. */
   turnQueue: { id: number; name: string; status: "available" | "busy" | "on_break"; position: number | null; /** Turns so far this period, in thousandths of a turn. */ turnUnits: number }[];
+  /** False = scanner-only lock screen. */
+  keypadVisible?: boolean;
   /** Opens the full Turn page (it used to open from the calendar's turn queue column). */
   onOpenTurnPage: () => void;
   onSignedIn: (who: TechSignIn) => void;
@@ -40,11 +43,11 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
   const press = (d: string) => { setMessage(""); setDigits((cur) => (cur.length >= 2 ? cur : cur + d)); };
   const back = () => { setMessage(""); setDigits((cur) => cur.slice(0, -1)); };
 
-  const enter = useCallback(async () => {
-    if (busy || digits.length === 0) return;
+  const signIn = useCallback(async (techId: number) => {
+    if (busy || !Number.isInteger(techId)) return;
     setBusy(true);
     try {
-      const who = await identifyTech(Number(digits));
+      const who = await identifyTech(techId);
       onSignedIn(who);
     } catch (err) {
       // 401 = this device is no longer signed in to the salon's account (signed out in another tab, or the
@@ -61,18 +64,68 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
     } finally {
       setBusy(false);
     }
-  }, [busy, digits, onSignedIn, shake]);
+  }, [busy, onSignedIn, shake]);
+
+  const enter = useCallback(async () => {
+    if (digits.length === 0) return;
+    await signIn(Number(digits));
+  }, [digits, signIn]);
+
+  useBarcodeScanner((raw) => {
+    const trimmed = raw.trim();
+    const techMatch = /^TECH:(\d{1,2})$/i.exec(trimmed);
+    if (techMatch) {
+      setDigits(techMatch[1]);
+      void signIn(Number(techMatch[1]));
+      return;
+    }
+    const qrMatch = /^QR:(.+)$/i.exec(trimmed);
+    if (qrMatch) {
+      // QR confirmation code for sensitive settings (e.g. keypad hide)
+      void handleQrConfirmation(qrMatch[1]);
+      return;
+    }
+    setMessage("That is not a Tech ID badge."); shake();
+  });
+
+  const handleQrConfirmation = useCallback(async (token: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/nail/qr-code/verify", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        setMessage("Keypad hide confirmed.");
+        setDigits("");
+      } else {
+        setMessage(data.message || "QR code not valid.");
+        shake();
+      }
+    } catch {
+      setMessage("No connection. Try again.");
+      shake();
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, shake]);
 
   // A keyboard (or a numeric scanner wedge) works too.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (!keypadVisible) return;
       if (/^[0-9]$/.test(e.key)) press(e.key);
       else if (e.key === "Backspace") back();
       else if (e.key === "Enter") void enter();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [enter]);
+  }, [enter, keypadVisible]);
 
   return (
     <div className="ng-gate" data-testid="tech-id-gate">
@@ -85,8 +138,9 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
 
       <div className="ng-gate-body">
        <div className="ng-gate-row">
-        <section className="ng-gate-card ng-gate-pad">
-          <p className="ng-gate-label">Enter your Tech ID</p>
+        <section className={`ng-gate-card ng-gate-pad ${!keypadVisible ? "ng-gate-scan" : ""}`}>
+          <p className="ng-gate-label">{keypadVisible ? "Enter your Tech ID" : "SCAN YOUR ID"}</p>
+          {!keypadVisible && <p className="ng-gate-scan-help">Hold your printed Tech ID under the scanner</p>}
           <div className={`ng-gate-slots ${shakeClass}`} onAnimationEnd={onShakeEnd} data-testid="tech-id-display">
             {[0, 1].map((i) => (
               <span key={i} className="ng-gate-slot" data-filled={digits[i] != null}>
@@ -96,13 +150,17 @@ export function TechIdGate({ storeName, timezone, turnQueue, onOpenTurnPage, onS
           </div>
           <p className="ng-gate-msg" role="alert" data-testid="tech-id-message">{message}</p>
 
-          <div className="ng-gate-keys">
-            {KEYS.map((d) => <button key={d} type="button" className="ng-gate-key" disabled={busy} onClick={() => press(d)} data-testid={`tech-id-key-${d}`}>{d}</button>)}
-            <span aria-hidden />
-            <button type="button" className="ng-gate-key" disabled={busy} onClick={() => press("0")} data-testid="tech-id-key-0">0</button>
-            <button type="button" className="ng-gate-key ghost" disabled={busy || digits.length === 0} onClick={back} aria-label="Delete" data-testid="tech-id-key-back"><Delete className="h-7 w-7" /></button>
-          </div>
-          <button type="button" className="ng-gate-enter" disabled={busy || digits.length === 0} onClick={() => void enter()} data-testid="tech-id-enter">{tx("enter")}</button>
+          {keypadVisible && (
+            <>
+              <div className="ng-gate-keys">
+                {KEYS.map((d) => <button key={d} type="button" className="ng-gate-key" disabled={busy} onClick={() => press(d)} data-testid={`tech-id-key-${d}`}>{d}</button>)}
+                <span aria-hidden />
+                <button type="button" className="ng-gate-key" disabled={busy} onClick={() => press("0")} data-testid="tech-id-key-0">0</button>
+                <button type="button" className="ng-gate-key ghost" disabled={busy || digits.length === 0} onClick={back} aria-label="Delete" data-testid="tech-id-key-back"><Delete className="h-7 w-7" /></button>
+              </div>
+              <button type="button" className="ng-gate-enter" disabled={busy || digits.length === 0} onClick={() => void enter()} data-testid="tech-id-enter">{tx("enter")}</button>
+            </>
+          )}
         </section>
 
         <section className="ng-gate-card ng-gate-wait" data-testid="tech-id-turn-queue">

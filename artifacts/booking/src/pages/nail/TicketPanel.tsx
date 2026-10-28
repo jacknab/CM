@@ -40,7 +40,7 @@ export function TicketPanel({ client, badge, lines, duration, price, submitLabel
         {lines.length === 0 ? (
           <div className="empty-ticket">
             <Hand size={36} />
-            <p>{client ? "Add services from the catalog to build the ticket" : "Check a client in, then open them from the Queue to build their ticket"}</p>
+            <p>{client ? "Add services from the catalog to build the ticket" : "Check a client in, then open them from the Queue to build their ticket — or tap Retail to sell a product"}</p>
           </div>
         ) : (
           lines.map((line) => (

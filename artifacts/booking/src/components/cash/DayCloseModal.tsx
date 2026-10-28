@@ -21,6 +21,9 @@ interface DayCloseModalProps {
   required?: boolean;
 }
 
+/** A client still waiting on a ticket nobody started (doesn't stop the close; can be cleared as a no-show). */
+interface WaitingTicket { id: number; ticketNumber: number | null; customerName: string | null; staffName: string | null; serviceName: string | null; checkedInAt: string }
+
 interface OpenTicket {
   id: number;
   ticketNumber?: number | null;
@@ -116,7 +119,7 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0, 
   });
 
   const closeStatusKey = `/api/cash-drawer/day-close-status?drawerId=${drawerId}&deviceId=${encodeURIComponent(getDeviceId())}`;
-  const { data: closeStatus, isLoading: lockLoading } = useQuery<{ lockedUntil: string | null; unpaidTickets?: OpenTicket[] | null; devices?: { holdingCash: { device: string; count: number; amount: number }[]; quiet: { device: string; lastSeenAt: string }[] } }>({
+  const { data: closeStatus, isLoading: lockLoading } = useQuery<{ lockedUntil: string | null; unpaidTickets?: OpenTicket[] | null; waitingTickets?: WaitingTicket[]; devices?: { holdingCash: { device: string; count: number; amount: number }[]; quiet: { device: string; lastSeenAt: string }[] } }>({
     queryKey: [closeStatusKey],
     enabled: open && !!storeId,
     refetchOnMount: "always",
@@ -153,6 +156,25 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0, 
   const blockedTickets = serverBlockedTickets.length > 0 ? serverBlockedTickets
     : closeStatus?.unpaidTickets ? closeStatus.unpaidTickets : openTickets;
   const doneUnpaid = blockedTickets.filter((t) => t.done).length;
+  // Waiting tickets nobody started: listed before counting, with one tap to clear them as no-shows (owner, 2026-10-28)
+  // — otherwise they carry over onto tomorrow's board.
+  const waitingTickets = closeStatus?.waitingTickets ?? [];
+  const [clearingWaiting, setClearingWaiting] = useState(false);
+  const clearWaiting = async () => {
+    setClearingWaiting(true);
+    try {
+      const r = await fetch("/api/cash-drawer/day-close/clear-waiting", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: waitingTickets.map((t) => t.id) }) });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body?.message || "Could not clear them");
+      toast({ title: `${body.cleared ?? 0} waiting ticket${body.cleared === 1 ? "" : "s"} cleared as no-shows` });
+      await queryClient.invalidateQueries({ queryKey: [closeStatusKey] });
+    } catch (err: any) {
+      toast({ title: "Couldn't clear the waiting tickets", description: err?.message, variant: "destructive" });
+    } finally {
+      setClearingWaiting(false);
+    }
+  };
   const isBlocked = blockedTickets.length > 0;
 
   // Card / non-cash rows from the Z-report (auto-populated)
@@ -388,6 +410,24 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0, 
           /* ── Main close form ──────────────────────────────────────────── */
           <div className="flex-1 flex flex-col min-h-0">
             <div className="flex-1 overflow-y-auto">
+              {waitingTickets.length > 0 && (
+                <div className="mx-5 mt-5 rounded-lg border border-gray-200 bg-gray-50 px-3.5 py-3 space-y-2" data-testid="day-close-waiting">
+                  <p className="text-sm font-semibold text-gray-900">
+                    {waitingTickets.length} client{waitingTickets.length === 1 ? " is" : "s are"} still waiting on a ticket nobody started
+                  </p>
+                  <ul className="space-y-1">
+                    {waitingTickets.map((t) => (
+                      <li key={t.id} className="text-xs text-gray-700">
+                        {t.ticketNumber != null ? `#${t.ticketNumber} · ` : ""}{t.customerName ?? "Walk-in"}
+                        {t.serviceName ? ` — ${t.serviceName}` : ""}{t.staffName ? ` · with ${t.staffName}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                  <Button size="sm" variant="outline" className="w-full" disabled={clearingWaiting} onClick={() => void clearWaiting()} data-testid="day-close-clear-waiting">
+                    {clearingWaiting ? "Clearing…" : "Clear as no-shows"}
+                  </Button>
+                </div>
+              )}
 
               {/* Card transactions — auto-populated */}
               <div className="px-5 pt-4 pb-3">

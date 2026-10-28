@@ -1118,6 +1118,5 @@
 .nail-app .pos-grid[data-cols="3"] .pos-key strong { font-size: clamp(12px, 1.05vw, 15px); }
 .nail-app .pos-grid[data-cols="3"] .pos-key svg { width: 20px; height: 20px; }
 
-/* Queue tab: the blush bokeh image behind the client cards (waiting, Appointments, No-shows, Walk-ins, Completed) —
-   the same image as the lock screen (owner, 2026-10-24). A little padding so the cards sit on it, not at its edge. */
-.nail-app .q-body { background: #fbe9e6 url("/images/nail/lock-bg.jpg") center / cover no-repeat; border-radius: 14px; padding: 12px; box-sizing: border-box; }
+/* Queue tab content panel. */
+.nail-app .q-body { background: #fbe9e6; border-radius: 14px; padding: 12px; box-sizing: border-box; }

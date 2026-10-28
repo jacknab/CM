@@ -52,7 +52,7 @@ import { pushBookingEvent } from "./lib/ownerPush";
 import { atomicCreateBooking, validateBookingSlot } from "./bookingEngine";
 import { resolvePackageForBooking } from "./lib/packageResolver";
 import { recordCommissionAccrual } from "./lib/commissionAccrual";
-import { sendBookingConfirmation, startReminderScheduler, sendSms } from "./sms";
+import { sendBookingConfirmation, sendRescheduleNotice, startReminderScheduler, sendSms } from "./sms";
 import { getOrCreateManageToken, buildReceiptUrl } from "./lib/bookingManageLinks";
 import { startQueueSmsScheduler } from "./queue-sms-scheduler";
 import bcrypt from "bcrypt";
@@ -4082,8 +4082,11 @@ export async function registerRoutes(
     if (!sessionStoreId) return res.status(403).json({ message: "No store context" });
     const { orderedIds } = req.body;
     if (!Array.isArray(orderedIds)) return res.status(400).json({ error: "Invalid input" });
+    // Only this store's categories are reordered (an id from another business is ignored).
     for (let i = 0; i < orderedIds.length; i++) {
-      await storage.updateServiceCategory(orderedIds[i], { sortOrder: i });
+      const id = Number(orderedIds[i]);
+      if (!Number.isSafeInteger(id)) continue;
+      await pool.query(`UPDATE service_categories SET sort_order = $1 WHERE id = $2 AND store_id = $3`, [i, id, sessionStoreId]);
     }
     return res.json({ success: true });
   });
@@ -4647,29 +4650,46 @@ export async function registerRoutes(
   });
 
   // === SERVICE ADDONS (linking) ===
+  // Every service–add-on link route is limited to the caller's own store (2026-10-28; before, any signed-in
+  // account could list, add or remove links on another business's services by id).
   app.get(api.serviceAddons.list.path, isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(403).json({ message: "No store context" });
     const serviceId = req.query.serviceId ? Number(req.query.serviceId) : undefined;
     const result = await storage.getServiceAddons(serviceId);
-    return res.json(result);
+    const own = new Set((await pool.query(`SELECT id FROM services WHERE store_id = $1`, [storeId])).rows.map((r: any) => Number(r.id)));
+    return res.json(result.filter((r: any) => own.has(Number(r.serviceId)) && r.addon?.storeId === storeId));
   });
 
   app.get(api.serviceAddons.forService.path, isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(403).json({ message: "No store context" });
     const serviceId = Number(req.params.id);
+    const service = Number.isSafeInteger(serviceId) ? await storage.getService(serviceId) : undefined;
+    if (!service || service.storeId !== storeId) return res.json([]);
     const result = await storage.getAddonsForService(serviceId);
     return res.json(result);
   });
 
   app.post(api.serviceAddons.create.path, isAuthenticated, async (req, res) => {
-    try {
-      const input = insertServiceAddonSchema.parse(req.body);
-      const sa = await storage.createServiceAddon(input);
-      return res.status(201).json(sa);
-    } catch (error) {
-      return res.status(400).json({ message: "Invalid input" });
-    }
+    let input;
+    try { input = insertServiceAddonSchema.parse(req.body); }
+    catch { return res.status(400).json({ message: "Invalid input" }); }
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(403).json({ message: "No store context" });
+    const [service, addon] = await Promise.all([storage.getService(input.serviceId), storage.getAddon(input.addonId)]);
+    if (!service || !addon || service.storeId !== storeId || addon.storeId !== storeId) return res.status(404).json({ message: "Service or add-on not found" });
+    const sa = await storage.createServiceAddon(input);
+    return res.status(201).json(sa);
   });
 
   app.delete(api.serviceAddons.delete.path, isAuthenticated, async (req, res) => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(403).json({ message: "No store context" });
+    const { rows } = await pool.query(
+      `SELECT sa.id FROM service_addons sa JOIN services s ON s.id = sa.service_id WHERE sa.id = $1 AND s.store_id = $2`,
+      [Number(req.params.id), storeId]);
+    if (!rows[0]) return res.status(404).json({ message: "Link not found" });
     await storage.deleteServiceAddon(Number(req.params.id));
     return res.status(204).end();
   });
@@ -6619,6 +6639,13 @@ If you have any questions, please contact your administrator.
              (req.session as any)?.userId ?? null,
              JSON.stringify({ previousDate: existingAppointment.date, newDate: input.date })]
           ).catch((e: any) => console.error("[aptEvents] reschedule:", e?.message));
+          // "Notify client" on the move (Certxa Pro app): text the client the new day and time.
+          if (req.body?.notifyClient === true) {
+            void storage.getAppointment(appointment.id)
+              .then((full) => (full ? sendRescheduleNotice(full as any) : { sent: false, reason: "not found" }))
+              .then((r) => { if (!r.sent) console.log(`[SMS] reschedule notice for appointment ${appointment.id} not sent: ${r.reason}`); })
+              .catch((e: any) => console.error("[SMS] reschedule notice:", e?.message));
+          }
         }
       }
 
@@ -7264,6 +7291,52 @@ If you have any questions, please contact your administrator.
     }));
   }
 
+  /** Checked-in tickets from the last two days that nobody started (assigned or not) — still on the board at close. */
+  async function findWaitingTickets(storeId: number) {
+    const { rows } = await pool.query(
+      `SELECT a.id, a.ticket_number, c.full_name AS customer_name, st.name AS staff_name, s.name AS service_name, a.checked_in_at
+         FROM appointments a
+         LEFT JOIN clients c ON c.id = a.customer_id
+         LEFT JOIN staff st ON st.id = a.staff_id
+         LEFT JOIN services s ON s.id = a.service_id
+        WHERE a.store_id = $1 AND a.status = 'confirmed' AND a.started_at IS NULL
+          AND a.checked_in_at IS NOT NULL AND a.checked_in_at > now() - interval '48 hours'
+        ORDER BY a.checked_in_at`, [storeId]);
+    return rows.map((r: any) => ({ id: Number(r.id), ticketNumber: r.ticket_number ?? null, customerName: r.customer_name ?? null,
+      staffName: r.staff_name ?? null, serviceName: r.service_name ?? "Retail sale", checkedInAt: r.checked_in_at }));
+  }
+
+  // POST /api/cash-drawer/day-close/clear-waiting {ids} — Day Close's "Clear as no-shows": those waiting tickets
+  // become no-shows quietly (no win-back text — the client simply left), and a technician held for one is freed.
+  app.post("/api/cash-drawer/day-close/clear-waiting", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      const parsed = z.object({ ids: z.array(z.number().int().positive()).min(1).max(200) }).safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid tickets" });
+      const { rows } = await pool.query(
+        `UPDATE appointments SET status = 'no_show', ringing_up_since = NULL
+          WHERE store_id = $1 AND id = ANY($2::int[]) AND status = 'confirmed' AND started_at IS NULL AND checked_in_at IS NOT NULL
+          RETURNING id, staff_id`, [storeId, parsed.data.ids]);
+      const held = [...new Set(rows.map((r: any) => Number(r.staff_id)).filter(Number.isFinite))];
+      if (held.length) {
+        await mutateTurnPreferences(storeId, (turn) => ({
+          lockedStaffIds: (Array.isArray(turn.lockedStaffIds) ? (turn.lockedStaffIds as any[]).map(Number) : []).filter((id) => !held.includes(id)),
+        }));
+      }
+      if (rows.length) {
+        await pool.query(`UPDATE kiosk_checkins SET status = 'expired' WHERE store_id = $1 AND appointment_id = ANY($2::int[]) AND status IN ('waiting','called')`,
+          [storeId, rows.map((r: any) => Number(r.id))]).catch(() => {});
+        for (const r of rows) broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId: Number(r.id), changes: ["status"] });
+        broadcastTurnEligibilityChanged(storeId);
+      }
+      return res.json({ cleared: rows.length });
+    } catch (err) {
+      console.error("[day-close clear-waiting]", err);
+      return res.status(500).json({ message: "Could not clear the waiting tickets" });
+    }
+  });
+
   // ── What each POS tablet says about its own offline queue (migration 0236) ──
   // A tablet tells the server how much it still has to send whenever it can reach it. Day Close uses that:
   // it refuses while any OTHER tablet has said it holds unsent cash, and lists tablets that were in use
@@ -7316,10 +7389,13 @@ If you have any questions, please contact your administrator.
       const devices = await otherDevices(storeId, typeof req.query.deviceId === "string" ? req.query.deviceId : null).catch(() => ({ holdingCash: [], quiet: [] }));
       // The tickets that would stop the close, so the sheet can list them before anyone counts the drawer.
       const unpaidTickets = await findUnpaidTickets(storeId).catch(() => null);
+      // Clients still waiting on a ticket nobody started: they don't stop the close, but are listed so they can be
+      // cleared as no-shows instead of carrying into tomorrow (owner, 2026-10-28).
+      const waitingTickets = await findWaitingTickets(storeId).catch(() => []);
       const lastClosedAt = await getLastDayCloseAt(storeId, drawerId);
       // lastClosedAt: when Day Close last ran for this drawer — /nail compares it with the salon's closing time to
       // open Day Close by itself once the salon has closed (and not again once it has run).
-      return res.json({ lockedUntil: dayCloseLockedUntil(lastClosedAt), lastClosedAt: lastClosedAt ? new Date(lastClosedAt).toISOString() : null, devices, unpaidTickets });
+      return res.json({ lockedUntil: dayCloseLockedUntil(lastClosedAt), lastClosedAt: lastClosedAt ? new Date(lastClosedAt).toISOString() : null, devices, unpaidTickets, waitingTickets });
     } catch (error) {
       console.error("[day-close-status]", error);
       return res.status(500).json({ message: "Could not load Day Close status" });
@@ -19273,6 +19349,8 @@ or
         packageId: z.number().int().positive().nullable().optional(),
         // The number a tablet gave the ticket while offline.
         ticketNumber: z.number().int().positive().nullable().optional(),
+        // Being rung up (2026-10-28): saved now so every station sees it; TURN gets it on SAVE (…/save).
+        ringingUp: z.boolean().optional(),
       }).safeParse(req.body);
       if (!body.success) return res.status(400).json({ message: "Invalid ticket" });
       const userId = (req.session as any)?.userId;
@@ -19294,10 +19372,23 @@ or
     }
   });
 
+  // A ticket whose technician pressed DONE is locked (owner, 2026-10-28): its services, add-ons, package and nail
+  // options can't be changed without the manager PIN (header X-Manager-Pin). Retail and custom-amount lines can
+  // still be added at checkout.
+  async function doneLockRefusal(req: any, storeId: number, appointmentId: number): Promise<{ status: number; body: any } | null> {
+    if (!Number.isSafeInteger(appointmentId)) return null;
+    const { rows } = await pool.query(`SELECT service_done_at FROM appointments WHERE id = $1 AND store_id = $2`, [appointmentId, storeId]);
+    if (!rows[0]?.service_done_at) return null;
+    const pin = req.headers["x-manager-pin"] ?? req.body?.managerPin;
+    if (!pin) return { status: 423, body: { message: "This service is marked DONE. A manager PIN is needed to change it.", code: "DONE_LOCKED" } };
+    const result = await checkManagerPin(storeId, pin);
+    return result === "ok" ? null : pinRefusal(result);
+  }
   app.put("/api/nail/tickets/:id", isAuthenticated, async (req, res) => {
     try {
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;
+      { const locked = await doneLockRefusal(req, storeId, Number(req.params.id)); if (locked) return res.status(locked.status).json(locked.body); }
       const body = z.object({
         serviceId: z.number().int().optional(),
         addonIds: z.array(z.number().int()),
@@ -19329,10 +19420,11 @@ or
     try {
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;
+      { const locked = await doneLockRefusal(req, storeId, Number(req.params.id)); if (locked) return res.status(locked.status).json(locked.body); }
       const appointmentId = Number(req.params.id);
       const serviceId = Number(req.body?.serviceId);
       if (!Number.isSafeInteger(appointmentId) || !Number.isSafeInteger(serviceId) || serviceId <= 0) return res.status(400).json({ message: "Invalid service" });
-      const { rows } = await pool.query(`SELECT id, staff_id, customer_id, status, ticket_group_id FROM appointments WHERE id = $1 AND store_id = $2`, [appointmentId, storeId]);
+      const { rows } = await pool.query(`SELECT id, staff_id, customer_id, status, ticket_group_id, ticket_number FROM appointments WHERE id = $1 AND store_id = $2`, [appointmentId, storeId]);
       const ticket = rows[0];
       if (!ticket || !["confirmed", "started"].includes(String(ticket.status))) return res.status(409).json({ message: "This ticket is no longer open." });
       const line = await nailTickets.serviceLine(storeId, serviceId);
@@ -19346,6 +19438,7 @@ or
       if (!ticket.customer_id) return res.status(409).json({ message: "Add a client to this ticket before adding a service another technician does." });
       const own = await nailTickets.createNailTicket(nailDeps, {
         storeId, clientId: Number(ticket.customer_id), serviceId, autoAssign: true, startOnAssign: false, idempotencyKey: null,
+        visitTicketNumber: ticket.ticket_number != null ? Number(ticket.ticket_number) : null,
         bookedByUserId: Number.isFinite(Number((req.session as any)?.userId)) ? Number((req.session as any).userId) : null,
       });
       if (!own.ok) return res.status(own.status).json({ message: own.message });
@@ -19461,6 +19554,110 @@ or
       return res.status(500).json({ message: "Could not remove the line" });
     }
   });
+  // POST /api/nail/tickets/:id/save {staffId?} — SAVE on a ticket that was being rung up: TURN gets it now
+  // (nailTickets.saveRingingUpTicket). POST …/discard — CLEAR on one never saved: it goes, its check-in waits again.
+  app.post("/api/nail/tickets/:id/save", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const appointmentId = Number(req.params.id);
+      const staffId = req.body?.staffId == null ? null : Number(req.body.staffId);
+      if (!Number.isSafeInteger(appointmentId) || (staffId != null && !Number.isSafeInteger(staffId))) return res.status(400).json({ message: "Invalid ticket" });
+      const r = await nailTickets.saveRingingUpTicket(nailDeps, { storeId, appointmentId, staffId });
+      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["staff", "services"] });
+      broadcastTurnEligibilityChanged(storeId);
+      return res.json(r.data);
+    } catch (err) {
+      console.error("[nail/tickets save]", err);
+      return res.status(500).json({ message: "Could not save the ticket" });
+    }
+  });
+  app.post("/api/nail/tickets/:id/discard", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const appointmentId = Number(req.params.id);
+      if (!Number.isSafeInteger(appointmentId)) return res.status(400).json({ message: "Invalid ticket" });
+      if (!(await nailTickets.discardRingingUpTicket(storeId, appointmentId))) return res.status(409).json({ message: "This ticket was already saved — open it from the Queue to change or cancel it." });
+      broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["status"] });
+      broadcastNotification({ type: "kiosk_checkin_created", storeId } as any);
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[nail/tickets discard]", err);
+      return res.status(500).json({ message: "Could not clear the ticket" });
+    }
+  });
+  // POST /api/nail/retail-sale {staffId, lines} — a retail-only sale with no client (2026-10-28), paid right away.
+  app.post("/api/nail/retail-sale", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const staffId = Number(req.body?.staffId);
+      if (!Number.isSafeInteger(staffId) || staffId <= 0) return res.status(400).json({ message: "Sign in with your Tech ID to sell retail." });
+      const r = await nailTickets.createRetailSale(storeId, staffId, req.body?.lines);
+      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId: r.data.appointmentId });
+      return res.status(201).json(r.data);
+    } catch (err) {
+      console.error("[nail/retail-sale]", err);
+      return res.status(500).json({ message: "Could not start the sale" });
+    }
+  });
+  // POST /api/nail/tickets/:id/addons {addonId} — an add-on key on the POS grid, saved onto the ticket as a real
+  // add-on (2026-10-28). POST …/addons/remove {addonId} takes it off again.
+  app.post("/api/nail/tickets/:id/addons", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      { const locked = await doneLockRefusal(req, storeId, Number(req.params.id)); if (locked) return res.status(locked.status).json(locked.body); }
+      const appointmentId = Number(req.params.id);
+      const addonId = Number(req.body?.addonId);
+      if (!Number.isSafeInteger(appointmentId) || !Number.isSafeInteger(addonId) || addonId <= 0) return res.status(400).json({ message: "Invalid add-on" });
+      const r = await nailTickets.addAddonToTicket(storeId, appointmentId, addonId);
+      if (r === "missing") return res.status(400).json({ message: "That add-on is no longer in the catalog." });
+      if (r === "closed") return res.status(409).json({ message: "This ticket is no longer open." });
+      if (r === "added") broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["services"] });
+      return res.json({ added: r === "added" });
+    } catch (err) {
+      console.error("[nail/tickets add addon]", err);
+      return res.status(500).json({ message: "Could not add the add-on" });
+    }
+  });
+  app.post("/api/nail/tickets/:id/addons/remove", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      { const locked = await doneLockRefusal(req, storeId, Number(req.params.id)); if (locked) return res.status(locked.status).json(locked.body); }
+      const appointmentId = Number(req.params.id);
+      const addonId = Number(req.body?.addonId);
+      if (!Number.isSafeInteger(appointmentId) || !Number.isSafeInteger(addonId)) return res.status(400).json({ message: "Invalid add-on" });
+      if (!(await nailTickets.removeAddonFromTicket(storeId, appointmentId, addonId))) return res.status(409).json({ message: "That add-on is no longer on this ticket." });
+      broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["services"] });
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[nail/tickets remove addon]", err);
+      return res.status(500).json({ message: "Could not remove the add-on" });
+    }
+  });
+  // POST /api/nail/tickets/:id/packages {packageId} — a Catalog package key tapped on an open ticket (2026-10-28).
+  app.post("/api/nail/tickets/:id/packages", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      { const locked = await doneLockRefusal(req, storeId, Number(req.params.id)); if (locked) return res.status(locked.status).json(locked.body); }
+      const appointmentId = Number(req.params.id);
+      const packageId = Number(req.body?.packageId);
+      if (!Number.isSafeInteger(appointmentId) || !Number.isSafeInteger(packageId) || packageId <= 0) return res.status(400).json({ message: "Invalid package" });
+      const r = await nailTickets.addPackageToTicket(storeId, appointmentId, packageId);
+      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["services"] });
+      return res.status(201).json({ ok: true, name: r.data.name });
+    } catch (err) {
+      console.error("[nail/tickets add package]", err);
+      return res.status(500).json({ message: "Could not add the package" });
+    }
+  });
 
   // POST /api/nail/tickets/:id/split — Split Ticket: the service line at `index` becomes its own ticket for the
   // same client, linked to the visit, waiting with no technician until this ticket is done (nailTickets.splitServiceLine).
@@ -19468,6 +19665,7 @@ or
     try {
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;
+      { const locked = await doneLockRefusal(req, storeId, Number(req.params.id)); if (locked) return res.status(locked.status).json(locked.body); }
       const appointmentId = Number(req.params.id);
       const index = Number(req.body?.index);
       if (!Number.isSafeInteger(appointmentId) || !Number.isSafeInteger(index) || index < 0) return res.status(400).json({ message: "Invalid line" });
@@ -19487,6 +19685,7 @@ or
     try {
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;
+      { const locked = await doneLockRefusal(req, storeId, Number(req.params.id)); if (locked) return res.status(locked.status).json(locked.body); }
       const appointmentId = Number(req.params.id);
       const index = Number(req.body?.index);
       if (!Number.isSafeInteger(appointmentId) || !Number.isSafeInteger(index) || index < 0) return res.status(400).json({ message: "Invalid line" });
@@ -19508,6 +19707,8 @@ or
       if (!body.success || !Number.isFinite(appointmentId)) return res.status(400).json({ message: "Invalid request" });
       const result = await nailTickets.reassignNailTicket(nailDeps, { storeId, appointmentId, staffId: body.data.staffId, expectedStaffId: body.data.expectedStaffId, reason: body.data.reason });
       if (!result.ok) return res.status(result.status).json({ message: result.message, code: result.code });
+      // Given a technician from another station while still being rung up: it counts as saved.
+      await pool.query(`UPDATE appointments SET ringing_up_since = NULL WHERE id = $1 AND store_id = $2 AND ringing_up_since IS NOT NULL`, [appointmentId, storeId]);
       return res.json(result.data);
     } catch (err) {
       console.error("[nail/tickets reassign]", err);
@@ -19652,11 +19853,13 @@ or
     try {
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;
-      if (typeof req.body?.lockScreen !== "boolean") return res.status(400).json({ message: "lockScreen must be on or off" });
-      const lockScreen: boolean = req.body.lockScreen;
-      await mutateStorePreferences(storeId, (current) => ({ ...current, nailScreen: { ...(current.nailScreen ?? {}), lockScreen } }));
+      const updates: Record<string, any> = {};
+      if (typeof req.body?.lockScreen === "boolean") updates.lockScreen = req.body.lockScreen;
+      if (typeof req.body?.keypadVisible === "boolean") updates.keypadVisible = req.body.keypadVisible;
+      if (Object.keys(updates).length === 0) return res.status(400).json({ message: "No valid settings to update" });
+      await mutateStorePreferences(storeId, (current) => ({ ...current, nailScreen: { ...(current.nailScreen ?? {}), ...updates } }));
       broadcastNotification({ type: "settings_changed", storeId, scope: "/api/nail/screen-settings" } as any);
-      return res.json({ lockScreen });
+      return res.json(updates);
     } catch (err) {
       console.error("[nail/screen-settings put]", err);
       return res.status(500).json({ message: "Could not save the screen settings" });
@@ -19705,6 +19908,7 @@ or
     }
   });
 
+  // POST /api/webhooks/twilio/incoming
   // GET /api/nail/tech-slip?staffId=N&period=today|week|pay — a technician's own pay slip, printed by the
   // technician at the /nail lock screen (salon owners do not want the front desk printing slips for everyone).
   // Laid out like the slips salons already use: total sale, commission, non-cash tips and total pay for the
@@ -20325,7 +20529,8 @@ or
         if (apt.customer_id && Number(apt.total_paid) > 0) await awardLoyaltyForCompletion({
           storeId, customerId: Number(apt.customer_id), appointmentId: Number(apt.id), totalPaid: Number(apt.total_paid),
         });
-        if (apt.staff_id) await handleTurnCheckout(storeId, Number(apt.staff_id), { appointmentId: Number(apt.id), totalPaid: Number(apt.total_paid), tipAmount: Number(apt.tip_amount) || 0 });
+        // A retail-only sale (no service) is outside the turn line: the seller may be in a chair with a client.
+        if (apt.staff_id && apt.service_id != null) await handleTurnCheckout(storeId, Number(apt.staff_id), { appointmentId: Number(apt.id), totalPaid: Number(apt.total_paid), tipAmount: Number(apt.tip_amount) || 0 });
         broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId: Number(apt.id) });
         triggerDashboardBroadcast(storeId);
       }
@@ -23906,8 +24111,9 @@ or
       let appointmentId: number | null = checkin?.appointment_id ? Number(checkin.appointment_id) : null;
       if (!appointmentId) {
         const { rows: apptRows } = await pool.query(
+          // The tickets of one visit share its number: the visit's first ticket is opened (its checkout takes the rest).
           `SELECT id FROM appointments WHERE store_id = $1 AND (ticket_number = $2 OR printed_ticket_number = $2)
-            ORDER BY (ticket_number = $2) DESC, created_at DESC LIMIT 1`,
+            ORDER BY (ticket_number = $2) DESC, COALESCE(ticket_group_id, id) DESC, id ASC LIMIT 1`,
           [storeId, ticketNumber],
         );
         appointmentId = apptRows[0]?.id ? Number(apptRows[0].id) : null;
@@ -26497,6 +26703,54 @@ or
     } catch (err) {
       console.error("[kiosk-settings/category-image] error:", err);
       return res.status(500).json({ error: "Failed to upload category image" });
+    }
+  });
+
+  // ── QR Code Confirmation for Sensitive Settings ──────────────────────────────
+  // Prevents account lockout by requiring a printed QR code to be scanned before
+  // sensitive settings like keypad hide take effect. Generates a unique token,
+  // stores it temporarily, and verifies it when scanned.
+
+  const qrConfirmations = new Map<string, { storeId: number; setting: string; expiresAt: number }>();
+
+  // POST /api/nail/qr-code/generate — create a confirmation QR code
+  app.post("/api/nail/qr-code/generate", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const setting = String(req.body?.setting ?? "keypadHide");
+      const token = `QR:${storeId}:${setting}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+      const expiresAt = Date.now() + 5 * 60 * 1000; // 5 min expiry
+      qrConfirmations.set(token, { storeId, setting, expiresAt });
+      // Clean up expired tokens
+      for (const [k, v] of qrConfirmations) {
+        if (v.expiresAt < Date.now()) qrConfirmations.delete(k);
+      }
+      return res.json({ token, expiresAt });
+    } catch (err) {
+      console.error("[nail/qr-code/generate]", err);
+      return res.status(500).json({ message: "Could not generate the QR code" });
+    }
+  });
+
+  // POST /api/nail/qr-code/verify — confirm a scanned QR code
+  app.post("/api/nail/qr-code/verify", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const token = String(req.body?.token ?? "");
+      const entry = qrConfirmations.get(token);
+      if (!entry) return res.status(404).json({ message: "QR code not found or already used" });
+      if (entry.storeId !== storeId) return res.status(403).json({ message: "QR code is for a different store" });
+      if (entry.expiresAt < Date.now()) {
+        qrConfirmations.delete(token);
+        return res.status(410).json({ message: "QR code has expired. Generate a new one." });
+      }
+      qrConfirmations.delete(token);
+      return res.json({ ok: true, setting: entry.setting });
+    } catch (err) {
+      console.error("[nail/qr-code/verify]", err);
+      return res.status(500).json({ message: "Could not verify the QR code" });
     }
   });
 
