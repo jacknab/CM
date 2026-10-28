@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Armchair, CalendarDays, Clock, EyeOff, PersonStanding, Ticket, UserCheck, Users, X } from "lucide-react";
 import { DEFAULT_SERVICE_MIN, estimateWait, formatWait, type WaitTech } from "@shared/waitEstimate";
-import type { BoardDayBooking, BoardMarker, BoardTicket, SalonGlance, TurnTech } from "./nailApi";
+import type { BoardDayBooking, BoardMarker, BoardTicket, BoardWait, SalonGlance, TurnTech } from "./nailApi";
 import { EMPTY_ARRAY } from "@/lib/empty";
 import { bookingsForDetail, walkInState, type DetailKind } from "./boardView";
 import { techLabel } from "./techName";
+import { urgencyRank, waitReasonText, waitUrgency } from "./urgency";
 
 const money = (n: number) => `$${n.toFixed(n % 1 === 0 ? 0 : 2)}`;
 
@@ -60,6 +61,8 @@ type ClientRow = {
   groupId?: number | null;
   /** The client is in service on this other ticket, so this one can't be assigned or started yet. */
   blockedBy?: number | null;
+  /** Why it hasn't started, when that needs watching (server): orange, then red (urgency.ts). */
+  wait?: BoardWait;
   /** In the chair: when the service should be finished (its time plus 15 minutes), for the countdown. */
   endsAt?: number | null;
   /** The technician pressed DONE at this time: the clock stops there and the card says COMPLETED. */
@@ -193,7 +196,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
       sub: m.requestedCategory ? m.requestedCategory.toUpperCase() : "WALK-IN",
       subKind: m.staffName ? "assigned" : "walkin", tech: m.staffName ? techLabel(m.staffName, m.staffId) : null,
       open: () => onMarker(m), testId: `nail-queue-wait-marker-${m.id}`, markerId: m.id, provisional: m.offline === true,
-      remove: onMarkerRemove ? () => onMarkerRemove(m) : undefined,
+      remove: onMarkerRemove ? () => onMarkerRemove(m) : undefined, wait: m.wait,
     }));
     // One service at a time: a client in a chair (started, DONE not pressed) holds back their other tickets.
     const inChairByClient = new Map<number, number>();
@@ -219,7 +222,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
         // A visit's tickets share one number (2026-10-28), so a second ticket says it waits for the visit's first service.
         service, sub: t.ringingUp ? "RINGING UP" : blockedBy != null ? `IN CHAIR ON #${blockedBy}` : t.staff ? `WITH ${techLabel(t.staff.name, t.staff.id).toUpperCase()}` : t.waitsForTicket != null ? "AFTER FIRST SERVICE" : "UNASSIGNED",
         subKind: t.staff ? "assigned" : "unassigned", tech: t.staff ? techLabel(t.staff.name, t.staff.id) : null,
-        provisional: t.offline === true, groupId, blockedBy,
+        provisional: t.offline === true, groupId, blockedBy, wait: blockedBy == null ? t.wait : undefined,
         open: () => onTicket(t), assign: t.staff || blockedBy != null || t.ringingUp ? undefined : () => onAssignTicket(t),
         start: t.staff && onStartTicket && blockedBy == null ? () => onStartTicket(t) : undefined, testId: `nail-queue-wait-${t.id}`,
       };
@@ -237,6 +240,15 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
       return +new Date(a.since) - +new Date(b.since);
     });
   }, [tickets, markers, onMarker, onMarkerRemove, onTicket, onTicketTap, onAssignTicket, onStartTicket]);
+  // Urgent cards first (owner, 2026-10-29): red, then orange, the longest wait first. Every other card keeps its place
+  // in ticket-number order, and an urgent card goes back there once it's started.
+  const urgencyOf = (r: ClientRow) => (r.state === "waiting" ? waitUrgency(r.wait, now) : null);
+  const boardRows = useMemo(() => {
+    const urgent = clientRows.filter((r) => urgencyOf(r) != null)
+      .sort((a, b) => urgencyRank(urgencyOf(a)) - urgencyRank(urgencyOf(b)) || Date.parse(a.wait!.since) - Date.parse(b.wait!.since));
+    return urgent.length ? [...urgent, ...clientRows.filter((r) => urgencyOf(r) == null)] : clientRows;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientRows, now]);
   const waitingCount = clientRows.filter((r) => r.state === "waiting").length;
   const inServiceCount = clientRows.length - waitingCount;
   // Up next = the lowest-numbered client still waiting, wherever their card sits.
@@ -296,9 +308,9 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
   // A fixed 4 × 4 card grid; more clients than fit go on the next swipeable page.
   const clientChunks = useMemo<ClientRow[][]>(() => {
     const chunks: ClientRow[][] = [];
-    for (let i = 0; i < clientRows.length; i += PER_PAGE) chunks.push(clientRows.slice(i, i + PER_PAGE));
+    for (let i = 0; i < boardRows.length; i += PER_PAGE) chunks.push(boardRows.slice(i, i + PER_PAGE));
     return chunks.length ? chunks : [[]];
-  }, [clientRows]);
+  }, [boardRows]);
   const pages = useMemo<Page[]>(() => [
     ...clientChunks.map((_, i): Page => ({ key: `waiting-${i}`, kind: "waiting", chunkIndex: i })),
     ...DETAIL_TABS.map(({ kind }): Page => ({ key: kind, kind, chunkIndex: 0 })),
@@ -355,8 +367,9 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
       {rows.map((r) => {
         const upNext = r.key === upNextKey;
         const inChair = r.state === "service";
+        const urgency = urgencyOf(r);
         return (
-          <div key={r.key} className={`q-booking-card q-unified-card q-wait-card ${upNext ? "q-up-next" : ""} ${linkSide.has(r.key) ? `q-visit-linked q-visit-${linkSide.get(r.key)}` : ""}`} data-testid={r.testId} data-state={r.state} role="button" tabIndex={0} aria-label={`Open ticket for ${r.name}`} onKeyDown={(event) => activateOnKeyboard(event, r.open)} onClick={r.open}>
+          <div key={r.key} data-urgency={urgency ?? undefined} className={`q-booking-card q-unified-card q-wait-card ${upNext ? "q-up-next" : ""} ${urgency ? `q-urgent q-urgent-${urgency}` : ""} ${linkSide.has(r.key) ? `q-visit-linked q-visit-${linkSide.get(r.key)}` : ""}`} data-testid={r.testId} data-state={r.state} role="button" tabIndex={0} aria-label={`Open ticket for ${r.name}`} onKeyDown={(event) => activateOnKeyboard(event, r.open)} onClick={r.open}>
             {r.remove && (
               <button type="button" className="q-card-remove" aria-label={`Remove ${r.name} from the waiting list`} data-testid={`${r.testId}-remove`}
                 onClick={(e) => { e.stopPropagation(); if (window.confirm(`Take ${r.name} off the waiting list?`)) r.remove?.(); }}>
@@ -366,7 +379,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
             <div className="q-booking-client q-booking-client-top q-unified-head">
               {r.provisional ? <span data-testid="nail-queue-not-sent">NOT SENT</span> : r.ticketNumber != null && <span className="q-ticket-no">{r.ticketNumber}</span>}
               <strong>{r.name}</strong>
-              <em className="q-unified-pill" data-kind={r.subKind}>{upNext ? "UP NEXT" : r.sub}</em>
+              <em className="q-unified-pill" data-kind={urgency ? `urgent-${urgency}` : r.subKind} data-testid={urgency ? `${r.testId}-why` : undefined}>{urgency && r.wait ? waitReasonText(r.wait, r.tech) : upNext ? "UP NEXT" : r.sub}</em>
             </div>
             <div className="q-unified-main">
               <div className="q-unified-clock">

@@ -1443,6 +1443,12 @@ export interface BoardTicket {
   waitsForTicket?: number;
   /** The technician pressed DONE: the service is finished and they are free; the ticket waits to be paid. */
   doneAt?: string;
+  /** When the ticket was given to its technician (migration 0265). */
+  staffAssignedAt?: string;
+  /** When ringing up began (not saved yet). */
+  ringingUpSince?: string;
+  /** Why this waiting ticket hasn't started, when that needs watching (boardWaitReasons). */
+  wait?: BoardWait;
   /** How long the service really took, START to DONE (migration 0253). */
   actualMinutes?: number;
   status: "confirmed" | "started";
@@ -1467,6 +1473,30 @@ export interface BoardTicket {
   walkIn: boolean;
 }
 
+/**
+ * Why a waiting ticket hasn't started (owner, 2026-10-29: catch tickets that sit, and say why). `since` is when the
+ * clock for this reason began; the card turns orange `orangeMin` after it and red `redMin` after it.
+ *   tech_free       its technician is free but hasn't started it
+ *   clocked_out     its technician isn't clocked in
+ *   running_over    its technician is still on another client, past that service's time (ticket = that number)
+ *   not_saved       being rung up and never saved
+ *   unassigned_free nobody has it although a technician is free
+ *   long_wait       nobody has it and every technician is busy (a normal wait, flagged only when long)
+ */
+export interface BoardWait {
+  code: "tech_free" | "clocked_out" | "running_over" | "not_saved" | "unassigned_free" | "long_wait";
+  since: string;
+  orangeMin: number;
+  redMin: number;
+  ticket?: number;
+}
+/** The minutes for each reason. One place, so the salon's thresholds are easy to change. */
+export const WAIT_LIMITS: Record<BoardWait["code"], [number, number]> = {
+  tech_free: [5, 10], clocked_out: [0, 0], running_over: [10, 20], not_saved: [5, 10], unassigned_free: [5, 10], long_wait: [30, 45],
+};
+/** Same padding the queue's chair countdown uses: a service is "over" this long after its booked time. */
+const SERVICE_PADDING_MIN = 15;
+
 export interface BoardWaitingMarker {
   id: number;
   /** Number printed beside the marker's QR code and accepted by manual ticket lookup. */
@@ -1482,6 +1512,8 @@ export interface BoardWaitingMarker {
   requestedCategory: string | null;
   /** The catalog category id behind requestedCategory, so the POS can open its grid there. */
   requestedCategoryId: number | null;
+  /** Why this client is still waiting, when that needs watching (see BoardWait). */
+  wait?: BoardWait;
 }
 
 export interface BoardDayBooking {
@@ -1567,6 +1599,51 @@ export async function getNailUpcoming(storeId: number): Promise<BoardDayBooking[
   }));
 }
 
+/**
+ * Fills in `wait` on every waiting ticket and check-in that needs watching (see BoardWait): why it hasn't started,
+ * and since when. A normal wait — the client is in a chair on another ticket, or the visit's first service isn't
+ * done — gets nothing.
+ */
+export function boardWaitReasons(tickets: BoardTicket[], markers: BoardWaitingMarker[], stats: Map<number, TechDayStats>, turnTakers: Set<number>): void {
+  const ms = (iso: string | null | undefined) => (iso ? Date.parse(iso) : NaN);
+  const latest = (...xs: number[]) => Math.max(...xs.filter((x) => Number.isFinite(x)));
+  const wait = (code: BoardWait["code"], sinceMs: number, ticket?: number): BoardWait | undefined =>
+    Number.isFinite(sinceMs) ? { code, since: new Date(sinceMs).toISOString(), orangeMin: WAIT_LIMITS[code][0], redMin: WAIT_LIMITS[code][1], ...(ticket != null ? { ticket } : {}) } : undefined;
+  const inChair = (staffId: number) => tickets.find((t) => t.status === "started" && !t.doneAt && t.staff?.id === staffId);
+  const clockedIn = (staffId: number) => !!stats.get(staffId)?.clockedInAt;
+  const freeSince = (staffId: number) => latest(ms(stats.get(staffId)?.clockedInAt), ms(stats.get(staffId)?.lastFinishedAt),
+    ...tickets.filter((t) => t.staff?.id === staffId && t.doneAt).map((t) => ms(t.doneAt)));
+  // Technicians who take turns, are clocked in and not with a client.
+  const free = [...stats.values()].filter((e) => e.clockedInAt && turnTakers.has(e.staffId) && !inChair(e.staffId)).map((e) => e.staffId);
+  const clientInChair = new Set(tickets.filter((t) => t.status === "started" && !t.doneAt && t.client.id != null).map((t) => t.client.id));
+
+  const forStaff = (staffId: number, givenAt: number): BoardWait | undefined => {
+    if (!clockedIn(staffId)) return wait("clocked_out", givenAt);
+    const busy = inChair(staffId);
+    if (busy) {
+      const end = ms(busy.startedAt) + ((Number(busy.duration) || 0) + SERVICE_PADDING_MIN) * 60_000;
+      return wait("running_over", end, busy.ticketNumber ?? undefined);
+    }
+    return wait("tech_free", latest(givenAt, freeSince(staffId)));
+  };
+  const forNobody = (arrived: number): BoardWait | undefined => free.length
+    ? wait("unassigned_free", latest(arrived, Math.min(...free.map(freeSince).filter((x) => Number.isFinite(x)))))
+    : wait("long_wait", arrived);
+
+  for (const t of tickets) {
+    if (t.status !== "confirmed" || t.waitsForTicket != null) continue;
+    if (t.client.id != null && clientInChair.has(t.client.id)) continue;
+    const arrived = ms(t.checkedInAt ?? t.date);
+    t.wait = t.ringingUp ? wait("not_saved", ms(t.ringingUpSince ?? t.checkedInAt ?? t.date))
+      : t.staff ? forStaff(t.staff.id, latest(arrived, ms(t.staffAssignedAt)))
+      : forNobody(arrived);
+  }
+  for (const m of markers) {
+    const arrived = ms(m.createdAt);
+    m.wait = m.staffId != null ? forStaff(m.staffId, arrived) : forNobody(arrived);
+  }
+}
+
 export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTicket[]; markers: BoardWaitingMarker[]; dayBookings: BoardDayBooking[]; techStats: TechDayStats[]; glance: SalonGlance; now: string; nextTicketNumber: number | null }> {
   const store = await storage.getStore(storeId);
   const tz = (store as any)?.timezone || "UTC";
@@ -1589,7 +1666,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
             COALESCE(ns.length_price_adj_snapshot, 0) AS length_adj, COALESCE(ns.shape_price_adj_snapshot, 0) AS shape_adj,
             COALESCE(ns.art_price_adj_snapshot, 0) AS art_adj,
             ns.nail_size_id, ns.nail_shape_id, ns.nail_art_application_id, ns.nail_art_effect_id,
-            ns.id AS nail_id
+            ns.id AS nail_id, a.staff_assigned_at
        FROM appointments a
        LEFT JOIN clients  c  ON c.id  = a.customer_id
        LEFT JOIN services s  ON s.id  = a.service_id
@@ -1629,6 +1706,8 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
       ...(r.ringing_up_since ? { ringingUp: true } : {}),
       ...(r.waits_for_number != null ? { waitsForTicket: Number(r.waits_for_number) } : {}),
       ...(r.service_done_at ? { doneAt: new Date(r.service_done_at).toISOString() } : {}),
+      ...(r.staff_assigned_at ? { staffAssignedAt: new Date(r.staff_assigned_at).toISOString() } : {}),
+      ...(r.ringing_up_since ? { ringingUpSince: new Date(r.ringing_up_since).toISOString() } : {}),
       ...(r.actual_minutes != null ? { actualMinutes: Number(r.actual_minutes) } : {}),
       status: r.status,
       date: new Date(r.date).toISOString(),
@@ -1797,6 +1876,8 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
   // The next ticket number the store will give out, so a tablet can keep numbering if it goes offline.
   const counter = await pool.query(`SELECT next_ticket_number FROM locations WHERE id = $1`, [storeId]);
   const nextTicketNumber = counter.rows[0]?.next_ticket_number != null ? Number(counter.rows[0].next_ticket_number) : null;
+  const turnTakers = await pool.query(`SELECT id FROM staff WHERE store_id = $1 AND takes_turns`, [storeId]).catch(() => ({ rows: [] as any[] }));
+  boardWaitReasons(tickets, markers, stats, new Set(turnTakers.rows.map((r: any) => Number(r.id))));
   return { tickets, markers, dayBookings, techStats: [...stats.values()], glance, now: new Date().toISOString(), nextTicketNumber };
 }
 

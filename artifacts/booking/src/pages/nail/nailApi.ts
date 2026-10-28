@@ -19,6 +19,16 @@ import { actionQueueDB } from "@/lib/action-queue-db";
 
 export const boardKey = (storeId: number) => ["/api/nail/board", storeId] as const;
 
+/** Why a waiting ticket / check-in hasn't started (server's boardWaitReasons): orange `orangeMin` after `since`, red `redMin`. */
+export interface BoardWait {
+  code: "tech_free" | "clocked_out" | "running_over" | "not_saved" | "unassigned_free" | "long_wait";
+  since: string;
+  orangeMin: number;
+  redMin: number;
+  /** running_over: the ticket number the technician is still on. */
+  ticket?: number;
+}
+
 export interface BoardTicket {
   id: number;
   ticketNumber: number | null;
@@ -30,6 +40,8 @@ export interface BoardTicket {
   waitsForTicket?: number;
   /** The technician pressed DONE: their service is finished and they are free; the ticket waits to be paid. */
   doneAt?: string;
+  /** Why this waiting ticket hasn't started, when that needs watching (server; colours in urgency.ts). */
+  wait?: BoardWait;
   /** How long the service really took, START to DONE, in minutes. */
   actualMinutes?: number;
   status: "confirmed" | "started";
@@ -72,6 +84,8 @@ export interface BoardMarker {
   requestedCategoryId?: number | null;
   /** Checked in on this device while the server was out of reach and not sent yet. */
   offline?: boolean;
+  /** Why this client is still waiting, when that needs watching (server). */
+  wait?: BoardWait;
 }
 
 export interface BoardDayBooking {

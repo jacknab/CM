@@ -915,6 +915,25 @@
 /* Tickets of one visit (split off or done by different technicians) sit together, joined by a yellow bar. */
 /* The bar is on the edges where the cards of the visit meet, so they read as joined. */
 .nail-app .q-wait-card.q-visit-linked:not(.q-up-next) { border-color: #facc15; }
+/* Urgent tickets (owner, 2026-10-29): a free technician hasn't started it — orange after 5 minutes, red after 10.
+   Listed after the up-next and linked-visit borders so the urgent colour wins. */
+.nail-app .q-wait-card.q-urgent { border-width: 3px; }
+.nail-app .q-wait-card.q-urgent-orange { border-color: #f59e0b; box-shadow: 0 0 0 1px #f59e0b, 0 6px 18px rgba(245, 158, 11, .25); }
+.nail-app .q-wait-card.q-urgent-red { border-color: #dc2626; box-shadow: 0 0 0 1px #dc2626, 0 6px 20px rgba(220, 38, 38, .30); }
+.nail-app .q-unified-pill[data-kind^="urgent-"] { max-width: 72%; }
+.nail-app .q-unified-pill[data-kind="urgent-orange"] { background: #fff4e0; color: #b45309; }
+.nail-app .q-unified-pill[data-kind="urgent-red"] { background: #fee2e2; color: #b91c1c; }
+/* Red ticket on the board: a red outline starts at the edges of the screen and shrinks in, now and then. */
+.nail-app .nl-urgent-edge { position: fixed; inset: 0; pointer-events: none; z-index: 2147483000; }
+.nail-app .nl-urgent-edge::before { content: ""; position: absolute; inset: 0; border: 6px solid rgba(220, 38, 38, .85); border-radius: 0;
+  animation: nl-urgent-shrink 5s ease-out infinite; opacity: 0; }
+@keyframes nl-urgent-shrink {
+  0% { inset: 0; opacity: 0; border-radius: 0; }
+  6% { opacity: .9; }
+  40% { inset: 9vh 9vw; opacity: 0; border-radius: 24px; }
+  100% { inset: 9vh 9vw; opacity: 0; border-radius: 24px; }
+}
+@media (prefers-reduced-motion: reduce) { .nail-app .nl-urgent-edge::before { animation: none; opacity: .5; } }
 .nail-app .q-wait-card.q-visit-first { box-shadow: inset -5px 0 0 #facc15, 0 6px 16px rgba(30, 60, 110, .10); }
 .nail-app .q-wait-card.q-visit-last { box-shadow: inset 5px 0 0 #facc15, 0 6px 16px rgba(30, 60, 110, .10); }
 .nail-app .q-wait-card.q-visit-middle { box-shadow: inset 5px 0 0 #facc15, inset -5px 0 0 #facc15, 0 6px 16px rgba(30, 60, 110, .10); }

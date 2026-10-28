@@ -58,6 +58,7 @@ import { TurnPageModal } from "@/components/staff-screen/TurnPage";
 import { VoucherRedeemSheet } from "@/components/staff-screen/VoucherRedeemSheet";
 import { useStaffList } from "@/hooks/use-staff";
 import { setTechRoster, techLabel } from "./techName";
+import { waitUrgency } from "./urgency";
 import { getNowInTimezone } from "@/lib/timezone";
 import {
   ApiError, boardKey, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchCalendarBoardBookings, fetchClient, fetchUpcoming,
@@ -449,6 +450,10 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     } catch { /* storage unavailable */ }
   }, []);
   const markers = board?.markers ?? [];
+  // Tickets that sit too long (urgency.ts): is any of them red right now?
+  const [urgentTick, setUrgentTick] = useState(() => Date.now());
+  useEffect(() => { const iv = setInterval(() => setUrgentTick(Date.now()), 30_000); return () => clearInterval(iv); }, []);
+  const anyRedTicket = [...tickets, ...markers].some((x) => waitUrgency(x.wait, urgentTick + clockOffsetMs) === "red");
   const waitingCount = tickets.filter((t) => t.status === "confirmed").length + markers.length;
 
   // Technician status for the Techs tab — same TURN feed as the assign popup, kept live by the socket.
@@ -1924,6 +1929,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   return (
     <div className="dark cx-cal nail-app h-app w-full" data-testid="nail-home">
+      {/* A red ticket on the board (owner, 2026-10-29): a red outline now and then shrinks in from the screen's edges. */}
+      {anyRedTicket && <div className="nl-urgent-edge" aria-hidden data-testid="nail-urgent-edge" />}
       <OfflineLimitLock />
       <a className="nail-skip-link" href="#nail-main">Skip to main content</a>
       <h1 className="sr-only">Nail salon front desk</h1>
