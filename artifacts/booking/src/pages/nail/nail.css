@@ -920,7 +920,7 @@
 .nail-app .q-wait-card.q-urgent { border-width: 3px; }
 .nail-app .q-wait-card.q-urgent-orange { border-color: #f59e0b; box-shadow: 0 0 0 1px #f59e0b, 0 6px 18px rgba(245, 158, 11, .25); }
 .nail-app .q-wait-card.q-urgent-red { border-color: #dc2626; box-shadow: 0 0 0 1px #dc2626, 0 6px 20px rgba(220, 38, 38, .30); }
-.nail-app .q-unified-pill[data-kind^="urgent-"] { max-width: 72%; }
+.nail-app .q-unified-pill[data-kind^="urgent-"] { max-width: 60%; }
 .nail-app .q-unified-pill[data-kind="urgent-orange"] { background: #fff4e0; color: #b45309; }
 .nail-app .q-unified-pill[data-kind="urgent-red"] { background: #fee2e2; color: #b91c1c; }
 /* Red ticket on the board: a red outline starts at the edges of the screen and shrinks in, now and then. */
