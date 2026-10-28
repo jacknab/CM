@@ -21529,44 +21529,34 @@ or
   // AT-RISK CLIENTS
   // ============================================================
 
+  // Clients not back in N days (owner audit 2026-10-29): live from appointments — the stored visit/spend/last-visit
+  // columns on clients are not kept up to date, so every client used to show as lapsed with an old spend.
   app.get("/api/clients/at-risk", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req.session as any)?.userId;
-      const userStore = await db.select({ id: locations.id }).from(locations).where(eq(locations.userId, userId)).limit(1);
-      if (!userStore.length) return res.status(404).json({ message: "Store not found" });
-      const storeId = userStore[0].id;
-
-      const daysSince = parseInt(req.query.daysSince as string || "60");
-      const cutoff = new Date(Date.now() - daysSince * 24 * 60 * 60 * 1000);
-
-      const storeClients = await db.select({
-        id: clients.id,
-        fullName: clients.fullName,
-        totalSpentCents: clients.totalSpentCents,
-        totalVisits: clients.totalVisits,
-        lastVisitAt: clients.lastVisitAt,
-        createdAt: clients.createdAt,
-      }).from(clients)
-        .where(and(eq(clients.storeId, storeId), isNull(clients.archivedAt)));
-
-      const atRisk = storeClients
-        .filter(c => {
-          const lastVisit = c.lastVisitAt ? new Date(c.lastVisitAt) : null;
-          if (!lastVisit) {
-            // Never visited — only flag if added before cutoff
-            return new Date(c.createdAt || "") < cutoff;
-          }
-          return lastVisit < cutoff;
-        })
-        .map(c => {
-          const lastVisit = c.lastVisitAt ? new Date(c.lastVisitAt) : null;
-          const daysSinceLast = lastVisit
-            ? Math.floor((Date.now() - lastVisit.getTime()) / (1000 * 60 * 60 * 24))
-            : null;
-          return { ...c, daysSinceLast, totalSpent: (c.totalSpentCents / 100).toFixed(2) };
-        })
-        .sort((a, b) => (b.daysSinceLast ?? 9999) - (a.daysSinceLast ?? 9999));
-
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const daysSince = Math.max(1, parseInt((req.query.daysSince as string) || "60") || 60);
+      const { rows } = await pool.query(
+        `WITH v AS (
+           SELECT a.customer_id::text AS cid, COUNT(DISTINCT COALESCE(a.ticket_group_id, a.id))::int AS visits,
+                  COALESCE(SUM(CAST(a.total_paid AS DECIMAL(10,2)) - COALESCE(CAST(a.tip_amount AS DECIMAL(10,2)), 0)), 0) AS spent,
+                  MAX(COALESCE(a.completed_at, a.date)) AS last_visit
+             FROM appointments a WHERE a.store_id = $1 AND a.status = 'completed' AND a.customer_id IS NOT NULL GROUP BY 1)
+         SELECT c.id, c.full_name, c.created_at, COALESCE(v.visits, 0) AS visits, COALESCE(v.spent, 0) AS spent, v.last_visit
+           FROM clients c LEFT JOIN v ON v.cid = c.id::text
+          WHERE c.store_id = $1 AND c.archived_at IS NULL
+            AND COALESCE(v.last_visit, c.created_at) < now() - make_interval(days => $2)`,
+        [storeId, daysSince]);
+      const now = Date.now();
+      const atRisk = rows.map((c: any) => {
+        const last = c.last_visit ? new Date(c.last_visit) : null;
+        return {
+          id: c.id, fullName: c.full_name, createdAt: c.created_at,
+          totalVisits: Number(c.visits), totalSpentCents: Math.round(Number(c.spent) * 100), lastVisitAt: last ? last.toISOString() : null,
+          daysSinceLast: last ? Math.floor((now - last.getTime()) / 86400000) : null,
+          totalSpent: Number(c.spent).toFixed(2),
+        };
+      }).sort((a: any, b: any) => (b.daysSinceLast ?? 9999) - (a.daysSinceLast ?? 9999));
       return res.json(atRisk);
     } catch (err) {
       console.error(err);

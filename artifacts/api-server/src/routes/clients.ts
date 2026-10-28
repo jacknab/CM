@@ -68,12 +68,28 @@ function getUserId(req: any): string | undefined {
 
 // ─── CLIENT LIST ──────────────────────────────────────────────────────────────
 
+// A client's live numbers, one definition everywhere (same as Reports › Clients): a visit counts once however many
+// services it had (ticket_group_id), spend is what they paid less tips, last visit is when the visit was paid.
+const LIVE_VISITS = sql`(SELECT COUNT(DISTINCT COALESCE(a.ticket_group_id, a.id)) FROM appointments a
+  WHERE a.customer_id = clients.id AND a.store_id = clients.store_id AND a.status = 'completed')`;
+const LIVE_SPENT = sql`(SELECT COALESCE(SUM(CAST(a.total_paid AS DECIMAL(10,2)) - COALESCE(CAST(a.tip_amount AS DECIMAL(10,2)), 0)), 0) FROM appointments a
+  WHERE a.customer_id = clients.id AND a.store_id = clients.store_id AND a.status = 'completed')`;
+const LIVE_LAST_VISIT = sql`(SELECT MAX(COALESCE(a.completed_at, a.date)) FROM appointments a
+  WHERE a.customer_id = clients.id AND a.store_id = clients.store_id AND a.status = 'completed')`;
+/** The list's status tabs (New / Regular / At risk / Inactive), worked out in the database so every client counts. */
+const SEGMENT_SQL: Record<string, ReturnType<typeof sql>> = {
+  inactive: sql`clients.client_status IS DISTINCT FROM 'vip' AND (${LIVE_LAST_VISIT} IS NULL OR ${LIVE_LAST_VISIT} < now() - interval '120 days')`,
+  at_risk:  sql`clients.client_status IS DISTINCT FROM 'vip' AND ${LIVE_LAST_VISIT} < now() - interval '45 days' AND ${LIVE_LAST_VISIT} >= now() - interval '120 days'`,
+  new:      sql`clients.client_status IS DISTINCT FROM 'vip' AND ${LIVE_LAST_VISIT} >= now() - interval '45 days' AND ${LIVE_VISITS} < 3`,
+  regular:  sql`clients.client_status IS DISTINCT FROM 'vip' AND ${LIVE_LAST_VISIT} >= now() - interval '45 days' AND ${LIVE_VISITS} >= 3`,
+};
+
 router.get("/", isAuthenticated, async (req, res) => {
   try {
     const storeId = await resolveSessionStoreId(req);
     if (!storeId) return res.status(400).json({ message: "storeId required" });
 
-    const { search, tag, status, page = "1", limit = "50", sort = "fullName", order = "asc" } = req.query as Record<string, string>;
+    const { search, tag, status, segment, page = "1", limit = "50", sort = "fullName", order = "asc" } = req.query as Record<string, string>;
 
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(1000, Math.max(1, parseInt(limit)));
@@ -87,29 +103,10 @@ router.get("/", isAuthenticated, async (req, res) => {
         displayPhone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id ORDER BY is_primary DESC, id ASC LIMIT 1)`,
         tags: sql<string>`(SELECT COALESCE(json_agg(json_build_object('id', t.id, 'tagName', t.tag_name, 'tagColor', t.tag_color)) FILTER (WHERE t.id IS NOT NULL), '[]'::json) FROM client_tags t JOIN client_tag_relationships r ON r.tag_id = t.id WHERE r.client_id = clients.id)`,
         loyaltyPointsLive: sql<number>`COALESCE(clients.loyalty_points, 0)`,
-        // Live-computed from appointments — the denormalized columns are never
-        // written back so they always read 0/null from the stored row.
-        liveVisits: sql<number>`(
-          SELECT COUNT(*)::int
-          FROM appointments
-          WHERE customer_id = clients.id
-            AND store_id    = clients.store_id
-            AND status      = 'completed'
-        )`,
-        liveSpentCents: sql<number>`(
-          SELECT COALESCE(ROUND(SUM(CAST(total_paid AS DECIMAL(10,2))) * 100), 0)::int
-          FROM appointments
-          WHERE customer_id = clients.id
-            AND store_id    = clients.store_id
-            AND status      = 'completed'
-        )`,
-        liveLastVisit: sql<string>`(
-          SELECT MAX(date)
-          FROM appointments
-          WHERE customer_id = clients.id
-            AND store_id    = clients.store_id
-            AND status      = 'completed'
-        )`,
+        // Live from appointments — the stored columns are not kept up to date.
+        liveVisits: sql<number>`${LIVE_VISITS}::int`,
+        liveSpentCents: sql<number>`ROUND(${LIVE_SPENT} * 100)::int`,
+        liveLastVisit: sql<string>`${LIVE_LAST_VISIT}`,
       })
       .from(clients)
       .$dynamic();
@@ -120,14 +117,21 @@ router.get("/", isAuthenticated, async (req, res) => {
       conditions.push(eq(clients.clientStatus, status));
     }
 
+    if (segment && SEGMENT_SQL[segment]) conditions.push(SEGMENT_SQL[segment]);
+
     if (search) {
+      // Phone match only when the search has digits: an empty digit string matched every client with a phone,
+      // so a name search returned nearly everyone.
+      const digits = search.replace(/\D/g, "");
       conditions.push(
         or(
           ilike(clients.fullName, `%${search}%`),
           ilike(clients.firstName, `%${search}%`),
           ilike(clients.lastName, `%${search}%`),
           sql`EXISTS (SELECT 1 FROM client_emails WHERE client_id = ${clients.id} AND email_address ILIKE ${`%${search}%`})`,
-          sql`EXISTS (SELECT 1 FROM client_phones WHERE client_id = ${clients.id} AND (phone_number_e164 LIKE ${`%${search.replace(/\D/g, "")}%`} OR display_phone ILIKE ${`%${search}%`}))`,
+          digits
+            ? sql`EXISTS (SELECT 1 FROM client_phones WHERE client_id = ${clients.id} AND (phone_number_e164 LIKE ${`%${digits}%`} OR display_phone ILIKE ${`%${search}%`}))`
+            : sql`false`,
         )!
       );
     }
@@ -140,9 +144,7 @@ router.get("/", isAuthenticated, async (req, res) => {
 
     // For live-computed columns, sort by the same subquery expression so the
     // ORDER BY matches what the client actually sees (not the stale stored value).
-    const liveVisitsSql   = sql`(SELECT COUNT(*) FROM appointments WHERE customer_id = clients.id AND store_id = clients.store_id AND status = 'completed')`;
-    const liveSpentSql    = sql`(SELECT COALESCE(SUM(CAST(total_paid AS DECIMAL(10,2))), 0) FROM appointments WHERE customer_id = clients.id AND store_id = clients.store_id AND status = 'completed')`;
-    const liveLastVisitSql = sql`(SELECT MAX(date) FROM appointments WHERE customer_id = clients.id AND store_id = clients.store_id AND status = 'completed')`;
+    const liveVisitsSql = LIVE_VISITS, liveSpentSql = LIVE_SPENT, liveLastVisitSql = LIVE_LAST_VISIT;
 
     const orderExpr = sort === "lastVisitAt" ? (order === "desc" ? desc(liveLastVisitSql) : asc(liveLastVisitSql))
       : sort === "totalSpent"  ? (order === "desc" ? desc(liveSpentSql)     : asc(liveSpentSql))
@@ -454,9 +456,9 @@ router.get("/:id", isAuthenticated, async (req, res) => {
       // written back, so always compute fresh from appointments.
       db.execute(sql`
         SELECT
-          COUNT(*)::int                                                             AS total_visits,
-          COALESCE(ROUND(SUM(CAST(total_paid AS DECIMAL(10,2))) * 100), 0)::int   AS total_spent_cents,
-          MAX(date)                                                                 AS last_visit_at
+          COUNT(DISTINCT COALESCE(ticket_group_id, id))::int                        AS total_visits,
+          COALESCE(ROUND(SUM(CAST(total_paid AS DECIMAL(10,2)) - COALESCE(CAST(tip_amount AS DECIMAL(10,2)), 0)) * 100), 0)::int AS total_spent_cents,
+          MAX(COALESCE(completed_at, date))                                         AS last_visit_at
         FROM appointments
         WHERE customer_id = ${clientId}
           AND store_id    = ${client.storeId}

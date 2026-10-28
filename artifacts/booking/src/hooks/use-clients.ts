@@ -121,6 +121,8 @@ export function useClients(params?: {
   search?: string;
   tag?: string;
   status?: string;
+  /** Status tab worked out on the server: new | regular | at_risk | inactive. */
+  segment?: string;
   page?: number;
   limit?: number;
   sort?: string;
@@ -175,6 +177,7 @@ export function useClients(params?: {
       if (params?.search) qs.set("search", params.search);
       if (params?.tag) qs.set("tag", params.tag);
       if (params?.status) qs.set("status", params.status);
+      if (params?.segment) qs.set("segment", params.segment);
       if (params?.page) qs.set("page", String(params.page));
       if (params?.limit) qs.set("limit", String(params.limit));
       if (params?.sort) qs.set("sort", params.sort);

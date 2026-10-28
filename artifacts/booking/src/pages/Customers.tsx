@@ -125,8 +125,6 @@ const TAB_VALUES = ["all", "new", "regular", "vip", "at_risk", "inactive"] as co
 type TabValue = typeof TAB_VALUES[number];
 
 const LIMIT = 50;
-// For computed-status tabs we fetch a larger batch and filter client-side
-const COMPUTED_LIMIT = 500;
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -269,35 +267,33 @@ export default function Customers() {
     debouncedSetSearch(val);
   }
 
-  // "vip" uses the API-level filter; every other non-"all" tab fetches a larger
-  // batch and filters client-side so the backend needs no changes.
-  const isComputedFilter = status !== "all" && status !== "vip";
+  // "vip" is the client's VIP flag; the other tabs are worked out on the server (same rules as getComputedStatus),
+  // so every client counts and the tabs page like All Clients.
   const apiStatus = status === "vip" ? "vip" : undefined;
+  const segment = status !== "all" && status !== "vip" ? status : undefined;
 
   const { data, isLoading } = useClients({
     search: debouncedSearch || undefined,
     status: apiStatus,
+    segment,
     tag: selectedTag !== "all" ? selectedTag : undefined,
     sort: sortField,
     order: sortOrder as "asc" | "desc",
-    page: isComputedFilter ? 1 : page,
-    limit: isComputedFilter ? COMPUTED_LIMIT : LIMIT,
+    page,
+    limit: LIMIT,
   });
 
   const { data: tags = EMPTY_ARRAY } = useClientTags();
 
-  const rawClients = data?.clients ?? [];
-  const clients = isComputedFilter
-    ? rawClients.filter(c => getComputedStatus(c) === status)
-    : rawClients;
+  const clients = data?.clients ?? [];
 
-  const totalPages = isComputedFilter ? 1 : Math.ceil((data?.total ?? 0) / LIMIT);
+  const totalPages = Math.ceil((data?.total ?? 0) / LIMIT);
   const serverTotal = data?.total ?? 0;
 
   function handleMigrate() {
     migrateFromCustomers(undefined, {
       onSuccess: (res: any) => {
-        toast({ title: t.noteSuccess, description: `${res.migrated} clients migrated.` });
+        toast({ title: "Contacts synced", description: `${res.migrated} clients migrated.` });
       },
     });
   }
@@ -334,7 +330,7 @@ export default function Customers() {
       </div>
 
       {/* ── Migration banner ── */}
-      {serverTotal === 0 && !isLoading && (
+      {serverTotal === 0 && !isLoading && !debouncedSearch && status === "all" && selectedTag === "all" && (
         <div className="mb-4 p-4 rounded-xl border bg-amber-50 border-amber-200 flex items-center justify-between gap-4">
           <div>
             <p className="font-semibold text-sm text-amber-900">{t.importBanner}</p>
@@ -488,8 +484,8 @@ export default function Customers() {
           </table>
         </div>
 
-        {/* Pagination (only for server-filtered tabs) */}
-        {!isComputedFilter && totalPages > 1 && (
+        {/* Pagination */}
+        {totalPages > 1 && (
           <div className="flex items-center justify-between px-5 py-3 border-t text-sm text-muted-foreground">
             <span>
               {((page - 1) * LIMIT) + 1}–{Math.min(page * LIMIT, serverTotal)} of {serverTotal.toLocaleString()}
@@ -506,12 +502,6 @@ export default function Customers() {
           </div>
         )}
 
-        {/* Result count for computed filters */}
-        {isComputedFilter && clients.length > 0 && (
-          <div className="px-5 py-3 border-t text-xs text-muted-foreground">
-            {clients.length} {clients.length === 1 ? "client" : "clients"} in this category
-          </div>
-        )}
       </div>
 
       {/* ── Dialogs ── */}
