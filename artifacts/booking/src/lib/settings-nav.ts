@@ -168,7 +168,7 @@ export function buildSettingsNav(pick: Pick4): SettingsTab[] {
         },
         {
           label: pick({ en: "Cash Drawers", vi: "Két tiền mặt", es: "Cajones de efectivo", fr: "Tiroirs-caisses" }),
-          description: pick({ en: "Set up each cash drawer with its starting cash and assign it to a POS station.", vi: "Thiết lập từng két tiền với số tiền đầu ngày và gán két cho một máy POS.", es: "Configura cada cajón con su efectivo inicial y asígnalo a una estación POS.", fr: "Configurez chaque tiroir-caisse avec son fonds de départ et attribuez-le à un poste de caisse." }),
+          description: pick({ en: "Set up your cash drawer with its starting cash and the POS stations that use it.", vi: "Thiết lập két tiền với số tiền đầu ngày và các máy POS dùng két đó.", es: "Configura tu cajón con su efectivo inicial y las estaciones POS que lo usan.", fr: "Configurez votre tiroir-caisse avec son fonds de départ et les postes de caisse qui l'utilisent." }),
           to: "/settings/cash-drawers", slug: "cash-drawers",
         },
         {

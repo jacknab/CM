@@ -192,7 +192,7 @@ export default function CashDrawers() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Cash Drawers</h1>
             <p className="text-muted-foreground mt-1 text-sm">
-              Set up each cash drawer with its starting cash and assign it to a POS station.
+              Set up your cash drawer with its starting cash and the POS stations that use it.
             </p>
           </div>
         )}
