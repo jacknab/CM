@@ -1,6 +1,8 @@
 import { EMPTY_ARRAY } from "@/lib/empty";
-import { useState, useMemo, Fragment } from "react";
-import { format, startOfDay, endOfDay, startOfMonth, isWithinInterval } from "date-fns";
+import { useState, useMemo, useEffect, Fragment } from "react";
+import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { format, startOfDay, endOfDay, startOfMonth, isWithinInterval, parseISO } from "date-fns";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,7 +13,7 @@ import { useStaffList } from "@/hooks/use-staff";
 import { useAppointments } from "@/hooks/use-appointments";
 import { useSelectedStore } from "@/hooks/use-store";
 import { toStoreLocal } from "@/lib/timezone";
-import { DollarSign, Percent, Scissors, Download, ChevronDown, ChevronRight } from "lucide-react";
+import { DollarSign, Percent, Scissors, Download, ChevronDown, ChevronRight, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Staff, AppointmentWithDetails } from "@shared/schema";
 import { commissionAmount, commissionBasis } from "@shared/commissionBasis";
@@ -46,6 +48,27 @@ export default function CommissionReport() {
   const [endDate, setEndDate] = useState(format(today, "yyyy-MM-dd"));
   const [selectedStaffId, setSelectedStaffId] = useState<string>("all");
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  const navigate = useNavigate();
+
+  // The salon's pay periods (owner, 2026-10-29): pick one and the dates follow. The report opens on the open period.
+  type PayPeriod = { periodStart: string; periodEnd: string; payDate: string; current: boolean };
+  const { data: payData } = useQuery<{ periods: PayPeriod[] }>({
+    queryKey: ["/api/payroll/periods", selectedStore?.id],
+    queryFn: async () => {
+      const res = await fetch("/api/payroll/periods", { credentials: "include" });
+      return res.ok ? res.json() : { periods: [] };
+    },
+    enabled: !!selectedStore?.id,
+  });
+  const periods = payData?.periods ?? [];
+  const [periodPicked, setPeriodPicked] = useState(false);
+  useEffect(() => {
+    const open = periods.find((p) => p.current);
+    if (open && !periodPicked) { setStartDate(open.periodStart); setEndDate(open.periodEnd); setPeriodPicked(true); }
+  }, [periods, periodPicked]);
+  const periodValue = periods.find((p) => p.periodStart === startDate && p.periodEnd === endDate)?.periodStart ?? "custom";
+  const periodLabel = (p: PayPeriod) =>
+    `${p.current ? "Current: " : ""}${format(parseISO(p.periodStart), "MMM d")} – ${format(parseISO(p.periodEnd), "MMM d, yyyy")} · paid ${format(parseISO(p.payDate), "MMM d")}`;
 
   const commissionStaff = useMemo(
     () => (staffList as Staff[]).filter(s => s.commissionEnabled),
@@ -144,6 +167,9 @@ export default function CommissionReport() {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap justify-between items-start gap-4 mb-6">
         <div>
+          <Button variant="ghost" size="sm" className="-ml-2 mb-1 gap-1 print:hidden" onClick={() => navigate("/reports")} data-testid="report-back">
+            <ArrowLeft className="h-4 w-4" /> Reports
+          </Button>
           <h1 className="text-3xl font-display font-bold">Commission Report</h1>
           <p className="text-muted-foreground text-sm mt-1">
             Commission earned by staff on completed appointments.
@@ -163,6 +189,21 @@ export default function CommissionReport() {
 
       {/* ── Filters ── sized for touchscreens: tall fields, big tap targets ──── */}
       <div className="flex flex-wrap items-end gap-4 mb-6">
+        {periods.length > 0 && (
+          <div className="space-y-1.5">
+            <Label className="text-sm text-muted-foreground">Pay period</Label>
+            <Select value={periodValue} onValueChange={(v) => {
+              const p = periods.find((x) => x.periodStart === v);
+              if (p) { setStartDate(p.periodStart); setEndDate(p.periodEnd); }
+            }}>
+              <SelectTrigger className="h-14 w-[330px] text-base" data-testid="commission-pay-period"><SelectValue placeholder="Choose a pay period" /></SelectTrigger>
+              <SelectContent>
+                {periodValue === "custom" && <SelectItem value="custom" className="text-base py-2.5">Custom dates</SelectItem>}
+                {periods.map((p) => <SelectItem key={p.periodStart} value={p.periodStart} className="text-base py-2.5">{periodLabel(p)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <div className="space-y-1.5">
           <Label className="text-sm text-muted-foreground">Start Date</Label>
           <Input
@@ -270,6 +311,7 @@ export default function CommissionReport() {
                   <tr className="border-b text-muted-foreground">
                     <th className="text-left font-medium px-4 py-3 w-8"></th>
                     <th className="text-left font-medium px-4 py-3">Staff Member</th>
+                    <th className="text-left font-medium px-4 py-3">Ticket #</th>
                     <th className="text-right font-medium px-4 py-3">Appts</th>
                     <th className="text-right font-medium px-4 py-3">Commissionable Rev.</th>
                     <th className="text-right font-medium px-4 py-3">Rate</th>
@@ -303,6 +345,7 @@ export default function CommissionReport() {
                               <span>{row.staff.name}</span>
                             </div>
                           </td>
+                          <td className="px-4 py-3"></td>
                           <td className="px-4 py-3 text-right tabular-nums">{row.appointments.length}</td>
                           <td className="px-4 py-3 text-right tabular-nums">{fmt(row.commissionableRev)}</td>
                           <td className="px-4 py-3 text-right tabular-nums">{Number(row.staff.commissionRate || 0).toFixed(1)}%</td>
@@ -318,6 +361,9 @@ export default function CommissionReport() {
                               <td className="px-4 py-2"></td>
                               <td className="px-4 py-2 pl-12 italic">
                                 {format(toStoreLocal(apt.date, timezone), "MMM d, h:mm a")} — {apt.service?.name || "Service"}
+                              </td>
+                              <td className="px-4 py-2 tabular-nums not-italic" data-testid={`commission-ticket-${apt.id}`}>
+                                {(apt as any).ticketNumber != null ? `#${(apt as any).ticketNumber}` : "—"}
                               </td>
                               <td className="px-4 py-2 text-right"></td>
                               <td className="px-4 py-2 text-right tabular-nums">{fmt(f.commissionableRev)}</td>
@@ -336,6 +382,7 @@ export default function CommissionReport() {
                   <tr className="border-t-2 bg-muted/30 font-semibold">
                     <td className="px-4 py-3"></td>
                     <td className="px-4 py-3">Total</td>
+                    <td className="px-4 py-3"></td>
                     <td className="px-4 py-3 text-right tabular-nums">
                       {staffBreakdown.reduce((s, r) => s + r.appointments.length, 0)}
                     </td>

@@ -31,7 +31,7 @@ function int(n: number | null | undefined): string {
 
 const PAYMENT_LABELS: Record<string, string> = {
   cash: "Cash", card: "Credit/Debit", credit: "Credit/Debit", credit_card: "Credit/Debit", debit: "Debit",
-  stripe: "Card", m2: "Card (M2)", tap: "Tap to Pay", gift: "Gift Card", check: "Check",
+  stripe: "Card", m2: "Card (M2)", tap: "Mobile Payment", tap_to_pay: "Mobile Payment", gift: "Gift Card", check: "Check",
   venmo: "Venmo", zelle: "Zelle", cashapp: "Cash App",
 };
 function paymentLabel(key: string): string {
@@ -185,9 +185,11 @@ ${SPACER}` : ""}
 
 ${loy ? `
 ${header("LOYALTY")}
+${row("Loyalty Discounts Given", money(loy.today.rewardValueRedeemed))}
 ${row("Points Earned Today", int(loy.today.earned))}
+${loy.today.earnedValue != null && loy.outstanding?.perPoint ? row("  Worth", money(loy.today.earnedValue)) : ""}
 ${row("Points Redeemed Today", int(loy.today.redeemed))}
-${loy.today.rewardValueRedeemed > 0 ? row("Reward Value Redeemed", money(loy.today.rewardValueRedeemed)) : ""}
+${loy.outstanding ? row(`Owed to Clients (${int(loy.outstanding.points)} pts)`, loy.outstanding.perPoint ? money(loy.outstanding.value) : "—") : ""}
 ${SPACER}` : ""}
 
 ${tSales.length ? `

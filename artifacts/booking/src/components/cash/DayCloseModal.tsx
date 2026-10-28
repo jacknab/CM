@@ -55,7 +55,7 @@ function paymentLabel(key: string): string {
     gift: "Gift Card",
     m2: "Card · M2 reader",
     tap: "Card · Tap to Pay",
-    tap_to_pay: "Card · Tap to Pay",
+    tap_to_pay: "Mobile Payment",
     loyalty: "Loyalty Points",
   };
   return map[key.toLowerCase()] ?? (key.charAt(0).toUpperCase() + key.slice(1));

@@ -2,13 +2,14 @@ import { and, eq, gte, lt, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   appointments, staff, services, serviceCategories, addons, appointmentAddons,
-  giftCards, loyaltyTransactions, paymentRefunds, businessHours, registers,
+  giftCards, loyaltyTransactions, loyaltyRewards, paymentRefunds, businessHours, registers,
   type CashDrawerSessionWithActions,
 } from "@shared/schema";
 import { commissionBasis, commissionAmount } from "@shared/commissionBasis";
 import { r2 } from "@shared/nailCheckout";
 import { getLocalDateString, getLocalDayUtcRange } from "./businessDay";
 import { allocateTenders } from "./tenderAllocation";
+import { pointsInDollars, redeemedDollars, valuePerPoint } from "@shared/loyaltyValue";
 import { cashBelongsToDrawer, primaryDrawerId } from "./stationDrawer";
 
 const num = (v: unknown): number => {
@@ -240,13 +241,18 @@ export async function computeZReport(opts: ZReportOptions) {
   const loyaltyEarned = (rows: typeof loyaltyRows) => rows.filter((t) => (t.type === "earn" || t.type === "bonus") && t.points > 0).reduce((s, t) => s + t.points, 0);
   const loyaltyRedeemed = (rows: typeof loyaltyRows) => rows.filter((t) => t.type === "redeem").reduce((s, t) => s + Math.abs(t.points), 0);
   const rewardValue = (rows: typeof loyaltyRows) => rows
-    .filter((t) => t.type === "redeem" && t.description)
-    .reduce((s, t) => {
-      const m = /\$([\d.]+)\s*off/i.exec(t.description || "");
-      return s + (m ? Number(m[1]) : 0);
-    }, 0);
+    .filter((t) => t.type === "redeem").reduce((s, t) => s + redeemedDollars(t.description), 0);
   const todayLoyalty = loyaltyRows.filter((t) => inShift(t.createdAt));
-  const hasLoyaltyActivity = loyaltyRows.length > 0;
+  // In dollars (owner, 2026-10-29): what today's points are worth, and what clients are owed on all points they hold,
+  // each point valued at the salon's best active reward (shared/loyaltyValue.ts).
+  const [rewardRows, heldRow] = await Promise.all([
+    db.select().from(loyaltyRewards).where(eq(loyaltyRewards.storeId, storeId)),
+    db.execute(sql`SELECT COALESCE(SUM(loyalty_points), 0)::int AS points, COUNT(*) FILTER (WHERE loyalty_points > 0)::int AS clients
+                     FROM clients WHERE store_id = ${storeId}`),
+  ]);
+  const perPoint = valuePerPoint(rewardRows);
+  const held = (heldRow as any).rows?.[0] ?? { points: 0, clients: 0 };
+  const hasLoyaltyActivity = loyaltyRows.length > 0 || Number(held.points) > 0;
 
   // ── Transaction summary (today only) ────────────────────────────────────
   const refundedAppointmentIdsToday = new Set(refundRows.filter((r) => inShift(r.createdAt) && r.appointmentId != null).map((r) => r.appointmentId));
@@ -354,7 +360,9 @@ export async function computeZReport(opts: ZReportOptions) {
     adjustments: { discounts: { today: today.discounts, ytd: ytd.discounts }, refunds: { today: refundsToday, ytd: refundsYtd } },
     giftCards: hasGiftCardActivity ? { today: { sold: giftSoldToday, redeemed: giftRedeemedToday }, ytd: { sold: giftSoldYtd, redeemed: giftRedeemedYtd } } : null,
     loyalty: hasLoyaltyActivity ? {
-      today: { earned: loyaltyEarned(todayLoyalty), redeemed: loyaltyRedeemed(todayLoyalty), rewardValueRedeemed: r2(rewardValue(todayLoyalty)) },
+      today: { earned: loyaltyEarned(todayLoyalty), redeemed: loyaltyRedeemed(todayLoyalty), rewardValueRedeemed: r2(rewardValue(todayLoyalty)),
+        earnedValue: pointsInDollars(loyaltyEarned(todayLoyalty), perPoint) },
+      outstanding: { points: Number(held.points) || 0, clients: Number(held.clients) || 0, value: pointsInDollars(Number(held.points) || 0, perPoint), perPoint },
       ytd: { earned: loyaltyEarned(loyaltyRows), redeemed: loyaltyRedeemed(loyaltyRows), rewardValueRedeemed: r2(rewardValue(loyaltyRows)) },
     } : null,
     technicianSales,

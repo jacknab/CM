@@ -1,4 +1,5 @@
 import { EMPTY_ARRAY } from "@/lib/empty";
+import { pointsInDollars, redeemedDollars, valuePerPoint } from "@shared/loyaltyValue";
 import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -150,6 +151,12 @@ export default function Loyalty() {
   const totalPointsIssued = transactions.filter(t => t.points > 0).reduce((s, t) => s + t.points, 0);
   const totalPointsRedeemed = transactions.filter(t => t.points < 0).reduce((s, t) => s + Math.abs(t.points), 0);
   const totalActivePoints = customers.reduce((s, c) => s + (c.loyaltyPoints || 0), 0);
+  // In dollars (owner, 2026-10-29): what clients are owed on the points they hold, and the discounts already given.
+  // A point is worth what the best active reward pays for it (shared/loyaltyValue.ts) — the same figure as Day Close.
+  const perPoint = valuePerPoint(rewards as any[]);
+  const owedToClients = pointsInDollars(totalActivePoints, perPoint);
+  const discountsGiven = transactions.filter((t) => (t as any).type === "redeem").reduce((s, t) => s + redeemedDollars((t as any).description), 0);
+  const usd = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
     <AppLayout>
@@ -253,6 +260,31 @@ export default function Loyalty() {
             </div>
           </CardContent>
         </Card>
+
+        {/* The money: owed to clients and given away (2026-10-29) */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" data-testid="loyalty-money">
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-2xl font-bold" data-testid="loyalty-owed">{perPoint ? usd(owedToClients) : "—"}</div>
+              <div className="text-sm text-muted-foreground">Owed to clients</div>
+              <div className="text-xs text-muted-foreground mt-1">{perPoint ? `${totalActivePoints.toLocaleString()} points held, at the best reward` : "Add a reward to value the points"}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-2xl font-bold" data-testid="loyalty-given">{usd(discountsGiven)}</div>
+              <div className="text-sm text-muted-foreground">Loyalty discounts given</div>
+              <div className="text-xs text-muted-foreground mt-1">Taken off bills with rewards</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-2xl font-bold">{perPoint ? `$${(Math.round(perPoint * 10000) / 10000).toString()}` : "—"}</div>
+              <div className="text-sm text-muted-foreground">Value of a point</div>
+              <div className="text-xs text-muted-foreground mt-1">The best active reward's dollars ÷ points</div>
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

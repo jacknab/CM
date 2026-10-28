@@ -24,7 +24,7 @@ import { cashPortionOf, paidByCard, ruleDeductionsFor, type DeductionRule } from
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { resolveSessionStoreId } from "../lib/sessionStore";
-import { autoApprovalDate, payrollPeriodsDue } from "../lib/payrollPeriods";
+import { autoApprovalDate, currentPayrollPeriod, payrollPeriodsDue } from "../lib/payrollPeriods";
 
 const router = Router();
 
@@ -82,6 +82,21 @@ router.put("/schedule", isAuthenticated, async (req, res) => {
 });
 
 // ── auto-create + list runs ──────────────────────────────────────────────
+// The salon's pay periods for picking one in a report (Commission report, 2026-10-29): the open one first, then the
+// 12 before it. None when no pay schedule is set.
+router.get("/periods", isAuthenticated, async (req, res) => {
+  const sid = await storeIdFor(req, res);
+  if (!sid) return;
+  const [sched] = await db.select().from(paySchedules).where(eq(paySchedules.storeId, sid));
+  if (!sched) return res.json({ periods: [] });
+  const tzResult = await pool.query<{ timezone: string | null }>("SELECT timezone FROM locations WHERE id = $1 LIMIT 1", [sid]);
+  const today = formatInTimeZone(new Date(), tzResult.rows[0]?.timezone || "UTC", "yyyy-MM-dd");
+  const anchor = sched.anchorDate as unknown as string;
+  const open = currentPayrollPeriod(sched.frequency, anchor, sched.periodEndOffsetDays, today);
+  const closed = payrollPeriodsDue(sched.frequency, anchor, sched.periodEndOffsetDays, today, 12);
+  res.json({ frequency: sched.frequency, periods: [{ ...open, current: true }, ...closed.map((p) => ({ ...p, current: false }))] });
+});
+
 router.get("/runs", isAuthenticated, async (req, res) => {
   const sid = await storeIdFor(req, res);
   if (!sid) return;

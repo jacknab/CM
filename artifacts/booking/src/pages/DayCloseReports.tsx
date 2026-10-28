@@ -21,10 +21,17 @@ function longDate(day: string) {
 export default function DayCloseReports() {
   const { selectedStore } = useSelectedStore();
   const timezone = selectedStore?.timezone || "UTC";
-  const [day, setDay] = useState(() => formatInTz(new Date(), timezone, "yyyy-MM-dd"));
-  // The salon's timezone arrives after first paint: start on the salon's today unless a day was already chosen.
+  // Opens on YESTERDAY's Day Close (owner, 2026-10-29): today's isn't run until tonight. The salon's own yesterday.
+  const salonYesterday = (tz: string) => {
+    const today = formatInTz(new Date(), tz, "yyyy-MM-dd");
+    const d = new Date(`${today}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().slice(0, 10);
+  };
+  const [day, setDay] = useState(() => salonYesterday(timezone));
+  // The salon's timezone arrives after first paint: start on the salon's yesterday unless a day was already chosen.
   const [picked, setPicked] = useState(false);
-  useEffect(() => { if (!picked) setDay(formatInTz(new Date(), timezone, "yyyy-MM-dd")); }, [timezone, picked]);
+  useEffect(() => { if (!picked) setDay(salonYesterday(timezone)); }, [timezone, picked]);
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [printing, setPrinting] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
