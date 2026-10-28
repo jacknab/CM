@@ -1159,19 +1159,17 @@ router.get("/api/support/accounts/:id/owners", requireSupportAuth, async (req: R
   const storeId = paramInt(req.params.id);
   try {
     const rows = await pool.query(`
-      SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.profile_image_url,
-        CASE WHEN l.user_id = u.id THEN 'Owner' ELSE INITCAP(st.role) END AS account_role
+      SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.profile_image_url, 'Owner' AS account_role
       FROM locations l
-      LEFT JOIN users u ON u.id = l.user_id
-      LEFT JOIN staff st ON st.user_id = u.id AND st.store_id = l.id
-      WHERE l.id = $1 AND u.id IS NOT NULL
+      JOIN users u ON u.id = l.user_id
+      WHERE l.id = $1
       UNION
-      SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.profile_image_url,
-        INITCAP(st.role)
+      -- Staff have no user_id; a manager/admin's login is the user with the same email.
+      SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.profile_image_url, INITCAP(st.role)
       FROM staff st
-      JOIN users u ON u.id = st.user_id
+      JOIN users u ON lower(u.email) = lower(st.email)
       WHERE st.store_id = $1 AND st.role IN ('admin', 'manager') AND st.status = 'active'
-        AND u.id != (SELECT user_id FROM locations WHERE id = $1)
+        AND u.id IS DISTINCT FROM (SELECT user_id FROM locations WHERE id = $1)
       LIMIT 10
     `, [storeId]);
     res.json(rows.rows.map(r => ({
@@ -1180,6 +1178,7 @@ router.get("/api/support/accounts/:id/owners", requireSupportAuth, async (req: R
       role: r.account_role ?? r.role, profileImageUrl: r.profile_image_url,
     })));
   } catch (e) {
+    console.error("[support] owners error:", e);
     res.status(500).json({ error: "Failed to load owners" });
   }
 });

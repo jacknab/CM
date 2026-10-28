@@ -4374,7 +4374,9 @@ function AppointmentDetailsPanel({
   const hasServerAppointmentId = Number.isFinite(appointmentIdNum);
 
   const { data: availableTimeData } = useQuery<{ availableMinutes: number }>({
-    queryKey: ["/api/appointments", hasServerAppointmentId ? appointmentIdNum : "local", "available-time"],
+    // Its own key, not under "/api/appointments": every live calendar update invalidates that prefix, which re-fetched
+    // this ~20 times in a second after one save.
+    queryKey: ["appointment-available-time", hasServerAppointmentId ? appointmentIdNum : "local"],
     queryFn: async () => {
       const res = await fetch(`/api/appointments/${appointmentIdNum}/available-time`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch available time");

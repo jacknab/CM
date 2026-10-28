@@ -394,8 +394,9 @@ export default function SmsInbox() {
   const { data: conversations = EMPTY_ARRAY, isLoading: convsLoading } = useQuery<Conversation[]>({
     queryKey: ["/api/sms-inbox/conversations", storeId, view],
     queryFn: () =>
+      // A failed request's body is an error object, not a list — throw so the page keeps its last list instead of crashing.
       fetch(`/api/sms-inbox/conversations?storeId=${storeId}&view=${view}`, { credentials: "include" })
-        .then(r => r.json()),
+        .then(async r => { if (!r.ok) throw new Error("Could not load conversations"); const d = await r.json(); return Array.isArray(d) ? d : []; }),
     enabled: !!storeId,
     refetchInterval: 60_000, // Fallback only — WS handles real-time updates
   });
@@ -405,7 +406,7 @@ export default function SmsInbox() {
     queryFn: () =>
       fetch(`/api/sms-inbox/messages?storeId=${storeId}&phone=${encodeURIComponent(selectedPhone!)}`, {
         credentials: "include",
-      }).then(r => r.json()),
+      }).then(async r => { if (!r.ok) throw new Error("Could not load messages"); const d = await r.json(); return Array.isArray(d) ? d : []; }),
     enabled: !!storeId && !!selectedPhone,
     refetchInterval: 60_000, // Fallback only — WS handles real-time updates
   });

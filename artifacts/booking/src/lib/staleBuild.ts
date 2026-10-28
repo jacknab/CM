@@ -25,6 +25,14 @@ export function reloadForNewBuild(): boolean {
   } catch {
     return false; // no session storage → can't guard against a loop, so don't auto-reload
   }
+  reloading = true;
   window.location.reload();
   return true;
+}
+
+let reloading = false;
+/** True once a reload onto the new build has started. While Vite's preload error is cancelled for that reload, the
+ *  lazy page resolves to nothing and React throws "reading 'default'" — that is the reload, not a bug to show or log. */
+export function isReloadingForNewBuild(): boolean {
+  return reloading;
 }

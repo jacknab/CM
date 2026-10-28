@@ -6,6 +6,24 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-10-29 — App-wide sweep (logs, browser errors, live data)
+
+Fixed and deployed: support account Owners panel (500 — joined on a `staff.user_id` column that doesn't exist);
+nail-salon tickets can no longer be closed unpaid through PATCH /api/appointments/:id (the phone calendar's Complete
+button closed tickets 302, 303, 305 on 10-27 with no payment); SMS inbox crash when a load failed; error screen flash
+during the after-deploy reload; calendar re-fetching "available time" ~20× per save; /api/public/plan-prices now reads
+subscription_plans (item 1 below); AI coaching backs off for 10 minutes after an OpenAI failure.
+
+Still open — needs the owner:
+- **OpenAI account is out of credit** (`credit_balance_exhausted` in today's error log). Autumn's calls and every AI
+  summary fail until credit is added.
+- **22 paid-looking tickets at Luxury Nails (store 2) are "completed" with no payment** — 3 from 2026-10-27 (#302 $95,
+  #303, #305 $85 service), 19 from Sept 22–28. Left as they are: whether money was collected is unknown.
+- **Open cash-drawer shifts:** store 38 since 10-03, stores 39 and 40 since 10-09 — someone there runs Day Close.
+- **AI Receptionist safety gate**: logs "Live calls not enabled for this salon — run preflight first … strict mode is
+  OFF — allowing call" for some stores.
+- **The Intelligence dashboard has its own "at risk" rule** (routes/intelligence.ts), separate from shared/clientStatus.ts.
+
 ## 2026-10-28 — Worked through (fixed today)
 
 - **Catalog store checks — fixed and live (deployed 2026-10-28):**
@@ -78,7 +96,7 @@ Solo is free (migration 0234; billing activates it without a checkout; site and 
 
 ## Still to build or decide
 
-**1. Plan prices — fixed 2026-10-21.** Stripe now has prices for Starter $29, Professional $99, Enterprise $179 (monthly + yearly) and `subscription_plans` points at them; the billing pages read the admin plans. Left: `billing_plans` (used by `/api/public/plan-prices`) still names the plans Professional/Elite.
+**1. Plan prices — fixed 2026-10-21; /api/public/plan-prices moved to `subscription_plans` 2026-10-29.**
 
 **2. Buttons that still only say "COMING SOON"** (to be built, decided 2026-10-09): Sell Gift Card on /nail (`GiftCardSheet.tsx`, `CheckoutMode.tsx`), and Gift Card (Sell / Redeem / Check Balance), Membership and Reprint on the calendar checkout sheet (`Calendar.tsx`, `handlePosAction`). Selling a gift card is a sale: it needs to be paid for (cash and card), counted in Day Close, and kept out of commission, tips and turns. "Membership" has nothing behind it yet — what a membership is has to be defined first.
 

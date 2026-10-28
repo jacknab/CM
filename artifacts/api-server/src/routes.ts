@@ -6539,6 +6539,14 @@ If you have any questions, please contact your administrator.
       if (existingAppointment.status === "cancelled" && input.status && input.status !== "cancelled") {
         return res.status(409).json({ error: "Cancelled appointments cannot be restored or checked out" });
       }
+      // A nail-salon ticket closes only by being paid (2026-10-29: three tickets were closed unpaid from the phone
+      // calendar's Complete button and vanished from the POS). Checkout always sends totalPaid (0 for a free ticket);
+      // a card the server already captured has total_paid set.
+      if (input.status === "completed" && existingAppointment.status !== "completed"
+          && (input as any).totalPaid === undefined && (existingAppointment as any).totalPaid == null
+          && nailTickets.isNailSalonCategory((await storage.getStore(existingAppointment.storeId!) as any)?.category)) {
+        return res.status(409).json({ code: "PAYMENT_REQUIRED", message: "Take payment at checkout to finish this ticket." });
+      }
       // Moving or lengthening a booking from the Certxa Pro app (`checkConflicts: true`): refused when the same
       // technician already has another booking in that time, with the salon's gap between appointments held.
       // Opt-in, because the salon calendar and the walk-in screens are allowed to overlap bookings on purpose.
@@ -11157,26 +11165,18 @@ If you have any questions, please contact your administrator.
   });
 
   // Public plan prices — used by marketing pages (no auth required)
-  app.get("/api/public/plan-prices", async (req, res) => {
+  // The plans the salon can actually buy (subscription_plans — the billing pages' source), keyed by plan code.
+  // billing_plans held old names (Professional/Elite) and prices; it is no longer read here (2026-10-29).
+  app.get("/api/public/plan-prices", async (_req, res) => {
     try {
-      const plans = await db
-        .select({ code: billingPlans.code, name: billingPlans.name, priceCents: billingPlans.priceCents })
-        .from(billingPlans)
-        .where(eq(billingPlans.active, true));
-      const DEFAULTS: Record<string, number> = { solo: 900, professional: 2200 };
+      const { rows } = await pool.query(
+        `SELECT code, name, price_monthly_cents FROM subscription_plans WHERE is_active = true ORDER BY sort_order, id`);
       const result: Record<string, { name: string; priceMonthly: number }> = {};
-      for (const p of plans) {
-        result[p.code] = { name: p.name, priceMonthly: Math.round(Number(p.priceCents)) };
-      }
-      // Fill any missing plans with defaults
-      for (const [code, cents] of Object.entries(DEFAULTS)) {
-        if (!result[code]) {
-          result[code] = { name: code.charAt(0).toUpperCase() + code.slice(1), priceMonthly: cents };
-        }
-      }
+      for (const p of rows as any[]) result[p.code] = { name: p.name, priceMonthly: Math.round(Number(p.price_monthly_cents) || 0) };
       res.setHeader("Cache-Control", "public, max-age=300");
       return res.json(result);
     } catch (err: any) {
+      console.error("[public/plan-prices]", err);
       return res.status(500).json({ error: "Failed to load plan prices" });
     }
   });

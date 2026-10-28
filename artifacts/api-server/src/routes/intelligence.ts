@@ -1441,6 +1441,8 @@ const _tabContext: Record<string, string> = {
   services:   "This is service performance — which services drive the most revenue, and pricing opportunities.",
 };
 
+const _aiCoachingFailedUntil = new Map<string, number>();
+
 router.post("/ai-coaching", async (req, res) => {
   const storeId = await requireStoreId(req, res);
   if (!storeId) return;
@@ -1451,6 +1453,10 @@ router.post("/ai-coaching", async (req, res) => {
   const cached = _aiCoachingCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return res.json({ summary: cached.summary });
+  }
+  // After a failure (e.g. the OpenAI account is out of credit) don't call again on every page view for 10 minutes.
+  if ((_aiCoachingFailedUntil.get(cacheKey) ?? 0) > Date.now()) {
+    return res.status(503).json({ error: "The summary is unavailable right now." });
   }
 
   // The intelligence system is automatic (owner, 2026-10-24): the summary says what the numbers mean and what Certxa
@@ -1484,7 +1490,8 @@ Keep your entire response under 55 words.`;
     return res.json({ summary });
   } catch (err: any) {
     console.error("[intelligence] ai-coaching error:", err.message);
-    return res.status(500).json({ error: "Failed to generate coaching summary" });
+    _aiCoachingFailedUntil.set(cacheKey, Date.now() + 10 * 60 * 1000);
+    return res.status(503).json({ error: "The summary is unavailable right now." });
   }
 });
 
