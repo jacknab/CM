@@ -49,8 +49,8 @@ export function CheckInIdle({ c, text, onStart, extra, footer }: {
         {/* Plain bold sans (the same family as the button), not the decorative heading font. A div, so the nail
             look's serif rule for headings doesn't apply. */}
         <div role="heading" aria-level={1} style={{
-          margin: 0, color: c.TEXT, fontFamily: "var(--font-body, 'DM Sans', sans-serif)", fontWeight: 700, lineHeight: 0.95, letterSpacing: "-0.01em",
-          fontSize: "clamp(56px, min(12vw, 17vh), 170px)", textTransform: "uppercase",
+          margin: 0, color: c.TEXT, fontFamily: "var(--font-body, 'DM Sans', sans-serif)", fontWeight: 700, lineHeight: 1.05, letterSpacing: "-0.01em",
+          fontSize: "clamp(56px, min(14vw, 15vh), 170px)", textTransform: "uppercase", whiteSpace: "pre-line",
         }}>
           {text.checkInHere}
         </div>
