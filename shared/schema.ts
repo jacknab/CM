@@ -2896,6 +2896,9 @@ export const cashDrawers = pgTable("cash_drawers", {
   storeId:     integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
   name:        text("name").notNull(),
   registerId:  integer("register_id").references(() => registers.id, { onDelete: "set null" }),
+  // The salon's built-in station (a salon with no station rows runs its POS as station 0). One drawer per station:
+  // unique register_id, and one main_station drawer per salon (migration 0264).
+  mainStation: boolean("main_station").notNull().default(false),
   // Optional per-drawer override of locations.registerTargetFloat — falls
   // back to the store-wide value when null.
   targetFloat: decimal("target_float", { precision: 10, scale: 2 }),

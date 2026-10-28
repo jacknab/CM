@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { useActiveRegisterId } from "@/hooks/use-registers";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useSelectedStore } from "@/hooks/use-store";
@@ -21,15 +22,6 @@ export function setLocalDrawerId(id: number): void {
   } catch {}
 }
 
-/** Has this browser ever been told which drawer it is (picker answered)? */
-function hasLocalDrawerChoice(): boolean {
-  try {
-    return localStorage.getItem(LOCAL_DRAWER_KEY) !== null;
-  } catch {
-    return false;
-  }
-}
-
 export interface CashDrawerOption { id: number; name: string; }
 
 export function useCashDrawers(storeId: number | undefined) {
@@ -49,12 +41,13 @@ export function useCreateCashDrawer() {
   const queryClient = useQueryClient();
   const { selectedStore } = useSelectedStore();
   return useMutation({
-    mutationFn: async (data: { name: string; registerId?: number | null; targetFloat?: string | null }) => {
+    mutationFn: async (data: { name: string; registerId?: number | null; mainStation?: boolean; targetFloat: string }) => {
       const res = await apiRequest("POST", "/api/cash-drawers", data);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/cash-drawers?storeId=${selectedStore?.id}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cash-drawers/station"] });
     },
   });
 }
@@ -63,12 +56,13 @@ export function useUpdateCashDrawer() {
   const queryClient = useQueryClient();
   const { selectedStore } = useSelectedStore();
   return useMutation({
-    mutationFn: async ({ id, ...patch }: { id: number; name?: string; registerId?: number | null; targetFloat?: string | null; isActive?: boolean; sortOrder?: number }) => {
+    mutationFn: async ({ id, ...patch }: { id: number; name?: string; registerId?: number | null; mainStation?: boolean; targetFloat?: string | null; isActive?: boolean; sortOrder?: number }) => {
       const res = await apiRequest("PUT", `/api/cash-drawers/${id}`, patch);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/cash-drawers?storeId=${selectedStore?.id}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cash-drawers/station"] });
     },
   });
 }
@@ -82,36 +76,54 @@ export function useDeleteCashDrawer() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/cash-drawers?storeId=${selectedStore?.id}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cash-drawers/station"] });
     },
   });
 }
 
 /**
- * Resolves which cash drawer this /calendar browser is acting as. The pre-
- * existing implicit/default drawer (drawerId 0) is a real, selectable
- * option — so as soon as a store has even ONE explicit drawer configured,
- * there are 2 possible drawers and `needsPicker` fires (a store with 0
- * drawers configured never shows a picker, since there's only ever been one).
+ * This POS station's cash drawer (owner, 2026-10-29). Each drawer is assigned to one station in Settings › Cash
+ * Drawers, and a station without one can't take cash (`cashAllowed` false; the server refuses it too).
+ *
+ * The drawer's starting cash is set once on the drawer, so there is no morning count: the drawer is opened for the
+ * day with that amount by itself, and counted at Day Close.
+ *
+ * `drawerId` is the station's drawer, or 0 when it has none. `needsPicker`, `drawers` and `selectDrawer` remain for
+ * the screens that used to ask "which drawer is this?" — a station's drawer is never picked on the tablet now.
  */
 export function useActiveDrawerId(storeId: number | undefined) {
-  const { data: drawerList } = useCashDrawers(storeId);
-  const [localId, setLocalId] = useState(getLocalDrawerId);
-  const [hasChoice, setHasChoice] = useState(hasLocalDrawerChoice);
+  const queryClient = useQueryClient();
+  const { registerId } = useActiveRegisterId(storeId);
+  const { data: station, isSuccess } = useQuery<{ drawer: CashDrawer | null }>({
+    queryKey: ["/api/cash-drawers/station", storeId, registerId],
+    enabled: !!storeId,
+    queryFn: async () => {
+      const res = await fetch(`/api/cash-drawers/station?registerId=${registerId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to find this station's cash drawer");
+      return res.json();
+    },
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000,
+  });
+  const drawer = station?.drawer ?? null;
+  const drawerId = drawer?.id ?? 0;
+  // Only a definite "no drawer" from the server blocks cash. Not known yet, or no connection (offline sales are cash):
+  // allowed — the server checks again when the sale reaches it.
+  const cashAllowed = !(isSuccess && !drawer);
 
-  const activeDrawers = (drawerList ?? []).filter((d) => d.isActive);
-  const options: CashDrawerOption[] = activeDrawers.length > 0
-    ? [{ id: 0, name: "Default Drawer" }, ...activeDrawers.map((d) => ({ id: d.id, name: d.name }))]
-    : [];
+  const openKey = [`/api/cash-drawer/open?storeId=${storeId}&drawerId=${drawerId}`];
+  const { data: openSession } = useQuery({ queryKey: openKey, enabled: !!storeId && drawerId > 0, staleTime: 60_000 });
+  const opening = useRef(false);
+  useEffect(() => {
+    if (!drawerId || openSession !== null || opening.current) return;
+    opening.current = true;
+    void apiRequest("POST", `/api/cash-drawers/${drawerId}/open-session`, {})
+      .then(() => queryClient.invalidateQueries({ queryKey: openKey }))
+      .catch(() => { /* tried again when the session is next looked at */ })
+      .finally(() => { opening.current = false; });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawerId, openSession]);
 
-  const localIsValid = hasChoice && (localId === 0 || activeDrawers.some((d) => d.id === localId));
-  const needsPicker = options.length >= 2 && !localIsValid;
-  const drawerId = localIsValid ? localId : 0;
-
-  const selectDrawer = useCallback((id: number) => {
-    setLocalDrawerId(id);
-    setLocalId(id);
-    setHasChoice(true);
-  }, []);
-
-  return { drawerId, needsPicker, drawers: options, selectDrawer };
+  const selectDrawer = useCallback((_id: number) => {}, []);
+  return { drawerId, drawer, cashAllowed, registerId, needsPicker: false, drawers: [] as CashDrawerOption[], selectDrawer };
 }

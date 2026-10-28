@@ -1056,6 +1056,8 @@ export interface FinalizeData {
   redemption?: { rewardId: number; customerId: number };
   /** Gift cards used as payment: each is charged (atomically, on the server) BEFORE the sale closes. */
   giftCards?: { code: string; amount: number }[];
+  /** The POS station taking the sale: one with no cash drawer can't take cash (server checks, 2026-10-29). */
+  registerId?: number;
 }
 
 export interface GiftCardInfo { code: string; balance: number; issuedTo: string | null }

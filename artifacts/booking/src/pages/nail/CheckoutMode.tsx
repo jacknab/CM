@@ -42,6 +42,8 @@ interface Props {
   storePhone?: string;
   timezone: string;
   registerId: number;
+  /** False when this POS station has no cash drawer: it can't take cash (owner, 2026-10-29). */
+  cashAllowed?: boolean;
   /** A customer-facing /frontdesk tablet is paired. */
   dualScreen: boolean;
   /** The store's sales-tax settings (Settings → Checkout & Tax). */
@@ -729,7 +731,9 @@ export function CheckoutMode(p: Props) {
   // no busy state the way CARD does (disabled={cardBusy}), and addCash runs synchronously with
   // nothing to naturally prevent two rapid taps from each reading the same `wanted()` value.
   const cashLock = useRef(false);
+  const noDrawer = () => say("NO CASH DRAWER ON THIS STATION · SET ONE UP IN SETTINGS › CASH DRAWERS", "error");
   const addCash = (value: number) => {
+    if (p.cashAllowed === false) return noDrawer();
     if (cashLock.current) return;
     if (value <= 0) return say("ENTER AN AMOUNT FIRST", "error");
     if (rest() <= 0) return say("NOTHING DUE", "error");
@@ -845,7 +849,7 @@ export function CheckoutMode(p: Props) {
     setRightTab("payment");
   };
   // CASH is the payment type, not a payment: the amount comes from the keypad.
-  const chooseCash = () => { beginPaying(); setPayType("cash"); };
+  const chooseCash = () => { if (p.cashAllowed === false) { noDrawer(); return; } beginPaying(); setPayType("cash"); };
   // The salon's own terminal approved the card: record a card payment of the typed amount, or of what is still due.
   const recordOwnCard = () => {
     if (cashLock.current) return;
@@ -1415,7 +1419,7 @@ export function CheckoutMode(p: Props) {
                   </div>
                 ) : (
                 <div className="pay-methods">
-                  <button type="button" className={`pay-cash ${paying && payType === "cash" ? "pay-type-on" : ""}`} aria-pressed={paying && payType === "cash"} onClick={chooseCash} data-testid="nail-pay-cash"><Banknote size={26} /><span>{tx("cash")}</span></button>
+                  <button type="button" className={`pay-cash ${paying && payType === "cash" ? "pay-type-on" : ""}`} aria-pressed={paying && payType === "cash"} aria-disabled={p.cashAllowed === false} style={p.cashAllowed === false ? { opacity: 0.4 } : undefined} onClick={chooseCash} data-testid="nail-pay-cash"><Banknote size={26} /><span>{tx("cash")}</span></button>
                   <button type="button" className={`pay-card ${paying && payType === "card" ? "pay-type-on" : ""}`} aria-pressed={paying && payType === "card"} disabled={cardBusy && cardProvider !== "own"} onClick={takeCard} data-testid="nail-pay-card">
                     {cardBusy && cardProvider !== "own" ? <Loader2 size={26} className="spin" /> : <CreditCard size={26} />}<span>{cardProvider === "own" || cardLabel === "CARD" ? tx("card") : cardLabel}</span>
                   </button>

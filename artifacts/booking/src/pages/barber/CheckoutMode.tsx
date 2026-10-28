@@ -32,6 +32,8 @@ interface Props {
   storePhone?: string;
   timezone: string;
   registerId: number;
+  /** False when this POS station has no cash drawer: it can't take cash (owner, 2026-10-29). */
+  cashAllowed?: boolean;
   /** A customer-facing /frontdesk tablet is paired. */
   dualScreen: boolean;
   /** The store's sales-tax settings (Settings → Checkout & Tax). */
@@ -373,6 +375,7 @@ export function CheckoutMode(p: Props) {
   // nothing to naturally prevent two rapid taps from each reading the same `wanted()` value.
   const cashLock = useRef(false);
   const takeCash = () => {
+    if (p.cashAllowed === false) return say("NO CASH DRAWER ON THIS STATION · SET ONE UP IN SETTINGS › CASH DRAWERS", "error");
     if (cashLock.current) return;
     const value = wanted();
     if (value <= 0) return say(rest() <= 0 ? "NOTHING DUE" : "ENTER AN AMOUNT FIRST", "error");
@@ -854,7 +857,7 @@ export function CheckoutMode(p: Props) {
               ) : (
               <div className="pay-panel" data-testid="barber-pay-payment">
                 <div className="pay-methods">
-                  <button type="button" className="pay-cash" onClick={takeCash} data-testid="barber-pay-cash"><Banknote size={26} /><span>CASH</span></button>
+                  <button type="button" className="pay-cash" aria-disabled={p.cashAllowed === false} style={p.cashAllowed === false ? { opacity: 0.4 } : undefined} onClick={takeCash} data-testid="barber-pay-cash"><Banknote size={26} /><span>CASH</span></button>
                   <button type="button" className="pay-card" disabled={cardBusy} onClick={takeCard} data-testid="barber-pay-card">
                     {cardBusy ? <Loader2 size={26} className="spin" /> : <CreditCard size={26} />}<span>{cardLabel}</span>
                   </button>

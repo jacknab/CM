@@ -272,6 +272,8 @@ export const fetchAppointment = (id: number) => call<any>(`/api/appointments/${i
 
 export interface FinalizeData {
   idempotencyKey: string;
+  /** The POS station taking the sale: one with no cash drawer can't take cash (server checks, 2026-10-29). */
+  registerId?: number;
   tenders: Tender[];
   extras?: { label: string; price: number }[];
   paymentMethod: string;

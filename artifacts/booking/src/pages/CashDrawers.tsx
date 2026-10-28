@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DollarSign, Trash2, Loader2, Pencil, Plus, Landmark } from "lucide-react";
+import { DollarSign, Trash2, Loader2, Pencil, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -14,53 +14,75 @@ import {
   useUpdateCashDrawer,
   useDeleteCashDrawer,
 } from "@/hooks/use-cash-drawers";
-import type { CashDrawer, Register } from "@shared/schema";
+import type { CashDrawer } from "@shared/schema";
 
-const NO_REGISTER = "none";
+/**
+ * Settings › Cash Drawers (owner, 2026-10-29). A salon sets up each cash drawer with its starting cash (set once; the
+ * drawer is counted at Day Close) and assigns it to ONE POS station. A POS station without a drawer can't take cash.
+ * A salon with no station rows has one built-in station, "Main POS station" (the drawer's mainStation flag).
+ */
+const NONE = "none";
+const MAIN = "main";
 
-function DrawerRow({ drawer, registerOptions }: { drawer: CashDrawer; registerOptions: Register[] }) {
+type StationOption = { value: string; label: string };
+
+/** "409: {"message":"..."}" → the message. */
+const serverMessage = (err: unknown, fallback: string) => {
+  const raw = String((err as Error)?.message ?? "");
+  try { return JSON.parse(raw.slice(raw.indexOf(":") + 1)).message || fallback; } catch { return fallback; }
+};
+
+const stationValue = (d: Pick<CashDrawer, "registerId" | "mainStation">) =>
+  d.registerId ? String(d.registerId) : d.mainStation ? MAIN : NONE;
+const stationPatch = (value: string) =>
+  value === MAIN ? { mainStation: true } : value === NONE ? { registerId: null, mainStation: false } : { registerId: Number(value) };
+const validAmount = (v: string) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) >= 0;
+
+function DrawerRow({ drawer, stations, takenBy }: { drawer: CashDrawer; stations: StationOption[]; takenBy: Map<string, string> }) {
   const { toast } = useToast();
   const updateDrawer = useUpdateCashDrawer();
   const deleteDrawer = useDeleteCashDrawer();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(drawer.name);
-  const [targetFloat, setTargetFloat] = useState(drawer.targetFloat ?? "");
+  const [amount, setAmount] = useState(drawer.targetFloat ?? "");
 
   const handleRename = () => {
     const trimmed = name.trim();
     if (!trimmed || trimmed === drawer.name) { setEditing(false); setName(drawer.name); return; }
     updateDrawer.mutate({ id: drawer.id, name: trimmed }, {
       onSuccess: () => setEditing(false),
-      onError: () => { toast({ title: "Failed to rename drawer", variant: "destructive" }); setName(drawer.name); },
+      onError: (err) => { toast({ title: serverMessage(err, "Couldn't rename the drawer"), variant: "destructive" }); setName(drawer.name); },
     });
   };
 
-  const handleFloatBlur = () => {
-    const trimmed = targetFloat.trim();
-    const current = drawer.targetFloat ?? "";
-    if (trimmed === current) return;
-    updateDrawer.mutate(
-      { id: drawer.id, targetFloat: trimmed === "" ? null : Number(trimmed).toFixed(2) },
-      { onError: () => toast({ title: "Failed to update target float", variant: "destructive" }) },
-    );
+  const handleAmountBlur = () => {
+    if (amount.trim() === (drawer.targetFloat ?? "")) return;
+    if (!validAmount(amount)) {
+      toast({ title: "Enter the drawer's starting cash", variant: "destructive" });
+      setAmount(drawer.targetFloat ?? "");
+      return;
+    }
+    updateDrawer.mutate({ id: drawer.id, targetFloat: Number(amount).toFixed(2) }, {
+      onError: (err) => toast({ title: serverMessage(err, "Couldn't save the starting cash"), variant: "destructive" }),
+    });
   };
 
-  const handleRegisterChange = (value: string) => {
-    updateDrawer.mutate(
-      { id: drawer.id, registerId: value === NO_REGISTER ? null : Number(value) },
-      { onError: () => toast({ title: "Failed to update linked register", variant: "destructive" }) },
-    );
+  const handleStation = (value: string) => {
+    updateDrawer.mutate({ id: drawer.id, ...stationPatch(value) }, {
+      onError: (err) => toast({ title: serverMessage(err, "Couldn't assign the POS station"), variant: "destructive" }),
+    });
   };
 
   const handleDelete = () => {
-    if (!window.confirm(`Remove "${drawer.name}"? Its open/closed session history is kept, just unlinked.`)) return;
+    if (!window.confirm(`Remove "${drawer.name}"? Its POS station won't be able to take cash until it has a drawer again.`)) return;
     deleteDrawer.mutate(drawer.id, {
-      onError: () => toast({ title: "Failed to delete cash drawer", variant: "destructive" }),
+      onError: (err) => toast({ title: serverMessage(err, "Couldn't remove the drawer"), variant: "destructive" }),
     });
   };
 
+  const current = stationValue(drawer);
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4" data-testid={`cash-drawer-${drawer.id}`}>
       <div className="flex items-center justify-between gap-2">
         {editing ? (
           <div className="flex items-center gap-2 flex-1">
@@ -75,14 +97,13 @@ function DrawerRow({ drawer, registerOptions }: { drawer: CashDrawer; registerOp
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            <Landmark className="w-5 h-5 text-teal-500" />
             <h3 className="font-semibold text-slate-700">{drawer.name}</h3>
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditing(true)} title="Rename">
               <Pencil className="w-3.5 h-3.5 text-slate-400" />
             </Button>
           </div>
         )}
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
+        <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-slate-700"
           onClick={handleDelete} disabled={deleteDrawer.isPending} title="Remove drawer">
           <Trash2 className="w-4 h-4" />
         </Button>
@@ -90,32 +111,30 @@ function DrawerRow({ drawer, registerOptions }: { drawer: CashDrawer; registerOp
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1.5">Linked register (optional)</label>
-          <Select value={drawer.registerId ? String(drawer.registerId) : NO_REGISTER} onValueChange={handleRegisterChange}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NO_REGISTER}>No specific register</SelectItem>
-              {registerOptions.map((r) => (
-                <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1.5">Target float (optional)</label>
+          <label className="block text-xs font-medium text-slate-500 mb-1.5">Starting cash</label>
           <div className="relative">
             <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-            <Input
-              className="pl-8"
-              placeholder="Store default"
-              value={targetFloat}
-              onChange={(e) => setTargetFloat(e.target.value)}
-              onBlur={handleFloatBlur}
-              inputMode="decimal"
-            />
+            <Input className="pl-8" value={amount} onChange={(e) => setAmount(e.target.value)} onBlur={handleAmountBlur}
+              inputMode="decimal" placeholder="0.00" data-testid={`cash-drawer-amount-${drawer.id}`} />
           </div>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1.5">POS station</label>
+          <Select value={current} onValueChange={handleStation}>
+            <SelectTrigger data-testid={`cash-drawer-station-${drawer.id}`}><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>Not assigned</SelectItem>
+              {stations.map((s) => {
+                const other = takenBy.get(s.value);
+                const taken = !!other && s.value !== current;
+                return (
+                  <SelectItem key={s.value} value={s.value} disabled={taken}>
+                    {taken ? `${s.label} · has ${other}` : s.label}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
         </div>
       </div>
     </div>
@@ -130,17 +149,28 @@ export default function CashDrawers() {
   const { data: allRegisters } = useRegisters(selectedStore?.id);
   const createDrawer = useCreateCashDrawer();
   const [newName, setNewName] = useState("");
+  const [newAmount, setNewAmount] = useState("");
+  const [newStation, setNewStation] = useState(NONE);
 
   const drawerList = allDrawers ?? [];
-  const registerOptions = allRegisters ?? [];
+  const activeStations = (allRegisters ?? []).filter((r) => r.isActive);
+  // A salon with no station rows runs one built-in station.
+  const stations: StationOption[] = activeStations.length
+    ? activeStations.map((r) => ({ value: String(r.id), label: r.name }))
+    : [{ value: MAIN, label: "Main POS station" }];
+  const takenBy = new Map<string, string>();
+  for (const d of drawerList) { const v = stationValue(d); if (v !== NONE) takenBy.set(v, d.name); }
 
+  const canAdd = !!newName.trim() && validAmount(newAmount) && !createDrawer.isPending;
   const handleAdd = () => {
-    const trimmed = newName.trim();
-    if (!trimmed) return;
-    createDrawer.mutate({ name: trimmed }, {
-      onSuccess: () => setNewName(""),
-      onError: () => toast({ title: "Failed to add cash drawer", variant: "destructive" }),
-    });
+    if (!canAdd) return;
+    createDrawer.mutate(
+      { name: newName.trim(), targetFloat: Number(newAmount).toFixed(2), ...(newStation === NONE ? {} : stationPatch(newStation)) } as any,
+      {
+        onSuccess: () => { setNewName(""); setNewAmount(""); setNewStation(NONE); },
+        onError: (err) => toast({ title: serverMessage(err, "Couldn't add the cash drawer"), variant: "destructive" }),
+      },
+    );
   };
 
   return (
@@ -150,7 +180,7 @@ export default function CashDrawers() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Cash Drawers</h1>
             <p className="text-muted-foreground mt-1 text-sm">
-              Set up multiple physical cash drawers, each with its own Day Close and target float.
+              Set up each cash drawer with its starting cash and assign it to a POS station.
             </p>
           </div>
         )}
@@ -162,27 +192,48 @@ export default function CashDrawers() {
           </div>
         ) : (
           <div className="space-y-6">
-            {drawerList.length === 0 && (
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-sm text-slate-600">
-                You're running a single shared cash drawer today — no setup needed. Add a drawer here only if
-                your salon uses more than one physical cash box (drawer count doesn't need to match your
-                number of registers — e.g. two checkout stations can still share one drawer).
-              </div>
-            )}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-sm text-slate-600" data-testid="cash-drawers-intro">
+              A POS station needs a cash drawer to take cash. Enter the cash the drawer starts each day with, then
+              assign the drawer to its POS station. Each drawer goes with one POS station. The drawer is counted at
+              Day Close.
+            </div>
 
             {drawerList.map((d) => (
-              <DrawerRow key={d.id} drawer={d} registerOptions={registerOptions} />
+              <DrawerRow key={d.id} drawer={d} stations={stations} takenBy={takenBy} />
             ))}
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-              <div className="flex items-center gap-2">
-                <Input
-                  placeholder='e.g. "Main Drawer" or "Drawer 2"'
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
-                />
-                <Button onClick={handleAdd} disabled={!newName.trim() || createDrawer.isPending} className="gap-1.5 shrink-0">
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4" data-testid="cash-drawer-new">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Drawer name</label>
+                  <Input placeholder='e.g. "Front Desk Drawer"' value={newName} onChange={(e) => setNewName(e.target.value)}
+                    data-testid="cash-drawer-new-name" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Starting cash</label>
+                  <div className="relative">
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                    <Input className="pl-8" placeholder="0.00" inputMode="decimal" value={newAmount}
+                      onChange={(e) => setNewAmount(e.target.value)} data-testid="cash-drawer-new-amount" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">POS station</label>
+                  <Select value={newStation} onValueChange={setNewStation}>
+                    <SelectTrigger data-testid="cash-drawer-new-station"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>Not assigned</SelectItem>
+                      {stations.map((s) => (
+                        <SelectItem key={s.value} value={s.value} disabled={takenBy.has(s.value)}>
+                          {takenBy.has(s.value) ? `${s.label} · has ${takenBy.get(s.value)}` : s.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <Button onClick={handleAdd} disabled={!canAdd} className="gap-1.5" data-testid="cash-drawer-add">
                   <Plus className="w-4 h-4" />
                   Add Drawer
                 </Button>

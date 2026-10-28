@@ -41,6 +41,7 @@ import { requireNotSuspended } from "./middleware/suspension-middleware";
 import { PERMISSIONS } from "@shared/permissions";
 import { z } from "zod";
 import { db, pool, waitForDb } from "./db";
+import { stationDrawer, NO_CASH_DRAWER_MESSAGE } from "./lib/stationDrawer";
 import { users } from "@shared/models/auth";
 import { eq, and, or, ne, desc, sql, count, gte, lte, asc, isNull, isNotNull, inArray, notInArray, like } from "drizzle-orm";
 import { resetTurnSystemForStore } from "./services/auto-clock-out";
@@ -6486,6 +6487,14 @@ If you have any questions, please contact your administrator.
           ? { status: appointmentStatusEnum.parse(normalizeAppointmentStatus(req.body.status)) }
           : {}),
       });
+      // A POS station (it says which) with no cash drawer can't take cash (owner, 2026-10-29). Callers that aren't a
+      // station — the Certxa Pro app's Mark as paid — don't send registerId and aren't affected.
+      if (req.body?.registerId !== undefined && /cash/i.test(String((input as any).paymentMethod ?? ""))) {
+        const stationStoreId = await resolveSessionStoreId(req);
+        if (stationStoreId && !(await stationDrawer(stationStoreId, Number(req.body.registerId) || 0))) {
+          return res.status(409).json({ code: "NO_CASH_DRAWER", message: NO_CASH_DRAWER_MESSAGE });
+        }
+      }
       // Commission snapshot fields are server-managed (set once at first
       // completion by storage.updateAppointment) — never trust a client value.
       delete (input as any).servicePrice;
@@ -20500,8 +20509,15 @@ or
           code: z.string().optional(), paymentIntentId: z.string().optional() })).max(30),
         // A cash sale taken on a tablet while it was offline says when the money was actually collected.
         collectedAt: z.string().datetime().optional(),
+        // The POS station the sale is taken on (owner, 2026-10-29: a station without a cash drawer can't take cash).
+        registerId: z.number().int().min(0).optional(),
       }).safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: "Invalid checkout" });
+      // Cash on a station with no drawer is refused — except cash already collected offline, which must be recorded.
+      if (parsed.data.registerId !== undefined && !parsed.data.collectedAt && parsed.data.tenders.some((t) => t.method === "cash" && t.amount > 0)
+        && !(await stationDrawer(storeId, parsed.data.registerId))) {
+        return res.status(409).json({ code: "NO_CASH_DRAWER", message: NO_CASH_DRAWER_MESSAGE });
+      }
       // A card that is only recorded (no charge behind it) is accepted only from a salon whose CARD button
       // is set to its own provider; everyone else's card payments must be real charges on the reader.
       if (parsed.data.tenders.some((t) => t.method === "card")) {
@@ -20518,7 +20534,8 @@ or
         if (age >= -5 * 60_000 && age <= 7 * 24 * 60 * 60_000) collectedAt = age < 0 ? new Date() : at;
       }
       const taxStore: any = await storage.getStore(storeId);
-      const outcome = await settleNailCheckout({ storeId, ...parsed.data, collectedAt }, {
+      const { registerId: _station, ...checkoutData } = parsed.data;
+      const outcome = await settleNailCheckout({ storeId, ...checkoutData, collectedAt }, {
         rate: Number(taxStore?.salesTaxRate ?? 0) || 0,
         services: taxStore?.taxServicesTaxable === true,
         products: taxStore?.taxProductsTaxable !== false,
@@ -26605,19 +26622,47 @@ or
     }
   });
 
+  // A drawer (owner, 2026-10-29): a name, its starting cash (set once — counted at Day Close, not every morning) and the
+  // ONE POS station it's assigned to. A station without a drawer can't take cash (lib/stationDrawer.ts).
+  const drawerStationCheck = async (storeId: number, id: number | null, registerId: unknown, mainStation: unknown): Promise<string | null> => {
+    if (registerId != null) {
+      const rid = Number(registerId);
+      const [reg] = await db.select({ id: registers.id }).from(registers).where(and(eq(registers.id, rid), eq(registers.storeId, storeId))).limit(1);
+      if (!reg) return "That POS station isn't in this salon.";
+      const [other] = await db.select({ id: cashDrawers.id, name: cashDrawers.name }).from(cashDrawers).where(eq(cashDrawers.registerId, rid)).limit(1);
+      if (other && other.id !== id) return `That POS station already has a cash drawer (${other.name}).`;
+    }
+    if (mainStation === true) {
+      const [other] = await db.select({ id: cashDrawers.id, name: cashDrawers.name }).from(cashDrawers)
+        .where(and(eq(cashDrawers.storeId, storeId), eq(cashDrawers.mainStation, true))).limit(1);
+      if (other && other.id !== id) return `The main POS station already has a cash drawer (${other.name}).`;
+    }
+    return null;
+  };
+  const drawerAmount = (v: unknown): string | null => {
+    const n = Number(v);
+    return v === "" || v == null || !Number.isFinite(n) || n < 0 || n > 100000 ? null : n.toFixed(2);
+  };
+
   app.post("/api/cash-drawers", isAuthenticated, async (req, res) => {
     try {
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(404).json({ message: "Store not found" });
       const { name, registerId, targetFloat, sortOrder } = req.body;
-      if (!String(name ?? "").trim()) return res.status(400).json({ message: "name is required" });
+      const mainStation = req.body?.mainStation === true && registerId == null;
+      if (!String(name ?? "").trim()) return res.status(400).json({ message: "Give the drawer a name." });
+      const amount = drawerAmount(targetFloat);
+      if (amount == null) return res.status(400).json({ message: "Enter the drawer's starting cash." });
+      const clash = await drawerStationCheck(storeId, null, registerId, mainStation);
+      if (clash) return res.status(409).json({ message: clash });
       const [created] = await db
         .insert(cashDrawers)
         .values({
           storeId,
           name: String(name).trim(),
           registerId: registerId != null ? Number(registerId) : null,
-          targetFloat: targetFloat != null ? String(targetFloat) : null,
+          mainStation,
+          targetFloat: amount,
           sortOrder: sortOrder ?? 0,
         })
         .returning();
@@ -26633,14 +26678,25 @@ or
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(404).json({ message: "Store not found" });
       const id = parseInt(String(req.params.id), 10);
-      const { name, registerId, targetFloat, sortOrder, isActive } = req.body;
+      const { name, registerId, targetFloat, sortOrder, isActive, mainStation } = req.body;
       const patch: Record<string, any> = {};
-      if (name != null)       patch.name       = String(name).trim();
-      if (registerId !== undefined) patch.registerId = registerId != null ? Number(registerId) : null;
-      if (targetFloat !== undefined) patch.targetFloat = targetFloat != null ? String(targetFloat) : null;
+      if (name != null) {
+        if (!String(name).trim()) return res.status(400).json({ message: "Give the drawer a name." });
+        patch.name = String(name).trim();
+      }
+      // Assigning a station: a named station, the built-in main station, or none. Never both.
+      if (registerId !== undefined) { patch.registerId = registerId != null ? Number(registerId) : null; if (registerId != null) patch.mainStation = false; }
+      if (mainStation !== undefined) { patch.mainStation = mainStation === true; if (mainStation === true) patch.registerId = null; }
+      if (targetFloat !== undefined) {
+        const amount = drawerAmount(targetFloat);
+        if (amount == null) return res.status(400).json({ message: "Enter the drawer's starting cash." });
+        patch.targetFloat = amount;
+      }
       if (sortOrder != null)  patch.sortOrder  = Number(sortOrder);
       if (isActive != null)   patch.isActive   = Boolean(isActive);
       if (!Object.keys(patch).length) return res.status(400).json({ message: "Nothing to update" });
+      const clash = await drawerStationCheck(storeId, id, patch.registerId ?? null, patch.mainStation === true);
+      if (clash) return res.status(409).json({ message: clash });
       const [updated] = await db
         .update(cashDrawers)
         .set(patch)
@@ -26651,6 +26707,45 @@ or
     } catch (err) {
       console.error("[PUT /api/cash-drawers/:id]", err);
       return res.status(500).json({ message: "Failed to update cash drawer" });
+    }
+  });
+
+  // This POS station's drawer, or null (then it can't take cash).
+  app.get("/api/cash-drawers/station", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const drawer = await stationDrawer(storeId, Number(req.query.registerId) || 0);
+      return res.json({ drawer });
+    } catch (err) {
+      console.error("[GET /api/cash-drawers/station]", err);
+      return res.status(500).json({ message: "Failed to find this station's cash drawer" });
+    }
+  });
+
+  // Opens the drawer for the day with its set starting cash (no morning count — the drawer is counted at Day Close).
+  // Nothing happens when it is already open.
+  app.post("/api/cash-drawers/:id/open-session", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const id = parseInt(String(req.params.id), 10);
+      const [drawer] = await db.select().from(cashDrawers).where(and(eq(cashDrawers.id, id), eq(cashDrawers.storeId, storeId))).limit(1);
+      if (!drawer || !drawer.isActive) return res.status(404).json({ message: "Cash drawer not found" });
+      const existing = await storage.getOpenCashDrawerSession(storeId, id);
+      if (existing) return res.json(existing);
+      const openedBy = typeof req.body?.openedBy === "string" ? req.body.openedBy.slice(0, 80) : null;
+      const session = await storage.createCashDrawerSession({
+        storeId, drawerId: id, openedAt: new Date(), openingBalance: drawer.targetFloat ?? "0.00", openedBy, status: "open",
+      } as any);
+      await storage.createDrawerAction({ sessionId: session.id, type: "open_drawer", reason: "Shift started", performedBy: openedBy, performedAt: new Date() });
+      return res.status(201).json(session);
+    } catch (err: any) {
+      // Two stations opening the same drawer at once: the other one won.
+      const existing = await storage.getOpenCashDrawerSession((await resolveSessionStoreId(req)) ?? 0, parseInt(String(req.params.id), 10)).catch(() => undefined);
+      if (existing) return res.json(existing);
+      console.error("[POST /api/cash-drawers/:id/open-session]", err);
+      return res.status(500).json({ message: "Couldn't open the cash drawer" });
     }
   });
 

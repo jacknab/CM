@@ -124,7 +124,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
   useAppointmentSSE(storeId);
   const printRef = useRef<((bytes: Uint8Array) => Promise<void>) | null>(null);
   printRef.current = thermalPrinter.isConnected ? thermalPrinter.print : null;
-  const { drawerId, needsPicker: needsDrawerPicker, drawers, selectDrawer } = useActiveDrawerId(storeId);
+  const { drawerId, cashAllowed, needsPicker: needsDrawerPicker, drawers, selectDrawer } = useActiveDrawerId(storeId);
 
   // ── screen state ──────────────────────────────────────────────────────────
   const [tab, setTab] = useState<NailTab>("queue");
@@ -458,11 +458,8 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
       say("Assign a barber first — checkout opens right after");
       return;
     }
-    if (posEnabled && !openDrawerSession && navigator.onLine) {
-      setPendingCheckout(t);
-      setShowOpenRegister(true);
-      return;
-    }
+    // No Open Register step (owner, 2026-10-29): the station's drawer opens for the day by itself with its set
+    // starting cash (useActiveDrawerId) and is counted at Day Close.
     openCheckout(t);
   };
   // Carry on to checkout once the register has been opened.
@@ -476,7 +473,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
   }, [pendingCheckout, openDrawerSession, openCheckout]);
 
   const finalize = useMutation({
-    mutationFn: (data: FinalizeData) => completeTicket(checkout!.id, data),
+    mutationFn: (data: FinalizeData) => completeTicket(checkout!.id, { ...data, registerId }),
     // Completed — but stay on this ticket's checkout screen (Print/Text/No Receipt takes it from here) rather than
     // jumping away immediately, so a receipt can still be sent for a sale that's already safely recorded.
     onSuccess: () => { invalidateBoard(); setTicketPaid(true); say("Checked out"); },
@@ -580,22 +577,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
   // ── open-register prompts: on load during the morning window, and again at 1 AM store time ──
   const dayKey = useCallback(() => new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date()), [timezone]);
   const markPrompted = useCallback(() => { try { localStorage.setItem(`certxa_drawer_prompted_${storeId}_${dayKey()}`, "1"); } catch { /* private mode */ } }, [storeId, dayKey]);
-  useEffect(() => {
-    if (!posEnabled || openDrawerSession === undefined || openDrawerSession) return;
-    try { if (localStorage.getItem(`certxa_drawer_prompted_${storeId}_${dayKey()}`)) return; } catch { /* private mode */ }
-    const hour = parseInt(new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", hour12: false }).format(new Date()));
-    if (hour >= 5 && hour < 12) setShowOpenRegister(true);
-  }, [posEnabled, openDrawerSession, storeId, timezone, dayKey]);
-  useEffect(() => {
-    if (!posEnabled) return;
-    let firedFor = "";
-    const iv = setInterval(() => {
-      const hour = parseInt(new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", hour12: false }).format(new Date()));
-      const day = dayKey();
-      if (hour === 1 && firedFor !== day) { firedFor = day; setShowOpenRegister(true); }
-    }, 60_000);
-    return () => clearInterval(iv);
-  }, [posEnabled, timezone, dayKey]);
+  // (No morning / 1 AM "Open Register" prompts, 2026-10-29: the drawer opens for the day by itself.)
 
   // ── paired /frontdesk tablet ───────────────────────────────────────────────
   const [dualScreen, setDualScreen] = useState(false);
@@ -793,6 +775,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
           <div style={{ display: tab === "pos" ? "contents" : "none" }}>
             <Suspense fallback={<div className="barber-route-loading" role="status"><Loader2 className="animate-spin" /> Loading checkout…</div>}><CheckoutMode
               key={checkout.id}
+              cashAllowed={cashAllowed}
               ticket={liveCheckout ?? checkout}
               salesTax={salesTax}
               storeId={storeId}

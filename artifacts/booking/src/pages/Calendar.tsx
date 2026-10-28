@@ -508,7 +508,8 @@ export default function Calendar() {
     );
     // Only prompt during the morning opening window (5 AM – noon store local time).
     // Prevents the modal from firing mid-afternoon or evening on a stale session.
-    if (localHour >= 5 && localHour < 12) setShowOpenRegister(true);
+    // (No morning prompt, 2026-10-29: the station's drawer opens for the day by itself with its set starting cash.)
+    void localHour;
   }, [posEnabled, selectedStore, openDrawerSession]);
 
   // Recurring timer: fire at each 1 AM in the store's local timezone and re-schedule for the next day
@@ -517,7 +518,7 @@ export default function Calendar() {
     let t: ReturnType<typeof setTimeout>;
     const schedule = () => {
       t = setTimeout(() => {
-        setShowOpenRegister(true);
+        // (No 1 AM Open Register prompt any more, 2026-10-29 — the drawer opens by itself.)
         schedule(); // re-schedule for next 1 AM
       }, msUntilNext1AM());
     };
@@ -1514,10 +1515,7 @@ export default function Calendar() {
   const handleCheckout = (apt: AppointmentWithDetails) => {
     // Offline: drawer session can't be verified — let checkout proceed and queue
     // the status update. When back online, the action queue will sync it.
-    if (!openDrawerSession && navigator.onLine) {
-      setShowOpenRegister(true);
-      return;
-    }
+    // No Open Register step (owner, 2026-10-29): the drawer opens for the day by itself with its set starting cash.
     // On native AND web: always open the checkout sheet first so staff can
     // review line items, apply a discount/tip, and then tap Finalize & Pay.
     // The native POS modal is opened from that button, not from here.
@@ -1672,6 +1670,7 @@ export default function Calendar() {
             id: g.appointmentId,
             status: "completed",
             paymentMethod: g.paymentMethod,
+            registerId: activeRegisterId,
             tipAmount: String(g.tip),
             discountAmount: String(g.discount),
             totalPaid: String(g.totalPaid),
@@ -1690,6 +1689,8 @@ export default function Calendar() {
         id: apt.id,
         status: "completed",
         paymentMethod: paymentData.paymentMethod,
+        // The station taking the sale: one with no cash drawer can't take cash (server checks, 2026-10-29).
+        registerId: activeRegisterId,
         tipAmount: String(paymentData.tip),
         discountAmount: String(paymentData.discount),
         totalPaid: String(paymentData.totalPaid),
@@ -5193,6 +5194,8 @@ export function CheckoutPOSPanel({
   // exists, not the raw/legacy localStorage value) — must match so this
   // panel's WS bucket lines up with whichever /frontdesk is paired.
   const { registerId: activeRegisterId } = useActiveRegisterId(storeId ?? undefined);
+  // A POS station without a cash drawer can't take cash (owner, 2026-10-29).
+  const { cashAllowed: stationCash } = useActiveDrawerId(storeId ?? undefined);
   // POS layout for this store's business type (nail-salon config today).
   const posLayout = getPosLayout((selectedStore as any)?.category);
   // Tax must come from the store's own owner-configured settings, never a
@@ -5487,6 +5490,7 @@ export function CheckoutPOSPanel({
   const handleApplyTender = (method: string) => {
     const amount = Number(keypadDisplay);
     if (amount <= 0) return;
+    if (method === "cash" && !stationCash) { toast({ title: "No cash drawer on this station. Set one up in Settings › Cash Drawers.", variant: "destructive" }); return; }
     if (method === "cash") kickDrawer();
     setTenders(prev => [...prev, { id: nextTenderId, method, amount }]);
     setNextTenderId(prev => prev + 1);
@@ -6432,6 +6436,7 @@ export function CheckoutPOSPanel({
     }
     const amt = posKeypadDollars();
     if (amt <= 0) { showPosStatus(tSt.enterAmountFirst, "error"); return; }
+    if (method === "cash" && !stationCash) { showPosStatus("NO CASH DRAWER ON THIS STATION · SET ONE UP IN SETTINGS › CASH DRAWERS", "error"); return; }
     if (method === "cash") kickDrawer();
     setTenders((prev) => [...prev, { id: nextTenderId, method, amount: amt }]);
     setNextTenderId((n) => n + 1);
@@ -7795,6 +7800,7 @@ function WalkInCheckoutPanel({ onClose, onThermalPrint }: { onClose: () => void;
   // exists, not the raw/legacy localStorage value) — must match so this
   // panel's WS bucket lines up with whichever /frontdesk is paired.
   const { registerId: wiActiveRegisterId } = useActiveRegisterId(wiStoreId ?? undefined);
+  const { cashAllowed: wiStationCash } = useActiveDrawerId(wiStoreId ?? undefined);
   const [dualScreenEnabled, setDualScreenEnabled] = useState(false);
   const [waitingForTip, setWaitingForTip] = useState(false);
   // Walk-in checkout has no separate subtotal/tip breakdown — amountDisplay
@@ -7918,6 +7924,7 @@ function WalkInCheckoutPanel({ onClose, onThermalPrint }: { onClose: () => void;
   const handleApplyTender = (method: string, overrideAmount?: number) => {
     const amount = overrideAmount ?? Number(keypadDisplay);
     if (amount <= 0) return;
+    if (method === "cash" && !wiStationCash) { toast({ title: "No cash drawer on this station. Set one up in Settings › Cash Drawers.", variant: "destructive" }); return; }
     if (method === "cash") void openCashDrawerHardware({ onThermalPrint });
     const newTenders = [...tenders, { id: nextTenderId, method, amount }];
     setTenders(newTenders);
