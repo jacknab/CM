@@ -91,6 +91,10 @@ export interface TicketLine {
   group?: NailGroup;
   /** Set on add-on lines. */
   addonId?: number;
+  /** Add-on lines: the service it goes under — null = the ticket's own service, n = its service line n. */
+  addonLineNo?: number | null;
+  /** A line of another ticket of the visit (another technician's service, or that service's add-on). */
+  ownerTicketId?: number;
   /** Set on keypad "Custom Amount" lines — their id in the draft. */
   customId?: number;
   /** Set on service lines: the service's id, for removing it from a ticket of several services. */
@@ -181,24 +185,39 @@ export function draftTotals(
   cfg: NailConfigView | null,
   pick: NailPick,
   custom: DraftCustomLine[] = [],
+  /** Same length as addonIds when known (a saved ticket): the service line each add-on goes under (null = the first). */
+  addonLineNos: (number | null)[] = [],
 ): DraftTotals {
   const lines: TicketLine[] = [];
   let dropped: NailGroup[] = [];
+  // An add-on's service line, when that line is a service on this ticket; otherwise it goes under the first service.
+  const lineOf = (n: number): number | null => {
+    const at = addonLineNos.length === addonIds.length ? addonLineNos[n] : null;
+    return at != null && custom[at]?.serviceId ? at : null;
+  };
   if (service) {
     lines.push({ key: `svc-${service.id}`, kind: "service", label: service.name, duration: num(service.duration), price: num(service.price) });
-    // The same add-on can be on the ticket more than once (2026-10-29): each copy is its own line.
+    // The same add-on can be on the ticket more than once (2026-10-29): each copy is its own line. Each service's
+    // add-ons are listed under it: the first service's here, a service line's right after that line.
     addonIds.forEach((id, n) => {
+      if (lineOf(n) != null) return;
       const a = addons.find((x) => x.id === id);
-      if (a) lines.push({ key: `addon-${a.id}-${n}`, kind: "addon", label: a.name, duration: num(a.duration), price: num(a.price), addonId: a.id });
+      if (a) lines.push({ key: `addon-${a.id}-${n}`, kind: "addon", label: a.name, duration: num(a.duration), price: num(a.price), addonId: a.id, addonLineNo: null });
     });
     const nail = nailAdjustment(cfg, pick);
     lines.push(...nail.lines);
     dropped = nail.dropped;
   }
-  for (const c of custom) {
+  custom.forEach((c, i) => {
     // Another service of the visit takes its time; a keypad amount takes none.
     lines.push({ key: `custom-${c.id}`, kind: "custom", label: c.label, duration: c.serviceId ? Number(c.duration) || 0 : 0, price: c.price, customId: c.id });
-  }
+    if (!service) return;
+    addonIds.forEach((id, n) => {
+      if (lineOf(n) !== i) return;
+      const a = addons.find((x) => x.id === id);
+      if (a) lines.push({ key: `addon-${a.id}-${n}`, kind: "addon", label: a.name, duration: num(a.duration), price: num(a.price), addonId: a.id, addonLineNo: i });
+    });
+  });
   return {
     lines,
     duration: lines.reduce((s, l) => s + l.duration, 0),

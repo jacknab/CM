@@ -419,6 +419,9 @@
 .nail-app .ticket-item .item-copy span.note { color: #0d9bd1; }
 /* The service chosen for Split Ticket. */
 .nail-app .ticket-item.ticket-item-selected { background: rgba(13,155,209,.16); box-shadow: inset 3px 0 0 #0d9bd1; }
+/* A service's add-ons sit under it (owner, 2026-10-29): indented, shorter, marked "+". */
+.nail-app .ticket-item.ticket-item-addon { height: 54px; padding-left: 30px; }
+.nail-app .ticket-item.ticket-item-addon .item-copy strong::before { content: "+ "; }
 .nail-app .display-prompt { color: #f0a830; font-size: 13px; margin-right: auto; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
 .nail-app .money-grid button.fn-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #e8eaed; font-size: 12px; font-weight: 700; }
 .nail-app .money-grid button.fn-btn svg { color: #c4cad3; }

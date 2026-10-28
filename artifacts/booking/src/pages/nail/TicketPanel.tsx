@@ -44,7 +44,7 @@ export function TicketPanel({ client, badge, lines, duration, price, submitLabel
           </div>
         ) : (
           lines.map((line) => (
-            <div className={`ticket-item ${selectedKey === line.key ? "ticket-item-selected" : ""}`} key={line.key} data-testid={`nail-line-${line.kind}`}
+            <div className={`ticket-item ticket-item-${line.kind} ${selectedKey === line.key ? "ticket-item-selected" : ""}`} key={line.key} data-testid={`nail-line-${line.kind}`}
               onClick={onSelect ? () => onSelect(line) : undefined} aria-selected={selectedKey === line.key || undefined}>
               <div className="item-copy">
                 <strong>{line.label}</strong>

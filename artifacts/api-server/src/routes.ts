@@ -19623,8 +19623,12 @@ or
       const appointmentId = Number(req.params.id);
       const addonId = Number(req.body?.addonId);
       if (!Number.isSafeInteger(appointmentId) || !Number.isSafeInteger(addonId) || addonId <= 0) return res.status(400).json({ message: "Invalid add-on" });
-      const r = await nailTickets.addAddonToTicket(storeId, appointmentId, addonId);
+      // Under which service on the ticket: absent/null = its own service, n = its service line n.
+      const lineNo = req.body?.lineNo == null ? null : Number(req.body.lineNo);
+      if (lineNo != null && (!Number.isSafeInteger(lineNo) || lineNo < 0)) return res.status(400).json({ message: "Invalid service" });
+      const r = await nailTickets.addAddonToTicket(storeId, appointmentId, addonId, lineNo);
       if (r === "missing") return res.status(400).json({ message: "That add-on is no longer in the catalog." });
+      if (r === "line") return res.status(409).json({ message: "That service is no longer on this ticket." });
       if (r === "closed") return res.status(409).json({ message: "This ticket is no longer open." });
       if (r === "already") return res.status(409).json({ message: `A ticket can have up to ${nailTickets.MAX_TICKET_ADDONS} add-ons.` });
       broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["services"] });
@@ -19642,7 +19646,9 @@ or
       const appointmentId = Number(req.params.id);
       const addonId = Number(req.body?.addonId);
       if (!Number.isSafeInteger(appointmentId) || !Number.isSafeInteger(addonId)) return res.status(400).json({ message: "Invalid add-on" });
-      if (!(await nailTickets.removeAddonFromTicket(storeId, appointmentId, addonId))) return res.status(409).json({ message: "That add-on is no longer on this ticket." });
+      // The service it was shown under (null = the ticket's own service); absent = any copy.
+      const lineNo = req.body?.lineNo === undefined ? undefined : req.body.lineNo == null ? null : Number(req.body.lineNo);
+      if (!(await nailTickets.removeAddonFromTicket(storeId, appointmentId, addonId, lineNo))) return res.status(409).json({ message: "That add-on is no longer on this ticket." });
       broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["services"] });
       return res.json({ ok: true });
     } catch (err) {

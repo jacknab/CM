@@ -244,7 +244,13 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // add-ons in `addonIds` and its price line in `customs`. Taking any part of it off takes the package off.
   const [pkg, setPkg] = useState<{ id: number; name: string; serviceIds: number[]; addonIds: number[] } | null>(null);
   // The service line chosen for Split Ticket (its key in the ticket panel).
-  const [splitKey, setSplitKey] = useState<string | null>(null);
+  // The service tapped in the cart (owner, 2026-10-29): add-ons added go under it until another service is tapped;
+  // tapping it again lets go. Split Ticket acts on it too. Kept as WHICH service (not a screen key), so it stays put
+  // while the ticket reloads after each change.
+  type CartPick = { kind: "main" } | { kind: "line"; index: number } | { kind: "visit"; id: number } | { kind: "extra"; lineId: number };
+  const [cartPick, setCartPick] = useState<CartPick | null>(null);
+  // The service line each saved add-on goes under (same order as addonIds; null = the first service).
+  const [addonLineNos, setAddonLineNos] = useState<(number | null)[]>([]);
   // The category the grid opens on for this ticket (the one the client picked at check-in).
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [activeGroup, setActiveGroup] = useState("");
@@ -738,11 +744,6 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   }, [service, extraServices, addonIds, pick, customs, pkg, client?.id, editing?.id]);
   // ── Split Ticket: a further service of a saved ticket comes off onto a ticket of its own, which waits in the Queue
   // with no technician until this ticket is done (server: nailTickets.splitServiceLine). ──
-  const splittable = (line: TicketLine) => {
-    if (line.kind === "service") return line.serviceId != null && line.key.startsWith("service-");
-    const c = line.customId != null ? customs.find((x) => x.id === line.customId) : undefined;
-    return !!c?.serviceId && !c.packageId;
-  };
   /** The ticket on screen still matches the saved one (a split acts on the saved ticket). */
   const editUnchanged = (t: BoardTicket) => {
     const ids = (a: number[]) => JSON.stringify([...a].sort((x, y) => x - y));
@@ -756,7 +757,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const [splitting, setSplitting] = useState(false);
   const splitSelected = async () => {
     if (splitting) return;
-    const line = splitKey ? draft.lines.find((l) => l.key === splitKey) : undefined;
+    const line = selectedKey ? draft.lines.find((l) => l.key === selectedKey) : undefined;
     if (!line) { say("Tap the service to split off, then tap Split Ticket"); return; }
     if (!editing) { say("Save the ticket first, then open it to split it"); return; }
     const c = line.customId != null ? customs.find((x) => x.id === line.customId) : undefined;
@@ -770,7 +771,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       setCustoms((cur) => cur.filter((x) => x.id !== c.id));
       setEditing((e) => (e ? { ...e, customLines: e.customLines.filter((_, i) => i !== index), duration: Math.max(1, e.duration - (Number(c.duration) || 0)) } : e));
       draftHistory.current.owner = "";
-      setSplitKey(null);
+      setCartPick(null);
       invalidateBoard();
       say(`Split · ${r.serviceName} waits until #${ticketNo(editing)} is done · same visit, paid together`);
     } catch (err: any) {
@@ -800,8 +801,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   };
 
   const totals = useMemo(
-    () => draftTotals(service, addonIds, activeAddons, nailCfg, pick, customs),
-    [service, addonIds, activeAddons, nailCfg, pick, customs],
+    () => draftTotals(service, addonIds, activeAddons, nailCfg, pick, customs, addonLineNos),
+    [service, addonIds, activeAddons, nailCfg, pick, customs, addonLineNos],
   );
   // The ticket as shown: the first service with its add-ons and options, then each further service.
   const draft = useMemo(() => {
@@ -833,7 +834,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   // ── ticket building ───────────────────────────────────────────────────────
   const resetDraft = useCallback(() => {
-    setClient(null); setCheckinId(null); setService(null); setExtraServices([]); setAddonIds([]); setPick(EMPTY_PICK); setCustoms([]); setPkg(null); setOpenGroup(null); setSplitKey(null);
+    setClient(null); setCheckinId(null); setService(null); setExtraServices([]); setAddonIds([]); setPick(EMPTY_PICK); setCustoms([]); setPkg(null); setOpenGroup(null); setCartPick(null); setAddonLineNos([]);
     setEditing(null); pickSeededFor.current = null; setMoreAddons(false); setBooking(null);
   }, []);
 
@@ -1017,7 +1018,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       await liveChange(t.id, () => cancelTicket(other.id, other.client.name));
       return;
     }
-    if (line.addonId != null) { await liveChange(t.id, () => removeTicketAddon(t.id, line.addonId!)); return; }
+    if (line.addonId != null) { await liveChange(t.id, () => removeTicketAddon(line.ownerTicketId ?? t.id, line.addonId!, line.addonLineNo ?? null)); return; }
     if (line.customId != null) {
       const index = customs.findIndex((c) => c.id === line.customId);
       const c = customs[index];
@@ -1079,7 +1080,11 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     const times = takeGridQty();
     if (isLive()) {
       const t = editing!;
-      void liveChange(t.id, async () => { for (let i = 0; i < times; i++) await addTicketAddon(t.id, addon.id); });
+      // Under the tapped service: another technician's service of the visit (its own ticket), a service line, or the first.
+      const pickNow = selectedKey ? cartPick : null;
+      const onTicket = pickNow?.kind === "visit" ? pickNow.id : t.id;
+      const lineNo = pickNow?.kind === "line" ? pickNow.index : null;
+      void liveChange(t.id, async () => { for (let i = 0; i < times; i++) await addTicketAddon(onTicket, addon.id, lineNo); });
       return;
     }
     setAddonIds((cur) => [...cur, ...Array.from({ length: times }, () => addon.id)]);
@@ -1154,13 +1159,15 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     setService(svc);
     pickSeededFor.current = svc.id;
     setAddonIds(t.addons.map((a) => a.id));
+    setAddonLineNos(t.addons.map((a) => a.lineNo ?? null));
     // A service line (another service of the visit) keeps its service and time through the edit.
     setCustoms(t.customLines.map((c) => ({ id: ++customSeq.current, label: c.label, price: c.price, isRetail: c.isRetail,
       ...(c.serviceId ? { serviceId: c.serviceId, duration: c.duration } : {}), ...(c.packageId ? { packageId: c.packageId } : {}) })));
     setPick({ size: t.nail?.sizeId ?? null, shape: t.nail?.shapeId ?? null, application: t.nail?.applicationId ?? null, effect: t.nail?.effectId ?? null });
     setEditing(t);
     setExtraServices([]); setPkg(null);
-    setSplitKey(null);
+    // The same ticket reloaded after a change keeps its tapped service; another ticket starts with none.
+    if (editing?.id !== t.id) setCartPick(null);
     setActiveGroup(groups.find((g) => g.services.some((s) => s.id === svc.id))?.key ?? activeGroup);
     if (!stay) setTab("pos");
   };
@@ -1858,12 +1865,34 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [board]);
   // The visit's other tickets (services other technicians do), shown on this ticket so the whole visit is on one screen.
+  // Each with its add-ons under it (the service line carries the rest of that ticket's price).
   const visitLines: TicketLine[] = editing?.groupId != null
-    ? tickets.filter((x) => x.id !== editing.id && x.groupId === editing.groupId).map((x) => ({
-      key: `visit-${x.id}`, kind: "service" as const, label: x.service.name, duration: x.duration, price: x.total,
-      note: `${x.staff ? techLabel(x.staff.name, x.staff.id) : "Next technician in turn"}${x.doneAt ? " · DONE" : x.status === "started" ? " · in service" : ""}`,
-      removable: isLive() && x.status !== "started" }))
+    ? tickets.filter((x) => x.id !== editing.id && x.groupId === editing.groupId).flatMap((x) => {
+      const addonsTotal = x.addons.reduce((n, a) => n + (Number(a.price) || 0), 0);
+      return [{
+        key: `visit-${x.id}`, kind: "service" as const, label: x.service.name, duration: x.duration, price: Math.round((x.total - addonsTotal) * 100) / 100,
+        note: `${x.staff ? techLabel(x.staff.name, x.staff.id) : "Next technician in turn"}${x.doneAt ? " · DONE" : x.status === "started" ? " · in service" : ""}`,
+        removable: isLive() && x.status !== "started", ownerTicketId: x.id,
+      }, ...x.addons.map((a, n): TicketLine => ({
+        key: `vaddon-${x.id}-${a.id}-${n}`, kind: "addon", label: a.name, duration: Number(a.duration) || 0, price: Number(a.price) || 0,
+        addonId: a.id, addonLineNo: a.lineNo ?? null, ownerTicketId: x.id,
+      }))];
+    })
     : [];
+  // The cart's tapped service (cartPick) as a line on screen, and the other way round.
+  const cartLines = [...draft.lines, ...visitLines];
+  const pickOf = (l: TicketLine): CartPick | null => {
+    if (l.key.startsWith("visit-") && l.ownerTicketId != null) return { kind: "visit", id: l.ownerTicketId };
+    if (l.kind === "service" && l.key.startsWith("svc-")) return { kind: "main" };
+    if (l.kind === "service" && l.key.startsWith("service-")) return { kind: "extra", lineId: Number(l.key.slice(8)) };
+    if (l.customId != null) {
+      const index = customs.findIndex((c) => c.id === l.customId);
+      return index >= 0 && customs[index].serviceId && !customs[index].packageId ? { kind: "line", index } : null;
+    }
+    return null;
+  };
+  const selectedKey: string | null = !cartPick ? null
+    : cartLines.find((l) => { const p = pickOf(l); return !!p && JSON.stringify(p) === JSON.stringify(cartPick); })?.key ?? null;
   const ticketActions = {
     // Defense in depth: even if another view invokes Start for an unassigned ticket,
     // assignment is required first so the ticket cannot disappear into an invalid started state.
@@ -1991,7 +2020,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
             <TicketPanel
               client={client}
               badge={booking ? "BOOK" : editing ? `#${editing.ticketNumber ?? editing.id}` : "NEW"}
-              lines={[...draft.lines, ...visitLines]}
+              lines={cartLines}
               duration={draft.duration}
               price={draft.price + visitLines.reduce((n, l) => n + l.price, 0)}
               submitLabel={booking ? (!service ? "ADD A SERVICE FIRST" : booking.step === "services" ? "PICK TIME" : booking.slot ? "BOOK" : "PICK A TIME")
@@ -2000,9 +2029,13 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
               busy={booking ? bookVisit.isPending : busy || liveBusy}
               appointment={booking?.slot ? bookingLabel(booking.slot) : null}
               editing={!!editing}
-              onRemove={(l) => { if (l.key === splitKey) setSplitKey(null); removeLine(l); }}
-              selectedKey={splitKey}
-              onSelect={booking ? undefined : (l) => setSplitKey((k) => (k === l.key || !splittable(l) ? null : l.key))}
+              onRemove={(l) => { if (l.key === selectedKey) setCartPick(null); removeLine(l); }}
+              selectedKey={selectedKey}
+              onSelect={booking ? undefined : (l) => {
+                const picked = pickOf(l);
+                if (!picked) return;
+                setCartPick((cur) => (cur && JSON.stringify(cur) === JSON.stringify(picked) ? null : picked));
+              }}
               onClear={() => void clearDraft()}
               onSubmit={!booking ? submit : booking.step === "services"
                 ? () => { if (!pkg && extraServices.length > 1) { say("A booking can have up to 2 services"); return; } setBooking({ step: "time", slot: null }); }

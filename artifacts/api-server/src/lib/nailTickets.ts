@@ -586,17 +586,22 @@ export async function appendServiceLine(storeId: number, appointmentId: number, 
 /** Most add-ons one ticket can carry (the same add-on may be on it more than once). */
 export const MAX_TICKET_ADDONS = 30;
 
-export async function addAddonToTicket(storeId: number, appointmentId: number, addonId: number): Promise<"added" | "already" | "closed" | "missing"> {
+/**
+ * Adds an add-on to an open ticket, under one of its services (owner, 2026-10-29: staff tap a service in the cart and
+ * the add-ons go under it): `lineNo` null = the ticket's own service, n = its service line custom_lines[n].
+ */
+export async function addAddonToTicket(storeId: number, appointmentId: number, addonId: number, lineNo: number | null = null): Promise<"added" | "already" | "closed" | "missing" | "line"> {
   const addon = await storage.getAddon(addonId);
   if (!addon || addon.storeId !== storeId || (addon as any).isActive === false) return "missing";
   return db.transaction(async (tx) => {
-    const row = (await tx.execute(sql`SELECT duration, status FROM appointments
+    const row = (await tx.execute(sql`SELECT duration, status, custom_lines FROM appointments
       WHERE id = ${appointmentId} AND store_id = ${storeId} FOR UPDATE`)).rows[0] as any;
     if (!row || !["confirmed", "started"].includes(String(row.status))) return "closed" as const;
+    if (lineNo != null && !sanitizeCustomLines(row.custom_lines, true)[lineNo]?.serviceId) return "line" as const;
     // The same add-on may be added again (two Nail Art – Simple); only the ticket's total number is capped.
     const have = await tx.select({ id: appointmentAddons.id }).from(appointmentAddons).where(eq(appointmentAddons.appointmentId, appointmentId));
     if (have.length >= MAX_TICKET_ADDONS) return "already" as const;
-    await tx.insert(appointmentAddons).values({ appointmentId, addonId });
+    await tx.insert(appointmentAddons).values({ appointmentId, addonId, lineNo });
     const extra = Math.max(0, Number(addon.duration) || 0);
     if (extra) await tx.update(appointments).set({ duration: (Number(row.duration) || 0) + extra }).where(eq(appointments.id, appointmentId));
     return "added" as const;
@@ -604,16 +609,18 @@ export async function addAddonToTicket(storeId: number, appointmentId: number, a
 }
 
 /** Takes an add-on (and its time) off an open ticket. */
-export async function removeAddonFromTicket(storeId: number, appointmentId: number, addonId: number): Promise<boolean> {
+export async function removeAddonFromTicket(storeId: number, appointmentId: number, addonId: number, lineNo?: number | null): Promise<boolean> {
   const addon = await storage.getAddon(addonId);
   return db.transaction(async (tx) => {
     const row = (await tx.execute(sql`SELECT duration, status FROM appointments
       WHERE id = ${appointmentId} AND store_id = ${storeId} FOR UPDATE`)).rows[0] as any;
     if (!row || !["confirmed", "started"].includes(String(row.status))) return false;
-    // One at a time: a ticket can hold the same add-on more than once, and × takes off one of them (the newest).
-    const [one] = await tx.select({ id: appointmentAddons.id }).from(appointmentAddons)
+    // One at a time: a ticket can hold the same add-on more than once, and × takes off one of them — the newest one
+    // under the service it was shown under (`lineNo`), else the newest anywhere.
+    const rows = await tx.select({ id: appointmentAddons.id, lineNo: appointmentAddons.lineNo }).from(appointmentAddons)
       .where(and(eq(appointmentAddons.appointmentId, appointmentId), eq(appointmentAddons.addonId, addonId)))
-      .orderBy(desc(appointmentAddons.id)).limit(1);
+      .orderBy(desc(appointmentAddons.id));
+    const one = (lineNo !== undefined ? rows.find((r) => (r.lineNo ?? null) === (lineNo ?? null)) : undefined) ?? rows[0];
     if (!one) return false;
     await tx.delete(appointmentAddons).where(eq(appointmentAddons.id, one.id));
     const less = Math.max(0, Number(addon?.duration) || 0);
@@ -668,12 +675,25 @@ export async function removeCustomLine(storeId: number, appointmentId: number, i
     if (!line || line.serviceId || line.packageId) return false;
     lines.splice(index, 1);
     await tx.update(appointments).set({ customLines: lines.length ? lines : null }).where(eq(appointments.id, appointmentId));
+    await shiftAddonLines(tx, appointmentId, index);
     return true;
   });
 }
 
-/** Takes the service line at `index` off a saved ticket (only a service line), with its time. */
-export async function removeServiceLine(storeId: number, appointmentId: number, index: number): Promise<boolean> {
+/**
+ * The ticket's custom line at `index` is gone: its add-ons go with it (their ids and time returned) and the add-ons of
+ * the lines after it move up one.
+ */
+async function shiftAddonLines(tx: any, appointmentId: number, index: number): Promise<{ addonIds: number[]; minutes: number }> {
+  const gone = (await tx.execute(sql`DELETE FROM appointment_addons aa USING addons d
+      WHERE aa.appointment_id = ${appointmentId} AND aa.line_no = ${index} AND d.id = aa.addon_id
+      RETURNING aa.addon_id, COALESCE(d.duration, 0) AS duration`)).rows as any[];
+  await tx.execute(sql`UPDATE appointment_addons SET line_no = line_no - 1 WHERE appointment_id = ${appointmentId} AND line_no > ${index}`);
+  return { addonIds: gone.map((r) => Number(r.addon_id)), minutes: gone.reduce((m, r) => m + (Number(r.duration) || 0), 0) };
+}
+
+/** Takes the service line at `index` off a saved ticket (only a service line), with its time and its add-ons. */
+export async function removeServiceLine(storeId: number, appointmentId: number, index: number): Promise<false | { addonIds: number[] }> {
   return db.transaction(async (tx) => {
     const row = (await tx.execute(sql`SELECT custom_lines, duration, status FROM appointments
       WHERE id = ${appointmentId} AND store_id = ${storeId} FOR UPDATE`)).rows[0] as any;
@@ -682,9 +702,11 @@ export async function removeServiceLine(storeId: number, appointmentId: number, 
     const line = lines[index];
     if (!line?.serviceId) return false;
     lines.splice(index, 1);
-    await tx.update(appointments).set({ customLines: lines.length ? lines : null, duration: Math.max(1, (Number(row.duration) || 0) - (Number(line.duration) || 0)) })
+    const addons = await shiftAddonLines(tx, appointmentId, index);
+    await tx.update(appointments).set({ customLines: lines.length ? lines : null,
+      duration: Math.max(1, (Number(row.duration) || 0) - (Number(line.duration) || 0) - addons.minutes) })
       .where(eq(appointments.id, appointmentId));
-    return true;
+    return { addonIds: addons.addonIds };
   });
 }
 
@@ -803,7 +825,8 @@ export async function splitServiceLine(
     if (!line?.serviceId) return fail(400, "Choose one of the other services on the ticket to split off.");
     if (line.packageId != null) return fail(400, "A package's services stay together.");
     if (!row.customer_id) return fail(409, "Add a client to this ticket before splitting it.");
-    if (!(await removeServiceLine(storeId, appointmentId, index))) return fail(409, "That service is no longer on this ticket.");
+    const removed = await removeServiceLine(storeId, appointmentId, index);
+    if (!removed) return fail(409, "That service is no longer on this ticket.");
     const own = await createNailTicketLocked(deps, {
       storeId, clientId: Number(row.customer_id), serviceId: line.serviceId, leaveUnassigned: true, startOnAssign: false,
       idempotencyKey: null, bookedByUserId: args.bookedByUserId ?? null, visitTicketNumber: row.ticket_number != null ? Number(row.ticket_number) : null,
@@ -817,6 +840,8 @@ export async function splitServiceLine(
     await pool.query(`UPDATE appointments SET ticket_group_id = $1 WHERE store_id = $2 AND id = ANY($3::int[])`,
       [groupId, storeId, [appointmentId, own.data.appointmentId]]);
     await pool.query(`UPDATE appointments SET waits_for_appointment_id = $1 WHERE id = $2 AND store_id = $3`, [appointmentId, own.data.appointmentId, storeId]);
+    // The service's add-ons go with it to its own ticket.
+    for (const addonId of removed.addonIds) await addAddonToTicket(storeId, own.data.appointmentId, addonId);
     deps.notify(storeId, { appointmentId, kind: "updated" });
     return { ok: true as const, data: { appointmentId: own.data.appointmentId, ticketNumber: own.data.ticketNumber, serviceName: line.label } };
   });
@@ -1306,8 +1331,18 @@ export async function updateNailTicketItems(deps: TicketDeps, input: UpdateItems
       serviceId: service.id, duration: pricing.duration - nailAdj.durationAdjustment,
       ...(input.customLines !== undefined ? { customLines: customLines.length ? customLines : null } : {}),
     }).where(and(eq(appointments.id, appt.id), eq(appointments.storeId, input.storeId)));
+    // Each add-on keeps the service it was under when that service line is still on the ticket.
+    const before = await tx.select({ addonId: appointmentAddons.addonId, lineNo: appointmentAddons.lineNo }).from(appointmentAddons)
+      .where(eq(appointmentAddons.appointmentId, appt.id)).orderBy(appointmentAddons.id);
+    const finalLines = input.customLines !== undefined ? customLines : sanitizeCustomLines((appt as any).customLines, true);
+    const keepLine = (addonId: number): number | null => {
+      const i = before.findIndex((b) => b.addonId === addonId);
+      if (i < 0) return null;
+      const [b] = before.splice(i, 1);
+      return b.lineNo != null && finalLines[b.lineNo]?.serviceId ? b.lineNo : null;
+    };
     await tx.delete(appointmentAddons).where(eq(appointmentAddons.appointmentId, appt.id));
-    if (addonIds.length) await tx.insert(appointmentAddons).values(addonIds.map((addonId) => ({ appointmentId: appt.id, addonId })));
+    if (addonIds.length) await tx.insert(appointmentAddons).values(addonIds.map((addonId) => ({ appointmentId: appt.id, addonId, lineNo: keepLine(addonId) })));
     await tx.delete(appointmentNailSelection).where(eq(appointmentNailSelection.appointmentId, appt.id));
     if (hasNail(input.nail)) await nailConfig.setAppointmentNailSelection(appt.id, input.nail!, tx);
     return { ok: true as const, data: { duration: pricing.duration, price: pricing.price } };
@@ -1465,7 +1500,8 @@ export interface BoardTicket {
   duration: number;
   client: { id: number | null; name: string; phone: string | null; loyaltyPoints: number };
   service: { id: number | null; name: string; price: number };
-  addons: { id: number; name: string; price: number; duration: number }[];
+  /** lineNo: the service line it goes under (custom_lines index); absent = the ticket's own service. */
+  addons: { id: number; name: string; price: number; duration: number; lineNo?: number }[];
   nail: {
     sizeId: number | null; shapeId: number | null; applicationId: number | null; effectId: number | null;
     priceAdjustment: number;
@@ -1693,7 +1729,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
           WHERE kc.appointment_id = a.id AND kc.store_id = a.store_id ORDER BY kc.id DESC LIMIT 1
        ) k ON a.customer_id IS NULL
        LEFT JOIN LATERAL (
-         SELECT json_agg(json_build_object('id', d.id, 'name', d.name, 'price', d.price, 'duration', d.duration) ORDER BY aa.id) AS items
+         SELECT json_agg(json_build_object('id', d.id, 'name', d.name, 'price', d.price, 'duration', d.duration, 'lineNo', aa.line_no) ORDER BY aa.id) AS items
            FROM appointment_addons aa JOIN addons d ON d.id = aa.addon_id
           WHERE aa.appointment_id = a.id
        ) ad ON true
@@ -1705,7 +1741,8 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
   );
 
   const tickets: BoardTicket[] = rows.map((r: any) => {
-    const addons = (r.addons ?? []).map((x: any) => ({ id: x.id, name: x.name, price: Number(x.price) || 0, duration: Number(x.duration) || 0 }));
+    const addons = (r.addons ?? []).map((x: any) => ({ id: x.id, name: x.name, price: Number(x.price) || 0, duration: Number(x.duration) || 0,
+      ...(x.lineNo != null ? { lineNo: Number(x.lineNo) } : {}) }));
     const nailLines: { label: string; price: number }[] = [];
     if (r.nail_id) {
       if (r.length_name_snapshot) nailLines.push({ label: `Length: ${r.length_name_snapshot}`, price: Number(r.length_adj) || 0 });

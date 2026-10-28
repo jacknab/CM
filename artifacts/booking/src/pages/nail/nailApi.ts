@@ -51,7 +51,8 @@ export interface BoardTicket {
   duration: number;
   client: { id: number | null; name: string; phone: string | null; loyaltyPoints: number };
   service: { id: number | null; name: string; price: number };
-  addons: { id: number; name: string; price: number; duration: number }[];
+  /** lineNo: the service line it goes under (customLines index); absent = the ticket's own service. */
+  addons: { id: number; name: string; price: number; duration: number; lineNo?: number }[];
   nail: {
     sizeId: number | null;
     shapeId: number | null;
@@ -684,13 +685,14 @@ export const addTicketService = (ticketId: number, serviceId: number) => {
     `/api/nail/tickets/${ticketId}/services`, { method: "POST", body: JSON.stringify({ serviceId }) });
 };
 /** An add-on key on the POS grid: saved onto the open ticket as a real add-on. `added: false` = it was already on. */
-export const addTicketAddon = (ticketId: number, addonId: number) => {
+/** `lineNo`: the service on the ticket it goes under — null/absent = the ticket's own service, n = its service line n. */
+export const addTicketAddon = (ticketId: number, addonId: number, lineNo: number | null = null) => {
   if (syncEngine.isOffline() || isLocalId(ticketId)) return Promise.reject(new ApiError("Adding an add-on to a saved ticket needs the connection.", 503));
-  return call<{ added: boolean }>(`/api/nail/tickets/${ticketId}/addons`, { method: "POST", body: JSON.stringify({ addonId }) });
+  return call<{ added: boolean }>(`/api/nail/tickets/${ticketId}/addons`, { method: "POST", body: JSON.stringify({ addonId, lineNo }) });
 };
-export const removeTicketAddon = (ticketId: number, addonId: number) => {
+export const removeTicketAddon = (ticketId: number, addonId: number, lineNo?: number | null) => {
   if (syncEngine.isOffline() || isLocalId(ticketId)) return Promise.reject(new ApiError("Taking an add-on off a saved ticket needs the connection.", 503));
-  return call<{ ok: true }>(`/api/nail/tickets/${ticketId}/addons/remove`, { method: "POST", body: JSON.stringify({ addonId }) });
+  return call<{ ok: true }>(`/api/nail/tickets/${ticketId}/addons/remove`, { method: "POST", body: JSON.stringify({ addonId, ...(lineNo !== undefined ? { lineNo } : {}) }) });
 };
 /** A Catalog package key on an open ticket: its services, add-ons and price line join the ticket. */
 export const addTicketPackage = (ticketId: number, packageId: number) => {

@@ -396,6 +396,8 @@ export const appointmentAddons = pgTable("appointment_addons", {
   id: serial("id").primaryKey(),
   appointmentId: integer("appointment_id").references(() => appointments.id).notNull(),
   addonId: integer("addon_id").references(() => addons.id).notNull(),
+  // Which service on the ticket it goes with: null = the ticket's own service, n = custom_lines[n] (migration 0266).
+  lineNo: integer("line_no"),
 });
 
 // ── Packages ────────────────────────────────────────────────────────────────
