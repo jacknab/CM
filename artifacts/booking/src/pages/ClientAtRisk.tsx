@@ -10,11 +10,12 @@ import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import {
-  AlertTriangle, Users, DollarSign, ChevronLeft, Calendar,
-  ArrowRight, MessageSquare, TrendingDown,
+  Users, DollarSign, ChevronLeft, Calendar,
+  ArrowRight, MessageSquare,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
+import { AT_RISK_DAYS, INACTIVE_DAYS } from "@shared/clientStatus";
 
 type AtRiskClient = {
   id: number;
@@ -26,25 +27,18 @@ type AtRiskClient = {
   daysSinceLast: number | null;
 };
 
-const FILTER_OPTIONS = [
-  { label: "30+ days", value: 30 },
-  { label: "60+ days", value: 60 },
-  { label: "90+ days", value: 90 },
-  { label: "120+ days", value: 120 },
-];
+// One rule everywhere (shared/clientStatus.ts): at risk from AT_RISK_DAYS, inactive from INACTIVE_DAYS.
+const FILTER_OPTIONS = [AT_RISK_DAYS, 90, INACTIVE_DAYS].map((value) => ({ label: `${value}+ days`, value }));
 
 function riskBadge(days: number | null) {
-  if (days === null || days >= 120) return { label: "Lapsed", color: "bg-red-100 text-red-700" };
-  if (days >= 90) return { label: "High Risk", color: "bg-orange-100 text-orange-700" };
-  if (days >= 60) return { label: "At Risk", color: "bg-amber-100 text-amber-700" };
-  return { label: "Drifting", color: "bg-yellow-100 text-yellow-700" };
+  return days === null || days >= INACTIVE_DAYS ? "Inactive" : "At risk";
 }
 
 export default function ClientAtRisk() {
   const { selectedStore } = useSelectedStore();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [daysSince, setDaysSince] = useState(60);
+  const [daysSince, setDaysSince] = useState(AT_RISK_DAYS);
   const [smsSending, setSmsSending] = useState<number | null>(null);
 
   const { data: clients = EMPTY_ARRAY, isLoading } = useQuery<AtRiskClient[]>({
@@ -88,11 +82,10 @@ export default function ClientAtRisk() {
           </Link>
           <div className="flex-1">
             <h1 className="text-xl font-bold flex items-center gap-2">
-              <TrendingDown className="h-5 w-5 text-orange-500" />
               At-Risk Clients
             </h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Clients who haven't visited in a while — reach out before they churn.
+              Clients who have visited before but haven't been back in a while.
             </p>
           </div>
         </div>
@@ -120,7 +113,7 @@ export default function ClientAtRisk() {
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <Users className="h-4 w-4 text-orange-500" />
+                  <Users className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">At-Risk Clients</span>
                 </div>
                 <div className="text-2xl font-bold">{clients.length}</div>
@@ -129,7 +122,7 @@ export default function ClientAtRisk() {
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <DollarSign className="h-4 w-4 text-red-500" />
+                  <DollarSign className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">Revenue at Stake</span>
                 </div>
                 <div className="text-2xl font-bold">${totalLostRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
@@ -138,7 +131,7 @@ export default function ClientAtRisk() {
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <Calendar className="h-4 w-4 text-blue-500" />
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">Avg Lifetime Spend</span>
                 </div>
                 <div className="text-2xl font-bold">${avgSpend.toFixed(0)}</div>
@@ -149,19 +142,18 @@ export default function ClientAtRisk() {
 
         {/* Win-back tip banner */}
         {!isLoading && clients.length > 0 && (
-          <div className="rounded-xl bg-gradient-to-r from-violet-50 to-indigo-50 border border-violet-200 px-5 py-4 flex items-center gap-4">
-            <AlertTriangle className="h-5 w-5 text-violet-600 shrink-0" />
+          <div className="rounded-xl bg-muted/40 border border-border px-5 py-4 flex items-center gap-4">
             <div className="flex-1">
-              <p className="text-sm font-semibold text-violet-900">
-                Win-back campaigns can recover 15–30% of lapsed clients.
+              <p className="text-sm font-semibold text-foreground">
+                Reach out before they're gone for good.
               </p>
-              <p className="text-xs text-violet-600 mt-0.5">
+              <p className="text-xs text-muted-foreground mt-0.5">
                 Use the SMS button to send a personal win-back message, or go to Campaigns to send a bulk SMS.
               </p>
             </div>
             <Link
               to="/campaigns"
-              className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors shrink-0"
+              className="flex items-center gap-1.5 border border-border bg-background hover:bg-muted text-foreground text-sm font-medium px-4 py-2 rounded-xl transition-colors shrink-0"
             >
               Campaigns
               <ArrowRight className="h-3.5 w-3.5" />
@@ -175,7 +167,7 @@ export default function ClientAtRisk() {
         ) : clients.length === 0 ? (
           <Card>
             <CardContent className="py-16 text-center">
-              <Users className="h-12 w-12 text-emerald-400 mx-auto mb-4" />
+              <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <p className="font-semibold text-foreground">No at-risk clients</p>
               <p className="text-sm text-muted-foreground mt-1">
                 All your clients have visited within the last {daysSince} days. Great retention!
@@ -191,8 +183,8 @@ export default function ClientAtRisk() {
                   <CardContent className="p-4">
                     <div className="flex items-center gap-4">
                       {/* Avatar */}
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-100 to-red-100 flex items-center justify-center shrink-0">
-                        <span className="text-sm font-bold text-orange-700">
+                      <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center shrink-0">
+                        <span className="text-sm font-bold text-foreground">
                           {client.fullName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
                         </span>
                       </div>
@@ -201,8 +193,8 @@ export default function ClientAtRisk() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-foreground truncate">{client.fullName}</span>
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${badge.color}`}>
-                            {badge.label}
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full border border-border text-muted-foreground">
+                            {badge}
                           </span>
                         </div>
                         <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
@@ -213,7 +205,7 @@ export default function ClientAtRisk() {
                               : "Never visited"}
                           </span>
                           {client.daysSinceLast !== null && (
-                            <span className="font-medium text-orange-600">
+                            <span className="font-medium text-foreground">
                               {client.daysSinceLast} days ago
                             </span>
                           )}

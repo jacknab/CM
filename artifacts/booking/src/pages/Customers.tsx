@@ -46,30 +46,21 @@ import { useForm } from "react-hook-form";
 import { useToast } from "@/hooks/use-toast";
 import { formatPhoneInput } from "@/lib/utils";
 import debounce from "lodash.debounce";
+import { clientStatusOf, AT_RISK_DAYS, INACTIVE_DAYS, REGULAR_VISITS, type ClientStatus } from "@shared/clientStatus";
 import { format, isToday, isYesterday, differenceInDays, parseISO } from "date-fns";
 
-// ─── Status computation ───────────────────────────────────────────────────────
-// Derived purely from existing client data — no DB or API changes needed.
-//
-// Precedence (intentional):
-//   1. VIP   — explicit DB flag always wins
-//   2. Inactive — no visit for 120+ days (lost relationship, even if visit count < 3)
-//   3. At Risk  — no visit for 45-119 days (needs re-engagement even if relatively new)
-//   4. New      — < 3 visits and visited recently (still building the relationship)
-//   5. Regular  — 3+ visits, visited recently
+// ─── Status ───────────────────────────────────────────────────────────────────
+// One rule everywhere (shared/clientStatus.ts); the server's status tabs use the same rule.
 
-type ComputedStatus = "new" | "regular" | "vip" | "at_risk" | "inactive";
+type ComputedStatus = ClientStatus;
 
 function getComputedStatus(client: ClientListItem): ComputedStatus {
-  if (client.clientStatus === "vip") return "vip";
-
   const lastVisit = client.lastVisitAt ? parseISO(client.lastVisitAt) : null;
-  const daysSince = lastVisit != null ? differenceInDays(new Date(), lastVisit) : null;
-
-  if (daysSince == null || daysSince >= 120) return "inactive";
-  if (daysSince >= 45) return "at_risk";
-  if (client.totalVisits < 3) return "new";
-  return "regular";
+  return clientStatusOf({
+    isVip: client.clientStatus === "vip",
+    visits: client.totalVisits ?? 0,
+    daysSinceLastVisit: lastVisit != null ? differenceInDays(new Date(), lastVisit) : null,
+  });
 }
 
 // ─── Last visit formatting ────────────────────────────────────────────────────
@@ -92,11 +83,11 @@ function formatLastVisit(dateStr: string | null, t: any): string {
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<ComputedStatus, { label: string; className: string }> = {
-  new:      { label: "🆕 New",     className: "bg-blue-50 text-blue-700 border-blue-200" },
-  regular:  { label: "● Regular",  className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  vip:      { label: "⭐ VIP",     className: "bg-amber-50 text-amber-700 border-amber-200" },
-  at_risk:  { label: "⚠ At Risk", className: "bg-orange-50 text-orange-700 border-orange-200" },
-  inactive: { label: "Inactive",   className: "bg-slate-50 text-slate-400 border-slate-200" },
+  new:      { label: "New",      className: "bg-background text-muted-foreground border-border" },
+  regular:  { label: "Regular",  className: "bg-background text-muted-foreground border-border" },
+  vip:      { label: "VIP",      className: "bg-foreground text-background border-foreground" },
+  at_risk:  { label: "At risk",  className: "bg-background text-foreground border-foreground/40 font-semibold" },
+  inactive: { label: "Inactive", className: "bg-background text-muted-foreground/70 border-border" },
 };
 
 function StatusBadge({ status }: { status: ComputedStatus }) {
@@ -203,15 +194,15 @@ export default function Customers() {
     noContactInfo:  pick({ en: "No contact info",   vi: "Không có liên hệ",   es: "Sin información",      fr: "Pas de contact" }),
     // Empty states — status tabs
     emptyNewTitle:    pick({ en: "No new clients",        vi: "Không có khách hàng mới",      es: "No hay clientes nuevos",         fr: "Aucun nouveau client" }),
-    emptyNewSub:      pick({ en: "New clients have fewer than 3 completed visits.", vi: "Khách mới có dưới 3 lần ghé thăm.", es: "Los clientes nuevos tienen menos de 3 visitas.", fr: "Les nouveaux clients ont moins de 3 visites." }),
+    emptyNewSub:      `New clients have visited in the last ${AT_RISK_DAYS} days and have fewer than ${REGULAR_VISITS} visits.`,
     emptyRegTitle:    pick({ en: "No regular clients yet",    vi: "Chưa có khách thường xuyên",   es: "Aún no hay clientes regulares",  fr: "Pas encore de clients réguliers" }),
-    emptyRegSub:      pick({ en: "Regular clients have 3+ visits and were seen recently.", vi: "Khách thường xuyên có 3+ lượt thăm gần đây.", es: "Los regulares tienen 3+ visitas recientes.", fr: "Les réguliers ont 3+ visites récentes." }),
+    emptyRegSub:      `Regular clients have ${REGULAR_VISITS}+ visits and visited in the last ${AT_RISK_DAYS} days.`,
     emptyVipTitle:    pick({ en: "No VIP clients",           vi: "Không có khách VIP",           es: "No hay clientes VIP",            fr: "Aucun client VIP" }),
     emptyVipSub:      pick({ en: "VIP status is set manually on the client profile.", vi: "Trạng thái VIP được đặt thủ công.", es: "El estado VIP se configura manualmente.", fr: "Le statut VIP est défini manuellement." }),
     emptyRiskTitle:   pick({ en: "No at-risk clients",       vi: "Không có khách có nguy cơ",    es: "No hay clientes en riesgo",      fr: "Aucun client à risque" }),
-    emptyRiskSub:     pick({ en: "Clients who haven't visited in 45–119 days appear here.", vi: "Khách chưa ghé 45–119 ngày hiển thị ở đây.", es: "Clientes sin visita en 45–119 días.", fr: "Clients sans visite depuis 45–119 jours." }),
+    emptyRiskSub:     `Clients who haven't been back in ${AT_RISK_DAYS}–${INACTIVE_DAYS - 1} days appear here.`,
     emptyInactTitle:  pick({ en: "No inactive clients",      vi: "Không có khách không hoạt động", es: "No hay clientes inactivos",    fr: "Aucun client inactif" }),
-    emptyInactSub:    pick({ en: "Clients who haven't visited in 120+ days appear here.", vi: "Khách chưa ghé 120+ ngày hiển thị ở đây.", es: "Clientes sin visita en 120+ días.", fr: "Clients sans visite depuis 120+ jours." }),
+    emptyInactSub:    `Clients who never visited, or haven't been back in ${INACTIVE_DAYS}+ days, appear here.`,
     emptySearchTitle: (q: string) => pick({ en: `No clients match "${q}"`, vi: `Không tìm thấy khách khớp "${q}"`, es: `Sin resultados para "${q}"`, fr: `Aucun client pour "${q}"` }),
     emptySearchSub:   pick({ en: "Try a different name, email, or phone number.", vi: "Thử tên, email hoặc số điện thoại khác.", es: "Intenta con otro nombre, email o teléfono.", fr: "Essayez un autre nom, email ou téléphone." }),
   };
@@ -316,11 +307,11 @@ export default function Customers() {
             <Download className="w-4 h-4 mr-1.5" />{t.export}
           </Button>
           <Link to="/clients/at-risk">
-            <Button variant="outline" size="sm" className="border-orange-300 text-orange-700 hover:bg-orange-50">
+            <Button variant="outline" size="sm">
               <Users className="w-4 h-4 mr-1.5" />{t.atRiskShortcut}
             </Button>
           </Link>
-          <Button variant="outline" size="sm" onClick={() => setIsDuplicateOpen(true)} className="border-violet-300 text-violet-700 hover:bg-violet-50">
+          <Button variant="outline" size="sm" onClick={() => setIsDuplicateOpen(true)}>
             <GitMerge className="w-4 h-4 mr-1.5" />Find Duplicates
           </Button>
           <Button size="sm" onClick={() => setIsCreateOpen(true)} className="bg-primary hover:bg-primary/90 text-white shadow-sm">
@@ -331,12 +322,12 @@ export default function Customers() {
 
       {/* ── Migration banner ── */}
       {serverTotal === 0 && !isLoading && !debouncedSearch && status === "all" && selectedTag === "all" && (
-        <div className="mb-4 p-4 rounded-xl border bg-amber-50 border-amber-200 flex items-center justify-between gap-4">
+        <div className="mb-4 p-4 rounded-xl border bg-muted/40 border-border flex items-center justify-between gap-4">
           <div>
-            <p className="font-semibold text-sm text-amber-900">{t.importBanner}</p>
-            <p className="text-xs text-amber-700 mt-0.5">{t.importBannerSub}</p>
+            <p className="font-semibold text-sm text-foreground">{t.importBanner}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{t.importBannerSub}</p>
           </div>
-          <Button size="sm" variant="outline" onClick={handleMigrate} disabled={isMigrating} className="border-amber-300 bg-white text-amber-900 hover:bg-amber-50 shrink-0">
+          <Button size="sm" variant="outline" onClick={handleMigrate} disabled={isMigrating} className="shrink-0">
             {isMigrating ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1.5" />}
             {t.syncContacts}
           </Button>
@@ -529,7 +520,7 @@ function ClientAvatar({ name, isVip }: { name: string; isVip: boolean }) {
     ? name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)
     : "?";
   return (
-    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${isVip ? "bg-amber-100 text-amber-700" : "bg-primary/10 text-primary"}`}>
+    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${isVip ? "bg-foreground text-background" : "bg-muted text-foreground"}`}>
       {initials}
     </div>
   );
@@ -622,8 +613,7 @@ function ClientRow({
       <td className="px-5 py-3">
         <span className="font-medium">${((client.totalSpentCents ?? 0) / 100).toFixed(2)}</span>
         {(client.loyaltyPoints ?? 0) > 0 && (
-          <div className="flex items-center gap-0.5 text-amber-600 text-xs mt-0.5">
-            <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+          <div className="text-muted-foreground text-xs mt-0.5">
             {client.loyaltyPoints} pts
           </div>
         )}
@@ -633,7 +623,7 @@ function ClientRow({
       <td className="px-5 py-3">
         <span className={`text-sm ${
           !client.lastVisitAt ? "text-muted-foreground/60"
-          : computedStatus === "at_risk" ? "text-orange-600 font-medium"
+          : computedStatus === "at_risk" ? "text-foreground font-semibold"
           : computedStatus === "inactive" ? "text-slate-400"
           : "text-foreground"
         }`}>
@@ -978,7 +968,7 @@ function ClientDetailSheet({
               </div>
               <div className="rounded-xl border bg-muted/30 p-3">
                 <p className="text-xs text-muted-foreground flex items-center gap-1 mb-0.5"><Star className="w-3 h-3" />Loyalty Points</p>
-                <p className="text-xl font-bold text-amber-600">{client.loyaltyPoints ?? 0}</p>
+                <p className="text-xl font-bold">{client.loyaltyPoints ?? 0}</p>
               </div>
               <div className="rounded-xl border bg-muted/30 p-3">
                 <p className="text-xs text-muted-foreground mb-0.5">Last Visit</p>
@@ -1119,9 +1109,9 @@ function CreateClientDialog({ open, onOpenChange }: { open: boolean; onOpenChang
 
 function buildReasonBadge(pick: (m: { en: string; vi: string; es: string; fr: string }) => string): Record<DuplicateGroup["reason"], { label: string; className: string }> {
   return {
-    phone: { label: pick({ en: "Same phone", vi: "Cùng số điện thoại", es: "Mismo teléfono", fr: "Même téléphone" }), className: "bg-blue-50 text-blue-700 border-blue-200" },
-    email: { label: pick({ en: "Same email", vi: "Cùng email",         es: "Mismo correo",   fr: "Même email" }),     className: "bg-violet-50 text-violet-700 border-violet-200" },
-    name:  { label: pick({ en: "Same name",  vi: "Cùng tên",           es: "Mismo nombre",   fr: "Même nom" }),       className: "bg-amber-50 text-amber-700 border-amber-200" },
+    phone: { label: pick({ en: "Same phone", vi: "Cùng số điện thoại", es: "Mismo teléfono", fr: "Même téléphone" }), className: "bg-background text-muted-foreground border-border" },
+    email: { label: pick({ en: "Same email", vi: "Cùng email",         es: "Mismo correo",   fr: "Même email" }),     className: "bg-background text-muted-foreground border-border" },
+    name:  { label: pick({ en: "Same name",  vi: "Cùng tên",           es: "Mismo nombre",   fr: "Même nom" }),       className: "bg-background text-muted-foreground border-border" },
   };
 }
 
@@ -1200,7 +1190,7 @@ function DuplicateMergeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <GitMerge className="w-5 h-5 text-violet-600" />
+            <GitMerge className="w-5 h-5 text-muted-foreground" />
             {dt.title}
           </DialogTitle>
         </DialogHeader>
@@ -1229,7 +1219,7 @@ function DuplicateMergeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
 
           {!isLoading && !isFetching && remaining.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground">
-              <CheckCircle2 className="w-10 h-10 text-emerald-500" />
+              <CheckCircle2 className="w-10 h-10 text-muted-foreground" />
               <p className="text-sm font-medium">
                 {groups.length === 0
                   ? dt.cleanList
@@ -1258,7 +1248,7 @@ function DuplicateMergeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                     size="sm"
                     disabled={isBusy || isMerging}
                     onClick={() => handleMerge(group)}
-                    className="bg-violet-600 hover:bg-violet-700 text-white h-7 px-3 text-xs"
+                    className="h-7 px-3 text-xs"
                   >
                     {isBusy
                       ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
@@ -1276,14 +1266,14 @@ function DuplicateMergeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                         key={client.id}
                         type="button"
                         onClick={() => setWinners(prev => ({ ...prev, [group.key]: client.id }))}
-                        className={`w-full text-left px-4 py-3 flex items-start gap-3 transition-colors ${isWinner ? "bg-violet-50" : "hover:bg-muted/30"}`}
+                        className={`w-full text-left px-4 py-3 flex items-start gap-3 transition-colors ${isWinner ? "bg-muted/60" : "hover:bg-muted/30"}`}
                       >
                         {/* Radio indicator */}
-                        <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${isWinner ? "border-violet-600 bg-violet-600" : "border-gray-300"}`}>
+                        <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${isWinner ? "border-foreground bg-foreground" : "border-border"}`}>
                           {isWinner && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                         </div>
                         {/* Avatar */}
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${isWinner ? "bg-violet-100 text-violet-700" : "bg-primary/10 text-primary"}`}>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${isWinner ? "bg-foreground text-background" : "bg-muted text-foreground"}`}>
                           {client.fullName.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2)}
                         </div>
                         {/* Info */}
@@ -1291,7 +1281,7 @@ function DuplicateMergeDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-medium">{client.fullName}</span>
                             {isWinner && (
-                              <span className="text-[10px] font-semibold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">
+                              <span className="text-[10px] font-semibold bg-muted text-foreground px-1.5 py-0.5 rounded-full">
                                 {dt.keep}
                               </span>
                             )}

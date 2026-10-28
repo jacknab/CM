@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { AT_RISK_DAYS, INACTIVE_DAYS, REGULAR_VISITS } from "@shared/clientStatus";
 import multer from "multer";
 import { db } from "../db";
 import { mergeLoyaltyTx } from "../lib/loyaltyAward";
@@ -76,12 +77,12 @@ const LIVE_SPENT = sql`(SELECT COALESCE(SUM(CAST(a.total_paid AS DECIMAL(10,2)) 
   WHERE a.customer_id = clients.id AND a.store_id = clients.store_id AND a.status = 'completed')`;
 const LIVE_LAST_VISIT = sql`(SELECT MAX(COALESCE(a.completed_at, a.date)) FROM appointments a
   WHERE a.customer_id = clients.id AND a.store_id = clients.store_id AND a.status = 'completed')`;
-/** The list's status tabs (New / Regular / At risk / Inactive), worked out in the database so every client counts. */
+/** The list's status tabs, worked out in the database so every client counts — the one rule in shared/clientStatus.ts. */
 const SEGMENT_SQL: Record<string, ReturnType<typeof sql>> = {
-  inactive: sql`clients.client_status IS DISTINCT FROM 'vip' AND (${LIVE_LAST_VISIT} IS NULL OR ${LIVE_LAST_VISIT} < now() - interval '120 days')`,
-  at_risk:  sql`clients.client_status IS DISTINCT FROM 'vip' AND ${LIVE_LAST_VISIT} < now() - interval '45 days' AND ${LIVE_LAST_VISIT} >= now() - interval '120 days'`,
-  new:      sql`clients.client_status IS DISTINCT FROM 'vip' AND ${LIVE_LAST_VISIT} >= now() - interval '45 days' AND ${LIVE_VISITS} < 3`,
-  regular:  sql`clients.client_status IS DISTINCT FROM 'vip' AND ${LIVE_LAST_VISIT} >= now() - interval '45 days' AND ${LIVE_VISITS} >= 3`,
+  inactive: sql`clients.client_status IS DISTINCT FROM 'vip' AND (${LIVE_LAST_VISIT} IS NULL OR ${LIVE_LAST_VISIT} < now() - make_interval(days => ${INACTIVE_DAYS}))`,
+  at_risk:  sql`clients.client_status IS DISTINCT FROM 'vip' AND ${LIVE_LAST_VISIT} < now() - make_interval(days => ${AT_RISK_DAYS}) AND ${LIVE_LAST_VISIT} >= now() - make_interval(days => ${INACTIVE_DAYS})`,
+  new:      sql`clients.client_status IS DISTINCT FROM 'vip' AND ${LIVE_LAST_VISIT} >= now() - make_interval(days => ${AT_RISK_DAYS}) AND ${LIVE_VISITS} < ${REGULAR_VISITS}`,
+  regular:  sql`clients.client_status IS DISTINCT FROM 'vip' AND ${LIVE_LAST_VISIT} >= now() - make_interval(days => ${AT_RISK_DAYS}) AND ${LIVE_VISITS} >= ${REGULAR_VISITS}`,
 };
 
 router.get("/", isAuthenticated, async (req, res) => {
@@ -458,7 +459,9 @@ router.get("/:id", isAuthenticated, async (req, res) => {
         SELECT
           COUNT(DISTINCT COALESCE(ticket_group_id, id))::int                        AS total_visits,
           COALESCE(ROUND(SUM(CAST(total_paid AS DECIMAL(10,2)) - COALESCE(CAST(tip_amount AS DECIMAL(10,2)), 0)) * 100), 0)::int AS total_spent_cents,
-          MAX(COALESCE(completed_at, date))                                         AS last_visit_at
+          MAX(COALESCE(completed_at, date))                                         AS last_visit_at,
+          COALESCE(ROUND(SUM(CAST(total_paid AS DECIMAL(10,2)) - COALESCE(CAST(tip_amount AS DECIMAL(10,2)), 0))
+            FILTER (WHERE COALESCE(completed_at, date) >= now() - interval '12 months') * 100), 0)::int AS spent_12m_cents
         FROM appointments
         WHERE customer_id = ${clientId}
           AND store_id    = ${client.storeId}
@@ -474,6 +477,7 @@ router.get("/:id", isAuthenticated, async (req, res) => {
       // Override stale denormalized columns with live appointment aggregates
       totalVisits:     Number(stats.total_visits ?? 0),
       totalSpentCents: Number(stats.total_spent_cents ?? 0),
+      spent12mCents:   Number(stats.spent_12m_cents ?? 0),
       lastVisitAt:     stats.last_visit_at ?? null,
       emails,
       phones,

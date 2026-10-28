@@ -3,6 +3,7 @@
  * visit count once); a client's spend is what they paid less tips.
  */
 import { pool } from "../../db";
+import { AT_RISK_DAYS } from "@shared/clientStatus";
 import { previousRange, storeTimezone, type ReportRange } from "./money";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -51,9 +52,9 @@ export async function retentionReport(storeId: number, r: ReportRange, compare: 
   return { range: r, totals: { ...totals, avgDaysBetweenVisits: avgGap?.days != null ? Math.round(num(avgGap.days)) : null }, previous };
 }
 
-/** Lapsed clients: regulars (2+ visits) who haven't been back for a while — a list to win back. */
+/** Lapsed clients: clients who have visited but haven't been back for a while (default AT_RISK_DAYS, shared/clientStatus.ts) — a list to win back. */
 export async function lapsedReport(storeId: number, r: ReportRange, _compare: boolean, q: Record<string, unknown> = {}) {
-  const days = Math.min(365, Math.max(14, Number(q.days) || 60));
+  const days = Math.min(365, Math.max(14, Number(q.days) || AT_RISK_DAYS));
   const { rows } = await pool.query(
     `SELECT c.id, c.full_name AS name,
             (SELECT COALESCE(p.display_phone, p.phone_number_e164) FROM client_phones p WHERE p.client_id = c.id ORDER BY p.is_primary DESC, p.id LIMIT 1) AS phone,
@@ -62,8 +63,9 @@ export async function lapsedReport(storeId: number, r: ReportRange, _compare: bo
             (SELECT st.name FROM appointments b JOIN staff st ON st.id = b.staff_id WHERE b.customer_id = c.id AND b.status = 'completed'
               GROUP BY st.name ORDER BY COUNT(*) DESC LIMIT 1) AS usual_tech
        FROM clients c JOIN appointments a ON a.customer_id = c.id AND a.store_id = $1 AND a.status = 'completed'
+      WHERE c.archived_at IS NULL
       GROUP BY c.id, c.full_name
-     HAVING COUNT(DISTINCT COALESCE(a.ticket_group_id, a.id)) >= 2 AND MAX(${PAID}) < ($2::date - ($3 || ' days')::interval)
+     HAVING MAX(${PAID}) < ($2::date - ($3 || ' days')::interval)
       ORDER BY spend DESC LIMIT 200`,
     [storeId, r.to, days],
   );

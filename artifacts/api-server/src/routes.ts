@@ -17,6 +17,7 @@ import supportAccountListRouter from "./routes/supportAccountList";
 import liveChatAccountRouter from "./routes/liveChatAccount";
 import supportFeedRouter from "./routes/supportFeed";
 import { resolveSessionStoreId } from "./lib/sessionStore";
+import { AT_RISK_DAYS } from "@shared/clientStatus";
 import { resolveTimezoneFromAddress, hasAddressChange } from "./lib/resolveTimezone";
 import { getOrCreateTodayBusinessDay, getPendingReconciliation, getLocalDateString, computeBusinessDayTotals } from "./lib/businessDay";
 import { computeZReport } from "./lib/zReport";
@@ -21529,13 +21530,13 @@ or
   // AT-RISK CLIENTS
   // ============================================================
 
-  // Clients not back in N days (owner audit 2026-10-29): live from appointments — the stored visit/spend/last-visit
+  // Clients who have visited but not been back in N days (shared/clientStatus.ts, default AT_RISK_DAYS); live from appointments — the stored visit/spend/last-visit
   // columns on clients are not kept up to date, so every client used to show as lapsed with an old spend.
   app.get("/api/clients/at-risk", isAuthenticated, async (req, res) => {
     try {
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(404).json({ message: "Store not found" });
-      const daysSince = Math.max(1, parseInt((req.query.daysSince as string) || "60") || 60);
+      const daysSince = Math.max(1, parseInt((req.query.daysSince as string) || String(AT_RISK_DAYS)) || AT_RISK_DAYS);
       const { rows } = await pool.query(
         `WITH v AS (
            SELECT a.customer_id::text AS cid, COUNT(DISTINCT COALESCE(a.ticket_group_id, a.id))::int AS visits,
@@ -21543,9 +21544,9 @@ or
                   MAX(COALESCE(a.completed_at, a.date)) AS last_visit
              FROM appointments a WHERE a.store_id = $1 AND a.status = 'completed' AND a.customer_id IS NOT NULL GROUP BY 1)
          SELECT c.id, c.full_name, c.created_at, COALESCE(v.visits, 0) AS visits, COALESCE(v.spent, 0) AS spent, v.last_visit
-           FROM clients c LEFT JOIN v ON v.cid = c.id::text
+           FROM clients c JOIN v ON v.cid = c.id::text
           WHERE c.store_id = $1 AND c.archived_at IS NULL
-            AND COALESCE(v.last_visit, c.created_at) < now() - make_interval(days => $2)`,
+            AND v.last_visit < now() - make_interval(days => $2)`,
         [storeId, daysSince]);
       const now = Date.now();
       const atRisk = rows.map((c: any) => {

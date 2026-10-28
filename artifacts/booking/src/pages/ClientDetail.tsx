@@ -9,21 +9,19 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, differenceInDays } from "date-fns";
+import { clientStatusOf, AT_RISK_DAYS } from "@shared/clientStatus";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft, Mail, Phone, Brain, TrendingUp, Calendar,
-  AlertTriangle, Send, RefreshCw, ExternalLink, Zap, Star,
+  Send, RefreshCw, ExternalLink, Zap, Star,
   CheckCircle2, XCircle, Clock3, Ban,
 } from "lucide-react";
 
 // ─── Risk meter ───────────────────────────────────────────────────────────────
 
 function RiskMeter({ score }: { score: number }) {
-  const color =
-    score >= 75 ? "#ef4444" :
-    score >= 50 ? "#f97316" :
-    score >= 25 ? "#f59e0b" : "#10b981";
+  const color = "hsl(var(--foreground))";
   return (
     <div className="space-y-1">
       <div className="w-full bg-muted rounded-full h-2">
@@ -36,10 +34,10 @@ function RiskMeter({ score }: { score: number }) {
 
 function ChurnBadge({ label }: { label: string }) {
   const styles: Record<string, string> = {
-    low:      "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400",
-    medium:   "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400",
-    high:     "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400",
-    critical: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400",
+    low:      "border border-border text-muted-foreground",
+    medium:   "border border-border text-foreground",
+    high:     "border border-foreground/40 text-foreground",
+    critical: "bg-foreground text-background",
   };
   return (
     <span className={cn("px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize", styles[label] || styles.low)}>
@@ -54,7 +52,7 @@ function ClientAvatar({ name, status, size = "lg" }: { name: string; status?: st
   const dim = size === "lg" ? "w-16 h-16 text-xl" : "w-10 h-10 text-sm";
   return (
     <div className={cn("rounded-full flex items-center justify-center font-bold shrink-0", dim,
-      isVip ? "bg-amber-100 text-amber-700" : "bg-primary/10 text-primary")}>
+      isVip ? "bg-foreground text-background" : "bg-muted text-foreground")}>
       {initials}
     </div>
   );
@@ -127,25 +125,25 @@ export default function ClientDetail() {
   const intel = intelData?.intel;
   const interventions: any[] = intelData?.interventions ?? [];
 
-  const ltv12   = Number(intel?.ltv12Month ?? 0);
-  const ltvAll  = Number(intel?.ltvAllTime ?? 0);
-  const avgTick = Number(intel?.avgTicketValue ?? 0);
+  const spent12m = (client?.spent12mCents ?? 0) / 100;
   const churnScore = Number(intel?.churnRiskScore ?? 0);
   const cadenceDays = intel?.avgVisitCadenceDays ? Math.round(Number(intel.avgVisitCadenceDays)) : null;
-  const daysSinceLast = intel?.daysSinceLastVisit ?? null;
+  const daysSinceLast = client?.lastVisitAt ? differenceInDays(new Date(), new Date(client.lastVisitAt)) : null;
   const isOverdue = daysSinceLast !== null && cadenceDays !== null && daysSinceLast > cadenceDays * 1.25;
-  const lastVisit = intel?.lastVisitDate ? new Date(intel.lastVisitDate) : null;
   const nextExpected = intel?.nextExpectedVisitDate ? new Date(intel.nextExpectedVisitDate) : null;
   const rebookingRate = Number(intel?.rebookingRate ?? 0);
   const noShowRate = Number(intel?.noShowRate ?? 0);
 
-  const hasAlert = intel?.isAtRisk || intel?.isDrifting;
 
   // Stat tiles derived from client record (visits/spend already synced by migration)
   const totalVisits  = client?.totalVisits ?? 0;
   const totalSpent   = client?.totalSpentCents ? (client.totalSpentCents / 100) : 0;
   const lastVisitAt  = client?.lastVisitAt ? new Date(client.lastVisitAt) : null;
   const loyaltyPoints = client?.loyaltyPoints ?? null;
+  const avgTick = totalVisits ? totalSpent / totalVisits : 0;
+  // The one status rule (shared/clientStatus.ts) — same as the Clients list, At-Risk page and Lapsed report.
+  const status = clientStatusOf({ isVip: client?.clientStatus === "vip", visits: totalVisits, daysSinceLastVisit: daysSinceLast });
+  const hasAlert = status === "at_risk";
 
   if (isLoading) {
     return (
@@ -182,17 +180,14 @@ export default function ClientDetail() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold truncate">{client.fullName || "Unnamed Client"}</h1>
-            {client.clientStatus === "vip" && (
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">⭐ VIP</span>
+            {status === "vip" && (
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-foreground text-background">VIP</span>
             )}
-            {client.clientStatus === "inactive" && (
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">Inactive</span>
+            {status === "inactive" && (
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full border border-border text-muted-foreground">Inactive</span>
             )}
             {hasAlert && (
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" />
-                {intel?.isAtRisk ? "At Risk" : "Drifting"}
-              </span>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full border border-foreground/40 text-foreground">At risk</span>
             )}
           </div>
           <div className="flex flex-col gap-1 mt-1.5">
@@ -256,7 +251,7 @@ export default function ClientDetail() {
           >
             {tab.label}
             {tab.dot && (
-              <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-orange-500" />
+              <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-foreground" />
             )}
           </button>
         ))}
@@ -280,7 +275,7 @@ export default function ClientDetail() {
 
           {/* Intelligence quick-glance (only if data exists) */}
           {intel && !intelLoading && (
-            <Card className={cn("p-4 border", hasAlert ? "border-orange-200 bg-orange-50/50 dark:bg-orange-950/20" : "")}>
+            <Card className={cn("p-4 border", hasAlert ? "border-foreground/30" : "")}>
               <div className="flex items-center justify-between mb-3">
                 <p className="text-sm font-semibold flex items-center gap-2">
                   <Brain className="w-4 h-4 text-muted-foreground" />
@@ -295,8 +290,8 @@ export default function ClientDetail() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center mb-3">
                 <div>
-                  <p className="text-xs text-muted-foreground">LTV 12mo</p>
-                  <p className="font-bold text-base">${ltv12.toFixed(0)}</p>
+                  <p className="text-xs text-muted-foreground">Spent, 12 months</p>
+                  <p className="font-bold text-base">${spent12m.toFixed(0)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Churn risk</p>
@@ -304,7 +299,7 @@ export default function ClientDetail() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Last visit</p>
-                  <p className={cn("font-semibold text-sm", isOverdue ? "text-orange-600" : "")}>
+                  <p className={cn("font-semibold text-sm", isOverdue ? "underline underline-offset-2" : "")}>
                     {daysSinceLast !== null ? `${daysSinceLast}d ago` : "—"}
                   </p>
                 </div>
@@ -343,12 +338,12 @@ export default function ClientDetail() {
               <div className="divide-y">
                 {bookings.map((b: any) => {
                   const statusConfig: Record<string, { icon: React.ElementType; color: string; label: string }> = {
-                    completed:  { icon: CheckCircle2, color: "text-emerald-600", label: "Completed" },
-                    cancelled:  { icon: XCircle,      color: "text-red-500",     label: "Cancelled" },
-                    "no-show":  { icon: Ban,           color: "text-orange-500",  label: "No-show" },
-                    no_show:    { icon: Ban,           color: "text-orange-500",  label: "No-show" },
-                    scheduled:  { icon: Clock3,        color: "text-blue-500",    label: "Scheduled" },
-                    confirmed:  { icon: Clock3,        color: "text-blue-500",    label: "Confirmed" },
+                    completed:  { icon: CheckCircle2, color: "text-muted-foreground", label: "Completed" },
+                    cancelled:  { icon: XCircle,      color: "text-muted-foreground", label: "Cancelled" },
+                    "no-show":  { icon: Ban,           color: "text-foreground",       label: "No-show" },
+                    no_show:    { icon: Ban,           color: "text-foreground",       label: "No-show" },
+                    scheduled:  { icon: Clock3,        color: "text-muted-foreground", label: "Scheduled" },
+                    confirmed:  { icon: Clock3,        color: "text-muted-foreground", label: "Confirmed" },
                   };
                   const cfg = statusConfig[b.status] ?? { icon: Clock3, color: "text-muted-foreground", label: b.status };
                   const Icon = cfg.icon;
@@ -412,19 +407,11 @@ export default function ClientDetail() {
             <>
               {/* Alert banner */}
               {hasAlert && (
-                <div className={cn(
-                  "rounded-xl border p-4 flex items-start gap-3",
-                  intel.isAtRisk ? "bg-orange-50 border-orange-200 dark:bg-orange-950/30" : "bg-amber-50 border-amber-200 dark:bg-amber-950/30"
-                )}>
-                  <AlertTriangle className={cn("w-4 h-4 mt-0.5 shrink-0", intel.isAtRisk ? "text-orange-600" : "text-amber-600")} />
+                <div className="rounded-xl border border-foreground/30 p-4 flex items-start gap-3">
                   <div className="flex-1">
-                    <p className={cn("text-sm font-semibold", intel.isAtRisk ? "text-orange-700 dark:text-orange-400" : "text-amber-700 dark:text-amber-400")}>
-                      {intel.isAtRisk ? "Client at risk of churning" : "Client is drifting"}
-                    </p>
+                    <p className="text-sm font-semibold text-foreground">Client at risk</p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {daysSinceLast !== null
-                        ? `Last visit ${daysSinceLast} days ago${cadenceDays ? ` — normally visits every ${cadenceDays} days` : ""}.`
-                        : "Visit pattern suggests this client may be slipping away."}
+                      {`Last visit ${daysSinceLast} days ago (at risk after ${AT_RISK_DAYS})${cadenceDays ? ` — normally visits every ${cadenceDays} days` : ""}.`}
                     </p>
                   </div>
                   {matchedCustomerId && (
@@ -444,9 +431,10 @@ export default function ClientDetail() {
               {/* LTV cards */}
               <div className="grid grid-cols-3 gap-3">
                 {[
-                  { label: "LTV (12mo)",    value: `$${ltv12.toFixed(0)}` },
-                  { label: "Avg Ticket",    value: `$${avgTick.toFixed(0)}` },
-                  { label: "All-time LTV",  value: `$${ltvAll.toFixed(0)}` },
+                  // Same numbers as the tiles at the top (one source: the client's paid visits, less tips).
+                  { label: "Spent, last 12 months", value: `$${spent12m.toFixed(0)}` },
+                  { label: "Average ticket",        value: `$${avgTick.toFixed(0)}` },
+                  { label: "Lifetime spend",        value: `$${totalSpent.toFixed(0)}` },
                 ].map(c => (
                   <Card key={c.label} className="p-4 text-center">
                     <p className="text-xs text-muted-foreground mb-1">{c.label}</p>
@@ -474,13 +462,12 @@ export default function ClientDetail() {
                   {[
                     { label: "Avg. visits every", value: cadenceDays ? `${cadenceDays} days` : "—" },
                     { label: "Days since last visit", value: daysSinceLast !== null ? `${daysSinceLast} days` : "—", warn: isOverdue },
-                    { label: "Last visit", value: lastVisit ? lastVisit.toLocaleDateString() : "—" },
                     { label: "Next expected", value: nextExpected ? nextExpected.toLocaleDateString() : "—", warn: isOverdue },
                   ].map(item => (
                     <div key={item.label}>
                       <p className="text-xs text-muted-foreground">{item.label}</p>
-                      <p className={cn("font-semibold", item.warn ? "text-orange-600 dark:text-orange-400" : "")}>
-                        {item.value}{item.warn ? " ⚠️" : ""}
+                      <p className={cn("font-semibold", item.warn ? "underline underline-offset-2" : "")}>
+                        {item.value}{item.warn ? " · overdue" : ""}
                       </p>
                     </div>
                   ))}
@@ -497,12 +484,11 @@ export default function ClientDetail() {
                   {[
                     { label: "Rebooking rate",  value: `${(rebookingRate * 100).toFixed(0)}%` },
                     { label: "No-show rate",    value: `${(noShowRate * 100).toFixed(0)}%`, warn: noShowRate > 0.25 },
-                    { label: "Total visits",    value: `${intel.totalVisits ?? 0}` },
                     { label: "Win-backs sent",  value: `${intel.winbackSentCount ?? 0}` },
                   ].map(item => (
                     <div key={item.label}>
                       <p className="text-xs text-muted-foreground">{item.label}</p>
-                      <p className={cn("font-semibold", item.warn ? "text-red-600 dark:text-red-400" : "")}>{item.value}</p>
+                      <p className={cn("font-semibold", item.warn ? "underline underline-offset-2" : "")}>{item.value}</p>
                     </div>
                   ))}
                 </div>

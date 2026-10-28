@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ReportFrame, Kpi, useReportRange, useReport, money, pctChange, downloadCsv } from "./ReportFrame";
 import { Table, DAYS } from "./MoneyReports";
+import { AT_RISK_DAYS } from "@shared/clientStatus";
 
 /** Client reports (owner, 2026-10-29, plans/reports.md stage 3), from /api/reports/clients/* (server: lib/reports/clients.ts). */
 const err = (q: { error: unknown }) => (q.error ? (q.error as Error).message : null);
@@ -41,11 +42,11 @@ export function RetentionReport() {
 
 export function LapsedReport() {
   const range = useReportRange();
-  const [days, setDays] = useState("60");
+  const [days, setDays] = useState(String(AT_RISK_DAYS));
   const q = useReport<any>("clients", "lapsed", range.from, range.to, false, `days=${days}`);
   const d = q.data;
   return (
-    <ReportFrame title="Lapsed clients" description="Regulars (2 or more visits) who haven't been back for a while — a list to win them back." range={range}
+    <ReportFrame title="Lapsed clients" description="Clients who have visited before but haven't been back for a while — a list to win them back." range={range}
       loading={q.isLoading} error={err(q)}
       onCsv={d ? () => downloadCsv(`lapsed-clients-${days}-days`, ["Client", "Phone", "Visits", "Last visit", "Spent", "Usual technician"],
         d.clients.map((c: any) => [c.name, c.phone ?? "", c.visits, day(c.lastVisit), c.spend, c.usualTech ?? ""])) : undefined}>
@@ -61,7 +62,7 @@ export function LapsedReport() {
         <Card><CardContent className="pt-5">
           {d.clients.length ? <Table testId="lapsed-table" head={["Client", "Phone", "Visits", "Last visit", "Spent", "Usual technician"]}
             rows={d.clients.map((c: any) => [c.name, c.phone ?? "—", c.visits, day(c.lastVisit), money(c.spend), c.usualTech ?? "—"])} />
-            : <p className="text-sm text-muted-foreground">No regulars have been away that long.</p>}
+            : <p className="text-sm text-muted-foreground">No clients have been away that long.</p>}
         </CardContent></Card>
       )}
     </ReportFrame>
