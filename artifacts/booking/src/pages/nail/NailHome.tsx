@@ -1075,15 +1075,14 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // An add-on key: the add-on joins the ticket's first service (an add-on is on a ticket once).
   const addAddonKey = (addon: { id: number; name: string }) => {
     if (!service) { say("Pick a service first, then its add-ons"); return; }
+    // QTY counts for add-ons too ("2 X" then Nail Art = two of them), and the same add-on can be added again.
+    const times = takeGridQty();
     if (isLive()) {
       const t = editing!;
-      takeGridQty();
-      void liveChange(t.id, async () => { const r = await addTicketAddon(t.id, addon.id); if (!r.added) say(`${addon.name} is already on the ticket`); });
+      void liveChange(t.id, async () => { for (let i = 0; i < times; i++) await addTicketAddon(t.id, addon.id); });
       return;
     }
-    if (addonIds.includes(addon.id)) { say(`${addon.name} is already on the ticket`); return; }
-    takeGridQty();
-    setAddonIds((cur) => [...cur, addon.id]);
+    setAddonIds((cur) => [...cur, ...Array.from({ length: times }, () => addon.id)]);
   };
   const noSale = () => { void openCashDrawerHardware({ onThermalPrint: thermalPrinter.isConnected ? thermalPrinter.print : undefined }); recordNoSale({ drawerId, performedBy: tech?.name }); say("Cash drawer opened"); };
   const toggleAddon = (id: number) => setAddonIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
@@ -1127,7 +1126,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       return;
     }
     if (line.customId != null) setCustoms((cur) => cur.filter((c) => c.id !== line.customId));
-    else if (line.addonId != null) toggleAddon(line.addonId);
+    // One copy at a time: the same add-on can be on the ticket more than once.
+    else if (line.addonId != null) setAddonIds((cur) => { const i = cur.lastIndexOf(line.addonId!); return i < 0 ? cur : [...cur.slice(0, i), ...cur.slice(i + 1)]; });
     else if (line.group) setPick((p) => ({ ...p, [line.group!]: null }));
   };
 

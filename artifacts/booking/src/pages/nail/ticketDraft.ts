@@ -186,10 +186,11 @@ export function draftTotals(
   let dropped: NailGroup[] = [];
   if (service) {
     lines.push({ key: `svc-${service.id}`, kind: "service", label: service.name, duration: num(service.duration), price: num(service.price) });
-    for (const id of addonIds) {
+    // The same add-on can be on the ticket more than once (2026-10-29): each copy is its own line.
+    addonIds.forEach((id, n) => {
       const a = addons.find((x) => x.id === id);
-      if (a) lines.push({ key: `addon-${a.id}`, kind: "addon", label: a.name, duration: num(a.duration), price: num(a.price), addonId: a.id });
-    }
+      if (a) lines.push({ key: `addon-${a.id}-${n}`, kind: "addon", label: a.name, duration: num(a.duration), price: num(a.price), addonId: a.id });
+    });
     const nail = nailAdjustment(cfg, pick);
     lines.push(...nail.lines);
     dropped = nail.dropped;

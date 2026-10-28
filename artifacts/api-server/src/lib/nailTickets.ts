@@ -11,7 +11,7 @@
  */
 
 import { pool, db } from "../db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { appointmentAddons, appointmentNailSelection, appointments } from "@shared/schema";
 import { storage } from "../storage";
 import { atomicCreateBooking, occupiedMinutes } from "../bookingEngine";
@@ -583,6 +583,9 @@ export async function appendServiceLine(storeId: number, appointmentId: number, 
  * (a real add-on, commissioned and reported as one) and its time joins the ticket's. An add-on is on a ticket
  * at most once.
  */
+/** Most add-ons one ticket can carry (the same add-on may be on it more than once). */
+export const MAX_TICKET_ADDONS = 30;
+
 export async function addAddonToTicket(storeId: number, appointmentId: number, addonId: number): Promise<"added" | "already" | "closed" | "missing"> {
   const addon = await storage.getAddon(addonId);
   if (!addon || addon.storeId !== storeId || (addon as any).isActive === false) return "missing";
@@ -590,9 +593,9 @@ export async function addAddonToTicket(storeId: number, appointmentId: number, a
     const row = (await tx.execute(sql`SELECT duration, status FROM appointments
       WHERE id = ${appointmentId} AND store_id = ${storeId} FOR UPDATE`)).rows[0] as any;
     if (!row || !["confirmed", "started"].includes(String(row.status))) return "closed" as const;
-    const have = await tx.select({ id: appointmentAddons.id }).from(appointmentAddons)
-      .where(and(eq(appointmentAddons.appointmentId, appointmentId), eq(appointmentAddons.addonId, addonId)));
-    if (have.length) return "already" as const;
+    // The same add-on may be added again (two Nail Art – Simple); only the ticket's total number is capped.
+    const have = await tx.select({ id: appointmentAddons.id }).from(appointmentAddons).where(eq(appointmentAddons.appointmentId, appointmentId));
+    if (have.length >= MAX_TICKET_ADDONS) return "already" as const;
     await tx.insert(appointmentAddons).values({ appointmentId, addonId });
     const extra = Math.max(0, Number(addon.duration) || 0);
     if (extra) await tx.update(appointments).set({ duration: (Number(row.duration) || 0) + extra }).where(eq(appointments.id, appointmentId));
@@ -607,9 +610,12 @@ export async function removeAddonFromTicket(storeId: number, appointmentId: numb
     const row = (await tx.execute(sql`SELECT duration, status FROM appointments
       WHERE id = ${appointmentId} AND store_id = ${storeId} FOR UPDATE`)).rows[0] as any;
     if (!row || !["confirmed", "started"].includes(String(row.status))) return false;
-    const gone = await tx.delete(appointmentAddons)
-      .where(and(eq(appointmentAddons.appointmentId, appointmentId), eq(appointmentAddons.addonId, addonId))).returning({ id: appointmentAddons.id });
-    if (!gone.length) return false;
+    // One at a time: a ticket can hold the same add-on more than once, and × takes off one of them (the newest).
+    const [one] = await tx.select({ id: appointmentAddons.id }).from(appointmentAddons)
+      .where(and(eq(appointmentAddons.appointmentId, appointmentId), eq(appointmentAddons.addonId, addonId)))
+      .orderBy(desc(appointmentAddons.id)).limit(1);
+    if (!one) return false;
+    await tx.delete(appointmentAddons).where(eq(appointmentAddons.id, one.id));
     const less = Math.max(0, Number(addon?.duration) || 0);
     if (less) await tx.update(appointments).set({ duration: Math.max(1, (Number(row.duration) || 0) - less) }).where(eq(appointments.id, appointmentId));
     return true;
@@ -984,7 +990,8 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
   const service = await storage.getService(input.serviceId);
   if (!service || service.storeId !== storeId || service.isActive === false) return fail(404, "Service not found");
 
-  const addonIds = [...new Set((input.addonIds ?? []).map(Number).filter(Number.isFinite))];
+  // The same add-on can be on a ticket more than once (owner, 2026-10-29: two Nail Art – Simple), up to 30 add-ons.
+  const addonIds = (input.addonIds ?? []).map(Number).filter(Number.isFinite).slice(0, MAX_TICKET_ADDONS);
   const addons = [];
   for (const id of addonIds) {
     const a = await storage.getAddon(id);
@@ -1242,7 +1249,7 @@ export async function updateNailTicketItems(deps: TicketDeps, input: UpdateItems
   const service = serviceId ? await storage.getService(serviceId) : undefined;
   if (!service || service.storeId !== input.storeId) return fail(404, "Service not found");
 
-  const addonIds = [...new Set(input.addonIds.map(Number).filter(Number.isFinite))];
+  const addonIds = input.addonIds.map(Number).filter(Number.isFinite).slice(0, MAX_TICKET_ADDONS);
   const addons = [];
   for (const id of addonIds) {
     const a = await storage.getAddon(id);

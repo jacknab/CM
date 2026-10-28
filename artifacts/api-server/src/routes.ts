@@ -19626,8 +19626,9 @@ or
       const r = await nailTickets.addAddonToTicket(storeId, appointmentId, addonId);
       if (r === "missing") return res.status(400).json({ message: "That add-on is no longer in the catalog." });
       if (r === "closed") return res.status(409).json({ message: "This ticket is no longer open." });
-      if (r === "added") broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["services"] });
-      return res.json({ added: r === "added" });
+      if (r === "already") return res.status(409).json({ message: `A ticket can have up to ${nailTickets.MAX_TICKET_ADDONS} add-ons.` });
+      broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["services"] });
+      return res.json({ added: true });
     } catch (err) {
       console.error("[nail/tickets add addon]", err);
       return res.status(500).json({ message: "Could not add the add-on" });

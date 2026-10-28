@@ -635,21 +635,25 @@ export function CheckoutMode(p: Props) {
   // An add-on key: a real add-on on the ticket (once). With no connection it is a line of this sale, as before.
   const gridAddon = async (a: import("./CatalogPanel").CatalogAddon) => {
     if (p.paid || p.finalizing) return;
+    // QTY counts for add-ons too ("2 X" then Nail Art = two), and the same add-on can be added again (2026-10-29).
+    const times = qty;
     setQty(1); setQtyDigits(null);
     const price = Number(a.price) || 0;
+    const label = times > 1 ? `${a.name.toUpperCase()} ×${times}` : a.name.toUpperCase();
     if (a.id && ticket.id > 0 && !syncEngine.isOffline()) {
       try {
-        const r = await guard(() => addTicketAddon(ticket.id, a.id));
-        if (!r) return;
-        say(r.added ? `${a.name.toUpperCase()} ADDED · ${money(price)}` : `${a.name.toUpperCase()} IS ALREADY ON THE TICKET`, r.added ? "success" : "error");
+        let added = 0;
+        for (let i = 0; i < times; i++) { const r = await guard(() => addTicketAddon(ticket.id, a.id)); if (!r) break; added++; }
+        if (added) say(`${label} ADDED · ${money(price * added)}`, "success");
         void refreshBoard();
         return;
       } catch (err: any) {
-        // The server said no (closed ticket, add-on gone): say so. Only a lost connection falls back to a line of this sale.
-        if (err instanceof ApiError && err.status !== 503) { say(String(err.message || "Could not add it").toUpperCase(), "error"); return; }
+        // The server said no (closed ticket, add-on gone, too many): say so. Only a lost connection falls back to a line of this sale.
+        if (err instanceof ApiError && err.status !== 503) { say(String(err.message || "Could not add it").toUpperCase(), "error"); void refreshBoard(); return; }
       }
     }
-    addExtra(`+ ${a.name}`, price, "custom"); say(`${a.name.toUpperCase()} ADDED · ${money(price)}`, "success");
+    for (let i = 0; i < times; i++) addExtra(`+ ${a.name}`, price, "custom");
+    say(`${label} ADDED · ${money(price * times)}`, "success");
   };
   const removeAddon = async (a: { id: number; name: string }) => {
     if (p.paid || p.finalizing) return;
@@ -1235,7 +1239,7 @@ export function CheckoutMode(p: Props) {
           {linked.length === 0 ? (
             <>
             {ticket.service.id != null && <div className="ticket-item"><div className="item-copy"><strong>{ticket.service.name}</strong><span>{ticket.staff ? techLabel(ticket.staff.name, ticket.staff.id) : "Service"}</span></div><div className="item-price"><strong>{money(ticket.service.price)}</strong></div><span /></div>}
-            {ticket.addons.map((a) => <div className="ticket-item" key={`a${a.id}`}><div className="item-copy"><strong>+ {a.name}</strong><span>Add-on</span></div><div className="item-price"><strong>{money(a.price)}</strong></div>
+            {ticket.addons.map((a, n) => <div className="ticket-item" key={`a${a.id}-${n}`}><div className="item-copy"><strong>+ {a.name}</strong><span>Add-on</span></div><div className="item-price"><strong>{money(a.price)}</strong></div>
               {!p.paid && !p.finalizing && ticket.id > 0 ? <button type="button" className="remove-item" onClick={() => void removeAddon(a)} aria-label={`Remove ${a.name}`}><X size={16} /></button> : <span />}</div>)}
             {(ticket.nail?.lines ?? []).map((l) => <div className="ticket-item" key={l.label}><div className="item-copy"><strong>{l.label}</strong><span>Nail option</span></div><div className="item-price"><strong>{money(l.price)}</strong></div><span /></div>)}
             {ticket.customLines.map((l, i) => <div className={`ticket-item ${splitIdx === i ? "ticket-item-selected" : ""}`} key={`c${i}`}
@@ -1275,7 +1279,7 @@ export function CheckoutMode(p: Props) {
                     )}
                   </div>
                   <div className="group-cart-line"><span>{t.service.name}</span><strong>{money(t.service.price)}</strong><span /></div>
-                  {t.addons.map((a) => <div className="group-cart-line" key={`a${a.id}`}><span>+ {a.name}</span><strong>{money(a.price)}</strong><span /></div>)}
+                  {t.addons.map((a, n) => <div className="group-cart-line" key={`a${a.id}-${n}`}><span>+ {a.name}</span><strong>{money(a.price)}</strong><span /></div>)}
                   {(t.nail?.lines ?? []).map((l) => <div className="group-cart-line" key={`n${l.label}`}><span>{l.label}</span><strong>{money(l.price)}</strong><span /></div>)}
                   {t.customLines.map((l, i) => <div className="group-cart-line" key={`c${i}`}><span>{l.label}</span><strong>{money(l.price)}</strong>
                     {l.serviceId && !p.paid && !p.finalizing ? <button type="button" className="remove-item" onClick={(ev) => { ev.stopPropagation(); void removeTicketService(t, i); }} aria-label={`Remove ${l.label}`}><X size={14} /></button>
