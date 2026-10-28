@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 /** One active, client-visible service from the salon's own catalog (the /config payload). */
 export interface CheckinService {
@@ -91,6 +91,10 @@ export function ServiceCheckin({ services, catalogCategories, categoryImages, bu
 }) {
   const categories = useMemo(() => checkinCategories(services, catalogCategories, categoryImages), [services, catalogCategories, categoryImages]);
   const [pickedKey, setPickedKey] = useState<string | null>(null);
+  // A tap counts only when the finger went down on this card. The phone keypad looks the client up the moment the
+  // 10th digit is pressed, so this screen can appear under a finger that is still down; lifting it then must not
+  // pick whichever card is under it (2026-10-29: a client was checked in for Gel without seeing this screen).
+  const downOn = useRef<string | null>(null);
   const cols = categories.length <= 3 ? Math.max(categories.length, 1) : categories.length === 4 ? 2 : 3;
 
   return (
@@ -108,7 +112,8 @@ export function ServiceCheckin({ services, catalogCategories, categoryImages, bu
                 type="button"
                 disabled={busy}
                 aria-pressed={picked}
-                onClick={() => { if (busy) return; setPickedKey(c.key); onConfirm(c); }}
+                onPointerDown={() => { downOn.current = c.key; }}
+                onClick={() => { if (busy || downOn.current !== c.key) return; setPickedKey(c.key); onConfirm(c); }}
                 className="rounded-3xl overflow-hidden text-left flex flex-col transition-transform active:scale-[0.97]"
                 style={{ background: picked ? SOFT : SURFACE, border: `3px solid ${picked ? PRIMARY : BORDER}`, boxShadow: SHADOW, opacity: busy && !picked ? 0.45 : 1 }}
                 data-testid={`fd-service-category-${c.key}`}

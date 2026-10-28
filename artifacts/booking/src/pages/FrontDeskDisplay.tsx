@@ -839,6 +839,9 @@ export default function FrontDeskDisplay() {
             }
             break;
           case "kiosk_checkout_cancel":
+            // Nothing of the POS's checkout on this screen: leave it alone. A client may be in the middle of their
+            // own check-in (2026-10-29: the screen jumped back to the start while a client typed their number).
+            if (posCheckoutRef.current === null) break;
             if (posCheckoutRef.current !== "thankyou") clearPosOverlay();
             // Staff finished the sale before the customer picked a receipt option.
             else if (receiptStepRef.current === "choose" || receiptStepRef.current === "text") finishReceipt("Thank you — have a great day!", 4_000);
