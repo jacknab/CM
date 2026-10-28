@@ -3,12 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useFeatureFlags } from "@/hooks/use-features";
 import { Link } from "react-router-dom";
 import {
-  DollarSign, Calendar, Users, Users2, Star, Crown, ShieldAlert,
-  AlertTriangle, AlertCircle, TrendingUp, TrendingDown,
-  CreditCard, Banknote, Gift, ChevronRight, Wifi, WifiOff,
-  Clock, BarChart3, Bell, CheckCircle2, UserCheck, Sparkles,
-  UserPlus, Radio, PhoneCall, PackageX, Scissors, MessageSquareText,
-  CalendarPlus, Package, X, HelpCircle, ArrowRight, Activity,
+  DollarSign, Calendar, Users, Users2, Star, Crown, AlertTriangle, AlertCircle, TrendingUp, TrendingDown, Gift, ChevronRight, Wifi, WifiOff, Clock, Bell, CheckCircle2, UserCheck, Sparkles, UserPlus, PhoneCall, PackageX, Scissors, MessageSquareText, CalendarPlus, Activity, Receipt,
 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useAuth } from "@/hooks/use-auth";
@@ -764,127 +759,41 @@ function TodayFinancials({ data, isLoading }: { data: DashboardData | null; isLo
   const fin = data?.todayFinancials;
   const { pick } = useLanguage();
   const t = buildT(pick);
-  const paymentConfig: Record<string, { label: string; icon: React.ElementType; color: string }> = {
-    card:      { label: t.payCard,     icon: CreditCard, color: "text-blue-500" },
-    cash:      { label: t.payCash,     icon: Banknote,   color: "text-emerald-500" },
-    gift_card: { label: t.payGiftCard, icon: Gift,       color: "text-violet-500" },
-  };
-
+  // Payment methods as the checkout records them (split payments already split by the server).
+  const methodLabel: Record<string, string> = { cash: t.payCash, card: t.payCard, m2: "Card reader", tap: "Mobile Payment", tap_to_pay: "Mobile Payment", gift: t.payGiftCard };
+  const line = (label: string, value: number, strong = false) => (
+    <div key={label} className="flex items-center justify-between py-2 border-b border-border/50">
+      <span className={cn("text-sm", strong ? "font-semibold text-foreground" : "text-muted-foreground")}>{label}</span>
+      <span className={cn("text-sm text-foreground", strong ? "font-bold" : "font-semibold")}><AnimatedNumber value={value} format="currency" /></span>
+    </div>
+  );
   return (
     <Card className="overflow-hidden h-full flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <h2 className="text-sm font-bold text-foreground">{t.todayFinancials}</h2>
-        <Link to="/salon-earnings" className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-0.5">
+        <Link to="/reports/sales?range=today" className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-0.5">
           {t.viewReport} <ChevronRight className="w-3 h-3" />
         </Link>
       </div>
       {isLoading ? (
         <div className="p-4 space-y-2">{[...Array(6)].map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
       ) : (
-        <div className="flex-1 p-4 space-y-0">
-          {/* Revenue lines */}
-          {[
-            { key: "total",   label: t.totalRevenue,  value: fin?.totalRevenue ?? 0, bold: false },
-            { key: "service", label: t.serviceSales,  value: fin?.serviceSales ?? 0, bold: false },
-            { key: "product", label: t.productSales,  value: fin?.productSales ?? 0, bold: false },
-            { key: "tips",    label: t.tips,          value: fin?.tips ?? 0,         bold: false },
-          ].map((row) => (
-            <div key={row.key} className="flex items-center justify-between py-2 border-b border-border/50">
-              <span className="text-sm text-muted-foreground">{row.label}</span>
-              <span className={cn("text-sm font-semibold text-foreground")}>
-                <AnimatedNumber value={row.value} format="currency" />
-              </span>
-            </div>
-          ))}
-
-          {/* Total payments */}
-          <div className="flex items-center justify-between py-2.5 border-b border-border">
-            <span className="text-sm font-semibold text-foreground">{t.totalPayments}</span>
-            <span className="text-sm font-bold text-foreground">
-              <AnimatedNumber value={fin?.totalPayments ?? 0} format="currency" />
-            </span>
+        <div className="flex-1 p-4 space-y-0" data-testid="dashboard-money">
+          {line("Net sales", fin?.netSales ?? 0, true)}
+          {line("Services", fin?.services ?? 0)}
+          {(fin?.products ?? 0) > 0 && line("Products", fin!.products)}
+          {(fin?.discounts ?? 0) > 0 && line("Discounts", -(fin!.discounts))}
+          {line("Tax", fin?.tax ?? 0)}
+          {line(t.tips, fin?.tips ?? 0)}
+          {line("Collected", fin?.collected ?? 0, true)}
+          <div className="pt-2 space-y-1">
+            {Object.entries(fin?.byMethod ?? {}).sort(([, x], [, y]) => (y as number) - (x as number)).map(([key, amount]) => (
+              <div key={key} className="flex items-center justify-between py-1">
+                <span className="text-xs text-muted-foreground">{methodLabel[key] ?? key.charAt(0).toUpperCase() + key.slice(1)}</span>
+                <span className="text-xs font-semibold text-foreground"><AnimatedNumber value={amount as number} format="currency" /></span>
+              </div>
+            ))}
           </div>
-
-          {/* By method */}
-          <div className="pt-1 pb-1 space-y-1">
-            {Object.entries(fin?.byMethod ?? {})
-              .filter(([k]) => k in paymentConfig)
-              .sort(([, a], [, b]) => (b as number) - (a as number))
-              .map(([key, amount]) => {
-                const cfg = paymentConfig[key];
-                if (!cfg) return null;
-                return (
-                  <div key={key} className="flex items-center justify-between py-1.5">
-                    <div className="flex items-center gap-2">
-                      <cfg.icon className={cn("w-3.5 h-3.5", cfg.color)} />
-                      <span className="text-xs text-muted-foreground">{cfg.label}</span>
-                    </div>
-                    <span className="text-xs font-semibold text-foreground">
-                      <AnimatedNumber value={amount as number} format="currency" />
-                    </span>
-                  </div>
-                );
-              })}
-          </div>
-
-          {/* Outstanding */}
-          <div className="flex items-center justify-between py-2.5 border-t border-border mt-1">
-            <span className="text-sm text-muted-foreground">{t.outstandingBalance}</span>
-            <span className={cn(
-              "text-sm font-bold",
-              (fin?.outstandingBalance ?? 0) > 0 ? "text-red-600" : "text-emerald-600 dark:text-emerald-400",
-            )}>
-              <AnimatedNumber value={fin?.outstandingBalance ?? 0} format="currency" />
-            </span>
-          </div>
-        </div>
-      )}
-    </Card>
-  );
-}
-
-// ── Top Services Today ────────────────────────────────────────────────────────
-function TopServicesToday({ services, isLoading }: { services: DashboardData["topServices"]; isLoading: boolean }) {
-  const { pick } = useLanguage();
-  const t = buildT(pick);
-  return (
-    <Card className="overflow-hidden h-full">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <h2 className="text-sm font-bold text-foreground">{t.topServicesToday}</h2>
-        <Link to="/services" className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-0.5">
-          {t.viewAllServices} <ChevronRight className="w-3 h-3" />
-        </Link>
-      </div>
-      {isLoading ? (
-        <div className="p-4 space-y-2">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10" />)}</div>
-      ) : services.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-10 text-center px-4">
-          <BarChart3 className="w-8 h-8 text-muted-foreground/30 mb-2" />
-          <p className="text-sm text-muted-foreground">{t.noServicesYet}</p>
-        </div>
-      ) : (
-        <div className="divide-y divide-border">
-          {services.map((svc) => (
-            <div key={svc.rank} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
-              <span className={cn(
-                "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
-                svc.rank === 1 ? "bg-amber-100 text-amber-700" :
-                svc.rank === 2 ? "bg-slate-100 text-slate-600" :
-                svc.rank === 3 ? "bg-orange-100 text-orange-600" :
-                "bg-muted text-muted-foreground",
-              )}>{svc.rank}</span>
-              <span className="flex-1 text-sm font-medium text-foreground truncate">{svc.name}</span>
-              <span className="text-sm font-semibold text-foreground shrink-0">
-                <AnimatedNumber value={svc.revenue} format="currency" />
-              </span>
-              <span className="text-xs text-muted-foreground shrink-0 w-8 text-right">({svc.count})</span>
-            </div>
-          ))}
-        </div>
-      )}
-      {!isLoading && (
-        <div className="px-4 py-2 border-t border-border/50 text-[10px] text-muted-foreground">
-          {t.revenueServicesLegend}
         </div>
       )}
     </Card>
@@ -899,7 +808,7 @@ function TeamPerformanceToday({ team, isLoading }: { team: DashboardData["teamPe
     <Card className="overflow-hidden h-full">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <h2 className="text-sm font-bold text-foreground">{t.teamPerformanceToday}</h2>
-        <Link to="/commission-report" className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-0.5">
+        <Link to="/reports/staff" className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-0.5">
           {t.viewTeamReport} <ChevronRight className="w-3 h-3" />
         </Link>
       </div>
@@ -928,7 +837,7 @@ function TeamPerformanceToday({ team, isLoading }: { team: DashboardData["teamPe
                 <span className="text-sm font-semibold text-foreground text-right">
                   <AnimatedNumber value={member.sales} format="currency" />
                 </span>
-                <span className="text-sm font-semibold text-foreground text-right">{member.appointments}</span>
+                <span className="text-sm font-semibold text-foreground text-right">{member.tickets}</span>
                 <span className="text-sm font-semibold text-foreground text-right w-16">
                   <AnimatedNumber value={member.avgTicket} format="currency" />
                 </span>
@@ -936,129 +845,6 @@ function TeamPerformanceToday({ team, isLoading }: { team: DashboardData["teamPe
             ))}
           </div>
         </>
-      )}
-    </Card>
-  );
-}
-
-// ── Client Loyalty Snapshot ───────────────────────────────────────────────────
-function ClientLoyaltySnapshot({ snapshot, isLoading }: { snapshot: DashboardData["clientLoyaltySnapshot"] | undefined; isLoading: boolean }) {
-  const { pick } = useLanguage();
-  const t = buildT(pick);
-  const rows = [
-    { icon: Crown,      iconBg: "bg-amber-100",   iconColor: "text-amber-600",   label: t.vipClients,     value: snapshot?.vipClients ?? 0 },
-    { icon: Users,      iconBg: "bg-emerald-100",  iconColor: "text-emerald-600", label: t.regulars,       value: snapshot?.regulars ?? 0 },
-    { icon: UserPlus,   iconBg: "bg-blue-100",     iconColor: "text-blue-600",    label: t.newThisMonth,   value: snapshot?.newThisMonth ?? 0 },
-    { icon: ShieldAlert,iconBg: "bg-red-100",      iconColor: "text-red-600",     label: t.clientsAtRisk,  value: snapshot?.atRisk ?? 0 },
-  ];
-
-  return (
-    <Card className="overflow-hidden h-full">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <h2 className="text-sm font-bold text-foreground">{t.clientLoyaltySnapshot}</h2>
-        <Link to="/customers" className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-0.5">
-          {t.viewLoyalty} <ChevronRight className="w-3 h-3" />
-        </Link>
-      </div>
-      {isLoading ? (
-        <div className="p-4 space-y-2">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
-      ) : (
-        <div className="divide-y divide-border">
-          {rows.map((row, i) => (
-            <div key={i} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
-              <div className={cn("w-8 h-8 rounded-full flex items-center justify-center shrink-0", row.iconBg)}>
-                <row.icon className={cn("w-4 h-4", row.iconColor)} />
-              </div>
-              <span className="flex-1 text-sm text-foreground">{row.label}</span>
-              <span className="text-lg font-bold text-foreground">
-                <AnimatedNumber value={row.value} />
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-// ── Recent Activity ───────────────────────────────────────────────────────────
-function RecentActivity({ items, isLoading, connected }: { items: DashboardData["recentActivity"]; isLoading: boolean; connected: boolean }) {
-  const [clock, setClock] = useState(() => new Date());
-  const { pick } = useLanguage();
-  const t = buildT(pick);
-  useEffect(() => {
-    const intervalId = setInterval(() => setClock(new Date()), 1000);
-    return () => clearInterval(intervalId);
-  }, []);
-
-  const seenIdsRef = useRef<Set<number>>(new Set());
-  const [freshIds, setFreshIds] = useState<Set<number>>(new Set());
-
-  useEffect(() => {
-    if (isLoading) return undefined;
-    const incoming = items.map((i) => i.id);
-    const newlySeen = incoming.filter((id) => !seenIdsRef.current.has(id));
-    incoming.forEach((id) => seenIdsRef.current.add(id));
-    if (newlySeen.length > 0 && seenIdsRef.current.size > newlySeen.length) {
-      setFreshIds(new Set(newlySeen));
-      const timeoutId = setTimeout(() => setFreshIds(new Set()), 2500);
-      return () => clearTimeout(timeoutId);
-    }
-    return undefined;
-  }, [items, isLoading]);
-
-  useEffect(() => {
-    if (!isLoading && seenIdsRef.current.size === 0) items.forEach((i) => seenIdsRef.current.add(i.id));
-  }, [isLoading, items]);
-
-  return (
-    <Card className="overflow-hidden h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <div className="flex items-center gap-2">
-          <Activity className={cn("w-3.5 h-3.5 text-primary", connected && "animate-pulse")} />
-          <h2 className="text-sm font-bold text-foreground">{t.recentActivity}</h2>
-        </div>
-        <Link to="/activity" className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-0.5">
-          {t.viewAllActivity} <ChevronRight className="w-3 h-3" />
-        </Link>
-      </div>
-      {isLoading ? (
-        <div className="p-4 space-y-2">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
-      ) : items.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-10 text-center px-4">
-          <Radio className="w-8 h-8 text-muted-foreground/30 mb-2" />
-          <p className="text-sm text-muted-foreground">{t.nothingYetToday}</p>
-        </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto divide-y divide-border max-h-64">
-          {items.map((item) => {
-            const cfg = FEED_ICON_CONFIG[item.eventType] || FEED_ICON_DEFAULT;
-            const Icon = cfg.icon;
-            const isFresh = freshIds.has(item.id);
-            return (
-              <div
-                key={item.id}
-                className={cn(
-                  "flex items-start gap-3 px-4 py-3 transition-colors duration-700",
-                  isFresh ? "bg-primary/[0.06] animate-in slide-in-from-top-2 fade-in duration-300" : "bg-transparent",
-                )}
-              >
-                <div className={cn("w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5", cfg.iconBg)}>
-                  <Icon className={cn("w-3.5 h-3.5", cfg.iconColor)} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-foreground leading-snug">{item.message}</p>
-                  <span className="text-[10px] text-muted-foreground">{feedRelativeTime(item.createdAt, clock, t)}</span>
-                </div>
-                {item.amount != null && (
-                  <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 shrink-0">
-                    ${item.amount.toFixed(2)}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
       )}
     </Card>
   );
@@ -1074,7 +860,7 @@ function RemindersAlerts({ items, isLoading }: { items: DashboardData["needsAtte
     return { Icon: Bell, color: "text-blue-600", bg: "bg-blue-100" };
   };
   const linkConfig: Record<string, string> = {
-    lost_clients: "/customers",
+    lost_clients: "/reports/lapsed-clients",
     no_shows: "/calendar",
     waiting: "/calendar",
   };
@@ -1212,91 +998,6 @@ function UpcomingAppointments({ schedule, isLoading }: { schedule: DashboardData
   );
 }
 
-// ── Inventory Alerts ──────────────────────────────────────────────────────────
-function InventoryAlertsCard({ alerts, isLoading }: { alerts: DashboardData["inventoryAlerts"]; isLoading: boolean }) {
-  const { pick } = useLanguage();
-  const t = buildT(pick);
-  return (
-    <Card className="overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <h2 className="text-sm font-bold text-foreground">{t.inventoryAlerts}</h2>
-        <Link to="/products" className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-0.5">
-          {t.viewInventory} <ChevronRight className="w-3 h-3" />
-        </Link>
-      </div>
-      {isLoading ? (
-        <div className="p-4 space-y-2">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-10" />)}</div>
-      ) : alerts.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-8 text-center px-4">
-          <Package className="w-8 h-8 text-emerald-500/50 mb-2" />
-          <p className="text-sm text-muted-foreground">{t.inventoryHealthy}</p>
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 px-4 py-2 bg-muted/30 border-b border-border text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-            <span>{t.colItem}</span><span>{t.colCategory}</span><span className="text-right">{t.colStock}</span><span className="text-right">{t.colStatus}</span>
-          </div>
-          <div className="divide-y divide-border">
-            {alerts.map((item, i) => (
-              <div key={i} className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center px-4 py-2.5 hover:bg-muted/20 transition-colors">
-                <span className="text-xs font-medium text-foreground truncate">{item.name}</span>
-                <span className="text-xs text-muted-foreground">{item.category || "—"}</span>
-                <span className="text-xs font-semibold text-foreground text-right">{item.stock}</span>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 whitespace-nowrap">{t.lowStock}</span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-    </Card>
-  );
-}
-
-// ── Salon at a Glance ─────────────────────────────────────────────────────────
-function SalonAtAGlance({ glance, isLoading }: { glance: DashboardData["glanceStats"] | undefined; isLoading: boolean }) {
-  const { pick } = useLanguage();
-  const t = buildT(pick);
-  const stats = [
-    { key: "walkins",   label: t.walkInsToday,    value: glance?.walkInsToday ?? 0,       format: "number" as const },
-    { key: "wait",      label: t.avgWaitTime,     value: glance?.avgWaitMinutes ?? 0,     format: "time" as const },
-    { key: "occupancy", label: t.occupancyRate,   value: glance?.occupancyPct ?? 0,        format: "pct" as const },
-    { key: "retention", label: t.clientRetention, value: glance?.clientRetentionPct ?? 0, format: "pct" as const },
-    { key: "avgTicket", label: t.avgTicket,       value: glance?.avgTicket ?? 0,           format: "currency" as const },
-    { key: "tipsPct",   label: t.tipsPct,         value: glance?.tipsPct ?? 0,             format: "pct1" as const },
-  ];
-
-  function renderValue(v: number, f: string) {
-    if (f === "currency") return <AnimatedNumber value={v} format="currency" />;
-    if (f === "pct")  return <>{v}%</>;
-    if (f === "pct1") return <>{v.toFixed(1)}%</>;
-    if (f === "time") return <>{v} {t.minSuffix}</>;
-    return <AnimatedNumber value={v} />;
-  }
-
-  return (
-    <div className="rounded-2xl bg-primary/5 border border-primary/20 px-6 py-5">
-      <h2 className="text-xs font-bold text-primary uppercase tracking-widest mb-4">{t.salonAtAGlance}</h2>
-      {isLoading ? (
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-4">
-          {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-10" />)}
-        </div>
-      ) : (
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-4 text-center">
-          {stats.map((s, i) => (
-            <div key={i}>
-              <p className="text-xl font-bold text-foreground">{renderValue(s.value, s.format)}</p>
-              <p className="text-xs text-muted-foreground mt-0.5 leading-tight">{s.label}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  MAIN PAGE
-// ══════════════════════════════════════════════════════════════════════════════
 export default function OwnerDashboard() {
   const { user } = useAuth();
   const { selectedStore } = useSelectedStore();
@@ -1314,15 +1015,9 @@ export default function OwnerDashboard() {
   // Derived data with fallbacks
   const today = data?.today;
   const schedule = data?.schedule ?? [];
-  const newClients = data?.newClientsThisWeek;
-  const topServices = data?.topServices ?? [];
   const teamPerf = data?.teamPerformance ?? [];
   const aiReceptionist = data?.aiReceptionist;
-  const inventoryAlerts = data?.inventoryAlerts ?? [];
   const needsAttention = data?.needsAttention ?? [];
-  const recentActivity = data?.recentActivity ?? [];
-  const glanceStats = data?.glanceStats;
-  const loyaltySnapshot = data?.clientLoyaltySnapshot;
 
   return (
     <AppLayout>
@@ -1351,94 +1046,62 @@ export default function OwnerDashboard() {
           </div>
         </div>
 
-        {/* ── ROW 1: 4 KPI cards ───────────────────────────────────────── */}
+        {/* ── ROW 1: the day in four numbers (owner audit 2026-10-29) ──────── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          {/* Today's Revenue */}
           <KpiCard
             icon={DollarSign} iconBg="bg-emerald-100 dark:bg-emerald-900/30" iconColor="text-emerald-600 dark:text-emerald-400"
-            title={t.todaysRevenue}
-            primary={isLoading ? <Skeleton className="h-8 w-24 inline-block" /> : <AnimatedNumber value={today?.revenue ?? 0} format="currency" />}
-            badge={!isLoading && today?.revenueDiff !== undefined ? (
+            title="Sales today"
+            primary={isLoading ? <Skeleton className="h-8 w-24 inline-block" /> : <AnimatedNumber value={today?.netSales ?? 0} format="currency" />}
+            badge={!isLoading && today ? (
               <span className={cn("flex items-center gap-0.5 text-xs font-semibold px-2 py-0.5 rounded-full",
-                today.revenueDiff >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600")}>
-                {today.revenueDiff >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                <AnimatedNumber value={Math.abs(today.revenueDiff)} format="currency" duration={600} />
+                today.salesDiff >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600")}>
+                {today.salesDiff >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                <AnimatedNumber value={Math.abs(today.salesDiff)} format="currency" duration={600} />
                 {t.vsYesterday}
               </span>
             ) : undefined}
-            sub={<span>{t.completedInService(today?.appointments?.completed ?? 0, today?.appointments?.inService ?? 0)}</span>}
-            to="/salon-earnings" toLabel={t.viewDetails}
+            sub={<span>After discounts, before tax and tips</span>}
+            to="/reports/sales?range=today" toLabel={t.viewDetails}
           />
-
-          {/* Today's Appointments */}
           <KpiCard
             icon={Calendar} iconBg="bg-blue-100 dark:bg-blue-900/30" iconColor="text-blue-600 dark:text-blue-400"
-            title={t.todaysAppts}
-            primary={isLoading ? <Skeleton className="h-8 w-16 inline-block" /> : <AnimatedNumber value={today?.totalAppointments ?? 0} />}
-            sub={isLoading ? undefined : (
-              <span>
-                {t.apptsCompletedUpcoming(today?.appointments?.completed ?? 0, today?.appointments?.upcoming ?? 0)}
-                {(today?.appointments?.waiting ?? 0) > 0 && t.apptsWaitingSuffix(today?.appointments?.waiting ?? 0)}
-                {(today?.appointments?.noShow ?? 0) > 0 && t.apptsNoShowSuffix(today?.appointments?.noShow ?? 0)}
-              </span>
-            )}
+            title="Visits today"
+            primary={isLoading ? <Skeleton className="h-8 w-16 inline-block" /> : <AnimatedNumber value={today?.visits ?? 0} />}
+            sub={isLoading ? undefined : <span>{today?.appointments.inService ?? 0} in the chair · {today?.appointments.upcoming ?? 0} still booked{(today?.appointments.noShow ?? 0) > 0 ? ` · ${today!.appointments.noShow} no-show` : ""}</span>}
             to="/calendar" toLabel={t.viewCalendar}
           />
-
-          {/* New Clients This Week */}
           <KpiCard
-            icon={Users} iconBg="bg-violet-100 dark:bg-violet-900/30" iconColor="text-violet-600 dark:text-violet-400"
-            title={t.newClientsWeek}
-            primary={isLoading ? <Skeleton className="h-8 w-16 inline-block" /> : <AnimatedNumber value={newClients?.count ?? 0} />}
-            badge={!isLoading && newClients !== undefined ? (
-              <span className={cn("flex items-center gap-0.5 text-xs font-semibold px-2 py-0.5 rounded-full",
-                (newClients.vsLastWeek ?? 0) >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600")}>
-                {(newClients.vsLastWeek ?? 0) >= 0 ? "+" : ""}{newClients.vsLastWeek}{t.vsLastWeek}
-              </span>
-            ) : undefined}
-            to="/customers" toLabel={t.viewClients}
+            icon={Clock} iconBg="bg-amber-100 dark:bg-amber-900/30" iconColor="text-amber-600 dark:text-amber-400"
+            title="Waiting now"
+            primary={isLoading ? <Skeleton className="h-8 w-16 inline-block" /> : <AnimatedNumber value={today?.appointments.waiting ?? 0} />}
+            sub={isLoading ? undefined : <span>{today?.longestWaitMinutes != null ? `Longest wait ${today.longestWaitMinutes} min` : "Nobody waiting"}</span>}
+            to="/calendar" toLabel={t.viewWaitList}
           />
-
-          {/* Returning Clients */}
           <KpiCard
-            icon={Users2} iconBg="bg-amber-100 dark:bg-amber-900/30" iconColor="text-amber-600 dark:text-amber-400"
-            title={t.returningClients}
-            primary={isLoading ? <Skeleton className="h-8 w-16 inline-block" /> : <AnimatedNumber value={data?.clientLoyalty?.returningClients ?? 0} />}
-            sub={!isLoading ? <span>{t.returningRate(data?.clientLoyalty?.retentionPct ?? 0)}</span> : undefined}
-            to="/customers" toLabel={t.viewLoyalty}
+            icon={Receipt} iconBg="bg-violet-100 dark:bg-violet-900/30" iconColor="text-violet-600 dark:text-violet-400"
+            title="Average ticket"
+            primary={isLoading ? <Skeleton className="h-8 w-16 inline-block" /> : <AnimatedNumber value={today?.avgTicket ?? 0} format="currency" />}
+            sub={<span>Net sales per visit</span>}
+            to="/reports/sales?range=today" toLabel={t.viewDetails}
           />
         </div>
 
-        {/* ── ROW 2: What's Happening | Schedule | Financials ──────────── */}
+        {/* ── ROW 2: What's Happening | Team | Today's money ───────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5" style={{ minHeight: 340 }}>
           <WhatsHappeningNow data={data} isLoading={isLoading} />
           <TeamMemberStatus schedule={schedule} isLoading={isLoading} />
           <TodayFinancials data={data} isLoading={isLoading} />
         </div>
 
-        {/* ── ROW 3: Top Services | Team | Client Loyalty ──────────────── */}
+        {/* ── ROW 3: Team today | Needs attention | Autumn ─────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          <TopServicesToday services={topServices} isLoading={isLoading} />
           <TeamPerformanceToday team={teamPerf} isLoading={isLoading} />
-          <ClientLoyaltySnapshot snapshot={loyaltySnapshot} isLoading={isLoading} />
-        </div>
-
-        {/* ── ROW 4: Recent Activity | Alerts | AI Receptionist ────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5" style={{ minHeight: 280 }}>
-          <RecentActivity items={recentActivity} isLoading={isLoading} connected={connected} />
           <RemindersAlerts items={needsAttention} isLoading={isLoading} />
           <AiReceptionistCard ai={aiReceptionist} isLoading={isLoading} />
         </div>
 
-        {/* ── ROW 5: Upcoming Appointments | Inventory Alerts ──────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <UpcomingAppointments schedule={schedule} isLoading={isLoading} />
-          <InventoryAlertsCard alerts={inventoryAlerts} isLoading={isLoading} />
-        </div>
-
-        {/* ── ROW 6: Salon at a Glance (full width) ────────────────────── */}
-        <SalonAtAGlance glance={glanceStats} isLoading={isLoading} />
-
+        {/* ── ROW 4: Who's coming ──────────────────────────────────────────── */}
+        <UpcomingAppointments schedule={schedule} isLoading={isLoading} />
       </div>
     </AppLayout>
   );
