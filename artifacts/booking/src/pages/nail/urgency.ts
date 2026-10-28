@@ -28,7 +28,7 @@ export function waitReasonText(wait: BoardWait, tech: string | null): string {
     case "clocked_out": return `${who} IS CLOCKED OUT`;
     case "running_over": return wait.ticket != null ? `${who} RUNNING OVER ON #${wait.ticket}` : `${who} RUNNING OVER`;
     case "not_saved": return "RINGING UP · NOT SAVED";
-    case "unassigned_free": return "NO TECHNICIAN · ONE IS FREE";
+    case "unassigned_free": return "NO TECH · ONE IS FREE";
     case "long_wait": return "LONG WAIT · ALL TECHS BUSY";
     // In the chair: don't let the client leave without paying.
     case "service_over": return "OVER TIME · NOT DONE";

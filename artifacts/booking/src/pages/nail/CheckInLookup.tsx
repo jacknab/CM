@@ -13,6 +13,7 @@ import { QuickAreaCodes } from "./QuickAreaCodes";
 import { useQuickAreaCodes } from "./useQuickAreaCodes";
 import { isNativeApp } from "./useCardPayments";
 import { techLabel } from "./techName";
+import { quickNameProblem } from "./quickName";
 
 /**
  * Front-desk Check-In — the Customers page (`/client-lookup`, full-screen phone pad → "Add Client Name" on-screen keyboard)
@@ -43,8 +44,10 @@ const KEY_ROWS = [
 const NUM_ROWS = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]];
 
 // Touch targets scale with the screen height so nothing is cut off on a 10" tablet.
-const NUM_KEY = "w-[clamp(84px,9vw,124px)] h-[clamp(52px,9.5vh,84px)] rounded-lg border bg-card text-[clamp(24px,4vh,36px)] font-semibold hover-elevate active-elevate-2";
-const KB_KEY = "flex-1 min-w-0 h-[clamp(52px,10.5vh,88px)] rounded-lg border bg-card text-[clamp(20px,3.6vh,32px)] font-medium hover-elevate active-elevate-2";
+// Light keys on the light sheet (the same look as the Queue tab, 2026-10-29) — /nail itself runs in dark mode.
+const LIGHT = "bg-[#ffffff] border-[#d5deea] text-[#0f1f3d] shadow-[0_1px_2px_rgba(15,31,61,0.06)] active:bg-[#eef3f9]";
+const NUM_KEY = `w-[clamp(84px,9vw,124px)] h-[clamp(52px,9.5vh,84px)] rounded-lg border ${LIGHT} text-[clamp(24px,4vh,36px)] font-semibold`;
+const KB_KEY = `flex-1 min-w-0 h-[clamp(52px,10.5vh,88px)] rounded-lg border ${LIGHT} text-[clamp(20px,3.6vh,32px)] font-medium`;
 const KB_WIDE = "flex-[1.5] min-w-0 h-[clamp(52px,10.5vh,88px)] rounded-lg border text-[clamp(20px,3.6vh,32px)] font-medium flex items-center justify-center";
 
 const formatPhone = (d: string): string => {
@@ -69,6 +72,9 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [shift, setShift] = useState(true);
+  // Quick Check-in (owner, 2026-10-29): a client who won't give a phone number, checked in by name only (quickName.ts).
+  const [quick, setQuick] = useState(false);
+  const [nameError, setNameError] = useState("");
   // A digit that can't start a real US number is refused with a shake — the digits already typed stay put.
   const { shakeClass, shake: rejectDigit, onShakeEnd } = useShake();
   const [busy, setBusy] = useState(false);
@@ -209,9 +215,14 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
 
   const saveNew = useCallback(async () => {
     if (!name.trim() || busy) return;
+    if (quick) {
+      // Not a real name: it is cleared and has to be typed again.
+      const problem = quickNameProblem(name);
+      if (problem) { setName(""); setShift(true); setNameError(problem); return; }
+    }
     setBusy(true);
     try {
-      await checkIn(await createClient(storeId, name, phone));
+      await checkIn(await createClient(storeId, name, quick ? "" : phone));
     } catch (e: any) {
       setMessage(e?.message === "save failed" ? "We could not save this client. Please try again." : (e?.message || "Could not check the client in"));
       setStep("error");
@@ -219,9 +230,10 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
       setBusy(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, phone, busy, storeId]);
+  }, [name, phone, busy, storeId, quick]);
 
   const key = (k: string) => {
+    setNameError("");
     if (k === "SHIFT") { setShift((v) => !v); return; }
     if (k === "BACKSPACE") { setName((v) => v.slice(0, -1)); return; }
     if (k === "SPACE") { setName((v) => v + " "); setShift(true); return; }
@@ -237,17 +249,19 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
 
   const back = () => {
     if (step === "phone") { onClose(); return; }
-    ran.current = ""; setStep("phone"); setMessage(""); setName(""); setShift(true);
+    ran.current = ""; setStep("phone"); setMessage(""); setName(""); setShift(true); setQuick(false); setNameError("");
   };
 
   return (
-    <div className="dark cx-cal fixed inset-0 z-[320] flex flex-col bg-background text-foreground" data-testid="nail-checkin-sheet">
+    <div className="cx-cal fixed inset-0 z-[320] flex flex-col text-[#0f1f3d]" data-testid="nail-checkin-sheet"
+      // The same background as the Queue tab (owner, 2026-10-29).
+      style={{ background: "linear-gradient(180deg, #f7fafd 0%, #eef3f9 100%)" }}>
       <div className="flex items-center justify-between gap-2 px-4 py-3 border-b">
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" className="h-12 w-12" onClick={back} data-testid="nail-checkin-back" aria-label="Back">
             <ArrowLeft className="w-6 h-6" />
           </Button>
-          <span className="text-lg font-semibold">{step === "name" ? "Enter Client Name" : "Check-In"}</span>
+          <span className="text-lg font-semibold">{step === "name" ? (quick ? "Quick Check-in" : "Enter Client Name") : "Check-In"}</span>
         </div>
         <Button variant="ghost" size="icon" className="h-12 w-12" onClick={onClose} data-testid="nail-checkin-close" aria-label="Close">
           <X className="w-6 h-6" />
@@ -304,6 +318,11 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
               </div>
               <QuickAreaCodes codes={quickCodes} onPick={appendDigits} variant="page" />
             </div>
+            {/* For a client who won't give a phone number: checked in by name (a real one — quickName.ts). */}
+            <Button variant="outline" className={cn("mt-[2vh] h-[clamp(48px,7vh,60px)] px-8 text-base border", LIGHT)} data-testid="nail-quick-checkin"
+              onClick={() => { setQuick(true); setName(""); setShift(true); setNameError(""); setStep("name"); }}>
+              Quick Check-in (no phone number)
+            </Button>
           </>
         )}
 
@@ -311,29 +330,30 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
 
         {step === "name" && (
           <>
-            <h1 className="text-[clamp(26px,4.5vh,38px)] font-bold mb-1" data-testid="nail-name-entry">Add Client Name</h1>
-            <p className="text-sm text-muted-foreground mb-[1.4vh]">Creating new client for {formatPhone(phone)}</p>
+            <h1 className="text-[clamp(26px,4.5vh,38px)] font-bold mb-1" data-testid="nail-name-entry">{quick ? "Client's Name" : "Add Client Name"}</h1>
+            <p className="text-sm text-muted-foreground mb-[1.4vh]">{quick ? "No phone number. Enter the client's real name." : `Creating new client for ${formatPhone(phone)}`}</p>
             <div
               className={cn(
-                "w-full max-w-[760px] h-[clamp(54px,8vh,72px)] mb-[1.6vh] px-5 border rounded-xl bg-card flex items-center justify-center text-[clamp(22px,3.5vh,32px)] font-bold tracking-wide",
-                name ? "text-foreground border-primary/60" : "text-muted-foreground/40 border-border",
+                "w-full max-w-[760px] h-[clamp(54px,8vh,72px)] mb-[1.6vh] px-5 border rounded-xl bg-[#ffffff] flex items-center justify-center text-[clamp(22px,3.5vh,32px)] font-bold tracking-wide",
+                name ? "text-[#0f1f3d] border-[#1f6fe0]" : "text-[#9aa8bb] border-[#d5deea]",
               )}
               role="textbox" aria-label="Client name" aria-readonly="true" aria-live="polite"
               data-testid="nail-name-display"
             >
               {name || "Client name"}
             </div>
+            {nameError && <p className="-mt-[0.8vh] mb-[1.2vh] text-[15px] font-semibold text-destructive" role="alert" data-testid="nail-quick-name-error">{nameError}</p>}
             <div className="w-full max-w-[1100px] space-y-[1.2vh]">
               {KEY_ROWS.map((row, ri) => (
                 <div key={ri} className="flex justify-center gap-[0.6vw]" style={ri === 1 ? { padding: "0 5%" } : undefined}>
                   {ri === 2 && (
-                    <button onClick={() => key("SHIFT")} className={cn(KB_WIDE, shift ? "bg-primary text-primary-foreground" : "bg-card hover-elevate active-elevate-2")} data-testid="kb-shift" aria-label="Shift">&#8593;</button>
+                    <button onClick={() => key("SHIFT")} className={cn(KB_WIDE, shift ? "bg-[#1f6fe0] text-white border-[#1f6fe0]" : LIGHT)} data-testid="kb-shift" aria-label="Shift">&#8593;</button>
                   )}
                   {row.map((k) => (
                     <button key={k} onClick={() => key(k)} className={KB_KEY} data-testid={`kb-${k.toLowerCase()}`}>{shift ? k : k.toLowerCase()}</button>
                   ))}
                   {ri === 2 && (
-                    <button onClick={() => key("BACKSPACE")} className={cn(KB_WIDE, "bg-card hover-elevate active-elevate-2")} data-testid="kb-backspace" aria-label="Backspace"><Delete className="w-7 h-7" /></button>
+                    <button onClick={() => key("BACKSPACE")} className={cn(KB_WIDE, LIGHT)} data-testid="kb-backspace" aria-label="Backspace"><Delete className="w-7 h-7" /></button>
                   )}
                 </div>
               ))}
