@@ -95,6 +95,10 @@ interface StoreConfig { name: string; phone: string; address: string; category?:
 interface KioskConfig { kioskEnabled: boolean; welcomeHeadline: string | null; welcomeSubText: string | null; loyaltyPromoText: string | null; timezone: string | null; loyaltyEnabled?: boolean; loyaltyPointsPerDollar?: number | null; }
 interface TodayAppointment { id: number; serviceName: string; staffName: string | null; staffAvatarThumbUrl: string | null; appointmentTime: string; }
 
+// Name keyboard key size: ten keys across the screen width, capped for big screens; height from the screen height.
+const KEY_GAP = "clamp(6px, 1vw, 12px)";
+const KEY_W = "min(112px, calc((100vw - 64px - 9 * clamp(6px, 1vw, 12px)) / 10))";
+const KEY_H = "clamp(52px, 10vh, 88px)";
 const QWERTY: string[][] = [
   ["Q","W","E","R","T","Y","U","I","O","P"],
   ["A","S","D","F","G","H","J","K","L"],
@@ -1952,9 +1956,9 @@ export default function FrontDeskDisplay() {
   );
 
   if (screen === "name_entry") return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center gap-5 px-8 select-none"
-      onContextMenu={e => e.preventDefault()} style={{ ...NO_SELECT, background: BG }}>
-      <div className="text-center space-y-2 mb-2">
+    <div className="fixed inset-0 flex flex-col items-center justify-center px-8 select-none" data-testid="fd-name-entry"
+      onContextMenu={e => e.preventDefault()} style={{ ...NO_SELECT, background: BG, gap: "clamp(10px, 2vh, 20px)" }}>
+      <div className="text-center space-y-1">
         <p className="text-xl uppercase tracking-widest font-semibold" style={{ color: PRIMARY }}>{t.firstTimeHere}</p>
         <h2 className="text-5xl font-black" style={{ color: TEXT }}>{t.whatsYourName}</h2>
       </div>
@@ -1962,9 +1966,10 @@ export default function FrontDeskDisplay() {
         style={{ background: SURFACE, border: `2px solid ${newClientName ? PRIMARY : BORDER}`, boxShadow: SHADOW }}>
         <span className="text-5xl font-bold" style={{ color: newClientName ? TEXT : BORDER }}>{newClientName || t.yourNamePlaceholder}</span>
       </div>
-      <div className="flex flex-col items-center gap-2 w-full max-w-3xl">
+      {/* Big keys (owner, 2026-10-29): the keyboard uses the width of the screen — about 110 × 80 on a 10.1" tablet. */}
+      <div className="flex flex-col items-center w-full" style={{ gap: KEY_GAP }}>
         {QWERTY.map((row, ri) => (
-          <div key={ri} className="flex gap-2 justify-center">
+          <div key={ri} className="flex justify-center" style={{ gap: KEY_GAP }}>
             {row.map(key => (
               <button key={key}
                 onPointerDown={e => {
@@ -1973,16 +1978,16 @@ export default function FrontDeskDisplay() {
                   else setNewClientName(n => n.length < 24 ? n + key : n);
                   kick();
                 }}
-                className="h-14 rounded-xl font-semibold text-xl transition-all active:scale-90 select-none"
-                style={{ width: key === "⌫" ? 72 : 56, background: key === "⌫" ? "#fef2f2" : SURFACE, border: `1.5px solid ${key === "⌫" ? "#fecaca" : BORDER}`, color: key === "⌫" ? "#ef4444" : TEXT, boxShadow: SHADOW }}>
+                className="rounded-xl font-semibold transition-all active:scale-90 select-none"
+                style={{ width: key === "⌫" ? `calc(${KEY_W} * 1.5)` : KEY_W, height: KEY_H, fontSize: "clamp(22px, 3.6vh, 32px)", background: key === "⌫" ? "#fef2f2" : SURFACE, border: `1.5px solid ${key === "⌫" ? "#fecaca" : BORDER}`, color: key === "⌫" ? "#ef4444" : TEXT, boxShadow: SHADOW }}>
                 {key}
               </button>
             ))}
           </div>
         ))}
         <button onPointerDown={e => { e.preventDefault(); setNewClientName(n => n.length < 24 ? n + " " : n); kick(); }}
-          className="mt-1 px-24 py-3 rounded-xl text-lg transition-all active:scale-95 select-none"
-          style={{ background: SURFACE, border: `1.5px solid ${BORDER}`, color: MUTED, boxShadow: SHADOW }}>
+          className="rounded-xl transition-all active:scale-95 select-none"
+          style={{ width: `calc(${KEY_W} * 5)`, height: `calc(${KEY_H} * 0.85)`, fontSize: "clamp(18px, 2.8vh, 24px)", background: SURFACE, border: `1.5px solid ${BORDER}`, color: MUTED, boxShadow: SHADOW }}>
           {t.spaceKey}
         </button>
       </div>
