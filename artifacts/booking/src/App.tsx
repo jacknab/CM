@@ -54,7 +54,6 @@ const SalonEarningsReport = lazy(() => import("@/pages/SalonEarningsReport"));
 const CommissionReport = lazy(() => import("@/pages/CommissionReport"));
 const Analytics = lazy(() => import("@/pages/Analytics"));
 const OwnerDashboard = lazy(() => import("@/pages/OwnerDashboard"));
-const Reports = lazy(() => import("@/pages/Reports"));
 const ReportsHub = lazy(() => import("@/pages/ReportsHub"));
 // The Money reports, each its own page (2026-10-29, pages/reports).
 const SalesReport = lazy(() => import("@/pages/reports/MoneyReports").then((m) => ({ default: m.SalesReport })));
@@ -62,6 +61,30 @@ const PaymentsReport = lazy(() => import("@/pages/reports/MoneyReports").then((m
 const TaxReport = lazy(() => import("@/pages/reports/MoneyReports").then((m) => ({ default: m.TaxReport })));
 const TipsReport = lazy(() => import("@/pages/reports/MoneyReports").then((m) => ({ default: m.TipsReport })));
 const GiftCardsReport = lazy(() => import("@/pages/reports/MoneyReports").then((m) => ({ default: m.GiftCardsReport })));
+const reportPage = (load: () => Promise<any>, name: string) => lazy(() => load().then((m) => ({ default: m[name] })));
+const StaffReport = reportPage(() => import("@/pages/reports/TeamReports"), "StaffReport");
+const HoursReport = reportPage(() => import("@/pages/reports/TeamReports"), "HoursReport");
+const TurnsReport = reportPage(() => import("@/pages/reports/TeamReports"), "TurnsReport");
+const RetentionReport = reportPage(() => import("@/pages/reports/ClientReports"), "RetentionReport");
+const LapsedReport = reportPage(() => import("@/pages/reports/ClientReports"), "LapsedReport");
+const TopClientsReport = reportPage(() => import("@/pages/reports/ClientReports"), "TopClientsReport");
+const NoShowsReport = reportPage(() => import("@/pages/reports/ClientReports"), "NoShowsReport");
+const LoyaltyReport = reportPage(() => import("@/pages/reports/ClientReports"), "LoyaltyReport");
+const AppointmentsReport = reportPage(() => import("@/pages/reports/OperationsReports"), "AppointmentsReport");
+const WaitTimesReport = reportPage(() => import("@/pages/reports/OperationsReports"), "WaitTimesReport");
+const ServiceTimesReport = reportPage(() => import("@/pages/reports/OperationsReports"), "ServiceTimesReport");
+const BusyTimesReport = reportPage(() => import("@/pages/reports/OperationsReports"), "BusyTimesReport");
+const ServicesReport = reportPage(() => import("@/pages/reports/OperationsReports"), "ServicesReport");
+const ReviewsReport = reportPage(() => import("@/pages/reports/MarketingReports"), "ReviewsReport");
+const TextsReport = reportPage(() => import("@/pages/reports/MarketingReports"), "TextsReport");
+const AutumnReport = reportPage(() => import("@/pages/reports/MarketingReports"), "AutumnReport");
+/** The old one-page reports (/reports/dashboard?tab=…) now each have a page: an old link opens the new one. */
+function OldReportsRedirect() {
+  const tab = new URLSearchParams(window.location.search).get("tab") ?? "";
+  const to = ({ revenue: "/reports/sales", appointments: "/reports/appointments", staff: "/reports/staff", services: "/reports/services",
+    customers: "/reports/retention", tax: "/reports/tax" } as Record<string, string>)[tab] ?? "/reports";
+  return <Navigate to={to} replace />;
+}
 const RegisterReports = lazy(() => import("@/pages/RegisterReports"));
 const DayCloseReports = lazy(() => import("@/pages/DayCloseReports"));
 const Waitlist = lazy(() => import("@/pages/Waitlist"));
@@ -662,13 +685,29 @@ function AppRoutes() {
       <Route path="/reviews" element={<OwnerOnlyRoute><Reviews /></OwnerOnlyRoute>} />
       <Route path="/google-business" element={<OwnerOnlyRoute><GoogleBusiness /></OwnerOnlyRoute>} />
       <Route path="/reports" element={<ReportsHub />} />
-      <Route path="/reports/dashboard" element={<Reports />} />
+      <Route path="/reports/dashboard" element={<OldReportsRedirect />} />
       <Route path="/reports/day-close" element={<DayCloseReports />} />
       <Route path="/reports/sales" element={<SalesReport />} />
       <Route path="/reports/payments" element={<PaymentsReport />} />
       <Route path="/reports/tax" element={<TaxReport />} />
       <Route path="/reports/tips" element={<TipsReport />} />
       <Route path="/reports/gift-cards" element={<GiftCardsReport />} />
+      <Route path="/reports/staff" element={<StaffReport />} />
+      <Route path="/reports/hours" element={<HoursReport />} />
+      <Route path="/reports/turns" element={<TurnsReport />} />
+      <Route path="/reports/retention" element={<RetentionReport />} />
+      <Route path="/reports/lapsed-clients" element={<LapsedReport />} />
+      <Route path="/reports/top-clients" element={<TopClientsReport />} />
+      <Route path="/reports/no-shows" element={<NoShowsReport />} />
+      <Route path="/reports/loyalty" element={<LoyaltyReport />} />
+      <Route path="/reports/appointments" element={<AppointmentsReport />} />
+      <Route path="/reports/wait-times" element={<WaitTimesReport />} />
+      <Route path="/reports/service-times" element={<ServiceTimesReport />} />
+      <Route path="/reports/busy-times" element={<BusyTimesReport />} />
+      <Route path="/reports/services" element={<ServicesReport />} />
+      <Route path="/reports/reviews" element={<ReviewsReport />} />
+      <Route path="/reports/texts" element={<TextsReport />} />
+      <Route path="/reports/autumn-calls" element={<AutumnReport />} />
       <Route path="/register-reports" element={<RegisterReports />} />
       <Route path="/commission-report" element={<CommissionReport />} />
       <Route path="/salon-earnings" element={<SalonEarningsReport />} />

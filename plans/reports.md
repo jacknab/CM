@@ -11,11 +11,28 @@ cards under Money · Team · Clients · Operations · Marketing; a report appear
 - Payment methods counted from raw payment_method strings, so split tenders were miscounted (server has allocateTenders).
 - Five "Coming soon" cards (Retail, Packages, Inventory, Transaction detail, Most valuable clients).
 
-## Stages
-1. **Money** (building now): Sales summary · Payments by method · Sales tax · Tips · Gift cards.
-2. Team: Staff performance (revenue, services, avg ticket, tips, add-on rate, rebook rate, retention), Hours & chair use, Turns.
-3. Clients: Retention (new vs returning, back within 30/60/90 days), Lapsed clients, Most valuable clients, No-show risk, Loyalty.
-4. Operations: Appointments & walk-ins, Wait times, Service times (real vs booked), Busiest hours, Service & add-on performance.
-5. Marketing: Review requests, Texts sent, Autumn calls.
+## Stages — all built 2026-10-29
+Every report: GET /api/reports/:group/:report?from&to&compare=1 (permission reports.view), server lib/reports/<group>.ts,
+page pages/reports/<Group>Reports.tsx in the shared ReportFrame. Checked against store 2's real October data.
+
+1. **Money** (`money.ts`): Sales `/reports/sales` · Payments `/reports/payments` · Sales tax `/reports/tax` ·
+   Tips `/reports/tips` · Gift cards `/reports/gift-cards`. Tax is saved on each sale (0269) by the /nail checkout and the
+   calendar checkout (appointment PATCH).
+2. **Team** (`team.ts`): Staff performance `/reports/staff` (net sales, tickets, avg ticket, tips, add-on %, came back
+   within 60 days %, avg service minutes, sales per clocked hour) · Hours & chair use `/reports/hours` · Turns `/reports/turns`
+   (turn_events; turns = turn_units ÷ TURN_UNIT).
+3. **Clients** (`clients.ts`): Retention `/reports/retention` (new vs returning, came back so far / within 30-60-90 days,
+   days between visits) · Lapsed clients `/reports/lapsed-clients` (2+ visits, not back for N days, win-back list) ·
+   Most valuable `/reports/top-clients` · No-shows & cancellations `/reports/no-shows` · Loyalty `/reports/loyalty`.
+4. **Operations** (`operations.ts`): Appointments & walk-ins `/reports/appointments` · Wait times `/reports/wait-times`
+   (check-in → start: avg, median, 90th percentile, within 15 min, by hour/day) · Service times `/reports/service-times`
+   (actual_minutes vs booked) · Busiest times `/reports/busy-times` · Services & add-ons `/reports/services`.
+5. **Marketing** (`marketing.ts`): Review requests `/reports/reviews` · Texts sent `/reports/texts` · Autumn calls `/reports/autumn-calls`.
+
 Existing pages kept and linked from the home: Commission earnings, Salon earnings, Day Close, Register reports.
-The old `/reports/dashboard` tabs stay until their stage replaces them.
+The old `/reports/dashboard?tab=…` page is gone; old links open the matching new report.
+
+## Ideas for later
+- Per-report drill-down (click a technician / service / day to see its tickets).
+- Scheduled email of a weekly summary to the owner.
+- Product (retail) inventory report once products track stock.

@@ -59,6 +59,19 @@ export function useReportRange() {
   };
 }
 
+/** A report's data from the server (/api/reports/:group/:report). `extra` = more query (e.g. days=60). */
+export function useReport<T>(group: string, report: string, from: string, to: string, compare: boolean, extra = "") {
+  return useQuery<T>({
+    queryKey: ["/api/reports", group, report, from, to, compare, extra],
+    queryFn: async () => {
+      const res = await fetch(`/api/reports/${group}/${report}?from=${from}&to=${to}${compare ? "&compare=1" : ""}${extra ? `&${extra}` : ""}`, { credentials: "include" });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.message || "Could not load the report");
+      return res.json();
+    },
+    enabled: from <= to,
+  });
+}
+
 /** A Money report's data from the server. */
 export function useMoneyReport<T>(report: string, from: string, to: string, compare: boolean) {
   return useQuery<T>({

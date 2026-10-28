@@ -9,9 +9,11 @@ import { ReportFrame, Kpi, useReportRange, useMoneyReport, money, pctChange, dow
 const BAR = "#1f6fe0";
 const METHOD_COLORS: Record<string, string> = { cash: "#16a34a", card: "#1f6fe0", m2: "#7c3aed", tap: "#0891b2", tap_to_pay: "#0891b2", gift: "#ea580c" };
 const methodName = (m: string) => ({ cash: "Cash", card: "Card", m2: "Card reader (M2)", tap: "Tap to Pay", tap_to_pay: "Tap to Pay", gift: "Gift card" } as Record<string, string>)[m] ?? m.charAt(0).toUpperCase() + m.slice(1);
-const bucketLabel = (label: string, by: "day" | "month") => (by === "month" ? format(parseISO(`${label}-01`), "MMM yyyy") : format(parseISO(label), "MMM d"));
+export const bucketLabel = (label: string, by: "day" | "month") => (by === "month" ? format(parseISO(`${label}-01`), "MMM yyyy") : format(parseISO(label), "MMM d"));
 
-function Chart({ title, data, keys, by }: { title: string; data: any[]; keys: { key: string; name: string; color: string }[]; by: "day" | "month" }) {
+export type Unit = "money" | "count" | "minutes";
+export const fmtUnit = (v: number, unit: Unit = "money") => (unit === "money" ? money(v) : unit === "minutes" ? `${Math.round(v)} min` : String(Math.round(v * 10) / 10));
+export function Chart({ title, data, keys, by, unit = "money" }: { title: string; data: any[]; keys: { key: string; name: string; color: string }[]; by: "day" | "month"; unit?: Unit }) {
   return (
     <Card>
       <CardHeader className="pb-2"><CardTitle className="text-base">{title}</CardTitle></CardHeader>
@@ -22,7 +24,7 @@ function Chart({ title, data, keys, by }: { title: string; data: any[]; keys: { 
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
               <YAxis tick={{ fontSize: 11 }} width={60} />
-              <Tooltip formatter={(v: number) => money(v)} />
+              <Tooltip formatter={(v: number) => fmtUnit(v, unit)} />
               {keys.length > 1 && <Legend />}
               {keys.map((k) => <Bar key={k.key} dataKey={k.key} name={k.name} fill={k.color} stackId={keys.length > 1 ? "a" : undefined} radius={keys.length > 1 ? 0 : [3, 3, 0, 0]} />)}
             </BarChart>
@@ -33,7 +35,7 @@ function Chart({ title, data, keys, by }: { title: string; data: any[]; keys: { 
   );
 }
 
-function Table({ head, rows, testId }: { head: string[]; rows: (string | number)[][]; testId?: string }) {
+export function Table({ head, rows, testId }: { head: string[]; rows: (string | number)[][]; testId?: string }) {
   return (
     <div className="overflow-x-auto" data-testid={testId}>
       <table className="w-full text-sm">
@@ -45,11 +47,11 @@ function Table({ head, rows, testId }: { head: string[]; rows: (string | number)
 }
 
 // ── Sales ─────────────────────────────────────────────────────────────────────
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-function Heatmap({ heat }: { heat: number[][] }) {
+export const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+export function Heatmap({ heat, unit = "money" }: { heat: number[][]; unit?: Unit }) {
   const hours = Array.from({ length: 24 }, (_, h) => h).filter((h) => heat.some((row) => row[h] > 0));
   const max = Math.max(1, ...heat.flat());
-  if (!hours.length) return <p className="text-sm text-muted-foreground">No sales in this period.</p>;
+  if (!hours.length) return <p className="text-sm text-muted-foreground">Nothing in this period.</p>;
   const hourLabel = (h: number) => `${h % 12 || 12}${h < 12 ? "a" : "p"}`;
   return (
     <div className="overflow-x-auto">
@@ -60,7 +62,7 @@ function Heatmap({ heat }: { heat: number[][] }) {
             <tr key={d}>
               <td className="pr-2 font-medium text-muted-foreground">{DAYS[d]}</td>
               {hours.map((h) => (
-                <td key={h} title={`${DAYS[d]} ${hourLabel(h)}: ${money(row[h])}`} className="h-7 min-w-[34px] rounded text-center tabular-nums"
+                <td key={h} title={`${DAYS[d]} ${hourLabel(h)}: ${fmtUnit(row[h], unit)}`} className="h-7 min-w-[34px] rounded text-center tabular-nums"
                   style={{ background: row[h] ? `rgba(31,111,224,${0.12 + 0.78 * (row[h] / max)})` : "rgba(127,127,127,0.08)", color: row[h] / max > 0.55 ? "#fff" : undefined }}>
                   {row[h] ? Math.round(row[h]) : ""}
                 </td>

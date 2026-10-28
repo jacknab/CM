@@ -43,6 +43,10 @@ import { z } from "zod";
 import { db, pool, waitForDb } from "./db";
 import { stationDrawer, NO_CASH_DRAWER_MESSAGE, primaryDrawerId, cashBelongsToDrawer } from "./lib/stationDrawer";
 import { MONEY_REPORTS, parseRange as parseReportRange } from "./lib/reports/money";
+import { TEAM_REPORTS } from "./lib/reports/team";
+import { CLIENT_REPORTS } from "./lib/reports/clients";
+import { OPERATIONS_REPORTS } from "./lib/reports/operations";
+import { MARKETING_REPORTS } from "./lib/reports/marketing";
 import { users } from "@shared/models/auth";
 import { eq, and, or, ne, desc, sql, count, gte, lte, asc, isNull, isNotNull, inArray, notInArray, like } from "drizzle-orm";
 import { resetTurnSystemForStore } from "./services/auto-clock-out";
@@ -6623,6 +6627,13 @@ If you have any questions, please contact your administrator.
 
       const appointment = await storage.updateAppointment(appointmentId, input);
       if (appointment && saleDrawerId != null) await db.update(appointments).set({ cashDrawerId: saleDrawerId }).where(eq(appointments.id, appointmentId));
+      // The sales tax this sale paid, saved for reports (migration 0269) — the calendar's checkout, like the /nail one:
+      // what was paid beyond the sale after discount and the tip.
+      if (appointment && ["totalPaid", "serviceRevenue", "productRevenue", "tipAmount", "discountAmount"].some((k) => (input as any)[k] != null)) {
+        await pool.query(
+          `UPDATE appointments SET tax_amount = GREATEST(0, ROUND(total_paid - COALESCE(tip_amount, 0) - (service_revenue + COALESCE(product_revenue, 0) - COALESCE(discount_amount, 0)), 2))
+            WHERE id = $1 AND status = 'completed' AND total_paid IS NOT NULL AND service_revenue IS NOT NULL`, [appointmentId]);
+      }
       if (!appointment) return res.status(404).json({ message: "Appointment not found" });
 
       // Log appointment lifecycle events (fire-and-forget)
@@ -7782,19 +7793,22 @@ If you have any questions, please contact your administrator.
     }
   });
 
-  // GET /api/reports/money/:report?from=YYYY-MM-DD&to=YYYY-MM-DD&compare=1 — the Money reports (owner, 2026-10-29:
-  // each report its own page, worked out on the server from what was charged; lib/reports/money.ts).
-  app.get("/api/reports/money/:report", isAuthenticated, requirePermission(PERMISSIONS.REPORTS_VIEW), async (req, res) => {
+  // GET /api/reports/:group/:report?from=YYYY-MM-DD&to=YYYY-MM-DD&compare=1 — the reports (owner, 2026-10-29: each
+  // report its own page, worked out on the server; lib/reports/*, plans/reports.md).
+  const REPORT_GROUPS: Record<string, Record<string, (s: number, r: any, c: boolean, q: Record<string, unknown>) => Promise<unknown>>> = {
+    money: MONEY_REPORTS as any, team: TEAM_REPORTS as any, clients: CLIENT_REPORTS as any, operations: OPERATIONS_REPORTS as any, marketing: MARKETING_REPORTS as any,
+  };
+  app.get("/api/reports/:group/:report", isAuthenticated, requirePermission(PERMISSIONS.REPORTS_VIEW), async (req, res) => {
     try {
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(403).json({ message: "No store context" });
-      const fn = (MONEY_REPORTS as Record<string, (s: number, r: any, c: boolean) => Promise<unknown>>)[String(req.params.report)];
+      const fn = REPORT_GROUPS[String(req.params.group)]?.[String(req.params.report)];
       if (!fn) return res.status(404).json({ message: "No such report" });
       const range = parseReportRange(req.query as any);
       if (!range) return res.status(400).json({ message: "Choose a date range (from / to)" });
-      return res.json(await fn(storeId, range, req.query.compare === "1"));
+      return res.json(await fn(storeId, range, req.query.compare === "1", req.query as Record<string, unknown>));
     } catch (err) {
-      console.error("[GET /api/reports/money]", err);
+      console.error("[GET /api/reports]", req.params.group, req.params.report, err);
       return res.status(500).json({ message: "Could not build the report" });
     }
   });

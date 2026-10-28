@@ -1,6 +1,9 @@
 import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { Sparkles, Receipt, Calendar, Percent, FileText, Star, Users, Scissors, UserCircle, Wallet, HandCoins, Gift } from "lucide-react";
+import {
+  Sparkles, Receipt, Calendar, Percent, FileText, Star, Users, Scissors, UserCircle, Wallet, HandCoins, Gift, Clock, Repeat,
+  UserMinus, CalendarX, Award, Hourglass, Timer, BarChart3, MessageSquareHeart, MessageSquare, Phone,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { isProAccount, isHiddenForProAccount } from "@shared/proAccount";
@@ -9,8 +12,7 @@ type ReportCard = { title: string; description: string; icon: typeof Sparkles; t
 
 /**
  * Reports home (owner, 2026-10-29): cards grouped by what they are about, each opening its own report page. A report is
- * listed once it is built (no "Coming soon"). Reports still being rebuilt (plans/reports.md) open their tab of the
- * older reports page until their own page replaces it.
+ * listed once it is built (no "Coming soon"). plans/reports.md.
  */
 const GROUPS: { title: string; cards: ReportCard[] }[] = [
   { title: "Money", cards: [
@@ -24,15 +26,29 @@ const GROUPS: { title: string; cards: ReportCard[] }[] = [
     { title: "Register reports", description: "Cash drawer counts and register activity history", icon: FileText, to: "/register-reports" },
   ] },
   { title: "Team", cards: [
-    { title: "Staff performance", description: "Bookings and revenue by team member", icon: UserCircle, to: "/reports/dashboard?tab=staff" },
+    { title: "Staff performance", description: "Sales, tickets, average ticket, tips, add-ons, clients who came back, sales per hour", icon: UserCircle, to: "/reports/staff" },
+    { title: "Hours & chair use", description: "Hours on the clock against time with clients", icon: Clock, to: "/reports/hours" },
+    { title: "Turns", description: "Turns earned, tickets given by turn, and adjustments", icon: Repeat, to: "/reports/turns" },
     { title: "Commission earnings", description: "Breakdown of earnings to support commission payouts", icon: FileText, to: "/commission-report" },
   ] },
   { title: "Clients", cards: [
-    { title: "Client activity", description: "Client counts, retention, and no-show risk", icon: Users, to: "/reports/dashboard?tab=customers" },
+    { title: "Client retention", description: "New and returning clients, and how many new clients come back", icon: Users, to: "/reports/retention" },
+    { title: "Lapsed clients", description: "Regulars who haven't been back for a while: a list to win them back", icon: UserMinus, to: "/reports/lapsed-clients" },
+    { title: "Most valuable clients", description: "Top clients by spend, with lifetime value", icon: Star, to: "/reports/top-clients" },
+    { title: "No-shows & cancellations", description: "Rates, worst days, and clients who miss again and again", icon: CalendarX, to: "/reports/no-shows" },
+    { title: "Loyalty", description: "Points earned and used, and who holds the most", icon: Award, to: "/reports/loyalty" },
   ] },
   { title: "Operations", cards: [
-    { title: "Appointments", description: "Appointment history: completed, cancelled, no-shows", icon: Calendar, to: "/reports/dashboard?tab=appointments" },
-    { title: "Service performance", description: "Bookings and revenue by service", icon: Scissors, to: "/reports/dashboard?tab=services" },
+    { title: "Appointments & walk-ins", description: "Booked vs walk-in, completed, cancelled, no-shows, how far ahead people book", icon: Calendar, to: "/reports/appointments" },
+    { title: "Wait times", description: "From check-in to the service starting, by hour and day", icon: Hourglass, to: "/reports/wait-times" },
+    { title: "Service times", description: "How long services really take against the time booked", icon: Timer, to: "/reports/service-times" },
+    { title: "Busiest times", description: "When clients come in, by day and hour, for staffing", icon: BarChart3, to: "/reports/busy-times" },
+    { title: "Services & add-ons", description: "What sells, for how much, and add-on attach rates", icon: Scissors, to: "/reports/services" },
+  ] },
+  { title: "Marketing", cards: [
+    { title: "Review requests", description: "Review texts sent, links opened, reviews received", icon: MessageSquareHeart, to: "/reports/reviews" },
+    { title: "Texts sent", description: "Every text the salon sent, by kind, with failures", icon: MessageSquare, to: "/reports/texts" },
+    { title: "Autumn calls", description: "AI receptionist calls, outcomes, and the visits she booked", icon: Phone, to: "/reports/autumn-calls" },
   ] },
   { title: "Something else", cards: [
     { title: "Create a custom report", description: "Ask your Growth Analyst for any custom report", icon: Sparkles, to: "/support" },
