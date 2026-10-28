@@ -53,16 +53,25 @@ export function Keypad({ locked, onEnter, onUndo, onSplit, onGiftCard, onCheckou
 }) {
   const [display, setDisplay] = useState("");
   const [qty, setQty] = useState(1);
-  useEffect(() => { if (qtyReset) setQty(1); }, [qtyReset]);
+  // QTY pressed first (owner, 2026-10-29): the next digits are the quantity, then the item is tapped. "3 X" still works.
+  const [qtyDigits, setQtyDigits] = useState<string | null>(null);
+  useEffect(() => { if (qtyReset) { setQty(1); setQtyDigits(null); } }, [qtyReset]);
+  const setQtyTo = (n: number) => { setQty(n); onQtyChange?.(n); };
   const [guided, setGuided] = useState<number | null>(null);
   const [retail, setRetail] = useState(false);
 
   const press = (key: string) => {
     if (locked) return;
+    if (qtyDigits !== null) {
+      // Typing the quantity: digits are how many; ENTER (or tapping the item) keeps it; ⌫ takes a digit off.
+      if (/^\d+$/.test(key)) { const next = (qtyDigits + key).replace(/^0+/, "").slice(0, 2); setQtyDigits(next); setQtyTo(Math.max(1, Number(next) || 1)); return; }
+      if (key === "⌫") { const next = qtyDigits.slice(0, -1); setQtyDigits(next); setQtyTo(Math.max(1, Number(next) || 1)); return; }
+      if (key === "ENTER" || key === "X") { setQtyDigits(null); return; }
+    }
     if (key === "⌫") { setDisplay((d) => d.slice(0, -1)); return; }
     // ↶ first clears what is being typed (and leaves Quick Ticket); with nothing typed it undoes the last change to the ticket.
     if (key === "↶") {
-      if (display !== "" || qty !== 1 || guided !== null) { setDisplay(""); setQty(1); setGuided(null); onQtyChange?.(1); return; }
+      if (display !== "" || qty !== 1 || qtyDigits !== null || guided !== null) { setDisplay(""); setQty(1); setQtyDigits(null); setGuided(null); onQtyChange?.(1); return; }
       onUndo?.();
       return;
     }
@@ -70,7 +79,8 @@ export function Keypad({ locked, onEnter, onUndo, onSplit, onGiftCard, onCheckou
       if (guided !== null) return; // Quick Ticket adds one of each step
       // "3 X" then the price = three of them.
       const n = Number(display);
-      if (Number.isInteger(n) && n >= 1 && n <= 99) { setQty(n); setDisplay(""); onQtyChange?.(n); }
+      if (display !== "" && Number.isInteger(n) && n >= 1 && n <= 99) { setQty(n); setDisplay(""); onQtyChange?.(n); return; }
+      if (display === "") { setQtyDigits(""); onNotice?.("QTY: type how many, then tap the item"); }
       return;
     }
     if (key === "ENTER") {
@@ -86,7 +96,7 @@ export function Keypad({ locked, onEnter, onUndo, onSplit, onGiftCard, onCheckou
       // step list ends), nothing here would ever remind staff it's still on, and leaving it stuck
       // "on" silently mislabels the NEXT unrelated custom charge as retail too (wrong commission
       // rate). Ringing up several retail items in a row just means tapping Retail again each time.
-      setDisplay(""); setQty(1); setRetail(false); onQtyChange?.(1);
+      setDisplay(""); setQty(1); setQtyDigits(null); setRetail(false); onQtyChange?.(1);
       return;
     }
     setDisplay((d) => (d + key).slice(0, 7));
@@ -97,7 +107,7 @@ export function Keypad({ locked, onEnter, onUndo, onSplit, onGiftCard, onCheckou
       <div className="calculator-display" data-testid="nail-keypad-display">
         {guided !== null && <span className="display-prompt" data-testid="nail-quick-prompt">{QUICK_TICKET_STEPS[guided].prompt} · {guided + 1}/{QUICK_TICKET_STEPS.length}</span>}
         {guided === null && retail && <span className="display-prompt" data-testid="nail-retail-prompt">RETAIL ITEM</span>}
-        {qty > 1 && <span className="display-qty">{qty} ×</span>}
+        {qtyDigits !== null ? <span className="display-qty" data-testid="nail-qty-entry">QTY {qtyDigits || "_"} ×</span> : qty > 1 && <span className="display-qty">{qty} ×</span>}
         {display ? display : ""}
       </div>
       <div className="key-grid">
@@ -111,7 +121,7 @@ export function Keypad({ locked, onEnter, onUndo, onSplit, onGiftCard, onCheckou
       </div>
       {/* The same two rows of functions the checkout screen has, in the same places, so building a ticket and paying it are one POS. */}
       <div className="money-grid pay-fn-row" data-testid="nail-fn-row-top">
-        <button type="button" disabled={locked} onClick={() => { setDisplay(""); setQty(1); setGuided((g) => (g === null ? 0 : null)); onQtyChange?.(1); }} data-testid="nail-quick-ticket">
+        <button type="button" disabled={locked} onClick={() => { setDisplay(""); setQty(1); setQtyDigits(null); setGuided((g) => (g === null ? 0 : null)); onQtyChange?.(1); }} data-testid="nail-quick-ticket">
           <Zap size={20} /><span>{guided !== null ? "Exit Quick Ticket" : "Quick Ticket"}</span>
         </button>
         <button type="button" disabled={locked} onClick={() => onCheckoutFn?.("group")} data-testid="nail-fn-group"><Users size={20} /><span>Combine</span></button>

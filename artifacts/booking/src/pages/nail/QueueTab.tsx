@@ -382,12 +382,11 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
               </div>
               {upNext ? (
                 <div className="q-unified-side q-wait-actions">
-                  {/* A linked ticket that can start shows Start only (owner, 2026-10-24); tapping the card still opens it. */}
-                  {!(linkSide.has(r.key) && r.start) && (
-                    <button type="button" onClick={(e) => { e.stopPropagation(); r.open(); }} data-testid="nail-queue-spotlight-action">{r.markerId != null ? "Create" : "Ticket"}</button>
-                  )}
-                  {r.assign && <button type="button" onClick={(e) => { e.stopPropagation(); r.assign?.(); }} data-testid="nail-queue-spotlight-assign">Assign</button>}
-                  {r.start && <button type="button" onClick={(e) => { e.stopPropagation(); r.start?.(); }} data-testid={`${r.testId}-start`}>Start</button>}
+                  {/* One button only, ever (owner, 2026-10-29): the next step — Start, else Assign, else open the
+                      ticket. Tapping the card still opens it. */}
+                  {r.start ? <button type="button" onClick={(e) => { e.stopPropagation(); r.start?.(); }} data-testid={`${r.testId}-start`}>Start</button>
+                    : r.assign ? <button type="button" onClick={(e) => { e.stopPropagation(); r.assign?.(); }} data-testid="nail-queue-spotlight-assign">Assign</button>
+                    : <button type="button" onClick={(e) => { e.stopPropagation(); r.open(); }} data-testid="nail-queue-spotlight-action">{r.markerId != null ? "Create" : "Ticket"}</button>}
                 </div>
               ) : r.start ? (
                 <div className="q-unified-side q-wait-actions">

@@ -101,7 +101,14 @@ function recallReceipt(): LastReceipt | null {
 export function CheckoutMode(p: Props) {
   const { t: tx } = useNailText();
   const { ticket } = p;
-  const { guard, pinSheet } = useManagerOverride();
+  const { guard: managerGuard, pinSheet } = useManagerOverride();
+  // When this screen last changed the ticket on the server: the total that comes back from that is its own change,
+  // not "another station's" (2026-10-29: adding a service here announced it as a change on another station).
+  const ownChangeAt = useRef(0);
+  const guard = <T,>(fn: () => Promise<T>) => {
+    ownChangeAt.current = Date.now();
+    return managerGuard(async () => { try { return await fn(); } finally { ownChangeAt.current = Date.now(); } });
+  };
   const [cents, setCents] = useState("");
   const [extras, setExtras] = useState<Extra[]>([]);
   const nextId = useRef(1);
@@ -190,8 +197,10 @@ export function CheckoutMode(p: Props) {
   const amount = wholeDollars ? (Number(cents) || 0) : centsToDollars(cents);
   // "3 X": the next amount entered, or the next key tapped on the grid, is rung up three times.
   const [qty, setQty] = useState(1);
+  // QTY pressed before the number (owner, 2026-10-29): the next digits are how many. "3 X" still works too.
+  const [qtyDigits, setQtyDigits] = useState<string | null>(null);
   // Typed "20" then CASH: the same $20 carries over into the payment keypad, as cents.
-  useEffect(() => { setCents((c) => (paying && c && guided === null ? `${c}00` : "")); setQty(1); }, [paying]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setCents((c) => (paying && c && guided === null ? `${c}00` : "")); setQty(1); setQtyDigits(null); }, [paying]); // eslint-disable-line react-hooks/exhaustive-deps
   // Right after a visit is saved the board may not have its other tickets yet: link them when they arrive, once.
   const groupSeeded = useRef(false);
   useEffect(() => {
@@ -230,12 +239,11 @@ export function CheckoutMode(p: Props) {
   // The ticket is kept live from the board; if another station changes it mid-checkout, say so
   // rather than let the total move without anyone noticing.
   const seenTotal = useRef(ticket.total);
-  const ownChange = useRef(false);
   useEffect(() => {
     if (seenTotal.current === ticket.total) return;
     seenTotal.current = ticket.total;
     // A change made right here (the service was swapped on this screen) announces itself.
-    if (ownChange.current) { ownChange.current = false; return; }
+    if (Date.now() - ownChangeAt.current < 15_000) return;
     if (!p.paid) say(`TICKET CHANGED ON ANOTHER STATION · NEW TICKET TOTAL ${money(ticket.total)}`, "info");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticket.total]);
@@ -479,6 +487,7 @@ export function CheckoutMode(p: Props) {
   const addLineTo = async (t: BoardTicket, label: string, price: number, isRetail: boolean) => {
     if (syncEngine.isOffline()) { say("ADDING TO ANOTHER TECHNICIAN'S TICKET NEEDS THE CONNECTION", "error"); return; }
     try {
+      ownChangeAt.current = Date.now();
       const r = await fetch(`/api/nail/tickets/${t.id}/lines`, {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label, price, isRetail }),
       });
@@ -495,6 +504,7 @@ export function CheckoutMode(p: Props) {
     const line = t.customLines[index];
     if (!line || line.serviceId || line.packageId || p.paid || p.finalizing) return;
     try {
+      ownChangeAt.current = Date.now();
       const r = await fetch(`/api/nail/tickets/${t.id}/lines/remove`, {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ index }),
       });
@@ -509,11 +519,18 @@ export function CheckoutMode(p: Props) {
   const needAmount = () => { say("MUST ENTER AMOUNT FIRST", "error"); };
 
   const pressKey = (k: string) => {
+    if (qtyDigits !== null) {
+      if (/^\d+$/.test(k)) { const next = (qtyDigits + k).replace(/^0+/, "").slice(0, 2); setQtyDigits(next); setQty(Math.max(1, Number(next) || 1)); return; }
+      if (k === "⌫") { const next = qtyDigits.slice(0, -1); setQtyDigits(next); setQty(Math.max(1, Number(next) || 1)); return; }
+      if (k === "ENTER" || k === "X") { setQtyDigits(null); if (qty > 1) say(`QTY ${qty} ×`); return; }
+      if (k === "↶") { setQtyDigits(null); setQty(1); return; }
+    }
     if (k === "⌫") { setCents((c) => c.slice(0, -1)); return; }
     if (k === "X") {
       if (guided !== null || paying) return;
       const n = Number(cents);
-      if (Number.isInteger(n) && n >= 1 && n <= 99) { setQty(n); setCents(""); say(`QTY ${n} ×`); }
+      if (cents !== "" && Number.isInteger(n) && n >= 1 && n <= 99) { setQty(n); setCents(""); say(`QTY ${n} ×`); return; }
+      if (cents === "") { setQtyDigits(""); say("QTY: TYPE HOW MANY, THEN TAP THE ITEM"); }
       return;
     }
     if (k === "↶") {
@@ -604,7 +621,7 @@ export function CheckoutMode(p: Props) {
   // A key on the grid, like a register's: "3 X" first rings it up three times. A package key adds the whole package.
   const gridService = async (svc: CatalogService) => {
     const times = qty;
-    setQty(1);
+    setQty(1); setQtyDigits(null);
     if (svc.id < 0) {
       if (p.paid || p.finalizing) return;
       try { const r = await guard(() => addTicketPackage(ticket.id, -svc.id)); if (!r) return; say(`${r.name.toUpperCase()} ADDED`, "success"); void refreshBoard(); }
@@ -616,7 +633,7 @@ export function CheckoutMode(p: Props) {
   // An add-on key: a real add-on on the ticket (once). With no connection it is a line of this sale, as before.
   const gridAddon = async (a: import("./CatalogPanel").CatalogAddon) => {
     if (p.paid || p.finalizing) return;
-    setQty(1);
+    setQty(1); setQtyDigits(null);
     const price = Number(a.price) || 0;
     if (a.id && ticket.id > 0 && !syncEngine.isOffline()) {
       try {
@@ -1324,8 +1341,9 @@ export function CheckoutMode(p: Props) {
           <div className="keypad pay-keypad" data-testid="nail-pay-keypad">
             <div className={`pos-status ${status ? `pos-status-${status.tone}` : ""} ${guidedPrompt ? "pos-status-guided" : ""}`} data-testid="nail-pay-status"><span>{guidedPrompt ?? status?.text ?? " "}</span></div>
             <div className="calculator-display" data-testid="nail-pay-display">
-              {qty > 1 && <span className="display-qty">{qty} ×</span>}
-              {cents ? (wholeDollars ? `$${amount}` : money(amount)) : ""}
+              {qtyDigits !== null ? <span className="display-qty" data-testid="nail-pay-qty-entry">QTY {qtyDigits || "_"} ×</span> : qty > 1 && <span className="display-qty">{qty} ×</span>}
+              {/* Just the number, no $ (owner, 2026-10-29). */}
+              {cents ? (wholeDollars ? String(amount) : amount.toFixed(2)) : ""}
             </div>
             <div className="key-grid">
               {KEYS.map((k) => (
