@@ -923,17 +923,27 @@
 .nail-app .q-unified-pill[data-kind^="urgent-"] { max-width: 60%; }
 .nail-app .q-unified-pill[data-kind="urgent-orange"] { background: #fff4e0; color: #b45309; }
 .nail-app .q-unified-pill[data-kind="urgent-red"] { background: #fee2e2; color: #b91c1c; }
-/* Red ticket on the board: a red outline starts at the edges of the screen and shrinks in, now and then. */
-.nail-app .nl-urgent-edge { position: fixed; inset: 0; pointer-events: none; z-index: 2147483000; }
-.nail-app .nl-urgent-edge::before { content: ""; position: absolute; inset: 0; border: 6px solid rgba(220, 38, 38, .85); border-radius: 0;
-  animation: nl-urgent-shrink 5s ease-out infinite; opacity: 0; }
-@keyframes nl-urgent-shrink {
-  0% { inset: 0; opacity: 0; border-radius: 0; }
-  6% { opacity: .9; }
-  40% { inset: 9vh 9vw; opacity: 0; border-radius: 24px; }
-  100% { inset: 9vh 9vw; opacity: 0; border-radius: 24px; }
+/* Red ticket on the board (owner, 2026-10-29: it must catch a technician's eye from across the salon): a solid red
+   frame stays on the screen's edges, with a glow that breathes, and two thick red rings keep shrinking in from it. */
+.nail-app .nl-urgent-edge { position: fixed; inset: 0; pointer-events: none; z-index: 2147483000;
+  border: 12px solid #ef1c1c; animation: nl-urgent-glow 1.3s ease-in-out infinite alternate; }
+.nail-app .nl-urgent-edge::before, .nail-app .nl-urgent-edge::after { content: ""; position: absolute; inset: 0;
+  border: 14px solid #ff2a2a; box-shadow: 0 0 30px 6px rgba(255, 30, 30, .7), inset 0 0 24px 4px rgba(255, 30, 30, .45);
+  animation: nl-urgent-shrink 2.6s cubic-bezier(.2, .6, .3, 1) infinite; opacity: 0; }
+.nail-app .nl-urgent-edge::after { animation-delay: 1.3s; }
+@keyframes nl-urgent-glow {
+  from { box-shadow: inset 0 0 40px 6px rgba(255, 30, 30, .55), 0 0 0 0 transparent; }
+  to   { box-shadow: inset 0 0 70px 18px rgba(255, 30, 30, .85), 0 0 0 0 transparent; }
 }
-@media (prefers-reduced-motion: reduce) { .nail-app .nl-urgent-edge::before { animation: none; opacity: .5; } }
+@keyframes nl-urgent-shrink {
+  0%   { inset: 0; opacity: 1; border-radius: 0; }
+  70%  { opacity: .55; }
+  100% { inset: 7vh 7vw; opacity: 0; border-radius: 28px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nail-app .nl-urgent-edge { animation: none; box-shadow: inset 0 0 80px 18px rgba(255, 30, 30, .7); }
+  .nail-app .nl-urgent-edge::before, .nail-app .nl-urgent-edge::after { animation: none; opacity: 0; }
+}
 .nail-app .q-wait-card.q-visit-first { box-shadow: inset -5px 0 0 #facc15, 0 6px 16px rgba(30, 60, 110, .10); }
 .nail-app .q-wait-card.q-visit-last { box-shadow: inset 5px 0 0 #facc15, 0 6px 16px rgba(30, 60, 110, .10); }
 .nail-app .q-wait-card.q-visit-middle { box-shadow: inset 5px 0 0 #facc15, inset -5px 0 0 #facc15, 0 6px 16px rgba(30, 60, 110, .10); }
