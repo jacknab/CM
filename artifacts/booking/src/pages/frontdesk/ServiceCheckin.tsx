@@ -50,11 +50,9 @@ export function checkinCategories(services: CheckinService[], catalog: CatalogCa
 const PRIMARY = "var(--fd-primary, #e84891)";
 const BG      = "var(--fd-bg, #f5f3ff)";
 const SURFACE = "var(--fd-surface, #ffffff)";
-const BORDER  = "var(--fd-border, #e9e3f5)";
 const TEXT    = "var(--fd-text, #18111a)";
 const MUTED   = "var(--fd-muted, #6b6580)";
 const SOFT    = "var(--fd-primary-s, #fdf2f8)";
-const SHADOW  = "var(--fd-shadow-lg, 0 8px 32px rgba(80,0,120,0.10), 0 2px 8px rgba(0,0,0,0.06))";
 const NO_SELECT: React.CSSProperties = { WebkitUserSelect: "none", userSelect: "none" };
 
 /** A photo that quietly gives way to a plain tile with the name's first letter if it is missing or fails to load. */
@@ -62,7 +60,7 @@ function Photo({ src, label }: { src?: string | null; label: string }) {
   const [broken, setBroken] = useState(false);
   if (!src || broken) {
     return (
-      <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", background: SOFT, color: PRIMARY, fontSize: 64, fontWeight: 900 }} aria-hidden>
+      <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", background: SOFT, color: PRIMARY, fontSize: "min(48px, 7vh)", fontWeight: 900 }} aria-hidden>
         {label.trim()[0]?.toUpperCase() ?? ""}
       </div>
     );
@@ -95,15 +93,19 @@ export function ServiceCheckin({ services, catalogCategories, categoryImages, bu
   // 10th digit is pressed, so this screen can appear under a finger that is still down; lifting it then must not
   // pick whichever card is under it (2026-10-29: a client was checked in for Gel without seeing this screen).
   const downOn = useRef<string | null>(null);
-  const cols = categories.length <= 3 ? Math.max(categories.length, 1) : categories.length === 4 ? 2 : 3;
-
+  // Small cards (owner, 2026-10-29): a round photo and the name, sized so a salon with up to 12 categories (15 on a
+  // wide screen) sees every card at once on a 10.1" tablet, without scrolling. More than that scrolls.
+  const n = Math.max(categories.length, 1);
+  const cols = n <= 4 ? n : n <= 6 ? 3 : n <= 12 ? 4 : 5;
+  const rows = Math.ceil(n / cols);
+  const photo = `clamp(56px, calc((100vh - 220px) / ${rows} - 96px), 150px)`;
   return (
     <div className="fixed inset-0 flex flex-col" style={{ ...NO_SELECT, background: BG }} onPointerDown={onActivity} data-testid="fd-service-categories">
-      <div className="px-10 pt-8 pb-6 shrink-0 text-center">
-        <h1 className="text-5xl font-black leading-tight" style={{ color: TEXT }}>What would you like to have done today?</h1>
+      <div className="px-8 pt-6 pb-4 shrink-0 text-center">
+        <h1 className="text-4xl font-black leading-tight" style={{ color: TEXT }}>What would you like to have done today?</h1>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto px-10 pb-4 flex flex-col justify-center">
-        <div className="grid gap-6 mx-auto w-full" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, maxWidth: cols === 2 ? 900 : 1180 }}>
+      <div className="flex-1 min-h-0 overflow-y-auto px-8 pb-2 flex flex-col justify-center">
+        <div className="flex flex-wrap justify-center mx-auto w-full" style={{ gap: 18, maxWidth: cols * 250 + (cols - 1) * 18 }}>
           {categories.map((c) => {
             const picked = pickedKey === c.key;
             return (
@@ -114,23 +116,21 @@ export function ServiceCheckin({ services, catalogCategories, categoryImages, bu
                 aria-pressed={picked}
                 onPointerDown={() => { downOn.current = c.key; }}
                 onClick={() => { if (busy || downOn.current !== c.key) return; setPickedKey(c.key); onConfirm(c); }}
-                className="rounded-3xl overflow-hidden text-left flex flex-col transition-transform active:scale-[0.97]"
-                style={{ background: picked ? SOFT : SURFACE, border: `3px solid ${picked ? PRIMARY : BORDER}`, boxShadow: SHADOW, opacity: busy && !picked ? 0.45 : 1 }}
+                className="rounded-2xl flex flex-col items-center justify-center text-center transition-transform active:scale-[0.97]"
+                style={{ width: `calc((100% - ${(cols - 1) * 18}px) / ${cols})`, background: picked ? SOFT : SURFACE, border: `2px solid ${picked ? PRIMARY : "transparent"}`, boxShadow: "0 2px 10px rgba(0,0,0,0.08)", opacity: busy && !picked ? 0.45 : 1, padding: "clamp(10px, 1.8vh, 18px) 10px", gap: "clamp(8px, 1.4vh, 14px)" }}
                 data-testid={`fd-service-category-${c.key}`}
               >
-                <div style={{ position: "relative", width: "100%", aspectRatio: categories.length <= 3 ? "4 / 3" : "16 / 9", overflow: "hidden" }}>
-                  <div style={{ position: "absolute", inset: 0 }}><Photo src={c.imageUrl} label={c.label} /></div>
+                <div className="rounded-full overflow-hidden shrink-0" style={{ width: photo, height: photo }}>
+                  <Photo src={c.imageUrl} label={c.label} />
                 </div>
-                <div className="px-6 py-5">
-                  <p className="text-3xl font-black leading-tight" style={{ color: TEXT }}>{c.label}</p>
-                  {picked && busy && <p className="text-lg mt-1" style={{ color: MUTED }}>Checking in…</p>}
-                </div>
+                <p className="uppercase leading-tight" style={{ color: TEXT, fontWeight: 600, letterSpacing: ".04em", fontSize: "clamp(15px, min(1.7vw, 2.6vh), 20px)" }}>{c.label}</p>
+                {picked && busy && <p className="text-sm" style={{ color: MUTED }}>Checking in…</p>}
               </button>
             );
           })}
         </div>
       </div>
-      <p className="shrink-0 px-10 pb-6 text-center text-xl font-semibold" role="alert" style={{ color: "#dc2626", minHeight: 52 }} data-testid="fd-service-error">{error}</p>
+      <p className="shrink-0 px-8 pb-3 text-center text-lg font-semibold" role="alert" style={{ color: "#dc2626", minHeight: 36 }} data-testid="fd-service-error">{error}</p>
     </div>
   );
 }
