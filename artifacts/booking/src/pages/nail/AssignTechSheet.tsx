@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Check, Loader2, X } from "lucide-react";
 import { fetchTurn, type TurnTech } from "./nailApi";
+import { techLabel } from "./techName";
 
 interface Props {
   storeId: number;
@@ -56,8 +57,8 @@ export function AssignTechSheet({ storeId, serviceId, clientName, mode, excludeS
   const confirmLabel = busy
     ? "WORKING…"
     : chosen
-      ? queueing ? `LINE UP BEHIND ${chosen.name.toUpperCase()}` : mode === "assign" ? `ASSIGN ${chosen.name.toUpperCase()}` : `MOVE TO ${chosen.name.toUpperCase()}`
-      : nextUp && assigning ? `ASSIGN NEXT UP · ${nextUp.name.toUpperCase()}` : "CHOOSE A TECHNICIAN";
+      ? queueing ? `LINE UP BEHIND ${techLabel(chosen.name, chosen.id).toUpperCase()}` : mode === "assign" ? `ASSIGN ${techLabel(chosen.name, chosen.id).toUpperCase()}` : `MOVE TO ${techLabel(chosen.name, chosen.id).toUpperCase()}`
+      : nextUp && assigning ? `ASSIGN NEXT UP · ${techLabel(nextUp.name, nextUp.id).toUpperCase()}` : "CHOOSE A TECHNICIAN";
   const canConfirm = !busy && (!!chosen || (assigning && !!nextUp));
 
   return (
@@ -86,7 +87,7 @@ export function AssignTechSheet({ storeId, serviceId, clientName, mode, excludeS
               <button key={t.id} type="button" disabled={cannotTake(t)} onClick={() => setSelected(isSel ? null : t.id)} data-testid={`nail-tech-${t.id}`}
                 className={`assign-create-item ${isSel ? "assign-create-item-sel" : ""}`} style={cannotTake(t) ? { opacity: 0.45 } : undefined}>
                 <span className="assign-create-dot" style={{ background: t.color || "#454c56" }} />
-                <span className="assign-create-name">{t.name}</span>
+                <span className="assign-create-name">{techLabel(t.name, t.id)}</span>
                 {assigning && nextUp?.id === t.id && <span className="assign-create-next">NEXT UP</span>}
                 <span className="assign-create-status">{statusOf(t)}</span>
                 {isSel && <Check size={15} style={{ color: "#0d9bd1" }} />}

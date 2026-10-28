@@ -31,6 +31,7 @@ import { useTipPresets } from "@/hooks/use-tip-presets";
 import { confirm } from "@/lib/confirm";
 import { CatalogPanel, type CatalogGroup, type CatalogService } from "./CatalogPanel";
 import { useManagerOverride } from "./useManagerOverride";
+import { techLabel } from "./techName";
 
 interface Props {
   ticket: BoardTicket;
@@ -303,7 +304,7 @@ export function CheckoutMode(p: Props) {
       ...(t.nail?.lines ?? []).map((l) => ({ label: l.label, price: l.price })),
       ...t.customLines.map((l) => ({ label: l.label, price: l.price, ...(l.isRetail ? { kind: "product" as const } : {}) })),
     ];
-    const heading = (t: BoardTicket) => (t.staff?.name ?? "No technician").toUpperCase();
+    const heading = (t: BoardTicket) => (t.staff ? techLabel(t.staff.name, t.staff.id) : "No technician").toUpperCase();
     // Each ticket's own share of the tip, as a line of its section (the whole tip stays in the totals).
     const tips = new Map(groupShares(paymentMethodSummary(tenders)).map((s) => [s.appointmentId, s.tip]));
     const tipLine = (t: BoardTicket): ReceiptLine[] => {
@@ -483,7 +484,7 @@ export function CheckoutMode(p: Props) {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { say(String(d.message || "Could not add it").toUpperCase(), "error"); return; }
-      say(`${label.toUpperCase()} · ${money(price)} ADDED TO ${(t.staff?.name ?? `#${ticketNo(t)}`).toUpperCase()}`, "success");
+      say(`${label.toUpperCase()} · ${money(price)} ADDED TO ${(t.staff ? techLabel(t.staff.name, t.staff.id) : `#${ticketNo(t)}`).toUpperCase()}`, "success");
       void refreshBoard();
     } catch {
       say("NO CONNECTION — IT WAS NOT ADDED", "error");
@@ -589,7 +590,7 @@ export function CheckoutMode(p: Props) {
       if (!d) return;
       if (d.added === "own_ticket") {
         setLinkedIds((cur) => (cur.includes(Number(d.appointmentId)) ? cur : [...cur, Number(d.appointmentId)]));
-        say(`${svc.name.toUpperCase()} → ${d.staffName ? String(d.staffName).toUpperCase() : "NEXT TECHNICIAN"} · SAME VISIT, PAID WITH THIS SALE`, "success");
+        say(`${svc.name.toUpperCase()} → ${d.staffName ? techLabel(String(d.staffName)).toUpperCase() : "NEXT TECHNICIAN"} · SAME VISIT, PAID WITH THIS SALE`, "success");
       } else {
         say(`${svc.name.toUpperCase()} ADDED TO THE TICKET · ${money(price)}`, "success");
       }
@@ -1212,12 +1213,12 @@ export function CheckoutMode(p: Props) {
         <div className="ticket-items">
           {linked.length === 0 ? (
             <>
-            {ticket.service.id != null && <div className="ticket-item"><div className="item-copy"><strong>{ticket.service.name}</strong><span>{ticket.staff?.name ?? "Service"}</span></div><div className="item-price"><strong>{money(ticket.service.price)}</strong></div><span /></div>}
+            {ticket.service.id != null && <div className="ticket-item"><div className="item-copy"><strong>{ticket.service.name}</strong><span>{ticket.staff ? techLabel(ticket.staff.name, ticket.staff.id) : "Service"}</span></div><div className="item-price"><strong>{money(ticket.service.price)}</strong></div><span /></div>}
             {ticket.addons.map((a) => <div className="ticket-item" key={`a${a.id}`}><div className="item-copy"><strong>+ {a.name}</strong><span>Add-on</span></div><div className="item-price"><strong>{money(a.price)}</strong></div>
               {!p.paid && !p.finalizing && ticket.id > 0 ? <button type="button" className="remove-item" onClick={() => void removeAddon(a)} aria-label={`Remove ${a.name}`}><X size={16} /></button> : <span />}</div>)}
             {(ticket.nail?.lines ?? []).map((l) => <div className="ticket-item" key={l.label}><div className="item-copy"><strong>{l.label}</strong><span>Nail option</span></div><div className="item-price"><strong>{money(l.price)}</strong></div><span /></div>)}
             {ticket.customLines.map((l, i) => <div className={`ticket-item ${splitIdx === i ? "ticket-item-selected" : ""}`} key={`c${i}`}
-              onClick={l.serviceId && !l.packageId && !p.paid && !p.finalizing ? () => setSplitIdx((cur) => (cur === i ? null : i)) : undefined}><div className="item-copy"><strong>{l.label}</strong><span>{l.serviceId ? (ticket.staff?.name ?? "Service") : "Custom charge"}</span></div><div className="item-price"><strong>{money(l.price)}</strong></div>
+              onClick={l.serviceId && !l.packageId && !p.paid && !p.finalizing ? () => setSplitIdx((cur) => (cur === i ? null : i)) : undefined}><div className="item-copy"><strong>{l.label}</strong><span>{l.serviceId ? (ticket.staff ? techLabel(ticket.staff.name, ticket.staff.id) : "Service") : "Custom charge"}</span></div><div className="item-price"><strong>{money(l.price)}</strong></div>
               {l.serviceId && !p.paid && !p.finalizing ? <button type="button" className="remove-item" onClick={() => void removeTicketService(ticket, i)} aria-label={`Remove ${l.label}`}><X size={16} /></button> : <span />}</div>)}
             {extras.map((e) => (
               <div className="ticket-item" key={e.id} data-testid={`nail-pay-extra-${e.kind}`}>
@@ -1240,7 +1241,7 @@ export function CheckoutMode(p: Props) {
               return (
                 <div className={`group-cart-wrap ${(own ? extraTo == null : extraTo === t.id) ? "group-cart-extras" : ""}`} key={`g${t.id}`}
                   onClick={p.paid || p.finalizing ? undefined : () => setExtraTo(own ? null : t.id)} data-testid={`nail-pay-cart-pick-${t.id}`}>
-                <div className="group-cart-tech">{t.staff?.name ?? "No technician"} · #{ticketNo(t)}
+                <div className="group-cart-tech">{t.staff ? techLabel(t.staff.name, t.staff.id) : "No technician"} · #{ticketNo(t)}
                   {(own ? extraTo == null : extraTo === t.id) && !p.paid && <span className="group-cart-extras-tag"> · EXTRAS GO HERE</span>}</div>
                 <div className="group-cart" data-testid={own ? "nail-pay-cart-own" : "nail-pay-linked"}>
                   <div className="group-cart-head">

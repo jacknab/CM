@@ -4,6 +4,7 @@ import { syncEngine } from "@/lib/sync-engine";
 import { loadOfflineBookingData } from "./nailApi";
 import { POS_GRID_SLOTS } from "@shared/posGrid";
 import { bookingTechs, openDaysOffline, openTimesOffline } from "./offlineBooking";
+import { techLabel } from "./techName";
 
 /** An open time: who takes it, and (two services nobody does both of) who takes the second service. A package
  *  (several services) also names who does each service, in visit order (`legs`). */
@@ -11,7 +12,7 @@ export interface BookingSlot { time: string; staffId: number; staffName: string;
 
 /** "Amy" / "Amy, then Lan" — who does the visit, in order. */
 export function slotStaffNames(slot: BookingSlot): string {
-  const names = slot.legs ? slot.legs.map((l) => l.staffName) : [slot.staffName, ...(slot.extraStaffName ? [slot.extraStaffName] : [])];
+  const names = (slot.legs ? slot.legs.map((l) => techLabel(l.staffName, l.staffId)) : [techLabel(slot.staffName, slot.staffId), ...(slot.extraStaffName ? [techLabel(slot.extraStaffName, slot.extraStaffId)] : [])]);
   return names.filter((n, i) => n && n !== names[i - 1]).join(", then ");
 }
 
@@ -147,7 +148,7 @@ export function BookingPanel(p: {
   }, [day, staffId, p.slug, visit]);
 
   const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { timeZone: p.timezone, hour: "numeric", minute: "2-digit" });
-  const techName = staffId ? techs?.find((t) => t.id === staffId)?.name ?? "Technician" : "Any technician";
+  const techName = staffId ? techLabel(techs?.find((t) => t.id === staffId)?.name ?? "Technician", staffId) : "Any technician";
   const pickTech = (id: number | null) => { setStaffId(id); setDayStarts([today]); setDay(null); p.onSlot(null); setView("day"); };
 
   const nav = (label: string, onClick: () => void, testId: string, icon: "back" | "more" = "back") => (

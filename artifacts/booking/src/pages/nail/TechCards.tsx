@@ -4,6 +4,7 @@ import { Clock } from "lucide-react";
 import { DEFAULT_SERVICE_MIN, estimateWait, formatWait, type WaitTech } from "@shared/waitEstimate";
 import type { BoardMarker, BoardTicket, SalonGlance, TechDayStats, TurnTech } from "./nailApi";
 import { Glance, type QueueView } from "./QueueTab";
+import { techLabel } from "./techName";
 
 type Status = "in-service" | "assigned" | "available" | "break" | "off";
 
@@ -212,7 +213,7 @@ export function TechCards({ techs, tickets, markers, glance, stats, loading, clo
                   } : undefined}>
                   <div className="q-booking-client q-booking-client-top q-unified-head">
                     {t.avatarUrl && <img className="q-tech-avatar" src={t.avatarUrl} alt="" />}
-                    <strong>{t.name}</strong>
+                    <strong>{techLabel(t.name, t.id)}</strong>
                     {status === "available" && nextUp && <em className="q-tech-next" data-testid={`nail-tech-next-${t.id}`}>{tx("next")}</em>}
                     <em className="q-unified-pill" data-kind={status}>{tx(PILL[status])}</em>
                   </div>

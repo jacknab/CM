@@ -6,6 +6,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchServiceTimes, type ServiceTimeRow } from "./nailApi";
 import { formatDuration } from "./ticketDraft";
+import { techLabel } from "./techName";
 
 const PERIODS = [{ days: 1, label: "Today" }, { days: 7, label: "7 days" }, { days: 30, label: "30 days" }, { days: 90, label: "90 days" }];
 
@@ -67,7 +68,7 @@ export function ServiceTimesSheet({ onClose }: { onClose: () => void }) {
           {isLoading ? <p className="assign-create-hint">Loading…</p>
             : error ? <p className="assign-create-error">{(error as Error).message || "Could not load service times"}</p>
             : data && (<>
-              <Table title="BY TECHNICIAN" rows={data.byTech} testId="nail-service-times-tech" />
+              <Table title="BY TECHNICIAN" rows={data.byTech.map((r) => ({ ...r, name: techLabel(r.name, r.id) }))} testId="nail-service-times-tech" />
               <Table title="BY SERVICE (tickets with one service)" rows={data.byService} testId="nail-service-times-service" />
             </>)}
         </div>

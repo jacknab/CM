@@ -12,6 +12,7 @@ import { findClientId } from "./clientLookup";
 import { QuickAreaCodes } from "./QuickAreaCodes";
 import { useQuickAreaCodes } from "./useQuickAreaCodes";
 import { isNativeApp } from "./useCardPayments";
+import { techLabel } from "./techName";
 
 /**
  * Front-desk Check-In — the Customers page (`/client-lookup`, full-screen phone pad → "Add Client Name" on-screen keyboard)
@@ -165,7 +166,7 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
     if (r.status !== "already") printCheckinTicket(r);
     const first = (r.client.name || "Client").trim().split(/\s+/)[0];
     const line = r.status === "already" ? `${first} is already checked in`
-      : r.status === "appointment" ? `${first} checked in${r.todayAppointment?.staffName ? ` · ${r.todayAppointment.staffName}` : ""}`
+      : r.status === "appointment" ? `${first} checked in${r.todayAppointment?.staffName ? ` · ${techLabel(r.todayAppointment.staffName)}` : ""}`
       : `${first} checked in · waiting for a technician`;
     setTimeout(() => onDone(line, r), 1400);
   };
@@ -355,7 +356,7 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
             <h1 className="text-3xl font-bold">{result.status === "already" ? "Already checked in" : "Checked in"}</h1>
             <p className="text-lg text-muted-foreground">
               {result.client.name}
-              {result.status === "appointment" && result.todayAppointment ? ` · ${result.todayAppointment.serviceName ?? "Appointment"}${result.todayAppointment.staffName ? ` with ${result.todayAppointment.staffName}` : ""}` : ""}
+              {result.status === "appointment" && result.todayAppointment ? ` · ${result.todayAppointment.serviceName ?? "Appointment"}${result.todayAppointment.staffName ? ` with ${techLabel(result.todayAppointment.staffName)}` : ""}` : ""}
               {result.status === "walkin" ? " · waiting for a technician" : ""}
             </p>
           </div>

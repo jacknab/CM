@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { buildTechSlipText, type TechSlip } from "@/lib/techSlip";
 import { ApiError, identifyTech, type TechSignIn } from "./nailApi";
+import { techLabel } from "./techName";
 
 type Period = "today" | "week" | "pay";
 const PERIODS: { key: Period; label: string }[] = [
@@ -78,7 +79,7 @@ export function TechSlipSheet({ staffId, staffName, timezone, onClose }: { staff
       <div className="assign-create-overlay" onClick={onClose} style={{ zIndex: 520 }} />
       <div className="assign-create-modal" role="dialog" aria-modal="true" aria-labelledby="nail-slip-title" data-testid="nail-tech-slip" style={{ zIndex: 521, maxHeight: "92vh", display: "flex", flexDirection: "column" }}>
         <div className="assign-create-header">
-          <div><h2 id="nail-slip-title">My Slip</h2><p>{staffName}</p></div>
+          <div><h2 id="nail-slip-title">My Slip</h2><p>{techLabel(staffName, staffId)}</p></div>
           <button type="button" className="assign-create-close" onClick={onClose} aria-label="Close">×</button>
         </div>
         <div style={{ display: "flex", gap: 8, padding: "0 22px 10px" }}>

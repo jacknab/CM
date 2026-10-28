@@ -7,6 +7,7 @@ import { ApiError, identifyTech, type TechSignIn } from "./nailApi";
 import { resumeOrSignIn } from "@/lib/resumeSignIn";
 import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
 import "./techGate.css";
+import { techLabel } from "./techName";
 
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
@@ -172,7 +173,7 @@ export function TechIdGate({ storeName, timezone, turnQueue, keypadVisible = tru
                 {turnQueue.map((t) => (
                   <li key={t.id} data-status={t.status} data-testid="tech-id-turn-row">
                     <span>{t.position ?? "–"}</span>
-                    <strong>{t.name}</strong>
+                    <strong>{techLabel(t.name, t.id)}</strong>
                     {/* How many turns they have, halves included: "1/2 turn", "1 turn", "1 1/2 turns". */}
                     <em data-testid="tech-id-turn-count">{formatTurns(t.turnUnits)} {t.turnUnits > 0 && t.turnUnits <= TURN_UNIT ? tx("turn") : tx("turns")}</em>
                   </li>

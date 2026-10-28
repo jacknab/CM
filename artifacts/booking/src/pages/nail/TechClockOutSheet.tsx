@@ -1,5 +1,6 @@
 import { LogOut, X } from "lucide-react";
 import type { TurnTech } from "./nailApi";
+import { techLabel } from "./techName";
 
 const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
 
@@ -20,7 +21,7 @@ export function TechClockOutSheet({ tech, busy, onClockOut, onClose }: { tech: T
             {tech.avatarUrl ? <img src={tech.avatarUrl} alt="" /> : initials(tech.name)}
           </span>
           <div className="tech-popup-name">
-            <strong>{tech.name}</strong>
+            <strong>{techLabel(tech.name, tech.id)}</strong>
             <span>{onBreak ? "On a break" : "Clocked in and free"}</span>
           </div>
           <span className="tech-pill" data-status={onBreak ? "break" : "available"}>{onBreak ? "ON BREAK" : "AVAILABLE"}</span>
@@ -29,7 +30,7 @@ export function TechClockOutSheet({ tech, busy, onClockOut, onClose }: { tech: T
           <LogOut size={30} />
           CLOCK OUT
         </button>
-        <p className="tech-popup-note">Takes {tech.name.split(" ")[0]} off the clock and out of the turn order.</p>
+        <p className="tech-popup-note">Takes {techLabel(tech.name, tech.id)} off the clock and out of the turn order.</p>
       </div>
     </>
   );

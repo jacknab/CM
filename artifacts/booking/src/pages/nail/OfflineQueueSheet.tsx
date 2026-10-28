@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { nailOffline, type LocalRecord, type Op } from "@/lib/nail-offline";
 import { syncEngine } from "@/lib/sync-engine";
+import { techLabel } from "./techName";
 
 const WHAT: Record<Op["type"], string> = {
   "client.create": "New client", "walkin.create": "Check-in", "ticket.create": "Ticket", "ticket.start": "Start service",
@@ -36,7 +37,7 @@ export function OfflineQueueSheet({ storeId, offline, onClose }: { storeId: numb
   const detail = (o: Op) => {
     const r = rec(o);
     if (o.type === "ticket.checkout" && r && (r.kind === "ticket" || r.kind === "patch") && r.paid) return ` · $${r.paid.cash.toFixed(2)}`;
-    if (o.type === "ticket.create" && r?.kind === "ticket" && r.staff) return ` · ${r.staff.name}${r.assignedOffline ? " (assigned offline)" : ""}`;
+    if (o.type === "ticket.create" && r?.kind === "ticket" && r.staff) return ` · ${techLabel(r.staff.name, r.staff.id)}${r.assignedOffline ? " (assigned offline)" : ""}`;
     return "";
   };
   const cash = ops.filter((o) => o.type === "ticket.checkout").reduce((sum, o) => { const r = rec(o); return sum + (r && (r.kind === "ticket" || r.kind === "patch") ? r.paid?.cash ?? 0 : 0); }, 0);

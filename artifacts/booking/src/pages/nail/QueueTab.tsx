@@ -4,10 +4,10 @@ import { DEFAULT_SERVICE_MIN, estimateWait, formatWait, type WaitTech } from "@s
 import type { BoardDayBooking, BoardMarker, BoardTicket, SalonGlance, TurnTech } from "./nailApi";
 import { EMPTY_ARRAY } from "@/lib/empty";
 import { bookingsForDetail, walkInState, type DetailKind } from "./boardView";
+import { techLabel } from "./techName";
 
 const money = (n: number) => `$${n.toFixed(n % 1 === 0 ? 0 : 2)}`;
 
-const firstName = (n: string | null | undefined) => (n ?? "").trim().split(/\s+/)[0] || "Guest";
 /** The client as the queue cards show them: first name and the first letter of the last name ("Toby B."). */
 const fullName = (n: string | null | undefined) => {
   const parts = (n ?? "").trim().split(/\s+/).filter(Boolean);
@@ -191,7 +191,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
       // and the technician the turn system handed them to.
       key: `m${m.id}`, state: "waiting", since: m.createdAt, name: fullName(m.clientName), ticketNumber: m.ticketNumber, service: "",
       sub: m.requestedCategory ? m.requestedCategory.toUpperCase() : "WALK-IN",
-      subKind: m.staffName ? "assigned" : "walkin", tech: m.staffName ?? null,
+      subKind: m.staffName ? "assigned" : "walkin", tech: m.staffName ? techLabel(m.staffName, m.staffId) : null,
       open: () => onMarker(m), testId: `nail-queue-wait-marker-${m.id}`, markerId: m.id, provisional: m.offline === true,
       remove: onMarkerRemove ? () => onMarkerRemove(m) : undefined,
     }));
@@ -207,7 +207,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
         return { groupId, endsAt, doneAt: t.doneAt ? +new Date(t.doneAt) : null,
           key: `t${t.id}`, state: "service", since: t.startedAt ?? t.date, name: fullName(t.client.name), ticketNumber: t.ticketNumber ?? null,
           // DONE: the service is finished and the technician is free; the visit waits to be paid.
-          service, sub: t.doneAt ? "DONE · READY TO PAY" : "IN SERVICE", subKind: "service", tech: t.staff?.name ?? null,
+          service, sub: t.doneAt ? "DONE · READY TO PAY" : "IN SERVICE", subKind: "service", tech: t.staff ? techLabel(t.staff.name, t.staff.id) : null,
           open: () => (onTicketTap ?? onTicket)(t), testId: `nail-queue-service-${t.id}`, provisional: t.offline === true,
         };
       }
@@ -217,8 +217,8 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
         // A visit's second ticket waits for its first to be done before anyone is given it; and nothing starts
         // for a client who is in a chair on another ticket.
         // A visit's tickets share one number (2026-10-28), so a second ticket says it waits for the visit's first service.
-        service, sub: t.ringingUp ? "RINGING UP" : blockedBy != null ? `IN CHAIR ON #${blockedBy}` : t.staff ? `WITH ${firstName(t.staff.name).toUpperCase()}` : t.waitsForTicket != null ? "AFTER FIRST SERVICE" : "UNASSIGNED",
-        subKind: t.staff ? "assigned" : "unassigned", tech: t.staff?.name ?? null,
+        service, sub: t.ringingUp ? "RINGING UP" : blockedBy != null ? `IN CHAIR ON #${blockedBy}` : t.staff ? `WITH ${techLabel(t.staff.name, t.staff.id).toUpperCase()}` : t.waitsForTicket != null ? "AFTER FIRST SERVICE" : "UNASSIGNED",
+        subKind: t.staff ? "assigned" : "unassigned", tech: t.staff ? techLabel(t.staff.name, t.staff.id) : null,
         provisional: t.offline === true, groupId, blockedBy,
         open: () => onTicket(t), assign: t.staff || blockedBy != null || t.ringingUp ? undefined : () => onAssignTicket(t),
         start: t.staff && onStartTicket && blockedBy == null ? () => onStartTicket(t) : undefined, testId: `nail-queue-wait-${t.id}`,
@@ -466,7 +466,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
               </div>
               <div className="q-unified-footer">
                 <div><small>Current Service</small><b>{booking.serviceName || "Not selected"}</b></div>
-                <div><small>Technician</small><b>{booking.staffName || (kind === "walk-ins" ? "Walk-in" : "Unassigned")}</b></div>
+                <div><small>Technician</small><b>{(booking.staffName ? techLabel(booking.staffName) : "") || (kind === "walk-ins" ? "Walk-in" : "Unassigned")}</b></div>
               </div>
             </div>
           ))}

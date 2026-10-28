@@ -1,5 +1,6 @@
 import { Clock, X } from "lucide-react";
 import type { TurnTech } from "./nailApi";
+import { techLabel } from "./techName";
 
 const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
 
@@ -19,7 +20,7 @@ export function TechClockInSheet({ tech, busy, onSetIn, onClose }: { tech: TurnT
             {tech.avatarUrl ? <img src={tech.avatarUrl} alt="" /> : initials(tech.name)}
           </span>
           <div className="tech-popup-name">
-            <strong>{tech.name}</strong>
+            <strong>{techLabel(tech.name, tech.id)}</strong>
             <span>Not in the turn order</span>
           </div>
           <span className="tech-pill" data-status="off">NOT CLOCKED IN</span>
@@ -28,7 +29,7 @@ export function TechClockInSheet({ tech, busy, onSetIn, onClose }: { tech: TurnT
           <Clock size={30} />
           SET IN / AVAILABLE
         </button>
-        <p className="tech-popup-note">Puts {tech.name.split(" ")[0]} on the clock and at the end of the turn order.</p>
+        <p className="tech-popup-note">Puts {techLabel(tech.name, tech.id)} on the clock and at the end of the turn order.</p>
       </div>
     </>
   );

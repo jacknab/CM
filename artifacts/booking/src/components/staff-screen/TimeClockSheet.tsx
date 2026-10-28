@@ -6,6 +6,7 @@ import { formatInTz } from "@/lib/timezone";
 import { ArrowLeft, X, Loader2, Check, Delete, PersonStanding } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLanguage } from "@/hooks/use-language";
+import { techLabel } from "@/pages/nail/techName";
 
 export function TimeClockSheet({ storeId, onClose }: { storeId: number; onClose: () => void }) {
   const { pick } = useLanguage();
@@ -224,7 +225,7 @@ export function TimeClockSheet({ storeId, onClose }: { storeId: number; onClose:
           <div className="w-full rounded-2xl bg-white border border-gray-200 shadow-sm py-6 px-4 mb-5 text-center">
             {staff ? (
               <>
-                <p className="text-lg font-bold text-gray-900">{staff.name}</p>
+                <p className="text-lg font-bold text-gray-900">{techLabel(staff.name, staff.id)}</p>
                 {successMsg ? (
                   <p className="text-3xl font-bold mt-2" style={{ color: clockedIn ? "#22c55e" : "#ef4444" }}>
                     {successMsg}

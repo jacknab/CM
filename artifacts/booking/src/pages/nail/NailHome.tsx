@@ -57,6 +57,7 @@ import { TimeClockSheet } from "@/components/staff-screen/TimeClockSheet";
 import { TurnPageModal } from "@/components/staff-screen/TurnPage";
 import { VoucherRedeemSheet } from "@/components/staff-screen/VoucherRedeemSheet";
 import { useStaffList } from "@/hooks/use-staff";
+import { setTechRoster, techLabel } from "./techName";
 import { getNowInTimezone } from "@/lib/timezone";
 import {
   ApiError, boardKey, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchCalendarBoardBookings, fetchClient, fetchUpcoming,
@@ -460,6 +461,15 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     networkMode: "always",
   });
   const techList = techFeed?.technicians ?? EMPTY_ARRAY;
+  // Tech names on /nail: first name, plus the last initial (or A, B) when two share it (techName.ts). Set during
+  // render so every part of the screen below uses it on this same render.
+  useMemo(() => {
+    const roster = new Map<number, string>();
+    for (const t of techList) roster.set(t.id, t.name);
+    for (const s of (turnStaffList ?? []) as Array<{ id: number; name: string }>) roster.set(s.id, s.name);
+    setTechRoster([...roster].map(([id, name]) => ({ id, name })));
+  }, [techList, turnStaffList]);
+  useEffect(() => () => setTechRoster(null), []);
   // Once the server itself says they're in, stop assuming.
   useEffect(() => {
     setAssumedIn((cur) => { const next = cur.filter((id) => techList.find((t) => t.id === id)?.clockedIn === false); return next.length === cur.length ? cur : next; });
@@ -980,7 +990,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       if (svc.id < 0) { const r = await addTicketPackage(t.id, -svc.id); note = `${r.name} added`; return; }
       for (let i = 0; i < times; i++) {
         const r = await addTicketService(t.id, svc.id);
-        note = r.added === "own_ticket" ? `${svc.name} → ${r.staffName ?? "the next technician"} · same visit, paid together` : `${svc.name} added`;
+        note = r.added === "own_ticket" ? `${svc.name} → ${r.staffName ? techLabel(r.staffName) : "the next technician"} · same visit, paid together` : `${svc.name} added`;
       }
     });
     if (note) say(note);
@@ -991,7 +1001,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       const other = tickets.find((x) => `visit-${x.id}` === line.key);
       if (!other) return;
       if (other.status === "started") { say("That service has started — change it from its own ticket"); return; }
-      if (!(await confirm(`Take ${other.service.name}${other.staff ? ` (${other.staff.name})` : ""} off this visit?`, { title: "Remove service", confirmLabel: "Remove", destructive: true }))) return;
+      if (!(await confirm(`Take ${other.service.name}${other.staff ? ` (${techLabel(other.staff.name, other.staff.id)})` : ""} off this visit?`, { title: "Remove service", confirmLabel: "Remove", destructive: true }))) return;
       await liveChange(t.id, () => cancelTicket(other.id, other.client.name));
       return;
     }
@@ -1042,7 +1052,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       const savedClient = client?.name;
       resetDraft();
       if (thenPay) { void openTicketForCheckout(t.id); return; }
-      say(r.staffName ? `Ticket #${r.ticketNumber ?? t.id} · ${r.staffName}` : `Ticket #${r.ticketNumber ?? t.id} is waiting · no technician free yet`);
+      say(r.staffName ? `Ticket #${r.ticketNumber ?? t.id} · ${techLabel(r.staffName)}` : `Ticket #${r.ticketNumber ?? t.id} is waiting · no technician free yet`);
       setStartedNotice(r.tickets.map((x) => ({ ticketNumber: r.ticketNumber ?? t.id, serviceName: x.serviceName, staffName: x.staffName, appointmentId: x.appointmentId, clientName: savedClient })));
     } catch (err: any) {
       toast({ title: "Couldn't save the ticket", description: err?.message, variant: "destructive" });
@@ -1280,7 +1290,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       if (shouldPay) void openTicketForCheckout(r.appointmentId);
       else setTab("queue");
       say(r.staffName
-        ? `Ticket #${r.ticketNumber} · ${r.staffName} · ${r.waiting ? `waiting, starts about ${new Date(r.startsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : r.status === "started" ? "in service" : "assigned"}`
+        ? `Ticket #${r.ticketNumber} · ${techLabel(r.staffName)} · ${r.waiting ? `waiting, starts about ${new Date(r.startsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : r.status === "started" ? "in service" : "assigned"}`
         : `Ticket #${r.ticketNumber} is waiting · no technician free yet`);
       if (shouldPay) resetDraft();
       // Show who each service went to for ten seconds before the keypad returns.
@@ -1324,7 +1334,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       return reassignTicket(v.id, v.staffId, who ? { name: who.name, color: who.color ?? null } : undefined, whose, v.reason);
     },
     onSuccess: (r, v) => {
-      invalidateBoard(); setAssigning(null); setAssignError(null); setAssignNeedsReason(false); say(`Moved to ${r.staffName}`);
+      invalidateBoard(); setAssigning(null); setAssignError(null); setAssignNeedsReason(false); say(`Moved to ${techLabel(r.staffName, r.staffId)}`);
       if (payAfterAssign.current === v.id) { payAfterAssign.current = null; void openTicketForCheckout(v.id); }
     },
     onError: (err: any) => {
@@ -1743,10 +1753,10 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     setAssumedIn((cur) => (cur.includes(tech.id) ? cur : [...cur, tech.id]));
     try {
       await clockInTech(storeId, tech.id);
-      say(`${tech.name} is in`);
+      say(`${techLabel(tech.name, tech.id)} is in`);
     } catch (err: any) {
       setAssumedIn((cur) => cur.filter((id) => id !== tech.id));
-      toast({ title: `Couldn't set ${tech.name.split(" ")[0]} in`, description: err?.message, variant: "destructive" });
+      toast({ title: `Couldn't set ${techLabel(tech.name, tech.id)} in`, description: err?.message, variant: "destructive" });
     } finally {
       invalidateBoard();
       queryClient.invalidateQueries({ queryKey: ["/api/turn/eligibility", storeId, "nail-techs"] });
@@ -1758,9 +1768,9 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     setAssumedIn((cur) => cur.filter((id) => id !== tech.id)); // a tech we just set in on this screen must not stay "in" once they are out
     try {
       await clockOutTech(storeId, tech.id);
-      say(`${tech.name} is out`);
+      say(`${techLabel(tech.name, tech.id)} is out`);
     } catch (err: any) {
-      toast({ title: `Couldn't clock ${tech.name.split(" ")[0]} out`, description: err?.message, variant: "destructive" });
+      toast({ title: `Couldn't clock ${techLabel(tech.name, tech.id)} out`, description: err?.message, variant: "destructive" });
     } finally {
       invalidateBoard();
       queryClient.invalidateQueries({ queryKey: ["/api/turn/eligibility", storeId, "nail-techs"] });
@@ -1856,7 +1866,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const visitLines: TicketLine[] = editing?.groupId != null
     ? tickets.filter((x) => x.id !== editing.id && x.groupId === editing.groupId).map((x) => ({
       key: `visit-${x.id}`, kind: "service" as const, label: x.service.name, duration: x.duration, price: x.total,
-      note: `${x.staff ? x.staff.name : "Next technician in turn"}${x.doneAt ? " · DONE" : x.status === "started" ? " · in service" : ""}`,
+      note: `${x.staff ? techLabel(x.staff.name, x.staff.id) : "Next technician in turn"}${x.doneAt ? " · DONE" : x.status === "started" ? " · in service" : ""}`,
       removable: isLive() && x.status !== "started" }))
     : [];
   const ticketActions = {
@@ -1872,7 +1882,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     },
     onCheckout: (t: BoardTicket) => { checkoutStart.current = null; void requestCheckout(t); },
     onDone: (t: BoardTicket) => act.mutate(() => markTicketDone(t.id), {
-      onSuccess: () => { setPopupId(null); say(`#${t.ticketNumber ?? t.id} done${t.staff ? ` · ${t.staff.name.split(" ")[0]} is free` : ""} · ready to pay`); },
+      onSuccess: () => { setPopupId(null); say(`#${t.ticketNumber ?? t.id} done${t.staff ? ` · ${techLabel(t.staff.name, t.staff.id)} is free` : ""} · ready to pay`); },
     }),
     onReassign: (t: BoardTicket) => { setAssignError(null); setAssigning({ mode: t.staff ? "reassign" : "assign", ticket: t }); },
     onEdit: startEdit,
@@ -2146,7 +2156,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
                 {t.ticketNumber > 0 ? `#${t.ticketNumber} · ` : ""}{t.serviceName}
                 <br />
                 <span style={{ fontWeight: 500, color: t.staffName ? "#7dd3fc" : "#cbd5e1" }}>
-                  {t.staffName ? `Assigned to ${t.staffName}` : "Waiting for the next free technician"}
+                  {t.staffName ? `Assigned to ${techLabel(t.staffName)}` : "Waiting for the next free technician"}
                 </span>
                 {t.staffName && (
                   <>
@@ -2175,7 +2185,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
             </p>
             <p style={{ margin: "14px 0 0", fontSize: 64, fontWeight: 800, lineHeight: 1.1, color: "#fff" }}>{waitingAssigned.clientName}</p>
             <p style={{ margin: "14px 0 0", fontSize: 34, fontWeight: 600, color: "#fff" }}>{waitingAssigned.serviceName}</p>
-            <p style={{ margin: "22px 0 0", fontSize: 40, fontWeight: 700, color: "#7dd3fc" }}>Assigned to {waitingAssigned.staffName}</p>
+            <p style={{ margin: "22px 0 0", fontSize: 40, fontWeight: 700, color: "#7dd3fc" }}>Assigned to {techLabel(waitingAssigned.staffName)}</p>
             <button type="button" disabled={waitingAssigned.started} data-testid="nail-waiting-assigned-start"
               onClick={() => {
                 act.mutate(() => startTicket(waitingAssigned.appointmentId, waitingAssigned.clientName));
@@ -2196,7 +2206,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
               {assignedNotice.ticketNumber != null && <span className="nl-assigned-ticket">#{assignedNotice.ticketNumber}</span>}
               <strong>{assignedNotice.clientName || "Client"}</strong>
             </div>
-            <p className="nl-assigned-tech">Assigned to <b>{assignedNotice.staffName}</b></p>
+            <p className="nl-assigned-tech">Assigned to <b>{techLabel(assignedNotice.staffName)}</b></p>
             <span className="nl-assigned-timer" aria-hidden />
           </div>
         </div>

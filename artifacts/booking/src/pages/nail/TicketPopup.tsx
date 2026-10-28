@@ -3,6 +3,7 @@ import { Ban, CalendarDays, Check, Clock, Hand, Phone, Play, Receipt, ShoppingBa
 import { useNailText } from "./i18n";
 import { formatDuration, formatElapsed } from "./ticketDraft";
 import { ticketNo, type BoardTicket } from "./nailApi";
+import { techLabel } from "./techName";
 
 interface Props {
   ticket: BoardTicket;
@@ -79,7 +80,7 @@ export function TicketPopup(p: Props) {
               <span><Phone size={13} /> {t.client.phone ?? "No phone"}</span>
             </div>
             <div className="checkin-status-pill" style={{ marginRight: 40 }} data-in-service={t.status === "started"}>
-              {t.status === "started" ? "IN SERVICE · UNPAID" : t.staff ? `WAITING · WITH ${t.staff.name.toUpperCase()}` : "WAITING · UNASSIGNED"}
+              {t.status === "started" ? "IN SERVICE · UNPAID" : t.staff ? `WAITING · WITH ${techLabel(t.staff.name, t.staff.id).toUpperCase()}` : "WAITING · UNASSIGNED"}
             </div>
           </div>
           <div className="checkin-modal-body">
@@ -96,12 +97,12 @@ export function TicketPopup(p: Props) {
             )}
             <div className="checkin-modal-detail">
               <UserRound size={18} />
-              <div><small>Technician</small><strong>{t.staff?.name ?? "Not assigned"}</strong></div>
+              <div><small>Technician</small><strong>{t.staff ? techLabel(t.staff.name, t.staff.id) : "Not assigned"}</strong></div>
             </div>
             {(p.visit?.length ?? 0) > 0 && (
               <div className="checkin-modal-lines" data-testid="nail-popup-visit">
                 {p.visit!.map((v) => (
-                  <div key={`v${v.id}`}><span>{v.service.name} · {v.staff?.name ?? "next technician"}{v.doneAt ? " · DONE" : v.status === "started" ? " · in service" : ""}</span><span>${v.total.toFixed(2)}</span></div>
+                  <div key={`v${v.id}`}><span>{v.service.name} · {v.staff ? techLabel(v.staff.name, v.staff.id) : "next technician"}{v.doneAt ? " · DONE" : v.status === "started" ? " · in service" : ""}</span><span>${v.total.toFixed(2)}</span></div>
                 ))}
               </div>
             )}

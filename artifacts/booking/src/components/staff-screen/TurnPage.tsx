@@ -15,6 +15,7 @@ import { useLanguage } from "@/hooks/use-language";
 import { queueTurnAdjust } from "@/pages/nail/nailApi";
 import { ManagerPinSheet } from "./ManagerPinSheet";
 import { TimeClockSheet } from "./TimeClockSheet";
+import { techLabel } from "@/pages/nail/techName";
 
 export type TurnTechnician = {
   id: number;
@@ -102,7 +103,7 @@ export function TurnTechCard({
           {isHold && (
             <span className="text-[11px] font-bold leading-none text-pink-500">{pick({ en: "HOLD", vi: "GIỮ CHỖ", es: "EN ESPERA", fr: "EN ATTENTE" })}</span>
           )}
-          <p className="truncate text-[15px] font-extrabold leading-tight text-slate-900">{row.name}</p>
+          <p className="truncate text-[15px] font-extrabold leading-tight text-slate-900">{techLabel(row.name, row.id)}</p>
           <span
             className="inline-block self-start rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white"
             style={{ backgroundColor: sc.badgeBg }}
@@ -555,26 +556,26 @@ export function TurnPageModal({
                       const turns = row.turnCount ?? 0;
                       const turnsText = formatTurns(Math.round(turns * TURN_UNIT));
                       const income = Math.round(row.dailyDoneIncome ?? 0);
-                      const prevName = index > 0 ? clockedInRows[index - 1].name : null;
+                      const prevName = index > 0 ? techLabel(clockedInRows[index - 1].name, clockedInRows[index - 1].id) : null;
 
                       let headline = "";
                       let detail = "";
 
                       if (index === 0) {
                         if (turns === 0) {
-                          headline = t.headline0First(row.name);
-                          detail = t.detail0First(row.name);
+                          headline = t.headline0First(techLabel(row.name, row.id));
+                          detail = t.detail0First(techLabel(row.name, row.id));
                         } else {
-                          headline = t.headline0Next(row.name);
-                          detail = t.detail0Next(row.name, turnsText, income, threshold);
+                          headline = t.headline0Next(techLabel(row.name, row.id));
+                          detail = t.detail0Next(techLabel(row.name, row.id), turnsText, income, threshold);
                         }
                       } else {
                         if (turns === 0) {
-                          headline = t.headlineNFirst(row.name, pos);
-                          detail = t.detailNFirst(row.name, prevName);
+                          headline = t.headlineNFirst(techLabel(row.name, row.id), pos);
+                          detail = t.detailNFirst(techLabel(row.name, row.id), prevName);
                         } else {
-                          headline = t.headlineNNext(row.name, pos);
-                          detail = t.detailNNext(row.name, turnsText, income, prevName);
+                          headline = t.headlineNNext(techLabel(row.name, row.id), pos);
+                          detail = t.detailNNext(techLabel(row.name, row.id), turnsText, income, prevName);
                         }
                       }
 
@@ -644,7 +645,7 @@ export function TurnPageModal({
                       {selectedTech.name.split(" ").map((p) => p[0] ?? "").join("").slice(0, 2).toUpperCase()}
                     </div>
                     <div>
-                      <h3 className="text-base font-bold text-slate-800">{selectedTech.name}</h3>
+                      <h3 className="text-base font-bold text-slate-800">{techLabel(selectedTech.name, selectedTech.id)}</h3>
                       <p className="text-xs text-slate-500">Turn breakdown</p>
                     </div>
                   </div>

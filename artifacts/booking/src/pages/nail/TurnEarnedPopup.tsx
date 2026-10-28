@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type { TurnEarned } from "./nailApi";
+import { techLabel } from "./techName";
 
 const RING = 2 * Math.PI * 54;
 
@@ -47,7 +48,7 @@ export function TurnEarnedPopup({ turns, onDone, seconds = 5 }: { turns: TurnEar
             const filled = Math.min(1, Math.max(0, earned));
             return (
               <div key={t.appointmentId} className="nl-turn-item" data-testid={`nail-turn-${t.appointmentId}`} data-earned={earned}>
-                {t.staffName && <p className="nl-turn-eyebrow">{t.staffName}</p>}
+                {t.staffName && <p className="nl-turn-eyebrow">{techLabel(t.staffName)}</p>}
                 <div className="nl-turn-ring">
                   <svg viewBox="0 0 120 120" aria-hidden>
                     <circle className="nl-turn-track" cx="60" cy="60" r="54" />

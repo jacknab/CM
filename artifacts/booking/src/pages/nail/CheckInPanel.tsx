@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { formatElapsed } from "./ticketDraft";
 import type { BoardMarker, BoardTicket } from "./nailApi";
+import { techLabel } from "./techName";
 
 const NO_COLOR = "#454c56";
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -44,11 +45,11 @@ export function CheckInPanel({ tickets, markers, onTicket, onMarker, onMarkerRem
       const since = t.checkedInAt ?? t.date;
       return {
         key: `t${t.id}`, since, name: firstName(t.client.name), color: t.staff?.color || NO_COLOR, testId: `nail-arrived-${t.id}`,
-        sub: `${t.staff?.name ?? "Unassigned"} · ${t.service.name}`, at: `@ ${fmtTime(since)}`, open: () => onTicket(t),
+        sub: `${t.staff ? techLabel(t.staff.name, t.staff.id) : "Unassigned"} · ${t.service.name}`, at: `@ ${fmtTime(since)}`, open: () => onTicket(t),
         // A tech with no color configured still needs to read as "assigned", not fall back to the
         // same gray a true walk-in/unassigned row uses — the chip is the reliable signal, the
         // border color is just a secondary accent.
-        chip: t.staff ? { label: `WITH ${firstName(t.staff.name).toUpperCase()}`, kind: "assigned" } : { label: "UNASSIGNED", kind: "unassigned" },
+        chip: t.staff ? { label: `WITH ${techLabel(t.staff.name, t.staff.id).toUpperCase()}`, kind: "assigned" } : { label: "UNASSIGNED", kind: "unassigned" },
       };
     });
     return [...fromMarkers, ...fromTickets].sort((a, b) => +new Date(a.since) - +new Date(b.since));
