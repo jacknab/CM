@@ -20938,6 +20938,24 @@ or
       const staffId = req.body.staffId ? Number(req.body.staffId) : null;
       if (!storeId || !staffId) return res.status(400).json({ error: "storeId and staffId required" });
 
+      // A technician with a started ticket that isn't paid can't clock out (owner, 2026-10-29): the ticket has to be
+      // settled or moved to another technician first, so it isn't left with nobody on it. A clock-out a tablet took
+      // while offline (it says when, `at`) already happened and is recorded as it is.
+      if (req.body?.at == null) {
+        const { rows: open } = await pool.query(
+          `SELECT ticket_number, id FROM appointments WHERE store_id = $1 AND staff_id = $2 AND status = 'started' ORDER BY started_at`,
+          [storeId, staffId],
+        );
+        if (open.length) {
+          const nums = open.map((r: any) => `#${r.ticket_number ?? r.id}`);
+          const list = nums.length === 1 ? `Ticket ${nums[0]} is` : `Tickets ${nums.slice(0, -1).join(", ")} and ${nums[nums.length - 1]} are`;
+          return res.status(409).json({
+            code: "OPEN_TICKETS", tickets: open.map((r: any) => Number(r.id)),
+            error: `${list} still open. Take payment or move it to another technician before clocking out.`,
+          });
+        }
+      }
+
       const [tzRowOut] = await db.select({ timezone: locations.timezone }).from(locations).where(eq(locations.id, storeId)).limit(1);
       const storeTzOut = (tzRowOut as any)?.timezone ?? "UTC";
       const localNowOut = toZonedTime(new Date(), storeTzOut);

@@ -16,6 +16,7 @@ import {
   History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,7 @@ function DashCard({
 // ── Timeclock widget ──────────────────────────────────────────────────────────
 
 function TimeclockWidget({ staffId, storeId }: { staffId: number; storeId: number }) {
+  const { toast } = useToast();
   const [toggling, setToggling] = useState(false);
   const { data: status, refetch } = useQuery<{ clockedIn: boolean; record: { clockIn: string } | null }>({
     queryKey: ["/api/timeclock/status", staffId, storeId],
@@ -84,12 +86,17 @@ function TimeclockWidget({ staffId, storeId }: { staffId: number; storeId: numbe
     setToggling(true);
     try {
       const url = clockedIn ? "/api/timeclock/clock-out" : "/api/timeclock/clock-in";
-      await fetch(url, {
+      const res = await fetch(url, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storeId, staffId }),
       });
+      // e.g. a started ticket that isn't paid yet blocks clocking out: say why.
+      if (!res.ok && !(clockedIn && res.status === 404)) {
+        const data = await res.json().catch(() => null);
+        toast({ title: clockedIn ? "Couldn't clock out" : "Couldn't clock in", description: data?.error || data?.message, variant: "destructive" });
+      }
       await refetch();
     } finally {
       setToggling(false);
