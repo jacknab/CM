@@ -71,4 +71,12 @@ describe("why a waiting ticket hasn't started", () => {
     boardWaitReasons([], [m], stats([{ staffId: 1, clockedInAt: at(-60) }]), new Set([1]));
     expect(m.wait).toMatchObject({ code: "unassigned_free", since: at(1) });
   });
+
+  it("in the chair: past the service's time without DONE, and DONE but not paid", () => {
+    const over = ticket(1, { status: "started", startedAt: at(0), duration: 45, staff: lan });
+    const done = ticket(2, { status: "started", startedAt: at(0), doneAt: at(50), staff: kim });
+    boardWaitReasons([over, done], [], stats([{ staffId: 1, clockedInAt: at(-60) }]), new Set([1, 2]));
+    expect(over.wait).toMatchObject({ code: "service_over", since: at(45), orangeMin: 15, redMin: 30 });
+    expect(done.wait).toMatchObject({ code: "done_unpaid", since: at(50), orangeMin: 10, redMin: 20 });
+  });
 });

@@ -21,7 +21,7 @@ export const boardKey = (storeId: number) => ["/api/nail/board", storeId] as con
 
 /** Why a waiting ticket / check-in hasn't started (server's boardWaitReasons): orange `orangeMin` after `since`, red `redMin`. */
 export interface BoardWait {
-  code: "tech_free" | "clocked_out" | "running_over" | "not_saved" | "unassigned_free" | "long_wait";
+  code: "tech_free" | "clocked_out" | "running_over" | "not_saved" | "unassigned_free" | "long_wait" | "service_over" | "done_unpaid";
   since: string;
   orangeMin: number;
   redMin: number;

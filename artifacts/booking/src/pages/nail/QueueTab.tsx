@@ -212,6 +212,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
           // DONE: the service is finished and the technician is free; the visit waits to be paid.
           service, sub: t.doneAt ? "DONE · READY TO PAY" : "IN SERVICE", subKind: "service", tech: t.staff ? techLabel(t.staff.name, t.staff.id) : null,
           open: () => (onTicketTap ?? onTicket)(t), testId: `nail-queue-service-${t.id}`, provisional: t.offline === true,
+          wait: t.wait,
         };
       }
       const blockedBy = t.client.id != null && inChairByClient.has(t.client.id) ? inChairByClient.get(t.client.id)! : null;
@@ -242,7 +243,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
   }, [tickets, markers, onMarker, onMarkerRemove, onTicket, onTicketTap, onAssignTicket, onStartTicket]);
   // Urgent cards first (owner, 2026-10-29): red, then orange, the longest wait first. Every other card keeps its place
   // in ticket-number order, and an urgent card goes back there once it's started.
-  const urgencyOf = (r: ClientRow) => (r.state === "waiting" ? waitUrgency(r.wait, now) : null);
+  const urgencyOf = (r: ClientRow) => waitUrgency(r.wait, now);
   const boardRows = useMemo(() => {
     const urgent = clientRows.filter((r) => urgencyOf(r) != null)
       .sort((a, b) => urgencyRank(urgencyOf(a)) - urgencyRank(urgencyOf(b)) || Date.parse(a.wait!.since) - Date.parse(b.wait!.since));

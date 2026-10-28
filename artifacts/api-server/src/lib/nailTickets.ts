@@ -1482,9 +1482,12 @@ export interface BoardTicket {
  *   not_saved       being rung up and never saved
  *   unassigned_free nobody has it although a technician is free
  *   long_wait       nobody has it and every technician is busy (a normal wait, flagged only when long)
+ * In the chair (so a client doesn't leave without paying):
+ *   service_over    started, DONE not pressed, past the service's scheduled time (since = start + its minutes)
+ *   done_unpaid     DONE pressed but not paid (since = DONE)
  */
 export interface BoardWait {
-  code: "tech_free" | "clocked_out" | "running_over" | "not_saved" | "unassigned_free" | "long_wait";
+  code: "tech_free" | "clocked_out" | "running_over" | "not_saved" | "unassigned_free" | "long_wait" | "service_over" | "done_unpaid";
   since: string;
   orangeMin: number;
   redMin: number;
@@ -1493,6 +1496,7 @@ export interface BoardWait {
 /** The minutes for each reason. One place, so the salon's thresholds are easy to change. */
 export const WAIT_LIMITS: Record<BoardWait["code"], [number, number]> = {
   tech_free: [5, 10], clocked_out: [0, 0], running_over: [10, 20], not_saved: [5, 10], unassigned_free: [5, 10], long_wait: [30, 45],
+  service_over: [15, 30], done_unpaid: [10, 20],
 };
 /** Same padding the queue's chair countdown uses: a service is "over" this long after its booked time. */
 const SERVICE_PADDING_MIN = 15;
@@ -1631,6 +1635,11 @@ export function boardWaitReasons(tickets: BoardTicket[], markers: BoardWaitingMa
     : wait("long_wait", arrived);
 
   for (const t of tickets) {
+    if (t.status === "started") {
+      t.wait = t.doneAt ? wait("done_unpaid", ms(t.doneAt))
+        : wait("service_over", ms(t.startedAt) + (Number(t.duration) || 0) * 60_000);
+      continue;
+    }
     if (t.status !== "confirmed" || t.waitsForTicket != null) continue;
     if (t.client.id != null && clientInChair.has(t.client.id)) continue;
     const arrived = ms(t.checkedInAt ?? t.date);
