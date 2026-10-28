@@ -6,20 +6,6 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
-## 2026-10-29 — Day Close counts the whole salon's cash, not one drawer's
-
-- **Where:** `artifacts/api-server/src/routes.ts`, `app.post(api.cashDrawer.close.path, …)` (the Day Close reconcile, "Reconcile on
-  the server from the shift's actual payments" — `shiftReport.cashDrawer.expectedCash`).
-- **Symptom:** a drawer's expected cash at Day Close is every cash payment the salon took since that drawer's session
-  opened. No payment records which drawer or POS station took it (no `drawer_id` / `register_id` on payments or
-  appointments). With ONE drawer per salon — every salon today — the numbers are right. Once a salon gives a second
-  POS station its own drawer (now possible: Settings › Cash Drawers, one drawer per station, 2026-10-29), each
-  drawer's Day Close would expect the other drawer's cash too.
-- **Fix when needed:** record the station/drawer on each cash tender at checkout (`/api/nail/checkout` already receives
-  `registerId`; the calendar PATCH sends it too) and filter the shift report by it.
-- **Why not now:** not needed until a salon runs two drawers; it changes the payment records and the Day Close report,
-  so it should be its own reviewed change.
-
 ## 2026-10-28 — Worked through (fixed today)
 
 - **Catalog store checks — fixed and live (deployed 2026-10-28):**

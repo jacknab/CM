@@ -9,6 +9,7 @@ import { commissionBasis, commissionAmount } from "@shared/commissionBasis";
 import { r2 } from "@shared/nailCheckout";
 import { getLocalDateString, getLocalDayUtcRange } from "./businessDay";
 import { allocateTenders } from "./tenderAllocation";
+import { cashBelongsToDrawer, primaryDrawerId } from "./stationDrawer";
 
 const num = (v: unknown): number => {
   const n = Number(v);
@@ -164,7 +165,7 @@ export async function computeZReport(opts: ZReportOptions) {
       tipAmount: appointments.tipAmount, discountAmount: appointments.discountAmount,
       servicePrice: appointments.servicePrice, serviceRevenue: appointments.serviceRevenue,
       productRevenue: appointments.productRevenue, commissionRate: appointments.commissionRate,
-      paymentMethod: appointments.paymentMethod,
+      paymentMethod: appointments.paymentMethod, cashDrawerId: appointments.cashDrawerId,
     }).from(appointments).where(and(eq(appointments.storeId, storeId), gte(sql<Date>`COALESCE(${appointments.completedAt}, ${appointments.date})`, rangeStart), lt(sql<Date>`COALESCE(${appointments.completedAt}, ${appointments.date})`, rangeEnd))),
     db.select().from(staff).where(eq(staff.storeId, storeId)),
     db.select({ id: services.id, price: services.price, categoryId: services.categoryId }).from(services).where(eq(services.storeId, storeId)),
@@ -309,7 +310,13 @@ export async function computeZReport(opts: ZReportOptions) {
   const cashIn = r2(actionsToday.filter((a) => a.type === "cash_in" || a.type === "paid_in").reduce((s, a) => s + num(a.amount), 0));
   const cashOut = r2(actionsToday.filter((a) => a.type === "cash_out" || a.type === "paid_out").reduce((s, a) => s + num(a.amount), 0));
   const openingCash = num(session.openingBalance);
-  const cashSalesToday = r2(today.paymentBreakdown["cash"] || 0);
+  // The drawer's own cash (2026-10-29): a salon with a drawer per POS station counts each drawer's sales at its own
+  // Day Close; cash no station claimed goes to the main drawer. Everything else on the report is salon-wide.
+  const sessionDrawerId = (session as any).drawerId ?? null;
+  const primaryId = sessionDrawerId != null ? await primaryDrawerId(storeId) : null;
+  const cashSalesToday = sessionDrawerId == null ? r2(today.paymentBreakdown["cash"] || 0)
+    : r2(todayRows.filter((a) => cashBelongsToDrawer(a.cashDrawerId, sessionDrawerId, primaryId))
+      .reduce((sum, a) => sum + (tendersById.get(a.id)?.cash ?? 0), 0));
   const expectedCash = r2(openingCash + cashSalesToday - cashRefundsToday + cashIn - cashOut);
   const actualCashCounted = session.closingBalance != null ? num(session.closingBalance) : null;
   const variance = actualCashCounted != null ? r2(actualCashCounted - expectedCash) : null;

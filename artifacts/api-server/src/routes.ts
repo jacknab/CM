@@ -41,7 +41,7 @@ import { requireNotSuspended } from "./middleware/suspension-middleware";
 import { PERMISSIONS } from "@shared/permissions";
 import { z } from "zod";
 import { db, pool, waitForDb } from "./db";
-import { stationDrawer, NO_CASH_DRAWER_MESSAGE } from "./lib/stationDrawer";
+import { stationDrawer, NO_CASH_DRAWER_MESSAGE, primaryDrawerId, cashBelongsToDrawer } from "./lib/stationDrawer";
 import { users } from "@shared/models/auth";
 import { eq, and, or, ne, desc, sql, count, gte, lte, asc, isNull, isNotNull, inArray, notInArray, like } from "drizzle-orm";
 import { resetTurnSystemForStore } from "./services/auto-clock-out";
@@ -6489,11 +6489,15 @@ If you have any questions, please contact your administrator.
       });
       // A POS station (it says which) with no cash drawer can't take cash (owner, 2026-10-29). Callers that aren't a
       // station — the Certxa Pro app's Mark as paid — don't send registerId and aren't affected.
+      // The drawer is also recorded on the sale, so its Day Close counts this cash (2026-10-29).
+      let saleDrawerId: number | null = null;
       if (req.body?.registerId !== undefined && /cash/i.test(String((input as any).paymentMethod ?? ""))) {
         const stationStoreId = await resolveSessionStoreId(req);
-        if (stationStoreId && !(await stationDrawer(stationStoreId, Number(req.body.registerId) || 0))) {
+        const drawer = stationStoreId ? await stationDrawer(stationStoreId, Number(req.body.registerId) || 0) : null;
+        if (stationStoreId && !drawer) {
           return res.status(409).json({ code: "NO_CASH_DRAWER", message: NO_CASH_DRAWER_MESSAGE });
         }
+        saleDrawerId = drawer?.id ?? null;
       }
       // Commission snapshot fields are server-managed (set once at first
       // completion by storage.updateAppointment) — never trust a client value.
@@ -6617,6 +6621,7 @@ If you have any questions, please contact your administrator.
       }
 
       const appointment = await storage.updateAppointment(appointmentId, input);
+      if (appointment && saleDrawerId != null) await db.update(appointments).set({ cashDrawerId: saleDrawerId }).where(eq(appointments.id, appointmentId));
       if (!appointment) return res.status(404).json({ message: "Appointment not found" });
 
       // Log appointment lifecycle events (fire-and-forget)
@@ -7798,6 +7803,7 @@ If you have any questions, please contact your administrator.
         tipAmount: appointments.tipAmount,
         discountAmount: appointments.discountAmount,
         paymentMethod: appointments.paymentMethod,
+        cashDrawerId: appointments.cashDrawerId,
       }).from(appointments).where(and(
         eq(appointments.storeId, session.storeId),
         eq(appointments.status, "completed"),
@@ -7836,7 +7842,12 @@ If you have any questions, please contact your administrator.
       }
 
       const openingBal = Number(session.openingBalance) || 0;
-      const cashFromSales = paymentBreakdown["cash"] || 0;
+      // This drawer's own cash (a drawer per POS station, 2026-10-29); unclaimed cash goes to the main drawer.
+      const sessionDrawerId = (session as any).drawerId ?? null;
+      const primaryId = sessionDrawerId != null ? await primaryDrawerId(session.storeId) : null;
+      const cashFromSales = sessionDrawerId == null ? paymentBreakdown["cash"] || 0
+        : Math.round(completedAppointments.filter((a) => cashBelongsToDrawer(a.cashDrawerId, sessionDrawerId, primaryId))
+          .reduce((sum, a) => sum + (tendersById.get(a.id)?.cash ?? 0), 0) * 100) / 100;
       const expectedCash = openingBal + cashFromSales + cashIn - cashOut;
 
       return res.json({
@@ -20521,8 +20532,9 @@ or
       }).safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: "Invalid checkout" });
       // Cash on a station with no drawer is refused — except cash already collected offline, which must be recorded.
-      if (parsed.data.registerId !== undefined && !parsed.data.collectedAt && parsed.data.tenders.some((t) => t.method === "cash" && t.amount > 0)
-        && !(await stationDrawer(storeId, parsed.data.registerId))) {
+      const takesCash = parsed.data.tenders.some((t) => t.method === "cash" && t.amount > 0);
+      const saleDrawer = parsed.data.registerId !== undefined && takesCash ? await stationDrawer(storeId, parsed.data.registerId) : null;
+      if (parsed.data.registerId !== undefined && !parsed.data.collectedAt && takesCash && !saleDrawer) {
         return res.status(409).json({ code: "NO_CASH_DRAWER", message: NO_CASH_DRAWER_MESSAGE });
       }
       // A card that is only recorded (no charge behind it) is accepted only from a salon whose CARD button
@@ -20547,6 +20559,10 @@ or
         services: taxStore?.taxServicesTaxable === true,
         products: taxStore?.taxProductsTaxable !== false,
       });
+      // The station's drawer took this cash: its Day Close counts it (2026-10-29).
+      if (saleDrawer && outcome.appointmentIds.length) {
+        await pool.query(`UPDATE appointments SET cash_drawer_id = $1 WHERE store_id = $2 AND id = ANY($3::int[])`, [saleDrawer.id, storeId, outcome.appointmentIds]);
+      }
       for (const apt of outcome.newlyCompleted) {
         const completed = await storage.getAppointment(Number(apt.id));
         if (completed) await recordCommissionAccrual(completed);
@@ -26664,6 +26680,22 @@ or
     }
     return null;
   };
+  /** Has the drawer taken cash, or had cash paid in/out, since its last Day Close (its open session)? */
+  const drawerUsedThisShift = async (storeId: number, drawerId: number): Promise<boolean> => {
+    const session = await storage.getOpenCashDrawerSession(storeId, drawerId);
+    if (!session) return false;
+    if ((session.actions ?? []).some((a: any) => a.type !== "open_drawer")) return true;
+    const primary = await primaryDrawerId(storeId);
+    const { rows } = await pool.query(
+      `SELECT 1 FROM appointments
+        WHERE store_id = $1 AND status = 'completed' AND payment_method ILIKE '%cash%'
+          AND COALESCE(completed_at, date) >= $2
+          AND (cash_drawer_id = $3 OR (cash_drawer_id IS NULL AND $3 = $4::int))
+        LIMIT 1`,
+      [storeId, session.openedAt, drawerId, primary],
+    );
+    return rows.length > 0;
+  };
   const drawerAmount = (v: unknown): string | null => {
     const n = Number(v);
     return v === "" || v == null || !Number.isFinite(n) || n < 0 || n > 100000 ? null : n.toFixed(2);
@@ -26720,6 +26752,17 @@ or
       if (sortOrder != null)  patch.sortOrder  = Number(sortOrder);
       if (isActive != null)   patch.isActive   = Boolean(isActive);
       if (!Object.keys(patch).length) return res.status(400).json({ message: "Nothing to update" });
+      // A drawer moves to another POS station only after its Day Close (owner, 2026-10-29): once it has taken cash
+      // (or had cash paid in/out) since it was last closed, that shift's count belongs to the station it's on.
+      if ("registerId" in patch || "mainStation" in patch) {
+        const [cur] = await db.select().from(cashDrawers).where(and(eq(cashDrawers.id, id), eq(cashDrawers.storeId, storeId))).limit(1);
+        if (!cur) return res.status(404).json({ message: "Cash drawer not found" });
+        const moving = (patch.registerId !== undefined && (patch.registerId ?? null) !== (cur.registerId ?? null))
+          || (patch.mainStation !== undefined && patch.mainStation !== cur.mainStation);
+        if (moving && await drawerUsedThisShift(storeId, id)) {
+          return res.status(409).json({ code: "DRAWER_IN_USE", message: `${cur.name} has taken cash since its last Day Close. Run its Day Close first, then change its POS station.` });
+        }
+      }
       const clash = await drawerStationCheck(storeId, id, patch.registerId ?? null, patch.mainStation === true);
       if (clash) return res.status(409).json({ message: clash });
       const [updated] = await db
