@@ -7,8 +7,8 @@ import { ReportFrame, Kpi, useReportRange, useMoneyReport, money, pctChange, dow
  * The Money reports (owner, 2026-10-29), each its own page, from /api/reports/money/* (server: lib/reports/money.ts).
  */
 const BAR = "#1f6fe0";
-const METHOD_COLORS: Record<string, string> = { cash: "#16a34a", card: "#1f6fe0", m2: "#7c3aed", tap: "#0891b2", gift: "#ea580c" };
-const methodName = (m: string) => ({ cash: "Cash", card: "Card", m2: "Card reader (M2)", tap: "Tap to Pay", gift: "Gift card" } as Record<string, string>)[m] ?? m.charAt(0).toUpperCase() + m.slice(1);
+const METHOD_COLORS: Record<string, string> = { cash: "#16a34a", card: "#1f6fe0", m2: "#7c3aed", tap: "#0891b2", tap_to_pay: "#0891b2", gift: "#ea580c" };
+const methodName = (m: string) => ({ cash: "Cash", card: "Card", m2: "Card reader (M2)", tap: "Tap to Pay", tap_to_pay: "Tap to Pay", gift: "Gift card" } as Record<string, string>)[m] ?? m.charAt(0).toUpperCase() + m.slice(1);
 const bucketLabel = (label: string, by: "day" | "month") => (by === "month" ? format(parseISO(`${label}-01`), "MMM yyyy") : format(parseISO(label), "MMM d"));
 
 function Chart({ title, data, keys, by }: { title: string; data: any[]; keys: { key: string; name: string; color: string }[]; by: "day" | "month" }) {
