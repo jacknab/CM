@@ -454,6 +454,13 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const [urgentTick, setUrgentTick] = useState(() => Date.now());
   useEffect(() => { const iv = setInterval(() => setUrgentTick(Date.now()), 30_000); return () => clearInterval(iv); }, []);
   const anyRedTicket = [...tickets, ...markers].some((x) => waitUrgency(x.wait, urgentTick + clockOffsetMs) === "red");
+  // While the alarm is on, look at the board every 10 seconds, so it stops within seconds of the last red ticket being
+  // dealt with — whichever screen or station dealt with it (2026-10-29: it took about a minute to stop).
+  useEffect(() => {
+    if (!anyRedTicket) return;
+    const iv = setInterval(() => { void queryClient.invalidateQueries({ queryKey: boardKey(storeId) }); }, 10_000);
+    return () => clearInterval(iv);
+  }, [anyRedTicket, storeId, queryClient]);
   const waitingCount = tickets.filter((t) => t.status === "confirmed").length + markers.length;
 
   // Technician status for the Techs tab — same TURN feed as the assign popup, kept live by the socket.
