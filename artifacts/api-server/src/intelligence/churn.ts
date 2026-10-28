@@ -1,5 +1,6 @@
 import { ClientCadenceData } from "./cadence";
 import { ClientLtvData } from "./ltv";
+import { clientStatusOf } from "@shared/clientStatus";
 
 export interface ChurnRiskData {
   customerId: number;
@@ -86,7 +87,9 @@ export function computeChurnRisk(
   else if (score >= 25) label = "medium";
   else label = "low";
 
-  const isAtRisk = score >= 50;
+  // "At risk" is the one rule used everywhere (shared/clientStatus.ts, 2026-10-29): visited, not back for 60–119 days.
+  // The score above still ranks how worried to be; it no longer decides the flag.
+  const isAtRisk = clientStatusOf({ isVip: false, visits: ltv.totalVisits, daysSinceLastVisit: cadence.daysSinceLast }) === "at_risk";
 
   return {
     customerId: cadence.customerId,

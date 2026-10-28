@@ -22,7 +22,7 @@ Still open — needs the owner:
 - **Open cash-drawer shifts:** store 38 since 10-03, stores 39 and 40 since 10-09 — someone there runs Day Close.
 - **AI Receptionist safety gate**: logs "Live calls not enabled for this salon — run preflight first … strict mode is
   OFF — allowing call" for some stores.
-- **The Intelligence dashboard has its own "at risk" rule** (routes/intelligence.ts), separate from shared/clientStatus.ts.
+- ~~Intelligence dashboard "at risk" rule~~ — now the shared rule (intelligence/churn.ts), 2026-10-29. Unpaid tickets left as is and Autumn strict mode left off (owner, 2026-10-29).
 
 ## 2026-10-28 — Worked through (fixed today)
 
