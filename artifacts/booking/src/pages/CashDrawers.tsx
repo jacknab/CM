@@ -2,7 +2,6 @@ import { useState } from "react";
 import { DollarSign, Trash2, Loader2, Pencil, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useInSettingsShell } from "@/lib/settings-shell-context";
 import { useToast } from "@/hooks/use-toast";
@@ -14,14 +13,15 @@ import {
   useUpdateCashDrawer,
   useDeleteCashDrawer,
 } from "@/hooks/use-cash-drawers";
-import type { CashDrawer } from "@shared/schema";
+import { Checkbox } from "@/components/ui/checkbox";
+import type { CashDrawerWithStations } from "@/hooks/use-cash-drawers";
 
 /**
- * Settings › Cash Drawers (owner, 2026-10-29). A salon sets up each cash drawer with its starting cash (set once; the
- * drawer is counted at Day Close) and assigns it to ONE POS station. A POS station without a drawer can't take cash.
- * A salon with no station rows has one built-in station, "Main POS station" (the drawer's mainStation flag).
+ * Settings › Cash Drawers (owner, 2026-10-29). A salon sets up its cash drawer with its starting cash (set once; the
+ * drawer is counted at Day Close) and ticks the POS stations that use it — several stations can share one drawer,
+ * each station uses one. A POS station without a drawer can't take cash. A salon with no station rows has one
+ * built-in station, "Main POS station" (the drawer's mainStation flag). Stations change only after the drawer's Day Close.
  */
-const NONE = "none";
 const MAIN = "main";
 
 type StationOption = { value: string; label: string };
@@ -32,13 +32,39 @@ const serverMessage = (err: unknown, fallback: string) => {
   try { return JSON.parse(raw.slice(raw.indexOf(":") + 1)).message || fallback; } catch { return fallback; }
 };
 
-const stationValue = (d: Pick<CashDrawer, "registerId" | "mainStation">) =>
-  d.registerId ? String(d.registerId) : d.mainStation ? MAIN : NONE;
-const stationPatch = (value: string) =>
-  value === MAIN ? { mainStation: true } : value === NONE ? { registerId: null, mainStation: false } : { registerId: Number(value) };
+/** The stations a drawer is on, as option values. */
+const stationValues = (d: Pick<CashDrawerWithStations, "registerIds" | "mainStation">) =>
+  [...d.registerIds.map(String), ...(d.mainStation ? [MAIN] : [])];
+/** The ticked option values → what the server takes. */
+const stationsPatch = (values: string[]) => ({
+  registerIds: values.filter((v) => v !== MAIN).map(Number),
+  mainStation: values.includes(MAIN),
+});
+
+/** A tick box per POS station; one used by another drawer can't be ticked. */
+function StationPicks({ stations, value, takenBy, onChange, testId }: {
+  stations: StationOption[]; value: string[]; takenBy: Map<string, string>; onChange: (next: string[]) => void; testId: string;
+}) {
+  return (
+    <div className="flex flex-col gap-2" data-testid={testId}>
+      {stations.map((s) => {
+        const other = takenBy.get(s.value);
+        const taken = !!other && !value.includes(s.value);
+        const on = value.includes(s.value);
+        return (
+          <label key={s.value} className={`flex items-center gap-2 text-sm ${taken ? "text-slate-400" : "text-slate-700"}`}>
+            <Checkbox checked={on} disabled={taken} data-testid={`${testId}-${s.value}`}
+              onCheckedChange={(c) => onChange(c ? [...value, s.value] : value.filter((v) => v !== s.value))} />
+            {s.label}{taken ? ` · uses ${other}` : ""}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
 const validAmount = (v: string) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) >= 0;
 
-function DrawerRow({ drawer, stations, takenBy }: { drawer: CashDrawer; stations: StationOption[]; takenBy: Map<string, string> }) {
+function DrawerRow({ drawer, stations, takenBy }: { drawer: CashDrawerWithStations; stations: StationOption[]; takenBy: Map<string, string> }) {
   const { toast } = useToast();
   const updateDrawer = useUpdateCashDrawer();
   const deleteDrawer = useDeleteCashDrawer();
@@ -67,20 +93,20 @@ function DrawerRow({ drawer, stations, takenBy }: { drawer: CashDrawer; stations
     });
   };
 
-  const handleStation = (value: string) => {
-    updateDrawer.mutate({ id: drawer.id, ...stationPatch(value) }, {
-      onError: (err) => toast({ title: serverMessage(err, "Couldn't assign the POS station"), variant: "destructive" }),
+  const handleStations = (values: string[]) => {
+    updateDrawer.mutate({ id: drawer.id, ...stationsPatch(values) }, {
+      onError: (err) => toast({ title: serverMessage(err, "Couldn't change the POS stations"), variant: "destructive" }),
     });
   };
 
   const handleDelete = () => {
-    if (!window.confirm(`Remove "${drawer.name}"? Its POS station won't be able to take cash until it has a drawer again.`)) return;
+    if (!window.confirm(`Remove "${drawer.name}"? Its POS stations won't be able to take cash until they have a drawer again.`)) return;
     deleteDrawer.mutate(drawer.id, {
       onError: (err) => toast({ title: serverMessage(err, "Couldn't remove the drawer"), variant: "destructive" }),
     });
   };
 
-  const current = stationValue(drawer);
+  const current = stationValues(drawer);
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4" data-testid={`cash-drawer-${drawer.id}`}>
       <div className="flex items-center justify-between gap-2">
@@ -119,22 +145,8 @@ function DrawerRow({ drawer, stations, takenBy }: { drawer: CashDrawer; stations
           </div>
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1.5">POS station</label>
-          <Select value={current} onValueChange={handleStation}>
-            <SelectTrigger data-testid={`cash-drawer-station-${drawer.id}`}><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>Not assigned</SelectItem>
-              {stations.map((s) => {
-                const other = takenBy.get(s.value);
-                const taken = !!other && s.value !== current;
-                return (
-                  <SelectItem key={s.value} value={s.value} disabled={taken}>
-                    {taken ? `${s.label} · has ${other}` : s.label}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
+          <label className="block text-xs font-medium text-slate-500 mb-1.5">POS stations that use it</label>
+          <StationPicks stations={stations} value={current} takenBy={takenBy} onChange={handleStations} testId={`cash-drawer-stations-${drawer.id}`} />
         </div>
       </div>
     </div>
@@ -150,7 +162,7 @@ export default function CashDrawers() {
   const createDrawer = useCreateCashDrawer();
   const [newName, setNewName] = useState("");
   const [newAmount, setNewAmount] = useState("");
-  const [newStation, setNewStation] = useState(NONE);
+  const [newStations, setNewStations] = useState<string[]>([]);
 
   const drawerList = allDrawers ?? [];
   const activeStations = (allRegisters ?? []).filter((r) => r.isActive);
@@ -159,15 +171,15 @@ export default function CashDrawers() {
     ? activeStations.map((r) => ({ value: String(r.id), label: r.name }))
     : [{ value: MAIN, label: "Main POS station" }];
   const takenBy = new Map<string, string>();
-  for (const d of drawerList) { const v = stationValue(d); if (v !== NONE) takenBy.set(v, d.name); }
+  for (const d of drawerList) for (const v of stationValues(d)) takenBy.set(v, d.name);
 
   const canAdd = !!newName.trim() && validAmount(newAmount) && !createDrawer.isPending;
   const handleAdd = () => {
     if (!canAdd) return;
     createDrawer.mutate(
-      { name: newName.trim(), targetFloat: Number(newAmount).toFixed(2), ...(newStation === NONE ? {} : stationPatch(newStation)) } as any,
+      { name: newName.trim(), targetFloat: Number(newAmount).toFixed(2), ...stationsPatch(newStations) },
       {
-        onSuccess: () => { setNewName(""); setNewAmount(""); setNewStation(NONE); },
+        onSuccess: () => { setNewName(""); setNewAmount(""); setNewStations([]); },
         onError: (err) => toast({ title: serverMessage(err, "Couldn't add the cash drawer"), variant: "destructive" }),
       },
     );
@@ -193,9 +205,9 @@ export default function CashDrawers() {
         ) : (
           <div className="space-y-6">
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-sm text-slate-600" data-testid="cash-drawers-intro">
-              A POS station needs a cash drawer to take cash. Enter the cash the drawer starts each day with, then
-              assign the drawer to its POS station. Each drawer goes with one POS station. The drawer is counted at
-              Day Close.
+              A POS station needs a cash drawer to take cash. Enter the cash the drawer starts each day with, then tick
+              the POS stations that use it — several stations can share one drawer. The drawer is counted at Day
+              Close, and its stations can be changed after its Day Close.
             </div>
 
             {drawerList.map((d) => (
@@ -218,18 +230,8 @@ export default function CashDrawers() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1.5">POS station</label>
-                  <Select value={newStation} onValueChange={setNewStation}>
-                    <SelectTrigger data-testid="cash-drawer-new-station"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NONE}>Not assigned</SelectItem>
-                      {stations.map((s) => (
-                        <SelectItem key={s.value} value={s.value} disabled={takenBy.has(s.value)}>
-                          {takenBy.has(s.value) ? `${s.label} · has ${takenBy.get(s.value)}` : s.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">POS stations that use it</label>
+                  <StationPicks stations={stations} value={newStations} takenBy={takenBy} onChange={setNewStations} testId="cash-drawer-new-stations" />
                 </div>
               </div>
               <div className="flex justify-end">

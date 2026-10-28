@@ -2851,6 +2851,8 @@ export const registers = pgTable("registers", {
   // Same device-pairing code as locations.activationCode, but for an explicitly-added station
   // beyond the implicit default (POS #2, #3, …) — see lib/activationCodes.ts.
   activationCode: text("activation_code").unique(),
+  // The cash drawer this station uses (migration 0268): several stations may share one drawer; none = no cash here.
+  cashDrawerId: integer("cash_drawer_id").references((): AnyPgColumn => cashDrawers.id, { onDelete: "set null" }),
 });
 export type Register = typeof registers.$inferSelect;
 export type InsertRegister = typeof registers.$inferInsert;
@@ -2899,6 +2901,8 @@ export const cashDrawers = pgTable("cash_drawers", {
   id:          serial("id").primaryKey(),
   storeId:     integer("store_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
   name:        text("name").notNull(),
+  // No longer used (2026-10-29, migration 0268): a station names its drawer (registers.cash_drawer_id) so one drawer
+  // can serve several stations.
   registerId:  integer("register_id").references(() => registers.id, { onDelete: "set null" }),
   // The salon's built-in station (a salon with no station rows runs its POS as station 0). One drawer per station:
   // unique register_id, and one main_station drawer per salon (migration 0264).

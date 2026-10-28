@@ -26647,39 +26647,56 @@ or
   // Optional named cash drawers. A store with zero rows here has every
   // cash-drawer session implicitly share drawerId null — see shared/schema.ts's
   // `cashDrawers` table.
+  // === CASH DRAWERS (owner, 2026-10-29) ─────────────────────────────────────────
+  // A drawer: a name, its starting cash (set once — counted at Day Close, not every morning) and the POS stations that
+  // use it. Several stations may share one drawer (salons use one); each station uses one drawer (registers.cash_drawer_id).
+  // A salon with no station rows has one built-in station: its drawer is marked mainStation. A station without a
+  // drawer can't take cash (lib/stationDrawer.ts).
+  const drawerStations = async (storeId: number) => {
+    const rows = await db.select({ id: registers.id, cashDrawerId: registers.cashDrawerId }).from(registers).where(eq(registers.storeId, storeId));
+    const by = new Map<number, number[]>();
+    for (const r of rows) if (r.cashDrawerId != null) by.set(r.cashDrawerId, [...(by.get(r.cashDrawerId) ?? []), r.id]);
+    return by;
+  };
+
   app.get("/api/cash-drawers", isAuthenticated, async (req, res) => {
     try {
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(404).json({ message: "Store not found" });
-      const rows = await db
-        .select()
-        .from(cashDrawers)
-        .where(eq(cashDrawers.storeId, storeId))
-        .orderBy(cashDrawers.sortOrder, cashDrawers.id);
-      return res.json(rows);
+      const rows = await db.select().from(cashDrawers).where(eq(cashDrawers.storeId, storeId)).orderBy(cashDrawers.sortOrder, cashDrawers.id);
+      const by = await drawerStations(storeId);
+      return res.json(rows.map((d) => ({ ...d, registerIds: by.get(d.id) ?? [] })));
     } catch (err) {
       console.error("[GET /api/cash-drawers]", err);
       return res.status(500).json({ message: "Failed to fetch cash drawers" });
     }
   });
 
-  // A drawer (owner, 2026-10-29): a name, its starting cash (set once — counted at Day Close, not every morning) and the
-  // ONE POS station it's assigned to. A station without a drawer can't take cash (lib/stationDrawer.ts).
-  const drawerStationCheck = async (storeId: number, id: number | null, registerId: unknown, mainStation: unknown): Promise<string | null> => {
-    if (registerId != null) {
-      const rid = Number(registerId);
-      const [reg] = await db.select({ id: registers.id }).from(registers).where(and(eq(registers.id, rid), eq(registers.storeId, storeId))).limit(1);
-      if (!reg) return "That POS station isn't in this salon.";
-      const [other] = await db.select({ id: cashDrawers.id, name: cashDrawers.name }).from(cashDrawers).where(eq(cashDrawers.registerId, rid)).limit(1);
-      if (other && other.id !== id) return `That POS station already has a cash drawer (${other.name}).`;
+  /** The stations asked for are this salon's, and none uses another drawer. Null = fine. */
+  const drawerStationCheck = async (storeId: number, id: number | null, registerIds: number[], mainStation: boolean): Promise<string | null> => {
+    if (registerIds.length) {
+      const regs = await db.select({ id: registers.id, name: registers.name, cashDrawerId: registers.cashDrawerId }).from(registers)
+        .where(and(eq(registers.storeId, storeId), inArray(registers.id, registerIds)));
+      if (regs.length !== new Set(registerIds).size) return "That POS station isn't in this salon.";
+      const taken = regs.find((r) => r.cashDrawerId != null && r.cashDrawerId !== id);
+      if (taken) {
+        const [other] = await db.select({ name: cashDrawers.name }).from(cashDrawers).where(eq(cashDrawers.id, taken.cashDrawerId!)).limit(1);
+        return `${taken.name} already uses ${other?.name ?? "another cash drawer"}.`;
+      }
     }
-    if (mainStation === true) {
+    if (mainStation) {
       const [other] = await db.select({ id: cashDrawers.id, name: cashDrawers.name }).from(cashDrawers)
         .where(and(eq(cashDrawers.storeId, storeId), eq(cashDrawers.mainStation, true))).limit(1);
-      if (other && other.id !== id) return `The main POS station already has a cash drawer (${other.name}).`;
+      if (other && other.id !== id) return `The main POS station already uses ${other.name}.`;
     }
     return null;
   };
+  const drawerAmount = (v: unknown): string | null => {
+    const n = Number(v);
+    return v === "" || v == null || !Number.isFinite(n) || n < 0 || n > 100000 ? null : n.toFixed(2);
+  };
+  const stationIdsOf = (v: unknown): number[] | null =>
+    Array.isArray(v) && v.every((x) => Number.isSafeInteger(Number(x)) && Number(x) > 0) ? [...new Set(v.map(Number))] : null;
   /** Has the drawer taken cash, or had cash paid in/out, since its last Day Close (its open session)? */
   const drawerUsedThisShift = async (storeId: number, drawerId: number): Promise<boolean> => {
     const session = await storage.getOpenCashDrawerSession(storeId, drawerId);
@@ -26696,34 +26713,25 @@ or
     );
     return rows.length > 0;
   };
-  const drawerAmount = (v: unknown): string | null => {
-    const n = Number(v);
-    return v === "" || v == null || !Number.isFinite(n) || n < 0 || n > 100000 ? null : n.toFixed(2);
-  };
 
   app.post("/api/cash-drawers", isAuthenticated, async (req, res) => {
     try {
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(404).json({ message: "Store not found" });
-      const { name, registerId, targetFloat, sortOrder } = req.body;
-      const mainStation = req.body?.mainStation === true && registerId == null;
+      const { name, targetFloat, sortOrder } = req.body;
+      const registerIds = stationIdsOf(req.body?.registerIds ?? []);
+      if (!registerIds) return res.status(400).json({ message: "Invalid POS stations" });
+      const mainStation = req.body?.mainStation === true;
       if (!String(name ?? "").trim()) return res.status(400).json({ message: "Give the drawer a name." });
       const amount = drawerAmount(targetFloat);
       if (amount == null) return res.status(400).json({ message: "Enter the drawer's starting cash." });
-      const clash = await drawerStationCheck(storeId, null, registerId, mainStation);
+      const clash = await drawerStationCheck(storeId, null, registerIds, mainStation);
       if (clash) return res.status(409).json({ message: clash });
-      const [created] = await db
-        .insert(cashDrawers)
-        .values({
-          storeId,
-          name: String(name).trim(),
-          registerId: registerId != null ? Number(registerId) : null,
-          mainStation,
-          targetFloat: amount,
-          sortOrder: sortOrder ?? 0,
-        })
+      const [created] = await db.insert(cashDrawers)
+        .values({ storeId, name: String(name).trim(), mainStation, targetFloat: amount, sortOrder: sortOrder ?? 0 })
         .returning();
-      return res.status(201).json(created);
+      if (registerIds.length) await db.update(registers).set({ cashDrawerId: created.id }).where(and(eq(registers.storeId, storeId), inArray(registers.id, registerIds)));
+      return res.status(201).json({ ...created, registerIds });
     } catch (err) {
       console.error("[POST /api/cash-drawers]", err);
       return res.status(500).json({ message: "Failed to create cash drawer" });
@@ -26735,15 +26743,15 @@ or
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(404).json({ message: "Store not found" });
       const id = parseInt(String(req.params.id), 10);
-      const { name, registerId, targetFloat, sortOrder, isActive, mainStation } = req.body;
+      const [cur] = await db.select().from(cashDrawers).where(and(eq(cashDrawers.id, id), eq(cashDrawers.storeId, storeId))).limit(1);
+      if (!cur) return res.status(404).json({ message: "Cash drawer not found" });
+      const { name, targetFloat, sortOrder, isActive, mainStation } = req.body;
       const patch: Record<string, any> = {};
       if (name != null) {
         if (!String(name).trim()) return res.status(400).json({ message: "Give the drawer a name." });
         patch.name = String(name).trim();
       }
-      // Assigning a station: a named station, the built-in main station, or none. Never both.
-      if (registerId !== undefined) { patch.registerId = registerId != null ? Number(registerId) : null; if (registerId != null) patch.mainStation = false; }
-      if (mainStation !== undefined) { patch.mainStation = mainStation === true; if (mainStation === true) patch.registerId = null; }
+      if (mainStation !== undefined) patch.mainStation = mainStation === true;
       if (targetFloat !== undefined) {
         const amount = drawerAmount(targetFloat);
         if (amount == null) return res.status(400).json({ message: "Enter the drawer's starting cash." });
@@ -26751,27 +26759,30 @@ or
       }
       if (sortOrder != null)  patch.sortOrder  = Number(sortOrder);
       if (isActive != null)   patch.isActive   = Boolean(isActive);
-      if (!Object.keys(patch).length) return res.status(400).json({ message: "Nothing to update" });
-      // A drawer moves to another POS station only after its Day Close (owner, 2026-10-29): once it has taken cash
-      // (or had cash paid in/out) since it was last closed, that shift's count belongs to the station it's on.
-      if ("registerId" in patch || "mainStation" in patch) {
-        const [cur] = await db.select().from(cashDrawers).where(and(eq(cashDrawers.id, id), eq(cashDrawers.storeId, storeId))).limit(1);
-        if (!cur) return res.status(404).json({ message: "Cash drawer not found" });
-        const moving = (patch.registerId !== undefined && (patch.registerId ?? null) !== (cur.registerId ?? null))
-          || (patch.mainStation !== undefined && patch.mainStation !== cur.mainStation);
-        if (moving && await drawerUsedThisShift(storeId, id)) {
-          return res.status(409).json({ code: "DRAWER_IN_USE", message: `${cur.name} has taken cash since its last Day Close. Run its Day Close first, then change its POS station.` });
-        }
+      // The stations that use it: the full new set, when given.
+      const registerIds = req.body?.registerIds === undefined ? null : stationIdsOf(req.body.registerIds);
+      if (req.body?.registerIds !== undefined && !registerIds) return res.status(400).json({ message: "Invalid POS stations" });
+      if (!Object.keys(patch).length && !registerIds) return res.status(400).json({ message: "Nothing to update" });
+
+      const before = (await drawerStations(storeId)).get(id) ?? [];
+      const stationsChange = (registerIds != null && (registerIds.length !== before.length || registerIds.some((r) => !before.includes(r))))
+        || (patch.mainStation !== undefined && patch.mainStation !== cur.mainStation);
+      // A drawer's POS stations change only after its Day Close (owner, 2026-10-29): once it has taken cash (or had cash
+      // paid in/out) since it was last closed, that shift's count belongs to the stations it's on.
+      if (stationsChange && await drawerUsedThisShift(storeId, id)) {
+        return res.status(409).json({ code: "DRAWER_IN_USE", message: `${cur.name} has taken cash since its last Day Close. Run its Day Close first, then change its POS stations.` });
       }
-      const clash = await drawerStationCheck(storeId, id, patch.registerId ?? null, patch.mainStation === true);
+      const clash = await drawerStationCheck(storeId, id, registerIds ?? [], patch.mainStation === true);
       if (clash) return res.status(409).json({ message: clash });
-      const [updated] = await db
-        .update(cashDrawers)
-        .set(patch)
-        .where(and(eq(cashDrawers.id, id), eq(cashDrawers.storeId, storeId)))
-        .returning();
-      if (!updated) return res.status(404).json({ message: "Cash drawer not found" });
-      return res.json(updated);
+
+      const updated = Object.keys(patch).length
+        ? (await db.update(cashDrawers).set(patch).where(and(eq(cashDrawers.id, id), eq(cashDrawers.storeId, storeId))).returning())[0]
+        : cur;
+      if (registerIds != null) {
+        await db.update(registers).set({ cashDrawerId: null }).where(and(eq(registers.storeId, storeId), eq(registers.cashDrawerId, id)));
+        if (registerIds.length) await db.update(registers).set({ cashDrawerId: id }).where(and(eq(registers.storeId, storeId), inArray(registers.id, registerIds)));
+      }
+      return res.json({ ...updated, registerIds: registerIds ?? before });
     } catch (err) {
       console.error("[PUT /api/cash-drawers/:id]", err);
       return res.status(500).json({ message: "Failed to update cash drawer" });

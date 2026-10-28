@@ -24,8 +24,11 @@ export function setLocalDrawerId(id: number): void {
 
 export interface CashDrawerOption { id: number; name: string; }
 
+/** A drawer with the POS stations that use it (several may share one drawer). */
+export type CashDrawerWithStations = CashDrawer & { registerIds: number[] };
+
 export function useCashDrawers(storeId: number | undefined) {
-  return useQuery<CashDrawer[]>({
+  return useQuery<CashDrawerWithStations[]>({
     queryKey: [`/api/cash-drawers?storeId=${storeId}`],
     enabled: !!storeId,
     queryFn: async () => {
@@ -41,7 +44,7 @@ export function useCreateCashDrawer() {
   const queryClient = useQueryClient();
   const { selectedStore } = useSelectedStore();
   return useMutation({
-    mutationFn: async (data: { name: string; registerId?: number | null; mainStation?: boolean; targetFloat: string }) => {
+    mutationFn: async (data: { name: string; registerIds?: number[]; mainStation?: boolean; targetFloat: string }) => {
       const res = await apiRequest("POST", "/api/cash-drawers", data);
       return res.json();
     },
@@ -56,7 +59,7 @@ export function useUpdateCashDrawer() {
   const queryClient = useQueryClient();
   const { selectedStore } = useSelectedStore();
   return useMutation({
-    mutationFn: async ({ id, ...patch }: { id: number; name?: string; registerId?: number | null; mainStation?: boolean; targetFloat?: string | null; isActive?: boolean; sortOrder?: number }) => {
+    mutationFn: async ({ id, ...patch }: { id: number; name?: string; registerIds?: number[]; mainStation?: boolean; targetFloat?: string | null; isActive?: boolean; sortOrder?: number }) => {
       const res = await apiRequest("PUT", `/api/cash-drawers/${id}`, patch);
       return res.json();
     },
