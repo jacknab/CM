@@ -472,6 +472,8 @@ type TurnTechDashboard = {
   currentStatus: "available" | "busy" | "on_break";
   turnPosition?: number | null;
   turnCount?: number;
+  /** When the tech entered their current state (server, staff.availability_since). */
+  stateSince?: string | null;
 };
 
 type StaffStatusEntry = {
@@ -482,6 +484,7 @@ type StaffStatusEntry = {
   turnPosition?: number | null;
   turnCount?: number;
   apptRef: { startedAt: string | null; duration: number } | null;
+  stateSince?: string | null;
 };
 
 function formatTimerSecs(totalSecs: number): string {
@@ -497,9 +500,11 @@ function formatTimerSecs(totalSecs: number): string {
 function TeamMemberTimer({
   apptRef,
   status,
+  since,
 }: {
   apptRef: StaffStatusEntry["apptRef"];
   status: StaffStatusEntry["currentStatus"];
+  since?: string | null;
 }) {
   const mountRef = useRef(Date.now());
   const [, setTick] = useState(0);
@@ -537,8 +542,10 @@ function TeamMemberTimer({
     );
   }
 
-  // Available / Break: count UP from 1s. Orange when elapsed > ticket duration.
-  const elapsed = Math.max(1, Math.floor((now - mountRef.current) / 1000));
+  // Available / Break: count UP from when the server says the tech entered this state (so every tech has their
+  // own time and a refresh doesn't reset it); page-open time only when the server doesn't know.
+  const base = since ? new Date(since).getTime() : mountRef.current;
+  const elapsed = Math.max(1, Math.floor((now - base) / 1000));
   const durSecs = apptRef ? (apptRef.duration ?? 0) * 60 : null;
   const over = durSecs !== null && durSecs > 0 && elapsed > durSecs;
   return (
@@ -648,6 +655,7 @@ function TeamMemberStatus({
             turnPosition: t.turnPosition,
             turnCount: t.turnCount,
             apptRef: a ? { startedAt: a.startedAt, duration: a.duration } : null,
+            stateSince: t.stateSince ?? null,
           };
         });
     }
@@ -730,7 +738,7 @@ function TeamMemberStatus({
               {/* Status badge + timer stacked on the right */}
               <div className="flex flex-col items-end gap-1 shrink-0">
                 <StatusBadge status={entry.currentStatus} />
-                <TeamMemberTimer apptRef={entry.apptRef} status={entry.currentStatus} />
+                <TeamMemberTimer apptRef={entry.apptRef} status={entry.currentStatus} since={entry.stateSince} />
               </div>
             </div>
           ))}
@@ -759,8 +767,8 @@ function TodayFinancials({ data, isLoading }: { data: DashboardData | null; isLo
   const fin = data?.todayFinancials;
   const { pick } = useLanguage();
   const t = buildT(pick);
-  // Payment methods as the checkout records them (split payments already split by the server).
-  const methodLabel: Record<string, string> = { cash: t.payCash, card: t.payCard, m2: "Card reader", tap: "Mobile Payment", tap_to_pay: "Mobile Payment", gift: t.payGiftCard };
+  // Payment methods (split payments already split by the server; card reader and Mobile Payment count as Card).
+  const methodLabel: Record<string, string> = { cash: t.payCash, card: t.payCard, gift: t.payGiftCard };
   const line = (label: string, value: number, strong = false) => (
     <div key={label} className="flex items-center justify-between py-2 border-b border-border/50">
       <span className={cn("text-sm", strong ? "font-semibold text-foreground" : "text-muted-foreground")}>{label}</span>
@@ -850,105 +858,6 @@ function TeamPerformanceToday({ team, isLoading }: { team: DashboardData["teamPe
   );
 }
 
-// ── Reminders & Alerts ────────────────────────────────────────────────────────
-function RemindersAlerts({ items, isLoading }: { items: DashboardData["needsAttention"]; isLoading: boolean }) {
-  const { pick } = useLanguage();
-  const t = buildT(pick);
-  const alertIcon = (priority: string) => {
-    if (priority === "high") return { Icon: AlertCircle, color: "text-red-600", bg: "bg-red-100" };
-    if (priority === "medium") return { Icon: AlertTriangle, color: "text-amber-600", bg: "bg-amber-100" };
-    return { Icon: Bell, color: "text-blue-600", bg: "bg-blue-100" };
-  };
-  const linkConfig: Record<string, string> = {
-    lost_clients: "/reports/lapsed-clients",
-    no_shows: "/calendar",
-    waiting: "/calendar",
-  };
-
-  return (
-    <Card className="overflow-hidden h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <h2 className="text-sm font-bold text-foreground">{t.remindersAlerts}</h2>
-        <Link to="/calendar" className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-0.5">
-          {t.viewAll} <ChevronRight className="w-3 h-3" />
-        </Link>
-      </div>
-      {isLoading ? (
-        <div className="p-4 space-y-2">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
-      ) : items.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-10 text-center px-4">
-          <CheckCircle2 className="w-8 h-8 text-emerald-500/50 mb-2" />
-          <p className="text-sm text-muted-foreground">{t.allClear}</p>
-        </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto divide-y divide-border max-h-64">
-          {items.map((item, i) => {
-            const { Icon, color, bg } = alertIcon(item.priority);
-            return (
-              <Link
-                key={i}
-                to={linkConfig[item.type] || "/calendar"}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors group"
-              >
-                <div className={cn("w-7 h-7 rounded-full flex items-center justify-center shrink-0", bg)}>
-                  <Icon className={cn("w-3.5 h-3.5", color)} />
-                </div>
-                <p className="flex-1 text-xs text-foreground leading-snug">{item.label}</p>
-                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-muted-foreground" />
-              </Link>
-            );
-          })}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-// ── AI Receptionist ───────────────────────────────────────────────────────────
-function AiReceptionistCard({ ai, isLoading }: { ai: DashboardData["aiReceptionist"] | undefined; isLoading: boolean }) {
-  const { pick } = useLanguage();
-  const t = buildT(pick);
-  return (
-    <Card className="overflow-hidden h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center">
-            <Sparkles className="w-3.5 h-3.5 text-violet-600" />
-          </div>
-          <h2 className="text-sm font-bold text-foreground">{t.aiReceptionist}</h2>
-        </div>
-        <LiveBadge />
-      </div>
-      {isLoading ? (
-        <div className="p-4 space-y-3"><Skeleton className="h-8" /><Skeleton className="h-16" /></div>
-      ) : (
-        <div className="flex-1 p-4 flex flex-col gap-4">
-          <p className="text-xs text-muted-foreground">{t.aiLiveDesc}</p>
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { key: "calls",  label: t.todaysCalls, value: ai?.todayCalls ?? 0 },
-              { key: "booked", label: t.booked,      value: ai?.booked ?? 0 },
-              { key: "missed", label: t.missed,      value: ai?.missed ?? 0 },
-            ].map((stat) => (
-              <div key={stat.key} className="rounded-xl bg-muted/40 border border-border/50 p-3 text-center">
-                <p className="text-xl font-bold text-foreground"><AnimatedNumber value={stat.value} /></p>
-                <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{stat.label}</p>
-              </div>
-            ))}
-          </div>
-          <Link
-            to="/manage/ai-receptionist"
-            className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted/40 transition-colors mt-auto"
-          >
-            <PhoneCall className="w-4 h-4" />
-            {t.viewCallLogs}
-          </Link>
-        </div>
-      )}
-    </Card>
-  );
-}
-
 // ── Upcoming Appointments ─────────────────────────────────────────────────────
 function UpcomingAppointments({ schedule, isLoading }: { schedule: DashboardData["schedule"]; isLoading: boolean }) {
   const { pick } = useLanguage();
@@ -1016,8 +925,6 @@ export default function OwnerDashboard() {
   const today = data?.today;
   const schedule = data?.schedule ?? [];
   const teamPerf = data?.teamPerformance ?? [];
-  const aiReceptionist = data?.aiReceptionist;
-  const needsAttention = data?.needsAttention ?? [];
 
   return (
     <AppLayout>
@@ -1093,12 +1000,8 @@ export default function OwnerDashboard() {
           <TodayFinancials data={data} isLoading={isLoading} />
         </div>
 
-        {/* ── ROW 3: Team today | Needs attention | Autumn ─────────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          <TeamPerformanceToday team={teamPerf} isLoading={isLoading} />
-          <RemindersAlerts items={needsAttention} isLoading={isLoading} />
-          <AiReceptionistCard ai={aiReceptionist} isLoading={isLoading} />
-        </div>
+        {/* ── ROW 3: Team today ───────────────────────────────────────────── */}
+        <TeamPerformanceToday team={teamPerf} isLoading={isLoading} />
 
         {/* ── ROW 4: Who's coming ──────────────────────────────────────────── */}
         <UpcomingAppointments schedule={schedule} isLoading={isLoading} />

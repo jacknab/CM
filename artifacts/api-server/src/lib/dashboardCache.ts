@@ -15,7 +15,7 @@ import { locations } from "@shared/schema";
 import { fromZonedTime, formatInTimeZone } from "date-fns-tz";
 import { allocateTenders } from "./tenderAllocation";
 
-const CACHE_KEY_PREFIX = "dashboard:v2:"; // v2 (2026-10-29): the slimmed dashboard shape — old cached shapes are never read
+const CACHE_KEY_PREFIX = "dashboard:v4:"; // v2 (2026-10-29): the slimmed dashboard shape — old cached shapes are never read
 const CACHE_TTL_SECONDS = 30;
 
 function makeKey(storeId: number): string {
@@ -49,9 +49,7 @@ export interface DashboardData {
     staffId: number | null; staffName: string | null; staffAvatarThumbUrl: string | null; status: string; totalPaid: number;
     startedAt: string | null; checkedInAt: string | null;
   }[];
-  needsAttention: { type: string; label: string; count: number; priority: "high" | "medium" | "low" }[];
   teamPerformance: { name: string; sales: number; tickets: number; tips: number; avgTicket: number }[];
-  aiReceptionist: { todayCalls: number; booked: number; missed: number; isLive: boolean };
   computedAt: number;
 }
 
@@ -71,10 +69,9 @@ export async function computeDashboard(storeId: number): Promise<DashboardData> 
   const yesterdayDateKey = formatInTimeZone(new Date(now.getTime() - 86400000), storeTz, "yyyy-MM-dd");
   const yesterdayStart = fromZonedTime(`${yesterdayDateKey}T00:00:00.000`, storeTz);
   const yesterdayEnd = fromZonedTime(`${yesterdayDateKey}T23:59:59.999`, storeTz);
-  const sixtyDaysAgo = new Date(now.getTime() - 60 * 86400000);
   const T0 = todayStart.toISOString(), T1 = todayEnd.toISOString();
 
-  const [todayRows, yesterdayRow, lapsedRow, clockedInRow, aiRows, waitingMarkersRow] = await Promise.all([
+  const [todayRows, yesterdayRow, clockedInRow, waitingMarkersRow] = await Promise.all([
     // Today's tickets: booked for today, or paid today (a ticket paid today belongs to today's money).
     db.execute(sql`
       WITH visit_counts AS (
@@ -100,20 +97,8 @@ export async function computeDashboard(storeId: number): Promise<DashboardData> 
         FROM appointments
        WHERE store_id = ${storeId} AND status = 'completed' AND total_paid IS NOT NULL
          AND COALESCE(completed_at, date) >= ${yesterdayStart.toISOString()} AND COALESCE(completed_at, date) <= ${yesterdayEnd.toISOString()}`),
-    // Regulars (2+ visits) not back in 60+ days — the win-back list (Reports › Lapsed clients).
-    db.execute(sql`
-      SELECT COUNT(*) AS lapsed FROM (
-        SELECT a.customer_id FROM appointments a
-          JOIN clients c ON c.id::text = a.customer_id::text AND c.store_id = ${storeId} AND c.archived_at IS NULL
-         WHERE a.store_id = ${storeId} AND a.status = 'completed' AND a.customer_id IS NOT NULL
-         GROUP BY a.customer_id
-        HAVING COUNT(DISTINCT COALESCE(a.ticket_group_id, a.id)) >= 2 AND MAX(COALESCE(a.completed_at, a.date)) < ${sixtyDaysAgo.toISOString()}) t`),
     db.execute(sql`SELECT COUNT(DISTINCT staff_id) AS clocked_in FROM timeclock WHERE store_id = ${storeId} AND work_date = ${todayDateKey} AND clock_out IS NULL`)
       .catch(() => ({ rows: [] })),
-    db.execute(sql`
-      SELECT COUNT(*) AS total_calls, COUNT(*) FILTER (WHERE outcome = 'booked' OR appointment_id IS NOT NULL) AS booked,
-             COUNT(*) FILTER (WHERE outcome NOT IN ('booked','in_progress','callback_required') AND outcome IS NOT NULL AND appointment_id IS NULL) AS missed
-        FROM ai_call_log WHERE store_id = ${storeId} AND started_at >= ${T0}`).catch(() => ({ rows: [] })),
     // Kiosk check-ins with no ticket yet: waiting too.
     db.execute(sql`
       SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM kiosk_checkins
@@ -135,9 +120,13 @@ export async function computeDashboard(storeId: number): Promise<DashboardData> 
   const netSales = sum("net");
   const visits = new Set(paidToday.map((a) => a.ticket_group_id ?? a.id)).size;
 
+  const CARD_METHODS = new Set(["card", "m2", "tap", "tap_to_pay", "credit", "debit", "terminal"]);
   const byMethod: Record<string, number> = {};
   const shares = allocateTenders(paidToday.map((a) => ({ id: a.id, totalPaid: a.total_paid, paymentMethod: a.payment_method, date: new Date(a.completed_at) })) as any);
-  for (const m of shares.values()) for (const [k, v] of Object.entries(m)) byMethod[k] = r2((byMethod[k] ?? 0) + v);
+  for (const m of shares.values()) for (const [k, v] of Object.entries(m)) {
+    const key = CARD_METHODS.has(k) ? "card" : k; // card, card reader and Mobile Payment are all one Card line
+    byMethod[key] = r2((byMethod[key] ?? 0) + v);
+  }
 
   const markers = (waitingMarkersRow.rows[0] as any) ?? {};
   const waitingTickets = todayAppts.filter(isWaiting);
@@ -151,19 +140,6 @@ export async function computeDashboard(storeId: number): Promise<DashboardData> 
     noShow: todayAppts.filter((a) => a.status === "no_show").length,
   };
   const yesterdayNetSales = r2(num((yesterdayRow.rows[0] as any)?.net));
-
-  // Needs attention: only what the owner can act on now.
-  const needsAttention: DashboardData["needsAttention"] = [];
-  if (appointmentBreakdown.waiting > 0 && (longestWaitMinutes ?? 0) >= 20) {
-    needsAttention.push({ type: "waiting", label: `${appointmentBreakdown.waiting} waiting · longest ${longestWaitMinutes} min`, count: appointmentBreakdown.waiting, priority: "high" });
-  }
-  if (appointmentBreakdown.noShow > 0) {
-    needsAttention.push({ type: "no_shows", label: `${appointmentBreakdown.noShow} no-show${appointmentBreakdown.noShow !== 1 ? "s" : ""} today`, count: appointmentBreakdown.noShow, priority: "medium" });
-  }
-  const lapsed = num((lapsedRow.rows[0] as any)?.lapsed);
-  if (lapsed > 0) {
-    needsAttention.push({ type: "lost_clients", label: `${lapsed} regular${lapsed !== 1 ? "s" : ""} not back in 60+ days`, count: lapsed, priority: "medium" });
-  }
 
   const classify = (visitCount: number): "New" | "Regular" | "VIP" => (visitCount >= 10 ? "VIP" : visitCount <= 1 ? "New" : "Regular");
   const shortName = (fullName: string | null) => {
@@ -191,7 +167,6 @@ export async function computeDashboard(storeId: number): Promise<DashboardData> 
   });
   const teamPerformance = [...team.values()].sort((x, y) => y.sales - x.sales).map((m) => ({ ...m, avgTicket: m.tickets ? r2(m.sales / m.tickets) : 0 }));
 
-  const aiRow = (aiRows.rows[0] as any) || {};
   return {
     today: {
       netSales, yesterdayNetSales, salesDiff: r2(netSales - yesterdayNetSales), visits, avgTicket: visits ? r2(netSales / visits) : 0,
@@ -200,9 +175,7 @@ export async function computeDashboard(storeId: number): Promise<DashboardData> 
     },
     todayFinancials: { netSales, services: sum("services"), products: sum("products"), discounts: sum("discount"), tax: sum("tax"), tips: sum("tip"), collected: sum("total"), byMethod },
     schedule,
-    needsAttention,
     teamPerformance,
-    aiReceptionist: { todayCalls: num(aiRow.total_calls), booked: num(aiRow.booked), missed: num(aiRow.missed), isLive: true },
     computedAt: Date.now(),
   };
 }

@@ -24,8 +24,6 @@ export interface DashboardData {
     staffId: number | null; staffName: string | null; staffAvatarThumbUrl?: string | null; status: string; totalPaid: number;
     startedAt: string | null; checkedInAt: string | null;
   }[];
-  needsAttention: { type: string; label: string; count: number; priority: "high" | "medium" | "low" }[];
   teamPerformance: { name: string; sales: number; tickets: number; tips: number; avgTicket: number }[];
-  aiReceptionist: { todayCalls: number; booked: number; missed: number; isLive: boolean };
   computedAt: number;
 }
