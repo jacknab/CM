@@ -210,7 +210,8 @@ export function draftTotals(
   }
   custom.forEach((c, i) => {
     // Another service of the visit takes its time; a keypad amount takes none.
-    lines.push({ key: `custom-${c.id}`, kind: "custom", label: c.label, duration: c.serviceId ? Number(c.duration) || 0 : 0, price: c.price, customId: c.id });
+    lines.push({ key: `custom-${c.id}`, kind: "custom", label: c.label, duration: c.serviceId ? Number(c.duration) || 0 : 0, price: c.price, customId: c.id,
+      ...(c.serviceId && !c.packageId ? { serviceId: c.serviceId } : {}) });
     if (!service) return;
     addonIds.forEach((id, n) => {
       if (lineOf(n) !== i) return;
@@ -266,4 +267,56 @@ export function formatElapsed(fromIso: string, now: number = Date.now()): string
   if (minutes < 60) return `${minutes} min`;
   const h = Math.floor(minutes / 60);
   return `${h} hr ${minutes % 60} min`;
+}
+
+/** A cart row: one line, or several identical ones shown as one with a quantity (like a register). */
+export interface CartRow extends TicketLine {
+  qty: number;
+  /** The lines it stands for, in order. × takes off the last one. */
+  members: TicketLine[];
+}
+
+/**
+ * QTY on a normal register (owner, 2026-10-29): identical items show as ONE line — "3 × Basic Manicure", "2 × Gel
+ * Polish Upgrade" with their total — instead of a line each. Each item is still its own line on the ticket; only the
+ * cart shows them together. The same service next to itself is one line, with all its copies' add-ons under it (each
+ * add-on once, with its quantity). The same keypad amount is one line. Never merged: nail options, package lines,
+ * another technician's ticket with this one.
+ */
+export function groupCartLines(lines: TicketLine[]): CartRow[] {
+  const keyOf = (l: TicketLine): string | null => {
+    if (l.ownerTicketId != null || l.kind === "nail" || l.kind === "addon") return null;
+    if (l.serviceId != null) return `s:${l.serviceId}:${l.price}`;
+    if (l.kind === "custom") return `c:${l.label}:${l.price}`;
+    return null;
+  };
+  // A line and the add-ons listed right after it (its own).
+  const blocks: { head: TicketLine; addons: TicketLine[] }[] = [];
+  for (const l of lines) {
+    const last = blocks[blocks.length - 1];
+    if (l.kind === "addon" && last && last.head.kind !== "addon") { last.addons.push(l); continue; }
+    blocks.push({ head: l, addons: [] });
+  }
+  // Runs of the same line become one.
+  const runs: { heads: TicketLine[]; addons: TicketLine[] }[] = [];
+  for (const b of blocks) {
+    const run = runs[runs.length - 1];
+    const key = keyOf(b.head);
+    if (key && run && keyOf(run.heads[0]) === key) { run.heads.push(b.head); run.addons.push(...b.addons); continue; }
+    runs.push({ heads: [b.head], addons: [...b.addons] });
+  }
+  const row = (members: TicketLine[]): CartRow => members.slice(1).reduce<CartRow>((r, m) => ({
+    ...r, qty: r.qty + 1, price: Math.round((r.price + m.price) * 100) / 100, duration: r.duration + m.duration,
+  }), { ...members[0], qty: 1, members });
+  const rows: CartRow[] = [];
+  for (const run of runs) {
+    rows.push(row(run.heads));
+    const byAddon = new Map<string, TicketLine[]>();
+    for (const a of run.addons) {
+      const k = `${a.addonId ?? a.key}:${a.ownerTicketId ?? ""}`;
+      byAddon.set(k, [...(byAddon.get(k) ?? []), a]);
+    }
+    for (const group of byAddon.values()) rows.push(row(group));
+  }
+  return rows;
 }

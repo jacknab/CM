@@ -658,11 +658,50 @@ export function CheckoutMode(p: Props) {
     for (let i = 0; i < times; i++) addExtra(`+ ${a.name}`, price, "custom");
     say(`${label} ADDED · ${money(price * times)}`, "success");
   };
-  /** The ticket's add-ons that go under one service (null = the first), as cart lines with a × each. */
-  const addonRows = (t: BoardTicket, lineNo: number | null) => t.addons.map((a, n) => ((a.lineNo ?? null) === lineNo
-    ? <div className="ticket-item ticket-item-addon" key={`a${a.id}-${n}`}><div className="item-copy"><strong>{a.name}</strong><span>Add-on</span></div><div className="item-price"><strong>{money(a.price)}</strong></div>
-      {!p.paid && !p.finalizing && t.id > 0 ? <button type="button" className="remove-item" onClick={() => void removeAddon(a)} aria-label={`Remove ${a.name}`}><X size={16} /></button> : <span />}</div>
-    : null));
+  // QTY like a register (owner, 2026-10-29): identical items show as ONE cart line with a quantity — "2 × Gel Polish"
+  // with their total — and × takes off one. Each is still its own item on the ticket.
+  const qtyLabel = (n: number, label: string) => <>{n > 1 ? <span className="item-qty">{n} × </span> : null}{label}</>;
+  /** The add-ons under these services (null = the first; several when copies of a service share a cart line): one line
+   *  per add-on, with its quantity. × takes off the last one added. */
+  const addonRows = (t: BoardTicket, lineNos: (number | null)[]) => {
+    const groups: { a: BoardTicket["addons"][number]; n: number; price: number; key: string }[] = [];
+    t.addons.forEach((a, n) => {
+      if (!lineNos.includes(a.lineNo ?? null)) return;
+      const g = groups.find((x) => x.a.id === a.id);
+      if (g) { g.n += 1; g.price = r2(g.price + (Number(a.price) || 0)); g.a = a; } else groups.push({ a, n: 1, price: Number(a.price) || 0, key: `a${a.id}-${n}` });
+    });
+    return groups.map((g) => (
+      <div className="ticket-item ticket-item-addon" key={g.key} data-qty={g.n}><div className="item-copy"><strong>{qtyLabel(g.n, g.a.name)}</strong><span>Add-on</span></div><div className="item-price"><strong>{money(g.price)}</strong></div>
+        {!p.paid && !p.finalizing && t.id > 0 ? <button type="button" className="remove-item" onClick={() => void removeAddon(g.a)} aria-label={g.n > 1 ? `Remove one ${g.a.name}` : `Remove ${g.a.name}`}><X size={16} /></button> : <span />}</div>
+    ));
+  };
+  /** The ticket's lines grouped for the cart: copies of the first service right after it count on its line; then runs
+   *  of the same line. A run's add-ons are listed together under it. */
+  const cartGroups = useMemo(() => {
+    const lines = ticket.customLines;
+    const same = (a: typeof lines[number], b: typeof lines[number]) => a.label === b.label && a.price === b.price
+      && (a.serviceId ?? null) === (b.serviceId ?? null) && !a.packageId && !b.packageId && !a.isRetail === !b.isRetail;
+    const mainExtra: number[] = [];
+    // Nail options make the first service different from a plain copy.
+    const mainPlain = ticket.service.id != null && !(ticket.nail?.lines ?? []).length;
+    let i = 0;
+    while (mainPlain && i < lines.length && lines[i].serviceId === ticket.service.id && lines[i].price === ticket.service.price && !lines[i].packageId) mainExtra.push(i++);
+    const groups: number[][] = [];
+    for (; i < lines.length; i++) {
+      const g = groups[groups.length - 1];
+      if (g && same(lines[g[0]], lines[i])) g.push(i); else groups.push([i]);
+    }
+    return { mainExtra, groups };
+  }, [ticket]);
+  /** Checkout extras: runs of the same one show as one line. */
+  const extraGroups = useMemo(() => {
+    const out: (typeof extras)[] = [];
+    for (const e of extras) {
+      const g = out[out.length - 1];
+      if (g && g[0].label === e.label && g[0].price === e.price && g[0].kind === e.kind) g.push(e); else out.push([e]);
+    }
+    return out;
+  }, [extras]);
   const removeAddon = async (a: { id: number; name: string; lineNo?: number }) => {
     if (p.paid || p.finalizing) return;
     try { if (!(await guard(() => removeTicketAddon(ticket.id, a.id, a.lineNo ?? null)))) return; say(`${a.name.toUpperCase()} REMOVED`, "success"); void refreshBoard(); }
@@ -1249,21 +1288,32 @@ export function CheckoutMode(p: Props) {
         <div className="ticket-items">
           {linked.length === 0 ? (
             <>
-            {ticket.service.id != null && <div className={`ticket-item ${mainPicked ? "ticket-item-selected" : ""}`} data-testid="nail-pay-main-service"
-              onClick={!p.paid && !p.finalizing ? () => { setSplitIdx(null); setMainPicked((v) => !v); } : undefined}><div className="item-copy"><strong>{ticket.service.name}</strong><span>{ticket.staff ? techLabel(ticket.staff.name, ticket.staff.id) : "Service"}</span></div><div className="item-price"><strong>{money(ticket.service.price)}</strong></div><span /></div>}
-            {addonRows(ticket, null)}
+            {ticket.service.id != null && <div className={`ticket-item ${mainPicked ? "ticket-item-selected" : ""}`} data-testid="nail-pay-main-service" data-qty={1 + cartGroups.mainExtra.length}
+              onClick={!p.paid && !p.finalizing ? () => { setSplitIdx(null); setMainPicked((v) => !v); } : undefined}><div className="item-copy"><strong>{qtyLabel(1 + cartGroups.mainExtra.length, ticket.service.name)}</strong><span>{ticket.staff ? techLabel(ticket.staff.name, ticket.staff.id) : "Service"}</span></div><div className="item-price"><strong>{money(r2(ticket.service.price * (1 + cartGroups.mainExtra.length)))}</strong></div>
+              {cartGroups.mainExtra.length && !p.paid && !p.finalizing ? <button type="button" className="remove-item" onClick={(e) => { e.stopPropagation(); void removeTicketService(ticket, cartGroups.mainExtra[cartGroups.mainExtra.length - 1]); }} aria-label={`Remove one ${ticket.service.name}`}><X size={16} /></button> : <span />}</div>}
+            {addonRows(ticket, [null, ...cartGroups.mainExtra])}
             {(ticket.nail?.lines ?? []).map((l) => <div className="ticket-item" key={l.label}><div className="item-copy"><strong>{l.label}</strong><span>Nail option</span></div><div className="item-price"><strong>{money(l.price)}</strong></div><span /></div>)}
-            {ticket.customLines.map((l, i) => <Fragment key={`c${i}`}><div className={`ticket-item ${splitIdx === i ? "ticket-item-selected" : ""}`}
-              onClick={l.serviceId && !l.packageId && !p.paid && !p.finalizing ? () => { setMainPicked(false); setSplitIdx((cur) => (cur === i ? null : i)); } : undefined}><div className="item-copy"><strong>{l.label}</strong><span>{l.serviceId ? (ticket.staff ? techLabel(ticket.staff.name, ticket.staff.id) : "Service") : "Custom charge"}</span></div><div className="item-price"><strong>{money(l.price)}</strong></div>
-              {l.serviceId && !p.paid && !p.finalizing ? <button type="button" className="remove-item" onClick={() => void removeTicketService(ticket, i)} aria-label={`Remove ${l.label}`}><X size={16} /></button> : <span />}</div>
-              {l.serviceId ? addonRows(ticket, i) : null}</Fragment>)}
-            {extras.map((e) => (
-              <div className="ticket-item" key={e.id} data-testid={`nail-pay-extra-${e.kind}`}>
-                <div className="item-copy"><strong>{e.label}</strong><span>{e.kind === "retail" ? "Retail" : "Added at checkout"}</span></div>
-                <div className="item-price"><strong>{money(e.price)}</strong></div>
-                <button type="button" className="remove-item" onClick={() => setExtras((cur) => cur.filter((x) => x.id !== e.id))} aria-label={`Remove ${e.label}`}><X size={16} /></button>
+            {cartGroups.groups.map((idxs) => {
+              const i = idxs[0];
+              const last = idxs[idxs.length - 1];
+              const l = ticket.customLines[i];
+              const n = idxs.length;
+              return <Fragment key={`c${i}`}><div className={`ticket-item ${splitIdx != null && idxs.includes(splitIdx) ? "ticket-item-selected" : ""}`} data-qty={n}
+                onClick={l.serviceId && !l.packageId && !p.paid && !p.finalizing ? () => { setMainPicked(false); setSplitIdx((cur) => (cur != null && idxs.includes(cur) ? null : last)); } : undefined}><div className="item-copy"><strong>{qtyLabel(n, l.label)}</strong><span>{l.serviceId ? (ticket.staff ? techLabel(ticket.staff.name, ticket.staff.id) : "Service") : "Custom charge"}</span></div><div className="item-price"><strong>{money(r2(idxs.reduce((sum, x) => sum + ticket.customLines[x].price, 0)))}</strong></div>
+                {l.serviceId && !p.paid && !p.finalizing ? <button type="button" className="remove-item" onClick={(e) => { e.stopPropagation(); void removeTicketService(ticket, last); }} aria-label={n > 1 ? `Remove one ${l.label}` : `Remove ${l.label}`}><X size={16} /></button> : <span />}</div>
+                {l.serviceId ? addonRows(ticket, idxs) : null}</Fragment>;
+            })}
+            {extraGroups.map((g) => {
+              const e = g[0];
+              const lastId = g[g.length - 1].id;
+              return (
+              <div className="ticket-item" key={e.id} data-testid={`nail-pay-extra-${e.kind}`} data-qty={g.length}>
+                <div className="item-copy"><strong>{qtyLabel(g.length, e.label)}</strong><span>{e.kind === "retail" ? "Retail" : "Added at checkout"}</span></div>
+                <div className="item-price"><strong>{money(r2(g.reduce((sum, x) => sum + x.price, 0)))}</strong></div>
+                <button type="button" className="remove-item" onClick={() => setExtras((cur) => cur.filter((x) => x.id !== lastId))} aria-label={g.length > 1 ? `Remove one ${e.label}` : `Remove ${e.label}`}><X size={16} /></button>
               </div>
-            ))}
+              );
+            })}
             </>
           ) : (
             // Group Pay: one cart per ticket — its client, technician and number, then its own lines (as on the

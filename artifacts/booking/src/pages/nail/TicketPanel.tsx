@@ -1,5 +1,5 @@
 import { Hand, X } from "lucide-react";
-import { formatDuration, type TicketLine } from "./ticketDraft";
+import { formatDuration, groupCartLines, type TicketLine } from "./ticketDraft";
 
 interface Props {
   client: { name: string; loyaltyPoints: number } | null;
@@ -43,11 +43,14 @@ export function TicketPanel({ client, badge, lines, duration, price, submitLabel
             <p>{client ? "Add services from the catalog to build the ticket" : "Check a client in, then open them from the Queue to build their ticket — or tap Retail to sell a product"}</p>
           </div>
         ) : (
-          lines.map((line) => (
-            <div className={`ticket-item ticket-item-${line.kind} ${selectedKey === line.key ? "ticket-item-selected" : ""}`} key={line.key} data-testid={`nail-line-${line.kind}`}
-              onClick={onSelect ? () => onSelect(line) : undefined} aria-selected={selectedKey === line.key || undefined}>
+          // Identical items show as one line with a quantity, like a register (groupCartLines); × takes off one.
+          groupCartLines(lines).map((line) => {
+            const picked = !!selectedKey && line.members.some((m) => m.key === selectedKey);
+            return (
+            <div className={`ticket-item ticket-item-${line.kind} ${picked ? "ticket-item-selected" : ""}`} key={line.key} data-testid={`nail-line-${line.kind}`}
+              onClick={onSelect ? () => onSelect(line.members[0]) : undefined} aria-selected={picked || undefined} data-qty={line.qty}>
               <div className="item-copy">
-                <strong>{line.label}</strong>
+                <strong>{line.qty > 1 ? <span className="item-qty">{line.qty} × </span> : null}{line.label}</strong>
                 <span className={line.note ? "note" : undefined}>
                   {line.note ?? (line.duration > 0 ? formatDuration(line.duration) : "No duration")}
                 </span>
@@ -55,13 +58,14 @@ export function TicketPanel({ client, badge, lines, duration, price, submitLabel
               <div className="item-price">
                 <strong>{line.price < 0 ? "-" : ""}${Math.abs(line.price).toFixed(2)}</strong>
               </div>
-              {line.kind !== "service" || line.removable ? (
-                <button type="button" className="remove-item" onClick={(e) => { e.stopPropagation(); onRemove(line); }} aria-label={`Remove ${line.label}`}>
+              {line.kind !== "service" || line.removable || line.qty > 1 ? (
+                <button type="button" className="remove-item" onClick={(e) => { e.stopPropagation(); onRemove(line.members[line.members.length - 1]); }} aria-label={line.qty > 1 ? `Remove one ${line.label}` : `Remove ${line.label}`}>
                   <X size={16} />
                 </button>
               ) : <span />}
             </div>
-          ))
+            );
+          })
         )}
       </div>
 

@@ -422,6 +422,8 @@
 /* A service's add-ons sit under it (owner, 2026-10-29): indented, shorter, marked "+". */
 .nail-app .ticket-item.ticket-item-addon { height: 54px; padding-left: 30px; }
 .nail-app .ticket-item.ticket-item-addon .item-copy strong::before { content: "+ "; }
+/* QTY like a register (2026-10-29): identical items are one line, "2 × Gel Polish". */
+.nail-app .item-copy strong .item-qty { display: inline; font-size: inherit; line-height: inherit; color: #0d9bd1; font-weight: 800; margin: 0; }
 .nail-app .display-prompt { color: #f0a830; font-size: 13px; margin-right: auto; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
 .nail-app .money-grid button.fn-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #e8eaed; font-size: 12px; font-weight: 700; }
 .nail-app .money-grid button.fn-btn svg { color: #c4cad3; }
