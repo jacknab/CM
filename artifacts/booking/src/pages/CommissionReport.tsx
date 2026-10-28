@@ -196,7 +196,7 @@ export default function CommissionReport() {
               const p = periods.find((x) => x.periodStart === v);
               if (p) { setStartDate(p.periodStart); setEndDate(p.periodEnd); }
             }}>
-              <SelectTrigger className="h-14 w-[330px] text-base" data-testid="commission-pay-period"><SelectValue placeholder="Choose a pay period" /></SelectTrigger>
+              <SelectTrigger className="h-14 w-[400px] max-w-full text-base" data-testid="commission-pay-period"><SelectValue placeholder="Choose a pay period" /></SelectTrigger>
               <SelectContent>
                 {periodValue === "custom" && <SelectItem value="custom" className="text-base py-2.5">Custom dates</SelectItem>}
                 {periods.map((p) => <SelectItem key={p.periodStart} value={p.periodStart} className="text-base py-2.5">{periodLabel(p)}</SelectItem>)}
