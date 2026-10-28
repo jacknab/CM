@@ -56,6 +56,12 @@ const Analytics = lazy(() => import("@/pages/Analytics"));
 const OwnerDashboard = lazy(() => import("@/pages/OwnerDashboard"));
 const Reports = lazy(() => import("@/pages/Reports"));
 const ReportsHub = lazy(() => import("@/pages/ReportsHub"));
+// The Money reports, each its own page (2026-10-29, pages/reports).
+const SalesReport = lazy(() => import("@/pages/reports/MoneyReports").then((m) => ({ default: m.SalesReport })));
+const PaymentsReport = lazy(() => import("@/pages/reports/MoneyReports").then((m) => ({ default: m.PaymentsReport })));
+const TaxReport = lazy(() => import("@/pages/reports/MoneyReports").then((m) => ({ default: m.TaxReport })));
+const TipsReport = lazy(() => import("@/pages/reports/MoneyReports").then((m) => ({ default: m.TipsReport })));
+const GiftCardsReport = lazy(() => import("@/pages/reports/MoneyReports").then((m) => ({ default: m.GiftCardsReport })));
 const RegisterReports = lazy(() => import("@/pages/RegisterReports"));
 const DayCloseReports = lazy(() => import("@/pages/DayCloseReports"));
 const Waitlist = lazy(() => import("@/pages/Waitlist"));
@@ -658,6 +664,11 @@ function AppRoutes() {
       <Route path="/reports" element={<ReportsHub />} />
       <Route path="/reports/dashboard" element={<Reports />} />
       <Route path="/reports/day-close" element={<DayCloseReports />} />
+      <Route path="/reports/sales" element={<SalesReport />} />
+      <Route path="/reports/payments" element={<PaymentsReport />} />
+      <Route path="/reports/tax" element={<TaxReport />} />
+      <Route path="/reports/tips" element={<TipsReport />} />
+      <Route path="/reports/gift-cards" element={<GiftCardsReport />} />
       <Route path="/register-reports" element={<RegisterReports />} />
       <Route path="/commission-report" element={<CommissionReport />} />
       <Route path="/salon-earnings" element={<SalonEarningsReport />} />

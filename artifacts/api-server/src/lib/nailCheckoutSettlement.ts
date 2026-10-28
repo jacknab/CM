@@ -224,6 +224,9 @@ export async function settleNailCheckout(a: NailCheckoutInput, salesTax: SalesTa
         description: `Redeemed "${reward.name}" — $${Number(reward.dollar_value).toFixed(2)} off` });
       if (!result || result.applied !== -Number(reward.points_cost)) throw new NailCheckoutError("Not enough loyalty points");
     }
+    // Each ticket's share of the sales tax, saved for reports (migration 0269): what it paid beyond its sale and tip.
+    const shareTax = (sh: { totalPaid: number; serviceRevenue: number; productRevenue: number; discount: number; tip: number }) =>
+      Math.max(0, cents(sh.totalPaid - sh.serviceRevenue - sh.productRevenue + sh.discount - sh.tip) / 100).toFixed(2);
     const completed: any[] = [];
     for (const share of shares) {
       const row = byId.get(share.appointmentId)!;
@@ -234,7 +237,7 @@ export async function settleNailCheckout(a: NailCheckoutInput, salesTax: SalesTa
         const reconciled: any = (await tx.execute(sql`UPDATE appointments SET payment_method = ${share.paymentMethod},
           tip_amount = ${share.tip.toFixed(2)}::numeric, discount_amount = ${share.discount.toFixed(2)}::numeric,
           total_paid = ${share.totalPaid.toFixed(2)}::numeric, service_revenue = ${share.serviceRevenue.toFixed(2)}::numeric,
-          product_revenue = ${share.productRevenue.toFixed(2)}::numeric
+          product_revenue = ${share.productRevenue.toFixed(2)}::numeric, tax_amount = ${shareTax(share)}::numeric
           WHERE id = ${share.appointmentId} AND store_id = ${a.storeId} RETURNING *`)).rows[0];
         completed.push(reconciled);
         continue;
@@ -245,6 +248,7 @@ export async function settleNailCheckout(a: NailCheckoutInput, salesTax: SalesTa
         payment_method = ${share.paymentMethod}, tip_amount = ${share.tip.toFixed(2)}::numeric,
         discount_amount = ${share.discount.toFixed(2)}::numeric, total_paid = ${share.totalPaid.toFixed(2)}::numeric,
         service_revenue = ${share.serviceRevenue.toFixed(2)}::numeric, product_revenue = ${share.productRevenue.toFixed(2)}::numeric,
+        tax_amount = ${shareTax(share)}::numeric,
         service_price = COALESCE(service_price, ${srv?.price ?? null}::numeric),
         commission_rate = COALESCE(commission_rate, ${member?.commission_rate ?? null}::numeric)
         WHERE id = ${share.appointmentId} AND store_id = ${a.storeId} RETURNING *`)).rows[0];

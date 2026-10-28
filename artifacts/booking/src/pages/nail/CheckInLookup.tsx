@@ -360,13 +360,16 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
               <div className="flex justify-center gap-[0.6vw]">
                 <button onClick={() => key("@")} className={cn(KB_KEY, "flex-[1.2]")} data-testid="kb-at">@</button>
                 <button onClick={() => key("SPACE")} className={cn(KB_KEY, "flex-[6] text-[clamp(16px,2.6vh,24px)]")} data-testid="kb-space">Spacebar</button>
-                <button onClick={() => key("RETURN")} className={cn(KB_KEY, "flex-[2] text-[clamp(16px,2.6vh,24px)]", name.trim() ? "bg-green-500 text-white hover:bg-green-600" : "")} data-testid="kb-return">Return &#8629;</button>
+                <button onClick={() => key("RETURN")} className={cn(KB_KEY, "flex-[2] text-[clamp(16px,2.6vh,24px)]", name.trim() ? "bg-green-500 text-white hover:bg-green-600" : "")} data-testid="kb-return">{quick ? "Next" : <>Return &#8629;</>}</button>
               </div>
             </div>
-            <Button className="mt-[2vh] px-16 h-[clamp(52px,9vh,76px)] text-xl bg-green-500 text-white" size="lg" onClick={() => void saveNew()}
-              disabled={!name.trim() || busy} data-testid="nail-checkin-save">
-              {busy ? "Saving..." : "Done"}
-            </Button>
+            {/* Quick Check-in goes on with the keyboard's Next key (owner, 2026-10-29): no separate Done button. */}
+            {!quick && (
+              <Button className="mt-[2vh] px-16 h-[clamp(52px,9vh,76px)] text-xl bg-green-500 text-white" size="lg" onClick={() => void saveNew()}
+                disabled={!name.trim() || busy} data-testid="nail-checkin-save">
+                {busy ? "Saving..." : "Done"}
+              </Button>
+            )}
           </>
         )}
 

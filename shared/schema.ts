@@ -619,6 +619,8 @@ export const appointments = pgTable("appointments", {
   // The cash drawer that took this sale's cash (migration 0267); null = no station said which (main drawer counts it).
   cashDrawerId: integer("cash_drawer_id").references((): AnyPgColumn => cashDrawers.id, { onDelete: "set null" }),
   tipAmount: decimal("tip_amount", { precision: 10, scale: 2 }),
+  // Sales tax charged on this sale (its share of the visit's tax; migration 0269).
+  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }),
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
   totalPaid: decimal("total_paid", { precision: 10, scale: 2 }),
   startedAt: timestamp("started_at", { withTimezone: true }),
@@ -1561,7 +1563,7 @@ export const insertCustomerSchema = z.object({
   loyaltyPoints: z.number().int().nullish(),
   storeId: z.number().int().nullish(),
 });
-export const insertAppointmentSchema = createInsertSchema(appointments).omit({ id: true, cashDrawerId: true });
+export const insertAppointmentSchema = createInsertSchema(appointments).omit({ id: true, cashDrawerId: true, taxAmount: true });
 export const insertProductSchema = createInsertSchema(products).omit({ id: true });
 export const insertBusinessHoursSchema = createInsertSchema(businessHours).omit({ id: true });
 export const insertCalendarSettingsSchema = createInsertSchema(calendarSettings).omit({ id: true });
