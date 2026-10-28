@@ -6,6 +6,10 @@ export interface KioskStrings {
   // Idle
   defaultSubText: string;
   tapToBegin: string;
+  /** Welcome screen (2026-10-29): what to do, readable from the door. */
+  checkInHere: string;
+  tapToStart: string;
+  idleSteps: [string, string, string];
   kioskReady: string;
 
   // Closed
@@ -174,6 +178,9 @@ const en: KioskStrings = {
   langLabel: "English",
   defaultSubText: "Your style journey starts here",
   tapToBegin: "👆  TAP ANYWHERE TO BEGIN",
+  checkInHere: "CHECK IN HERE",
+  tapToStart: "TAP TO START",
+  idleSteps: ["Tap the screen", "Enter your phone number", "Have a seat — we'll call you"],
   kioskReady: "Kiosk Ready",
   seeFrontDesk: "Please see a team member at the front desk",
   oneMoment: "One moment…",
@@ -305,6 +312,9 @@ const es: KioskStrings = {
   langLabel: "Español",
   defaultSubText: "Tu viaje de estilo comienza aquí",
   tapToBegin: "👆  TOCA PARA COMENZAR",
+  checkInHere: "REGÍSTRESE AQUÍ",
+  tapToStart: "TOQUE PARA EMPEZAR",
+  idleSteps: ["Toque la pantalla", "Escriba su número de teléfono", "Tome asiento, le llamaremos"],
   kioskReady: "Kiosk Listo",
   seeFrontDesk: "Por favor hable con un miembro del equipo",
   oneMoment: "Un momento…",
@@ -436,6 +446,9 @@ const vi: KioskStrings = {
   langLabel: "Tiếng Việt",
   defaultSubText: "Hành trình làm đẹp của bạn bắt đầu tại đây",
   tapToBegin: "👆  CHẠM VÀO ĐỂ BẮT ĐẦU",
+  checkInHere: "CHECK IN TẠI ĐÂY",
+  tapToStart: "CHẠM ĐỂ BẮT ĐẦU",
+  idleSteps: ["Chạm vào màn hình", "Nhập số điện thoại của bạn", "Mời bạn ngồi, chúng tôi sẽ gọi bạn"],
   kioskReady: "Kiosk Sẵn Sàng",
   seeFrontDesk: "Vui lòng gặp nhân viên ở quầy lễ tân",
   oneMoment: "Một chút…",
@@ -567,6 +580,9 @@ const zh: KioskStrings = {
   langLabel: "中文",
   defaultSubText: "您的美甲之旅从这里开始",
   tapToBegin: "👆  点击任意处开始",
+  checkInHere: "在此签到",
+  tapToStart: "点击开始",
+  idleSteps: ["点击屏幕", "输入您的电话号码", "请稍坐，我们会叫您"],
   kioskReady: "服务台就绪",
   seeFrontDesk: "请前往前台联系工作人员",
   oneMoment: "请稍候…",
@@ -698,6 +714,9 @@ const ko: KioskStrings = {
   langLabel: "한국어",
   defaultSubText: "당신의 스타일 여정이 시작됩니다",
   tapToBegin: "👆  화면을 탭하여 시작하세요",
+  checkInHere: "여기서 체크인",
+  tapToStart: "탭하여 시작",
+  idleSteps: ["화면을 탭하세요", "전화번호를 입력하세요", "앉아서 기다려 주세요. 불러 드릴게요"],
   kioskReady: "키오스크 준비 완료",
   seeFrontDesk: "프런트 데스크의 직원에게 문의해 주세요",
   oneMoment: "잠시만요…",

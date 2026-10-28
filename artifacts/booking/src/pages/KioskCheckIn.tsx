@@ -20,6 +20,7 @@ const kioskNailCfgKey = (slug: string, serviceId: number) => `certxa.kiosk.nailc
 const keepJson = (key: string, value: unknown) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ } };
 const keptJson = (key: string): any => { try { return JSON.parse(localStorage.getItem(key) ?? "null"); } catch { return null; } };
 import KioskPairing from "../components/kiosk/KioskPairing";
+import { CheckInIdle } from "../components/kiosk/CheckInIdle";
 import KioskSuspendedScreen from "../components/kiosk/KioskSuspendedScreen";
 
 type Screen =
@@ -1195,67 +1196,36 @@ function KioskCheckInScreens() {
 
   // ── IDLE ────────────────────────────────────────────────────────────────────
   if (screen === "idle") return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center cursor-pointer overflow-hidden"
-      onPointerDown={() => setScreen("phone")}
-      onContextMenu={e => e.preventDefault()}
-      style={{ ...NO_SELECT, background: BG }}>
-
-      {/* Decorative blobs */}
-      <div className="absolute top-[-80px] right-[-80px] w-[500px] h-[500px] rounded-full pointer-events-none"
-        style={{ background: "radial-gradient(circle at center, rgba(232,72,145,0.08) 0%, transparent 70%)" }} />
-      <div className="absolute bottom-[-100px] left-[-100px] w-[600px] h-[600px] rounded-full pointer-events-none"
-        style={{ background: "radial-gradient(circle at center, rgba(167,139,250,0.10) 0%, transparent 70%)" }} />
-
-      <div className="relative z-10 text-center space-y-10 px-12">
-        <div className="w-40 h-40 rounded-full mx-auto flex items-center justify-center shadow-2xl"
-          style={{ background: `linear-gradient(135deg, ${PRIMARY}, ${ACCENT})`, boxShadow: SHADOW_LG }}>
-          <span className="text-white text-7xl font-black">✓</span>
+    <CheckInIdle
+      c={{ BG, SURFACE, TEXT, MUTED, PRIMARY, ACCENT, BORDER, SHADOW_LG }}
+      text={t}
+      onStart={() => setScreen("phone")}
+      extra={kioskConfig?.loyaltyPromoText ? (
+        <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full text-xl font-semibold"
+          style={{ background: PILL_BG, border: `1.5px solid ${PILL_BORDER}`, color: PILL_TEXT }}>
+          <span>{G("⭐")}</span><span>{kioskConfig.loyaltyPromoText}</span>
         </div>
-        <div className="space-y-4">
-          <h1 className="text-8xl font-black leading-none tracking-tight" style={{ color: TEXT }}>
-            {kioskConfig?.welcomeHeadline || storeConfig?.name || "Welcome"}
-          </h1>
-          <p className="text-3xl font-light" style={{ color: MUTED }}>{kioskConfig?.welcomeSubText || t.defaultSubText}</p>
+      ) : null}
+      footer={(
+        <div className="flex items-center justify-center gap-3 flex-wrap px-8">
+          {KIOSK_LANGS.map(({ code, label }) => (
+            <button
+              key={code}
+              onPointerDown={e => { e.stopPropagation(); setLang(code); }}
+              className="px-5 py-2.5 rounded-full text-base font-semibold transition-all duration-150 active:scale-95"
+              style={{
+                background: lang === code ? PRIMARY : SURFACE,
+                color: lang === code ? "#fff" : MUTED,
+                border: `1.5px solid ${lang === code ? PRIMARY : BORDER}`,
+                boxShadow: SHADOW,
+                cursor: "pointer",
+              }}>
+              {label}
+            </button>
+          ))}
         </div>
-        {kioskConfig?.loyaltyPromoText && (
-          <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full text-xl font-semibold"
-            style={{ background: PILL_BG, border: `1.5px solid ${PILL_BORDER}`, color: PILL_TEXT }}>
-            <span>{G("⭐")}</span><span>{kioskConfig.loyaltyPromoText}</span>
-          </div>
-        )}
-        <div className="pt-4">
-          <div className="inline-flex items-center gap-4 px-14 py-6 rounded-full text-3xl font-bold text-white tracking-wide animate-pulse"
-            style={{ background: `linear-gradient(135deg, ${PRIMARY}, ${ACCENT})`, boxShadow: SHADOW_LG }}>
-            {t.tapToBegin}
-          </div>
-        </div>
-        <div className="flex items-center justify-center gap-3 pt-2">
-          <span className="w-3 h-3 rounded-full animate-ping inline-block" style={{ background: PRIMARY }} />
-          <span className="text-base tracking-widest uppercase" style={{ color: SUBTLE }}>{t.kioskReady}</span>
-        </div>
-      </div>
-
-      {/* ── Language selector pills ── */}
-      <div
-        className="absolute bottom-6 left-0 right-0 flex items-center justify-center gap-3 flex-wrap px-8 z-20"
-        onPointerDown={e => e.stopPropagation()}>
-        {KIOSK_LANGS.map(({ code, label }) => (
-          <button
-            key={code}
-            onPointerDown={e => { e.stopPropagation(); setLang(code); }}
-            className="px-5 py-2.5 rounded-full text-base font-semibold transition-all duration-150 active:scale-95"
-            style={{
-              background: lang === code ? PRIMARY : SURFACE,
-              color: lang === code ? "#fff" : MUTED,
-              border: `1.5px solid ${lang === code ? PRIMARY : BORDER}`,
-              boxShadow: SHADOW,
-              cursor: "pointer",
-            }}>
-            {label}
-          </button>
-        ))}
-      </div>
-    </div>
+      )}
+    />
   );
 
   // ── LOADING ─────────────────────────────────────────────────────────────────
