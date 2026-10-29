@@ -96,7 +96,7 @@ export function Glance({ waitLabel, checkedIn, inService, clockedInTechs, glance
     { id: "avg-ticket", label: "Avg Ticket", value: glance?.avgTicket != null ? money(glance.avgTicket) : "—", tone: "mint" },
   ];
   return (
-    <div className="tt-glance" data-testid="nail-queue-glance">
+    <div className="tt-glance q-glance" data-testid="nail-queue-glance">
       <div className="q-glance-row">
         {tiles.map((t) => {
           const Icon = t.id === "completed" ? UserCheck : GLANCE_ICON[t.id];

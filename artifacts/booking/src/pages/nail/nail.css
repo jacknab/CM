@@ -594,6 +594,9 @@
  * Always one row of 8 (never wraps to a second row) — narrower widths shrink the tiles
  * (tighter padding, smaller numerals, icon dropped) rather than reflowing the grid. */
 .nail-app .q-glance-row { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px; }
+/* The Queue tab's metric cards sit flush with the top and both sides of the screen (owner, 2026-10-29): undo the
+   panel's 10px top / 14px side padding and the work area's 9px right padding, for this row only. */
+.nail-app .tt-panel > .q-glance { margin: -10px -23px 0 -14px; }
 .nail-app .q-glance-row .tt-tile { min-height: 72px; padding: 14px 10px; gap: 10px; border: 0; border-bottom: 2px solid rgba(15, 31, 61, .16); border-radius: 0; box-shadow: none; }
 .nail-app .q-glance-row .tt-tile svg { width: 24px; height: 24px; }
 .nail-app .q-glance-row .tt-tile strong { font-size: 21px; font-weight: 800; line-height: 1.05; }
