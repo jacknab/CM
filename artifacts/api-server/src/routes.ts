@@ -6560,6 +6560,20 @@ If you have any questions, please contact your administrator.
              LEFT JOIN clients c ON c.id = a.customer_id
             WHERE a.id = $1`, [appointmentId]);
         const staffScreen = nailTickets.isNailSalonCategory(w?.category) || /barber/i.test(w?.category ?? "");
+        // A part of a visit whose other part is already DONE (owner, 2026-10-29): adding a service to that visit needs
+        // the manager PIN (DONE lock), so taking one off does too. Same 423 DONE_LOCKED, so /nail asks for the PIN itself.
+        if (w && staffScreen && !(w.started_at || w.service_done_at || w.status === "completed")) {
+          const { rows: [done] } = await pool.query(
+            `SELECT 1 FROM appointments b, appointments a WHERE a.id = $1 AND a.ticket_group_id IS NOT NULL
+                AND b.ticket_group_id = a.ticket_group_id AND b.id <> a.id AND b.store_id = a.store_id
+                AND b.service_done_at IS NOT NULL AND b.status <> 'cancelled' LIMIT 1`, [appointmentId]);
+          if (done) {
+            const pin = req.headers["x-manager-pin"] ?? (req.body as any)?.managerPin;
+            if (!pin) return res.status(423).json({ code: "DONE_LOCKED", message: "Part of this visit is marked DONE. A manager PIN is needed to change it." });
+            const result = await checkManagerPin(existingAppointment.storeId!, pin);
+            if (result !== "ok") { const r = pinRefusal(result); return res.status(r.status).json(r.body); }
+          }
+        }
         if (w && staffScreen && (w.started_at || w.service_done_at || w.status === "completed")) {
           const pin = req.headers["x-manager-pin"] ?? (req.body as any)?.managerPin;
           const reason = String((req.body as any)?.servicedCancelReason ?? "").trim();

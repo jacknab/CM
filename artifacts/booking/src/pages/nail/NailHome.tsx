@@ -1946,7 +1946,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     // A ticket a technician already worked on (started or DONE) needs a reason and the manager PIN (ServicedCancelSheet).
     onCancel: (t: BoardTicket) => {
       if (t.status === "started" || t.doneAt) { setPopupId(null); setServicedCancel(t); return; }
-      if (window.confirm(`Cancel ${t.client.name}'s ticket?`)) act.mutate(() => cancelTicket(t.id, t.client.name));
+      // guard: a part of a visit whose other part is DONE needs the manager PIN (server 423 DONE_LOCKED).
+      if (window.confirm(`Cancel ${t.client.name}'s ticket?`)) act.mutate(() => guard(() => cancelTicket(t.id, t.client.name)));
     },
   };
   // ── Tech ID sign-in ───────────────────────────────────────────────────────
