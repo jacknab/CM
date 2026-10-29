@@ -1965,8 +1965,10 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   return (
     <div className="dark cx-cal nail-app h-app w-full" data-testid="nail-home">
-      {/* A red ticket on the board (owner, 2026-10-29): a red outline now and then shrinks in from the screen's edges. */}
-      {anyRedTicket && <div className="nl-urgent-edge" aria-hidden data-testid="nail-urgent-edge" />}
+      {/* A red ticket on the board (owner, 2026-10-29): a red outline now and then shrinks in from the screen's edges —
+          only while the lock screen is up (owner, 2026-10-29), not while someone is working the POS. */}
+      {anyRedTicket && lockEnabled && !tech && !showTurnPage && !needsRegisterPicker && !needsDrawerPicker
+        && <div className="nl-urgent-edge" aria-hidden data-testid="nail-urgent-edge" />}
       <OfflineLimitLock />
       <a className="nail-skip-link" href="#nail-main">Skip to main content</a>
       <h1 className="sr-only">Nail salon front desk</h1>
