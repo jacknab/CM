@@ -464,32 +464,9 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // Tickets that sit too long (urgency.ts): is any of them red right now?
   const [urgentTick, setUrgentTick] = useState(() => Date.now());
   useEffect(() => { const iv = setInterval(() => setUrgentTick(Date.now()), 30_000); return () => clearInterval(iv); }, []);
-  const redKeys = [
-    ...tickets.filter((x) => waitUrgency(x.wait, urgentTick + clockOffsetMs) === "red").map((x) => `t${x.id}`),
-    ...markers.filter((x) => waitUrgency(x.wait, urgentTick + clockOffsetMs) === "red").map((x) => `m${x.id}`),
-  ];
-  const anyRedTicket = redKeys.length > 0;
-  // The red edge alarm (owner, 2026-10-29): stops the moment anyone taps the screen. It comes back when another ticket
-  // turns red, or when the screen has gone ALARM_RETURN_MS without a touch while a ticket is still red.
-  const ALARM_RETURN_MS = 60_000;
-  const [alarmHush, setAlarmHush] = useState<{ at: number; keys: Set<string> } | null>(null);
-  const redKeysRef = useRef<string[]>(redKeys);
-  redKeysRef.current = redKeys;
-  useEffect(() => {
-    // Only while something is red, so ordinary taps don't re-render the screen.
-    const onTouch = () => { if (redKeysRef.current.length) setAlarmHush({ at: Date.now(), keys: new Set(redKeysRef.current) }); };
-    window.addEventListener("pointerdown", onTouch, true);
-    return () => window.removeEventListener("pointerdown", onTouch, true);
-  }, []);
-  const [alarmClock, setAlarmClock] = useState(() => Date.now());
-  useEffect(() => {
-    if (!anyRedTicket || !alarmHush) return;
-    const iv = setInterval(() => setAlarmClock(Date.now()), 5_000);
-    return () => clearInterval(iv);
-  }, [anyRedTicket, alarmHush]);
-  const showRedAlarm = anyRedTicket && (!alarmHush
-    || redKeys.some((k) => !alarmHush.keys.has(k))
-    || Math.max(alarmClock, urgentTick) - alarmHush.at >= ALARM_RETURN_MS);
+  const anyRedTicket = [...tickets, ...markers].some((x) => waitUrgency(x.wait, urgentTick + clockOffsetMs) === "red");
+  // The red alarm (owner, 2026-10-29): stays on until every ticket that set it off is dealt with — a tap doesn't stop it.
+  const showRedAlarm = anyRedTicket;
   // While the alarm is on, look at the board every 10 seconds, so it stops within seconds of the last red ticket being
   // dealt with — whichever screen or station dealt with it (2026-10-29: it took about a minute to stop).
   useEffect(() => {
@@ -2001,7 +1978,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   return (
     <div className="dark cx-cal nail-app h-app w-full" data-testid="nail-home">
       {/* A red ticket on the board (owner, 2026-10-29): a red outline now and then shrinks in from the screen's edges,
-          on the lock screen and the POS alike; a tap anywhere stops it (see showRedAlarm). */}
+          on the lock screen and the POS alike, until no ticket is red. */}
       {showRedAlarm && <div className="nl-urgent-edge" aria-hidden data-testid="nail-urgent-edge" />}
       <OfflineLimitLock />
       <a className="nail-skip-link" href="#nail-main">Skip to main content</a>
