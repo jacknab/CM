@@ -70,8 +70,10 @@ async function translateOne(
        (entity_type, entity_id, language, name, description, auto_generated, is_edited_by_user, confidence_score, updated_at)
      VALUES ($1, $2, $3, $4, $5, TRUE, FALSE, 0.9, NOW())
      ON CONFLICT (entity_type, entity_id, language) DO UPDATE
-       SET name             = EXCLUDED.name,
-           description      = EXCLUDED.description,
+       -- A translation someone corrected by hand is kept; only the AI's own ones are replaced (2026-10-29: the name and
+       -- description were overwritten even though the hand-edited flag was kept).
+       SET name             = CASE WHEN entity_translations.is_edited_by_user THEN entity_translations.name ELSE EXCLUDED.name END,
+           description      = CASE WHEN entity_translations.is_edited_by_user THEN entity_translations.description ELSE EXCLUDED.description END,
            auto_generated   = CASE WHEN entity_translations.is_edited_by_user THEN entity_translations.auto_generated ELSE TRUE END,
            confidence_score = CASE WHEN entity_translations.is_edited_by_user THEN entity_translations.confidence_score ELSE 0.9 END,
            updated_at       = CASE WHEN entity_translations.is_edited_by_user THEN entity_translations.updated_at ELSE NOW() END`,
