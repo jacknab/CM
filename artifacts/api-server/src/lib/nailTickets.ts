@@ -1677,9 +1677,20 @@ export function boardWaitReasons(tickets: BoardTicket[], markers: BoardWaitingMa
     ? wait("unassigned_free", latest(arrived, Math.min(...free.map(freeSince).filter((x) => Number.isFinite(x)))))
     : wait("long_wait", arrived);
 
+  // A visit split between technicians is paid once, when every part is done (owner, 2026-10-29: the first tech's DONE
+  // part went red while the second was still working). So "DONE, not paid" starts when the visit's LAST part is done;
+  // until then a DONE part is simply waiting for the rest of its visit.
+  const groupOf = (t: BoardTicket) => ((t as any).groupId as number | null | undefined) ?? null;
+  const visitDoneAt = (t: BoardTicket): number => {
+    const g = groupOf(t);
+    if (g == null) return ms(t.doneAt);
+    const parts = tickets.filter((x) => groupOf(x) === g);
+    if (parts.some((x) => !x.doneAt)) return NaN; // another part still waiting or in the chair
+    return latest(...parts.map((x) => ms(x.doneAt)));
+  };
   for (const t of tickets) {
     if (t.status === "started") {
-      t.wait = t.doneAt ? wait("done_unpaid", ms(t.doneAt))
+      t.wait = t.doneAt ? wait("done_unpaid", visitDoneAt(t))
         : wait("service_over", ms(t.startedAt) + (Number(t.duration) || 0) * 60_000);
       continue;
     }

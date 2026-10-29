@@ -79,4 +79,25 @@ describe("why a waiting ticket hasn't started", () => {
     expect(over.wait).toMatchObject({ code: "service_over", since: at(45), orangeMin: 15, redMin: 30 });
     expect(done.wait).toMatchObject({ code: "done_unpaid", since: at(50), orangeMin: 10, redMin: 20 });
   });
+
+  it("a visit split between technicians: a DONE part isn't 'not paid' while another part is still being done", () => {
+    const first = ticket(3, { status: "started", startedAt: at(0), doneAt: at(20), staff: lan, groupId: 3 } as any);
+    const second = ticket(4, { status: "started", startedAt: at(20), duration: 30, staff: kim, groupId: 3 } as any);
+    boardWaitReasons([first, second], [], stats([{ staffId: 1, clockedInAt: at(-60) }, { staffId: 2, clockedInAt: at(-60) }]), new Set([1, 2]));
+    expect(first.wait).toBeUndefined();
+    expect(second.wait).toMatchObject({ code: "service_over", since: at(50) });
+  });
+  it("a split visit: once every part is DONE, 'not paid' counts from the last part's DONE, on every part", () => {
+    const first = ticket(5, { status: "started", startedAt: at(0), doneAt: at(20), staff: lan, groupId: 5 } as any);
+    const second = ticket(6, { status: "started", startedAt: at(20), doneAt: at(45), staff: kim, groupId: 5 } as any);
+    boardWaitReasons([first, second], [], stats([]), new Set([1, 2]));
+    expect(first.wait).toMatchObject({ code: "done_unpaid", since: at(45) });
+    expect(second.wait).toMatchObject({ code: "done_unpaid", since: at(45) });
+  });
+  it("a split visit whose other part hasn't started yet: the DONE part waits quietly", () => {
+    const first = ticket(7, { status: "started", startedAt: at(0), doneAt: at(20), staff: lan, groupId: 7 } as any);
+    const waiting = ticket(8, { status: "confirmed", staff: kim, groupId: 7 } as any);
+    boardWaitReasons([first, waiting], [], stats([{ staffId: 2, clockedInAt: at(-60) }]), new Set([1, 2]));
+    expect(first.wait).toBeUndefined();
+  });
 });
