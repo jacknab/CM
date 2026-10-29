@@ -1108,14 +1108,23 @@
 .nail-app .ticket-popup .checkin-status-pill { font-size: 16px; letter-spacing: .4px; padding: 8px 16px; border-radius: 999px; margin-right: 64px !important; }
 .nail-app .ticket-popup .checkin-status-pill[data-in-service="true"] { background: #d4ecdd; color: #0b4d32; border: 2px solid #0b4d32; }
 .nail-app .ticket-popup .checkin-status-pill[data-in-service="false"] { background: #f7dcdc; color: #8a1518; border: 2px solid #8a1518; }
-.nail-app .ticket-popup .checkin-modal-body { padding: 26px 32px 32px; gap: 24px; }
+.nail-app .ticket-popup .checkin-modal-body { padding: 22px 32px 28px; gap: 18px; }
+/* Safety net for an unusually long ticket: the card never runs off the screen; its lines can be moved with a finger,
+   with no scroll bar shown (owner, 2026-10-29: no scroll bars — the smaller add-on lines keep normal tickets in view). */
+.nail-app .ticket-popup .checkin-modal-card { max-height: calc(100vh - 24px); display: flex; flex-direction: column; }
+.nail-app .ticket-popup .checkin-modal-body { overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; }
+.nail-app .ticket-popup .checkin-modal-body::-webkit-scrollbar { display: none; }
 .nail-app .ticket-popup .checkin-modal-detail { gap: 18px; }
 .nail-app .ticket-popup .checkin-modal-detail svg { width: 26px; height: 26px; color: #333; }
 .nail-app .ticket-popup .checkin-modal-detail small { font-size: 14px; color: #444; }
 .nail-app .ticket-popup .checkin-modal-detail strong { font-size: 24px; color: #111; }
-.nail-app .ticket-popup .checkin-modal-lines { font-size: 18px; color: #222; padding-left: 44px; margin-top: -10px; gap: 6px; }
+/* Add-ons and the visit's other parts: much smaller than the service (owner, 2026-10-29), so a ticket with many lines
+   still fits the card without a scroll bar. The price never wraps; a long label wraps beside it. */
+.nail-app .ticket-popup .checkin-modal-lines { font-size: 15px; line-height: 1.3; color: #555; padding-left: 44px; margin-top: -12px; gap: 3px; }
+.nail-app .ticket-popup .checkin-modal-lines div { gap: 16px; align-items: baseline; }
+.nail-app .ticket-popup .checkin-modal-lines span:last-child { white-space: nowrap; }
 /* The service's own price, lined up with (and sized like) its add-on prices below. */
-.nail-app .ticket-popup .checkin-modal-price { align-self: flex-end; font-size: 18px; color: #222; padding-bottom: 2px; }
+.nail-app .ticket-popup .checkin-modal-price { align-self: flex-end; font-size: 18px; color: #222; padding-bottom: 2px; white-space: nowrap; }
 .nail-app .ticket-popup .assign-create-hint { font-size: 16px; color: #f0ead6; border: 0; }
 .nail-app .ticket-popup .checkin-dock { grid-template-columns: repeat(2, 132px); gap: 14px; }
 /* Split ticket: the other part's button spans the dock's two columns, above the others. With it first, the usual

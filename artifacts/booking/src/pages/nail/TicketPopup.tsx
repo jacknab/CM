@@ -96,7 +96,8 @@ export function TicketPopup(p: Props) {
             </div>
             {(t.addons.length > 0 || (t.nail?.lines.length ?? 0) > 0 || t.customLines.length > 0) && (
               <div className="checkin-modal-lines">
-                {t.addons.map((a) => <div key={`a${a.id}`}><span>+ {a.name}</span><span>${a.price.toFixed(2)}</span></div>)}
+                {/* The same add-on more than once is one line with its count and the amount for all of them. */}
+                {groupedAddons(t.addons).map((a) => <div key={`a${a.id}`}><span>+ {a.name}{a.count > 1 ? ` ×${a.count}` : ""}</span><span>${(a.price * a.count).toFixed(2)}</span></div>)}
                 {t.nail?.lines.map((l) => <div key={l.label}><span>+ {l.label}</span><span>${l.price.toFixed(2)}</span></div>)}
                 {t.customLines.map((l, i) => <div key={`c${i}`}><span>{l.serviceId || l.packageId ? l.label : `+ ${l.label}`}</span><span>{l.price < 0 ? "-" : ""}${Math.abs(l.price).toFixed(2)}</span></div>)}
               </div>
@@ -165,4 +166,14 @@ function countedNames(names: string[]): string[] {
   const counts = new Map<string, number>();
   for (const n of names) counts.set(n, (counts.get(n) ?? 0) + 1);
   return [...counts].map(([n, c]) => (c > 1 ? `${n} ×${c}` : n));
+}
+
+/** Add-ons grouped by id, in the order first added, each with how many times it is on the ticket. */
+function groupedAddons(addons: BoardTicket["addons"]): (BoardTicket["addons"][number] & { count: number })[] {
+  const byId = new Map<number, BoardTicket["addons"][number] & { count: number }>();
+  for (const a of addons) {
+    const seen = byId.get(a.id);
+    if (seen) seen.count += 1; else byId.set(a.id, { ...a, count: 1 });
+  }
+  return [...byId.values()];
 }
