@@ -137,4 +137,36 @@ export async function servicesReport(storeId: number, r: ReportRange, compare: b
   };
 }
 
-export const OPERATIONS_REPORTS = { appointments: appointmentsReport, "wait-times": waitTimesReport, "service-times": serviceTimesReport, "busy-times": busyTimesReport, services: servicesReport } as const;
+/** Cancelled after service (owner, 2026-10-29): tickets a technician had worked on (started, DONE or paid) that were
+ *  cancelled with the manager PIN, each with the reason given. Written by PATCH /api/appointments/:id. */
+export async function cancelledAfterServiceReport(storeId: number, r: ReportRange, compare: boolean) {
+  const tz = await storeTimezone(storeId);
+  const list = async (p: ReportRange) => (await pool.query(
+    `SELECT e.id, e.appointment_id, e.created_at, e.metadata FROM appointment_events e
+      WHERE e.store_id = $1 AND e.event_type = 'cancelled_after_service'
+        AND (e.created_at AT TIME ZONE $2)::date BETWEEN $3::date AND $4::date
+      ORDER BY e.created_at DESC LIMIT 500`,
+    [storeId, tz, p.from, p.to])).rows;
+  const rows = (await list(r)).map((x: any) => {
+    const m = x.metadata ?? {};
+    return {
+      id: x.id, appointmentId: x.appointment_id, cancelledAt: x.created_at, reason: m.reason ?? "",
+      ticketNumber: m.ticketNumber ?? null, clientName: m.clientName ?? null, staffName: m.staffName ?? null,
+      serviceName: m.serviceName ?? null, price: m.price != null ? r2(num(m.price)) : null,
+      totalPaid: m.totalPaid != null ? r2(num(m.totalPaid)) : null, wasPaid: m.previousStatus === "completed",
+      wasDone: !!m.doneAt, startedAt: m.startedAt ?? null, signedInStaffName: m.signedInStaffName ?? null,
+    };
+  });
+  const value = r2(rows.reduce((t, x) => t + (x.totalPaid ?? x.price ?? 0), 0));
+  const byTech = new Map<string, number>();
+  for (const x of rows) byTech.set(x.staffName ?? "No technician", (byTech.get(x.staffName ?? "No technician") ?? 0) + 1);
+  const previous = compare ? { count: (await list(previousRange(r))).length } : null;
+  return {
+    range: r, totals: { count: rows.length, value },
+    byTech: [...byTech.entries()].map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n),
+    rows, previous,
+  };
+}
+
+export const OPERATIONS_REPORTS = { appointments: appointmentsReport, "wait-times": waitTimesReport, "service-times": serviceTimesReport, "busy-times": busyTimesReport, services: servicesReport,
+  "cancelled-after-service": cancelledAfterServiceReport } as const;

@@ -6547,6 +6547,31 @@ If you have any questions, please contact your administrator.
           && nailTickets.isNailSalonCategory((await storage.getStore(existingAppointment.storeId!) as any)?.category)) {
         return res.status(409).json({ code: "PAYMENT_REQUIRED", message: "Take payment at checkout to finish this ticket." });
       }
+      // Cancelling a ticket a technician already worked on (owner, 2026-10-29): allowed — the salon decides — but only with
+      // the manager PIN and a written reason, which the owner sees in Reports › Cancelled after service. "Worked on" =
+      // START pressed, DONE pressed, or paid. Applies to the staff-screen salons (nail, barber), from /nail or the calendar.
+      let servicedCancel: { reason: string; row: any } | null = null;
+      if (input.status === "cancelled" && existingAppointment.status !== "cancelled") {
+        const { rows: [w] } = await pool.query(
+          `SELECT a.started_at, a.service_done_at, a.status, a.total_paid, a.ticket_number, a.staff_id, a.customer_id, a.date,
+                  l.category, st.name AS staff_name, sv.name AS service_name, COALESCE(a.service_price, sv.price) AS price, c.full_name AS client_name
+             FROM appointments a JOIN locations l ON l.id = a.store_id
+             LEFT JOIN staff st ON st.id = a.staff_id LEFT JOIN services sv ON sv.id = a.service_id
+             LEFT JOIN clients c ON c.id = a.customer_id
+            WHERE a.id = $1`, [appointmentId]);
+        const staffScreen = nailTickets.isNailSalonCategory(w?.category) || /barber/i.test(w?.category ?? "");
+        if (w && staffScreen && (w.started_at || w.service_done_at || w.status === "completed")) {
+          const pin = req.headers["x-manager-pin"] ?? (req.body as any)?.managerPin;
+          const reason = String((req.body as any)?.servicedCancelReason ?? "").trim();
+          if (!pin || reason.length < 5) {
+            return res.status(423).json({ code: "SERVICED_CANCEL", message: "This ticket was already worked on. A manager PIN and the reason are needed to cancel it." });
+          }
+          const result = await checkManagerPin(existingAppointment.storeId!, pin);
+          if (result !== "ok") { const r = pinRefusal(result); return res.status(r.status).json(r.body); }
+          servicedCancel = { reason: reason.slice(0, 500), row: w };
+          (input as any).cancellationReason = `Cancelled after service: ${reason.slice(0, 450)}`;
+        }
+      }
       // Moving or lengthening a booking from the Certxa Pro app (`checkConflicts: true`): refused when the same
       // technician already has another booking in that time, with the salon's gap between appointments held.
       // Opt-in, because the salon calendar and the walk-in screens are allowed to overlap bookings on purpose.
@@ -6644,6 +6669,26 @@ If you have any questions, please contact your administrator.
             WHERE id = $1 AND status = 'completed' AND total_paid IS NOT NULL AND service_revenue IS NOT NULL`, [appointmentId]);
       }
       if (!appointment) return res.status(404).json({ message: "Appointment not found" });
+
+      // A serviced ticket cancelled with the manager PIN: kept for the owner (Reports › Cancelled after service). Awaited,
+      // not fire-and-forget — this record is the point of the rule.
+      if (servicedCancel) {
+        const w = servicedCancel.row;
+        const techId = Number((req.body as any)?.actingStaffId);
+        const { rows: [actor] } = Number.isSafeInteger(techId)
+          ? await pool.query(`SELECT name FROM staff WHERE id = $1 AND store_id = $2`, [techId, appointment.storeId]) : { rows: [] as any[] };
+        await pool.query(
+          `INSERT INTO appointment_events (store_id, appointment_id, event_type, actor_user_id, actor_type, metadata)
+           VALUES ($1, $2, 'cancelled_after_service', $3, 'manager_pin', $4)`,
+          [appointment.storeId, appointment.id, (req.session as any)?.userId ?? null, JSON.stringify({
+            reason: servicedCancel.reason, previousStatus: existingAppointment.status,
+            ticketNumber: w.ticket_number, clientName: w.client_name, staffId: w.staff_id, staffName: w.staff_name,
+            serviceName: w.service_name, price: w.price != null ? Number(w.price) : null,
+            totalPaid: w.total_paid != null ? Number(w.total_paid) : null,
+            startedAt: w.started_at, doneAt: w.service_done_at, visitDate: w.date,
+            signedInStaffId: Number.isSafeInteger(techId) ? techId : null, signedInStaffName: actor?.name ?? null,
+          })]);
+      }
 
       // Log appointment lifecycle events (fire-and-forget)
       if (appointment.storeId) {

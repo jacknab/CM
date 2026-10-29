@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { pgIdempotencyStore, STALE_MS } from "../lib/idempotency";
-import { db } from "../db";
+import { db, pool } from "../db";
 import { storage } from "../storage";
 import { isAuthenticated } from "../auth";
 import { appointments, waitlist, locations, services, staff } from "@shared/schema";
@@ -488,6 +488,14 @@ async function handleCancelBooking(
   const realId = resolveId(p.appointmentId ?? action.entity_temp_id, mappings);
   if (!realId) return { actionId: action.id, type: action.type, status: "skipped", conflict: "No resolved ID" };
 
+  // A ticket a technician already worked on needs the manager PIN and a reason to cancel (routes.ts, PATCH
+  // /api/appointments/:id) — an offline queue has neither, so it is refused here and must be done online.
+  const { rows: [w] } = await pool.query(
+    `SELECT a.started_at, a.service_done_at, a.status, l.category FROM appointments a JOIN locations l ON l.id = a.store_id
+      WHERE a.id = $1 AND a.store_id = $2`, [realId, storeId]);
+  if (w && (/nail|barber/i.test(w.category ?? "")) && (w.started_at || w.service_done_at || w.status === "completed")) {
+    return { actionId: action.id, type: action.type, status: "rejected", conflict: "This ticket was already worked on — cancel it online with the manager PIN and a reason." };
+  }
   await storage.updateAppointment(realId, { status: "cancelled", cancellationReason: p.reason || "Cancelled offline" } as any);
   broadcastSyncEvent({ type: "booking_deleted", storeId, appointmentId: realId });
   return { actionId: action.id, type: action.type, status: "applied", realId };

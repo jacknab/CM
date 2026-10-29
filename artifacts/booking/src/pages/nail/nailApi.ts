@@ -842,6 +842,15 @@ export const cancelTicket = (id: number, clientName?: string): Promise<unknown> 
     async () => nailOffline.changeServerTicket(storeOrThrow(), await asLastSeen(id, clientName), { type: "cancel" }),
   );
 
+/** Cancels a ticket a technician already worked on: online only, with the manager PIN and the reason (server: PATCH
+ *  /api/appointments/:id refuses it without both and records it for the owner). */
+export const cancelServicedTicket = (id: number, reason: string, pin: string, actingStaffId: number | null): Promise<unknown> =>
+  call(`/api/appointments/${id}`, {
+    method: "PATCH",
+    headers: { "X-Manager-Pin": pin },
+    body: JSON.stringify({ status: "cancelled", servicedCancelReason: reason, calendarHidden: true, ...(actingStaffId != null ? { actingStaffId } : {}) }),
+  });
+
 /**
  * With no server, a clock-in or clock-out is kept on this device with the time it was really made and sent
  * when the connection is back (the app's action queue, TIMECLOCK_PUNCH). The turn line on this device

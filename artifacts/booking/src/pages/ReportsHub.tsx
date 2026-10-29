@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import {
   Sparkles, Receipt, Calendar, Percent, FileText, Star, Users, Scissors, UserCircle, Wallet, HandCoins, Gift, Clock, Repeat,
-  UserMinus, CalendarX, Award, Hourglass, Timer, BarChart3, MessageSquareHeart, MessageSquare, Phone,
+  UserMinus, CalendarX, Award, Hourglass, Timer, BarChart3, MessageSquareHeart, MessageSquare, Phone, Ban,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
@@ -44,6 +44,7 @@ const GROUPS: { title: string; cards: ReportCard[] }[] = [
     { title: "Service times", description: "How long services really take against the time booked", icon: Timer, to: "/reports/service-times" },
     { title: "Busiest times", description: "When clients come in, by day and hour, for staffing", icon: BarChart3, to: "/reports/busy-times" },
     { title: "Services & add-ons", description: "What sells, for how much, and add-on attach rates", icon: Scissors, to: "/reports/services" },
+    { title: "Cancelled after service", description: "Tickets cancelled after a technician worked on them, with the reason", icon: Ban, to: "/reports/cancelled-after-service" },
   ] },
   { title: "Marketing", cards: [
     { title: "Review requests", description: "Review texts sent, links opened, reviews received", icon: MessageSquareHeart, to: "/reports/reviews" },

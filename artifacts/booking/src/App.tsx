@@ -75,6 +75,7 @@ const WaitTimesReport = reportPage(() => import("@/pages/reports/OperationsRepor
 const ServiceTimesReport = reportPage(() => import("@/pages/reports/OperationsReports"), "ServiceTimesReport");
 const BusyTimesReport = reportPage(() => import("@/pages/reports/OperationsReports"), "BusyTimesReport");
 const ServicesReport = reportPage(() => import("@/pages/reports/OperationsReports"), "ServicesReport");
+const CancelledAfterServiceReport = reportPage(() => import("@/pages/reports/OperationsReports"), "CancelledAfterServiceReport");
 const ReviewsReport = reportPage(() => import("@/pages/reports/MarketingReports"), "ReviewsReport");
 const TextsReport = reportPage(() => import("@/pages/reports/MarketingReports"), "TextsReport");
 const AutumnReport = reportPage(() => import("@/pages/reports/MarketingReports"), "AutumnReport");
@@ -705,6 +706,7 @@ function AppRoutes() {
       <Route path="/reports/service-times" element={<ServiceTimesReport />} />
       <Route path="/reports/busy-times" element={<BusyTimesReport />} />
       <Route path="/reports/services" element={<ServicesReport />} />
+      <Route path="/reports/cancelled-after-service" element={<CancelledAfterServiceReport />} />
       <Route path="/reports/reviews" element={<ReviewsReport />} />
       <Route path="/reports/texts" element={<TextsReport />} />
       <Route path="/reports/autumn-calls" element={<AutumnReport />} />

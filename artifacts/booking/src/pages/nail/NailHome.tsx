@@ -17,6 +17,7 @@ import { BarChart3, Bell, Clock, RotateCcw, CreditCard, RefreshCw, Gift, KeyRoun
 import { useNailText, type NailLang } from "./i18n";
 import { confirm } from "@/lib/confirm";
 import { useManagerOverride } from "./useManagerOverride";
+import { ServicedCancelSheet } from "./ServicedCancelSheet";
 import { useNailDomTranslation } from "./nailDomTranslate";
 import { SlipTechIdSheet, TechSlipSheet } from "./TechSlipSheet";
 import { useSelectedStore } from "@/hooks/use-store";
@@ -61,7 +62,7 @@ import { setTechRoster, techLabel } from "./techName";
 import { waitUrgency } from "./urgency";
 import { getNowInTimezone } from "@/lib/timezone";
 import {
-  ApiError, boardKey, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchCalendarBoardBookings, fetchClient, fetchUpcoming,
+  ApiError, boardKey, cancelServicedTicket, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchCalendarBoardBookings, fetchClient, fetchUpcoming,
   addTicketAddon, addTicketLine, startRetailSale, addTicketPackage, addTicketService, discardRingingUp, removeTicketAddon, removeTicketLine, removeTicketServiceLine,
   saveRingingUp, startRingingUp, ticketNo, clockInTech, clockOutTech, textClientReady, fetchNailConfig, fetchPosGrid, fetchScreenSettings, fetchTurn, reassignTicket, savePosGrid, saveScreenSettings, removeMarker, resolveMarkerClient, startTicket, updateTicket,
   type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData, type TechSignIn, type TurnEarned, type TurnTech,
@@ -201,6 +202,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // Who is at the POS right now. Nobody → the Tech ID keypad. For a technician it comes back after each saved ticket or
   // checkout; for the front desk (reception / manager / owner) only after two idle minutes.
   const [tech, setTech] = useState<TechSignIn["staff"] | null>(null);
+  const [servicedCancel, setServicedCancel] = useState<BoardTicket | null>(null);
   // More → My Slip: whose slip is open, or asking for a Tech ID when no technician is signed in.
   const [slipFor, setSlipFor] = useState<{ id: number; name: string } | null>(null);
   const [slipAsk, setSlipAsk] = useState(false);
@@ -1941,7 +1943,11 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       textClientReady(t.id).then((r) => say(r.alreadySent ? `Already texted ${t.client.name.split(" ")[0]}` : `Texted ${t.client.name.split(" ")[0]}`))
         .catch((err: any) => toast({ title: "The text was not sent", description: err?.message, variant: "destructive" }));
     },
-    onCancel: (t: BoardTicket) => { if (window.confirm(`Cancel ${t.client.name}'s ticket?`)) act.mutate(() => cancelTicket(t.id, t.client.name)); },
+    // A ticket a technician already worked on (started or DONE) needs a reason and the manager PIN (ServicedCancelSheet).
+    onCancel: (t: BoardTicket) => {
+      if (t.status === "started" || t.doneAt) { setPopupId(null); setServicedCancel(t); return; }
+      if (window.confirm(`Cancel ${t.client.name}'s ticket?`)) act.mutate(() => cancelTicket(t.id, t.client.name));
+    },
   };
   // ── Tech ID sign-in ───────────────────────────────────────────────────────
   // A technician with a client in the chair is shown that client's ticket; everyone else lands on the queue.
@@ -2286,6 +2292,15 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       <PairCustomerScreenDialog open={pairScreenOpen} stationName={currentRegisterName} onClose={() => setPairScreenOpen(false)} />
       <StationsFullBanner show={stationsFull} />
 
+      {servicedCancel && (
+        <ServicedCancelSheet ticket={servicedCancel} onClose={() => setServicedCancel(null)}
+          onConfirm={async (reason, pin) => {
+            await cancelServicedTicket(servicedCancel.id, reason, pin, tech?.id ?? null);
+            setServicedCancel(null);
+            invalidateBoard();
+            say(`#${servicedCancel.ticketNumber ?? servicedCancel.id} cancelled · the reason was sent to the owner`);
+          }} />
+      )}
       {assigning && (
         <AssignTechSheet
           storeId={storeId}

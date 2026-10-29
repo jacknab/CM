@@ -2,6 +2,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ReportFrame, Kpi, useReportRange, useReport, money, pctChange, downloadCsv } from "./ReportFrame";
 import { Chart, Table, Heatmap, DAYS } from "./MoneyReports";
+import { format } from "date-fns";
 
 /** Operations reports (owner, 2026-10-29, plans/reports.md stage 4), from /api/reports/operations/* (lib/reports/operations.ts). */
 const err = (q: { error: unknown }) => (q.error ? (q.error as Error).message : null);
@@ -142,6 +143,37 @@ export function ServicesReport() {
                 : <p className="text-sm text-muted-foreground">No add-ons sold in this period.</p>}
             </CardContent>
           </Card>
+        </>
+      )}
+    </ReportFrame>
+  );
+}
+
+export function CancelledAfterServiceReport() {
+  const range = useReportRange();
+  const q = useReport<any>("operations", "cancelled-after-service", range.from, range.to, range.compare);
+  const d = q.data; const t = d?.totals;
+  const when = (v: string) => format(new Date(v), "MMM d, h:mm a");
+  const stage = (x: any) => (x.wasPaid ? "Paid" : x.wasDone ? "DONE" : "Started");
+  return (
+    <ReportFrame title="Cancelled after service" description="Tickets a technician had already worked on that were cancelled with the manager PIN, and the reason given." range={range}
+      loading={q.isLoading} error={err(q)}
+      onCsv={d ? () => downloadCsv(`cancelled-after-service-${range.from}-to-${range.to}`, ["Cancelled", "Ticket", "Client", "Technician", "Service", "Amount", "Stage", "Reason", "Signed in"],
+        d.rows.map((x: any) => [when(x.cancelledAt), x.ticketNumber ?? "", x.clientName ?? "", x.staffName ?? "", x.serviceName ?? "", x.totalPaid ?? x.price ?? "", stage(x), x.reason, x.signedInStaffName ?? ""])) : undefined}>
+      {t && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <Kpi label="Cancelled after service" value={String(t.count)} invert change={d.previous ? pctChange(t.count, d.previous.count) : null} />
+            <Kpi label="Value of those tickets" value={money(t.value)} sub="Paid amount, or the service price" />
+            <Kpi label="Technicians involved" value={String(d.byTech.length)} sub={d.byTech.slice(0, 3).map((b: any) => `${b.name} ${b.n}`).join(" · ") || undefined} />
+          </div>
+          <Card><CardContent className="pt-5">
+            {d.rows.length ? <Table testId="cancelled-after-service-table" head={["Cancelled", "Ticket", "Client", "Technician", "Service", "Amount", "Stage", "Reason"]}
+              rows={d.rows.map((x: any) => [when(x.cancelledAt), x.ticketNumber ?? "—", x.clientName ?? "—", x.staffName ?? "—", x.serviceName ?? "—",
+                x.totalPaid != null || x.price != null ? money(x.totalPaid ?? x.price) : "—", stage(x), x.reason])} />
+              : <p className="text-sm text-muted-foreground">No serviced tickets were cancelled in this period.</p>}
+            <p className="text-xs text-muted-foreground mt-3">Stage: how far the ticket had got — Started (START pressed), DONE, or Paid.</p>
+          </CardContent></Card>
         </>
       )}
     </ReportFrame>
