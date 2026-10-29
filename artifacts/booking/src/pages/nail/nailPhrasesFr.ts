@@ -1209,7 +1209,9 @@ export const NAIL_PHRASES_FR: Record<string, string> = {
  "Z Report": "Rapport Z",
  "Z Report Preview": "Aperçu du rapport Z",
  "Z Report printed.": "Rapport Z imprimé.",
- "Zelle": "Zelle"
+ "Zelle": "Zelle",
+ "Why is this ticket being cancelled? (at least 3 words)": "Pourquoi ce ticket est-il annulé ? (au moins 3 mots)",
+ "Write the reason in at least 3 words.": "Écrivez le motif en au moins 3 mots."
 };
 
 export const NAIL_PATTERNS_FR: Record<string, string> = {
@@ -1372,5 +1374,7 @@ export const NAIL_PATTERNS_FR: Record<string, string> = {
  "WAITING · WITH {0}": "EN ATTENTE · AVEC {0}",
  "waiting, starts about {0}": "en attente, commence vers {0}",
  "WITH {0}": "AVEC {0}",
- "with {0} ·": "avec {0} ·"
+ "with {0} ·": "avec {0} ·",
+ "{0} already started this service. Cancelling it needs the reason and the manager PIN. The owner sees both.": "{0} a déjà commencé ce service. L'annuler demande le motif et le PIN du responsable. Le propriétaire voit les deux.",
+ "{0} already marked this service DONE. Cancelling it needs the reason and the manager PIN. The owner sees both.": "{0} a déjà marqué ce service TERMINÉ. L'annuler demande le motif et le PIN du responsable. Le propriétaire voit les deux."
 };

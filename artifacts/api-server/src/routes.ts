@@ -18,6 +18,7 @@ import liveChatAccountRouter from "./routes/liveChatAccount";
 import supportFeedRouter from "./routes/supportFeed";
 import { resolveSessionStoreId } from "./lib/sessionStore";
 import { AT_RISK_DAYS } from "@shared/clientStatus";
+import { servicedCancelReasonProblem } from "@shared/servicedCancel";
 import { resolveTimezoneFromAddress, hasAddressChange } from "./lib/resolveTimezone";
 import { getOrCreateTodayBusinessDay, getPendingReconciliation, getLocalDateString, computeBusinessDayTotals } from "./lib/businessDay";
 import { computeZReport } from "./lib/zReport";
@@ -6577,9 +6578,11 @@ If you have any questions, please contact your administrator.
         if (w && staffScreen && (w.started_at || w.service_done_at || w.status === "completed")) {
           const pin = req.headers["x-manager-pin"] ?? (req.body as any)?.managerPin;
           const reason = String((req.body as any)?.servicedCancelReason ?? "").trim();
-          if (!pin || reason.length < 5) {
+          if (!pin || !reason) {
             return res.status(423).json({ code: "SERVICED_CANCEL", message: "This ticket was already worked on. A manager PIN and the reason are needed to cancel it." });
           }
+          const reasonProblem = servicedCancelReasonProblem(reason);
+          if (reasonProblem) return res.status(400).json({ code: "SERVICED_CANCEL_REASON", message: reasonProblem });
           const result = await checkManagerPin(existingAppointment.storeId!, pin);
           if (result !== "ok") { const r = pinRefusal(result); return res.status(r.status).json(r.body); }
           servicedCancel = { reason: reason.slice(0, 500), row: w };

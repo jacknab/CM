@@ -14,6 +14,7 @@ import { useQuickAreaCodes } from "./useQuickAreaCodes";
 import { isNativeApp } from "./useCardPayments";
 import { techLabel } from "./techName";
 import { quickNameProblem } from "./quickName";
+import { KEY_ROWS, LIGHT, KB_KEY, KB_WIDE } from "./touchKeys";
 
 /**
  * Front-desk Check-In — the Customers page (`/client-lookup`, full-screen phone pad → "Add Client Name" on-screen keyboard)
@@ -36,19 +37,11 @@ export interface CheckInResult {
   todayCount?: number;
 }
 
-const KEY_ROWS = [
-  ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
-  ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
-  ["Z", "X", "C", "V", "B", "N", "M"],
-];
 const NUM_ROWS = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]];
 
 // Touch targets scale with the screen height so nothing is cut off on a 10" tablet.
 // Light keys on the light sheet (the same look as the Queue tab, 2026-10-29) — /nail itself runs in dark mode.
-const LIGHT = "bg-[#ffffff] border-[#d5deea] text-[#0f1f3d] shadow-[0_1px_2px_rgba(15,31,61,0.06)] active:bg-[#eef3f9]";
 const NUM_KEY = `w-[clamp(84px,9vw,124px)] h-[clamp(52px,9.5vh,84px)] rounded-lg border ${LIGHT} text-[clamp(24px,4vh,36px)] font-semibold`;
-const KB_KEY = `flex-1 min-w-0 h-[clamp(52px,10.5vh,88px)] rounded-lg border ${LIGHT} text-[clamp(20px,3.6vh,32px)] font-medium`;
-const KB_WIDE = "flex-[1.5] min-w-0 h-[clamp(52px,10.5vh,88px)] rounded-lg border text-[clamp(20px,3.6vh,32px)] font-medium flex items-center justify-center";
 
 const formatPhone = (d: string): string => {
   if (d.length <= 3) return `(${d}`;

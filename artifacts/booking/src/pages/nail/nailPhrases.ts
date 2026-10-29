@@ -5993,6 +5993,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "pts": [
   "điểm",
   "pts"
+ ],
+ "Why is this ticket being cancelled? (at least 3 words)": [
+  "Vì sao hủy phiếu này? (ít nhất 3 chữ)",
+  "¿Por qué se cancela este ticket? (al menos 3 palabras)"
+ ],
+ "Write the reason in at least 3 words.": [
+  "Ghi lý do ít nhất 3 chữ.",
+  "Escriba el motivo en al menos 3 palabras."
  ]
 };
 
@@ -6992,5 +7000,15 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "This tablet holds {0} cash payments totalling ${1} that the server has not received yet. Reconnect and let them send (or resolve the ones needing attention) before closing the day.",
   "Máy này đang giữ {0} khoản tiền mặt, tổng ${1}, máy chủ chưa nhận. Hãy kết nối lại để gửi (hoặc xử lý các khoản cần xem lại) trước khi chốt ngày.",
   "Esta tableta tiene {0} pagos en efectivo por un total de ${1} que el servidor aún no ha recibido. Vuelva a conectarse y deje que se envíen (o resuelva los que requieren atención) antes de cerrar el día."
+ ],
+ [
+  "{0} already started this service. Cancelling it needs the reason and the manager PIN. The owner sees both.",
+  "{0} đã bắt đầu làm dịch vụ này. Muốn hủy phải ghi lý do và nhập mã quản lý. Chủ tiệm sẽ thấy cả hai.",
+  "{0} ya empezó este servicio. Para cancelarlo se necesitan el motivo y el PIN de gerente. El dueño ve ambos."
+ ],
+ [
+  "{0} already marked this service DONE. Cancelling it needs the reason and the manager PIN. The owner sees both.",
+  "{0} đã bấm XONG dịch vụ này. Muốn hủy phải ghi lý do và nhập mã quản lý. Chủ tiệm sẽ thấy cả hai.",
+  "{0} ya marcó este servicio como LISTO. Para cancelarlo se necesitan el motivo y el PIN de gerente. El dueño ve ambos."
  ]
 ];
