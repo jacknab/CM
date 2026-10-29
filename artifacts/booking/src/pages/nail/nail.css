@@ -1123,6 +1123,9 @@
 .nail-app .ticket-popup .checkin-modal-lines { font-size: 15px; line-height: 1.3; color: #555; padding-left: 44px; margin-top: -12px; gap: 3px; }
 .nail-app .ticket-popup .checkin-modal-lines div { gap: 16px; align-items: baseline; }
 .nail-app .ticket-popup .checkin-modal-lines span:last-child { white-space: nowrap; }
+/* This part's service total on a split ticket: under its add-ons, darker than them, with a rule above. */
+.nail-app .ticket-popup .checkin-modal-subtotal { margin-top: -10px; }
+.nail-app .ticket-popup .checkin-modal-subtotal div { border-top: 1px solid #cfc6ab; padding-top: 6px; font-size: 17px; font-weight: 600; color: #111; }
 /* The service's own price, lined up with (and sized like) its add-on prices below. */
 .nail-app .ticket-popup .checkin-modal-price { align-self: flex-end; font-size: 18px; color: #222; padding-bottom: 2px; white-space: nowrap; }
 .nail-app .ticket-popup .assign-create-hint { font-size: 16px; color: #f0ead6; border: 0; }

@@ -41,6 +41,7 @@ export function TicketPopup(p: Props) {
   const { t: tr } = useNailText();
   const [tick, setTick] = useState(() => Date.now());
   const visitParts = p.onOpenTicket ? (p.visit ?? []) : [];
+  const isSplit = (p.visit?.length ?? 0) > 0;
   const visitTotal = Math.round((t.total + (p.visit ?? []).reduce((n, v) => n + v.total, 0)) * 100) / 100;
   const now = tick + (p.clockOffsetMs ?? 0);
   useEffect(() => {
@@ -102,17 +103,17 @@ export function TicketPopup(p: Props) {
                 {t.customLines.map((l, i) => <div key={`c${i}`}><span>{l.serviceId || l.packageId ? l.label : `+ ${l.label}`}</span><span>{l.price < 0 ? "-" : ""}${Math.abs(l.price).toFixed(2)}</span></div>)}
               </div>
             )}
+            {/* A split ticket shows only its own part (owner, 2026-10-29): this part's service + add-ons, then the
+                tickets' total at the bottom. The other part is one tap away (SPLIT TICKET button). */}
+            {isSplit && (
+              <div className="checkin-modal-lines checkin-modal-subtotal" data-testid="nail-popup-service-total">
+                <div><span>Service total</span><span>${t.total.toFixed(2)}</span></div>
+              </div>
+            )}
             <div className="checkin-modal-detail">
               <UserRound size={18} />
               <div><small>Technician</small><strong>{t.staff ? techLabel(t.staff.name, t.staff.id) : "Not assigned"}</strong></div>
             </div>
-            {(p.visit?.length ?? 0) > 0 && (
-              <div className="checkin-modal-lines" data-testid="nail-popup-visit">
-                {p.visit!.map((v) => (
-                  <div key={`v${v.id}`}><span>{[v.service.name, ...countedNames(v.addons.map((a) => a.name))].join(" + ")} · {v.staff ? techLabel(v.staff.name, v.staff.id) : "next technician"}{v.doneAt ? " · DONE" : v.status === "started" ? " · in service" : ""}</span><span>${v.total.toFixed(2)}</span></div>
-                ))}
-              </div>
-            )}
             {t.actualMinutes != null && (
               // DONE: how long the service really took, against the time planned for it.
               <div className="checkin-modal-detail" data-testid="nail-popup-service-time">
@@ -128,7 +129,7 @@ export function TicketPopup(p: Props) {
             <div className="checkin-modal-detail">
               <CalendarDays size={18} />
               {/* A visit split between technicians is paid once, for all of it (CheckoutMode): show that amount. */}
-              <div><small>{visitTotal !== t.total ? "Total to collect · whole visit" : "Total to collect"}</small><strong data-testid="nail-popup-total">${visitTotal.toFixed(2)}</strong></div>
+              <div><small>{isSplit ? `Tickets total · ${1 + (p.visit?.length ?? 0)} tickets` : "Total to collect"}</small><strong data-testid="nail-popup-total">${visitTotal.toFixed(2)}</strong></div>
             </div>
           </div>
         </div>
@@ -159,13 +160,6 @@ export function TicketPopup(p: Props) {
       </div>
     </>
   );
-}
-
-/** "Nail Art, Nail Art" → "Nail Art ×2", keeping first-seen order. */
-function countedNames(names: string[]): string[] {
-  const counts = new Map<string, number>();
-  for (const n of names) counts.set(n, (counts.get(n) ?? 0) + 1);
-  return [...counts].map(([n, c]) => (c > 1 ? `${n} ×${c}` : n));
 }
 
 /** Add-ons grouped by id, in the order first added, each with how many times it is on the ticket. */
