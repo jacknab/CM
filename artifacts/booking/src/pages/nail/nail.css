@@ -928,9 +928,13 @@
 .nail-app .q-unified-pill[data-kind^="urgent-"] { max-width: 60%; }
 .nail-app .q-unified-pill[data-kind="urgent-orange"] { background: #fff4e0; color: #b45309; }
 .nail-app .q-unified-pill[data-kind="urgent-red"] { background: #fee2e2; color: #b91c1c; }
-/* Red edge alarm (owner, 2026-10-29): just the outer border, blinking 1 second on, 1 second off. */
-.nail-app .nl-urgent-edge { position: fixed; inset: 0; pointer-events: none; z-index: 2147483000;
-  border: 10px solid #ef1c1c; animation: nl-urgent-blink 2s step-end infinite; }
+/* Red alarm (owner, 2026-10-29): a red bar on the left and right edges only — no top or bottom line — in the middle
+   of the screen, clear of the header and the footer; blinking 1 second on, 1 second off. Same on the lock screen. */
+.nail-app .nl-urgent-edge { position: fixed; inset: 0; pointer-events: none; z-index: 2147483000; animation: nl-urgent-blink 2s step-end infinite; }
+.nail-app .nl-urgent-edge::before, .nail-app .nl-urgent-edge::after { content: ""; position: absolute; top: 25vh; bottom: 25vh; width: 10px;
+  background: #ef1c1c; border-radius: 6px; }
+.nail-app .nl-urgent-edge::before { left: 0; }
+.nail-app .nl-urgent-edge::after { right: 0; }
 @keyframes nl-urgent-blink { 0% { opacity: 1; } 50% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
   .nail-app .nl-urgent-edge { animation: none; }
