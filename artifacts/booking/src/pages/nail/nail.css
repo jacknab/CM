@@ -1118,6 +1118,13 @@
 .nail-app .ticket-popup .checkin-modal-price { align-self: flex-end; font-size: 18px; color: #222; padding-bottom: 2px; }
 .nail-app .ticket-popup .assign-create-hint { font-size: 16px; color: #f0ead6; border: 0; }
 .nail-app .ticket-popup .checkin-dock { grid-template-columns: repeat(2, 132px); gap: 14px; }
+/* Split ticket: the other part's button spans the dock's two columns, above the others. With it first, the usual
+   "odd last button spans both" rule would count it, so the dock marks its own wide button (checkin-dock-wide). */
+.nail-app .checkin-dock-has-visit .checkin-dock-btn:last-child:nth-child(odd) { grid-column: auto; }
+.nail-app .checkin-dock-has-visit .checkin-dock-wide, .nail-app .checkin-dock .checkin-dock-visit { grid-column: span 2; }
+.nail-app .ticket-popup .checkin-dock-btn.checkin-dock-visit { flex-direction: row; justify-content: center; padding: 18px 12px; gap: 12px;
+  background: #f0ead6; color: #111; border: 2px solid #111; }
+.nail-app .ticket-popup .checkin-dock-btn.checkin-dock-visit:hover { background: #e4ddc6; border-color: #111; }
 .nail-app .ticket-popup .checkin-dock-btn { background: #f0ead6; border: 1px solid #d8d0b8; color: #111; border-radius: 14px; padding: 24px 8px; gap: 10px; }
 .nail-app .ticket-popup .checkin-dock-btn:hover { background: #e4ddc6; border-color: #cfc6ab; color: #111; }
 .nail-app .ticket-popup .checkin-dock-btn svg { width: 34px; height: 34px; }

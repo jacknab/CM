@@ -2133,7 +2133,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
         // same visit is still waiting. The visit's last ticket is checked out as normal.
         onDone={popupTicket.groupId != null && tickets.some((x) => x.id !== popupTicket.id && x.groupId === popupTicket.groupId && x.status === "confirmed")
           ? ticketActions.onDone : undefined}
-        inChairOn={popupTicket.client.id != null ? tickets.find((x) => x.id !== popupTicket.id && x.client.id === popupTicket.client.id && x.status === "started" && !x.doneAt)?.ticketNumber ?? null : null} clockOffsetMs={clockOffsetMs} onClose={() => setPopupId(null)} />}
+        inChairOn={popupTicket.client.id != null ? tickets.find((x) => x.id !== popupTicket.id && x.client.id === popupTicket.client.id && x.status === "started" && !x.doneAt)?.ticketNumber ?? null : null} clockOffsetMs={clockOffsetMs} onClose={() => setPopupId(null)}
+        onOpenTicket={(v) => setPopupId(v.id)} />}
       {receiptToken && <ReceiptDialog token={receiptToken} onClose={() => setReceiptToken(null)} />}
       {receiptSnapshot != null && <ReceiptDialog token={null} snapshot={receiptSnapshot} onClose={() => setReceiptSnapshot(null)} />}
       {lookupStatus && <TicketStatusDialog ticket={lookupStatus} onClose={() => setLookupStatus(null)} />}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Ban, CalendarDays, Check, Clock, Hand, Phone, Play, Receipt, ShoppingBag, UserRound, X, MessageSquare } from "lucide-react";
+import { Ban, CalendarDays, Check, Clock, Hand, Phone, Play, Receipt, ShoppingBag, Split, UserRound, X, MessageSquare } from "lucide-react";
 import { useNailText } from "./i18n";
 import { formatDuration, formatElapsed } from "./ticketDraft";
 import { ticketNo, type BoardTicket } from "./nailApi";
@@ -24,6 +24,8 @@ interface Props {
   clockOffsetMs?: number;
   /** The visit's other tickets (same number, services other technicians do): the whole visit is shown. */
   visit?: BoardTicket[];
+  /** Opens another part of the same visit in this popup (the SPLIT TICKET button above the dock). */
+  onOpenTicket?: (t: BoardTicket) => void;
 }
 
 const NO_COLOR = "#454c56";
@@ -38,6 +40,7 @@ export function TicketPopup(p: Props) {
   const t = p.ticket;
   const { t: tr } = useNailText();
   const [tick, setTick] = useState(() => Date.now());
+  const visitParts = p.onOpenTicket ? (p.visit ?? []) : [];
   const visitTotal = Math.round((t.total + (p.visit ?? []).reduce((n, v) => n + v.total, 0)) * 100) / 100;
   const now = tick + (p.clockOffsetMs ?? 0);
   useEffect(() => {
@@ -105,7 +108,7 @@ export function TicketPopup(p: Props) {
             {(p.visit?.length ?? 0) > 0 && (
               <div className="checkin-modal-lines" data-testid="nail-popup-visit">
                 {p.visit!.map((v) => (
-                  <div key={`v${v.id}`}><span>{[v.service.name, ...v.addons.map((a) => a.name)].join(" + ")} · {v.staff ? techLabel(v.staff.name, v.staff.id) : "next technician"}{v.doneAt ? " · DONE" : v.status === "started" ? " · in service" : ""}</span><span>${v.total.toFixed(2)}</span></div>
+                  <div key={`v${v.id}`}><span>{[v.service.name, ...countedNames(v.addons.map((a) => a.name))].join(" + ")} · {v.staff ? techLabel(v.staff.name, v.staff.id) : "next technician"}{v.doneAt ? " · DONE" : v.status === "started" ? " · in service" : ""}</span><span>${v.total.toFixed(2)}</span></div>
                 ))}
               </div>
             )}
@@ -134,10 +137,19 @@ export function TicketPopup(p: Props) {
             {t.client.name} is in service on #{p.inChairOn}. This ticket can be assigned and started once that service is done.
           </p>
         )}
-        <div className="checkin-dock" onClick={(e) => e.stopPropagation()}>
-          {dock.map((b) => (
+        <div className={`checkin-dock ${visitParts.length ? "checkin-dock-has-visit" : ""}`} onClick={(e) => e.stopPropagation()}>
+          {/* Part of a visit split between technicians (owner, 2026-10-29): a full-width button per other part opens it,
+              and shows at a glance that this ticket is one part of a split ticket. */}
+          {visitParts.map((v) => (
+            <button key={`visit-${v.id}`} type="button" onClick={() => p.onOpenTicket!(v)} data-testid="nail-dock-visit-part"
+              className="checkin-dock-btn checkin-dock-visit">
+              <Split size={22} />
+              <span>SPLIT TICKET · {v.staff ? `${techLabel(v.staff.name, v.staff.id).toUpperCase()}'S PART` : "OTHER PART"}</span>
+            </button>
+          ))}
+          {dock.map((b, i) => (
             <button key={b.id} type="button" disabled={p.busy || b.disabled} onClick={() => { b.action(); p.onClose(); }} data-testid={`nail-dock-${b.id.toLowerCase()}`}
-              className={`checkin-dock-btn ${b.primary ? "checkin-dock-primary" : ""} ${b.danger ? "checkin-dock-danger" : ""}`}>
+              className={`checkin-dock-btn ${b.primary ? "checkin-dock-primary" : ""} ${b.danger ? "checkin-dock-danger" : ""} ${dock.length % 2 === 1 && i === dock.length - 1 ? "checkin-dock-wide" : ""}`}>
               <b.icon size={22} />
               <span>{b.label}</span>
             </button>
@@ -146,4 +158,11 @@ export function TicketPopup(p: Props) {
       </div>
     </>
   );
+}
+
+/** "Nail Art, Nail Art" → "Nail Art ×2", keeping first-seen order. */
+function countedNames(names: string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const n of names) counts.set(n, (counts.get(n) ?? 0) + 1);
+  return [...counts].map(([n, c]) => (c > 1 ? `${n} ×${c}` : n));
 }
