@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Ban, CalendarDays, Check, Clock, Hand, Phone, Play, Receipt, ShoppingBag, Split, UserRound, X, MessageSquare } from "lucide-react";
+import { Ban, CalendarDays, Check, Clock, Hand, Play, Receipt, ShoppingBag, Split, UserRound, X, MessageSquare } from "lucide-react";
 import { useNailText } from "./i18n";
 import { formatDuration, formatElapsed } from "./ticketDraft";
 import { ticketNo, type BoardTicket } from "./nailApi";
@@ -82,7 +82,6 @@ export function TicketPopup(p: Props) {
                     reach the main POS gets one when the ticket is sent. */}
                 <span className="checkin-ticket-num">{t.ticketNumber != null ? `#${ticketNo(t)}` : t.offline ? "NUMBER PENDING" : `#${t.id}`}</span>
               </div>
-              <span><Phone size={13} /> {t.client.phone ?? "No phone"}</span>
             </div>
             <div className="checkin-status-pill" style={{ marginRight: 40 }} data-in-service={t.status === "started"}>
               {t.doneAt ? "DONE · UNPAID" : t.status === "started" ? "IN SERVICE · UNPAID" : t.staff ? `WAITING · WITH ${techLabel(t.staff.name, t.staff.id).toUpperCase()}` : "WAITING · UNASSIGNED"}
