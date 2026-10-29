@@ -914,6 +914,12 @@
    for four rows (e.g. the Techs tab's Clocked In/Out bar on an 800px-tall tablet), scroll the grid a
    little instead of squeezing rows and clipping each card's bottom line. */
 .nail-app .q-wait-grid, .nail-app .q-tech-grid { grid-template-rows: none; grid-auto-rows: 145px; }
+/* Bigger than a 10" tablet (owner, 2026-10-29): the same 4 × 4 cards grow by --q-zoom (gridZoom.ts) to fill the area —
+   wider columns, taller rows, and everything inside a card scaled by the same factor. --q-zoom is 1 on a 10" tablet. */
+.nail-app .q-detail-ghost-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: calc(14px * var(--q-zoom, 1)); }
+.nail-app .q-detail-ghost-grid:not(.q-wait-grid):not(.q-tech-grid) { grid-template-rows: repeat(4, minmax(0, calc(145px * var(--q-zoom, 1)))); }
+.nail-app .q-wait-grid, .nail-app .q-tech-grid { grid-auto-rows: calc(145px * var(--q-zoom, 1)); }
+.nail-app .q-detail-ghost-grid > * { zoom: var(--q-zoom, 1); }
 .nail-app .q-wait-rest { width: 100%; }
 .nail-app .q-wait-card { position: relative; cursor: pointer; }
 /* No service / no technician yet: a red blank line (the "___" text stays for screen readers, drawn as a solid bar so it reads clearly at card size). */

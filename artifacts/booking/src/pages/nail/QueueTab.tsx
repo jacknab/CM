@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { gridZoomRef } from "./gridZoom";
 import { Armchair, CalendarDays, Clock, EyeOff, PersonStanding, Ticket, UserCheck, Users, X } from "lucide-react";
 import { DEFAULT_SERVICE_MIN, estimateWait, formatWait, type WaitTech } from "@shared/waitEstimate";
 import type { BoardDayBooking, BoardMarker, BoardTicket, BoardWait, SalonGlance, TurnTech } from "./nailApi";
@@ -365,7 +366,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
 
   // Same 16 fixed slots on every page, including silhouettes when there are fewer clients.
   const renderClients = (rows: ClientRow[]) => (
-    <div className="q-detail-ghost-grid q-wait-grid" data-testid="nail-queue-wait-grid">
+    <div className="q-detail-ghost-grid q-wait-grid" ref={gridZoomRef} data-testid="nail-queue-wait-grid">
       {rows.map((r) => {
         const upNext = r.key === upNextKey;
         const inChair = r.state === "service";
@@ -463,7 +464,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
             ))}
           </div>
         )}
-        <div className="q-detail-ghost-grid">
+        <div className="q-detail-ghost-grid" ref={gridZoomRef}>
           {kind === "appointments" && all.length === 0 && (appointmentsLoading || appointmentsError || (count ?? 0) > 0) && (
             <p className="q-detail-message" role="status">{appointmentsError ? "Appointments could not be loaded. Please refresh the page." : appointmentsLoading ? "Loading appointments…" : "Appointment details are unavailable. Please refresh the page."}</p>
           )}

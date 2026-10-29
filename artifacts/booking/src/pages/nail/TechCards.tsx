@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { gridZoomRef } from "./gridZoom";
 import { useNailText, type NailTextKey } from "./i18n";
 import { Clock } from "lucide-react";
 import { DEFAULT_SERVICE_MIN, estimateWait, formatWait, type WaitTech } from "@shared/waitEstimate";
@@ -191,7 +192,7 @@ export function TechCards({ techs, tickets, markers, glance, stats, loading, clo
   // Technicians use In Service's fixed 4 × 4 card grid, not an expanding/scaled layout.
   const renderGrid = (list: typeof cards, empty: string) => {
     return (
-        <div className="q-detail-ghost-grid q-tech-grid" data-testid="nail-tech-fixed-grid">
+        <div className="q-detail-ghost-grid q-tech-grid" ref={gridZoomRef} data-testid="nail-tech-fixed-grid">
           {list.length === 0 && !loading && <p className="q-detail-message" role="status">{empty}</p>}
           {list.map((c) => {
             const { t, current, queue, status, nextUp, stats: st, since } = c;
