@@ -1472,7 +1472,7 @@ export function CheckoutMode(p: Props) {
                       <Ban size={22} /><span>NO RECEIPT</span>
                     </button>
                   </div>
-                  <p className="pay-hint">The sale is complete. Choose how {ticket.client.name.trim().split(/\s+/)[0] || "the client"} would like their receipt.</p>
+                  <p className="pay-hint">{`The sale is complete. Choose how ${ticket.client.name.trim().split(/\s+/)[0] || "the client"} would like their receipt.`}</p>
                 </div>
               ) : (
               <div className="pay-panel" data-testid="nail-pay-payment">

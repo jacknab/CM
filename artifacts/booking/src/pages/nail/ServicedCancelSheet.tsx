@@ -55,8 +55,7 @@ export function ServicedCancelSheet({ ticket, onClose, onConfirm }: {
         <div className="assign-create-notice">
           <AlertTriangle size={14} />
           <span>
-            {ticket.staff ? techLabel(ticket.staff.name, ticket.staff.id) : "A technician"} already {stage} this service.
-            Cancelling it needs the reason and the manager PIN. The owner sees both.
+            {`${ticket.staff ? techLabel(ticket.staff.name, ticket.staff.id) : "A technician"} already ${stage} this service. Cancelling it needs the reason and the manager PIN. The owner sees both.`}
           </span>
         </div>
         <div style={{ padding: "10px 22px" }}>

@@ -56,16 +56,16 @@ export function OfflineQueueSheet({ storeId, offline, onClose }: { storeId: numb
           {nailOffline.storageProblem() && (
             <div className="gift-error" data-testid="nail-storage-problem">
               {nailOffline.storageProblem()!.kind === "full" ? "This tablet's storage is full." : "This tablet cannot save right now."}
-              {" "}New changes will not be saved until this is fixed. Nothing already saved has been removed. Free up space on the tablet or restart it, and tell your manager.
+              {" "}{"New changes will not be saved until this is fixed. Nothing already saved has been removed. Free up space on the tablet or restart it, and tell your manager."}
             </div>
           )}
           {syncEngine.needsSignIn() && <div className="gift-error" data-testid="nail-signin-needed">This tablet has been signed out. Everything below is kept and will be sent as soon as someone signs in to the salon again.</div>}
           <div className="assign-create-hint" data-testid="nail-last-sync">
             {lastSync ? `Last sent to the server: ${new Date(lastSync).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "Nothing has been sent from this tablet yet."}
           </div>
-          {others > 0 && <div className="assign-create-hint">{others} saved change{others === 1 ? "" : "s"} belong{others === 1 ? "s" : ""} to another salon and will be sent when that salon signs in on this tablet.</div>}
+          {others > 0 && <div className="assign-create-hint">{others === 1 ? "1 saved change belongs to another salon and will be sent when that salon signs in on this tablet." : `${others} saved changes belong to another salon and will be sent when that salon signs in on this tablet.`}</div>}
           {ops.length === 0 && <div className="assign-create-hint">Everything has been sent.</div>}
-          {cash > 0 && <div className="assign-create-hint" data-testid="nail-queued-cash-total">Cash taken on this tablet and not yet confirmed by the server: ${cash.toFixed(2)}</div>}
+          {cash > 0 && <div className="assign-create-hint" data-testid="nail-queued-cash-total">{`Cash taken on this tablet and not yet confirmed by the server: $${cash.toFixed(2)}`}</div>}
           {ops.map((o) => (
             <div key={o.id} className="assign-create-item" style={{ cursor: "default", flexWrap: "wrap" }} data-testid={`nail-queued-${o.type}`}>
               <span className="assign-create-name">{WHAT[o.type]}{who(o) ? ` · ${who(o)}` : ""}{detail(o)}</span>

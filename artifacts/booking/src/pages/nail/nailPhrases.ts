@@ -5365,6 +5365,634 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Zelle": [
   "Zelle",
   "Zelle"
+ ],
+ "after these days": [
+  "sau những ngày này",
+  "después de estos días"
+ ],
+ "in the next 30 days": [
+  "trong 30 ngày tới",
+  "en los próximos 30 días"
+ ],
+ "in the next 90 days": [
+  "trong 90 ngày tới",
+  "en los próximos 90 días"
+ ],
+ "We could not save this client. Please try again.": [
+  "Không lưu được khách này. Vui lòng thử lại.",
+  "No se pudo guardar este cliente. Inténtelo de nuevo."
+ ],
+ "Quick Check-in": [
+  "Nhận khách nhanh",
+  "Registro rápido"
+ ],
+ "Quick Check-in (no phone number)": [
+  "Nhận khách nhanh (không số điện thoại)",
+  "Registro rápido (sin teléfono)"
+ ],
+ "Client's Name": [
+  "Tên khách",
+  "Nombre del cliente"
+ ],
+ "No phone number. Enter the client's real name.": [
+  "Không có số điện thoại. Nhập tên thật của khách.",
+  "Sin número de teléfono. Escriba el nombre real del cliente."
+ ],
+ "NEXT TECHNICIAN": [
+  "THỢ KẾ TIẾP",
+  "SIGUIENTE TÉCNICO"
+ ],
+ "Could not add the package": [
+  "Không thêm được gói",
+  "No se pudo agregar el paquete"
+ ],
+ "NO CASH DRAWER ON THIS STATION · SET ONE UP IN SETTINGS › CASH DRAWERS": [
+  "TRẠM NÀY CHƯA CÓ NGĂN KÉO TIỀN · CÀI TRONG CÀI ĐẶT › NGĂN KÉO TIỀN",
+  "ESTA ESTACIÓN NO TIENE CAJÓN DE EFECTIVO · CONFIGÚRELO EN AJUSTES › CAJONES"
+ ],
+ "not saved": [
+  "chưa lưu",
+  "sin guardar"
+ ],
+ "Undo": [
+  "Hoàn tác",
+  "Deshacer"
+ ],
+ "Quantity": [
+  "Số lượng",
+  "Cantidad"
+ ],
+ "the client": [
+  "khách",
+  "el cliente"
+ ],
+ "Open a grid": [
+  "Mở một bảng phím",
+  "Abrir una cuadrícula"
+ ],
+ "Add-ons key": [
+  "Phím dịch vụ thêm",
+  "Tecla de extras"
+ ],
+ "Show": [
+  "Hiện",
+  "Mostrar"
+ ],
+ "Hide": [
+  "Ẩn",
+  "Ocultar"
+ ],
+ "Key grid saved": [
+  "Đã lưu bảng phím",
+  "Cuadrícula guardada"
+ ],
+ "Key grid is automatic again": [
+  "Bảng phím đã tự động trở lại",
+  "La cuadrícula vuelve a ser automática"
+ ],
+ "Couldn't save the key grid": [
+  "Không lưu được bảng phím",
+  "No se pudo guardar la cuadrícula"
+ ],
+ "That ticket was paid or closed on another station": [
+  "Phiếu đó đã được trả hoặc đóng ở trạm khác",
+  "Ese ticket se pagó o cerró en otra estación"
+ ],
+ "Couldn't change the ticket": [
+  "Không đổi được phiếu",
+  "No se pudo cambiar el ticket"
+ ],
+ "Couldn't start the ticket": [
+  "Không bắt đầu được phiếu",
+  "No se pudo iniciar el ticket"
+ ],
+ "A package can be added to a saved ticket once the connection is back": [
+  "Có thể thêm gói vào phiếu đã lưu khi có mạng lại",
+  "Se puede agregar un paquete a un ticket guardado cuando vuelva la conexión"
+ ],
+ "the next technician": [
+  "thợ kế tiếp",
+  "el siguiente técnico"
+ ],
+ "That service has started — change it from its own ticket": [
+  "Dịch vụ đó đã bắt đầu — hãy đổi trên phiếu riêng của nó",
+  "Ese servicio ya empezó — cámbielo desde su propio ticket"
+ ],
+ "The package price stays with its services": [
+  "Giá gói đi kèm các dịch vụ của gói",
+  "El precio del paquete va con sus servicios"
+ ],
+ "A ticket needs a service — tap CLEAR to start over": [
+  "Phiếu cần có dịch vụ — bấm XÓA để làm lại",
+  "Un ticket necesita un servicio — toque BORRAR para empezar de nuevo"
+ ],
+ "A ticket needs a service — cancel it from the Queue instead": [
+  "Phiếu cần có dịch vụ — hãy hủy phiếu ở mục Khách chờ",
+  "Un ticket necesita un servicio — cancélelo desde la Cola"
+ ],
+ "Sign in with your Tech ID to sell retail": [
+  "Đăng nhập bằng Mã thợ để bán lẻ",
+  "Inicie sesión con su ID de técnico para vender productos"
+ ],
+ "Couldn't start the sale": [
+  "Không bắt đầu được việc bán",
+  "No se pudo iniciar la venta"
+ ],
+ "Check a client in first — or tap Retail to sell a product": [
+  "Nhận khách trước — hoặc bấm Bán lẻ để bán sản phẩm",
+  "Registre primero a un cliente — o toque Venta para vender un producto"
+ ],
+ "(no technician yet)": [
+  "(chưa có thợ)",
+  "(aún sin técnico)"
+ ],
+ "A ticket with no technician can't be paid yet and stays open.": [
+  "Phiếu chưa có thợ thì chưa trả được và vẫn mở.",
+  "Un ticket sin técnico aún no se puede pagar y queda abierto."
+ ],
+ "Not every service is done": [
+  "Chưa xong hết các dịch vụ",
+  "No todos los servicios están terminados"
+ ],
+ "Pay now": [
+  "Trả ngay",
+  "Pagar ahora"
+ ],
+ "This ticket hasn't been saved. Clear it? The client goes back to waiting.": [
+  "Phiếu này chưa lưu. Xóa phiếu? Khách sẽ quay lại chờ.",
+  "Este ticket no se ha guardado. ¿Borrarlo? El cliente vuelve a esperar."
+ ],
+ "Clear ticket": [
+  "Xóa phiếu",
+  "Borrar ticket"
+ ],
+ "Couldn't clear the ticket": [
+  "Không xóa được phiếu",
+  "No se pudo borrar el ticket"
+ ],
+ "Next technician in turn": [
+  "Thợ kế tiếp theo lượt",
+  "Siguiente técnico en turno"
+ ],
+ "· DONE": [
+  "· XONG",
+  "· LISTO"
+ ],
+ "· in service": [
+  "· đang làm",
+  "· en servicio"
+ ],
+ "PAY": [
+  "TRẢ TIỀN",
+  "PAGAR"
+ ],
+ "1 saved change belongs to another salon and will be sent when that salon signs in on this tablet.": [
+  "1 thay đổi đã lưu thuộc tiệm khác và sẽ được gửi khi tiệm đó đăng nhập trên máy này.",
+  "1 cambio guardado pertenece a otro salón y se enviará cuando ese salón inicie sesión en esta tableta."
+ ],
+ "RINGING UP": [
+  "ĐANG TÍNH",
+  "COBRANDO"
+ ],
+ "AFTER FIRST SERVICE": [
+  "SAU DỊCH VỤ ĐẦU",
+  "DESPUÉS DEL PRIMER SERVICIO"
+ ],
+ "Appointments could not be loaded. Please refresh the page.": [
+  "Không tải được lịch hẹn. Vui lòng tải lại trang.",
+  "No se pudieron cargar las citas. Actualice la página."
+ ],
+ "Appointment details are unavailable. Please refresh the page.": [
+  "Không xem được chi tiết lịch hẹn. Vui lòng tải lại trang.",
+  "Los detalles de la cita no están disponibles. Actualice la página."
+ ],
+ "7 days": [
+  "7 ngày",
+  "7 días"
+ ],
+ "30 days": [
+  "30 ngày",
+  "30 días"
+ ],
+ "90 days": [
+  "90 ngày",
+  "90 días"
+ ],
+ "on time": [
+  "đúng giờ",
+  "a tiempo"
+ ],
+ "marked DONE": [
+  "bấm XONG",
+  "marcó LISTO"
+ ],
+ "Could not cancel the ticket": [
+  "Không hủy được phiếu",
+  "No se pudo cancelar el ticket"
+ ],
+ "Cancel serviced ticket · Manager PIN": [
+  "Hủy phiếu đã làm · Mã quản lý",
+  "Cancelar ticket atendido · PIN de gerente"
+ ],
+ "Cancel a serviced ticket": [
+  "Hủy phiếu đã làm",
+  "Cancelar un ticket atendido"
+ ],
+ "started": [
+  "bắt đầu",
+  "inició"
+ ],
+ "A technician": [
+  "Một thợ",
+  "Un técnico"
+ ],
+ "Why is this ticket being cancelled?": [
+  "Vì sao hủy phiếu này?",
+  "¿Por qué se cancela este ticket?"
+ ],
+ "Reason for cancelling": [
+  "Lý do hủy",
+  "Motivo de la cancelación"
+ ],
+ "No connection. A serviced ticket can only be cancelled online.": [
+  "Mất mạng. Phiếu đã làm chỉ hủy được khi có mạng.",
+  "Sin conexión. Un ticket atendido solo se puede cancelar en línea."
+ ],
+ "CANCELLING…": [
+  "ĐANG HỦY…",
+  "CANCELANDO…"
+ ],
+ "MANAGER PIN · CANCEL TICKET": [
+  "MÃ QUẢN LÝ · HỦY PHIẾU",
+  "PIN DE GERENTE · CANCELAR TICKET"
+ ],
+ "That is not a Tech ID badge.": [
+  "Đó không phải thẻ Mã thợ.",
+  "Eso no es una credencial de ID de técnico."
+ ],
+ "Keypad hide confirmed.": [
+  "Đã xác nhận ẩn bàn phím số.",
+  "Ocultar teclado confirmado."
+ ],
+ "QR code not valid.": [
+  "Mã QR không hợp lệ.",
+  "Código QR no válido."
+ ],
+ "No connection. Try again.": [
+  "Mất mạng. Thử lại.",
+  "Sin conexión. Inténtelo de nuevo."
+ ],
+ "SCAN YOUR ID": [
+  "QUÉT MÃ CỦA BẠN",
+  "ESCANEE SU ID"
+ ],
+ "Hold your printed Tech ID under the scanner": [
+  "Đưa thẻ Mã thợ đã in dưới máy quét",
+  "Ponga su ID de técnico impreso bajo el escáner"
+ ],
+ "Could not print this Tech ID.": [
+  "Không in được Mã thợ này.",
+  "No se pudo imprimir este ID de técnico."
+ ],
+ "Generating QR code…": [
+  "Đang tạo mã QR…",
+  "Generando código QR…"
+ ],
+ "Could not generate QR code": [
+  "Không tạo được mã QR",
+  "No se pudo generar el código QR"
+ ],
+ "Could not generate QR code.": [
+  "Không tạo được mã QR.",
+  "No se pudo generar el código QR."
+ ],
+ "Printing QR code…": [
+  "Đang in mã QR…",
+  "Imprimiendo código QR…"
+ ],
+ "Salon": [
+  "Tiệm",
+  "Salón"
+ ],
+ "Hide Keypad": [
+  "Ẩn bàn phím số",
+  "Ocultar teclado"
+ ],
+ "QR code printed. Scan it to confirm.": [
+  "Đã in mã QR. Quét để xác nhận.",
+  "Código QR impreso. Escanéelo para confirmar."
+ ],
+ "QR code printed. Scan to confirm.": [
+  "Đã in mã QR. Quét để xác nhận.",
+  "Código QR impreso. Escanee para confirmar."
+ ],
+ "Print Tech ID": [
+  "In Mã thợ",
+  "Imprimir ID de técnico"
+ ],
+ "Print a scanner badge for the selected technician.": [
+  "In thẻ quét cho thợ đã chọn.",
+  "Imprima una credencial para escanear del técnico elegido."
+ ],
+ "Confirm Keypad Hide": [
+  "Xác nhận ẩn bàn phím số",
+  "Confirmar ocultar teclado"
+ ],
+ "A QR code has been printed. Scan it with the lock screen scanner to confirm hiding the keypad.": [
+  "Đã in một mã QR. Quét bằng máy quét ở màn hình khóa để xác nhận ẩn bàn phím số.",
+  "Se imprimió un código QR. Escanéelo con el escáner de la pantalla de bloqueo para confirmar ocultar el teclado."
+ ],
+ "The QR code expires in 5 minutes.": [
+  "Mã QR hết hạn sau 5 phút.",
+  "El código QR vence en 5 minutos."
+ ],
+ "Show keypad on lock screen": [
+  "Hiện bàn phím số ở màn hình khóa",
+  "Mostrar teclado en la pantalla de bloqueo"
+ ],
+ "When hidden, technicians must scan their printed ID.": [
+  "Khi ẩn, thợ phải quét thẻ Mã thợ đã in.",
+  "Si está oculto, los técnicos deben escanear su ID impreso."
+ ],
+ "Choose technician": [
+  "Chọn thợ",
+  "Elegir técnico"
+ ],
+ "No active technicians have a Tech ID.": [
+  "Chưa có thợ nào có Mã thợ.",
+  "Ningún técnico activo tiene ID de técnico."
+ ],
+ "Choose a technician with a Tech ID.": [
+  "Chọn thợ có Mã thợ.",
+  "Elija un técnico con ID de técnico."
+ ],
+ "DONE · UNPAID": [
+  "XONG · CHƯA TRẢ",
+  "LISTO · SIN PAGAR"
+ ],
+ "Service total": [
+  "Tổng dịch vụ",
+  "Total del servicio"
+ ],
+ "Done at": [
+  "Xong lúc",
+  "Terminado a las"
+ ],
+ "SPLIT TICKET · OTHER PART": [
+  "PHIẾU CHIA · PHẦN CÒN LẠI",
+  "TICKET DIVIDIDO · OTRA PARTE"
+ ],
+ "No-Show": [
+  "Không đến",
+  "No se presentó"
+ ],
+ "No-show": [
+  "Không đến",
+  "No se presentó"
+ ],
+ "Never served": [
+  "Chưa phục vụ",
+  "Nunca atendido"
+ ],
+ "This needs a connection. It will work again once the tablet is back online.": [
+  "Việc này cần có mạng. Sẽ dùng lại được khi máy có mạng.",
+  "Esto necesita conexión. Volverá a funcionar cuando la tableta esté en línea."
+ ],
+ "No connection, and no one with that ID is on this tablet's staff list. Check the ID, or try again once the tablet is back online.": [
+  "Mất mạng, và danh sách thợ trên máy này không có ai với mã đó. Kiểm tra lại mã, hoặc thử lại khi có mạng.",
+  "Sin conexión, y nadie con ese ID está en la lista de personal de esta tableta. Revise el ID o inténtelo cuando vuelva la conexión."
+ ],
+ "That client is no longer on this device": [
+  "Khách đó không còn trên máy này",
+  "Ese cliente ya no está en este dispositivo"
+ ],
+ "Marking a ticket done needs the connection. Check it out instead.": [
+  "Bấm xong phiếu cần có mạng. Hãy tính tiền thay vào đó.",
+  "Marcar un ticket como listo necesita conexión. Cóbrelo en su lugar."
+ ],
+ "Adding to a saved ticket needs the connection.": [
+  "Thêm vào phiếu đã lưu cần có mạng.",
+  "Agregar a un ticket guardado necesita conexión."
+ ],
+ "Changing a saved ticket needs the connection.": [
+  "Đổi phiếu đã lưu cần có mạng.",
+  "Cambiar un ticket guardado necesita conexión."
+ ],
+ "Adding a service to a saved ticket needs the connection.": [
+  "Thêm dịch vụ vào phiếu đã lưu cần có mạng.",
+  "Agregar un servicio a un ticket guardado necesita conexión."
+ ],
+ "Adding an add-on to a saved ticket needs the connection.": [
+  "Thêm dịch vụ thêm vào phiếu đã lưu cần có mạng.",
+  "Agregar un extra a un ticket guardado necesita conexión."
+ ],
+ "Taking an add-on off a saved ticket needs the connection.": [
+  "Bỏ dịch vụ thêm khỏi phiếu đã lưu cần có mạng.",
+  "Quitar un extra de un ticket guardado necesita conexión."
+ ],
+ "Adding a package to a saved ticket needs the connection.": [
+  "Thêm gói vào phiếu đã lưu cần có mạng.",
+  "Agregar un paquete a un ticket guardado necesita conexión."
+ ],
+ "Taking a service off a saved ticket needs the connection.": [
+  "Bỏ dịch vụ khỏi phiếu đã lưu cần có mạng.",
+  "Quitar un servicio de un ticket guardado necesita conexión."
+ ],
+ "Splitting a ticket needs the connection.": [
+  "Chia phiếu cần có mạng.",
+  "Dividir un ticket necesita conexión."
+ ],
+ "Couldn't clock them in": [
+  "Không cho vào ca được",
+  "No se pudo marcar su entrada"
+ ],
+ "Only cash can be taken while the tablet is offline. Card and gift card payments need a connection.": [
+  "Khi mất mạng chỉ thu được tiền mặt. Thẻ và thẻ quà cần có mạng.",
+  "Sin conexión solo se acepta efectivo. Los pagos con tarjeta y tarjeta de regalo necesitan conexión."
+ ],
+ "Rewards can be redeemed once the tablet is back online.": [
+  "Đổi điểm thưởng được khi máy có mạng lại.",
+  "Las recompensas se pueden canjear cuando la tableta vuelva a estar en línea."
+ ],
+ "Group Pay needs a connection. Pay each ticket on its own, or wait until the tablet is back online.": [
+  "Trả chung cần có mạng. Hãy trả từng phiếu, hoặc chờ có mạng lại.",
+  "Pago en grupo necesita conexión. Pague cada ticket por separado o espere a que vuelva la conexión."
+ ],
+ "Enter the client's name: at least 3 letters.": [
+  "Nhập tên khách: ít nhất 3 chữ cái.",
+  "Escriba el nombre del cliente: al menos 3 letras."
+ ],
+ "That doesn't look like a name. Ask the client for their name and enter it.": [
+  "Cái này không giống tên. Hỏi tên khách rồi nhập vào.",
+  "Eso no parece un nombre. Pregunte al cliente su nombre y escríbalo."
+ ],
+ "Receipts print from the Certxa tablet app with a receipt printer set up.": [
+  "Hóa đơn in từ ứng dụng Certxa trên máy tính bảng đã cài máy in hóa đơn.",
+  "Los recibos se imprimen desde la app Certxa de la tableta con una impresora configurada."
+ ],
+ "The receipt did not print.": [
+  "Hóa đơn không in được.",
+  "El recibo no se imprimió."
+ ],
+ "The printer did not respond. Check that it is on, has paper, and is connected.": [
+  "Máy in không phản hồi. Kiểm tra máy in đã bật, còn giấy và đã kết nối.",
+  "La impresora no respondió. Revise que esté encendida, tenga papel y esté conectada."
+ ],
+ "No receipt has been printed on this tablet yet. Open the ticket by its # to print its receipt.": [
+  "Máy này chưa in hóa đơn nào. Mở phiếu theo số # để in hóa đơn.",
+  "Aún no se ha impreso ningún recibo en esta tableta. Abra el ticket por su # para imprimir el recibo."
+ ],
+ "Length": [
+  "Độ dài",
+  "Largo"
+ ],
+ "Shape": [
+  "Dáng móng",
+  "Forma"
+ ],
+ "Art": [
+  "Vẽ móng",
+  "Arte"
+ ],
+ "Effect": [
+  "Hiệu ứng",
+  "Efecto"
+ ],
+ "Custom quote": [
+  "Giá riêng",
+  "Precio personalizado"
+ ],
+ "just now": [
+  "vừa xong",
+  "justo ahora"
+ ],
+ "RINGING UP · NOT SAVED": [
+  "ĐANG TÍNH · CHƯA LƯU",
+  "COBRANDO · SIN GUARDAR"
+ ],
+ "NO TECH · ONE IS FREE": [
+  "CHƯA CÓ THỢ · CÓ THỢ RẢNH",
+  "SIN TÉCNICO · HAY UNO LIBRE"
+ ],
+ "LONG WAIT · ALL TECHS BUSY": [
+  "CHỜ LÂU · THỢ ĐỀU BẬN",
+  "ESPERA LARGA · TODOS OCUPADOS"
+ ],
+ "OVER TIME · NOT DONE": [
+  "QUÁ GIỜ · CHƯA XONG",
+  "TIEMPO EXCEDIDO · SIN TERMINAR"
+ ],
+ "DONE · NOT PAID": [
+  "XONG · CHƯA TRẢ",
+  "LISTO · SIN PAGAR"
+ ],
+ "Card charge has no transaction ID. Check Stripe before retrying.": [
+  "Lần quẹt thẻ không có mã giao dịch. Kiểm tra Stripe trước khi thử lại.",
+  "El cargo con tarjeta no tiene ID de transacción. Revise Stripe antes de reintentar."
+ ],
+ "Card payment could not be verified": [
+  "Không xác minh được thanh toán thẻ",
+  "No se pudo verificar el pago con tarjeta"
+ ],
+ "Missing transaction ID. Check Stripe before trying another charge.": [
+  "Thiếu mã giao dịch. Kiểm tra Stripe trước khi quẹt lần nữa.",
+  "Falta el ID de transacción. Revise Stripe antes de intentar otro cargo."
+ ],
+ "Card declined": [
+  "Thẻ bị từ chối",
+  "Tarjeta rechazada"
+ ],
+ "M2 READER — INSERT / TAP CARD": [
+  "MÁY ĐỌC M2 — CẮM / CHẠM THẺ",
+  "LECTOR M2 — INSERTE / ACERQUE LA TARJETA"
+ ],
+ "Reader disconnected.": [
+  "Máy đọc thẻ đã ngắt kết nối.",
+  "Lector desconectado."
+ ],
+ "No reader found. The M2 is a Bluetooth reader and only works through the Certxa Android app — a web browser can't connect to it (browsers only support smart readers on the same network).": [
+  "Không tìm thấy máy đọc thẻ. M2 là máy đọc Bluetooth và chỉ dùng được qua ứng dụng Certxa trên Android — trình duyệt web không kết nối được (trình duyệt chỉ hỗ trợ máy đọc thông minh cùng mạng).",
+  "No se encontró lector. El M2 es un lector Bluetooth y solo funciona con la app Certxa para Android — un navegador no puede conectarse (los navegadores solo admiten lectores inteligentes en la misma red)."
+ ],
+ "Reader connection failed": [
+  "Kết nối máy đọc thẻ thất bại",
+  "Falló la conexión del lector"
+ ],
+ "Capture failed": [
+  "Thu tiền thất bại",
+  "Falló el cobro"
+ ],
+ "FINISHING THE PREVIOUS CHARGE — DO NOT CHARGE AGAIN…": [
+  "ĐANG HOÀN TẤT LẦN QUẸT TRƯỚC — ĐỪNG QUẸT LẠI…",
+  "TERMINANDO EL COBRO ANTERIOR — NO COBRE DE NUEVO…"
+ ],
+ "Payment failed": [
+  "Thanh toán thất bại",
+  "Pago fallido"
+ ],
+ "CARD PAYMENT SENT TO FRONT DESK": [
+  "ĐÃ GỬI THANH TOÁN THẺ RA QUẦY",
+  "PAGO CON TARJETA ENVIADO A RECEPCIÓN"
+ ],
+ "TIP AND CARD PAYMENT SENT TO FRONT DESK": [
+  "ĐÃ GỬI TIỀN TIP VÀ THANH TOÁN THẺ RA QUẦY",
+  "PROPINA Y PAGO CON TARJETA ENVIADOS A RECEPCIÓN"
+ ],
+ "Service is DONE · Manager PIN": [
+  "Dịch vụ đã XONG · Mã quản lý",
+  "Servicio LISTO · PIN de gerente"
+ ],
+ "Network error. Please try again.": [
+  "Lỗi mạng. Vui lòng thử lại.",
+  "Error de red. Inténtelo de nuevo."
+ ],
+ "Connection error. Please try again.": [
+  "Lỗi kết nối. Vui lòng thử lại.",
+  "Error de conexión. Inténtelo de nuevo."
+ ],
+ "Mobile Payment": [
+  "Thanh toán di động",
+  "Pago móvil"
+ ],
+ "Could not clear them": [
+  "Không xóa được",
+  "No se pudieron borrar"
+ ],
+ "Couldn't clear the waiting tickets": [
+  "Không xóa được các phiếu chờ",
+  "No se pudieron borrar los tickets en espera"
+ ],
+ "1 open ticket must be checked out first": [
+  "Phải tính tiền 1 phiếu đang mở trước",
+  "Primero hay que cobrar 1 ticket abierto"
+ ],
+ "1 client is still waiting on a ticket nobody started": [
+  "1 khách vẫn đang chờ ở phiếu chưa ai bắt đầu",
+  "1 cliente sigue esperando en un ticket que nadie inició"
+ ],
+ "Clearing…": [
+  "Đang xóa…",
+  "Borrando…"
+ ],
+ "Clear as no-shows": [
+  "Ghi là không đến",
+  "Marcar como no presentados"
+ ],
+ "this station": [
+  "trạm này",
+  "esta estación"
+ ],
+ "Every POS station already belongs to another tablet, so this one isn't linked to a customer screen. The owner can add a station or release an unused one in Settings → POS Stations.": [
+  "Mọi trạm POS đã thuộc máy khác, nên máy này chưa nối với màn hình khách. Chủ tiệm có thể thêm trạm hoặc nhả trạm không dùng trong Cài đặt → Trạm POS.",
+  "Todas las estaciones POS ya pertenecen a otra tableta, así que esta no está vinculada a una pantalla de cliente. El dueño puede agregar una estación o liberar una sin uso en Ajustes → Estaciones POS."
+ ],
+ "0 min": [
+  "0 phút",
+  "0 min"
+ ],
+ "pts": [
+  "điểm",
+  "pts"
  ]
 };
 
@@ -6064,5 +6692,305 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "with {0} ·",
   "với {0} ·",
   "con {0} ·"
+ ],
+ [
+  "QTY {0}×",
+  "SL {0}×",
+  "CANT {0}×"
+ ],
+ [
+  "QTY {0} ×",
+  "SL {0} ×",
+  "CANT {0} ×"
+ ],
+ [
+  "{0} is already checked in",
+  "{0} đã được nhận vào rồi",
+  "{0} ya está registrado"
+ ],
+ [
+  "Creating new client for {0}",
+  "Đang tạo khách mới cho {0}",
+  "Creando cliente nuevo para {0}"
+ ],
+ [
+  "+Extra ×{0}",
+  "+Thêm ×{0}",
+  "+Extra ×{0}"
+ ],
+ [
+  "{0} → {1} · SAME VISIT, PAID WITH THIS SALE",
+  "{0} → {1} · CÙNG LƯỢT KHÁCH, TRẢ CHUNG LẦN NÀY",
+  "{0} → {1} · MISMA VISITA, SE PAGA CON ESTA VENTA"
+ ],
+ [
+  "{0} ADDED",
+  "ĐÃ THÊM {0}",
+  "{0} AGREGADO"
+ ],
+ [
+  "SPLIT · {0} WAITS FOR A TECHNICIAN · SAME VISIT",
+  "CHIA · {0} CHỜ THỢ · CÙNG LƯỢT KHÁCH",
+  "DIVIDIDO · {0} ESPERA UN TÉCNICO · MISMA VISITA"
+ ],
+ [
+  "card {0}",
+  "thẻ {0}",
+  "tarjeta {0}"
+ ],
+ [
+  "cash {0}",
+  "tiền mặt {0}",
+  "efectivo {0}"
+ ],
+ [
+  "The sale is complete. Choose how {0} would like their receipt.",
+  "Đã bán xong. Chọn cách {0} muốn nhận hóa đơn.",
+  "La venta está completa. Elija cómo quiere {0} su recibo."
+ ],
+ [
+  "Position {0}",
+  "Vị trí {0}",
+  "Posición {0}"
+ ],
+ [
+  "Split · {0} waits until #{1} is done · same visit, paid together",
+  "Chia · {0} chờ đến khi #{1} xong · cùng lượt khách, trả chung",
+  "Dividido · {0} espera a que termine #{1} · misma visita, se paga junta"
+ ],
+ [
+  "{0} package",
+  "gói {0}",
+  "paquete {0}"
+ ],
+ [
+  "{0} added",
+  "Đã thêm {0}",
+  "{0} agregado"
+ ],
+ [
+  "{0} → {1} · same visit, paid together",
+  "{0} → {1} · cùng lượt khách, trả chung",
+  "{0} → {1} · misma visita, se paga junta"
+ ],
+ [
+  "Take {0} off this visit?",
+  "Bỏ {0} khỏi lượt khách này?",
+  "¿Quitar {0} de esta visita?"
+ ],
+ [
+  "{0} {1} been started yet.{2} Take payment for the visit now?",
+  "{0} chưa được bắt đầu.{2} Thu tiền cho lượt khách bây giờ?",
+  "{0} aún no se ha iniciado.{2} ¿Cobrar la visita ahora?"
+ ],
+ [
+  "{0} is out",
+  "{0} đã ra ca",
+  "{0} no está"
+ ],
+ [
+  "New client · {0}",
+  "Khách mới · {0}",
+  "Cliente nuevo · {0}"
+ ],
+ [
+  "{0} saved changes belong to another salon and will be sent when that salon signs in on this tablet.",
+  "{0} thay đổi đã lưu thuộc tiệm khác và sẽ được gửi khi tiệm đó đăng nhập trên máy này.",
+  "{0} cambios guardados pertenecen a otro salón y se enviarán cuando ese salón inicie sesión en esta tableta."
+ ],
+ [
+  "Cash taken on this tablet and not yet confirmed by the server: ${0}",
+  "Tiền mặt thu trên máy này, máy chủ chưa xác nhận: ${0}",
+  "Efectivo cobrado en esta tableta y aún no confirmado por el servidor: ${0}"
+ ],
+ [
+  "Date: {0}",
+  "Ngày: {0}",
+  "Fecha: {0}"
+ ],
+ [
+  "Client: {0}",
+  "Khách: {0}",
+  "Cliente: {0}"
+ ],
+ [
+  "Staff: {0}",
+  "Thợ: {0}",
+  "Personal: {0}"
+ ],
+ [
+  "Txn: #{0}",
+  "Giao dịch: #{0}",
+  "Transacción: #{0}"
+ ],
+ [
+  "Approval: {0}",
+  "Mã duyệt: {0}",
+  "Aprobación: {0}"
+ ],
+ [
+  "{0} already {1} this service. Cancelling it needs the reason and the manager PIN. The owner sees both.",
+  "{0} đã {1} dịch vụ này. Muốn hủy phải ghi lý do và nhập mã quản lý. Chủ tiệm sẽ thấy cả hai.",
+  "{0} ya {1} este servicio. Para cancelarlo se necesitan el motivo y el PIN de gerente. El dueño ve ambos."
+ ],
+ [
+  "Puts {0} on the clock and at the end of the turn order.",
+  "Cho {0} vào ca và xếp cuối thứ tự lượt.",
+  "Marca la entrada de {0} y lo pone al final del orden de turnos."
+ ],
+ [
+  "Takes {0} off the clock and out of the turn order.",
+  "Cho {0} ra ca và rời khỏi thứ tự lượt.",
+  "Marca la salida de {0} y lo saca del orden de turnos."
+ ],
+ [
+  "Printed {0}'s Tech ID.",
+  "Đã in Mã thợ của {0}.",
+  "Se imprimió el ID de técnico de {0}."
+ ],
+ [
+  "{0} · planned {1}",
+  "{0} · dự kiến {1}",
+  "{0} · previsto {1}"
+ ],
+ [
+  "Tickets total · {0} tickets",
+  "Tổng các phiếu · {0} phiếu",
+  "Total de tickets · {0} tickets"
+ ],
+ [
+  "{0} is in service on #{1}. This ticket can be assigned and started once that service is done.",
+  "{0} đang làm ở phiếu #{1}. Phiếu này giao thợ và bắt đầu được khi dịch vụ đó xong.",
+  "{0} está en servicio en #{1}. Este ticket se puede asignar e iniciar cuando termine ese servicio."
+ ],
+ [
+  "SPLIT TICKET · {0}'S PART",
+  "PHIẾU CHIA · PHẦN CỦA {0}",
+  "TICKET DIVIDIDO · PARTE DE {0}"
+ ],
+ [
+  "{0} isn't clocked in.",
+  "{0} chưa vào ca.",
+  "{0} no ha marcado entrada."
+ ],
+ [
+  "{0} doesn't perform this service.",
+  "{0} không làm dịch vụ này.",
+  "{0} no realiza este servicio."
+ ],
+ [
+  "{0} hr {1} min",
+  "{0} giờ {1} phút",
+  "{0} h {1} min"
+ ],
+ [
+  "{0} IS FREE · NOT STARTED",
+  "{0} RẢNH · CHƯA BẮT ĐẦU",
+  "{0} ESTÁ LIBRE · SIN INICIAR"
+ ],
+ [
+  "{0} IS CLOCKED OUT",
+  "{0} ĐÃ RA CA",
+  "{0} MARCÓ SALIDA"
+ ],
+ [
+  "{0} RUNNING OVER ON #{1}",
+  "{0} ĐANG QUÁ GIỜ Ở #{1}",
+  "{0} SE PASA DE TIEMPO EN #{1}"
+ ],
+ [
+  "{0} RUNNING OVER",
+  "{0} ĐANG QUÁ GIỜ",
+  "{0} SE PASA DE TIEMPO"
+ ],
+ [
+  "M2 READER CONNECTED · {0}",
+  "ĐÃ KẾT NỐI MÁY ĐỌC M2 · {0}",
+  "LECTOR M2 CONECTADO · {0}"
+ ],
+ [
+  "Still couldn't confirm that charge ({0}). DO NOT charge the card again — check Stripe or contact support before retrying.",
+  "Vẫn chưa xác nhận được lần quẹt đó ({0}). ĐỪNG quẹt thẻ lại — kiểm tra Stripe hoặc liên hệ hỗ trợ trước khi thử lại.",
+  "Aún no se pudo confirmar ese cobro ({0}). NO cobre la tarjeta de nuevo — revise Stripe o contacte a soporte antes de reintentar."
+ ],
+ [
+  "Card was charged but we couldn't confirm it with the server ({0}). DO NOT charge again — tap CARD once more to retry saving this same charge.",
+  "Thẻ đã bị trừ tiền nhưng chưa xác nhận được với máy chủ ({0}). ĐỪNG quẹt lại — bấm THẺ thêm một lần để lưu lại chính lần quẹt này.",
+  "Se cobró la tarjeta pero no pudimos confirmarlo con el servidor ({0}). NO cobre de nuevo — toque TARJETA otra vez para volver a guardar este mismo cobro."
+ ],
+ [
+  "Expires {0}/{1}",
+  "Hết hạn {0}/{1}",
+  "Vence {0}/{1}"
+ ],
+ [
+  "{0} waiting ticket cleared as no-shows",
+  "Đã xóa {0} phiếu chờ, ghi là không đến",
+  "{0} ticket en espera marcado como no presentado"
+ ],
+ [
+  "{0} waiting tickets cleared as no-shows",
+  "Đã xóa {0} phiếu chờ, ghi là không đến",
+  "{0} tickets en espera marcados como no presentados"
+ ],
+ [
+  "The Z Report didn't print: {0}",
+  "Báo cáo Z không in được: {0}",
+  "El informe Z no se imprimió: {0}"
+ ],
+ [
+  "Day Close was already run. It can be run again after {0} (12 hours after the last close).",
+  "Đã chốt ngày rồi. Có thể chốt lại sau {0} (12 giờ sau lần chốt trước).",
+  "El cierre del día ya se hizo. Se puede hacer de nuevo después de {0} (12 horas después del último cierre)."
+ ],
+ [
+  "{0} open tickets must be checked out first",
+  "Phải tính tiền {0} phiếu đang mở trước",
+  "Primero hay que cobrar {0} tickets abiertos"
+ ],
+ [
+  "{0} of them",
+  "{0} trong số đó",
+  "{0} de ellos"
+ ],
+ [
+  "{0} clients are still waiting on a ticket nobody started",
+  "{0} khách vẫn đang chờ ở phiếu chưa ai bắt đầu",
+  "{0} clientes siguen esperando en tickets que nadie inició"
+ ],
+ [
+  "· with {0}",
+  "· với {0}",
+  "· con {0}"
+ ],
+ [
+  "It now shows checkouts from {0}.",
+  "Giờ nó hiện các lần tính tiền từ {0}.",
+  "Ahora muestra los cobros de {0}."
+ ],
+ [
+  "Ticket #{0} · ${1} in services",
+  "Phiếu #{0} · ${1} tiền dịch vụ",
+  "Ticket #{0} · ${1} en servicios"
+ ],
+ [
+  "${0} in services",
+  "${0} tiền dịch vụ",
+  "${0} en servicios"
+ ],
+ [
+  "{0} min",
+  "{0} phút",
+  "{0} min"
+ ],
+ [
+  "This tablet holds {0} cash payment totalling ${1} that the server has not received yet. Reconnect and let them send (or resolve the ones needing attention) before closing the day.",
+  "Máy này đang giữ {0} khoản tiền mặt, tổng ${1}, máy chủ chưa nhận. Hãy kết nối lại để gửi (hoặc xử lý các khoản cần xem lại) trước khi chốt ngày.",
+  "Esta tableta tiene {0} pago en efectivo por un total de ${1} que el servidor aún no ha recibido. Vuelva a conectarse y deje que se envíe (o resuelva los que requieren atención) antes de cerrar el día."
+ ],
+ [
+  "This tablet holds {0} cash payments totalling ${1} that the server has not received yet. Reconnect and let them send (or resolve the ones needing attention) before closing the day.",
+  "Máy này đang giữ {0} khoản tiền mặt, tổng ${1}, máy chủ chưa nhận. Hãy kết nối lại để gửi (hoặc xử lý các khoản cần xem lại) trước khi chốt ngày.",
+  "Esta tableta tiene {0} pagos en efectivo por un total de ${1} que el servidor aún no ha recibido. Vuelva a conectarse y deje que se envíen (o resuelva los que requieren atención) antes de cerrar el día."
  ]
 ];

@@ -7,7 +7,7 @@ import { useCalendarSettings } from "./use-calendar-settings";
 const NAIL_LANG_KEY = "certxa.nail.lang";
 function nailTabletLanguage(): string | null {
   if (typeof window === "undefined" || !/^\/nail(\/|$)/.test(window.location.pathname)) return null;
-  try { const v = localStorage.getItem(NAIL_LANG_KEY); return v === "en" || v === "vi" || v === "es" ? v : null; } catch { return null; }
+  try { const v = localStorage.getItem(NAIL_LANG_KEY); return v === "en" || v === "vi" || v === "es" || v === "fr" ? v : null; } catch { return null; }
 }
 
 export function useLanguage() {

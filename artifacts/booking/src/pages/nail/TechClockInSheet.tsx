@@ -29,7 +29,7 @@ export function TechClockInSheet({ tech, busy, onSetIn, onClose }: { tech: TurnT
           <Clock size={30} />
           SET IN / AVAILABLE
         </button>
-        <p className="tech-popup-note">Puts {techLabel(tech.name, tech.id)} on the clock and at the end of the turn order.</p>
+        <p className="tech-popup-note">{`Puts ${techLabel(tech.name, tech.id)} on the clock and at the end of the turn order.`}</p>
       </div>
     </>
   );

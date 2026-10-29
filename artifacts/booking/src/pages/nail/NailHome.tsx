@@ -19,6 +19,7 @@ import { confirm } from "@/lib/confirm";
 import { useManagerOverride } from "./useManagerOverride";
 import { ServicedCancelSheet } from "./ServicedCancelSheet";
 import { useNailDomTranslation } from "./nailDomTranslate";
+import { useNailCatalogNames } from "./catalogNames";
 import { SlipTechIdSheet, TechSlipSheet } from "./TechSlipSheet";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useAuth } from "@/hooks/use-auth";
@@ -151,8 +152,8 @@ export default function NailHome() {
   );
 }
 
-const LANG_ORDER: NailLang[] = ["en", "vi", "es"];
-const LANG_NAMES: Record<NailLang, string> = { en: "English", vi: "Tiếng Việt", es: "Español" };
+const LANG_ORDER: NailLang[] = ["en", "vi", "es", "fr"];
+const LANG_NAMES: Record<NailLang, string> = { en: "English", vi: "Tiếng Việt", es: "Español", fr: "Français" };
 
 function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, storePhone, timezone, salesTax, cashDiscountPct, bookingSlug }: {
   /** The salon's booking address, used to ask for open times when booking a future visit. */
@@ -208,7 +209,9 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const [slipAsk, setSlipAsk] = useState(false);
   const { lang, setLang, t: nailText } = useNailText();
   // MORE → Language changes every word on the screen, not only the phrases above (nailDomTranslate.ts).
-  useNailDomTranslation(lang);
+  // Service, add-on and category names in the tablet's language too (the salon's stored translations).
+  const catalogNamesVersion = useNailCatalogNames(storeId);
+  useNailDomTranslation(lang, catalogNamesVersion);
   // The full Turn page, opened from the top of the lock screen's turn queue.
   const [showTurnPage, setShowTurnPage] = useState(false);
   const { data: turnStaffList } = useStaffList();

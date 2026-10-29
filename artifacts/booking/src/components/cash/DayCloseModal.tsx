@@ -355,7 +355,7 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0, 
           <div className="p-5 space-y-4" data-testid="day-close-locked">
             <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3">
               <Clock className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-amber-800">Day Close was already run. It can be run again after {new Date(lockedUntil).toLocaleString()} (12 hours after the last close).</p>
+              <p className="text-sm text-amber-800">{`Day Close was already run. It can be run again after ${new Date(lockedUntil).toLocaleString()} (12 hours after the last close).`}</p>
             </div>
             <Button className="w-full" variant="outline" onClick={handleClose}>Close</Button>
           </div>
@@ -376,7 +376,7 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0, 
               <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
               <div className="text-sm text-red-800">
                 <p className="font-semibold mb-1">
-                  {blockedTickets.length} open ticket{blockedTickets.length === 1 ? "" : "s"} must be checked out first
+                  {blockedTickets.length === 1 ? "1 open ticket must be checked out first" : `${blockedTickets.length} open tickets must be checked out first`}
                 </p>
                 <p className="text-red-700 text-xs">
                   {doneUnpaid > 0
@@ -413,7 +413,7 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0, 
               {waitingTickets.length > 0 && (
                 <div className="mx-5 mt-5 rounded-lg border border-gray-200 bg-gray-50 px-3.5 py-3 space-y-2" data-testid="day-close-waiting">
                   <p className="text-sm font-semibold text-gray-900">
-                    {waitingTickets.length} client{waitingTickets.length === 1 ? " is" : "s are"} still waiting on a ticket nobody started
+                    {waitingTickets.length === 1 ? "1 client is still waiting on a ticket nobody started" : `${waitingTickets.length} clients are still waiting on a ticket nobody started`}
                   </p>
                   <ul className="space-y-1">
                     {waitingTickets.map((t) => (

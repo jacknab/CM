@@ -30,7 +30,7 @@ export function TechClockOutSheet({ tech, busy, onClockOut, onClose }: { tech: T
           <LogOut size={30} />
           CLOCK OUT
         </button>
-        <p className="tech-popup-note">Takes {techLabel(tech.name, tech.id)} off the clock and out of the turn order.</p>
+        <p className="tech-popup-note">{`Takes ${techLabel(tech.name, tech.id)} off the clock and out of the turn order.`}</p>
       </div>
     </>
   );

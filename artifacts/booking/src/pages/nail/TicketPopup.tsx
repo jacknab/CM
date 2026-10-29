@@ -118,7 +118,7 @@ export function TicketPopup(p: Props) {
               // DONE: how long the service really took, against the time planned for it.
               <div className="checkin-modal-detail" data-testid="nail-popup-service-time">
                 <Clock size={18} />
-                <div><small>Service time</small><strong>{formatDuration(t.actualMinutes)} · planned {formatDuration(t.duration)}</strong></div>
+                <div><small>Service time</small><strong>{`${formatDuration(t.actualMinutes)} · planned ${formatDuration(t.duration)}`}</strong></div>
               </div>
             )}
             <div className="checkin-modal-detail">
@@ -136,7 +136,7 @@ export function TicketPopup(p: Props) {
 
         {t.status === "confirmed" && p.inChairOn != null && (
           <p className="assign-create-hint" style={{ margin: "0 22px 10px" }} data-testid="nail-popup-in-chair">
-            {t.client.name} is in service on #{p.inChairOn}. This ticket can be assigned and started once that service is done.
+            {`${t.client.name} is in service on #${p.inChairOn}. This ticket can be assigned and started once that service is done.`}
           </p>
         )}
         <div className={`checkin-dock ${visitParts.length ? "checkin-dock-has-visit" : ""}`} onClick={(e) => e.stopPropagation()}>
@@ -146,7 +146,7 @@ export function TicketPopup(p: Props) {
             <button key={`visit-${v.id}`} type="button" onClick={() => p.onOpenTicket!(v)} data-testid="nail-dock-visit-part"
               className="checkin-dock-btn checkin-dock-visit">
               <Split size={22} />
-              <span>SPLIT TICKET · {v.staff ? `${techLabel(v.staff.name, v.staff.id).toUpperCase()}'S PART` : "OTHER PART"}</span>
+              <span>{v.staff ? `SPLIT TICKET · ${techLabel(v.staff.name, v.staff.id).toUpperCase()}'S PART` : "SPLIT TICKET · OTHER PART"}</span>
             </button>
           ))}
           {dock.map((b, i) => (

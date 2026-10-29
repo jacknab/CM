@@ -59,7 +59,7 @@ export function TurnEarnedPopup({ turns, onDone, seconds = 5 }: { turns: TurnEar
                 </div>
                 <strong className="nl-turn-title">{turnTitle(t)}</strong>
                 <p className="nl-turn-sub">
-                  {t.ticketNumber != null ? `Ticket #${t.ticketNumber} · ` : ""}${t.serviceAmount.toFixed(2)} in services
+                  {`${t.ticketNumber != null ? `Ticket #${t.ticketNumber} · ` : ""}$${t.serviceAmount.toFixed(2)} in services`}
                 </p>
                 {earned <= 0 && <p className="nl-turn-note">You keep your place at the front of the line.</p>}
               </div>
