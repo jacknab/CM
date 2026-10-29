@@ -38,6 +38,7 @@ export function TicketPopup(p: Props) {
   const t = p.ticket;
   const { t: tr } = useNailText();
   const [tick, setTick] = useState(() => Date.now());
+  const visitTotal = Math.round((t.total + (p.visit ?? []).reduce((n, v) => n + v.total, 0)) * 100) / 100;
   const now = tick + (p.clockOffsetMs ?? 0);
   useEffect(() => {
     const iv = setInterval(() => setTick(Date.now()), 30_000);
@@ -80,13 +81,15 @@ export function TicketPopup(p: Props) {
               <span><Phone size={13} /> {t.client.phone ?? "No phone"}</span>
             </div>
             <div className="checkin-status-pill" style={{ marginRight: 40 }} data-in-service={t.status === "started"}>
-              {t.status === "started" ? "IN SERVICE · UNPAID" : t.staff ? `WAITING · WITH ${techLabel(t.staff.name, t.staff.id).toUpperCase()}` : "WAITING · UNASSIGNED"}
+              {t.doneAt ? "DONE · UNPAID" : t.status === "started" ? "IN SERVICE · UNPAID" : t.staff ? `WAITING · WITH ${techLabel(t.staff.name, t.staff.id).toUpperCase()}` : "WAITING · UNASSIGNED"}
             </div>
           </div>
           <div className="checkin-modal-body">
             <div className="checkin-modal-detail">
               <Hand size={18} />
-              <div><small>Service</small><strong>{t.service.name}</strong></div>
+              <div style={{ flex: 1 }}><small>Service</small><strong>{t.service.name}</strong></div>
+              {/* The service's own price, like its add-ons below, so the lines add up to the total (owner, 2026-10-29). */}
+              {t.service.price > 0 && <span className="checkin-modal-price" data-testid="nail-popup-service-price">${t.service.price.toFixed(2)}</span>}
             </div>
             {(t.addons.length > 0 || (t.nail?.lines.length ?? 0) > 0 || t.customLines.length > 0) && (
               <div className="checkin-modal-lines">
@@ -102,7 +105,7 @@ export function TicketPopup(p: Props) {
             {(p.visit?.length ?? 0) > 0 && (
               <div className="checkin-modal-lines" data-testid="nail-popup-visit">
                 {p.visit!.map((v) => (
-                  <div key={`v${v.id}`}><span>{v.service.name} · {v.staff ? techLabel(v.staff.name, v.staff.id) : "next technician"}{v.doneAt ? " · DONE" : v.status === "started" ? " · in service" : ""}</span><span>${v.total.toFixed(2)}</span></div>
+                  <div key={`v${v.id}`}><span>{[v.service.name, ...v.addons.map((a) => a.name)].join(" + ")} · {v.staff ? techLabel(v.staff.name, v.staff.id) : "next technician"}{v.doneAt ? " · DONE" : v.status === "started" ? " · in service" : ""}</span><span>${v.total.toFixed(2)}</span></div>
                 ))}
               </div>
             )}
@@ -115,11 +118,13 @@ export function TicketPopup(p: Props) {
             )}
             <div className="checkin-modal-detail">
               <Clock size={18} />
-              <div><small>{t.status === "started" ? "In chair since" : "Duration"}</small><strong>{t.status === "started" ? `${fmtTime(t.startedAt ?? t.date)} · ${formatElapsed(t.startedAt ?? t.date, now)}` : formatDuration(t.duration)}</strong></div>
+              {/* After DONE the clock stops: when it was done, not a time still counting up. */}
+              <div><small>{t.doneAt ? "Done at" : t.status === "started" ? "In chair since" : "Duration"}</small><strong>{t.doneAt ? fmtTime(t.doneAt) : t.status === "started" ? `${fmtTime(t.startedAt ?? t.date)} · ${formatElapsed(t.startedAt ?? t.date, now)}` : formatDuration(t.duration)}</strong></div>
             </div>
             <div className="checkin-modal-detail">
               <CalendarDays size={18} />
-              <div><small>Total to collect</small><strong>${t.total.toFixed(2)}</strong></div>
+              {/* A visit split between technicians is paid once, for all of it (CheckoutMode): show that amount. */}
+              <div><small>{visitTotal !== t.total ? "Total to collect · whole visit" : "Total to collect"}</small><strong data-testid="nail-popup-total">${visitTotal.toFixed(2)}</strong></div>
             </div>
           </div>
         </div>

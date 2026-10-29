@@ -1114,6 +1114,8 @@
 .nail-app .ticket-popup .checkin-modal-detail small { font-size: 14px; color: #444; }
 .nail-app .ticket-popup .checkin-modal-detail strong { font-size: 24px; color: #111; }
 .nail-app .ticket-popup .checkin-modal-lines { font-size: 18px; color: #222; padding-left: 44px; margin-top: -10px; gap: 6px; }
+/* The service's own price, lined up with (and sized like) its add-on prices below. */
+.nail-app .ticket-popup .checkin-modal-price { align-self: flex-end; font-size: 18px; color: #222; padding-bottom: 2px; }
 .nail-app .ticket-popup .assign-create-hint { font-size: 16px; color: #f0ead6; border: 0; }
 .nail-app .ticket-popup .checkin-dock { grid-template-columns: repeat(2, 132px); gap: 14px; }
 .nail-app .ticket-popup .checkin-dock-btn { background: #f0ead6; border: 1px solid #d8d0b8; color: #111; border-radius: 14px; padding: 24px 8px; gap: 10px; }
