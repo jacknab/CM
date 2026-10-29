@@ -50,6 +50,10 @@ export function setNailCatalogNames(names: Map<string, Partial<Record<Lang3, str
 function lookup(english: string, lang: Lang3): string | null {
   const named = catalogNames.get(english)?.[lang];
   if (named) return named;
+  // A catalog name with a count after it: "Basic Pedicure +2" (more services on the card), "Nail Art ×2".
+  const counted = /^(.+?)(\s+[+×]\s?\d+)$/.exec(english);
+  const countedName = counted ? catalogNames.get(counted[1])?.[lang] : undefined;
+  if (countedName) return countedName + counted![2];
   if (!phrases) return null;
   const exact = phraseFor(english, lang);
   if (exact) return exact;

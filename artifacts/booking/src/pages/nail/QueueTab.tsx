@@ -202,7 +202,8 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
     const inChairByClient = new Map<number, number>();
     for (const t of tickets) if (t.status === "started" && !t.doneAt && t.client.id != null) inChairByClient.set(t.client.id, t.ticketNumber ?? 0);
     const fromTickets = tickets.map<ClientRow>((t) => {
-      const service = `${t.service.name}${t.addons.length > 0 ? ` +${t.addons.length}` : ""}`;
+      // Only the service's name (owner, 2026-10-29): no "+2" for add-ons — and the name alone is what gets translated.
+      const service = t.service.name;
       const groupId = t.groupId ?? null;
       if (t.status === "started") {
         // The chair timer counts down the service's time plus 15 minutes; DONE stops it.
