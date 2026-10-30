@@ -57,7 +57,7 @@ const T = {
   start: { en: "START", vi: "BẮT ĐẦU", es: "INICIAR", fr: "COMMENCER" },
   done: { en: "DONE", vi: "XONG", es: "LISTO", fr: "TERMINÉ" },
   assign: { en: "ASSIGN", vi: "GIAO THỢ", es: "ASIGNAR", fr: "ASSIGNER" },
-  checkout: { en: "CHECKOUT", vi: "TÍNH TIỀN", es: "COBRAR", fr: "ENCAISSER" },
+  checkout: { en: "PAY", vi: "TRẢ TIỀN", es: "PAGAR", fr: "PAYER" }, // the ticket popup button (was CHECKOUT, owner 2026-10-30)
   reassign: { en: "REASSIGN", vi: "ĐỔI THỢ", es: "REASIGNAR", fr: "RÉASSIGNER" },
   ticket: { en: "TICKET", vi: "PHIẾU", es: "TICKET", fr: "TICKET" },
   textReady: { en: "TEXT READY", vi: "NHẮN KHÁCH", es: "AVISAR", fr: "PRÉVENIR" },

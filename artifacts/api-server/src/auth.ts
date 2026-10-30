@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction, RequestHandler } from "express";
+import { emailButton, emailCode, emailGreeting, emailNote, emailText } from "./lib/emailLayout";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 // Native bcrypt — bcryptjs (pure JS) blocks the entire Node event loop for the
@@ -940,27 +941,12 @@ export function setupAuth(app: Express) {
         );
       }
 
-      const year = new Date().getFullYear();
-      const html = `
-        <div style="font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;max-width:520px;margin:0 auto;padding:40px 24px;background:#ffffff;">
-          <div style="text-align:center;margin-bottom:32px;">
-            <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;background:#f5f3ff;border-radius:16px;margin-bottom:16px;">
-              <span style="font-size:28px;">🔐</span>
-            </div>
-            <h1 style="margin:0;font-size:24px;font-weight:800;color:#111827;letter-spacing:-0.03em;">Verify your account</h1>
-            <p style="margin:8px 0 0;color:#6b7280;font-size:15px;">Your Certxa verification code</p>
-          </div>
-          <div style="background:#f9fafb;border:1.5px solid #e5e7eb;border-radius:16px;padding:32px 24px;text-align:center;margin-bottom:28px;">
-            <p style="margin:0 0 8px;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:#9ca3af;">Your verification code</p>
-            <p style="margin:0;font-size:40px;font-weight:800;letter-spacing:0.25em;color:#3B0764;font-family:'Courier New',monospace;">${code}</p>
-            <p style="margin:12px 0 0;font-size:13px;color:#9ca3af;">Valid for 15 minutes · Do not share this code</p>
-          </div>
-          <p style="font-size:14px;color:#6b7280;line-height:1.6;margin:0 0 16px;">
-            Enter this code on the Certxa signup page to verify your account. If you didn't request this, you can safely ignore this email.
-          </p>
-          <hr style="border:none;border-top:1px solid #f3f4f6;margin:24px 0;" />
-          <p style="font-size:12px;color:#9ca3af;text-align:center;margin:0;">© ${year} Certxa · <a href="https://certxa.com" style="color:#9ca3af;">certxa.com</a></p>
-        </div>`;
+      const html = [
+        emailText(`<strong style="font-size:18px;">Verify your account</strong>`),
+        emailText("Enter this code on the Certxa sign-up page to verify your account."),
+        emailCode(code, "Valid for 15 minutes. Do not share this code."),
+        emailNote("If you didn't request this, you can safely ignore this e-mail."),
+      ].join("");
 
       const result = await sendEmail(
         0,
@@ -1205,14 +1191,13 @@ export function setupAuth(app: Express) {
       const appUrl = process.env.APP_URL || `https://${process.env.REPLIT_DEV_DOMAIN || "localhost:5000"}`;
       const resetUrl = `${appUrl}/reset-password?token=${token}`;
 
-      const html = `
-        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
-          <h2>Reset your Certxa password</h2>
-          <p>Hi ${user.firstName || "there"},</p>
-          <p>We received a request to reset your password. Click the link below to set a new one:</p>
-          <p><a href="${resetUrl}" style="background:#111;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">Reset Password</a></p>
-          <p>This link expires in 1 hour. If you didn't request this, you can safely ignore this email.</p>
-        </div>`;
+      const html = [
+        emailText(`<strong style="font-size:18px;">Reset your Certxa password</strong>`),
+        emailGreeting(user.firstName),
+        emailText("We received a request to reset your password. Tap the button below to set a new one."),
+        emailButton("Reset password", resetUrl),
+        emailNote("This link expires in 1 hour. If you didn't request this, you can safely ignore this e-mail."),
+      ].join("");
 
       await sendEmail(0, normalizedEmail, "Reset your Certxa password", html);
       logAuthEvent(user.id, "forgot_password", req, { email: normalizedEmail });

@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { sendSms } from "./sms";
 import { sendEmail } from "./mail";
+import { emailButton, emailText, escapeEmailHtml } from "./lib/emailLayout";
 import { smsLog, locations } from "@shared/schema";
 import { clients } from "@shared/schema/clients";
 import { eq, and, sql, lt, isNotNull, isNull } from "drizzle-orm";
@@ -69,19 +70,19 @@ async function processLapsedClientsTable(store: {
     );
 
     if (client.primaryEmail) {
-      const html = `
-        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-          <h2 style="color: #5b21b6;">We miss you, ${firstName}!</h2>
-          <p>It's been a while since your last visit at <strong>${store.name}</strong>, and we'd love to see you again.</p>
-          <p>
-            <a href="${bookingUrl}" style="background:#5b21b6;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">Book Now</a>
-          </p>
-        </div>`;
+      const html = [
+        emailText(`<strong style="font-size:18px;">We miss you, ${escapeEmailHtml(firstName)}</strong>`),
+        emailText(`It's been a while since your last visit at <strong>${escapeEmailHtml(store.name)}</strong>, and we'd love to see you again.`),
+        emailButton("Book now", bookingUrl),
+      ].join("");
       await sendEmail(
         store.id,
         client.primaryEmail,
         `We miss you — come back to ${store.name}!`,
-        html
+        html,
+        undefined,
+        undefined,
+        { business: store.name },
       );
     }
   }

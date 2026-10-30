@@ -16,6 +16,7 @@
  *   runResponseDispatcher()             — runs every 5 min, publishes due responses
  */
 
+import { emailButton, emailCallout, emailGreeting, emailNote, emailText, escapeEmailHtml } from "../lib/emailLayout";
 import { db } from "../db";
 import { encryptToken, decryptToken } from "../lib/googleTokenCrypto";
 import { OAuth2Client } from "google-auth-library";
@@ -378,21 +379,19 @@ async function notifyOwnerOfLowRating(storeId: number, review: {
       storeId,
       userRows[0].email,
       `[Action Required] ${review.rating}-star review needs your attention — ${businessName}`,
-      `
-        <div style="font-family:sans-serif;max-width:560px;margin:auto">
-          <h2 style="color:#dc2626">New ${review.rating}-star Google Review</h2>
-          <p>Hi ${ownerName},</p>
-          <p>A new low-rating review has been received for <strong>${businessName}</strong> and requires your attention.</p>
-          <div style="background:#fef2f2;border-left:4px solid #dc2626;padding:16px;margin:16px 0;border-radius:4px">
-            <p style="margin:0;font-size:18px">${stars}</p>
-            <p style="margin:8px 0 0"><strong>From:</strong> ${review.customerName ?? "Anonymous"}</p>
-            ${review.reviewText ? `<p style="margin:8px 0 0;font-style:italic">"${review.reviewText}"</p>` : ""}
-          </div>
-          <p>Log in to Certxa to view this review and write a response.</p>
-          <p><a href="${appUrl}/google-business" style="background:#2563eb;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none">View &amp; Respond</a></p>
-          <p style="color:#6b7280;font-size:12px;margin-top:24px">You're receiving this because you have low-rating review notifications enabled. Manage your settings in the Google Business section of Certxa.</p>
-        </div>
-      `,
+      [
+        emailText(`<strong style="font-size:18px;">New ${review.rating}-star Google review</strong>`),
+        emailGreeting(ownerName),
+        emailText(`A new low-rating review has been received for <strong>${escapeEmailHtml(businessName)}</strong> and needs your attention.`),
+        emailCallout(
+          `<span style="font-size:17px;letter-spacing:2px;">${stars}</span><br><strong>From:</strong> ${escapeEmailHtml(review.customerName ?? "Anonymous")}` +
+          (review.reviewText ? `<br><em>&ldquo;${escapeEmailHtml(review.reviewText)}&rdquo;</em>` : ""),
+          "danger",
+        ),
+        emailText("Sign in to Certxa to view this review and write a response."),
+        emailButton("View and respond", `${appUrl}/google-business`),
+        emailNote("You're receiving this because you have low-rating review notifications turned on. Manage this in the Google Business section of Certxa."),
+      ].join(""),
     );
     console.log(`[ReviewEngine] Owner notified by email for storeId=${storeId} rating=${review.rating}`);
   } catch (e: any) {

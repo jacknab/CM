@@ -2,6 +2,7 @@ import { db } from "../db";
 import { sql, eq, and, lte, isNull, inArray } from "drizzle-orm";
 import { sendSms } from "../sms";
 import { sendEmail } from "../mail";
+import { emailText, escapeEmailHtml } from "../lib/emailLayout";
 import { storage } from "../storage";
 import { locations } from "@shared/schema";
 
@@ -152,7 +153,10 @@ async function sendCampaignMessages(
           storeId,
           customer.email,
           `Message from ${store?.name || "your salon"}`,
-          `<p>${message.replace(/\n/g, "<br>")}</p>`
+          emailText(escapeEmailHtml(message).replace(/\n/g, "<br>")),
+          undefined,
+          undefined,
+          { business: store?.name },
         ).catch(() => ({ success: false }));
         if (result.success) sentCount++;
         else failedCount++;

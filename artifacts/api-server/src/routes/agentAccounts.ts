@@ -15,6 +15,7 @@ import bcrypt from "bcrypt";
 import crypto from "crypto";
 import { pool } from "../db";
 import { sendEmail } from "../mail";
+import { emailButton, emailCallout, emailDetails, emailGreeting, emailText, escapeEmailHtml } from "../lib/emailLayout";
 import { isAdminAuthenticated } from "../auth";
 
 const router = Router();
@@ -50,28 +51,17 @@ function generateStrongPassword(length = 16): string {
 
 function credentialsEmail(agentName: string, loginEmail: string, password: string) {
   const loginUrl = `${process.env.FRONTEND_URL || process.env.APP_URL || ""}/isTeam/login`;
-  const html = `
-<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#333">
-  <div style="background:#1a1a2e;padding:24px 32px;border-radius:8px 8px 0 0">
-    <h1 style="color:#fff;margin:0;font-size:22px">Certxa Back Office</h1>
-    <p style="color:#a0aec0;margin:6px 0 0">Your team account is ready</p>
-  </div>
-  <div style="background:#fff;padding:32px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px">
-    <p>Hi ${agentName},</p>
-    <p>An account has been created for you on the Certxa back office (/isTeam). Here are your login details:</p>
-    <div style="background:#f7fafc;border-left:4px solid #667eea;padding:16px 20px;margin:16px 0;border-radius:0 4px 4px 0">
-      <p style="margin:0 0 8px"><strong>Login email:</strong> ${loginEmail}</p>
-      <p style="margin:0"><strong>Temporary password:</strong> <span style="font-family:monospace;background:#e9ecef;padding:2px 8px;border-radius:3px">${password}</span></p>
-    </div>
-    <div style="background:#fff3cd;padding:12px 16px;border-radius:5px;margin:16px 0;border-left:4px solid #ffc107">
-      <p style="margin:0;color:#856404"><strong>Important:</strong> Please log in and change your password as soon as possible.</p>
-    </div>
-    <div style="text-align:center;margin:28px 0">
-      <a href="${loginUrl}" style="background:#667eea;color:#fff;padding:12px 30px;text-decoration:none;border-radius:5px;display:inline-block">Log In to Back Office</a>
-    </div>
-    <p style="margin-top:32px;color:#718096;font-size:13px">Certxa Team</p>
-  </div>
-</div>`;
+  const html = [
+    emailText(`<strong style="font-size:18px;">Your Certxa back office account is ready</strong>`),
+    emailGreeting(agentName),
+    emailText("An account has been created for you on the Certxa back office. Here are your sign-in details:"),
+    emailDetails([
+      ["Sign-in e-mail", escapeEmailHtml(loginEmail)],
+      ["Temporary password", `<span style="font-family:Menlo,Consolas,monospace;">${escapeEmailHtml(password)}</span>`],
+    ]),
+    emailCallout("Please sign in and change your password as soon as possible.", "warning"),
+    emailButton("Sign in to the back office", loginUrl),
+  ].join("");
   const text = `Hi ${agentName},
 
 An account has been created for you on the Certxa back office (/isTeam).

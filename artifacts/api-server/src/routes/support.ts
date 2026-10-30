@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { emailButton, emailGreeting, emailNote, emailText, escapeEmailHtml } from "../lib/emailLayout";
 import type { Request, Response } from "express";
 import { MAX_TRIAL_EXTENSION_DAYS, latestTrialEnd, trialEndRefusal } from "../lib/trialLimit";
 import bcrypt from "bcrypt";
@@ -3328,13 +3329,13 @@ router.post("/api/support/accounts/:id/reset-password", requireSupportAuth, asyn
 
     const appUrl = process.env.APP_URL ?? "https://certxa.com";
     const resetUrl = `${appUrl}/reset-password?token=${token}`;
-    const html = `<div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
-      <h2>Reset your Certxa password</h2>
-      <p>Hi ${owner.first_name ?? "there"},</p>
-      <p>Certxa support initiated a password reset for your account. Click the link below to set a new one:</p>
-      <p><a href="${resetUrl}" style="background:#111;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">Reset Password</a></p>
-      <p>This link expires in 1 hour. If you didn't request this, contact support.</p>
-    </div>`;
+    const html = [
+      emailText(`<strong style="font-size:18px;">Reset your Certxa password</strong>`),
+      emailGreeting(owner.first_name),
+      emailText("Certxa support started a password reset for your account. Tap the button below to set a new one."),
+      emailButton("Reset password", resetUrl),
+      emailNote("This link expires in 1 hour. If you didn't ask for this, contact support."),
+    ].join("");
 
     const { sendEmail } = await import("../mail.js");
     const mailResult = await sendEmail(storeId, owner.email, "Reset your Certxa password", html);
@@ -3425,7 +3426,11 @@ router.post("/api/support/accounts/:id/send-email", requireSupportAuth, async (r
     if (!ownerR.rows[0]) return res.status(404).json({ error: "Owner not found" });
     const owner = ownerR.rows[0];
     const { sendEmail } = await import("../mail.js");
-    const html = `<p>Hi ${owner.first_name ?? "there"},</p><p>${message.replace(/\n/g, "<br>")}</p><p style="margin-top:16px;color:#6b7280;font-size:13px">— Certxa Support Team</p>`;
+    const html = [
+      emailGreeting(owner.first_name),
+      emailText(escapeEmailHtml(message).replace(/\n/g, "<br>")),
+      emailNote("Certxa Support Team"),
+    ].join("");
     const text = `Hi ${owner.first_name ?? "there"},\n\n${message}\n\n— Certxa Support Team`;
     const mailResult = await sendEmail(storeId, owner.email, subject, html, text);
     if (!mailResult.success) {

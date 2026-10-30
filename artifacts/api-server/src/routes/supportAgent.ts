@@ -51,6 +51,7 @@ import {
 } from "@shared/schema";
 import { eq, desc, ilike, or, sql, count, and, inArray } from "drizzle-orm";
 import { sendEmail } from "../mail";
+import { emailCallout, emailGreeting, emailNote, emailText, escapeEmailHtml } from "../lib/emailLayout";
 import { isAuthenticated, isAdminAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import { publishCrossProcess, subscribeCrossProcess, isCrossProcessBusAvailable } from "../lib/wsBroadcastBus";
@@ -1697,27 +1698,15 @@ function createSupportCallSession(twilioWs: WebSocket): void {
             } else if (!summary.trim()) {
               toolResult = "A summary of the issue is required before sending the email.";
             } else {
-              const ticketRef = ticketId ? `<p><strong>Support Ticket #${ticketId}</strong> has been created. Our team will follow up within 1 business day.</p>` : "";
-              const html = `
-<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#333">
-  <div style="background:#1a1a2e;padding:24px 32px;border-radius:8px 8px 0 0">
-    <h1 style="color:#fff;margin:0;font-size:22px">Certxa Support</h1>
-    <p style="color:#a0aec0;margin:6px 0 0">Your support summary</p>
-  </div>
-  <div style="background:#fff;padding:32px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px">
-    <p>Hi ${callerName || "there"},</p>
-    <p>Thank you for contacting Certxa support. Here's a summary of your call:</p>
-    <div style="background:#f7fafc;border-left:4px solid #667eea;padding:16px 20px;margin:16px 0;border-radius:0 4px 4px 0">
-      <p style="margin:0;white-space:pre-line">${summary.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>
-    </div>
-    ${ticketRef}
-    <p>If you have any further questions, don't hesitate to call us again.</p>
-    <p style="margin-top:32px;color:#718096;font-size:13px">
-      Certxa Support Team<br>
-      This email was sent from an automated support call.
-    </p>
-  </div>
-</div>`;
+              const html = [
+                emailText(`<strong style="font-size:18px;">Your support summary</strong>`),
+                emailGreeting(callerName),
+                emailText("Thank you for contacting Certxa support. Here's a summary of your call:"),
+                emailCallout(`<span style="white-space:pre-line;">${escapeEmailHtml(summary)}</span>`, "brand"),
+                ticketId ? emailText(`<strong>Support ticket #${ticketId}</strong> has been created. Our team will follow up within 1 business day.`) : "",
+                emailText("If you have any further questions, don't hesitate to call us again."),
+                emailNote("This e-mail was sent from an automated support call."),
+              ].join("");
               const text = `Hi ${callerName || "there"},\n\nThank you for contacting Certxa support.\n\n${summary}${ticketId ? `\n\nSupport Ticket #${ticketId} has been created.` : ""}\n\nCertxa Support Team`;
               try {
                 const result = await sendEmail(

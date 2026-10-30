@@ -55,6 +55,7 @@ import { eq, and, or, ne, desc, sql, count, gte, lte, asc, isNull, isNotNull, in
 import { resetTurnSystemForStore } from "./services/auto-clock-out";
 import { clockOutOpenRecords } from "./lib/clockOut";
 import { sendEmail, sendBookingConfirmationEmail, sendReminderEmail, sendReviewRequestEmail, startEmailReminderScheduler } from "./mail";
+import { emailButton, emailCallout, emailDetails, emailGreeting, emailNote, emailText as emailParagraph, escapeEmailHtml } from "./lib/emailLayout";
 import { businessTemplates } from "./onboarding-data";
 import { fromZonedTime, toZonedTime, formatInTimeZone } from "date-fns-tz";
 import { pushBookingEvent } from "./lib/ownerPush";
@@ -5446,38 +5447,19 @@ export async function registerRoutes(
       }
 
       // Send email with temporary password
-      const emailHtml = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #007bff; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-            <h1 style="margin: 0; font-size: 24px;">Staff Calendar Access</h1>
-          </div>
-          <div style="background-color: #f8f9fa; padding: 30px; border-radius: 0 0 8px 8px;">
-            <h2 style="color: #333; margin-top: 0;">Welcome to Your Staff Portal!</h2>
-            <p style="color: #666; line-height: 1.6;">
-              Your calendar access has been enabled for <strong>${staff.name}</strong>.
-            </p>
-            <div style="background-color: white; padding: 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #007bff;">
-              <h3 style="color: #333; margin-top: 0; margin-bottom: 15px;">Your Login Details:</h3>
-              <p style="margin: 5px 0;"><strong>Email:</strong> ${staff.email}</p>
-              <p style="margin: 5px 0;"><strong>Temporary Password:</strong> <span style="background-color: #e9ecef; padding: 5px 10px; border-radius: 3px; font-family: monospace; font-size: 16px;">${tempPassword}</span></p>
-            </div>
-            <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #ffc107;">
-              <p style="margin: 0; color: #856404;">
-                <strong>Important:</strong> Please log in and change your password as soon as possible.
-              </p>
-            </div>
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${process.env.FRONTEND_URL || process.env.APP_URL || ''}/staff-auth" 
-                 style="background-color: #007bff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-                Log In to Staff Portal
-              </a>
-            </div>
-            <p style="color: #6c757d; font-size: 14px; text-align: center; margin-top: 30px;">
-              If you have any questions, please contact your administrator.
-            </p>
-          </div>
-        </div>
-      `;
+      const staffPortalUrl = `${process.env.FRONTEND_URL || process.env.APP_URL || ''}/staff-auth`;
+      const emailHtml = [
+        emailParagraph(`<strong style="font-size:18px;">Your staff calendar access is ready</strong>`),
+        emailGreeting(staff.name),
+        emailParagraph("Your calendar access has been turned on. Here are your sign-in details:"),
+        emailDetails([
+          ["E-mail", escapeEmailHtml(staff.email)],
+          ["Temporary password", `<span style="font-family:Menlo,Consolas,monospace;">${escapeEmailHtml(tempPassword)}</span>`],
+        ]),
+        emailCallout("Please sign in and change your password as soon as possible.", "warning"),
+        emailButton("Sign in to the staff portal", staffPortalUrl),
+        emailNote("If you have any questions, please contact your manager."),
+      ].join("");
 
       const emailText = `
 Staff Calendar Access Enabled
@@ -7759,7 +7741,16 @@ If you have any questions, please contact your administrator.
             const counted = Number(finalClosingBalance).toFixed(2);
             const expected = shiftReport!.cashDrawer.expectedCash.toFixed(2);
             const text = `A cash shortage of $${amount} was recorded at Day Close. Expected cash: $${expected}. Cash counted: $${counted}. Session #${id}. Closed by: ${input.closedBy || "Unknown"}.`;
-            const sent = await sendEmail(session.storeId, owner.email, "Day Close cash shortage alert", `<p>A cash shortage of <strong>$${amount}</strong> was recorded at Day Close.</p><p>Expected cash: $${expected}<br>Cash counted: $${counted}<br>Session #${id}</p>`, text);
+            const sent = await sendEmail(session.storeId, owner.email, "Day Close cash shortage alert", [
+              emailParagraph(`A cash shortage of <strong>$${amount}</strong> was recorded at Day Close.`),
+              emailDetails([
+                ["Expected cash", `$${expected}`],
+                ["Cash counted", `$${counted}`],
+                ["Short", `$${amount}`],
+                ["Closed by", escapeEmailHtml(input.closedBy || "Unknown")],
+                ["Session", `#${id}`],
+              ]),
+            ].join(""), text);
             if (!sent.success) console.error("[day-close] Cash shortage alert failed", { storeId: session.storeId, sessionId: id, error: sent.error });
           }
         } catch (error) {
@@ -11888,7 +11879,7 @@ or
       const baseQuery = db.select({
         name: clients.fullName,
         phone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
-        email: sql<string>`(SELECT email_address FROM client_emails WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
+        email: sql<string>`(SELECT ce.email_address FROM client_emails ce WHERE ce.client_id = clients.id AND ce.is_primary = true AND ce.marketing_opt_in IS NOT FALSE AND NOT EXISTS (SELECT 1 FROM client_marketing_preferences mp WHERE mp.client_id = clients.id AND mp.email_marketing_opt_in = false) LIMIT 1)`, // none for a client who opted out of marketing e-mail
       }).from(clients).where(and(eq(clients.storeId, storeId), isNull(clients.archivedAt)));
 
       if (campaign.audience === "all") {
@@ -11899,7 +11890,7 @@ or
         targetCustomers = await db.select({
           name: clients.fullName,
           phone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id ORDER BY is_primary DESC, id ASC LIMIT 1)`,
-          email: sql<string>`(SELECT email_address FROM client_emails WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
+          email: sql<string>`(SELECT ce.email_address FROM client_emails ce WHERE ce.client_id = clients.id AND ce.is_primary = true AND ce.marketing_opt_in IS NOT FALSE AND NOT EXISTS (SELECT 1 FROM client_marketing_preferences mp WHERE mp.client_id = clients.id AND mp.email_marketing_opt_in = false) LIMIT 1)`, // none for a client who opted out of marketing e-mail
         }).from(clients)
           .where(
             and(
@@ -11970,12 +11961,11 @@ or
         }
         if (campaign.channel === "email" || campaign.channel === "both") {
           if (customer.email) {
-            try {
-              await sendEmail(storeId, customer.email, `Message from ${store?.name || "your salon"}`, `<p>${message.replace(/\n/g, "<br>")}</p>`);
-              sentCount++;
-            } catch {
-              failedCount++;
-            }
+            // sendEmail reports a failure in its result; it does not throw.
+            const emailResult = await sendEmail(storeId, customer.email, `Message from ${store?.name || "your salon"}`,
+              emailParagraph(escapeEmailHtml(message).replace(/\n/g, "<br>")), undefined, undefined, { business: store?.name }).catch(() => ({ success: false }));
+            if (emailResult.success) sentCount++;
+            else failedCount++;
           }
         }
       }
@@ -23016,21 +23006,13 @@ or
         storeId,
         email,
         `You've been invited to join ${store.name} on Certxa`,
-        `
-          <div style="font-family:Inter,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px">
-            <h1 style="font-family:'Cormorant Garamond',serif;font-size:2rem;font-weight:700;color:#3B0764;margin:0 0 8px">
-              You're invited to ${store.name}
-            </h1>
-            <p style="color:#4b5563;font-size:.95rem;line-height:1.6;margin:0 0 24px">
-              Hi ${name}, you've been invited to join <strong>${store.name}</strong> as a team member on Certxa. 
-              Click the button below to create your account and get started.
-            </p>
-            <a href="${inviteUrl}" style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#3B0764,#5B21B6);color:#fff;text-decoration:none;border-radius:50px;font-weight:700;font-size:.9rem;margin-bottom:24px">
-              Accept Invitation →
-            </a>
-            <p style="color:#9ca3af;font-size:.78rem">This invitation expires in 7 days. If you didn't expect this email, you can safely ignore it.</p>
-          </div>
-        `,
+        [
+          emailParagraph(`<strong style="font-size:18px;">You're invited to ${escapeEmailHtml(store.name)}</strong>`),
+          emailGreeting(name),
+          emailParagraph(`You've been invited to join <strong>${escapeEmailHtml(store.name)}</strong> as a team member on Certxa. Tap the button below to create your account and get started.`),
+          emailButton("Accept invitation", inviteUrl),
+          emailNote("This invitation expires in 7 days. If you didn't expect this e-mail, you can safely ignore it."),
+        ].join(""),
         `You've been invited to join ${store.name} on Certxa. Accept your invitation: ${inviteUrl}`
       );
 

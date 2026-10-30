@@ -1,4 +1,5 @@
 import { createHmac } from "crypto";
+import { brandedEmail, emailButton, emailCallout, emailDetails, emailNote, emailText, escapeEmailHtml, EMAIL_COLORS } from "../lib/emailLayout";
 import { db } from "../db";
 import { sendEmail } from "../mail";
 import { users, locations } from "@shared/schema";
@@ -39,20 +40,6 @@ function isMondayMorning(): boolean {
   const dow = parseInt(formatInTimeZone(now, "UTC", "i"), 10); // 1=Mon
   const h   = parseInt(formatInTimeZone(now, "UTC", "H"), 10);
   return dow === 1 && h === 9;
-}
-
-function gradeColor(grade: string): string {
-  const map: Record<string, string> = {
-    A: "#10b981", B: "#3b82f6", C: "#f59e0b", D: "#f97316", F: "#ef4444",
-  };
-  return map[grade] || "#6366f1";
-}
-
-  function churnColor(label: string): string {
-  const map: Record<string, string> = {
-    critical: "#ef4444", high: "#f97316", medium: "#f59e0b", low: "#10b981",
-  };
-  return map[label] || "#6b7280";
 }
 
 export async function sendWeeklyDigest(storeId: number): Promise<{ sent: boolean; skipped?: string }> {
@@ -209,161 +196,64 @@ export async function sendWeeklyDigest(storeId: number): Promise<{ sent: boolean
   const storeName = store.name;
   const weekLabel = now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 
-  // Build at-risk client rows
-  const riskRows = ((atRiskClients as any).rows as any[]).map((c) => `
+  // The shared Certxa layout (lib/emailLayout.ts); every value from the database is escaped.
+  const esc = escapeEmailHtml;
+  const C = EMAIL_COLORS;
+  const riskList = ((atRiskClients as any).rows as any[]) ?? [];
+  const riskRows = riskList.map((c) => `
     <tr>
-      <td style="padding:10px 12px;border-bottom:1px solid #f3f4f6;">
-        <span style="font-weight:600;color:#111827;">${c.name || "Unknown"}</span>
-      </td>
-      <td style="padding:10px 12px;border-bottom:1px solid #f3f4f6;text-align:center;">
-        <span style="background:${churnColor(c.churn_risk_label)};color:#fff;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:700;text-transform:capitalize;">${c.churn_risk_label}</span>
-      </td>
-      <td style="padding:10px 12px;border-bottom:1px solid #f3f4f6;text-align:right;color:#6b7280;font-size:13px;">
-        $${parseFloat(c.ltv_12_month || "0").toFixed(0)}/yr
-      </td>
+      <td style="padding:11px 16px;border-bottom:1px solid ${C.line};font-size:14px;font-weight:600;color:${C.ink};">${esc(c.name || "Unknown")}</td>
+      <td style="padding:11px 16px;border-bottom:1px solid ${C.line};font-size:13px;color:${C.muted};text-transform:capitalize;">${esc(c.churn_risk_label)}</td>
+      <td align="right" style="padding:11px 16px;border-bottom:1px solid ${C.line};font-size:13px;color:${C.muted};">$${parseFloat(c.ltv_12_month || "0").toFixed(0)}/yr</td>
     </tr>`).join("");
 
-  const scoreColor = growthScore ? gradeColor(computeGrade(growthScore.score)) : "#6366f1";
-  const revChangeHtml = revChange !== null
-    ? `<span style="color:${revChange >= 0 ? "#10b981" : "#ef4444"};font-weight:700;">
-        ${revChange >= 0 ? "▲" : "▼"} ${Math.abs(revChange)}% vs last week
-       </span>`
-    : `<span style="color:#9ca3af;">First week of data</span>`;
+  const revenueLine = revChange !== null
+    ? `${revChange >= 0 ? "Up" : "Down"} ${Math.abs(revChange)}% vs last week`
+    : "First week of data";
 
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:32px 0;">
-  <tr><td align="center">
-    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+  const actions: string[] = [];
+  if (noShowCount > 0) actions.push(emailCallout(
+    `<strong>${noShowCount} high-risk appointment${noShowCount > 1 ? "s" : ""} in the next 7 days.</strong><br>Clients who often miss. If they do, Certxa texts them to rebook. <a href="${appUrl}/intelligence?tab=noshow" style="color:${C.brand};text-decoration:none;font-weight:600;">Review</a>`,
+    "danger"));
+  if (driftingCount > 0) actions.push(emailCallout(
+    `<strong>${driftingCount} high-value client${driftingCount > 1 ? "s" : ""} drifting, $${driftingLtv.toFixed(0)} at stake.</strong><br>Top spenders visiting less often. Certxa texts them an invite to book. <a href="${appUrl}/intelligence?tab=clients" style="color:${C.brand};text-decoration:none;font-weight:600;">See clients</a>`,
+    "brand"));
+  if (deadSeatsCount > 0) actions.push(emailCallout(
+    `<strong>${deadSeatsCount} regularly empty time slot${deadSeatsCount > 1 ? "s" : ""}${deadSeatsLostRev > 0 ? `, $${deadSeatsLostRev.toFixed(0)} potential` : ""}.</strong><br>Recurring gaps. Certxa sends booking nudges to clients who are due. <a href="${appUrl}/intelligence?tab=seats" style="color:${C.brand};text-decoration:none;font-weight:600;">See empty time</a>`,
+    "warning"));
+  if (!actions.length) actions.push(emailCallout("All revenue signals look healthy this week.", "success"));
 
-      <!-- Header -->
-      <tr><td style="background:#18103a;border-radius:16px 16px 0 0;padding:28px 32px;">
-        <p style="margin:0 0 4px;font-size:12px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Revenue Intelligence</p>
-        <h1 style="margin:0;font-size:22px;color:#fff;font-weight:700;">Your weekly digest, ${ownerName}</h1>
-        <p style="margin:6px 0 0;font-size:13px;color:rgba(255,255,255,0.5);">Week ending ${weekLabel} · ${storeName}</p>
-      </td></tr>
+  const sectionLabel = (t: string) => `<p style="margin:8px 0 12px;font-size:12px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:${C.muted};">${t}</p>`;
 
-      <!-- Score + Revenue row -->
-      <tr><td style="background:#fff;padding:0;">
-        <table width="100%" cellpadding="0" cellspacing="0">
+  const html = brandedEmail({
+    heading: `Your weekly digest, ${ownerName}`,
+    preheader: `Week ending ${weekLabel} · ${storeName}`,
+    body: [
+      emailText(`Week ending ${esc(weekLabel)} &middot; ${esc(storeName)}`, { muted: true, size: 14 }),
+      emailDetails([
+        ["Revenue this week", `$${revenueThisWeek.toLocaleString("en-US", { maximumFractionDigits: 0 })}`],
+        ["Compared with last week", esc(revenueLine)],
+        ["Appointments completed", String(appointmentsThisWeek)],
+        ["Business health", growthScore ? `${computeGrade(growthScore.score)} &middot; ${growthScore.score}/100` : "Not yet computed"],
+      ]),
+      sectionLabel("What Certxa is handling for you"),
+      actions.join(""),
+      riskList.length ? sectionLabel("At-risk clients") + `
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;border:1px solid ${C.line};border-radius:14px;border-collapse:separate;">
           <tr>
-            <!-- Growth Score -->
-            <td width="50%" style="padding:24px 20px 24px 32px;border-bottom:1px solid #f3f4f6;border-right:1px solid #f3f4f6;vertical-align:top;">
-              <p style="margin:0 0 8px;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.8px;font-weight:700;">Business Health</p>
-              ${growthScore
-                 ? `<p style="margin:0;font-size:42px;font-weight:800;color:${scoreColor};line-height:1;">${computeGrade(growthScore.score)}</p>
-                    <p style="margin:4px 0 0;font-size:13px;color:#6b7280;">${growthScore.score}/100 growth score</p>`
-                : `<p style="margin:0;font-size:28px;font-weight:800;color:#d1d5db;">—</p>
-                   <p style="margin:4px 0 0;font-size:13px;color:#9ca3af;">Not yet computed</p>`
-              }
-            </td>
-            <!-- Revenue -->
-            <td width="50%" style="padding:24px 32px 24px 20px;border-bottom:1px solid #f3f4f6;vertical-align:top;">
-              <p style="margin:0 0 8px;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.8px;font-weight:700;">Revenue this week</p>
-              <p style="margin:0;font-size:36px;font-weight:800;color:#111827;line-height:1;">$${revenueThisWeek.toLocaleString("en-US", { maximumFractionDigits: 0 })}</p>
-              <p style="margin:4px 0 0;font-size:13px;">${revChangeHtml}</p>
-              <p style="margin:6px 0 0;font-size:12px;color:#9ca3af;">${appointmentsThisWeek} appointment${appointmentsThisWeek !== 1 ? "s" : ""} completed</p>
-            </td>
-          </tr>
-        </table>
-      </td></tr>
-
-      <!-- Action items -->
-      <tr><td style="background:#fff;padding:24px 32px 0;">
-        <p style="margin:0 0 16px;font-size:13px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.8px;">What Certxa is handling for you</p>
-        <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:12px;overflow:hidden;border:1px solid #f3f4f6;">
-          ${noShowCount > 0 ? `
-          <tr>
-            <td style="padding:14px 16px;border-bottom:1px solid #f3f4f6;background:#fef2f2;">
-              <table width="100%" cellpadding="0" cellspacing="0"><tr>
-                <td style="font-size:20px;width:32px;">⚠️</td>
-                <td style="padding-left:12px;">
-                  <p style="margin:0;font-size:14px;font-weight:700;color:#991b1b;">${noShowCount} high-risk appointment${noShowCount > 1 ? "s" : ""} next 7 days</p>
-                  <p style="margin:2px 0 0;font-size:12px;color:#ef4444;">Clients who often miss — if they do, Certxa texts them to rebook</p>
-                </td>
-                <td style="text-align:right;white-space:nowrap;">
-                  <a href="${appUrl}/intelligence?tab=noshow" style="font-size:12px;color:#dc2626;font-weight:600;text-decoration:none;">Review →</a>
-                </td>
-              </tr></table>
-            </td>
-          </tr>` : ""}
-          ${driftingCount > 0 ? `
-          <tr>
-            <td style="padding:14px 16px;border-bottom:1px solid #f3f4f6;background:#faf5ff;">
-              <table width="100%" cellpadding="0" cellspacing="0"><tr>
-                <td style="font-size:20px;width:32px;">💜</td>
-                <td style="padding-left:12px;">
-                  <p style="margin:0;font-size:14px;font-weight:700;color:#6b21a8;">${driftingCount} high-value client${driftingCount > 1 ? "s" : ""} drifting — $${driftingLtv.toFixed(0)} at stake</p>
-                  <p style="margin:2px 0 0;font-size:12px;color:#7c3aed;">Top spenders visiting less often — Certxa texts them an invite to book</p>
-                </td>
-                <td style="text-align:right;white-space:nowrap;">
-                  <a href="${appUrl}/intelligence?tab=clients" style="font-size:12px;color:#7c3aed;font-weight:600;text-decoration:none;">See clients →</a>
-                </td>
-              </tr></table>
-            </td>
-          </tr>` : ""}
-          ${deadSeatsCount > 0 ? `
-          <tr>
-            <td style="padding:14px 16px;background:#fffbeb;">
-              <table width="100%" cellpadding="0" cellspacing="0"><tr>
-                <td style="font-size:20px;width:32px;">🪑</td>
-                <td style="padding-left:12px;">
-                  <p style="margin:0;font-size:14px;font-weight:700;color:#92400e;">${deadSeatsCount} chronically empty time slot${deadSeatsCount > 1 ? "s" : ""}${deadSeatsLostRev > 0 ? ` — $${deadSeatsLostRev.toFixed(0)} potential` : ""}</p>
-                  <p style="margin:2px 0 0;font-size:12px;color:#d97706;">Recurring gaps — Certxa sends booking nudges to clients who are due</p>
-                </td>
-                <td style="text-align:right;white-space:nowrap;">
-                  <a href="${appUrl}/intelligence?tab=seats" style="font-size:12px;color:#d97706;font-weight:600;text-decoration:none;">See empty time →</a>
-                </td>
-              </tr></table>
-            </td>
-          </tr>` : ""}
-          ${noShowCount === 0 && driftingCount === 0 && deadSeatsCount === 0 ? `
-          <tr>
-            <td style="padding:16px;background:#f0fdf4;text-align:center;">
-              <p style="margin:0;font-size:14px;color:#166534;font-weight:600;">✅ All revenue signals look healthy this week!</p>
-            </td>
-          </tr>` : ""}
-        </table>
-      </td></tr>
-
-      <!-- At-risk client table -->
-  ${( (atRiskClients as any).rows?.length ?? 0) > 0 ? `
-      <tr><td style="background:#fff;padding:24px 32px 0;">
-        <p style="margin:0 0 12px;font-size:13px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.8px;">At-risk clients</p>
-        <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #f3f4f6;border-radius:12px;overflow:hidden;">
-          <tr style="background:#f9fafb;">
-            <th style="padding:8px 12px;text-align:left;font-size:11px;color:#9ca3af;font-weight:600;text-transform:uppercase;">Client</th>
-            <th style="padding:8px 12px;text-align:center;font-size:11px;color:#9ca3af;font-weight:600;text-transform:uppercase;">Risk</th>
-            <th style="padding:8px 12px;text-align:right;font-size:11px;color:#9ca3af;font-weight:600;text-transform:uppercase;">12-mo LTV</th>
+            <td style="padding:9px 16px;border-bottom:1px solid ${C.line};font-size:11px;font-weight:600;color:${C.muted};text-transform:uppercase;">Client</td>
+            <td style="padding:9px 16px;border-bottom:1px solid ${C.line};font-size:11px;font-weight:600;color:${C.muted};text-transform:uppercase;">Risk</td>
+            <td align="right" style="padding:9px 16px;border-bottom:1px solid ${C.line};font-size:11px;font-weight:600;color:${C.muted};text-transform:uppercase;">12-mo value</td>
           </tr>
           ${riskRows}
         </table>
-        <p style="margin:8px 0 0;text-align:right;">
-          <a href="${appUrl}/intelligence?tab=clients" style="font-size:12px;color:#7c3aed;font-weight:600;text-decoration:none;">View all at-risk clients →</a>
-        </p>
-      </td></tr>` : ""}
-
-      <!-- CTA -->
-      <tr><td style="background:#fff;padding:28px 32px;text-align:center;border-radius:0 0 16px 16px;">
-        <a href="${appUrl}/intelligence"
-           style="display:inline-block;background:#18103a;color:#fff;font-size:14px;font-weight:700;padding:14px 32px;border-radius:12px;text-decoration:none;">
-          Open Revenue Intelligence →
-        </a>
-        <p style="margin:16px 0 0;font-size:11px;color:#9ca3af;">
-          You're receiving this because you own a store on Certxa.<br>
-          This digest is sent every Monday at 9am. ·
-          <a href="${appUrl}/api/intelligence/unsubscribe?storeId=${storeId}&token=${generateUnsubscribeToken(storeId)}"
-             style="color:#9ca3af;text-decoration:underline;">Unsubscribe</a>
-        </p>
-      </td></tr>
-
-    </table>
-  </td></tr>
-</table>
-</body>
-</html>`;
+        ${emailNote(`<a href="${appUrl}/intelligence?tab=clients" style="color:${C.brand};text-decoration:none;font-weight:600;">View all at-risk clients</a>`)}` : "",
+      emailButton("Open Revenue Intelligence", `${appUrl}/intelligence`),
+      emailNote("You're receiving this because you own a store on Certxa. This digest is sent every Monday at 9am."),
+    ].join(""),
+    unsubscribeUrl: `${appUrl}/api/intelligence/unsubscribe?storeId=${storeId}&token=${generateUnsubscribeToken(storeId)}`,
+    unsubscribeLabel: "Unsubscribe from the weekly digest",
+  });
 
   const subject = `${storeName} · Weekly revenue digest — ${weekLabel}`;
 

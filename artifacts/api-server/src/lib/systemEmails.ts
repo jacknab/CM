@@ -13,13 +13,15 @@ import { users } from "@shared/models/auth";
 import { locations, userEmailPreferences } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { createHmac } from "crypto";
+import { brandedEmail, emailButton, emailDetails, emailDivider, escapeEmailHtml, EMAIL_COLORS, type EmailTone } from "./emailLayout";
 
 // ─── Brand constants ──────────────────────────────────────────────────────────
 
-const BRAND_COLOR   = "#6366f1";
-const DANGER_COLOR  = "#ef4444";
-const SUCCESS_COLOR = "#22c55e";
-const WARN_COLOR    = "#f59e0b";
+// The shared e-mail palette (lib/emailLayout.ts).
+const BRAND_COLOR: string   = EMAIL_COLORS.brand;
+const DANGER_COLOR: string  = EMAIL_COLORS.danger;
+const SUCCESS_COLOR: string = EMAIL_COLORS.success;
+const WARN_COLOR: string    = EMAIL_COLORS.warning;
 const APP_URL       = process.env.APP_URL || "https://app.certxa.com";
 
 // ─── Unsubscribe token ────────────────────────────────────────────────────────
@@ -100,54 +102,39 @@ async function getUserIdByEmail(email: string): Promise<string | null> {
 }
 
 function greeting(firstName: string | null): string {
-  return firstName ? `Hi ${firstName},` : "Hi there,";
+  return `Hi ${escapeEmailHtml(firstName?.trim() || "there")},`;
 }
 
-// ─── Base HTML wrapper ────────────────────────────────────────────────────────
+// ─── Base HTML wrapper (the shared Certxa layout, lib/emailLayout.ts) ─────────
+
+function toneOf(color?: string): EmailTone {
+  if (color === DANGER_COLOR) return "danger";
+  if (color === WARN_COLOR) return "warning";
+  if (color === SUCCESS_COLOR) return "success";
+  return "brand";
+}
 
 function wrap(
-  { title, accentColor = BRAND_COLOR, body, unsubscribeUrl }:
-  { title: string; accentColor?: string; body: string; unsubscribeUrl?: string }
+  { title, accentColor = BRAND_COLOR, body, unsubscribeUrl, preheader }:
+  { title: string; accentColor?: string; body: string; unsubscribeUrl?: string; preheader?: string }
 ): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${title}</title></head>
-<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 16px;">
-<tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);">
-
-  <!-- Header -->
-  <tr><td style="background:${accentColor};padding:28px 40px;text-align:left;">
-    <span style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.3px;">Certxa</span>
-  </td></tr>
-
-  <!-- Body -->
-  <tr><td style="padding:36px 40px;color:#1e293b;font-size:15px;line-height:1.65;">
-    ${body}
-  </td></tr>
-
-  <!-- Footer -->
-  <tr><td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;text-align:center;">
-    <p style="margin:0;color:#94a3b8;font-size:12px;line-height:1.6;">
-      Certxa — Service Business Platform<br>
-      Questions? Email <a href="mailto:support@certxa.com" style="color:${BRAND_COLOR};text-decoration:none;">support@certxa.com</a>${unsubscribeUrl ? `<br><a href="${unsubscribeUrl}" style="color:#94a3b8;font-size:11px;text-decoration:underline;margin-top:4px;display:inline-block;">Unsubscribe from billing emails</a>` : ""}
-    </p>
-  </td></tr>
-
-</table>
-</td></tr>
-</table>
-</body>
-</html>`;
+  return brandedEmail({
+    heading: title,
+    body,
+    preheader,
+    tone: toneOf(accentColor) === "brand" || toneOf(accentColor) === "success" ? undefined : toneOf(accentColor),
+    unsubscribeUrl,
+    unsubscribeLabel: "Unsubscribe from these e-mails",
+  });
 }
 
 function btn(label: string, url: string, color = BRAND_COLOR): string {
-  return `<a href="${url}" style="display:inline-block;background:${color};color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;padding:12px 28px;border-radius:8px;margin-top:20px;">${label}</a>`;
+  const tone = toneOf(color);
+  return emailButton(label, url, tone === "success" ? "brand" : tone);
 }
 
 function divider(): string {
-  return `<hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />`;
+  return emailDivider();
 }
 
 // ─── 2. Subscription Renewal Success ─────────────────────────────────────────
@@ -167,7 +154,7 @@ export async function sendSubscriptionRenewalEmail(
     body: `
       <p style="margin:0 0 16px;">${greeting(owner.firstName)}</p>
       <p style="margin:0 0 16px;">Your Certxa subscription payment was successfully processed.</p>
-      <table cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
+      <table cellpadding="0" cellspacing="0" style="background:${EMAIL_COLORS.panel};border:1px solid ${EMAIL_COLORS.line};border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
         <tr>
           <td style="color:#64748b;font-size:13px;padding-bottom:6px;">Business</td>
           <td style="text-align:right;font-weight:600;">${owner.storeName}</td>
@@ -214,7 +201,7 @@ export async function sendPaymentFailedEmail(
         We were unable to process your Certxa subscription payment.
         <strong>Your account has been temporarily suspended</strong> until this is resolved.
       </p>
-      <table cellpadding="0" cellspacing="0" style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
+      <table cellpadding="0" cellspacing="0" style="background:${EMAIL_COLORS.panel};border:1px solid ${EMAIL_COLORS.line};border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
         <tr>
           <td style="color:#64748b;font-size:13px;padding-bottom:6px;">Reason</td>
           <td style="text-align:right;font-weight:600;color:${DANGER_COLOR};">${reason}</td>
@@ -251,7 +238,7 @@ export async function sendAccountSuspendedEmail(
       <p style="margin:0 0 16px;">
         Your Certxa account (<strong>${owner.storeName}</strong>) has been suspended.
       </p>
-      <table cellpadding="0" cellspacing="0" style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
+      <table cellpadding="0" cellspacing="0" style="background:${EMAIL_COLORS.panel};border:1px solid ${EMAIL_COLORS.line};border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
         <tr>
           <td style="color:#64748b;font-size:13px;">Reason</td>
           <td style="text-align:right;font-weight:600;color:${WARN_COLOR};">${reason}</td>
@@ -346,7 +333,7 @@ export async function sendTrialExpiredEmail(
       </p>
       <table cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 20px;">
         ${["Unlimited bookings & appointments", "POS, loyalty rewards & gift cards", "Client CRM & automated reminders", "AI Receptionist & marketing tools"].map(item =>
-          `<tr><td style="padding:6px 0;"><span style="color:${BRAND_COLOR};font-weight:700;margin-right:8px;">✓</span>${item}</td></tr>`
+          `<tr><td style="padding:6px 0;"><span style="color:${EMAIL_COLORS.muted};margin-right:8px;">&bull;</span>${item}</td></tr>`
         ).join("")}
       </table>
       ${btn("View Plans & Subscribe", `${APP_URL}/billing`)}
@@ -385,7 +372,7 @@ export async function sendCreditsTopupReceiptEmail(
     body: `
       <p style="margin:0 0 16px;">${greeting(owner.firstName)}</p>
       <p style="margin:0 0 16px;">Your top-up was successful. Here's your receipt.</p>
-      <table cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
+      <table cellpadding="0" cellspacing="0" style="background:${EMAIL_COLORS.panel};border:1px solid ${EMAIL_COLORS.line};border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
         <tr>
           <td style="color:#64748b;font-size:13px;padding-bottom:6px;">Business</td>
           <td style="text-align:right;font-weight:600;">${owner.storeName}</td>
@@ -542,7 +529,7 @@ export async function sendSubscriptionCancellationEmail(
         Your <strong>${planName}</strong> subscription for <strong>${owner.storeName}</strong> has been scheduled for cancellation.
         You will continue to have full access until your billing period ends.
       </p>
-      <table cellpadding="0" cellspacing="0" style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
+      <table cellpadding="0" cellspacing="0" style="background:${EMAIL_COLORS.panel};border:1px solid ${EMAIL_COLORS.line};border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
         <tr>
           <td style="color:#64748b;font-size:13px;padding-bottom:6px;">Plan</td>
           <td style="text-align:right;font-weight:600;">${planName}</td>
@@ -588,7 +575,7 @@ export async function sendSubscriptionEndedEmail(
         Your <strong>${planName}</strong> subscription for <strong>${owner.storeName}</strong> has now ended.
         Your account has been moved to the free tier and some features may no longer be available.
       </p>
-      <table cellpadding="0" cellspacing="0" style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
+      <table cellpadding="0" cellspacing="0" style="background:${EMAIL_COLORS.panel};border:1px solid ${EMAIL_COLORS.line};border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
         <tr>
           <td style="color:#64748b;font-size:13px;padding-bottom:6px;">Plan</td>
           <td style="text-align:right;font-weight:600;">${planName}</td>
@@ -638,7 +625,7 @@ export async function sendSubscriptionReactivatedEmail(
         Your <strong>${planName}</strong> subscription for <strong>${owner.storeName}</strong> has been reactivated.
         Everything is back to normal — no action needed.
       </p>
-      <table cellpadding="0" cellspacing="0" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
+      <table cellpadding="0" cellspacing="0" style="background:${EMAIL_COLORS.panel};border:1px solid ${EMAIL_COLORS.line};border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
         <tr>
           <td style="color:#64748b;font-size:13px;padding-bottom:6px;">Plan</td>
           <td style="text-align:right;font-weight:600;">${planName}</td>
@@ -685,7 +672,7 @@ export async function sendDataTransferCompleteEmail(
         Great news! Your Certxa data transfer has been reviewed, approved, and imported successfully.
       </p>
       ${rows ? `
-      <table cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
+      <table cellpadding="0" cellspacing="0" style="background:${EMAIL_COLORS.panel};border:1px solid ${EMAIL_COLORS.line};border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
         ${rows}
       </table>` : ""}
       <p style="margin:0 0 16px;">Everything is now live in your Certxa account.</p>
@@ -719,7 +706,7 @@ export async function sendDataTransferRejectedEmail(
       <p style="margin:0 0 16px;">
         We reviewed your data transfer request and were unable to complete the import.
       </p>
-      <table cellpadding="0" cellspacing="0" style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
+      <table cellpadding="0" cellspacing="0" style="background:${EMAIL_COLORS.panel};border:1px solid ${EMAIL_COLORS.line};border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
         <tr>
           <td style="color:#64748b;font-size:13px;">Reason</td>
           <td style="text-align:right;font-weight:600;color:${DANGER_COLOR};">${reason}</td>
@@ -760,14 +747,14 @@ export async function sendOwnerContractorVerifiedEmail(
         <strong>${contractorName}</strong> has connected and verified their Stripe payout account.
         Payouts are now enabled for this contractor and will be sent automatically on each pay cycle.
       </p>
-      <table cellpadding="0" cellspacing="0" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
+      <table cellpadding="0" cellspacing="0" style="background:${EMAIL_COLORS.panel};border:1px solid ${EMAIL_COLORS.line};border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
         <tr>
           <td style="color:#64748b;font-size:13px;padding-bottom:6px;">Contractor</td>
           <td style="text-align:right;font-weight:600;">${contractorName}</td>
         </tr>
         <tr>
           <td style="color:#64748b;font-size:13px;">Payout status</td>
-          <td style="text-align:right;font-weight:700;color:${SUCCESS_COLOR};">Active ✓</td>
+          <td style="text-align:right;font-weight:700;color:${SUCCESS_COLOR};">Active</td>
         </tr>
       </table>
       <p style="margin:0 0 16px;color:#64748b;font-size:13px;">
@@ -796,10 +783,10 @@ export async function sendContractorStripeVerifiedEmail(
         Great news — your Stripe payout account has been verified and payouts are now active.
         You'll receive your earnings automatically on each pay cycle.
       </p>
-      <table cellpadding="0" cellspacing="0" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
+      <table cellpadding="0" cellspacing="0" style="background:${EMAIL_COLORS.panel};border:1px solid ${EMAIL_COLORS.line};border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
         <tr>
           <td style="color:#64748b;font-size:13px;padding-bottom:6px;">Account status</td>
-          <td style="text-align:right;font-weight:700;color:${SUCCESS_COLOR};">Verified ✓</td>
+          <td style="text-align:right;font-weight:700;color:${SUCCESS_COLOR};">Verified</td>
         </tr>
         <tr>
           <td style="color:#64748b;font-size:13px;">Payouts</td>
@@ -843,7 +830,7 @@ export async function sendOwnerContractorRestrictedEmail(
         <strong>${contractorName}</strong>'s Stripe payout account has been flagged as <strong>restricted</strong>.
         Payouts to this contractor are currently on hold until the issue is resolved.
       </p>
-      <table cellpadding="0" cellspacing="0" style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
+      <table cellpadding="0" cellspacing="0" style="background:${EMAIL_COLORS.panel};border:1px solid ${EMAIL_COLORS.line};border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
         <tr>
           <td style="color:#64748b;font-size:13px;padding-bottom:6px;">Contractor</td>
           <td style="text-align:right;font-weight:600;">${contractorName}</td>
@@ -891,14 +878,14 @@ export async function sendOwnerContractorResolvedEmail(
         Good news — <strong>${contractorName}</strong>'s Stripe payout account is back in good standing.
         Payouts have automatically resumed and will be sent on the next pay cycle.
       </p>
-      <table cellpadding="0" cellspacing="0" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
+      <table cellpadding="0" cellspacing="0" style="background:${EMAIL_COLORS.panel};border:1px solid ${EMAIL_COLORS.line};border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
         <tr>
           <td style="color:#64748b;font-size:13px;padding-bottom:6px;">Contractor</td>
           <td style="text-align:right;font-weight:600;">${contractorName}</td>
         </tr>
         <tr>
           <td style="color:#64748b;font-size:13px;">Payout status</td>
-          <td style="text-align:right;font-weight:700;color:${SUCCESS_COLOR};">Active ✓</td>
+          <td style="text-align:right;font-weight:700;color:${SUCCESS_COLOR};">Active</td>
         </tr>
       </table>
       <p style="margin:0 0 20px;color:#64748b;font-size:13px;">
@@ -927,10 +914,10 @@ export async function sendContractorResolvedEmail(
         Great news — your Stripe payout account has been reviewed and is back in good standing.
         Payouts will automatically resume on your next pay cycle.
       </p>
-      <table cellpadding="0" cellspacing="0" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
+      <table cellpadding="0" cellspacing="0" style="background:${EMAIL_COLORS.panel};border:1px solid ${EMAIL_COLORS.line};border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:20px;">
         <tr>
           <td style="color:#64748b;font-size:13px;padding-bottom:6px;">Account status</td>
-          <td style="text-align:right;font-weight:700;color:${SUCCESS_COLOR};">Resolved ✓</td>
+          <td style="text-align:right;font-weight:700;color:${SUCCESS_COLOR};">Resolved</td>
         </tr>
         <tr>
           <td style="color:#64748b;font-size:13px;">Payouts</td>
@@ -975,21 +962,20 @@ export async function sendContractorOnboardingInvite({
     title: "Set up your direct deposit",
     accentColor: BRAND_COLOR,
     body: `
-      <p style="margin:0 0 16px;font-size:20px;font-weight:700;color:#1e293b;">You've been invited to set up direct deposit</p>
       <p style="margin:0 0 16px;">Hi ${firstName},</p>
       <p style="margin:0 0 20px;">
         <strong>${storeName}</strong> uses Certxa to send contractor payouts.
         To receive direct deposits, you'll need to connect a payout account through our secure partner, Stripe.
       </p>
-      <table cellpadding="0" cellspacing="0" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:24px;">
+      <table cellpadding="0" cellspacing="0" style="background:${EMAIL_COLORS.panel};border:1px solid ${EMAIL_COLORS.line};border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:24px;">
         <tr><td style="padding-bottom:8px;">
-          <span style="color:#16a34a;font-weight:700;font-size:14px;">What to expect:</span>
+          <span style="color:${EMAIL_COLORS.ink};font-weight:700;font-size:14px;">What to expect:</span>
         </td></tr>
         ${["Takes about 5 minutes to complete", "You'll need your bank account or debit card details", "Your info is encrypted and handled by Stripe — not stored by Certxa", "Once verified, payouts go directly to your account"].map(item =>
-          `<tr><td style="padding:3px 0;font-size:14px;color:#374151;"><span style="color:#16a34a;margin-right:8px;">✓</span>${item}</td></tr>`
+          `<tr><td style="padding:3px 0;font-size:14px;color:#374151;"><span style="color:${EMAIL_COLORS.muted};margin-right:8px;">&bull;</span>${item}</td></tr>`
         ).join("")}
       </table>
-      ${btn("Set Up My Direct Deposit", portalUrl, "#0d9488")}
+      ${btn("Set Up My Direct Deposit", portalUrl)}
       <p style="margin:20px 0 0;color:#94a3b8;font-size:12px;">
         This link expires in 48 hours. If you didn't expect this email, you can safely ignore it.
       </p>
@@ -1020,9 +1006,6 @@ export async function sendGBPReconnectEmail(
     title: "Google Business Profile — reconnection needed",
     accentColor: WARN_COLOR,
     body: `
-      <p style="margin:0 0 16px;font-size:20px;font-weight:700;color:#1e293b;">
-        Your Google Business Profile connection needs to be renewed
-      </p>
       <p style="margin:0 0 16px;">
         Hi there,
       </p>
@@ -1031,17 +1014,17 @@ export async function sendGBPReconnectEmail(
         for <strong>${storeName}</strong>. This usually happens when Google requires
         you to re-authorise the connection.
       </p>
-      <table cellpadding="0" cellspacing="0" style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:24px;">
+      <table cellpadding="0" cellspacing="0" style="background:${EMAIL_COLORS.panel};border:1px solid ${EMAIL_COLORS.line};border-radius:8px;padding:20px;width:100%;box-sizing:border-box;margin-bottom:24px;">
         <tr><td style="padding-bottom:12px;">
-          <span style="color:#92400e;font-weight:700;font-size:14px;">While disconnected, automatic updates are paused:</span>
+          <span style="color:${EMAIL_COLORS.ink};font-weight:700;font-size:14px;">While disconnected, automatic updates are paused:</span>
         </td></tr>
         ${[
           "Business hours will not be kept in sync with Google",
           "New services won't appear on your Google listing",
           "Review responses will still work manually",
         ].map((item) => `
-          <tr><td style="padding:3px 0;font-size:14px;color:#78350f;">
-            <span style="color:#d97706;margin-right:8px;">⚠</span>${item}
+          <tr><td style="padding:3px 0;font-size:14px;color:${EMAIL_COLORS.ink};">
+            <span style="color:${EMAIL_COLORS.muted};margin-right:8px;">&bull;</span>${item}
           </td></tr>
         `).join("")}
       </table>
@@ -1082,30 +1065,15 @@ export async function sendServiceImportSuccessEmail(
     title: "Your Certxa service menu is ready",
     accentColor: SUCCESS_COLOR,
     body: `
-    <div style="text-align:center;margin-bottom:28px;">
-      <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:50%;background:${SUCCESS_COLOR}20;margin-bottom:12px;">
-        <span style="font-size:28px;">✅</span>
-      </div>
-      <h2 style="margin:0 0 6px;font-size:22px;font-weight:700;color:#1e293b;">Your Certxa service menu is ready</h2>
-      <p style="margin:0;color:#64748b;font-size:14px;">Hi ${firstName}, we've finished building your service menu for <strong>${storeName}</strong>.</p>
-    </div>
-    <div style="background:#f8fafc;border-radius:12px;padding:20px 24px;margin-bottom:24px;border:1px solid #e2e8f0;">
-      <p style="margin:0 0 12px;font-size:14px;font-weight:600;color:#475569;">Here's what was created:</p>
-      <div style="display:flex;gap:24px;">
-        <div style="text-align:center;flex:1;">
-          <div style="font-size:32px;font-weight:800;color:${BRAND_COLOR};">${categoryCount}</div>
-          <div style="font-size:13px;color:#64748b;">categor${categoryCount === 1 ? "y" : "ies"}</div>
-        </div>
-        <div style="text-align:center;flex:1;">
-          <div style="font-size:32px;font-weight:800;color:${BRAND_COLOR};">${serviceCount}</div>
-          <div style="font-size:13px;color:#64748b;">service${serviceCount === 1 ? "" : "s"}</div>
-        </div>
-      </div>
-    </div>
+    <p style="margin:0 0 16px;">${greeting(firstName)} we've finished building your service menu for <strong>${escapeEmailHtml(storeName)}</strong>.</p>
+    ${emailDetails([
+      ["Categories", String(categoryCount)],
+      ["Services", String(serviceCount)],
+    ])}
     <p style="margin:0 0 20px;color:#475569;font-size:14px;line-height:1.6;">
       Review your services, make any edits, and publish your menu so clients can start booking online.
     </p>
-    ${btn("Review Your Service Menu →", reviewUrl, SUCCESS_COLOR)}
+    ${btn("Review Your Service Menu", reviewUrl, SUCCESS_COLOR)}
     <p style="margin:24px 0 0;color:#94a3b8;font-size:12px;">
       Questions? Email <a href="mailto:support@certxa.com" style="color:${BRAND_COLOR};text-decoration:none;">support@certxa.com</a>
     </p>
@@ -1136,15 +1104,9 @@ export async function sendServiceImportFailureEmail(
     title: "We need clearer photos",
     accentColor: WARN_COLOR,
     body: `
-    <div style="text-align:center;margin-bottom:28px;">
-      <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:50%;background:${WARN_COLOR}20;margin-bottom:12px;">
-        <span style="font-size:28px;">📸</span>
-      </div>
-      <h2 style="margin:0 0 6px;font-size:22px;font-weight:700;color:#1e293b;">We need clearer photos</h2>
-      <p style="margin:0;color:#64748b;font-size:14px;">Hi ${firstName}, we had trouble reading your service menu for <strong>${storeName}</strong>.</p>
-    </div>
-    <div style="background:#fefce8;border-radius:12px;padding:16px 20px;margin-bottom:24px;border:1px solid #fde68a;">
-      <p style="margin:0;font-size:14px;color:#92400e;line-height:1.6;">${reason}</p>
+    <p style="margin:0 0 16px;">${greeting(firstName)} we had trouble reading your service menu for <strong>${escapeEmailHtml(storeName)}</strong>.</p>
+    <div style="background:${EMAIL_COLORS.panel};border-radius:12px;padding:16px 20px;margin-bottom:24px;border:1px solid ${EMAIL_COLORS.line};">
+      <p style="margin:0;font-size:14px;color:${EMAIL_COLORS.ink};line-height:1.6;">${reason}</p>
     </div>
     <p style="margin:0 0 16px;color:#475569;font-size:14px;font-weight:600;">For best results:</p>
     <ul style="margin:0 0 24px;padding:0 0 0 20px;color:#475569;font-size:14px;line-height:2;">
@@ -1153,7 +1115,7 @@ export async function sendServiceImportFailureEmail(
       <li>Keep the entire menu board in the frame</li>
       <li>Hold your phone straight and steady</li>
     </ul>
-    ${btn("Try Again →", retryUrl, BRAND_COLOR)}
+    ${btn("Try Again", retryUrl, BRAND_COLOR)}
     <p style="margin:24px 0 0;color:#94a3b8;font-size:12px;">
       You can also <a href="${APP_URL}/setup/services" style="color:${BRAND_COLOR};text-decoration:none;">add services manually</a> if you prefer.
       Questions? Email <a href="mailto:support@certxa.com" style="color:${BRAND_COLOR};text-decoration:none;">support@certxa.com</a>

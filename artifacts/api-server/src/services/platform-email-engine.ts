@@ -1,9 +1,10 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { pool } from "../db";
 import { sendEmail } from "../mail";
+import { brandedEmail, EMAIL_COLORS } from "../lib/emailLayout";
 
 const APP_URL = process.env.APP_URL || "https://app.certxa.com";
-const BRAND_COLOR = "#6d5dfc";
+const BRAND_COLOR = EMAIL_COLORS.brand;
 const MAX_BATCH = 100;
 
 type CampaignSeed = {
@@ -78,37 +79,14 @@ export function platformClickUrl(deliveryId: number, destination: string): strin
 }
 
 function wrapEmail(title: string, body: string, unsubscribeUrl: string, previewText?: string): string {
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${escapeHtml(title)}</title>
-  ${previewText ? `<span style="display:none!important;max-height:0;overflow:hidden;opacity:0;color:transparent">${escapeHtml(previewText)}</span>` : ""}
-</head>
-<body style="margin:0;background:#f4f5f8;color:#1f2430;font-family:Arial,Helvetica,sans-serif">
-  <div style="max-width:620px;margin:0 auto;padding:28px 16px">
-    <div style="background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 8px 30px rgba(23,25,35,.08)">
-      <div style="padding:26px 34px;background:#171923;color:#fff">
-        <div style="font-size:21px;letter-spacing:.22em;font-weight:700">CERTXA</div>
-        <div style="margin-top:10px;color:#c7c9d5;font-size:12px">Tools for businesses that are ready to grow</div>
-      </div>
-      <div style="padding:36px 34px">${body}</div>
-      <div style="padding:22px 34px;border-top:1px solid #ececf1;color:#7b7f8c;font-size:12px;line-height:1.6">
-        <div>Questions? Reply to this email or visit <a href="${appUrl("/support")}" style="color:${BRAND_COLOR}">Certxa Support</a>.</div>
-        <div style="margin-top:10px"><a href="${unsubscribeUrl}" style="color:#7b7f8c">Unsubscribe from Certxa marketing emails</a></div>
-        <div style="margin-top:8px">© ${new Date().getFullYear()} Certxa</div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
+  // The shared Certxa layout (lib/emailLayout.ts).
+  return brandedEmail({ title, body, preheader: previewText, unsubscribeUrl, unsubscribeLabel: "Unsubscribe from Certxa marketing e-mails" });
 }
 
 function defaultSeeds(): CampaignSeed[] {
   const button = (label: string, url = "/onboarding") =>
     `<a href="{{ctaUrl}}" style="display:inline-block;background:${BRAND_COLOR};color:#fff;text-decoration:none;padding:14px 22px;border-radius:999px;font-weight:700">${label}</a>`;
-  const paragraph = (text: string) => `<p style="font-size:16px;line-height:1.65;margin:0 0 18px">${text}</p>`;
+  const paragraph = (text: string) => `<p style="font-size:15px;line-height:1.65;margin:0 0 16px;color:#3B3748">${text}</p>`;
   return [
     {
       campaignKey: "welcome-and-first-win",

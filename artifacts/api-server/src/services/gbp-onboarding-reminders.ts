@@ -1,4 +1,5 @@
 import { and, eq, isNull, lte, or } from "drizzle-orm";
+import { emailText } from "../lib/emailLayout";
 import { db } from "../db";
 import { googleBusinessProfiles, locations, users } from "@shared/schema";
 import { sendSms } from "../sms";
@@ -45,7 +46,11 @@ export async function processGbpPostcardReminders(now = new Date()): Promise<num
     const second = stage === "day_10";
 
     const text = "Hi from Certxa 👋 Your Google salon verification postcard should have arrived. Enter the code when you receive it so customers can find your salon on Google.";
-    const html = `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto"><p>Your Google verification postcard should arrive soon.</p><p>Once verified, Certxa can help your salon:</p><p>⭐ Get more 5-star reviews<br>🤖 Respond to Google reviews automatically<br>📸 Show customer reviews on your booking website<br>📈 Help customers discover your salon</p></div>`;
+    const html = [
+      emailText("Your Google verification postcard should arrive soon. Enter the code when you receive it so customers can find your salon on Google."),
+      emailText("Once verified, Certxa can help your salon:"),
+      emailText("&bull; Get more 5-star reviews<br>&bull; Respond to Google reviews automatically<br>&bull; Show customer reviews on your booking website<br>&bull; Help customers discover your salon"),
+    ].join("");
 
     if (row.phone) {
       await sendSms(row.storeId, row.phone, text, second ? "gbp_postcard_day_10" : "gbp_postcard_day_7", undefined, undefined, {
