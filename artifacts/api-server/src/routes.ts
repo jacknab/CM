@@ -19430,6 +19430,27 @@ or
     }
   });
 
+  // POST /api/nail/checkin-walkin {name, ticketNumber?} — Quick Check-in (owner, 2026-10-30): a walk-in who won't give a
+  // phone number is checked in by name only. No client record is made; the name stays on the check-in and on the
+  // ticket made from it. The name must be a real one (shared rule: quickName on the screen, checked again here).
+  app.post("/api/nail/checkin-walkin", isAuthenticated, idempotent("nail.checkin.walkin", (r) => resolveSessionStoreId(r)), async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const name = String(req.body?.name ?? "").trim().replace(/\s+/g, " ").slice(0, 80);
+      if ((name.match(/\p{L}/gu) ?? []).length < 3) return res.status(400).json({ message: "Enter the client's name: at least 3 letters." });
+      const [store] = await db.select().from(locations).where(eq(locations.id, storeId));
+      if (!store) return res.status(404).json({ message: "Store not found" });
+      const wanted = Number(req.body?.ticketNumber);
+      const checkin = await recordWalkInCheckinMarker(storeId, null, name, "", Number.isInteger(wanted) && wanted > 0 ? wanted : null);
+      const todayCount = await countTodayCheckins(storeId, (store as any).timezone || "UTC");
+      return res.json({ status: "walkin", client: { id: null, name, loyaltyPoints: 0 }, todayAppointment: null, checkin, todayCount });
+    } catch (err) {
+      console.error("[nail/checkin-walkin]", err);
+      return res.status(500).json({ message: "Could not check the client in" });
+    }
+  });
+
   app.post("/api/nail/tickets", isAuthenticated, idempotent("nail.ticket.create", (r) => resolveSessionStoreId(r), undefined,
     // The request died after the ticket was made: answer with that ticket rather than making another.
     async (appointmentId, storeId) => {
@@ -19444,7 +19465,7 @@ or
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;
       const body = z.object({
-        clientId: z.number().int(),
+        clientId: z.number().int().nullable(), // 0 / null: a walk-in by name only (createNailTicket)
         serviceId: z.number().int(),
         addonIds: z.array(z.number().int()).optional(),
         nail: nailSelectionInput.nullable().optional(),
@@ -24842,13 +24863,15 @@ or
   // for a ticket to exist, and carried forward rather than re-minted once one is created).
   async function recordWalkInCheckinMarker(
     storeId: number,
-    clientId: number,
+    /** null: a walk-in checked in by name only (Quick Check-in) — no client record. */
+    clientId: number | null,
     clientName: string | null,
     digits: string,
     /** The number a tablet gave this check-in while offline; kept when it is still free. */
     wantedTicketNumber?: number | null,
   ): Promise<{ id: number; token: string; ticketNumber: number }> {
-    const { rows: recentCheckin } = await pool.query(
+    // A name-only walk-in is never "the same person already waiting": there's nothing to match them by.
+    const { rows: recentCheckin } = clientId == null ? { rows: [] as any[] } : await pool.query(
       `SELECT id, token, ticket_number FROM kiosk_checkins
        WHERE store_id = $1 AND client_id = $2 AND appointment_id IS NULL
          AND status IN ('waiting', 'called')

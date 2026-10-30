@@ -474,7 +474,9 @@ async function validateNail(serviceId: number, nail: NailInput): Promise<string 
 
 export interface CreateTicketInput {
   storeId: number;
-  clientId: number;
+  /** 0 / null: a walk-in checked in by name only (Quick Check-in) — no client record; allowed with that check-in
+   *  (checkinId) or as another ticket of such a visit (visitTicketNumber). Owner, 2026-10-30. */
+  clientId: number | null;
   serviceId: number;
   addonIds?: number[];
   nail?: NailInput | null;
@@ -824,11 +826,10 @@ export async function splitServiceLine(
     const line = sanitizeCustomLines(row.custom_lines, true)[index];
     if (!line?.serviceId) return fail(400, "Choose one of the other services on the ticket to split off.");
     if (line.packageId != null) return fail(400, "A package's services stay together.");
-    if (!row.customer_id) return fail(409, "Add a client to this ticket before splitting it.");
     const removed = await removeServiceLine(storeId, appointmentId, index);
     if (!removed) return fail(409, "That service is no longer on this ticket.");
     const own = await createNailTicketLocked(deps, {
-      storeId, clientId: Number(row.customer_id), serviceId: line.serviceId, leaveUnassigned: true, startOnAssign: false,
+      storeId, clientId: row.customer_id != null ? Number(row.customer_id) : null, serviceId: line.serviceId, leaveUnassigned: true, startOnAssign: false,
       idempotencyKey: null, bookedByUserId: args.bookedByUserId ?? null, visitTicketNumber: row.ticket_number != null ? Number(row.ticket_number) : null,
     });
     if (!own.ok) {
@@ -1009,8 +1010,14 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
   if (!store) return fail(404, "Store not found");
   const tz = (store as any).timezone || "UTC";
 
-  const client = await storage.getCustomer(input.clientId);
-  if (!client || client.storeId !== storeId) return fail(404, "Client not found");
+  // A name-only walk-in has no client record: the name stays on its check-in (kiosk_checkins.client_name).
+  let client: Awaited<ReturnType<typeof storage.getCustomer>> | null = null;
+  if (input.clientId) {
+    client = (await storage.getCustomer(input.clientId)) ?? null;
+    if (!client || client.storeId !== storeId) return fail(404, "Client not found");
+  } else if (input.checkinId == null && input.visitTicketNumber == null) {
+    return fail(400, "Choose a client");
+  }
 
   const service = await storage.getService(input.serviceId);
   if (!service || service.storeId !== storeId || service.isActive === false) return fail(404, "Service not found");
@@ -1113,7 +1120,7 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
   }
 
   // The client is in service on another ticket: TURN doesn't hand this one out yet (it waits unassigned).
-  if (autoAssign && staffId != null && (await clientInServiceTicket(storeId, client.id)) != null) { staffId = null; staffName = null; }
+  if (autoAssign && staffId != null && client && (await clientInServiceTicket(storeId, client.id)) != null) { staffId = null; staffName = null; }
 
   // ── When: right now if the tech is free, otherwise right after their current client ──
   const now = new Date();
@@ -1155,7 +1162,7 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
     if (input.checkinId != null) {
       const marker = (await tx.execute(sql`SELECT ticket_number, client_id, status, appointment_id
         FROM kiosk_checkins WHERE id = ${input.checkinId} AND store_id = ${storeId} FOR UPDATE`)).rows[0] as any;
-      if (!marker || Number(marker.client_id) !== client.id || marker.appointment_id != null ||
+      if (!marker || (marker.client_id == null ? null : Number(marker.client_id)) !== (client?.id ?? null) || marker.appointment_id != null ||
           !["waiting", "called"].includes(String(marker.status))) {
         return { ok: false as const, message: "This check-in was already used or belongs to another client." };
       }
@@ -1164,7 +1171,7 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
     const created = await atomicCreateBooking({
       storeId, timezone: tz, startTime,
       durationMinutes: pricing.duration - nailAdj.durationAdjustment,
-      staffId, serviceId: service.id, customerId: client.id, status: "confirmed",
+      staffId, serviceId: service.id, customerId: client?.id ?? null, status: "confirmed",
       notes: input.notes ?? null, checkedInAt: now, clientRequestedStaff: false,
       resourceId, ticketNumberOverride, packageId: input.packageId ?? null,
     }, tx);
@@ -1188,7 +1195,7 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
       await tx.execute(sql`UPDATE kiosk_checkins SET appointment_id = ${appointmentId}, staff_id = ${staffId},
         assigned_staff_name = ${staffName}, status = ${immediate && startOnAssign ? "serving" : "waiting"}
         WHERE id = ${input.checkinId} AND store_id = ${storeId} AND appointment_id IS NULL`);
-    } else {
+    } else if (client) {
       await tx.execute(sql`UPDATE kiosk_checkins SET appointment_id = ${appointmentId}, staff_id = ${staffId},
         assigned_staff_name = ${staffName}, status = ${immediate && startOnAssign ? "serving" : "waiting"}
         WHERE store_id = ${storeId} AND client_id = ${client.id} AND appointment_id IS NULL
@@ -1736,8 +1743,12 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
        LEFT JOIN staff    st ON st.id = a.staff_id
        LEFT JOIN appointment_nail_selection ns ON ns.appointment_id = a.id
        LEFT JOIN LATERAL (
+         -- A ticket with no client (a walk-in by name only) takes its name from its check-in, or from the check-in of
+         -- another ticket of the same visit (a service another technician does).
          SELECT kc.client_name, kc.phone FROM kiosk_checkins kc
-          WHERE kc.appointment_id = a.id AND kc.store_id = a.store_id ORDER BY kc.id DESC LIMIT 1
+          WHERE kc.store_id = a.store_id AND (kc.appointment_id = a.id OR (a.ticket_group_id IS NOT NULL AND kc.appointment_id IN
+                (SELECT g.id FROM appointments g WHERE g.store_id = a.store_id AND g.ticket_group_id = a.ticket_group_id)))
+          ORDER BY (kc.appointment_id = a.id) DESC, kc.id DESC LIMIT 1
        ) k ON a.customer_id IS NULL
        LEFT JOIN LATERAL (
          SELECT json_agg(json_build_object('id', d.id, 'name', d.name, 'price', d.price, 'duration', d.duration, 'lineNo', aa.line_no) ORDER BY aa.id) AS items

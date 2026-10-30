@@ -1145,18 +1145,24 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
 
   const pickClient = async (clientId: number, marker?: number | null) => {
     try {
-      setClient(await fetchClient(clientId));
-      setCheckinId(marker ?? null);
-      // The grid opens on the category the client picked at check-in, so the tech knows what they came for.
-      const m = marker != null ? markers.find((x) => x.id === marker) : undefined;
-      const wanted = m && (groups.find((g) => m.requestedCategoryId != null && g.key === `cat:${m.requestedCategoryId}`)
-        ?? groups.find((g) => !!m.requestedCategory && g.name.trim().toLowerCase() === m.requestedCategory.trim().toLowerCase()));
-      setOpenGroup(wanted?.key ?? null);
-      if (wanted) setActiveGroup(wanted.key);
-      setTab("pos");
+      openTicketFor(await fetchClient(clientId), marker);
     } catch (err: any) {
       toast({ title: "Couldn't load that client", description: err?.message, variant: "destructive" });
     }
+  };
+  // A walk-in checked in by name only (Quick Check-in, owner 2026-10-30): no client record — the ticket is built for
+  // the name on their check-in (client id 0; the server keeps the name with the check-in).
+  const pickWalkIn = (name: string, marker: number | null) => openTicketFor({ id: 0, name, phone: null, loyaltyPoints: 0 }, marker);
+  const openTicketFor = (who: NonNullable<typeof client>, marker?: number | null) => {
+    setClient(who);
+    setCheckinId(marker ?? null);
+    // The grid opens on the category the client picked at check-in, so the tech knows what they came for.
+    const m = marker != null ? markers.find((x) => x.id === marker) : undefined;
+    const wanted = m && (groups.find((g) => m.requestedCategoryId != null && g.key === `cat:${m.requestedCategoryId}`)
+      ?? groups.find((g) => !!m.requestedCategory && g.name.trim().toLowerCase() === m.requestedCategory.trim().toLowerCase()));
+    setOpenGroup(wanted?.key ?? null);
+    if (wanted) setActiveGroup(wanted.key);
+    setTab("pos");
   };
 
   const startEdit = (t: BoardTicket, stay = false) => {
@@ -1843,6 +1849,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const fullNameOf = (n: string | null | undefined) => (n ?? "").trim().replace(/\s+/g, " ") || "Walk-in";
   const startFromMarker = async (m: BoardMarker) => {
     let clientId = m.clientId;
+    // Checked in by name only, with no phone: a walk-in with no client record — never made into one.
+    if (!clientId && !m.phone) { pickWalkIn(fullNameOf(m.clientName), m.id); return; }
     if (!clientId) {
       try { clientId = (await resolveMarkerClient(m.id)).clientId; invalidateBoard(); }
       catch (err: any) {
@@ -2140,6 +2148,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
             // A walk-in has no ticket yet: go straight to the POS tab to build it. A booked client's
             // appointment is already their ticket, so they are only marked as arrived.
             if (r.status !== "appointment" && !r.todayAppointment && r.client?.id) void pickClient(r.client.id, r.checkin?.id ?? null);
+            // Quick Check-in (name only): no client record, the ticket is built for the name.
+            else if (r.status === "walkin" && !r.client?.id && r.client?.name) pickWalkIn(r.client.name, r.checkin?.id ?? null);
           }}
           onPrintTicket={thermalPrinter.isConnected ? async (result) => {
             const appointment = result.todayAppointment;

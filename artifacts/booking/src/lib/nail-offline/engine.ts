@@ -252,7 +252,8 @@ export class NailOffline {
 
   /** A walk-in: the client is here and waiting. One open walk-in per client. */
   async checkIn(storeId: number, client: { id: number; name: string; phone: string | null }, key?: string): Promise<{ walkin: WalkinRecord; already: boolean }> {
-    const open = (await this.records(storeId)).find((r): r is WalkinRecord => r.kind === "walkin" && r.clientId === client.id && r.status === "waiting" && !r.synced);
+    // Client id 0 = a walk-in by name only (Quick Check-in): never "already waiting" — there's no one to match.
+    const open = client.id === 0 ? undefined : (await this.records(storeId)).find((r): r is WalkinRecord => r.kind === "walkin" && r.clientId === client.id && r.status === "waiting" && !r.synced);
     if (open) return { walkin: open, already: true };
     const writes: Write[] = [];
     const { id, seq } = await this.next(writes);
@@ -535,15 +536,22 @@ export class NailOffline {
           }
           if (reply.status < 300) patch = { realId: Number(reply.body.id) };
         } else if (op.type === "walkin.create" && rec.kind === "walkin") {
-          const clientId = await realOf(rec.clientId);
-          if (!clientId) continue;
-          reply = await transport.send("POST", "/api/nail/checkin", { clientId, ...(rec.ticketNumber ? { ticketNumber: rec.ticketNumber } : {}) }, op.idempotencyKey);
+          const number = rec.ticketNumber ? { ticketNumber: rec.ticketNumber } : {};
+          if (rec.clientId === 0) {
+            // A walk-in by name only: no client record on the server either.
+            reply = await transport.send("POST", "/api/nail/checkin-walkin", { name: rec.clientName, ...number }, op.idempotencyKey);
+          } else {
+            const clientId = await realOf(rec.clientId);
+            if (!clientId) continue;
+            reply = await transport.send("POST", "/api/nail/checkin", { clientId, ...number }, op.idempotencyKey);
+          }
           // "already" / "appointment": the server has them checked in another way — just as good.
           if (reply.status < 300) patch = { realId: reply.body?.checkin?.id ?? null, synced: true, syncedAt: this.now().toISOString(),
             ticketNumber: reply.body?.checkin?.ticketNumber ?? rec.ticketNumber ?? null } as Partial<WalkinRecord>;
         } else if (op.type === "ticket.create" && rec.kind === "ticket") {
-          const clientId = await realOf(rec.clientId);
-          if (!clientId) continue;
+          // 0 = a walk-in by name only (no client record); it goes with its check-in.
+          const clientId = rec.clientId === 0 ? 0 : await realOf(rec.clientId);
+          if (clientId == null || (clientId === 0 && rec.clientId !== 0)) continue;
           let checkinId: number | null = null;
           if (rec.walkinId != null) {
             if (!isLocalId(rec.walkinId)) checkinId = rec.walkinId;

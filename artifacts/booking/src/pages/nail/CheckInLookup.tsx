@@ -159,6 +159,38 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
         r = data as CheckInResult;
       }
     }
+    finish(r);
+  };
+
+  // Quick Check-in (owner, 2026-10-30): a walk-in by name only is NOT made into a client record — the name stays on
+  // the check-in (POST /api/nail/checkin-walkin). With no server it is saved on this tablet the same way (client id 0).
+  const checkInByName = async (who: string) => {
+    const key = newIdempotencyKey("walkin.create");
+    const onDevice = async (): Promise<CheckInResult> => {
+      const { walkin } = await nailOffline.checkIn(storeId, { id: 0, name: who, phone: null }, key);
+      return { status: "walkin", client: { id: 0, name: who, loyaltyPoints: 0 }, todayAppointment: null,
+        checkin: { id: walkin.id, token: "", ticketNumber: walkin.ticketNumber ?? 0 } };
+    };
+    let r: CheckInResult;
+    if (syncEngine.isOffline()) r = await onDevice();
+    else {
+      let res: Response | null = null;
+      try {
+        res = await fetch("/api/nail/checkin-walkin", {
+          method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-Idempotency-Key": key }, body: JSON.stringify({ name: who }),
+        });
+      } catch { syncEngine.noteUnreachable(); }
+      if (!res) r = await onDevice();
+      else {
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.status) throw new Error(data?.message || "Could not check the client in");
+        r = { ...data, client: { ...data.client, id: 0 } } as CheckInResult;
+      }
+    }
+    finish(r);
+  };
+
+  const finish = (r: CheckInResult) => {
     setResult(r);
     setStep("done");
     // A check-in saved offline gets its slip too: its code is the ticket number (TN:), see printCheckinTicket.
@@ -215,7 +247,8 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
     }
     setBusy(true);
     try {
-      await checkIn(await createClient(storeId, name, quick ? "" : phone));
+      if (quick) await checkInByName(name.trim().replace(/\s+/g, " "));
+      else await checkIn(await createClient(storeId, name, phone));
     } catch (e: any) {
       setMessage(e?.message === "save failed" ? "We could not save this client. Please try again." : (e?.message || "Could not check the client in"));
       setStep("error");
