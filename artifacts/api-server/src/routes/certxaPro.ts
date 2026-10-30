@@ -13,11 +13,21 @@ const router = Router();
 const id = z.coerce.number().int().positive();
 const date = z.string().datetime({ offset: true }).refine(value => Number.isFinite(Date.parse(value)), "Invalid ISO date");
 const status = z.enum(["pending", "confirmed", "started", "paid", "cancelled"]);
+// A client can be added from just a name, a phone number or an e-mail (the app's POS, owner 2026-10-30).
+// Without a name, the phone or e-mail is shown as the name until the owner adds one.
 const customerInput = z.object({
-  name: z.string().trim().min(1).max(200),
+  name: z.string().trim().max(200).optional(),
   phone: z.string().trim().min(1).max(50).optional(),
   email: z.email().max(254).optional(),
   notes: z.string().max(10000).optional(),
+}).strict().refine((c) => !!(c.name || c.phone || c.email), { message: "Enter a name, phone number or e-mail" })
+  .transform((c) => ({ ...c, name: c.name || c.phone || c.email || "" }));
+// A quick sale from the app's POS: an amount for a client, paid by card. It is a ticket of its own, kept off the
+// calendar (calendar_hidden), and completed by the card capture like any checkout.
+const quickSaleInput = z.object({
+  customerId: id,
+  amountCents: z.number().int().min(50).max(10_000_000),
+  description: z.string().trim().max(60).optional(),
 }).strict();
 const appointmentInput = z.object({
   customerId: id, serviceId: id, duration: z.number().int().positive().max(1440),
@@ -188,6 +198,37 @@ router.post("/customers", async (req, res) => {
     if ((error as { code?: string }).code === "PHONE_DUPLICATE") return res.status(409).json({ error: "A customer with this phone already exists" });
     return unexpected(res, error);
   }
+});
+
+router.post("/quick-sales", async (req, res) => {
+  const parsed = quickSaleInput.safeParse(req.body);
+  if (!parsed.success) return invalid(res, parsed.error);
+  try {
+    const storeId = await store(req, res); if (!storeId) return;
+    const staffId = await ownStaff(req, storeId);
+    const { customerId, amountCents, description } = parsed.data;
+    const lines = [{ label: description || "Quick sale", price: amountCents / 100 }];
+    const result = await pool.query(`INSERT INTO appointments (customer_id,store_id,duration,date,notes,status,staff_id,custom_lines,calendar_hidden,service_price)
+      SELECT c.id,$2,1,now(),$3,'pending',$4,$5::jsonb,true,$6 FROM clients c
+      WHERE c.id=$1 AND c.store_id=$2 AND c.archived_at IS NULL RETURNING id`,
+      [customerId, storeId, "Quick sale (Certxa Pro POS)", staffId, JSON.stringify(lines), (amountCents / 100).toFixed(2)]);
+    if (!result.rows[0]) return res.status(400).json({ error: "Client not found in this business" });
+    return res.status(201).json({ id: result.rows[0].id });
+  } catch (error) { return unexpected(res, error); }
+});
+
+// A quick sale whose card payment did not go through: removed, so no unpaid ticket is left behind.
+// Only an unpaid quick sale can be removed this way.
+router.delete("/quick-sales/:id", async (req, res) => {
+  const parsed = id.safeParse(req.params.id);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid sale" });
+  try {
+    const storeId = await store(req, res); if (!storeId) return;
+    const removed = await pool.query(`DELETE FROM appointments WHERE id=$1 AND store_id=$2 AND service_id IS NULL AND calendar_hidden=true
+      AND status='pending' AND notes='Quick sale (Certxa Pro POS)' AND total_paid IS NULL AND stripe_payment_intent_id IS NULL RETURNING id`,
+      [parsed.data, storeId]);
+    return removed.rows[0] ? res.json({ removed: true }) : res.status(409).json({ error: "This sale can't be removed" });
+  } catch (error) { return unexpected(res, error); }
 });
 
 router.get("/services", async (req, res) => {
