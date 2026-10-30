@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { AT_RISK_DAYS, INACTIVE_DAYS, REGULAR_VISITS } from "@shared/clientStatus";
 import multer from "multer";
-import { db } from "../db";
+import { db, pool } from "../db";
 import { mergeLoyaltyTx } from "../lib/loyaltyAward";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import { isAuthenticated } from "../auth";
@@ -640,7 +640,9 @@ router.get("/:id/notes", isAuthenticated, async (req, res) => {
     const [clientRow] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.id, clientId), eq(clients.storeId, storeId ?? -1)));
     if (!clientRow) return res.status(404).json({ message: "Client not found" });
     const notes = await db.select().from(clientNotes).where(eq(clientNotes.clientId, clientId)).orderBy(desc(clientNotes.pinned), desc(clientNotes.createdAt));
-    return res.json(notes);
+    const visits = await pool.query(`SELECT id, appointment_id FROM client_notes WHERE client_id = $1 AND appointment_id IS NOT NULL`, [clientId]);
+    const visitOf = new Map<number, number>(visits.rows.map((r: any) => [Number(r.id), Number(r.appointment_id)]));
+    return res.json(notes.map((n) => ({ ...n, appointmentId: visitOf.get(n.id) ?? null })));
   } catch (err) {
     return res.status(500).json({ message: "Failed to fetch notes" });
   }
@@ -655,10 +657,25 @@ router.post("/:id/notes", isAuthenticated, async (req, res) => {
     const [clientRow] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.id, clientId), eq(clients.storeId, storeId)));
     if (!clientRow) return res.status(404).json({ message: "Client not found" });
 
+    // Optional: the visit the note was written on (the Certxa Pro app's appointment Notes). Must be this client's.
+    let appointmentId: number | null = null;
+    if (req.body.appointmentId != null) {
+      appointmentId = Number(req.body.appointmentId);
+      const owned = Number.isInteger(appointmentId) && appointmentId > 0
+        ? await pool.query(`SELECT 1 FROM appointments WHERE id = $1 AND store_id = $2 AND customer_id = $3`, [appointmentId, storeId, clientId])
+        : { rows: [] as unknown[] };
+      if (!owned.rows[0]) return res.status(400).json({ message: "That appointment is not this client's" });
+    }
+    if (typeof noteContent !== "string" || !noteContent.trim() || noteContent.length > 5000) {
+      return res.status(400).json({ message: "Write the note first (up to 5,000 characters)" });
+    }
+
     const [note] = await db
       .insert(clientNotes)
-      .values({ clientId, storeId, createdByUserId: getUserId(req) ?? null, noteType, visibility, noteContent, pinned })
+      .values({ clientId, storeId, createdByUserId: getUserId(req) ?? null, noteType, visibility, noteContent: noteContent.trim(), pinned })
       .returning();
+    // client_notes.appointment_id is not in the shared schema, so it is set directly.
+    if (appointmentId) await pool.query(`UPDATE client_notes SET appointment_id = $1 WHERE id = $2`, [appointmentId, note.id]);
 
     return res.status(201).json(note);
   } catch (err) {
