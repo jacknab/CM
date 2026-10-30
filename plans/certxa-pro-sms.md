@@ -1,9 +1,9 @@
-# Certxa Pro app — SMS credits and the $5 Plus plan
+# Certxa Pro app — SMS credits and the $3 Plus plan
 
 Owner request, 2026-10-30. The Certxa Pro app (Solo plan) stays free. Text-message notifications are not free:
 - Every new Solo account gets **50 free SMS credits**. The number is a backend setting.
 - 1 credit = 1 text.
-- Owners buy credit packs on the website, or take **Plus at $5/month** for unlimited notification texts. Plus will unlock more features later.
+- Owners buy credit packs on the website, or take **Plus at $3/month** (was $5; owner changed it 2026-10-30) for unlimited notification texts. Plus will unlock more features later.
 - Payments use Certxa's Stripe account and our own renewal system, not Stripe Subscriptions.
 
 ## What exists today (audit, 2026-10-30)
@@ -61,10 +61,10 @@ Owner request, 2026-10-30. The Certxa Pro app (Solo plan) stays free. Text-messa
 - **Sign-in handoff:** the app opens the page already signed in, using a one-time link created from the app's login, so the owner doesn't log in again in the browser.
 - A receipt e-mail goes out after each purchase.
 
-### Phase 3 — Plus, $5/month
-- **Plan row:** a new plan `solo_plus` ($5 monthly) in `subscription_plans`, admin-editable like the others.
-- **Signing up:** card saved with a SetupIntent, then `startInHouseSubscription()` takes the first $5 now and opens the plan.
-- **Renewals:** the hourly billing run charges $5 every 31 days. This needs `SAAS_BILLING_MODE=live` (it currently is off for everyone).
+### Phase 3 — Plus, $3/month
+- **Plan row:** a new plan `solo_plus` ($3 monthly) in `subscription_plans`, admin-editable like the others.
+- **Signing up:** card saved with a SetupIntent, then `startInHouseSubscription()` takes the first $3 now and opens the plan.
+- **Renewals:** the hourly billing run charges $3 every 31 days. This needs `SAAS_BILLING_MODE=live` (it currently is off for everyone).
 - **Failed payment:** after the last retry, a Plus account **drops back to free Solo**. It is not Suspended (today the run suspends the whole account). Unused credits stay.
 - **Cancel:** Plus stays until the paid period ends, then the account returns to Solo.
 - **Abuse guard:** "unlimited" is still capped by a hidden daily safety limit.

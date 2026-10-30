@@ -5,7 +5,7 @@
  *   • A new Solo account gets free credits (platform_settings.solo_free_sms_credits, default 50).
  *   • Every text to a client from a Solo account spends 1 credit (locations.sms_credits).
  *     With no credits left the text is not sent; e-mails still go.
- *   • Solo Plus ($5/month, plan code 'solo_plus') sends notification texts without spending credits.
+ *   • Solo Plus ($3/month, plan code 'solo_plus') sends notification texts without spending credits.
  *     Marketing campaigns still spend credits on Plus.
  *   • Texts that are not to a client (staff invites, owner test texts, payout reminders) are free.
  * Every change to the balance writes one sms_credit_ledger row, so the balance can always be explained.

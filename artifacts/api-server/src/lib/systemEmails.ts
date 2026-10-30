@@ -1217,7 +1217,7 @@ export async function sendSoloSmsCreditsAlertEmail(storeId: number, remaining: n
       <p style="margin:0 0 16px;">${empty
         ? `<strong>${owner.storeName}</strong> has no text message credits left. Text reminders, confirmations and other texts to your clients have stopped. E-mails to clients still go out.`
         : `<strong>${owner.storeName}</strong> has <strong>${remaining}</strong> text message credits left. Each text to a client uses 1 credit.`}</p>
-      <p style="margin:0 0 16px;">Buy more credits, or get Plus for $5 a month for unlimited text notifications.</p>
+      <p style="margin:0 0 16px;">Buy more credits, or get Plus for $3 a month for unlimited text notifications.</p>
       ${btn(empty ? "Add credits" : "Add credits or get Plus", `${APP_URL}/sms-credits`, color)}
     `,
     unsubscribeUrl: buildUnsubscribeUrl(owner.userId, "lowBalanceAlerts"),
