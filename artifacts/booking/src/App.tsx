@@ -144,6 +144,7 @@ const BookingConfirmation = lazy(() => import("@/pages/public-booking/BookingCon
 const ManageBooking = lazy(() => import("@/pages/public-booking/ManageBooking"));
 const PublicReceipt = lazy(() => import("@/pages/public-booking/PublicReceipt"));
 const CompleteBooking = lazy(() => import("@/pages/public-payment/CompleteBooking"));
+const ProPlus = lazy(() => import("@/pages/ProPlus"));
 const StaffCalendar = lazy(() => import("@/pages/StaffCalendar"));
 const StaffProfile = lazy(() => import("@/pages/StaffProfile"));
 const StaffMenu = lazy(() => import("@/pages/StaffMenu"));
@@ -548,6 +549,8 @@ function AppRoutes() {
       <Route path="/receipt/:token" element={<PublicReceipt />} />
       <Route path="/review/:id" element={<ReviewEntry />} />
       <Route path="/complete-booking/:token" element={<CompleteBooking />} />
+      {/* Certxa Pro Plus, opened from the app (routes/soloPlus.ts) */}
+      <Route path="/pro-plus" element={<ProPlus />} />
 
       {/* Public queue */}
       <Route path="/q/:slug" element={<PublicCheckIn />} />

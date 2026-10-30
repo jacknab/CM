@@ -86,6 +86,12 @@ export async function applyResult(r: BillingResult): Promise<void> {
     if (userId) emitPlatformEmailEvent("payment_failed", userId, { source: "saas_billing", attempt: r.attempt, reason: r.message }).catch(() => {});
     return;
   }
+  // Certxa Pro Plus is an extra on the free Solo plan: when its payment finally fails, or the owner's
+  // cancellation takes effect, the account goes back to free Solo — it is never suspended (owner, 2026-10-30).
+  if ((r.outcome === "suspended" || r.outcome === "canceled") && await isSoloPlusProfile(r.profileId)) {
+    await backToSolo(r.storeId, r.outcome === "suspended" ? "payment_failed" : "canceled");
+    return;
+  }
   if (r.outcome === "suspended") {
     await pool.query(
       `UPDATE store_subscriptions SET status = 'past_due', updated_at = now()
@@ -104,6 +110,32 @@ export async function applyResult(r: BillingResult): Promise<void> {
     );
     cache.billing.invalidate(r.storeId);
   }
+}
+
+async function isSoloPlusProfile(profileId: number): Promise<boolean> {
+  const r = await pool.query(
+    `SELECT 1 FROM saas_billing_profiles p JOIN subscription_plans sp ON sp.id = p.plan_id WHERE p.id = $1 AND sp.code = 'solo_plus'`,
+    [profileId],
+  );
+  return !!r.rows[0];
+}
+
+/** Plus has ended: the store is on the free Solo plan again. */
+export async function backToSolo(storeId: number, why: string): Promise<void> {
+  const solo = await pool.query(`SELECT id FROM subscription_plans WHERE code = 'solo' LIMIT 1`);
+  if (!solo.rows[0]) { console.error(`[saas-billing] no 'solo' plan — storeId=${storeId} left as it is`); return; }
+  await pool.query(
+    `UPDATE store_subscriptions SET status = 'canceled', canceled_at = now(), updated_at = now()
+      WHERE store_id = $1 AND status IN ('active', 'trialing', 'past_due')`,
+    [storeId],
+  );
+  await pool.query(
+    `INSERT INTO store_subscriptions (store_id, plan_id, status, current_period_start, created_at, updated_at, cancel_at_period_end)
+     VALUES ($1, $2, 'active', now(), now(), now(), false)`,
+    [storeId, solo.rows[0].id],
+  );
+  cache.billing.invalidate(storeId);
+  console.log(`[saas-billing] storeId=${storeId} Plus ended (${why}) → free Solo`);
 }
 
 let running = false;

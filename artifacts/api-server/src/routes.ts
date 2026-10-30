@@ -4293,6 +4293,9 @@ export async function registerRoutes(
   // before the older web endpoints. The router passes non-native calls through.
   const { default: certxaProRouter } = await import("./routes/certxaPro.js");
   app.use("/api", certxaProRouter);
+  // Certxa Pro Plus: the app's one-time link into certxa.com/pro-plus, and buying Plus there (routes/soloPlus.ts).
+  const { default: soloPlusRouter } = await import("./routes/soloPlus.js");
+  app.use(soloPlusRouter);
   // Solo plan: where the professional sees clients, and booking approval (plans/solo-work-places-and-approval.md).
   const { default: workPlacesRouter } = await import("./routes/workPlaces.js");
   app.use("/api/work-places", isAuthenticated, workPlacesRouter);
