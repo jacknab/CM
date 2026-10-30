@@ -100,8 +100,8 @@ export default function TeamCustomer360Page() {
             </div>
             <div className="flex flex-wrap items-center gap-4 mt-1 text-xs text-slate-500">
               {store.bookingSlug && (
-                <a href={`https://book.certxa.com/${store.bookingSlug}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-indigo-600 hover:underline">
-                  book.certxa.com/{store.bookingSlug}<ExternalLink size={10} />
+                <a href={`https://${store.bookingSlug}.certxa.com`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-indigo-600 hover:underline">
+                  {store.bookingSlug}.certxa.com<ExternalLink size={10} />
                 </a>
               )}
               <span>Account ID #{store.id}</span>

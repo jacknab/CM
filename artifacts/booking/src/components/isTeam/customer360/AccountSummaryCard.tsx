@@ -37,7 +37,7 @@ export default function AccountSummaryCard({ store, owner }: Props) {
           {store.timezone && <Row icon={<Clock size={13} />} label="Timezone"><span className="text-xs text-slate-700">{store.timezone}</span></Row>}
           {store.bookingSlug && (
             <Row icon={<Globe size={13} />} label="Booking URL">
-              <a href={`/book/${store.bookingSlug}`} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline text-xs">/{store.bookingSlug}</a>
+              <a href={`https://${store.bookingSlug}.certxa.com`} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline text-xs">{store.bookingSlug}.certxa.com</a>
             </Row>
           )}
         </div>

@@ -60,12 +60,12 @@ export default function BookingSystemTab({ accountId, bookingSlug }: Props) {
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <span className="font-medium text-slate-700">Booking URL:</span>
           <a
-            href={`https://book.certxa.com/${slug}`}
+            href={`https://${slug}.certxa.com`}
             target="_blank"
             rel="noreferrer"
             className="flex items-center gap-1 text-indigo-600 hover:underline font-medium"
           >
-            book.certxa.com/{slug}
+            {slug}.certxa.com
             <ExternalLink size={11} />
           </a>
         </div>
