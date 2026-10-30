@@ -1,3 +1,4 @@
+import { usesBuiltInReviewsOnly } from "./lib/reviewLinks";
 import express, { type Express, type Request, type RequestHandler, type Response } from "express";
 import { checkHouseCall, saveClientAddress, type ClientAddress } from "./lib/houseCalls";
 import { publicStoreView, bookedClientStoreView, addressIsPrivate } from "./lib/publicStore";
@@ -8998,7 +8999,9 @@ If you have any questions, please contact your administrator.
       const store = await storage.getStoreBySlug(req.params.slug);
       if (!store) return res.status(404).json({ message: "Store not found" });
 
-      const reviewRows = await db
+      // Solo businesses show only Certxa's own reviews (they reply to them in the Certxa Pro app).
+      const builtInOnly = await usesBuiltInReviewsOnly(store.id);
+      const reviewRows = builtInOnly ? [] : await db
         .select({
           id: googleReviews.id,
           customerName: googleReviews.customerName,

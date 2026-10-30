@@ -12,6 +12,13 @@ import { pool, db } from "../db";
 import { clientMarketingPreferences } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
+import { resolveStorePlan } from "./featureAccess";
+
+/** Solo (Certxa Pro app) businesses always use Certxa's own reviews, never Google (owner, 2026-10-30). */
+export async function usesBuiltInReviewsOnly(storeId: number): Promise<boolean> {
+  const plan = await resolveStorePlan(storeId).catch(() => null);
+  return plan?.planCode === "solo";
+}
 
 /**
  * Only the token itself is a new concept — actual review content is stored
@@ -59,6 +66,9 @@ export async function ensureReviewTables(): Promise<void> {
  * Returns null if none of the three are available.
  */
 export async function resolveExternalReviewUrl(storeId: number): Promise<string | null> {
+  // A Solo business's review links always open Certxa's own review form, so the review lands on its
+  // booking site and in the Certxa Pro app, where the owner can reply.
+  if (await usesBuiltInReviewsOnly(storeId)) return null;
   const result = await pool.query(
     `SELECT ss.google_review_url AS sms_google_review_url,
             gbp.google_review_link AS gbp_review_link,
