@@ -66,19 +66,21 @@ export async function fetchShopStatus(): Promise<ShopStatus> {
 let statusRequest: Promise<ShopStatus> | null = null;
 
 /**
- * Shop status for the current visitor: undefined until it has loaded. Fetched
- * once per page load and only in the browser, so rendering a page on the
- * server never starts a request or leaves a timer behind.
+ * Shop status for the current visitor: undefined until it has loaded. Asked again every time a page using it opens
+ * (owner, 2026-10-30: moving to /products inside the site showed the prices written on the page, or the first ones
+ * seen, until a hard refresh) — only requests made at the same moment share one answer. Only in the browser, so
+ * rendering a page on the server never starts a request. The prices it brings are also put where priceLabel reads them.
  */
 export function useShopStatus(): ShopStatus | undefined {
   const [status, setStatus] = useState<ShopStatus | undefined>(undefined);
   useEffect(() => {
     let live = true;
-    statusRequest ??= fetchShopStatus().catch((err) => {
-      statusRequest = null;
-      throw err;
-    });
-    statusRequest.then((s) => live && setStatus(s)).catch(() => live && setStatus({ open: false, products: [] }));
+    statusRequest ??= fetchShopStatus().finally(() => { statusRequest = null; });
+    statusRequest.then((s) => {
+      // The current prices ({ sku: cents }), for priceLabel / livePriceCents on this and the next page.
+      if (s.products?.length) (window as any).__CERTXA_SHOP_PRICES__ = Object.fromEntries(s.products.map((p) => [p.sku, p.priceCents]));
+      if (live) setStatus(s);
+    }).catch(() => live && setStatus({ open: false, products: [] }));
     return () => {
       live = false;
     };

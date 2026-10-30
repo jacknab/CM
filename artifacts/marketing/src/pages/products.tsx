@@ -5,7 +5,7 @@ import { Link } from 'react-router';
 import { motion } from 'motion/react';
 import { ArrowRight, Check, Zap } from 'lucide-react';
 import { products } from 'virtual:content';
-import { livePriceCents, priceLabel } from '@/lib/cart';
+import { livePriceCents, priceLabel, useShopStatus } from '@/lib/cart';
 
 const SITE = 'https://certxa.com';
 const PAGE_URL = `${SITE}/products`;
@@ -114,6 +114,9 @@ const jsonLd = () => ({
 
 export default function ProductsPage() {
   const nailSalon = useNailSalonVisitor();
+  // The prices in the database, asked for every time the page opens; the page redraws with them when they arrive
+  // (the server also puts them in the HTML of a full page load).
+  useShopStatus();
   const station = products.mainProducts.find((p) => p.id === 'prod-station');
   // Below the hero: the rest of the main hardware (the kiosk only for nail salons).
   const setup = products.mainProducts.filter((p) => p.id !== 'prod-station' && (p.id !== 'prod-kiosk' || nailSalon));
