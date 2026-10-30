@@ -195,6 +195,19 @@ export default function FeaturesPage() {
                       ))}
                     </motion.ul>
 
+                    {/* Deep-link to the turn system guide (owner 2026-10-30) */}
+                    {sec.id === 'sec-turns' && (
+                      <motion.div variants={fadeUp}>
+                        <Link
+                          to="/nail-salon-turn-system"
+                          className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:gap-3 transition-all duration-200"
+                        >
+                          How nail salon turn systems work, with a free turn calculator
+                          <ArrowRight size={15} />
+                        </Link>
+                      </motion.div>
+                    )}
+
                     {/* Deep-link for Autumn */}
                     {isAutumn && (
                       <motion.div variants={fadeUp}>

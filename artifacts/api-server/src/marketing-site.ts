@@ -47,6 +47,8 @@ const DEFAULT_PATHS = [
   "/roadmap",
   "/vietnamese-nail-salon-software",
   "/vi/phan-mem-tiem-nail",
+  "/nail-salon-turn-system",
+  "/vi/chia-tua-tiem-nail",
 ];
 
 /**

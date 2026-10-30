@@ -8,6 +8,8 @@ const footerLinks: Record<string, { label: string; href: string | null }[]> = {
     { label: 'Pricing', href: '/pricing' },
     { label: 'Vietnamese Nail Salons', href: '/vietnamese-nail-salon-software' },
     { label: 'Phần mềm tiệm nail', href: '/vi/phan-mem-tiem-nail' },
+    { label: 'Nail Salon Turn System', href: '/nail-salon-turn-system' },
+    { label: 'Chia tua tiệm nail', href: '/vi/chia-tua-tiem-nail' },
     { label: 'Changelog', href: '/changelog' },
     { label: 'Roadmap', href: '/roadmap' },
   ],

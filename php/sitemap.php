@@ -25,6 +25,8 @@ function page_lastmod(string $path, string $root, string $today): ?string {
         ''                               => ["pages/index.tsx", "content/pages/home.json"],
         'vietnamese-nail-salon-software' => ["pages/vietnamese-nail-salon-software.tsx", "components/landing/VietnameseNailLanding.tsx"],
         'vi/phan-mem-tiem-nail'          => ["components/landing/VietnameseNailLanding.tsx"],
+        'nail-salon-turn-system'         => ["pages/nail-salon-turn-system.tsx", "components/landing/TurnSystemGuide.tsx"],
+        'vi/chia-tua-tiem-nail'          => ["components/landing/TurnSystemGuide.tsx"],
     ];
     if (isset($marketing[$slug])) $files = array_map(fn($f) => "$mk/$f", $marketing[$slug]);
     elseif (strpos($slug, 'compare/') === 0) $files = ["$mk/pages/compare/ComparisonLayout.tsx", "$mk/content/data/comparisons.json"];
@@ -61,6 +63,8 @@ $PAGES = [
     '/autumn'                    => '0.93',
     '/vietnamese-nail-salon-software' => '0.92',
     '/vi/phan-mem-tiem-nail'     => '0.90',
+    '/nail-salon-turn-system'    => '0.90',
+    '/vi/chia-tua-tiem-nail'     => '0.88',
     '/booking'                   => '0.90',
     '/launchsite'               => '0.87',
     '/products'                  => '0.86',

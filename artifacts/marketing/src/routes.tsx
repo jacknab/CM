@@ -10,6 +10,8 @@ import BookingPage from './pages/booking';
 import AutumnPage from './pages/autumn';
 import VietnameseNailSalonSoftwarePage from './pages/vietnamese-nail-salon-software';
 import PhanMemTiemNailPage from './pages/vi/phan-mem-tiem-nail';
+import NailSalonTurnSystemPage from './pages/nail-salon-turn-system';
+import ChiaTuaTiemNailPage from './pages/vi/chia-tua-tiem-nail';
 import CareersPage from './pages/careers';
 import ChangelogPage from './pages/changelog';
 import RoadmapPage from './pages/roadmap';
@@ -49,6 +51,14 @@ export const routes: RouteObject[] = [
   {
     path: '/vi/phan-mem-tiem-nail',
     element: <PhanMemTiemNailPage />,
+  },
+  {
+    path: '/nail-salon-turn-system',
+    element: <NailSalonTurnSystemPage />,
+  },
+  {
+    path: '/vi/chia-tua-tiem-nail',
+    element: <ChiaTuaTiemNailPage />,
   },
   {
     path: '/pricing',
