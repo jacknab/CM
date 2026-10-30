@@ -9,7 +9,7 @@ type Props = {
 
 export default function AccountSummaryCard({ store, owner }: Props) {
   const formatPhone = (p: string) => p?.replace(/(\d{1})(\d{3})(\d{3})(\d{4})/, "+$1 ($2) $3-$4") ?? p;
-  const signupDate = owner.signupDate ? format(new Date(owner.signupDate), "MMM d, yyyy") : "—";
+  const signupDate = owner.signupDate ? format(new Date(owner.signupDate), "MMM d, yyyy · h:mm a") : "—";
   // The salon's full address: street, then "City, ST ZIP".
   const cityLine = [store.city, [store.state, store.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
   const hasAddress = !!(store.address || cityLine);
