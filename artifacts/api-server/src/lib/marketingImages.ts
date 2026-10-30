@@ -23,7 +23,7 @@ const image = (
   pages: string[],
   width: number,
   height: number,
-  fit: MarketingImageFit = "cover",
+  fit: MarketingImageFit = "contain",
   originalUrl?: string,
   cornerStyle: "rounded" | "none" = "rounded",
   note?: string,
@@ -33,9 +33,12 @@ const image = (
 /**
  * Audited image slots used by the React marketing pages. Every slot has a
  * locked output canvas so an admin replacement cannot change page geometry.
+ * Website images are never cropped (owner, 2026-10-30): a replacement is fitted whole into the frame and the
+ * spare space takes the photo's own background colour. Only the app icons and the /nail background still fill
+ * their frame ("cover"), because they must have no empty edges.
  */
 export const MARKETING_IMAGES: MarketingImageDefinition[] = [
-  image("pages/home/hero", "Home — hero salon", ["Home"], 1200, 900, "cover", undefined, "none"),
+  image("pages/home/hero", "Home — hero salon", ["Home"], 1200, 900, "contain", undefined, "none"),
   image("pages/home/feature-booking", "Online booking", ["Home", "Features"], 700, 525),
   image("pages/home/feature-payments", "Salon POS", ["Home", "Features"], 700, 525),
   image("pages/home/feature-analytics", "Analytics and kiosk", ["Home", "Features"], 700, 525),
@@ -52,12 +55,12 @@ export const MARKETING_IMAGES: MarketingImageDefinition[] = [
   image("pages/autumn/software-screenshot", "Autumn — software screenshot", ["Autumn"], 1024, 576),
   image("team/thanh-lam-founder", "Founder portrait", ["About"], 1145, 1374),
   image("products/tablet-stand", "Check-in kiosk stand", ["Products"], 600, 600, "contain"),
-  image("products/certxa-station-hero", "Certxa Station — hero", ["Products"], 1536, 1024, "cover", "/_site/images/products/certxa-station-hero.webp"),
+  image("products/certxa-station-hero", "Certxa Station — hero", ["Products"], 1536, 1024, "contain", "/_site/images/products/certxa-station-hero.webp"),
   image("products/certxa-station", "Certxa Station — product card", ["Products"], 1200, 800, "contain", "/_site/images/products/certxa-station.webp"),
-  image("products/certxa-check-in-tablet", "Customer check-in tablet", ["Products"], 1000, 1000, "cover", "/_site/images/products/certxa-check-in-tablet.webp"),
-  image("products/certxa-thermal-printer", "Thermal printer", ["Products"], 1000, 1000, "cover", "/_site/images/products/certxa-thermal-printer.webp"),
-  image("products/certxa-cash-drawer", "Cash drawer", ["Products"], 1000, 1000, "cover", "/_site/images/products/certxa-cash-drawer.webp"),
-  image("products/stripe-m2-reader", "Stripe M2 card reader", ["Products"], 560, 560, "cover", "/_site/images/products/stripe-m2-reader.webp"),
+  image("products/certxa-check-in-tablet", "Customer check-in tablet", ["Products"], 1000, 1000, "contain", "/_site/images/products/certxa-check-in-tablet.webp"),
+  image("products/certxa-thermal-printer", "Thermal printer", ["Products"], 1000, 1000, "contain", "/_site/images/products/certxa-thermal-printer.webp"),
+  image("products/certxa-cash-drawer", "Cash drawer", ["Products"], 1000, 1000, "contain", "/_site/images/products/certxa-cash-drawer.webp"),
+  image("products/stripe-m2-reader", "Stripe M2 card reader", ["Products"], 560, 560, "contain", "/_site/images/products/stripe-m2-reader.webp"),
   image("brand/header-logo", "Certxa header logo", ["All pages"], 679, 144, "contain", "/_site/logo.png", "none"),
   image("app/nail-wrapper-background", "/nail wrapper background", ["/nail lock screen", "/nail queue"], 780, 546, "cover", "/images/nail/lock-bg.jpg"),
   image("mobile/certxa-owner-icon", "Certxa Owner app icon", ["iOS", "Android"], 1024, 1024, "cover", "/images/mobile/certxa-owner-icon.png", "rounded", "Applied to the next native app build; installed apps keep their current icon.", ["apps/certxa-owner/assets/icon.png"]),

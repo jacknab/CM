@@ -22,6 +22,22 @@ import {
 
 const router = Router();
 
+/** The colour around the photo's edge (average of its four corners); transparent if the photo has transparency. */
+async function edgeBackground(input: Buffer): Promise<{ r: number; g: number; b: number; alpha: number }> {
+  const clear = { r: 255, g: 255, b: 255, alpha: 0 };
+  try {
+    const { data, info } = await sharp(input).rotate().ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const { width, height, channels } = info;
+    const at = (x: number, y: number) => { const i = (y * width + x) * channels; return [data[i], data[i + 1], data[i + 2], data[i + 3]]; };
+    const corners = [at(0, 0), at(width - 1, 0), at(0, height - 1), at(width - 1, height - 1)];
+    if (corners.some((c) => c[3] < 250)) return clear;
+    const avg = (k: number) => Math.round(corners.reduce((sum, c) => sum + c[k], 0) / corners.length);
+    return { r: avg(0), g: avg(1), b: avg(2), alpha: 1 };
+  } catch {
+    return clear;
+  }
+}
+
 function projectRoot(): string {
   const candidates = [
     path.resolve(process.cwd(), "../.."),
@@ -117,12 +133,14 @@ router.post(
 
       // A fixed output canvas plus the slot's cover/contain rule guarantees the
       // replacement cannot alter the card size or rounded wrapper on the site.
+      // "contain" never cuts the picture: the spare space takes the photo's own background (the colour of its
+      // corners), or stays transparent when the photo has transparency, so it blends into the frame.
       const processed = await sharp(req.file.buffer)
         .rotate()
         .resize(definition.width, definition.height, {
           fit: definition.fit,
-          position: "attention",
-          background: { r: 255, g: 255, b: 255, alpha: 0 },
+          position: definition.fit === "cover" ? "attention" : "centre",
+          background: definition.fit === "contain" ? await edgeBackground(req.file.buffer) : { r: 255, g: 255, b: 255, alpha: 0 },
         })
         .webp({ quality: 88 })
         .toBuffer();
