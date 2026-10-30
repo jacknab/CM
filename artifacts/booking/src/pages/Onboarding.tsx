@@ -6,7 +6,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Check, Search, MapPin, Star, Phone, Globe, Clock, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { OnboardingGoogleStep } from "@/components/OnboardingGoogleStep";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -767,65 +766,6 @@ function BookingLinkPreview({ salonName, slug }: { salonName: string; slug: stri
   );
 }
 
-/** Google search results mockup for Connect step */
-function GoogleSearchPreview({ salonName }: { salonName: string }) {
-  const name = salonName || "Your Salon";
-  const competitors = ["Lux Nail Studio","Pink Spa & Nails","Cloud 9 Nails"];
-  return (
-    <div style={{ width:"100%", maxWidth:380 }}>
-      {/* Fake Google search */}
-      <div style={{ borderRadius:12, background:"#fff",
-        border:"1px solid #e9e4f2", boxShadow:"0 2px 10px rgba(59,7,100,0.06)",
-        padding:"10px 14px", marginBottom:12,
-        display:"flex", alignItems:"center", gap:8 }}>
-        <svg width="16" height="16" viewBox="0 0 48 48">
-          <path fill="#4285F4" d="M47.5 24.6c0-1.6-.1-3.1-.4-4.6H24v8.7h13.2c-.6 3-2.3 5.5-4.9 7.2v6h7.9c4.6-4.3 7.3-10.5 7.3-17.3z"/>
-          <path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.9-6c-2.1 1.4-4.9 2.3-8 2.3-6.1 0-11.3-4.1-13.2-9.7H2.6v6.2C6.6 42.7 14.7 48 24 48z"/>
-          <path fill="#FBBC05" d="M10.8 28.8c-.5-1.4-.7-2.9-.7-4.4s.3-3 .7-4.4v-6.2H2.6C.9 17 0 20.4 0 24s.9 7 2.6 10.2l8.2-5.4z"/>
-          <path fill="#EA4335" d="M24 9.5c3.4 0 6.5 1.2 8.9 3.5l6.6-6.6C35.9 2.4 30.4 0 24 0 14.7 0 6.6 5.3 2.6 13.8l8.2 5.4C12.7 13.6 17.9 9.5 24 9.5z"/>
-        </svg>
-        <span style={{ fontSize:".8rem", color:"#374151" }}>nail salons near me</span>
-        <Search style={{ width:14, height:14, color:"#9ca3af", marginLeft:"auto" }} />
-      </div>
-
-      {/* Featured (YOUR salon) */}
-      <div style={{ borderRadius:12, background:"#fff", overflow:"hidden",
-        boxShadow:"0 4px 24px rgba(59,7,100,0.1)", marginBottom:8, border:`2px solid ${GOLD}` }}>
-        <div style={{ padding:"3px 10px", background:GOLD, display:"flex", alignItems:"center", gap:6 }}>
-          <Check style={{ width:10, height:10, color:"#fff" }} />
-          <span style={{ fontSize:".58rem", fontWeight:700, color:"#fff" }}>YOUR SALON · Connected with Certxa</span>
-        </div>
-        <div style={{ padding:"12px 14px" }}>
-          <div style={{ fontWeight:700, color:"#111827", fontSize:".85rem", marginBottom:3 }}>{name}</div>
-          <div style={{ display:"flex", alignItems:"center", gap:3, marginBottom:4 }}>
-            {Array.from({length:5},(_,i)=>(<Star key={i} style={{ width:11,height:11 }} fill="#fbbf24" color="#fbbf24" />))}
-            <span style={{ fontSize:".65rem", color:"#6b7280" }}>4.9 (312 reviews)</span>
-          </div>
-          <div style={{ fontSize:".65rem", color:"#16a34a", fontWeight:600 }}>Open · Closes 7 PM</div>
-          <div style={{ marginTop:8, padding:"6px 12px", borderRadius:8,
-            background:`linear-gradient(135deg,${PLUM},${PLUM_MID})`,
-            display:"inline-flex", alignItems:"center", gap:4, fontSize:".65rem", fontWeight:700, color:"#fff" }}>
-            Book Now ›
-          </div>
-        </div>
-      </div>
-
-      {/* Competitors (greyed out) */}
-      {competitors.map(c => (
-        <div key={c} style={{ borderRadius:10, background:"#fff", border:"1px solid #eceaf1",
-          padding:"10px 14px", marginBottom:6, opacity:0.55 }}>
-          <div style={{ fontWeight:600, color:"#374151", fontSize:".78rem" }}>{c}</div>
-          <div style={{ display:"flex", alignItems:"center", gap:3, marginTop:2 }}>
-            {Array.from({length:5},(_,i)=>(<Star key={i} style={{ width:10,height:10 }} fill={i<4?"#fbbf24":"#e5e7eb"} color={i<4?"#fbbf24":"#e5e7eb"} />))}
-            <span style={{ fontSize:".6rem", color:"#9ca3af" }}>4.2 · Open</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/** Animated success checklist */
 function SuccessPreview({ visible, salonName }: { visible: boolean; salonName: string }) {
   const [shown, setShown] = useState(0);
   const items = [
@@ -945,7 +885,6 @@ function RightPanel({ step, salonName, address, phone, hours, slug, createdStore
         )}
         {step === 2 && <AutumnAdPreview salonName={salonName} />}
         {step === 3 && <BookingLinkPreview salonName={salonName} slug={slug} />}
-        {step === 4 && <GoogleSearchPreview salonName={salonName} />}
         {step === 5 && <SuccessPreview visible={step === 5} salonName={salonName} />}
       </div>
 
@@ -997,7 +936,6 @@ export default function Onboarding() {
   const slugTimer = useRef<ReturnType<typeof setTimeout>|null>(null);
 
   // ── After submission ───────────────────────────────────────────────────────
-  const [connectGoogle,    setConnectGoogle]    = useState<boolean|null>(null);
   const [createdStoreId,   setCreatedStoreId]   = useState<number|null>(null);
   const [createdWebsiteSlug, setCreatedWebsiteSlug] = useState("");
 
@@ -1116,7 +1054,6 @@ export default function Onboarding() {
       case 1: return salonName.trim().length >= 2;
       case 2: return hours.some(h => h.isOpen);
       case 3: return slugStatus === "available";
-      case 4: return true; // Google connect is optional
       default: return true;
     }
   };
@@ -1153,7 +1090,8 @@ export default function Onboarding() {
       setCreatedWebsiteSlug(data.website?.slug ?? data.store?.bookingSlug ?? "");
       queryClient.setQueryData(["/api/auth/user"], data.user);
       queryClient.invalidateQueries({ queryKey: ["/api/stores"] });
-      goNext(4); // move to Google connect step
+      // Straight to "Your salon is ready" — the Google Business step was taken out (owner, 2026-10-30).
+      goNext(5);
     },
     onError: (err: Error) => {
       toast({ title: "Setup failed", description: err.message, variant: "destructive" });
@@ -1604,77 +1542,6 @@ export default function Onboarding() {
                   </button>
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* ── STEP 4: Connect Google ── */}
-          {step === 4 && (
-            <div style={{ animation:"stepIn .35s cubic-bezier(.22,1,.36,1) both" }}>
-              {connectGoogle === null ? (
-                /* Pitch screen */
-                <>
-                  <h1 style={{ fontSize:"1.5rem", fontWeight:800, color:"#111827",
-                    letterSpacing:"-.02em", lineHeight:1.2, margin:"0 0 6px" }}>
-                    Turn Google searches into new appointments
-                  </h1>
-                  <p style={{ fontSize:".85rem", color:"#6b7280", marginBottom:20, lineHeight:1.5 }}>
-                    When someone searches <em>"nail salons near me"</em>, Google helps potential
-                    clients discover nearby salons. Connect Certxa to your Google Business Profile.
-                  </p>
-
-                  <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:20 }}>
-                    {[
-                      "Help new clients discover your salon",
-                      "Show your services and booking options",
-                      "Make it easy for customers to schedule",
-                      "Bring your Google reviews into Certxa",
-                      "Avoid updating your info in multiple places",
-                    ].map(b => (
-                      <div key={b} style={{ display:"flex", alignItems:"center", gap:10 }}>
-                        <div style={{ width:20, height:20, borderRadius:"50%", background:"#dcfce7",
-                          display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                          <Check style={{ width:11, height:11, color:"#16a34a" }} />
-                        </div>
-                        <span style={{ fontSize:".82rem", color:"#374151" }}>{b}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <button onClick={() => setConnectGoogle(true)}
-                    style={{
-                      width:"100%", padding:"13px", borderRadius:10, border:"none", marginBottom:10,
-                      background:`linear-gradient(135deg,${PLUM},${PLUM_MID})`,
-                      color:"#fff", fontSize:".9rem", fontWeight:700, cursor:"pointer",
-                      boxShadow:"0 4px 20px rgba(59,7,100,0.3)",
-                      display:"flex", alignItems:"center", justifyContent:"center", gap:8,
-                    }}>
-                    <svg width="16" height="16" viewBox="0 0 48 48">
-                      <path fill="#fff" opacity=".8" d="M47.5 24.6c0-1.6-.1-3.1-.4-4.6H24v8.7h13.2c-.6 3-2.3 5.5-4.9 7.2v6h7.9c4.6-4.3 7.3-10.5 7.3-17.3z"/>
-                    </svg>
-                    Connect Google & Get More Bookings
-                  </button>
-                  <button onClick={() => { setConnectGoogle(false); goNext(5); }}
-                    style={{ width:"100%", padding:"12px", borderRadius:10,
-                      border:"1.5px solid #e5e7eb", background:"#fff",
-                      fontSize:".85rem", fontWeight:600, color:"#6b7280", cursor:"pointer" }}>
-                    Continue without connecting
-                  </button>
-                </>
-              ) : connectGoogle === true && createdStoreId ? (
-                /* Show Google connect flow */
-                <OnboardingGoogleStep
-                  storeId={createdStoreId}
-                  salonName={salonName}
-                  salonAddress={fullAddress}
-                  salonPhone={phone}
-                  onSkip={() => goNext(5)}
-                  onComplete={() => goNext(5)}
-                />
-              ) : (
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"center", padding:40 }}>
-                  <Loader2 style={{ width:32, height:32, color:PLUM, animation:"spin 1s linear infinite" }} />
-                </div>
-              )}
             </div>
           )}
 

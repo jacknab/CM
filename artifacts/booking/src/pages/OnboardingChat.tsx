@@ -29,7 +29,6 @@ import {
 } from "@/lib/onboarding-script";
 import { parseHours, summariseHours, formatTime12h, type DayHours } from "@/lib/hours-parser";
 import { apiRequest } from "@/lib/queryClient";
-import { OnboardingGoogleStep } from "@/components/OnboardingGoogleStep";
 import {
   Check,
   ChevronLeft,
@@ -1248,13 +1247,6 @@ function OnboardingChatSession({ userId }: { userId: string }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStep?.id]);
 
-  // Provision the already-collected salon foundation when the Google phase begins.
-  // Existing Google ownership APIs require the persisted store ID.
-  useEffect(() => {
-    if (currentStep?.id === "google_setup" && !session.createdStoreId && !isSubmitting) {
-      void prepareGoogle();
-    }
-  }, [currentStep?.id, session.createdStoreId, isSubmitting, prepareGoogle]);
 
   // Auto-advance display-only steps
   useEffect(() => {
@@ -1736,7 +1728,7 @@ function OnboardingChatSession({ userId }: { userId: string }) {
                   setAnswer("servicesMethod", opt.value);
                   if (opt.value === "upload") goNext("services_upload");
                   else if (opt.value === "manual") goNext("services_manual");
-                  else goNext("google_setup");
+                  else goNext("team_intro");
                 }}
                 className="flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 border-gray-200 text-sm font-medium text-left hover:border-purple-400 transition-colors min-h-[44px]"
               >
@@ -1997,7 +1989,7 @@ function OnboardingChatSession({ userId }: { userId: string }) {
                     const err = await res.json().catch(() => ({}));
                     throw new Error((err as any).error ?? "Publish failed");
                   }
-                  goNext("google_setup");
+                  goNext("team_intro");
                 } catch (e: any) {
                   setSvcPublishing(false);
                 }
@@ -2165,28 +2157,6 @@ function OnboardingChatSession({ userId }: { userId: string }) {
           />
         );
 
-      case "google_setup": {
-        const storeId = session.createdStoreId;
-        if (!storeId) {
-          return (
-            <div className="flex items-center justify-center gap-2 py-6 text-sm" style={{ color: PLUM }}>
-              <Loader2 className="w-4 h-4 animate-spin" /> Finishing your business setup…
-            </div>
-          );
-        }
-        return (
-          <OnboardingGoogleStep
-            storeId={storeId}
-            salonName={answers.businessName ?? ""}
-            salonAddress={[answers.address, answers.city, answers.state, answers.postcode].filter(Boolean).join(", ")}
-            salonPhone={answers.phone ?? ""}
-            placeId={(answers as Record<string, unknown>).placeId as string | undefined}
-            onSkip={() => goNext("team_intro")}
-            onComplete={() => goNext("team_intro")}
-          />
-        );
-      }
-
       default:
         return null;
     }
@@ -2198,14 +2168,13 @@ function OnboardingChatSession({ userId }: { userId: string }) {
     const noButton: typeof currentStep.inputType[] = [
       "display_only","chips","slot_interval","buffer_time",
       "advance_window","cancellation","yes_no","services_method",
-      "team_size","staff_role","team_add_more","timezone","name_confirm","google_setup",
+      "team_size","staff_role","team_add_more","timezone","name_confirm",
       "website_template_pick",
     ];
     return !noButton.includes(currentStep.inputType);
   }
 
   const isReviewStep = currentStep?.inputType === "review";
-  const isGoogleStep = currentStep?.inputType === "google_setup";
   const currentPhase = currentStep?.phase;
 
   // Phase index for the phase dots
@@ -2329,7 +2298,7 @@ function OnboardingChatSession({ userId }: { userId: string }) {
                 <><Sparkles size={18} /> Complete Setup</>
               )}
             </button>
-          ) : isGoogleStep ? null : placesLookupPending ? (
+          ) : placesLookupPending ? (
             <div
               className="w-full py-3.5 rounded-xl text-sm font-medium flex items-center justify-center gap-2 min-h-[44px]"
               style={{ background: "#F3F4F6", color: PLUM }}
@@ -2350,7 +2319,7 @@ function OnboardingChatSession({ userId }: { userId: string }) {
           ) : null}
 
           {/* Skip + Back + Exit row */}
-          {!isGoogleStep && <div className="flex items-center justify-between">
+          {<div className="flex items-center justify-between">
             <button
               type="button"
               onClick={goBack}

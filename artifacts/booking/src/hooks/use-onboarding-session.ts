@@ -105,7 +105,7 @@ function calcProgress(
   // to completedStepIds. Excluding it means the bar reaches 100% when all data
   // has been collected, which is the correct semantic for "done".
   const coreSteps = ONBOARDING_STEPS.filter(
-    (s) => s.inputType !== "display_only" && s.inputType !== "review" && s.inputType !== "google_setup"
+    (s) => s.inputType !== "display_only" && s.inputType !== "review"
   );
   if (coreSteps.length === 0) return 0;
 
@@ -245,6 +245,9 @@ export function useOnboardingSession(userId: string): OnboardingSessionHook {
       if (raw) {
         const parsed = JSON.parse(raw) as OnboardingSession;
         if (parsed.version === 1 && parsed.userId === userId) {
+          // The Google Business step was taken out of signup (owner, 2026-10-30: everyone who stopped, stopped there).
+          // Someone saved on it carries on with the team questions.
+          if (parsed.currentStepId === "google_setup") return { ...parsed, currentStepId: "team_intro" };
           return parsed;
         }
       }

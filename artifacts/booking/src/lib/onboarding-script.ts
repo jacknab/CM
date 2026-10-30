@@ -39,7 +39,6 @@ export type InputType =
   | "advance_window"       // 1wk/2wk/1mo/3mo chips
   | "cancellation"         // no cancellations / 24hr / 48hr chips
   | "deposit"              // yes/no + percent slider
-  | "google_setup"         // post-creation Google discovery / ownership flow
   | "website_name"         // website subdomain slug input ([name].certxa.com)
   | "website_template_pick"// 2-card visual template selector (auto-advances)
   | "services_review"      // extracted-service review + edit before publish
@@ -337,7 +336,7 @@ export const ONBOARDING_STEPS: StepDefinition[] = [
     message: "How would you like to add your services? The photo upload is the quickest — just snap a picture of your price list or menu!",
     inputType: "services_method",
     skippable: true,
-    skipTo: "google_setup",
+    skipTo: "team_intro",
   },
 
   {
@@ -347,7 +346,7 @@ export const ONBOARDING_STEPS: StepDefinition[] = [
     message: "Upload your service menu — a photo, PDF, or image of your menu works great!",
     inputType: "file_upload",
     skippable: true,
-    skipTo: "google_setup",
+    skipTo: "team_intro",
     nextStep: "services_review",
   },
 
@@ -357,8 +356,8 @@ export const ONBOARDING_STEPS: StepDefinition[] = [
     message: "Here's what we found! 🎉 Review your services below — you can edit names, prices, or durations, and remove anything that doesn't look right. When you're happy, tap **Publish Services** to add them to your account.",
     inputType: "services_review",
     skippable: true,
-    skipTo: "google_setup",
-    nextStep: "google_setup",
+    skipTo: "team_intro",
+    nextStep: "team_intro",
   },
 
   {
@@ -368,18 +367,10 @@ export const ONBOARDING_STEPS: StepDefinition[] = [
     message: "Let's add your services. Start with a category name (e.g. Manicure, Pedicure) then add services to it.",
     inputType: "services_manual",
     skippable: true,
-    skipTo: "google_setup",
-    nextStep: "google_setup",
-  },
-
-  {
-    id: "google_setup",
-    phase: "Google",
-    message: "Great! Your salon services are ready 🎉\n\nThe next step helps more customers find your salon on Google and helps you get more 5-star reviews.\n\nI'll check if your salon is already listed on Google and help you connect it.",
-    inputType: "google_setup",
-    required: false,
+    skipTo: "team_intro",
     nextStep: "team_intro",
   },
+
 
   // ── Phase C: Team ─────────────────────────────────────────────────────────
 
@@ -616,4 +607,4 @@ export function firstStepId(): string {
 export const REQUIRED_STEP_IDS = ["business_type", "salon_name", "timezone", "website_name", "website_template_pick"];
 
 // Phase order for progress bar
-export const PHASES = ["Business", "Services", "Google", "Team", "Booking", "Review"];
+export const PHASES = ["Business", "Services", "Team", "Booking", "Review"];
