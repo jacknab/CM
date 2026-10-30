@@ -126,7 +126,7 @@ export default function ProPlus() {
   );
 
   return (
-    <div className="min-h-screen bg-[#F7F5FB] px-4 py-6">
+    <div className="fixed inset-0 overflow-y-auto bg-[#F7F5FB] px-4 py-6">{/* fixed: the site-wide 56px mobile header padding on body does not apply here (no header on this page) */}
       <div className="mx-auto max-w-md space-y-5">
         <img src="/images/pro-plus-plan.jpg" alt="Plus Plan: unlock the app with unlimited SMS notifications" className="w-full rounded-2xl" />
 
