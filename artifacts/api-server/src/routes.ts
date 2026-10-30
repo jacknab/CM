@@ -4297,6 +4297,11 @@ export async function registerRoutes(
   // Certxa Pro Plus: the app's one-time link into certxa.com/pro-plus, and buying Plus there (routes/soloPlus.ts).
   const { default: soloPlusRouter } = await import("./routes/soloPlus.js");
   app.use(soloPlusRouter);
+
+  // Certxa for AI assistants: a public MCP server at /mcp (ChatGPT apps, Claude connectors) to find a salon,
+  // check open times and book through the booking page's own rules (routes/mcp.ts, plans/ai-booking.md).
+  const { default: mcpRouter } = await import("./routes/mcp.js");
+  app.use(mcpRouter);
   // Solo plan: where the professional sees clients, and booking approval (plans/solo-work-places-and-approval.md).
   const { default: workPlacesRouter } = await import("./routes/workPlaces.js");
   app.use("/api/work-places", isAuthenticated, workPlacesRouter);
