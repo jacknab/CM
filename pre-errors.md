@@ -6,6 +6,16 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-10-30 — Support "magic link" sign-in links lead nowhere
+
+`artifacts/api-server/src/routes/support.ts:3355` — `POST /api/support/accounts/:id/magic-link` stores a token in
+`support_magic_links` and returns `${APP_URL}/api/auth/magic?token=…`, but no route serves `/api/auth/magic`
+(grep finds nothing), so the link a support agent sends can never sign the owner in. Not fixed now: found while
+building the Certxa Pro Plus sign-in link (routes/soloPlus.ts has a working single-use link that could be the
+model). Needs a decision on whether support should be able to sign owners in by link at all.
+
+---
+
 ## 2026-10-30 — Admin platform-settings Save rewrites the text/e-mail provider keys
 
 `artifacts/api-server/src/routes.ts` — `PUT /api/admin/platform-settings` (just below the new `/api/admin/solo-sms-settings`).

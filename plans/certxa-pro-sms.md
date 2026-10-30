@@ -61,7 +61,9 @@ Owner request, 2026-10-30. The Certxa Pro app (Solo plan) stays free. Text-messa
 - **Sign-in handoff:** the app opens the page already signed in, using a one-time link created from the app's login, so the owner doesn't log in again in the browser.
 - A receipt e-mail goes out after each purchase.
 
-### Phase 3 — Plus, $3/month
+### Phase 3 — Plus, $3/month — BUILT 2026-10-30
+Built as `routes/soloPlus.ts` + `/pro-plus` page: the app's Plus card (More) asks for a one-time link (`POST /api/solo/plus/web-link`) and opens certxa.com/pro-plus signed in; card via SetupIntent; `startInHouseSubscription()` takes the first $3; plan row `solo_plus` (migration 0272, not public). `SAAS_BILLING_MODE=dry_run` since 2026-10-30 — switch to `live` after a day. Failed or cancelled Plus → back to free Solo (`backToSolo` in services/saas-billing.ts).
+
 - **Plan row:** a new plan `solo_plus` ($3 monthly) in `subscription_plans`, admin-editable like the others.
 - **Signing up:** card saved with a SetupIntent, then `startInHouseSubscription()` takes the first $3 now and opens the plan.
 - **Renewals:** the hourly billing run charges $3 every 31 days. This needs `SAAS_BILLING_MODE=live` (it currently is off for everyone).
