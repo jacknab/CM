@@ -10,7 +10,10 @@ type Props = {
 export default function AccountSummaryCard({ store, owner }: Props) {
   const formatPhone = (p: string) => p?.replace(/(\d{1})(\d{3})(\d{3})(\d{4})/, "+$1 ($2) $3-$4") ?? p;
   const signupDate = owner.signupDate ? format(new Date(owner.signupDate), "MMM d, yyyy") : "—";
-  const location = [store.city, store.state].filter(Boolean).join(", ");
+  // The salon's full address: street, then "City, ST ZIP".
+  const cityLine = [store.city, [store.state, store.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  const hasAddress = !!(store.address || cityLine);
+  const lastLogin = owner.lastLoginAt ? format(new Date(owner.lastLoginAt), "MMM d, yyyy · h:mm a") : "Never";
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -23,7 +26,14 @@ export default function AccountSummaryCard({ store, owner }: Props) {
           <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Business</p>
           {store.email && <Row icon={<Mail size={13} />} label="Email"><a href={`mailto:${store.email}`} className="text-indigo-600 hover:underline text-xs">{store.email}</a></Row>}
           {store.phone && <Row icon={<Phone size={13} />} label="Phone"><span className="text-xs text-slate-700">{formatPhone(store.phone)}</span></Row>}
-          {location && <Row icon={<MapPin size={13} />} label="Location"><span className="text-xs text-slate-700">{location}</span></Row>}
+          {hasAddress && (
+            <Row icon={<MapPin size={13} />} label="Location">
+              <span className="text-xs text-slate-700 block">
+                {store.address && <span className="block">{store.address}</span>}
+                {cityLine && <span className="block">{cityLine}</span>}
+              </span>
+            </Row>
+          )}
           {store.timezone && <Row icon={<Clock size={13} />} label="Timezone"><span className="text-xs text-slate-700">{store.timezone}</span></Row>}
           {store.bookingSlug && (
             <Row icon={<Globe size={13} />} label="Booking URL">
@@ -40,6 +50,7 @@ export default function AccountSummaryCard({ store, owner }: Props) {
         <div className="border-t border-slate-100 pt-3 space-y-2">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Dates</p>
           <Row icon={<Clock size={13} />} label="Signed Up"><span className="text-xs text-slate-700">{signupDate}</span></Row>
+          <Row icon={<Clock size={13} />} label="Last Login"><span className="text-xs text-slate-700">{lastLogin}</span></Row>
           {owner.trialEndsAt && (
             <Row icon={<Clock size={13} />} label="Trial Ends"><span className="text-xs text-slate-700">{format(new Date(owner.trialEndsAt), "MMM d, yyyy")}</span></Row>
           )}

@@ -259,7 +259,12 @@ router.get("/api/support/accounts/:id/overview", requireSupportAuth, async (req:
   try {
     const storeRow = await pool.query(`
       SELECT l.*, u.id AS user_id, u.email AS owner_email, u.first_name, u.last_name,
-        u.created_at AS signup_date, u.subscription_status, u.trial_started_at, u.trial_ends_at, u.profile_image_url
+        u.created_at AS signup_date, u.subscription_status, u.trial_started_at, u.trial_ends_at, u.profile_image_url,
+        -- Last time the owner was signed in: a password or magic-link login, signing up, or a device signing itself back in.
+        GREATEST(
+          (SELECT MAX(ae.created_at) FROM auth_events ae WHERE ae.user_id = u.id AND ae.event_type IN ('login', 'magic_link', 'register')),
+          (SELECT MAX(dl.last_used_at) FROM device_logins dl WHERE dl.user_id = u.id)
+        ) AS last_login_at
       FROM locations l LEFT JOIN users u ON u.id = l.user_id WHERE l.id = $1
     `, [storeId]);
     if (storeRow.rows.length === 0) return res.status(404).json({ error: "Account not found" });
@@ -276,7 +281,7 @@ router.get("/api/support/accounts/:id/overview", requireSupportAuth, async (req:
     const health = await computeHealthStatus(storeId);
     res.json({
       store: { id: store.id, name: store.name, phone: store.phone, email: store.email, address: store.address, city: store.city, state: store.state, postcode: store.postcode, timezone: store.timezone, category: store.category, bookingSlug: store.booking_slug, accountStatus: store.account_status, smsTokens: store.sms_tokens, smsAllowance: store.sms_allowance, platformCredits: store.platform_credits, account_id: store.account_id ?? `ACC-${String(store.id).padStart(5, "0")}` },
-      owner: { id: store.user_id, email: store.owner_email, firstName: store.first_name, lastName: store.last_name, name: [store.first_name, store.last_name].filter(Boolean).join(" "), signupDate: store.signup_date, subscriptionStatus: store.subscription_status, trialStartedAt: store.trial_started_at, trialEndsAt: store.trial_ends_at, profileImageUrl: store.profile_image_url },
+      owner: { id: store.user_id, email: store.owner_email, firstName: store.first_name, lastName: store.last_name, name: [store.first_name, store.last_name].filter(Boolean).join(" "), signupDate: store.signup_date, subscriptionStatus: store.subscription_status, trialStartedAt: store.trial_started_at, trialEndsAt: store.trial_ends_at, profileImageUrl: store.profile_image_url, lastLoginAt: store.last_login_at ?? null },
       subscription: sub ? { planCode: sub.plan_code, planName: sub.plan_name, priceCents: sub.price_cents, interval: sub.interval ?? "month", status: sub.status, cancelAtPeriodEnd: sub.cancel_at_period_end, paymentBrand: null, paymentLast4: null, renewalDate: null } : null,
       stats: { appointmentsThisMonth: apptCount.rows[0]?.count ?? 0, smsSentThisMonth: smsCount.rows[0]?.count ?? 0, aiCallsThisMonth: aiCallRow.rows[0]?.calls ?? 0, aiBookingsThisMonth: aiCallRow.rows[0]?.bookings ?? 0, aiMinutesThisMonth: Math.round(aiMinRow.rows[0]?.minutes ?? 0), aiCostThisMonth: parseFloat(aiMinRow.rows[0]?.cost ?? "0"), staffCount: staffCount.rows[0]?.count ?? 0 },
       health,
