@@ -3441,6 +3441,105 @@ router.post("/api/support/accounts/:id/send-email", requireSupportAuth, async (r
 });
 
 // GET /api/support/accounts/:id/booking
+// ── POS tab (back office, 2026-10-30): a salon's POS set-up and devices, for support helping with a device problem ──
+// Stations with the tablet on each (last ping, IP, app build, unsent work), cash drawers and their shifts, customer
+// screens, kiosks, receipt printers, the owner app, the local hub and the POS settings that cause most calls.
+router.get("/api/support/accounts/:id/pos", requireSupportAuth, async (req: Request, res: Response) => {
+  const storeId = paramInt(req.params.id);
+  if (isNaN(storeId)) return res.status(400).json({ error: "Invalid account ID" });
+  try {
+    const q = (sql: string) => pool.query(sql, [storeId]).then((r) => r.rows).catch((e) => { console.error("[support/pos]", e?.message); return [] as any[]; });
+    const [[store], [settingsRow], stations, claims, drawers, sessions, tablets, screens, kiosks, printers, ownerApp, [trust]] = await Promise.all([
+      q(`SELECT id, timezone, category, pos_enabled, sales_tax_rate, tax_services_taxable, tax_addons_taxable, tax_products_taxable,
+                tax_gift_cards_taxable, cash_discount_percent, kiosk_permitted, restrict_kiosk_network FROM locations WHERE id = $1`),
+      q(`SELECT preferences FROM store_settings WHERE store_id = $1`),
+      q(`SELECT id, name, is_active, is_default, activation_code, cash_drawer_id, sort_order, created_at FROM registers WHERE store_id = $1 ORDER BY sort_order, id`),
+      q(`SELECT register_id, device_id, claimed_at FROM register_claims WHERE store_id = $1`),
+      q(`SELECT id, name, target_float, is_active, main_station, register_id FROM cash_drawers WHERE store_id = $1 ORDER BY sort_order, id`),
+      q(`SELECT DISTINCT ON (drawer_id, (closed_at IS NULL)) id, drawer_id, opened_at, closed_at, opening_balance, closing_balance, status,
+                prior_closing_mismatch, prior_closing_variance
+           FROM cash_drawer_sessions WHERE store_id = $1 ORDER BY drawer_id, (closed_at IS NULL), opened_at DESC`),
+      q(`SELECT device_id, last_seen_at, last_ip, user_agent, page, register_id, app_build, pending, attention, cash_count, cash_amount::float AS cash_amount
+           FROM device_sync_status WHERE store_id = $1 AND last_seen_at > now() - interval '30 days' ORDER BY last_seen_at DESC LIMIT 60`),
+      q(`SELECT screen_id, register_id, paired_at, last_seen_at, last_ip, user_agent FROM frontdesk_screens WHERE store_id = $1 ORDER BY last_seen_at DESC NULLS LAST`),
+      q(`SELECT id, created_at, last_used_at, revoked_at, user_agent, last_ip FROM kiosk_devices WHERE store_id = $1 ORDER BY revoked_at NULLS FIRST, last_used_at DESC NULLS LAST`),
+      q(`SELECT id, machine_name, printer_name, printer_status, agent_version, paired_ip, last_seen_at, revoked_at, is_default, bank_ready, created_at
+           FROM print_agents WHERE store_id = $1 ORDER BY revoked_at NULLS FIRST, last_seen_at DESC NULLS LAST`),
+      q(`SELECT platform, created_at, last_seen_at FROM owner_push_devices WHERE store_id = $1 ORDER BY last_seen_at DESC NULLS LAST LIMIT 10`),
+      q(`SELECT trusted_ip, anchor_device_id, updated_at FROM store_network_trust WHERE store_id = $1`),
+    ]);
+    if (!store) return res.status(404).json({ error: "Account not found" });
+    let prefs: any = {};
+    try { prefs = typeof settingsRow?.preferences === "string" ? JSON.parse(settingsRow.preferences) : (settingsRow?.preferences ?? {}); } catch { prefs = {}; }
+    const nailScreen = prefs.nailScreen ?? {};
+    const stationName = new Map<number, string>(stations.map((r: any) => [Number(r.id), r.name]));
+    res.json({
+      timezone: store.timezone || "UTC",
+      settings: {
+        posEnabled: store.pos_enabled !== false,
+        salesTaxRate: store.sales_tax_rate != null ? Number(store.sales_tax_rate) : null,
+        taxable: { services: !!store.tax_services_taxable, addons: !!store.tax_addons_taxable, products: !!store.tax_products_taxable, giftCards: !!store.tax_gift_cards_taxable },
+        cashDiscountPercent: store.cash_discount_percent != null ? Number(store.cash_discount_percent) : null,
+        cardProvider: prefs.cardProvider ?? null,
+        lockScreen: nailScreen.lockScreen !== false,
+        keypadVisible: nailScreen.keypadVisible !== false,
+        // Still the factory PIN (2026) when no PIN was ever set — anyone who knows it can approve manager actions.
+        managerPinIsDefault: !nailScreen.managerPinHash,
+        customKeyGrid: !!prefs.posGrid,
+        turnSystem: prefs.features?.turnSystem !== false && prefs.turnSystem?.turnEnabled !== false ? (prefs.turnSystem?.turnMode ?? "on") : "off",
+        timeclock: prefs.features?.timeclock !== false,
+        kioskPermitted: Number(store.kiosk_permitted) === 1,
+        kioskEnabled: prefs.kioskSettings?.kioskEnabled !== false,
+        dualScreenMode: !!prefs.kioskSettings?.dualScreenMode,
+        restrictKioskNetwork: !!store.restrict_kiosk_network,
+        localHub: prefs.localHub?.address ? { address: prefs.localHub.address, at: prefs.localHub.addressAt ?? null } : null,
+        trustedNetworkIp: trust?.trusted_ip ?? null, trustedNetworkAt: trust?.updated_at ?? null,
+      },
+      stations: stations.map((r: any) => {
+        const claim = claims.find((c: any) => Number(c.register_id) === Number(r.id));
+        const tablet = tablets.find((t: any) => Number(t.register_id) === Number(r.id));
+        return {
+          id: Number(r.id), name: r.name, active: r.is_active !== false, isDefault: !!r.is_default, activationCode: r.activation_code ?? null,
+          drawerId: r.cash_drawer_id != null ? Number(r.cash_drawer_id) : null,
+          claimedAt: claim?.claimed_at ?? null, claimDeviceId: claim?.device_id ?? null,
+          tablet: tablet ? { deviceId: tablet.device_id, lastSeenAt: tablet.last_seen_at } : null,
+          screens: screens.filter((s: any) => Number(s.register_id) === Number(r.id)).map((s: any) => s.screen_id),
+        };
+      }),
+      drawers: drawers.map((d: any) => {
+        const open = sessions.find((x: any) => Number(x.drawer_id) === Number(d.id) && !x.closed_at);
+        const last = sessions.find((x: any) => Number(x.drawer_id) === Number(d.id) && x.closed_at);
+        return {
+          id: Number(d.id), name: d.name, active: d.is_active !== false, startingCash: d.target_float != null ? Number(d.target_float) : null,
+          mainStation: d.main_station ?? null,
+          stations: stations.filter((r: any) => Number(r.cash_drawer_id) === Number(d.id)).map((r: any) => r.name),
+          openShift: open ? { openedAt: open.opened_at, openingBalance: open.opening_balance != null ? Number(open.opening_balance) : null } : null,
+          lastClose: last ? { closedAt: last.closed_at, closingBalance: last.closing_balance != null ? Number(last.closing_balance) : null,
+            mismatch: !!last.prior_closing_mismatch, variance: last.prior_closing_variance != null ? Number(last.prior_closing_variance) : null } : null,
+        };
+      }),
+      tablets: tablets.map((t: any) => ({
+        deviceId: t.device_id, lastSeenAt: t.last_seen_at, ip: t.last_ip ?? null, userAgent: t.user_agent ?? null, page: t.page ?? null,
+        station: t.register_id != null ? (stationName.get(Number(t.register_id)) ?? `#${t.register_id}`) : null, appBuild: t.app_build ?? null,
+        pending: Number(t.pending) || 0, attention: Number(t.attention) || 0, unsentCashCount: Number(t.cash_count) || 0, unsentCashAmount: Number(t.cash_amount) || 0,
+      })),
+      customerScreens: screens.map((s: any) => ({
+        screenId: s.screen_id, station: s.register_id ? (stationName.get(Number(s.register_id)) ?? `#${s.register_id}`) : null,
+        pairedAt: s.paired_at, lastSeenAt: s.last_seen_at, ip: s.last_ip ?? null, userAgent: s.user_agent ?? null,
+      })),
+      kiosks: kiosks.map((k: any) => ({ id: Number(k.id), pairedAt: k.created_at, lastSeenAt: k.last_used_at, revokedAt: k.revoked_at, ip: k.last_ip ?? null, userAgent: k.user_agent ?? null })),
+      printers: printers.map((p: any) => ({
+        id: Number(p.id), machine: p.machine_name, printer: p.printer_name, status: p.printer_status, version: p.agent_version, ip: p.paired_ip ?? null,
+        lastSeenAt: p.last_seen_at, revokedAt: p.revoked_at, isDefault: !!p.is_default, pairedAt: p.created_at,
+      })),
+      ownerApp: ownerApp.map((d: any) => ({ platform: d.platform, firstSeenAt: d.created_at, lastSeenAt: d.last_seen_at })),
+    });
+  } catch (err) {
+    console.error("[support/pos]", err);
+    res.status(500).json({ error: "Failed to load POS details" });
+  }
+});
+
 router.get("/api/support/accounts/:id/booking", requireSupportAuth, async (req: Request, res: Response) => {
   const storeId = paramInt(req.params.id);
   if (isNaN(storeId)) return res.status(400).json({ error: "Invalid account ID" });

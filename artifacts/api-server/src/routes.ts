@@ -7446,14 +7446,20 @@ If you have any questions, please contact your administrator.
         deviceId: z.string().min(6).max(100),
         pending: z.number().int().min(0).max(100000), attention: z.number().int().min(0).max(100000),
         cashCount: z.number().int().min(0).max(100000), cashAmount: z.number().min(0).max(10_000_000),
+        // What support sees on the back office POS tab (migration 0270): the screen, station and app build.
+        page: z.string().max(60).optional(), registerId: z.number().int().min(0).optional(), appBuild: z.string().max(60).optional(),
       }).safeParse(req.body);
       if (!body.success) return res.status(400).json({ message: "Invalid status" });
       const d = body.data;
+      const ip = getClientIp(req);
+      const ua = String(req.headers["user-agent"] ?? "").slice(0, 300) || null;
       await pool.query(
-        `INSERT INTO device_sync_status (store_id, device_id, pending, attention, cash_count, cash_amount, last_seen_at)
-         VALUES ($1, $2, $3, $4, $5, $6, now())
-         ON CONFLICT (store_id, device_id) DO UPDATE SET pending = $3, attention = $4, cash_count = $5, cash_amount = $6, last_seen_at = now()`,
-        [storeId, d.deviceId, d.pending, d.attention, d.cashCount, d.cashAmount.toFixed(2)],
+        `INSERT INTO device_sync_status (store_id, device_id, pending, attention, cash_count, cash_amount, last_seen_at, last_ip, user_agent, page, register_id, app_build)
+         VALUES ($1, $2, $3, $4, $5, $6, now(), $7, $8, $9, $10, $11)
+         ON CONFLICT (store_id, device_id) DO UPDATE SET pending = $3, attention = $4, cash_count = $5, cash_amount = $6, last_seen_at = now(),
+           last_ip = $7, user_agent = $8, page = COALESCE($9, device_sync_status.page), register_id = COALESCE($10, device_sync_status.register_id),
+           app_build = COALESCE($11, device_sync_status.app_build)`,
+        [storeId, d.deviceId, d.pending, d.attention, d.cashCount, d.cashAmount.toFixed(2), ip, ua, d.page ?? null, d.registerId ?? null, d.appBuild ?? null],
       );
       return res.json({ ok: true });
     } catch (error) {

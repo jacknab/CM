@@ -131,7 +131,9 @@ class SyncEngine {
       const c = await nailOffline.counts(storeId);
       await fetch("/api/device-sync-status", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deviceId: getDeviceId(), pending: c.pending, attention: c.attention, cashCount: c.cash.count, cashAmount: c.cash.amount }),
+        body: JSON.stringify({ deviceId: getDeviceId(), pending: c.pending, attention: c.attention, cashCount: c.cash.count, cashAmount: c.cash.amount,
+          // For support's POS tab (back office): the screen this tablet is on, its station, and the Certxa app build.
+          ...deviceDetails() }),
       });
     } catch { /* told next time */ }
   }
@@ -924,3 +926,15 @@ class SyncEngine {
 }
 
 export const syncEngine = new SyncEngine();
+
+/** What this tablet is, for the back office POS tab: its screen (/nail, /frontdesk…), station and app build. */
+function deviceDetails(): { page?: string; registerId?: number; appBuild?: string } {
+  if (typeof window === "undefined") return {};
+  const out: { page?: string; registerId?: number; appBuild?: string } = {};
+  const page = window.location.pathname.split("/")[1];
+  if (page) out.page = `/${page}`.slice(0, 60);
+  try { const r = Number(localStorage.getItem("certxa_register_id")); if (Number.isInteger(r) && r > 0) out.registerId = r; } catch { /* none */ }
+  const build = (window as unknown as { CERTXA_APP_BUILD?: string }).CERTXA_APP_BUILD;
+  if (build) out.appBuild = String(build).slice(0, 60);
+  return out;
+}

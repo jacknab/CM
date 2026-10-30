@@ -18,6 +18,7 @@ import HealthCheckTab from "@/components/isTeam/customer360/HealthCheckTab";
 import BookingSystemTab from "@/components/isTeam/customer360/BookingSystemTab";
 import WebsiteTab from "@/components/isTeam/customer360/WebsiteTab";
 import CommunicationsTab from "@/components/isTeam/customer360/CommunicationsTab";
+import PosTab from "@/components/isTeam/customer360/PosTab";
 import { format } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 
@@ -37,7 +38,7 @@ function useLocalTime(timezone: string) {
   }
 }
 
-const TABS = ["Overview", "Activity", "Account Diagnostics", "Billing", "AI Receptionist", "Booking System", "Website", "Communications", "Tickets", "Notes & History", "Files"];
+const TABS = ["Overview", "Activity", "Account Diagnostics", "Billing", "AI Receptionist", "Booking System", "Website", "Communications", "Tickets", "Notes & History", "POS"];
 
 export default function TeamCustomer360Page() {
   const { id } = useParams();
@@ -207,7 +208,10 @@ export default function TeamCustomer360Page() {
         {activeTab === "Communications" && (
           <CommunicationsTab accountId={accountId} />
         )}
-        {!["Overview", "Activity", "Account Diagnostics", "Billing", "AI Receptionist", "Booking System", "Website", "Communications", "Tickets", "Notes & History"].includes(activeTab) && (
+        {activeTab === "POS" && (
+          <PosTab accountId={accountId} />
+        )}
+        {!["Overview", "Activity", "Account Diagnostics", "Billing", "AI Receptionist", "Booking System", "Website", "Communications", "Tickets", "Notes & History", "POS"].includes(activeTab) && (
           <div className="p-6 flex items-center justify-center h-64">
             <p className="text-slate-400 text-sm">{activeTab} — coming soon</p>
           </div>

@@ -1,6 +1,6 @@
 import { Mail, Phone, MapPin, Globe, Clock, User, Hash } from "lucide-react";
 import type { AccountOverview } from "@/lib/support-api";
-import { format } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
 
 type Props = {
   store: AccountOverview["store"];
@@ -9,11 +9,14 @@ type Props = {
 
 export default function AccountSummaryCard({ store, owner }: Props) {
   const formatPhone = (p: string) => p?.replace(/(\d{1})(\d{3})(\d{3})(\d{4})/, "+$1 ($2) $3-$4") ?? p;
-  const signupDate = owner.signupDate ? format(new Date(owner.signupDate), "MMM d, yyyy · h:mm a") : "—";
+  // Times in the salon's own time zone (owner, 2026-10-30), so support knows the client's local time.
+  const tz = store.timezone || "UTC";
+  const salonTime = (iso: string) => formatInTimeZone(new Date(iso), tz, "MMM d, yyyy · h:mm a zzz");
+  const signupDate = owner.signupDate ? salonTime(owner.signupDate) : "—";
   // The salon's full address: street, then "City, ST ZIP".
   const cityLine = [store.city, [store.state, store.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
   const hasAddress = !!(store.address || cityLine);
-  const lastLogin = owner.lastLoginAt ? format(new Date(owner.lastLoginAt), "MMM d, yyyy · h:mm a") : "Never";
+  const lastLogin = owner.lastLoginAt ? salonTime(owner.lastLoginAt) : "Never";
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -52,7 +55,7 @@ export default function AccountSummaryCard({ store, owner }: Props) {
           <Row icon={<Clock size={13} />} label="Signed Up"><span className="text-xs text-slate-700">{signupDate}</span></Row>
           <Row icon={<Clock size={13} />} label="Last Login"><span className="text-xs text-slate-700">{lastLogin}</span></Row>
           {owner.trialEndsAt && (
-            <Row icon={<Clock size={13} />} label="Trial Ends"><span className="text-xs text-slate-700">{format(new Date(owner.trialEndsAt), "MMM d, yyyy")}</span></Row>
+            <Row icon={<Clock size={13} />} label="Trial Ends"><span className="text-xs text-slate-700">{formatInTimeZone(new Date(owner.trialEndsAt), tz, "MMM d, yyyy")}</span></Row>
           )}
         </div>
         <div className="border-t border-slate-100 pt-3">

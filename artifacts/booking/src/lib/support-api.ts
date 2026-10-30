@@ -56,6 +56,7 @@ export const supportApi = {
     sendEmail:   (id: number, subject: string, message: string) =>
       request<{ ok: boolean; email: string; message: string }>(`/accounts/${id}/send-email`, { method: "POST", body: JSON.stringify({ subject, message }) }),
     booking:     (id: number) => request<BookingOverview>(`/accounts/${id}/booking`),
+    pos:         (id: number) => request<PosOverview>(`/accounts/${id}/pos`),
     communications:(id: number) => request<CommunicationsData>(`/accounts/${id}/communications`),
     website:     (id: number) => request<WebsiteData>(`/accounts/${id}/website`),
     healthCheck: {
@@ -427,4 +428,29 @@ export interface WebsiteData {
     page_count: number;
   } | null;
   pageViews: { total_views: number; views_30d: number; views_7d: number };
+}
+
+/** Back office POS tab: a salon's POS set-up and devices (GET /api/support/accounts/:id/pos). */
+export interface PosOverview {
+  timezone: string;
+  settings: {
+    posEnabled: boolean; salesTaxRate: number | null;
+    taxable: { services: boolean; addons: boolean; products: boolean; giftCards: boolean };
+    cashDiscountPercent: number | null; cardProvider: string | null; lockScreen: boolean; keypadVisible: boolean;
+    managerPinIsDefault: boolean; customKeyGrid: boolean; turnSystem: string; timeclock: boolean;
+    kioskPermitted: boolean; kioskEnabled: boolean; dualScreenMode: boolean; restrictKioskNetwork: boolean;
+    localHub: { address: string; at: string | null } | null; trustedNetworkIp: string | null; trustedNetworkAt: string | null;
+  };
+  stations: { id: number; name: string; active: boolean; isDefault: boolean; activationCode: string | null; drawerId: number | null;
+    claimedAt: string | null; claimDeviceId: string | null; tablet: { deviceId: string; lastSeenAt: string } | null; screens: string[] }[];
+  drawers: { id: number; name: string; active: boolean; startingCash: number | null; mainStation: string | null; stations: string[];
+    openShift: { openedAt: string; openingBalance: number | null } | null;
+    lastClose: { closedAt: string; closingBalance: number | null; mismatch: boolean; variance: number | null } | null }[];
+  tablets: { deviceId: string; lastSeenAt: string; ip: string | null; userAgent: string | null; page: string | null; station: string | null;
+    appBuild: string | null; pending: number; attention: number; unsentCashCount: number; unsentCashAmount: number }[];
+  customerScreens: { screenId: string; station: string | null; pairedAt: string | null; lastSeenAt: string | null; ip: string | null; userAgent: string | null }[];
+  kiosks: { id: number; pairedAt: string; lastSeenAt: string | null; revokedAt: string | null; ip: string | null; userAgent: string | null }[];
+  printers: { id: number; machine: string | null; printer: string | null; status: string | null; version: string | null; ip: string | null;
+    lastSeenAt: string | null; revokedAt: string | null; isDefault: boolean; pairedAt: string }[];
+  ownerApp: { platform: string; firstSeenAt: string; lastSeenAt: string | null }[];
 }

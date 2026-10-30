@@ -19,6 +19,7 @@
  */
 
 import type { Request, Response } from "express";
+import { getClientIp } from "./salonNetworkGuard";
 import crypto from "node:crypto";
 import { pool } from "../db";
 import { resolveSessionStoreId } from "./sessionStore";
@@ -36,10 +37,10 @@ export async function deviceAuthorizedFor(req: Request, storeId: number): Promis
   const token = String(req.headers[KIOSK_DEVICE_HEADER] ?? "");
   if (/^[0-9a-f]{64}$/.test(token)) {
     const r = await pool.query(
-      `UPDATE kiosk_devices SET last_used_at = now()
+      `UPDATE kiosk_devices SET last_used_at = now(), last_ip = $3
         WHERE token_hash = $1 AND store_id = $2 AND revoked_at IS NULL
         RETURNING id`,
-      [sha256(token), storeId],
+      [sha256(token), storeId, getClientIp(req)],
     );
     if (r.rows.length) return "device";
   }

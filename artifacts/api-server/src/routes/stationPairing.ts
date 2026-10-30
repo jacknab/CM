@@ -27,6 +27,7 @@
  */
 
 import { Router } from "express";
+import { getClientIp } from "../lib/salonNetworkGuard";
 import type { Request, Response } from "express";
 import crypto from "node:crypto";
 import rateLimit from "express-rate-limit";
@@ -301,8 +302,8 @@ router.get("/api/public/frontdesk/:slug/pairing", async (req: Request, res: Resp
     }
     if (!ID_RE.test(screenId)) return res.status(400).json({ error: "screenId is required" });
     const row = (await pool.query(
-      `UPDATE frontdesk_screens SET last_seen_at = now() WHERE store_id = $1 AND screen_id = $2 RETURNING register_id`,
-      [store.id, screenId],
+      `UPDATE frontdesk_screens SET last_seen_at = now(), last_ip = $3, user_agent = $4 WHERE store_id = $1 AND screen_id = $2 RETURNING register_id`,
+      [store.id, screenId, getClientIp(req), String(req.headers["user-agent"] ?? "").slice(0, 300) || null],
     )).rows[0];
     const station = row ? options.find((o) => o.id === row.register_id) : undefined;
     return res.json({ multiStation: true, registerId: station?.id ?? null, stationName: station?.name ?? null });
