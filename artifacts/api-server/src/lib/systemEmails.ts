@@ -1199,3 +1199,29 @@ export async function sendServiceImportFailureEmail(
     html
   ).catch((e: any) => console.warn("[systemEmail] Service import failure email failed:", e?.message));
 }
+
+// ─── Certxa Pro (Solo) SMS credits running low / run out ──────────────────────
+// Sent once at 10 credits left and once at 0 (lib/soloSmsCredits.ts). The button opens the page where the owner
+// buys credits or takes Plus (plans/certxa-pro-sms.md).
+export async function sendSoloSmsCreditsAlertEmail(storeId: number, remaining: number): Promise<void> {
+  const owner = await getStoreOwnerContact(storeId);
+  if (!owner) return;
+  if (!await userWantsEmail(owner.userId, "lowBalanceAlerts")) return;
+  const empty = remaining <= 0;
+  const color = empty ? DANGER_COLOR : WARN_COLOR;
+  const html = wrap({
+    title: empty ? "You're out of text message credits" : "Text message credits running low",
+    accentColor: color,
+    body: `
+      <p style="margin:0 0 16px;">${greeting(owner.firstName)}</p>
+      <p style="margin:0 0 16px;">${empty
+        ? `<strong>${owner.storeName}</strong> has no text message credits left. Text reminders, confirmations and other texts to your clients have stopped. E-mails to clients still go out.`
+        : `<strong>${owner.storeName}</strong> has <strong>${remaining}</strong> text message credits left. Each text to a client uses 1 credit.`}</p>
+      <p style="margin:0 0 16px;">Buy more credits, or get Plus for $5 a month for unlimited text notifications.</p>
+      ${btn(empty ? "Add credits" : "Add credits or get Plus", `${APP_URL}/sms-credits`, color)}
+    `,
+    unsubscribeUrl: buildUnsubscribeUrl(owner.userId, "lowBalanceAlerts"),
+  });
+  await sendEmail(storeId, owner.email, empty ? `You're out of text message credits — ${owner.storeName}` : `Text message credits running low — ${owner.storeName}`, html)
+    .catch((e) => console.warn("[systemEmail] solo sms credits alert error:", e?.message));
+}

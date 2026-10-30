@@ -17094,8 +17094,10 @@ or
       const trialPeriodDays = await TrialService.getFreeTrialDays();
 
       // Get settings from environment variables
+      const { soloFreeCreditsSetting } = await import("./lib/soloSmsCredits");
       const settings = {
         trialPeriodDays,
+        soloFreeSmsCredits: await soloFreeCreditsSetting(),
         mailgun: {
           apiKey: process.env.MAILGUN_API_KEY || '',
           domain: process.env.MAILGUN_DOMAIN || '',
@@ -17115,6 +17117,22 @@ or
     } catch (error) {
       console.error("Error fetching platform settings:", error);
       return res.status(500).json({ message: "Failed to fetch platform settings" });
+    }
+  });
+
+  // Free text message credits for each new Solo (Certxa Pro) account — its own save, so changing it never
+  // touches the mail/text provider keys the platform-settings save rewrites (lib/soloSmsCredits.ts).
+  app.put("/api/admin/solo-sms-settings", async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    const n = Number(req.body?.soloFreeSmsCredits);
+    if (!Number.isInteger(n) || n < 0 || n > 10000) return res.status(400).json({ message: "Free credits must be a whole number from 0 to 10,000" });
+    try {
+      const updated = await pool.query(`UPDATE platform_settings SET solo_free_sms_credits = $1 RETURNING id`, [n]);
+      if (!updated.rows[0]) await pool.query(`INSERT INTO platform_settings (solo_free_sms_credits) VALUES ($1)`, [n]);
+      return res.json({ soloFreeSmsCredits: n });
+    } catch (error) {
+      console.error("[admin/solo-sms-settings]", error);
+      return res.status(500).json({ message: "Failed to save" });
     }
   });
 
@@ -23406,6 +23424,19 @@ or
   // staff, commission or payroll areas (users.account_type = "certxa_pro"; see shared/proAccount.ts). It is on
   // the free Solo plan from the start — no trial clock. Everything a booking needs is set up here in one go:
   // the business, its hours, a starter list of services for its type, and the owner's own calendar.
+  // Text message credits for a Solo (Certxa Pro) account: balance, Plus, texts this month, recent changes.
+  app.get("/api/solo/sms-credits", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      const { soloCreditsSummary } = await import("./lib/soloSmsCredits");
+      return res.json(await soloCreditsSummary(storeId));
+    } catch (err) {
+      console.error("[solo/sms-credits]", err);
+      return res.status(500).json({ message: "Could not load your text message credits" });
+    }
+  });
+
   app.post("/api/solo/register", async (req, res) => {
     const input = z.object({
       firstName: z.string().trim().min(1).max(60),
@@ -23469,6 +23500,13 @@ or
         await db.insert(storeSubscriptions).values({
           storeId: store.id, planId: soloPlan.id, status: "active", currentPeriodStart: new Date(), createdAt: new Date(), updatedAt: new Date(),
         } as any);
+      }
+      // The free text message credits every new Solo account starts with (admin setting; lib/soloSmsCredits.ts).
+      try {
+        const { grantSoloFreeCredits } = await import("./lib/soloSmsCredits");
+        await grantSoloFreeCredits(store.id);
+      } catch (err: any) {
+        console.error(`[solo/register] free SMS credits not granted store=${store.id}:`, err?.message ?? err);
       }
 
       const [fresh] = await db.select().from(users).where(eq(users.id, user.id));

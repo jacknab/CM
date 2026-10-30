@@ -21,6 +21,7 @@ import {
 
 interface PlatformSettings {
   trialPeriodDays: number;
+  soloFreeSmsCredits?: number;
   mailgun: {
     apiKey: string;
     domain: string;
@@ -104,6 +105,8 @@ export const PlatformSettingsManager: React.FC = () => {
   const [settings, setSettings] = useState<PlatformSettings | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [testEmail, setTestEmail] = useState<string>('');
+  const [soloCredits, setSoloCredits] = useState<string>('');
+  const [soloSaving, setSoloSaving] = useState(false);
 
   useEffect(() => {
     fetchSettings();
@@ -121,6 +124,7 @@ export const PlatformSettingsManager: React.FC = () => {
       }
       const settingsData = await response.json();
       setSettings(settingsData);
+      setSoloCredits(String(settingsData.soloFreeSmsCredits ?? ''));
     } catch (err: any) {
       // No more silent fall-back to mock 30-day trial — that's exactly what
       // was hiding the real env value. Surface the error to the admin instead.
@@ -179,6 +183,27 @@ export const PlatformSettingsManager: React.FC = () => {
     } catch (err: any) {
       console.error('Error saving settings:', err);
       void appAlert(`Failed to save settings: ${err?.message ?? "unknown error"}`, "Error");
+    }
+  };
+
+  // Free text message credits for new Solo (Certxa Pro) accounts: saved on its own (PUT /api/admin/solo-sms-settings).
+  const saveSoloCredits = async () => {
+    setSoloSaving(true);
+    try {
+      const response = await fetch('/api/admin/solo-sms-settings', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ soloFreeSmsCredits: Number(soloCredits) }),
+      });
+      const body = await response.json().catch(() => ({} as any));
+      if (!response.ok) throw new Error(body?.message ?? `HTTP ${response.status}`);
+      setSoloCredits(String(body.soloFreeSmsCredits));
+      void appAlert(`New Solo accounts will start with ${body.soloFreeSmsCredits} free text message credits.`, "Saved");
+    } catch (err: any) {
+      void appAlert(`Failed to save: ${err?.message ?? "unknown error"}`, "Error");
+    } finally {
+      setSoloSaving(false);
     }
   };
 
@@ -295,6 +320,34 @@ export const PlatformSettingsManager: React.FC = () => {
                     Could not load live settings — showing zeros. ({fetchError})
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+
+          {/* Certxa Pro (Solo) text message credits */}
+          <div className="border border-white shadow-[1px_1px_#808080] bg-[#D4D0C8]">
+            <SectionHeader title="Certxa Pro Text Messages" icon={<Smartphone size={10} />} />
+            <div className="p-2">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="text-[11px] text-right min-w-[120px]">Free SMS credits:</div>
+                <input
+                  type="number"
+                  min={0}
+                  max={10000}
+                  value={soloCredits}
+                  onChange={(e) => setSoloCredits(e.target.value)}
+                  className="bg-white border border-[#7F9DB9] px-1 py-0.5 text-[11px] h-[20px] outline-none w-24"
+                />
+                <button
+                  onClick={saveSoloCredits}
+                  disabled={soloSaving || soloCredits === ''}
+                  className="px-3 py-0.5 border border-white shadow-[1px_1px_#000000] bg-[#D4D0C8] hover:bg-[#E1E1E1] text-[11px] font-bold disabled:opacity-50"
+                >
+                  {soloSaving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+              <div className="mt-2 p-2 bg-white border border-[#7F9DB9] text-[9px] text-gray-600">
+                Each new Solo plan account starts with this many free text message credits. 1 credit = 1 text to a client.
               </div>
             </div>
           </div>

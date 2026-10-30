@@ -6,6 +6,19 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-10-30 — Admin platform-settings Save rewrites the text/e-mail provider keys
+
+`artifacts/api-server/src/routes.ts` — `PUT /api/admin/platform-settings` (just below the new `/api/admin/solo-sms-settings`).
+Saving the admin Platform Settings page (`PlatformSettingsManager.tsx`) sets `process.env.TWILIO_*` and `MAILGUN_*` in
+memory from whatever the form sent, and writes them to a `.env` file in the process's working directory (not
+`/etc/certxa.env`). A save with an empty or wrong Twilio/Mailgun field would stop every text or e-mail on that pm2 worker
+until a restart, and the two cluster workers can disagree. `GET` also returns the live Twilio auth token and Mailgun key
+to the browser. Not fixed now: found while adding the Solo free-credits setting (given its own save to stay clear of
+this). The fix would be to stop the page from editing provider keys, or to store them properly; that needs a decision
+about whether admins should edit keys from the web at all.
+
+---
+
 ## 2026-10-29 — App-wide sweep (logs, browser errors, live data)
 
 Fixed and deployed: support account Owners panel (500 — joined on a `staff.user_id` column that doesn't exist);

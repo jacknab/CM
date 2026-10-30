@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { soloTextCharge, spendSoloCredit, refundSoloCredit } from "./lib/soloSmsCredits";
 import { isAccountStopped } from "./lib/accountSuspension";
 import type { AppointmentWithDetails } from "@shared/schema";
 import { formatInTimeZone } from "date-fns-tz";
@@ -281,6 +282,41 @@ export async function sendSms(
     }
   }
 
+  // ── Certxa Pro (Solo plan): every text to a client spends 1 credit ──────────
+  // (lib/soloSmsCredits.ts, owner 2026-10-30). Plus sends notifications free. No credit left → the text
+  // is not sent and is logged as skipped; e-mails still go. This replaces the rules below for Solo accounts.
+  const soloCharge = await soloTextCharge(storeId, messageType).catch((err) => {
+    console.warn(`[SMS] Solo plan check failed store=${storeId}:`, err?.message ?? err);
+    return null;
+  });
+  let soloSpent = false;
+  if (soloCharge === "credit") {
+    const left = await spendSoloCredit(storeId, messageType).catch((err) => {
+      console.error(`[SMS] Solo credit spend failed store=${storeId}:`, err?.message ?? err);
+      return null;
+    });
+    if (left === null) {
+      console.log(`[SMS] Not sent — store ${storeId} has no text message credits (messageType=${messageType})`);
+      await storage.createSmsLog({
+        storeId,
+        appointmentId: appointmentId ?? null,
+        customerId: customerId ?? null,
+        phone: e164Phone,
+        messageType,
+        messageBody: body,
+        status: "skipped",
+        twilioSid: null,
+        errorMessage: "No text message credits left",
+        sentAt: new Date(),
+        smsSource: "none",
+        costEstimate: "0.0000",
+      }).catch(() => {});
+      return { success: false, skipped: true, error: "No text message credits left" };
+    }
+    soloSpent = true;
+  }
+  const soloSource = soloCharge === "credit" ? "solo_credit" : soloCharge === "free" ? "solo_plus" : null;
+
   // ── Only marketing campaigns / bulk SMS are billed to the account ──────────
   // Everything else the system sends — booking confirmations, reminders, review
   // requests, chatbot & auto-dialer replies, kiosk / queue notifications, 1:1
@@ -293,6 +329,7 @@ export async function sendSms(
   // still force-bypasses for callers that charged via their own pre-flight.
   const METERED_MESSAGE_TYPES = new Set(["campaign", "campaign_test", "bulk_sms"]);
   const shouldCharge =
+    !soloCharge &&
     !options?.skipCreditDeduction &&
     (options?.billAccount === true || METERED_MESSAGE_TYPES.has(messageType));
 
@@ -337,6 +374,7 @@ export async function sendSms(
 
   if (!accountSid || !authToken || (!fromNumber && !messagingServiceSid)) {
     // Twilio not configured — refund the deducted credit and fail
+    if (soloSpent) await refundSoloCredit(storeId, messageType, "Text service not configured");
     if (deductResult?.source === "allowance") {
       await db.update(locations)
         .set({ smsAllowance: sql`sms_allowance + 1` })
@@ -368,7 +406,7 @@ export async function sendSms(
 
     // Deduction already happened atomically — log success.
     // Not charged => platform-funded.
-    const smsSource = deductResult?.source ?? options?.smsSource ?? "platform";
+    const smsSource = soloSource ?? deductResult?.source ?? options?.smsSource ?? "platform";
     const costEstimate = smsSource === "wallet" ? SMS_WALLET_RATE_USD.toFixed(4) : "0.0000";
     await storage.createSmsLog({
       storeId,
@@ -390,6 +428,7 @@ export async function sendSms(
     const errorMessage = err.message || "Unknown error";
 
     // Provider failed after deduction — refund the credit so it isn't lost
+    if (soloSpent) await refundSoloCredit(storeId, messageType, "Text could not be sent");
     if (deductResult?.source === "allowance") {
       await db.update(locations)
         .set({ smsAllowance: sql`sms_allowance + 1` })
