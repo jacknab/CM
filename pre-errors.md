@@ -6,6 +6,27 @@ Convention: newest entries at the top. Include date found, file:line, the exact 
 
 ---
 
+## 2026-10-30 — E-mail audit: open items (not fixed)
+
+Found in the e-mail system audit (fixed items are in commit "E-mail audit fixes"). These need a decision or a
+larger change:
+
+1. **Lifecycle e-mails fire once per owner, ever.** `services/platform-email-engine.ts` `emitPlatformEmailEvent` uses
+   the event key `${eventName}:${userId}` (unique in `platform_email_event_log`) and enrollments are unique on
+   `(campaign_id, user_id)`; deliveries on `(campaign_id, step_id, user_id)`. So "payment failed", "account
+   suspended" and "account reactivated" are sent the first time only; a second failed payment months later sends
+   nothing. Fix needs per-occurrence event keys (e.g. invoice id) and re-enrollment once the earlier enrollment is
+   completed.
+2. **Bounces and spam complaints never stop future mail.** `routes/platformEmailCampaigns.ts`
+   `/api/webhooks/mailgun/platform-email` only records the event; it does not add the address to
+   `platform_email_suppressions`, and it only covers platform campaign mail. `MAILGUN_WEBHOOK_SIGNING_KEY` is not
+   set in `/etc/certxa.env`, and it is unknown whether the webhook is registered in Mailgun at all.
+3. **Client marketing e-mails have no unsubscribe link or postal address** (US CAN-SPAM). `services/campaign-scheduler.ts`
+   ("Message from <salon>") and `lapsed-client-scheduler.ts` ("We miss you"). Opted-out clients are now skipped, but a
+   client has no way to opt out from the e-mail itself. Neither has been sent yet (no e-mail campaigns in the database).
+4. **Sender is a bare `Certxa@mg.certxa.com`** with no reply-to. Receipts and client e-mails from a salon come from
+   Certxa and replies don't reach the salon; the welcome series says "reply to this email".
+
 ## 2026-10-30 — Support "magic link" sign-in links lead nowhere
 
 `artifacts/api-server/src/routes/support.ts:3355` — `POST /api/support/accounts/:id/magic-link` stores a token in

@@ -192,10 +192,12 @@ router.get("/api/platform-emails/track/click/:id", async (req, res) => {
 router.post("/api/webhooks/mailgun/platform-email", async (req, res) => {
   const eventData = req.body?.["event-data"] || req.body || {};
   const signature = eventData.signature || req.body?.signature;
-  if (signature?.timestamp && signature?.token && process.env.MAILGUN_WEBHOOK_SIGNING_KEY) {
+  // With a signing key set, every event must carry a valid signature (a request without one used to skip the check).
+  if (process.env.MAILGUN_WEBHOOK_SIGNING_KEY) {
+    if (!signature?.timestamp || !signature?.token || !signature?.signature) return res.status(403).json({ message: "Invalid signature" });
     const expected = createHmac("sha256", process.env.MAILGUN_WEBHOOK_SIGNING_KEY)
       .update(`${signature.timestamp}${signature.token}`).digest("hex");
-    if (expected !== signature.signature) return res.status(403).json({ message: "Invalid signature" });
+    if (expected !== String(signature.signature)) return res.status(403).json({ message: "Invalid signature" });
   }
   const providerId = String(eventData.id || eventData.message?.headers?.["message-id"] || "");
   const event = String(eventData.event || "");

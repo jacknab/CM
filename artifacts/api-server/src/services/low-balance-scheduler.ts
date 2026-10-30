@@ -12,7 +12,12 @@
  * costMeter (after AI call deductions) and admin credit adjustments.
  *
  * Tracks sent alerts in-memory (per store, per day) to avoid duplicate emails.
+ *
+ * OFF since 2026-10-30 (owner: no low-credit e-mails). The daily run is no longer started (routes.ts) and the
+ * real-time check does nothing. Every active salon with $0 credits was getting this e-mail every day.
+ * The admin's manual "send alert" button (routes.ts) still sends one on purpose.
  */
+const AUTOMATIC_ALERTS_ON = false;
 
 import { db } from "../db";
 import { locations } from "@shared/schema";
@@ -46,6 +51,7 @@ const PLATFORM_CREDITS_LOW_DEFAULT = 5.0; // dollars — fallback when no thresh
  * @param newBalance The balance after deduction (may be negative)
  */
 export async function maybeSendLowBalanceAlert(storeId: number, newBalance: number): Promise<void> {
+  if (!AUTOMATIC_ALERTS_ON) return;
   try {
     // Critical alert: balance has gone negative (crosses $0)
     if (newBalance < PLATFORM_CREDITS_CRITICAL && !hasAlertedToday(storeId, "platform_critical")) {
@@ -77,6 +83,7 @@ export async function maybeSendLowBalanceAlert(storeId: number, newBalance: numb
 }
 
 export async function runLowBalanceCheck(): Promise<void> {
+  if (!AUTOMATIC_ALERTS_ON) return;
   try {
     const stores = await db
       .select({

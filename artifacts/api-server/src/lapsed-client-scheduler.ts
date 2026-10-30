@@ -30,7 +30,11 @@ async function processLapsedClientsTable(store: {
       lastVisitAt: clients.lastVisitAt,
       totalVisits: sql<number>`(SELECT COUNT(*) FROM appointments WHERE customer_id = ${clients.id} AND store_id = ${store.id} AND status IN ('completed','started'))`,
       primaryPhone: sql<string>`(SELECT phone_number_e164 FROM client_phones WHERE client_id = ${clients.id} AND is_primary = true AND sms_opt_in = true LIMIT 1)`,
-      primaryEmail: sql<string>`(SELECT email_address FROM client_emails WHERE client_id = ${clients.id} AND is_primary = true LIMIT 1)`,
+      // No address for a client who opted out of marketing e-mail (per address or in their preferences).
+      primaryEmail: sql<string>`(SELECT ce.email_address FROM client_emails ce WHERE ce.client_id = ${clients.id} AND ce.is_primary = true
+        AND ce.marketing_opt_in IS NOT FALSE
+        AND NOT EXISTS (SELECT 1 FROM client_marketing_preferences mp WHERE mp.client_id = ${clients.id} AND mp.email_marketing_opt_in = false)
+        LIMIT 1)`,
       smsOptIn: sql<boolean>`(SELECT sms_marketing_opt_in FROM client_marketing_preferences WHERE client_id = ${clients.id} LIMIT 1)`,
     })
     .from(clients)

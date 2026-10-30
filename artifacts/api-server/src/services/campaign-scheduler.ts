@@ -71,7 +71,11 @@ async function sendCampaignMessages(
       .select({
         name: clients.fullName,
         phone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
-        email: sql<string>`(SELECT email_address FROM client_emails WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
+        // No address for a client who opted out of marketing e-mail (per address or in their preferences).
+        email: sql<string>`(SELECT ce.email_address FROM client_emails ce WHERE ce.client_id = clients.id AND ce.is_primary = true
+          AND ce.marketing_opt_in IS NOT FALSE
+          AND NOT EXISTS (SELECT 1 FROM client_marketing_preferences mp WHERE mp.client_id = clients.id AND mp.email_marketing_opt_in = false)
+          LIMIT 1)`,
       })
       .from(clients)
       .where(and(eq(clients.storeId, storeId), isNull(clients.archivedAt)));
@@ -82,7 +86,11 @@ async function sendCampaignMessages(
       .select({
         name: clients.fullName,
         phone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
-        email: sql<string>`(SELECT email_address FROM client_emails WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
+        // No address for a client who opted out of marketing e-mail (per address or in their preferences).
+        email: sql<string>`(SELECT ce.email_address FROM client_emails ce WHERE ce.client_id = clients.id AND ce.is_primary = true
+          AND ce.marketing_opt_in IS NOT FALSE
+          AND NOT EXISTS (SELECT 1 FROM client_marketing_preferences mp WHERE mp.client_id = clients.id AND mp.email_marketing_opt_in = false)
+          LIMIT 1)`,
       })
       .from(clients)
       .where(
@@ -108,7 +116,11 @@ async function sendCampaignMessages(
       .select({
         name: clients.fullName,
         phone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
-        email: sql<string>`(SELECT email_address FROM client_emails WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
+        // No address for a client who opted out of marketing e-mail (per address or in their preferences).
+        email: sql<string>`(SELECT ce.email_address FROM client_emails ce WHERE ce.client_id = clients.id AND ce.is_primary = true
+          AND ce.marketing_opt_in IS NOT FALSE
+          AND NOT EXISTS (SELECT 1 FROM client_marketing_preferences mp WHERE mp.client_id = clients.id AND mp.email_marketing_opt_in = false)
+          LIMIT 1)`,
       })
       .from(clients)
       .where(and(eq(clients.storeId, storeId), isNull(clients.archivedAt)));
@@ -135,17 +147,15 @@ async function sendCampaignMessages(
     }
     if (campaign.channel === "email" || campaign.channel === "both") {
       if (customer.email) {
-        try {
-          await sendEmail(
-            storeId,
-            customer.email,
-            `Message from ${store?.name || "your salon"}`,
-            `<p>${message.replace(/\n/g, "<br>")}</p>`
-          );
-          sentCount++;
-        } catch {
-          failedCount++;
-        }
+        // sendEmail reports a failure in its result; it does not throw.
+        const result = await sendEmail(
+          storeId,
+          customer.email,
+          `Message from ${store?.name || "your salon"}`,
+          `<p>${message.replace(/\n/g, "<br>")}</p>`
+        ).catch(() => ({ success: false }));
+        if (result.success) sentCount++;
+        else failedCount++;
       }
     }
   }

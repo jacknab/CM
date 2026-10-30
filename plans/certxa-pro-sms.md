@@ -38,7 +38,7 @@ Owner request, 2026-10-30. The Certxa Pro app (Solo plan) stays free. Text-messa
 
 ## Owner decisions (2026-10-30)
 - **Every text to a client** from a Solo account without Plus costs 1 credit. That includes confirmations, reminders, review requests, booking-request replies, reschedule notices and two-way replies.
-- **Out of credits:** the text is not sent and is logged. E-mail still goes. The owner is alerted at 10 credits left and at 0.
+- **Out of credits:** the text is not sent and is logged. E-mail still goes. The owner is not e-mailed about a low or empty balance (owner, 2026-10-30).
 - **Packs:** $5/100, $10/250, $20/600 (admin-editable).
 - **Billing run:** turn `SAAS_BILLING_MODE` on when Plus launches. Run dry_run for a day first, then live.
 
@@ -52,7 +52,7 @@ Owner request, 2026-10-30. The Certxa Pro app (Solo plan) stays free. Text-messa
   - Otherwise, take 1 from `sms_credits` atomically (`WHERE sms_credits > 0`), and refund it if Twilio fails.
   - At 0 credits → the text is not sent and is logged as `skipped`, with the reason "no SMS credits". E-mail notifications still go.
 - **Ledger:** every grant, purchase and spend gets one row in its own table, so the balance can always be explained.
-- **Owner alerts:** one e-mail or notification at 10 credits left, and one at 0.
+- **Owner alerts:** none by e-mail (owner turned the low-credit e-mails off, 2026-10-30).
 - Salon plans (Starter and up) are unchanged.
 
 ### Phase 2 — Buying credits on the website

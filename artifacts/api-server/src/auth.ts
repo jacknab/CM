@@ -14,7 +14,6 @@ import { users } from "@shared/models/auth";
 import { locations, staff, passwordResetTokens, storeSettings, staffAvailability } from "@shared/schema";
 import { eq, and, gt, or } from "drizzle-orm";
 import { sendEmail } from "./mail";
-import { sendWelcomeEmail } from "./lib/systemEmails";
 import { computePermissions, normalizeRole } from "@shared/permissions";
 import { toE164US } from "./lib/phoneUtils";
 import { logAuthEvent } from "./lib/authEvents";
@@ -225,8 +224,8 @@ export function setupAuth(app: Express) {
       // Log registration event
       logAuthEvent(user.id, "register", req, { email });
 
-      // Welcome email (non-blocking)
-      sendWelcomeEmail(email, firstName || null).catch(() => {});
+      // Welcome e-mail series (platform-email-engine "welcome-and-first-win"). The older single welcome e-mail
+      // (systemEmails sendWelcomeEmail) was removed 2026-10-30: every new owner was getting both.
       emitPlatformEmailEvent("signup", user.id, { source: "password" }).catch((err) =>
         console.warn("[PlatformEmail] signup event failed:", err?.message),
       );
@@ -443,7 +442,6 @@ export function setupAuth(app: Express) {
         }).returning();
 
         await TrialService.setupTrialForUser(user.id);
-        sendWelcomeEmail(profile.email, profile.firstName).catch(() => {});
         emitPlatformEmailEvent("signup", user.id, { source: "google" }).catch((err) =>
           console.warn("[PlatformEmail] Google signup event failed:", err?.message),
         );

@@ -150,37 +150,6 @@ function divider(): string {
   return `<hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />`;
 }
 
-// ─── 1. Welcome Email (on registration) ──────────────────────────────────────
-
-export async function sendWelcomeEmail(
-  email: string,
-  firstName: string | null
-): Promise<void> {
-  const html = wrap({
-    title: "Welcome to Certxa",
-    body: `
-      <p style="margin:0 0 16px;font-size:20px;font-weight:700;color:#1e293b;">Welcome to Certxa! 🎉</p>
-      <p style="margin:0 0 16px;">${greeting(firstName)}</p>
-      <p style="margin:0 0 16px;">
-        Your account is live and your <strong>60-day free trial</strong> has started. Here's what you can do right now:
-      </p>
-      <table cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 20px;">
-        ${["Set up your services &amp; pricing", "Add your team members", "Enable online booking", "Run your first POS transaction"].map(item =>
-          `<tr><td style="padding:6px 0;"><span style="color:${BRAND_COLOR};font-weight:700;margin-right:8px;">✓</span>${item}</td></tr>`
-        ).join("")}
-      </table>
-      ${btn("Open Certxa Dashboard", `${APP_URL}/dashboard`)}
-      ${divider()}
-      <p style="margin:0;color:#64748b;font-size:13px;">
-        Need help getting started? Reply to this email — we're here.
-      </p>
-    `,
-  });
-
-  await sendEmail(0, email, "Welcome to Certxa — your 60-day trial has started!", html)
-    .catch((e) => console.warn("[systemEmail] welcome email failed:", e?.message));
-}
-
 // ─── 2. Subscription Renewal Success ─────────────────────────────────────────
 
 export async function sendSubscriptionRenewalEmail(
@@ -1198,30 +1167,4 @@ export async function sendServiceImportFailureEmail(
     `Action needed: upload clearer photos for your ${storeName} menu`,
     html
   ).catch((e: any) => console.warn("[systemEmail] Service import failure email failed:", e?.message));
-}
-
-// ─── Certxa Pro (Solo) SMS credits running low / run out ──────────────────────
-// Sent once at 10 credits left and once at 0 (lib/soloSmsCredits.ts). The button opens the page where the owner
-// buys credits or takes Plus (plans/certxa-pro-sms.md).
-export async function sendSoloSmsCreditsAlertEmail(storeId: number, remaining: number): Promise<void> {
-  const owner = await getStoreOwnerContact(storeId);
-  if (!owner) return;
-  if (!await userWantsEmail(owner.userId, "lowBalanceAlerts")) return;
-  const empty = remaining <= 0;
-  const color = empty ? DANGER_COLOR : WARN_COLOR;
-  const html = wrap({
-    title: empty ? "You're out of text message credits" : "Text message credits running low",
-    accentColor: color,
-    body: `
-      <p style="margin:0 0 16px;">${greeting(owner.firstName)}</p>
-      <p style="margin:0 0 16px;">${empty
-        ? `<strong>${owner.storeName}</strong> has no text message credits left. Text reminders, confirmations and other texts to your clients have stopped. E-mails to clients still go out.`
-        : `<strong>${owner.storeName}</strong> has <strong>${remaining}</strong> text message credits left. Each text to a client uses 1 credit.`}</p>
-      <p style="margin:0 0 16px;">Buy more credits, or get Plus for $3 a month for unlimited text notifications.</p>
-      ${btn(empty ? "Add credits" : "Add credits or get Plus", `${APP_URL}/sms-credits`, color)}
-    `,
-    unsubscribeUrl: buildUnsubscribeUrl(owner.userId, "lowBalanceAlerts"),
-  });
-  await sendEmail(storeId, owner.email, empty ? `You're out of text message credits — ${owner.storeName}` : `Text message credits running low — ${owner.storeName}`, html)
-    .catch((e) => console.warn("[systemEmail] solo sms credits alert error:", e?.message));
 }

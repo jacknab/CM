@@ -23588,9 +23588,7 @@ or
   const { startTrialReminderScheduler } = await import("./services/trial-reminders.js");
   startTrialReminderScheduler();
 
-  // Start daily low-balance alerts (platform credits < $5, SMS credits < 50)
-  const { startLowBalanceScheduler } = await import("./services/low-balance-scheduler.js");
-  startLowBalanceScheduler();
+  // Daily low-balance e-mails are off (owner, 2026-10-30) — see services/low-balance-scheduler.ts.
 
   // Start Google Reviews auto-sync (every 6 hours — new engine, new schema + legacy fallback)
   startGoogleReviewSyncScheduler();

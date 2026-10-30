@@ -14,13 +14,20 @@ function getMailgunClient(apiKey: string, domain: string) {
   return mailgun.client({ key: apiKey, username: "api" });
 }
 
+const escapeHtml = (v: string) =>
+  v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+
+/** Fills {name} placeholders. For the HTML version (html: true) the values are escaped: a client's name comes from
+ *  the public booking form and must not be able to put markup into an e-mail sent in the salon's name. */
 function interpolateTemplate(
   template: string,
-  vars: Record<string, string>
+  vars: Record<string, string>,
+  html = false,
 ): string {
   let result = template;
   for (const [key, value] of Object.entries(vars)) {
-    result = result.replace(new RegExp(`\\{${key}\\}`, "g"), value);
+    const v = html ? escapeHtml(value) : value;
+    result = result.replace(new RegExp(`\\{${key}\\}`, "g"), () => v);
   }
   return result;
 }
@@ -103,7 +110,7 @@ export async function sendBookingConfirmationEmail(
     ),
     appointmentTime: formatInTimeZone(appointment.date, timezone, "h:mm a"),
     serviceName: appointment.service?.name || "your service",
-  });
+  }, true);
 
   const qrData = encodeURIComponent(`BK:${appointment.id}`);
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=10&data=${qrData}`;
@@ -169,7 +176,7 @@ export async function sendReminderEmail(
     ),
     appointmentTime: formatInTimeZone(appointment.date, timezone, "h:mm a"),
     serviceName: appointment.service?.name || "your service",
-  });
+  }, true);
 
   const plainText = interpolateTemplate(
     settings.reminderTemplate
@@ -238,7 +245,7 @@ export async function sendReviewRequestEmail(
     customerName: customerName || "there",
     storeName: appointment.store?.name || "our salon",
     reviewUrl,
-  });
+  }, true);
 
   const plainText = interpolateTemplate(
     settings.reviewTemplate
@@ -295,6 +302,13 @@ async function processEmailReminders(): Promise<void> {
 
   for (const appt of upcomingAppointments) {
     try {
+      // The window is an hour wide and this runs every 5 minutes, so each appointment is claimed once.
+      // (A claimed appointment with no client e-mail or with reminders off simply sends nothing.)
+      const claimed = await pool.query(
+        `UPDATE appointments SET reminder_email_sent_at = now() WHERE id = $1 AND reminder_email_sent_at IS NULL RETURNING id`,
+        [appt.id],
+      );
+      if (!claimed.rowCount) continue;
       await sendReminderEmail(appt);
     } catch (err) {
       console.error(`[Email] Reminder error for appointment ${appt.id}:`, err);

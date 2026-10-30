@@ -4,7 +4,8 @@
  * The Solo plan is free, but its texts are not:
  *   • A new Solo account gets free credits (platform_settings.solo_free_sms_credits, default 50).
  *   • Every text to a client from a Solo account spends 1 credit (locations.sms_credits).
- *     With no credits left the text is not sent; e-mails still go.
+ *     With no credits left the text is not sent; e-mails still go. The owner is not e-mailed about a low or
+ *     empty balance (owner, 2026-10-30).
  *   • Solo Plus ($3/month, plan code 'solo_plus') sends notification texts without spending credits.
  *     Marketing campaigns still spend credits on Plus.
  *   • Texts that are not to a client (staff invites, owner test texts, payout reminders) are free.
@@ -23,8 +24,6 @@ const NOT_TO_CLIENTS = new Set([
 ]);
 /** Marketing texts: Plus does not make these free. */
 const MARKETING = new Set(["campaign", "campaign_test", "bulk_sms"]);
-
-export const LOW_CREDITS_ALERT_AT = 10;
 
 export async function soloPlanCode(storeId: number): Promise<SoloPlanCode | null> {
   const plan = await resolveStorePlan(storeId).catch(() => null);
@@ -56,7 +55,6 @@ export async function spendSoloCredit(storeId: number, messageType: string): Pro
       [storeId, left, messageType],
     );
     await client.query("COMMIT");
-    if (left === LOW_CREDITS_ALERT_AT || left === 0) void alertOwner(storeId, left);
     return left;
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
@@ -127,22 +125,6 @@ export async function grantSoloFreeCredits(storeId: number): Promise<void> {
   const amount = await soloFreeCreditsSetting();
   if (amount <= 0) return;
   await addSoloCredits(storeId, amount, "free_grant", { reference: "free_grant", note: "Free credits for a Solo account" });
-}
-
-/** One e-mail at 10 left and one at 0; a purchase clears the flag. */
-async function alertOwner(storeId: number, left: number): Promise<void> {
-  try {
-    const level = left <= 0 ? "empty" : "low";
-    const r = await pool.query(
-      `UPDATE locations SET sms_credit_alert = $2 WHERE id = $1 AND sms_credit_alert IS DISTINCT FROM $2 RETURNING id`,
-      [storeId, level],
-    );
-    if (!r.rows[0]) return;
-    const { sendSoloSmsCreditsAlertEmail } = await import("./systemEmails");
-    await sendSoloSmsCreditsAlertEmail(storeId, left);
-  } catch (err: any) {
-    console.warn(`[solo-sms] alert failed store=${storeId}:`, err?.message ?? err);
-  }
 }
 
 /** Balance, plan and recent activity for the app and the website. */
