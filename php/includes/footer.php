@@ -64,6 +64,10 @@
         <a href="/sms-terms">SMS Terms</a>
         <a href="/google-data-policy">Google Data Policy</a>
         <a href="/data-transfer">Data Transfer</a>
+        <!-- Launchpadly — Certxa (text) -->
+        <a href="https://launchpadly.co/startup/certxa?ref=badge" target="_blank" rel="noopener noreferrer" data-launchpadly-badge="certxa">
+          Proudly listed on Launchpadly Startup Directory
+        </a>
       </div>
     </div>
   </div>

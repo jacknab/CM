@@ -40,7 +40,17 @@ export default function Footer() {
             <p className="text-sm leading-relaxed text-gray-500 max-w-xs">
               The all-in-one platform built for modern salons. Bookings, payments, clients — all in one place.
             </p>
-            <p className="text-xs text-gray-600 mt-auto">
+            {/* Launchpadly — Certxa (text) */}
+            <a
+              href="https://launchpadly.co/startup/certxa?ref=badge"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-launchpadly-badge="certxa"
+              className="text-sm text-gray-400 hover:text-white transition-colors duration-200 mt-auto"
+            >
+              Proudly listed on Launchpadly Startup Directory
+            </a>
+            <p className="text-xs text-gray-600">
               © {new Date().getFullYear()} Certxa. All rights reserved.
             </p>
           </div>
