@@ -6,13 +6,16 @@ import { cache } from "../cache";
 import { sendTrialExpiredEmail } from "../lib/systemEmails";
 import { emitPlatformEmailEvent } from "./platform-email-engine";
 import { broadcastNotification } from "../notifications";
+import { forgetAccountStatus } from "../lib/accountSuspension";
 
 /**
  * How long after trial end before the account is suspended.
  * During this window the user retains access so they can subscribe without
  * losing their data or being locked out of the calendar.
  */
-const GRACE_PERIOD_DAYS = 1;
+// No waiting period for a free trial (owner, 2026-10-31): the day it ends the salon stops, the same as a suspended
+// account (lib/accountSuspension.ts). Support can extend a trial by 14 days, which lifts it (liftTrialSuspension).
+const GRACE_PERIOD_DAYS = 0;
 
 export async function runTrialExpirationCheck(): Promise<{ expired: number; suspended: number; skipped: number }> {
   const now = new Date();
@@ -20,8 +23,7 @@ export async function runTrialExpirationCheck(): Promise<{ expired: number; susp
   let suspended = 0;
   let skipped = 0;
 
-  // ── Phase 1: trial just ended → mark as expired, start grace period ────────
-  // Account stays Active so the user retains full access for GRACE_PERIOD_DAYS.
+  // ── Phase 1: trial just ended → mark as expired ──────────────────────────────
   const justExpiredUsers = await db
     .select({ id: users.id, email: users.email, firstName: users.firstName, trialEndsAt: users.trialEndsAt })
     .from(users)
@@ -39,22 +41,24 @@ export async function runTrialExpirationCheck(): Promise<{ expired: number; susp
       const hasActiveSub = await userHasActivePaidSubscription(user.id);
       if (hasActiveSub) { skipped++; continue; }
 
-      // Mark subscription expired — account_status stays Active during grace period.
-      await db
+      // Mark the trial expired. Only one pm2 worker wins this change, so the e-mail goes out once.
+      const claimed = await db
         .update(users)
         .set({ subscriptionStatus: "expired" })
-        .where(eq(users.id, user.id));
+        .where(and(eq(users.id, user.id), eq(users.subscriptionStatus, "trial")))
+        .returning({ id: users.id });
+      if (!claimed.length) continue;
 
       expired++;
       sendTrialExpiredEmail(user.email, user.firstName ?? null).catch(() => {});
       emitPlatformEmailEvent("trial_expired", user.id, { trialEndsAt: user.trialEndsAt }).catch(() => {});
-      console.log(`[TrialExpiration] Trial ended for ${user.email} — ${GRACE_PERIOD_DAYS}-day grace period started`);
+      console.log(`[TrialExpiration] Trial ended for ${user.email}`);
     } catch (err) {
       console.error(`[TrialExpiration] Phase 1 failed for user ${user.id}:`, err);
     }
   }
 
-  // ── Phase 2: grace period over → suspend calendar + public booking access ──
+  // ── Phase 2: trial over (no waiting period) → suspend calendar + public booking access ──
   // Suspension is light: the user can still log in, access settings, and
   // export their data. Only calendar pages and the public booking site are
   // blocked (enforced by the server middleware and frontend route guard).
@@ -86,13 +90,13 @@ export async function runTrialExpirationCheck(): Promise<{ expired: number; susp
       if (store && (store.accountStatus ?? "").toLowerCase() !== "suspended") {
         await db
           .update(locations)
-          .set({ accountStatus: "Suspended" })
+          .set({ accountStatus: "Suspended", suspendedAt: new Date(), suspendedReason: TRIAL_ENDED_REASON })
           .where(eq(locations.id, store.id));
 
         await deactivateLaunchSite(store.id);
         cache.billing.invalidate(store.id);
         emitPlatformEmailEvent("account_suspended", user.id, { source: "trial_grace_expired" }).catch(() => {});
-        console.log(`[TrialExpiration] Suspended account for ${user.email} — grace period over`);
+        console.log(`[TrialExpiration] Suspended account for ${user.email} — trial ended`);
         suspended++;
       }
     } catch (err) {
@@ -101,10 +105,35 @@ export async function runTrialExpirationCheck(): Promise<{ expired: number; susp
   }
 
   if (expired > 0 || suspended > 0) {
-    console.log(`[TrialExpiration] ${expired} trials entered grace period, ${suspended} suspended after grace, ${skipped} skipped (paid)`);
+    console.log(`[TrialExpiration] ${expired} trials ended, ${suspended} suspended, ${skipped} skipped (paid)`);
   }
 
   return { expired, suspended, skipped };
+}
+
+export const TRIAL_ENDED_REASON = "trial_ended";
+
+/**
+ * Support extended a trial that had already ended: open the salon again — but only a suspension the trial's end
+ * caused, never one for an unpaid bill.
+ */
+export async function liftTrialSuspension(storeId: number): Promise<void> {
+  forgetAccountStatus(storeId); // the trial check is cached for 30 s
+  const [store] = await db
+    .select({ accountStatus: locations.accountStatus, suspendedReason: locations.suspendedReason })
+    .from(locations)
+    .where(eq(locations.id, storeId))
+    .limit(1);
+  if (!store || (store.accountStatus ?? "").toLowerCase() !== "suspended" || store.suspendedReason !== TRIAL_ENDED_REASON) return;
+  await db
+    .update(locations)
+    .set({ accountStatus: "Active", suspendedAt: null, suspendedReason: null })
+    .where(eq(locations.id, storeId));
+  await reactivateLaunchSite(storeId);
+  cache.billing.invalidate(storeId);
+  forgetAccountStatus(storeId);
+  broadcastNotification({ type: "account_status_changed", storeId, accountStatus: "active" });
+  console.log(`[TrialExpiration] Trial extended — store ${storeId} open again`);
 }
 
 export async function reactivateExpiredAccount(salonId: number): Promise<void> {
@@ -207,7 +236,9 @@ async function reactivateLaunchSite(storeId: number): Promise<void> {
 }
 
 export function startTrialExpirationScheduler(): void {
-  const INTERVAL_MS = 60 * 60 * 1000;
+  // Every 5 minutes: with no waiting period, the booking page and website (which read account_status) stop within
+  // minutes of a trial ending; /nail, the calendar, texts and Autumn stop at once (isAccountStopped).
+  const INTERVAL_MS = 5 * 60 * 1000;
   let running = false;
 
   const run = async () => {
@@ -224,5 +255,5 @@ export function startTrialExpirationScheduler(): void {
 
   run();
   setInterval(run, INTERVAL_MS);
-  console.log("[TrialExpiration] Scheduler started — runs every hour");
+  console.log("[TrialExpiration] Scheduler started — runs every 5 minutes");
 }

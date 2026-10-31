@@ -1,4 +1,5 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
+import { isAccountStopped } from "../lib/accountSuspension";
 import { eq, and, sql, count, isNull, ne, or } from "drizzle-orm";
 import { db, websitesTable, templatesTable, pageViewsTable } from "@workspace/db";
 import { isAuthenticated } from "../auth";
@@ -885,7 +886,7 @@ router.get("/tenant/:slug/data", async (req, res): Promise<void> => {
         SELECT account_status FROM locations WHERE id = ${storeid} LIMIT 1
       `);
       const accountStatus = String((statusRow.rows as any[])[0]?.account_status ?? "active").toLowerCase();
-      if (accountStatus === "suspended" || accountStatus === "canceled") {
+      if (accountStatus === "suspended" || accountStatus === "canceled" || await isAccountStopped(Number(storeid))) {
         res.status(503).json({ error: "Under Maintenance" });
         return;
       }

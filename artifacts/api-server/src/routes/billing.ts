@@ -198,76 +198,36 @@ router.get("/account-status", async (req: any, res) => {
     }
 
     // ── Trial / subscription status ──────────────────────────────────────────
-    // Staff users and platform admins are never trial-expired.
-    // For owners: subscriptionStatus === 'expired' means trial ended. We still
-    // allow through if they have a live Stripe store_subscription row.
-    let trialExpired = false;
-    let inGracePeriod = false;
-    let graceEndsAt: string | null = null;
+    // A free trial has no waiting period (owner, 2026-10-31): the moment it ends without a paid plan the salon is
+    // treated as suspended — account and data open, /nail and the calendar stopped — the same rule the server
+    // applies (lib/accountSuspension.ts isAccountStopped) and the trial job then records. Support can extend the
+    // trial by 14 days, which opens it again. Staff logins see the salon's own status.
     let trialEndsAt: string | null = null;
     let subscriptionStatus: string | null = null;
-
-    // Grace period: 7 days of full access after trial ends before suspension.
-    const GRACE_PERIOD_DAYS = 7;
+    let trialOver = false;
 
     if (ownerUserId && !staffId) {
       const [userRow] = await db
-        .select({ subscriptionStatus: users.subscriptionStatus, trialEndsAt: users.trialEndsAt, isAdmin: users.isAdmin })
+        .select({ subscriptionStatus: users.subscriptionStatus, trialEndsAt: users.trialEndsAt })
         .from(users)
         .where(eq(users.id, ownerUserId))
         .limit(1);
-
       if (userRow) {
         subscriptionStatus = (userRow.subscriptionStatus as string) ?? null;
-        trialEndsAt = userRow.trialEndsAt
-          ? new Date(userRow.trialEndsAt as any).toISOString()
-          : null;
-
-        // Platform admins always bypass the trial wall — they run the platform.
-        const isAdminUser = userRow.isAdmin === true;
-
-        if (!isAdminUser && subscriptionStatus === "expired") {
-          // Fallback: check for a live Stripe subscription before hard-blocking
-          const [activeSub] = await db
-            .select({ status: storeSubscriptionsTable.status })
-            .from(storeSubscriptionsTable)
-            .where(
-              and(
-                eq(storeSubscriptionsTable.storeId, store.id),
-                inArray(storeSubscriptionsTable.status, ["active", "trialing"]),
-              ),
-            )
-            .limit(1);
-
-          if (!activeSub) {
-            // Determine whether we're still within the 7-day grace period.
-            const trialEndDate = userRow.trialEndsAt ? new Date(userRow.trialEndsAt as any) : null;
-            const graceEnd = trialEndDate
-              ? new Date(trialEndDate.getTime() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000)
-              : null;
-
-            if (graceEnd && graceEnd > new Date()) {
-              // Still within grace window — full access, but show warning banner.
-              inGracePeriod = true;
-              graceEndsAt = graceEnd.toISOString();
-            } else {
-              // Grace period over — account is (or will be) suspended.
-              trialExpired = true;
-            }
-          }
-        }
+        trialEndsAt = userRow.trialEndsAt ? new Date(userRow.trialEndsAt as any).toISOString() : null;
       }
     }
+    if ((store.accountStatus ?? "active").toLowerCase() === "active") trialOver = await isAccountStopped(store.id);
 
     return res.json({
-      accountStatus: (store.accountStatus ?? "active").toLowerCase(),
+      accountStatus: trialOver ? "suspended" : (store.accountStatus ?? "active").toLowerCase(),
       suspendedAt:   store.suspendedAt   ?? null,
       lockedAt:      store.lockedAt      ?? null,
-      suspendedReason: store.suspendedReason ?? null,
+      suspendedReason: trialOver ? "trial_ended" : (store.suspendedReason ?? null),
       salonId: store.id,
-      trialExpired,
-      inGracePeriod,
-      graceEndsAt,
+      trialExpired: false,
+      inGracePeriod: false,
+      graceEndsAt: null,
       trialEndsAt,
       subscriptionStatus,
     });

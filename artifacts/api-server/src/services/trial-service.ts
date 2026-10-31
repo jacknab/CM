@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { liftTrialSuspension } from "./trial-expiration";
 import { MAX_TRIAL_EXTENSION_DAYS, latestTrialEnd, trialEndRefusal } from "../lib/trialLimit";
 import { users } from "@shared/models/auth";
 import { locations, storeSubscriptions } from "@shared/schema";
@@ -209,6 +210,8 @@ export class TrialService {
       .limit(1);
 
     if (store) {
+      // A trial that already ended had stopped the salon: open it again.
+      await liftTrialSuspension(store.id);
       await db
         .update(storeSubscriptions)
         .set({ currentPeriodEnd: newTrialEndsAt, status: 'trialing', updatedAt: new Date() })

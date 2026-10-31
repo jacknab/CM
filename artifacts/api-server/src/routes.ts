@@ -1,4 +1,5 @@
 import { usesBuiltInReviewsOnly } from "./lib/reviewLinks";
+import { isAccountStopped } from "./lib/accountSuspension";
 import express, { type Express, type Request, type RequestHandler, type Response } from "express";
 import { checkHouseCall, saveClientAddress, type ClientAddress } from "./lib/houseCalls";
 import { publicStoreView, bookedClientStoreView, addressIsPrivate } from "./lib/publicStore";
@@ -2111,7 +2112,8 @@ export async function registerRoutes(
             });
             return;
           }
-          if (status === "suspended" && isSuspendedBlocked) {
+          // A free trial that has ended stops the same pages as a suspension (isAccountStopped, no waiting period).
+          if (isSuspendedBlocked && (status === "suspended" || await isAccountStopped(r.rows[0].id))) {
             // Light suspension — only calendar and appointment endpoints are blocked.
             // Users can still access the rest of the app (settings, exports, billing).
             res.status(402).json({
@@ -2123,8 +2125,8 @@ export async function registerRoutes(
         }
       } else if (staffId) {
         // Staff session: check their store's status.
-        const r = await pool.query<{ account_status: string | null }>(
-          `SELECT l.account_status FROM staff s JOIN locations l ON l.id = s.store_id WHERE s.id = $1 LIMIT 1`,
+        const r = await pool.query<{ account_status: string | null; store_id: number }>(
+          `SELECT l.account_status, l.id AS store_id FROM staff s JOIN locations l ON l.id = s.store_id WHERE s.id = $1 LIMIT 1`,
           [staffId]
         );
         if (r.rows.length > 0) {
@@ -2136,7 +2138,7 @@ export async function registerRoutes(
             });
             return;
           }
-          if (status === "suspended" && isSuspendedBlocked) {
+          if (isSuspendedBlocked && (status === "suspended" || await isAccountStopped(r.rows[0].store_id))) {
             res.status(402).json({
               message: "Calendar access is suspended. Please contact the account owner.",
               accountStatus: "suspended",

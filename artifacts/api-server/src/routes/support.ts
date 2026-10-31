@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { liftTrialSuspension } from "../services/trial-expiration";
 import { emailButton, emailGreeting, emailNote, emailText, escapeEmailHtml } from "../lib/emailLayout";
 import type { Request, Response } from "express";
 import { MAX_TRIAL_EXTENSION_DAYS, latestTrialEnd, trialEndRefusal } from "../lib/trialLimit";
@@ -1326,6 +1327,8 @@ router.post("/api/support/accounts/:id/extend-trial", requireSupportAuth, async 
       [newTrialEnd, storeId]
     );
 
+    // A trial that already ended had stopped the salon: open it again.
+    await liftTrialSuspension(storeId);
     await logActivity(req.session.supportAgentId!, storeId, "trial_extended", req.session.supportAgentName!, { days });
     res.json({ ok: true, newTrialEnd });
   } catch (e) {
@@ -2167,6 +2170,8 @@ router.post("/api/support/billing/:accountId/extend-trial", requireSupportAuth, 
          AND status IN ('trialing', 'trial', 'expired')`,
       [trialDate, storeId]
     );
+    // A trial that already ended had stopped the salon: open it again.
+    await liftTrialSuspension(storeId);
 
     await logActivity(req.session.supportAgentId!, storeId, "trial_extended_by_support", req.session.supportAgentName!, { newTrialEnd, reason });
     const noteContent = `Trial extended to ${trialDate.toLocaleDateString()}${reason ? ` — Reason: ${reason}` : ""}`;

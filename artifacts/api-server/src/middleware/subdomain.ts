@@ -1,4 +1,5 @@
 import { type Request, type Response, type NextFunction } from 'express';
+import { isAccountStopped } from "../lib/accountSuspension";
 import { db } from '../db';
 import { locations } from '@shared/schema';
 import { eq, sql, and } from 'drizzle-orm';
@@ -363,7 +364,8 @@ export async function subdomainMiddleware(req: Request, res: Response, next: Nex
       const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, subdomain));
       if (store) {
         const acctStatus = ((store as any).accountStatus ?? store.accountStatus ?? "active").toLowerCase();
-        if (acctStatus === "suspended" || acctStatus === "canceled" || acctStatus === "cancelled") {
+        // A free trial that has ended closes the booking page at once too (isAccountStopped).
+        if (acctStatus === "suspended" || acctStatus === "canceled" || acctStatus === "cancelled" || await isAccountStopped(store.id)) {
           const storeName = (store as any).name ?? "This business";
           return res.status(402).send(`<!DOCTYPE html><html><head><title>${storeName}</title>
             <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0a0a0a;color:#fff;}
@@ -457,7 +459,8 @@ export async function subdomainMiddleware(req: Request, res: Response, next: Nex
       } catch { /* table may not exist yet */ }
     }
 
-    if (row && (launchsiteAcctStatus === "suspended" || launchsiteAcctStatus === "cancelled" || launchsiteAcctStatus === "canceled")) {
+    if (row && (launchsiteAcctStatus === "suspended" || launchsiteAcctStatus === "cancelled" || launchsiteAcctStatus === "canceled"
+        || (row.store_id && await isAccountStopped(Number(row.store_id))))) {
       return res.status(503).send(`<!DOCTYPE html><html><head><title>${row.business_name ?? "Website Unavailable"}</title>
         <style>
           *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }

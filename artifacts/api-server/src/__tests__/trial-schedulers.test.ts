@@ -260,8 +260,14 @@ describe("runTrialExpirationCheck", () => {
           }),
         };
       }),
+      // The trial → expired change is claimed with RETURNING, so only one pm2 worker e-mails.
       update: vi.fn().mockReturnValue({
-        set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: "claimed" }]),
+            then: (onFulfilled: (v: unknown) => unknown) => Promise.resolve(undefined).then(onFulfilled),
+          }),
+        }),
       }),
       execute: vi.fn().mockResolvedValue(undefined),
     };

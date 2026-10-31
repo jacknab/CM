@@ -1,4 +1,5 @@
 import path from "path";
+import { isAccountStopped } from "./accountSuspension";
 import fs from "fs";
 import type { Request, Response } from "express";
 import { and, eq, sql } from "drizzle-orm";
@@ -1289,7 +1290,8 @@ async function isWebsiteSuspendedOrCanceled(storeId: string | null): Promise<boo
     SELECT account_status FROM locations WHERE id = ${Number(storeId)} LIMIT 1
   `);
   const acctStatus = String((acctResult.rows as any[])[0]?.account_status ?? "active").toLowerCase();
-  return acctStatus === "suspended" || acctStatus === "canceled";
+  // A free trial that has ended takes the website down at once too (isAccountStopped).
+  return acctStatus === "suspended" || acctStatus === "canceled" || await isAccountStopped(Number(storeId));
 }
 
 // ── Auto-page renderer (publisher_type === 'auto') ────────────────────────────
