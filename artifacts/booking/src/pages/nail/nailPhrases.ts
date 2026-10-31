@@ -6086,6 +6086,46 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Vui lòng báo cho chủ tiệm.",
   "Avise al dueño del salón."
  ],
+ "Card payments": [
+  "Thanh toán thẻ",
+  "Pagos con tarjeta"
+ ],
+ "Cash price": [
+  "Giá tiền mặt",
+  "Precio en efectivo"
+ ],
+ "Gift cards are taxed": [
+  "Tính thuế thẻ quà",
+  "Las tarjetas de regalo pagan impuesto"
+ ],
+ "CARD button": [
+  "Nút THẺ",
+  "Botón TARJETA"
+ ],
+ "Technicians take walk-ins one after another, in order. The price of the ticket never matters.": [
+  "Thợ nhận khách vãng lai lần lượt theo thứ tự. Giá của phiếu không quan trọng.",
+  "Los técnicos atienden a los clientes sin cita uno tras otro, en orden. El precio del ticket no importa."
+ ],
+ "Every finished ticket counts as one client. The technician with the fewest clients is next.": [
+  "Mỗi phiếu làm xong tính là một khách. Thợ có ít khách nhất được nhận kế tiếp.",
+  "Cada ticket terminado cuenta como un cliente. Sigue el técnico con menos clientes."
+ ],
+ "A paid ticket under the threshold earns 1/2 turn. The technician with the fewest accumulated turns is next.": [
+  "Phiếu đã trả dưới mức quy định được tính 1/2 lượt. Thợ có ít lượt nhất được nhận kế tiếp.",
+  "Un ticket pagado por debajo del mínimo cuenta 1/2 turno. Sigue el técnico con menos turnos acumulados."
+ ],
+ "Turns are earned by the service amount. The technician with the lowest total is next.": [
+  "Lượt được tính theo số tiền dịch vụ. Thợ có tổng thấp nhất được nhận kế tiếp.",
+  "Los turnos se ganan según el monto del servicio. Sigue el técnico con el total más bajo."
+ ],
+ "You set the amounts and what each one earns. The technician with the lowest total is next.": [
+  "Bạn đặt các mức tiền và số lượt của mỗi mức. Thợ có tổng thấp nhất được nhận kế tiếp.",
+  "Usted fija los montos y lo que gana cada uno. Sigue el técnico con el total más bajo."
+ ],
+ "Every dollar earns its share of a turn. The technician with the lowest total is next.": [
+  "Mỗi đô la được tính một phần của lượt. Thợ có tổng thấp nhất được nhận kế tiếp.",
+  "Cada dólar gana su parte de un turno. Sigue el técnico con el total más bajo."
+ ],
  "Where you keep cash": [
   "Nơi giữ tiền mặt",
   "Dónde guarda el efectivo"
@@ -6147,7 +6187,7 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Las propinas nunca pagan impuesto."
  ],
  "What should the CARD button do at checkout?": [
-  "Nút CARD khi tính tiền sẽ làm gì?",
+  "Nút THẺ khi tính tiền sẽ làm gì?",
   "¿Qué debe hacer el botón TARJETA al cobrar?"
  ],
  "Certxa card reader": [
@@ -6163,7 +6203,7 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Mi propia terminal"
  ],
  "You run the card on your own terminal. The CARD button only records the payment as card: Certxa charges nothing.": [
-  "Bạn quẹt thẻ trên máy riêng của tiệm. Nút CARD chỉ ghi lại là trả bằng thẻ: Certxa không thu gì.",
+  "Bạn quẹt thẻ trên máy riêng của tiệm. Nút THẺ chỉ ghi lại là trả bằng thẻ: Certxa không thu gì.",
   "Usted cobra la tarjeta en su propia terminal. El botón TARJETA solo registra el pago con tarjeta: Certxa no cobra nada."
  ],
  "Your Stripe account isn't connected yet. Connect it in Settings › Payments before taking cards on the reader. Until then, cash still works.": [
@@ -6195,7 +6235,7 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Pertenece a su recepción principal."
  ],
  "More drawers and registers can be added in Settings › Cash Drawers.": [
-  "Có thể thêm ngăn kéo và máy POS trong Cài Đặt › Ngăn Kéo Tiền.",
+  "Có thể thêm ngăn kéo tiền và quầy trong Cài Đặt › Ngăn Kéo Tiền.",
   "Puede agregar más cajas y registradoras en Configuración › Cajas."
  ],
  "The tip percentages your clients can tap at checkout. Clients can always enter their own amount or skip.": [

@@ -13,6 +13,12 @@ import { ArrowLeft, Check, Loader2 } from "lucide-react";
 import { TURN_MODES, TURN_PRESETS, formatTurns, isDollarMode, normalizeTurnRules, turnUnits, type TurnMode } from "@shared/turnRules";
 import { DEFAULT_TIP_PRESETS, sanitizeTipPresets } from "@shared/tipPresets";
 import { LIGHT_PAGE_BG } from "./touchKeys";
+import type { NailLang } from "./i18n";
+
+// The language buttons at the bottom, like the /kiosk welcome page: each name in its own language (not translated).
+const SETUP_LANGS: { code: NailLang; label: string }[] = [
+  { code: "en", label: "English" }, { code: "vi", label: "Tiếng Việt" }, { code: "es", label: "Español" }, { code: "fr", label: "Français" },
+];
 
 type CardProvider = "stripe" | "own";
 interface TeamMember { id: number; name: string; role: string | null; techId: number | null; frontDesk: boolean; isOwner: boolean }
@@ -82,7 +88,7 @@ function MoneyField({ label, value, onChange, prefix, suffix, testId, max }: { l
   );
 }
 
-export function PosSetupWizard({ storeId, onFinished, onClose }: { storeId: number; onFinished: () => void; onClose: () => void }) {
+export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: { storeId: number; onFinished: () => void; onClose: () => void; lang: NailLang; onLang: (l: NailLang) => void }) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -462,7 +468,7 @@ export function PosSetupWizard({ storeId, onFinished, onClose }: { storeId: numb
         <div className="max-w-[900px] mx-auto px-6 py-6">{body}</div>
       </main>
       {ready && (
-        <footer className="shrink-0 px-6 pb-6 pt-3">
+        <footer className="shrink-0 px-6 pb-4 pt-3">
           <div className="max-w-[900px] mx-auto flex flex-col gap-2">
             {error && <p className="text-[22px] font-medium" style={{ color: "#b42318" }} role="alert" data-testid="pos-setup-error">{error}</p>}
             <button type="button" onClick={() => void next()} disabled={saving} data-testid="pos-setup-next"
@@ -472,6 +478,15 @@ export function PosSetupWizard({ storeId, onFinished, onClose }: { storeId: numb
           </div>
         </footer>
       )}
+      <div className="shrink-0 flex items-center justify-center gap-3 flex-wrap px-6 pb-6" data-no-translate data-testid="pos-setup-langs">
+        {SETUP_LANGS.map(({ code, label }) => (
+          <button key={code} type="button" onClick={() => onLang(code)} data-testid={`pos-setup-lang-${code}`}
+            className="px-5 py-2.5 rounded-full text-[20px] font-semibold transition-all duration-150 active:scale-95"
+            style={{ background: lang === code ? brand : "#fff", color: lang === code ? "#fff" : muted, border: `1.5px solid ${lang === code ? brand : line}` }}>
+            {label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

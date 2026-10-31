@@ -2300,7 +2300,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       {showSetup && (
         <PosSetupWizard storeId={storeId}
           onFinished={() => { setSetupOpen(false); void queryClient.invalidateQueries({ queryKey: ["/api/nail/pos-setup"] }); }}
-          onClose={() => setSetupOpen(false)} />
+          onClose={() => setSetupOpen(false)} lang={lang} onLang={setLang} />
       )}
       {!showSetup && lockEnabled && !tech && !showTurnPage && !needsRegisterPicker && !needsDrawerPicker && <TechIdGate storeName={storeName} timezone={timezone} turnQueue={turnQueueForGate} onOpenTurnPage={() => setShowTurnPage(true)} onSignedIn={onTechSignedIn} />}
       {showTurnPage && (
