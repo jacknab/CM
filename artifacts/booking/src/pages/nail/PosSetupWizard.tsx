@@ -244,7 +244,7 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
         <h1 className={h1} style={{ color: ink }}>Let's set up your front desk</h1>
         <p className={lead} style={{ color: muted }}>A few questions about how your salon takes payment. It takes about three minutes, and you can change any answer later in Settings.</p>
         <ul className="mt-6 grid sm:grid-cols-2 gap-x-8 gap-y-2 text-[24px]" style={{ color: ink }}>
-          {["Sales tax", "Card payments", "Cash price", "Where you keep cash", "Tip choices", "Turn rotation", "Tech IDs", "Manager PIN"].map((t) => (
+          {["Sales tax", "Card payments", "Cash price", "Cash Drawer", "Tip choices", "Turn rotation", "Tech IDs", "Manager PIN"].map((t) => (
             <li key={t} className="flex items-center gap-3"><span className="w-2 h-2 rounded-full" style={{ background: muted }} />{t}</li>
           ))}
         </ul>
@@ -297,7 +297,7 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
     body = (
       <div className="flex flex-col gap-4">
         <div>
-          <h1 className={h1} style={{ color: ink }}>Where you keep cash</h1>
+          <h1 className={h1} style={{ color: ink }}>Cash Drawer</h1>
           <p className={lead} style={{ color: muted }}>The cash you take goes somewhere: a cash drawer, a cash box or an envelope. Tell us what you keep it in and how much cash for change is in it when the day starts. Certxa keeps count of what should be in it, and you count it at Day Close. The front desk can't take cash until this is set up.</p>
         </div>
         <label className="flex items-center justify-between gap-4 rounded-2xl border px-5 py-3 pos-white" style={{ borderColor: line }}>
@@ -408,7 +408,7 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
       ["Sales tax", [pctText(taxRate), ...(taxed.length ? taxed : ["Nothing is taxed"])]],
       ["CARD button", [card === "own" ? "My own card machine" : "Certxa card reader"]],
       ["Cash price", [Number(cashPct) > 0 ? pctText(cashPct) : "Off"]],
-      ["Where you keep cash", [`${status.mainDrawer?.name ?? drawerName} · $${Number(status.mainDrawer?.startingCash ?? startingCash).toFixed(2)}`]],
+      ["Cash Drawer", [`${status.mainDrawer?.name ?? drawerName} · $${Number(status.mainDrawer?.startingCash ?? startingCash).toFixed(2)}`]],
       ["Tip choices", [tips.filter(Boolean).map((t) => `${t}%`).join(", ")]],
       ["Turn rotation", [TURN_PRESETS[mode].label]],
       ["Tech ID sign-in", [lockScreen ? "On" : "Off"]],
@@ -450,7 +450,7 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
               <ArrowLeft className="w-6 h-6" />
             </button>
           )}
-          <span className="text-[22px] font-semibold" style={{ color: muted }}>Front desk setup</span>
+          <span className="text-[22px] font-semibold uppercase tracking-wide" style={{ color: muted }}>Front desk setup</span>
         </span>
         {ready && (
           <span className="flex items-center gap-1.5" aria-hidden="true">

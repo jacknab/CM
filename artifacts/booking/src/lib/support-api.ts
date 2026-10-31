@@ -439,7 +439,7 @@ export interface PosOverview {
     cashDiscountPercent: number | null; cardProvider: string | null; lockScreen: boolean; keypadVisible: boolean;
     managerPinIsDefault: boolean; customKeyGrid: boolean; turnSystem: string; timeclock: boolean;
     kioskPermitted: boolean; kioskEnabled: boolean; dualScreenMode: boolean; restrictKioskNetwork: boolean;
-    localHub: { address: string; at: string | null } | null; trustedNetworkIp: string | null; trustedNetworkAt: string | null;
+    localHub: { address: string; at: string | null; confirmedAt?: string | null } | null; trustedNetworkIp: string | null; trustedNetworkAt: string | null;
   };
   stations: { id: number; name: string; active: boolean; isDefault: boolean; activationCode: string | null; drawerId: number | null;
     claimedAt: string | null; claimDeviceId: string | null; tablet: { deviceId: string; lastSeenAt: string } | null; screens: string[] }[];

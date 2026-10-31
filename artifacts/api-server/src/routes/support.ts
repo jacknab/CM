@@ -3502,7 +3502,7 @@ router.get("/api/support/accounts/:id/pos", requireSupportAuth, async (req: Requ
         kioskEnabled: prefs.kioskSettings?.kioskEnabled !== false,
         dualScreenMode: !!prefs.kioskSettings?.dualScreenMode,
         restrictKioskNetwork: !!store.restrict_kiosk_network,
-        localHub: prefs.localHub?.address ? { address: prefs.localHub.address, at: prefs.localHub.addressAt ?? null } : null,
+        localHub: prefs.localHub?.address ? { address: prefs.localHub.address, at: prefs.localHub.addressAt ?? null, confirmedAt: prefs.localHub.confirmedAt ?? prefs.localHub.addressAt ?? null } : null,
         trustedNetworkIp: trust?.trusted_ip ?? null, trustedNetworkAt: trust?.updated_at ?? null,
       },
       stations: stations.map((r: any) => {

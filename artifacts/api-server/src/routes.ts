@@ -20535,9 +20535,15 @@ or
       if (!storeId) return;
       const address = privateAddress(req.body?.address);
       if (!address) return res.status(400).json({ message: "That is not an address on a local network" });
-      await mutateStorePreferences(storeId, (current: any) =>
-        current.localHub?.address === address ? null : { ...current, localHub: { ...(current.localHub ?? {}), address, addressAt: new Date().toISOString() } });
-      broadcastNotification({ type: "settings_changed", storeId, scope: "/api/nail/hub" } as any);
+      // Every report confirms the address (confirmedAt, shown in the back office); only a new address changes
+      // addressAt and tells the other tablets.
+      let changed = false;
+      const now = new Date().toISOString();
+      await mutateStorePreferences(storeId, (current: any) => {
+        changed = current.localHub?.address !== address;
+        return { ...current, localHub: { ...(current.localHub ?? {}), address, confirmedAt: now, ...(changed ? { addressAt: now } : {}) } };
+      });
+      if (changed) broadcastNotification({ type: "settings_changed", storeId, scope: "/api/nail/hub" } as any);
       return res.json({ address });
     } catch (err) {
       console.error("[nail/hub put]", err);

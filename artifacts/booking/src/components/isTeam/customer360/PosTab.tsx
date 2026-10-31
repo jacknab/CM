@@ -117,7 +117,7 @@ export default function PosTab({ accountId }: { accountId: number }) {
       <Section title="Network">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 p-4">
           <Setting label="Salon's internet IP" value={s.trustedNetworkIp ?? "Not set"} sub={s.trustedNetworkAt ? `Set ${at(s.trustedNetworkAt)}` : undefined} />
-          <Setting label="Local hub (in-salon)" value={s.localHub?.address ?? "Not running"} sub={s.localHub?.at ? `Reported ${at(s.localHub.at)}` : "POS tablet that links the salon's devices offline"} />
+          <Setting label="Local hub (in-salon)" value={s.localHub?.address ?? "Not running"} sub={s.localHub?.confirmedAt || s.localHub?.at ? `Confirmed ${at(s.localHub.confirmedAt ?? s.localHub.at)}` : "POS tablet that links the salon's devices offline"} />
         </div>
       </Section>
 

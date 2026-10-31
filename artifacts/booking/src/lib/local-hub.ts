@@ -21,6 +21,9 @@ interface HubWindow {
   CERTXA_NATIVE_HUB?: number;
   __certxaHubEvent?: (json: string) => void;
 }
+/** How often the main POS tablet re-confirms its address to the server while online. */
+const CONFIRM_EVERY_MS = 30 * 60 * 1000;
+
 export interface HubSettings { token: string; address: string | null }
 /**
  * `pos`: POS #1 — accepts the salon's other tablets. `station`: another POS station — connects to POS #1, so
@@ -54,6 +57,8 @@ class LocalHubClient {
   private role: HubRole | null = null;
   /** This tablet's own address on the salon's Wi-Fi (main POS only), as the app last said. */
   private ownAddress: string | null = null;
+  /** When the server last heard this tablet's address (ms); re-sent every CONFIRM_EVERY_MS while online. */
+  private confirmedAt = 0;
   private checkTimer: ReturnType<typeof setInterval> | null = null;
   private healTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -71,11 +76,14 @@ class LocalHubClient {
         this.status = String(event.status);
         void this.reportStatus(event);
       } else if (event.kind === "address" && event.address) {
-        // Reported when the page opens and whenever this tablet's address changes, not on every check.
+        // Reported when the page opens, whenever this tablet's address changes, and every 30 minutes as a
+        // confirmation (the back office shows when it was last confirmed) — not on every minute's check.
         const address = String(event.address);
-        if (address === this.ownAddress) return;
+        const due = Date.now() - this.confirmedAt >= CONFIRM_EVERY_MS;
+        if (address === this.ownAddress && !due) return;
+        const changed = address !== this.ownAddress;
         this.ownAddress = address;
-        void this.reportAddress(address);
+        void this.reportAddress(address, !changed);
       }
     };
   }
@@ -94,14 +102,18 @@ class LocalHubClient {
   }
 
   /** The main POS tablet tells the server where it is on the salon's network, so the others can find it. */
-  private async reportAddress(address: string) {
+  private async reportAddress(address: string, confirmOnly = false) {
     if (this.storeId == null || this.role !== "pos") return;
     const saved = readSaved(this.storeId);
-    if (saved?.address === address || syncEngine.isOffline()) return;
+    if (syncEngine.isOffline()) return;
+    if (saved?.address === address && !confirmOnly && Date.now() - this.confirmedAt < CONFIRM_EVERY_MS) return;
     try {
       const res = await fetch("/api/nail/hub", { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address }) });
-      if (res.ok && saved) localStorage.setItem(settingsKey(this.storeId), JSON.stringify({ ...saved, address }));
-    } catch { /* tried again the next time the screen opens */ }
+      if (res.ok) {
+        this.confirmedAt = Date.now();
+        if (saved) localStorage.setItem(settingsKey(this.storeId), JSON.stringify({ ...saved, address }));
+      }
+    } catch { /* tried again at the next check */ }
   }
 
   /**
