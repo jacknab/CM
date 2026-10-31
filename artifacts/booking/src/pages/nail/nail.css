@@ -1174,3 +1174,21 @@
 
 /* Queue tab content panel. */
 .nail-app .q-body { background: #fbe9e6; border-radius: 14px; padding: 12px; box-sizing: border-box; }
+
+/* Queue look (owner, 2026-10-31): no pink panel behind the queue on any view; an empty spot is a flat dashed
+   placeholder, and a real card stands up off the page — raised a little, a deeper bottom edge and a soft
+   two-layer shadow — so the eye goes straight to the clients. */
+.nail-app .q-body { background: transparent; }
+.nail-app .q-detail-ghost-card { background: transparent; border: 1.5px dashed #cfd8e4; box-shadow: none; }
+.nail-app .q-booking-card {
+  transform: translateY(-3px);
+  border-bottom-width: 3px; border-bottom-color: #c9d3e0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .95), 0 2px 3px rgba(15, 31, 61, .08), 0 12px 24px -6px rgba(15, 31, 61, .22);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.nail-app .q-booking-card:active { transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .95), 0 1px 2px rgba(15, 31, 61, .10), 0 5px 12px -4px rgba(15, 31, 61, .18); }
+/* The same lift on cards that draw their own coloured edge (up next, a visit linked across tickets). */
+.nail-app .q-wait-card.q-up-next { box-shadow: inset 3px 0 0 #1f6fe0, inset 0 1px 0 rgba(255, 255, 255, .95), 0 2px 3px rgba(15, 31, 61, .08), 0 12px 24px -6px rgba(15, 31, 61, .22); }
+.nail-app .q-wait-card.q-visit-first { box-shadow: inset -5px 0 0 #facc15, 0 2px 3px rgba(15, 31, 61, .08), 0 12px 24px -6px rgba(15, 31, 61, .22); }
+.nail-app .q-wait-card.q-visit-last { box-shadow: inset 5px 0 0 #facc15, 0 2px 3px rgba(15, 31, 61, .08), 0 12px 24px -6px rgba(15, 31, 61, .22); }
+.nail-app .q-wait-card.q-visit-middle { box-shadow: inset 5px 0 0 #facc15, inset -5px 0 0 #facc15, 0 2px 3px rgba(15, 31, 61, .08), 0 12px 24px -6px rgba(15, 31, 61, .22); }
