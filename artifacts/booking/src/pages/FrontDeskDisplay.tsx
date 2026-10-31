@@ -21,6 +21,8 @@
  *
  * Route: /frontdesk/:slug   (slug === locations.bookingSlug, same as /kiosk/:slug)
  */
+// Bundled (not in public/) so it is kept for offline with the rest of the app (sw.js keeps /assets/ only).
+import checkInBanner from "@/assets/frontdesk-check-in-banner.jpg";
 import { forRegister, localHub, relayCheckoutEvent } from "@/lib/local-hub";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { printNativeCheckinTicket } from "../lib/native-checkin-ticket";
@@ -39,7 +41,6 @@ syncEngine.watchReachability();
 const frontdeskConfigKey = (url: string) => `certxa.frontdesk.config.${url}`;
 import { getStationDeviceId } from "../lib/stationDevice";
 import KioskPairing from "../components/kiosk/KioskPairing";
-import { CheckInIdle } from "../components/kiosk/CheckInIdle";
 import KioskSuspendedScreen from "../components/kiosk/KioskSuspendedScreen";
 import { TIP_OPTIONS, tipOptionsFor, calcTipAmount, type TipOption } from "./frontdesk/tipOptions";
 import { sanitizeTipPresets } from "@shared/tipPresets";
@@ -1869,8 +1870,20 @@ export default function FrontDeskDisplay() {
     <KioskPairing slug={slug} storeName={storeConfig?.name} onPaired={() => setScreen("idle")} />
   );
 
+  // Welcome screen (owner, 2026-10-31): only a card with the CHECK-IN HERE banner, as big as the screen allows while
+  // keeping the picture's shape (1909 × 824). Tapping anywhere starts the check-in, as before.
   if (screen === "idle") return (
-    <CheckInIdle c={{ BG, SURFACE, TEXT, MUTED, PRIMARY, ACCENT, BORDER, SHADOW_LG }} text={t} onStart={() => setScreen("phone")} />
+    <div className="fixed inset-0 flex items-center justify-center cursor-pointer select-none" data-testid="checkin-idle"
+      onPointerDown={() => setScreen("phone")} onContextMenu={(e) => e.preventDefault()}
+      style={{ ...NO_SELECT, background: BG }}>
+      <div data-testid="fd-welcome-card" style={{
+        width: "min(94vw, calc((94vh - 24px) * 1909 / 824 + 24px))", padding: 12, borderRadius: 28,
+        background: SURFACE, border: `1.5px solid ${BORDER}`, boxShadow: SHADOW_LG, boxSizing: "border-box",
+      }}>
+        <img src={checkInBanner} alt="Check-in here" draggable={false}
+          style={{ display: "block", width: "100%", aspectRatio: "1909 / 824", borderRadius: 18, objectFit: "cover" }} />
+      </div>
+    </div>
   );
 
   if (screen === "loading") return (
