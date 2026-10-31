@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from "react";
 
-/** The line shown under "This page is unavailable": who was told, and how. */
+/** The line shown under "SYSTEM UNAVAILABLE": who was told, and how. */
 export function useBlockedNotice(path: string, enabled = true): string {
   const [reached, setReached] = useState<{ sms: boolean; email: boolean } | null>(null);
   useEffect(() => {

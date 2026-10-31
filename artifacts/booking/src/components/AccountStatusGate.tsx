@@ -85,7 +85,7 @@ function SuspendedAccessScreen() {
   return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-6">
       <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center space-y-4" data-testid="blocked-page">
-        <h1 className="text-xl font-semibold text-white">This page is unavailable</h1>
+        <h1 className="text-xl font-semibold text-white">SYSTEM UNAVAILABLE</h1>
         <p className="text-zinc-400 text-sm leading-relaxed" data-testid="blocked-page-notice">{notice}</p>
       </div>
     </div>

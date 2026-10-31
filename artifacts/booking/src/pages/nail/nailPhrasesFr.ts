@@ -18,7 +18,7 @@ export const NAIL_PHRASES_FR: Record<string, string> = {
  "Let's set up your front desk": "Configurons votre accueil",
  "A few questions about how your salon takes payment. It takes about three minutes, and you can change any answer later in Settings.": "Quelques questions sur la façon dont votre salon encaisse. Cela prend environ trois minutes, et vous pourrez modifier chaque réponse plus tard dans Paramètres.",
  "Sign in as the owner": "Se connecter en tant que propriétaire",
- "This page is unavailable": "Cette page n'est pas disponible",
+ "SYSTEM UNAVAILABLE": "SYSTÈME INDISPONIBLE",
  "Please check back later.": "Veuillez réessayer plus tard.",
  "The salon owner has been notified by text and e-mail.": "Le propriétaire du salon a été prévenu par SMS et par e-mail.",
  "The salon owner has been notified by text.": "Le propriétaire du salon a été prévenu par SMS.",

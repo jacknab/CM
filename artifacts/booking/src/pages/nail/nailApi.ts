@@ -256,7 +256,7 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
  * (owner, 2026-10-31: staff must not learn about the owner's business).
  */
 export const ACCOUNT_STOPPED_EVENT = "certxa:account-stopped";
-export const ACCOUNT_STOPPED_MESSAGE = "This page is unavailable";
+export const ACCOUNT_STOPPED_MESSAGE = "SYSTEM UNAVAILABLE";
 export function isAccountStoppedError(err: unknown): boolean {
   return err instanceof ApiError && err.status === 402 && ["suspended", "locked"].includes(String(err.data?.accountStatus ?? ""));
 }

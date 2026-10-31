@@ -2290,7 +2290,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       {stoppedOpen && (
         <div className="fixed inset-0 z-[450] flex items-center justify-center px-6" style={{ background: "rgba(10,12,16,.72)" }} role="alertdialog" aria-modal="true" data-testid="nail-unavailable">
           <div className="rounded-2xl px-10 py-9 text-center" style={{ background: "#232830", border: "1px solid #3b424c", boxShadow: "0 30px 70px rgba(0,0,0,.5)", maxWidth: 560 }}>
-            <p style={{ margin: 0, fontSize: 28, fontWeight: 700, lineHeight: 1.3, color: "#fff" }}>This page is unavailable</p>
+            <p style={{ margin: 0, fontSize: 28, fontWeight: 700, lineHeight: 1.3, color: "#fff" }}>SYSTEM UNAVAILABLE</p>
             <p style={{ margin: "12px 0 0", fontSize: 20, lineHeight: 1.45, color: "#cbd5e1" }} data-testid="nail-unavailable-notice">{stoppedNotice}</p>
             <button type="button" onClick={() => setStoppedOpen(false)} data-testid="nail-unavailable-ok"
               style={{ marginTop: 24, minWidth: 160, height: 56, borderRadius: 14, background: "#3b424c", color: "#fff", fontSize: 22, fontWeight: 700 }}>OK</button>

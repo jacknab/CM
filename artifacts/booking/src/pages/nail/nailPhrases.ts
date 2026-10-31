@@ -6062,9 +6062,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Đăng nhập bằng tài khoản chủ tiệm",
   "Iniciar sesión como dueño"
  ],
- "This page is unavailable": [
-  "Trang này hiện không dùng được",
-  "Esta página no está disponible"
+ "SYSTEM UNAVAILABLE": [
+  "HỆ THỐNG KHÔNG DÙNG ĐƯỢC",
+  "SISTEMA NO DISPONIBLE"
  ],
  "Please check back later.": [
   "Vui lòng quay lại sau.",

@@ -2117,7 +2117,7 @@ export async function registerRoutes(
             // Light suspension — only calendar and appointment endpoints are blocked.
             // Users can still access the rest of the app (settings, exports, billing).
             res.status(402).json({
-              message: "This page is unavailable.", // generic: staff see it (owner, 2026-10-31)
+              message: "SYSTEM UNAVAILABLE", // generic: staff see it (owner, 2026-10-31)
               accountStatus: "suspended",
             });
             return;
@@ -2140,7 +2140,7 @@ export async function registerRoutes(
           }
           if (isSuspendedBlocked && (status === "suspended" || await isAccountStopped(r.rows[0].store_id))) {
             res.status(402).json({
-              message: "This page is unavailable.", // generic: staff see it (owner, 2026-10-31)
+              message: "SYSTEM UNAVAILABLE", // generic: staff see it (owner, 2026-10-31)
               accountStatus: "suspended",
             });
             return;
