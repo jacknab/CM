@@ -5,7 +5,7 @@
  * Certxa uses: sales tax (POS Settings), the CARD button, cash price, the first cash drawer on the main POS
  * register, tip choices, the turn method, the team's Tech IDs and the lock screen, and the salon's own manager
  * PIN (every salon starts on the shared 2026). Opens again from Manager › POS Setup.
- * Shown full screen in place of the POS until it is finished; "Finish later" hides it on this tablet for today.
+ * Shown full screen in place of the POS until it is finished; it has to be finished before the front desk can be used (owner login).
  */
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -23,12 +23,6 @@ interface SetupStatus {
 
 const STEPS = ["welcome", "tax", "card", "cash", "drawer", "tips", "turns", "team", "pin", "done"] as const;
 type Step = (typeof STEPS)[number];
-const LATER_KEY = (storeId: number) => `certxa.nail.posSetupLater.${storeId}`;
-
-/** Hidden for today on this tablet ("Finish later")? */
-export function posSetupPostponed(storeId: number): boolean {
-  try { return localStorage.getItem(LATER_KEY(storeId)) === new Date().toDateString(); } catch { return false; }
-}
 
 async function send(url: string, method: string, body?: unknown) {
   const res = await fetch(url, { method, credentials: "include", headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -88,7 +82,7 @@ function MoneyField({ label, value, onChange, prefix, suffix, testId, max }: { l
   );
 }
 
-export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: number; onFinished: () => void; onLater: () => void }) {
+export function PosSetupWizard({ storeId, onFinished, onClose }: { storeId: number; onFinished: () => void; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -202,7 +196,6 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
         }
       } else if (step === "done") {
         await send("/api/nail/pos-setup/complete", "POST");
-        try { localStorage.removeItem(LATER_KEY(storeId)); } catch { /* private mode */ }
         onFinished();
         return;
       }
@@ -212,11 +205,6 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
     } finally {
       setSaving(false);
     }
-  };
-
-  const later = () => {
-    try { localStorage.setItem(LATER_KEY(storeId), new Date().toDateString()); } catch { /* private mode */ }
-    onLater();
   };
 
   const owner = status?.team.find((m) => m.isOwner);
@@ -430,6 +418,8 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
   }
 
   const ready = !!status && status.canSetUp;
+
+
   const nextLabel = step === "welcome" ? "Start" : step === "done" ? "Open the front desk" : step === "pin" && !status?.managerPinIsDefault ? "Keep my PIN" : "Next";
 
   return (
@@ -452,8 +442,9 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
             ))}
           </span>
         )}
-        <button type="button" onClick={later} className="text-[22px] font-semibold px-3 py-2 rounded-lg hover:bg-white/70" style={{ color: muted }} data-testid="pos-setup-later">
-          Finish later
+        {/* The setup has to be finished before the front desk can be used: Close only once it has been finished. */}
+        <button type="button" onClick={onClose} className={`${status?.completed ? "" : "invisible "}text-[22px] font-semibold px-3 py-2 rounded-lg hover:bg-white/70`} style={{ color: muted }} data-testid="pos-setup-close">
+          Close
         </button>
       </header>
       <main className="flex-1 min-h-0 overflow-y-auto">

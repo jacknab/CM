@@ -90,7 +90,7 @@ import { ReceiptDialog } from "./ReceiptDialog";
 import { LookupByNumberDialog } from "./LookupByNumberDialog";
 import { TicketStatusDialog, type LookupTicketStatus } from "./TicketStatusDialog";
 import { BottomNav, type NailTab } from "./BottomNav";
-import { PosSetupWizard, posSetupPostponed } from "./PosSetupWizard";
+import { PosSetupWizard } from "./PosSetupWizard";
 import { TechIdGate } from "./TechIdGate";
 import { OfflineQueueSheet } from "./OfflineQueueSheet";
 import { TurnEarnedPopup } from "./TurnEarnedPopup";
@@ -292,12 +292,11 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // Every time the Check-In page opens or closes, start from "not typing" — never inherit a stale overlay.
   useEffect(() => { onFrontdeskTyping(false); }, [showCheckIn, onFrontdeskTyping]);
   const [sheet, setSheet] = useState<null | "voucher" | "timeclock" | "dayclose" | "clients" | "manager" | "turns" | "servicetimes">(null);
-  // Front desk setup (owner, 2026-10-31): opens by itself until the owner has finished it, unless put off for today on
-  // this tablet; Manager › POS Setup opens it again any time.
+  // Front desk setup (owner, 2026-10-31): is required: the owner login can't use the front desk until it is
+  // finished. Manager › Front Desk Setup opens it again any time (with Close).
   const { data: posSetup } = useQuery<{ completed: boolean; canSetUp: boolean }>({ queryKey: ["/api/nail/pos-setup"], staleTime: 10 * 60_000, retry: false });
   const [setupOpen, setSetupOpen] = useState(false);
-  const [setupLater, setSetupLater] = useState(() => posSetupPostponed(storeId));
-  const showSetup = setupOpen || (!!posSetup && !posSetup.completed && posSetup.canSetUp && !setupLater);
+  const showSetup = setupOpen || (!!posSetup && !posSetup.completed && posSetup.canSetUp);
   const [assigning, setAssigning] = useState<Assigning>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assignNeedsReason, setAssignNeedsReason] = useState(false);
@@ -2276,8 +2275,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       )}
       {showSetup && (
         <PosSetupWizard storeId={storeId}
-          onFinished={() => { setSetupOpen(false); setSetupLater(false); void queryClient.invalidateQueries({ queryKey: ["/api/nail/pos-setup"] }); }}
-          onLater={() => { setSetupOpen(false); setSetupLater(true); }} />
+          onFinished={() => { setSetupOpen(false); void queryClient.invalidateQueries({ queryKey: ["/api/nail/pos-setup"] }); }}
+          onClose={() => setSetupOpen(false)} />
       )}
       {!showSetup && lockEnabled && !tech && !showTurnPage && !needsRegisterPicker && !needsDrawerPicker && <TechIdGate storeName={storeName} timezone={timezone} turnQueue={turnQueueForGate} onOpenTurnPage={() => setShowTurnPage(true)} onSignedIn={onTechSignedIn} />}
       {showTurnPage && (
