@@ -13,7 +13,7 @@ import { EMPTY_ARRAY } from "@/lib/empty";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BarChart3, Bell, Clock, RotateCcw, CreditCard, RefreshCw, Gift, KeyRound, Languages, LayoutGrid, Loader2, Lock, LockKeyhole, Printer, Receipt, Search, Settings, ShoppingBag, CalendarPlus, Wallet } from "lucide-react";
+import { BarChart3, Bell, ClipboardList, Clock, RotateCcw, CreditCard, RefreshCw, Gift, KeyRound, Languages, LayoutGrid, Loader2, Lock, LockKeyhole, Printer, Receipt, Search, Settings, ShoppingBag, CalendarPlus, Wallet } from "lucide-react";
 import { useNailText, type NailLang } from "./i18n";
 import { confirm } from "@/lib/confirm";
 import { useManagerOverride } from "./useManagerOverride";
@@ -90,6 +90,7 @@ import { ReceiptDialog } from "./ReceiptDialog";
 import { LookupByNumberDialog } from "./LookupByNumberDialog";
 import { TicketStatusDialog, type LookupTicketStatus } from "./TicketStatusDialog";
 import { BottomNav, type NailTab } from "./BottomNav";
+import { PosSetupWizard, posSetupPostponed } from "./PosSetupWizard";
 import { TechIdGate } from "./TechIdGate";
 import { OfflineQueueSheet } from "./OfflineQueueSheet";
 import { TurnEarnedPopup } from "./TurnEarnedPopup";
@@ -291,6 +292,12 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // Every time the Check-In page opens or closes, start from "not typing" — never inherit a stale overlay.
   useEffect(() => { onFrontdeskTyping(false); }, [showCheckIn, onFrontdeskTyping]);
   const [sheet, setSheet] = useState<null | "voucher" | "timeclock" | "dayclose" | "clients" | "manager" | "turns" | "servicetimes">(null);
+  // POS setup (owner, 2026-10-31): opens by itself until the owner has finished it, unless put off for today on
+  // this tablet; Manager › POS Setup opens it again any time.
+  const { data: posSetup } = useQuery<{ completed: boolean; canSetUp: boolean }>({ queryKey: ["/api/nail/pos-setup"], staleTime: 10 * 60_000, retry: false });
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [setupLater, setSetupLater] = useState(() => posSetupPostponed(storeId));
+  const showSetup = setupOpen || (!!posSetup && !posSetup.completed && posSetup.canSetUp && !setupLater);
   const [assigning, setAssigning] = useState<Assigning>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assignNeedsReason, setAssignNeedsReason] = useState(false);
@@ -1725,6 +1732,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // The Manager tab of the More popup — everything here is behind the manager PIN.
   const managerTiles: MoreTile[] = [
     { key: "settings", label: "Settings", icon: Settings, run: () => navigate(appPage("/settings")!) },
+    { key: "possetup", label: "POS Setup", sub: "Tax, card, drawer, tips", icon: ClipboardList, run: () => { setShowMore(false); setSetupOpen(true); } },
     ...(posEnabled ? [{ key: "register", label: "Cash Drawer", sub: openDrawerSession ? "Open" : "Closed", icon: Wallet, run: () => setShowOpenRegister(true) }] : []),
     { key: "messages", label: "Messages", icon: Bell, run: () => navigate(appPage("/sms-inbox")!) },
     { key: "keygrid", label: "Key Grid", sub: "Arrange the POS keys", icon: LayoutGrid, run: () => setGridEditor("open") },
@@ -2266,7 +2274,12 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
           </div>
         </div>
       )}
-      {lockEnabled && !tech && !showTurnPage && !needsRegisterPicker && !needsDrawerPicker && <TechIdGate storeName={storeName} timezone={timezone} turnQueue={turnQueueForGate} onOpenTurnPage={() => setShowTurnPage(true)} onSignedIn={onTechSignedIn} />}
+      {showSetup && (
+        <PosSetupWizard storeId={storeId}
+          onFinished={() => { setSetupOpen(false); setSetupLater(false); void queryClient.invalidateQueries({ queryKey: ["/api/nail/pos-setup"] }); }}
+          onLater={() => { setSetupOpen(false); setSetupLater(true); }} />
+      )}
+      {!showSetup && lockEnabled && !tech && !showTurnPage && !needsRegisterPicker && !needsDrawerPicker && <TechIdGate storeName={storeName} timezone={timezone} turnQueue={turnQueueForGate} onOpenTurnPage={() => setShowTurnPage(true)} onSignedIn={onTechSignedIn} />}
       {showTurnPage && (
         <TurnPageModal
           currentDate={getNowInTimezone(timezone)}

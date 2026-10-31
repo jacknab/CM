@@ -4302,6 +4302,10 @@ export async function registerRoutes(
   // check open times and book through the booking page's own rules (routes/mcp.ts, plans/ai-booking.md).
   const { default: mcpRouter } = await import("./routes/mcp.js");
   app.use(mcpRouter);
+
+  // POS setup: the /nail POS's first-time setup wizard (routes/posSetup.ts, plans/pos-setup.md).
+  const { default: posSetupRouter } = await import("./routes/posSetup.js");
+  app.use(posSetupRouter);
   // Solo plan: where the professional sees clients, and booking approval (plans/solo-work-places-and-approval.md).
   const { default: workPlacesRouter } = await import("./routes/workPlaces.js");
   app.use("/api/work-places", isAuthenticated, workPlacesRouter);

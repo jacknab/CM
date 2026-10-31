@@ -6001,6 +6001,262 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Write the reason in at least 3 words.": [
   "Ghi lý do ít nhất 3 chữ.",
   "Escriba el motivo en al menos 3 palabras."
+ ],
+ "Could not save. Please try again.": [
+  "Không lưu được. Vui lòng thử lại.",
+  "No se pudo guardar. Inténtelo de nuevo."
+ ],
+ "Drawer 1": [
+  "Ngăn kéo 1",
+  "Caja 1"
+ ],
+ "The POS setup could not be loaded. Check the connection and try again.": [
+  "Không tải được phần cài đặt POS. Kiểm tra kết nối rồi thử lại.",
+  "No se pudo cargar la configuración del POS. Revise la conexión e inténtelo de nuevo."
+ ],
+ "Enter a tax rate from 0% to 25%.": [
+  "Nhập mức thuế từ 0% đến 25%.",
+  "Ingrese una tasa de impuesto del 0% al 25%."
+ ],
+ "Enter a cash discount from 0% to 10%.": [
+  "Nhập mức giảm cho tiền mặt từ 0% đến 10%.",
+  "Ingrese un descuento por efectivo del 0% al 10%."
+ ],
+ "Enter how much cash the drawer starts each day with.": [
+  "Nhập số tiền mặt có sẵn trong ngăn kéo mỗi sáng.",
+  "Ingrese con cuánto efectivo empieza la caja cada día."
+ ],
+ "Enter tip percentages from 1 to 100.": [
+  "Nhập phần trăm tiền tip từ 1 đến 100.",
+  "Ingrese porcentajes de propina del 1 al 100."
+ ],
+ "Enter the dollars for one turn.": [
+  "Nhập số tiền cho một lượt.",
+  "Ingrese los dólares de un turno."
+ ],
+ "The manager PIN is 4 digits.": [
+  "Mã quản lý gồm 4 số.",
+  "El PIN de gerente tiene 4 dígitos."
+ ],
+ "The two PINs are not the same.": [
+  "Hai mã không giống nhau.",
+  "Los dos PIN no coinciden."
+ ],
+ "Set up your POS": [
+  "Cài đặt máy POS",
+  "Configure su POS"
+ ],
+ "This tablet isn't signed in with the salon owner's account. Sign in as the owner to set up the POS.": [
+  "Máy tính bảng này không đăng nhập bằng tài khoản chủ tiệm. Hãy đăng nhập bằng tài khoản chủ tiệm để cài đặt POS.",
+  "Esta tableta no tiene abierta la cuenta del dueño del salón. Inicie sesión como dueño para configurar el POS."
+ ],
+ "Let's set up your POS": [
+  "Cùng cài đặt máy POS",
+  "Configuremos su POS"
+ ],
+ "A few questions about how your salon takes payment. It takes about three minutes, and you can change any answer later in Settings.": [
+  "Vài câu hỏi về cách tiệm nhận thanh toán. Mất khoảng ba phút, và bạn có thể đổi bất kỳ câu trả lời nào sau này trong Cài Đặt.",
+  "Unas preguntas sobre cómo cobra su salón. Toma unos tres minutos y puede cambiar cualquier respuesta después en Configuración."
+ ],
+ "Your first cash drawer": [
+  "Ngăn kéo tiền đầu tiên",
+  "Su primera caja"
+ ],
+ "Tip choices": [
+  "Mức tiền tip",
+  "Opciones de propina"
+ ],
+ "Tech IDs": [
+  "Mã thợ",
+  "ID de técnicos"
+ ],
+ "Your state and city sales tax rate, and what it applies to. Many states don't tax services but do tax products. Check with your state if you're not sure.": [
+  "Mức thuế bán hàng của tiểu bang và thành phố, và những gì phải tính thuế. Nhiều tiểu bang không đánh thuế dịch vụ nhưng có đánh thuế sản phẩm. Hãy hỏi tiểu bang nếu bạn chưa chắc.",
+  "La tasa de impuesto de su estado y ciudad, y a qué se aplica. Muchos estados no gravan los servicios pero sí los productos. Consulte con su estado si no está seguro."
+ ],
+ "Sales tax rate": [
+  "Mức thuế bán hàng",
+  "Tasa de impuesto"
+ ],
+ "Services are taxed": [
+  "Tính thuế dịch vụ",
+  "Los servicios pagan impuesto"
+ ],
+ "Add-ons are taxed": [
+  "Tính thuế dịch vụ thêm",
+  "Los extras pagan impuesto"
+ ],
+ "Retail products are taxed": [
+  "Tính thuế sản phẩm bán lẻ",
+  "Los productos pagan impuesto"
+ ],
+ "Usually not: tax is charged when the gift card is spent.": [
+  "Thường là không: thuế được tính khi thẻ quà được dùng.",
+  "Normalmente no: el impuesto se cobra al usar la tarjeta."
+ ],
+ "Tips are never taxed.": [
+  "Tiền tip không bao giờ bị tính thuế.",
+  "Las propinas nunca pagan impuesto."
+ ],
+ "What should the CARD button do at checkout?": [
+  "Nút CARD khi tính tiền sẽ làm gì?",
+  "¿Qué debe hacer el botón TARJETA al cobrar?"
+ ],
+ "Certxa card reader": [
+  "Máy quẹt thẻ Certxa",
+  "Lector de tarjetas Certxa"
+ ],
+ "The card is charged on the Certxa card reader, and the money is paid out to your bank by Stripe.": [
+  "Thẻ được quẹt trên máy Certxa, và Stripe chuyển tiền về ngân hàng của bạn.",
+  "La tarjeta se cobra en el lector Certxa y Stripe deposita el dinero en su banco."
+ ],
+ "My own card machine": [
+  "Máy quẹt thẻ riêng của tiệm",
+  "Mi propia terminal"
+ ],
+ "You run the card on your own terminal. The CARD button only records the payment as card: Certxa charges nothing.": [
+  "Bạn quẹt thẻ trên máy riêng của tiệm. Nút CARD chỉ ghi lại là trả bằng thẻ: Certxa không thu gì.",
+  "Usted cobra la tarjeta en su propia terminal. El botón TARJETA solo registra el pago con tarjeta: Certxa no cobra nada."
+ ],
+ "Your Stripe account isn't connected yet. Connect it in Settings › Payments before taking cards on the reader. Until then, cash still works.": [
+  "Tài khoản Stripe chưa được kết nối. Hãy kết nối trong Cài Đặt › Thanh toán trước khi nhận thẻ trên máy. Trong lúc đó, vẫn nhận tiền mặt được.",
+  "Su cuenta de Stripe aún no está conectada. Conéctela en Configuración › Pagos antes de cobrar con el lector. Mientras tanto, el efectivo sí funciona."
+ ],
+ "Give clients who pay cash a lower price, as a percent off the ticket. Leave it at 0 for no cash price.": [
+  "Giảm giá cho khách trả tiền mặt, theo phần trăm trên phiếu. Để 0 nếu không giảm.",
+  "Dé un precio más bajo a quien paga en efectivo, como porcentaje del ticket. Déjelo en 0 para no tener precio en efectivo."
+ ],
+ "Percent off for cash": [
+  "Phần trăm giảm cho tiền mặt",
+  "Porcentaje de descuento en efectivo"
+ ],
+ "The cash drawer at your main POS register. It starts each day with the same amount of cash for change, and is counted at Day Close. The POS can't take cash until it has a drawer.": [
+  "Ngăn kéo tiền ở máy POS chính. Mỗi ngày bắt đầu với cùng một số tiền thối, và được đếm khi đóng ngày. POS chỉ nhận tiền mặt khi đã có ngăn kéo.",
+  "La caja de su POS principal. Cada día empieza con el mismo efectivo para cambio y se cuenta en el cierre del día. El POS no acepta efectivo hasta que tenga una caja."
+ ],
+ "Drawer name": [
+  "Tên ngăn kéo",
+  "Nombre de la caja"
+ ],
+ "Starting cash": [
+  "Tiền đầu ngày",
+  "Efectivo inicial"
+ ],
+ "It is assigned to your main POS register.": [
+  "Ngăn kéo này thuộc máy POS chính.",
+  "Se asigna a su POS principal."
+ ],
+ "More drawers and registers can be added in Settings › Cash Drawers.": [
+  "Có thể thêm ngăn kéo và máy POS trong Cài Đặt › Ngăn Kéo Tiền.",
+  "Puede agregar más cajas y registradoras en Configuración › Cajas."
+ ],
+ "The tip percentages your clients can tap at checkout. Clients can always enter their own amount or skip.": [
+  "Các mức phần trăm tip khách có thể chọn khi trả tiền. Khách luôn có thể tự nhập số tiền hoặc bỏ qua.",
+  "Los porcentajes de propina que el cliente puede tocar al pagar. Siempre puede ingresar su propio monto u omitirla."
+ ],
+ "How your salon decides which technician gets the next walk-in.": [
+  "Cách tiệm chọn thợ nhận khách vãng lai kế tiếp.",
+  "Cómo decide su salón qué técnico atiende al siguiente cliente sin cita."
+ ],
+ "A full turn from": [
+  "Một lượt đủ từ",
+  "Un turno completo desde"
+ ],
+ "Dollars for one turn": [
+  "Số tiền cho một lượt",
+  "Dólares por turno"
+ ],
+ "A smaller ticket earns": [
+  "Phiếu nhỏ hơn được tính",
+  "Un ticket menor vale"
+ ],
+ "Everyone signs in to the POS with their own Tech ID. These are your team's IDs. Add or change team members in Settings › Staff.": [
+  "Mỗi người đăng nhập POS bằng mã thợ của mình. Đây là mã của nhân viên trong tiệm. Thêm hoặc sửa nhân viên trong Cài Đặt › Nhân viên.",
+  "Cada persona entra al POS con su propio ID de técnico. Estos son los ID de su equipo. Agregue o cambie miembros en Configuración › Personal."
+ ],
+ "Owner": [
+  "Chủ tiệm",
+  "Dueño"
+ ],
+ "Front desk": [
+  "Quầy tiếp tân",
+  "Recepción"
+ ],
+ "Your own Tech ID is": [
+  "Mã thợ của bạn là",
+  "Su propio ID de técnico es"
+ ],
+ "Ask for a Tech ID to use the POS": [
+  "Phải nhập mã thợ để dùng POS",
+  "Pedir el ID de técnico para usar el POS"
+ ],
+ "Everything done on the POS is recorded under who did it.": [
+  "Mọi việc trên POS đều được ghi theo người làm.",
+  "Todo lo que se hace en el POS queda registrado a nombre de quien lo hizo."
+ ],
+ "Anyone can use the POS without signing in.": [
+  "Ai cũng dùng được POS mà không cần đăng nhập.",
+  "Cualquiera puede usar el POS sin iniciar sesión."
+ ],
+ "The Manager menu and cancelling a client who has been served need a 4-digit PIN. Choose your salon's own PIN and keep it private.": [
+  "Menu quản lý và việc hủy khách đã được làm cần mã 4 số. Hãy chọn mã riêng của tiệm và giữ bí mật.",
+  "El menú de gerente y cancelar a un cliente ya atendido necesitan un PIN de 4 dígitos. Elija el PIN propio de su salón y no lo comparta."
+ ],
+ "Your salon already has its own manager PIN. To change it, use Manager › Manager PIN on the POS.": [
+  "Tiệm đã có mã quản lý riêng. Muốn đổi, vào Quản lý › Mã quản lý trên POS.",
+  "Su salón ya tiene su propio PIN de gerente. Para cambiarlo, use Gerente › PIN de gerente en el POS."
+ ],
+ "New PIN": [
+  "Mã mới",
+  "PIN nuevo"
+ ],
+ "Enter it again": [
+  "Nhập lại",
+  "Ingréselo otra vez"
+ ],
+ "Retail products": [
+  "Sản phẩm bán lẻ",
+  "Productos"
+ ],
+ "Nothing is taxed": [
+  "Không tính thuế",
+  "Nada paga impuesto"
+ ],
+ "Tech ID sign-in": [
+  "Đăng nhập bằng mã thợ",
+  "Entrada con ID de técnico"
+ ],
+ "On": [
+  "Bật",
+  "Activado"
+ ],
+ "Not set": [
+  "Chưa đặt",
+  "Sin configurar"
+ ],
+ "Your POS is ready": [
+  "Máy POS đã sẵn sàng",
+  "Su POS está listo"
+ ],
+ "You can change any of this later in Settings.": [
+  "Bạn có thể đổi những mục này sau trong Cài Đặt.",
+  "Puede cambiar todo esto después en Configuración."
+ ],
+ "Open the POS": [
+  "Mở máy POS",
+  "Abrir el POS"
+ ],
+ "Keep my PIN": [
+  "Giữ mã hiện tại",
+  "Mantener mi PIN"
+ ],
+ "POS setup": [
+  "Cài đặt POS",
+  "Configuración del POS"
+ ],
+ "Finish later": [
+  "Làm sau",
+  "Terminar después"
  ]
 };
 
@@ -7010,5 +7266,15 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "{0} already marked this service DONE. Cancelling it needs the reason and the manager PIN. The owner sees both.",
   "{0} đã bấm XONG dịch vụ này. Muốn hủy phải ghi lý do và nhập mã quản lý. Chủ tiệm sẽ thấy cả hai.",
   "{0} ya marcó este servicio como LISTO. Para cancelarlo se necesitan el motivo y el PIN de gerente. El dueño ve ambos."
+ ],
+ [
+  "Your main POS register uses {0}.",
+  "Máy POS chính dùng {0}.",
+  "Su POS principal usa {0}."
+ ],
+ [
+  "Tip choice {0}",
+  "Mức tip {0}",
+  "Opción de propina {0}"
  ]
 ];
