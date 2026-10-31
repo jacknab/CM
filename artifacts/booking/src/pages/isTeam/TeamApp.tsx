@@ -13,6 +13,7 @@ import AccountTimelinePage from "./AccountTimelinePage";
 import BillingInvestigationPage from "./BillingInvestigationPage";
 import VisitorsPage from "./VisitorsPage";
 import SignupsPage from "./SignupsPage";
+import SalesLeadsPage from "./SalesLeadsPage";
 
 function TeamShell() {
   return (
@@ -27,6 +28,7 @@ function TeamShell() {
             <Route path="accounts" element={<TeamDashboardPage />} />
             <Route path="accounts/:id" element={<TeamCustomer360Page />} />
             <Route path="signups" element={<SignupsPage />} />
+            <Route path="sales-leads" element={<SalesLeadsPage />} />
             <Route path="tickets" element={<TicketsPage />} />
             <Route path="live-chat" element={<LiveChatPage />} />
             <Route path="account-timeline" element={<AccountTimelinePage />} />

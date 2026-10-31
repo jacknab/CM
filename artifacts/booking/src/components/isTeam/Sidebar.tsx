@@ -5,7 +5,7 @@ import { useSupportAuth } from "@/hooks/use-support-auth";
 import { supportApi } from "@/lib/support-api";
 import { useChatConnection } from "./ChatConnection";
 import {
-  Home, Users, Ticket, CreditCard, Monitor, ArrowRightLeft,
+  Home, Users, Ticket, CreditCard, Monitor, ArrowRightLeft, PhoneCall,
   ChevronDown, ChevronRight, LogOut, Activity,
   ChevronsLeft,
 } from "lucide-react";
@@ -38,6 +38,7 @@ const BASE_NAV: NavItem[] = [
       { label: "Live Chat",             to: "/isTeam/live-chat", dot: "green" },
     ],
   },
+  { label: "Sales Leads", icon: <PhoneCall size={16} />, to: "/isTeam/sales-leads" },
   { label: "Billing", icon: <CreditCard size={16} />, to: "/isTeam/billing-investigation" },
   { label: "Live Visitors", icon: <Monitor size={16} />, to: "/isTeam/visitors", dot: "green" },
   { label: "Data Transfers", icon: <ArrowRightLeft size={16} />, to: "/isTeam/data-transfers" },

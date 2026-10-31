@@ -11,7 +11,7 @@
  */
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 
-export type StreamKind = "autumn" | "support";
+export type StreamKind = "autumn" | "support" | "sales";
 
 const TTL_MS = 2 * 60 * 1000;
 const used = new Map<string, number>(); // nonce → expiry, so a pass works once

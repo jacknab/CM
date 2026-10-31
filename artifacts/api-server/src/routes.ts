@@ -191,6 +191,7 @@ import { payoutRedeemedVoucher } from "./lib/dealVoucherPayouts";
 import { applyLoyaltyDelta, awardLoyaltyForCompletion, redeemLoyaltyReward } from "./lib/loyaltyAward";
 import { setupAiReceptionistRoutes } from "./routes/aiReceptionist";
 import { setupSupportAgentRoutes } from "./routes/supportAgent";
+import { setupSalesAgentRoutes } from "./routes/salesAgent";
 import validateRouter from "./routes/validate";
 import onboardingRouter from "./routes/onboarding";
 import usageRouter from "./routes/usage";
@@ -1473,6 +1474,8 @@ export async function registerRoutes(
 
   setupNotificationServer(httpServer);
   setupSupportAgentRoutes(httpServer, app);
+  // Tom, the inbound sales phone agent on (888) 814-7623 (owner, 2026-10-31).
+  setupSalesAgentRoutes(httpServer, app);
   setupAiReceptionistRoutes(httpServer, app);
   app.use(validateRouter);
   app.use(onboardingRouter);
