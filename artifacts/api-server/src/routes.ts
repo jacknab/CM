@@ -4137,7 +4137,7 @@ export async function registerRoutes(
       if (input.imageUrl) input.imageUrl = (await persistDataUriToR2(input.imageUrl, "category")) ?? undefined;
       const cat = await storage.updateServiceCategory(Number(req.params.id), input);
       if (!cat) return res.status(404).json({ message: "Category not found" });
-      if (input.name) triggerTranslation({ entityType: "category", entityId: cat.id, name: cat.name });
+      if (cat.name !== existing.name) triggerTranslation({ entityType: "category", entityId: cat.id, name: cat.name });
       return res.json(cat);
     } catch (error) {
       return res.status(400).json({ message: "Invalid input" });
@@ -4435,7 +4435,9 @@ export async function registerRoutes(
         [sessionStoreId, service.id, service.name, "updated", (req.session as any)?.userId ?? null,
          JSON.stringify({ changedFields: Object.keys(input).filter(k => k !== "storeId") })]
       ).catch((e: any) => console.error("[serviceEvents] update:", e?.message));
-      if (input.name || input.description !== undefined) {
+      // Only when the name or description really changed: a form sends every field on save, and each translation
+      // is 5 OpenAI calls (one per language).
+      if (service.name !== existing.name || (service.description ?? null) !== (existing.description ?? null)) {
         triggerTranslation({ entityType: "service", entityId: service.id, name: service.name, description: service.description });
       }
       // Trigger GBP auto-sync if enabled (fire-and-forget)
@@ -4644,7 +4646,7 @@ export async function registerRoutes(
       const input = insertAddonSchema.partial().parse(req.body);
       const addon = await storage.updateAddon(Number(req.params.id), input);
       if (!addon) return res.status(404).json({ message: "Addon not found" });
-      if (input.name || input.description !== undefined) {
+      if (addon.name !== existing.name || (addon.description ?? null) !== (existing.description ?? null)) {
         triggerTranslation({ entityType: "addon", entityId: addon.id, name: addon.name, description: addon.description });
       }
       return res.json(addon);
@@ -7068,7 +7070,7 @@ If you have any questions, please contact your administrator.
       const input = insertProductSchema.partial().parse(req.body);
       const product = await storage.updateProduct(Number(req.params.id), input);
       if (!product) return res.status(404).json({ message: "Product not found" });
-      if (input.name) triggerTranslation({ entityType: "product", entityId: product.id, name: product.name });
+      if (product.name !== existing.name) triggerTranslation({ entityType: "product", entityId: product.id, name: product.name });
       // Owner Feed: fire once when stock crosses from above-threshold to
       // at-or-below-threshold (not on every save while already low), so a
       // low-stock event appears the moment it actually becomes a problem.
