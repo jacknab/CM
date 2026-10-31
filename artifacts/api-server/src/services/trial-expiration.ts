@@ -30,6 +30,8 @@ export async function runTrialExpirationCheck(): Promise<{ expired: number; susp
     .where(
       and(
         inArray(users.role, ["owner", "admin"]),
+        // Platform admins' own salons (e.g. store 2) are never stopped by a trial's end (owner, 2026-10-31).
+        sql`COALESCE(${users.isAdmin}, false) = false`,
         eq(users.subscriptionStatus, "trial"),
         isNotNull(users.trialEndsAt),
         lte(users.trialEndsAt, now),
@@ -72,6 +74,8 @@ export async function runTrialExpirationCheck(): Promise<{ expired: number; susp
     .where(
       and(
         inArray(users.role, ["owner", "admin"]),
+        // Platform admins' own salons (e.g. store 2) are never stopped by a trial's end (owner, 2026-10-31).
+        sql`COALESCE(${users.isAdmin}, false) = false`,
         eq(users.subscriptionStatus, "expired"),
         isNotNull(users.trialEndsAt),
         lte(users.trialEndsAt, graceCutoff),

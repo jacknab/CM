@@ -19,6 +19,7 @@ export async function isAccountStopped(storeId: number): Promise<boolean> {
     const { rows } = await pool.query(
       `SELECT lower(coalesce(l.account_status, 'active')) AS status,
               (u.subscription_status IN ('trial', 'expired') AND u.trial_ends_at IS NOT NULL AND u.trial_ends_at <= now()
+                AND NOT COALESCE(u.is_admin, false) -- a platform admin's own salon is exempt (owner, 2026-10-31)
                 AND NOT EXISTS (SELECT 1 FROM store_subscriptions ss WHERE ss.store_id = l.id AND ss.status = 'active')) AS trial_over
          FROM locations l LEFT JOIN users u ON u.id = l.user_id
         WHERE l.id = $1`,

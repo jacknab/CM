@@ -4,6 +4,14 @@ Bugs/type-errors Claude noticed while working on an unrelated task, in files it 
 
 Convention: newest entries at the top. Include date found, file:line, the exact error, and enough context for someone to pick it up cold.
 
+## 2026-10-31 — trial-expiration's launch-site switch-off/on does nothing (column doesn't exist)
+
+- **Where:** artifacts/api-server/src/services/trial-expiration.ts `deactivateLaunchSite` / `reactivateLaunchSite`.
+- **Symptom:** both queries filter `onboarding_submissions` by `store_id` (and `os.store_id`), but that table has no store_id column (`column "store_id" does not exist`). Errors are swallowed by the empty catch, so suspending/reopening a salon never changes its launch-site row.
+- **Impact:** none seen — a suspended salon's sites are already taken down by the account-status checks (middleware/subdomain.ts, template-serve.ts, websites.ts use isAccountStopped / account_status). Found while reopening store 2.
+- **Why not fixed now:** harmless; fixing needs the real link from onboarding_submissions to a store (probably via subdomains/user) and would start changing launch-site rows that have never been touched.
+
+
 ## 2026-10-31 — /nail and /barber ignore the "Add-ons are taxed" switch; "Gift cards are taxed" is used nowhere
 
 - **Where:** shared/nailCheckout.ts:32-42 (`salesTaxCents`, `SalesTaxSettings` has only `services` + `products`), artifacts/api-server/src/routes.ts:20708 (server builds the same two flags), shared/schema.ts:244/246.
