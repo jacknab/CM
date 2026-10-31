@@ -4,6 +4,13 @@ Bugs/type-errors Claude noticed while working on an unrelated task, in files it 
 
 Convention: newest entries at the top. Include date found, file:line, the exact error, and enough context for someone to pick it up cold.
 
+## 2026-10-31 — /nail and /barber ignore the "Add-ons are taxed" switch; "Gift cards are taxed" is used nowhere
+
+- **Where:** shared/nailCheckout.ts:32-42 (`salesTaxCents`, `SalesTaxSettings` has only `services` + `products`), artifacts/api-server/src/routes.ts:20708 (server builds the same two flags), shared/schema.ts:244/246.
+- **Symptom:** POS Settings and the new Front Desk Setup both offer "Add-ons are taxed" and "Gift cards are taxed". On /nail and /barber (and the server's settlement) add-ons are counted as service revenue, so they are taxed exactly when services are, whatever the add-ons switch says. Only the main POS (pages/POSInterface.tsx:695) reads `taxAddonsTaxable`. `taxGiftCardsTaxable` is saved and returned by GET/PATCH /api/pos-settings but no checkout reads it.
+- **Why not fixed now:** found while investigating owner-defined tax rules (several named taxes, each with its own rate and what it applies to). That redesign replaces these flags and the three separate tax calculations (nailCheckout.ts, POSInterface.tsx, Calendar), so patching them first would be throwaway. Fix as part of it, or on its own if the redesign isn't approved.
+
+
 ---
 
 ## 2026-10-30 — E-mail audit: open items (not fixed)
