@@ -50,7 +50,9 @@ export async function runTrialExpirationCheck(): Promise<{ expired: number; susp
       if (!claimed.length) continue;
 
       expired++;
-      sendTrialExpiredEmail(user.email, user.firstName ?? null).catch(() => {});
+      // The trial's end suspends the salon, so the salon's business e-mail is told too.
+      const [ownStore] = await db.select({ id: locations.id }).from(locations).where(eq(locations.userId, user.id)).limit(1);
+      sendTrialExpiredEmail(user.email, user.firstName ?? null, ownStore?.id ?? null).catch(() => {});
       emitPlatformEmailEvent("trial_expired", user.id, { trialEndsAt: user.trialEndsAt }).catch(() => {});
       console.log(`[TrialExpiration] Trial ended for ${user.email}`);
     } catch (err) {

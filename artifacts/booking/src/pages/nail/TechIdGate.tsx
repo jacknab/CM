@@ -3,7 +3,7 @@ import { useNailText } from "./i18n";
 import { Delete, Loader2 } from "lucide-react";
 import { TURN_UNIT, formatTurns } from "@shared/turnRules";
 import { useShake } from "@/hooks/use-shake";
-import { ApiError, identifyTech, type TechSignIn } from "./nailApi";
+import { ApiError, isAccountStoppedError, identifyTech, type TechSignIn } from "./nailApi";
 import { resumeOrSignIn } from "@/lib/resumeSignIn";
 import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
 import "./techGate.css";
@@ -59,6 +59,8 @@ export function TechIdGate({ storeName, timezone, turnQueue, keypadVisible = tru
         void resumeOrSignIn("/nail");
         return;
       }
+      // The salon is stopped: /nail shows a popup for it (NailHome) — nothing about it on the lock screen.
+      if (isAccountStoppedError(err)) { setMessage(""); setDigits(""); return; }
       setMessage(err instanceof ApiError ? err.message : "Couldn't check that ID. Try again.");
       setDigits("");
       shake();

@@ -286,7 +286,7 @@ describe("runTrialExpirationCheck", () => {
 
     expect(result.expired).toBe(1);
     expect(result.skipped).toBe(0);
-    expect(sendTrialExpiredEmailMock).toHaveBeenCalledWith("expired@example.com", "Old");
+    expect(sendTrialExpiredEmailMock).toHaveBeenCalledWith("expired@example.com", "Old", null); // null: no salon found in this test
   });
 
   it("does not email a manager user even when DB returns them (role filter is in the query)", async () => {

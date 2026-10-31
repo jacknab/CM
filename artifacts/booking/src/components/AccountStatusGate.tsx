@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Loader2, X, AlertTriangle } from "lucide-react";
 import AccountSuspended from "@/pages/AccountSuspended";
+import { useBlockedNotice } from "@/components/blockedNotice";
 import AccountLocked from "@/pages/AccountLocked";
 import TrialExpired from "@/pages/TrialExpired";
 import { useAuth } from "@/hooks/use-auth";
@@ -77,29 +78,15 @@ function GracePeriodBanner({ graceEndsAt, onDismiss }: { graceEndsAt: string | n
 }
 
 function SuspendedAccessScreen() {
+  // Seen in the salon by staff and clients: discreet (owner's wish) — no "suspended", no balance, no links into the
+  // account. Opening it tells the owner by text and e-mail (components/blockedNotice.ts).
+  const location = useLocation();
+  const notice = useBlockedNotice(location.pathname);
   return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-6">
-      <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center space-y-4">
-        {/* Seen in the salon by staff and clients: discreet (owner's wish) — no "suspended", no balance. The owner
-            learns why on the billing page. */}
+      <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center space-y-4" data-testid="blocked-page">
         <h1 className="text-xl font-semibold text-white">This page is unavailable</h1>
-        <p className="text-zinc-400 text-sm leading-relaxed">
-          Please check back later.
-        </p>
-        <div className="flex flex-col gap-2 pt-2">
-          <a
-            href="/billing"
-            className="w-full py-2.5 px-4 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
-          >
-            Billing
-          </a>
-          <a
-            href="/customers"
-            className="w-full py-2.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-medium transition-colors"
-          >
-            Clients
-          </a>
-        </div>
+        <p className="text-zinc-400 text-sm leading-relaxed" data-testid="blocked-page-notice">{notice}</p>
       </div>
     </div>
   );

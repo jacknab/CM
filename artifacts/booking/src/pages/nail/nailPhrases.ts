@@ -6062,6 +6062,30 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Đăng nhập bằng tài khoản chủ tiệm",
   "Iniciar sesión como dueño"
  ],
+ "This page is unavailable": [
+  "Trang này hiện không dùng được",
+  "Esta página no está disponible"
+ ],
+ "Please check back later.": [
+  "Vui lòng quay lại sau.",
+  "Vuelva a intentarlo más tarde."
+ ],
+ "The salon owner has been notified by text and e-mail.": [
+  "Chủ tiệm đã được báo qua tin nhắn và e-mail.",
+  "Se avisó al dueño del salón por mensaje de texto y correo electrónico."
+ ],
+ "The salon owner has been notified by text.": [
+  "Chủ tiệm đã được báo qua tin nhắn.",
+  "Se avisó al dueño del salón por mensaje de texto."
+ ],
+ "The salon owner has been notified by e-mail.": [
+  "Chủ tiệm đã được báo qua e-mail.",
+  "Se avisó al dueño del salón por correo electrónico."
+ ],
+ "Please let the salon owner know.": [
+  "Vui lòng báo cho chủ tiệm.",
+  "Avise al dueño del salón."
+ ],
  "Where you keep cash": [
   "Nơi giữ tiền mặt",
   "Dónde guarda el efectivo"

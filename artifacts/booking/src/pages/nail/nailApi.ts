@@ -246,8 +246,24 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => null);
   if (res.status === 401) reportUnauthorized(url);
-  if (!res.ok) throw new ApiError(data?.message || data?.error || `Request failed (${res.status})`, res.status, data);
+  if (!res.ok) { throwIfAccountStopped(res.status, data); throw new ApiError(data?.message || data?.error || `Request failed (${res.status})`, res.status, data); }
   return data as T;
+}
+
+/**
+ * The salon is stopped (free trial ended, or the account suspended): the server answers 402 with accountStatus.
+ * /nail shows a discreet popup for it (NailHome, ACCOUNT_STOPPED_EVENT), never the server's words on the screen
+ * (owner, 2026-10-31: staff must not learn about the owner's business).
+ */
+export const ACCOUNT_STOPPED_EVENT = "certxa:account-stopped";
+export const ACCOUNT_STOPPED_MESSAGE = "This page is unavailable";
+export function isAccountStoppedError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 402 && ["suspended", "locked"].includes(String(err.data?.accountStatus ?? ""));
+}
+function throwIfAccountStopped(status: number, data: any): void {
+  if (status !== 402 || !["suspended", "locked"].includes(String(data?.accountStatus ?? ""))) return;
+  try { window.dispatchEvent(new CustomEvent(ACCOUNT_STOPPED_EVENT)); } catch { /* no window */ }
+  throw new ApiError(ACCOUNT_STOPPED_MESSAGE, status, data);
 }
 
 /** The server's board plus whatever was made on this device and has not come back from the server yet. */
@@ -1021,6 +1037,7 @@ export async function clockInTech(storeId: number, staffId: number): Promise<voi
   // 409 = already clocked in (someone got there first) — that is the state we wanted.
   if (!res.ok && res.status !== 409) {
     const data = await res.json().catch(() => null);
+    throwIfAccountStopped(res.status, data);
     throw new ApiError(data?.error || data?.message || "Couldn't clock them in", res.status, data);
   }
 }
@@ -1035,6 +1052,7 @@ export async function clockOutTech(storeId: number, staffId: number): Promise<vo
   // 404 = no open clock-in (someone already clocked them out) — that is the state we wanted.
   if (!res.ok && res.status !== 404) {
     const data = await res.json().catch(() => null);
+    throwIfAccountStopped(res.status, data);
     throw new ApiError(data?.error || data?.message || "Couldn't clock them out", res.status, data);
   }
 }

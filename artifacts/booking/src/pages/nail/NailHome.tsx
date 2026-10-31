@@ -67,7 +67,8 @@ import {
   addTicketAddon, addTicketLine, startRetailSale, addTicketPackage, addTicketService, discardRingingUp, removeTicketAddon, removeTicketLine, removeTicketServiceLine,
   saveRingingUp, startRingingUp, ticketNo, clockInTech, clockOutTech, textClientReady, fetchNailConfig, fetchPosGrid, fetchScreenSettings, fetchTurn, reassignTicket, savePosGrid, saveScreenSettings, removeMarker, resolveMarkerClient, startTicket, updateTicket,
   type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData, type TechSignIn, type TurnEarned, type TurnTech,
- keptOnDevice, keepNailConfig, queueBooking, clientOnDevice, todaysBookingOnDevice, waitOnDevice, ownTurnEvents, splitTicketService, markTicketDone,} from "./nailApi";
+ keptOnDevice, keepNailConfig, queueBooking, clientOnDevice, todaysBookingOnDevice, waitOnDevice, ownTurnEvents, splitTicketService, markTicketDone, ACCOUNT_STOPPED_EVENT,} from "./nailApi";
+import { useBlockedNotice } from "@/components/blockedNotice";
 import { defaultPick, draftTotals, EMPTY_PICK, type DraftCustomLine, type NailPick, type TicketLine } from "./ticketDraft";
 /** A further service on the ticket being built: one line each, so the same service can be on it twice. */
 type ExtraService = CatalogService & { lineId: number };
@@ -299,6 +300,15 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const { data: posSetup } = useQuery<{ completed: boolean; canSetUp: boolean }>({ queryKey: ["/api/nail/pos-setup"], staleTime: 10 * 60_000, retry: false,
     refetchInterval: (q) => (q.state.data && !(q.state.data as any).completed ? 60_000 : false) });
   const [setupOpen, setSetupOpen] = useState(false);
+  // The salon is stopped (free trial ended, or account suspended): a discreet popup, opened by any /nail request the
+  // server refuses for it (nailApi ACCOUNT_STOPPED_EVENT). Opening it tells the owner by text and e-mail.
+  const [stoppedOpen, setStoppedOpen] = useState(false);
+  useEffect(() => {
+    const open = () => setStoppedOpen(true);
+    window.addEventListener(ACCOUNT_STOPPED_EVENT, open);
+    return () => window.removeEventListener(ACCOUNT_STOPPED_EVENT, open);
+  }, []);
+  const stoppedNotice = useBlockedNotice("/nail", stoppedOpen);
   // Every login is held here until the setup is finished: the owner's to do it, any other to be told the owner must.
   const showSetup = setupOpen || (!!posSetup && !posSetup.completed);
   const [assigning, setAssigning] = useState<Assigning>(null);
@@ -2274,6 +2284,16 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
             </div>
             <p className="nl-assigned-tech">Assigned to <b>{techLabel(assignedNotice.staffName)}</b></p>
             <span className="nl-assigned-timer" aria-hidden />
+          </div>
+        </div>
+      )}
+      {stoppedOpen && (
+        <div className="fixed inset-0 z-[450] flex items-center justify-center px-6" style={{ background: "rgba(10,12,16,.72)" }} role="alertdialog" aria-modal="true" data-testid="nail-unavailable">
+          <div className="rounded-2xl px-10 py-9 text-center" style={{ background: "#232830", border: "1px solid #3b424c", boxShadow: "0 30px 70px rgba(0,0,0,.5)", maxWidth: 560 }}>
+            <p style={{ margin: 0, fontSize: 28, fontWeight: 700, lineHeight: 1.3, color: "#fff" }}>This page is unavailable</p>
+            <p style={{ margin: "12px 0 0", fontSize: 20, lineHeight: 1.45, color: "#cbd5e1" }} data-testid="nail-unavailable-notice">{stoppedNotice}</p>
+            <button type="button" onClick={() => setStoppedOpen(false)} data-testid="nail-unavailable-ok"
+              style={{ marginTop: 24, minWidth: 160, height: 56, borderRadius: 14, background: "#3b424c", color: "#fff", fontSize: 22, fontWeight: 700 }}>OK</button>
           </div>
         </div>
       )}

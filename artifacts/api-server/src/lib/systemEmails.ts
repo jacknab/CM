@@ -251,8 +251,10 @@ export async function sendAccountSuspendedEmail(
     `,
   });
 
-  await sendEmail(storeId, owner.email, "Your Certxa account has been suspended", html)
-    .catch((e) => console.warn("[systemEmail] suspended email error:", e?.message));
+  for (const to of await suspensionRecipients(storeId, owner.email)) {
+    await sendEmail(storeId, to, "Your Certxa account has been suspended", html)
+      .catch((e) => console.warn("[systemEmail] suspended email error:", e?.message));
+  }
 }
 
 // ─── 5. Account Locked (30 days past due) ────────────────────────────────────
@@ -315,7 +317,9 @@ export async function sendAccountRestoredEmail(storeId: number): Promise<void> {
 
 export async function sendTrialExpiredEmail(
   email: string,
-  firstName: string | null
+  firstName: string | null,
+  /** The salon: its business e-mail gets it too (the trial's end suspends the salon). */
+  storeId?: number | null,
 ): Promise<void> {
   const uid = await getUserIdByEmail(email);
   if (uid && !await userWantsEmail(uid, "trialReminders")) return;
@@ -344,8 +348,65 @@ export async function sendTrialExpiredEmail(
     `,
   });
 
-  await sendEmail(0, email, "Your Certxa free trial has ended — don't lose your data", html)
-    .catch((e) => console.warn("[systemEmail] trial expired email error:", e?.message));
+  const to = storeId ? await suspensionRecipients(storeId, email) : [email];
+  for (const addr of to) {
+    await sendEmail(0, addr, "Your Certxa free trial has ended — don't lose your data", html)
+      .catch((e) => console.warn("[systemEmail] trial expired email error:", e?.message));
+  }
+}
+
+/**
+ * Where a suspension notice goes (owner, 2026-10-31): the owner's own e-mail and the salon's business e-mail
+ * (locations.email), each once.
+ */
+async function suspensionRecipients(storeId: number, ownerEmail: string | null): Promise<string[]> {
+  const out: string[] = [];
+  const add = (e: string | null | undefined) => {
+    const v = String(e ?? "").trim();
+    if (v && !out.some((x) => x.toLowerCase() === v.toLowerCase())) out.push(v);
+  };
+  add(ownerEmail);
+  try {
+    const [loc] = await db.select({ email: locations.email }).from(locations).where(eq(locations.id, storeId)).limit(1);
+    add(loc?.email);
+  } catch { /* the owner still gets it */ }
+  return out;
+}
+
+// ─── Blocked page notice (owner, 2026-10-31) ─────────────────────────────────
+// Staff opened a page that is stopped (free trial ended, or account suspended). The screen they see stays discreet;
+// the owner is told here, and by text (routes/billing.ts POST /api/billing/blocked-notice).
+
+export async function sendBlockedPageEmail(storeId: number, pageLabel: string, trialEnded: boolean): Promise<boolean> {
+  const owner = await getStoreOwnerContact(storeId);
+  if (!owner) return false;
+  const why = trialEnded ? "your free trial has ended" : "your Certxa account is suspended";
+  const html = wrap({
+    title: `${owner.storeName}: ${pageLabel} is stopped`,
+    accentColor: WARN_COLOR,
+    preheader: `Someone at ${owner.storeName} just tried to open ${pageLabel}.`,
+    body: `
+      <p style="margin:0 0 16px;">${greeting(owner.firstName)}</p>
+      <p style="margin:0 0 16px;">
+        Someone at ${escapeEmailHtml(owner.storeName)} just tried to open ${escapeEmailHtml(pageLabel)}, but it is stopped because ${why}.
+        Your front desk, calendar, online booking and website stay off until it is turned back on.
+      </p>
+      <p style="margin:0 0 16px;">Your clients, appointments and reports are all safe.</p>
+      ${btn(trialEnded ? "Choose a plan" : "Open Billing", `${APP_URL}/billing`)}
+      ${divider()}
+      <p style="margin:0;color:#64748b;font-size:13px;">Questions? Reply to this e-mail and our team will help.</p>
+    `,
+  });
+  let sent = false;
+  for (const to of await suspensionRecipients(storeId, owner.email)) {
+    try {
+      await sendEmail(0, to, `${owner.storeName}: ${pageLabel} is stopped`, html);
+      sent = true;
+    } catch (e: any) {
+      console.warn("[systemEmail] blocked page email error:", e?.message);
+    }
+  }
+  return sent;
 }
 
 // ─── 8. Credits Top-up Receipt ────────────────────────────────────────────────

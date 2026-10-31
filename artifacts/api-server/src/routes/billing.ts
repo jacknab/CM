@@ -1184,4 +1184,64 @@ router.get("/admin/auto-refill-stats", async (req: any, res) => {
   }
 });
 
+// ─── POST /api/billing/blocked-notice ─────────────────────────────────────────
+// The blocked-page screen (website AccountStatusGate) calls this each time it opens: the salon owner is told by
+// text and e-mail that someone hit a stopped page (owner, 2026-10-31). At most one notice per salon per hour
+// (locations.blocked_notice_at), so refreshes and several tablets don't flood the owner. Answers with how the
+// owner can be reached, so the screen can say "notified by text and e-mail".
+const BLOCKED_PAGE_LABELS: [string, string][] = [
+  ["/nail", "the front desk"], ["/barber", "the front desk"], ["/pos", "the POS"], ["/staff-pos", "the POS"],
+  ["/calendar", "the calendar"], ["/staff-calendar", "the calendar"], ["/appointments", "appointments"],
+  ["/booking/new", "new bookings"], ["/walk-in-board", "the walk-in board"], ["/walkins", "walk-ins"],
+  ["/waitlist", "the waitlist"], ["/dashboard/queue", "the queue"], ["/dashboard/turn", "the turn list"],
+];
+
+router.post("/blocked-notice", async (req: any, res) => {
+  try {
+    const { resolveSessionStoreId } = await import("../lib/sessionStore");
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(401).json({ message: "Not signed in" });
+    const [store] = await db.select({ accountStatus: locations.accountStatus, suspendedReason: locations.suspendedReason, userId: locations.userId, name: locations.name })
+      .from(locations).where(eq(locations.id, storeId)).limit(1);
+    if (!store) return res.status(404).json({ message: "Not found" });
+    const suspended = ["suspended", "locked"].includes(String(store.accountStatus ?? "").toLowerCase());
+    if (!suspended && !(await isAccountStopped(storeId))) return res.json({ sms: false, email: false });
+
+    const [owner] = store.userId
+      ? await db.select({ phone: users.phone, email: users.email }).from(users).where(eq(users.id, store.userId)).limit(1)
+      : [];
+    const canText = !!owner?.phone;
+    const canEmail = !!owner?.email;
+
+    // Claim this hour's notice for the salon (one pm2 worker wins).
+    const claim = await pool.query(
+      `UPDATE locations SET blocked_notice_at = now()
+        WHERE id = $1 AND (blocked_notice_at IS NULL OR blocked_notice_at < now() - interval '1 hour')
+        RETURNING id`,
+      [storeId],
+    );
+    if (claim.rows.length) {
+      const path = String(req.body?.path ?? "");
+      const pageLabel = BLOCKED_PAGE_LABELS.find(([p]) => path === p || path.startsWith(p + "/"))?.[1] ?? "a page";
+      const trialEnded = store.suspendedReason === "trial_ended" || !suspended;
+      const why = trialEnded ? "your free trial has ended" : "your account is suspended";
+      if (canText) {
+        const { sendTwilioSms } = await import("../sms");
+        // Platform text (sendTwilioSms), not the salon's: a stopped salon's own texts are switched off.
+        sendTwilioSms(owner!.phone!, `Certxa: someone at ${store.name ?? "your salon"} just tried to open ${pageLabel}, but it is stopped because ${why}. Turn it back on at ${process.env.APP_URL || "https://certxa.com"}/billing`)
+          .catch((e) => console.warn("[blocked-notice] sms", e?.message));
+      }
+      if (canEmail) {
+        const { sendBlockedPageEmail } = await import("../lib/systemEmails");
+        sendBlockedPageEmail(storeId, pageLabel, trialEnded).catch(() => {});
+      }
+      console.log(`[blocked-notice] store ${storeId} ${pageLabel}: owner told (sms ${canText}, email ${canEmail})`);
+    }
+    return res.json({ sms: canText, email: canEmail });
+  } catch (err: any) {
+    console.error("[blocked-notice]", err?.message);
+    return res.json({ sms: false, email: false });
+  }
+});
+
 export default router;

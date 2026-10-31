@@ -34,6 +34,8 @@ type Recipient = {
   setupComplete: boolean;
   subscriptionStatus: string | null;
   trialEndsAt: string | null;
+  /** The salon's own business e-mail (locations.email), when it has one. */
+  businessEmail: string | null;
 };
 
 function escapeHtml(value: unknown): string {
@@ -355,7 +357,8 @@ async function getRecipient(userId: string): Promise<Recipient | null> {
                SELECT 1 FROM signup_progress sp WHERE sp.user_id = u.id AND sp.completed_at IS NULL
              )) AS "setupComplete",
             u.subscription_status AS "subscriptionStatus",
-            u.trial_ends_at AS "trialEndsAt"
+            u.trial_ends_at AS "trialEndsAt",
+            NULLIF(TRIM(l.email), '') AS "businessEmail"
        FROM users u
        LEFT JOIN locations l ON l.user_id = u.id
       WHERE u.id = $1
@@ -527,6 +530,12 @@ export async function processPlatformEmailCampaigns(): Promise<{ processed: numb
     }
     sent++;
     await pool.query(`UPDATE platform_email_deliveries SET status='sent', provider_id=$2, sent_at=NOW() WHERE id=$1`, [deliveryId, result.id || null]);
+    // A suspension notice also goes to the salon's business e-mail (owner, 2026-10-31), once, when it differs.
+    if (step.trigger_event === "account_suspended" && recipient.businessEmail
+        && recipient.businessEmail.toLowerCase() !== recipient.email.toLowerCase()) {
+      await sendEmail(0, recipient.businessEmail, step.subject, html, text, step.from_name ? `${step.from_name} <${process.env.MAILGUN_FROM_EMAIL || "noreply@certxa.com"}>` : undefined)
+        .catch((e: any) => console.warn("[platform-email] business e-mail copy failed:", e?.message));
+    }
     const nextStep = await pool.query<{ step_order: number; delay_minutes: number }>(
       `SELECT step_order, delay_minutes FROM platform_email_steps
         WHERE campaign_id=$1 AND step_order>$2 AND is_active=TRUE ORDER BY step_order ASC LIMIT 1`,
