@@ -16,6 +16,7 @@ type Lead = {
 type Call = {
   id: number; caller_phone: string | null; outcome: string; duration_seconds: number | null; summary: string | null;
   lead_id: number | null; started_at: string; ended_at: string | null;
+  fact_check_ok: boolean | null; fact_check_issues: string[] | null;
 };
 type SalesData = { leads: Lead[]; calls: Call[]; phoneNumber: string };
 
@@ -137,6 +138,7 @@ export default function SalesLeadsPage() {
                         <th className="px-4 py-2 font-medium">Caller</th>
                         <th className="px-4 py-2 font-medium">Length</th>
                         <th className="px-4 py-2 font-medium">Result</th>
+                        <th className="px-4 py-2 font-medium">Fact check</th>
                         <th className="px-4 py-2 font-medium">Summary</th>
                       </tr>
                     </thead>
@@ -147,6 +149,14 @@ export default function SalesLeadsPage() {
                           <td className="px-4 py-2 text-slate-700">{phone(c.caller_phone)}</td>
                           <td className="px-4 py-2 text-slate-700">{mins(c.duration_seconds)}</td>
                           <td className="px-4 py-2 text-slate-700">{OUTCOMES[c.outcome] ?? c.outcome}</td>
+                          <td className="px-4 py-2">
+                            {c.fact_check_ok == null ? <span className="text-slate-400">—</span>
+                              : c.fact_check_ok ? <span className="text-slate-600">Passed</span>
+                              : <span className="font-medium text-red-700">{(c.fact_check_issues ?? []).length} to review</span>}
+                            {c.fact_check_ok === false && openCall === c.id && (
+                              <ul className="mt-1 list-disc pl-4 text-red-700">{(c.fact_check_issues ?? []).map((i, n) => <li key={n}>{i}</li>)}</ul>
+                            )}
+                          </td>
                           <td className="px-4 py-2 text-slate-600">
                             {c.summary || "—"}
                             {openCall === c.id && Array.isArray(callDetail?.transcript) && (

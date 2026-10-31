@@ -53,12 +53,13 @@ function apiRoot(): string {
   return here.includes("/src") ? join(here, "..", "..") : join(here, "..");
 }
 
-let factSheet = "";
-try {
-  factSheet = readFileSync(join(apiRoot(), "knowledge-base-sales", "certxa-sales.md"), "utf-8");
-} catch (err) {
-  console.error(`${LOG} could not load the sales fact sheet:`, (err as Error).message);
+// The verified fact sheet and the sales playbook (knowledge-base-sales/). Edit those files to change what Tom knows.
+function loadSalesDoc(file: string): string {
+  try { return readFileSync(join(apiRoot(), "knowledge-base-sales", file), "utf-8"); }
+  catch (err) { console.error(`${LOG} could not load ${file}:`, (err as Error).message); return ""; }
 }
+const factSheet = loadSalesDoc("certxa-sales.md");
+const playbook = loadSalesDoc("sales-playbook.md");
 
 function publicAppUrl(): string | null {
   const url = process.env.APP_URL || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "");
@@ -91,23 +92,82 @@ function callerSpeaking(base64: string): boolean {
   return n > 0 && sum / n > 650 && peak > 2200;
 }
 
-/** Current plans and prices, the same list the pricing page shows (loopback to our own public endpoint). */
+const PORT = () => process.env.PORT || "9200";
+
+/**
+ * The salon plans, from the same admin plan list the pricing page uses. Only what the software enforces is given:
+ * price, staff limit, locations, Autumn calls (the pricing page's comparison table lists differences that are not
+ * enforced — owner audit 2026-10-31). The free Solo plan (Certxa Pro) is left out: Tom never brings it up.
+ */
 async function livePlans(): Promise<string> {
   try {
-    const port = process.env.PORT || "9200";
-    const res = await fetch(`http://127.0.0.1:${port}/api/public/pricing-plans`, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`http://127.0.0.1:${PORT()}/api/public/pricing-plans`, { signal: AbortSignal.timeout(3000) });
     const plans = (await res.json()) as any[];
-    return plans.map((p) => {
-      const monthly = Number(p.priceMonthly) / 100;
-      const yearly = Number(p.priceYearly) / 100;
-      const price = monthly > 0 ? `$${monthly} a month (or $${yearly} a year)` : "free";
-      const feats = (p.features ?? []).map((f: any) => `${f.featureName}${f.limitValue != null ? `: ${f.limitValue}` : ""}`).join(", ");
-      return `- ${p.name}: ${price}. ${p.description ?? ""} Includes: ${feats}.`;
-    }).join("\n");
+    return plans
+      .filter((p) => Number(p.priceMonthly) > 0 && String(p.code) !== "solo")
+      .map((p) => {
+        const limit = (id: string) => (p.features ?? []).find((f: any) => f.featureId === id);
+        const staff = limit("staff");
+        const locations = limit("locations");
+        const calls = limit("ai_receptionist");
+        const staffText = staff?.limitValue != null ? `up to ${staff.limitValue} staff` : "unlimited staff";
+        const locText = locations?.limitValue != null ? `${locations.limitValue} location${Number(locations.limitValue) === 1 ? "" : "s"}` : "1 location";
+        const callText = calls?.limitValue != null ? `${calls.limitValue} Autumn calls a month included` : "";
+        return `- ${p.name}: $${Number(p.priceMonthly) / 100} a month, or $${Number(p.priceYearly) / 100} a year. ${staffText}, ${locText}${callText ? `, ${callText}` : ""}.`;
+      })
+      .join("\n");
   } catch (err) {
     console.warn(`${LOG} live plans unavailable:`, (err as Error).message);
-    return "- Solo: free. - Starter: $29 a month. - Professional: $99 a month. - Enterprise: $179 a month.";
+    return "Plan details could not be loaded right now: say the prices are on certxa.com/pricing.";
   }
+}
+
+/** Hardware from the shop (live prices), and whether online ordering is open. */
+async function liveHardware(): Promise<string> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${PORT()}/api/shop/status`, { signal: AbortSignal.timeout(3000) });
+    const shop = (await res.json()) as { open: boolean; products: { name: string; priceCents: number }[] };
+    const list = shop.products.map((p) => `- ${p.name}: $${p.priceCents / 100}`).join("\n");
+    return `${list}\nWhen a caller asks what hardware they need, ask how they want to run their front desk and check-in, and describe what each item does — never say what most or many salons buy.\n${shop.open ? "Hardware can be ordered at certxa.com/products." : "Online hardware ordering is not open yet: give prices if asked, but do not say it can be ordered now, and never say when it will open."}`;
+  } catch {
+    return "Hardware prices could not be loaded right now: say they are on certxa.com/products.";
+  }
+}
+
+/** Tom's instructions, used by real calls and by the test simulations (one source). */
+export async function buildTomInstructions(callerPhone: string | null): Promise<{ voice: string; backend: string }> {
+  const [plans, hardware] = await Promise.all([livePlans(), liveHardware()]);
+  const today = formatInTimeZone(new Date(), "America/Phoenix", "EEEE, MMMM d, yyyy");
+  const voice = `You are ${AGENT_NAME}, a sales specialist at Certxa, answering Certxa's sales line. You are an AI built by Certxa — if anyone asks, say so plainly.
+
+HOW YOU TALK: warm, confident, genuinely helpful, never pushy. One or two short sentences at a time, then let them talk. Plain words, no jargon, no hype words. Use the caller's name once you know it. Ask one question at a time and listen more than you talk. English by default; if the caller speaks Vietnamese, Spanish or another language, or asks to, switch and stay in it.
+
+HONESTY — THE MOST IMPORTANT RULE: everything you say about Certxa must come from the FACTS, PLANS or HARDWARE below. Never invent or guess a feature, price, number, statistic, integration, customer story, timeline or policy, and never stretch a fact to sound better. If the answer isn't below, say plainly that you don't want to guess, and that they can find it on certxa.com or ask Certxa support. Saying "I'm not sure" is always better than a wrong answer. Never say what other salons do ("many salons", "most salons", "salons usually"); talk only about this caller. Never explain what a price or fee "covers" or "includes" beyond the facts. Never guess what Certxa support or anyone else can do beyond the facts. Never promise a result or benefit ("faster", "fewer no-shows", "more clients", "more revenue", "built for busy salons") — say what the feature does, and let the caller draw the conclusion.
+
+${playbook}
+
+SALON PLANS (live — the only prices you quote):
+${plans}
+
+HARDWARE (live):
+${hardware}
+
+FACTS:
+${factSheet}
+
+Today is ${today}.
+
+YOUR BACKEND does three things, and you must hand them to it:
+- Every time the caller tells you their name, salon name, salon type, team size, city, e-mail, what software they use, or which plan interests them, hand those details to the backend to save as a lead — right away, in the same turn, while you keep talking.
+- When the caller agrees to have the free-trial sign-up link texted to them, hand that to the backend to send.
+- After you say goodbye and the caller is done, hand off ending the call.
+Backend work is silent: never say "let me check", "I'll save that" or narrate tools. When a result arrives, carry on naturally.`;
+  const backend = `You handle the actions for ${AGENT_NAME}, Certxa's sales phone agent.
+- save_lead: as soon as the caller gives a name or business name, save the lead, and save again when you learn more (business type, team size, city, e-mail, current software, plan interest, short notes about needs and objections). Pass only what the caller said. Confirm e-mail spelling before saving it.
+- send_trial_link: when the caller wants to try Certxa, only send after they say yes to getting the link by text. It sends once per call.
+- end_call: only after a goodbye, when the caller is done.
+The caller's number is ${callerPhone ?? "unknown"}.`;
+  return { voice, backend };
 }
 
 // ─── Limits (shared across pm2 workers through the call log) ──────────────────
@@ -228,7 +288,8 @@ function runSalesCall(twilioWs: WebSocket): void {
       pool.query(
         `UPDATE sales_call_logs SET ended_at = now(), duration_seconds = $2, outcome = $3, transcript = $4::jsonb, lead_id = $5 WHERE id = $1`,
         [callLogId, seconds, finalOutcome, JSON.stringify(transcript), leadId],
-      ).then(() => summarize(callLogId!, transcript)).catch((e) => console.error(`${LOG} call log update failed:`, e.message));
+      ).then(() => summarize(callLogId!, transcript)).then(() => factCheckCall(callLogId!, transcript))
+        .catch((e) => console.error(`${LOG} call log update failed:`, e.message));
     }
   }
 
@@ -288,30 +349,7 @@ function runSalesCall(twilioWs: WebSocket): void {
   async function openLive(): Promise<void> {
     const key = process.env.OPENAI_API_KEY;
     if (!key) { console.error(`${LOG} OPENAI_API_KEY is missing`); finish("no_ai_key"); return; }
-    const plans = await livePlans();
-    const now = formatInTimeZone(new Date(), "America/Phoenix", "EEEE, MMMM d");
-
-    const voiceInstructions = `You are ${AGENT_NAME}, a friendly, knowledgeable sales specialist at Certxa, answering the phone for people interested in Certxa salon software. You are an AI — if someone asks, say so plainly.
-Speak naturally, one or two short sentences at a time, warm and confident, never pushy. Use plain words. English by default — only switch if the caller asks or speaks another language.
-Your goals, in order: understand their salon (type, team size, what they use today and what bothers them about it), answer their questions honestly from the facts below, and get them started on the free trial.
-Ask one question at a time. Listen more than you talk. Relate features to what they told you.
-Facts — your ONLY source for prices, plans, features and policies. Never state a price, feature, number or promise that is not written here. If you don't know, say you're not sure and that it's on certxa.com, or that the team can follow up by e-mail.
-CURRENT PLANS AND PRICES:
-${plans}
-${factSheet}
-Today is ${now}.
-Never offer discounts, custom prices, contracts or deals. Never promise a feature that is not listed. Never say you will transfer the call or that someone will call them back. Don't talk about competitors by name; focus on Certxa.
-Your backend does three things, and you must hand them to it:
-- Every time the caller tells you their name, salon name, salon type, team size, city, e-mail, what software they use, or which plan interests them, hand those details to the backend to save as a lead — right away, in the same turn, while you keep talking.
-- When the caller agrees to have the free-trial sign-up link texted to them, hand that to the backend to send.
-- After you say goodbye and the caller is done, hand off ending the call.
-Backend work is silent: never say "let me check", "I'll save that" or narrate tools. When a result arrives, carry on naturally.`;
-
-    const backendInstructions = `You handle the actions for ${AGENT_NAME}, Certxa's sales phone agent.
-- save_lead: as soon as the caller gives a name or business name, save the lead, and save again when you learn more (business type, team size, city, e-mail, current software, plan interest, short notes about needs and objections). Pass only what the caller said. Confirm e-mail spelling before saving it.
-- send_trial_link: when the caller wants to try Certxa, ask if they'd like the sign-up link texted to this number, and only send after they say yes. It sends once per call.
-- end_call: only after a goodbye, when the caller is done.
-The caller's number is ${callerPhone ?? "unknown"}.`;
+    const { voice: voiceInstructions, backend: backendInstructions } = await buildTomInstructions(callerPhone);
 
     openAi = new WebSocket(LIVE_URL, { headers: { Authorization: `Bearer ${key}` } });
     openAi.on("open", () => {
@@ -449,6 +487,48 @@ async function summarize(callLogId: number, transcript: { role: string; text: st
   }
 }
 
+/**
+ * Fact check (owner, 2026-10-31: "make sure the agent never makes up anything"). After each call a separate model
+ * compares everything Tom said with the fact sheet and live lists, and flags any claim that isn't supported.
+ * Shown in isTeam → Sales Leads, so a wrong answer is caught and the fact sheet or playbook fixed.
+ */
+export async function factCheckTranscript(transcript: { role: string; text: string }[]): Promise<{ ok: boolean; issues: string[] } | null> {
+  const tomLines = transcript.filter((t) => t.role === "tom").map((t) => t.text).join("\n");
+  if (!tomLines.trim() || !process.env.OPENAI_API_KEY) return null;
+  const { voice } = await buildTomInstructions(null);
+  const reference = voice.slice(voice.indexOf("SALON PLANS"), voice.indexOf("YOUR BACKEND"));
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+    body: JSON.stringify({
+      model: process.env.SALES_FACT_CHECK_MODEL || "gpt-4.1",
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: `You audit a sales agent for honesty. Below is the ONLY approved information about Certxa. Be strict. List every statement the agent made about Certxa that is NOT directly supported by the approved information, or that contradicts it: features, prices, totals, plans, limits, policies, numbers, where or how to get an app or a product, timelines ("soon", "coming"), promises (callbacks, demos, e-mails, discounts), and generalizations presented as fact ("most salons…", "I hear that a lot", "salons love…"). Simple arithmetic on approved prices is fine. Greetings, empathy ("I hear you", "I understand"), questions to the caller, pointing to certxa.com for sign-up, and repeating what the caller said about their own salon are fine. A caller asking for "something free" counts as asking about a free plan. Recommending the plan whose staff limit fits the caller's team is approved, and "yearly is like two months free" is approved (ten months for twelve). This transcript may come from a text simulation where actions run silently, so "I've sent the link" is fine. Also flag if the agent mentioned Certxa Pro, the Solo plan or a free plan before the caller did. Reply as JSON {"issues": [string]} — an empty list when everything is supported.\n\nAPPROVED INFORMATION:\n${reference}` },
+        { role: "user", content: transcript.map((t) => `${t.role === "tom" ? "AGENT" : "CALLER"}: ${t.text}`).join("\n").slice(0, 20_000) },
+      ],
+    }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const data: any = await res.json();
+  const parsed = JSON.parse(data?.choices?.[0]?.message?.content ?? "{}");
+  const issues = (Array.isArray(parsed.issues) ? parsed.issues : []).map((i: unknown) => String(i)).slice(0, 20);
+  return { ok: issues.length === 0, issues };
+}
+
+async function factCheckCall(callLogId: number, transcript: { role: string; text: string }[]): Promise<void> {
+  try {
+    const result = await factCheckTranscript(transcript);
+    if (!result) return;
+    await pool.query(`UPDATE sales_call_logs SET fact_check_ok = $2, fact_check_issues = $3::jsonb WHERE id = $1`,
+      [callLogId, result.ok, JSON.stringify(result.issues)]);
+    if (!result.ok) console.warn(`${LOG} fact check flagged call ${callLogId}: ${result.issues.join(" | ")}`);
+  } catch (e) {
+    console.warn(`${LOG} fact check failed:`, (e as Error).message);
+  }
+}
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 export function setupSalesAgentRoutes(httpServer: HttpServer, app: Express): void {
@@ -502,7 +582,7 @@ export function setupSalesAgentRoutes(httpServer: HttpServer, app: Express): voi
           ORDER BY l.created_at DESC LIMIT 300`,
       );
       const calls = await pool.query(
-        `SELECT id, caller_phone, outcome, duration_seconds, summary, lead_id, started_at, ended_at
+        `SELECT id, caller_phone, outcome, duration_seconds, summary, lead_id, started_at, ended_at, fact_check_ok, fact_check_issues
            FROM sales_call_logs ORDER BY started_at DESC LIMIT 100`,
       );
       res.json({ leads: leads.rows, calls: calls.rows, phoneNumber: "(888) 814-7623" });
