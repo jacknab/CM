@@ -582,6 +582,21 @@ app.get("/api/health", async (_req, res) => {
   });
 });
 
+// pro.certxa.com = the Certxa Pro app in the browser (owner, 2026-10-31): an Expo web build in dist/pro-web, for
+// using the app's screens from a PC. It signs in and calls the API at certxa.com like the phone app does.
+{
+  const proWebDir = _cjsDirname ? path.resolve(_cjsDirname, "pro-web") : path.resolve(process.cwd(), "dist/pro-web");
+  const proStatic = express.static(proWebDir, { index: false, maxAge: "7d" });
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.hostname !== "pro.certxa.com" || req.path.startsWith("/api/") || req.path.startsWith("/ws")) return next();
+    proStatic(req, res, () => {
+      const index = path.join(proWebDir, "index.html");
+      if (req.method !== "GET" || !fs.existsSync(index)) return next();
+      res.set("Cache-Control", "no-cache").sendFile(index);
+    });
+  });
+}
+
 app.use(subdomainMiddleware);
 
 // Root (/) is served by the PHP middleware below — phpMiddleware handles isPhpRoute("/")
