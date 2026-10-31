@@ -1546,6 +1546,33 @@ export async function buildAssistantSnapshot(storeId: number) {
   const leakage = await computeRevenueLeakage(storeId);
   const round = (n: unknown) => Math.round(Number(n) || 0);
 
+  // What Certxa did on its own in the last 30 days (owner, 2026-10-31: the assistant talks about this work, never
+  // hands the owner chores). Outreach is logged in intelligence_interventions; "booked again" = a messaged client
+  // who made a booking after the message (not cancelled).
+  const auto = await pool.query(
+    `WITH sent AS (
+       SELECT customer_id, intervention_type, sent_at FROM intelligence_interventions
+        WHERE store_id = $1 AND status = 'sent' AND sent_at >= NOW() - INTERVAL '30 days'
+     ),
+     back AS (
+       SELECT DISTINCT ON (a.id) a.id, a.customer_id, COALESCE(NULLIF(a.total_paid, 0), a.service_revenue, 0)::float AS amount
+         FROM appointments a JOIN sent s ON s.customer_id = a.customer_id
+        WHERE a.store_id = $1 AND a.created_at > s.sent_at AND a.created_at <= s.sent_at + INTERVAL '30 days'
+          AND COALESCE(a.status, '') NOT IN ('cancelled', 'canceled', 'no_show', 'no-show')
+     )
+     SELECT
+       (SELECT COUNT(*) FROM sent WHERE intervention_type = 'rebooking_nudge')::int AS rebooking_reminders,
+       (SELECT COUNT(*) FROM sent WHERE intervention_type = 'winback')::int AS win_back_texts,
+       (SELECT COUNT(*) FROM sent WHERE intervention_type = 'cancellation_recovery')::int AS cancellation_follow_ups,
+       (SELECT COUNT(*) FROM sent WHERE intervention_type = 'no_show_winback')::int AS no_show_follow_ups,
+       (SELECT COUNT(DISTINCT customer_id) FROM sent)::int AS clients_reached,
+       (SELECT COUNT(DISTINCT customer_id) FROM back)::int AS clients_booked_again,
+       (SELECT COALESCE(SUM(amount), 0) FROM back)::float AS bookings_value`,
+    [storeId],
+  ).catch(() => ({ rows: [] as any[] }));
+  const a: any = auto.rows[0] ?? {};
+  const [eng] = await db.select({ on: smsSettings.autoEngageEnabled }).from(smsSettings).where(eq(smsSettings.storeId, storeId)).limit(1).catch(() => [] as any[]);
+
   return {
     salon: store?.name ?? "the salon",
     revenue: {
@@ -1561,6 +1588,13 @@ export async function buildAssistantSnapshot(storeId: number) {
       const { revenue: _r, ...b } = breakdown ?? {};
       return { ...rest, breakdown: b };
     })(),
+    certxaAutomaticWorkLast30Days: {
+      automaticOutreachOn: eng?.on ?? true,
+      rebookingReminders: a.rebooking_reminders ?? 0, winBackTexts: a.win_back_texts ?? 0,
+      cancellationFollowUps: a.cancellation_follow_ups ?? 0, noShowFollowUps: a.no_show_follow_ups ?? 0,
+      clientsReached: a.clients_reached ?? 0, clientsWhoBookedAgain: a.clients_booked_again ?? 0,
+      valueOfThoseBookings: round(a.bookings_value),
+    },
     leakageLast45Days: {
       total: round(leakage.totalLeakage), noShowLoss: round(leakage.breakdown.noShowLoss), noShows: leakage.breakdown.noShowCount,
       cancellationLoss: round(leakage.breakdown.cancellationLoss), cancellations: leakage.breakdown.cancellationCount,
@@ -1641,8 +1675,13 @@ router.post("/growth-assistant", async (req, res) => {
     const system = `You are Certxa's growth analyst for one salon owner, talking like a smart friend — plain words, no jargon.
 Answer ONLY from the salon data below. If the data can't answer the question, say so and say which number would help. Never invent figures, clients, or dates.
 Month-to-date revenue is a partial month — compare it fairly (say so) rather than calling it a drop.
-Reply with a JSON object: {"reply": string (under 90 words, specific numbers, end with one concrete next step),
-"highlights": up to 4 of {"label": string, "value": string, "detail": string (optional)} taken from the data,
+Certxa does the salon's growth work automatically: it texts clients who are due to rebook, wins back clients who have drifted away, follows up cancellations and no-shows (certxaAutomaticWorkLast30Days). The owner should never have to lift a finger for this. So:
+- Lead with good news and with what Certxa has done for them (messages sent, clients who booked again and what those bookings are worth), using the real numbers.
+- Never tell the owner to send nudges, reminders, texts or campaigns, to "focus on" clients, review lists, or fill the schedule themselves. Never end with a chore.
+- Mention drifting or at-risk clients and empty times only as what Certxa is already working on, never as a problem the owner must fix.
+- If automaticOutreachOn is false, the one thing to suggest is turning on automatic outreach (Autonomous Mode) in Growth Intelligence.
+Reply with a JSON object: {"reply": string (under 90 words, specific numbers, warm and reassuring),
+"highlights": up to 4 of {"label": string, "value": string, "detail": string (optional)} taken from the data — prefer revenue, new clients and Certxa's automatic work (clients who booked again, messages sent); never a card that reads as a problem for the owner to fix,
 "actions": up to 2 of {"id": one of ${Object.keys(ASSISTANT_LINKS).join(" | ")}}}.
 
 SALON DATA (JSON):
@@ -1672,6 +1711,8 @@ ${JSON.stringify(snapshot)}`;
     const actions = (Array.isArray(parsed.actions) ? parsed.actions : [])
       .map((a: any) => (a && typeof a.id === "string" ? ASSISTANT_LINKS[a.id] && { id: a.id, ...ASSISTANT_LINKS[a.id] } : null))
       .filter((a: any) => a && !seen.has(a.id) && seen.add(a.id))
+      // The opening briefing never hands the owner a task (Certxa does this work itself).
+      .filter((a: any) => !isAutomaticBriefing || !["campaigns", "at_risk"].includes(a.id))
       .slice(0, 2);
 
     return res.json({
