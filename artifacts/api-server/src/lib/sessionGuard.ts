@@ -2,7 +2,7 @@
  * Session Guard — Duration limits, idle detection, concurrency control.
  *
  * Enforces per-salon safety limits:
- *   - Max call duration (default: 12 min) — Req 3, 4
+ *   - Max call duration (default: 6 min) — Req 3, 4
  *   - Idle timeout (default: 30s no activity) — Req 7
  *   - Max concurrent calls per salon (default: 3) — Req 3
  *   - Daily call minutes cap — Req 3
@@ -29,7 +29,7 @@ export interface SalonLimits {
 }
 
 export const DEFAULT_LIMITS: SalonLimits = {
-  maxCallDurationMin:  parseInt(process.env.DEFAULT_MAX_CALL_DURATION_MIN  || "12",  10),
+  maxCallDurationMin:  parseInt(process.env.DEFAULT_MAX_CALL_DURATION_MIN  || "6",   10), // owner 2026-10-31: was 12
   maxDailyMinutes:     parseInt(process.env.DEFAULT_MAX_DAILY_MINUTES      || "480", 10),
   maxMonthlyCostUsd:   parseFloat(process.env.DEFAULT_MAX_MONTHLY_COST_USD || "200"),
   maxConcurrentCalls:  parseInt(process.env.DEFAULT_MAX_CONCURRENT_CALLS   || "3",   10),

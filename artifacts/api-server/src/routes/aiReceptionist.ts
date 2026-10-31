@@ -116,6 +116,7 @@ import {
 } from "../lib/afterHoursReceptionist";
 import { getSalonOperationsOverview, summarizeSalonOperations } from "../lib/salonOperationsOverview";
 import { getStaffSchedules, summarizeSchedules } from "../lib/staffScheduleLookup";
+import { issueStreamPass, redeemStreamPass, passFromPath } from "../lib/streamPass";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -4121,6 +4122,12 @@ function createCallSession(twilioWs: WebSocket) {
         twilioWs.close(1008, "Missing storeId parameter");
         return;
       }
+      // The salon must be the one the call's pass was issued for (lib/streamPass.ts).
+      if ((twilioWs as any).__passStoreId !== parsedStoreId) {
+        console.warn(`[AI Receptionist] 🚫 start for store ${parsedStoreId} does not match the stream pass — closing`);
+        twilioWs.close(1008, "Forbidden");
+        return;
+      }
 
       // Load salon context now (we couldn't do it at upgrade time — no URL params).
       // S2-fix: Race against a 4s timeout so a stalled DB connection (which never throws)
@@ -4246,10 +4253,10 @@ function createCallSession(twilioWs: WebSocket) {
         }
         costMeter.startSession(sessionCallSid, parsedStoreId);
 
-        // ── 12-minute hard session limit ───────────────────────────────────
-        // If the call is still active after 12 minutes, force a graceful farewell
+        // ── 6-minute hard session limit (owner, 2026-10-31: was 12) ─────────
+        // If the call is still active after 6 minutes, force a graceful farewell
         // and hang up. This prevents runaway cost on stuck or looping sessions.
-        const MAX_SESSION_MS = 12 * 60 * 1000;
+        const MAX_SESSION_MS = 6 * 60 * 1000;
         sessionMaxDurationHandle = setTimeout(() => {
           sessionMaxDurationHandle = null;
           console.warn(
@@ -4602,7 +4609,7 @@ function createCallSession(twilioWs: WebSocket) {
     outboundFrameQueue.length = 0;
     ambienceCursor = null;
 
-    // Clear the 12-minute hard-limit timer if it's still pending
+    // Clear the 6-minute hard-limit timer if it's still pending
     if (sessionMaxDurationHandle) {
       clearTimeout(sessionMaxDurationHandle);
       sessionMaxDurationHandle = null;
@@ -5538,7 +5545,8 @@ export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express):
     // any `?param=…` causes the WebSocket handshake to fail (Twilio error 31920).
     // The storeId and caller phone are passed below as <Parameter> nouns,
     // which Twilio delivers in the `start` event's customParameters object.
-    const streamUrl = `wss://${wssDomain}/media-stream`;
+    // A one-time pass in the path: the audio connection is refused without it (lib/streamPass.ts).
+    const streamUrl = `wss://${wssDomain}/media-stream/${issueStreamPass("autumn", storeId)}`;
 
     console.log(
       `[AI Receptionist] Incoming call → "${salon.businessName}" (store ${storeId}) from "${callerPhone || "unknown"}"`
@@ -5627,9 +5635,19 @@ export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express):
 
   httpServer.on("upgrade", (req, socket, head) => {
     const pathname = req.url?.split("?")[0] ?? "";
-    if (pathname === "/media-stream") {
-      console.log(`[AI Receptionist] WS upgrade → /media-stream from ${req.headers.host}`);
+    if (pathname === "/media-stream" || pathname.startsWith("/media-stream/")) {
+      // Only Twilio, for a call our signed webhook answered: no valid one-time pass → refused before any OpenAI
+      // session opens (owner, 2026-10-31: the bare address let anyone spend credits).
+      const passStoreId = redeemStreamPass("autumn", passFromPath(pathname, "/media-stream"));
+      if (passStoreId == null) {
+        console.warn(`[AI Receptionist] 🚫 /media-stream upgrade refused — no valid stream pass (${req.socket.remoteAddress ?? "?"})`);
+        try { socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n"); } catch { /* ignore */ }
+        socket.destroy();
+        return;
+      }
+      console.log(`[AI Receptionist] WS upgrade → /media-stream (store ${passStoreId}) from ${req.headers.host}`);
       mediaWss.handleUpgrade(req as Request, socket as any, head, (ws) => {
+        (ws as any).__passStoreId = passStoreId;
         mediaWss.emit("connection", ws, req);
       });
     }
@@ -6016,7 +6034,15 @@ When done, say a warm goodbye and end the call naturally.${salon.ownerInstructio
     return `https://${hostname}/api/webhook/twilio/voice`;
   }
 
+  // Simple Voice asks OpenAI once per caller sentence: only Twilio may call it (owner, 2026-10-31), and a call stops
+  // after SIMPLE_VOICE_MAX_TURNS caller turns.
+  const SIMPLE_VOICE_MAX_TURNS = 30;
   app.post("/api/webhook/twilio/voice/:storeId", async (req: Request, res: Response) => {
+    const signedBase = getVoiceWebhookBase(req).replace(/\/api\/webhook\/twilio\/voice$/, "");
+    if (!isValidTwilioSignature(req, signedBase)) {
+      console.warn(`[Voice] ❌ Rejected unsigned/forged Twilio webhook for storeId=${req.params.storeId}`);
+      return res.status(403).type("text/plain").send("Forbidden");
+    }
     const storeId = parseInt(String(req.params.storeId ?? ""), 10);
     if (isNaN(storeId) || storeId <= 0) {
       return res.status(400).type("text/xml").send(twimlHangup("Sorry, this number is not configured. Goodbye."));
@@ -6198,6 +6224,10 @@ When done, say a warm goodbye and end the call naturally.${salon.ownerInstructio
 
     if (speechResult) {
       session.messages.push({ role: "user", content: speechResult });
+      if (session.messages.filter((m: any) => m.role === "user").length > SIMPLE_VOICE_MAX_TURNS) {
+        voiceSessions.delete(callSid);
+        return res.type("text/xml").send(twimlHangup("We've reached the end of what I can do on this call. Please call back if you need anything else. Goodbye."));
+      }
     }
 
     let aiResponse: { text: string | null; toolName: string | null; toolArgs: string | null };

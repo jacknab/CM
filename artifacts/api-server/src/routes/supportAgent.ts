@@ -28,6 +28,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { issueStreamPass, redeemStreamPass, passFromPath } from "../lib/streamPass";
 import type { Express, Request, Response } from "express";
 import type { Server as HttpServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
@@ -2056,7 +2057,8 @@ export function setupSupportAgentRoutes(httpServer: HttpServer, app: Express): v
     const callerPhoneRaw = (req.body?.From as string | undefined) ?? "";
     const callerPhone = toTenDigit(callerPhoneRaw) ?? callerPhoneRaw;
 
-    const streamUrl = `${appUrl.replace(/^http/i, "ws")}/support-agent-stream`;
+    // A one-time pass in the path: the audio connection is refused without it (lib/streamPass.ts).
+    const streamUrl = `${appUrl.replace(/^http/i, "ws")}/support-agent-stream/${issueStreamPass("support", 0)}`;
 
     console.log(`${LOG_PREFIX} Incoming call from ${callerPhone} → ${streamUrl}`);
 
@@ -2084,7 +2086,15 @@ export function setupSupportAgentRoutes(httpServer: HttpServer, app: Express): v
 
   httpServer.on("upgrade", (req, socket, head) => {
     const pathname = req.url?.split("?")[0] ?? "";
-    if (pathname === "/support-agent-stream") {
+    if (pathname === "/support-agent-stream" || pathname.startsWith("/support-agent-stream/")) {
+      // Only Twilio, for a call our signed webhook answered: no valid one-time pass → refused before the OpenAI
+      // session (which opens on connection) exists (owner, 2026-10-31: the bare address let anyone spend credits).
+      if (redeemStreamPass("support", passFromPath(pathname, "/support-agent-stream")) == null) {
+        console.warn(`${LOG_PREFIX} /support-agent-stream upgrade refused — no valid stream pass (${req.socket.remoteAddress ?? "?"})`);
+        try { socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n"); } catch { /* ignore */ }
+        socket.destroy();
+        return;
+      }
       console.log(`${LOG_PREFIX} WS upgrade → /support-agent-stream`);
       supportWss.handleUpgrade(req as Request, socket as any, head, (ws) => {
         supportWss.emit("connection", ws, req);
