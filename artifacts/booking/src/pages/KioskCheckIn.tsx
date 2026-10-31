@@ -1203,14 +1203,12 @@ function KioskCheckInScreens() {
     <div className="fixed inset-0 cursor-pointer select-none overflow-hidden" data-testid="checkin-idle"
       onPointerDown={() => setScreen("phone")} onContextMenu={e => e.preventDefault()}
       style={{ ...NO_SELECT, background: BG }}>
-      {/* Portrait (a standing kiosk): the picture fills the screen. Landscape: the whole picture, centered, over a
-          blurred copy of itself, so nothing is cut off and the screen still looks full. */}
-      <style>{`.kw-img { object-fit: cover } .kw-blur { display: none }
-        @media (orientation: landscape) { .kw-img { object-fit: contain } .kw-blur { display: block } }`}</style>
-      <img src={kioskWelcomeBanner} alt="" aria-hidden draggable={false} className="kw-blur"
+      {/* The whole picture is always shown (never cropped: a 9:16 kiosk screen cut off the WELCOME bar, owner
+          2026-10-31), as big as the screen allows, over a blurred copy of itself that fills the rest with purple. */}
+      <img src={kioskWelcomeBanner} alt="" aria-hidden draggable={false}
         style={{ position: "absolute", inset: "-5%", width: "110%", height: "110%", objectFit: "cover", filter: "blur(70px) saturate(1.1)", opacity: 0.85 }} />
-      <img src={kioskWelcomeBanner} alt="Welcome. Please check in here" draggable={false} data-testid="kiosk-welcome-image" className="kw-img"
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectPosition: "center" }} />
+      <img src={kioskWelcomeBanner} alt="Welcome. Please check in here" draggable={false} data-testid="kiosk-welcome-image"
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", objectPosition: "center" }} />
       <div className="absolute left-0 right-0 flex items-center justify-center gap-3 flex-wrap px-8"
         style={{ bottom: "clamp(18px, 3vh, 30px)" }} onPointerDown={e => e.stopPropagation()}>
         {KIOSK_LANGS.map(({ code, label }) => (
@@ -1218,11 +1216,12 @@ function KioskCheckInScreens() {
             key={code}
             onPointerDown={e => { e.stopPropagation(); setLang(code); }}
             className="px-5 py-2.5 rounded-full text-base font-semibold transition-all duration-150 active:scale-95"
+            // Light purple to match the welcome picture (owner, 2026-10-31); the chosen language a deeper purple.
             style={{
-              background: lang === code ? PRIMARY : SURFACE,
-              color: lang === code ? "#fff" : MUTED,
-              border: `1.5px solid ${lang === code ? PRIMARY : BORDER}`,
-              boxShadow: SHADOW,
+              background: lang === code ? "#7c3aed" : "#ede4ff",
+              color: lang === code ? "#fff" : "#5b21b6",
+              border: `1.5px solid ${lang === code ? "#7c3aed" : "#d6c4ff"}`,
+              boxShadow: "0 2px 8px rgba(91, 33, 182, .18)",
               cursor: "pointer",
             }}>
             {label}

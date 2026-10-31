@@ -1875,8 +1875,11 @@ export default function FrontDeskDisplay() {
   if (screen === "idle") return (
     <div className="fixed inset-0 flex items-center justify-center cursor-pointer select-none" data-testid="checkin-idle"
       onPointerDown={() => setScreen("phone")} onContextMenu={(e) => e.preventDefault()}
-      style={{ ...NO_SELECT, background: BG }}>
-      <div data-testid="fd-welcome-card" style={{
+      style={{ ...NO_SELECT, background: BG, overflow: "hidden" }}>
+      {/* Purple background: the banner itself, heavily blurred, filling the screen (the same look as the kiosk). */}
+      <img src={checkInBanner} alt="" aria-hidden draggable={false}
+        style={{ position: "absolute", inset: "-5%", width: "110%", height: "110%", objectFit: "cover", filter: "blur(70px) saturate(1.1)", opacity: 0.85 }} />
+      <div data-testid="fd-welcome-card" style={{ position: "relative",
         width: "min(94vw, calc((94vh - 24px) * 1909 / 824 + 24px))", padding: 12, borderRadius: 28,
         background: SURFACE, border: `1.5px solid ${BORDER}`, boxShadow: SHADOW_LG, boxSizing: "border-box",
       }}>
