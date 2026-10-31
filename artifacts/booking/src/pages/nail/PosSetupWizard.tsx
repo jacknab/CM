@@ -207,6 +207,13 @@ export function PosSetupWizard({ storeId, onFinished, onClose }: { storeId: numb
     }
   };
 
+  // A staff login can't open the sign-in page while signed in (it sends them straight back), so sign this tablet
+  // out first, then come back here after the owner signs in.
+  const signInAsOwner = async () => {
+    try { await fetch("/api/auth/logout", { method: "POST", credentials: "include" }); } catch { /* offline: the sign-in page will say so */ }
+    window.location.href = `/auth?redirect=${encodeURIComponent(window.location.pathname)}`;
+  };
+
   const owner = status?.team.find((m) => m.isOwner);
   const h1 = "text-[34px] md:text-[38px] font-bold leading-tight";
   const lead = "text-[24px] leading-relaxed mt-2";
@@ -216,9 +223,13 @@ export function PosSetupWizard({ storeId, onFinished, onClose }: { storeId: numb
     body = loadError ? <p className="text-[24px]" style={{ color: "#b42318" }}>{loadError}</p> : <Loader2 className="w-8 h-8 animate-spin mx-auto" style={{ color: muted }} />;
   } else if (!status.canSetUp) {
     body = (
-      <div>
-        <h1 className={h1} style={{ color: ink }}>Set up your front desk</h1>
-        <p className={lead} style={{ color: muted }}>This tablet isn't signed in with the salon owner's account. Sign in as the owner to set up the front desk.</p>
+      <div className="flex flex-col gap-6" data-testid="pos-setup-owner-needed">
+        <div>
+          <h1 className={h1} style={{ color: ink }}>The owner needs to set up the front desk</h1>
+          <p className={lead} style={{ color: muted }}>Before your salon can use the front desk, the salon owner has to answer a few questions about sales tax, card payments and cash. Sign in on this tablet with the owner's account to do it. It takes a few minutes.</p>
+        </div>
+        <button type="button" onClick={() => void signInAsOwner()} data-testid="pos-setup-owner-signin"
+          className="w-full h-16 rounded-2xl text-white text-[26px] font-bold" style={{ background: brand }}>Sign in as the owner</button>
       </div>
     );
   } else if (step === "welcome") {

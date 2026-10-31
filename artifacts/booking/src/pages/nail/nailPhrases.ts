@@ -6042,13 +6042,13 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Hai mã không giống nhau.",
   "Los dos PIN no coinciden."
  ],
- "Set up your front desk": [
-  "Cài đặt quầy lễ tân",
-  "Configure su recepción"
+ "The owner needs to set up the front desk": [
+  "Chủ tiệm cần cài đặt quầy lễ tân",
+  "El dueño debe configurar la recepción"
  ],
- "This tablet isn't signed in with the salon owner's account. Sign in as the owner to set up the front desk.": [
-  "Máy tính bảng này không đăng nhập bằng tài khoản chủ tiệm. Hãy đăng nhập bằng tài khoản chủ tiệm để cài đặt quầy lễ tân.",
-  "Esta tableta no tiene abierta la cuenta del dueño del salón. Inicie sesión como dueño para configurar la recepción."
+ "Before your salon can use the front desk, the salon owner has to answer a few questions about sales tax, card payments and cash. Sign in on this tablet with the owner's account to do it. It takes a few minutes.": [
+  "Trước khi tiệm dùng được quầy lễ tân, chủ tiệm cần trả lời vài câu hỏi về thuế bán hàng, thanh toán thẻ và tiền mặt. Hãy đăng nhập trên máy tính bảng này bằng tài khoản chủ tiệm để làm. Chỉ mất vài phút.",
+  "Antes de que su salón pueda usar la recepción, el dueño debe responder unas preguntas sobre el impuesto sobre ventas, los pagos con tarjeta y el efectivo. Inicie sesión en esta tableta con la cuenta del dueño para hacerlo. Toma unos minutos."
  ],
  "Let's set up your front desk": [
   "Cùng cài đặt quầy lễ tân",
@@ -6057,6 +6057,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "A few questions about how your salon takes payment. It takes about three minutes, and you can change any answer later in Settings.": [
   "Vài câu hỏi về cách tiệm nhận thanh toán. Mất khoảng ba phút, và bạn có thể đổi bất kỳ câu trả lời nào sau này trong Cài Đặt.",
   "Unas preguntas sobre cómo cobra su salón. Toma unos tres minutos y puede cambiar cualquier respuesta después en Configuración."
+ ],
+ "Sign in as the owner": [
+  "Đăng nhập bằng tài khoản chủ tiệm",
+  "Iniciar sesión como dueño"
  ],
  "Where you keep cash": [
   "Nơi giữ tiền mặt",

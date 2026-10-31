@@ -294,9 +294,13 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const [sheet, setSheet] = useState<null | "voucher" | "timeclock" | "dayclose" | "clients" | "manager" | "turns" | "servicetimes">(null);
   // Front desk setup (owner, 2026-10-31): is required: the owner login can't use the front desk until it is
   // finished. Manager › Front Desk Setup opens it again any time (with Close).
-  const { data: posSetup } = useQuery<{ completed: boolean; canSetUp: boolean }>({ queryKey: ["/api/nail/pos-setup"], staleTime: 10 * 60_000, retry: false });
+  // Not finished yet: look again every minute, so a tablet signed in with a staff login opens once the owner has
+  // finished on another tablet.
+  const { data: posSetup } = useQuery<{ completed: boolean; canSetUp: boolean }>({ queryKey: ["/api/nail/pos-setup"], staleTime: 10 * 60_000, retry: false,
+    refetchInterval: (q) => (q.state.data && !(q.state.data as any).completed ? 60_000 : false) });
   const [setupOpen, setSetupOpen] = useState(false);
-  const showSetup = setupOpen || (!!posSetup && !posSetup.completed && posSetup.canSetUp);
+  // Every login is held here until the setup is finished: the owner's to do it, any other to be told the owner must.
+  const showSetup = setupOpen || (!!posSetup && !posSetup.completed);
   const [assigning, setAssigning] = useState<Assigning>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assignNeedsReason, setAssignNeedsReason] = useState(false);
