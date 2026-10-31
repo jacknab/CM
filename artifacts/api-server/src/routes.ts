@@ -8578,7 +8578,9 @@ If you have any questions, please contact your administrator.
           name: s.name,
           color: s.color || "#3b82f6",
           storeId: store.id,
-        });
+          // No team entered: this record is the owner's own (they do the services), so it is their Tech ID too.
+          ...(staffData ? {} : { employmentType: "owner" }),
+        } as any);
 
         if (allServiceIds.length > 0) {
           await storage.setStaffServices(newStaff.id, allServiceIds);
@@ -8615,6 +8617,9 @@ If you have any questions, please contact your administrator.
           isActive: true,
         });
       }
+
+      // Every team member and the owner get their Tech ID now, from sign-up (owner, 2026-10-31).
+      await nailTickets.ensureBarberNumbers(store.id).catch((e) => console.error("[onboarding] tech IDs:", e?.message ?? e));
 
       await db.update(users).set({ onboardingCompleted: true }).where(eq(users.id, userId));
 

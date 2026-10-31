@@ -1965,11 +1965,46 @@ export function isFrontDeskId(barberNumber: number): boolean {
 }
 
 /**
+ * The salon owner's own staff record (employment_type "owner"), so the owner has a Tech ID too (owner,
+ * 2026-10-31; migration 0275 did the same for existing salons). In this order:
+ *   1. the staff record the owner's login is linked to (users.staff_id) is already theirs,
+ *   2. else the record sign-up made for them (named "Owner") or one with the owner's own name is marked owner
+ *      and keeps working as before,
+ *   3. else a new one: role "Owner", hidden from the calendar and the booking page, not in the turn line,
+ *      no commission.
+ * At most one per salon (unique index staff_one_owner_per_store). Idempotent and cheap once done.
+ */
+export async function ensureOwnerStaff(storeId: number): Promise<void> {
+  const hasOwner = `EXISTS (SELECT 1 FROM staff x WHERE x.store_id = l.id AND COALESCE(x.status, 'active') NOT IN ('removed', 'deactivated')
+                      AND (x.employment_type = 'owner' OR x.id = u.staff_id))`;
+  const marked = await pool.query(
+    `UPDATE staff s SET employment_type = 'owner'
+       FROM (SELECT st.id FROM locations l JOIN users u ON u.id = l.user_id
+               JOIN staff st ON st.store_id = l.id AND COALESCE(st.status, 'active') NOT IN ('removed', 'deactivated')
+              WHERE l.id = $1 AND NOT ${hasOwner}
+                AND (lower(trim(st.name)) = 'owner' OR lower(trim(st.name)) = lower(trim(CONCAT_WS(' ', u.first_name, u.last_name))))
+              ORDER BY st.id LIMIT 1) pick
+      WHERE s.id = pick.id`,
+    [storeId],
+  ).catch(() => ({ rowCount: 0 }));
+  if (marked.rowCount) return;
+  await pool.query(
+    `INSERT INTO staff (name, role, store_id, status, employment_type, show_on_calendar, takes_turns, front_desk, commission_enabled)
+     SELECT COALESCE(NULLIF(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), ''), 'Owner'), 'Owner', l.id, 'active', 'owner', false, false, false, false
+       FROM locations l JOIN users u ON u.id = l.user_id
+      WHERE l.id = $1 AND NOT ${hasOwner}
+     ON CONFLICT DO NOTHING`,
+    [storeId],
+  );
+}
+
+/**
  * Give every active staff member of the store an ID: the lowest free number in their range — 90–99 for
  * receptionists (staff.front_desk), 1–89 for everyone else. Someone whose number is in the wrong range
  * (they were just made, or unmade, a receptionist) is renumbered. Idempotent.
  */
 export async function ensureBarberNumbers(storeId: number): Promise<void> {
+  await ensureOwnerStaff(storeId);
   await pool.query(
     `UPDATE staff SET barber_number = NULL
       WHERE store_id = $1 AND barber_number IS NOT NULL AND front_desk <> (barber_number >= ${FRONT_DESK_ID_MIN})`,

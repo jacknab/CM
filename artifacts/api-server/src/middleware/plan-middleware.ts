@@ -9,7 +9,7 @@
 import { Request, Response, NextFunction } from "express";
 import { resolveFeature, canUseFeature } from "../lib/featureAccess";
 import { db } from "../db";
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 
 // ─── requireFeature middleware ────────────────────────────────────────────────
 
@@ -75,10 +75,16 @@ export async function checkStaffLimit(
   storeId: number
 ): Promise<{ allowed: boolean; limit: number | null; current: number }> {
   const { staff } = await import("@shared/schema");
+  // A seat is a working team member: not the owner's own record, and not someone who was removed or
+  // deactivated (they used to count, so a salon that let someone go could not add their replacement).
   const [{ value }] = await db
     .select({ value: count() })
     .from(staff)
-    .where(eq(staff.storeId, storeId));
+    .where(and(
+      eq(staff.storeId, storeId),
+      sql`COALESCE(${staff.status}, 'active') NOT IN ('removed', 'deactivated')`,
+      sql`COALESCE(${staff.employmentType}, '') <> 'owner'`,
+    ));
   const current = Number(value);
 
   const access = await resolveFeature(storeId, "staff");
