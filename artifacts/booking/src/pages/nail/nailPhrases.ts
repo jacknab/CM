@@ -426,9 +426,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "đã kiếm được",
   "ha ganado"
  ],
- "A grid with no Back key gets one in its last position on the POS.": [
-  "Một lưới không có phím Quay lại sẽ có một phím ở vị trí cuối cùng trên POS.",
-  "Una cuadrícula sin tecla Atrás obtiene una en su última posición en el POS."
+ "A grid with no Back key gets one in its last position on the front desk.": [
+  "Một lưới không có phím Quay lại sẽ có một phím ở vị trí cuối cùng trên quầy lễ tân.",
+  "Una cuadrícula sin tecla Atrás obtiene una en su última posición en la recepción."
  ],
  "Pick the time again.": [
   "Chọn lại giờ.",
@@ -442,9 +442,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Một tùy chọn đã chọn không còn khả dụng",
   "Una opción seleccionada ya no está disponible"
  ],
- "a POS station": [
-  "một trạm POS",
-  "una estación POS"
+ "a front desk station": [
+  "một trạm lễ tân",
+  "una estación de recepción"
  ],
  "A ticket of": [
   "Phiếu từ",
@@ -614,9 +614,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Nhấn vào biểu tượng để đặt không cần tên",
   "Toca para sin cita"
  ],
- "Arrange the POS keys": [
-  "Sắp Xếp Phím POS",
-  "Organizar las teclas del POS"
+ "Arrange the front desk keys": [
+  "Sắp Xếp Phím Quầy Lễ Tân",
+  "Organizar las teclas de recepción"
  ],
  "Assign": [
   "Giao",
@@ -926,9 +926,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "THẺ SẼ SỬ DỤNG ĐẦU ĐỌC M2 CỦA LỄ TÂN",
   "LA TARJETA USARÁ EL LECTOR M2 DE RECEPCIÓN"
  ],
- "CARD WILL USE THE M2 READER ON THIS POS DEVICE": [
-  "THẺ SẼ SỬ DỤNG ĐẦU ĐỌC M2 TRÊN THIẾT BỊ POS NÀY",
-  "LA TARJETA USARÁ EL LECTOR M2 EN ESTE DISPOSITIVO POS"
+ "CARD WILL USE THE M2 READER ON THIS FRONT DESK TABLET": [
+  "THẺ SẼ DÙNG ĐẦU ĐỌC M2 TRÊN MÁY TÍNH BẢNG QUẦY LỄ TÂN NÀY",
+  "LA TARJETA USARÁ EL LECTOR M2 DE ESTA TABLETA DE RECEPCIÓN"
  ],
  "Card: type the amount and press ENTER to start": [
   "Thẻ: nhập số tiền và nhấn ENTER để bắt đầu",
@@ -1070,9 +1070,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Thanh toán với đầu đọc M2 kết nối với thiết bị quầy lễ tân",
   "Cobrar con el lector M2 emparejado al dispositivo de recepción"
  ],
- "Charge with the M2 reader paired to this POS device": [
-  "Thanh toán với đầu đọc M2 kết nối với thiết bị POS này",
-  "Cobrar con el lector M2 emparejado a este dispositivo POS"
+ "Charge with the M2 reader paired to this front desk tablet": [
+  "Thanh toán với đầu đọc M2 kết nối với máy tính bảng quầy lễ tân này",
+  "Cobrar con el lector M2 emparejado a esta tableta de recepción"
  ],
  "CHARGING…": [
   "ĐANG TÍNH PHÍ…",
@@ -1194,9 +1194,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "CHỌN KHÁCH TRƯỚC",
   "ELEGIR UN CLIENTE PRIMERO"
  ],
- "Choose a grid, tap a position, then say what that key is. Nothing changes on the POS until you save.": [
-  "Chọn một lưới, chạm vào một vị trí, sau đó nói phím đó là gì. Không có gì thay đổi trên POS cho đến khi bạn lưu.",
-  "Elija una cuadrícula, toque una posición, luego diga qué es esa tecla. Nada cambia en el POS hasta que lo guarde."
+ "Choose a grid, tap a position, then say what that key is. Nothing changes on the front desk until you save.": [
+  "Chọn một lưới, chạm vào một vị trí, sau đó nói phím đó là gì. Không có gì thay đổi trên quầy lễ tân cho đến khi bạn lưu.",
+  "Elija una cuadrícula, toque una posición, luego diga qué es esa tecla. Nada cambia en la recepción hasta que lo guarde."
  ],
  "CHOOSE A TECHNICIAN": [
   "CHỌN MỘT THỢ",
@@ -2386,9 +2386,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Quay lại và tính tiền",
   "Regresar y cobrar"
  ],
- "Go back to the automatic layout? The POS will show a key for every category again, and this arrangement is deleted.": [
-  "Quay lại bố cục tự động? POS sẽ hiển thị một phím cho mỗi danh mục một lần nữa, và sắp xếp này sẽ bị xóa.",
-  "¿Volver al diseño automático? El POS mostrará una tecla para cada categoría nuevamente, y esta disposición se eliminará."
+ "Go back to the automatic layout? The front desk will show a key for every category again, and this arrangement is deleted.": [
+  "Quay lại bố cục tự động? Quầy lễ tân sẽ hiển thị một phím cho mỗi danh mục một lần nữa, và sắp xếp này sẽ bị xóa.",
+  "¿Volver al diseño automático? La recepción mostrará una tecla para cada categoría nuevamente, y esta disposición se eliminará."
  ],
  "Go to 2 across? Keys in positions 13–18 are taken off.": [
   "Đi đến 2 ngang? Các phím ở vị trí 13–18 bị gỡ bỏ.",
@@ -2790,9 +2790,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Lý do:",
   "Motivo:"
  ],
- "M2 Reader — POS Device": [
-  "Đầu đọc M2 — Thiết bị POS",
-  "Lector M2 — Dispositivo POS"
+ "M2 Reader — Front Desk Tablet": [
+  "Đầu đọc M2 — Máy tính bảng quầy lễ tân",
+  "Lector M2 — Tableta de recepción"
  ],
  "Mã PIN 3–4 chữ số": [
   "Mã PIN 3–4 chữ số",
@@ -3374,9 +3374,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "OK",
   "OK"
  ],
- "On · Tech ID to use the POS": [
-  "Bật · ID thợ để dùng POS",
-  "Encendido · ID de técnico para usar el POS"
+ "On · Tech ID to use the front desk": [
+  "Bật · ID thợ để dùng quầy lễ tân",
+  "Encendido · ID de técnico para usar la recepción"
  ],
  "On a break": [
   "Đang nghỉ",
@@ -4498,9 +4498,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "đầu đọc M2 quầy lễ tân",
   "el lector M2 de la recepción"
  ],
- "the M2 reader connected to this POS device": [
-  "đầu đọc M2 kết nối với thiết bị POS này",
-  "el lector M2 conectado a este dispositivo POS"
+ "the M2 reader connected to this front desk tablet": [
+  "đầu đọc M2 kết nối với máy tính bảng quầy lễ tân này",
+  "el lector M2 conectado a esta tableta de recepción"
  ],
  "The price of the service does not matter.": [
   "Giá dịch vụ không ảnh hưởng.",
@@ -4582,9 +4582,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Thiết bị này đã được đăng xuất. Đang đăng nhập lại…",
   "Este dispositivo fue cerrado. Volviendo a iniciar sesión…"
  ],
- "This position is empty, so the POS shows a category that isn't on any grid here. Choose a key to put something else here.": [
-  "Vị trí này trống, vì vậy POS hiển thị một danh mục không có trên bất kỳ lưới nào ở đây. Chọn một phím để đặt thứ khác ở đây.",
-  "Esta posición está vacía, por lo que el POS muestra una categoría que no está en ninguna cuadrícula aquí. Elija una tecla para poner algo más aquí."
+ "This position is empty, so the front desk shows a category that isn't on any grid here. Choose a key to put something else here.": [
+  "Vị trí này trống, vì vậy quầy lễ tân hiển thị một danh mục không có trên bất kỳ lưới nào ở đây. Chọn một phím để đặt thứ khác ở đây.",
+  "Esta posición está vacía, por lo que la recepción muestra una categoría que no está en ninguna cuadrícula aquí. Elija una tecla para poner algo más aquí."
  ],
  "This position is empty. Choose what the key is above.": [
   "Vị trí này trống. Chọn phím ở trên.",
@@ -5074,9 +5074,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Hủy ghép đôi màn hình hiện tại của trạm này",
   "Desemparejar la pantalla actual de esta estación"
  ],
- "Unpaired. That screen now shows a code and can be paired with the POS it belongs to.": [
-  "Đã hủy ghép nối. Màn hình đó hiện hiển thị mã và có thể ghép nối với POS mà nó thuộc về.",
-  "Desemparejado. Esa pantalla ahora muestra un código y puede emparejarse con el POS al que pertenece."
+ "Unpaired. That screen now shows a code and can be paired with the front desk it belongs to.": [
+  "Đã hủy ghép nối. Màn hình đó hiện hiển thị mã và có thể ghép nối với quầy lễ tân mà nó thuộc về.",
+  "Desemparejado. Esa pantalla ahora muestra un código y puede emparejarse con la recepción a la que pertenece."
  ],
  "UP NEXT": [
   "TIẾP THEO",
@@ -5330,9 +5330,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Khách tiếp theo của bạn",
   "Tu próximo cliente"
  ],
- "Your own card terminal. No M2, no Tap to Pay, no card payment on the customer screen. CARD records the payment. Applies to every POS station.": [
-  "Thiết bị thẻ riêng của bạn. Không M2, không Tap to Pay, không thanh toán thẻ trên màn hình khách hàng. THẺ ghi nhận thanh toán. Áp dụng cho mọi trạm POS.",
-  "Su propio terminal de tarjeta. Sin M2, sin Tap to Pay, sin pago con tarjeta en la pantalla del cliente. TARJETA registra el pago. Se aplica a cada estación POS."
+ "Your own card terminal. No M2, no Tap to Pay, no card payment on the customer screen. CARD records the payment. Applies to every front desk station.": [
+  "Thiết bị thẻ riêng của bạn. Không M2, không Tap to Pay, không thanh toán thẻ trên màn hình khách hàng. THẺ ghi nhận thanh toán. Áp dụng cho mọi trạm lễ tân.",
+  "Su propio terminal de tarjeta. Sin M2, sin Tap to Pay, sin pago con tarjeta en la pantalla del cliente. TARJETA registra el pago. Se aplica a cada estación de recepción."
  ],
  "Your turn is counted when you press DONE, or when the ticket is paid.": [
   "Lượt của bạn được tính khi bạn bấm XONG, hoặc khi phiếu được tính tiền.",
@@ -5982,9 +5982,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "trạm này",
   "esta estación"
  ],
- "Every POS station already belongs to another tablet, so this one isn't linked to a customer screen. The owner can add a station or release an unused one in Settings → POS Stations.": [
-  "Mọi trạm POS đã thuộc máy khác, nên máy này chưa nối với màn hình khách. Chủ tiệm có thể thêm trạm hoặc nhả trạm không dùng trong Cài đặt → Trạm POS.",
-  "Todas las estaciones POS ya pertenecen a otra tableta, así que esta no está vinculada a una pantalla de cliente. El dueño puede agregar una estación o liberar una sin uso en Ajustes → Estaciones POS."
+ "Every front desk station already belongs to another tablet, so this one isn't linked to a customer screen. The owner can add a station or release an unused one in Settings → POS Stations.": [
+  "Mọi trạm lễ tân đã thuộc máy khác, nên máy này chưa nối với màn hình khách. Chủ tiệm có thể thêm trạm hoặc nhả trạm không dùng trong Cài đặt → Trạm POS.",
+  "Todas las estaciones de recepción ya pertenecen a otra tableta, así que esta no está vinculada a una pantalla de cliente. El dueño puede agregar una estación o liberar una sin uso en Ajustes → Estaciones POS."
  ],
  "0 min": [
   "0 phút",
@@ -6010,9 +6010,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Ngăn kéo 1",
   "Caja 1"
  ],
- "The POS setup could not be loaded. Check the connection and try again.": [
-  "Không tải được phần cài đặt POS. Kiểm tra kết nối rồi thử lại.",
-  "No se pudo cargar la configuración del POS. Revise la conexión e inténtelo de nuevo."
+ "The front desk setup could not be loaded. Check the connection and try again.": [
+  "Không tải được phần cài đặt quầy lễ tân. Kiểm tra kết nối rồi thử lại.",
+  "No se pudo cargar la configuración de la recepción. Revise la conexión e inténtelo de nuevo."
  ],
  "Enter a tax rate from 0% to 25%.": [
   "Nhập mức thuế từ 0% đến 25%.",
@@ -6042,21 +6042,41 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Hai mã không giống nhau.",
   "Los dos PIN no coinciden."
  ],
- "Set up your POS": [
-  "Cài đặt máy POS",
-  "Configure su POS"
+ "Set up your front desk": [
+  "Cài đặt quầy lễ tân",
+  "Configure su recepción"
  ],
- "This tablet isn't signed in with the salon owner's account. Sign in as the owner to set up the POS.": [
-  "Máy tính bảng này không đăng nhập bằng tài khoản chủ tiệm. Hãy đăng nhập bằng tài khoản chủ tiệm để cài đặt POS.",
-  "Esta tableta no tiene abierta la cuenta del dueño del salón. Inicie sesión como dueño para configurar el POS."
+ "This tablet isn't signed in with the salon owner's account. Sign in as the owner to set up the front desk.": [
+  "Máy tính bảng này không đăng nhập bằng tài khoản chủ tiệm. Hãy đăng nhập bằng tài khoản chủ tiệm để cài đặt quầy lễ tân.",
+  "Esta tableta no tiene abierta la cuenta del dueño del salón. Inicie sesión como dueño para configurar la recepción."
  ],
- "Let's set up your POS": [
-  "Cùng cài đặt máy POS",
-  "Configuremos su POS"
+ "Let's set up your front desk": [
+  "Cùng cài đặt quầy lễ tân",
+  "Configuremos su recepción"
  ],
  "A few questions about how your salon takes payment. It takes about three minutes, and you can change any answer later in Settings.": [
   "Vài câu hỏi về cách tiệm nhận thanh toán. Mất khoảng ba phút, và bạn có thể đổi bất kỳ câu trả lời nào sau này trong Cài Đặt.",
   "Unas preguntas sobre cómo cobra su salón. Toma unos tres minutos y puede cambiar cualquier respuesta después en Configuración."
+ ],
+ "Where you keep cash": [
+  "Nơi giữ tiền mặt",
+  "Dónde guarda el efectivo"
+ ],
+ "The cash you take goes somewhere: a cash drawer, a cash box or an envelope. Tell us what you keep it in and how much cash for change is in it when the day starts. Certxa keeps count of what should be in it, and you count it at Day Close. The front desk can't take cash until this is set up.": [
+  "Tiền mặt bạn nhận được để ở đâu đó: ngăn kéo tiền, hộp đựng tiền hay một phong bì. Cho chúng tôi biết bạn để tiền trong gì và có bao nhiêu tiền thối trong đó khi bắt đầu ngày. Certxa ghi lại số tiền phải có trong đó, và bạn đếm lại khi đóng ngày. Quầy lễ tân chỉ nhận tiền mặt khi đã thiết lập phần này.",
+  "El efectivo que cobra se guarda en algún lugar: una caja registradora, una caja de dinero o un sobre. Díganos dónde lo guarda y cuánto efectivo para cambio hay al empezar el día. Certxa lleva la cuenta de lo que debería haber, y usted lo cuenta en el cierre del día. La recepción no acepta efectivo hasta que esto esté configurado."
+ ],
+ "What you keep it in": [
+  "Bạn để tiền trong gì",
+  "Dónde lo guarda"
+ ],
+ "Cash drawer, cash box or envelope": [
+  "Ngăn kéo tiền, hộp tiền hay phong bì",
+  "Caja registradora, caja de dinero o sobre"
+ ],
+ "Cash for change at the start of the day": [
+  "Tiền thối đầu ngày",
+  "Efectivo para cambio al empezar el día"
  ],
  "Your first cash drawer": [
   "Ngăn kéo tiền đầu tiên",
@@ -6142,9 +6162,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Tiền đầu ngày",
   "Efectivo inicial"
  ],
- "It is assigned to your main POS register.": [
-  "Ngăn kéo này thuộc máy POS chính.",
-  "Se asigna a su POS principal."
+ "It belongs to your main front desk.": [
+  "Thuộc quầy lễ tân chính.",
+  "Pertenece a su recepción principal."
  ],
  "More drawers and registers can be added in Settings › Cash Drawers.": [
   "Có thể thêm ngăn kéo và máy POS trong Cài Đặt › Ngăn Kéo Tiền.",
@@ -6170,9 +6190,9 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Phiếu nhỏ hơn được tính",
   "Un ticket menor vale"
  ],
- "Everyone signs in to the POS with their own Tech ID. These are your team's IDs. Add or change team members in Settings › Staff.": [
-  "Mỗi người đăng nhập POS bằng mã thợ của mình. Đây là mã của nhân viên trong tiệm. Thêm hoặc sửa nhân viên trong Cài Đặt › Nhân viên.",
-  "Cada persona entra al POS con su propio ID de técnico. Estos son los ID de su equipo. Agregue o cambie miembros en Configuración › Personal."
+ "Everyone signs in to the front desk with their own Tech ID. These are your team's IDs. Add or change team members in Settings › Staff.": [
+  "Mỗi người đăng nhập quầy lễ tân bằng mã thợ của mình. Đây là mã của nhân viên trong tiệm. Thêm hoặc sửa nhân viên trong Cài Đặt › Nhân viên.",
+  "Cada persona entra a la recepción con su propio ID de técnico. Estos son los ID de su equipo. Agregue o cambie miembros en Configuración › Personal."
  ],
  "Owner": [
   "Chủ tiệm",
@@ -6186,25 +6206,25 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Mã thợ của bạn là",
   "Su propio ID de técnico es"
  ],
- "Ask for a Tech ID to use the POS": [
-  "Phải nhập mã thợ để dùng POS",
-  "Pedir el ID de técnico para usar el POS"
+ "Ask for a Tech ID to use the front desk": [
+  "Phải nhập mã thợ để dùng quầy lễ tân",
+  "Pedir el ID de técnico para usar la recepción"
  ],
- "Everything done on the POS is recorded under who did it.": [
-  "Mọi việc trên POS đều được ghi theo người làm.",
-  "Todo lo que se hace en el POS queda registrado a nombre de quien lo hizo."
+ "Everything done on the front desk is recorded under who did it.": [
+  "Mọi việc trên quầy lễ tân đều được ghi theo người làm.",
+  "Todo lo que se hace en la recepción queda registrado a nombre de quien lo hizo."
  ],
- "Anyone can use the POS without signing in.": [
-  "Ai cũng dùng được POS mà không cần đăng nhập.",
-  "Cualquiera puede usar el POS sin iniciar sesión."
+ "Anyone can use the front desk without signing in.": [
+  "Ai cũng dùng được quầy lễ tân mà không cần đăng nhập.",
+  "Cualquiera puede usar la recepción sin iniciar sesión."
  ],
  "The Manager menu and cancelling a client who has been served need a 4-digit PIN. Choose your salon's own PIN and keep it private.": [
   "Menu quản lý và việc hủy khách đã được làm cần mã 4 số. Hãy chọn mã riêng của tiệm và giữ bí mật.",
   "El menú de gerente y cancelar a un cliente ya atendido necesitan un PIN de 4 dígitos. Elija el PIN propio de su salón y no lo comparta."
  ],
- "Your salon already has its own manager PIN. To change it, use Manager › Manager PIN on the POS.": [
-  "Tiệm đã có mã quản lý riêng. Muốn đổi, vào Quản lý › Mã quản lý trên POS.",
-  "Su salón ya tiene su propio PIN de gerente. Para cambiarlo, use Gerente › PIN de gerente en el POS."
+ "Your salon already has its own manager PIN. To change it, use Manager › Manager PIN on the front desk.": [
+  "Tiệm đã có mã quản lý riêng. Muốn đổi, vào Quản lý › Mã quản lý trên quầy lễ tân.",
+  "Su salón ya tiene su propio PIN de gerente. Para cambiarlo, use Gerente › PIN de gerente en la recepción."
  ],
  "New PIN": [
   "Mã mới",
@@ -6234,25 +6254,25 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Chưa đặt",
   "Sin configurar"
  ],
- "Your POS is ready": [
-  "Máy POS đã sẵn sàng",
-  "Su POS está listo"
+ "Your front desk is ready": [
+  "Quầy lễ tân đã sẵn sàng",
+  "Su recepción está lista"
  ],
  "You can change any of this later in Settings.": [
   "Bạn có thể đổi những mục này sau trong Cài Đặt.",
   "Puede cambiar todo esto después en Configuración."
  ],
- "Open the POS": [
-  "Mở máy POS",
-  "Abrir el POS"
+ "Open the front desk": [
+  "Mở quầy lễ tân",
+  "Abrir la recepción"
  ],
  "Keep my PIN": [
   "Giữ mã hiện tại",
   "Mantener mi PIN"
  ],
- "POS setup": [
-  "Cài đặt POS",
-  "Configuración del POS"
+ "Front desk setup": [
+  "Cài đặt quầy lễ tân",
+  "Configuración de la recepción"
  ],
  "Finish later": [
   "Làm sau",
@@ -7268,9 +7288,9 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "{0} ya marcó este servicio como LISTO. Para cancelarlo se necesitan el motivo y el PIN de gerente. El dueño ve ambos."
  ],
  [
-  "Your main POS register uses {0}.",
-  "Máy POS chính dùng {0}.",
-  "Su POS principal usa {0}."
+  "Your main front desk uses {0}.",
+  "Quầy lễ tân chính dùng {0}.",
+  "Su recepción principal usa {0}."
  ],
  [
   "Tip choice {0}",

@@ -129,10 +129,10 @@ export function GridEditor({ groups: allGroups, addons = [], config, saving, onS
       <header className="ge-head">
         <div>
           <h2>Key grid</h2>
-          <p>Choose a grid, tap a position, then say what that key is. Nothing changes on the POS until you save.</p>
+          <p>Choose a grid, tap a position, then say what that key is. Nothing changes on the front desk until you save.</p>
         </div>
         <div className="ge-head-actions">
-          <button type="button" disabled={saving} onClick={() => { if (window.confirm("Go back to the automatic layout? The POS will show a key for every category again, and this arrangement is deleted.")) onSave(null); }} data-testid="nail-grid-auto">Automatic layout</button>
+          <button type="button" disabled={saving} onClick={() => { if (window.confirm("Go back to the automatic layout? The front desk will show a key for every category again, and this arrangement is deleted.")) onSave(null); }} data-testid="nail-grid-auto">Automatic layout</button>
           <button type="button" disabled={saving} onClick={onClose} data-testid="nail-grid-cancel">Cancel</button>
           <button type="button" className="ge-save" disabled={saving} onClick={() => onSave(draft)} data-testid="nail-grid-save">{saving ? "Saving…" : "Save"}</button>
         </div>
@@ -249,9 +249,9 @@ export function GridEditor({ groups: allGroups, addons = [], config, saving, onS
                   </div>
                 </>
               ) : autoSlots.has(slot) ? (
-                <p className="ge-hint">This position is empty, so the POS shows a category that isn't on any grid here. Choose a key to put something else here.</p>
+                <p className="ge-hint">This position is empty, so the front desk shows a category that isn't on any grid here. Choose a key to put something else here.</p>
               ) : <p className="ge-hint">This position is empty. Choose what the key is above.</p>}
-              {!isMain && <p className="ge-hint">A grid with no Back key gets one in its last position on the POS.</p>}
+              {!isMain && <p className="ge-hint">A grid with no Back key gets one in its last position on the front desk.</p>}
             </>
           )}
         </aside>

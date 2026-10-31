@@ -1,5 +1,5 @@
 /**
- * POS setup — the first time a salon opens the /nail POS (owner, 2026-10-31; plans/pos-setup.md).
+ * Front desk setup — the first time a salon opens the /nail POS (owner, 2026-10-31; plans/pos-setup.md).
  *
  * One question a screen, every answer saved as the owner moves on, through the same settings the rest of
  * Certxa uses: sales tax (POS Settings), the CARD button, cash price, the first cash drawer on the main POS
@@ -38,7 +38,7 @@ async function send(url: string, method: string, body?: unknown) {
 }
 
 const ink = "#0f1f3d";
-const muted = "#5b6b84";
+const muted = "#45546b";
 const line = "#d5deea";
 const brand = "#1f6fe0";
 
@@ -48,12 +48,12 @@ function Choice({ selected, onClick, title, detail, testId }: { selected: boolea
       className="w-full text-left rounded-2xl border-2 px-5 py-4 transition-colors"
       style={{ borderColor: selected ? brand : line, background: selected ? "#eef4ff" : "#fff" }}>
       <span className="flex items-center justify-between gap-3">
-        <span className="text-[19px] font-semibold" style={{ color: ink }}>{title}</span>
+        <span className="text-[26px] font-semibold" style={{ color: ink }}>{title}</span>
         <span className="w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0" style={{ borderColor: selected ? brand : line, background: selected ? brand : "#fff" }}>
           {selected && <Check className="w-4 h-4 text-white" strokeWidth={3} />}
         </span>
       </span>
-      {detail && <span className="block mt-1 text-[15px] leading-snug" style={{ color: muted }}>{detail}</span>}
+      {detail && <span className="block mt-1 text-[22px] leading-snug" style={{ color: muted }}>{detail}</span>}
     </button>
   );
 }
@@ -63,8 +63,8 @@ function Toggle({ on, onChange, title, detail, testId }: { on: boolean; onChange
     <button type="button" onClick={() => onChange(!on)} data-testid={testId} aria-pressed={on}
       className="w-full flex items-center justify-between gap-4 rounded-2xl border px-5 py-4 pos-white text-left" style={{ borderColor: line }}>
       <span>
-        <span className="block text-[18px] font-semibold" style={{ color: ink }}>{title}</span>
-        {detail && <span className="block text-[14px] mt-0.5" style={{ color: muted }}>{detail}</span>}
+        <span className="block text-[24px] font-semibold" style={{ color: ink }}>{title}</span>
+        {detail && <span className="block text-[22px] mt-1" style={{ color: muted }}>{detail}</span>}
       </span>
       <span className="relative w-14 h-8 rounded-full shrink-0 transition-colors" style={{ background: on ? brand : "#cbd5e1" }}>
         <span className="absolute top-1 w-6 h-6 rounded-full pos-white shadow transition-all" style={{ left: on ? 28 : 4 }} />
@@ -76,12 +76,12 @@ function Toggle({ on, onChange, title, detail, testId }: { on: boolean; onChange
 function MoneyField({ label, value, onChange, prefix, suffix, testId, max }: { label: string; value: string; onChange: (v: string) => void; prefix?: string; suffix?: string; testId?: string; max?: number }) {
   return (
     <label className="flex items-center justify-between gap-4 rounded-2xl border px-5 py-3 pos-white" style={{ borderColor: line }}>
-      <span className="text-[18px] font-semibold" style={{ color: ink }}>{label}</span>
-      <span className="flex items-center gap-2 text-[22px] font-semibold" style={{ color: ink }}>
+      <span className="text-[24px] font-semibold" style={{ color: ink }}>{label}</span>
+      <span className="flex items-center gap-2 text-[28px] font-semibold" style={{ color: ink }}>
         {prefix}
         <input inputMode="decimal" value={value} data-testid={testId} aria-label={label}
           onChange={(e) => { const v = e.target.value.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1"); if (max == null || !v || Number(v) <= max) onChange(v); }}
-          className="w-32 h-12 rounded-xl border text-right px-3 text-[22px] font-semibold outline-none focus:ring-2" style={{ borderColor: line, color: ink }} />
+          className="w-36 h-14 rounded-xl border text-right px-3 text-[28px] font-semibold outline-none focus:ring-2" style={{ borderColor: line, color: ink }} />
         {suffix}
       </span>
     </label>
@@ -101,7 +101,7 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
   const [taxable, setTaxable] = useState({ services: false, addons: false, products: true, giftCards: false });
   const [card, setCard] = useState<CardProvider>("stripe");
   const [cashPct, setCashPct] = useState("0");
-  const [drawerName, setDrawerName] = useState("Drawer 1");
+  const [drawerName, setDrawerName] = useState("");
   const [startingCash, setStartingCash] = useState("200");
   const [tips, setTips] = useState<string[]>(DEFAULT_TIP_PRESETS.map(String));
   const [turnSaved, setTurnSaved] = useState<Record<string, any>>({});
@@ -138,7 +138,7 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
       }
       if (screen) setLockScreen(screen.lockScreen !== false);
       if (s.mainDrawer) { setDrawerName(s.mainDrawer.name); setStartingCash(String(s.mainDrawer.startingCash)); }
-    }).catch(() => alive && setLoadError("The POS setup could not be loaded. Check the connection and try again."));
+    }).catch(() => alive && setLoadError("The front desk setup could not be loaded. Check the connection and try again."));
     return () => { alive = false; };
   }, [storeId]);
 
@@ -173,7 +173,7 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
       } else if (step === "drawer") {
         const amount = Number(startingCash);
         if (startingCash === "" || !Number.isFinite(amount) || amount < 0) throw new Error("Enter how much cash the drawer starts each day with.");
-        const r = await send("/api/nail/pos-setup/drawer", "PUT", { name: drawerName.trim() || "Drawer 1", startingCash: amount });
+        const r = await send("/api/nail/pos-setup/drawer", "PUT", { name: drawerName.trim() || "Cash", startingCash: amount });
         setStatus((s) => (s ? { ...s, mainDrawer: r.mainDrawer } : s));
         void queryClient.invalidateQueries({ queryKey: ["/api/cash-drawers"] });
         void queryClient.invalidateQueries({ queryKey: ["/api/cash-drawers/station"] });
@@ -220,34 +220,34 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
   };
 
   const owner = status?.team.find((m) => m.isOwner);
-  const h1 = "text-[30px] md:text-[34px] font-bold leading-tight";
-  const lead = "text-[17px] leading-relaxed mt-2";
+  const h1 = "text-[34px] md:text-[38px] font-bold leading-tight";
+  const lead = "text-[24px] leading-relaxed mt-2";
 
   let body: React.ReactNode = null;
   if (!status) {
-    body = loadError ? <p className="text-[18px]" style={{ color: "#b42318" }}>{loadError}</p> : <Loader2 className="w-8 h-8 animate-spin mx-auto" style={{ color: muted }} />;
+    body = loadError ? <p className="text-[24px]" style={{ color: "#b42318" }}>{loadError}</p> : <Loader2 className="w-8 h-8 animate-spin mx-auto" style={{ color: muted }} />;
   } else if (!status.canSetUp) {
     body = (
       <div>
-        <h1 className={h1} style={{ color: ink }}>Set up your POS</h1>
-        <p className={lead} style={{ color: muted }}>This tablet isn't signed in with the salon owner's account. Sign in as the owner to set up the POS.</p>
+        <h1 className={h1} style={{ color: ink }}>Set up your front desk</h1>
+        <p className={lead} style={{ color: muted }}>This tablet isn't signed in with the salon owner's account. Sign in as the owner to set up the front desk.</p>
       </div>
     );
   } else if (step === "welcome") {
     body = (
       <div>
-        <h1 className={h1} style={{ color: ink }}>Let's set up your POS</h1>
+        <h1 className={h1} style={{ color: ink }}>Let's set up your front desk</h1>
         <p className={lead} style={{ color: muted }}>A few questions about how your salon takes payment. It takes about three minutes, and you can change any answer later in Settings.</p>
-        <ul className="mt-6 grid sm:grid-cols-2 gap-x-8 gap-y-2 text-[17px]" style={{ color: ink }}>
-          {["Sales tax", "Card payments", "Cash price", "Your first cash drawer", "Tip choices", "Turn rotation", "Tech IDs", "Manager PIN"].map((t) => (
-            <li key={t} className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full" style={{ background: muted }} />{t}</li>
+        <ul className="mt-6 grid sm:grid-cols-2 gap-x-8 gap-y-2 text-[24px]" style={{ color: ink }}>
+          {["Sales tax", "Card payments", "Cash price", "Where you keep cash", "Tip choices", "Turn rotation", "Tech IDs", "Manager PIN"].map((t) => (
+            <li key={t} className="flex items-center gap-3"><span className="w-2 h-2 rounded-full" style={{ background: muted }} />{t}</li>
           ))}
         </ul>
       </div>
     );
   } else if (step === "tax") {
     body = (
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         <div>
           <h1 className={h1} style={{ color: ink }}>Sales tax</h1>
           <p className={lead} style={{ color: muted }}>Your state and city sales tax rate, and what it applies to. Many states don't tax services but do tax products. Check with your state if you're not sure.</p>
@@ -257,12 +257,12 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
         <Toggle on={taxable.addons} onChange={(v) => setTaxable((t) => ({ ...t, addons: v }))} title="Add-ons are taxed" testId="pos-setup-tax-addons" />
         <Toggle on={taxable.products} onChange={(v) => setTaxable((t) => ({ ...t, products: v }))} title="Retail products are taxed" testId="pos-setup-tax-products" />
         <Toggle on={taxable.giftCards} onChange={(v) => setTaxable((t) => ({ ...t, giftCards: v }))} title="Gift cards are taxed" detail="Usually not: tax is charged when the gift card is spent." testId="pos-setup-tax-giftcards" />
-        <p className="text-[14px]" style={{ color: muted }}>Tips are never taxed.</p>
+        <p className="text-[22px]" style={{ color: muted }}>Tips are never taxed.</p>
       </div>
     );
   } else if (step === "card") {
     body = (
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         <div>
           <h1 className={h1} style={{ color: ink }}>Card payments</h1>
           <p className={lead} style={{ color: muted }}>What should the CARD button do at checkout?</p>
@@ -272,7 +272,7 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
         <Choice selected={card === "own"} onClick={() => setCard("own")} title="My own card machine" testId="pos-setup-card-own"
           detail="You run the card on your own terminal. The CARD button only records the payment as card: Certxa charges nothing." />
         {card === "stripe" && !status.stripeConnected && (
-          <p className="text-[15px] rounded-xl px-4 py-3 border" style={{ color: ink, borderColor: line, background: "#fff" }} data-testid="pos-setup-stripe-note">
+          <p className="text-[22px] rounded-xl px-4 py-3 border" style={{ color: ink, borderColor: line, background: "#fff" }} data-testid="pos-setup-stripe-note">
             Your Stripe account isn't connected yet. Connect it in Settings › Payments before taking cards on the reader. Until then, cash still works.
           </p>
         )}
@@ -280,7 +280,7 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
     );
   } else if (step === "cash") {
     body = (
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         <div>
           <h1 className={h1} style={{ color: ink }}>Cash price</h1>
           <p className={lead} style={{ color: muted }}>Give clients who pay cash a lower price, as a percent off the ticket. Leave it at 0 for no cash price.</p>
@@ -290,26 +290,26 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
     );
   } else if (step === "drawer") {
     body = (
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         <div>
-          <h1 className={h1} style={{ color: ink }}>Your first cash drawer</h1>
-          <p className={lead} style={{ color: muted }}>The cash drawer at your main POS register. It starts each day with the same amount of cash for change, and is counted at Day Close. The POS can't take cash until it has a drawer.</p>
+          <h1 className={h1} style={{ color: ink }}>Where you keep cash</h1>
+          <p className={lead} style={{ color: muted }}>The cash you take goes somewhere: a cash drawer, a cash box or an envelope. Tell us what you keep it in and how much cash for change is in it when the day starts. Certxa keeps count of what should be in it, and you count it at Day Close. The front desk can't take cash until this is set up.</p>
         </div>
         <label className="flex items-center justify-between gap-4 rounded-2xl border px-5 py-3 pos-white" style={{ borderColor: line }}>
-          <span className="text-[18px] font-semibold" style={{ color: ink }}>Drawer name</span>
-          <input value={drawerName} maxLength={40} onChange={(e) => setDrawerName(e.target.value)} data-testid="pos-setup-drawer-name" aria-label="Drawer name"
-            className="w-56 h-12 rounded-xl border px-3 text-[20px] font-semibold outline-none focus:ring-2" style={{ borderColor: line, color: ink }} />
+          <span className="text-[24px] font-semibold" style={{ color: ink }}>What you keep it in</span>
+          <input value={drawerName} maxLength={40} onChange={(e) => setDrawerName(e.target.value)} data-testid="pos-setup-drawer-name" aria-label="What you keep it in" placeholder="Cash drawer, cash box or envelope"
+            className="w-[440px] max-w-[60%] h-14 rounded-xl border px-3 text-[26px] font-semibold placeholder:font-normal placeholder:text-[22px] outline-none focus:ring-2" style={{ borderColor: line, color: ink }} />
         </label>
-        <MoneyField label="Starting cash" value={startingCash} onChange={setStartingCash} prefix="$" testId="pos-setup-drawer-cash" max={10000} />
-        <p className="text-[15px]" style={{ color: muted }}>
-          <span>{status.mainDrawer ? `Your main POS register uses ${status.mainDrawer.name}.` : "It is assigned to your main POS register."}</span>{" "}
+        <MoneyField label="Cash for change at the start of the day" value={startingCash} onChange={setStartingCash} prefix="$" testId="pos-setup-drawer-cash" max={10000} />
+        <p className="text-[22px]" style={{ color: muted }}>
+          <span>{status.mainDrawer ? `Your main front desk uses ${status.mainDrawer.name}.` : "It belongs to your main front desk."}</span>{" "}
           <span>More drawers and registers can be added in Settings › Cash Drawers.</span>
         </p>
       </div>
     );
   } else if (step === "tips") {
     body = (
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         <div>
           <h1 className={h1} style={{ color: ink }}>Tip choices</h1>
           <p className={lead} style={{ color: muted }}>The tip percentages your clients can tap at checkout. Clients can always enter their own amount or skip.</p>
@@ -319,8 +319,8 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
             <label key={i} className="flex items-center justify-center gap-1 rounded-2xl border pos-white h-20" style={{ borderColor: line }}>
               <input inputMode="numeric" value={tips[i] ?? ""} aria-label={`Tip choice ${i + 1}`} data-testid={`pos-setup-tip-${i}`}
                 onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, 3); setTips((t) => { const n = [...t]; while (n.length < 4) n.push(""); n[i] = v; return n; }); }}
-                className="w-20 h-12 text-center text-[26px] font-bold rounded-xl outline-none" style={{ color: ink }} />
-              <span className="text-[22px] font-semibold" style={{ color: muted }}>%</span>
+                className="w-24 h-14 text-center text-[32px] font-bold rounded-xl outline-none" style={{ color: ink }} />
+              <span className="text-[28px] font-semibold" style={{ color: muted }}>%</span>
             </label>
           ))}
         </div>
@@ -328,7 +328,7 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
     );
   } else if (step === "turns") {
     body = (
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         <div>
           <h1 className={h1} style={{ color: ink }}>Turn rotation</h1>
           <p className={lead} style={{ color: muted }}>How your salon decides which technician gets the next walk-in.</p>
@@ -343,17 +343,17 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
         )}
         {mode === "dollar" && (
           <div className="flex items-center justify-between gap-4 rounded-2xl border px-5 py-3 pos-white" style={{ borderColor: line }}>
-            <span className="text-[18px] font-semibold" style={{ color: ink }}>A smaller ticket earns</span>
+            <span className="text-[24px] font-semibold" style={{ color: ink }}>A smaller ticket earns</span>
             <span className="flex gap-2">
               {[0.25, 0.5, 0.75].map((v) => (
-                <button key={v} type="button" onClick={() => setPartial(v)} className="min-w-14 h-12 px-3 rounded-xl border-2 text-[20px] font-semibold"
+                <button key={v} type="button" onClick={() => setPartial(v)} className="min-w-14 h-12 px-3 rounded-xl border-2 text-[26px] font-semibold"
                   style={{ borderColor: partial === v ? brand : line, background: partial === v ? "#eef4ff" : "#fff", color: ink }}>{v === 0.25 ? "¼" : v === 0.5 ? "½" : "¾"}</button>
               ))}
             </span>
           </div>
         )}
         {isDollarMode(mode) && dollarsNum > 0 && (
-          <p className="text-[15px]" style={{ color: muted }} data-testid="pos-setup-turn-preview">
+          <p className="text-[22px]" style={{ color: muted }} data-testid="pos-setup-turn-preview">
             {[20, 30, 45, 60, 90].map((a) => `$${a} = ${formatTurns(turnUnits(turnRules, a))}`).join("   ·   ")}
           </p>
         )}
@@ -361,33 +361,33 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
     );
   } else if (step === "team") {
     body = (
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         <div>
           <h1 className={h1} style={{ color: ink }}>Tech IDs</h1>
-          <p className={lead} style={{ color: muted }}>Everyone signs in to the POS with their own Tech ID. These are your team's IDs. Add or change team members in Settings › Staff.</p>
+          <p className={lead} style={{ color: muted }}>Everyone signs in to the front desk with their own Tech ID. These are your team's IDs. Add or change team members in Settings › Staff.</p>
         </div>
         <div className="rounded-2xl border pos-white divide-y" style={{ borderColor: line }} data-testid="pos-setup-team">
           {status.team.map((m) => (
             <div key={m.id} className="flex items-center justify-between px-5 py-3" style={{ borderColor: line }}>
-              <span className="text-[18px] font-semibold" style={{ color: ink }}>{m.name}<span className="ml-2 text-[14px] font-normal" style={{ color: muted }}>{m.isOwner ? "Owner" : m.frontDesk ? "Front desk" : (m.role || "")}</span></span>
-              <span className="text-[22px] font-bold tabular-nums" style={{ color: ink }}>{m.techId ?? "—"}</span>
+              <span className="text-[24px] font-semibold" style={{ color: ink }}>{m.name}<span className="ml-2 text-[22px] font-normal" style={{ color: muted }}>{m.isOwner ? "Owner" : m.frontDesk ? "Front desk" : (m.role || "")}</span></span>
+              <span className="text-[28px] font-bold tabular-nums" style={{ color: ink }}>{m.techId ?? "—"}</span>
             </div>
           ))}
         </div>
-        {owner?.techId != null && <p className="text-[15px]" style={{ color: muted }}>Your own Tech ID is <strong style={{ color: ink }}>{owner.techId}</strong>.</p>}
-        <Toggle on={lockScreen} onChange={setLockScreen} title="Ask for a Tech ID to use the POS" testId="pos-setup-lockscreen"
-          detail={lockScreen ? "Everything done on the POS is recorded under who did it." : "Anyone can use the POS without signing in."} />
+        {owner?.techId != null && <p className="text-[22px]" style={{ color: muted }}>Your own Tech ID is <strong style={{ color: ink }}>{owner.techId}</strong>.</p>}
+        <Toggle on={lockScreen} onChange={setLockScreen} title="Ask for a Tech ID to use the front desk" testId="pos-setup-lockscreen"
+          detail={lockScreen ? "Everything done on the front desk is recorded under who did it." : "Anyone can use the front desk without signing in."} />
       </div>
     );
   } else if (step === "pin") {
     body = (
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         <div>
           <h1 className={h1} style={{ color: ink }}>Manager PIN</h1>
           <p className={lead} style={{ color: muted }}>
             {status.managerPinIsDefault
               ? "The Manager menu and cancelling a client who has been served need a 4-digit PIN. Choose your salon's own PIN and keep it private."
-              : "Your salon already has its own manager PIN. To change it, use Manager › Manager PIN on the POS."}
+              : "Your salon already has its own manager PIN. To change it, use Manager › Manager PIN on the front desk."}
           </p>
         </div>
         {status.managerPinIsDefault && <>
@@ -403,23 +403,23 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
       ["Sales tax", [pctText(taxRate), ...(taxed.length ? taxed : ["Nothing is taxed"])]],
       ["CARD button", [card === "own" ? "My own card machine" : "Certxa card reader"]],
       ["Cash price", [Number(cashPct) > 0 ? pctText(cashPct) : "Off"]],
-      ["Cash drawer", [`${status.mainDrawer?.name ?? drawerName} · $${Number(status.mainDrawer?.startingCash ?? startingCash).toFixed(2)}`]],
+      ["Where you keep cash", [`${status.mainDrawer?.name ?? drawerName} · $${Number(status.mainDrawer?.startingCash ?? startingCash).toFixed(2)}`]],
       ["Tip choices", [tips.filter(Boolean).map((t) => `${t}%`).join(", ")]],
       ["Turn rotation", [TURN_PRESETS[mode].label]],
       ["Tech ID sign-in", [lockScreen ? "On" : "Off"]],
       ["Manager PIN", [status.managerPinIsDefault ? "Not set" : "Set"]],
     ];
     body = (
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         <div>
-          <h1 className={h1} style={{ color: ink }}>Your POS is ready</h1>
+          <h1 className={h1} style={{ color: ink }}>Your front desk is ready</h1>
           <p className={lead} style={{ color: muted }}>You can change any of this later in Settings.</p>
         </div>
         <div className="rounded-2xl border pos-white divide-y" style={{ borderColor: line }} data-testid="pos-setup-summary">
           {rows.map(([k, v]) => (
             <div key={k} className="flex items-center justify-between gap-4 px-5 py-3" style={{ borderColor: line }}>
-              <span className="text-[16px]" style={{ color: muted }}>{k}</span>
-              <span className="text-[17px] font-semibold text-right" style={{ color: ink }}>
+              <span className="text-[22px]" style={{ color: muted }}>{k}</span>
+              <span className="text-[24px] font-semibold text-right" style={{ color: ink }}>
                 {v.map((part, i) => <span key={i}>{i > 0 && (i === 1 ? " · " : ", ")}<span>{part}</span></span>)}
               </span>
             </div>
@@ -430,7 +430,7 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
   }
 
   const ready = !!status && status.canSetUp;
-  const nextLabel = step === "welcome" ? "Start" : step === "done" ? "Open the POS" : step === "pin" && !status?.managerPinIsDefault ? "Keep my PIN" : "Next";
+  const nextLabel = step === "welcome" ? "Start" : step === "done" ? "Open the front desk" : step === "pin" && !status?.managerPinIsDefault ? "Keep my PIN" : "Next";
 
   return (
     <div className="cx-cal pos-setup fixed inset-0 z-[300] flex flex-col" style={{ background: LIGHT_PAGE_BG, color: ink }} data-testid="pos-setup">
@@ -443,7 +443,7 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
               <ArrowLeft className="w-6 h-6" />
             </button>
           )}
-          <span className="text-[16px] font-semibold" style={{ color: muted }}>POS setup</span>
+          <span className="text-[22px] font-semibold" style={{ color: muted }}>Front desk setup</span>
         </span>
         {ready && (
           <span className="flex items-center gap-1.5" aria-hidden="true">
@@ -452,19 +452,19 @@ export function PosSetupWizard({ storeId, onFinished, onLater }: { storeId: numb
             ))}
           </span>
         )}
-        <button type="button" onClick={later} className="text-[15px] font-semibold px-3 py-2 rounded-lg hover:bg-white/70" style={{ color: muted }} data-testid="pos-setup-later">
+        <button type="button" onClick={later} className="text-[22px] font-semibold px-3 py-2 rounded-lg hover:bg-white/70" style={{ color: muted }} data-testid="pos-setup-later">
           Finish later
         </button>
       </header>
       <main className="flex-1 min-h-0 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-6 py-6">{body}</div>
+        <div className="max-w-[900px] mx-auto px-6 py-6">{body}</div>
       </main>
       {ready && (
         <footer className="shrink-0 px-6 pb-6 pt-3">
-          <div className="max-w-3xl mx-auto flex flex-col gap-2">
-            {error && <p className="text-[15px] font-medium" style={{ color: "#b42318" }} role="alert" data-testid="pos-setup-error">{error}</p>}
+          <div className="max-w-[900px] mx-auto flex flex-col gap-2">
+            {error && <p className="text-[22px] font-medium" style={{ color: "#b42318" }} role="alert" data-testid="pos-setup-error">{error}</p>}
             <button type="button" onClick={() => void next()} disabled={saving} data-testid="pos-setup-next"
-              className="w-full h-16 rounded-2xl text-white text-[20px] font-bold flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: brand }}>
+              className="w-full h-16 rounded-2xl text-white text-[26px] font-bold flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: brand }}>
               {saving && <Loader2 className="w-5 h-5 animate-spin" />}{nextLabel}
             </button>
           </div>

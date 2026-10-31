@@ -995,7 +995,7 @@ export function CheckoutMode(p: Props) {
     setCardMethod(m);
     try { localStorage.setItem(CARD_METHOD_KEY, m); } catch { /* private mode: it just won't be remembered */ }
     setPopup(null);
-    say(m === "m2" ? "CARD WILL USE THE M2 READER ON THIS POS DEVICE" : "CARD WILL USE THE FRONT DESK M2 READER", "success");
+    say(m === "m2" ? "CARD WILL USE THE M2 READER ON THIS FRONT DESK TABLET" : "CARD WILL USE THE FRONT DESK M2 READER", "success");
   };
   const canNativePrint = native && !!(window as any).CERTXA_PRINT_BRIDGE;
 
@@ -1505,7 +1505,7 @@ export function CheckoutMode(p: Props) {
                 <p className="pay-hint">{!paying ? "Tap PAY / CHECKOUT to take payment."
                   : cardProvider === "own" && payType === "card" ? "Take the card on your own terminal, then tap CARD PAYMENT APPROVED. Type an amount first to record part of the bill."
                   : cardProvider === "own" ? "Cash: type the amount and press ENTER. CARD records a payment taken on your own terminal."
-                  : payType === "card" ? `Card: type the amount and press ENTER to start ${cardMethod === "m2" ? "the M2 reader connected to this POS device" : "the front desk M2 reader"}. ENTER with no amount charges what is still due.`
+                  : payType === "card" ? `Card: type the amount and press ENTER to start ${cardMethod === "m2" ? "the M2 reader connected to this front desk tablet" : "the front desk M2 reader"}. ENTER with no amount charges what is still due.`
                   : "Cash: type the amount and press ENTER. For a card, tap CARD, type the amount and press ENTER."}</p>
               </div>
               )
@@ -1567,7 +1567,7 @@ export function CheckoutMode(p: Props) {
                   })()}
                   <div className="assign-create-hint">Card payment method — what the CARD button uses. Also used when the customer confirms the tip on their screen.</div>
                   {([
-                    { key: "m2" as const, label: "M2 Reader — POS Device", icon: CreditCard, hint: "Charge with the M2 reader paired to this POS device" },
+                    { key: "m2" as const, label: "M2 Reader — Front Desk Tablet", icon: CreditCard, hint: "Charge with the M2 reader paired to this front desk tablet" },
                     { key: "frontdesk" as const, label: "Front Desk M2 Reader", icon: CreditCard, hint: "Charge with the M2 reader paired to the front desk device" },
                   ]).map((o) => {
                     const on = cardProvider !== "own" && cardMethod === o.key;
@@ -1578,7 +1578,7 @@ export function CheckoutMode(p: Props) {
                     );
                   })}
                   <button type="button" className={`assign-create-item ${cardProvider === "own" ? "assign-create-item-sel" : ""}`} onClick={() => void chooseOwnProvider()} data-testid="nail-pay-method-own">
-                    <CreditCard size={18} /><span className="assign-create-name">Own Provider</span><span className="assign-create-status">Your own card terminal. No M2, no Tap to Pay, no card payment on the customer screen. CARD records the payment. Applies to every POS station.</span>{cardProvider === "own" && <Check size={18} />}
+                    <CreditCard size={18} /><span className="assign-create-name">Own Provider</span><span className="assign-create-status">Your own card terminal. No M2, no Tap to Pay, no card payment on the customer screen. CARD records the payment. Applies to every front desk station.</span>{cardProvider === "own" && <Check size={18} />}
                   </button>
                   {canNativePrint && (
                     <button type="button" className="assign-create-item" data-testid="nail-pay-setup-printer"

@@ -81,16 +81,16 @@ router.get("/api/nail/pos-setup", isAuthenticated, async (req: Request, res: Res
     });
   } catch (err: any) {
     console.error("[pos-setup] status", err?.message ?? err);
-    return res.status(500).json({ message: "Could not load the POS setup" });
+    return res.status(500).json({ message: "Could not load the front desk setup" });
   }
 });
 
 router.put("/api/nail/pos-setup/drawer", isAuthenticated, async (req: Request, res: Response) => {
   try {
     const who = await ownerStore(req, res); if (!who) return;
-    if (!who.isOwner) return res.status(403).json({ message: "Only the salon owner's login can set up the POS." });
+    if (!who.isOwner) return res.status(403).json({ message: "Only the salon owner's login can set up the front desk." });
     const { storeId } = who;
-    const name = String(req.body?.name ?? "").trim().slice(0, 40) || "Drawer 1";
+    const name = String(req.body?.name ?? "").trim().slice(0, 40) || "Cash";
     const amount = Number(req.body?.startingCash);
     if (!Number.isFinite(amount) || amount < 0 || amount > 10000) return res.status(400).json({ message: "Enter the starting cash, from $0 to $10,000." });
     const cash = amount.toFixed(2);
@@ -114,13 +114,13 @@ router.put("/api/nail/pos-setup/drawer", isAuthenticated, async (req: Request, r
 router.post("/api/nail/pos-setup/complete", isAuthenticated, async (req: Request, res: Response) => {
   try {
     const who = await ownerStore(req, res); if (!who) return;
-    if (!who.isOwner) return res.status(403).json({ message: "Only the salon owner's login can set up the POS." });
+    if (!who.isOwner) return res.status(403).json({ message: "Only the salon owner's login can set up the front desk." });
     const completedAt = new Date().toISOString();
     await mutateStorePreferences(who.storeId, (p) => ({ ...p, posSetup: { ...(p.posSetup ?? {}), completedAt } }));
     return res.json({ completed: true, completedAt });
   } catch (err: any) {
     console.error("[pos-setup] complete", err?.message ?? err);
-    return res.status(500).json({ message: "Could not finish the POS setup" });
+    return res.status(500).json({ message: "Could not finish the front desk setup" });
   }
 });
 

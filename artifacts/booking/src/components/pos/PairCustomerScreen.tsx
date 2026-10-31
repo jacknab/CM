@@ -49,7 +49,7 @@ export function PairCustomerScreen({ stationName, onDone }: { stationName: strin
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setError(d.error || "Couldn't unpair the screen. Try again."); return; }
       setNote(d.unpaired
-        ? "Unpaired. That screen now shows a code and can be paired with the POS it belongs to."
+        ? "Unpaired. That screen now shows a code and can be paired with the front desk it belongs to."
         : "No customer screen is paired with this station.");
     } catch {
       setError("Couldn't reach Certxa. Check the connection and try again.");
@@ -70,7 +70,7 @@ export function PairCustomerScreen({ stationName, onDone }: { stationName: strin
   return (
     <div className="space-y-2">
       <p className="text-xs text-slate-600">
-        This tablet is <strong>{stationName ?? "a POS station"}</strong>. To pair its customer screen, enter the
+        This tablet is <strong>{stationName ?? "a front desk station"}</strong>. To pair its customer screen, enter the
         4-digit code showing on that screen.
       </p>
       <input
@@ -135,7 +135,7 @@ export function StationsFullBanner({ show }: { show: boolean }) {
   if (!show) return null;
   return (
     <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-[150] max-w-lg w-[calc(100%-1.5rem)] rounded-xl bg-amber-50 border border-amber-300 px-4 py-2.5 text-xs text-amber-900 shadow-lg">
-      Every POS station already belongs to another tablet, so this one isn't linked to a customer screen.
+      Every front desk station already belongs to another tablet, so this one isn't linked to a customer screen.
       The owner can add a station or release an unused one in Settings → POS Stations.
     </div>
   );

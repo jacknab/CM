@@ -292,7 +292,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // Every time the Check-In page opens or closes, start from "not typing" — never inherit a stale overlay.
   useEffect(() => { onFrontdeskTyping(false); }, [showCheckIn, onFrontdeskTyping]);
   const [sheet, setSheet] = useState<null | "voucher" | "timeclock" | "dayclose" | "clients" | "manager" | "turns" | "servicetimes">(null);
-  // POS setup (owner, 2026-10-31): opens by itself until the owner has finished it, unless put off for today on
+  // Front desk setup (owner, 2026-10-31): opens by itself until the owner has finished it, unless put off for today on
   // this tablet; Manager › POS Setup opens it again any time.
   const { data: posSetup } = useQuery<{ completed: boolean; canSetUp: boolean }>({ queryKey: ["/api/nail/pos-setup"], staleTime: 10 * 60_000, retry: false });
   const [setupOpen, setSetupOpen] = useState(false);
@@ -1732,14 +1732,14 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // The Manager tab of the More popup — everything here is behind the manager PIN.
   const managerTiles: MoreTile[] = [
     { key: "settings", label: "Settings", icon: Settings, run: () => navigate(appPage("/settings")!) },
-    { key: "possetup", label: "POS Setup", sub: "Tax, card, drawer, tips", icon: ClipboardList, run: () => { setShowMore(false); setSetupOpen(true); } },
+    { key: "possetup", label: "Front Desk Setup", sub: "Tax, card, drawer, tips", icon: ClipboardList, run: () => { setShowMore(false); setSetupOpen(true); } },
     ...(posEnabled ? [{ key: "register", label: "Cash Drawer", sub: openDrawerSession ? "Open" : "Closed", icon: Wallet, run: () => setShowOpenRegister(true) }] : []),
     { key: "messages", label: "Messages", icon: Bell, run: () => navigate(appPage("/sms-inbox")!) },
-    { key: "keygrid", label: "Key Grid", sub: "Arrange the POS keys", icon: LayoutGrid, run: () => setGridEditor("open") },
+    { key: "keygrid", label: "Key Grid", sub: "Arrange the front desk keys", icon: LayoutGrid, run: () => setGridEditor("open") },
     { key: "turnrotation", label: "Turn Rotation", sub: "How turns are counted", icon: RotateCcw, run: () => setSheet("turns") },
     { key: "servicetimes", label: "Service Times", sub: "Actual vs planned", icon: Clock, run: () => setSheet("servicetimes") },
     { key: "managerpin", label: "Manager PIN", sub: "Change the PIN for this menu", icon: KeyRound, run: () => { setShowMore(false); setPinChange(true); } },
-    { key: "lockscreen", label: "Lock Screen", sub: saveLock.isPending ? "Saving…" : lockEnabled ? "On · Tech ID to use the POS" : "Off · no sign-in", icon: Lock, keepOpen: true,
+    { key: "lockscreen", label: "Lock Screen", sub: saveLock.isPending ? "Saving…" : lockEnabled ? "On · Tech ID to use the front desk" : "Off · no sign-in", icon: Lock, keepOpen: true,
       run: () => { if (!saveLock.isPending) saveLock.mutate(!lockEnabled); } },
     ...(thermalPrinter.isAvailable ? [{
       key: "printer", icon: Printer, label: "Printer",
