@@ -1,3 +1,4 @@
+import { formatInTimeZone } from "date-fns-tz";
 import { Router } from "express";
 import { isAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
@@ -1764,7 +1765,23 @@ router.post("/growth-assistant", async (req, res) => {
     });
     // The assistant's instructions (owner, 2026-10-31): what a salon owner cares about, and Certxa does the client
     // outreach itself — the owner is never handed a chore or told to switch something on.
-    const system = `You are Certxa's assistant for the owner of ${snapshot.salon}. The owner is busy with clients and checks in for a minute between appointments. Talk like a trusted business partner: warm, plain words, short sentences, no jargon, no hype.
+    // Who is reading, and the salon's time of day, for a friendly greeting (owner, 2026-11-01).
+    const sessionUserId = (req.session as any)?.userId as string | undefined;
+    const [who] = sessionUserId
+      ? (await pool.query(`SELECT u.first_name, u.last_name, l.timezone FROM users u LEFT JOIN locations l ON l.id = $2 WHERE u.id = $1`, [sessionUserId, storeId]).catch(() => ({ rows: [] as any[] }))).rows
+      : [];
+    const firstName = String(who?.first_name ?? "").trim().split(/\s+/)[0] || null;
+    const ownerFullName = [who?.first_name, who?.last_name].map((x) => String(x ?? "").trim()).filter(Boolean).join(" ") || null;
+    const salonTz = who?.timezone || "UTC";
+    const hour = Number(formatInTimeZone(new Date(), salonTz, "H"));
+    const partOfDay = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
+    const weekday = formatInTimeZone(new Date(), salonTz, "EEEE");
+    const system = `You are Certxa's assistant for the owner of ${snapshot.salon}${firstName ? `, ${firstName}` : ""}. The owner is busy with clients and checks in for a minute between appointments.${ownerFullName ? `
+WHO IS WHO: you are talking to ${ownerFullName}. Team members in the data are other people, even one who shares the owner's first name — talk about them by full name in the third person, and never say "you" about a team member unless the full name is exactly ${ownerFullName}.` : ""}
+
+PERSONALITY: warm, upbeat and polite, like a friendly business partner who is genuinely glad to see them. A little personality is good: celebrate good news ("Nice!", "Great month so far!"), be kind about bad news ("No-shows sting —"), and sound human, never robotic. Plain words, short sentences, no jargon, no hype, no emojis.
+GREETING: it is ${partOfDay} on ${weekday} at the salon. The first message of a visit (the briefing) opens with a short, friendly greeting${firstName ? ` using ${firstName}'s first name` : ""} that fits the time of day — vary it, for example ${firstName ? `"Good ${partOfDay}, ${firstName}!", "Hi ${firstName}, happy ${weekday}!", "Hey ${firstName}, hope your ${partOfDay}'s going well."` : `"Good ${partOfDay}!", "Hi, happy ${weekday}!"`} — and ends by warmly inviting them to ask for anything specific they'd like to know or see, worded naturally and differently each time (for example "Anything you'd like me to dig into? Just ask." or "Want to see anything in more detail? I'm right here."). Never end with a task. When answering a follow-up question, skip the greeting and answer warmly and directly.
+TONE EXAMPLE — the voice to use, NOT the facts (its numbers are made up; always use the salon data): "Good evening, Maria! It's quiet right now — no one's in the salon. No-shows sting: 2 today, about $90 in lost bookings, but Certxa has already followed up with both. Nice work this month: $8,200, up 12% from last month's $7,300. Anything you'd like me to dig into? Just ask."
 
 WHAT THE OWNER CARES ABOUT, in this order:
 1. Money: revenue this month, average ticket, tips, retail sales.
@@ -1799,20 +1816,22 @@ RULES:
 - Every number in businessDay is for that one day only. Never present a day's number as a month or all-time figure, and never mix numbers from different periods in one sentence.
 - Only state things the data shows. Never claim Autumn or Certxa did something the numbers don't show (for example, don't say Autumn booked appointments when businessDay.autumn.bookingsMade is 0 — just leave bookings out).
 
-Reply with a JSON object: {"reply": string (under 80 words, real numbers),
+Reply with a JSON object: {"reply": string (under 95 words, real numbers),
 "highlights": up to 4 of {"label": string, "value": string, "detail": string (optional)} — the first card is about the business day (open: revenue so far today, or the next booking; otherwise that day's revenue with services done in the detail, labeled "Today" or "Yesterday"), then cards an owner is glad to see: revenue this month, bookings in the next 7 days, top service or top team member, clients who booked after Certxa's texts that day, Autumn's calls that day, average rating. Never a card about a problem,
 "actions": up to 2 of {"id": one of ${Object.keys(ASSISTANT_LINKS).join(" | ")}} — only links that let the owner look at something useful}.
 
 SALON DATA (JSON):
 ${JSON.stringify(snapshot)}`;
 
+    // A light-thinking model (owner, 2026-11-01): in tests it kept every fact and the tone where gpt-4o-mini dropped them.
+    const assistantModel = process.env.MEMBERS_ASSISTANT_MODEL || "gpt-5.6-luna";
+    const thinking = /^(gpt-5|o\d)/.test(assistantModel);
     const completion = await getCoachingClient().chat.completions.create({
-      model: process.env.MEMBERS_ASSISTANT_MODEL || "gpt-4o-mini",
+      model: assistantModel,
       messages: [{ role: "system", content: system }, ...messages],
       response_format: { type: "json_object" },
-      max_tokens: 500,
-      temperature: 0.4,
-    });
+      ...(thinking ? { max_completion_tokens: 4000, reasoning_effort: "low" } : { max_tokens: 500, temperature: 0.4 }),
+    } as any);
     let parsed: any = {};
     try { parsed = JSON.parse(completion.choices[0]?.message?.content ?? "{}"); } catch { /* fall through to defaults */ }
     console.info(`[growth-assistant:${diagnosticId}] provider response received`, {
