@@ -18,6 +18,9 @@
  *   POST /api/assistant/actions/:id/confirm | /cancel
  */
 import { Router, type Request, type Response } from "express";
+import { readFileSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 import { formatInTimeZone } from "date-fns-tz";
 import { pool } from "../db";
 import { isAuthenticated } from "../auth";
@@ -25,6 +28,18 @@ import { resolveSessionStoreId } from "../lib/sessionStore";
 import { TURN_MODES, TURN_PRESETS, isDollarMode, type TurnMode } from "@shared/turnRules";
 
 const router = Router();
+
+// The verified "where things are" guide (knowledge-base-owner/certxa-help.md, checked against the code 2026-11-01).
+const HELP_GUIDE = (() => {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const root = here.includes("/src") ? join(here, "..", "..") : join(here, "..");
+    return readFileSync(join(root, "knowledge-base-owner", "certxa-help.md"), "utf-8");
+  } catch (err) {
+    console.error("[assistant] help guide not loaded:", (err as Error).message);
+    return "";
+  }
+})();
 const LOG = "[assistant]";
 const MODEL = () => process.env.OWNER_ASSISTANT_MODEL || process.env.MEMBERS_ASSISTANT_MODEL || "gpt-5.6-luna";
 const MAX_TOOL_ROUNDS = 8;
@@ -381,7 +396,14 @@ WHAT YOU CAN DO:
 
 WHAT YOU NEVER DO: create, move, cancel or change client bookings or appointments; take payments, refunds, or change prices of services; change the manager PIN, staff, or anything not listed above. If asked, say kindly that you can't do that here and where in Certxa they can do it (the calendar for bookings, Settings for the rest).
 
-Certxa runs client outreach automatically (rebooking reminders, win-back texts, follow-ups after cancellations and no-shows, Autumn answering the phone); never tell the owner to do that work themselves.`;
+Certxa runs client outreach automatically (rebooking reminders, win-back texts, follow-ups after cancellations and no-shows, Autumn answering the phone); never tell the owner to do that work themselves.
+
+FORMAT: plain text only — no markdown, no asterisks, no headings. Short paragraphs or simple lines starting with "-".
+
+"HOW DO I…?" QUESTIONS: answer only from the HELP GUIDE below, and never add a step, button or menu the guide doesn't give, and give the page as a link path (for example "Settings → Booking Controls (/settings/booking-controls)"). If the guide doesn't cover it, say you're not sure where it is and that Certxa support can help — never describe a screen, button or menu you can't see in the guide. When the guide says something doesn't exist, say so plainly and stop — don't suggest support or anyone else can provide it.
+
+HELP GUIDE:
+${HELP_GUIDE}`;
 }
 
 router.post("/api/assistant/chat", isAuthenticated, async (req: Request, res: Response) => {
@@ -447,15 +469,53 @@ router.post("/api/assistant/chat", isAuthenticated, async (req: Request, res: Re
         input.push({ type: "function_call_output", call_id: call.call_id, output: clip(out) });
       }
     }
+    reply = reply.replace(/\*\*(.+?)\*\*/g, "$1").replace(/^#+\s*/gm, ""); // plain text on the page
     if (!reply) reply = proposed.length ? "Here's the change — tap Confirm to make it." : "Sorry, I couldn't finish that. Could you ask it another way?";
-    await pool.query(`INSERT INTO assistant_messages (store_id, user_id, role, content, action_ids) VALUES ($1, $2, 'assistant', $3, $4::jsonb)`,
+    const saved = await pool.query(`INSERT INTO assistant_messages (store_id, user_id, role, content, action_ids) VALUES ($1, $2, 'assistant', $3, $4::jsonb) RETURNING id`,
       [ctx.storeId, ctx.userId, reply, JSON.stringify(proposed.map((p) => p.id))]);
+    // Checked afterwards, so the owner isn't kept waiting (owner, 2026-11-01: "truthful insight and facts").
+    void factCheckAnswer(saved.rows[0].id, message, reply, input, key);
     return res.json({ reply, actions: proposed.map((p) => ({ id: p.id, summary: p.summary, status: "pending" })) });
   } catch (err: any) {
     console.error(`${LOG} chat failed:`, err?.message);
     return res.status(500).json({ message: "The assistant is unavailable right now. Please try again shortly." });
   }
 });
+
+/**
+ * After each answer a separate model compares it with what the tools returned and the help guide, and records any
+ * statement that isn't supported (assistant_messages.fact_check). Read in the back office to fix gaps.
+ */
+async function factCheckAnswer(messageId: number, question: string, reply: string, input: any[], key: string): Promise<void> {
+  try {
+    const evidence = input
+      .filter((i) => i?.type === "function_call_output")
+      .map((i) => String(i.output))
+      .join("\n---\n")
+      .slice(0, 40_000);
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: process.env.ASSISTANT_FACT_CHECK_MODEL || "gpt-4.1",
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: `You audit an assistant's answer to a salon owner. Every number, name, date, setting, or description of where something is in the app must be supported by the LOOKUP RESULTS or the HELP GUIDE below. List each statement that is not supported or contradicts them. Greetings, questions back to the owner, and "tap Confirm" lines are fine. Reply as JSON {"issues": [string]} — empty when everything is supported.\n\nHELP GUIDE:\n${HELP_GUIDE}\n\nLOOKUP RESULTS:\n${evidence || "(none)"}` },
+          { role: "user", content: `OWNER ASKED: ${question}\n\nASSISTANT ANSWERED: ${reply}` },
+        ],
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    const data: any = await res.json();
+    const issues = JSON.parse(data?.choices?.[0]?.message?.content ?? "{}").issues;
+    const list = Array.isArray(issues) ? issues.map(String).slice(0, 10) : [];
+    await pool.query(`UPDATE assistant_messages SET fact_check = $2::jsonb WHERE id = $1`, [messageId, JSON.stringify({ ok: list.length === 0, issues: list })]);
+    if (list.length) console.warn(`${LOG} fact check flagged message ${messageId}: ${list.join(" | ")}`);
+  } catch (e) {
+    console.warn(`${LOG} fact check failed:`, (e as Error).message);
+  }
+}
 
 router.get("/api/assistant/history", isAuthenticated, async (req: Request, res: Response) => {
   const ctx = await ownerContext(req, res); if (!ctx) return;
