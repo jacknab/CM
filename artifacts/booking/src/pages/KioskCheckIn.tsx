@@ -1203,12 +1203,11 @@ function KioskCheckInScreens() {
     <div className="fixed inset-0 cursor-pointer select-none overflow-hidden" data-testid="checkin-idle"
       onPointerDown={() => setScreen("phone")} onContextMenu={e => e.preventDefault()}
       style={{ ...NO_SELECT, background: BG }}>
-      {/* The whole picture is always shown (never cropped: a 9:16 kiosk screen cut off the WELCOME bar, owner
-          2026-10-31), as big as the screen allows, over a blurred copy of itself that fills the rest with purple. */}
-      <img src={kioskWelcomeBanner} alt="" aria-hidden draggable={false}
-        style={{ position: "absolute", inset: "-5%", width: "110%", height: "110%", objectFit: "cover", filter: "blur(70px) saturate(1.1)", opacity: 0.85 }} />
+      {/* The picture always fills the whole screen (owner, 2026-11-01: even if a little is cut off). It is a 9:16
+          version of the owner's 2:3 artwork, its purple background extended top and bottom, so on a standing 9:16
+          kiosk it fits exactly and nothing is cut; other screen shapes lose a little at the edges. */}
       <img src={kioskWelcomeBanner} alt="Welcome. Please check in here" draggable={false} data-testid="kiosk-welcome-image"
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", objectPosition: "center" }} />
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
       <div className="absolute left-0 right-0 flex items-center justify-center gap-3 flex-wrap px-8"
         style={{ bottom: "clamp(18px, 3vh, 30px)" }} onPointerDown={e => e.stopPropagation()}>
         {KIOSK_LANGS.map(({ code, label }) => (
